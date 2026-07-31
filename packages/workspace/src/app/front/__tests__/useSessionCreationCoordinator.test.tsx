@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from "@testing-library/react"
+import { StrictMode, type PropsWithChildren } from "react"
 import { describe, expect, it, vi } from "vitest"
+import { SESSION_CREATE_PROTOCOL_ERROR } from "../../../front/sessionCreateProtocol"
 import { useSessionCreationCoordinator } from "../useSessionCreationCoordinator"
 
 interface Session {
@@ -17,13 +19,32 @@ function deferred<T>() {
 function validateResult(value: unknown): Session {
   if (!value || typeof value !== "object" || typeof (value as { id?: unknown }).id !== "string") {
     throw Object.assign(new Error("create did not return a canonical session"), {
-      code: "SESSION_CREATE_PROTOCOL_ERROR" as const,
+      code: SESSION_CREATE_PROTOCOL_ERROR,
     })
   }
   return value as Session
 }
 
 describe("useSessionCreationCoordinator", () => {
+  it("creates successfully after the StrictMode effect replay", async () => {
+    const create = vi.fn(() => ({ id: "strict-created" }))
+    const wrapper = ({ children }: PropsWithChildren) => <StrictMode>{children}</StrictMode>
+    const { result } = renderHook(() => useSessionCreationCoordinator<Session>({
+      sourceKey: "source",
+      validateResult,
+      ownerIsCurrent: () => true,
+      ownershipReady: true,
+    }), { wrapper })
+
+    let creation!: Promise<Session | undefined>
+    act(() => {
+      creation = result.current.coordinate({ dedupeKey: "strict", create })
+    })
+
+    await expect(creation).resolves.toEqual({ id: "strict-created" })
+    expect(create).toHaveBeenCalledOnce()
+  })
+
   it("rechecks ownership at the deferred invocation boundary", async () => {
     let owned = true
     const create = vi.fn(() => ({ id: "must-not-exist" }))

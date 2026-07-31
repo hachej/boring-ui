@@ -477,6 +477,7 @@ describe('CoreWorkspaceAgentFront', () => {
       defaultSurfaceOpen: false,
     })
     expect(workspaceAgentProps?.beforeShell).toBeTruthy()
+    expect(workspaceAgentProps?.onCreateSession).toBeUndefined()
     expect(workspaceAgentProps?.chatParams).toMatchObject({
       initialDraft: 'Keep this draft',
       serverResourcesEnabled: false,

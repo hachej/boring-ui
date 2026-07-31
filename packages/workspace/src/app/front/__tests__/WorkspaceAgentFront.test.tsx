@@ -1840,6 +1840,33 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "retried-split"]))
   })
 
+  it("releases split pending after a resolved callback throws so a split can retry", async () => {
+    const create = vi.fn()
+      .mockReturnValueOnce({ id: "first-created", title: "First created", updatedAt: Date.now() })
+      .mockReturnValueOnce({ id: "retried-created", title: "Retried created", updatedAt: Date.now() })
+    const switchSession = vi.fn()
+      .mockImplementationOnce(() => { throw new Error("switch failed") })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="callback-split-retry"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session", updatedAt: Date.now() }]}
+        activeSessionId="s1"
+        onSwitchSession={switchSession}
+        onCreateSession={create}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Split First session chat vertically" }))
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    await waitFor(() => expect(screen.getByRole("button", { name: "Split First session chat horizontally" })).toBeEnabled())
+    fireEvent.click(screen.getByRole("button", { name: "Split First session chat horizontally" }))
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
+  })
+
   it("ignores another split request while asynchronous pane creation is pending", async () => {
     const user = userEvent.setup()
     let resolveCreate!: (session: { id: string; title: string; updatedAt: number }) => void

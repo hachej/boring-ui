@@ -53,6 +53,36 @@ Workbench surfaces are locally gated by warmup state. File tree/editor/plugin wo
     workspace adapters can depend on native Pi packages without requiring
     Boring-specific exports from those packages.
 
+## Session creation protocol
+
+Session providers must return the canonical created session from both supported
+entry points:
+
+- `WorkspaceAgentSessionsApi.create(input)` for `useSessions` providers.
+- `WorkspaceAgentFrontProps.onCreateSession()` for controlled session hosts.
+
+The result may be synchronous (`TSession`) or asynchronous
+(`Promise<TSession>`). It must be the created row itself, with a non-empty
+string `id`. `agentTypeId` is optional for compatibility sources, but when
+present it must be a non-empty string; addressed hosts use it as the canonical
+session owner. Invalid, missing, or `void` results reject with
+`SESSION_CREATE_PROTOCOL_ERROR`; a thrown provider error or rejected provider
+promise remains the task rejection. Consumers can import the canonical
+`SESSION_CREATE_PROTOCOL_ERROR` constant and `SessionCreateProtocolError` type
+from `@hachej/boring-workspace` or `@hachej/boring-workspace/app/front`.
+
+Creates are serialized per session source and deduplicated only while the same
+intent is queued or active. A failed task is removed before its callbacks run,
+its settlement cleanup always runs, and a later user action may retry. The
+workspace does not automatically retry provider failures; provider-side retry
+must still return one canonical row when it succeeds.
+
+Legacy providers that currently mutate their store and return `void` must be
+migrated to return the row they created. For example, return the parsed create
+response, or retain the locally constructed row, publish it to the store, and
+then return that same row. Do not rely on the workspace to infer a created row
+from later list or active-session changes.
+
 ## Ownership Rules
 
 - Workspace chrome must not hardcode plugin panel ids or plugin domain rules.

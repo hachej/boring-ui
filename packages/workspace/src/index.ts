@@ -89,6 +89,10 @@ export { filesystemEvents } from "./plugins/filesystemPlugin/shared/events"
 export type { FilesystemEventMap, FilesystemEventMeta } from "./plugins/filesystemPlugin/shared/events"
 // Utility
 export { cn } from "./front/lib/utils"
+export {
+  SESSION_CREATE_PROTOCOL_ERROR,
+  type SessionCreateProtocolError,
+} from "./front/sessionCreateProtocol"
 
 // Registry & panel management
 export { PanelRegistry } from "./front/registry/PanelRegistry"

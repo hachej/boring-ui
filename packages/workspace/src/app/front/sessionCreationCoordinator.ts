@@ -29,32 +29,27 @@ export class SessionCreationCoordinator<TSession extends SessionCreationResult> 
   sourceKey: string
   active: SessionCreationTask<TSession> | null = null
   queue: SessionCreationTask<TSession>[] = []
-  private lifecycle: "ready" | "resetting" | "disposed" = "ready"
+  private resetting = false
 
   constructor(sourceKey: string) {
     this.sourceKey = sourceKey
   }
 
   reset(sourceKey: string): void {
-    if (this.lifecycle === "disposed") return
-    this.lifecycle = "resetting"
+    if (this.resetting) return
+    this.resetting = true
     try {
       this.cancel(() => true)
       this.sourceKey = sourceKey
     } finally {
-      if (this.lifecycle === "resetting") this.lifecycle = "ready"
+      this.resetting = false
     }
   }
 
-  dispose(): void {
-    this.lifecycle = "disposed"
-    this.cancel(() => true)
-  }
-
   coordinate(options: CoordinateSessionCreateOptions<TSession>): Promise<TSession | undefined> {
-    if (this.lifecycle !== "ready") {
+    if (this.resetting) {
       return Promise.reject(Object.assign(
-        new Error("Session creation coordinator is resetting or disposed"),
+        new Error("Session creation coordinator is resetting"),
         { code: "SESSION_CREATE_COORDINATOR_UNAVAILABLE" as const },
       ))
     }
@@ -113,9 +108,12 @@ export class SessionCreationCoordinator<TSession extends SessionCreationResult> 
     if (task.phase === "finished") return
     task.phase = "finished"
     try {
-      if ("error" in outcome) task.onError?.(outcome.error)
-      else if (outcome.value !== undefined) task.onResolved?.(outcome.value)
-      task.onSettled?.()
+      try {
+        if ("error" in outcome) task.onError?.(outcome.error)
+        else if (outcome.value !== undefined) task.onResolved?.(outcome.value)
+      } finally {
+        task.onSettled?.()
+      }
     } catch (error) {
       task.reject(error)
       return

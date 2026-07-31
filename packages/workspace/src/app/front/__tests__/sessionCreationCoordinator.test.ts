@@ -47,7 +47,7 @@ describe("session creation coordinator", () => {
     await expect(reentrant).resolves.toBeUndefined()
   })
 
-  it("rejects reentrant settlement work while resetting or disposing", async () => {
+  it("rejects reentrant settlement work while resetting", async () => {
     const coordinator = new SessionCreationCoordinator<Session>("source")
     let duringReset!: Promise<Session | undefined>
     const resetTask = coordinator.coordinate({
@@ -62,18 +62,6 @@ describe("session creation coordinator", () => {
     await expect(resetTask).resolves.toBeUndefined()
     await expect(duringReset).rejects.toMatchObject({ code: "SESSION_CREATE_COORDINATOR_UNAVAILABLE" })
     expect(coordinator.sourceKey).toBe("next")
-
-    let duringDispose!: Promise<Session | undefined>
-    const disposeTask = coordinator.coordinate({
-      dedupeKey: "dispose",
-      create: vi.fn(),
-      onSettled: () => {
-        duringDispose = coordinator.coordinate({ dedupeKey: "during-dispose", create: vi.fn() })
-      },
-    })
-    coordinator.dispose()
-    await expect(disposeTask).resolves.toBeUndefined()
-    await expect(duringDispose).rejects.toMatchObject({ code: "SESSION_CREATE_COORDINATOR_UNAVAILABLE" })
   })
 
   it("detaches the active task before canonical callbacks run", async () => {
@@ -96,22 +84,44 @@ describe("session creation coordinator", () => {
     await expect(next).resolves.toBeUndefined()
   })
 
-  it("rejects with a callback failure while leaving the queue available", async () => {
+  it("runs onSettled and rejects with an onResolved failure while leaving the queue available", async () => {
     const coordinator = new SessionCreationCoordinator<Session>("source")
-    const callbackError = new Error("callback failed")
+    const callbackError = new Error("resolved callback failed")
+    const onSettled = vi.fn()
     const creation = coordinator.coordinate({
       dedupeKey: "first",
       create: vi.fn(),
       onResolved: () => { throw callbackError },
+      onSettled,
     })
     const task = coordinator.takeNext()!
 
     coordinator.finish(task, { value: { id: "created" } })
 
     await expect(creation).rejects.toBe(callbackError)
+    expect(onSettled).toHaveBeenCalledOnce()
     const retry = coordinator.coordinate({ dedupeKey: "retry", create: vi.fn() })
     const retryTask = coordinator.takeNext()!
     coordinator.finish(retryTask, { value: { id: "retry" } })
     await expect(retry).resolves.toEqual({ id: "retry" })
+  })
+
+  it("runs onSettled and rejects with an onError failure", async () => {
+    const coordinator = new SessionCreationCoordinator<Session>("source")
+    const transportError = new Error("transport failed")
+    const callbackError = new Error("error callback failed")
+    const onSettled = vi.fn()
+    const creation = coordinator.coordinate({
+      dedupeKey: "first",
+      create: vi.fn(),
+      onError: () => { throw callbackError },
+      onSettled,
+    })
+    const task = coordinator.takeNext()!
+
+    coordinator.finish(task, { error: transportError })
+
+    await expect(creation).rejects.toBe(callbackError)
+    expect(onSettled).toHaveBeenCalledOnce()
   })
 })

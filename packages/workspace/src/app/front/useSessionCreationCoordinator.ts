@@ -103,7 +103,7 @@ export function useSessionCreationCoordinator<TSession extends SessionCreationRe
     runtimeRef.current.mounted = true
     return () => {
       runtimeRef.current.mounted = false
-      coordinatorRef.current.dispose()
+      coordinatorRef.current.cancel(() => true)
     }
   }, [])
 

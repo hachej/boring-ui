@@ -55,6 +55,10 @@ import {
   workspaceSessionRefFromPersisted,
   type WorkspaceSessionRef,
 } from "../../front/sessionIdentity"
+import {
+  SESSION_CREATE_PROTOCOL_ERROR,
+  type SessionCreateProtocolError,
+} from "../../front/sessionCreateProtocol"
 import { useSessionCreationCoordinator } from "./useSessionCreationCoordinator"
 
 type AutoSubmitDraftTarget = {
@@ -424,9 +428,9 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
-function sessionCreateProtocolError(message: string): Error & { code: "SESSION_CREATE_PROTOCOL_ERROR" } {
+function sessionCreateProtocolError(message: string): SessionCreateProtocolError {
   return Object.assign(new Error(`Session provider protocol error: ${message}`), {
-    code: "SESSION_CREATE_PROTOCOL_ERROR" as const,
+    code: SESSION_CREATE_PROTOCOL_ERROR,
   })
 }
 

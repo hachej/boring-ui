@@ -1,4 +1,8 @@
 export {
+  SESSION_CREATE_PROTOCOL_ERROR,
+  type SessionCreateProtocolError,
+} from "../../front/sessionCreateProtocol"
+export {
   WorkspaceAgentFront,
   type WorkspaceAgentFrontProps,
   type WorkspaceAgentLayout,

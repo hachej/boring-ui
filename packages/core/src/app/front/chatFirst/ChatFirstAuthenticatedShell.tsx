@@ -52,7 +52,7 @@ export function ChatFirstAuthenticatedShell<
       sessions={[]}
       activeSessionId={null}
       onSwitchSession={() => undefined}
-      onCreateSession={() => undefined}
+      onCreateSession={undefined}
       onDeleteSession={() => undefined}
       provisionWorkspace={false}
       bootPreloadPaths={[]}
