@@ -42,6 +42,11 @@ import {
   readPiChatNdjsonStream,
   schedulePiChatReconnect,
 } from './piChatStream'
+import {
+  errorResponseCode,
+  gatewayResponseErrorFromBody,
+  GatewayResponseError,
+} from '../gatewayResponseError'
 
 const SUPPORTED_PROTOCOL_VERSION = 1
 const DEFAULT_RECONNECT_BASE_MS = 1_000
@@ -94,6 +99,8 @@ export interface RemotePiSessionOptions {
   // Per-attempt timeout for /state and command fetches. Defaults to
   // DEFAULT_REQUEST_TIMEOUT_MS; exposed mainly for tests.
   requestTimeoutMs?: number
+  /** Reports structured gateway failures so session-list owners can mark incompatible sessions read-only. */
+  onGatewayError?: (error: GatewayResponseError) => void
   /** Browser-local addressed session whose first prompt creates and adopts its durable ID. */
   nativeFirstPrompt?: {
     onAdopt: (session: SessionSummary) => void
@@ -428,7 +435,12 @@ export class RemotePiSession {
           markOpen()
           return
         }
-        this.dispatchProtocolError(routeErrorMessage(body, `Pi chat event stream failed with HTTP ${response.status}.`))
+        const error = this.reportGatewayError(gatewayResponseErrorFromBody(
+          response.status,
+          body,
+          'Pi chat event stream failed.',
+        ))
+        this.dispatchProtocolError(error.message)
         this.scheduleReconnect(generation)
         markOpen()
         return
@@ -630,7 +642,11 @@ export class RemotePiSession {
     try {
       const response = await this.fetchImpl(url, { ...init, signal: controller.signal })
       const body = await safeReadJson(response)
-      if (!response.ok) throw new RemotePiSessionHttpError(response.status, routeErrorMessage(body, `HTTP ${response.status}`), body, routeErrorCode(body))
+      if (!response.ok) throw this.reportGatewayError(gatewayResponseErrorFromBody(
+        response.status,
+        body,
+        'The chat request failed.',
+      ))
       return body
     } catch (error) {
       // Distinguish our own timeout abort from a dispose-driven abort: a
@@ -654,14 +670,22 @@ export class RemotePiSession {
     }
     const body = await safeReadJson(response)
     if (!response.ok) {
-      throw new RemotePiSessionHttpError(
+      throw this.reportGatewayError(gatewayResponseErrorFromBody(
         response.status,
-        routeErrorMessage(body, `HTTP ${response.status}`),
         body,
-        routeErrorCode(body),
-      )
+        'The chat request failed.',
+      ))
     }
     return body
+  }
+
+  private reportGatewayError(error: GatewayResponseError): GatewayResponseError {
+    try {
+      this.options.onGatewayError?.(error)
+    } catch {
+      // An observer must not replace the structured request failure.
+    }
+    return error
   }
 
   private async requestHeaders(): Promise<Record<string, string>> {
@@ -789,13 +813,6 @@ export function createRemotePiSession(options: RemotePiSessionOptions): RemotePi
   return new RemotePiSession(options)
 }
 
-class RemotePiSessionHttpError extends Error {
-  constructor(readonly status: number, message: string, readonly body: unknown, readonly errorCode?: string) {
-    super(message)
-    this.name = 'RemotePiSessionHttpError'
-  }
-}
-
 class RemotePiSessionRequestTimeoutError extends Error {
   constructor(url: string, timeoutMs: number) {
     super(`Request to ${url} timed out after ${timeoutMs}ms.`)
@@ -804,26 +821,18 @@ class RemotePiSessionRequestTimeoutError extends Error {
 }
 
 /**
- * Extract the stable, CANONICAL server error code (a member of the shared ErrorCode
- * enum, e.g. `SESSION_LOCKED`) from an error thrown by a command call (prompt/follow-up/
- * etc). Returns undefined for non-HTTP errors, bodies without a code, or non-canonical
- * codes. This is the agent's generic seam: callers map a code to UI (a notice action)
- * WITHOUT the agent knowing what the code means.
+ * Extract a stable server error code from a command failure. This accepts both
+ * the legacy shared ErrorCode enum and AgentGateway error codes.
  */
 export function piChatErrorCode(error: unknown): string | undefined {
-  if (error instanceof RemotePiSessionHttpError) return error.errorCode
-  // Also accept a plain `errorCode` carried on any thrown value, so callers that
-  // re-wrap or synthesize a command error can still surface a stable code — but only
-  // when it's a canonical ErrorCode, never an arbitrary string.
-  const parsed = ErrorCode.safeParse((error as { errorCode?: unknown } | null)?.errorCode)
-  return parsed.success ? parsed.data : undefined
+  return errorResponseCode(error)
 }
 
 function classifyNativeFirstPromptError(error: unknown): NativeFirstSendErrorKind {
   if (error instanceof TypeError
     || error instanceof RemotePiSessionRequestTimeoutError
     || error instanceof NativeFirstPromptInvalidReceiptError
-    || (error instanceof RemotePiSessionHttpError && error.status >= 500)) {
+    || (error instanceof GatewayResponseError && error.status >= 500)) {
     return NativeFirstSendErrorKind.Ambiguous
   }
   return NativeFirstSendErrorKind.Definite
@@ -860,23 +869,6 @@ async function safeReadJson(response: Response): Promise<unknown> {
   } catch {
     return undefined
   }
-}
-
-function routeErrorMessage(body: unknown, fallback: string): string {
-  if (typeof body !== 'object' || body === null) return fallback
-  const error = (body as Record<string, unknown>).error
-  const payload = typeof error === 'object' && error !== null ? error as Record<string, unknown> : body as Record<string, unknown>
-  return typeof payload.message === 'string' && payload.message ? payload.message : fallback
-}
-
-function routeErrorCode(body: unknown): string | undefined {
-  if (typeof body !== 'object' || body === null) return undefined
-  const error = (body as Record<string, unknown>).error
-  const payload = typeof error === 'object' && error !== null ? error as Record<string, unknown> : body as Record<string, unknown>
-  // Only surface a CANONICAL code: hosts treat notice.errorCode as a stable action
-  // key, so a malformed/legacy body must not leak an arbitrary string.
-  const parsed = ErrorCode.safeParse(payload.code)
-  return parsed.success ? parsed.data : undefined
 }
 
 function errorMessage(error: unknown, fallback: string): string {

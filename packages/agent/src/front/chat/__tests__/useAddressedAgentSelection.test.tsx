@@ -2,6 +2,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { StrictMode, type ReactNode } from 'react'
 import { describe, expect, test, vi } from 'vitest'
+import { AgentGatewayErrorCode } from '../../../shared/gateway/errors'
 import { useAddressedAgentSelection } from '../useAddressedAgentSelection'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -57,6 +58,23 @@ describe('useAddressedAgentSelection', () => {
     expect(result.current.loading).toBe(false)
     expect(result.current.selectedAgentTypeId).toBeUndefined()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test('surfaces the structured server message when agent discovery fails', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({
+      error: { code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, message: 'Agent catalog is restarting.' },
+    }, 503))
+    const { result } = renderHook(() => useAddressedAgentSelection({
+      fetch: fetchMock as unknown as typeof fetch,
+      enabled: true,
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.error).toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED,
+      message: 'Agent catalog is restarting.',
+    })
+    expect(result.current.error?.message).not.toContain('503')
   })
 
   test('keeps a selected agent across refresh and falls back when it disappears', async () => {

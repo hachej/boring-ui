@@ -91,12 +91,20 @@ export function useAddressedConsoleController<
     return controllers.current.get(session.agentTypeId)?.rename?.(session.sessionId, title)
   }, [controllers, enabled])
 
+  const markSessionReadOnly = useCallback((
+    session: WorkspaceSessionRef,
+    reason?: string,
+  ) => {
+    if (!enabled || !session.agentTypeId) return
+    controllers.current.get(session.agentTypeId)?.markReadOnly?.(session.sessionId, reason)
+  }, [controllers, enabled])
+
   const refreshSession = useCallback((session: WorkspaceSessionRef) => {
     if (!enabled || !session.agentTypeId) return undefined
     return controllers.current.get(session.agentTypeId)?.refresh?.({ background: true })
   }, [controllers, enabled])
 
-  return { activate, createSession, adoptNativeSession, renameSession, deleteSession, refreshSession }
+  return { activate, createSession, adoptNativeSession, renameSession, deleteSession, markSessionReadOnly, refreshSession }
 }
 
 function AddressedConsoleSessionSource<

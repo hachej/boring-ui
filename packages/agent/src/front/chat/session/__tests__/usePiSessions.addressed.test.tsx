@@ -2,6 +2,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { RemotePiSession, RemotePiSessionOptions } from '../../pi/remotePiSession'
+import { AgentGatewayErrorCode } from '../../../../shared/gateway/errors'
+import { GatewayResponseError, RUNTIME_SCOPE_MISMATCH_MESSAGE } from '../../gatewayResponseError'
 import { activeSessionStorageKey } from '../activeSessionStorage'
 import { usePiSessions } from '../usePiSessions'
 
@@ -153,6 +155,179 @@ describe('usePiSessions addressed Agent transport', () => {
       requestId: expect.stringMatching(/^rename-/),
       title: 'Renamed',
     })
+  })
+
+  test('parses a runtime-scope rename failure and lazily marks the listed chat read-only', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return new Response(JSON.stringify({
+          error: {
+            code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+            message: 'session is pinned to a different runtime scope',
+          },
+        }), { status: 409, headers: { 'content-type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({
+        sessions: [{
+          ref: { agentTypeId: 'alpha', sessionId: 'orphaned' },
+          title: 'Previous runtime chat',
+          status: 'idle',
+          createdAt: 1,
+          updatedAt: 2,
+        }],
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      fetch: fetchMock as unknown as typeof fetch,
+      connectActiveSession: false,
+      retry: { maxRetries: 0 },
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    let error: unknown
+    await act(async () => {
+      error = await result.current.rename('orphaned', 'New title').catch((reason) => reason)
+    })
+
+    expect(error).toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+      message: RUNTIME_SCOPE_MISMATCH_MESSAGE,
+    })
+    expect((error as Error).message).not.toContain('409')
+    expect(result.current.sessions).toEqual([
+      expect.objectContaining({
+        id: 'orphaned',
+        readOnly: true,
+        readOnlyReason: RUNTIME_SCOPE_MISMATCH_MESSAGE,
+      }),
+    ])
+  })
+
+  test('keeps a chat listed when delete is rejected and marks a scope mismatch read-only', async () => {
+    const deleteResponse = deferred<Response>()
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'DELETE') return deleteResponse.promise
+      return new Response(JSON.stringify({
+        sessions: [{
+          ref: { agentTypeId: 'alpha', sessionId: 'orphaned' },
+          title: 'Previous runtime chat',
+          status: 'idle',
+          createdAt: 1,
+          updatedAt: 2,
+        }],
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      fetch: fetchMock as unknown as typeof fetch,
+      connectActiveSession: false,
+      retry: { maxRetries: 0 },
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    let deletion!: Promise<void>
+    act(() => {
+      deletion = result.current.delete('orphaned')
+    })
+    expect(result.current.sessions.map((session) => session.id)).toEqual(['orphaned'])
+
+    await act(async () => {
+      deleteResponse.resolve(new Response(JSON.stringify({
+        error: {
+          code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+          message: 'session is pinned to a different runtime scope',
+        },
+      }), { status: 409, headers: { 'content-type': 'application/json' } }))
+      await deletion.catch(() => undefined)
+    })
+
+    expect(result.current.sessions).toEqual([
+      expect.objectContaining({ id: 'orphaned', readOnly: true }),
+    ])
+    expect(result.current.error?.message).toBe(RUNTIME_SCOPE_MISMATCH_MESSAGE)
+  })
+
+  test('marks a mismatch before notifying a consumer callback that throws', async () => {
+    const created: RemotePiSessionOptions[] = []
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      sessions: [{
+        ref: { agentTypeId: 'alpha', sessionId: 'orphaned' },
+        title: 'Previous runtime chat',
+        status: 'idle',
+        createdAt: 1,
+        updatedAt: 2,
+      }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => {
+      created.push(options)
+      return { dispose: vi.fn() } as unknown as RemotePiSession
+    })
+    const consumerError = new Error('consumer observer failed')
+    const remoteSessionOptions = {
+      onGatewayError: () => {
+        throw consumerError
+      },
+    }
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession,
+      remoteSessionOptions,
+      retry: { maxRetries: 0 },
+    }))
+
+    await waitFor(() => expect(created).toHaveLength(1))
+    const mismatch = new GatewayResponseError(
+      409,
+      RUNTIME_SCOPE_MISMATCH_MESSAGE,
+      AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+    )
+    let observedError: unknown
+    act(() => {
+      try {
+        created[0]?.onGatewayError?.(mismatch)
+      } catch (error) {
+        observedError = error
+      }
+    })
+
+    expect(observedError).toBe(consumerError)
+    expect(result.current.sessions).toEqual([
+      expect.objectContaining({ id: 'orphaned', readOnly: true }),
+    ])
+  })
+
+  test('tags a network delete failure with its action so load-error observers can ignore it', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'DELETE') throw new TypeError('network unavailable')
+      return new Response(JSON.stringify({
+        sessions: [{
+          ref: { agentTypeId: 'alpha', sessionId: 'healthy' },
+          title: 'Healthy chat',
+          status: 'idle',
+          createdAt: 1,
+          updatedAt: 2,
+        }],
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      fetch: fetchMock as unknown as typeof fetch,
+      connectActiveSession: false,
+      retry: { maxRetries: 0 },
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    const error = await result.current.delete('healthy').catch((reason) => reason)
+
+    expect(error).toMatchObject({
+      message: 'network unavailable',
+      operation: 'delete chat',
+    })
+    expect(result.current.sessions).toEqual([
+      expect.objectContaining({ id: 'healthy' }),
+    ])
   })
 
   test('switches the addressed collection and remote wire without connecting a stale session id', async () => {

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../../front/agentPlugins/reloadEvent"
 import { UI_COMMAND_EVENT, type UiCommand } from "../../../front/bridge"
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
+import { clearToasts, getActiveToasts } from "../../../front/toast"
 import type { PanelConfig } from "../../../front/registry/types"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
@@ -87,6 +88,7 @@ describe("WorkspaceAgentFront", () => {
 
   beforeEach(() => {
     localStorage.clear()
+    clearToasts()
     sessionsFailuresRemaining = 0
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -3421,6 +3423,104 @@ describe("WorkspaceAgentFront", () => {
 
     expect(create).toHaveBeenCalledOnce()
     expect(create.mock.calls[0]).toEqual([])
+  })
+
+  it("shows the structured server message when New chat creation is rejected", async () => {
+    const createError = Object.assign(new Error("Agent gateway is restarting."), {
+      code: "AGENT_GATEWAY_CLOSED",
+    })
+    render(
+      <WorkspaceAgentFront
+        workspaceId="create-error-surface"
+        workspaceLayout="plugin-tabs"
+        chatPanel={ChatPanel}
+        sessions={[{ id: "existing", title: "Existing chat", updatedAt: Date.now() }]}
+        activeSessionId="existing"
+        onCreateSession={() => Promise.reject(createError)}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+
+    expect(await screen.findByText(/Agent gateway is restarting.*AGENT_GATEWAY_CLOSED/)).toBeInTheDocument()
+    expect(screen.getAllByText("Existing chat").length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Failed to create.*503/)).not.toBeInTheDocument()
+  })
+
+  it("keeps a rejected delete row visible and explains the failure", async () => {
+    const user = userEvent.setup()
+    const deleteError = Object.assign(
+      new Error("This chat belongs to a previous runtime configuration and can no longer be changed."),
+      { code: "AGENT_SESSION_RUNTIME_SCOPE_MISMATCH", operation: "delete chat" },
+    )
+    const deleteSession = vi.fn((_id: string) => Promise.reject(deleteError))
+    const sessions = [
+      { id: "first", title: "First chat", updatedAt: Date.now() },
+      { id: "orphaned", title: "Previous runtime chat", updatedAt: Date.now() - 1 },
+    ]
+    function useFailingDeleteSessions() {
+      const [error, setError] = useState<Error>()
+      return {
+        sessions,
+        activeSessionId: "first",
+        activeSession: sessions[0],
+        loading: false,
+        error,
+        create: vi.fn(),
+        switch: vi.fn(),
+        delete: (id: string) => {
+          setError(deleteError)
+          return deleteSession(id)
+        },
+      }
+    }
+    render(
+      <WorkspaceAgentFront
+        workspaceId="delete-error-surface"
+        workspaceLayout="plugin-tabs"
+        chatPanel={ChatPanel}
+        useSessions={useFailingDeleteSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await user.click(screen.getByLabelText("More options for Previous runtime chat"))
+    await user.click(screen.getByRole("menuitem", { name: "Delete" }))
+
+    await waitFor(() => expect(deleteSession).toHaveBeenCalledWith("orphaned"))
+    expect(screen.getByText("Previous runtime chat")).toBeInTheDocument()
+    expect(await screen.findByText(/previous runtime configuration.*AGENT_SESSION_RUNTIME_SCOPE_MISMATCH/i)).toBeInTheDocument()
+    expect(getActiveToasts()).toEqual([
+      expect.objectContaining({ title: "Could not delete chat" }),
+    ])
+  })
+
+  it("shows a structured session-list load error", async () => {
+    const loadError = Object.assign(new Error("Session catalog is unavailable."), {
+      code: "AGENT_GATEWAY_CLOSED",
+    })
+    render(
+      <WorkspaceAgentFront
+        workspaceId="load-error-surface"
+        workspaceLayout="plugin-tabs"
+        chatPanel={ChatPanel}
+        useSessions={() => ({
+          sessions: [],
+          activeSessionId: null,
+          activeSession: null,
+          loading: false,
+          error: loadError,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(await screen.findByText(/Session catalog is unavailable.*AGENT_GATEWAY_CLOSED/)).toBeInTheDocument()
+    expect(screen.queryByText(/Failed to load sessions: 500/)).not.toBeInTheDocument()
   })
 
   it("creates a replacement before deleting the last authoritative remote session", async () => {
