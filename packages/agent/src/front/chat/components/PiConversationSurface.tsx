@@ -16,6 +16,7 @@ import {
 } from '../../primitives/conversation'
 import { RuntimeNoticeMessages, type PanelNotice } from './ChatNotices'
 import { PiTimelineMessage } from './PiTimelineMessage'
+import type { MessageMention, MessageMentionCatalog } from './MessageMentions'
 
 // Heavy sessions (tool-heavy runs reach thousands of messages) must not mount
 // the whole transcript at once. Render a window anchored to the latest message
@@ -39,6 +40,8 @@ export interface PiConversationSurfaceProps {
   isStreaming: boolean
   showThoughts: boolean
   toolRenderers: ToolRendererOverrides
+  mentionCatalog?: MessageMentionCatalog
+  onMentionActivate?: (mention: Exclude<MessageMention, { kind: 'file' }>) => void
   runtimeNotices: PanelNotice[]
   onDismissNotice: (id: string) => void
   /** Host-supplied recovery action node for a runtime notice, keyed off its error
@@ -61,6 +64,8 @@ export function PiConversationSurface({
   isStreaming,
   showThoughts,
   toolRenderers,
+  mentionCatalog,
+  onMentionActivate,
   runtimeNotices,
   onDismissNotice,
   renderNoticeAction,
@@ -132,6 +137,8 @@ export function PiConversationSurface({
             isStreaming={isStreaming}
             showThoughts={showThoughts}
             toolRenderers={toolRenderers}
+            mentionCatalog={mentionCatalog}
+            onMentionActivate={onMentionActivate}
           />
         ))}
         <RuntimeNoticeMessages notices={runtimeNotices} onDismiss={onDismissNotice} renderAction={renderNoticeAction} />
