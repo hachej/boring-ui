@@ -34,6 +34,80 @@ function ChatPanel(props: WorkspaceChatPanelProps) {
 }
 
 describe("WorkspaceAgentFront session action ownership", () => {
+  it("makes saved explicit-session callbacks inert after an operation identity commit", async () => {
+    const alpha = { create: vi.fn(), switch: vi.fn(), delete: vi.fn() }
+    const beta = { create: vi.fn(), switch: vi.fn(), delete: vi.fn() }
+    const sessions = [
+      { id: "first", title: "First" },
+      { id: "second", title: "Second" },
+    ]
+    const front = (workspaceId: string, actions: typeof alpha) => (
+      <WorkspaceAgentFront
+        workspaceId={workspaceId}
+        workspaceLayout="plugin-tabs"
+        chatPanel={ChatPanel}
+        sessions={sessions}
+        activeSessionId="first"
+        onCreateSession={actions.create}
+        onSwitchSession={actions.switch}
+        onDeleteSession={actions.delete}
+      />
+    )
+
+    const view = render(front("explicit-alpha", alpha))
+    await waitFor(() => expect(screen.getByText("Chat first")).toBeInTheDocument())
+    const saved = {
+      create: capturedAppLeftPane?.onCreateSession,
+      switch: capturedAppLeftPane?.onSwitchSession,
+      open: capturedAppLeftPane?.onOpenSessionAsPane,
+      delete: capturedAppLeftPane?.onDeleteSession,
+      pin: capturedAppLeftPane?.onToggleSessionPinned,
+      activatePane: capturedChatLayout?.onActiveChatPaneChange,
+      closePane: capturedChatLayout?.onCloseChatPane,
+      createPane: capturedChatLayout?.onCreateChatPaneAfter,
+      splitPane: capturedChatLayout?.onSplitChatPane,
+      consumePlacement: capturedChatLayout?.onPendingChatPanePlacementConsumed,
+    }
+
+    const deferredCreate = saved.create?.()
+    view.rerender(front("explicit-beta", beta))
+    await act(async () => { await deferredCreate })
+    await waitFor(() => expect(screen.getByText("Chat first")).toBeInTheDocument())
+    const activePaneBefore = capturedChatLayout?.activeChatPaneId
+    const storageBefore = Object.fromEntries(
+      Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+        .filter((key): key is string => key !== null)
+        .map((key) => [key, localStorage.getItem(key)]),
+    )
+
+    act(() => {
+      saved.switch?.("second")
+      saved.open?.("second")
+      saved.delete?.("first")
+      saved.pin?.("second")
+      saved.activatePane?.("second")
+      saved.closePane?.("first")
+      saved.createPane?.("first")
+      saved.splitPane?.("first", "right")
+      saved.consumePlacement?.("second")
+    })
+    await act(async () => { await Promise.resolve() })
+
+    expect(alpha.create).not.toHaveBeenCalled()
+    expect(alpha.switch).not.toHaveBeenCalled()
+    expect(alpha.delete).not.toHaveBeenCalled()
+    expect(beta.create).not.toHaveBeenCalled()
+    expect(beta.switch).not.toHaveBeenCalled()
+    expect(beta.delete).not.toHaveBeenCalled()
+    expect(capturedChatLayout?.activeChatPaneId).toBe(activePaneBefore)
+    expect(capturedAppLeftPane?.pinnedSessionRefs).toEqual([])
+    expect(Object.fromEntries(
+      Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+        .filter((key): key is string => key !== null)
+        .map((key) => [key, localStorage.getItem(key)]),
+    )).toEqual(storageBefore)
+  })
+
   it("releases last-session replacement guards after a synchronous custom create failure", async () => {
     const create = vi.fn()
       .mockImplementationOnce(() => { throw new Error("sync replacement failed") })
@@ -190,5 +264,77 @@ describe("WorkspaceAgentFront session action ownership", () => {
     await act(async () => { await Promise.resolve() })
     act(() => { capturedAppLeftPane?.onCreateSession?.() })
     await waitFor(() => expect(beta.create).toHaveBeenCalledTimes(2))
+  })
+
+  it("does not publish a fallback active id during terminal or unattested source transitions", async () => {
+    const onActiveSessionIdChange = vi.fn()
+
+    function Harness() {
+      const [mode, setMode] = useState<"ready" | "terminal" | "source">("ready")
+      const agentTypeId = mode === "source" ? "beta" : "alpha"
+      const useSessions: UseWorkspaceAgentSessions = (options) => {
+        if (mode === "terminal") {
+          return {
+            sourceIdentity: options.sourceIdentity,
+            sessions: [],
+            activeSessionId: undefined,
+            loading: false,
+            error: new Error("terminal sessions failure"),
+            create: vi.fn(),
+            switch: vi.fn(),
+            delete: vi.fn(),
+          }
+        }
+        if (mode === "source") {
+          return {
+            sourceIdentity: undefined,
+            sessions: [],
+            activeSessionId: undefined,
+            loading: false,
+            create: vi.fn(),
+            switch: vi.fn(),
+            delete: vi.fn(),
+          }
+        }
+        const session = { id: "alpha-row", agentTypeId: "alpha", title: "Alpha" }
+        return {
+          sourceIdentity: options.sourceIdentity,
+          sessions: [session],
+          activeSessionId: session.id,
+          activeSession: session,
+          loading: false,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+        }
+      }
+      return (
+        <>
+          <button type="button" onClick={() => setMode("terminal")}>Terminal transition</button>
+          <button type="button" onClick={() => setMode("source")}>Source transition</button>
+          <WorkspaceAgentFront
+            workspaceId="active-id-attestation"
+            agentTypeId={agentTypeId}
+            chatPanel={ChatPanel}
+            useSessions={useSessions}
+            onActiveSessionIdChange={onActiveSessionIdChange}
+            persistenceEnabled={false}
+          />
+        </>
+      )
+    }
+
+    render(<Harness />)
+    await waitFor(() => expect(onActiveSessionIdChange).toHaveBeenLastCalledWith("alpha-row"))
+    onActiveSessionIdChange.mockClear()
+
+    fireEvent.click(screen.getByRole("button", { name: "Terminal transition" }))
+    await waitFor(() => expect(screen.getByText("Sessions failed to load")).toBeInTheDocument())
+    await act(async () => { await Promise.resolve() })
+    expect(onActiveSessionIdChange).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "Source transition" }))
+    await act(async () => { await Promise.resolve() })
+    expect(onActiveSessionIdChange).not.toHaveBeenCalled()
   })
 })

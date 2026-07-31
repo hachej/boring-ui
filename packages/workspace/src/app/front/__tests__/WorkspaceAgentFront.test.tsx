@@ -2258,6 +2258,69 @@ describe("WorkspaceAgentFront", () => {
     expect(seenSessionIds).not.toContain("sess-old")
   })
 
+  it.each([
+    ["synchronous throw", () => { throw new Error("persistent auto-submit create failure") }],
+    ["rejected promise", () => Promise.reject(new Error("persistent auto-submit create failure"))],
+  ])("bounds a persistent %s and retries only on user action or source reset", async (_label, failCreate) => {
+    let capturedChatProps: CapturedChatPanelProps | undefined
+    const createSession = vi.fn(failCreate)
+
+    function Harness() {
+      const [agentTypeId, setAgentTypeId] = useState("alpha")
+      const [, setUnrelated] = useState(0)
+      return (
+        <>
+          <button type="button" onClick={() => setUnrelated((value) => value + 1)}>Unrelated rerender</button>
+          <button type="button" onClick={() => setAgentTypeId("beta")}>Reset source</button>
+          <WorkspaceAgentFront
+            workspaceId="bounded-auth-return-create"
+            agentTypeId={agentTypeId}
+            workspaceLayout="plugin-tabs"
+            chatPanel={(props) => {
+              capturedChatProps = props as CapturedChatPanelProps
+              return <div>Captured failed auto-submit</div>
+            }}
+            useSessions={() => ({
+              sessions: [{ id: "existing", title: "Existing" }],
+              loading: false,
+              activeSessionId: "existing",
+              activeSession: { id: "existing", title: "Existing" },
+              switch: vi.fn(),
+              create: createSession,
+              delete: vi.fn(),
+            })}
+            chatParams={{ initialDraft: "send once", autoSubmitInitialDraft: true }}
+            persistenceEnabled={false}
+          />
+        </>
+      )
+    }
+
+    render(<Harness />)
+
+    await waitFor(() => expect(createSession).toHaveBeenCalledOnce())
+    expect(capturedChatProps?.initialDraft).toBeUndefined()
+    expect(capturedChatProps?.autoSubmitInitialDraft).toBe(false)
+
+    fireEvent.click(screen.getByRole("button", { name: "Unrelated rerender" }))
+    fireEvent.click(screen.getByRole("button", { name: "Unrelated rerender" }))
+    await act(async () => { await Promise.resolve() })
+    expect(createSession).toHaveBeenCalledOnce()
+
+    fireEvent.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(2))
+    fireEvent.click(screen.getByRole("button", { name: "Unrelated rerender" }))
+    await act(async () => { await Promise.resolve() })
+    expect(createSession).toHaveBeenCalledTimes(2)
+    expect(capturedChatProps?.initialDraft).toBeUndefined()
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset source" }))
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(3))
+    await act(async () => { await Promise.resolve() })
+    expect(createSession).toHaveBeenCalledTimes(3)
+    expect(capturedChatProps?.initialDraft).toBeUndefined()
+  })
+
   it("keeps hydration disabled after auth-return auto-submit props clear until the chat explicitly unlocks it", async () => {
     let capturedChatProps: unknown
     const getCapturedChatProps = () => capturedChatProps as CapturedChatPanelProps | undefined

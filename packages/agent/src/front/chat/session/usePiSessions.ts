@@ -68,7 +68,7 @@ export type PiSessionsError = Error & {
 interface PiSessionsErrorState {
   kind: PiSessionsError['kind']
   requestScopeKey: string
-  error: Error
+  error: PiSessionsError
 }
 
 export interface UsePiSessionsResult {
@@ -127,10 +127,14 @@ function isNetworkFetchError(error: unknown): boolean {
   return error instanceof TypeError
 }
 
-function publicSessionsError(state: PiSessionsErrorState): PiSessionsError {
-  const error = new Error(state.error.message)
-  error.name = state.error.name
-  return Object.assign(error, { kind: state.kind })
+function sessionsErrorState(
+  source: Error,
+  kind: PiSessionsError['kind'],
+  requestScopeKey: string,
+): PiSessionsErrorState {
+  const error = new Error(source.message)
+  error.name = source.name
+  return { kind, requestScopeKey, error: Object.assign(error, { kind }) }
 }
 
 export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessionsResult {
@@ -440,7 +444,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     } catch (err) {
       if (!isCurrent()) return
       const requestError = err instanceof Error ? err : new Error(String(err))
-      if (!background) setErrorState({ kind: 'fatal', requestScopeKey, error: requestError })
+      if (!background) setErrorState(sessionsErrorState(requestError, 'fatal', requestScopeKey))
       setLoading(false)
       if (refreshOptions.throwOnError) throw requestError
     }
@@ -486,7 +490,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     } catch (err) {
       if (requestSeq === loadMoreRequestSeqRef.current && version === refreshVersionRef.current && mutationGuardIsCurrent(sourceGuard)) {
         const requestError = err instanceof Error ? err : new Error(String(err))
-        setErrorState({ kind: 'recoverable', requestScopeKey, error: requestError })
+        setErrorState(sessionsErrorState(requestError, 'recoverable', requestScopeKey))
       }
     } finally {
       if (requestSeq === loadMoreRequestSeqRef.current) loadMoreInFlightRef.current = false
@@ -551,7 +555,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     } catch (err) {
       const requestError = err instanceof Error ? err : new Error(String(err))
       if (mutationGuardIsCurrent(mutationGuard)) {
-        setErrorState({ kind: 'recoverable', requestScopeKey, error: requestError })
+        setErrorState(sessionsErrorState(requestError, 'recoverable', requestScopeKey))
       }
       throw requestError
     }
@@ -581,7 +585,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     } catch (err) {
       const requestError = err instanceof Error ? err : new Error(String(err))
       if (mutationGuardIsCurrent(mutationGuard)) {
-        setErrorState({ kind: 'recoverable', requestScopeKey, error: requestError })
+        setErrorState(sessionsErrorState(requestError, 'recoverable', requestScopeKey))
       }
       throw requestError
     }
@@ -635,7 +639,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     } catch (err) {
       const requestError = err instanceof Error ? err : new Error(String(err))
       if (mutationGuardIsCurrent(mutationGuard)) {
-        setErrorState({ kind: 'recoverable', requestScopeKey, error: requestError })
+        setErrorState(sessionsErrorState(requestError, 'recoverable', requestScopeKey))
       }
       throw requestError
     }
@@ -667,7 +671,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
   const visibleActiveSessionId = enabled ? activeSessionId : undefined
   const currentErrorState = errorState?.requestScopeKey === requestScopeKey ? errorState : undefined
-  const currentError = currentErrorState ? publicSessionsError(currentErrorState) : undefined
+  const currentError = currentErrorState?.error
 
   return {
     sessions,

@@ -1235,6 +1235,8 @@ describe('usePiSessions', () => {
     const nextResponse = deferred<Response>()
     const privateError = Object.assign(new Error('scoped load failed'), {
       requestHeaders: { 'x-test-tenant': 'alpha' },
+      sourceKey: 'alpha-private-source',
+      requestScopeKey: 'alpha-private-scope',
     })
     fetchMock
       .mockRejectedValueOnce(privateError)
@@ -1256,7 +1258,13 @@ describe('usePiSessions', () => {
     expect(result.current.error).toEqual(expect.objectContaining({ kind: 'fatal', message: 'scoped load failed' }))
     expect(result.current.error).not.toBe(privateError)
     expect(result.current.error).not.toHaveProperty('requestHeaders')
+    expect(result.current.error).not.toHaveProperty('sourceKey')
+    expect(result.current.error).not.toHaveProperty('requestScopeKey')
     expect(result.current.sourceIdentity).toBe('session-source')
+
+    const publicError = result.current.error
+    rerender({ tenant: 'alpha' })
+    expect(result.current.error).toBe(publicError)
 
     rerender({ tenant: 'beta' })
     expect(result.current.error).toBeUndefined()
