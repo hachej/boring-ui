@@ -84,6 +84,7 @@ function createFixture(options: {
   readonly failPromptSynchronously?: boolean
   readonly distinctPreboundService?: boolean
   readonly preboundRuntimeScopeIdentity?: string
+  readonly missingSession?: boolean
   readonly migration?: {
     readonly fromIdentity: string
     readonly toIdentity: string
@@ -189,7 +190,7 @@ function createFixture(options: {
     ledger,
     compiledById: new Map([['default', { agentTypeId: 'default', legacyDefault: true }]]),
     options: { resolveRuntimeScope: async () => runtimeScope },
-    resolveSessionRuntime: async () => ({
+    resolveSessionRuntime: async () => options.missingSession ? null : ({
       runtimeScope,
       runtimeScopeIdentity: persistedPin,
       migrateRuntimeScopeIdentity: async () => {
@@ -265,6 +266,15 @@ describe('legacy admitEffect Level-B compatibility', () => {
       'mutation:session.prompt',
       'complete:session.prompt',
     ])
+  })
+
+  it('preserves the frozen legacy session-not-found code before mutation admission', async () => {
+    const fixture = createFixture({ missingSession: true })
+
+    await expect(fixture.compatibility.deleteSession!(context('legacy-missing-http'), 'missing')).rejects.toMatchObject({
+      code: ErrorCode.enum.SESSION_NOT_FOUND,
+    })
+    expect(fixture.events).toEqual([])
   })
 
   it('reuses a pre-resolved compatibility service only when its identity matches the verified binding', async () => {
