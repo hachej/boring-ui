@@ -1,9 +1,12 @@
 import { useEffect, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
 import {
-  ChatMessageRendererProvider,
-  ComposerRecordingProvider,
+  ChatMessageContributionProvider,
+  ComposerContributionProvider,
   type BoringChatMessage,
-  type ComposerRecordingAdapter,
+  type ComposerActionContributionProps,
+  type ComposerContribution,
+  type ChatMessageContribution,
+  type ChatMessageContributionProps,
 } from "@hachej/boring-agent/front"
 import { MarkdownEditorPane, postUiCommand, type MarkdownEditorPaneProps } from "@hachej/boring-workspace"
 import { definePlugin } from "@hachej/boring-workspace/plugin"
@@ -14,31 +17,84 @@ import { TranscriptReviewToolMessage, transcriptReviewPresentationFromMessage } 
 
 const LIVE_MARKDOWN_PANEL_ID = "live-transcription.markdown"
 
-let composerRecordingSource: ReturnType<typeof liveTranscriptController.getRecordingSnapshot> | undefined
-let composerRecordingSnapshot: ReturnType<ComposerRecordingAdapter["getSnapshot"]> = { phase: "idle" }
 
-function getComposerRecordingSnapshot(): ReturnType<ComposerRecordingAdapter["getSnapshot"]> {
-  const state = liveTranscriptController.getRecordingSnapshot()
-  if (state === composerRecordingSource) return composerRecordingSnapshot
-  composerRecordingSource = state
-  composerRecordingSnapshot = {
-    phase: state.phase ?? "idle",
-    ...(state.recordingKind ? { kind: state.recordingKind } : {}),
-    ...(state.startedAt ? { startedAt: state.startedAt } : {}),
-    ...(state.error ? { error: state.error } : {}),
+export function LiveTranscriptComposerTop() {
+  const recording = useSyncExternalStore(
+    liveTranscriptBrowserState.subscribe,
+    liveTranscriptBrowserState.getSnapshot,
+    liveTranscriptBrowserState.getSnapshot,
+  )
+  if (recording.phase === "error" && recording.error) {
+    return (
+      <div
+        role="alert"
+        data-boring-agent-part="live-transcription-error"
+        className="rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2 text-xs text-destructive"
+      >
+        {recording.error}
+      </div>
+    )
   }
-  return composerRecordingSnapshot
+  if (recording.recordingKind !== "live" || !isActiveRecordingPhase(recording.phase)) return null
+  return <LiveTranscriptComposerDock />
 }
 
-const composerRecordingAdapter: ComposerRecordingAdapter = {
-  // useSyncExternalStore requires referentially stable snapshots until the store
-  // actually changes. Translating to a fresh object here causes React error #185.
-  getSnapshot: getComposerRecordingSnapshot,
-  subscribe: liveTranscriptController.subscribeRecording,
-  startShort: () => liveTranscriptController.startShort(),
-  stopShort: () => liveTranscriptController.stopShort(),
-  stopLive: () => liveTranscriptController.stopLiveRecording(),
-  RecordingAccessory: LiveTranscriptComposerDock,
+export function LiveTranscriptComposerAction({ updateDraft }: ComposerActionContributionProps) {
+  const recording = useSyncExternalStore(
+    liveTranscriptBrowserState.subscribe,
+    liveTranscriptBrowserState.getSnapshot,
+    liveTranscriptBrowserState.getSnapshot,
+  )
+  const elapsedSeconds = useElapsedSeconds(recording.startedAt, recording.phase)
+  if (recording.recordingKind === "live" && isActiveRecordingPhase(recording.phase)) return null
+
+  const disabled = recording.phase === "transcribing"
+    || (recording.recordingKind === "short" && recording.phase === "starting")
+  const label = recording.phase === "transcribing"
+    ? "Transcribing short dictation"
+    : recording.recordingKind === "short" && recording.phase === "starting"
+      ? "Starting short dictation"
+      : recording.phase === "recording"
+        ? "Stop short recording"
+        : "Start short dictation"
+  const toggle = async () => {
+    if (disabled) return
+    if (recording.recordingKind === "short" && recording.phase === "recording") {
+      const text = await liveTranscriptController.stopShort()
+      if (text) updateDraft((current) => appendTranscriptToDraft(current, text))
+      return
+    }
+    await liveTranscriptController.startShort()
+  }
+
+  return (
+    <button
+      type="button"
+      data-boring-agent-part="live-transcription-control"
+      aria-label={label}
+      title={recording.error ?? `${label}${recording.phase === "idle" ? "" : ` ${formatClock(elapsedSeconds)}`}`}
+      disabled={disabled}
+      onClick={() => { void toggle().catch(() => undefined) }}
+      className={`flex h-8 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium transition-colors disabled:cursor-wait disabled:opacity-65 ${
+        recording.phase === "recording" || recording.phase === "starting"
+          ? "bg-red-500/12 text-red-600 hover:bg-red-500/20 dark:text-red-400"
+          : recording.phase === "error"
+            ? "bg-destructive/10 text-destructive hover:bg-destructive/15"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+      }`}
+    >
+      {recording.phase === "starting" || recording.phase === "transcribing" ? (
+        <LoadingIcon />
+      ) : recording.phase === "recording" ? (
+        <><span className="size-2 rounded-full bg-red-500 animate-pulse" /><StopIcon /></>
+      ) : (
+        <MicrophoneIcon />
+      )}
+      {recording.phase !== "idle" ? (
+        <span>{recording.phase === "transcribing" ? "Transcribing" : recording.phase === "starting" ? "Starting" : "Short"} {formatClock(elapsedSeconds)}</span>
+      ) : null}
+    </button>
+  )
 }
 
 export function LiveTranscriptComposerDock() {
@@ -189,6 +245,38 @@ export function LiveTranscriptComposerDock() {
   )
 }
 
+function useElapsedSeconds(startedAt?: number, phase?: string): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    setNow(Date.now())
+    if (!startedAt || phase === "idle" || phase === "error") return
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000)
+    return () => window.clearInterval(timer)
+  }, [phase, startedAt])
+  return startedAt ? Math.max(0, Math.floor((now - startedAt) / 1_000)) : 0
+}
+
+function isActiveRecordingPhase(phase?: string): boolean {
+  return phase === "starting" || phase === "recording" || phase === "transcribing"
+}
+
+export function appendTranscriptToDraft(draft: string, transcript: string): string {
+  const separator = draft.length > 0 && !/\s$/u.test(draft) ? " " : ""
+  return `${draft}${separator}${transcript}`
+}
+
+function LoadingIcon() {
+  return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 animate-spin fill-none stroke-current" strokeWidth="1.5"><path d="M8 1.5a6.5 6.5 0 1 1-6.5 6.5" /></svg>
+}
+
+function MicrophoneIcon() {
+  return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current" strokeWidth="1.5" strokeLinecap="round"><rect x="5" y="1.5" width="6" height="9" rx="3"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2"/></svg>
+}
+
+function StopIcon() {
+  return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3 fill-current"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg>
+}
+
 function DocumentIcon() {
   return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current" strokeWidth="1.4" strokeLinejoin="round"><path d="M4 1.75h5l3 3V14.25H4z"/><path d="M9 1.75v3h3"/></svg>
 }
@@ -210,18 +298,32 @@ function formatCompact(seconds: number): string {
   return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`
 }
 
-function renderTranscriptReviewMessage(message: BoringChatMessage) {
+function TranscriptReviewMessageContribution({ message }: ChatMessageContributionProps) {
   const presentation = transcriptReviewPresentationFromMessage(message)
   return presentation
     ? <TranscriptReviewToolMessage message={message} presentation={presentation} />
-    : undefined
+    : null
+}
+
+const liveTranscriptComposerContribution: ComposerContribution = {
+  id: "live-transcription",
+  Top: LiveTranscriptComposerTop,
+  Action: LiveTranscriptComposerAction,
+}
+
+const liveTranscriptMessageContribution: ChatMessageContribution = {
+  id: "live-transcription.review",
+  matches: (message: BoringChatMessage) => transcriptReviewPresentationFromMessage(message) !== undefined,
+  Component: TranscriptReviewMessageContribution,
 }
 
 function LiveTranscriptComposerProvider({ children }: { children: ReactNode }) {
   return (
-    <ChatMessageRendererProvider renderer={renderTranscriptReviewMessage}>
-      <ComposerRecordingProvider adapter={composerRecordingAdapter}>{children}</ComposerRecordingProvider>
-    </ChatMessageRendererProvider>
+    <ChatMessageContributionProvider contribution={liveTranscriptMessageContribution}>
+      <ComposerContributionProvider contribution={liveTranscriptComposerContribution}>
+        {children}
+      </ComposerContributionProvider>
+    </ChatMessageContributionProvider>
   )
 }
 

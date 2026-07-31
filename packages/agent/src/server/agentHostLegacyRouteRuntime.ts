@@ -1031,7 +1031,7 @@ export async function mountAgentHostLegacyRouteRuntime(
         return {
           dispatcher: createLeasedWorkspaceAgentDispatcher(staticBinding, boundCtx, options?.request),
           workspace: staticBinding.runtimeBundle.workspace,
-          ensurePiSessionBound: async (boundSessionId, requestedSessionCtx) => await ensureTrustedPiSessionBound(
+          bindPiSession: async (boundSessionId, requestedSessionCtx) => await ensureTrustedPiSessionBound(
             staticBinding,
             boundCtx,
             boundSessionId,
@@ -1045,7 +1045,7 @@ export async function mountAgentHostLegacyRouteRuntime(
       return {
         dispatcher: createLeasedWorkspaceAgentDispatcher(binding, boundCtx, options?.request),
         workspace: binding.runtimeBundle.workspace,
-        ensurePiSessionBound: async (boundSessionId, requestedSessionCtx) => await ensureTrustedPiSessionBound(
+        bindPiSession: async (boundSessionId, requestedSessionCtx) => await ensureTrustedPiSessionBound(
           binding,
           boundCtx,
           boundSessionId,

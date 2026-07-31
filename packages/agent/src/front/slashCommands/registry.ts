@@ -24,9 +24,8 @@ export interface SlashCommand {
   /** Originating plugin/package name (when known), shown as a tag. */
   sourcePlugin?: string
   /**
-   * Narrow browser-local escape hatch for controls that must remain usable
-   * while Pi is running (for example, stopping an independent microphone).
-   * The predicate must admit only its exact privacy/control subcommands.
+   * Narrow browser-local escape hatch for independent controls that must remain
+   * usable while Pi is running. The predicate must admit only exact safe subcommands.
    */
   allowWhileBusy?: (args: string) => boolean
   handler: SlashCommandHandler

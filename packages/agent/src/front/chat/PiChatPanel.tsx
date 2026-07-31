@@ -31,7 +31,7 @@ import {
   type ChatPanelRuntimeDependenciesWarmupStatus,
   type ChatPanelWorkspaceWarmupStatus,
 } from './chatPanelWorkspaceWarmup'
-import { appendTranscriptToDraft } from './composerRecording'
+import type { ComposerDraftUpdate } from './composerContributions'
 import { selectMessagesForRender, selectQueuePreview, selectRuntimeNotices } from './pi/selectors'
 import { piChatErrorCode, type RemotePiSession, type RemotePiSessionOptions } from './pi/remotePiSession'
 import type { PiChatRuntimeNotice } from './pi/piChatReducer'
@@ -1204,7 +1204,9 @@ export function PiChatPanel<
               textareaRef={textareaRef}
               onTextareaChange={onTextareaChange}
               onTextareaKeyDown={onTextareaKeyDown}
-              onInsertTranscript={(text) => setComposerDraft(appendTranscriptToDraft(draftRef.current, text))}
+              updateDraft={(update: ComposerDraftUpdate, options) => {
+                setComposerDraft(update(draftRef.current), options?.focus ?? true)
+              }}
               onSubmitMessage={({ text, files }) => sendComposerMessage({ text, files })}
               onStop={stop}
             />

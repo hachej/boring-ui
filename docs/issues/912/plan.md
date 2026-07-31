@@ -48,7 +48,7 @@ POST /api/v1/live-transcripts/:id/interrupt # pre-attachment terminal reason
 WS   /api/v1/live-transcripts/:id/audio   # first binary message redeems socket nonce
 ```
 
-An `AudioWorklet` downmixes and resamples browser audio to signed PCM16 little-endian, mono, 16 kHz. It sends binary frames to the same-origin local WebSocket route. The browser never connects to WhisperLiveKit directly and never supplies a root, transcript path, upstream URL, or authoritative session identity. The local trusted composition extends and forwards `resolveWithWorkspace()` through both the static dispatcher resolver and workspace trusted proxy. Start uses `agent.sessions.load(sessionCtx, sessionId)` plus a narrow `ensurePiSessionBound(sessionId, runContext)` to validate/create the lazily instantiated Pi session before reserving review state. The resolver returns `{ workspace, fullSessionCacheKey, reviewBroker }`; brokers are keyed by the full cache key, never a raw session ID. The server owns path allocation, session validation, and the process-wide lease.
+An `AudioWorklet` downmixes and resamples browser audio to signed PCM16 little-endian, mono, 16 kHz. It sends binary frames to the same-origin local WebSocket route. The browser never connects to WhisperLiveKit directly and never supplies a root, transcript path, upstream URL, or authoritative session identity. The local trusted composition extends and forwards `resolveWithWorkspace()` through both the static dispatcher resolver and workspace trusted proxy. Start uses the trusted resolver's `bindPiSession(sessionId, actor)` capability to validate/create the lazily instantiated Pi session before reserving review state. The returned visible-turn target is closed over the exact internal session/workspace/user cache identity; that key is never exposed to plugins. The server owns path allocation, session validation, and the process-wide lease.
 
 Even for localhost, all POST/upgrade routes validate the exact configured `Host` and canonical `Origin`; WebSockets do not rely on CORS. `startFolderMode()` passes explicit `{ listenerHost, canonicalHost, canonicalOrigin }` from the CLI, distinguishing the loopback listener address from the browser's canonical `localhost:<port>` authority. The Boring listener and WhisperLiveKit URL must resolve to loopback. Audio attachment uses a 256-bit single-use nonce delivered in the start response and redeemed in the first strict binary message, never a URL/query parameter. These are localhost cross-site protections, not production user authentication. The interrupt body accepts only `permission_denied | attachment_failed`; setup timeout has its own stable terminal outcome.
 
@@ -114,11 +114,11 @@ CPU spike evidence is canonical under `docs/issues/912/spikes/whisperlivekit/`. 
 8. **No consent modal.** `/live start` immediately begins file/microphone/socket setup. Browser microphone permission remains the platform gate.
 9. **No retries or recovery.** Any browser or upstream failure is terminal. Graceful stop alone gets one bounded upstream drain before completion. Simplicity wins over gap handling.
 10. **Markdown is the sole artifact.** No transcript card, audio artifact, recording, playback, upload, or parallel structured transcript store.
-11. **One static singleton.** No dynamic provider mounting, generic audio bus, generic scheduler, distributed lease, or runtime plugin platform.
+11. **One static singleton.** No generic audio bus, generic scheduler, distributed lease, or new runtime plugin platform. The plugin uses existing static provider composition plus narrow, domain-neutral composer/message/lifecycle contribution seams; Agent and Workspace do not interpret transcription state.
 12. **Feature remains default-off and CLI-owned.** Folder mode may enable it and browser metadata advertises commands only when the server confirms local flag-on readiness. `boring-ui workspaces` rejects flag-on; non-CLI applications treat the environment variable as inert and gain no routes/UI.
 13. **Privacy-critical local commands bypass Pi busy admission narrowly.** Exact `/live stop`, `/live status`, and `/review transcript` execute through the local controller while Pi streams; unrelated commands remain blocked. `/live start` remains rejected while an active live session exists.
 14. **Session-bound visible-message target.** The minimal trusted resolver seam binds acknowledged idle-state and visible-prompt operations to one full Pi session cache key; it is not a browser-generic messaging or scheduler API.
-15. **Unified composer microphone affordance.** Owner review expanded V0 to restore short dictation and require visible `Short`/`Live` elapsed recording status around the composer. Both modes share one singleton microphone owner and loopback-only service boundary.
+15. **Plugin-owned composer affordance.** Owner review expanded V0 to restore short dictation and require visible `Short`/`Live` elapsed recording status around the composer. Both modes share one singleton microphone owner and loopback-only service boundary. The live-transcription plugin owns all recording phases, actions, labels, timers, and error UI; Agent provides only generic top-of-composer/action placement and functional draft updates.
 
 ## Flag / Abstraction
 
@@ -236,6 +236,19 @@ Every terminal outcome releases browser/server ownership and active-path view mo
 **Proof:** fake-clock extension tests, native session/reload ordering, composed browser demo, CPU service smoke, controlled non-retention inspection, full focused commands above.
 
 **Review budget:** inside.
+
+### Package-boundary correction after owner review
+
+**Goal:** Every change below `packages/` is either a domain-neutral contribution seam, a generic host safety capability, or explicit CLI composition policy. Recording/review implementation details remain in `plugins/live-transcription/`.
+
+1. Replace Agent's `ComposerRecordingAdapter` with additive generic composer contributions: a top slot, an action slot, and a functional draft updater. Move recording state, timing, icons, labels, errors, and short-dictation insertion into the plugin.
+2. Express custom message replacement as the parallel generic message contribution. Agent supplies only message placement/fallback; the plugin owns review decoding and cards.
+3. Keep exact-session visible turns as a generic trusted-host capability: remove split run identity, use generic nonce/type names, make the bound visible target required, and distinguish internal session validation from resolver-level binding.
+4. Add a generic server-plugin `beforeAgentReload` lifecycle contribution. The live plugin owns capture interruption and Fastify-close disposal; CLI no longer holds a transcription manager.
+5. Install bounded CLI signal shutdown for every listening CLI app, not only when transcription is enabled. Keep flag, authority, upstream, and static package selection only at the CLI composition boundary.
+6. Prove contribution ordering/fallback, latest-draft functional updates, plugin-owned recording UI, reload interruption, close cleanup, exact-session delivery, typechecks/builds/invariants, and run standards/spec/thermonuclear review.
+
+**Rollback:** Revert this boundary-only slice; no persisted schema or transcript format changes.
 
 ## Out of Scope
 

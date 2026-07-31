@@ -25,6 +25,7 @@ describe("bootstrapServer", () => {
       runtimePlugins: [],
       provisioningContributions: [],
       routeContributions: [],
+      beforeAgentReloadContributions: [],
       workspaceBridgeHandlers: [],
       preservedUiStateKeys: [],
     })
@@ -155,6 +156,20 @@ describe("bootstrapServer", () => {
     })
 
     expect(result.routeContributions).toEqual([{ id: "routes", routes }])
+  })
+
+  it("collects Agent reload lifecycle contributions in plugin order", () => {
+    const first = vi.fn()
+    const second = vi.fn()
+    const result = bootstrapServer({
+      defaults: [{ id: "first", beforeAgentReload: first }],
+      plugins: [{ id: "second", beforeAgentReload: second }],
+    })
+
+    expect(result.beforeAgentReloadContributions).toEqual([
+      { id: "first", run: first },
+      { id: "second", run: second },
+    ])
   })
 
   it("collects trusted server plugin WorkspaceBridge handlers", () => {

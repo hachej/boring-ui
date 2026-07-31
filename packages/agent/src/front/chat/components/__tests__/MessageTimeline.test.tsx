@@ -2,6 +2,7 @@
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import type { BoringChatMessage } from '../../../../shared/chat'
+import { ChatMessageContributionProvider } from '../../messageContributions'
 import { MessageTimeline } from '../MessageTimeline'
 
 vi.mock('../../../primitives/conversation', () => ({
@@ -88,6 +89,22 @@ describe('MessageTimeline', () => {
     expect(Boolean(assistantContent && tools && finalText)).toBe(true)
     expect(assistantContent!.compareDocumentPosition(tools!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(tools!.compareDocumentPosition(finalText!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  test('supports contributed message replacement and ordinary fallback', () => {
+    render(
+      <ChatMessageContributionProvider contribution={{
+        id: 'test-message',
+        matches: (message) => message.id === 'u1',
+        Component: () => <div>Contributed card</div>,
+      }}>
+        <MessageTimeline messages={messages()} />
+      </ChatMessageContributionProvider>,
+    )
+
+    expect(screen.getByText('Contributed card')).toBeTruthy()
+    expect(screen.queryByText('Hello')).toBeNull()
+    expect(screen.getByText('Done')).toBeTruthy()
   })
 
   test('renders empty state without requiring browser transcript cache', () => {

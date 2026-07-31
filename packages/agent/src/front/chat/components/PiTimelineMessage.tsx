@@ -17,7 +17,7 @@ import {
 import { Message, MessageContent, MessageResponse } from '../../primitives/message'
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/reasoning'
 import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
-import { useCustomChatMessage } from '../messageRenderers'
+import { useCustomChatMessage } from '../messageContributions'
 import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
 import {
   createMessageMentionMarkdownComponents,

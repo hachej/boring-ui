@@ -22,7 +22,6 @@ export interface LiveTranscriptServerPluginOptions {
   reviewIntervalMs?: number
   reviewRetryMs?: number
   createUpstreamForTest?: LiveTranscriptManagerOptions["createUpstreamForTest"]
-  onManager?: (manager: LiveTranscriptManager) => void
   dictationFetch?: typeof fetch
 }
 
@@ -42,11 +41,13 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
     reviewRetryMs: options.reviewRetryMs,
     createUpstreamForTest: options.createUpstreamForTest,
   })
-  options.onManager?.(manager)
 
   return defineServerPlugin({
     id: "live-transcription",
     label: "Live transcription",
+    beforeAgentReload: async () => {
+      await manager.interruptForSessionReplacement()
+    },
     routes: async (app) => {
       await app.register(fastifyWebsocket)
 

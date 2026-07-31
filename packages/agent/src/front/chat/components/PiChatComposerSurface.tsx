@@ -1,8 +1,7 @@
 "use client"
 
 import type { CSSProperties, ChangeEvent, KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
-import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react'
-import { LoaderCircleIcon, MicIcon, SquareIcon } from 'lucide-react'
+import { useCallback, useLayoutEffect } from 'react'
 import { motion } from 'motion/react'
 import type { QueuedUserMessage } from '../../../shared/chat'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../../chatPanelSettings'
@@ -17,7 +16,7 @@ import {
   ThinkingSelectTrigger,
 } from '../../chatPanelComposerControls'
 import { cn } from '../../lib'
-import { shouldShowRecordingAccessory, useComposerRecordingAdapter, type ComposerRecordingSnapshot } from '../composerRecording'
+import { useComposerContributions, type ComposerDraftUpdate } from '../composerContributions'
 import type { MentionState } from '../../primitives/mention-picker'
 import { MentionPicker } from '../../primitives/mention-picker'
 import {
@@ -45,8 +44,6 @@ const COMPOSER_INPUT_GROUP_MIN_HEIGHT = 56
 const COMPOSER_TEXTAREA_MAX_HEIGHT = 160
 const COMPOSER_MULTILINE_EXTRA_HEIGHT = 8
 const COMPOSER_TEXTAREA_VERTICAL_INSET = 16
-const IDLE_RECORDING: ComposerRecordingSnapshot = { phase: 'idle' }
-const noopSubscribe = () => () => {}
 
 function hasSoftWrappedLine(node: HTMLTextAreaElement, style: CSSStyleDeclaration): boolean {
   const paddingLeft = Number.parseFloat(style.paddingLeft) || 0
@@ -123,7 +120,7 @@ export interface PiChatComposerSurfaceProps<
   textareaRef: RefObject<HTMLTextAreaElement | null>
   onTextareaChange: (event: ChangeEvent<HTMLTextAreaElement>) => void
   onTextareaKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void
-  onInsertTranscript?: (text: string) => void
+  updateDraft: (update: ComposerDraftUpdate, options?: { focus?: boolean }) => void
   onSubmitMessage: (payload: { text: string; files: PromptInputFilePart[] }) => false | void | Promise<false | void>
   onStop: () => void
 }
@@ -185,50 +182,12 @@ export function PiChatComposerSurface<
   textareaRef,
   onTextareaChange,
   onTextareaKeyDown,
-  onInsertTranscript,
+  updateDraft,
   onSubmitMessage,
   onStop,
 }: PiChatComposerSurfaceProps<TComposerBlocker>) {
   const workspaceRequestId = getHeaderValue(requestHeaders, 'x-boring-workspace-id')
-  const recordingAdapter = useComposerRecordingAdapter()
-  const RecordingAccessory = recordingAdapter?.RecordingAccessory
-  const recording = useSyncExternalStore(
-    recordingAdapter?.subscribe ?? noopSubscribe,
-    recordingAdapter?.getSnapshot ?? (() => IDLE_RECORDING),
-    () => IDLE_RECORDING,
-  )
-  const recordingAccessoryActive = shouldShowRecordingAccessory(recording, Boolean(RecordingAccessory))
-  const recordingControlDisabled = recording.phase === 'transcribing'
-    || (recording.kind === 'short' && recording.phase === 'starting')
-  const recordingControlLabel = recording.phase === 'transcribing'
-    ? 'Transcribing short dictation'
-    : recording.kind === 'short' && recording.phase === 'starting'
-      ? 'Starting short dictation'
-      : recording.phase === 'recording' || recording.phase === 'starting'
-        ? `Stop ${recording.kind ?? ''} recording`
-        : 'Start short dictation'
-  const [elapsedSeconds, setElapsedSeconds] = useState(0)
-  useEffect(() => {
-    const update = () => setElapsedSeconds(recording.startedAt ? Math.max(0, Math.floor((Date.now() - recording.startedAt) / 1_000)) : 0)
-    update()
-    if (!recording.startedAt || recording.phase === 'idle' || recording.phase === 'error') return
-    const timer = window.setInterval(update, 1_000)
-    return () => window.clearInterval(timer)
-  }, [recording.phase, recording.startedAt])
-  const toggleRecording = useCallback(async () => {
-    if (!recordingAdapter || recording.phase === 'transcribing') return
-    if (recording.kind === 'short' && recording.phase === 'starting') return
-    if (recording.kind === 'short' && recording.phase === 'recording') {
-      const text = await recordingAdapter.stopShort()
-      if (text) onInsertTranscript?.(text)
-      return
-    }
-    if (recording.kind === 'live' && (recording.phase === 'recording' || recording.phase === 'starting')) {
-      await recordingAdapter.stopLive()
-      return
-    }
-    await recordingAdapter.startShort()
-  }, [onInsertTranscript, recording.kind, recording.phase, recordingAdapter])
+  const composerContributions = useComposerContributions()
   const uploadAttachment = useCallback((file: File) => uploadFile(file, {
     apiBaseUrl,
     workspaceRequestId,
@@ -360,23 +319,16 @@ export function PiChatComposerSurface<
           />
         ) : null}
       </div>
-      {recordingAccessoryActive && RecordingAccessory ? (
-        <div className={cn('mx-auto mb-2 w-full', chrome ? 'max-w-3xl' : 'max-w-[680px]')}>
-          <RecordingAccessory />
-        </div>
-      ) : null}
-      {recording.phase === 'error' && recording.error ? (
+      {composerContributions.map(({ id, Top }) => Top ? (
         <div
-          role="alert"
-          data-boring-agent-part="composer-recording-error"
-          className={cn(
-            'mx-auto mb-2 w-full rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2 text-xs text-destructive',
-            chrome ? 'max-w-3xl' : 'max-w-[680px]',
-          )}
+          key={id}
+          data-boring-agent-part="composer-contribution-top"
+          data-boring-agent-contribution-id={id}
+          className={cn('mx-auto mb-2 w-full empty:hidden', chrome ? 'max-w-3xl' : 'max-w-[680px]')}
         >
-          {recording.error}
+          <Top />
         </div>
-      ) : null}
+      ) : null)}
       <div
         data-boring-agent-part="composer-rail"
         data-composer-multiline="false"
@@ -451,35 +403,16 @@ export function PiChatComposerSurface<
               className="!order-none !w-auto shrink-0 self-center justify-between border-0 bg-transparent !px-2 !py-0"
             >
               <div className="ml-auto flex items-center gap-1.5">
-                {recordingAdapter && !recordingAccessoryActive ? (
-                  <button
-                    type="button"
-                    data-boring-agent-part="composer-recording-control"
-                    aria-label={recordingControlLabel}
-                    title={recording.error ?? `${recordingControlLabel}${recording.phase === 'idle' ? '' : ` ${formatElapsed(elapsedSeconds)}`}`}
-                    disabled={recordingControlDisabled}
-                    onClick={() => { void toggleRecording().catch(() => undefined) }}
-                    className={cn(
-                      'flex h-8 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium transition-colors disabled:cursor-wait disabled:opacity-65',
-                      recording.phase === 'recording' || recording.phase === 'starting'
-                        ? 'bg-red-500/12 text-red-600 hover:bg-red-500/20 dark:text-red-400'
-                        : recording.phase === 'error'
-                          ? 'bg-destructive/10 text-destructive hover:bg-destructive/15'
-                          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                    )}
+                {composerContributions.map(({ id, Action }) => Action ? (
+                  <span
+                    key={id}
+                    data-boring-agent-part="composer-contribution-action"
+                    data-boring-agent-contribution-id={id}
+                    className="contents"
                   >
-                    {recording.phase === 'starting' || recording.phase === 'transcribing' ? (
-                      <LoaderCircleIcon className="size-3.5 animate-spin" />
-                    ) : recording.phase === 'recording' ? (
-                      <><span className="size-2 rounded-full bg-red-500 animate-pulse" /><SquareIcon className="size-3" /></>
-                    ) : (
-                      <MicIcon className="size-3.5" />
-                    )}
-                    {recording.phase !== 'idle' ? (
-                      <span>{recording.phase === 'transcribing' ? 'Transcribing' : recording.phase === 'starting' && recording.kind === 'short' ? 'Starting' : recording.kind === 'live' ? 'Live' : 'Short'} {formatElapsed(elapsedSeconds)}</span>
-                    ) : null}
-                  </button>
-                ) : null}
+                    <Action updateDraft={updateDraft} />
+                  </span>
+                ) : null)}
                 <PromptInputSubmit
                   data-boring-agent-part="composer-submit"
                   status={submitStatus}
@@ -543,12 +476,6 @@ export function PiChatComposerSurface<
       )}
     </div>
   )
-}
-
-function formatElapsed(seconds: number): string {
-  const minutes = Math.floor(seconds / 60)
-  const remainder = seconds % 60
-  return `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
 }
 
 function getHeaderValue(headers: Record<string, string> | undefined, name: string): string | undefined {

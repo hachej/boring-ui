@@ -8,18 +8,14 @@ import type {
 } from '../core/piChatSessionService'
 import { ErrorCode } from '../shared/error-codes'
 import type { WorkspaceAgentDispatcherContext } from '../shared/workspaceAgentDispatcher'
-import { createWorkspaceAgentDispatcherError } from './workspaceAgentDispatcher'
+import {
+  createWorkspaceAgentDispatcherError,
+  type BoundPiSession,
+} from './workspaceAgentDispatcher'
 
 interface TrustedPiSessionServices {
   binding: AgentCoreSessionService
   prompt: Pick<PiChatSessionService, 'prompt'>
-}
-
-export interface TrustedPiSessionBinding {
-  visibleUserMessageTarget: {
-    isIdle(): Promise<boolean>
-    send(message: string, displayMessage?: string): Promise<void>
-  }
 }
 
 export async function bindTrustedPiSession(input: {
@@ -28,7 +24,7 @@ export async function bindTrustedPiSession(input: {
   sessionId: string
   requested?: { workspaceId?: string; userId?: string }
   withServices<T>(effect: (services: TrustedPiSessionServices) => Promise<T>): Promise<T>
-}): Promise<TrustedPiSessionBinding> {
+}): Promise<BoundPiSession> {
   const sessionContext = trustedPiSessionContext(input.ctx, input.request, input.requested)
   await input.withServices(async ({ binding }) => {
     if (!binding.ensurePiSessionBound) {
@@ -38,11 +34,7 @@ export async function bindTrustedPiSession(input: {
         500,
       )
     }
-    return await binding.ensurePiSessionBound(
-      sessionContext,
-      input.sessionId,
-      { userId: input.ctx.userId },
-    )
+    return await binding.ensurePiSessionBound(sessionContext, input.sessionId)
   })
   return {
     visibleUserMessageTarget: {
@@ -57,7 +49,7 @@ export async function bindTrustedPiSession(input: {
           await prompt.prompt(sessionContext, input.sessionId, {
             message,
             displayMessage: displayMessage ?? message,
-            clientNonce: `live-review:${randomUUID()}`,
+            clientNonce: `trusted-visible-turn:${randomUUID()}`,
           })
         })
       },

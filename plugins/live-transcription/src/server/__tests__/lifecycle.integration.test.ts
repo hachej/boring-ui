@@ -21,9 +21,10 @@ interface SystemHarness {
   workspace: MemoryWorkspace
   reviews: string[]
   reviewSessions: string[]
-  ensurePiSessionBound: ReturnType<typeof vi.fn>
+  bindPiSession: ReturnType<typeof vi.fn>
   upstreamConnections: () => number
   upstreamPcm: Uint8Array[]
+  beforeAgentReload(): Promise<void>
   close(): Promise<void>
 }
 
@@ -31,7 +32,7 @@ function resolver(
   workspace: MemoryWorkspace,
   reviews: string[],
   reviewSessions: string[],
-  ensurePiSessionBound: ReturnType<typeof vi.fn>,
+  bindPiSession: ReturnType<typeof vi.fn>,
 ): WorkspaceAgentDispatcherResolver {
   return {
     async resolve() {
@@ -45,7 +46,7 @@ function resolver(
       return {
         dispatcher: await this.resolve(actor),
         workspace,
-        ensurePiSessionBound: ensurePiSessionBound as WorkspaceAgentDispatcherBinding["ensurePiSessionBound"],
+        bindPiSession: bindPiSession as WorkspaceAgentDispatcherBinding["bindPiSession"],
       }
     },
   }
@@ -76,8 +77,7 @@ async function createSystem(options: { emitSnapshots?: boolean; workspace?: Memo
     })
   })
 
-  const ensurePiSessionBound = vi.fn(async (sessionId: string, requestedActor: typeof actor) => ({
-    fullSessionCacheKey: JSON.stringify([sessionId, requestedActor.workspaceId, requestedActor.userId]),
+  const bindPiSession = vi.fn(async (sessionId: string, requestedActor: typeof actor) => ({
     visibleUserMessageTarget: {
       isIdle: async () => true,
       send: async (message: string) => {
@@ -87,7 +87,7 @@ async function createSystem(options: { emitSnapshots?: boolean; workspace?: Memo
     },
   }))
   const plugin = createLiveTranscriptServerPlugin({
-    dispatcherResolver: resolver(workspace, reviews, reviewSessions, ensurePiSessionBound),
+    dispatcherResolver: resolver(workspace, reviews, reviewSessions, bindPiSession),
     actorResolver: () => actor,
     authority: { listenerHost: "127.0.0.1", canonicalHost, canonicalOrigin },
     upstreamUrl: `ws://127.0.0.1:${upstreamAddress.port}/asr`,
@@ -107,9 +107,10 @@ async function createSystem(options: { emitSnapshots?: boolean; workspace?: Memo
     workspace,
     reviews,
     reviewSessions,
-    ensurePiSessionBound,
+    bindPiSession,
     upstreamConnections: () => upstreamConnections,
     upstreamPcm,
+    beforeAgentReload: async () => await plugin.beforeAgentReload!(),
     async close() {
       await app.close()
       for (const client of upstream.clients) client.terminate()
@@ -260,7 +261,7 @@ describe("live transcription system lifecycle", () => {
         400,
       )
       expect(system.upstreamConnections()).toBe(0)
-      expect(system.ensurePiSessionBound).not.toHaveBeenCalled()
+      expect(system.bindPiSession).not.toHaveBeenCalled()
       expect(system.workspace.files.size).toBe(0)
     } finally {
       await system.close()
@@ -299,7 +300,7 @@ describe("live transcription system lifecycle", () => {
         },
       })
       expect(injected.statusCode).toBe(400)
-      expect(system.ensurePiSessionBound).not.toHaveBeenCalled()
+      expect(system.bindPiSession).not.toHaveBeenCalled()
       expect(system.workspace.files.size).toBe(0)
       expect(system.upstreamConnections()).toBe(0)
     } finally {
@@ -312,7 +313,7 @@ describe("live transcription system lifecycle", () => {
     let browser: WebSocket | undefined
     try {
       const started = await start(system)
-      expect(system.ensurePiSessionBound).toHaveBeenCalledWith("chat-a", actor)
+      expect(system.bindPiSession).toHaveBeenCalledWith("chat-a", actor)
 
       const textNonce = await openBrowserSocket(system, `${LIVE_TRANSCRIPT_BASE_PATH}/${started.liveSessionId}/audio`)
       textNonce.send(started.socketNonce)
@@ -375,6 +376,29 @@ describe("live transcription system lifecycle", () => {
       await system.close()
     }
   }, 10_000)
+
+  it("owns Agent reload interruption through its generic lifecycle contribution", async () => {
+    const system = await createSystem()
+    try {
+      const started = await start(system, "chat-reload")
+      await system.beforeAgentReload()
+
+      const status = await system.app.inject({
+        method: "POST",
+        url: `${LIVE_TRANSCRIPT_BASE_PATH}/status`,
+        headers: { host: canonicalHost, origin: canonicalOrigin },
+        payload: { liveSessionId: started.liveSessionId },
+      })
+      expect(status.statusCode).toBe(200)
+      expect(status.json()).toMatchObject({
+        state: "interrupted",
+        outcome: "live_transcript_attachment_failed",
+      })
+      expect(await system.workspace.readFile(started.transcriptPath)).toContain("- State: interrupted")
+    } finally {
+      await system.close()
+    }
+  })
 
   it("interrupts active capture on app close and allows a fresh process to start a distinct artifact", async () => {
     const workspace = new MemoryWorkspace()

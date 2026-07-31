@@ -249,15 +249,24 @@ test('registerAgentRoutes composes a trusted dispatcher over the workspace runti
     expect(events.at(-1)?.chunk).toMatchObject({ type: 'agent-end', status: 'ok' })
     const gatewaySessionId = events[0]?.sessionId
     expect(gatewaySessionId).not.toBe(sessionId)
-    const boundSession = await binding.ensurePiSessionBound!(sessionId)
+    const boundSession = await binding.bindPiSession!(sessionId)
     expect(boundSession).toMatchObject({
       visibleUserMessageTarget: {
         isIdle: expect.any(Function),
         send: expect.any(Function),
       },
     })
-    await expect(boundSession.visibleUserMessageTarget!.isIdle()).resolves.toBe(true)
-    await boundSession.visibleUserMessageTarget!.send('[Manual transcript review] read live-transcripts/a.md')
+    await expect(boundSession.visibleUserMessageTarget.isIdle()).resolves.toBe(true)
+    await expect(binding.bindPiSession!(sessionId, { workspaceId: 'wrong-workspace' })).rejects.toMatchObject({
+      code: ErrorCode.enum.UNAUTHORIZED,
+    })
+    await expect(binding.bindPiSession!(sessionId, { userId: 'wrong-user' })).rejects.toMatchObject({
+      code: ErrorCode.enum.UNAUTHORIZED,
+    })
+    await boundSession.visibleUserMessageTarget.send(
+      '[Manual transcript review] read live-transcripts/a.md',
+      'Manual review requested',
+    )
     await vi.waitFor(() => expect(harness.sendInputs).toContainEqual(expect.objectContaining({
       content: '[Manual transcript review] read live-transcripts/a.md',
       sessionId,

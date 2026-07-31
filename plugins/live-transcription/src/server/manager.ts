@@ -95,12 +95,12 @@ export class LiveTranscriptManager {
         throw new LiveTranscriptError("live_transcript_disabled", "Trusted Workspace resolver is unavailable.", 503)
       }
       const binding = await this.options.dispatcherResolver.resolveWithWorkspace(actor, { request })
-      if (!binding.ensurePiSessionBound) {
+      if (!binding.bindPiSession) {
         throw new LiveTranscriptError("live_transcript_disabled", "Trusted Pi session binding is unavailable.", 503)
       }
-      let boundSession: Awaited<ReturnType<NonNullable<typeof binding.ensurePiSessionBound>>>
+      let boundSession: Awaited<ReturnType<NonNullable<typeof binding.bindPiSession>>>
       try {
-        boundSession = await binding.ensurePiSessionBound(sessionId, actor)
+        boundSession = await binding.bindPiSession(sessionId, actor)
       } catch (error) {
         if ((error as { code?: unknown })?.code !== "SESSION_NOT_FOUND") throw error
         throw new LiveTranscriptError("live_transcript_session_not_found", "Originating Pi session was not found.", 404)

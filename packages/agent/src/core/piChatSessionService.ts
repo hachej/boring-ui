@@ -73,7 +73,6 @@ export interface AgentCoreSessionService extends PiChatSessionService {
   ensurePiSessionBound?(
     ctx: PiSessionRequestContext,
     sessionId: string,
-    runIdentity?: { userId?: string; userEmail?: string; userEmailVerified?: boolean },
   ): Promise<void>
   createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
   deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
@@ -133,7 +132,7 @@ export function withAgentEffectAdmission(
 ): AgentCoreSessionService {
   return {
     ...(service.ensurePiSessionBound
-      ? { ensurePiSessionBound: (ctx, sessionId, runIdentity) => service.ensurePiSessionBound!(ctx, sessionId, runIdentity) }
+      ? { ensurePiSessionBound: (ctx, sessionId) => service.ensurePiSessionBound!(ctx, sessionId) }
       : {}),
     ...(service.listSessions
       ? { listSessions: (ctx, options) => service.listSessions!(ctx, options) }

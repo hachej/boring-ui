@@ -29,8 +29,7 @@ class FakeSocket extends EventEmitter {
 
 function resolver(
   workspace: MemoryWorkspace,
-  ensure: NonNullable<WorkspaceAgentDispatcherBinding["ensurePiSessionBound"]> = vi.fn(async () => ({
-    fullSessionCacheKey: '["chat-1","default","local"]',
+  ensure: NonNullable<WorkspaceAgentDispatcherBinding["bindPiSession"]> = vi.fn(async () => ({
     visibleUserMessageTarget: { isIdle: async () => true, send: async (_message: string) => undefined },
   })),
 ): WorkspaceAgentDispatcherResolver {
@@ -46,7 +45,7 @@ function resolver(
       return {
         dispatcher: await this.resolve({ workspaceId: "default", userId: "local" }),
         workspace,
-        ensurePiSessionBound: ensure,
+        bindPiSession: ensure,
       }
     },
   }
@@ -124,8 +123,7 @@ describe("LiveTranscriptManager", () => {
     const workspace = new MemoryWorkspace()
     const send = vi.fn(async (_message: string) => undefined)
     const ensure = vi.fn(async () => ({
-      fullSessionCacheKey: '["chat-1","default","local"]',
-      visibleUserMessageTarget: { isIdle: async () => true, send },
+        visibleUserMessageTarget: { isIdle: async () => true, send },
     }))
     const upstream = {
       connect: vi.fn(async () => undefined),
@@ -248,8 +246,7 @@ describe("LiveTranscriptManager", () => {
     const ensure = vi.fn(async () => {
       await ensureGate
       return {
-        fullSessionCacheKey: '["chat-1","default","local"]',
-        visibleUserMessageTarget: { isIdle: async () => true, send: async (_message: string) => undefined },
+            visibleUserMessageTarget: { isIdle: async () => true, send: async (_message: string) => undefined },
       }
     })
     const manager = new LiveTranscriptManager({
@@ -271,8 +268,7 @@ describe("LiveTranscriptManager", () => {
     const retryEnsure = vi.fn()
       .mockRejectedValueOnce(Object.assign(new Error("disposed"), { code: "AGENT_BINDING_DISPOSED" }))
       .mockResolvedValue({
-        fullSessionCacheKey: '["chat-1","default","local"]',
-        visibleUserMessageTarget: { isIdle: async () => true, send: async (_message: string) => undefined },
+            visibleUserMessageTarget: { isIdle: async () => true, send: async (_message: string) => undefined },
       })
     const retryManager = new LiveTranscriptManager({
       dispatcherResolver: resolver(retryWorkspace, retryEnsure),

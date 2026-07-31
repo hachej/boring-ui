@@ -3,7 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import type { BoringChatMessage } from '../../../../shared/chat'
 import { ArtifactOpenProvider } from '../../../ArtifactOpenContext'
-import { ChatMessageRendererProvider } from '../../messageRenderers'
+import { ChatMessageContributionProvider } from '../../messageContributions'
 import { PiTimelineMessage } from '../PiTimelineMessage'
 
 vi.mock('../../../primitives/message', () => ({
@@ -53,9 +53,13 @@ describe('PiTimelineMessage', () => {
     }
 
     render(
-      <ChatMessageRendererProvider renderer={(candidate) => candidate.id === message.id ? <div>Custom message card</div> : undefined}>
+      <ChatMessageContributionProvider contribution={{
+        id: 'test-renderer',
+        matches: (candidate) => candidate.id === message.id,
+        Component: () => <div>Custom message card</div>,
+      }}>
         <PiTimelineMessage message={message} isLast isStreaming={false} showThoughts={false} toolRenderers={{}} />
-      </ChatMessageRendererProvider>,
+      </ChatMessageContributionProvider>,
     )
 
     expect(screen.getByText('Custom message card')).toBeTruthy()

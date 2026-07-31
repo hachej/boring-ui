@@ -735,10 +735,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     ctx: PiSessionRequestContext,
     sessionId: string,
     input: string | PromptPayload,
-    options?: {
-      authorize?: boolean
-      runIdentity?: { userId?: string; userEmail?: string; userEmailVerified?: boolean }
-    },
+    options?: { authorize?: boolean },
   ): Promise<PiAgentSessionAdapter> {
     this.lifecycle.assertOpen()
     if (!this.harness.getPiSessionAdapter) throw new Error('pi-native harness adapter unavailable')
@@ -759,9 +756,9 @@ export class HarnessPiChatService implements PiChatSessionService {
       workdir: this.workdir,
       workspaceId: ctx.workspaceId,
       requestId: ctx.requestId,
-      userId: options?.runIdentity?.userId ?? ctx.authSubject,
-      userEmail: options?.runIdentity?.userEmail ?? ctx.authEmail,
-      userEmailVerified: options?.runIdentity?.userEmailVerified ?? ctx.authEmailVerified,
+      userId: ctx.authSubject,
+      userEmail: ctx.authEmail,
+      userEmailVerified: ctx.authEmailVerified,
     })
     await this.lifecycle.assertAdapterOwned(adapter)
     return adapter
@@ -869,11 +866,10 @@ export class HarnessPiChatService implements PiChatSessionService {
   async ensurePiSessionBound(
     ctx: PiSessionRequestContext,
     sessionId: string,
-    runIdentity?: { userId?: string; userEmail?: string; userEmailVerified?: boolean },
   ): Promise<void> {
     this.lifecycle.assertOpen()
     await this.assertCanAccessSession(ctx, sessionId)
-    const adapter = await this.getAdapter(ctx, sessionId, '', { authorize: false, runIdentity })
+    const adapter = await this.getAdapter(ctx, sessionId, '', { authorize: false })
     await this.ensureChannel(ctx, sessionId, adapter)
     this.lifecycle.assertOpen()
   }

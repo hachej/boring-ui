@@ -79,11 +79,14 @@ describe("CLI live transcript composition", () => {
       expect(review.statusCode).toBe(503)
       expect(review.json()).toMatchObject({ error: { code: "live_transcript_disabled" } })
 
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload" })
+      expect(reload.statusCode, reload.body).toBe(200)
+
       const interrupted = await app.inject({
         method: "POST",
-        url: `/api/v1/live-transcripts/${liveSessionId}/interrupt`,
+        url: "/api/v1/live-transcripts/status",
         headers: exactHeaders,
-        payload: { reason: "attachment_failed" },
+        payload: { liveSessionId },
       })
       expect(interrupted.statusCode).toBe(200)
       expect(interrupted.json()).toMatchObject({

@@ -62,6 +62,8 @@ export interface WorkspaceServerPlugin {
   /** Static filesystem assets this plugin needs in production/serverless bundles. */
   assets?: WorkspaceServerPluginAsset[]
   routes?: FastifyPluginAsync
+  /** Release session-bound plugin work immediately before the Agent runtime is replaced. */
+  beforeAgentReload?: () => void | Promise<void>
   /** UI state keys owned by this plugin that browser state PUTs must not overwrite. */
   preservedUiStateKeys?: string[]
 }
@@ -335,6 +337,9 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
   }
   if (plugin.routes !== undefined && typeof plugin.routes !== "function") {
     fail(plugin.id, "routes must be a Fastify plugin function when provided")
+  }
+  if (plugin.beforeAgentReload !== undefined && typeof plugin.beforeAgentReload !== "function") {
+    fail(plugin.id, "beforeAgentReload must be a function when provided")
   }
   if (plugin.preservedUiStateKeys !== undefined) {
     if (!Array.isArray(plugin.preservedUiStateKeys) || plugin.preservedUiStateKeys.some((key) => typeof key !== "string" || key.length === 0)) {

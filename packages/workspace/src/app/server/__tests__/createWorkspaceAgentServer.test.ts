@@ -1519,6 +1519,23 @@ describe("beforeReload triggers directory-source re-resolve", () => {
     expect(rebuilt).toEqual({ ok: true, diagnostics: [] })
   })
 
+  test("does not run destructive plugin lifecycle hooks when reload preparation fails", async () => {
+    const beforeAgentReload = vi.fn()
+    await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("phase5-lifecycle-order-host-"),
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [{ id: "lifecycle", beforeAgentReload }],
+      beforeReload: async () => { throw new Error("preparation failed") },
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { beforeReload?: () => Promise<void> },
+    ]
+    await expect(agentOptions.beforeReload?.()).rejects.toThrow("preparation failed")
+    expect(beforeAgentReload).not.toHaveBeenCalled()
+  })
+
   test("beforeReload returns rebuild diagnostics merged with caller restart warnings", async () => {
     const dir = await makeTempDir("phase5-diagnostics-")
     await mkdir(join(dir, "src", "server"), { recursive: true })

@@ -1,5 +1,5 @@
-import { createElement, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
-import { useComposerRecordingAdapter, type BoringChatMessage } from "@hachej/boring-agent/front"
+import { createElement } from "react"
+import type { BoringChatMessage } from "@hachej/boring-agent/front"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -15,7 +15,10 @@ import { liveTranscriptBrowserState } from "../state"
 import { TranscriptReviewToolMessage, transcriptReviewPresentationFromMessage } from "../TranscriptReviewToolMessage"
 import { encodeLiveTranscriptReviewPresentation } from "../../shared/reviewPresentation"
 import {
+  appendTranscriptToDraft,
+  LiveTranscriptComposerAction,
   LiveTranscriptComposerDock,
+  LiveTranscriptComposerTop,
   LiveTranscriptMarkdownPane,
   liveTranscriptCommands,
   liveTranscriptController,
@@ -93,29 +96,26 @@ describe("live transcript front surface", () => {
     expect(resolver.resolve({ kind: "workspace.open.path", target: "README.md" })).toBeUndefined()
   })
 
-  it("provides stable recording snapshots to React external-store consumers", () => {
-    const providers: Array<{ component: ComponentType<{ children: ReactNode }> }> = []
-    liveTranscriptPlugin({
-      registerPanel: vi.fn(),
-      registerSurfaceResolver: vi.fn(),
-      registerBinding: vi.fn(),
-      registerProvider: (value: unknown) => providers.push(value as { component: ComponentType<{ children: ReactNode }> }),
-    } as never)
-    const Provider = providers[0]!.component
-    let renders = 0
-    function Probe() {
-      const adapter = useComposerRecordingAdapter()!
-      const snapshot = useSyncExternalStore(adapter.subscribe, adapter.getSnapshot, adapter.getSnapshot)
-      renders += 1
-      return <div data-testid="recording-phase">{snapshot.phase}</div>
-    }
+  it("owns short-dictation controls and updates the latest draft functionally", async () => {
+    const stopShort = vi.spyOn(liveTranscriptController, "stopShort").mockResolvedValue("bonjour")
+    liveTranscriptBrowserState.set({ recordingKind: "short", phase: "recording", startedAt: Date.now() })
+    let draft = "newer draft "
 
-    const view = render(<Provider><Probe /></Provider>)
-    expect(screen.getByTestId("recording-phase")).toHaveTextContent("idle")
-    act(() => liveTranscriptBrowserState.set({ recordingKind: "short", phase: "recording", startedAt: 1 }))
-    expect(screen.getByTestId("recording-phase")).toHaveTextContent("recording")
-    expect(renders).toBeLessThan(5)
-    view.unmount()
+    render(<LiveTranscriptComposerAction updateDraft={(update) => { draft = update(draft) }} />)
+    fireEvent.click(screen.getByRole("button", { name: "Stop short recording" }))
+
+    await waitFor(() => expect(stopShort).toHaveBeenCalledOnce())
+    expect(draft).toBe("newer draft bonjour")
+    expect(appendTranscriptToDraft("draft", "bonjour")).toBe("draft bonjour")
+    expect(appendTranscriptToDraft("draft ", "bonjour")).toBe("draft bonjour")
+  })
+
+  it("owns composer-top visibility and recording errors", () => {
+    const view = render(<LiveTranscriptComposerTop />)
+    expect(view.container).toBeEmptyDOMElement()
+
+    act(() => liveTranscriptBrowserState.set({ recordingKind: "short", phase: "error", error: "Microphone failed." }))
+    expect(screen.getByRole("alert")).toHaveTextContent("Microphone failed.")
   })
 
   it("renders detached live controls with truthful current behavior", async () => {

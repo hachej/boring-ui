@@ -452,7 +452,7 @@ async function startFolderMode(opts: {
 
   await registerStatic(app as FastifyInstance, opts.publicDir)
   await app.listen({ port: opts.port, host: opts.host })
-  if (liveTranscriptsEnabled) installBoundedCloseSignalHandlers(app)
+  installBoundedCloseSignalHandlers(app)
   console.log(`  ${url}  ready\n`)
   openBrowser(url)
 }
@@ -517,6 +517,7 @@ async function startWorkspacesMode(opts: {
 
   await registerStatic(app, opts.publicDir)
   await app.listen({ port: opts.port, host: opts.host })
+  installBoundedCloseSignalHandlers(app)
 
   const initialWorkspace = (await registry.list()).find((workspace) => workspace.available)
   const initialUrl = initialWorkspace

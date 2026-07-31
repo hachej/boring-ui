@@ -17,6 +17,16 @@ export interface WorkspaceAgentDispatcherResolveOptions {
   request?: FastifyRequest
 }
 
+export interface PiSessionVisibleUserTurnTarget {
+  isIdle(): Promise<boolean>
+  send(message: string, displayMessage?: string): Promise<void>
+}
+
+export interface BoundPiSession {
+  /** Trusted target closed over one exact logical Pi session. */
+  visibleUserMessageTarget: PiSessionVisibleUserTurnTarget
+}
+
 export interface WorkspaceAgentDispatcherBinding {
   dispatcher: WorkspaceAgentDispatcher
   workspace: Workspace
@@ -24,16 +34,10 @@ export interface WorkspaceAgentDispatcherBinding {
    * Trusted host seam used by local integrations that must bind durable work
    * to the exact logical Pi session before accepting it.
    */
-  ensurePiSessionBound?(
+  bindPiSession?(
     sessionId: string,
     sessionCtx?: { workspaceId?: string; userId?: string },
-  ): Promise<{
-    /** Trusted, session-bound visible user-turn target for local host integrations. */
-    visibleUserMessageTarget?: {
-      isIdle(): Promise<boolean>
-      send(message: string, displayMessage?: string): Promise<void>
-    }
-  }>
+  ): Promise<BoundPiSession>
 }
 
 export interface WorkspaceAgentDispatcherResolver {

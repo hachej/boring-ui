@@ -73,6 +73,7 @@ import {
   type ServerBootstrapOptions,
   type WorkspacePiPackageSource,
   type WorkspaceServerPlugin,
+  type WorkspaceBeforeAgentReloadContribution,
   type WorkspaceProvisioningContribution,
   type WorkspaceRouteContribution,
 } from "../../server/plugins/bootstrapServer"
@@ -680,6 +681,7 @@ export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   routeContributions: WorkspaceRouteContribution[]
+  beforeAgentReloadContributions: WorkspaceBeforeAgentReloadContribution[]
   workspaceBridgeHandlers: WorkspaceServerPlugin["workspaceBridgeHandlers"]
   preservedUiStateKeys: string[]
   defaultPluginPackagePaths: string[]
@@ -757,6 +759,7 @@ export function collectWorkspaceAgentServerPlugins(
       ...result.runtimePlugins,
     ],
     routeContributions: result.routeContributions,
+    beforeAgentReloadContributions: result.beforeAgentReloadContributions,
     workspaceBridgeHandlers: result.workspaceBridgeHandlers,
     preservedUiStateKeys: result.preservedUiStateKeys,
     defaultPluginPackagePaths: [],
@@ -1066,6 +1069,12 @@ export async function createWorkspaceAgentServer(
     async resolve(actor, options) {
       if (!workspaceAgentDispatcherResolver) throw new Error("workspace agent dispatcher is not ready")
       return await workspaceAgentDispatcherResolver.resolve(actor, options)
+    },
+    async resolveWithWorkspace(actor, options) {
+      if (!workspaceAgentDispatcherResolver?.resolveWithWorkspace) {
+        throw new Error("workspace-bound agent dispatcher is not ready")
+      }
+      return await workspaceAgentDispatcherResolver.resolveWithWorkspace(actor, options)
     },
   }
   const pluginCollection = await resolveWorkspaceAgentServerPluginCollection({
@@ -1553,6 +1562,11 @@ export async function createWorkspaceAgentServer(
       diagnostics = [...scanDiagnostics, ...backendReload.diagnostics, ...rebuild.diagnostics]
       await runRuntimeProvisioning(liveRuntimeBundle)
       const callerResult = await opts.beforeReload?.()
+      // Destructive plugin lifecycle hooks run only after every failure-capable
+      // reload preparation step has succeeded, immediately before replacement.
+      for (const contribution of pluginCollection.beforeAgentReloadContributions) {
+        await contribution.run()
+      }
       const callerRestartWarnings = callerResult && typeof callerResult === "object"
         ? callerResult.restart_warnings ?? []
         : []
