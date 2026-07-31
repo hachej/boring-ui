@@ -164,19 +164,42 @@ export interface AgentFleetCompiler {
 }
 
 export interface ResolvedEnvironmentScope {
+  /** Physical lease/cache identity. May contain absolute deployment paths. */
   readonly placementIdentity: string
+  /** Stable semantic placement class used by persisted session identity. */
+  readonly sessionPlacementIdentity?: string
   readonly workspaceRoot: string
   readonly templatePath?: string
+  /** Physical provisioning cache identity. */
   readonly provisioningFingerprint: string
+  /** Stable semantic provisioning identity used by persisted session identity. */
+  readonly sessionProvisioningIdentity?: string
   readonly provisionRuntime?: (input: {
     readonly runtimeBundle: Awaited<ReturnType<RuntimeModeAdapter['create']>>
     readonly signal: AbortSignal
   }) => Promise<WorkspaceProvisioningResult | undefined>
 }
 
+/**
+ * Exact operator-provided authorization for an irreversible persisted pin CAS.
+ * Hosts never synthesize these entries; rollout requires reproduced v1 evidence.
+ */
+export interface RuntimeScopeIdentityMigrationAuthorization {
+  readonly schemaVersion: 1
+  readonly agentTypeId: string
+  readonly workspaceScopeId: string
+  readonly sessionNamespace: string
+  readonly fromIdentity: string
+  readonly toIdentity: string
+  readonly evidenceDigest: string
+}
+
 export interface ResolvedAgentRuntimeScope {
-  /** Complete app-canonicalized PL1 composition identity. */
+  /** Persisted semantic compatibility identity. */
   readonly identity: string
+  /** Physical process binding/cache identity. Defaults to identity. */
+  readonly bindingIdentity?: string
+  readonly sessionIdentityMigrations?: readonly RuntimeScopeIdentityMigrationAuthorization[]
   readonly environment: ResolvedEnvironmentScope
   readonly sessionNamespace: string
   readonly pi?: PiHarnessOptions

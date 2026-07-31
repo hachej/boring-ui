@@ -20,6 +20,7 @@ import { ErrorCode } from '../../shared/error-codes'
 import {
   AgentEffectAdmissionError,
   isObservedSynchronousServiceError,
+  type AgentCoreSessionService,
   type PiChatSessionService,
   type PiSessionRequestContext,
 } from '../../core/piChatSessionService'
@@ -485,13 +486,49 @@ export class EmbeddedAgentGateway implements AgentGateway {
     }
     const resolved = authority?.runtimeScope
       ?? await this.runtime.options.resolveRuntimeScope({ agentTypeId: ref.agentTypeId, scope })
-    const persistedPin = authority?.runtimeScopeIdentity
-    const pinned = persistedPin ?? cached
+    let persistedPin = authority?.runtimeScopeIdentity
+    let pinned = persistedPin ?? cached
+    let preparedBinding: Awaited<ReturnType<AgentHostRuntime['resolveBinding']>> | undefined
     if (pinned && pinned !== resolved.identity) {
-      throw new AgentGatewayError(
-        AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-        'session is pinned to a different runtime scope',
-      )
+      const migrations = resolved.sessionIdentityMigrations ?? []
+      const candidates = migrations.filter((migration) => (
+        migration.schemaVersion === 1
+        && migration.agentTypeId === ref.agentTypeId
+        && migration.workspaceScopeId === claim.workspaceScopeId
+        && migration.sessionNamespace === resolved.sessionNamespace
+        && migration.fromIdentity === pinned
+        && migration.toIdentity === resolved.identity
+        && migration.fromIdentity.trim().length > 0
+        && migration.fromIdentity.length <= 8_192
+        && /^[a-f0-9]{64}$/.test(migration.toIdentity)
+        && /^[a-f0-9]{64}$/.test(migration.evidenceDigest)
+      ))
+      if (!authority || candidates.length !== 1) {
+        throw new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+          'session is pinned to a different runtime scope',
+        )
+      }
+      // Prove the authorized target can be constructed before irreversibly
+      // changing the persisted pin. Binding construction admits no session effect.
+      preparedBinding = await this.runtime.resolveBinding(ref.agentTypeId, scope, claim, resolved)
+      try {
+        const result = await authority.migrateRuntimeScopeIdentity({
+          expectedIdentity: candidates[0]!.fromIdentity,
+          nextIdentity: candidates[0]!.toIdentity,
+          evidenceDigest: candidates[0]!.evidenceDigest,
+        })
+        if (result === 'mismatch') throw new Error('runtime identity migration compare-and-swap failed')
+      } catch {
+        // The proven target binding may remain cached, but bindingForSession
+        // fails here so no session effect or admission can observe it.
+        throw new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+          'session is pinned to a different runtime scope',
+        )
+      }
+      persistedPin = resolved.identity
+      pinned = resolved.identity
     }
     // Missing pins are pre-AH0 compatibility transcripts. They use the first
     // current runtime for this Host lifetime without mutating historical JSONL.
@@ -501,7 +538,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       runtimeScopeIdentity,
     })
     this.pins.set(key, runtimeScopeIdentity)
-    return await this.runtime.resolveBinding(ref.agentTypeId, scope, claim, resolved)
+    return preparedBinding ?? await this.runtime.resolveBinding(ref.agentTypeId, scope, claim, resolved)
   }
 
   private async loadSummary(
@@ -544,12 +581,18 @@ export class EmbeddedAgentGateway implements AgentGateway {
     readonly target: AgentRequestTarget
     readonly requestId: string
     readonly payload: JsonValue
-    readonly action: () => Promise<unknown>
+    readonly action?: () => Promise<unknown>
+    readonly runtimeScopeIdentity?: string
+    readonly sessionAction?: (
+      service: AgentCoreSessionService,
+      runtimeScopeIdentity: string,
+    ) => Promise<unknown>
   }): Promise<unknown> {
     const claim = await this.verify(input.scope)
     if (input.operation === 'session.create') {
       if (input.target.kind !== 'agent') throw new TypeError('session.create requires an Agent target')
-      return await this.effect(
+      if (!input.action) throw new TypeError('session.create requires an Agent action')
+      const created = await this.effect(
         claim,
         input.operation,
         input.target,
@@ -559,15 +602,35 @@ export class EmbeddedAgentGateway implements AgentGateway {
         false,
         true,
       )
+      const sessionId = created && typeof created === 'object' && 'id' in created
+        && typeof created.id === 'string' && created.id.length > 0
+        ? created.id
+        : undefined
+      if (sessionId && input.runtimeScopeIdentity) {
+        const ref = { agentTypeId: input.target.agentTypeId, sessionId }
+        this.pins.set(sessionKey(claim.workspaceScopeId, ref), input.runtimeScopeIdentity)
+        this.runtime.activity.set(claim.workspaceScopeId, ref, 'idle')
+      }
+      return created
     }
     if (input.target.kind !== 'session') throw new TypeError(`${input.operation} requires a session target`)
+    if (!input.sessionAction) throw new TypeError(`${input.operation} requires a session action`)
+    let binding: Awaited<ReturnType<EmbeddedAgentGateway['bindingForSession']>>
+    try {
+      binding = await this.bindingForSession(input.scope, claim, input.target.ref)
+    } catch (error) {
+      if (error instanceof AgentGatewayError && error.code === AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND) {
+        throw Object.assign(new Error('session not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND })
+      }
+      throw error
+    }
     return await this.sessionEffect(
       input.target.ref,
       claim,
       input.operation,
       input.requestId,
       input.payload,
-      input.action,
+      () => input.sessionAction!(binding.composition.service, binding.scope.identity),
       false,
       true,
     )
