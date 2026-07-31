@@ -14,8 +14,7 @@ scope.
 - At the HTTP route boundary, search the primary root plus every filesystem
   binding resolved for the current request. Binding roots are searched only via
   `RuntimeFilesystemBinding.operations.find`; no host path is exposed or used.
-- Preserve legacy `results: string[]` for the primary workspace and add
-  browser-safe `resources: { filesystem, path }[]` for unified consumers.
+- Return only browser-safe `resources: { filesystem, path }[]` from search.
   Request-scoped binding resolution remains the authorization boundary, and
   opening a result continues through the normal freshly authorized file route.
 - Give Files catalog rows filesystem-qualified IDs and show the root identity.
@@ -30,11 +29,9 @@ scope.
 1. Extend the search route options with request-visible bindings, aggregate
    primary and binding results, and return structured resources.
 2. Wire binding resolution through both agent route composition paths.
-3. Preserve `FetchClient.search(): Promise<string[]>` and add the structured
-   `searchResources()` API. Update catalog/fallback consumers to prefer structured
-   resources with legacy bare-path fallback, preserve duplicate paths across
-   roots, and open with filesystem. Preserve non-user identity through the
-   public `WorkspaceProvider.onOpenFile` callback's optional resource argument.
+3. Use `searchResources()` throughout the frontend, preserve duplicate paths
+   across roots, and open with filesystem. `WorkspaceProvider.onOpenFile`
+   receives one required filesystem-qualified resource.
 4. Remove the duplicate Files-pane search input while preserving controlled search plumbing.
 5. Make the multi-filesystem playground binding request-scoped and searchable,
    align readonly projection glob matching with the case-insensitive catalog
@@ -54,10 +51,10 @@ scope.
 
 - `GET /api/v1/filesystems` projects the authenticated request's effective runtime bindings into a browser-safe catalog. Denied bindings are omitted; provider errors and host paths are never serialized.
 - The primary `user` workspace is server-declared. Additional entries derive access and fine-grained capabilities from binding access plus installed operations. Optional binding metadata supplies presentation only and cannot grant authority.
-- The canonical Workspace filesystem plugin loads this catalog and falls back to `user` only while loading, on failure, or against older servers. Every file/search/tree/mutation request still resolves and authorizes bindings independently.
-- Governance annotates bindings only after server policy authorizes them. Its frontend compatibility factory is now a deprecated no-op and no browser code translates `companyContextAccess` or invents `company_context`.
-- Hosts using cookie-only authentication can change `authScopeKey` after identity transitions; the Files catalog immediately fails closed and reloads under the new identity.
-- The API and runtime metadata are additive. Existing explicit `FileTreePane.roots`, legacy file/search responses, and path-only callers remain supported.
+- The canonical Workspace filesystem plugin loads this catalog and falls back to `user` only while loading or on failure. Every file/search/tree/mutation request still resolves and authorizes bindings independently.
+- Governance annotates bindings only after server policy authorizes them. No Governance frontend roots factory remains, and no browser code translates `companyContextAccess` or invents `company_context`.
+- Hosts using cookie-only authentication change `authScopeKey` after identity transitions; the Files catalog immediately fails closed and reloads under the new identity.
+- This is a coordinated breaking cutover: search responses and open callbacks require filesystem-qualified resources.
 
 ## Validation completed
 

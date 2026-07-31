@@ -54,11 +54,9 @@ describe.skipIf(!HAS_BWRAP)('GET /api/v1/files/search', () => {
       url: '/api/v1/files/search?q=*.ts',
     })
     expect(res.statusCode).toBe(200)
-    const { results, resources } = res.json() as {
-      results: string[]
+    const { resources } = res.json() as {
       resources: Array<{ filesystem: string; path: string }>
     }
-    expect(results.sort()).toEqual(['a.ts', 'src/b.ts'])
     expect(resources.map((result) => result.path).sort()).toEqual(['a.ts', 'src/b.ts'])
     expect(resources.every((result) => result.filesystem === 'user')).toBe(true)
   })
@@ -69,11 +67,9 @@ describe.skipIf(!HAS_BWRAP)('GET /api/v1/files/search', () => {
       url: '/api/v1/files/search?q=**%2F*.tsx',
     })
     expect(res.statusCode).toBe(200)
-    const { results, resources } = res.json() as {
-      results: string[]
+    const { resources } = res.json() as {
       resources: Array<{ filesystem: string; path: string }>
     }
-    expect(results).toContain('src/c.tsx')
     expect(resources).toContainEqual({ filesystem: 'user', path: 'src/c.tsx' })
   })
 
@@ -82,11 +78,9 @@ describe.skipIf(!HAS_BWRAP)('GET /api/v1/files/search', () => {
       method: 'GET',
       url: '/api/v1/files/search?q=readme.md',
     })
-    const { results, resources } = res.json() as {
-      results: string[]
+    const { resources } = res.json() as {
       resources: Array<{ filesystem: string; path: string }>
     }
-    expect(results).toEqual(['README.md'])
     expect(resources).toEqual([{ filesystem: 'user', path: 'README.md' }])
   })
 

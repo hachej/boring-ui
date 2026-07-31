@@ -143,14 +143,10 @@ function createFallbackFilesCatalog(options?: { apiBaseUrl?: string; authHeaders
           signal,
         })
         if (!response.ok) throw new Error(`File search failed (${response.status})`)
-        const payload = await response.json() as { resources?: unknown; results?: unknown }
+        const payload = await response.json() as { resources?: unknown }
         const resources = Array.isArray(payload.resources)
           ? payload.resources.filter(isUiFileResource)
-          : Array.isArray(payload.results)
-            ? payload.results
-              .filter((path): path is string => typeof path === "string")
-              .map((path): UiFileResource => ({ filesystem: "user", path }))
-            : []
+          : []
         if (signal?.aborted) return emptySearchResult()
         return { items: resources.map(fileRowFromResource), total: resources.length, hasMore: false }
       },

@@ -55,8 +55,13 @@ export function MentionPicker({
         ...(headers ? { headers } : {}),
       })
         .then((r) => r.ok ? r.json() : null)
-        .then((data: { results?: string[] } | null) => {
-          if (data?.results) setResults(data.results.slice(0, 8))
+        .then((data: { resources?: Array<{ filesystem: string; path: string }> } | null) => {
+          if (data?.resources) {
+            setResults(data.resources
+              .filter((resource) => resource.filesystem === 'user')
+              .map((resource) => resource.path)
+              .slice(0, 8))
+          }
         })
         .catch(() => {})
     }, 120)

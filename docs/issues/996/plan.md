@@ -9,7 +9,7 @@
 1. Reconcile root changes with the current selection first, falling back to the configured default and then the first available root only when the current root was removed.
    - Verify with focused component tests for an equivalent roots-array rerender and deterministic selected-root removal fallback.
 2. Add optional filesystem identity to file-tree reveal requests and use explicit reveal/open events to select a matching configured root.
-   - Keep path-only callers backward compatible as the `user` filesystem where the bridge already applies that default.
+   - Requests without filesystem identity target the primary `user` filesystem.
    - Verify explicit company/user synchronization and ensure requests are only delivered to the matching active tree.
 3. Carry optional filesystem through the existing `expandToFile` command/bridge/surface path and ensure successful surface file opens emit the existing identity-bearing `file:opened` event.
    - Verify bridge/dispatcher forwarding and surface event behavior with targeted unit tests.

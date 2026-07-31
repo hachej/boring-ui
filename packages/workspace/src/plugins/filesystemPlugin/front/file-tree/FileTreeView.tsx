@@ -196,11 +196,11 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   className,
 }, ref) {
   const dataClient = useDataClient()
-  const legacyCanMutate = access !== "readonly"
-  const canWrite = capabilities?.write ?? legacyCanMutate
-  const canCreateDir = capabilities?.mkdir ?? legacyCanMutate
-  const canMove = capabilities?.move ?? legacyCanMutate
-  const canDelete = capabilities?.delete ?? legacyCanMutate
+  const canMutateByAccess = access !== "readonly"
+  const canWrite = capabilities?.write ?? canMutateByAccess
+  const canCreateDir = capabilities?.mkdir ?? canMutateByAccess
+  const canMove = capabilities?.move ?? canMutateByAccess
+  const canDelete = capabilities?.delete ?? canMutateByAccess
   const canCreate = canWrite || canCreateDir
   const activeFilesystem = normalizeUiFilesystem(filesystem)
   const requestFilesystem = activeFilesystem === "user" ? undefined : activeFilesystem
@@ -1025,7 +1025,6 @@ export interface FileTreeRootConfig {
   label: string
   rootDir?: string
   access?: "readonly" | "readwrite"
-  searchPlaceholder?: string
   capabilities?: FilesystemCatalogCapabilities
 }
 

@@ -86,12 +86,11 @@ function FilesystemTreePreloadBinding() {
 
 export function FilesystemFileTreeSource(props: WorkspaceSourceProps<FileTreePaneParams>) {
   const roots = useFileTreeRoots()
-  const effectiveRoots = props.params?.roots ?? (roots ? [...roots] : undefined)
   return createElement(FileTreePane, {
     ...props,
     params: {
       ...props.params,
-      roots: effectiveRoots,
+      roots: roots ? [...roots] : undefined,
     },
   })
 }

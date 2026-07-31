@@ -616,7 +616,6 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
     const search = await app.inject({ method: 'GET', url: '/api/v1/files/search?q=*.md' })
     expect(search.statusCode).toBe(200)
     expect(search.json()).toEqual({
-      results: [],
       resources: [{ filesystem: 'company_context', path: '/policy.md' }],
     })
     expect(operations.find).toHaveBeenCalledWith(

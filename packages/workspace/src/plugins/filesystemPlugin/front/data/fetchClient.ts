@@ -314,10 +314,10 @@ export class FetchClient {
     query: string,
     limit?: number,
     signal?: AbortSignal,
-  ): Promise<{ resources?: unknown; results?: unknown }> {
+  ): Promise<{ resources?: unknown }> {
     const params = new URLSearchParams({ q: query })
     if (limit != null) params.set("limit", String(limit))
-    return this.request<{ resources?: unknown; results?: unknown }>(
+    return this.request<{ resources?: unknown }>(
       "GET",
       `/api/v1/files/search?${params}`,
       undefined,
@@ -326,29 +326,11 @@ export class FetchClient {
     )
   }
 
-  /** Legacy primary-workspace search API. */
-  async search(query: string, limit?: number, signal?: AbortSignal): Promise<string[]> {
-    const response = await this.searchResponse(query, limit, signal)
-    if (Array.isArray(response.results)) {
-      return response.results.filter((path): path is string => typeof path === "string")
-    }
-    return Array.isArray(response.resources)
-      ? response.resources
-        .filter((value): value is FileSearchResource => isFileSearchResource(value) && value.filesystem === "user")
-        .map((resource) => resource.path)
-      : []
-  }
-
   /** Structured search across every request-readable filesystem root. */
   async searchResources(query: string, limit?: number, signal?: AbortSignal): Promise<FileSearchResource[]> {
     const response = await this.searchResponse(query, limit, signal)
-    if (Array.isArray(response.resources)) {
-      return response.resources.filter(isFileSearchResource)
-    }
-    return Array.isArray(response.results)
-      ? response.results
-        .filter((path): path is string => typeof path === "string")
-        .map((path) => ({ filesystem: "user", path }))
+    return Array.isArray(response.resources)
+      ? response.resources.filter(isFileSearchResource)
       : []
   }
 

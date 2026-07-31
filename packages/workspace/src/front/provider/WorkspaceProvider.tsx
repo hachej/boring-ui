@@ -336,7 +336,7 @@ function WorkspacePluginProviders({
   }, children)
 }
 
-export type WorkspaceOpenFileHandler = (path: string, resource?: UiFileResource) => void
+export type WorkspaceOpenFileHandler = (resource: UiFileResource) => void
 
 function WorkspaceOpenFileBinding({ onOpenFile }: { onOpenFile?: WorkspaceOpenFileHandler }) {
   useEffect(() => {
@@ -346,11 +346,10 @@ function WorkspaceOpenFileBinding({ onOpenFile }: { onOpenFile?: WorkspaceOpenFi
       const path = command.params.path
       if (typeof path !== "string") return
       const filesystem = command.params.filesystem
-      if (typeof filesystem === "string" && filesystem !== "user") {
-        onOpenFile(path, { filesystem, path })
-      } else {
-        onOpenFile(path)
-      }
+      onOpenFile({
+        filesystem: typeof filesystem === "string" ? filesystem : "user",
+        path,
+      })
     })
   }, [onOpenFile])
 

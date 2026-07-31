@@ -71,50 +71,20 @@ do not set `lazy: true`.
 | `@hachej/boring-workspace/app/server` | Node | App composition: `createWorkspaceAgentServer` |
 | `@hachej/boring-workspace/globals.css` | Browser | Global CSS for the workspace chrome |
 
-## Files panel: multi-root filesystems
+## Files panel: server-driven roots
 
-The built-in `FileTreePane` shows a single filesystem root by default (today's
-behavior — no dropdown, no extra chrome). Host apps that expose additional
-governed filesystems (e.g. a shared `company_context`) can pass a `roots` list;
-the panel then renders a **dropdown** at the top to switch the active filesystem
-and shows one root's tree at a time.
+The canonical Files source loads `GET /api/v1/filesystems`. The authenticated
+server returns the primary workspace plus every effective runtime binding with
+its label, logical root, access level, and operation-derived capabilities. One
+root renders the normal tree; multiple roots add only the root dropdown.
 
-```tsx
-import { FileTreePane, type FileTreeRootConfig } from "@hachej/boring-workspace"
+The browser never invents governed roots or grants access. Every tree, search,
+open, and mutation request resolves and authorizes its binding again. Catalog
+loading or failure is fail-closed to the primary `user` workspace.
 
-const roots: FileTreeRootConfig[] = [
-  { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
-  { filesystem: "company_context", label: "Company", rootDir: "/", access: "readonly" },
-]
-
-<FileTreePane roots={roots} />
-```
-
-`FileTreeRootConfig`:
-
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `filesystem` | yes | Filesystem id threaded to the file routes (`?filesystem=…`). `"user"` is the default workspace root. |
-| `label` | yes | Text shown in the switcher dropdown. |
-| `rootDir` | no | Root directory for the tree (defaults to `.` for `user`, `/` otherwise). |
-| `access` | no | `"readonly"` hides all mutating affordances (new/rename/delete/drag) for that root; defaults to `"readwrite"`. |
-| `searchPlaceholder` | no | Deprecated compatibility field; Files uses the shell's unified search input. |
-
-Notes:
-
-- **Additive & backward-compatible.** Omitting `roots` (or passing a single
-  entry) preserves the exact single-root UI — the switcher is hidden.
-- **Governance-agnostic.** The workspace package never imports governance. The
-  host supplies the roots list — a governed app (e.g. via
-  `boring-governance` bindings or a tenant `…/governance/usage` response) maps
-  its per-user filesystem access into `FileTreeRootConfig[]`.
-- **Isolated errors.** A `403`/`404` on one root renders an inline "Failed to
-  load files" state inside the pane while the dropdown stays usable to switch
-  to another root — it never blanks the whole panel.
-
-See the multi-filesystem playground fixture in
-`apps/workspace-playground/src/front/App.tsx` (guarded by
-`VITE_PLAYGROUND_MULTI_FS=1`) for a working consumer.
+Runtime binding metadata may provide browser-safe presentation fields such as a
+label and logical root. It must never contain host paths or authorization data.
+See `apps/workspace-playground/src/server/dev.ts` for a multi-root fixture.
 
 ## Documentation
 

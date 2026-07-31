@@ -259,28 +259,13 @@ describe("FetchClient", () => {
     expect(body).toEqual({ from: "/a.ts", to: "/b.ts" })
   })
 
-  it("GET /api/v1/files/search preserves legacy search results", async () => {
+  it("GET /api/v1/files/searchResources returns structured resources", async () => {
     const resources = [{ filesystem: "user", path: "/a.ts" }, { filesystem: "company_context", path: "/a.ts" }]
-    mockFetch.mockReturnValue(ok({ resources, results: ["/legacy.ts"] }))
-    const client = new FetchClient({ apiBaseUrl: "" })
-    await expect(client.search("*.ts", 10)).resolves.toEqual(["/legacy.ts"])
-    expect(mockFetch.mock.calls[0][0]).toContain("q=*.ts")
-    expect(mockFetch.mock.calls[0][0]).toContain("limit=10")
-  })
-
-  it("GET /api/v1/files/searchResources prefers structured resources", async () => {
-    const resources = [{ filesystem: "user", path: "/a.ts" }, { filesystem: "company_context", path: "/a.ts" }]
-    mockFetch.mockReturnValue(ok({ resources, results: ["/legacy.ts"] }))
+    mockFetch.mockReturnValue(ok({ resources }))
     const client = new FetchClient({ apiBaseUrl: "" })
     await expect(client.searchResources("*.ts", 10)).resolves.toEqual(resources)
-  })
-
-  it("GET /api/v1/files/searchResources falls back to legacy bare-path results", async () => {
-    mockFetch.mockReturnValue(ok({ results: ["/a.ts"] }))
-    const client = new FetchClient({ apiBaseUrl: "" })
-    await expect(client.searchResources("*.ts", 10)).resolves.toEqual([
-      { filesystem: "user", path: "/a.ts" },
-    ])
+    expect(mockFetch.mock.calls[0][0]).toContain("q=*.ts")
+    expect(mockFetch.mock.calls[0][0]).toContain("limit=10")
   })
 
   it("GET /api/v1/files/search aborts when caller AbortSignal aborts", async () => {
@@ -297,7 +282,7 @@ describe("FetchClient", () => {
     })
     const client = new FetchClient({ apiBaseUrl: "" })
     const controller = new AbortController()
-    const promise = client.search("*.ts", 10, controller.signal)
+    const promise = client.searchResources("*.ts", 10, controller.signal)
     controller.abort()
     await expect(promise).rejects.toMatchObject({ name: "AbortError" })
     expect(fetchSignal?.aborted).toBe(true)

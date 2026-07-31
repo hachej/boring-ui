@@ -341,7 +341,6 @@ describe("CommandPalette", () => {
         const url = String(input)
         if (url.includes("/api/v1/files/search")) {
           return new Response(JSON.stringify({
-            results: ["README.md"],
             resources: [
               { filesystem: "user", path: "README.md" },
               { filesystem: "company_context", path: "src/readme-helper.ts" },

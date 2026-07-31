@@ -115,9 +115,6 @@ export function searchRoutes(
           }
         }))
       return reply.send({
-        // Preserve the original primary-workspace response for callers that
-        // still consume bare paths. Multi-root consumers use `resources`.
-        results: userResults.map((result) => result.path),
         resources: interleaveResults([userResults, ...bindingResults], limit),
       })
     } catch (err) {

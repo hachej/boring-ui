@@ -296,7 +296,6 @@ describe("WorkspaceProvider — panel registration", () => {
   it("registers filesystem plugin file search as the default files catalog", async () => {
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({
-        results: ["/src/App.tsx"],
         resources: [{ filesystem: "user", path: "/src/App.tsx" }],
       }), {
         status: 200,
@@ -369,7 +368,7 @@ describe("WorkspaceProvider — panel registration", () => {
       })
     })
 
-    expect(onOpenFile).toHaveBeenCalledWith("/src/App.tsx")
+    expect(onOpenFile).toHaveBeenCalledWith({ filesystem: "user", path: "/src/App.tsx" })
   })
 
   it("preserves non-user filesystem identity through onOpenFile", async () => {
@@ -394,10 +393,10 @@ describe("WorkspaceProvider — panel registration", () => {
       })
     })
 
-    expect(onOpenFile).toHaveBeenCalledWith(
-      "/company/hr/policy.md",
-      { filesystem: "company_context", path: "/company/hr/policy.md" },
-    )
+    expect(onOpenFile).toHaveBeenCalledWith({
+      filesystem: "company_context",
+      path: "/company/hr/policy.md",
+    })
   })
 
   it("capabilities filter removes panels missing required capabilities", () => {

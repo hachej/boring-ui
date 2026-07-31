@@ -37,7 +37,6 @@ describe('searchRoutes multi-filesystem search', () => {
 
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual({
-      results: ['same.md', 'user-only.md'],
       resources: [
         { filesystem: 'user', path: 'same.md' },
         { filesystem: 'company_context', path: 'same.md' },
@@ -98,7 +97,7 @@ describe('searchRoutes multi-filesystem search', () => {
     })
 
     const deniedResponse = await app.inject({ method: 'GET', url: '/api/v1/files/search?q=*.md' })
-    expect(deniedResponse.json()).toEqual({ results: [], resources: [] })
+    expect(deniedResponse.json()).toEqual({ resources: [] })
 
     const allowedResponse = await app.inject({
       method: 'GET',
@@ -106,7 +105,6 @@ describe('searchRoutes multi-filesystem search', () => {
       headers: { 'x-allow-company': 'yes' },
     })
     expect(allowedResponse.json()).toEqual({
-      results: [],
       resources: [{ filesystem: 'company_context', path: '/visible.md' }],
     })
     expect(allowedResponse.body).not.toContain('/host/private')
