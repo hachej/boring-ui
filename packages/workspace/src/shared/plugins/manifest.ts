@@ -8,6 +8,11 @@
  * - `boring`: workspace/UI package discovery (front/server entrypoints and labels)
  */
 
+export interface BoringPackageRuntimeIdentityField {
+  /** Runtime files/directories admitted into semantic Agent identity. */
+  paths: string[]
+}
+
 export interface BoringPackageBoringField {
   /** Optional stable plugin id. Defaults to package.json#name normalized for package discovery. */
   id?: string
@@ -15,6 +20,7 @@ export interface BoringPackageBoringField {
   front?: string
   /** Workspace/UI support server entry. Set false to disable convention lookup. */
   server?: string | false
+  runtimeIdentity?: BoringPackageRuntimeIdentityField
   label?: string
 }
 
@@ -153,6 +159,17 @@ function validateBoringField(
   if (server !== undefined && server !== false && (typeof server !== "string" || !isSafePluginRelativePath(server))) {
     issues.push(issue("INVALID_PATH", "boring.server", "boring.server must be a safe relative path or false"))
   }
+  const runtimeIdentity = boring.runtimeIdentity
+  if (runtimeIdentity !== undefined) {
+    if (!isRecord(runtimeIdentity)) {
+      issues.push(issue("INVALID_FIELD", "boring.runtimeIdentity", "boring.runtimeIdentity must be an object when provided"))
+    } else {
+      validateStringArray(issues, runtimeIdentity.paths, "boring.runtimeIdentity.paths", true)
+      if (Array.isArray(runtimeIdentity.paths) && runtimeIdentity.paths.length === 0) {
+        issues.push(issue("INVALID_FIELD", "boring.runtimeIdentity.paths", "boring.runtimeIdentity.paths must not be empty"))
+      }
+    }
+  }
   if (boring.label !== undefined && typeof boring.label !== "string") {
     issues.push(issue("INVALID_FIELD", "boring.label", "boring.label must be a string when provided"))
   }
@@ -160,6 +177,9 @@ function validateBoringField(
     ...(typeof boring.id === "string" ? { id: boring.id } : {}),
     ...(typeof boring.front === "string" ? { front: boring.front } : {}),
     ...(typeof boring.server === "string" || boring.server === false ? { server: boring.server } : {}),
+    ...(isRecord(runtimeIdentity) && Array.isArray(runtimeIdentity.paths)
+      ? { runtimeIdentity: { paths: runtimeIdentity.paths.filter((path): path is string => typeof path === "string") } }
+      : {}),
     ...(typeof boring.label === "string" ? { label: boring.label } : {}),
   }
 }

@@ -30,6 +30,8 @@ export interface ChatLayoutProps {
   surfaceParams?: Record<string, unknown>
   /** Opaque overlay rendered over the full chat stage only (not over the workbench). */
   chatOverlay?: ReactNode
+  /** Empty state that hides, but does not unmount, retained chat panes. */
+  chatEmptyState?: ReactNode
   /** Called when shell chrome needs to dismiss the chat overlay before collapsing chat. */
   onCloseChatOverlay?: () => void
   surfaceOverlay?: ReactNode

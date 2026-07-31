@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "pnpm run build:deps && playwright test",
+    "test:e2e:addressed-agent": "pnpm run build:deps && playwright test apps/workspace-playground/e2e/agent-host-golden-route.spec.ts apps/workspace-playground/e2e/native-session-regressions.spec.ts",
+    "test:e2e:release-candidate": "playwright test apps/workspace-playground/e2e/release-candidate-golden-route.spec.ts",
     "smoke:bridge": "pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && tsx scripts/bridge-e2e.ts",
     "eval": "AGENT_API_PORT=5350 vite-node src/eval/run.ts",
     "eval:slash-command": "AGENT_API_PORT=5350 vite-node src/eval/run.ts src/eval/plugin-slash-command.yaml",

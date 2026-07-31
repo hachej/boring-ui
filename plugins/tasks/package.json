@@ -14,7 +14,10 @@
     "id": "tasks",
     "label": "Tasks",
     "front": "dist/front/index.js",
-    "server": "dist/server/index.js"
+    "server": "dist/server/index.js",
+    "runtimeIdentity": {
+      "paths": ["dist/server"]
+    }
   },
   "files": [
     "dist"

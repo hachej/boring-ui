@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../../front/agentPlugins/reloadEvent"
 import { UI_COMMAND_EVENT, type UiCommand } from "../../../front/bridge"
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
+import { clearToasts, getActiveToasts } from "../../../front/toast"
 import type { PanelConfig } from "../../../front/registry/types"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
-import { WorkspaceAgentFront } from "../WorkspaceAgentFront"
+import { WorkspaceAgentFront, type UseWorkspaceAgentSessions } from "../WorkspaceAgentFront"
 
 type CapturedChatPanelProps = WorkspaceChatPanelProps & {
   initialDraft?: string
@@ -87,6 +88,7 @@ describe("WorkspaceAgentFront", () => {
 
   beforeEach(() => {
     localStorage.clear()
+    clearToasts()
     sessionsFailuresRemaining = 0
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -311,7 +313,7 @@ describe("WorkspaceAgentFront", () => {
     expect(switchCalls).toContain("s2")
     expect(visibleChatSessionIds()).toEqual(["s2"])
 
-    await user.click(screen.getByLabelText("Open Third session in chat pane"))
+    await user.click(screen.getByLabelText("Open Third session in split"))
     expect(switchCalls).toContain("s3")
     expect(visibleChatSessionIds()).toEqual(["s2", "s3"])
 
@@ -371,7 +373,7 @@ describe("WorkspaceAgentFront", () => {
 
     render(<Harness />)
     expandHistory()
-    await user.click(screen.getByLabelText("Open Beta shared in chat pane"))
+    await user.click(screen.getByLabelText("Open Beta shared in split"))
 
     expect(screen.getAllByTestId("addressed-chat-pane").map((pane) => [
       pane.getAttribute("data-session-id"),
@@ -395,6 +397,1333 @@ describe("WorkspaceAgentFront", () => {
 
     await user.click(screen.getByLabelText("Delete Alpha shared"))
     expect(deleted).toEqual([["shared", "beta"], ["shared", "alpha"]])
+  })
+
+  it("drives remote session plumbing from the dynamically selected agent without touching legacy routes", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith("/api/v1/agents")) {
+        return new Response(JSON.stringify([
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ]), { status: 200 })
+      }
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
+      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    let selectAgent!: (agentTypeId: string) => void
+    function useTestAgentSelection({ enabled }: { enabled?: boolean }) {
+      const [selectedAgentTypeId, setSelectedAgentTypeId] = useState<string>()
+      selectAgent = setSelectedAgentTypeId
+      useEffect(() => {
+        if (!enabled) return
+        let cancelled = false
+        void fetch("/api/v1/agents").then((response) => response.json()).then((agents: Array<{ agentTypeId: string }>) => {
+          if (!cancelled) setSelectedAgentTypeId(agents[0]?.agentTypeId)
+        })
+        return () => {
+          cancelled = true
+        }
+      }, [enabled])
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: Boolean(enabled && !selectedAgentTypeId),
+        error: undefined,
+        selectAgentTypeId: setSelectedAgentTypeId,
+      }
+    }
+    const sessionHookCalls: Array<{ agentTypeId?: string; enabled?: boolean }> = []
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      sessionHookCalls.push({ agentTypeId: options.agentTypeId, enabled: options.enabled })
+      const owner = options.agentTypeId
+      const session = owner ? { id: "shared", agentTypeId: owner, title: `${owner} shared` } : undefined
+      return {
+        sessions: session ? [session] : [],
+        sourceAgentTypeId: owner,
+        loading: false,
+        activeSessionId: session?.id ?? null,
+        activeSessionAgentTypeId: owner ?? null,
+        activeSession: session ?? null,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+    function AgentControlledChatPanel(props: WorkspaceChatPanelProps) {
+      return <div data-testid="selected-agent-session">{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="dynamic-agent-sessions"
+        chatPanel={AgentControlledChatPanel}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByTestId("selected-agent-session")).toHaveTextContent("alpha/shared"))
+    expect(sessionHookCalls).toContainEqual({ agentTypeId: undefined, enabled: false })
+    expect(sessionHookCalls).toContainEqual({ agentTypeId: "alpha", enabled: true })
+
+    act(() => selectAgent("beta"))
+
+    await waitFor(() => expect(screen.getByTestId("selected-agent-session")).toHaveTextContent("beta/shared"))
+    expect(sessionHookCalls).toContainEqual({ agentTypeId: "beta", enabled: true })
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/api/v1/agents"))).toHaveLength(1)
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/"))).toBe(false)
+  })
+
+  it("accepts source-less custom sessions for an explicit addressed agent", async () => {
+    const requestedAgentTypeIds: Array<string | undefined> = []
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      requestedAgentTypeIds.push(options.agentTypeId)
+      const session = { id: "custom-session", title: "Custom session" }
+      return {
+        sessions: [session],
+        loading: false,
+        activeSessionId: session.id,
+        activeSession: session,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+    function AddressedSessionProbe(props: WorkspaceChatPanelProps) {
+      return <div data-testid="explicit-addressed-session">{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="explicit-custom-agent"
+        agentTypeId="custom-agent"
+        chatPanel={AddressedSessionProbe}
+        useSessions={useSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("explicit-addressed-session")).toHaveTextContent("custom-agent/custom-session")
+    })
+    expect(requestedAgentTypeIds).toContain("custom-agent")
+  })
+
+  it("replaces the active pane when selecting a chat row and preserves explicit splits", async () => {
+    const user = userEvent.setup()
+    const createdForAgents: string[] = []
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, setSelectedAgentTypeId] = useState("alpha")
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: setSelectedAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const [activeByAgent, setActiveByAgent] = useState<Record<string, string>>({
+        alpha: "a1",
+        beta: "b1",
+      })
+      const owner = options.agentTypeId ?? "alpha"
+      const agentSessions = owner === "alpha"
+        ? [
+            { id: "a1", agentTypeId: owner, title: "Alpha one" },
+            { id: "a2", agentTypeId: owner, title: "Alpha two" },
+          ]
+        : [
+            { id: "b1", agentTypeId: owner, title: "Beta one" },
+            { id: "b2", agentTypeId: owner, title: "Beta two" },
+          ]
+      const activeSessionId = activeByAgent[owner]
+      return {
+        sessions: agentSessions,
+        sourceAgentTypeId: owner,
+        loading: false,
+        activeSessionId,
+        activeSessionAgentTypeId: owner,
+        activeSession: agentSessions.find((session) => session.id === activeSessionId) ?? null,
+        workspaceId: options.workspaceId,
+        switch: (id) => setActiveByAgent((current) => ({ ...current, [owner]: id })),
+        create: () => {
+          createdForAgents.push(owner)
+        },
+        delete: vi.fn(),
+      }
+    }
+    const unmounted: string[] = []
+    function StatefulAgentChat(props: WorkspaceChatPanelProps) {
+      const identity = `${props.agentTypeId}/${props.sessionId}`
+      useEffect(() => () => {
+        unmounted.push(identity)
+      }, [identity])
+      return <div data-testid={`agent-chat-${props.agentTypeId}-${props.sessionId}`}>{identity}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="per-agent-active-session"
+        workspaceLayout="plugin-tabs"
+        chatPanel={StatefulAgentChat}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByTestId("agent-chat-alpha-a1")).toBeInTheDocument())
+    expect(screen.getByLabelText("Chat session Alpha · Alpha one")).toBeInTheDocument()
+    const chats = screen.getByRole("region", { name: "Chats" })
+    await user.click(within(chats).getByRole("button", { name: "Alpha two" }))
+    await waitFor(() => expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument())
+    expect(screen.queryByTestId("agent-chat-alpha-a1")).not.toBeInTheDocument()
+
+    await user.click(within(chats).getByRole("button", { name: "Beta one" }))
+    await waitFor(() => expect(screen.getByTestId("agent-chat-beta-b1")).toBeInTheDocument())
+    expect(screen.getByLabelText("Chat session Beta · Beta one")).toBeInTheDocument()
+    expect(screen.queryByTestId("agent-chat-alpha-a2")).not.toBeInTheDocument()
+    expect(unmounted).toContain("alpha/a2")
+
+    await user.click(within(chats).getByRole("button", { name: "Beta two" }))
+    await waitFor(() => expect(screen.getByTestId("agent-chat-beta-b2")).toBeInTheDocument())
+    expect(screen.queryByTestId("agent-chat-beta-b1")).not.toBeInTheDocument()
+
+    await user.click(within(chats).getByRole("button", { name: "Alpha two" }))
+    await waitFor(() => expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument())
+    expect(screen.queryByTestId("agent-chat-beta-b2")).not.toBeInTheDocument()
+    expect(screen.getByText("Alpha one")).toBeInTheDocument()
+    expect(screen.getByText("Beta one")).toBeInTheDocument()
+
+    await user.click(screen.getByLabelText("Open Beta one in split"))
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument()
+      expect(screen.getByTestId("agent-chat-beta-b1")).toBeInTheDocument()
+      expect(screen.getByTestId("agent-chat-beta-b1").closest('[data-boring-workspace-part="chat-pane"]')).toHaveAttribute("data-boring-state", "active")
+    })
+
+    await user.click(within(chats).getByRole("button", { name: "Alpha two" }))
+    await user.click(screen.getByRole("button", { name: "Split Beta · Beta one chat vertically" }))
+    expect(createdForAgents).toEqual(["beta"])
+  })
+
+  it("shows an authoritative empty agent without a synthetic wire and replaces the active pane from its primary action", async () => {
+    const user = userEvent.setup()
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const owner = options.agentTypeId ?? "legacy"
+      const [loading, setLoading] = useState(owner === "beta")
+      const [ownerSessions, setOwnerSessions] = useState(
+        owner === "alpha"
+          ? [{ id: "alpha-session", agentTypeId: owner, title: "Alpha session" }]
+          : [],
+      )
+      useEffect(() => {
+        if (owner === "beta") setLoading(false)
+      }, [owner])
+      const active = ownerSessions[0] ?? null
+      return {
+        sessions: ownerSessions,
+        sourceAgentTypeId: owner,
+        loading,
+        activeSessionId: active?.id ?? null,
+        activeSessionAgentTypeId: owner ?? null,
+        activeSession: active,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: async () => {
+          const created = { id: "beta-first", agentTypeId: owner, title: "Beta first" }
+          setOwnerSessions([created])
+          return created
+        },
+        delete: vi.fn(),
+      }
+    }
+    const mountedWires: string[] = []
+    const unmountedWires: string[] = []
+    function LifecycleChat(props: WorkspaceChatPanelProps) {
+      const wire = `${props.agentTypeId}/${props.sessionId}`
+      mountedWires.push(wire)
+      useEffect(() => () => {
+        unmountedWires.push(wire)
+      }, [wire])
+      return <textarea aria-label={`Composer ${wire}`} defaultValue={wire} />
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="authoritative-empty-agent"
+        workspaceLayout="plugin-tabs"
+        chatPanel={LifecycleChat}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    const alphaComposer = await screen.findByRole("textbox", { name: "Composer alpha/alpha-session" })
+    expect(screen.getByRole("button", { name: "Agents" })).toHaveAttribute("aria-expanded", "true")
+    const betaAgent = screen.getByRole("region", { name: "Beta agent" })
+    expect(screen.queryByRole("button", { name: "Expand Beta agent" })).not.toBeInTheDocument()
+    await user.click(within(betaAgent).getByRole("button", { name: "New chat with Beta" }))
+
+    expect(screen.queryByRole("textbox", { name: /Composer beta\/default/ })).not.toBeInTheDocument()
+    expect(mountedWires).not.toContain("beta/default")
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Composer beta/beta-first" })).toBeVisible()
+    })
+    const chats = screen.getByRole("region", { name: "Chats" })
+    const betaFirstRow = within(chats).getByText("Beta first").closest('[data-boring-workspace-part="app-session-row"]')
+    expect(betaFirstRow).toHaveAttribute("data-boring-session-state", "active")
+    expect(within(betaFirstRow as HTMLElement).getByRole("button", { name: "Beta first" })).toHaveAttribute("aria-current", "page")
+    await waitFor(() => expect(alphaComposer).not.toBeInTheDocument())
+    expect(unmountedWires).toContain("alpha/alpha-session")
+    expect(screen.getByLabelText("Chat session Beta · Beta first")).toBeInTheDocument()
+  })
+
+  it("creates a quick chat with the selected row's agent without replacing the active pane", async () => {
+    const user = userEvent.setup()
+    const createdForAgents: string[] = []
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const owner = options.agentTypeId ?? "legacy"
+      const session = { id: "shared", agentTypeId: owner, title: `${owner} session` }
+      return {
+        sessions: [session],
+        sourceAgentTypeId: owner,
+        loading: false,
+        activeSessionId: session.id,
+        activeSessionAgentTypeId: owner,
+        activeSession: session,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: () => {
+          createdForAgents.push(owner)
+          return Promise.resolve({
+            id: "quick-shared",
+            agentTypeId: owner,
+            title: `${owner} quick`,
+          })
+        },
+        delete: vi.fn(),
+      }
+    }
+    function QuickChatPanel(props: WorkspaceChatPanelProps) {
+      const [mountedOwner] = useState(props.agentTypeId)
+      return (
+        <div data-testid={`quick-chat-${props.agentTypeId}-${props.sessionId}`}>
+          mounted:{mountedOwner};current:{props.agentTypeId};session:{props.sessionId}
+        </div>
+      )
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="addressed-quick-chat"
+        workspaceLayout="plugin-tabs"
+        chatPanel={QuickChatPanel}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    const alphaPane = await screen.findByTestId("quick-chat-alpha-shared")
+    expect(alphaPane.closest('[data-boring-workspace-part="chat-pane"]')).toHaveAttribute("data-boring-state", "active")
+    await user.click(screen.getByRole("button", { name: "Quick chat with Alpha" }))
+    expect(await screen.findByTestId("quick-chat-alpha-quick-shared")).toHaveTextContent(
+      "mounted:alpha;current:alpha;session:quick-shared",
+    )
+    await user.click(screen.getByRole("button", { name: "Quick chat with Beta" }))
+
+    expect(await screen.findByTestId("quick-chat-beta-quick-shared")).toHaveTextContent(
+      "mounted:beta;current:beta;session:quick-shared",
+    )
+    expect(screen.queryByText("mounted:alpha;current:beta;session:quick-shared")).not.toBeInTheDocument()
+    expect(alphaPane).toBeInTheDocument()
+    expect(alphaPane.closest('[data-boring-workspace-part="chat-pane"]')).toHaveAttribute("data-boring-state", "active")
+    expect(createdForAgents).toEqual(["alpha", "beta"])
+    expect(screen.getByLabelText("Chat session Alpha · alpha session")).toBeInTheDocument()
+  })
+
+  it("does not mount a synthetic wire while the initially selected addressed agent resolves empty", async () => {
+    let releaseSessions!: () => void
+    const sessionsReady = new Promise<void>((resolve) => {
+      releaseSessions = resolve
+    })
+    function useTestAgentSelection() {
+      return {
+        agents: [{ agentTypeId: "alpha", label: "Alpha" }],
+        selectedAgentTypeId: "alpha",
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: vi.fn(),
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const [loading, setLoading] = useState(true)
+      useEffect(() => {
+        let active = true
+        void sessionsReady.then(() => {
+          if (active) setLoading(false)
+        })
+        return () => {
+          active = false
+        }
+      }, [])
+      return {
+        sessions: [],
+        sourceAgentTypeId: options.agentTypeId,
+        loading,
+        activeSessionId: null,
+        activeSessionAgentTypeId: options.agentTypeId ?? null,
+        activeSession: null,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+    const mountedWires: string[] = []
+    function WireProbe(props: WorkspaceChatPanelProps) {
+      const wire = `${props.agentTypeId}/${props.sessionId}`
+      mountedWires.push(wire)
+      return <div>{wire}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="initial-authoritative-empty-agent"
+        workspaceLayout="plugin-tabs"
+        chatPanel={WireProbe}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(await screen.findByText("Loading sessions…")).toBeInTheDocument()
+    expect(mountedWires).toEqual([])
+
+    await act(async () => {
+      releaseSessions()
+      await sessionsReady
+    })
+
+    await screen.findByRole("heading", { name: "No chats yet" })
+    expect(mountedWires).toEqual([])
+    expect(screen.queryByText("alpha/default")).not.toBeInTheDocument()
+  })
+
+  it("does not mount disabled per-agent session sources when workspace provisioning is suppressed", async () => {
+    const storageKey = "boring-workspace:sessions:chat-first-disabled-sources"
+    const alphaKey = `${storageKey}:agent:alpha:active-session`
+    const betaKey = `${storageKey}:agent:beta:active-session`
+    localStorage.setItem(alphaKey, "alpha-active")
+    localStorage.setItem(betaKey, "beta-active")
+    const sourceCalls: Array<{ agentTypeId?: string; enabled?: boolean }> = []
+    function useTestAgentSelection() {
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId: "alpha",
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: vi.fn(),
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      sourceCalls.push({ agentTypeId: options.agentTypeId, enabled: options.enabled })
+      useEffect(() => {
+        if (options.agentTypeId && options.enabled === false) {
+          localStorage.removeItem(`${storageKey}:agent:${options.agentTypeId}:active-session`)
+        }
+      }, [options.agentTypeId, options.enabled])
+      return {
+        sessions: [],
+        sourceAgentTypeId: options.agentTypeId,
+        loading: false,
+        activeSessionId: null,
+        activeSession: null,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="chat-first-disabled-sources"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        sessions={[]}
+        activeSessionId={null}
+        onSwitchSession={vi.fn()}
+        onCreateSession={vi.fn()}
+        onDeleteSession={vi.fn()}
+        provisionWorkspace={false}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(sourceCalls.some((call) => call.agentTypeId === "alpha" || call.agentTypeId === "beta")).toBe(false)
+    expect(localStorage.getItem(alphaKey)).toBe("alpha-active")
+    expect(localStorage.getItem(betaKey)).toBe("beta-active")
+  })
+
+  it("prunes and disposes panes whose owner disappears from the authoritative agent catalog", async () => {
+    const user = userEvent.setup()
+    let removeBeta!: () => void
+    let failAlphaSource!: () => void
+    let resolveBetaCreate!: (session: { id: string; agentTypeId: string; title: string }) => void
+    const betaCreate = new Promise<{ id: string; agentTypeId: string; title: string }>((resolve) => {
+      resolveBetaCreate = resolve
+    })
+    const betaCreateStarted = vi.fn()
+    function useTestAgentSelection() {
+      const [agents, setAgents] = useState([
+        { agentTypeId: "alpha", label: "Alpha" },
+        { agentTypeId: "beta", label: "Beta" },
+      ])
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      removeBeta = () => {
+        setAgents([{ agentTypeId: "alpha", label: "Alpha" }])
+      }
+      return {
+        agents,
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const owner = options.agentTypeId ?? "legacy"
+      const [sourceError, setSourceError] = useState<Error | null>(null)
+      if (owner === "alpha") failAlphaSource = () => setSourceError(new Error("alpha source unavailable"))
+      const ownerSession = { id: `${owner}-session`, agentTypeId: owner, title: `${owner} session` }
+      return {
+        sessions: [ownerSession],
+        sourceAgentTypeId: owner,
+        loading: false,
+        activeSessionId: ownerSession.id,
+        activeSessionAgentTypeId: owner,
+        activeSession: ownerSession,
+        workspaceId: options.workspaceId,
+        hasMore: true,
+        error: sourceError,
+        switch: vi.fn(),
+        create: owner === "beta"
+          ? () => {
+              betaCreateStarted()
+              return betaCreate
+            }
+          : vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+    const disposedPanes: string[] = []
+    function DisposableChat(props: WorkspaceChatPanelProps) {
+      const wire = `${props.agentTypeId}/${props.sessionId}`
+      useEffect(() => () => {
+        disposedPanes.push(wire)
+      }, [wire])
+      return <div data-testid={`catalog-pane-${props.agentTypeId}`}>{wire}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="catalog-owner-removal"
+        workspaceLayout="plugin-tabs"
+        chatPanel={DisposableChat}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await screen.findByText("beta session")
+    await user.click(screen.getByLabelText("Open beta session in split"))
+    await waitFor(() => expect(screen.getByTestId("catalog-pane-beta")).toBeInTheDocument())
+    await user.click(screen.getByRole("button", { name: "New chat with Beta" }))
+    expect(betaCreateStarted).toHaveBeenCalledOnce()
+
+    await user.click(within(screen.getByRole("region", { name: "Chats" })).getByRole("button", { name: "alpha session" }))
+    act(() => failAlphaSource())
+    act(() => removeBeta())
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("catalog-pane-beta")).not.toBeInTheDocument()
+      expect(disposedPanes).toContain("beta/beta-session")
+    })
+    await act(async () => {
+      resolveBetaCreate({ id: "beta-late", agentTypeId: "beta", title: "Late Beta" })
+      await betaCreate
+    })
+    expect(screen.queryByTestId("catalog-pane-beta")).not.toBeInTheDocument()
+    expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
+    expect(screen.getByTestId("catalog-pane-alpha").closest('[data-boring-workspace-part="chat-pane"]')).toHaveAttribute("data-boring-state", "active")
+  })
+
+  it("routes a colliding cached-session deletion to Beta while Alpha remains selected", async () => {
+    const user = userEvent.setup()
+    const alphaDelete = vi.fn()
+    const betaDelete = vi.fn()
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const owner = options.agentTypeId ?? "legacy"
+      const [ownerSessions, setOwnerSessions] = useState([
+        { id: "shared", agentTypeId: owner, title: `${owner === "alpha" ? "Alpha" : "Beta"} shared` },
+      ])
+      return {
+        sessions: ownerSessions,
+        sourceAgentTypeId: owner,
+        loading: false,
+        activeSessionId: ownerSessions[0]?.id ?? null,
+        activeSessionAgentTypeId: owner,
+        activeSession: ownerSessions[0] ?? null,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: async (id) => {
+          if (owner === "alpha") alphaDelete(id)
+          if (owner === "beta") betaDelete(id)
+          setOwnerSessions((current) => current.filter((session) => session.id !== id))
+        },
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="owner-routed-delete"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await screen.findByText("Beta shared")
+    expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
+    await user.click(screen.getByLabelText("More options for Beta shared"))
+    await user.click(screen.getByRole("menuitem", { name: "Delete" }))
+
+    await waitFor(() => {
+      expect(betaDelete).toHaveBeenCalledWith("shared")
+      expect(alphaDelete).not.toHaveBeenCalled()
+      const chats = screen.getByRole("region", { name: "Chats" })
+      expect(within(chats).getByText("Alpha shared")).toBeInTheDocument()
+      expect(within(chats).queryByText("Beta shared")).not.toBeInTheDocument()
+    })
+  })
+
+  it("aligns the selected owner controller when closing across colliding addressed panes", async () => {
+    const user = userEvent.setup()
+    const alphaSwitch = vi.fn()
+    const betaSwitch = vi.fn()
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const owner = options.agentTypeId ?? "legacy"
+      const ownerSession = { id: "shared", agentTypeId: owner, title: `${owner === "alpha" ? "Alpha" : "Beta"} shared` }
+      return {
+        sessions: [ownerSession],
+        sourceAgentTypeId: owner,
+        loading: false,
+        activeSessionId: "shared",
+        activeSessionAgentTypeId: owner,
+        activeSession: ownerSession,
+        workspaceId: options.workspaceId,
+        switch: (id) => {
+          if (owner === "alpha") alphaSwitch(id)
+          if (owner === "beta") betaSwitch(id)
+        },
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+    function PresenceOwnedPane(props: WorkspaceChatPanelProps) {
+      const owner = props.agentTypeId ?? "legacy"
+      const presenceOwnerId = `owned-pane:${owner}`
+      useEffect(() => {
+        const detail = {
+          sessionId: props.sessionId,
+          agentTypeId: props.agentTypeId,
+          presenceOwnerId,
+        }
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { ...detail, working: true },
+        }))
+        return () => {
+          window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+            detail: { ...detail, working: false },
+          }))
+        }
+      }, [presenceOwnerId, props.agentTypeId, props.sessionId])
+      return <div data-testid={`owned-pane-${owner}`}>{owner}/{props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="owner-routed-close"
+        workspaceLayout="plugin-tabs"
+        chatPanel={PresenceOwnedPane}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await screen.findByText("Beta shared")
+    await user.click(screen.getByLabelText("Open Beta shared in split"))
+    await waitFor(() => {
+      expect(betaSwitch).toHaveBeenCalledWith("shared")
+      expect(screen.getByTestId("owned-pane-alpha")).toBeInTheDocument()
+      expect(screen.getByTestId("owned-pane-beta")).toBeInTheDocument()
+      expect(screen.getByLabelText("Beta streaming")).toBeInTheDocument()
+    })
+    const betaSwitchCount = betaSwitch.mock.calls.length
+
+    await user.click(screen.getByLabelText("Close Beta · Beta shared pane"))
+
+    await waitFor(() => {
+      expect(alphaSwitch).toHaveBeenCalledWith("shared")
+      expect(betaSwitch).toHaveBeenCalledTimes(betaSwitchCount)
+      expect(screen.getByTestId("owned-pane-alpha").closest('[data-boring-workspace-part="chat-pane"]')).toHaveAttribute("data-boring-state", "active")
+      expect(screen.getByLabelText("Beta idle")).toBeInTheDocument()
+    })
+  })
+
+  it("restores the canonical non-first active session per agent and across remount", async () => {
+    const user = userEvent.setup()
+    let selectAgent!: (agentTypeId: string) => void
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      selectAgent = selectAgentTypeId
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const owner = url.includes("/agents/beta/") ? "beta" : url.includes("/agents/alpha/") ? "alpha" : undefined
+      if (owner) {
+        return new Response(JSON.stringify({
+          sessions: owner === "beta" ? [] : [
+            { ref: { agentTypeId: owner, sessionId: `${owner}-first` }, title: `${owner} first`, status: "idle", createdAt: 1, updatedAt: 2 },
+            { ref: { agentTypeId: owner, sessionId: `${owner}-second` }, title: `${owner} second`, status: "idle", createdAt: 1, updatedAt: 2 },
+          ],
+        }))
+      }
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }))
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]))
+      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]))
+      return new Response(null, { status: 204 })
+    }))
+    const props = {
+      workspaceId: "canonical-per-agent-active",
+      workspaceLayout: "plugin-tabs" as const,
+      chatPanel: (panelProps: WorkspaceChatPanelProps) => <div data-testid="canonical-wire">{panelProps.agentTypeId}/{panelProps.sessionId}</div>,
+      addressedAgentSelection: true,
+      useAddressedAgentSelection: useTestAgentSelection,
+    }
+
+    const firstRender = render(<WorkspaceAgentFront {...props} />)
+    await screen.findByText("alpha second")
+    await user.click(screen.getByText("alpha second"))
+    await waitFor(() => expect(screen.getByTestId("canonical-wire")).toHaveTextContent("alpha/alpha-second"))
+    act(() => selectAgent("beta"))
+    await waitFor(() => {
+      const chats = screen.getByRole("region", { name: "Chats" })
+      expect(within(chats).getByText("alpha first")).toBeInTheDocument()
+      expect(within(chats).getByText("alpha second")).toBeInTheDocument()
+      expect(within(chats).queryByText("beta first")).not.toBeInTheDocument()
+    })
+    act(() => selectAgent("alpha"))
+    await waitFor(() => expect(screen.getByTestId("canonical-wire")).toHaveTextContent("alpha/alpha-second"))
+
+    firstRender.unmount()
+    render(<WorkspaceAgentFront {...props} />)
+    await waitFor(() => expect(screen.getByTestId("canonical-wire")).toHaveTextContent("alpha/alpha-second"))
+  })
+
+  it("does not recreate or dispose an Alpha remote when deferred Beta becomes selected", async () => {
+    let releaseBeta!: () => void
+    const betaReady = new Promise<void>((resolve) => {
+      releaseBeta = resolve
+    })
+    let selectAgent!: (agentTypeId: string) => void
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      selectAgent = selectAgentTypeId
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const owner = options.agentTypeId ?? "legacy"
+      const [loaded, setLoaded] = useState(owner === "alpha")
+      useEffect(() => {
+        if (owner !== "beta") return
+        let active = true
+        void betaReady.then(() => {
+          if (active) setLoaded(true)
+        })
+        return () => {
+          active = false
+        }
+      }, [owner])
+      const session = loaded ? { id: `${owner}-session`, agentTypeId: owner, title: `${owner} session` } : undefined
+      return {
+        sessions: session ? [session] : [],
+        sourceAgentTypeId: owner,
+        loading: !loaded,
+        activeSessionId: session?.id ?? null,
+        activeSessionAgentTypeId: owner,
+        activeSession: session ?? null,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+    const created: Array<{ owner: string; dispose: ReturnType<typeof vi.fn> }> = []
+    const createRemoteSession = vi.fn((owner: string) => {
+      const dispose = vi.fn()
+      created.push({ owner, dispose })
+      return { dispose }
+    })
+    function RemoteLifecyclePanel(props: CapturedChatPanelProps) {
+      useEffect(() => {
+        const remote = createRemoteSession(props.agentTypeId ?? "legacy")
+        return () => remote.dispose()
+      }, [props.agentTypeId, props.hydrateMessages, props.sessionId])
+      return <div data-testid={`remote-${props.agentTypeId}`}>{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="retained-remote-lifetime"
+        workspaceLayout="plugin-tabs"
+        chatPanel={RemoteLifecyclePanel}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await screen.findByTestId("remote-alpha")
+    expect(createRemoteSession.mock.calls.filter(([owner]) => owner === "alpha")).toHaveLength(1)
+    act(() => selectAgent("beta"))
+    expect(created.find((remote) => remote.owner === "alpha")?.dispose).not.toHaveBeenCalled()
+    expect(createRemoteSession.mock.calls.filter(([owner]) => owner === "alpha")).toHaveLength(1)
+
+    await act(async () => {
+      releaseBeta()
+      await betaReady
+    })
+    await screen.findByTestId("remote-beta")
+    expect(created.find((remote) => remote.owner === "alpha")?.dispose).not.toHaveBeenCalled()
+    expect(createRemoteSession.mock.calls.filter(([owner]) => owner === "alpha")).toHaveLength(1)
+    expect(createRemoteSession.mock.calls.filter(([owner]) => owner === "beta")).toHaveLength(1)
+  })
+
+  it("migrates a pinned local chat to its native id on first-send adoption", async () => {
+    const user = userEvent.setup()
+    let capturedChatProps: WorkspaceChatPanelProps | undefined
+    function useTestAgentSelection() {
+      return {
+        agents: [{ agentTypeId: "alpha", label: "Alpha" }],
+        selectedAgentTypeId: "alpha",
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: vi.fn(),
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const [session, setSession] = useState({
+        id: "local-draft",
+        agentTypeId: "alpha",
+        title: "Pinned draft",
+        updatedAt: new Date(1).toISOString(),
+        ephemeral: true,
+      })
+      return {
+        sessions: [session],
+        sourceAgentTypeId: "alpha",
+        loading: false,
+        activeSessionId: session.id,
+        activeSessionAgentTypeId: "alpha",
+        activeSession: session,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+        adoptNative: (_localId, nativeSession) => setSession({
+          ...session,
+          ...nativeSession,
+          agentTypeId: "alpha",
+          ephemeral: false,
+        }),
+      }
+    }
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      capturedChatProps = props
+      return <div>Captured adoption chat</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="pin-adoption"
+        workspaceLayout="plugin-tabs"
+        chatPanel={CapturingChatPanel}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+      />,
+    )
+
+    await user.click(await screen.findByRole("button", { name: "Pin Pinned draft" }))
+    act(() => {
+      capturedChatProps?.onNativeSessionAdopt?.({
+        id: "native-session",
+        title: "Pinned draft",
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(1).toISOString(),
+        turnCount: 1,
+      })
+    })
+
+    await screen.findByRole("button", { name: "Unpin Pinned draft" })
+    const stored = localStorage.getItem("boring-workspace:pinned-sessions:pin-adoption") ?? ""
+    expect(stored).toContain("native-session")
+    expect(stored).not.toContain("local-draft")
+  })
+
+  it("refreshes only the completed chat without reconnecting every open chat", async () => {
+    const user = userEvent.setup()
+    const alphaRefresh = vi.fn()
+    const betaRefresh = vi.fn()
+    const remoteOptionChanges = { alpha: 0, beta: 0 }
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const owner = options.agentTypeId ?? "legacy"
+      const [revision, setRevision] = useState(0)
+      const session = {
+        id: `${owner}-session`,
+        agentTypeId: owner,
+        title: `${owner} session`,
+        updatedAt: revision,
+      }
+      return {
+        sessions: [session],
+        sourceAgentTypeId: owner,
+        loading: false,
+        activeSessionId: session.id,
+        activeSessionAgentTypeId: owner,
+        activeSession: session,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+        refresh: async () => {
+          if (owner === "alpha") alphaRefresh()
+          if (owner === "beta") betaRefresh()
+          setRevision((current) => current + 1)
+        },
+      }
+    }
+    function CompletionPanel(props: WorkspaceChatPanelProps) {
+      const owner = props.agentTypeId === "beta" ? "beta" : "alpha"
+      useEffect(() => {
+        remoteOptionChanges[owner] += 1
+      }, [owner, props.remoteSessionOptions])
+      return (
+        <button type="button" onClick={() => props.onTurnComplete?.()}>
+          Complete {props.agentTypeId}
+        </button>
+      )
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="owner-routed-refresh"
+        workspaceLayout="plugin-tabs"
+        chatPanel={CompletionPanel}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await screen.findByText("beta session")
+    await user.click(screen.getByLabelText("Open beta session in split"))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Complete beta" })).toBeInTheDocument())
+    alphaRefresh.mockClear()
+    betaRefresh.mockClear()
+    const optionChangesBeforeRefresh = { ...remoteOptionChanges }
+
+    await user.click(screen.getByRole("button", { name: "Complete alpha" }))
+
+    await waitFor(() => expect(alphaRefresh).toHaveBeenCalledTimes(1))
+    expect(betaRefresh).not.toHaveBeenCalled()
+    expect(remoteOptionChanges).toEqual(optionChangesBeforeRefresh)
+  })
+
+  it("never mounts a workspace-only Alpha placeholder on Beta's wire while Beta sessions are deferred", async () => {
+    localStorage.setItem("boring-workspace:sessions:deferred-agent-transition", "alpha-stored-session")
+    let resolveBetaSessions!: () => void
+    const betaSessions = new Promise<void>((resolve) => {
+      resolveBetaSessions = resolve
+    })
+    let selectAgent!: (agentTypeId: string) => void
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, setSelectedAgentTypeId] = useState("alpha")
+      selectAgent = setSelectedAgentTypeId
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: setSelectedAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const [betaReady, setBetaReady] = useState(false)
+      useEffect(() => {
+        if (options.agentTypeId !== "beta") return
+        let cancelled = false
+        void betaSessions.then(() => {
+          if (!cancelled) setBetaReady(true)
+        })
+        return () => {
+          cancelled = true
+        }
+      }, [options.agentTypeId])
+      const session = options.agentTypeId === "alpha"
+        ? { id: "alpha-session", agentTypeId: "alpha", title: "Alpha session" }
+        : betaReady
+          ? { id: "beta-session", agentTypeId: "beta", title: "Beta session" }
+          : undefined
+      return {
+        sessions: session ? [session] : [],
+        sourceAgentTypeId: options.agentTypeId === "beta" && !betaReady ? "alpha" : options.agentTypeId,
+        loading: options.agentTypeId === "beta" && !betaReady,
+        activeSessionId: session?.id ?? null,
+        activeSessionAgentTypeId: session?.agentTypeId ?? null,
+        activeSession: session ?? null,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+    const renderedWires: string[] = []
+    function WireProbe(props: WorkspaceChatPanelProps) {
+      renderedWires.push(`${props.agentTypeId}/${props.sessionId}`)
+      return <div data-testid="deferred-agent-wire">{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="deferred-agent-transition"
+        chatPanel={WireProbe}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+    await waitFor(() => expect(screen.getByTestId("deferred-agent-wire")).toHaveTextContent("alpha/alpha-session"))
+
+    act(() => selectAgent("beta"))
+    await waitFor(() => expect(screen.queryByTestId("deferred-agent-wire")).toBeNull())
+    expect(screen.queryByText("alpha/alpha-session")).toBeNull()
+    expect(renderedWires).not.toContain("beta/alpha-session")
+    expect(renderedWires).not.toContain("beta/alpha-stored-session")
+    expect(screen.queryByText("beta/alpha-stored-session")).toBeNull()
+
+    await act(async () => {
+      resolveBetaSessions()
+      await betaSessions
+    })
+    await waitFor(() => expect(screen.getByTestId("deferred-agent-wire")).toHaveTextContent("beta/beta-session"))
+    expect(renderedWires).not.toContain("beta/alpha-stored-session")
+  })
+
+  it("rejects an unowned stale Alpha result while Beta's authoritative result is deferred", async () => {
+    let releaseBeta!: () => void
+    const betaResult = new Promise<void>((resolve) => {
+      releaseBeta = resolve
+    })
+    let selectAgent!: (agentTypeId: string) => void
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, setSelectedAgentTypeId] = useState("alpha")
+      selectAgent = setSelectedAgentTypeId
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: setSelectedAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const [betaReady, setBetaReady] = useState(false)
+      useEffect(() => {
+        if (options.agentTypeId !== "beta") return
+        let cancelled = false
+        void betaResult.then(() => {
+          if (!cancelled) setBetaReady(true)
+        })
+        return () => {
+          cancelled = true
+        }
+      }, [options.agentTypeId])
+      const staleAlpha = options.agentTypeId === "beta" && !betaReady
+      const sourceAgentTypeId = staleAlpha ? "alpha" : options.agentTypeId
+      const sessionId = sourceAgentTypeId === "beta" ? "beta-session" : "alpha-session"
+      const session = { id: sessionId, title: `${sourceAgentTypeId} session` }
+      return {
+        sessions: [session],
+        sourceAgentTypeId,
+        loading: false,
+        activeSessionId: session.id,
+        activeSession: session,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+    const renderedWires: string[] = []
+    function WireProbe(props: WorkspaceChatPanelProps) {
+      renderedWires.push(`${props.agentTypeId}/${props.sessionId}`)
+      return <div data-testid="unowned-stale-agent-wire">{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="unowned-stale-agent-transition"
+        chatPanel={WireProbe}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+    await waitFor(() => expect(screen.getByTestId("unowned-stale-agent-wire")).toHaveTextContent("alpha/alpha-session"))
+
+    act(() => selectAgent("beta"))
+    await waitFor(() => expect(screen.queryByTestId("unowned-stale-agent-wire")).toBeNull())
+    expect(renderedWires).not.toContain("beta/alpha-session")
+
+    await act(async () => {
+      releaseBeta()
+      await betaResult
+    })
+    await waitFor(() => expect(screen.getByTestId("unowned-stale-agent-wire")).toHaveTextContent("beta/beta-session"))
+    expect(renderedWires).not.toContain("beta/alpha-session")
+  })
+
+  it("ignores a stale Alpha auto-submit create completion after selecting Beta", async () => {
+    let resolveAlphaCreate!: (session: { id: string; agentTypeId: string; title: string }) => void
+    let resolveBetaCreate!: (session: { id: string; agentTypeId: string; title: string }) => void
+    const alphaCreate = new Promise<{ id: string; agentTypeId: string; title: string }>((resolve) => {
+      resolveAlphaCreate = resolve
+    })
+    const betaCreate = new Promise<{ id: string; agentTypeId: string; title: string }>((resolve) => {
+      resolveBetaCreate = resolve
+    })
+    let selectAgent!: (agentTypeId: string) => void
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, setSelectedAgentTypeId] = useState("alpha")
+      selectAgent = setSelectedAgentTypeId
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: setSelectedAgentTypeId,
+      }
+    }
+    const createCalls: string[] = []
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const [session, setSession] = useState<{ id: string; agentTypeId: string; title: string }>()
+      useEffect(() => setSession(undefined), [options.agentTypeId])
+      return {
+        sessions: session ? [session] : [],
+        sourceAgentTypeId: options.agentTypeId,
+        loading: false,
+        activeSessionId: session?.id ?? null,
+        activeSessionAgentTypeId: session?.agentTypeId ?? null,
+        activeSession: session ?? null,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(() => {
+          const owner = options.agentTypeId ?? "legacy"
+          createCalls.push(owner)
+          const creation = owner === "beta" ? betaCreate : alphaCreate
+          return creation.then((created) => {
+            if (owner === "beta") setSession(created)
+            return created
+          })
+        }),
+        delete: vi.fn(),
+      }
+    }
+    const renderedWires: string[] = []
+    function WireProbe(props: WorkspaceChatPanelProps) {
+      renderedWires.push(`${props.agentTypeId}/${props.sessionId}`)
+      return <div data-testid="auto-submit-agent-wire">{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="stale-auto-submit-agent"
+        chatPanel={WireProbe}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        chatParams={{ initialDraft: "send after create", autoSubmitInitialDraft: true }}
+        persistenceEnabled={false}
+      />,
+    )
+    await waitFor(() => expect(createCalls).toContain("alpha"))
+
+    act(() => selectAgent("beta"))
+    await waitFor(() => expect(createCalls).toContain("beta"))
+    await act(async () => {
+      resolveAlphaCreate({ id: "alpha-created", agentTypeId: "alpha", title: "Alpha created" })
+      await alphaCreate
+    })
+    expect(renderedWires).not.toContain("beta/alpha-created")
+
+    await act(async () => {
+      resolveBetaCreate({ id: "beta-created", agentTypeId: "beta", title: "Beta created" })
+      await betaCreate
+    })
+    await waitFor(() => expect(screen.getByTestId("auto-submit-agent-wire")).toHaveTextContent("beta/beta-created"))
+    expect(renderedWires).not.toContain("beta/alpha-created")
   })
 
   it("initializes a controlled colliding id to its explicit active owner", () => {
@@ -445,7 +1774,7 @@ describe("WorkspaceAgentFront", () => {
     )
     expandHistory()
 
-    await user.click(screen.getByLabelText("Open Addressed alpha in chat pane"))
+    await user.click(screen.getByLabelText("Open Addressed alpha in split"))
     await user.click(screen.getAllByText("Literal legacy").find((node) => node.closest("li"))!)
     await user.click(screen.getByLabelText("Delete Literal legacy"))
 
@@ -517,7 +1846,7 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).getByText("Pinned")).toBeInTheDocument()
     expect(within(appNav).getByText("Chats")).toBeInTheDocument()
 
-    await user.click(within(appNav).getByRole("button", { name: "Open Third session in new chat pane" }))
+    await user.click(within(appNav).getByRole("button", { name: "Open Third session in split" }))
     expect(onSwitchSession).toHaveBeenCalledWith("s3")
 
     await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
@@ -701,9 +2030,9 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).queryByRole("button", { name: "Pin Beta kickoff" })).not.toBeInTheDocument()
     expect(within(appNav).getByText("Active project session")).toBeInTheDocument()
     // The active session is already open, so it offers no "open in a new pane".
-    expect(within(appNav).queryByRole("button", { name: "Open Active project session in new chat pane" })).not.toBeInTheDocument()
+    expect(within(appNav).queryByRole("button", { name: "Open Active project session in split" })).not.toBeInTheDocument()
     // A session that isn't open still does.
-    expect(within(appNav).getByRole("button", { name: "Open Pinned session in new chat pane" })).toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Open Pinned session in split" })).toBeInTheDocument()
     expect(within(appNav).getByRole("button", { name: "Pin Active project session" })).toBeInTheDocument()
     expect(within(appNav).getByText("Pinned session")).toBeInTheDocument()
     expect(within(appNav).queryByText("Chats")).not.toBeInTheDocument()
@@ -1172,6 +2501,7 @@ describe("WorkspaceAgentFront", () => {
     await user.click(screen.getByRole("button", { name: "Split First session chat vertically" }))
     expect(screen.getByRole("button", { name: "Split First session chat horizontally" })).toBeDisabled()
     await user.click(screen.getByRole("button", { name: "Split First session chat horizontally" }))
+    await user.click(screen.getByRole("button", { name: "New chat" }))
     expect(onCreateSession).toHaveBeenCalledOnce()
 
     resolveCreate({ id: "created", title: "Created session", updatedAt: Date.now() })
@@ -1239,7 +2569,7 @@ describe("WorkspaceAgentFront", () => {
     render(<Harness />)
     expandHistory()
 
-    await user.click(screen.getByLabelText("Open Second session in chat pane"))
+    await user.click(screen.getByLabelText("Open Second session in split"))
     expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
 
     await user.click(screen.getByLabelText("Delete Second session"))
@@ -1281,7 +2611,7 @@ describe("WorkspaceAgentFront", () => {
     render(<Harness />)
     expandHistory()
 
-    await user.click(screen.getByLabelText("Open Second session in chat pane"))
+    await user.click(screen.getByLabelText("Open Second session in split"))
     expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
 
     await user.click(screen.getByRole("button", { name: "Drop second session" }))
@@ -1330,7 +2660,7 @@ describe("WorkspaceAgentFront", () => {
     render(<Harness />)
     expandHistory()
 
-    await user.click(screen.getByLabelText("Open Second session in chat pane"))
+    await user.click(screen.getByLabelText("Open Second session in split"))
     expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
 
     await user.click(screen.getByRole("button", { name: "Show first page" }))
@@ -1376,7 +2706,7 @@ describe("WorkspaceAgentFront", () => {
       expect(activeStreams()).toHaveLength(1)
     })
 
-    await user.click(screen.getByLabelText("Open Second session in chat pane"))
+    await user.click(screen.getByLabelText("Open Second session in split"))
 
     await waitFor(() => {
       expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
@@ -1413,7 +2743,7 @@ describe("WorkspaceAgentFront", () => {
     expandHistory()
 
     try {
-      await user.click(screen.getByLabelText("Open Second session in chat pane"))
+      await user.click(screen.getByLabelText("Open Second session in split"))
       await user.click(screen.getByLabelText("Chat session First session"))
       await user.click(screen.getByLabelText("Chat session Second session"))
       await user.click(screen.getByLabelText("Close Second session pane"))
@@ -1453,7 +2783,7 @@ describe("WorkspaceAgentFront", () => {
     render(<Harness />)
     expandHistory()
 
-    await user.click(screen.getByLabelText("Open Second session in chat pane"))
+    await user.click(screen.getByLabelText("Open Second session in split"))
     document.dispatchEvent(new KeyboardEvent("keydown", {
       key: "Escape",
       bubbles: true,
@@ -2157,16 +3487,17 @@ describe("WorkspaceAgentFront", () => {
   })
 
   it("does not pass the New chat click event into remote session creation", () => {
-    const create = vi.fn(async () => ({ id: "manual", title: "Manual", updatedAt: Date.now(), turnCount: 0 }))
+    const updatedAt = Date.now()
+    const create = vi.fn(async () => ({ id: "manual", title: "Manual", updatedAt, turnCount: 0 }))
 
     render(
       <WorkspaceAgentFront
         workspaceId="create-click-event"
         chatPanel={ChatPanel}
         useSessions={() => ({
-          sessions: [{ id: "existing", title: "Existing", updatedAt: Date.now(), turnCount: 0 }],
+          sessions: [{ id: "existing", title: "Existing", updatedAt, turnCount: 0 }],
           activeSessionId: "existing",
-          activeSession: { id: "existing", title: "Existing", updatedAt: Date.now(), turnCount: 0 },
+          activeSession: { id: "existing", title: "Existing", updatedAt, turnCount: 0 },
           loading: false,
           create,
           switch: vi.fn(),
@@ -2182,6 +3513,104 @@ describe("WorkspaceAgentFront", () => {
     expect(create.mock.calls[0]).toEqual([])
   })
 
+  it("shows the structured server message when New chat creation is rejected", async () => {
+    const createError = Object.assign(new Error("Agent gateway is restarting."), {
+      code: "AGENT_GATEWAY_CLOSED",
+    })
+    render(
+      <WorkspaceAgentFront
+        workspaceId="create-error-surface"
+        workspaceLayout="plugin-tabs"
+        chatPanel={ChatPanel}
+        sessions={[{ id: "existing", title: "Existing chat", updatedAt: Date.now() }]}
+        activeSessionId="existing"
+        onCreateSession={() => Promise.reject(createError)}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+
+    expect(await screen.findByText(/Agent gateway is restarting.*AGENT_GATEWAY_CLOSED/)).toBeInTheDocument()
+    expect(screen.getAllByText("Existing chat").length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Failed to create.*503/)).not.toBeInTheDocument()
+  })
+
+  it("keeps a rejected delete row visible and explains the failure", async () => {
+    const user = userEvent.setup()
+    const deleteError = Object.assign(
+      new Error("This chat belongs to a previous runtime configuration and can no longer be changed."),
+      { code: "AGENT_SESSION_RUNTIME_SCOPE_MISMATCH", operation: "delete chat" },
+    )
+    const deleteSession = vi.fn((_id: string) => Promise.reject(deleteError))
+    const sessions = [
+      { id: "first", title: "First chat", updatedAt: Date.now() },
+      { id: "orphaned", title: "Previous runtime chat", updatedAt: Date.now() - 1 },
+    ]
+    function useFailingDeleteSessions() {
+      const [error, setError] = useState<Error>()
+      return {
+        sessions,
+        activeSessionId: "first",
+        activeSession: sessions[0],
+        loading: false,
+        error,
+        create: vi.fn(),
+        switch: vi.fn(),
+        delete: (id: string) => {
+          setError(deleteError)
+          return deleteSession(id)
+        },
+      }
+    }
+    render(
+      <WorkspaceAgentFront
+        workspaceId="delete-error-surface"
+        workspaceLayout="plugin-tabs"
+        chatPanel={ChatPanel}
+        useSessions={useFailingDeleteSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await user.click(screen.getByLabelText("More options for Previous runtime chat"))
+    await user.click(screen.getByRole("menuitem", { name: "Delete" }))
+
+    await waitFor(() => expect(deleteSession).toHaveBeenCalledWith("orphaned"))
+    expect(screen.getByText("Previous runtime chat")).toBeInTheDocument()
+    expect(await screen.findByText(/previous runtime configuration.*AGENT_SESSION_RUNTIME_SCOPE_MISMATCH/i)).toBeInTheDocument()
+    expect(getActiveToasts()).toEqual([
+      expect.objectContaining({ title: "Could not delete chat" }),
+    ])
+  })
+
+  it("shows a structured session-list load error", async () => {
+    const loadError = Object.assign(new Error("Session catalog is unavailable."), {
+      code: "AGENT_GATEWAY_CLOSED",
+    })
+    render(
+      <WorkspaceAgentFront
+        workspaceId="load-error-surface"
+        workspaceLayout="plugin-tabs"
+        chatPanel={ChatPanel}
+        useSessions={() => ({
+          sessions: [],
+          activeSessionId: null,
+          activeSession: null,
+          loading: false,
+          error: loadError,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(await screen.findByText(/Session catalog is unavailable.*AGENT_GATEWAY_CLOSED/)).toBeInTheDocument()
+    expect(screen.queryByText(/Failed to load sessions: 500/)).not.toBeInTheDocument()
+  })
+
   it("creates a replacement before deleting the last authoritative remote session", async () => {
     const calls: string[] = []
     const createArgs: unknown[] = []
@@ -2195,7 +3624,7 @@ describe("WorkspaceAgentFront", () => {
         setSessionIds((prev) => ["created", ...prev])
         return { id: "created", title: "Created" }
       })
-      const sessions = sessionIds.map((id) => ({ id, title: id === "created" ? "Created" : "Only session", updatedAt: Date.now() }))
+      const sessions = sessionIds.map((id) => ({ id, title: id === "created" ? "Created" : "Only session", updatedAt: id === "created" ? 2 : 1 }))
       return {
         sessions,
         activeSessionId: sessions[0]?.id ?? null,

@@ -12,6 +12,7 @@ cleanup() {
 trap cleanup EXIT
 
 printf '[features]\ngoogle_oauth = true\n' > "$CONFIG_PATH"
+ln -s "$APP_DIR/node_modules" "$CONFIG_DIR/node_modules"
 
 cd "$APP_DIR"
 pnpm --filter @hachej/boring-core exec tsup --no-dts
@@ -19,4 +20,4 @@ pnpm --filter @hachej/boring-core exec sh -c "cp src/front/theme.css dist/front/
 pnpm migrate
 pnpm build
 cd "$CONFIG_DIR"
-exec env NODE_ENV=production node "$APP_DIR/dist/server/main.js"
+exec env NODE_ENV=production BORING_APP_CONFIG_PATH="$CONFIG_PATH" node "$APP_DIR/dist/server/main.js"

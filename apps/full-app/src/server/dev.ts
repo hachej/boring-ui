@@ -8,6 +8,7 @@ import { loadConfig } from '@hachej/boring-core/server'
 import {
   createFullAppHostPluginComposition,
 } from './plugins.js'
+import { createFullAppAgentFleetComposition } from './agentFleet.js'
 import { buildCreditsWiring } from './credits.js'
 import {
   createFullAppBoringMcpAgentToolsForRequest,
@@ -18,6 +19,7 @@ import {
   registerFullAppManagedAgentMcpRoutes,
 } from './managedAgentMcp.js'
 import type { WorkspaceAgentDispatcherResolver } from '@hachej/boring-agent/server'
+import { registerDevLoginRoute } from './devLogin.js'
 
 const appRoot = appRootFromImportMeta(import.meta.url, 2)
 
@@ -26,62 +28,6 @@ function pluginAuthoringEnabledFromEnv(): boolean {
 }
 
 const frontendPort = Number(process.env.FRONTEND_PORT) || undefined
-
-const DEV_LOGIN_EMAIL = 'dev@example.test'
-const DEV_LOGIN_PASSWORD = 'Dev-local-2026!!x9'
-
-function devLoginEnabledFromEnv(): boolean {
-  return process.env.ENABLE_DEV_LOGIN === '1' && process.env.NODE_ENV !== 'production'
-}
-
-function extractSetCookies(headers: Headers): string[] {
-  const withGetSetCookie = headers as Headers & { getSetCookie?: () => string[] }
-  if (typeof withGetSetCookie.getSetCookie === 'function') {
-    return withGetSetCookie.getSetCookie()
-  }
-
-  const value = headers.get('set-cookie')
-  return value ? [value] : []
-}
-
-async function registerDevLoginRoute(app: Awaited<ReturnType<typeof createCoreWorkspaceAgentServer>>): Promise<void> {
-  if (!devLoginEnabledFromEnv()) return
-
-  async function authPost(pathname: string, body: Record<string, unknown>): Promise<Response> {
-    return app.auth.handler(new Request(new URL(pathname, app.config.auth.url), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }))
-  }
-
-  app.get('/dev-login', async (_request, reply) => {
-    const email = process.env.DEV_LOGIN_EMAIL?.trim() || DEV_LOGIN_EMAIL
-    const password = process.env.DEV_LOGIN_PASSWORD?.trim() || DEV_LOGIN_PASSWORD
-    const name = process.env.DEV_LOGIN_NAME?.trim() || 'Dev'
-
-    let response = await authPost('/auth/sign-in/email', { email, password })
-    if (!response.ok) {
-      response = await authPost('/auth/sign-up/email', { email, password, name })
-    }
-
-    if (!response.ok) {
-      const message = await response.text().catch(() => '')
-      reply.status(response.status)
-      return reply.send({
-        error: 'dev_login_failed',
-        message: message || 'Dev login failed. If the user already exists with a different password, reset the local compose Postgres volume or set DEV_LOGIN_PASSWORD to match it.',
-      })
-    }
-
-    const setCookies = extractSetCookies(response.headers)
-    if (setCookies.length > 0) {
-      reply.header('set-cookie', setCookies.length === 1 ? setCookies[0] : setCookies)
-    }
-
-    return reply.redirect('/')
-  })
-}
 
 startCoreWorkspaceAgentDevServer({
   appRoot,
@@ -99,6 +45,7 @@ startCoreWorkspaceAgentDevServer({
     const app = await createCoreWorkspaceAgentServer({
       ...options,
       config,
+      ...createFullAppAgentFleetComposition(),
       plugins: [...pluginComposition.plugins],
       defaultPluginPackages: [...pluginComposition.defaultPluginPackages],
       externalPlugins: false,
@@ -121,7 +68,7 @@ startCoreWorkspaceAgentDevServer({
     credits.attach(app)
     registerFullAppBoringMcpRoutes(app)
     registerFullAppManagedAgentMcpRoutes(app, { dispatcherResolver: managedAgentDispatcherResolver })
-    await registerDevLoginRoute(app)
+    registerDevLoginRoute(app)
     return app
   },
 }).catch((error) => {

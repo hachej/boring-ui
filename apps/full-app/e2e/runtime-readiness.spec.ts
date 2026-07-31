@@ -21,7 +21,7 @@ function json(body: unknown, status = 200) {
 }
 
 test('authenticated workspace can submit chat while runtime dependencies are still preparing', async ({ page, baseURL }) => {
-  let chatSubmitted: { message?: string } | null = null
+  let chatSubmitted: { content?: string } | null = null
   await page.route('**/*', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -45,11 +45,28 @@ test('authenticated workspace can submit chat while runtime dependencies are sti
     }
     if (path === '/api/v1/workspaces') return route.fulfill(json({ workspaces: [WORKSPACE] }))
     if (path === `/api/v1/workspaces/${WORKSPACE.id}`) return route.fulfill(json({ workspace: WORKSPACE, role: 'owner' }))
+    if (path === '/api/v1/workspace/meta') return route.fulfill(json({ workspaceId: WORKSPACE.id, workspaceRoot: '/workspace', projectName: WORKSPACE.name }))
     if (path === '/api/v1/tree') return route.fulfill(json({ entries: [] }))
-    if (path === '/api/v1/agent/pi-chat/sessions' && request.method() === 'GET') return route.fulfill(json([{ id: 'runtime-readiness', title: 'Runtime Readiness', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 0 }]))
-    if (path === '/api/v1/agent/pi-chat/runtime-readiness/state') return route.fulfill(json({ protocolVersion: 1, sessionId: 'runtime-readiness', seq: 0, status: 'idle', messages: [], queue: { followUps: [] }, followUpMode: 'one-at-a-time' }))
-    if (path === '/api/v1/agent/pi-chat/runtime-readiness/events') return route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: '{"type":"heartbeat","now":"2026-01-01T00:00:00.000Z"}\n' })
-    if (path === '/api/v1/agent/models') return route.fulfill(json({ models: [] }))
+    if (path === '/api/v1/agents') return route.fulfill(json([{ agentTypeId: 'default', label: 'Default' }]))
+    if (path === '/api/v1/agents/default/sessions' && request.method() === 'GET') {
+      return route.fulfill(json({
+        sessions: [{
+          ref: { agentTypeId: 'default', sessionId: 'runtime-readiness' },
+          title: 'Runtime Readiness',
+          status: 'idle',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }],
+      }))
+    }
+    if (path === '/api/v1/agents/default/sessions/runtime-readiness/state') return route.fulfill(json({ protocolVersion: 1, sessionId: 'runtime-readiness', seq: 0, status: 'idle', messages: [], queue: { followUps: [] }, followUpMode: 'one-at-a-time' }))
+    if (path === '/api/v1/agents/default/sessions/runtime-readiness/events') return route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: '{"type":"heartbeat","now":"2026-01-01T00:00:00.000Z"}\n' })
+    if (path === '/api/v1/agent/models') {
+      return route.fulfill(json({
+        models: [{ provider: 'test', id: 'runtime-readiness', label: 'Runtime Readiness', available: true }],
+        defaultModel: { provider: 'test', id: 'runtime-readiness' },
+      }))
+    }
     if (path === '/api/v1/ready-status') {
       return route.fulfill({
         status: 200,
@@ -57,8 +74,8 @@ test('authenticated workspace can submit chat while runtime dependencies are sti
         body: 'event: status\ndata: {"state":"ready","sandboxReady":true,"harnessReady":true,"capabilities":{"chat":{"state":"ready"},"workspace":{"state":"ready"},"runtimeDependencies":{"state":"preparing","requirement":"runtime:python"}}}\n\n',
       })
     }
-    if (path === '/api/v1/agent/pi-chat/runtime-readiness/prompt' && request.method() === 'POST') {
-      chatSubmitted = request.postDataJSON() as { message?: string }
+    if (path === '/api/v1/agents/default/sessions/runtime-readiness/prompt' && request.method() === 'POST') {
+      chatSubmitted = request.postDataJSON() as { content?: string }
       return route.fulfill(json({ accepted: true, cursor: 0, clientNonce: 'runtime-readiness' }))
     }
     if (path === '/api/v1/ui/state' && request.method() === 'PUT') return route.fulfill({ status: 204, body: '' })
@@ -69,11 +86,12 @@ test('authenticated workspace can submit chat while runtime dependencies are sti
   })
 
   await page.goto(`/workspace/${WORKSPACE.id}`)
-  await expect(page.getByPlaceholder('Message the agent…')).toBeVisible()
-  await page.getByPlaceholder('Message the agent…').fill('Can I chat before macro runtime is ready?')
-  await page.getByLabel('Submit').click()
+  const composer = page.locator('[data-boring-agent-part="composer-input"]')
+  await expect(composer).toBeVisible()
+  await composer.fill('Can I chat before macro runtime is ready?')
+  await page.locator('[data-boring-agent-part="composer-submit"]').click()
 
-  await expect.poll(() => chatSubmitted?.message ?? null, {
+  await expect.poll(() => chatSubmitted?.content ?? null, {
     message: 'chat POST should be sent even while runtimeDependencies is preparing',
   }).toBe('Can I chat before macro runtime is ready?')
 })
