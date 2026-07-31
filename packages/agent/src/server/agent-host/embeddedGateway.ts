@@ -487,6 +487,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       ?? await this.runtime.options.resolveRuntimeScope({ agentTypeId: ref.agentTypeId, scope })
     let persistedPin = authority?.runtimeScopeIdentity
     let pinned = persistedPin ?? cached
+    let preparedBinding: Awaited<ReturnType<AgentHostRuntime['resolveBinding']>> | undefined
     if (pinned && pinned !== resolved.identity) {
       const migrations = resolved.sessionIdentityMigrations ?? []
       const candidates = migrations.filter((migration) => (
@@ -507,6 +508,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
           'session is pinned to a different runtime scope',
         )
       }
+      // Prove the authorized target can be constructed before irreversibly
+      // changing the persisted pin. Binding construction admits no session effect.
+      preparedBinding = await this.runtime.resolveBinding(ref.agentTypeId, scope, claim, resolved)
       try {
         const result = await authority.migrateRuntimeScopeIdentity({
           expectedIdentity: candidates[0]!.fromIdentity,
@@ -515,6 +519,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
         })
         if (result === 'mismatch') throw new Error('runtime identity migration compare-and-swap failed')
       } catch {
+        // The proven target binding may remain cached, but bindingForSession
+        // fails here so no session effect or admission can observe it.
         throw new AgentGatewayError(
           AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
           'session is pinned to a different runtime scope',
@@ -531,7 +537,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       runtimeScopeIdentity,
     })
     this.pins.set(key, runtimeScopeIdentity)
-    return await this.runtime.resolveBinding(ref.agentTypeId, scope, claim, resolved)
+    return preparedBinding ?? await this.runtime.resolveBinding(ref.agentTypeId, scope, claim, resolved)
   }
 
   private async loadSummary(
