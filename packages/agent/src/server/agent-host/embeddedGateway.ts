@@ -20,6 +20,7 @@ import { ErrorCode } from '../../shared/error-codes'
 import {
   AgentEffectAdmissionError,
   isObservedSynchronousServiceError,
+  type AgentCoreSessionService,
   type PiChatSessionService,
   type PiSessionRequestContext,
 } from '../../core/piChatSessionService'
@@ -580,11 +581,13 @@ export class EmbeddedAgentGateway implements AgentGateway {
     readonly target: AgentRequestTarget
     readonly requestId: string
     readonly payload: JsonValue
-    readonly action: () => Promise<unknown>
+    readonly action?: () => Promise<unknown>
+    readonly sessionAction?: (service: AgentCoreSessionService) => Promise<unknown>
   }): Promise<unknown> {
     const claim = await this.verify(input.scope)
     if (input.operation === 'session.create') {
       if (input.target.kind !== 'agent') throw new TypeError('session.create requires an Agent target')
+      if (!input.action) throw new TypeError('session.create requires an Agent action')
       return await this.effect(
         claim,
         input.operation,
@@ -597,13 +600,15 @@ export class EmbeddedAgentGateway implements AgentGateway {
       )
     }
     if (input.target.kind !== 'session') throw new TypeError(`${input.operation} requires a session target`)
+    if (!input.sessionAction) throw new TypeError(`${input.operation} requires a session action`)
+    const binding = await this.bindingForSession(input.scope, claim, input.target.ref)
     return await this.sessionEffect(
       input.target.ref,
       claim,
       input.operation,
       input.requestId,
       input.payload,
-      input.action,
+      () => input.sessionAction!(binding.composition.service),
       false,
       true,
     )
