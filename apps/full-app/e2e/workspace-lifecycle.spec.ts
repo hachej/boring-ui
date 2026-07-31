@@ -455,7 +455,8 @@ async function openWorkspaceFile(page: Page, path: string, expectedContent?: str
   await expect(page.getByText('Nothing open yet')).toBeHidden({ timeout: 10_000 })
   await expect(page.getByText(path, { exact: true }).last()).toBeVisible({ timeout: 10_000 })
   if (expectedContent !== undefined) {
-    await expect(page.locator('.cm-content').last()).toContainText(expectedContent, { timeout: 10_000 })
+    await page.getByTitle('Raw markdown').last().click()
+    await expect(page.getByTestId('markdown-raw-editor').last()).toHaveValue(expectedContent, { timeout: 10_000 })
   }
 }
 
@@ -539,7 +540,7 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
   await switchWorkspace(page, 'Beta Workspace', 'ws-beta')
   await openWorkspaceFile(page, 'beta.md', '# beta')
   await expect(page.getByText('alpha.md', { exact: true })).toHaveCount(0)
-  await expect(page.locator('.cm-content')).not.toContainText('# alpha')
+  await expect(page.getByTestId('markdown-raw-editor').last()).not.toHaveValue('# alpha')
 
   await openWorkspaceMenu(page)
   await page.getByRole('menuitem', { name: 'Create workspace' }).click()
@@ -562,7 +563,7 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
     return { ok: response.ok, status: response.status }
   })
   expect(writeResponse).toEqual({ ok: true, status: 200 })
-  await openWorkspaceFile(page, 'notes.md')
+  await openWorkspaceFile(page, 'notes.md', '')
   expect(state.filesByWorkspace.get('ws-gamma-workspace')?.get('notes.md')).toBe('')
   expect(state.fileWrites).toContainEqual({
     workspaceId: 'ws-gamma-workspace',
@@ -575,7 +576,7 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
   await expect(page.getByText('notes.md', { exact: true })).toHaveCount(0)
 
   await switchWorkspace(page, 'Gamma Workspace', 'ws-gamma-workspace')
-  await openWorkspaceFile(page, 'notes.md')
+  await openWorkspaceFile(page, 'notes.md', '')
   await expect(page.getByText('beta.md', { exact: true })).toHaveCount(0)
 
   expect(new Set(state.sessionRequests)).toEqual(
