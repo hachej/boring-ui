@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { appendFile, chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -109,6 +109,109 @@ describe('runtime scope identity', () => {
     expect(diagnostic.semanticV2Identity).not.toBe(diagnostic.legacyV1Identity)
   })
 
+  it('replaces only the header and preserves a malformed transcript tail byte-for-byte', async () => {
+    const sessionRoot = await temporaryRoot()
+    const store = new PiSessionStore(sessionRoot, {
+      sessionRoot,
+      sessionNamespace: 'header-cas',
+      storageCwd: sessionRoot,
+    })
+    const oldIdentity = '4'.repeat(64)
+    const nextIdentity = '5'.repeat(64)
+    const created = await store.create({
+      workspaceId: 'workspace-a',
+      runtimeScopeIdentity: oldIdentity,
+    } as Parameters<PiSessionStore['create']>[0])
+    const transcriptPath = join(sessionRoot, 'header-cas', `${created.id}.jsonl`)
+    const malformedTail = '{"type":"message","payload":"preserve spacing"}\r\n{malformed-tail\u0000bytes}\n'
+    await appendFile(transcriptPath, malformedTail, 'utf8')
+    await appendFile(transcriptPath, new Uint8Array([0xff, 0xfe, 0x00]))
+    const before = await readFile(transcriptPath)
+    const beforeTail = before.subarray(before.indexOf(0x0a))
+
+    await expect(store.migrateRuntimeScopeIdentity(
+      { workspaceId: 'workspace-a' },
+      created.id,
+      { expectedIdentity: oldIdentity, nextIdentity, evidenceDigest: '6'.repeat(64) },
+    )).resolves.toBe('migrated')
+
+    const after = await readFile(transcriptPath)
+    expect(after.subarray(after.indexOf(0x0a)).equals(beforeTail)).toBe(true)
+    const header = new TextDecoder().decode(after.subarray(0, after.indexOf(0x0a)))
+    expect(JSON.parse(header).boringSessionCtx.runtimeScopeIdentity).toBe(nextIdentity)
+  })
+
+  it('fails closed on a malformed authoritative header', async () => {
+    const sessionRoot = await temporaryRoot()
+    const store = new PiSessionStore(sessionRoot, {
+      sessionRoot,
+      sessionNamespace: 'malformed-header-cas',
+      storageCwd: sessionRoot,
+    })
+    const created = await store.create({
+      workspaceId: 'workspace-a',
+      runtimeScopeIdentity: 'a'.repeat(64),
+    } as Parameters<PiSessionStore['create']>[0])
+    const transcriptPath = join(sessionRoot, 'malformed-header-cas', `${created.id}.jsonl`)
+    const malformed = '{malformed-header}\n{"tail":"unchanged"}\n'
+    await writeFile(transcriptPath, malformed, 'utf8')
+    await expect(store.migrateRuntimeScopeIdentity(
+      { workspaceId: 'workspace-a' },
+      created.id,
+      { expectedIdentity: 'a'.repeat(64), nextIdentity: 'b'.repeat(64), evidenceDigest: 'c'.repeat(64) },
+    )).rejects.toThrow(/Session (?:metadata is malformed|not found)/)
+    expect(await readFile(transcriptPath, 'utf8')).toBe(malformed)
+  })
+
+  it('fails closed after a bounded wait on a stale filesystem lock', async () => {
+    const sessionRoot = await temporaryRoot()
+    const store = new PiSessionStore(sessionRoot, {
+      sessionRoot,
+      sessionNamespace: 'stale-lock-cas',
+      storageCwd: sessionRoot,
+    })
+    const oldIdentity = 'd'.repeat(64)
+    const created = await store.create({
+      workspaceId: 'workspace-a',
+      runtimeScopeIdentity: oldIdentity,
+    } as Parameters<PiSessionStore['create']>[0])
+    const transcriptPath = join(sessionRoot, 'stale-lock-cas', `${created.id}.jsonl`)
+    await writeFile(`${transcriptPath}.runtime-identity.lock`, 'stale', { flag: 'wx' })
+    const before = await readFile(transcriptPath)
+    await expect(store.migrateRuntimeScopeIdentity(
+      { workspaceId: 'workspace-a' },
+      created.id,
+      { expectedIdentity: oldIdentity, nextIdentity: 'e'.repeat(64), evidenceDigest: 'f'.repeat(64) },
+    )).rejects.toThrow(/migration is locked/)
+    expect((await readFile(transcriptPath)).equals(before)).toBe(true)
+  })
+
+  it('serializes conflicting migrations across independent stores', async () => {
+    const sessionRoot = await temporaryRoot()
+    const options = { sessionRoot, sessionNamespace: 'cross-store-cas', storageCwd: sessionRoot }
+    const firstStore = new PiSessionStore(sessionRoot, options)
+    const secondStore = new PiSessionStore(sessionRoot, options)
+    const oldIdentity = '7'.repeat(64)
+    const created = await firstStore.create({
+      workspaceId: 'workspace-a',
+      runtimeScopeIdentity: oldIdentity,
+    } as Parameters<PiSessionStore['create']>[0])
+    const results = await Promise.all([
+      firstStore.migrateRuntimeScopeIdentity(
+        { workspaceId: 'workspace-a' },
+        created.id,
+        { expectedIdentity: oldIdentity, nextIdentity: '8'.repeat(64), evidenceDigest: 'a'.repeat(64) },
+      ),
+      secondStore.migrateRuntimeScopeIdentity(
+        { workspaceId: 'workspace-a' },
+        created.id,
+        { expectedIdentity: oldIdentity, nextIdentity: '9'.repeat(64), evidenceDigest: 'b'.repeat(64) },
+      ),
+    ])
+    expect(results.filter((result) => result === 'migrated')).toHaveLength(1)
+    expect(results.filter((result) => result === 'mismatch')).toHaveLength(1)
+  })
+
   it('keeps semantic identity stable when only the physical binding changes', () => {
     const semantic = {
       ...base,
@@ -159,6 +262,24 @@ describe('runtime scope identity', () => {
       })
     }
     expect(createRuntime).toHaveBeenCalledTimes(2)
+    await host.host.close()
+  })
+
+  it('rejects an explicitly empty physical binding identity', async () => {
+    const sessionRoot = await temporaryRoot()
+    const createRuntime = vi.fn(createTestRuntimeModeAdapter('direct').create)
+    const host = await createAgentHost(hostOptions({
+      sessionRoot,
+      runtimeIdentity: () => 'semantic-runtime',
+      bindingIdentity: '   ',
+      createRuntime,
+    }))
+    await expect(host.gateway.createSession({
+      scope: { workspaceScopeId: 'workspace-a', authSubjectId: 'subject' } as AuthorizedAgentScope,
+      agentTypeId: 'alpha',
+      requestId: 'empty-binding',
+    })).rejects.toThrow(/binding identity must be non-empty/)
+    expect(createRuntime).not.toHaveBeenCalled()
     await host.host.close()
   })
 
@@ -254,6 +375,59 @@ describe('runtime scope identity', () => {
       title: 'Still writable',
     })).resolves.toMatchObject({ title: 'Still writable' })
     await secondRestart.host.close()
+  })
+
+  it('accepts an exact authorized raw legacy scope key', async () => {
+    const sessionRoot = await temporaryRoot()
+    const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
+    const rawLegacyIdentity = JSON.stringify(['direct', 'workspace-a', '/historical/checkout', null])
+    const newIdentity = 'c'.repeat(64)
+    const first = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => rawLegacyIdentity }))
+    const ref = await first.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'create-raw-v1' })
+    await first.host.close()
+    const restarted = await createAgentHost(hostOptions({
+      sessionRoot,
+      runtimeIdentity: () => newIdentity,
+      migration: {
+        schemaVersion: 1,
+        agentTypeId: 'alpha',
+        workspaceScopeId: 'workspace-a',
+        sessionNamespace: 'sessions',
+        fromIdentity: rawLegacyIdentity,
+        toIdentity: newIdentity,
+        evidenceDigest: 'd'.repeat(64),
+      },
+    }))
+    await expect(restarted.gateway.renameSession({
+      scope,
+      ref,
+      requestId: 'migrate-raw-v1',
+      title: 'Raw v1 migrated',
+    })).resolves.toMatchObject({ title: 'Raw v1 migrated' })
+    await restarted.host.close()
+  })
+
+  it('keeps the observed legacy pin fail-closed without exact authorization evidence', async () => {
+    const sessionRoot = await temporaryRoot()
+    const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
+    const observedIdentity = '33293674ddb7f24bcc036f4b5bedbf2457ac3a639e2969353ccb0175d385d7fe'
+    const first = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => observedIdentity }))
+    const ref = await first.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'create-observed-pin' })
+    await first.host.close()
+    const createRuntime = vi.fn(createTestRuntimeModeAdapter('direct').create)
+    const restarted = await createAgentHost(hostOptions({
+      sessionRoot,
+      runtimeIdentity: () => 'e'.repeat(64),
+      createRuntime,
+    }))
+    await expect(restarted.gateway.renameSession({
+      scope,
+      ref,
+      requestId: 'observed-remains-locked',
+      title: 'Must remain locked',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH })
+    expect(createRuntime).not.toHaveBeenCalled()
+    await restarted.host.close()
   })
 
   it('fails a wrong-scope migration closed before binding or transcript mutation', async () => {

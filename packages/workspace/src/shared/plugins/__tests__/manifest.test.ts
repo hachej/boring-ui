@@ -34,6 +34,7 @@ describe("validateBoringPluginManifest", () => {
       boring: {
         front: "front/index.tsx",
         server: "server/index.ts",
+        runtimeIdentity: { paths: ["dist/server"] },
         label: "Playground Data",
       },
     })
@@ -41,7 +42,20 @@ describe("validateBoringPluginManifest", () => {
     expect(result.valid).toBe(true)
     if (result.valid) {
       expect(result.packageJson.boring?.front).toBe("front/index.tsx")
+      expect(result.packageJson.boring?.runtimeIdentity?.paths).toEqual(["dist/server"])
     }
+  })
+
+  it("rejects unsafe runtime identity paths", () => {
+    const result = validateBoringPluginManifest({
+      name: "unsafe-runtime-identity",
+      boring: { server: "server/index.ts", runtimeIdentity: { paths: ["../outside"] } },
+    })
+    expect(result.valid).toBe(false)
+    if (!result.valid) expect(result.issues).toContainEqual(expect.objectContaining({
+      code: "INVALID_PATH",
+      field: "boring.runtimeIdentity.paths[0]",
+    }))
   })
 
   it("rejects removed package.json#boring UI registration arrays", () => {

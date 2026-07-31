@@ -180,6 +180,10 @@ export interface ResolvedEnvironmentScope {
   }) => Promise<WorkspaceProvisioningResult | undefined>
 }
 
+/**
+ * Exact operator-provided authorization for an irreversible persisted pin CAS.
+ * Hosts never synthesize these entries; rollout requires reproduced v1 evidence.
+ */
 export interface RuntimeScopeIdentityMigrationAuthorization {
   readonly schemaVersion: 1
   readonly agentTypeId: string

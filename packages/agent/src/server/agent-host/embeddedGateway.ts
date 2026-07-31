@@ -496,7 +496,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
         && migration.sessionNamespace === resolved.sessionNamespace
         && migration.fromIdentity === pinned
         && migration.toIdentity === resolved.identity
-        && /^[a-f0-9]{64}$/.test(migration.fromIdentity)
+        && migration.fromIdentity.trim().length > 0
+        && migration.fromIdentity.length <= 8_192
         && /^[a-f0-9]{64}$/.test(migration.toIdentity)
         && /^[a-f0-9]{64}$/.test(migration.evidenceDigest)
       ))

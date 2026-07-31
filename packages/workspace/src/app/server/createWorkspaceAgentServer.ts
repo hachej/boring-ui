@@ -569,6 +569,10 @@ function declaredDirectoryRuntimeContentDigest(root: string): string | undefined
     throw new AgentRuntimeIdentityError("boring.runtimeIdentity.paths must be a non-empty string array")
   }
 
+  const serverEntry = (boring as { server?: unknown }).server
+  if (typeof serverEntry !== "string" || !serverEntry) {
+    throw new AgentRuntimeIdentityError("boring.runtimeIdentity requires an explicit boring.server entry")
+  }
   const absoluteRoot = resolve(root)
   const hash = createHash("sha256")
   const visit = (absolute: string, relativePath: string) => {
@@ -587,6 +591,10 @@ function declaredDirectoryRuntimeContentDigest(root: string): string | undefined
     hash.update("\0")
   }
   const uniquePaths = [...new Set(paths as string[])].sort()
+  hash.update(`runtime-declaration\0${canonicalIdentityJson({
+    server: serverEntry.replaceAll("\\", "/").replace(/^\.\/+/, ""),
+    runtimeIdentity: { paths: uniquePaths.map((path) => path.replaceAll("\\", "/")) },
+  })}\0`)
   for (const path of uniquePaths) {
     if (!path || isAbsolute(path) || path.split(/[\\/]+/).some((segment) => segment === ".." || segment === "." || !segment)) {
       throw new AgentRuntimeIdentityError(`invalid declared runtime identity path: ${path}`)
@@ -1107,8 +1115,11 @@ function validateRuntimeScopeIdentityMigrations(
     if (!migration.agentTypeId || !migration.workspaceScopeId) {
       throw new AgentRuntimeIdentityError("runtime identity migrations require agent and workspace scopes")
     }
-    if (![migration.fromIdentity, migration.toIdentity, migration.evidenceDigest].every((value) => /^[a-f0-9]{64}$/.test(value))) {
-      throw new AgentRuntimeIdentityError("runtime identity migrations require canonical SHA-256 identities and evidence")
+    if (!migration.fromIdentity.trim() || migration.fromIdentity.length > 8_192) {
+      throw new AgentRuntimeIdentityError("runtime identity migrations require a bounded non-empty legacy identity")
+    }
+    if (![migration.toIdentity, migration.evidenceDigest].every((value) => /^[a-f0-9]{64}$/.test(value))) {
+      throw new AgentRuntimeIdentityError("runtime identity migrations require canonical SHA-256 target identity and evidence")
     }
     const key = canonicalIdentityJson(jsonIdentityValue({
       agentTypeId: migration.agentTypeId,
