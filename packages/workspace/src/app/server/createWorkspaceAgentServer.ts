@@ -1562,8 +1562,8 @@ export async function createWorkspaceAgentServer(
       diagnostics = [...scanDiagnostics, ...backendReload.diagnostics, ...rebuild.diagnostics]
       await runRuntimeProvisioning(liveRuntimeBundle)
       const callerResult = await opts.beforeReload?.()
-      // Destructive plugin lifecycle hooks run only after every failure-capable
-      // reload preparation step has succeeded, immediately before replacement.
+      // Final plugin guards run only after every failure-capable reload
+      // preparation step has succeeded, immediately before replacement.
       for (const contribution of pluginCollection.beforeAgentReloadContributions) {
         await contribution.run()
       }

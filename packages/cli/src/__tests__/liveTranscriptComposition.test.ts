@@ -79,20 +79,31 @@ describe("CLI live transcript composition", () => {
       expect(review.statusCode).toBe(503)
       expect(review.json()).toMatchObject({ error: { code: "live_transcript_disabled" } })
 
-      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload" })
-      expect(reload.statusCode, reload.body).toBe(200)
+      const blockedReload = await app.inject({ method: "POST", url: "/api/v1/agent/reload" })
+      expect(blockedReload.statusCode).toBe(422)
+      expect(blockedReload.json()).toMatchObject({
+        ok: false,
+        error: "Stop the active transcription before reloading the Agent.",
+      })
 
-      const interrupted = await app.inject({
+      const stillActive = await app.inject({
         method: "POST",
         url: "/api/v1/live-transcripts/status",
         headers: exactHeaders,
         payload: { liveSessionId },
       })
-      expect(interrupted.statusCode).toBe(200)
-      expect(interrupted.json()).toMatchObject({
-        state: "interrupted",
-        outcome: "live_transcript_attachment_failed",
+      expect(stillActive.statusCode).toBe(200)
+      expect(stillActive.json()).toMatchObject({ state: "setup" })
+
+      const interrupted = await app.inject({
+        method: "POST",
+        url: `/api/v1/live-transcripts/${liveSessionId}/interrupt`,
+        headers: exactHeaders,
+        payload: { reason: "attachment_failed" },
       })
+      expect(interrupted.statusCode).toBe(200)
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload" })
+      expect(reload.statusCode, reload.body).toBe(200)
     } finally {
       await app.close()
     }

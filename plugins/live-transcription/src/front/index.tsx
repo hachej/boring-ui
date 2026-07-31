@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
+import { useEffect, useMemo, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
 import {
   ChatMessageContributionProvider,
   ComposerContributionProvider,
@@ -309,6 +309,11 @@ const liveTranscriptComposerContribution: ComposerContribution = {
   id: "live-transcription",
   Top: LiveTranscriptComposerTop,
   Action: LiveTranscriptComposerAction,
+  commands: liveTranscriptCommands,
+}
+
+const disabledLiveTranscriptComposerContribution: ComposerContribution = {
+  id: "live-transcription",
 }
 
 const liveTranscriptMessageContribution: ChatMessageContribution = {
@@ -318,9 +323,26 @@ const liveTranscriptMessageContribution: ChatMessageContribution = {
 }
 
 function LiveTranscriptComposerProvider({ children }: { children: ReactNode }) {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    void fetch("/api/v1/workspace/meta")
+      .then(async (response) => response.ok ? await response.json() as { liveTranscripts?: { ready?: boolean } } : undefined)
+      .then((meta) => {
+        if (!cancelled) setReady(meta?.liveTranscripts?.ready === true)
+      })
+      .catch(() => {
+        if (!cancelled) setReady(false)
+      })
+    return () => { cancelled = true }
+  }, [])
+  const composerContribution = useMemo(
+    () => ready ? liveTranscriptComposerContribution : disabledLiveTranscriptComposerContribution,
+    [ready],
+  )
   return (
     <ChatMessageContributionProvider contribution={liveTranscriptMessageContribution}>
-      <ComposerContributionProvider contribution={liveTranscriptComposerContribution}>
+      <ComposerContributionProvider contribution={composerContribution}>
         {children}
       </ComposerContributionProvider>
     </ChatMessageContributionProvider>

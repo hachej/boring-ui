@@ -377,11 +377,14 @@ describe("live transcription system lifecycle", () => {
     }
   }, 10_000)
 
-  it("owns Agent reload interruption through its generic lifecycle contribution", async () => {
+  it("blocks Agent reload while capture owns an exact Pi session", async () => {
     const system = await createSystem()
     try {
       const started = await start(system, "chat-reload")
-      await system.beforeAgentReload()
+      await expect(system.beforeAgentReload()).rejects.toMatchObject({
+        code: "live_transcript_already_active",
+        statusCode: 409,
+      })
 
       const status = await system.app.inject({
         method: "POST",
@@ -390,11 +393,8 @@ describe("live transcription system lifecycle", () => {
         payload: { liveSessionId: started.liveSessionId },
       })
       expect(status.statusCode).toBe(200)
-      expect(status.json()).toMatchObject({
-        state: "interrupted",
-        outcome: "live_transcript_attachment_failed",
-      })
-      expect(await system.workspace.readFile(started.transcriptPath)).toContain("- State: interrupted")
+      expect(status.json()).toMatchObject({ state: "setup" })
+      expect(await system.workspace.readFile(started.transcriptPath)).toContain("- State: active")
     } finally {
       await system.close()
     }

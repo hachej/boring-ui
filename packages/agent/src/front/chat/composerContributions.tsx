@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from "react"
+import type { SlashCommand } from "../slashCommands"
 
 export type ComposerDraftUpdate = (currentDraft: string) => string
 
@@ -12,6 +13,7 @@ export interface ComposerContribution {
   id: string
   Top?: ComponentType
   Action?: ComponentType<ComposerActionContributionProps>
+  commands?: readonly SlashCommand[]
 }
 
 const ComposerContributionContext = createContext<readonly ComposerContribution[]>([])

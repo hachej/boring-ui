@@ -62,7 +62,10 @@ export interface WorkspaceServerPlugin {
   /** Static filesystem assets this plugin needs in production/serverless bundles. */
   assets?: WorkspaceServerPluginAsset[]
   routes?: FastifyPluginAsync
-  /** Release session-bound plugin work immediately before the Agent runtime is replaced. */
+  /**
+   * Final plugin guard before Agent replacement. May release session-bound work
+   * or throw to block reload while that work must retain the current Agent.
+   */
   beforeAgentReload?: () => void | Promise<void>
   /** UI state keys owned by this plugin that browser state PUTs must not overwrite. */
   preservedUiStateKeys?: string[]

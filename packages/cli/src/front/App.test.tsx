@@ -2,7 +2,7 @@
 import React from "react"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { liveTranscriptCommands, liveTranscriptPlugin } from "@hachej/boring-live-transcription/front"
+import { liveTranscriptPlugin } from "@hachej/boring-live-transcription/front"
 import { CliWorkspaceShell } from "./App"
 
 const workspaceAgentFrontSpy = vi.fn((props: Record<string, unknown>) => (
@@ -154,7 +154,7 @@ describe("CliWorkspaceShell", () => {
     expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({ workspaceId: "target" })
   })
 
-  test("composes live transcription only when folder metadata reports readiness", async () => {
+  test("statically composes live transcription without knowing its commands", async () => {
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith("/api/v1/workspace/meta")) {
@@ -174,8 +174,8 @@ describe("CliWorkspaceShell", () => {
     await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
     expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
       plugins: expect.arrayContaining([liveTranscriptPlugin]),
-      extraCommands: liveTranscriptCommands,
     })
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).not.toHaveProperty("extraCommands")
   })
 
   test("enables runtime hot loading without rendering plugin helper pills", async () => {
@@ -209,6 +209,7 @@ describe("CliWorkspaceShell", () => {
         expect.any(Function),
         expect.objectContaining({ pluginId: "diagram" }),
         expect.objectContaining({ pluginId: "tasks" }),
+        liveTranscriptPlugin,
       ],
     })
 

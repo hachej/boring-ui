@@ -329,6 +329,15 @@ export class LiveTranscriptManager {
     })
   }
 
+  assertAgentReloadAllowed(): void {
+    if (!this.active) return
+    throw new LiveTranscriptError(
+      "live_transcript_already_active",
+      "Stop the active transcription before reloading the Agent.",
+      409,
+    )
+  }
+
   async interruptForSessionReplacement(): Promise<void> {
     const session = this.active
     if (session) await this.terminate(session, "interrupted", "live_transcript_attachment_failed")

@@ -7,8 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { boringAutomationPlugin } from "@hachej/boring-automation/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
-import { liveTranscriptCommands, liveTranscriptPlugin } from "@hachej/boring-live-transcription/front"
-import type { LiveTranscriptReadiness } from "@hachej/boring-live-transcription/shared"
+import { liveTranscriptPlugin } from "@hachej/boring-live-transcription/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
 import * as WorkspaceSingleton from "@hachej/boring-workspace"
 import * as WorkspaceEventsSingleton from "@hachej/boring-workspace/events"
@@ -37,7 +36,6 @@ interface WorkspaceMeta {
   workspacesMode?: boolean
   version?: string
   runtimePluginFrontLoadingEnabled?: boolean
-  liveTranscripts?: LiveTranscriptReadiness
 }
 
 interface LocalWorkspace {
@@ -178,7 +176,6 @@ export function CliWorkspaceShell() {
   // and retry) so a transient error never strands the page on the empty state.
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false)
   const [runtimePluginFrontLoadingEnabled, setRuntimePluginFrontLoadingEnabled] = useState(false)
-  const [liveTranscriptsReady, setLiveTranscriptsReady] = useState(false)
   const [projectSessionOverviews, setProjectSessionOverviews] = useState<Record<string, ProjectSessionOverview>>({})
   const [projectSessionPreviewLimits, setProjectSessionPreviewLimits] = useState<Record<string, number>>({})
 
@@ -246,7 +243,6 @@ export function CliWorkspaceShell() {
         const runtimePluginsEnabled = meta?.runtimePluginFrontLoadingEnabled === true
         setWorkspacesMode(isWorkspacesMode)
         setRuntimePluginFrontLoadingEnabled(runtimePluginsEnabled)
-        setLiveTranscriptsReady(!isWorkspacesMode && meta?.liveTranscripts?.ready === true)
         if (isWorkspacesMode) refreshWorkspaces()
         setMetaLoaded(true)
       })
@@ -319,8 +315,8 @@ export function CliWorkspaceShell() {
     boringAutomationPlugin,
     diagramPlugin,
     createTasksPlugin(),
-    ...(!workspacesMode && liveTranscriptsReady ? [liveTranscriptPlugin] : []),
-  ], [liveTranscriptsReady, workspacesMode])
+    liveTranscriptPlugin,
+  ], [workspacesMode])
   const activeWorkspaceRequestHeaders = useMemo(
     () => activeWorkspaceId ? { "x-boring-workspace-id": activeWorkspaceId } : null,
     [activeWorkspaceId],
@@ -512,7 +508,6 @@ export function CliWorkspaceShell() {
       activeSessionId={initialSessionId ?? undefined}
       chatParams={{ thinkingControl: true }}
       frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
-      extraCommands={liveTranscriptsReady ? liveTranscriptCommands : undefined}
       topBarRight={<CliVersionBadge version={cliVersion} />}
     />
   )

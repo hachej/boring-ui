@@ -45,8 +45,8 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
   return defineServerPlugin({
     id: "live-transcription",
     label: "Live transcription",
-    beforeAgentReload: async () => {
-      await manager.interruptForSessionReplacement()
+    beforeAgentReload: () => {
+      manager.assertAgentReloadAllowed()
     },
     routes: async (app) => {
       await app.register(fastifyWebsocket)
