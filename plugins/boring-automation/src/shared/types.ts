@@ -1,6 +1,17 @@
 export type AutomationRunStatus = "queued" | "dispatching" | "running" | "succeeded" | "failed" | "cancelled" | "outcome-unknown"
 export type AutomationRunTrigger = "manual" | "scheduled"
 
+export interface AutomationRunChangedEvent {
+  v: 1
+  eventId: string
+  workspaceId: string
+  userId: string
+  automationId: string
+  runId: string
+  status: AutomationRunStatus
+  updatedAt: string
+}
+
 export interface Automation {
   id: string
   title: string

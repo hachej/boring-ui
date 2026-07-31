@@ -512,7 +512,7 @@ export async function createWorkspacesModeApp(opts: {
   registryPath?: string
   provisionWorkspace?: boolean
 }): Promise<FastifyInstance> {
-  const [workspaceAppServer, workspaceServer, agentServer, agentShared, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createBoringAutomationTool, DueRunService, FileAutomationStore, ManualRunExecutor, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
+  const [workspaceAppServer, workspaceServer, agentServer, agentShared, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createBoringAutomationTool, DueRunService, FileAutomationStore, InMemoryAutomationRunEventBus, ManualRunExecutor, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
     import("@hachej/boring-agent/server"),
@@ -584,6 +584,8 @@ export async function createWorkspacesModeApp(opts: {
   const pluginPiSnapshots = new Map<string, CliPluginPiSnapshot>()
   const runtimeProvisioningByWorkspace = new Map<string, WorkspaceProvisioningResult | undefined>()
   const automationStores = new Map<string, InstanceType<typeof FileAutomationStore>>()
+  const automationEventBus = new InMemoryAutomationRunEventBus()
+  app.addHook("onClose", async () => await automationEventBus.close())
   let workspaceAgentDispatcher: WorkspaceAgentDispatcherResolver | undefined
 
   function getBridge(workspaceId: string) {
@@ -652,6 +654,7 @@ export async function createWorkspacesModeApp(opts: {
       store: automationStore(workspace),
       dispatcherResolver: workspaceAgentDispatcher,
       actorResolver: () => ({ workspaceId: workspace.id, userId: "local" }),
+      eventPublisher: automationEventBus,
     })
   }
 
@@ -666,6 +669,7 @@ export async function createWorkspacesModeApp(opts: {
             store,
             dispatcherResolver: workspaceAgentDispatcher,
             actorResolver: () => actor,
+            eventPublisher: automationEventBus,
           })
         },
         localUserId: "local",
@@ -933,6 +937,8 @@ export async function createWorkspacesModeApp(opts: {
         executor: await automationExecutorForRequest(request),
       })
     },
+    actorResolver: async (request) => ({ workspaceId: (await workspaceFromRequest(request)).id, userId: "local" }),
+    eventBus: automationEventBus,
   })
 
   await app.register(workspaceServer.uiRoutes, {

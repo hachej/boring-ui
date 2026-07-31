@@ -5,6 +5,7 @@ import type { AgentEvent } from "@hachej/boring-agent/shared"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import type { AutomationRun } from "../shared/types"
+import type { AutomationRunEventPublisher } from "./runEventBus"
 import type { AutomationStore } from "./store"
 import { AutomationStoreError } from "./store"
 
@@ -18,6 +19,7 @@ export interface ManualRunExecutorOptions {
   storeForRequest?: (request: FastifyRequest, actor: VerifiedAutomationActor) => Promise<AutomationStore> | AutomationStore
   dispatcherResolver: WorkspaceAgentDispatcherResolver
   actorResolver: (request: FastifyRequest) => Promise<VerifiedAutomationActor> | VerifiedAutomationActor
+  eventPublisher?: AutomationRunEventPublisher
   clock?: () => Date
 }
 
@@ -31,6 +33,8 @@ export interface ManualRunInput {
   /** Optional caller idempotency key; explicit new runs omit it and get a new ID. */
   invocationId?: string
 }
+
+const RUN_HEARTBEAT_INTERVAL_MS = 30_000
 
 interface UsageTotals {
   inputTokens: number | null
@@ -82,16 +86,21 @@ export class ManualRunExecutor {
       modelSnapshot,
       createdAt,
     })
+    await this.publishRunChange(actor, run)
     // beginRun is the durable invocation-to-run receipt. A retry of a terminal
     // invocation returns that receipt verbatim and must never enter dispatch
     // again, especially after restart reconciliation made the outcome unknown.
     if (isTerminalRunStatus(run.status)) return run
 
     const usage: UsageAccumulator = { input: null, output: null }
-    let current = run
     let sessionId: string | null = null
     let terminalStatus: "succeeded" | "failed" | "cancelled" | null = null
     let terminalError: string | null = null
+    const claimed = await store.claimRunForDispatch(run.id)
+    if (!claimed) return await this.readDurableRun(store, automation.id, run.id, run)
+    let current = claimed
+    const stopHeartbeat = startRunHeartbeat(store, run.id)
+    await this.publishRunChange(actor, current)
     let startedAt: string | null = null
 
     try {
@@ -100,16 +109,14 @@ export class ManualRunExecutor {
         input.request ? { request: input.request } : undefined,
       )
       startedAt = this.nowIso()
-      current = await store.updateRunLifecycle(run.id, {
-        status: "dispatching",
-        startedAt,
-        sessionId: null,
-      })
+      current = await store.updateRunLifecycle(run.id, { status: "dispatching", startedAt, sessionId: null })
+      await this.publishRunChange(actor, current)
       if (!dispatcher.dispatch) {
         throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE, "automation dispatcher does not support addressed Gateway dispatch")
       }
       const dispatched = await dispatcher.dispatch({
         requestId: run.id,
+        title: automationSessionTitle(automation.title, promptSnapshot),
         content: promptSnapshot,
         model,
         ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
@@ -125,12 +132,14 @@ export class ManualRunExecutor {
           ...dispatched.receipt,
         },
       })
+      await this.publishRunChange(actor, current)
 
       for await (const event of dispatched.events) {
         const eventSessionId = sessionIdFromEvent(event)
         if (!sessionId && eventSessionId) {
           sessionId = eventSessionId
           current = await store.updateRunLifecycle(run.id, { sessionId })
+          await this.publishRunChange(actor, current)
         }
         aggregateUsage(usage, event)
         const outcome = terminalOutcomeFromEvent(event)
@@ -141,7 +150,8 @@ export class ManualRunExecutor {
       }
 
       const completedAt = this.nowIso()
-      return await this.finalizeRun(store, run.id, {
+      await stopHeartbeat()
+      const finalized = await this.finalizeRun(store, run.id, {
         current,
         sessionId,
         startedAt,
@@ -150,19 +160,52 @@ export class ManualRunExecutor {
         error: terminalStatus === "failed" ? (terminalError ?? "Automation run failed") : null,
         usage,
       })
+      await this.publishRunChange(actor, finalized)
+      return finalized
     } catch (error) {
       const completedAt = this.nowIso()
+      await stopHeartbeat()
+      if (isRunLeaseLost(error)) return await this.readDurableRun(store, automation.id, run.id, current)
       const cancelled = isCancellationError(error)
       const status = terminalStatus ?? (cancelled ? "cancelled" : "failed")
-      return await this.finalizeRun(store, run.id, {
-        current,
-        sessionId,
-        startedAt,
-        completedAt,
-        status,
-        error: status === "failed" ? (terminalError ?? safeErrorMessage(error)) : null,
-        usage,
+      let finalized: AutomationRun
+      try {
+        finalized = await this.finalizeRun(store, run.id, {
+          current,
+          sessionId,
+          startedAt,
+          completedAt,
+          status,
+          error: status === "failed" ? (terminalError ?? safeErrorMessage(error)) : null,
+          usage,
+        })
+      } catch (finalizeError) {
+        if (isRunLeaseLost(finalizeError)) return await this.readDurableRun(store, automation.id, run.id, current)
+        throw finalizeError
+      }
+      await this.publishRunChange(actor, finalized)
+      return finalized
+    }
+  }
+
+  private async readDurableRun(store: AutomationStore, automationId: string, runId: string, fallback: AutomationRun): Promise<AutomationRun> {
+    return (await store.listRuns(automationId)).find((candidate) => candidate.id === runId) ?? fallback
+  }
+
+  private async publishRunChange(actor: VerifiedAutomationActor, run: AutomationRun): Promise<void> {
+    try {
+      await this.options.eventPublisher?.publish({
+        v: 1,
+        eventId: randomUUID(),
+        workspaceId: actor.workspaceId,
+        userId: actor.userId,
+        automationId: run.automationId,
+        runId: run.id,
+        status: run.status,
+        updatedAt: run.updatedAt,
       })
+    } catch {
+      // Notifications are best-effort invalidations; durable run state remains authoritative.
     }
   }
 
@@ -188,6 +231,35 @@ export class ManualRunExecutor {
   private nowIso(): string {
     return this.clock().toISOString()
   }
+}
+
+function startRunHeartbeat(store: AutomationStore, runId: string): () => Promise<void> {
+  let stopped = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let inFlight: Promise<void> = Promise.resolve()
+  const schedule = () => {
+    if (stopped) return
+    timer = setTimeout(() => {
+      inFlight = store.heartbeatRun(runId)
+        .then((renewed) => {
+          if (renewed) schedule()
+          else stopped = true
+        })
+        .catch(() => schedule())
+    }, RUN_HEARTBEAT_INTERVAL_MS)
+    timer.unref?.()
+  }
+  schedule()
+  return async () => {
+    stopped = true
+    if (timer !== undefined) clearTimeout(timer)
+    await inFlight
+  }
+}
+
+export function automationSessionTitle(automationTitle: string, prompt: string): string {
+  const sessionName = prompt.trim().split(/\r?\n/, 1)[0]?.trim() || "Run"
+  return `Automation ${automationTitle.trim()}: ${sessionName}`.slice(0, 80)
 }
 
 export function parseAutomationModel(value: string): { provider: string; id: string } {
@@ -275,6 +347,10 @@ function isTerminalRunStatus(status: AutomationRun["status"]): boolean {
     || status === "failed"
     || status === "cancelled"
     || status === "outcome-unknown"
+}
+
+function isRunLeaseLost(error: unknown): boolean {
+  return error instanceof AutomationStoreError && error.code === BORING_AUTOMATION_ERROR_CODES.RUN_LEASE_LOST
 }
 
 function isCancellationError(error: unknown): boolean {
