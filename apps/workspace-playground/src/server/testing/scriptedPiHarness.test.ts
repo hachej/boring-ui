@@ -49,6 +49,31 @@ describe('scripted Pi browser harness persistence', () => {
     await expect(afterDeleteRestart.sessions!.list(sessionCtx)).resolves.toEqual([])
   })
 
+  it('keeps repeated creates unique and restart-hydratable beside an oversized numeric suffix', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-counter-workspace-'))
+    const sessionRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-counter-sessions-'))
+    const sessionDir = join(sessionRoot, `--${workspaceRoot.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`)
+    await mkdir(sessionDir, { recursive: true })
+    const largeId = 'scripted-99999999999999999999'
+    await writeFile(join(sessionDir, `${largeId}.jsonl`), `${JSON.stringify({
+      type: 'session',
+      id: largeId,
+      timestamp: '2026-06-04T12:00:00.000Z',
+      boringSessionCtx: { workspaceId: 'workspace-a', runtimeScopeIdentity: 'runtime-a' },
+    })}\n`, 'utf8')
+    const ctx = { workspaceId: 'workspace-a', runtimeScopeIdentity: 'runtime-a' }
+    const first = createScriptedPiHarness({ cwd: workspaceRoot, sessionRoot })
+    const createdA = await first.sessions!.create(ctx)
+    const createdB = await first.sessions!.create(ctx)
+    expect([createdA.id, createdB.id]).toEqual(['scripted-main', 'scripted-1'])
+
+    const restarted = createScriptedPiHarness({ cwd: workspaceRoot, sessionRoot })
+    const createdC = await restarted.sessions!.create(ctx)
+    expect(createdC.id).toBe('scripted-2')
+    const ids = (await restarted.sessions!.list(ctx)).map((session) => session.id)
+    expect(new Set(ids)).toEqual(new Set([largeId, 'scripted-main', 'scripted-1', 'scripted-2']))
+  })
+
   it('hides other workspace records and ignores unattested or incomplete headers', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-scope-workspace-'))
     const sessionRoot = await mkdtemp(join(tmpdir(), 'scripted-pi-scope-sessions-'))

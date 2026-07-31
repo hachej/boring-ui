@@ -37,6 +37,7 @@ const SESSION_ROOT_ENV = 'BORING_AGENT_SESSION_ROOT'
 const DEFAULT_SESSION_ID = 'scripted-main'
 const DEFAULT_TIME = '2026-06-04T12:00:00.000Z'
 const DEFAULT_TICK_MS = 5
+const MAX_SESSION_ID_LENGTH = 128
 
 let persistedHarness: ScriptedPiHarness | undefined
 
@@ -151,13 +152,7 @@ class ScriptedSessionStore implements SessionStore {
 
   async create(_ctx: SessionCtx, init?: { title?: string }): Promise<SessionSummary> {
     await this.ensureHydrated()
-    const id = this.createCount === 0 ? DEFAULT_SESSION_ID : `scripted-${this.createCount}`
-    this.createCount += 1
-    const existing = this.records.get(id)
-    if (existing) {
-      this.assertVisible(existing, _ctx, id)
-      return toSummary(existing)
-    }
+    const id = this.takeNextSessionId()
     const record = this.createRecord(id, init?.title ?? 'Scripted baseline', _ctx.workspaceId)
     this.records.set(record.id, record)
     await this.writeSessionFile(record, _ctx)
@@ -265,7 +260,7 @@ class ScriptedSessionStore implements SessionStore {
       const header = entries[0]
       const id = typeof header?.id === 'string' ? header.id : undefined
       const expectedName = id ? `${id}.jsonl` : undefined
-      if (header?.type !== 'session' || !id || !SAFE_NATIVE_SESSION_ID.test(id) || name !== expectedName || this.records.has(id)) continue
+      if (header?.type !== 'session' || !id || id.length > MAX_SESSION_ID_LENGTH || !SAFE_NATIVE_SESSION_ID.test(id) || name !== expectedName || this.records.has(id)) continue
       const infos = entries.filter((entry) => entry.type === 'session_info')
       const latestInfo = infos.at(-1)
       const timestamps = entries.map((entry) => entry.timestamp).filter((value): value is string => typeof value === 'string')
@@ -283,12 +278,19 @@ class ScriptedSessionStore implements SessionStore {
         workspaceId: boringSessionCtx.workspaceId,
       })
     }
-    let next = this.records.has(DEFAULT_SESSION_ID) ? 1 : 0
-    for (const id of this.records.keys()) {
-      const match = /^scripted-(\d+)$/.exec(id)
-      if (match) next = Math.max(next, Number(match[1]) + 1)
+    this.createCount = 0
+  }
+
+  private takeNextSessionId(): string {
+    for (;;) {
+      if (!Number.isSafeInteger(this.createCount) || this.createCount < 0) {
+        throw new Error('scripted session id space exhausted')
+      }
+      const id = this.createCount === 0 ? DEFAULT_SESSION_ID : `scripted-${this.createCount}`
+      this.createCount += 1
+      if (id.length > MAX_SESSION_ID_LENGTH) throw new Error('scripted session id space exhausted')
+      if (!this.records.has(id)) return id
     }
-    this.createCount = next
   }
 
   private belongsTo(record: ScriptedSessionRecord, ctx: SessionCtx): boolean {
