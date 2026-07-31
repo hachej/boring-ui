@@ -54,6 +54,7 @@ describe('workspace agent dispatcher', () => {
 
     const dispatched = await dispatcher.dispatch!({
       requestId: 'run-1',
+      title: 'Automation Daily summary: run this',
       content: 'run this',
       model: { provider: 'test', id: 'gpt-5.5' },
     })
@@ -61,7 +62,12 @@ describe('workspace agent dispatcher', () => {
       ref: { agentTypeId: 'default', sessionId: 'session-1' },
       receipt: { accepted: true, disposition: 'prompt', clientNonce: 'run-1' },
     })
-    expect(gateway.createSession).toHaveBeenCalledWith(expect.objectContaining({ scope, agentTypeId: 'default', requestId: 'run-1' }))
+    expect(gateway.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      scope,
+      agentTypeId: 'default',
+      requestId: 'run-1',
+      title: 'Automation Daily summary: run this',
+    }))
     expect(gateway.sends).toEqual([expect.objectContaining({ kind: 'prompt', requestId: 'run-1', clientNonce: 'run-1' })])
 
     const received = []
