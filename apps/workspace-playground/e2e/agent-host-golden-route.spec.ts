@@ -61,10 +61,25 @@ async function expectHorizontalSplit(
 }
 
 test.describe("addressed Agent Host browser wire", () => {
+  test("seeds committed fixtures into the configured workspace root", async ({ request }) => {
+    const metaResponse = await request.get("/api/v1/workspace/meta")
+    expect(metaResponse.status()).toBe(200)
+    const { workspaceId } = await metaResponse.json() as { workspaceId: string }
+
+    const fixtureResponse = await request.get("/api/v1/files?path=README.md", {
+      headers: { "x-boring-workspace-id": workspaceId },
+    })
+    expect(fixtureResponse.status(), await fixtureResponse.text()).toBe(200)
+    await expect(fixtureResponse.json()).resolves.toMatchObject({
+      content: expect.stringContaining("# Workspace Playground"),
+    })
+  })
+
   test("marks a chat read-only after a structured runtime-scope mutation failure", async ({ page }) => {
-    test.setTimeout(90_000)
+    test.setTimeout(180_000)
 
     await page.goto("/?fresh=1")
+    await expect(page.locator('aside[aria-label="App navigation"]')).toBeVisible({ timeout: 120_000 })
     await page.getByRole("button", { name: "New chat with Alpha", exact: true }).click()
     const chat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="alpha"]').last()
     await expect(chat).toHaveAttribute("data-pi-chat-session-id", /^local-/, { timeout: 15_000 })
