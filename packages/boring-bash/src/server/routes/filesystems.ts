@@ -18,10 +18,12 @@ export interface FilesystemCatalogCapabilities {
   mkdir: boolean
 }
 
+export type LogicalFilesystemRoot = '.' | `/${string}`
+
 export interface FilesystemCatalogEntry {
   filesystem: string
   label: string
-  rootDir: string
+  rootDir: LogicalFilesystemRoot
   access: 'readonly' | 'readwrite'
   capabilities: FilesystemCatalogCapabilities
 }
@@ -71,7 +73,7 @@ function safeText(value: unknown, fallback: string, maxLength: number): string {
     : fallback
 }
 
-function safeLogicalRoot(value: unknown): string {
+function safeLogicalRoot(value: unknown): LogicalFilesystemRoot {
   if (value === '.') return '.'
   if (typeof value !== 'string' || value.length === 0 || value.length > MAX_ROOT_LENGTH) return '/'
   if (!value.startsWith('/') || value.includes('\\') || CONTROL_CHARACTERS.test(value)) return '/'
@@ -79,7 +81,7 @@ function safeLogicalRoot(value: unknown): string {
   if (value.endsWith('/') || value.includes('//')) return '/'
   const segments = value.slice(1).split('/')
   if (segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')) return '/'
-  return value
+  return value as LogicalFilesystemRoot
 }
 
 function capabilitiesFor(binding: RuntimeFilesystemBinding): FilesystemCatalogCapabilities {

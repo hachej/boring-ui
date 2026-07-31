@@ -15,6 +15,11 @@ export const COMMAND_PALETTE_HARD_GATE_CONTRACT = {
   allowedHttpErrors: [] as Array<{ urlIncludes: string; statuses: number[] }>,
   allowedRequestFailures: [
     {
+      path: "/api/v1/filesystems",
+      errorText: "net::ERR_ABORTED",
+      rationale: "The fixture shell cancels filesystem discovery when its fresh-state reset completes.",
+    },
+    {
       path: "/api/v1/tree?path=.",
       errorText: "net::ERR_ABORTED",
       rationale: "The fixture shell cancels duplicate startup tree refreshes when its fresh-state reset completes.",

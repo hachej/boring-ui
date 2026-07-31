@@ -85,10 +85,10 @@ export function searchRoutes(
     }
 
     try {
-      const [fileSearch, bindings] = await Promise.all([
-        resolveFileSearch(request),
-        resolveFilesystemBindings(request),
-      ])
+      // Resolve sequentially so request-scoped runtimes are leased before a
+      // second resolver asks for the same binding.
+      const fileSearch = await resolveFileSearch(request)
+      const bindings = await resolveFilesystemBindings(request)
       const userResults = (await fileSearch.search(q, limit)).map((path) => ({
         filesystem: 'user',
         path,
