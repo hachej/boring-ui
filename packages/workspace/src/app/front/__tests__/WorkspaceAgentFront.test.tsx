@@ -537,6 +537,55 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByText("Late A")).not.toBeInTheDocument()
   })
 
+  it.each([
+    { source: "agent", firstAgent: "alpha", nextAgent: "beta", firstApi: "/api", nextApi: "/api" },
+    { source: "API", firstAgent: "alpha", nextAgent: "alpha", firstApi: "/source-a/", nextApi: "/source-b" },
+  ])("does not materialize a late created pane after a same-workspace $source switch", async ({ firstAgent, nextAgent, firstApi, nextApi }) => {
+    const user = userEvent.setup()
+    const oldCreate = deferred<{ id: string; agentTypeId: string; title: string; updatedAt: number }>()
+    const view = render(
+      <WorkspaceAgentFront
+        workspaceId="same-workspace-create-switch"
+        agentTypeId={firstAgent}
+        apiBaseUrl={firstApi}
+        workspaceLayout="plugin-tabs"
+        persistenceEnabled={false}
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "first", agentTypeId: firstAgent, title: "First source", updatedAt: 1 }]}
+        activeSessionId="first"
+        activeSessionAgentTypeId={firstAgent}
+        onSwitchSession={vi.fn()}
+        onCreateSession={() => oldCreate.promise}
+      />,
+    )
+
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+    view.rerender(
+      <WorkspaceAgentFront
+        workspaceId="same-workspace-create-switch"
+        agentTypeId={nextAgent}
+        apiBaseUrl={nextApi}
+        workspaceLayout="plugin-tabs"
+        persistenceEnabled={false}
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "next", agentTypeId: nextAgent, title: "Next source", updatedAt: 2 }]}
+        activeSessionId="next"
+        activeSessionAgentTypeId={nextAgent}
+        onSwitchSession={vi.fn()}
+        onCreateSession={vi.fn()}
+      />,
+    )
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["next"]))
+
+    await act(async () => {
+      oldCreate.resolve({ id: "old-late", agentTypeId: firstAgent, title: "Old late", updatedAt: 3 })
+      await oldCreate.promise
+    })
+
+    expect(visibleChatSessionIds()).toEqual(["next"])
+    expect(screen.queryByText("Old late")).not.toBeInTheDocument()
+  })
+
   it("creates exactly one session when New chat is double-clicked", async () => {
     // create() is an awaited server round-trip now, so without a re-entry
     // guard the second click of a double-click mints a second session.
@@ -2335,6 +2384,57 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(screen.getByText("Global command panel body")).toBeInTheDocument()
     })
+  })
+
+  it("keeps an unvalidated persisted addressed pane out of chat and plugin providers", async () => {
+    const providerSnapshots: Array<{ activeSessionId?: string | null; openSessionIds?: readonly string[] }> = []
+    function SessionProbeProvider({ activeSessionId, openSessionIds, children }: PluginProviderProps) {
+      providerSnapshots.push({ activeSessionId, openSessionIds })
+      return <>{children}</>
+    }
+    const probePlugin = definePlugin({
+      id: "session-scope-probe",
+      setup(api) {
+        api.registerProvider({ id: "session-probe", component: SessionProbeProvider })
+      },
+    })
+    localStorage.setItem("boring-workspace:chat-panes:validated-addressed-panes", JSON.stringify({
+      version: 2,
+      refs: [
+        { kind: "addressed", sessionId: "missing", agentTypeId: "alpha" },
+        { kind: "addressed", sessionId: "valid", agentTypeId: "alpha" },
+      ],
+      activeRef: { kind: "addressed", sessionId: "missing", agentTypeId: "alpha" },
+    }))
+    const validSession = { id: "valid", agentTypeId: "alpha", title: "Valid session", updatedAt: 1 }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="validated-addressed-panes"
+        agentTypeId="alpha"
+        chatPanel={SessionIdChatPanel}
+        plugins={[probePlugin]}
+        useSessions={() => ({
+          sessions: [validSession],
+          activeSession: validSession,
+          activeSessionId: validSession.id,
+          activeSessionAgentTypeId: validSession.agentTypeId,
+          workspaceId: "validated-addressed-panes",
+          loading: false,
+          hasMore: true,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["valid"]))
+    expect(screen.queryByText("Chat pane missing")).not.toBeInTheDocument()
+    expect(providerSnapshots.some((snapshot) => (
+      snapshot.activeSessionId === "missing" || snapshot.openSessionIds?.includes("missing")
+    ))).toBe(false)
+    expect(providerSnapshots.at(-1)).toMatchObject({ activeSessionId: "valid", openSessionIds: ["valid"] })
   })
 
   it("forwards request headers to workspace plugin providers by default", async () => {

@@ -27,6 +27,24 @@ describe('activeSessionStorage', () => {
     expect(bootResumeSessionStorageKey('workspace-a:user-opaque')).toBe('boring-agent:v2:workspace-a:user-opaque:bootResumeSessionId')
   })
 
+  test('keys boot ownership by the full normalized addressed source', () => {
+    const alpha = bootResumeSessionStorageKey({
+      apiBaseUrl: '/api/', sessionsApiPath: '/api/v1/agents/alpha/sessions', workspaceId: 'workspace-a', storageScope: 'scope-a',
+    })
+    const normalizedAlpha = bootResumeSessionStorageKey({
+      apiBaseUrl: '/api', sessionsApiPath: '/api/v1/agents/alpha/sessions', workspaceId: 'workspace-a', storageScope: 'scope-a',
+    })
+    const beta = bootResumeSessionStorageKey({
+      apiBaseUrl: '/api', sessionsApiPath: '/api/v1/agents/beta/sessions', workspaceId: 'workspace-a', storageScope: 'scope-a',
+    })
+    const otherApi = bootResumeSessionStorageKey({
+      apiBaseUrl: '/other', sessionsApiPath: '/api/v1/agents/alpha/sessions', workspaceId: 'workspace-a', storageScope: 'scope-a',
+    })
+
+    expect(alpha).toBe(normalizedAlpha)
+    expect(new Set([alpha, beta, otherApi])).toHaveLength(3)
+  })
+
   test('reads, writes, and clears only the active session id', () => {
     const storage = memoryStorage()
 

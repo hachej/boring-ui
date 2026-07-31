@@ -9,17 +9,33 @@ export interface ActiveSessionStorageLike {
   removeItem(key: string): void
 }
 
+export interface BootResumeSessionSource {
+  apiBaseUrl?: string
+  sessionsApiPath: string
+  workspaceId?: string
+  storageScope?: string
+}
+
 export interface ActiveSessionStorageOptions {
   storageScope?: string
   storage?: ActiveSessionStorageLike
+  bootResumeSource?: BootResumeSessionSource
 }
 
 export function activeSessionStorageKey(storageScope?: string): string {
   return scopedSessionStorageKey(storageScope, ACTIVE_SESSION_KEY_SUFFIX)
 }
 
-export function bootResumeSessionStorageKey(storageScope?: string): string {
-  return scopedSessionStorageKey(storageScope, BOOT_RESUME_SESSION_KEY_SUFFIX)
+export function bootResumeSessionStorageKey(source?: string | BootResumeSessionSource): string {
+  const scope = typeof source === 'object' && source !== null
+    ? encodeURIComponent(JSON.stringify([
+        source.apiBaseUrl?.replace(/\/$/, '') ?? '',
+        source.sessionsApiPath,
+        source.workspaceId ?? '',
+        source.storageScope ?? DEFAULT_STORAGE_SCOPE,
+      ]))
+    : source
+  return scopedSessionStorageKey(scope, BOOT_RESUME_SESSION_KEY_SUFFIX)
 }
 
 export function readActiveSessionId(options: ActiveSessionStorageOptions = {}): string | undefined {
@@ -50,7 +66,7 @@ export function readBootResumeSessionId(options: ActiveSessionStorageOptions = {
   const storage = resolveBootStorage(options.storage)
   if (!storage) return undefined
   try {
-    return storage.getItem(bootResumeSessionStorageKey(options.storageScope)) ?? undefined
+    return storage.getItem(bootResumeSessionStorageKey(options.bootResumeSource ?? options.storageScope)) ?? undefined
   } catch {
     return undefined
   }
@@ -60,7 +76,7 @@ export function writeBootResumeSessionId(sessionId: string | undefined, options:
   const storage = resolveBootStorage(options.storage)
   if (!storage) return
   try {
-    const key = bootResumeSessionStorageKey(options.storageScope)
+    const key = bootResumeSessionStorageKey(options.bootResumeSource ?? options.storageScope)
     if (sessionId === undefined || sessionId.length === 0) storage.removeItem(key)
     else storage.setItem(key, sessionId)
   } catch {}

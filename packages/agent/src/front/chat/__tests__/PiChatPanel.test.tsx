@@ -198,7 +198,11 @@ describe('PiChatPanel sandbox shell', () => {
 
   test('exactly resumes a tab-owned hidden addressed session even when visible sessions exist', async () => {
     const persisted = storage({ [activeSessionStorageKey('scope-a')]: 'pi-hidden-empty' })
-    window.sessionStorage.setItem(bootResumeSessionStorageKey('scope-a'), 'pi-hidden-empty')
+    const bootResumeKey = bootResumeSessionStorageKey({
+      sessionsApiPath: '/api/v1/agents/alpha/sessions',
+      storageScope: 'scope-a',
+    })
+    window.sessionStorage.setItem(bootResumeKey, 'pi-hidden-empty')
     const remote = new FakeRemotePiSession(remoteState())
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ sessions: [{
@@ -228,7 +232,7 @@ describe('PiChatPanel sandbox shell', () => {
     })
     await waitFor(() => expect(createRemoteSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'pi-hidden-empty' })))
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-hidden-empty')
-    expect(window.sessionStorage.getItem(bootResumeSessionStorageKey('scope-a'))).toBe('pi-hidden-empty')
+    expect(window.sessionStorage.getItem(bootResumeKey)).toBe('pi-hidden-empty')
   })
 
   test('clears the composer immediately after local prompt acceptance', async () => {
