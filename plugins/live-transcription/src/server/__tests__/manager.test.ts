@@ -30,7 +30,7 @@ class FakeSocket extends EventEmitter {
 function resolver(
   workspace: MemoryWorkspace,
   ensure: NonNullable<WorkspaceAgentDispatcherBinding["bindPiSession"]> = vi.fn(async () => ({
-    visibleUserMessageTarget: { isIdle: async () => true, send: async (_message: string) => undefined },
+    visibleUserMessageTarget: { isIdle: async () => true, sendIfIdle: async (_input: unknown) => ({ status: "accepted" as const, cursor: 1 }) },
   })),
 ): WorkspaceAgentDispatcherResolver {
   return {
@@ -121,9 +121,9 @@ describe("LiveTranscriptManager", () => {
 
   it("dispatches manual review through the exact bound Pi session target", async () => {
     const workspace = new MemoryWorkspace()
-    const send = vi.fn(async (_message: string) => undefined)
+    const send = vi.fn(async (_input: unknown) => ({ status: "accepted" as const, cursor: 1 }))
     const ensure = vi.fn(async () => ({
-        visibleUserMessageTarget: { isIdle: async () => true, send },
+        visibleUserMessageTarget: { isIdle: async () => true, sendIfIdle: send },
     }))
     const upstream = {
       connect: vi.fn(async () => undefined),
@@ -145,8 +145,44 @@ describe("LiveTranscriptManager", () => {
 
     await expect(manager.review(started.liveSessionId)).resolves.toEqual({ status: "dispatched" })
     expect(send).toHaveBeenCalledOnce()
-    expect(send.mock.calls[0]![0]).toContain("[Manual transcript review]")
-    expect(send.mock.calls[0]![0]).toContain(`\`${started.transcriptPath}\``)
+    expect(send.mock.calls[0]![0]).toMatchObject({ message: expect.stringContaining("[Manual transcript review]") })
+    expect(send.mock.calls[0]![0]).toMatchObject({ message: expect.stringContaining(`\`${started.transcriptPath}\``) })
+    await manager.close()
+  })
+
+  it("interrupts capture when the exact Pi session disappears during review delivery", async () => {
+    const workspace = new MemoryWorkspace()
+    const bindPiSession = vi.fn(async () => ({
+      visibleUserMessageTarget: {
+        isIdle: async () => true,
+        sendIfIdle: async () => ({ status: "gone" as const }),
+      },
+    }))
+    const upstream = {
+      connect: vi.fn(async () => undefined),
+      sendPcm: vi.fn(async () => undefined),
+      drain: vi.fn(async () => undefined),
+      close: vi.fn(),
+    }
+    const manager = new LiveTranscriptManager({
+      dispatcherResolver: resolver(workspace, bindPiSession),
+      actorResolver: () => ({ workspaceId: "default", userId: "local" }),
+      upstreamUrl: "ws://127.0.0.1:18772/asr",
+      createUpstreamForTest: () => upstream,
+    })
+    const started = await manager.start(request, { sessionId: "chat-gone" })
+    const socket = new FakeSocket()
+    manager.handleBrowserSocket(started.liveSessionId, socket as never)
+    socket.emit("message", Buffer.from(started.socketNonce), true)
+    await vi.waitFor(() => expect(manager.status(started.liveSessionId).state).toBe("active"))
+
+    await expect(manager.review(started.liveSessionId)).resolves.toEqual({ status: "pending" })
+    await vi.waitFor(() => expect(manager.status(started.liveSessionId)).toMatchObject({
+      active: false,
+      state: "interrupted",
+      outcome: "live_transcript_session_not_found",
+    }))
+    expect(upstream.close).toHaveBeenCalled()
     await manager.close()
   })
 
@@ -246,7 +282,7 @@ describe("LiveTranscriptManager", () => {
     const ensure = vi.fn(async () => {
       await ensureGate
       return {
-            visibleUserMessageTarget: { isIdle: async () => true, send: async (_message: string) => undefined },
+            visibleUserMessageTarget: { isIdle: async () => true, sendIfIdle: async (_input: unknown) => ({ status: "accepted" as const, cursor: 1 }) },
       }
     })
     const manager = new LiveTranscriptManager({
@@ -268,7 +304,7 @@ describe("LiveTranscriptManager", () => {
     const retryEnsure = vi.fn()
       .mockRejectedValueOnce(Object.assign(new Error("disposed"), { code: "AGENT_BINDING_DISPOSED" }))
       .mockResolvedValue({
-            visibleUserMessageTarget: { isIdle: async () => true, send: async (_message: string) => undefined },
+            visibleUserMessageTarget: { isIdle: async () => true, sendIfIdle: async (_input: unknown) => ({ status: "accepted" as const, cursor: 1 }) },
       })
     const retryManager = new LiveTranscriptManager({
       dispatcherResolver: resolver(retryWorkspace, retryEnsure),

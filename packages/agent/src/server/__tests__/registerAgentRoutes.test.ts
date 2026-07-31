@@ -253,7 +253,7 @@ test('registerAgentRoutes composes a trusted dispatcher over the workspace runti
     expect(boundSession).toMatchObject({
       visibleUserMessageTarget: {
         isIdle: expect.any(Function),
-        send: expect.any(Function),
+        sendIfIdle: expect.any(Function),
       },
     })
     await expect(boundSession.visibleUserMessageTarget.isIdle()).resolves.toBe(true)
@@ -263,15 +263,71 @@ test('registerAgentRoutes composes a trusted dispatcher over the workspace runti
     await expect(binding.bindPiSession!(sessionId, { userId: 'wrong-user' })).rejects.toMatchObject({
       code: ErrorCode.enum.UNAUTHORIZED,
     })
-    await boundSession.visibleUserMessageTarget.send(
-      '[Manual transcript review] read live-transcripts/a.md',
-      'Manual review requested',
-    )
+    const adapter = harness.adapters.get(sessionId)!
+    const retryableReview = {
+      requestId: 'retryable-review-1',
+      message: 'retry after busy',
+      displayMessage: 'Retry after busy',
+    }
+    adapter.setStreamingForTest(true)
+    await expect(boundSession.visibleUserMessageTarget.sendIfIdle(retryableReview))
+      .resolves.toEqual({ status: 'busy' })
+    adapter.setStreamingForTest(false)
+    await expect(boundSession.visibleUserMessageTarget.sendIfIdle(retryableReview))
+      .resolves.toMatchObject({ status: 'accepted' })
+
+    const releaseConcurrentPrompt = adapter.holdNextPrompt()
+    const concurrentReviews = [
+      { requestId: 'concurrent-review-1', message: 'concurrent one' },
+      { requestId: 'concurrent-review-2', message: 'concurrent two' },
+    ]
+    const concurrentResults = await Promise.all(concurrentReviews.map(async (review) =>
+      await boundSession.visibleUserMessageTarget.sendIfIdle(review)))
+    expect(concurrentResults.map((result) => result.status).sort()).toEqual(['accepted', 'busy'])
+    releaseConcurrentPrompt()
+    await vi.waitFor(() => expect(boundSession.visibleUserMessageTarget.isIdle()).resolves.toBe(true))
+    const busyReview = concurrentReviews[concurrentResults.findIndex((result) => result.status === 'busy')]!
+    await expect(boundSession.visibleUserMessageTarget.sendIfIdle(busyReview))
+      .resolves.toMatchObject({ status: 'accepted' })
+
+    const visibleReview = {
+      requestId: 'manual-review-1',
+      message: '[Manual transcript review] read live-transcripts/a.md',
+      displayMessage: 'Manual review requested',
+    }
+    const firstVisibleReview = await boundSession.visibleUserMessageTarget.sendIfIdle(visibleReview)
+    expect(firstVisibleReview).toMatchObject({ status: 'accepted', cursor: expect.any(Number) })
+    await expect(boundSession.visibleUserMessageTarget.sendIfIdle(visibleReview)).resolves.toEqual(firstVisibleReview)
+    await expect(boundSession.visibleUserMessageTarget.sendIfIdle({
+      ...visibleReview,
+      message: 'changed payload',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
     await vi.waitFor(() => expect(harness.sendInputs).toContainEqual(expect.objectContaining({
       content: '[Manual transcript review] read live-transcripts/a.md',
       sessionId,
       ctx: expect.objectContaining({ workspaceId: 'default' }),
     })))
+    const secondCreated = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions',
+      headers: { 'x-boring-workspace-id': 'default' },
+      payload: {},
+    })
+    const secondSessionId = secondCreated.json().id as string
+    const secondBoundSession = await binding.bindPiSession!(secondSessionId)
+    await expect(secondBoundSession.visibleUserMessageTarget.sendIfIdle({
+      requestId: 'second-session-review',
+      message: 'second session only',
+      displayMessage: 'Second session only',
+    })).resolves.toMatchObject({ status: 'accepted' })
+    expect(harness.sendInputs).toContainEqual(expect.objectContaining({
+      content: 'second session only',
+      sessionId: secondSessionId,
+    }))
+    expect(harness.sendInputs).not.toContainEqual(expect.objectContaining({
+      content: 'second session only',
+      sessionId,
+    }))
     await expect(dispatcher.interrupt(gatewaySessionId!)).resolves.toMatchObject({ accepted: true })
     await expect(dispatcher.stop(gatewaySessionId!)).resolves.toMatchObject({ accepted: true, stopped: true })
     expect(harness.factoryInputs).toHaveLength(1)

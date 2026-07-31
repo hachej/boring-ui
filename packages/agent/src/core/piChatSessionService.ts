@@ -33,6 +33,9 @@ export interface PiSessionCreateInit {
   modelDefault?: ChatModelSelection
 }
 
+/** Server-only prompt admission selector; browser schemas never accept requireIdle. */
+export type AgentPromptPayload = PromptPayload & { readonly requireIdle?: true }
+
 export type PiChatReplayRangeError =
   | { type: 'replay_gap'; latestSeq: number; minReplaySeq: number }
   | { type: 'cursor_ahead'; latestSeq: number; minReplaySeq: number }
@@ -61,7 +64,7 @@ export interface PiChatSessionService {
   readAttachment?(ctx: PiSessionRequestContext, sessionId: string, messageId: string, index: number): Promise<PiChatAttachmentResult>
   readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot>
   subscribe(ctx: PiSessionRequestContext, sessionId: string, cursor: number, subscriber: PiChatEventSubscriber): Promise<PiChatEventStreamResult>
-  prompt(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt>
+  prompt(ctx: PiSessionRequestContext, sessionId: string, payload: AgentPromptPayload): Promise<PromptReceipt>
   followUp(ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload): Promise<FollowUpReceipt>
   clearQueue(ctx: PiSessionRequestContext, sessionId: string, payload: QueueClearPayload): Promise<QueueClearReceipt>
   interrupt(ctx: PiSessionRequestContext, sessionId: string, payload: InterruptPayload): Promise<CommandReceipt>

@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import type { FastifyRequest } from 'fastify'
 
 import type {
@@ -7,6 +6,7 @@ import type {
   PiSessionRequestContext,
 } from '../core/piChatSessionService'
 import { ErrorCode } from '../shared/error-codes'
+import { AgentGatewayError, AgentGatewayErrorCode } from '../shared/gateway/errors'
 import type { WorkspaceAgentDispatcherContext } from '../shared/workspaceAgentDispatcher'
 import {
   createWorkspaceAgentDispatcherError,
@@ -44,17 +44,44 @@ export async function bindTrustedPiSession(input: {
           return snapshot.status === 'idle'
         })
       },
-      async send(message, displayMessage) {
-        await input.withServices(async ({ prompt }) => {
-          await prompt.prompt(sessionContext, input.sessionId, {
-            message,
-            displayMessage: displayMessage ?? message,
-            clientNonce: `trusted-visible-turn:${randomUUID()}`,
-          })
-        })
+      async sendIfIdle(sendInput) {
+        const requestId = sendInput.requestId.trim()
+        if (!requestId) throw new TypeError('requestId must be a non-empty string')
+        try {
+          const receipt = await input.withServices(async ({ prompt }) => await prompt.prompt(
+            sessionContext,
+            input.sessionId,
+            {
+              message: sendInput.message,
+              displayMessage: sendInput.displayMessage ?? sendInput.message,
+              clientNonce: requestId,
+              requireIdle: true,
+            },
+          ))
+          return {
+            status: 'accepted' as const,
+            cursor: receipt.cursor,
+            ...(receipt.duplicate ? { duplicate: true } : {}),
+          }
+        } catch (error) {
+          if (error instanceof AgentGatewayError && error.code === AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE) {
+            return { status: 'busy' as const }
+          }
+          if (isGoneSessionError(error)) return { status: 'gone' as const }
+          throw error
+        }
       },
     },
   }
+}
+
+function isGoneSessionError(error: unknown): boolean {
+  const code = (error as { code?: unknown })?.code
+  return code === AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND
+    || code === AgentGatewayErrorCode.AGENT_SCOPE_DENIED
+    || code === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
+    || code === ErrorCode.enum.SESSION_NOT_FOUND
+    || code === ErrorCode.enum.UNAUTHORIZED
 }
 
 function trustedPiSessionContext(

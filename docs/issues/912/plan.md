@@ -250,6 +250,23 @@ Every terminal outcome releases browser/server ownership and active-path view mo
 
 **Rollback:** Revert this boundary-only slice; no persisted schema or transcript format changes.
 
+### Gateway-backed exact-session visible delivery
+
+**Goal:** Expose a least-authority exact-session facade whose visible turns use Agent Host's request ledger, while making busy admission and retries genuinely atomic/idempotent.
+
+The originating browser Pi session still lives in the legacy workspace/user storage partition. A plain addressed `AgentSessionRef` resolves the Gateway's workspace-scoped partition and therefore cannot safely replace that binding until browser sessions migrate to addressed Gateway transport. This slice keeps the host-only legacy binding solely for exact partition resolution and lazy adapter binding; the plugin receives no service or Gateway access, and every visible send still flows through Agent Host's Gateway compatibility ledger.
+
+1. Add an explicit `requireIdle: true` selector to Gateway prompt commands. Ordinary prompts retain existing error-recovery semantics; strict review prompts accept only an actually `idle` session.
+2. Run strict prompt-state validation under the per-session writer after request-ledger prepare but before admission acceptance/effect start. Busy returns retryable `AGENT_COMMAND_INVALID_STATE` and leaves the request ID at pending admission.
+3. Apply the same writer-protected guard to server-only strict legacy prompts using their exact legacy session context. Keep ordinary browser prompt admission unchanged.
+4. Expose only advisory `isIdle()` and atomic/idempotent `sendIfIdle({ requestId, message, displayMessage })` from the exact-session target closed over host-authorized actor/session context.
+5. Keep `ensurePiSessionBound` only as the legacy partition adapter-binding bridge; remove random server-generated delivery nonces and direct/unacknowledged sends from the capability.
+6. Freeze each broker delivery ID and full model/display payload across busy/transient retries. Accepted replay counts as one delivery; changed coalesced payload gets a new ID.
+7. Treat missing/deleted or permanently ownership-invalid originating sessions as terminal: stop retries and interrupt capture with `live_transcript_session_not_found`. Keep transient failures retryable with the same delivery.
+8. Prove busy-then-idle same-ID success, accepted replay, changed-payload conflict, concurrent strict sends, actor/session isolation, display/model separation, broker payload freezing, and terminal session-loss cleanup.
+
+**Rollback:** Revert the strict-idle selector and restore one-shot visible review delivery; no persisted schema or transcript format changes.
+
 ## Out of Scope
 
 - Production or shared deployment; production user auth/membership/CSRF, multi-user status privacy, or multi-replica ownership. Local exact Host/Origin checks remain in scope.

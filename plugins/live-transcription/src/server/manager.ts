@@ -154,6 +154,9 @@ export class LiveTranscriptManager {
         getReviewInstructions: () => readReviewInstructions(binding.workspace),
         intervalMs: this.options.reviewIntervalMs,
         retryMs: this.options.reviewRetryMs,
+        onTerminalFailure: () => {
+          void this.terminate(session, "interrupted", "live_transcript_session_not_found")
+        },
         onDrained: () => { this.reviewBrokers.delete(broker) },
       })
       session.reviewBroker = broker

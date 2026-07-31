@@ -18,8 +18,18 @@ export interface WorkspaceAgentDispatcherResolveOptions {
 }
 
 export interface PiSessionVisibleUserTurnTarget {
+  /** Advisory snapshot; sendIfIdle is the authoritative atomic admission. */
   isIdle(): Promise<boolean>
-  send(message: string, displayMessage?: string): Promise<void>
+  sendIfIdle(input: {
+    /** Stable across busy/transient retries; also used as the Pi client nonce. */
+    requestId: string
+    message: string
+    displayMessage?: string
+  }): Promise<
+    | { status: 'accepted'; cursor: number; duplicate?: boolean }
+    | { status: 'busy' }
+    | { status: 'gone' }
+  >
 }
 
 export interface BoundPiSession {

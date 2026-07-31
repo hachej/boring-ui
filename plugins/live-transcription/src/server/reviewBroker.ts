@@ -1,8 +1,17 @@
+import { randomUUID } from "node:crypto"
 import { encodeLiveTranscriptReviewPresentation } from "../shared/reviewPresentation"
 
 export interface VisibleUserMessageTarget {
   isIdle(): Promise<boolean>
-  send(message: string, displayMessage?: string): Promise<void>
+  sendIfIdle(input: {
+    requestId: string
+    message: string
+    displayMessage?: string
+  }): Promise<
+    | { status: "accepted"; cursor: number; duplicate?: boolean }
+    | { status: "busy" }
+    | { status: "gone" }
+  >
 }
 
 export interface LiveReviewBrokerOptions {
@@ -16,10 +25,23 @@ export interface LiveReviewBrokerOptions {
   clearInterval?: typeof clearInterval
   setTimeout?: typeof setTimeout
   clearTimeout?: typeof clearTimeout
+  createRequestId?: () => string
+  onTerminalFailure?: () => void
   onDrained?: () => void
 }
 
 type ReviewKind = "automatic" | "manual" | "final"
+
+interface PendingReview {
+  kind: ReviewKind
+  force: boolean
+  requestId: string
+  revision: number
+  delivery?: {
+    message: string
+    displayMessage: string
+  }
+}
 
 /**
  * Session-bound, changed-only review scheduler. It never queues through Pi while
@@ -28,7 +50,8 @@ type ReviewKind = "automatic" | "manual" | "final"
  */
 export class LiveReviewBroker {
   private lastDispatchedRevision = 0
-  private pending: { kind: ReviewKind; force: boolean } | undefined
+  private current: PendingReview | undefined
+  private pending: PendingReview | undefined
   private interval: ReturnType<typeof setInterval> | undefined
   private retryTimer: ReturnType<typeof setTimeout> | undefined
   private dispatching = false
@@ -53,11 +76,13 @@ export class LiveReviewBroker {
     this.finalizing = true
     this.clearAutomaticTimer()
     await this.request("final", false)
+    this.current = undefined
     this.pending = undefined
     this.dispose()
   }
 
   interrupt(): void {
+    this.current = undefined
     this.pending = undefined
     this.dispose()
   }
@@ -80,12 +105,22 @@ export class LiveReviewBroker {
       if (this.finalizing) this.dispose()
       return "dispatched"
     }
-    this.pending = mergePending(this.pending, { kind, force })
+    this.pending = mergePending(this.pending, {
+      kind,
+      force,
+      requestId: (this.options.createRequestId ?? randomUUID)(),
+      revision,
+    })
     return await this.tryDispatch()
   }
 
   private async tryDispatch(): Promise<"dispatched" | "pending"> {
-    if (this.disposed || this.dispatching || !this.pending) return "pending"
+    if (this.disposed || this.dispatching || (!this.current && !this.pending)) return "pending"
+    if (!this.current) {
+      this.current = this.pending
+      this.pending = undefined
+    }
+    const current = this.current!
     this.dispatching = true
     try {
       const idle = await this.options.target.isIdle()
@@ -94,34 +129,47 @@ export class LiveReviewBroker {
         if (!this.finalizing) this.scheduleRetry()
         return "pending"
       }
-      const pending = this.pending
-      const revision = this.options.getProjectionRevision()
-      if (!pending.force && revision <= this.lastDispatchedRevision) {
-        this.pending = undefined
+      if (!current.force && current.revision <= this.lastDispatchedRevision) {
+        this.current = undefined
         if (this.finalizing) this.dispose()
         return "dispatched"
       }
-      const instructions = await this.options.getReviewInstructions?.()
-      if (this.disposed) return "pending"
-      await this.options.target.send(
-        reviewMessage(pending.kind, this.options.transcriptPath, instructions),
-        encodeLiveTranscriptReviewPresentation({ kind: pending.kind, transcriptPath: this.options.transcriptPath }),
-      )
-      this.lastDispatchedRevision = Math.max(this.lastDispatchedRevision, revision)
-      if (this.pending === pending) {
-        this.pending = undefined
-        if (this.finalizing) this.dispose()
-      } else if (!this.finalizing) {
-        // A newer manual request arrived while this send was in flight. Keep
-        // it and re-evaluate after the current turn settles.
-        this.scheduleRetry()
+      if (!current.delivery) {
+        const instructions = await this.options.getReviewInstructions?.()
+        if (this.disposed) return "pending"
+        current.delivery = {
+          message: reviewMessage(current.kind, this.options.transcriptPath, instructions),
+          displayMessage: encodeLiveTranscriptReviewPresentation({
+            kind: current.kind,
+            transcriptPath: this.options.transcriptPath,
+          }),
+        }
       }
+      const result = await this.options.target.sendIfIdle({
+        requestId: current.requestId,
+        ...current.delivery,
+      })
+      if (result.status === "busy") {
+        if (!this.finalizing) this.scheduleRetry()
+        return "pending"
+      }
+      if (result.status === "gone") {
+        this.current = undefined
+        this.pending = undefined
+        this.dispose()
+        this.options.onTerminalFailure?.()
+        return "pending"
+      }
+      this.lastDispatchedRevision = Math.max(this.lastDispatchedRevision, current.revision)
+      this.current = undefined
+      if (this.finalizing) this.dispose()
       return "dispatched"
     } catch {
       if (!this.finalizing) this.scheduleRetry()
       return "pending"
     } finally {
       this.dispatching = false
+      if (!this.disposed && !this.current && this.pending) void this.tryDispatch()
     }
   }
 
@@ -140,15 +188,22 @@ export class LiveReviewBroker {
   }
 }
 
-function mergePending(
-  current: { kind: ReviewKind; force: boolean } | undefined,
-  incoming: { kind: ReviewKind; force: boolean },
-): { kind: ReviewKind; force: boolean } {
+function mergePending(current: PendingReview | undefined, incoming: PendingReview): PendingReview {
   if (!current) return incoming
-  if (incoming.kind === "manual") return { kind: "manual", force: true }
-  if (current.kind === "manual") return { kind: "manual", force: current.force || incoming.force }
-  if (incoming.kind === "final") return { kind: "final", force: current.force || incoming.force }
-  return { kind: current.kind, force: current.force || incoming.force }
+  if (incoming.kind === "manual") return { ...incoming, force: true }
+  if (current.kind === "manual") {
+    return {
+      ...current,
+      force: current.force || incoming.force,
+      revision: Math.max(current.revision, incoming.revision),
+    }
+  }
+  if (incoming.kind === "final") return { ...incoming, force: current.force || incoming.force }
+  return {
+    ...current,
+    force: current.force || incoming.force,
+    revision: Math.max(current.revision, incoming.revision),
+  }
 }
 
 const DEFAULT_REVIEW_INSTRUCTIONS = "Summarize notable decisions, open questions, risks, and useful next actions. If little changed, say so briefly."

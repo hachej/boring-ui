@@ -80,9 +80,10 @@ async function createSystem(options: { emitSnapshots?: boolean; workspace?: Memo
   const bindPiSession = vi.fn(async (sessionId: string, requestedActor: typeof actor) => ({
     visibleUserMessageTarget: {
       isIdle: async () => true,
-      send: async (message: string) => {
-        reviews.push(message)
+      sendIfIdle: async (input: { message: string }) => {
+        reviews.push(input.message)
         reviewSessions.push(sessionId)
+        return { status: "accepted" as const, cursor: 1 }
       },
     },
   }))
