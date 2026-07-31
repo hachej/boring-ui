@@ -11,14 +11,14 @@ export interface CoordinateSessionCreateOptions<TRow extends SessionCreationRow>
   onSettled?: () => void
 }
 
+export type SessionCreationTaskPhase = "queued" | "ready" | "transport" | "invoked" | "awaiting-row" | "finished"
+
 export interface SessionCreationTask<TRow extends SessionCreationRow> extends CoordinateSessionCreateOptions<TRow> {
   sourceKey: string
   knownKeys: Set<string>
   candidateKeys: Set<string>
   ambiguousCandidateHistory: boolean
-  awaitingRow: boolean
-  invocationPending: boolean
-  finished: boolean
+  phase: SessionCreationTaskPhase
   rowWaitTimeout?: ReturnType<typeof globalThis.setTimeout>
   promise: Promise<unknown>
   resolve: (value: unknown) => void
@@ -26,6 +26,11 @@ export interface SessionCreationTask<TRow extends SessionCreationRow> extends Co
 }
 
 export type SessionCreationOutcome = { value?: unknown; error?: unknown }
+
+export interface OrphanBarrierOptions {
+  timeoutMs: number
+  onRelease?: () => void
+}
 
 /**
  * Deterministic state for one source's serialized creates. Invocation and React
@@ -36,7 +41,7 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
   sourceKey: string
   active: SessionCreationTask<TRow> | null = null
   queue: SessionCreationTask<TRow>[] = []
-  private readonly orphanInvocations = new Set<SessionCreationTask<TRow>>()
+  private orphanBarrierTimeout: ReturnType<typeof globalThis.setTimeout> | undefined
   private readonly overlapKeys = new Set<string>()
   private readonly quarantinedKeys = new Set<string>()
 
@@ -45,14 +50,19 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
   }
 
   get hasOrphanBarrier(): boolean {
-    return this.orphanInvocations.size > 0
+    return this.orphanBarrierTimeout !== undefined
   }
 
-  reset(sourceKey: string, observedKeys: Iterable<string> = []): void {
-    this.cancel(() => true, observedKeys)
+  reset(sourceKey: string): void {
+    this.cancel(() => true)
+    this.clearOrphanBarrier()
     this.sourceKey = sourceKey
-    this.orphanInvocations.clear()
-    this.overlapKeys.clear()
+    this.quarantinedKeys.clear()
+  }
+
+  dispose(): void {
+    this.cancel(() => true)
+    this.clearOrphanBarrier()
     this.quarantinedKeys.clear()
   }
 
@@ -74,9 +84,7 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
       knownKeys: new Set(),
       candidateKeys: new Set(),
       ambiguousCandidateHistory: false,
-      awaitingRow: false,
-      invocationPending: false,
-      finished: false,
+      phase: "queued",
       promise,
       resolve,
       reject,
@@ -89,27 +97,27 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
     const task = this.queue.shift() ?? null
     if (!task) return null
     task.knownKeys = new Set([...knownKeys, ...this.quarantinedKeys])
+    this.quarantinedKeys.clear()
+    task.phase = "ready"
     this.active = task
     return task
   }
 
   beginInvocation(task: SessionCreationTask<TRow>): boolean {
-    if (this.active !== task || task.finished || task.sourceKey !== this.sourceKey) return false
-    task.invocationPending = true
+    if (this.active !== task || task.phase !== "ready" || task.sourceKey !== this.sourceKey) return false
+    task.phase = "transport"
     return true
   }
 
   settleInvocation(task: SessionCreationTask<TRow>, observedKeys: Iterable<string>): void {
+    if (task.sourceKey !== this.sourceKey) return
     this.observeRows(observedKeys)
-    task.invocationPending = false
-    if (!this.orphanInvocations.delete(task) || this.orphanInvocations.size > 0) return
-    for (const key of this.overlapKeys) this.quarantinedKeys.add(key)
-    this.overlapKeys.clear()
+    if (this.active === task && task.phase === "transport") task.phase = "invoked"
   }
 
   markAwaitingRow(task: SessionCreationTask<TRow>): boolean {
-    if (this.active !== task || task.finished || task.sourceKey !== this.sourceKey) return false
-    task.awaitingRow = true
+    if (this.active !== task || task.phase !== "invoked" || task.sourceKey !== this.sourceKey) return false
+    task.phase = "awaiting-row"
     return true
   }
 
@@ -133,8 +141,8 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
     this.observeRows(rowKeys)
     if (
       this.active !== task
-      || !task.awaitingRow
       || task.sourceKey !== this.sourceKey
+      || (task.phase !== "transport" && task.phase !== "invoked" && task.phase !== "awaiting-row")
       || this.hasOrphanBarrier
     ) return undefined
 
@@ -148,6 +156,9 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
     if (candidates.length > 1 && !active) task.ambiguousCandidateHistory = true
     for (const row of candidates) task.candidateKeys.add(keyFor(row))
 
+    // Observation starts at provider invocation, but attribution cannot happen
+    // until a settled void result explicitly enters its row-publication wait.
+    if (task.phase !== "awaiting-row") return undefined
     if (active && !task.ambiguousCandidateHistory) return active
     if (task.candidateKeys.size !== 1) return undefined
     const onlyKey = task.candidateKeys.values().next().value as string | undefined
@@ -155,24 +166,30 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
   }
 
   finish(task: SessionCreationTask<TRow>, outcome: SessionCreationOutcome): boolean {
-    if (this.active !== task || task.finished) return false
+    if (this.active !== task || task.phase === "finished") return false
     this.active = null
     this.settleTask(task, outcome)
     return true
   }
 
+  abandon(task: SessionCreationTask<TRow>, observedKeys: Iterable<string>, barrier: OrphanBarrierOptions): void {
+    if (
+      task.sourceKey !== this.sourceKey
+      || (task.phase !== "transport" && task.phase !== "invoked" && task.phase !== "awaiting-row")
+    ) return
+    this.retainOrphanBarrier(observedKeys, barrier)
+  }
+
   cancel(
     matches: (task: SessionCreationTask<TRow>) => boolean,
     observedKeys: Iterable<string> = [],
+    barrier?: OrphanBarrierOptions,
   ): void {
     const keys = Array.from(observedKeys)
     if (this.active && matches(this.active)) {
       const task = this.active
       this.active = null
-      if (task.invocationPending) {
-        this.orphanInvocations.add(task)
-        for (const key of keys) this.overlapKeys.add(key)
-      }
+      if (barrier) this.abandon(task, keys, barrier)
       this.settleTask(task, { value: undefined })
     }
     this.queue = this.queue.filter((task) => {
@@ -182,9 +199,26 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
     })
   }
 
+  private retainOrphanBarrier(observedKeys: Iterable<string>, barrier: OrphanBarrierOptions): void {
+    for (const key of observedKeys) this.overlapKeys.add(key)
+    if (this.orphanBarrierTimeout !== undefined) globalThis.clearTimeout(this.orphanBarrierTimeout)
+    this.orphanBarrierTimeout = globalThis.setTimeout(() => {
+      this.orphanBarrierTimeout = undefined
+      for (const key of this.overlapKeys) this.quarantinedKeys.add(key)
+      this.overlapKeys.clear()
+      barrier.onRelease?.()
+    }, Math.max(0, barrier.timeoutMs))
+  }
+
+  private clearOrphanBarrier(): void {
+    if (this.orphanBarrierTimeout !== undefined) globalThis.clearTimeout(this.orphanBarrierTimeout)
+    this.orphanBarrierTimeout = undefined
+    this.overlapKeys.clear()
+  }
+
   private settleTask(task: SessionCreationTask<TRow>, outcome: SessionCreationOutcome): void {
-    if (task.finished) return
-    task.finished = true
+    if (task.phase === "finished") return
+    task.phase = "finished"
     if (task.rowWaitTimeout !== undefined) globalThis.clearTimeout(task.rowWaitTimeout)
     task.onSettled?.()
     if ("error" in outcome) task.reject(outcome.error)

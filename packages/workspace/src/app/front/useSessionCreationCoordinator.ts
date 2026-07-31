@@ -42,6 +42,7 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
   const runtimeRef = useRef<CoordinatorRuntime<TRow>>({ ...options, mounted: false })
   const drainRef = useRef<() => void>(() => {})
   const reconcileRef = useRef<() => boolean>(() => false)
+  const armRowWaitRef = useRef<(task: SessionCreationTask<TRow>) => void>(() => {})
 
   const keysFor = useCallback((runtime: CoordinatorRuntime<TRow>) => (
     runtime.rows.map(runtime.keyFor)
@@ -70,6 +71,41 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
     }
     if (coordinator.finish(task, { value })) queueMicrotask(() => drainRef.current())
   }, [finishError])
+
+  const orphanBarrierFor = useCallback((runtime: CoordinatorRuntime<TRow>) => ({
+    timeoutMs: runtime.reconciliationTimeoutMs ?? 10_000,
+    onRelease: () => {
+      queueMicrotask(() => {
+        if (!reconcileRef.current()) {
+          const active = coordinatorRef.current.active
+          if (active) armRowWaitRef.current(active)
+        }
+        drainRef.current()
+      })
+    },
+  }), [])
+
+  const armRowWait = useCallback((task: SessionCreationTask<TRow>): void => {
+    const runtime = runtimeRef.current
+    const coordinator = coordinatorRef.current
+    if (
+      coordinator.active !== task
+      || task.phase !== "awaiting-row"
+      || task.rowWaitTimeout !== undefined
+      || coordinator.hasOrphanBarrier
+    ) return
+    const timeoutMs = runtime.reconciliationTimeoutMs ?? 10_000
+    task.rowWaitTimeout = globalThis.setTimeout(() => {
+      if (coordinator.active !== task) return
+      coordinator.abandon(task, keysFor(runtimeRef.current), orphanBarrierFor(runtimeRef.current))
+      const error = Object.assign(
+        new Error("Session create did not publish one canonical row before reconciliation expired"),
+        { code: "SESSION_CREATE_RECONCILIATION_TIMEOUT" as const },
+      )
+      finishError(task, error)
+    }, timeoutMs)
+  }, [finishError, keysFor, orphanBarrierFor])
+  armRowWaitRef.current = armRowWait
 
   const reconcile = useCallback((): boolean => {
     const runtime = runtimeRef.current
@@ -101,7 +137,7 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
     if (!runtime.mounted || coordinator.sourceKey !== runtime.sourceKey || coordinator.active) return
     const observedKeys = keysFor(runtime)
     if (!runtime.ownershipReady || !runtime.ownerIsCurrent()) {
-      coordinator.cancel(() => true, observedKeys)
+      coordinator.cancel(() => true, observedKeys, orphanBarrierFor(runtime))
       return
     }
     const task = coordinator.takeNext(observedKeys)
@@ -117,10 +153,11 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
         || !current.ownershipReady
         || !current.ownerIsCurrent()
       ) {
-        coordinator.cancel((candidate) => candidate === task, keysFor(current))
+        coordinator.cancel((candidate) => candidate === task, keysFor(current), orphanBarrierFor(current))
         return PREFLIGHT_CANCELED
       }
       if (!coordinator.beginInvocation(task)) return PREFLIGHT_CANCELED
+      reconcileRef.current()
       return task.create()
     }).then((value) => {
       if (value === PREFLIGHT_CANCELED) {
@@ -135,7 +172,7 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
         || !current.ownershipReady
         || !current.ownerIsCurrent()
       ) {
-        coordinator.cancel((candidate) => candidate === task, keysFor(current))
+        coordinator.cancel((candidate) => candidate === task, keysFor(current), orphanBarrierFor(current))
         queueMicrotask(() => drainRef.current())
         return
       }
@@ -150,14 +187,7 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
       }
       if (!coordinator.markAwaitingRow(task)) return
       if (reconcileRef.current()) return
-      task.rowWaitTimeout = globalThis.setTimeout(() => {
-        if (coordinator.active !== task) return
-        const error = Object.assign(
-          new Error("Session create did not publish one canonical row before reconciliation expired"),
-          { code: "SESSION_CREATE_RECONCILIATION_TIMEOUT" as const },
-        )
-        finishError(task, error)
-      }, current.reconciliationTimeoutMs ?? 10_000)
+      armRowWaitRef.current(task)
       try {
         void Promise.resolve(current.refresh?.())
           .then(() => reconcileRef.current())
@@ -176,7 +206,7 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
         || !current.ownershipReady
         || !current.ownerIsCurrent()
       ) {
-        coordinator.cancel((candidate) => candidate === task, keysFor(current))
+        coordinator.cancel((candidate) => candidate === task, keysFor(current), orphanBarrierFor(current))
         queueMicrotask(() => drainRef.current())
         return
       }
@@ -187,32 +217,32 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
       }
       finishError(task, error)
     })
-  }, [finishError, finishResolved, keysFor])
+  }, [finishError, finishResolved, keysFor, orphanBarrierFor])
   drainRef.current = drain
 
   useIsomorphicLayoutEffect(() => {
     runtimeRef.current.mounted = true
     return () => {
-      const runtime = runtimeRef.current
-      runtime.mounted = false
-      coordinatorRef.current.cancel(() => true, keysFor(runtime))
+      runtimeRef.current.mounted = false
+      coordinatorRef.current.dispose()
     }
-  }, [keysFor])
+  }, [])
 
   useIsomorphicLayoutEffect(() => {
     const coordinator = coordinatorRef.current
     const previous = runtimeRef.current
     if (coordinator.sourceKey !== options.sourceKey) {
-      coordinator.reset(options.sourceKey, keysFor(previous))
+      coordinator.reset(options.sourceKey)
     }
     runtimeRef.current = { ...options, mounted: previous.mounted }
     if (!options.ownershipReady || !options.ownerIsCurrent()) {
-      coordinator.cancel(() => true, options.rows.map(options.keyFor))
+      const runtime = runtimeRef.current
+      coordinator.cancel(() => true, options.rows.map(options.keyFor), orphanBarrierFor(runtime))
       return
     }
     reconcileRef.current()
     drainRef.current()
-  }, [keysFor, options])
+  }, [options, orphanBarrierFor])
 
   const coordinate = useCallback((taskOptions: CoordinateSessionCreateOptions<TRow>): Promise<unknown> => {
     const runtime = runtimeRef.current
@@ -230,9 +260,9 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
 
   const cancel = useCallback((matches: (task: SessionCreationTask<TRow>) => boolean): void => {
     const runtime = runtimeRef.current
-    coordinatorRef.current.cancel(matches, keysFor(runtime))
+    coordinatorRef.current.cancel(matches, keysFor(runtime), orphanBarrierFor(runtime))
     queueMicrotask(() => drainRef.current())
-  }, [keysFor])
+  }, [keysFor, orphanBarrierFor])
 
   return { coordinate, cancel }
 }

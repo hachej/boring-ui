@@ -398,13 +398,12 @@ const EMPTY_STRING_LIST: string[] = []
 const PREPARING_WARMUP_STATUS: WorkspaceWarmupStatus = { status: "preparing" }
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect
 
-function sessionOperationIdentity(input: {
+function sessionDataSourceIdentity(input: {
   workspaceId: string
   agentTypeId?: string
   apiBaseUrl?: string
   storageKey: string
   requestHeaders: Record<string, string>
-  enabled: boolean
 }): string {
   return JSON.stringify({
     workspaceId: input.workspaceId,
@@ -412,8 +411,11 @@ function sessionOperationIdentity(input: {
     apiBaseUrl: input.apiBaseUrl?.replace(/\/$/, "") ?? "",
     storageKey: input.storageKey,
     requestHeaders: Object.entries(input.requestHeaders).sort(([left], [right]) => left.localeCompare(right)),
-    enabled: input.enabled,
   })
+}
+
+function sessionOperationIdentity(dataSourceKey: string, enabled: boolean): string {
+  return JSON.stringify({ dataSourceKey, enabled })
 }
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -690,14 +692,14 @@ export function WorkspaceAgentFront<
   const shouldUseRemoteSessions = !chatPanelProp || Boolean(useSessionsProp)
   const remoteSessionHookEnabled = shouldUseRemoteSessions && provisionWorkspace !== false
   const requestedAutoSubmitInitialDraft = chatParams?.autoSubmitInitialDraft === true
-  const sessionOperationKey = sessionOperationIdentity({
+  const sessionDataSourceKey = sessionDataSourceIdentity({
     workspaceId,
     agentTypeId,
     apiBaseUrl,
     storageKey: resolvedSessionStorageKey,
     requestHeaders: resolvedRequestHeaders,
-    enabled: remoteSessionHookEnabled,
   })
+  const sessionOperationKey = sessionOperationIdentity(sessionDataSourceKey, remoteSessionHookEnabled)
   const autoSubmitRequestConsumedRef = useRef(false)
   const autoSubmitDirectDesignationRef = useRef<{
     sourceKey: string
@@ -1150,7 +1152,9 @@ export function WorkspaceAgentFront<
     coordinate: coordinateSessionCreate,
     cancel: cancelSessionCreates,
   } = useSessionCreationCoordinator<WorkspaceAgentSession>({
-    sourceKey: sessionOperationKey,
+    // Lifecycle attestation changes across disable/reenable, but orphan rows
+    // remain attributable to this stable underlying inventory.
+    sourceKey: sessionDataSourceKey,
     rows: resolvedSessions,
     activeKey: activeCreationSessionKey,
     keyFor: workspaceSessionKeyFor,
@@ -1512,7 +1516,9 @@ export function WorkspaceAgentFront<
   // While remote sessions load, resolvedSessions is a one-item placeholder
   // for the stored active session — never an authoritative list to prune
   // restored panes against.
-  const sessionListAuthoritative = !activeRemoteHasMore && !remoteSessionsPending
+  const sessionListAuthoritative = !activeRemoteHasMore
+    && !remoteSessionsPending
+    && !remoteSessionsHaveStaleData
   useEffect(() => {
     if (remoteSessionsTransitioning) return
     const sessionKeys = new Set(resolvedSessions.map(workspaceSessionKeyFor))
@@ -1575,12 +1581,15 @@ export function WorkspaceAgentFront<
     for (const session of resolvedSessions) titles.set(workspaceSessionKeyFor(session), session.title)
     return titles
   }, [resolvedSessions])
+  const publicSessionInventoryAuthoritative = sessionListAuthoritative
+    && (!shouldUseRemoteSessions || remoteSessionsAvailable)
   const resolveSessionRef = useCallback((sessionId: string): WorkspaceSessionRef | null => {
+    if (!publicSessionInventoryAuthoritative) return null
     const matches = resolvedSessions.filter((session) => session.id === sessionId)
     return matches.length === 1
       ? workspaceSessionRef(matches[0]!.id, matches[0]!.agentTypeId)
       : null
-  }, [resolvedSessions])
+  }, [publicSessionInventoryAuthoritative, resolvedSessions])
   const [initialHydrationPromptStarted, setInitialHydrationPromptStarted] = useState<{ workspaceId: string; ids: Set<string> }>(() => ({
     workspaceId,
     ids: new Set(),

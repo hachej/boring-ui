@@ -2733,6 +2733,77 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByRole("dialog", { name: /Chat session/ })).not.toBeInTheDocument()
   })
 
+  it("ignores a public bare-id detached open while the session inventory is paginated", async () => {
+    render(
+      <WorkspaceAgentFront
+        workspaceId="paginated-public-detached"
+        chatPanel={AutoSubmitProbe}
+        useSessions={() => ({
+          sessions: [{ id: "only-loaded-page", agentTypeId: "alpha", title: "Loaded target" }],
+          loading: false,
+          hasMore: true,
+          activeSessionId: "only-loaded-page",
+          activeSessionAgentTypeId: "alpha",
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+        persistenceEnabled={false}
+      />,
+    )
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", {
+        detail: { sessionId: "only-loaded-page" },
+      }))
+    })
+    await act(async () => { await Promise.resolve() })
+
+    expect(screen.queryByRole("dialog", { name: /Chat session/ })).not.toBeInTheDocument()
+  })
+
+  it("ignores a public bare-id detached open during a stale inventory transition", async () => {
+    function Harness() {
+      const [stale, setStale] = useState(false)
+      const session = { id: "stale-target", agentTypeId: "alpha", title: "Stale target" }
+      return (
+        <>
+          <button type="button" onClick={() => setStale(true)}>Start stale transition</button>
+          <WorkspaceAgentFront
+            workspaceId="stale-public-detached"
+            chatPanel={AutoSubmitProbe}
+            useSessions={(options) => ({
+              sourceIdentity: options.sourceIdentity,
+              sessions: [session],
+              loading: stale,
+              hasMore: false,
+              activeSessionId: session.id,
+              activeSessionAgentTypeId: session.agentTypeId,
+              activeSession: session,
+              create: vi.fn(),
+              switch: vi.fn(),
+              delete: vi.fn(),
+            })}
+            persistenceEnabled={false}
+          />
+        </>
+      )
+    }
+
+    render(<Harness />)
+    await waitFor(() => expect(screen.getByTestId("auto-submit-probe")).toHaveAttribute("data-session-id", "stale-target"))
+    fireEvent.click(screen.getByRole("button", { name: "Start stale transition" }))
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", {
+        detail: { sessionId: "stale-target" },
+      }))
+    })
+    await act(async () => { await Promise.resolve() })
+
+    expect(screen.queryByRole("dialog", { name: /Chat session/ })).not.toBeInTheDocument()
+  })
+
   it("allows later public detached drafts after auto-submit settles", async () => {
     function SettlingProbe(props: WorkspaceChatPanelProps) {
       const captured = props as CapturedChatPanelProps

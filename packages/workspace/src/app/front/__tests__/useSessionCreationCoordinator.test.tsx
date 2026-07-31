@@ -154,6 +154,155 @@ describe("useSessionCreationCoordinator", () => {
     expect(activeResolved).not.toHaveBeenCalled()
   })
 
+  it("records an ambiguous batch before void transport settlement and never adopts its survivor", async () => {
+    let rows: Row[] = [{ id: "existing" }]
+    let activeKey = keyFor(rows[0]!)
+    const gate = deferred<undefined>()
+    const create = vi.fn(() => gate.promise)
+    const { result, rerender } = renderHook(() => useSessionCreationCoordinator<Row>({
+      sourceKey: "source",
+      rows,
+      activeKey,
+      keyFor,
+      hasCanonicalResult: (value) => typeof (value as { id?: unknown } | undefined)?.id === "string",
+      ownerIsCurrent: () => true,
+      ownershipReady: true,
+      reconciliationTimeoutMs: 1_000,
+    }))
+
+    let creation!: Promise<unknown>
+    act(() => { creation = result.current.coordinate({ dedupeKey: "void", create }) })
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+
+    rows = [{ id: "first" }, { id: "second" }, { id: "existing" }]
+    activeKey = keyFor({ id: "existing" })
+    rerender()
+    await act(async () => { await Promise.resolve() })
+
+    rows = [{ id: "first" }, { id: "existing" }]
+    activeKey = keyFor({ id: "first" })
+    rerender()
+    act(() => { gate.resolve(undefined) })
+    await act(async () => { await gate.promise })
+
+    let settled = false
+    void creation.then(() => { settled = true }, () => { settled = true })
+    await act(async () => { await Promise.resolve() })
+    expect(settled).toBe(false)
+    act(() => { result.current.cancel(() => true) })
+    await expect(creation).resolves.toBeUndefined()
+  })
+
+  it("retains a row-publication barrier when a settled void create is canceled", async () => {
+    let rows: Row[] = [{ id: "existing" }]
+    let activeKey = keyFor(rows[0]!)
+    const create = vi.fn(() => undefined)
+    const { result, rerender } = renderHook(() => useSessionCreationCoordinator<Row>({
+      sourceKey: "source",
+      rows,
+      activeKey,
+      keyFor,
+      hasCanonicalResult: (value) => typeof (value as { id?: unknown } | undefined)?.id === "string",
+      ownerIsCurrent: () => true,
+      ownershipReady: true,
+      reconciliationTimeoutMs: 200,
+    }))
+
+    let old!: Promise<unknown>
+    act(() => { old = result.current.coordinate({ dedupeKey: "old", create }) })
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    await act(async () => { await Promise.resolve() })
+    act(() => { result.current.cancel((task) => task.dedupeKey === "old") })
+    await expect(old).resolves.toBeUndefined()
+
+    let renewed!: Promise<unknown>
+    act(() => { renewed = result.current.coordinate({ dedupeKey: "renewed", create }) })
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
+    rows = [{ id: "old-late" }, { id: "existing" }]
+    activeKey = keyFor(rows[0]!)
+    rerender()
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 220)) })
+
+    rows = [{ id: "safe" }, { id: "old-late" }, { id: "existing" }]
+    activeKey = keyFor(rows[0]!)
+    rerender()
+    await expect(renewed).resolves.toEqual({ id: "safe" })
+  })
+
+  it("quarantines a late row after reconciliation timeout", async () => {
+    let rows: Row[] = [{ id: "existing" }]
+    let activeKey = keyFor(rows[0]!)
+    const create = vi.fn(() => undefined)
+    const { result, rerender } = renderHook(() => useSessionCreationCoordinator<Row>({
+      sourceKey: "source",
+      rows,
+      activeKey,
+      keyFor,
+      hasCanonicalResult: (value) => typeof (value as { id?: unknown } | undefined)?.id === "string",
+      ownerIsCurrent: () => true,
+      ownershipReady: true,
+      reconciliationTimeoutMs: 200,
+    }))
+
+    let timedOut!: Promise<unknown>
+    act(() => { timedOut = result.current.coordinate({ dedupeKey: "timed-out", create }) })
+    const timeoutExpectation = expect(timedOut).rejects.toMatchObject({ code: "SESSION_CREATE_RECONCILIATION_TIMEOUT" })
+    await timeoutExpectation
+
+    let renewed!: Promise<unknown>
+    act(() => { renewed = result.current.coordinate({ dedupeKey: "renewed", create }) })
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
+    rows = [{ id: "timed-out-late" }, { id: "existing" }]
+    activeKey = keyFor(rows[0]!)
+    rerender()
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 220)) })
+
+    rows = [{ id: "safe" }, { id: "timed-out-late" }, { id: "existing" }]
+    activeKey = keyFor(rows[0]!)
+    rerender()
+    await expect(renewed).resolves.toEqual({ id: "safe" })
+  })
+
+  it("preserves the orphan barrier across disable and reenable of the same source", async () => {
+    let rows: Row[] = [{ id: "existing" }]
+    let activeKey = keyFor(rows[0]!)
+    let ready = true
+    const create = vi.fn(() => undefined)
+    const { result, rerender } = renderHook(() => useSessionCreationCoordinator<Row>({
+      sourceKey: "stable-source",
+      rows,
+      activeKey,
+      keyFor,
+      hasCanonicalResult: (value) => typeof (value as { id?: unknown } | undefined)?.id === "string",
+      ownerIsCurrent: () => ready,
+      ownershipReady: ready,
+      reconciliationTimeoutMs: 200,
+    }))
+
+    let old!: Promise<unknown>
+    act(() => { old = result.current.coordinate({ dedupeKey: "old", create }) })
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    await act(async () => { await Promise.resolve() })
+    ready = false
+    rerender()
+    await expect(old).resolves.toBeUndefined()
+
+    ready = true
+    rerender()
+    let renewed!: Promise<unknown>
+    act(() => { renewed = result.current.coordinate({ dedupeKey: "renewed", create }) })
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
+    rows = [{ id: "disabled-epoch-late" }, { id: "existing" }]
+    activeKey = keyFor(rows[0]!)
+    rerender()
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 220)) })
+
+    rows = [{ id: "safe" }, { id: "disabled-epoch-late" }, { id: "existing" }]
+    activeKey = keyFor(rows[0]!)
+    rerender()
+    await expect(renewed).resolves.toEqual({ id: "safe" })
+  })
+
   it("holds a renewed void reconciliation behind an orphan and quarantines overlap history", async () => {
     let rows: Row[] = [{ id: "existing" }]
     let activeKey = keyFor(rows[0]!)
@@ -168,6 +317,7 @@ describe("useSessionCreationCoordinator", () => {
       hasCanonicalResult: (value) => typeof (value as { id?: unknown } | undefined)?.id === "string",
       ownerIsCurrent: () => true,
       ownershipReady: true,
+      reconciliationTimeoutMs: 200,
     }))
 
     let old!: Promise<unknown>
@@ -196,6 +346,7 @@ describe("useSessionCreationCoordinator", () => {
     void renewed.then(() => { settled = true })
     await act(async () => { await Promise.resolve() })
     expect(settled).toBe(false)
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 220)) })
 
     rows = [{ id: "safe-after-overlap" }, { id: "old-late" }, { id: "existing" }]
     activeKey = keyFor(rows[0]!)
