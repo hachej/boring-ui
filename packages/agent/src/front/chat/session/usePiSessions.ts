@@ -61,6 +61,11 @@ export interface UsePiSessionsOptions {
   }
 }
 
+export type PiSessionsError = Error & {
+  kind: 'fatal' | 'recoverable'
+  sourceKey: string
+}
+
 export interface UsePiSessionsResult {
   sessions: SessionSummary[]
   activeSession: SessionSummary | undefined
@@ -74,7 +79,7 @@ export interface UsePiSessionsResult {
   loading: boolean
   loadingMore: boolean
   hasMore: boolean
-  error: Error | undefined
+  error: PiSessionsError | undefined
   refresh: (options?: PiSessionRefreshOptions) => Promise<void>
   create: (init?: PiSessionCreateInit) => Promise<SessionSummary>
   rename: (id: string, title: string) => Promise<SessionSummary>
@@ -117,6 +122,10 @@ function isNetworkFetchError(error: unknown): boolean {
   return error instanceof TypeError
 }
 
+function tagSessionsError(error: Error, kind: PiSessionsError['kind'], sourceKey: string): PiSessionsError {
+  return Object.assign(error, { kind, sourceKey })
+}
+
 export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessionsResult {
   const enabled = options.enabled ?? true
   const apiBaseUrl = options.apiBaseUrl?.replace(/\/$/, '') ?? ''
@@ -136,6 +145,10 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const normalizedHeaders = useMemo(() => buildRequestHeaders(options.requestHeaders, storageScope), [headersKey, storageScope])
   const requestScopeKey = useMemo(() => requestScopeIdentity(apiBaseUrl, sessionsApiPath, agentTypeId, storageScope, headersKey, options.workspaceId), [agentTypeId, apiBaseUrl, headersKey, options.workspaceId, sessionsApiPath, storageScope])
   const dataSourceKey = useMemo(() => dataSourceIdentity(apiBaseUrl, sessionsApiPath, agentTypeId, storageScope, options.workspaceId), [agentTypeId, apiBaseUrl, options.workspaceId, sessionsApiPath, storageScope])
+  const attestationSourceKey = useMemo(
+    () => JSON.stringify([dataSourceKey, enabled, options.sourceIdentity ?? null]),
+    [dataSourceKey, enabled, options.sourceIdentity],
+  )
   const bootResumeSource = useMemo<BootResumeSessionSource>(() => ({
     apiBaseUrl,
     sessionsApiPath,
@@ -159,7 +172,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const [loading, setLoading] = useState(enabled)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
-  const [error, setError] = useState<Error | undefined>(undefined)
+  const [error, setError] = useState<PiSessionsError | undefined>(undefined)
   const committedSourceRef = useRef({
     dataSourceKey,
     requestScopeKey,
@@ -185,6 +198,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const dataStorageScopeRef = useRef(storageScope)
   const loadedDataSourceRef = useRef(dataSourceKey)
   const loadedRequestScopeRef = useRef(requestScopeKey)
+  const loadedAttestationSourceRef = useRef(attestationSourceKey)
   const remoteSessionOptionsRef = useRef(options.remoteSessionOptions)
   const remoteSessionOptionsKey = useMemo(
     () => remoteSessionOptionsIdentity(options.remoteSessionOptions),
@@ -323,6 +337,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
     loadedDataSourceRef.current = dataSourceKey
     loadedRequestScopeRef.current = requestScopeKey
+    loadedAttestationSourceRef.current = attestationSourceKey
     dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
     setSessions(merged)
@@ -356,7 +371,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       persistActive(next)
       return next
     })
-  }, [addressed, applyPendingRenameTitles, bootResumeSource, dataSourceKey, ensurePendingScope, options.bootResumeStorage, persistActive, persistBootResume, preferredSessionId, requestScopeKey, storageScope, updateResumeSessionId])
+  }, [addressed, applyPendingRenameTitles, attestationSourceKey, bootResumeSource, dataSourceKey, ensurePendingScope, options.bootResumeStorage, persistActive, persistBootResume, preferredSessionId, requestScopeKey, storageScope, updateResumeSessionId])
 
   const refresh = useCallback(async (refreshOptions: PiSessionRefreshOptions = {}) => {
     const sourceGuard = captureMutationGuard()
@@ -373,6 +388,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       canonicalLoadedCountRef.current = 0
       loadedDataSourceRef.current = dataSourceKey
       loadedRequestScopeRef.current = requestScopeKey
+      loadedAttestationSourceRef.current = attestationSourceKey
       dataStorageScopeRef.current = storageScope
       setDataStorageScope(storageScope)
       setSessions([])
@@ -389,8 +405,12 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     loadMoreRequestSeqRef.current += 1
     loadMoreInFlightRef.current = false
     setLoadingMore(false)
-    if (!background) setLoading(true)
-    else setLoading(false)
+    if (!background) {
+      setError(undefined)
+      setLoading(true)
+    } else {
+      setLoading(false)
+    }
     try {
       let page: SessionPage | undefined
       for (let attempt = 0; ; attempt += 1) {
@@ -412,12 +432,12 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       setLoading(false)
     } catch (err) {
       if (!isCurrent()) return
-      const error = err instanceof Error ? err : new Error(String(err))
-      if (!background) setError(error)
+      const requestError = err instanceof Error ? err : new Error(String(err))
+      if (!background) setError(tagSessionsError(requestError, 'fatal', attestationSourceKey))
       setLoading(false)
-      if (refreshOptions.throwOnError) throw error
+      if (refreshOptions.throwOnError) throw requestError
     }
-  }, [addressed, applySessions, captureMutationGuard, enabled, fetchImpl, mutationGuardIsCurrent, persistActive, preferredSessionId, requestHeaders, requestScopeKey, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl, updateResumeSessionId])
+  }, [addressed, applySessions, attestationSourceKey, captureMutationGuard, dataSourceKey, enabled, fetchImpl, mutationGuardIsCurrent, persistActive, preferredSessionId, requestHeaders, requestScopeKey, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl, updateResumeSessionId])
 
   useEffect(() => {
     mountedRef.current = true
@@ -458,7 +478,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       })
     } catch (err) {
       if (requestSeq === loadMoreRequestSeqRef.current && version === refreshVersionRef.current && mutationGuardIsCurrent(sourceGuard)) {
-        setError(err instanceof Error ? err : new Error(String(err)))
+        const requestError = err instanceof Error ? err : new Error(String(err))
+        setError(tagSessionsError(requestError, 'recoverable', attestationSourceKey))
       }
     } finally {
       if (requestSeq === loadMoreRequestSeqRef.current) loadMoreInFlightRef.current = false
@@ -466,7 +487,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
         setLoadingMore(false)
       }
     }
-  }, [addressed, applyPendingRenameTitles, captureMutationGuard, enabled, fetchImpl, hasMore, loading, loadingMore, mutationGuardIsCurrent, persistActive, requestHeaders, sessionsListUrl])
+  }, [addressed, applyPendingRenameTitles, attestationSourceKey, captureMutationGuard, dataSourceKey, enabled, fetchImpl, hasMore, loading, loadingMore, mutationGuardIsCurrent, persistActive, requestHeaders, sessionsListUrl])
 
   useEffect(() => {
     if (!enabled || !connectActiveSession || !activeSessionId || !activeSessionKnown) {
@@ -494,56 +515,70 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const mutationGuard = captureMutationGuard()
     if (!mutationGuardIsCurrent(mutationGuard)) throw new StaleSessionsSourceError()
     if (!enabled) throw new Error('Pi sessions are disabled')
-    const response = await fetchImpl(sessionsUrl(), {
-      method: 'POST',
-      headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify(init ?? {}),
-    })
-    if (!response.ok) {
-      const err = new Error(`Failed to create session: ${response.status}`)
-      if (mutationGuardIsCurrent(mutationGuard)) setError(err)
-      throw err
+    try {
+      const response = await fetchImpl(sessionsUrl(), {
+        method: 'POST',
+        headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(init ?? {}),
+      })
+      if (!response.ok) throw new Error(`Failed to create session: ${response.status}`)
+      const body = await response.json()
+      const session = addressed
+        ? addressedCreatedSession(body, init?.title)
+        : toSessionSummary(body)
+      if (!mutationGuardIsCurrent(mutationGuard)) return session
+      ensurePendingScope()
+      pendingCreatedRef.current.set(session.id, session)
+      if (addressed) {
+        persistBootResume(session.id)
+        confirmedBootResumeRef.current = { dataSourceKey, sessionId: session.id }
+      }
+      updateResumeSessionId(undefined)
+      setDataStorageScope(storageScope)
+      setSessions((previous) => mergeSessionLists(addressed, [session], previous))
+      setActiveSessionId(session.id)
+      persistActive(session.id)
+      setError(undefined)
+      void refresh()
+      return session
+    } catch (err) {
+      const requestError = err instanceof Error ? err : new Error(String(err))
+      if (mutationGuardIsCurrent(mutationGuard)) {
+        setError(tagSessionsError(requestError, 'recoverable', attestationSourceKey))
+      }
+      throw requestError
     }
-    const body = await response.json()
-    const session = addressed
-      ? addressedCreatedSession(body, init?.title)
-      : toSessionSummary(body)
-    if (!mutationGuardIsCurrent(mutationGuard)) return session
-    ensurePendingScope()
-    pendingCreatedRef.current.set(session.id, session)
-    if (addressed) {
-      persistBootResume(session.id)
-      confirmedBootResumeRef.current = { dataSourceKey, sessionId: session.id }
-    }
-    updateResumeSessionId(undefined)
-    setDataStorageScope(storageScope)
-    setSessions((previous) => mergeSessionLists(addressed, [session], previous))
-    setActiveSessionId(session.id)
-    persistActive(session.id)
-    void refresh()
-    return session
-  }, [addressed, captureMutationGuard, dataSourceKey, enabled, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, persistActive, persistBootResume, refresh, requestHeaders, sessionsUrl, storageScope, updateResumeSessionId])
+  }, [addressed, attestationSourceKey, captureMutationGuard, dataSourceKey, enabled, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, persistActive, persistBootResume, refresh, requestHeaders, sessionsUrl, storageScope, updateResumeSessionId])
 
   const rename = useCallback(async (id: string, title: string): Promise<SessionSummary> => {
     const mutationGuard = captureMutationGuard()
     if (!mutationGuardIsCurrent(mutationGuard)) throw new StaleSessionsSourceError()
-    const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}${addressed ? '/rename' : ''}`), {
-      method: addressed ? 'POST' : 'PATCH',
-      headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify(addressed ? { requestId: sessionMutationRequestId('rename'), title } : { title }),
-    })
-    if (!response.ok) throw new Error(`Failed to rename session: ${response.status}`)
-    const body = await response.json()
-    const session = addressed ? toAddressedSessionSummary(body) : toSessionSummary(body)
-    if (!mutationGuardIsCurrent(mutationGuard)) return session
-    ensurePendingScope()
-    pendingRenamesRef.current.set(id, { title: session.title, generation: refreshGenerationRef.current, mismatches: 0 })
-    setSessions((previous) => previous.map((item) => item.id === id ? { ...item, ...session } : item))
-    void refresh({ background: true }).catch(() => {
-      // Background reconciliation is best-effort after the rename succeeds.
-    })
-    return session
-  }, [addressed, captureMutationGuard, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, refresh, requestHeaders, sessionsUrl])
+    try {
+      const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}${addressed ? '/rename' : ''}`), {
+        method: addressed ? 'POST' : 'PATCH',
+        headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(addressed ? { requestId: sessionMutationRequestId('rename'), title } : { title }),
+      })
+      if (!response.ok) throw new Error(`Failed to rename session: ${response.status}`)
+      const body = await response.json()
+      const session = addressed ? toAddressedSessionSummary(body) : toSessionSummary(body)
+      if (!mutationGuardIsCurrent(mutationGuard)) return session
+      ensurePendingScope()
+      pendingRenamesRef.current.set(id, { title: session.title, generation: refreshGenerationRef.current, mismatches: 0 })
+      setSessions((previous) => previous.map((item) => item.id === id ? { ...item, ...session } : item))
+      setError(undefined)
+      void refresh({ background: true }).catch(() => {
+        // Background reconciliation is best-effort after the rename succeeds.
+      })
+      return session
+    } catch (err) {
+      const requestError = err instanceof Error ? err : new Error(String(err))
+      if (mutationGuardIsCurrent(mutationGuard)) {
+        setError(tagSessionsError(requestError, 'recoverable', attestationSourceKey))
+      }
+      throw requestError
+    }
+  }, [addressed, attestationSourceKey, captureMutationGuard, dataSourceKey, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, refresh, requestHeaders, sessionsUrl])
 
   const switchSession = useCallback((id: string) => {
     const mutationGuard = captureMutationGuard()
@@ -579,24 +614,25 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const mutationGuard = captureMutationGuard()
     if (!mutationGuardIsCurrent(mutationGuard)) throw new StaleSessionsSourceError()
     if (!enabled) throw new Error('Pi sessions are disabled')
-    ensurePendingScope()
-    removeSessionLocally(id)
     try {
       const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
         method: 'DELETE',
         headers: requestHeaders(),
       })
       if (!response.ok && response.status !== 404) throw new Error(`Failed to delete session: ${response.status}`)
+      if (!mutationGuardIsCurrent(mutationGuard)) return
+      ensurePendingScope()
+      removeSessionLocally(id)
+      setError(undefined)
+      void refresh()
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err))
+      const requestError = err instanceof Error ? err : new Error(String(err))
       if (mutationGuardIsCurrent(mutationGuard)) {
-        setError(error)
-        void refresh()
+        setError(tagSessionsError(requestError, 'recoverable', attestationSourceKey))
       }
-      throw error
+      throw requestError
     }
-    if (mutationGuardIsCurrent(mutationGuard)) void refresh()
-  }, [captureMutationGuard, enabled, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, refresh, removeSessionLocally, requestHeaders, sessionsUrl])
+  }, [attestationSourceKey, captureMutationGuard, dataSourceKey, enabled, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, refresh, removeSessionLocally, requestHeaders, sessionsUrl])
 
   const reset = useCallback(() => {
     const mutationGuard = captureMutationGuard()
@@ -610,6 +646,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     nextCursorRef.current = undefined
     loadedDataSourceRef.current = dataSourceKey
     loadedRequestScopeRef.current = requestScopeKey
+    loadedAttestationSourceRef.current = attestationSourceKey
     dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
     setActiveSessionId(undefined)
@@ -619,9 +656,10 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     setActivePiSession(undefined)
     setLoadingMore(false)
     persistActive(undefined)
-  }, [captureMutationGuard, dataSourceKey, mutationGuardIsCurrent, persistActive, persistBootResume, requestScopeKey, storageScope, updateResumeSessionId])
+  }, [attestationSourceKey, captureMutationGuard, dataSourceKey, mutationGuardIsCurrent, persistActive, persistBootResume, requestScopeKey, storageScope, updateResumeSessionId])
 
   const visibleActiveSessionId = enabled ? activeSessionId : undefined
+  const currentError = error?.sourceKey === attestationSourceKey ? error : undefined
 
   return {
     sessions,
@@ -631,14 +669,16 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     activePiSession: visibleActiveSessionId ? activePiSession : undefined,
     dataStorageScope,
     sourceIdentity: (
-      loadedDataSourceRef.current === dataSourceKey && loadedRequestScopeRef.current === requestScopeKey
-    ) || (error && !loading)
+      loadedDataSourceRef.current === dataSourceKey
+      && loadedRequestScopeRef.current === requestScopeKey
+      && loadedAttestationSourceRef.current === attestationSourceKey
+    ) || (currentError?.kind === 'fatal' && !loading)
       ? options.sourceIdentity
       : undefined,
     loading: enabled ? loading : false,
     loadingMore,
     hasMore: enabled ? hasMore : false,
-    error,
+    error: currentError,
     refresh,
     create,
     rename,

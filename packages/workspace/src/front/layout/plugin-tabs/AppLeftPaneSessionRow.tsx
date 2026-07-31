@@ -53,8 +53,8 @@ export function AppSessionRow({
   canPin?: boolean
   working?: boolean
   attentionBadge?: WorkspaceAttentionSessionBadge
-  onSwitch: (id: string) => void
-  onOpenAsPane: (id: string) => void
+  onSwitch?: (id: string) => void
+  onOpenAsPane?: (id: string) => void
   onTogglePinned: (id: string) => void
   onRename?: (id: string, title: string) => void | Promise<unknown>
   onDelete?: (id: string) => void | Promise<unknown>
@@ -64,6 +64,7 @@ export function AppSessionRow({
   const renameAvailable = Boolean(onRename) && session.nativeSessionId === session.id && session.hasAssistantReply === true
   const canCopy = session.ephemeral !== true
   const showMenu = canCopy || renameAvailable || Boolean(onDelete)
+  const actionsAvailable = Boolean(onSwitch)
   const rename = useInlineSessionRename({
     sessionId: session.id,
     title,
@@ -73,7 +74,7 @@ export function AppSessionRow({
   // Re-selecting the active chat is intentional: the shell uses this callback
   // to dismiss transient app-left overlays (Tasks, Skills, Plugins) even when
   // no session switch is needed.
-  const activate = () => onSwitch(session.id)
+  const activate = () => onSwitch?.(session.id)
 
   return (
     <div
@@ -83,8 +84,8 @@ export function AppSessionRow({
       // stage accepts CHAT_SESSION_DRAG_TYPE; see ChatPaneStageDock). Only
       // same-project sessions are draggable — a split pane lives in the loaded
       // workspace's stage, so cross-project sessions can't join it.
-      draggable={canSplit && !rename.editing && !menuOpen}
-      onDragStart={canSplit ? (event) => {
+      draggable={actionsAvailable && canSplit && !rename.editing && !menuOpen}
+      onDragStart={actionsAvailable && canSplit ? (event) => {
         if (rename.editing || menuOpen) { event.preventDefault(); return }
         event.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, encodeWorkspaceSessionDrag({
           sessionId: session.id,
@@ -93,9 +94,10 @@ export function AppSessionRow({
         event.dataTransfer.setData("text/plain", title)
         event.dataTransfer.effectAllowed = "copyMove"
       } : undefined}
-      onClick={() => { if (!rename.editing) activate() }}
+      onClick={actionsAvailable ? () => { if (!rename.editing) activate() } : undefined}
       className={cn(
         "group flex min-h-8 w-full items-center gap-2 rounded-md border px-2.5 py-1 text-left transition-colors",
+        !actionsAvailable && "opacity-60",
         state === "active"
           // Subtle accent-tinted fill, no heavy colored border (Linear/Stripe style).
           ? "border-transparent bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] text-foreground"
@@ -118,6 +120,7 @@ export function AppSessionRow({
         <button
           type="button"
           onClick={(event) => { event.stopPropagation(); activate() }}
+          disabled={!actionsAvailable}
           aria-current={state === "active" ? "page" : undefined}
           className="min-w-0 flex-1 truncate rounded text-left text-[13px] font-medium leading-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           title={title}
@@ -172,12 +175,12 @@ export function AppSessionRow({
           </button>
         </span>
       ) : null}
-      {(state === "normal" && canSplit) || showMenu ? (
+      {(state === "normal" && actionsAvailable && canSplit) || showMenu ? (
         <span
           data-boring-workspace-part="app-session-actions"
           className="flex w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[width,opacity,margin] group-hover:ml-1 group-hover:w-auto group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-auto group-focus-within:opacity-100"
         >
-          {state === "normal" && canSplit && !rename.editing ? (
+          {state === "normal" && actionsAvailable && canSplit && onOpenAsPane && !rename.editing ? (
             <button
               type="button"
               aria-label={`Open ${title} in new chat pane`}

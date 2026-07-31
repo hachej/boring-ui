@@ -377,6 +377,32 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByText("Loading sessions…")).not.toBeInTheDocument()
   })
 
+  it("keeps authoritative chat and actions available for recoverable session errors", async () => {
+    const create = vi.fn()
+    const session = { id: "recoverable", title: "Recoverable session" }
+    const recoverableError = Object.assign(new Error("pagination failed"), {
+      kind: "recoverable" as const,
+      sourceKey: "custom-source",
+    })
+    render(
+      <WorkspaceAgentFront
+        workspaceId="recoverable-session-error"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        persistenceEnabled={false}
+        useSessions={() => ({
+          sessions: [session], activeSession: session, activeSessionId: session.id,
+          loading: false, error: recoverableError, create, switch: vi.fn(), delete: vi.fn(),
+        })}
+      />,
+    )
+
+    expect(screen.getByText("Chat pane recoverable")).toBeInTheDocument()
+    expect(screen.queryByText("Sessions failed to load")).not.toBeInTheDocument()
+    fireEvent.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+  })
+
   it("exits transition and renders the explicit error state when remote sessions fail", () => {
     const FailedChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
@@ -766,6 +792,33 @@ describe("WorkspaceAgentFront", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Settle source" }))
     expect(await screen.findByText("Chat pane beta-row")).toBeInTheDocument()
+  })
+
+  it("swallows a rejecting custom session refresh after turn completion", async () => {
+    let capturedPanel: WorkspaceChatPanelProps | undefined
+    const refresh = vi.fn(() => Promise.reject(new Error("refresh rejected")))
+    const CapturingPanel = (props: WorkspaceChatPanelProps) => {
+      capturedPanel = props
+      return <SessionIdChatPanel {...props} />
+    }
+    const session = { id: "refresh-rejection", agentTypeId: "alpha", title: "Refresh rejection" }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="refresh-rejection"
+        agentTypeId="alpha"
+        chatPanel={CapturingPanel}
+        persistenceEnabled={false}
+        useSessions={() => ({
+          sessions: [session], activeSession: session, activeSessionId: session.id,
+          loading: false, create: vi.fn(), switch: vi.fn(), delete: vi.fn(), refresh,
+        })}
+      />,
+    )
+
+    act(() => { capturedPanel?.onTurnComplete?.() })
+    await waitFor(() => expect(refresh).toHaveBeenCalledWith({ background: true }))
+    await act(async () => { await Promise.resolve() })
   })
 
   it("diagnoses a settled custom result with consciously missing source attestation", () => {

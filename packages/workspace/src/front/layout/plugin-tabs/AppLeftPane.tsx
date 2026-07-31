@@ -86,12 +86,12 @@ export interface AppLeftPaneProps {
   pinnedSessionIds?: readonly string[]
   /** Structured Workspace-internal pinned refs. */
   pinnedSessionRefs?: readonly WorkspaceSessionRef[]
-  onCreateSession: () => void
+  onCreateSession?: () => void
   onCreateSplitSession?: () => void
   onCreatePopoverSession?: () => void
   onOpenCommandPalette: () => void
-  onSwitchSession: (id: string, agentTypeId?: string) => void
-  onOpenSessionAsPane: (id: string, agentTypeId?: string) => void
+  onSwitchSession?: (id: string, agentTypeId?: string) => void
+  onOpenSessionAsPane?: (id: string, agentTypeId?: string) => void
   onToggleSessionPinned: (id: string, agentTypeId?: string) => void
   onDeleteSession?: (id: string, agentTypeId?: string) => void | Promise<unknown>
   onRenameSession?: (id: string, title: string) => void | Promise<unknown>
@@ -270,14 +270,18 @@ export function AppLeftPane({
         working={isActiveProjectSession && workingSessionIds.has(sessionKey)}
         attentionBadge={isActiveProjectSession ? sessionBadges.get(sessionKey) : undefined}
         onSwitch={isActiveProjectSession
-          ? session.agentTypeId
-            ? () => onSwitchSession(session.id, session.agentTypeId)
-            : () => onSwitchSession(session.id)
+          ? onSwitchSession
+            ? session.agentTypeId
+              ? () => onSwitchSession(session.id, session.agentTypeId)
+              : () => onSwitchSession(session.id)
+            : undefined
           : () => onOpenProjectSession?.(projectId, session.id)}
         onOpenAsPane={isActiveProjectSession
-          ? session.agentTypeId
-            ? () => onOpenSessionAsPane(session.id, session.agentTypeId)
-            : () => onOpenSessionAsPane(session.id)
+          ? onOpenSessionAsPane
+            ? session.agentTypeId
+              ? () => onOpenSessionAsPane(session.id, session.agentTypeId)
+              : () => onOpenSessionAsPane(session.id)
+            : undefined
           : () => onOpenProjectSession?.(projectId, session.id)}
         onTogglePinned={session.agentTypeId
           ? () => onToggleSessionPinned(session.id, session.agentTypeId)
@@ -303,7 +307,7 @@ export function AppLeftPane({
       pinnedProjectIds={pinnedProjectSet}
       onTogglePinnedProject={togglePinnedProject}
       onOpenProjectSession={(projectId, sessionId) => {
-        if (projectId === activeProjectId) onSwitchSession(sessionId)
+        if (projectId === activeProjectId) onSwitchSession?.(sessionId)
         else onOpenProjectSession?.(projectId, sessionId)
       }}
       onShowMoreProjectSessions={onShowMoreProjectSessions}
@@ -350,9 +354,11 @@ export function AppLeftPane({
       </nav>
 
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        <div className="pb-2">
-          <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
-        </div>
+        {onCreateSession ? (
+          <div className="pb-2">
+            <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
+          </div>
+        ) : null}
         {/* Multi-project (PR2): the Workspaces/projects tree. Single-project
             shows no projects section — the workspace lives in the header above
             and the body is just the session list. */}

@@ -1026,7 +1026,11 @@ describe('usePiSessions', () => {
     await act(async () => {
       await result.current.loadMore()
     })
-    expect(result.current.error?.message).toBe('Failed to load sessions: 500')
+    expect(result.current.error).toEqual(expect.objectContaining({
+      kind: 'recoverable',
+      message: 'Failed to load sessions: 500',
+    }))
+    expect(result.current.hasMore).toBe(true)
 
     await act(async () => {
       await result.current.loadMore()
@@ -1064,6 +1068,37 @@ describe('usePiSessions', () => {
     })
 
     expect(result.current.sessions).toHaveLength(100)
+  })
+
+  test('failed delete preserves authoritative rows and remains retryable', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([session('pi-keep')]))
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'delete failed' } }, 500))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse([]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      sourceIdentity: 'source-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      connectActiveSession: false,
+    }))
+    await waitFor(() => expect(result.current.activeSessionId).toBe('pi-keep'))
+
+    await act(async () => {
+      await expect(result.current.delete('pi-keep')).rejects.toThrow('Failed to delete session: 500')
+    })
+
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-keep'])
+    expect(result.current.activeSessionId).toBe('pi-keep')
+    expect(result.current.sourceIdentity).toBe('source-a')
+    expect(result.current.error).toEqual(expect.objectContaining({ kind: 'recoverable' }))
+
+    await act(async () => {
+      await result.current.delete('pi-keep')
+    })
+    await waitFor(() => expect(result.current.sessions).toEqual([]))
+    expect(fetchMock).toHaveBeenCalledTimes(4)
   })
 
   test('falls back safely when persisted active id is invalid and persists the fallback', async () => {
@@ -1189,8 +1224,48 @@ describe('usePiSessions', () => {
     }))
 
     await waitFor(() => expect(result.current.loading).toBe(false))
-    expect(result.current.error).toEqual(expect.objectContaining({ message: 'terminal network failure' }))
+    expect(result.current.error).toEqual(expect.objectContaining({
+      kind: 'fatal',
+      message: 'terminal network failure',
+    }))
     expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  test('does not let an old-source fatal error attest a new foreground load', async () => {
+    const betaResponse = deferred<Response>()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'alpha failed' } }, 500))
+      .mockReturnValueOnce(betaResponse.promise)
+
+    const { result, rerender } = renderHook(
+      ({ agentTypeId, sourceIdentity }) => usePiSessions({
+        agentTypeId,
+        workspaceId: 'workspace-a',
+        storageScope: 'workspace-a',
+        sourceIdentity,
+        fetch: fetchMock as unknown as typeof fetch,
+        connectActiveSession: false,
+        retry: { maxRetries: 0 },
+      }),
+      { initialProps: { agentTypeId: 'alpha', sourceIdentity: 'alpha-source' } },
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.error).toEqual(expect.objectContaining({ kind: 'fatal' }))
+    expect(result.current.sourceIdentity).toBe('alpha-source')
+
+    rerender({ agentTypeId: 'beta', sourceIdentity: 'beta-source' })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(result.current.loading).toBe(true)
+    expect(result.current.error).toBeUndefined()
+    expect(result.current.sourceIdentity).toBeUndefined()
+
+    await act(async () => {
+      betaResponse.resolve(jsonResponse({ sessions: [addressedSession('beta-row')] }))
+      await betaResponse.promise
+    })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sourceIdentity).toBe('beta-source')
+    expect(result.current.error).toBeUndefined()
   })
 
   test('retries network-level fetch failures (server restarting) instead of failing terminally', async () => {
