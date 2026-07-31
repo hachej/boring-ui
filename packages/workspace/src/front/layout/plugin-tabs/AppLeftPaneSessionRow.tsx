@@ -204,18 +204,23 @@ export function AppSessionRow({
               </button>
             </span>
           ) : null}
-          {/* Keep the split action visible for closed, same-project sessions: it
-              is the first-class path to watching another chat alongside the
-              current one. A cross-project session cannot share this stage. */}
+          {/* Keep the split action available on hover/focus for closed,
+              same-project sessions. A cross-project session cannot share this
+              stage. */}
           {state === "normal" && canSplit && !rename.editing ? (
-            <AppLeftPaneSplitAction
-              ariaLabel={`Open ${title} in split`}
-              title="Open in split"
-              onClick={(event) => {
-                event.stopPropagation()
-                onOpenAsPane(session.id)
-              }}
-            />
+            <span
+              data-boring-workspace-part="app-session-split-action"
+              className="flex w-0 shrink-0 items-center overflow-hidden opacity-0 transition-[width,opacity,margin] group-hover:ml-1 group-hover:w-auto group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-auto group-focus-within:opacity-100"
+            >
+              <AppLeftPaneSplitAction
+                ariaLabel={`Open ${title} in split`}
+                title="Open in split"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onOpenAsPane(session.id)
+                }}
+              />
+            </span>
           ) : null}
           {showMenu ? (
             <span
