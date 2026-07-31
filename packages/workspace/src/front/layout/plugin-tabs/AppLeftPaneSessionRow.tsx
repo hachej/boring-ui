@@ -55,7 +55,7 @@ export function AppSessionRow({
   attentionBadge?: WorkspaceAttentionSessionBadge
   onSwitch?: (id: string) => void
   onOpenAsPane?: (id: string) => void
-  onTogglePinned: (id: string) => void
+  onTogglePinned?: (id: string) => void
   onRename?: (id: string, title: string) => void | Promise<unknown>
   onDelete?: (id: string) => void | Promise<unknown>
 }) {
@@ -65,6 +65,7 @@ export function AppSessionRow({
   const canCopy = session.ephemeral !== true
   const showMenu = canCopy || renameAvailable || Boolean(onDelete)
   const actionsAvailable = Boolean(onSwitch)
+  const pinAvailable = canPin && Boolean(onTogglePinned)
   const rename = useInlineSessionRename({
     sessionId: session.id,
     title,
@@ -102,8 +103,8 @@ export function AppSessionRow({
           // Subtle accent-tinted fill, no heavy colored border (Linear/Stripe style).
           ? "border-transparent bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] text-foreground"
           : state === "open"
-            ? "cursor-pointer border-transparent bg-foreground/[0.05] text-foreground/90 hover:bg-foreground/[0.07]"
-            : "cursor-pointer border-transparent text-foreground/78 hover:bg-foreground/[0.055] hover:text-foreground",
+            ? cn("border-transparent bg-foreground/[0.05] text-foreground/90", actionsAvailable && "cursor-pointer hover:bg-foreground/[0.07]")
+            : cn("border-transparent text-foreground/78", actionsAvailable && "cursor-pointer hover:bg-foreground/[0.055] hover:text-foreground"),
       )}
     >
       <Clock3
@@ -149,7 +150,7 @@ export function AppSessionRow({
       ) : state === "active" ? (
         <span aria-hidden="true" className="w-[60px] shrink-0" />
       ) : null}
-      {canPin ? (
+      {pinAvailable ? (
         <span
           data-boring-workspace-part="app-session-pin-action"
           className={cn(
@@ -164,7 +165,7 @@ export function AppSessionRow({
             aria-pressed={pinned}
             onClick={(event) => {
               event.stopPropagation()
-              onTogglePinned(session.id)
+              onTogglePinned?.(session.id)
             }}
             className={cn(
               "grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",

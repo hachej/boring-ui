@@ -2,9 +2,11 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { useState } from "react"
 import { describe, expect, it, vi } from "vitest"
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
+import type { ChatLayoutProps } from "../../../front/layout"
 import type { AppLeftPaneProps } from "../../../front/layout/plugin-tabs/AppLeftPane"
 
 let capturedAppLeftPane: AppLeftPaneProps | undefined
+let capturedChatLayout: ChatLayoutProps | undefined
 
 vi.mock("../../../front/layout/plugin-tabs/AppLeftPane", () => ({
   AppLeftPane: (props: AppLeftPaneProps) => {
@@ -13,6 +15,18 @@ vi.mock("../../../front/layout/plugin-tabs/AppLeftPane", () => ({
   },
 }))
 
+vi.mock("../../../front/layout", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../front/layout")>()
+  return {
+    ...actual,
+    ChatLayout: (props: ChatLayoutProps) => {
+      capturedChatLayout = props
+      const sessionId = (props.centerParams as { sessionId?: string } | undefined)?.sessionId
+      return <div data-testid="chat-pane">Chat {sessionId}</div>
+    },
+  }
+})
+
 import { WorkspaceAgentFront, type UseWorkspaceAgentSessions } from "../WorkspaceAgentFront"
 
 function ChatPanel(props: WorkspaceChatPanelProps) {
@@ -20,7 +34,46 @@ function ChatPanel(props: WorkspaceChatPanelProps) {
 }
 
 describe("WorkspaceAgentFront session action ownership", () => {
-  it("makes saved create, switch, and delete callbacks inert across source and enablement commits", async () => {
+  it("releases last-session replacement guards after a synchronous custom create failure", async () => {
+    const create = vi.fn()
+      .mockImplementationOnce(() => { throw new Error("sync replacement failed") })
+      .mockResolvedValueOnce({ id: "replacement", title: "Replacement" })
+    const remove = vi.fn()
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="sync-replacement-retry"
+        workspaceLayout="plugin-tabs"
+        chatPanel={ChatPanel}
+        useSessions={(options) => ({
+          sourceIdentity: options.sourceIdentity,
+          sessions: [{ id: "only", title: "Only" }],
+          activeSessionId: "only",
+          activeSession: { id: "only", title: "Only" },
+          loading: false,
+          hasMore: false,
+          create,
+          switch: vi.fn(),
+          delete: remove,
+        })}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(capturedAppLeftPane?.onDeleteSession).toEqual(expect.any(Function)))
+    const deleteOnly = capturedAppLeftPane?.onDeleteSession
+    if (!deleteOnly) throw new Error("Expected delete callback")
+    await expect(deleteOnly("only")).rejects.toThrow("sync replacement failed")
+    await expect(deleteOnly("only")).resolves.toBeUndefined()
+
+    expect(create).toHaveBeenCalledTimes(2)
+    expect(remove).toHaveBeenCalledOnce()
+  })
+
+  it("makes saved session callbacks inert across source and enablement commits", async () => {
+    const autoSubmitSettled = vi.fn()
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ reloaded: true }), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
     const alpha = {
       create: vi.fn(),
       switch: vi.fn(),
@@ -67,6 +120,7 @@ describe("WorkspaceAgentFront session action ownership", () => {
             chatPanel={ChatPanel}
             useSessions={useSessions}
             provisionWorkspace={provision}
+            chatParams={{ onAutoSubmitInitialDraftSettled: autoSubmitSettled }}
             persistenceEnabled={false}
           />
         </>
@@ -75,23 +129,37 @@ describe("WorkspaceAgentFront session action ownership", () => {
 
     render(<Harness />)
     await waitFor(() => expect(screen.getByText("Chat alpha-row")).toBeInTheDocument())
+    const alphaCenterParams = capturedChatLayout?.centerParams as WorkspaceChatPanelProps | undefined
     const savedAlpha = {
       create: capturedAppLeftPane?.onCreateSession,
       switch: capturedAppLeftPane?.onSwitchSession,
       delete: capturedAppLeftPane?.onDeleteSession,
+      pin: capturedAppLeftPane?.onToggleSessionPinned,
+      close: capturedChatLayout?.onCloseChatPane,
+      settle: alphaCenterParams?.onAutoSubmitInitialDraftSettled,
+      reload: alphaCenterParams?.onReloadAgentPlugins,
     }
 
     fireEvent.click(screen.getByRole("button", { name: "Switch source" }))
     await waitFor(() => expect(capturedAppLeftPane?.onCreateSession).toBeUndefined())
+    expect(capturedAppLeftPane?.onToggleSessionPinned).toBeUndefined()
     act(() => {
       savedAlpha.create?.()
       savedAlpha.switch?.("alpha-row", "alpha")
       savedAlpha.delete?.("alpha-row", "alpha")
+      savedAlpha.pin?.("alpha-row", "alpha")
+      savedAlpha.close?.("alpha-row")
+      savedAlpha.settle?.()
     })
+    if (!savedAlpha.reload) throw new Error("Expected source-owned reload callback")
+    await expect(savedAlpha.reload()).rejects.toThrow("Session source is unavailable")
     expect(alpha.create).not.toHaveBeenCalled()
     expect(alpha.switch).not.toHaveBeenCalled()
     expect(alpha.delete).not.toHaveBeenCalled()
     expect(beta.create).not.toHaveBeenCalled()
+    expect(autoSubmitSettled).not.toHaveBeenCalled()
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/api/v1/agent/reload"))).toBe(false)
+    expect(capturedAppLeftPane?.pinnedSessionRefs).toEqual([])
     expect(screen.queryByText("Chat alpha-row")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Settle beta" }))
@@ -118,8 +186,9 @@ describe("WorkspaceAgentFront session action ownership", () => {
     fireEvent.click(screen.getByRole("button", { name: "Toggle provision" }))
     await waitFor(() => expect(capturedAppLeftPane?.onCreateSession).toEqual(expect.any(Function)))
     act(() => { capturedAppLeftPane?.onCreateSession?.() })
+    await waitFor(() => expect(beta.create).toHaveBeenCalledOnce())
     await act(async () => { await Promise.resolve() })
     act(() => { capturedAppLeftPane?.onCreateSession?.() })
-    expect(beta.create).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(beta.create).toHaveBeenCalledTimes(2))
   })
 })

@@ -44,11 +44,14 @@ describe("SessionBrowser", () => {
     expect(second?.className).toMatch(/bg-foreground\/\[0\.06\]/)
   })
 
-  it("does not require onSwitch — clicking is a no-op when omitted", () => {
-    expect(() => {
-      render(<SessionBrowser sessions={sample} activeId="s1" />)
-      fireEvent.click(screen.getByText(/Second session/))
-    }).not.toThrow()
+  it("does not render unavailable rows as enabled-looking controls", () => {
+    render(<SessionBrowser sessions={sample} activeId="s1" />)
+    const row = screen.getByText(/Second session/).closest("li")
+
+    expect(() => fireEvent.click(screen.getByText(/Second session/))).not.toThrow()
+    expect(row).toHaveAttribute("draggable", "false")
+    expect(row).not.toHaveClass("cursor-pointer")
+    expect(screen.queryByLabelText(/Pin Second session/)).not.toBeInTheDocument()
   })
 
   it("calls onCreate when the new-session button is clicked", () => {
@@ -137,6 +140,7 @@ describe("SessionBrowser", () => {
         openIds={[legacyCollisionId]}
         pinnedRefs={[{ sessionId: "shared", agentTypeId: "alpha" }]}
         onSwitch={onSwitch}
+        onOpenAsTab={vi.fn()}
         onTogglePin={onTogglePin}
         onDelete={onDelete}
       />,
@@ -166,7 +170,7 @@ describe("SessionBrowser", () => {
 
   it("writes an addressed drag payload without exposing an internal pane key", () => {
     const setData = vi.fn()
-    render(<SessionBrowser sessions={[{ id: "shared", agentTypeId: "beta", title: "Beta shared" }]} />)
+    render(<SessionBrowser sessions={[{ id: "shared", agentTypeId: "beta", title: "Beta shared" }]} onOpenAsTab={vi.fn()} />)
     fireEvent.dragStart(screen.getByText("Beta shared").closest("li")!, {
       dataTransfer: { setData, effectAllowed: "" },
     })

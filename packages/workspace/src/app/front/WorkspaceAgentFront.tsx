@@ -495,6 +495,10 @@ function scheduleActiveAgentComposerFocus(): void {
   })
 }
 
+function invokeSessionCreate<T>(action: () => T | PromiseLike<T>): Promise<Awaited<T>> {
+  return Promise.resolve().then(action) as Promise<Awaited<T>>
+}
+
 function readStoredSessionId(storageKey: string): string | null {
   try {
     return globalThis.localStorage?.getItem(storageKey) ?? null
@@ -774,7 +778,7 @@ export function WorkspaceAgentFront<
         ?? { workspaceId, ids: [] }
     })
   }, [pinnedStorageKey, shellPersistenceEnabled, workspaceId])
-  const toggleSessionPinned = useCallback((sessionId: string, sessionAgentTypeId?: string) => {
+  const updateSessionPinned = useCallback((sessionId: string, sessionAgentTypeId?: string) => {
     const sessionKey = workspaceSessionKey(sessionId, sessionAgentTypeId)
     setPinnedState((previous) => {
       const current = previous.workspaceId === workspaceId ? previous.ids : []
@@ -876,6 +880,10 @@ export function WorkspaceAgentFront<
   const sessionActionOwnerIsCurrent = useCallback(() => (
     !shouldUseRemoteSessions || sessionActionOwnershipRef.current?.owner === sessionActionOwner
   ), [sessionActionOwner, shouldUseRemoteSessions])
+  const toggleSessionPinned = useCallback((sessionId: string, sessionAgentTypeId?: string) => {
+    if (!sessionActionOwnerIsCurrent()) return
+    updateSessionPinned(sessionId, sessionAgentTypeId)
+  }, [sessionActionOwnerIsCurrent, updateSessionPinned])
   const availableSessionActions = useMemo(() => {
     if (!remoteSessionsAvailable) return undefined
     const current = () => {
@@ -1084,7 +1092,7 @@ export function WorkspaceAgentFront<
     if (autoSubmitSessionCreateRef.current) return
     autoSubmitSessionCreateRef.current = true
     const operationEpoch = sessionOperationEpoch
-    void Promise.resolve(availableSessionActions.create({ title: defaultSessionTitle }))
+    void invokeSessionCreate(() => availableSessionActions.create({ title: defaultSessionTitle }))
       .then((session) => {
         if (operationEpoch !== sessionOperationEpochRef.current.epoch || !sessionActionOwnerIsCurrent()) return
         if (typeof (session as { id?: unknown } | null | undefined)?.id !== "string") {
@@ -1094,8 +1102,10 @@ export function WorkspaceAgentFront<
       })
       .catch(() => {
         if (operationEpoch !== sessionOperationEpochRef.current.epoch || !sessionActionOwnerIsCurrent()) return
-        autoSubmitSessionCreateRef.current = false
         setAutoSubmitSessionId(undefined)
+      })
+      .finally(() => {
+        if (operationEpoch === sessionOperationEpochRef.current.epoch) autoSubmitSessionCreateRef.current = false
       })
   }, [autoSubmitSessionId, availableSessionActions, defaultSessionTitle, sessionActionOwnerIsCurrent, sessionOperationEpoch])
   const effectiveActiveSessionId = autoSubmitSessionId !== undefined ? autoSubmitSessionId ?? null : resolvedActiveId
@@ -1139,16 +1149,12 @@ export function WorkspaceAgentFront<
       autoCreateSessionRef.current = true
       setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
       const operationEpoch = sessionOperationEpoch
-      const replacement = availableSessionActions.create({ title: defaultSessionTitle })
-      return Promise.resolve(
-        replacement && typeof (replacement as PromiseLike<unknown>).then === "function"
-          ? Promise.resolve(replacement).then(() => (
-              operationEpoch === sessionOperationEpochRef.current.epoch
-                ? sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
-                : undefined
-            ))
-          : sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id),
-      )
+      return invokeSessionCreate(() => availableSessionActions.create({ title: defaultSessionTitle }))
+        .then(() => (
+          operationEpoch === sessionOperationEpochRef.current.epoch && sessionActionOwnerIsCurrent()
+            ? sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
+            : undefined
+        ))
         .catch((error) => {
           if (operationEpoch === sessionOperationEpochRef.current.epoch && sessionActionOwnerIsCurrent()) {
             autoCreateSessionRef.current = false
@@ -1296,17 +1302,18 @@ export function WorkspaceAgentFront<
     setInitialRemoteSessionCreating({ workspaceId, creating: true })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
     const operationEpoch = sessionOperationEpoch
-    void Promise.resolve(availableSessionActions.create({
+    void invokeSessionCreate(() => availableSessionActions.create({
       title: defaultSessionTitle,
       ...(activeRemoteResumeSessionId ? { resumeSessionId: activeRemoteResumeSessionId } : {}),
     }))
       .catch(() => {
         if (operationEpoch !== sessionOperationEpochRef.current.epoch || !sessionActionOwnerIsCurrent()) return
-        setInitialRemoteSessionCreating({ workspaceId, creating: false })
         setInitialRemoteSessionCreateFailed({ workspaceId, failed: true })
       })
       .finally(() => {
-        if (operationEpoch === sessionOperationEpochRef.current.epoch) autoCreateSessionRef.current = false
+        if (operationEpoch !== sessionOperationEpochRef.current.epoch) return
+        autoCreateSessionRef.current = false
+        setInitialRemoteSessionCreating({ workspaceId, creating: false })
       })
   }, [activeRemoteResumeSessionId, activeRemoteSessions.length, autoSubmitSessionId, availableSessionActions, defaultSessionTitle, remoteEmptySessionsSettling, remoteSessionsAvailable, sessionActionOwnerIsCurrent, sessionOperationEpoch, workspaceId])
 
@@ -1726,8 +1733,8 @@ export function WorkspaceAgentFront<
     pendingCreatePaneRef.current = pendingCreatePane
     createInFlightRef.current = pendingCreatePane
     const operationEpoch = sessionOperationEpoch
-    const created = resolvedCreate()
-    void Promise.resolve(created).then((session) => {
+    const created = invokeSessionCreate(resolvedCreate)
+    void created.then((session) => {
       if (operationEpoch !== sessionOperationEpochRef.current.epoch || !sessionActionOwnerIsCurrent()) return
       const materialized = materializeCreatedSession(session)
       if (!materialized) return
@@ -1769,8 +1776,8 @@ export function WorkspaceAgentFront<
     pendingCreatePaneRef.current = pendingCreatePane
     createInFlightRef.current = pendingCreatePane
     const operationEpoch = sessionOperationEpoch
-    const created = resolvedCreate()
-    void Promise.resolve(created).then((session) => {
+    const created = invokeSessionCreate(resolvedCreate)
+    void created.then((session) => {
       if (operationEpoch !== sessionOperationEpochRef.current.epoch || !sessionActionOwnerIsCurrent()) return
       const materialized = materializeCreatedSession(session)
       if (!materialized) return
@@ -1780,7 +1787,6 @@ export function WorkspaceAgentFront<
         if (placementDirection) {
           setPendingChatPanePlacement({ paneId: createdKey, referencePaneId: afterId, direction: placementDirection })
         }
-        setChatPaneSplitPending(false)
       }
       setChatPaneState((previous) => {
         const current = chatPaneStateForWorkspace(previous)
@@ -1796,10 +1802,9 @@ export function WorkspaceAgentFront<
       scheduleActiveAgentComposerFocus()
     }).catch(() => {
       if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
-      if (operationEpoch !== sessionOperationEpochRef.current.epoch || !sessionActionOwnerIsCurrent()) return
-      setChatPaneSplitPending(false)
     }).finally(() => {
       if (createInFlightRef.current === pendingCreatePane) createInFlightRef.current = null
+      if (operationEpoch === sessionOperationEpochRef.current.epoch && placementDirection) setChatPaneSplitPending(false)
     })
     return created
   }, [chatPaneStateForWorkspace, materializeCreatedSession, resolvedCreate, resolvedSessions, sessionActionOwnerIsCurrent, sessionOperationEpoch, switchToCreatedSession, workspaceId])
@@ -1877,6 +1882,7 @@ export function WorkspaceAgentFront<
   const workbenchBlocked = workspaceWarmupStatus.status !== "ready"
   const workbenchOverlay = workbenchBlocked ? <WorkbenchWarmupOverlay status={workspaceWarmupStatus} /> : undefined
   const reloadAgentPluginsForSession = useCallback(async (sessionId: string) => {
+    if (!sessionActionOwnerIsCurrent()) throw new Error("Session source is unavailable")
     const endpoint = `${apiBaseUrl?.replace(/\/$/, "") ?? ""}/api/v1/agent/reload`
     const response = await fetch(endpoint, {
       method: "POST",
@@ -1888,9 +1894,10 @@ export function WorkspaceAgentFront<
       throw new Error(payload.error || `reload failed (${response.status})`)
     }
     const payload = await response.json().catch(() => ({})) as { reloaded?: boolean; diagnostics?: Array<{ message?: string }> }
+    if (!sessionActionOwnerIsCurrent()) throw new Error("Session source is unavailable")
     window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
     return { message: pluginReloadMessage(payload), reloaded: payload.reloaded === true }
-  }, [apiBaseUrl, resolvedRequestHeaders])
+  }, [apiBaseUrl, resolvedRequestHeaders, sessionActionOwnerIsCurrent])
 
   const reloadAgentPluginsMessageForSession = useCallback(async (sessionId: string) => {
     try {
@@ -1908,6 +1915,7 @@ export function WorkspaceAgentFront<
     return { ...(base ?? {}), requestTimeoutMs: apiTimeout }
   }, [apiTimeout, chatParams?.remoteSessionOptions])
   const refreshSessionsBestEffort = useCallback(() => {
+    if (!sessionActionOwnerIsCurrent()) return
     try {
       void Promise.resolve(availableSessionActions?.refresh?.({ background: true })).catch(() => {
         // Session summary reconciliation is best-effort.
@@ -1915,7 +1923,7 @@ export function WorkspaceAgentFront<
     } catch {
       // Custom providers may throw before returning a promise.
     }
-  }, [availableSessionActions])
+  }, [availableSessionActions, sessionActionOwnerIsCurrent])
 
   const makeCenterParams = useCallback(
     (sessionKey: string, options: { bridgeEnabled?: boolean } = {}) => {
@@ -1939,7 +1947,12 @@ export function WorkspaceAgentFront<
       requestHeaders: resolvedRequestHeaders,
       remoteSessionOptions: chatRemoteSessionOptions,
       showSessions: false,
-      onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession(sessionId)),
+      onReloadAgentPlugins: sessionControlsAvailable ? async () => {
+        if (!sessionActionOwnerIsCurrent()) throw new Error("Session source is unavailable")
+        return typeof chatParams?.onReloadAgentPlugins === "function"
+          ? chatParams.onReloadAgentPlugins()
+          : reloadAgentPluginsForSession(sessionId)
+      } : undefined,
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
       bridgeEndpoint: bridgeEnabled ? bridgeEndpoint : null,
       surfaceDispatch,
@@ -1948,6 +1961,7 @@ export function WorkspaceAgentFront<
       hydrateMessages,
       allowPromptDuringInitialHydration: emptySessionIds.has(sessionKey),
       onPromptSubmitStarted: ({ sessionId: submittedSessionId }: { sessionId: string; clientNonce: string; message: string }) => {
+        if (!sessionActionOwnerIsCurrent()) return
         const submittedKey = workspaceSessionKey(submittedSessionId, sessionRef.agentTypeId ?? agentTypeId)
         setInitialHydrationPromptStarted((current) => {
           const currentIds = current.workspaceId === workspaceId ? current.ids : new Set<string>()
@@ -1958,6 +1972,7 @@ export function WorkspaceAgentFront<
         })
       },
       onTurnComplete: () => {
+        if (!sessionActionOwnerIsCurrent()) return
         refreshSessionsBestEffort()
         const existing = chatParams?.onTurnComplete
         if (typeof existing === "function") existing()
@@ -1968,6 +1983,7 @@ export function WorkspaceAgentFront<
         onHydratedAssistantReply: refreshSessionsBestEffort,
       } : {}),
       onAutoSubmitInitialDraftSettled: () => {
+        if (!sessionActionOwnerIsCurrent()) return
         autoSubmitSessionCreateRef.current = false
         setAutoSubmitHydrationDisabled(false)
         setAutoSubmitSessionId(undefined)
@@ -1980,7 +1996,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, pluginToolRenderers, refreshSessionsBestEffort, reloadAgentPluginsForSession, resolvedHotReloadEnabled, resolvedSessions, workspaceId],
+    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, pluginToolRenderers, refreshSessionsBestEffort, reloadAgentPluginsForSession, resolvedHotReloadEnabled, resolvedSessions, sessionActionOwnerIsCurrent, sessionControlsAvailable, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionKey),
@@ -2095,7 +2111,7 @@ export function WorkspaceAgentFront<
     activeRef: activeChatPaneRef,
     openRefs: openChatPaneRefs,
     pinnedRefs,
-    onTogglePin: toggleSessionPinned,
+    onTogglePin: sessionControlsAvailable ? toggleSessionPinned : undefined,
     onSwitch: sessionControlsAvailable ? switchToChatPane : undefined,
     onOpenAsTab: sessionControlsAvailable ? openChatPane : undefined,
     onCreate: sessionControlsAvailable ? createChatSession : undefined,
@@ -2137,6 +2153,7 @@ export function WorkspaceAgentFront<
     resolveSessionKey,
     openChatPane,
     refreshChatSessions: async () => {
+      if (!sessionActionOwnerIsCurrent()) return
       await availableSessionActions?.refresh?.({ background: true, throwOnError: true })
     },
     surfaceDispatch,
@@ -2156,8 +2173,8 @@ export function WorkspaceAgentFront<
     pendingCreatePaneRef.current = pendingCreatePane
     createInFlightRef.current = pendingCreatePane
     const operationEpoch = sessionOperationEpoch
-    const created = resolvedCreate()
-    void Promise.resolve(created).then((session) => {
+    const created = invokeSessionCreate(resolvedCreate)
+    void created.then((session) => {
       if (operationEpoch !== sessionOperationEpochRef.current.epoch || !sessionActionOwnerIsCurrent()) return
       const id = createdSessionId(session)
       if (!id) return
@@ -2290,12 +2307,12 @@ export function WorkspaceAgentFront<
       chatTopActions={chatTopOverlayActions}
       activeChatPaneId={activeChatPaneId}
       onActiveChatPaneChange={sessionControlsAvailable ? activateChatPane : undefined}
-      onCloseChatPane={closeChatPane}
+      onCloseChatPane={sessionControlsAvailable ? closeChatPane : undefined}
       onCreateChatPaneAfter={isPluginTabsLayout || !sessionControlsAvailable ? undefined : createChatPaneAfter}
       onSplitChatPane={sessionControlsAvailable ? createChatPaneAfter : undefined}
       chatPaneSplitPending={chatPaneSplitPending}
       pendingChatPanePlacement={pendingChatPanePlacement}
-      onPendingChatPanePlacementConsumed={consumePendingChatPanePlacement}
+      onPendingChatPanePlacementConsumed={sessionControlsAvailable ? consumePendingChatPanePlacement : undefined}
       onDropChatSession={sessionControlsAvailable ? openChatPane : undefined}
       flashChatPaneId={flashChatPane?.workspaceId === workspaceId ? flashChatPane.id : null}
       surface={surfaceOpen ? "artifact-surface" : null}
@@ -2397,7 +2414,7 @@ export function WorkspaceAgentFront<
           onOpenCommandPalette={openCommandPalette}
           onSwitchSession={sessionControlsAvailable ? switchToChatPane : undefined}
           onOpenSessionAsPane={sessionControlsAvailable ? openChatPane : undefined}
-          onToggleSessionPinned={toggleSessionPinned}
+          onToggleSessionPinned={sessionControlsAvailable ? toggleSessionPinned : undefined}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
           onRenameSession={resolvedRename}
           actions={managementActions}

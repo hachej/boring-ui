@@ -91,6 +91,15 @@ describe("AppSessionRow native actions", () => {
     expect(screen.getByText("Copy session ID")).toBeInTheDocument()
   })
 
+  it("disables drag, cursor, and pin affordances when session controls are unavailable", () => {
+    row({ onSwitch: undefined, onOpenAsPane: undefined, onTogglePinned: undefined })
+    const sessionRow = screen.getByText("Native chat").closest('[data-boring-workspace-part="app-session-row"]')
+
+    expect(sessionRow).toHaveAttribute("draggable", "false")
+    expect(sessionRow).not.toHaveClass("cursor-pointer")
+    expect(screen.queryByLabelText("Pin Native chat")).not.toBeInTheDocument()
+  })
+
   it("hides the action menu for an ephemeral row with no available mutations", () => {
     row({
       session: { id: "local-1", title: "Local draft", ephemeral: true },

@@ -63,7 +63,12 @@ export interface UsePiSessionsOptions {
 
 export type PiSessionsError = Error & {
   kind: 'fatal' | 'recoverable'
-  sourceKey: string
+}
+
+interface PiSessionsErrorState {
+  kind: PiSessionsError['kind']
+  requestScopeKey: string
+  error: Error
 }
 
 export interface UsePiSessionsResult {
@@ -122,8 +127,10 @@ function isNetworkFetchError(error: unknown): boolean {
   return error instanceof TypeError
 }
 
-function tagSessionsError(error: Error, kind: PiSessionsError['kind'], sourceKey: string): PiSessionsError {
-  return Object.assign(error, { kind, sourceKey })
+function publicSessionsError(state: PiSessionsErrorState): PiSessionsError {
+  const error = new Error(state.error.message)
+  error.name = state.error.name
+  return Object.assign(error, { kind: state.kind })
 }
 
 export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessionsResult {
@@ -172,7 +179,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const [loading, setLoading] = useState(enabled)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
-  const [error, setError] = useState<PiSessionsError | undefined>(undefined)
+  const [errorState, setErrorState] = useState<PiSessionsErrorState | undefined>(undefined)
   const committedSourceRef = useRef({
     dataSourceKey,
     requestScopeKey,
@@ -394,7 +401,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       setSessions([])
       setActiveSessionId(undefined)
       updateResumeSessionId(undefined)
-      setError(undefined)
+      setErrorState(undefined)
       setLoading(false)
       setLoadingMore(false)
       setHasMore(false)
@@ -406,7 +413,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     loadMoreInFlightRef.current = false
     setLoadingMore(false)
     if (!background) {
-      setError(undefined)
+      setErrorState(undefined)
       setLoading(true)
     } else {
       setLoading(false)
@@ -428,12 +435,12 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       }
       if (!isCurrent() || !page) return
       applySessions(page.sessions, { background, nextCursor: page.nextCursor, requestGeneration })
-      setError(undefined)
+      setErrorState(undefined)
       setLoading(false)
     } catch (err) {
       if (!isCurrent()) return
       const requestError = err instanceof Error ? err : new Error(String(err))
-      if (!background) setError(tagSessionsError(requestError, 'fatal', attestationSourceKey))
+      if (!background) setErrorState({ kind: 'fatal', requestScopeKey, error: requestError })
       setLoading(false)
       if (refreshOptions.throwOnError) throw requestError
     }
@@ -469,7 +476,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       nextCursorRef.current = page.nextCursor
       setSessions(merged)
       setHasMore(nextHasMore)
-      setError(undefined)
+      setErrorState(undefined)
       setActiveSessionId((previous) => {
         if (previous && merged.some((session) => session.id === previous)) return previous
         const next = merged[0]?.id
@@ -479,7 +486,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     } catch (err) {
       if (requestSeq === loadMoreRequestSeqRef.current && version === refreshVersionRef.current && mutationGuardIsCurrent(sourceGuard)) {
         const requestError = err instanceof Error ? err : new Error(String(err))
-        setError(tagSessionsError(requestError, 'recoverable', attestationSourceKey))
+        setErrorState({ kind: 'recoverable', requestScopeKey, error: requestError })
       }
     } finally {
       if (requestSeq === loadMoreRequestSeqRef.current) loadMoreInFlightRef.current = false
@@ -538,17 +545,17 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       setSessions((previous) => mergeSessionLists(addressed, [session], previous))
       setActiveSessionId(session.id)
       persistActive(session.id)
-      setError(undefined)
+      setErrorState(undefined)
       void refresh()
       return session
     } catch (err) {
       const requestError = err instanceof Error ? err : new Error(String(err))
       if (mutationGuardIsCurrent(mutationGuard)) {
-        setError(tagSessionsError(requestError, 'recoverable', attestationSourceKey))
+        setErrorState({ kind: 'recoverable', requestScopeKey, error: requestError })
       }
       throw requestError
     }
-  }, [addressed, attestationSourceKey, captureMutationGuard, dataSourceKey, enabled, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, persistActive, persistBootResume, refresh, requestHeaders, sessionsUrl, storageScope, updateResumeSessionId])
+  }, [addressed, captureMutationGuard, dataSourceKey, enabled, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, persistActive, persistBootResume, refresh, requestHeaders, requestScopeKey, sessionsUrl, storageScope, updateResumeSessionId])
 
   const rename = useCallback(async (id: string, title: string): Promise<SessionSummary> => {
     const mutationGuard = captureMutationGuard()
@@ -566,7 +573,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       ensurePendingScope()
       pendingRenamesRef.current.set(id, { title: session.title, generation: refreshGenerationRef.current, mismatches: 0 })
       setSessions((previous) => previous.map((item) => item.id === id ? { ...item, ...session } : item))
-      setError(undefined)
+      setErrorState(undefined)
       void refresh({ background: true }).catch(() => {
         // Background reconciliation is best-effort after the rename succeeds.
       })
@@ -574,11 +581,11 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     } catch (err) {
       const requestError = err instanceof Error ? err : new Error(String(err))
       if (mutationGuardIsCurrent(mutationGuard)) {
-        setError(tagSessionsError(requestError, 'recoverable', attestationSourceKey))
+        setErrorState({ kind: 'recoverable', requestScopeKey, error: requestError })
       }
       throw requestError
     }
-  }, [addressed, attestationSourceKey, captureMutationGuard, dataSourceKey, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, refresh, requestHeaders, sessionsUrl])
+  }, [addressed, captureMutationGuard, dataSourceKey, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, refresh, requestHeaders, requestScopeKey, sessionsUrl])
 
   const switchSession = useCallback((id: string) => {
     const mutationGuard = captureMutationGuard()
@@ -623,16 +630,16 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       if (!mutationGuardIsCurrent(mutationGuard)) return
       ensurePendingScope()
       removeSessionLocally(id)
-      setError(undefined)
+      setErrorState(undefined)
       void refresh()
     } catch (err) {
       const requestError = err instanceof Error ? err : new Error(String(err))
       if (mutationGuardIsCurrent(mutationGuard)) {
-        setError(tagSessionsError(requestError, 'recoverable', attestationSourceKey))
+        setErrorState({ kind: 'recoverable', requestScopeKey, error: requestError })
       }
       throw requestError
     }
-  }, [attestationSourceKey, captureMutationGuard, dataSourceKey, enabled, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, refresh, removeSessionLocally, requestHeaders, sessionsUrl])
+  }, [captureMutationGuard, dataSourceKey, enabled, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, refresh, removeSessionLocally, requestHeaders, requestScopeKey, sessionsUrl])
 
   const reset = useCallback(() => {
     const mutationGuard = captureMutationGuard()
@@ -659,7 +666,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [attestationSourceKey, captureMutationGuard, dataSourceKey, mutationGuardIsCurrent, persistActive, persistBootResume, requestScopeKey, storageScope, updateResumeSessionId])
 
   const visibleActiveSessionId = enabled ? activeSessionId : undefined
-  const currentError = error?.sourceKey === attestationSourceKey ? error : undefined
+  const currentErrorState = errorState?.requestScopeKey === requestScopeKey ? errorState : undefined
+  const currentError = currentErrorState ? publicSessionsError(currentErrorState) : undefined
 
   return {
     sessions,

@@ -92,7 +92,7 @@ export interface AppLeftPaneProps {
   onOpenCommandPalette: () => void
   onSwitchSession?: (id: string, agentTypeId?: string) => void
   onOpenSessionAsPane?: (id: string, agentTypeId?: string) => void
-  onToggleSessionPinned: (id: string, agentTypeId?: string) => void
+  onToggleSessionPinned?: (id: string, agentTypeId?: string) => void
   onDeleteSession?: (id: string, agentTypeId?: string) => void | Promise<unknown>
   onRenameSession?: (id: string, title: string) => void | Promise<unknown>
   /** Primary app-left actions supplied by the host/app/plugin shell after New chat/Search. */
@@ -265,8 +265,8 @@ export function AppLeftPane({
         // Split panes only make sense within the loaded workspace, so only the
         // active project's sessions are draggable / offer "open in a new pane".
         // A session from another project switches to that workspace instead.
-        canSplit={isActiveProjectSession}
-        canPin={isActiveProjectSession}
+        canSplit={isActiveProjectSession && Boolean(onOpenSessionAsPane)}
+        canPin={isActiveProjectSession && Boolean(onToggleSessionPinned)}
         working={isActiveProjectSession && workingSessionIds.has(sessionKey)}
         attentionBadge={isActiveProjectSession ? sessionBadges.get(sessionKey) : undefined}
         onSwitch={isActiveProjectSession
@@ -283,9 +283,11 @@ export function AppLeftPane({
               : () => onOpenSessionAsPane(session.id)
             : undefined
           : () => onOpenProjectSession?.(projectId, session.id)}
-        onTogglePinned={session.agentTypeId
-          ? () => onToggleSessionPinned(session.id, session.agentTypeId)
-          : () => onToggleSessionPinned(session.id)}
+        onTogglePinned={onToggleSessionPinned
+          ? session.agentTypeId
+            ? () => onToggleSessionPinned(session.id, session.agentTypeId)
+            : () => onToggleSessionPinned(session.id)
+          : undefined}
         onRename={isActiveProjectSession ? onRenameSession : undefined}
         onDelete={isActiveProjectSession && onDeleteSession
           ? session.agentTypeId

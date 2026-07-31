@@ -1231,6 +1231,43 @@ describe('usePiSessions', () => {
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 
+  test('hides and sanitizes a fatal error immediately on a headers-only source switch', async () => {
+    const nextResponse = deferred<Response>()
+    const privateError = Object.assign(new Error('scoped load failed'), {
+      requestHeaders: { 'x-test-tenant': 'alpha' },
+    })
+    fetchMock
+      .mockRejectedValueOnce(privateError)
+      .mockReturnValueOnce(nextResponse.promise)
+
+    const { result, rerender } = renderHook(
+      ({ tenant }) => usePiSessions({
+        storageScope: 'scope-a',
+        sourceIdentity: 'session-source',
+        requestHeaders: { 'x-test-tenant': tenant },
+        fetch: fetchMock as unknown as typeof fetch,
+        connectActiveSession: false,
+        retry: { maxRetries: 0 },
+      }),
+      { initialProps: { tenant: 'alpha' } },
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.error).toEqual(expect.objectContaining({ kind: 'fatal', message: 'scoped load failed' }))
+    expect(result.current.error).not.toBe(privateError)
+    expect(result.current.error).not.toHaveProperty('requestHeaders')
+    expect(result.current.sourceIdentity).toBe('session-source')
+
+    rerender({ tenant: 'beta' })
+    expect(result.current.error).toBeUndefined()
+    expect(result.current.sourceIdentity).toBeUndefined()
+
+    await act(async () => {
+      nextResponse.resolve(jsonResponse([]))
+      await nextResponse.promise
+    })
+  })
+
   test('does not let an old-source fatal error attest a new foreground load', async () => {
     const betaResponse = deferred<Response>()
     fetchMock

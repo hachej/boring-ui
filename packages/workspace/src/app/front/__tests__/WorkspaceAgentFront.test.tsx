@@ -638,6 +638,30 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByText("Old late")).not.toBeInTheDocument()
   })
 
+  it("releases the New chat guard when a custom create throws synchronously", async () => {
+    const create = vi.fn()
+      .mockImplementationOnce(() => { throw new Error("sync create failed") })
+      .mockResolvedValueOnce({ id: "retried", title: "Retried", updatedAt: Date.now() })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="sync-create-retry"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "existing", title: "Existing", updatedAt: Date.now() }]}
+        activeSessionId="existing"
+        onCreateSession={create}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }))
+    await act(async () => { await Promise.resolve() })
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }))
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["retried"]))
+  })
+
   it("creates exactly one session when New chat is double-clicked", async () => {
     // create() is an awaited server round-trip now, so without a re-entry
     // guard the second click of a double-click mints a second session.
@@ -716,7 +740,7 @@ describe("WorkspaceAgentFront", () => {
     render(<Harness />)
     const newChat = within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" })
     fireEvent.click(newChat)
-    expect(create).toHaveBeenCalledOnce()
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
 
     act(() => { transitionToB() })
     expect(screen.queryByText("Suspended B")).not.toBeInTheDocument()
@@ -875,7 +899,7 @@ describe("WorkspaceAgentFront", () => {
     fireEvent.click(newChat)
     fireEvent.click(screen.getByRole("button", { name: "Equivalent rerender" }))
     fireEvent.click(newChat)
-    expect(create).toHaveBeenCalledOnce()
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
 
     await act(async () => {
       created.resolve({ id: "created-row", agentTypeId: "alpha", title: "Created row" })
@@ -1708,6 +1732,30 @@ describe("WorkspaceAgentFront", () => {
 
     await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "created"]))
     expect(screen.getByRole("button", { name: "Split created chat horizontally" })).toBeEnabled()
+  })
+
+  it("releases split pending when a custom create throws synchronously", async () => {
+    const create = vi.fn()
+      .mockImplementationOnce(() => { throw new Error("sync split failed") })
+      .mockResolvedValueOnce({ id: "retried-split", title: "Retried split", updatedAt: Date.now() })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="sync-split-retry"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session", updatedAt: Date.now() }]}
+        activeSessionId="s1"
+        onCreateSession={create}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Split First session chat vertically" }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Split First session chat horizontally" })).toBeEnabled())
+    fireEvent.click(screen.getByRole("button", { name: "Split First session chat horizontally" }))
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "retried-split"]))
   })
 
   it("ignores another split request while asynchronous pane creation is pending", async () => {
@@ -2766,7 +2814,7 @@ describe("WorkspaceAgentFront", () => {
     expect(deleted).not.toHaveBeenCalled()
   })
 
-  it("does not pass the New chat click event into remote session creation", () => {
+  it("does not pass the New chat click event into remote session creation", async () => {
     const create = vi.fn(async () => ({ id: "manual", title: "Manual", updatedAt: Date.now(), turnCount: 0 }))
 
     render(
@@ -2788,7 +2836,7 @@ describe("WorkspaceAgentFront", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "New chat" }))
 
-    expect(create).toHaveBeenCalledOnce()
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
     expect(create.mock.calls[0]).toEqual([])
   })
 
@@ -3125,6 +3173,35 @@ describe("WorkspaceAgentFront", () => {
     expect(fetchMock.mock.calls.some(([input, init]) =>
       String(input).includes("/api/v1/agent/pi-chat/sessions") && (init?.method ?? "GET") === "POST",
     )).toBe(false)
+  })
+
+  it("releases initial auto-create state after a synchronous custom failure so New chat can retry", async () => {
+    const createSession = vi.fn()
+      .mockImplementationOnce(() => { throw new Error("sync initial create failed") })
+      .mockResolvedValueOnce({ id: "retried-initial", title: "Retried initial" })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="sync-initial-create-retry"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        useSessions={() => ({
+          sessions: [],
+          loading: false,
+          activeSessionId: null,
+          resumeSessionId: "hidden-empty",
+          activeSession: null,
+          switch: vi.fn(),
+          create: createSession,
+          delete: vi.fn(),
+        })}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(createSession).toHaveBeenCalledOnce())
+    fireEvent.click(await screen.findByRole("button", { name: "New chat" }))
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(2))
   })
 
   it("creates the first remote session when a sessions hook loads empty", async () => {

@@ -492,24 +492,24 @@ function SessionRow({
       data-boring-state={active ? "selected" : undefined}
       className={cn(
         "group relative mx-2 mt-px flex items-center rounded-md px-2.5 py-1.5 text-[13px] transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
-        "cursor-pointer hover:bg-foreground/[0.04]",
+        onSwitch && "cursor-pointer hover:bg-foreground/[0.04]",
         active && "bg-foreground/[0.06] text-foreground",
       )}
-      onClick={() => {
-        if (session.agentTypeId) onSwitch?.(session.id, session.agentTypeId)
-        else onSwitch?.(session.id)
-      }}
+      onClick={onSwitch ? () => {
+        if (session.agentTypeId) onSwitch(session.id, session.agentTypeId)
+        else onSwitch(session.id)
+      } : undefined}
       // Rows can be dragged onto the chat stage to open the session as a
       // pane at the drop position (dock engine).
-      draggable
-      onDragStart={(e) => {
+      draggable={Boolean(onOpenAsTab)}
+      onDragStart={onOpenAsTab ? (e) => {
         e.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, encodeWorkspaceSessionDrag({
           sessionId: session.id,
           ...(session.agentTypeId ? { agentTypeId: session.agentTypeId } : {}),
         }))
         e.dataTransfer.setData("text/plain", session.title || session.id)
         e.dataTransfer.effectAllowed = "copyMove"
-      }}
+      } : undefined}
     >
       {open && (
         <span

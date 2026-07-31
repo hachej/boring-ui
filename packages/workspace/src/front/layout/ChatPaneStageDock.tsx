@@ -279,6 +279,7 @@ export function ChatPaneStageDock({
     // Accept session rows dragged in from outside the dock (the session
     // browser). The drop opens the session as a pane at the drop position.
     const dragOverDisposable = api.onUnhandledDragOver((dragEvent) => {
+      if (!latestRef.current.onDropSession) return
       const nativeEvent = dragEvent.nativeEvent
       const types = nativeEvent instanceof DragEvent ? nativeEvent.dataTransfer?.types : undefined
       if (types && Array.from(types).includes(CHAT_SESSION_DRAG_TYPE)) dragEvent.accept()
@@ -369,6 +370,7 @@ export function ChatPaneStageDock({
           // so the single header stretches across the full group width and
           // reads as a flat pane header, not a tab.
           singleTabMode="fullwidth"
+          disableDnd={!onActivePaneChange}
           onReady={handleReady}
         />
       </div>
@@ -457,15 +459,16 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
 
   // With a single pane there is nothing to move — show a plain title.
   const multiPane = stage.panes.length > 1
+  const draggable = multiPane && Boolean(stage.onActivePaneChange)
   return (
     <div
       className={cn(
         "group flex h-full w-full min-w-0 select-none items-center gap-1.5 px-2 text-[12px] font-medium leading-none tracking-tight",
-        multiPane && "cursor-grab active:cursor-grabbing",
+        draggable && "cursor-grab active:cursor-grabbing",
       )}
       title={title}
     >
-      {multiPane ? (
+      {draggable ? (
         <GripVertical
           aria-hidden="true"
           data-boring-workspace-part="chat-pane-grip"
