@@ -491,7 +491,13 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     })
 
     try {
-      const res = await app.inject({ method: "GET", url: "/api/v1/agent/commands?sessionId=default" })
+      const created = await app.inject({ method: "POST", url: "/api/v1/agent/pi-chat/sessions" })
+      expect(created.statusCode).toBe(201)
+      const sessionId = (created.json() as { id: string }).id
+      const res = await app.inject({
+        method: "GET",
+        url: `/api/v1/agent/commands?sessionId=${encodeURIComponent(sessionId)}`,
+      })
       expect(res.statusCode).toBe(200)
       const commands = res.json().commands as Array<{ name: string; source: string }>
       const skillCommands = commands.filter((c) => c.source === "skill").map((c) => c.name)

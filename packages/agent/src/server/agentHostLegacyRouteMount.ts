@@ -40,6 +40,8 @@ function isPiSessionHttpRequest(request: FastifyRequest): boolean {
   const apiPath = apiIndex >= 0 ? pathname.slice(apiIndex) : pathname
   return apiPath === '/api/v1/agent/pi-chat/sessions'
     || apiPath.startsWith('/api/v1/agent/pi-chat/')
+    || apiPath === '/api/v1/agent/commands'
+    || apiPath === '/api/v1/agent/commands/execute'
     || /^\/api\/v1\/agents\/[^/]+\/sessions(?:\/|$)/.test(apiPath)
 }
 import { deepLinkRoutes } from './http/routes/deepLink'

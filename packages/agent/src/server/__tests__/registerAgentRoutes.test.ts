@@ -1107,7 +1107,7 @@ test('registerAgentRoutes bridges request.user to workspaceContext', async () =>
   await app.close()
 })
 
-test('registerAgentRoutes resolves session principals only for Pi session routes', async () => {
+test('registerAgentRoutes resolves session principals for Pi session and command routes', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-session-principal-')
   const app = Fastify({ logger: false })
   const resolvePiSessionRequestContext = vi.fn(async (
@@ -1130,13 +1130,23 @@ test('registerAgentRoutes resolves session principals only for Pi session routes
   expect(catalog.statusCode).toBe(200)
   expect(resolvePiSessionRequestContext).not.toHaveBeenCalled()
 
-  const sessions = await app.inject({ method: 'GET', url: '/mounted/api/v1/agent/pi-chat/sessions' })
-  expect(sessions.statusCode).toBe(200)
+  const created = await app.inject({ method: 'POST', url: '/mounted/api/v1/agent/pi-chat/sessions' })
+  expect(created.statusCode).toBe(201)
+  const sessionId = (created.json() as { id: string }).id
   expect(resolvePiSessionRequestContext).toHaveBeenCalledTimes(1)
-  expect(resolvePiSessionRequestContext.mock.calls[0]?.[1]).toMatchObject({
-    workspaceId: 'default',
-    requestId: expect.any(String),
+
+  const commands = await app.inject({
+    method: 'GET',
+    url: `/mounted/api/v1/agent/commands?sessionId=${encodeURIComponent(sessionId)}`,
   })
+  expect(commands.statusCode).toBe(200)
+  expect(resolvePiSessionRequestContext).toHaveBeenCalledTimes(2)
+  for (const call of resolvePiSessionRequestContext.mock.calls) {
+    expect(call[1]).toMatchObject({
+      workspaceId: 'default',
+      requestId: expect.any(String),
+    })
+  }
 
   await app.close()
 })
