@@ -33,16 +33,28 @@ import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
 import { readyStatusRoutes } from './http/routes/readyStatus'
 import { commandsRoutes } from './http/routes/commands'
+import { resolveRequestPrincipal } from './http/requestPrincipal'
 
-function isPiSessionHttpRequest(request: FastifyRequest): boolean {
-  const pathname = request.url.split('?', 1)[0] ?? request.url
-  const apiIndex = pathname.indexOf('/api/v1/')
-  const apiPath = apiIndex >= 0 ? pathname.slice(apiIndex) : pathname
+function finalApiRoutePath(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const pathname = value.split('?', 1)[0] ?? value
+  const apiIndex = pathname.lastIndexOf('/api/v1/')
+  return apiIndex >= 0 ? pathname.slice(apiIndex) : undefined
+}
+
+function isPiSessionApiPath(apiPath: string): boolean {
   return apiPath === '/api/v1/agent/pi-chat/sessions'
     || apiPath.startsWith('/api/v1/agent/pi-chat/')
     || apiPath === '/api/v1/agent/commands'
     || apiPath === '/api/v1/agent/commands/execute'
     || /^\/api\/v1\/agents\/[^/]+\/sessions(?:\/|$)/.test(apiPath)
+}
+
+function isPiSessionHttpRequest(request: FastifyRequest): boolean {
+  return [request.url, request.routeOptions.url].some((value) => {
+    const apiPath = finalApiRoutePath(value)
+    return apiPath ? isPiSessionApiPath(apiPath) : false
+  })
 }
 import { deepLinkRoutes } from './http/routes/deepLink'
 import type { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
@@ -93,7 +105,6 @@ export interface MountOrderedAgentHostLegacyRoutesInput {
   readonly agentToolNames: string[]
   readonly getAvailableModelProviders: () => string[]
   readonly getRequestWorkspaceId: (request: FastifyRequest) => string
-  readonly getRequestAuthSubject: (request?: FastifyRequest) => string | undefined
   readonly promoteRawFileWorkspaceQueryToHeader: (request: FastifyRequest) => void
   readonly isWorkspaceAgnosticAgentRequest: (
     request: FastifyRequest,
@@ -133,7 +144,6 @@ export async function mountOrderedAgentHostLegacyRoutes(
     agentToolNames,
     getAvailableModelProviders,
     getRequestWorkspaceId,
-    getRequestAuthSubject,
     promoteRawFileWorkspaceQueryToHeader,
     isWorkspaceAgnosticAgentRequest,
     getBindingForRequest,
@@ -168,6 +178,7 @@ export async function mountOrderedAgentHostLegacyRoutes(
     const user = (request as unknown as {
       user?: { id: string; email?: string; emailVerified?: boolean } | null
     }).user
+    const initialPrincipal = resolveRequestPrincipal(request)
     let workspaceId = DEFAULT_WORKSPACE_ID
     promoteRawFileWorkspaceQueryToHeader(request)
     if (opts.getWorkspaceId && !isWorkspaceAgnosticAgentRequest(request, { readyStatusWorkspaceScoped: requestScopedRuntime, modelsWorkspaceScoped })) {
@@ -205,7 +216,6 @@ export async function mountOrderedAgentHostLegacyRoutes(
         })
       }
     }
-    let authSubject = user?.id
     if (opts.resolvePiSessionRequestContext && isPiSessionHttpRequest(request)) {
       const storageScopeHeader = request.headers['x-boring-storage-scope']
       const defaultContext: PiSessionRequestContext = {
@@ -213,9 +223,9 @@ export async function mountOrderedAgentHostLegacyRoutes(
         storageScope: typeof storageScopeHeader === 'string' && storageScopeHeader.length > 0
           ? storageScopeHeader
           : undefined,
-        authSubject,
-        authEmail: typeof user?.email === 'string' && user.email.length > 0 ? user.email : undefined,
-        authEmailVerified: user?.emailVerified === true,
+        authSubject: initialPrincipal.authSubject,
+        authEmail: initialPrincipal.authEmail,
+        authEmailVerified: initialPrincipal.authEmailVerified === true,
         requestId: request.id,
       }
       const sessionContext = await opts.resolvePiSessionRequestContext(request, defaultContext)
@@ -224,12 +234,12 @@ export async function mountOrderedAgentHostLegacyRoutes(
         workspaceId,
         requestId: sessionContext.requestId || request.id,
       }
-      authSubject = sessionContext.authSubject
     }
+    const principal = resolveRequestPrincipal(request)
     request.workspaceContext = {
       workspaceId,
       authenticated: !!user,
-      ...(authSubject ? { authSubject } : {}),
+      ...principal,
     }
   })
 
@@ -280,7 +290,7 @@ export async function mountOrderedAgentHostLegacyRoutes(
       const binding = await getBindingForRequest(request)
       return issueScope({
         workspaceScopeId: getRequestWorkspaceId(request),
-        authSubjectId: getRequestAuthSubject(request) ?? 'legacy',
+        authSubjectId: resolveRequestPrincipal(request).authSubject ?? 'legacy',
       }, binding.hostScope)
     },
     defaultAgentTypeId,
@@ -290,7 +300,7 @@ export async function mountOrderedAgentHostLegacyRoutes(
       const binding = await getBindingForRequest(request)
       const scope = issueScope({
         workspaceScopeId: getRequestWorkspaceId(request),
-        authSubjectId: getRequestAuthSubject(request) ?? 'legacy',
+        authSubjectId: resolveRequestPrincipal(request).authSubject ?? 'legacy',
       }, binding.hostScope)
       return agentHost.createPiChatService({
         service: binding.piChatService,

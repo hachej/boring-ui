@@ -609,46 +609,59 @@ describe('PiChatPanel sandbox shell', () => {
     expect(screen.getByRole('button', { name: 'New session' })).toBeTruthy()
   })
 
-  test('auto-creates only one session while the empty-list create is in flight', async () => {
+  test('waits for an auto-created canonical session before discovering its commands', async () => {
     const createSessionResponse = deferred<Response>()
-    const modelsResponse = deferred<Response>()
-    const skillsResponse = deferred<Response>()
+    const createdSession = session('pi-created', 'Auto created')
+    const remote = new FakeRemotePiSession(remoteState({ sessionId: createdSession.id }))
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const method = init?.method ?? 'GET'
       if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'GET') return jsonResponse([])
       if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'POST') return createSessionResponse.promise
-      if (url.endsWith('/api/v1/agent/models')) return modelsResponse.promise
-      if (url.includes('/api/v1/agent/commands')) return skillsResponse.promise
+      if (url === '/api/v1/agent/commands?sessionId=pi-created') {
+        return jsonResponse({ commands: [{ name: 'fresh-session-command', description: 'Created-session command', source: 'prompt' }] })
+      }
       throw new Error(`unexpected fetch ${url}`)
     })
 
-    render(<PiChatPanel storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} />)
+    render(
+      <PiChatPanel
+        availableModels={[]}
+        storageScope="scope-a"
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
 
     const createCalls = () => fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST')
+    const commandCalls = () => fetchMock.mock.calls.filter((call) => String(call[0]).includes('/api/v1/agent/commands'))
     await waitFor(() => expect(createCalls()).toHaveLength(1))
+    expect(commandCalls()).toHaveLength(0)
 
     await act(async () => {
-      modelsResponse.resolve(jsonResponse({ models: [] }))
-      skillsResponse.resolve(jsonResponse({ commands: [] }))
-      await Promise.resolve()
-    })
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/models', expect.anything()))
-    expect(createCalls()).toHaveLength(1)
-
-    await act(async () => {
-      createSessionResponse.resolve(jsonResponse(session('pi-created', 'Auto created'), 201))
+      createSessionResponse.resolve(jsonResponse(createdSession, 201))
       await createSessionResponse.promise
     })
+
+    await waitFor(() => expect(commandCalls().map((call) => String(call[0]))).toEqual([
+      '/api/v1/agent/commands?sessionId=pi-created',
+    ]))
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: '/fresh' } })
+    expect(await screen.findByText('/fresh-session-command')).toBeTruthy()
+    expect(await screen.findByText('Created-session command')).toBeTruthy()
+    expect(commandCalls()).toHaveLength(1)
   })
 
   test('routes model and skill discovery through apiBaseUrl with scoped headers', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      if (url === 'https://agent.test/api/v1/agent/pi-chat/sessions' && init?.method === 'POST') {
+        return jsonResponse(session('pi-scoped'), 201)
+      }
       if (url === 'https://agent.test/api/v1/agent/pi-chat/sessions') return jsonResponse([])
       if (url === 'https://agent.test/api/v1/agent/models') return jsonResponse({ models: [] })
-      if (url.startsWith('https://agent.test/api/v1/agent/commands')) return jsonResponse({ commands: [] })
+      if (url === 'https://agent.test/api/v1/agent/commands?sessionId=pi-scoped') return jsonResponse({ commands: [] })
       throw new Error(`unexpected fetch ${url}`)
     })
 
@@ -665,7 +678,7 @@ describe('PiChatPanel sandbox shell', () => {
       expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual(expect.arrayContaining([
         'https://agent.test/api/v1/agent/pi-chat/sessions',
         'https://agent.test/api/v1/agent/models',
-        expect.stringContaining('https://agent.test/api/v1/agent/commands'),
+        'https://agent.test/api/v1/agent/commands?sessionId=pi-scoped',
       ]))
     })
     for (const [, init] of fetchMock.mock.calls) {

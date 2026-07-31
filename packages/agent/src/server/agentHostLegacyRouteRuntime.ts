@@ -49,6 +49,7 @@ import {
   type RuntimeBindingEntry as ManagedRuntimeBindingEntry,
 } from './runtime/runtimeBindingLifecycle'
 import { mountOrderedAgentHostLegacyRoutes } from './agentHostLegacyRouteMount'
+import { resolveRequestPrincipal } from './http/requestPrincipal'
 
 const DEFAULT_WORKSPACE_ID = 'default'
 const STANDARD_AGENT_TOOL_NAMES = ['bash', 'read', 'write', 'edit', 'find', 'grep', 'ls']
@@ -160,13 +161,6 @@ function normalizeSessionNamespace(value: string | undefined): string | undefine
   if (typeof value !== 'string') return undefined
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : undefined
-}
-
-function getRequestAuthSubject(request: FastifyRequest | undefined): string | undefined {
-  const userId = (request as { user?: { id?: unknown } } | undefined)?.user?.id
-  if (typeof userId === 'string' && userId.trim()) return userId.trim()
-  const authSubject = (request?.workspaceContext as { authSubject?: unknown } | undefined)?.authSubject
-  return typeof authSubject === 'string' && authSubject.trim() ? authSubject.trim() : undefined
 }
 
 function createHttpError(
@@ -340,9 +334,14 @@ export async function mountAgentHostLegacyRouteRuntime(
       : templatePath
     const pi = await resolveScopePi(workspaceId, root, request)
     const sessionNamespace = normalizeSessionNamespace(opts.getSessionNamespace
-      ? await opts.getSessionNamespace({ workspaceId, workspaceRoot: root, request, userId: trustedCtx?.userId })
+      ? await opts.getSessionNamespace({
+          workspaceId,
+          workspaceRoot: root,
+          request,
+          userId: trustedCtx?.userId ?? resolveRequestPrincipal(request).authSubject,
+        })
       : opts.sessionNamespace)
-    const extraToolsAuthSubject = opts.getExtraTools ? trustedCtx?.userId ?? getRequestAuthSubject(request) : undefined
+    const extraToolsAuthSubject = opts.getExtraTools ? trustedCtx?.userId ?? resolveRequestPrincipal(request).authSubject : undefined
     const contribution = await opts.getRuntimeScopeContribution?.({ workspaceId, workspaceRoot: root, request })
     return {
       root,
@@ -677,7 +676,7 @@ export async function mountAgentHostLegacyRouteRuntime(
                 workspaceRoot: root,
                 runtimeMode: resolvedMode,
                 workspaceFsCapability: bundle.workspace.fsCapability,
-                authSubject: trustedCtx?.userId ?? getRequestAuthSubject(request),
+                authSubject: trustedCtx?.userId ?? resolveRequestPrincipal(request).authSubject,
               })
             : []
         },
@@ -692,7 +691,7 @@ export async function mountAgentHostLegacyRouteRuntime(
     }
     const authorizedScope = issueScope({
       workspaceScopeId: workspaceId,
-      authSubjectId: trustedCtx?.userId ?? getRequestAuthSubject(request) ?? 'legacy',
+      authSubjectId: trustedCtx?.userId ?? resolveRequestPrincipal(request).authSubject ?? 'legacy',
     }, hostScope)
     const composition = await agentHost.resolveComposition(defaultAgentTypeId, authorizedScope)
     runtimeBundle = composition.runtimeBundle
@@ -1074,7 +1073,6 @@ export async function mountAgentHostLegacyRouteRuntime(
     agentToolNames,
     getAvailableModelProviders,
     getRequestWorkspaceId,
-    getRequestAuthSubject,
     promoteRawFileWorkspaceQueryToHeader,
     isWorkspaceAgnosticAgentRequest,
     getBindingForRequest,

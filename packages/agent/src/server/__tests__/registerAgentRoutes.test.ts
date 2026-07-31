@@ -1107,7 +1107,7 @@ test('registerAgentRoutes bridges request.user to workspaceContext', async () =>
   await app.close()
 })
 
-test('registerAgentRoutes resolves session principals for Pi session and command routes', async () => {
+test('registerAgentRoutes classifies session routes behind API-shaped prefixes without matching lookalikes', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-session-principal-')
   const app = Fastify({ logger: false })
   const resolvePiSessionRequestContext = vi.fn(async (
@@ -1122,22 +1122,24 @@ test('registerAgentRoutes resolves session principals for Pi session and command
     workspaceRoot,
     mode: 'direct',
     resolvePiSessionRequestContext,
-    prefix: '/mounted',
+    prefix: '/mounted/api/v1/tenant',
   })
   await app.ready()
 
-  const catalog = await app.inject({ method: 'GET', url: '/mounted/api/v1/agent/catalog' })
+  const catalog = await app.inject({ method: 'GET', url: '/mounted/api/v1/tenant/api/v1/agent/catalog' })
   expect(catalog.statusCode).toBe(200)
+  const lookalike = await app.inject({ method: 'GET', url: '/mounted/api/v1/tenant/api/v1/agent/commands-extra' })
+  expect(lookalike.statusCode).toBe(404)
   expect(resolvePiSessionRequestContext).not.toHaveBeenCalled()
 
-  const created = await app.inject({ method: 'POST', url: '/mounted/api/v1/agent/pi-chat/sessions' })
+  const created = await app.inject({ method: 'POST', url: '/mounted/api/v1/tenant/api/v1/agent/pi-chat/sessions' })
   expect(created.statusCode).toBe(201)
   const sessionId = (created.json() as { id: string }).id
   expect(resolvePiSessionRequestContext).toHaveBeenCalledTimes(1)
 
   const commands = await app.inject({
     method: 'GET',
-    url: `/mounted/api/v1/agent/commands?sessionId=${encodeURIComponent(sessionId)}`,
+    url: `/mounted/api/v1/tenant/api/v1/agent/commands?sessionId=${encodeURIComponent(sessionId)}`,
   })
   expect(commands.statusCode).toBe(200)
   expect(resolvePiSessionRequestContext).toHaveBeenCalledTimes(2)
@@ -1650,19 +1652,20 @@ test('file routes use request-aware filesystem bindings from registerAgentRoutes
   await app.close()
 }, 15_000)
 
-test('request-scoped command endpoints use the workspace harness and request identity', async () => {
+test('request-scoped command endpoints use the host-resolved principal for binding, discovery, and execution', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-commands-')
   const app = Fastify({ logger: false })
   const getSlashCommands = vi.fn(async () => [{ name: 'open-test-panel', source: 'extension' as const }])
   const executeSlashCommand = vi.fn(async () => {})
+  const bindingPrincipals: Array<string | undefined> = []
   let scopeChecks = 0
 
   app.addHook('onRequest', async (request) => {
     ;(request as typeof request & { user: { id: string; email: string; name: null; emailVerified: boolean } }).user = {
-      id: 'user-1',
-      email: 'user@example.com',
+      id: 'user-a',
+      email: 'user-a@example.com',
       name: null,
-      emailVerified: true,
+      emailVerified: false,
     }
   })
 
@@ -1680,6 +1683,16 @@ test('request-scoped command endpoints use the workspace harness and request ide
       return value
     },
     getWorkspaceRoot: () => workspaceRoot,
+    resolvePiSessionRequestContext: async (_request, context) => ({
+      ...context,
+      authSubject: 'owner-b',
+      authEmail: 'owner-b@example.com',
+      authEmailVerified: true,
+    }),
+    getExtraTools: ({ authSubject }) => {
+      bindingPrincipals.push(authSubject)
+      return []
+    },
     harnessFactory: async () => ({
       id: 'commands-test-harness',
       placement: 'server' as const,
@@ -1714,8 +1727,8 @@ test('request-scoped command endpoints use the workspace harness and request ide
     expect(getSlashCommands).toHaveBeenCalledWith('custom', expect.objectContaining({
       workdir: workspaceRoot,
       workspaceId: 'workspace-a',
-      userId: 'user-1',
-      userEmail: 'user@example.com',
+      userId: 'owner-b',
+      userEmail: 'owner-b@example.com',
       userEmailVerified: true,
       requestId: expect.any(String),
     }))
@@ -1731,11 +1744,12 @@ test('request-scoped command endpoints use the workspace harness and request ide
     expect(executeSlashCommand).toHaveBeenCalledWith('custom', 'open-test-panel', 'arg1', expect.objectContaining({
       workdir: workspaceRoot,
       workspaceId: 'workspace-a',
-      userId: 'user-1',
-      userEmail: 'user@example.com',
+      userId: 'owner-b',
+      userEmail: 'owner-b@example.com',
       userEmailVerified: true,
       requestId: expect.any(String),
     }))
+    expect(bindingPrincipals).toEqual(['owner-b'])
     expect(scopeChecks).toBe(2)
   } finally {
     await app.close()

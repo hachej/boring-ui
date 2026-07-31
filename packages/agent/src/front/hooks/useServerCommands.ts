@@ -40,7 +40,7 @@ function commandsUrl(
 
 function toSlashCommand(
   command: ServerCommandSummary,
-  getSessionId: () => string,
+  getSessionId: () => string | undefined,
   apiBaseUrl: string | undefined,
   agentTypeId: string | undefined,
   requestHeaders: Record<string, string> | undefined,
@@ -52,8 +52,10 @@ function toSlashCommand(
     source: command.source,
     ...(command.sourcePlugin ? { sourcePlugin: command.sourcePlugin } : {}),
     handler: async (args) => {
+      const sessionId = getSessionId()
+      if (!sessionId) return
       const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-      const url = commandsUrl(base, getSessionId(), agentTypeId, '/execute')
+      const url = commandsUrl(base, sessionId, agentTypeId, '/execute')
       try {
         const res = await fetchImpl(url, {
           method: 'POST',
@@ -92,7 +94,7 @@ export function useServerCommands({
 }: {
   registry: CommandRegistry
   requestHeaders?: Record<string, string>
-  sessionId: string
+  sessionId?: string
   /** Owning agent type in addressed hosts. Absent on the legacy single-agent wire. */
   agentTypeId?: string
   apiBaseUrl?: string
@@ -103,10 +105,10 @@ export function useServerCommands({
 }): number {
   const [stamp, setStamp] = useState(0)
   const registeredNamesRef = useRef<Set<string>>(new Set())
-  // Keep sessionId in a ref so discovery doesn't re-run when only the session
-  // ID changes — sessionId is only needed at execute time (passed via closure).
-  const sessionIdRef = useRef(sessionId)
-  useEffect(() => { sessionIdRef.current = sessionId }, [sessionId])
+  const canonicalSessionId = sessionId?.trim() || undefined
+  // Existing command callbacks always execute against the latest canonical session.
+  const sessionIdRef = useRef<string | undefined>(canonicalSessionId)
+  sessionIdRef.current = canonicalSessionId
 
   useEffect(() => {
     const clearRegistered = () => {
@@ -116,7 +118,7 @@ export function useServerCommands({
       return true
     }
 
-    if (!enabled) {
+    if (!enabled || !canonicalSessionId) {
       if (clearRegistered()) setStamp((n) => n + 1)
       return
     }
@@ -124,7 +126,7 @@ export function useServerCommands({
     let aborted = false
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
     const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-    const url = commandsUrl(base, sessionIdRef.current, agentTypeId, '')
+    const url = commandsUrl(base, canonicalSessionId, agentTypeId, '')
     const headers = scopedHeaders(requestHeaders, storageScope)
 
     nextFetch(url, { headers })
@@ -152,7 +154,7 @@ export function useServerCommands({
       })
 
     return () => { aborted = true }
-  }, [agentTypeId, apiBaseUrl, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
+  }, [agentTypeId, apiBaseUrl, canonicalSessionId, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
 
   return stamp
 }

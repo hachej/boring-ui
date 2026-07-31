@@ -3,6 +3,7 @@ import type { AgentHarness, AgentSlashCommandSummary, RunContext } from '../../.
 import type { AgentMeteringSink } from '../../pi-chat/metering'
 import { AgentEffectAdmissionError, type AgentEffectAdmission } from '../../../core/piChatSessionService'
 import { ErrorCode, type ErrorCode as ErrorCodeValue } from '../../../shared/error-codes'
+import { resolveRequestPrincipal } from '../requestPrincipal'
 
 const DEFAULT_WORKSPACE_ID = 'default'
 
@@ -38,13 +39,6 @@ function getRequestWorkspaceId(request: FastifyRequest): string {
   return request.workspaceContext?.workspaceId ?? DEFAULT_WORKSPACE_ID
 }
 
-function getRequestAuthSubject(request: FastifyRequest): string | undefined {
-  const userId = (request as FastifyRequest & { user?: { id?: unknown } | null }).user?.id
-  if (typeof userId === 'string' && userId.trim()) return userId.trim()
-  const authSubject = (request.workspaceContext as { authSubject?: unknown } | undefined)?.authSubject
-  return typeof authSubject === 'string' && authSubject.trim() ? authSubject.trim() : undefined
-}
-
 function isErrorCode(value: unknown): value is ErrorCodeValue {
   return typeof value === 'string' && ErrorCode.options.includes(value as ErrorCodeValue)
 }
@@ -61,20 +55,16 @@ function isMeteringActive(metering: Pick<AgentMeteringSink, 'isEnabled'> | undef
   return metering.isEnabled ? metering.isEnabled() === true : true
 }
 
-function nonEmptyString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
-}
-
 function buildRunContext(request: FastifyRequest, workdir: string, options: { allowPromptDispatch?: boolean } = {}): RunContext {
-  const user = (request as FastifyRequest & { user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null }).user
+  const principal = resolveRequestPrincipal(request)
   return {
     abortSignal: new AbortController().signal,
     workdir,
     workspaceId: getRequestWorkspaceId(request),
     requestId: request.id,
-    userId: getRequestAuthSubject(request),
-    userEmail: nonEmptyString(user?.email),
-    userEmailVerified: user?.emailVerified === true,
+    userId: principal.authSubject,
+    userEmail: principal.authEmail,
+    userEmailVerified: principal.authEmailVerified === true,
     ...(options.allowPromptDispatch === false ? { allowPromptDispatch: false } : {}),
   }
 }

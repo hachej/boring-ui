@@ -21,6 +21,9 @@ const DEFAULT_WORKSPACE_ID = 'default'
 export interface WorkspaceContext {
   workspaceId: string
   authenticated: boolean
+  authSubject?: string
+  authEmail?: string
+  authEmailVerified?: boolean
 }
 
 interface ErrorPayload {

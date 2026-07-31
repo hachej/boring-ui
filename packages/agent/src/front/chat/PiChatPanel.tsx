@@ -436,7 +436,7 @@ export function PiChatPanel<
   const commandsStamp = useServerCommands({
     registry,
     requestHeaders: normalizedRequestHeaders,
-    sessionId: activeSessionId ?? 'default',
+    sessionId: activeSessionId,
     // Without the owner, discovery and execution fall back to the legacy
     // single-agent routes, which always answer from the DEFAULT binding.
     agentTypeId,
