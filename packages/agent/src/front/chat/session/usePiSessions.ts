@@ -391,14 +391,15 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     setLoadingMore(true)
     try {
       const page = await fetchSessionList(fetchImpl, sessionsListUrl(offset, undefined, nextCursorRef.current), requestHeaders(), addressed)
-      const data = page.sessions
+      const canonicalData = page.sessions
+      const data = canonicalData.filter((session) => !pendingDeletedRef.current.has(session.id))
       if (!mountedRef.current || requestSeq !== loadMoreRequestSeqRef.current || version !== refreshVersionRef.current || scope !== requestScopeRef.current) return
       const merged = applyReadOnlySessions(
         mergeSessions(sessionsRef.current, data),
         readOnlySessionsRef.current,
       )
-      const nextHasMore = addressed ? page.nextCursor !== undefined : data.length >= SESSION_PAGE_SIZE
-      canonicalLoadedCountRef.current += data.length
+      const nextHasMore = addressed ? page.nextCursor !== undefined : canonicalData.length >= SESSION_PAGE_SIZE
+      canonicalLoadedCountRef.current += canonicalData.length
       nextCursorRef.current = page.nextCursor
       setSessions(merged)
       setHasMore(nextHasMore)
@@ -517,6 +518,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       : toSessionSummary(body)
     if (!mountedRef.current || scope !== requestScopeRef.current) return session
     ensurePendingScope()
+    pendingDeletedRef.current.delete(session.id)
     pendingCreatedRef.current.set(session.id, session)
     setDataStorageScope(storageScope)
     setSessions((previous) => mergeSessions([session], previous))
@@ -536,6 +538,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     }
     localSessionsRef.current.delete(localId)
     ensurePendingScope()
+    pendingDeletedRef.current.delete(nativeSession.id)
     pendingCreatedRef.current.set(nativeSession.id, nativeSession)
     setSessions((previous) => mergeSessions(
       [nativeSession],
@@ -594,7 +597,6 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       })
       return
     }
-    pendingDeletedRef.current.add(id)
     try {
       const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
         method: 'DELETE',
@@ -604,7 +606,6 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
         throw await gatewayResponseError(response, 'Failed to delete the chat.', 'delete chat')
       }
     } catch (err) {
-      pendingDeletedRef.current.delete(id)
       const error = withSessionOperation(err, 'delete chat')
       markRuntimeScopeMismatch(id, error)
       if (!mountedRef.current || scope !== requestScopeRef.current) throw error
@@ -612,6 +613,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       throw error
     }
     if (!mountedRef.current || scope !== requestScopeRef.current) return
+    pendingDeletedRef.current.add(id)
     pendingCreatedRef.current.delete(id)
     setDataStorageScope(storageScope)
     setSessions((previous) => previous.filter((session) => session.id !== id))

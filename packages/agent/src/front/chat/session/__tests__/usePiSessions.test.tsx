@@ -1019,6 +1019,39 @@ describe('usePiSessions', () => {
     expect(result.current.sessions).toEqual([])
   })
 
+  test('keeps a confirmed deletion hidden when a stale later page is loaded', async () => {
+    const remote = remoteFactory()
+    const firstPage = Array.from({ length: 50 }, (_, index) => session(`pi-${index}`))
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(firstPage))
+      .mockResolvedValueOnce(jsonResponse([session('pi-delete')]))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse(firstPage))
+      .mockResolvedValueOnce(jsonResponse([session('pi-delete')]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+    }))
+    await waitFor(() => expect(result.current.hasMore).toBe(true))
+    await act(async () => {
+      await result.current.loadMore()
+    })
+    expect(result.current.sessions.map((item) => item.id)).toContain('pi-delete')
+
+    await act(async () => {
+      await result.current.delete('pi-delete')
+    })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4))
+    await waitFor(() => expect(result.current.hasMore).toBe(true))
+
+    await act(async () => {
+      await result.current.loadMore()
+    })
+    expect(result.current.sessions.map((item) => item.id)).not.toContain('pi-delete')
+  })
+
   test('delete of active session clears storage when no fallback remains and disposes remote session', async () => {
     const persisted = storage()
     const remote = remoteFactory()
