@@ -61,7 +61,7 @@ class FakePiChatService implements PiChatSessionService {
     return this.sessions
   }
 
-  async createSession(ctx: PiSessionRequestContext, init?: { title?: string }) {
+  async createSession(ctx: PiSessionRequestContext, init?: { title?: string; reuseEmpty?: boolean }) {
     const session = { id: 'pi-new', title: init?.title ?? 'New session', createdAt: '2026-06-03T00:02:00.000Z', updatedAt: '2026-06-03T00:02:00.000Z', turnCount: 0 }
     this.calls.push({ method: 'createSession', ctx, sessionId: session.id, payload: init ?? {} })
     this.sessions = [session, ...this.sessions]
@@ -160,7 +160,7 @@ describe('piChatRoutes', () => {
       method: 'POST',
       url: '/api/v1/agent/pi-chat/sessions',
       headers: { 'x-boring-storage-scope': 'scope-a' },
-      payload: { title: 'New Pi session' },
+      payload: { title: 'New Pi session', reuseEmpty: true },
     })
     expect(created.statusCode).toBe(201)
     expect(created.json()).toMatchObject({ id: 'pi-new', title: 'New Pi session' })
@@ -177,6 +177,7 @@ describe('piChatRoutes', () => {
       ctx: { workspaceId: 'workspace-a', storageScope: 'scope-a', authSubject: 'user-a' },
       options: { limit: 50, offset: 0 },
     })
+    expect(service.calls[1]?.payload).toEqual({ title: 'New Pi session', reuseEmpty: true })
 
     await app.close()
   })

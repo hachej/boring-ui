@@ -135,6 +135,32 @@ describe("stable session id — create with the id the server minted", () => {
   }, 20_000);
 });
 
+describe("stable session id — boot adoption", () => {
+  it("reuses only a scoped turn-less session while explicit creates keep minting", async () => {
+    await withTempCwd("pi-stable-boot-adopt-", async (cwd) => {
+      const store = new PiSessionStore(cwd, { sessionDir: join(cwd, "sessions") });
+      const first = await store.create(WORKSPACE_CTX, { title: "First boot" });
+
+      // Empty sessions stay absent from the user-facing inventory.
+      await expect(store.list(WORKSPACE_CTX)).resolves.toEqual([]);
+
+      const adopted = await store.create(WORKSPACE_CTX, { title: "Reload", reuseEmpty: true });
+      expect(adopted.id).toBe(first.id);
+      expect(adopted.title).toBe("First boot");
+
+      const explicit = await store.create(WORKSPACE_CTX, { title: "Explicit New chat" });
+      expect(explicit.id).not.toBe(first.id);
+
+      const otherScope = await store.create(
+        { workspaceId: "workspace-b", userId: "user-b" },
+        { title: "Other tenant boot", reuseEmpty: true },
+      );
+      expect(otherScope.id).not.toBe(first.id);
+      expect(otherScope.id).not.toBe(explicit.id);
+    });
+  });
+});
+
 describe("stable session id — tenancy pin", () => {
   it("keeps a pi-created transcript listable and loadable under its scoped ctx", async () => {
     await withTempCwd("pi-stable-pin-", async (cwd) => {

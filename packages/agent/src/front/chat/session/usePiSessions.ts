@@ -15,6 +15,8 @@ const MAX_PENDING_RENAME_MISMATCHES = 2
 
 export interface PiSessionCreateInit {
   title?: string
+  /** Boot-only intent: reconnect a scoped unsent session instead of minting another. */
+  reuseEmpty?: boolean
 }
 
 export interface PiSessionRefreshOptions {

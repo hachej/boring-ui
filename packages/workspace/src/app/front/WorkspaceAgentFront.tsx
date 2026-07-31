@@ -89,7 +89,7 @@ export interface WorkspaceAgentSessionsApi<
   activeSession?: TSession | null
   workspaceId?: string | null
   switch: (id: string, agentTypeId?: string) => void
-  create: (input?: { title?: string }) => void | Promise<unknown>
+  create: (input?: { title?: string; reuseEmpty?: boolean }) => void | Promise<unknown>
   rename?: (id: string, title: string) => void | Promise<unknown>
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
@@ -1113,7 +1113,7 @@ export function WorkspaceAgentFront<
     autoCreateSessionRef.current = true
     setInitialRemoteSessionCreating({ workspaceId, creating: true })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
-    void Promise.resolve(sessionApi.create({ title: defaultSessionTitle }))
+    void Promise.resolve(sessionApi.create({ title: defaultSessionTitle, reuseEmpty: true }))
       .catch(() => {
         autoCreateSessionRef.current = false
         setInitialRemoteSessionCreating({ workspaceId, creating: false })

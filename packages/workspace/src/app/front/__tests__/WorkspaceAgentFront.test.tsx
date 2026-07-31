@@ -2744,7 +2744,7 @@ describe("WorkspaceAgentFront", () => {
     )
 
     await waitFor(() => {
-      expect(createSession).toHaveBeenCalledWith({ title: "Fresh session" })
+      expect(createSession).toHaveBeenCalledWith({ title: "Fresh session", reuseEmpty: true })
     }, { timeout: 3000 })
   })
 

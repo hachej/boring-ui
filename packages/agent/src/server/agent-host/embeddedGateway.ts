@@ -276,12 +276,16 @@ export class EmbeddedAgentGateway implements AgentGateway {
       'session.create',
       target,
       input.requestId,
-      { agentTypeId: input.agentTypeId, title: input.title ?? null },
+      {
+        agentTypeId: input.agentTypeId,
+        title: input.title ?? null,
+        ...(input.reuseEmpty === true ? { reuseEmpty: true } : {}),
+      },
       async () => {
         const binding = await this.runtime.resolveBinding(input.agentTypeId, input.scope, claim)
         const created = await binding.composition.service.createSession!(
           context(claim, input.requestId, binding.scope.identity),
-          { title: input.title },
+          { title: input.title, ...(input.reuseEmpty === true ? { reuseEmpty: true } : {}) },
         )
         const ref = { agentTypeId: input.agentTypeId, sessionId: created.id }
         this.pins.set(sessionKey(claim.workspaceScopeId, ref), binding.scope.identity)

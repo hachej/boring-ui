@@ -228,8 +228,14 @@ export class PiSessionStore implements SessionStore {
 
   async create(
     ctx: SessionCtx,
-    init?: { title?: string },
+    init?: { title?: string; reuseEmpty?: boolean },
   ): Promise<SessionSummary> {
+    if (init?.reuseEmpty) {
+      const existing = await this.list(ctx, { includeEmpty: true });
+      const empty = existing.find((session) => session.turnCount === 0);
+      if (empty) return empty;
+    }
+
     await mkdir(this.sessionDir, { recursive: true });
 
     const id = randomUUID();

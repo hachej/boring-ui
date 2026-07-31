@@ -208,7 +208,7 @@ describe('addressed Agent Host HTTP projection', () => {
     const created = await app.inject({
       method: 'POST',
       url: '/api/v1/agents/alpha/sessions',
-      payload: { requestId: 'create-1', title: 'Created' },
+      payload: { requestId: 'create-1', title: 'Created', reuseEmpty: true },
     })
     expect(created.statusCode).toBe(201)
     expect(created.json()).toEqual(ref)
@@ -268,7 +268,7 @@ describe('addressed Agent Host HTTP projection', () => {
 
     expect(gateway.calls).toEqual(expect.arrayContaining([
       { method: 'listSessions', input: { scope, agentTypeId: 'alpha', cursor: undefined, limit: 25 } },
-      { method: 'createSession', input: { scope, agentTypeId: 'alpha', requestId: 'create-1', title: 'Created' } },
+      { method: 'createSession', input: { scope, agentTypeId: 'alpha', requestId: 'create-1', title: 'Created', reuseEmpty: true } },
       { method: 'send', input: expect.objectContaining({ kind: 'prompt', requestId: 'prompt-1', attachments: [expect.objectContaining({ path: 'uploads/chart.png' })] }) },
       { method: 'send', input: { kind: 'followup', requestId: 'follow-1', clientNonce: 'nonce-f', content: 'next', displayContent: 'Next', clientSeq: 3 } },
       { method: 'interrupt', input: { requestId: 'interrupt-1' } },
