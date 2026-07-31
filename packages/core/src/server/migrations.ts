@@ -1,7 +1,6 @@
 import type { LoadConfigOptions } from './config/index.js'
-import { readConfigFileSecret } from './config/fileSecrets.js'
+import { resolveConfigFileSecrets } from './config/fileSecrets.js'
 import { runMigrations, type RunMigrationsOptions } from './db/index.js'
-import { ConfigValidationError } from '../shared/errors.js'
 
 export interface RunCoreMigrationsFromEnvOptions extends RunMigrationsOptions {
   loadConfigOptions?: LoadConfigOptions
@@ -18,14 +17,9 @@ export async function runCoreMigrationsFromEnv(
 
 function resolveMigrationDatabaseUrl(options?: Pick<LoadConfigOptions, 'env'>): string | null {
   const env = options?.env ?? (process.env as Record<string, string | undefined>)
-  if (env.DATABASE_URL !== undefined && env.DATABASE_URL_FILE !== undefined) {
-    throw new ConfigValidationError([{
-      message: 'DATABASE_URL and DATABASE_URL_FILE cannot both be set',
-      path: ['env', 'DATABASE_URL_FILE'],
-    }])
-  }
-  if (env.DATABASE_URL_FILE !== undefined) {
-    return readConfigFileSecret('DATABASE_URL_FILE', env.DATABASE_URL_FILE)
-  }
-  return env.DATABASE_URL ?? null
+  const fileSecrets = resolveConfigFileSecrets({
+    DATABASE_URL: env.DATABASE_URL,
+    DATABASE_URL_FILE: env.DATABASE_URL_FILE,
+  })
+  return fileSecrets.DATABASE_URL ?? env.DATABASE_URL ?? null
 }
