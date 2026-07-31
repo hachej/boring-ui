@@ -210,10 +210,9 @@ function hydrateFromSnapshot(
   const queue = { followUps: enrichQueueWithKnownMetadata(snapshot.queue.followUps, state.optimisticOutbox, state.queue.followUps) }
   const snapshotMessages = normalizeSnapshotMessages(snapshot.messages)
   const preserveLocalHistory = shouldPreserveLocalCommittedHistory(state, snapshot, snapshotMessages, options)
-  const mergedCommittedMessages = preserveLocalHistory
+  const committedMessages = preserveLocalHistory
     ? mergeSnapshotMessagesIntoLocal(state.committedMessages, snapshotMessages)
     : snapshotMessages
-  const committedMessages = settleTerminalSnapshotToolState(mergedCommittedMessages, snapshot.status)
   const serverNonces = new Set<string>()
   for (const message of committedMessages) {
     if (message.clientNonce) serverNonces.add(message.clientNonce)
@@ -538,48 +537,6 @@ function normalizeSnapshotMessages(messages: BoringChatMessage[]): BoringChatMes
   return normalized
 }
 
-function settleTerminalSnapshotToolState(
-  messages: BoringChatMessage[],
-  status: PiChatStatus,
-): BoringChatMessage[] {
-  if (status !== 'idle' && status !== 'error') return messages
-
-  return messages.map((message) => {
-    if (message.role !== 'assistant') return message
-    const settled = settlePendingToolCalls(
-      message,
-      status === 'error' ? 'output-error' : 'aborted',
-      isToolPending,
-    )
-    if (settled === message) return message
-
-    // /state and its replay cursor must describe the same point in time. A
-    // native adapter can report the session terminal before its history has
-    // replaced a request-only tool part; the terminal event is then already
-    // behind the cursor and cannot settle that part after hydration.
-    const messageStatus = status === 'error'
-      ? 'error'
-      : message.status === 'aborted' || message.status === 'error'
-        ? message.status
-        : 'done'
-    return { ...settled, status: messageStatus }
-  })
-}
-
-function settlePendingToolCalls(
-  message: BoringChatMessage,
-  toolState: 'aborted' | 'output-error',
-  shouldSettle: (part: Extract<BoringChatPart, { type: 'tool-call' }>) => boolean,
-): BoringChatMessage {
-  let changed = false
-  const parts = message.parts.map((part): BoringChatPart => {
-    if (part.type !== 'tool-call' || !shouldSettle(part)) return part
-    changed = true
-    return { ...part, state: toolState }
-  })
-  return changed ? { ...message, parts } : message
-}
-
 function shouldMergeAssistantSnapshotMessages(previous: BoringChatMessage, next: BoringChatMessage): boolean {
   if (previous.turnId && next.turnId && previous.turnId !== next.turnId) return false
   if (previous.id === next.id) return true
@@ -811,20 +768,15 @@ function withCommittedMessages(state: PiChatState, committedMessages: BoringChat
 function settleTurn(state: PiChatState, status: 'ok' | 'aborted' | 'error'): PiChatState {
   const shouldSettleStreamingMessage = status !== 'ok' && state.streamingMessage !== undefined
   if (state.pendingToolCallIds.size === 0 && !shouldSettleStreamingMessage) return state
-  const settleParts = (message: BoringChatMessage): BoringChatMessage => {
-    const toolsSettled = settlePendingToolCalls(
-      message,
-      status === 'error' ? 'output-error' : 'aborted',
-      (part) => state.pendingToolCallIds.has(part.id),
-    )
-    return {
-      ...toolsSettled,
-      parts: toolsSettled.parts.map((part) => {
-        if (status !== 'ok' && part.type === 'reasoning' && part.state === 'streaming') return { ...part, state: 'done' }
-        return part
-      }),
-    }
-  }
+  const toolState = status === 'error' ? 'output-error' : 'aborted'
+  const settleParts = (message: BoringChatMessage): BoringChatMessage => ({
+    ...message,
+    parts: message.parts.map((part) => {
+      if (part.type === 'tool-call' && state.pendingToolCallIds.has(part.id)) return { ...part, state: toolState }
+      if (status !== 'ok' && part.type === 'reasoning' && part.state === 'streaming') return { ...part, state: 'done' }
+      return part
+    }),
+  })
   const settleCommittedMessage = (message: BoringChatMessage): BoringChatMessage => {
     const settled = settleParts(message)
     if (status === 'ok' || message.role !== 'assistant') return settled

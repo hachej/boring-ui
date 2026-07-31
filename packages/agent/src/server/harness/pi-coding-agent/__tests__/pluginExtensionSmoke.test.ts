@@ -155,5 +155,5 @@ describe("Plugin extension smoke test", () => {
     expect(toolResult.content[0]?.text).toBe(
       "Hello, Ada! (from synthetic extension)",
     );
-  }, 30_000);
+  }, 15_000);
 });

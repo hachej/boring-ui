@@ -71,15 +71,6 @@ interface SerializedDockLayout {
   panels?: Record<string, unknown>
 }
 
-function hasStackedChatPanels(node: unknown): boolean {
-  if (!node || typeof node !== "object") return false
-  const data = (node as { data?: unknown }).data
-  if (Array.isArray(data)) return data.some(hasStackedChatPanels)
-  if (!data || typeof data !== "object") return false
-  const views = (data as { views?: unknown }).views
-  return Array.isArray(views) && views.length > 1
-}
-
 function readStoredLayout(storageKey: string, paneIds: string[]): SerializedDockLayout | null {
   try {
     const raw = globalThis.localStorage?.getItem(layoutStorageKey(storageKey))
@@ -89,13 +80,6 @@ function readStoredLayout(storageKey: string, paneIds: string[]): SerializedDock
     if (storedIds.length !== paneIds.length) return null
     const wanted = new Set(paneIds)
     if (!storedIds.every((id) => wanted.has(id))) return null
-    const gridRoot = parsed.grid && typeof parsed.grid === "object"
-      ? (parsed.grid as { root?: unknown }).root
-      : undefined
-    // Chat panes are groups, never tabs. Older persisted layouts can still
-    // contain multiple chat views in one leaf; restoring that state would
-    // preserve the exact one-visible-chat failure this stage now forbids.
-    if (hasStackedChatPanels(gridRoot)) return null
     return parsed
   } catch {
     return null
@@ -191,29 +175,7 @@ function syncPanesToDock(
   }
   if (activePaneId) {
     const panel = api.getPanel(activePaneId)
-    // A replacement can inherit the active panel's group while the removed
-    // panel is still Dockview's visible renderer. Reassert activation even
-    // when `api.activePanel` already reports the replacement; otherwise the
-    // authoritative pane is marked active while its `.dv-react-part` remains
-    // visibility:hidden until a user click. Dockview can still retain a stale
-    // visibility bit after that activation; fall back to its direct renderer
-    // for that panel so the active transcript is never left blank.
-    panel?.api.setActive()
-    if (panel && panel.api.renderer === "always") {
-      const panelWindow = panel.api.getWindow()
-      panelWindow.requestAnimationFrame(() => {
-        panelWindow.requestAnimationFrame(() => {
-          const current = api.getPanel(activePaneId)
-          if (!current || current.api.renderer !== "always") return
-          const pane = Array.from(panelWindow.document.querySelectorAll<HTMLElement>(
-            '[data-boring-workspace-part="chat-pane"][data-boring-state="active"]',
-          )).find((candidate) => candidate.dataset.boringPaneId === activePaneId)
-          if (pane && panelWindow.getComputedStyle(pane).visibility === "hidden") {
-            current.api.setRenderer("onlyWhenVisible")
-          }
-        })
-      })
-    }
+    if (panel && api.activePanel?.id !== activePaneId) panel.api.setActive()
   }
 }
 
@@ -423,19 +385,18 @@ function ChatPanePanel(props: IDockviewPanelProps) {
   return (
     <div
       data-boring-workspace-part="chat-pane"
-      data-boring-pane-id={paneId}
       data-boring-state={active ? "active" : "inactive"}
       aria-label={`Chat session ${paneTitle(pane)}`}
       className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-background"
       onMouseDown={(event) => {
         const target = event.target instanceof HTMLElement ? event.target : null
         if (target?.closest('[data-boring-workspace-part="chat-pane-control"]')) return
-        if (!active) stage.onActivePaneChange?.(paneId)
+        stage.onActivePaneChange?.(paneId)
       }}
       onFocusCapture={(event) => {
         const target = event.target instanceof HTMLElement ? event.target : null
         if (target?.closest('[data-boring-workspace-part="chat-pane-control"]')) return
-        if (!active) stage.onActivePaneChange?.(paneId)
+        stage.onActivePaneChange?.(paneId)
       }}
     >
       {/* The active ring lives at the dockview group level (CSS) so it wraps

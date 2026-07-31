@@ -506,21 +506,16 @@ export function ChatLayout(props: ChatLayoutProps) {
             />
           ) : null}
           <div
-            aria-hidden={props.chatEmptyState ? true : undefined}
-            inert={props.chatEmptyState ? true : undefined}
-            hidden={Boolean(props.chatEmptyState)}
             className={cn(
-              "relative",
               mobileShell && !chatHidden ? "min-h-0 flex-1 overflow-hidden" : "h-full min-h-0 overflow-hidden",
               "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
               chatHidden ? "opacity-0" : "opacity-100",
-              props.chatEmptyState && "invisible",
             )}
           >
             {hasChatPanes && mobileShell && activeMobileChatPane ? (
               <MobileSingleChatPane
-                panes={chatPanes}
-                activePane={activeMobileChatPane}
+                pane={activeMobileChatPane}
+                totalPanes={chatPanes.length}
                 topActions={props.chatTopActions}
                 onClosePane={props.onCloseChatPane}
                 renderPane={(pane) => (
@@ -551,18 +546,10 @@ export function ChatLayout(props: ChatLayoutProps) {
                   />
                 )}
               />
-            ) : props.chatEmptyState ? null : (
+            ) : (
               <PanelSlot id={centerId} params={props.centerParams} />
             )}
           </div>
-          {props.chatEmptyState ? (
-            <div
-              data-boring-workspace-part="chat-empty-state"
-              className="absolute inset-0 z-30 grid place-items-center bg-background px-6"
-            >
-              {props.chatEmptyState}
-            </div>
-          ) : null}
           {props.chatOverlay ? (
             <div
               data-boring-workspace-part="chat-left-overlay"

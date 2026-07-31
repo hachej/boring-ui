@@ -5,10 +5,19 @@ import { homedir } from 'node:os'
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import { CURRENT_SESSION_VERSION } from '@mariozechner/pi-coding-agent'
-import type { AgentCoreHarnessFactory, AgentHarness, RunContext, AgentSendInput } from '@hachej/boring-agent/shared'
+import type { AgentHarness, RunContext, AgentSendInput } from '@hachej/boring-agent/shared'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '@hachej/boring-agent/shared'
 
-type AgentHarnessFactoryInput = Parameters<AgentCoreHarnessFactory>[0]
+interface AgentHarnessFactoryInput {
+  cwd: string
+  runtimeCwd?: string
+  systemPromptAppend?: string
+  sessionNamespace?: string
+  sessionRoot?: string
+  sessionDir?: string
+}
+
+
 
 type ScriptedMessage = Record<string, unknown>
 
@@ -29,28 +38,11 @@ const DEFAULT_SESSION_ID = 'scripted-main'
 const DEFAULT_TIME = '2026-06-04T12:00:00.000Z'
 const DEFAULT_TICK_MS = 5
 
-const persistedHarnesses = new Map<string, ScriptedPiHarness>()
-
-function scriptedResponseMarker(sessionNamespace?: string): string {
-  const agentTypeId = sessionNamespace?.split('--')[0]?.trim()
-  return agentTypeId
-    ? `PI_NATIVE_ASSISTANT_DONE:${agentTypeId}`
-    : 'PI_NATIVE_ASSISTANT_DONE'
-}
+let persistedHarness: ScriptedPiHarness | undefined
 
 export function createPersistedScriptedPiHarness(input: AgentHarnessFactoryInput): ScriptedPiHarness {
-  const key = JSON.stringify([
-    input.sessionRoot ?? '',
-    input.sessionNamespace ?? '',
-    input.sessionDir ?? '',
-    input.cwd,
-  ])
-  let harness = persistedHarnesses.get(key)
-  if (!harness) {
-    harness = createScriptedPiHarness(input)
-    persistedHarnesses.set(key, harness)
-  }
-  return harness
+  persistedHarness ??= createScriptedPiHarness(input)
+  return persistedHarness
 }
 
 interface PiAgentSessionSnapshot {
@@ -88,21 +80,11 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): Script
   const tickMs = readTickMs()
   const toolDelayTicks = readToolDelayTicks()
   const reasoningPartCount = readReasoningPartCount()
-  const responseMarker = scriptedResponseMarker(input.sessionNamespace)
-  const capabilityToolName = input.tools.find((tool) => tool.name.endsWith('_capability'))?.name
 
   const getAdapter = (sessionId: string): ScriptedPiSessionAdapter => {
     let adapter = adapters.get(sessionId)
     if (!adapter) {
-      adapter = new ScriptedPiSessionAdapter(
-        sessionId,
-        tickMs,
-        toolDelayTicks,
-        reasoningPartCount,
-        responseMarker,
-        capabilityToolName,
-        (message) => sessions.appendMessage(sessionId, message),
-      )
+      adapter = new ScriptedPiSessionAdapter(sessionId, tickMs, toolDelayTicks, reasoningPartCount, (message) => sessions.appendMessage(sessionId, message))
       adapters.set(sessionId, adapter)
     }
     return adapter
@@ -253,8 +235,6 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     private readonly tickMs: number,
     private readonly toolDelayTicks: number,
     private readonly reasoningPartCount: number,
-    private readonly responseMarker: string,
-    private readonly capabilityToolName: string | undefined,
     private readonly appendMessage: (message: ScriptedMessage) => void,
   ) {}
 
@@ -346,7 +326,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     const assistantId = `a${this.turn}`
     const toolCallId = `tool-${this.turn}`
     const reasoningTexts = ['Reasoning visible', 'Second reasoning visible', 'Third reasoning visible'].slice(0, this.reasoningPartCount)
-    const finalText = this.responseMarker
+    const finalText = 'PI_NATIVE_ASSISTANT_DONE'
     const toolOutput = 'TOOL_E2E_OUTPUT'
     const run: ScriptedRun = { cancelled: false }
 
@@ -399,7 +379,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     const toolPart = {
       type: 'toolCall',
       id: toolCallId,
-      name: this.capabilityToolName ?? 'grep',
+      name: 'grep',
       arguments: { pattern: 'baseline' },
       state: 'input-available',
     }
@@ -413,7 +393,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
         partial: { id: assistantId },
         toolCall: {
           id: toolCallId,
-          name: this.capabilityToolName ?? 'grep',
+          name: 'grep',
           arguments: { pattern: 'baseline' },
         },
       },
