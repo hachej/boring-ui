@@ -114,6 +114,12 @@ export function useServerCommands({
   const identityKeyRef = useRef<string | undefined>(identityKey)
   identityKeyRef.current = identityKey
 
+  useEffect(() => () => {
+    const registrations = registrationsRef.current
+    for (const name of registrations.names) registrations.registry.unregister(name)
+    registrationsRef.current = { registry: registrations.registry, identity: undefined, names: new Set() }
+  }, [])
+
   useEffect(() => {
     const clearRegistered = () => {
       const registrations = registrationsRef.current

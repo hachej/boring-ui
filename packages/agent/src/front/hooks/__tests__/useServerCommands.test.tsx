@@ -119,6 +119,27 @@ describe('useServerCommands', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 
+  it('removes owned server commands on unmount without touching local commands', async () => {
+    const registry = createCommandRegistry()
+    const localHandler = vi.fn()
+    registry.register({ name: 'local', description: 'Local', source: 'prompt', handler: localHandler })
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      commands: [{ name: 'plan', source: 'prompt' }],
+    }), { status: 200 })) as unknown as typeof fetch
+
+    const { unmount } = renderHook(() => useServerCommands({
+      registry,
+      sessionId: 'session-1',
+      fetch: fetchImpl,
+    }))
+    await waitFor(() => expect(registry.get('plan')).toBeTruthy())
+
+    unmount()
+
+    expect(registry.get('plan')).toBeUndefined()
+    expect(registry.get('local')?.handler).toBe(localHandler)
+  })
+
   it('addresses discovery and execution to the owning agent', async () => {
     const registry = createCommandRegistry()
     const urls: string[] = []
