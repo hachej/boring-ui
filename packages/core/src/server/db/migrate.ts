@@ -37,7 +37,7 @@ export interface RunMigrationsOptions {
 }
 
 export async function runMigrations(
-  config: CoreConfig,
+  config: Pick<CoreConfig, 'databaseUrl'>,
   options?: RunMigrationsOptions,
 ): Promise<void> {
   if (!config.databaseUrl) {
