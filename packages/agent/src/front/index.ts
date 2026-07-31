@@ -20,6 +20,15 @@ export type {
   UseAddressedAgentSelectionOptions,
   UseAddressedAgentSelectionResult,
 } from './chat/useAddressedAgentSelection'
+export {
+  GatewayResponseError,
+  errorResponseCode,
+  gatewayResponseError,
+  gatewayResponseErrorFromBody,
+  isRuntimeScopeMismatchError,
+  RUNTIME_SCOPE_MISMATCH_MESSAGE,
+} from './chat/gatewayResponseError'
+export type { GatewayResponseErrorCode } from './chat/gatewayResponseError'
 export { DebugDrawer } from './DebugDrawer'
 export {
   ArtifactOpenProvider,

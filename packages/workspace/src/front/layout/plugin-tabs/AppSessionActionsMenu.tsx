@@ -16,6 +16,8 @@ export function AppSessionActionsMenu({
   title,
   canCopy,
   canRename,
+  mutationsDisabled = false,
+  disabledReason,
   onRename,
   onDelete,
   onOpenChange,
@@ -24,6 +26,8 @@ export function AppSessionActionsMenu({
   title: string
   canCopy: boolean
   canRename: boolean
+  mutationsDisabled?: boolean
+  disabledReason?: string
   onRename: () => void
   onDelete?: (id: string) => void | Promise<unknown>
   onOpenChange: (open: boolean) => void
@@ -81,7 +85,10 @@ export function AppSessionActionsMenu({
         {canCopy && (canRename || onDelete) ? <DropdownMenuSeparator /> : null}
         {canRename ? (
           <DropdownMenuItem
+            disabled={mutationsDisabled}
+            title={mutationsDisabled ? disabledReason : undefined}
             onSelect={() => {
+              if (mutationsDisabled) return
               setMenuOpen(false)
               onRename()
             }}
@@ -93,7 +100,11 @@ export function AppSessionActionsMenu({
         {canRename && onDelete ? <DropdownMenuSeparator /> : null}
         {onDelete ? (
           <DropdownMenuItem
-            onSelect={() => void onDelete(sessionId)}
+            disabled={mutationsDisabled}
+            title={mutationsDisabled ? disabledReason : undefined}
+            onSelect={() => {
+              if (!mutationsDisabled) void onDelete(sessionId)
+            }}
             variant="destructive"
             className="gap-2 text-[13px]"
           >
