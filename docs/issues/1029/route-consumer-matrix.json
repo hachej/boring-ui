@@ -1,0 +1,522 @@
+{
+  "schemaVersion": 1,
+  "routes": [
+    {
+      "id": "health",
+      "current": [
+        "GET /health",
+        "GET /ready"
+      ],
+      "final": [
+        "GET /health",
+        "GET /ready"
+      ],
+      "owner": "app-core",
+      "auth": "public",
+      "disposition": "retain",
+      "consumers": [
+        "deployment probes",
+        "workspace/full-app/playground boot"
+      ],
+      "slice": 3,
+      "proof": [
+        "composed route table",
+        "public probe tests"
+      ],
+      "contract": {
+        "request": "Preserve current validated request contract for health except explicitly documented addressed agent/session parameters and required requestId fields.",
+        "response": "Preserve current success/error/status/stream framing contract for health except documented URL/path changes."
+      }
+    },
+    {
+      "id": "fleet",
+      "current": [
+        "GET /api/v1/agents"
+      ],
+      "final": [
+        "GET /api/v1/agents"
+      ],
+      "owner": "agent-host",
+      "auth": "authorized-scope",
+      "disposition": "retain",
+      "consumers": [
+        "Agent selection",
+        "Workspace multi-agent front"
+      ],
+      "slice": 1,
+      "proof": [
+        "AgentHost HTTP projection tests",
+        "fleet auth tests"
+      ],
+      "contract": {
+        "request": "Preserve current validated request contract for fleet except explicitly documented addressed agent/session parameters and required requestId fields.",
+        "response": "Preserve current success/error/status/stream framing contract for fleet except documented URL/path changes."
+      }
+    },
+    {
+      "id": "sessions",
+      "current": [
+        "GET /api/v1/agent/pi-chat/sessions",
+        "POST /api/v1/agent/pi-chat/sessions",
+        "DELETE /api/v1/agent/pi-chat/sessions/:sessionId",
+        "GET /api/v1/agent/pi-chat/:sessionId/state",
+        "GET /api/v1/agent/pi-chat/:sessionId/events",
+        "POST /api/v1/agent/pi-chat/:sessionId/prompt",
+        "POST /api/v1/agent/pi-chat/:sessionId/followup",
+        "POST /api/v1/agent/pi-chat/:sessionId/queue/clear",
+        "POST /api/v1/agent/pi-chat/:sessionId/interrupt",
+        "POST /api/v1/agent/pi-chat/:sessionId/stop",
+        "GET /api/v1/agents/:agentTypeId/sessions",
+        "POST /api/v1/agents/:agentTypeId/sessions",
+        "DELETE /api/v1/agents/:agentTypeId/sessions/:sessionId",
+        "GET /api/v1/agents/:agentTypeId/sessions/:sessionId/state",
+        "GET /api/v1/agents/:agentTypeId/sessions/:sessionId/events",
+        "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/rename",
+        "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/prompt",
+        "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/followup",
+        "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/queue/clear",
+        "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/interrupt",
+        "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/stop",
+        "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/queue-clear"
+      ],
+      "final": [
+        "GET /api/v1/agents/:agentTypeId/sessions",
+        "POST /api/v1/agents/:agentTypeId/sessions",
+        "DELETE /api/v1/agents/:agentTypeId/sessions/:sessionId",
+        "GET /api/v1/agents/:agentTypeId/sessions/:sessionId/state",
+        "GET /api/v1/agents/:agentTypeId/sessions/:sessionId/events",
+        "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/rename",
+        "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/prompt",
+        "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/followup",
+        "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/queue/clear",
+        "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/interrupt",
+        "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/stop"
+      ],
+      "owner": "agent-host",
+      "auth": "authorized-scope",
+      "disposition": "replace",
+      "consumers": [
+        "usePiSessions",
+        "remotePiSession",
+        "CLI front",
+        "eval/bin",
+        "plugins/tasks",
+        "plugins/github-pr-tracker",
+        "plugins/ccusage-dashboard",
+        "E2E/smoke fixtures"
+      ],
+      "slice": 2,
+      "proof": [
+        "Gateway conformance",
+        "addressed session HTTP tests",
+        "front URL tests",
+        "full-app/playground E2E",
+        "duplicate queue-clear alias absent after contraction"
+      ],
+      "contract": {
+        "request": "Preserve current validated request contract for sessions except explicitly documented addressed agent/session parameters and required requestId fields.",
+        "response": "Preserve current success/error/status/stream framing contract for sessions except documented URL/path changes."
+      }
+    },
+    {
+      "id": "attachments",
+      "current": [
+        "GET /api/v1/agent/pi-chat/:sessionId/attachments/:messageId/:index"
+      ],
+      "final": [
+        "GET /api/v1/agents/:agentTypeId/sessions/:sessionId/attachments/:messageId/:index"
+      ],
+      "owner": "agent-host",
+      "auth": "authorized-scope",
+      "disposition": "replace",
+      "consumers": [
+        "HarnessPiChatService generated attachment URLs",
+        "chat image rendering",
+        "persisted transcript snapshots/events"
+      ],
+      "slice": 1,
+      "proof": [
+        "addressed attachment bytes/headers",
+        "cross-agent/session denial",
+        "legacy transcript attachment fixture"
+      ],
+      "contract": {
+        "request": "Addressed agentTypeId/sessionId/messageId/index path parameters.",
+        "response": "Raw bytes with preserved media/cache headers; canonical authorization/not-found errors."
+      }
+    },
+    {
+      "id": "reload",
+      "current": [
+        "POST /api/v1/agent/reload"
+      ],
+      "final": [
+        "POST /api/v1/agents/:agentTypeId/reload"
+      ],
+      "owner": "agent-host",
+      "auth": "authorized-scope",
+      "disposition": "replace",
+      "consumers": [
+        "WorkspaceAgentFront",
+        "agent-playground",
+        "plugin-cli self-test",
+        "slash commands"
+      ],
+      "slice": 2,
+      "proof": [
+        "reload ledger/idempotency tests",
+        "same-identity reload",
+        "restart-required no-mutation",
+        "plugin-cli self-test"
+      ],
+      "contract": {
+        "request": "JSON { requestId: safe-string<=128, sessionId?: string }; addressed agentTypeId path parameter.",
+        "response": "200 typed reload receipt; 409 AGENT_RUNTIME_RESTART_REQUIRED or AGENT_REQUEST_CONFLICT; canonical Gateway error envelope."
+      }
+    },
+    {
+      "id": "skills",
+      "current": [
+        "GET /api/v1/agent/skills"
+      ],
+      "final": [
+        "GET /api/v1/agents/:agentTypeId/skills"
+      ],
+      "owner": "agent-host",
+      "auth": "authorized-scope",
+      "disposition": "replace",
+      "consumers": [
+        "useServerSkills",
+        "Workspace SkillsPage"
+      ],
+      "slice": 2,
+      "proof": [
+        "addressed skills route tests",
+        "skills front tests"
+      ],
+      "contract": {
+        "request": "Preserve current validated request contract for skills except explicitly documented addressed agent/session parameters and required requestId fields.",
+        "response": "Preserve current success/error/status/stream framing contract for skills except documented URL/path changes."
+      }
+    },
+    {
+      "id": "commands",
+      "current": [
+        "GET /api/v1/agent/commands",
+        "POST /api/v1/agent/commands/execute"
+      ],
+      "final": [
+        "GET /api/v1/agents/:agentTypeId/commands",
+        "POST /api/v1/agents/:agentTypeId/commands/execute"
+      ],
+      "owner": "agent-host",
+      "auth": "authorized-scope",
+      "disposition": "replace",
+      "consumers": [
+        "useServerCommands",
+        "slash command execution"
+      ],
+      "slice": 2,
+      "proof": [
+        "command catalog tests",
+        "strong-admission command execution tests",
+        "metering fail-closed tests"
+      ],
+      "contract": {
+        "request": "GET catalog; POST JSON { requestId: safe-string<=128, sessionId: string, name: string, args: string }.",
+        "response": "GET {commands}; POST 200 {ok:true,sessionId,name}; stable metering/admission/conflict errors."
+      }
+    },
+    {
+      "id": "models",
+      "current": [
+        "GET /api/v1/agent/models"
+      ],
+      "final": [
+        "GET /api/v1/agents/:agentTypeId/models"
+      ],
+      "owner": "agent-host",
+      "auth": "app-policy",
+      "disposition": "replace",
+      "consumers": [
+        "useChatModelSelection",
+        "boring-automation model picker",
+        "automation discovery"
+      ],
+      "slice": 2,
+      "proof": [
+        "addressed model filtering tests",
+        "automation front tests"
+      ],
+      "contract": {
+        "request": "Preserve current validated request contract for models except explicitly documented addressed agent/session parameters and required requestId fields.",
+        "response": "Preserve current success/error/status/stream framing contract for models except documented URL/path changes."
+      }
+    },
+    {
+      "id": "system-prompt",
+      "current": [
+        "GET /api/v1/agent/sessions/:sessionId/system-prompt"
+      ],
+      "final": [
+        "GET /api/v1/agents/:agentTypeId/sessions/:sessionId/system-prompt"
+      ],
+      "owner": "agent-host",
+      "auth": "authorized-scope",
+      "disposition": "replace",
+      "consumers": [
+        "Agent DebugDrawer"
+      ],
+      "slice": 2,
+      "proof": [
+        "addressed system prompt tests",
+        "DebugDrawer tests"
+      ],
+      "contract": {
+        "request": "Addressed agentTypeId and sessionId path parameters; empty body.",
+        "response": "200 {systemPrompt}; 404 unmaterialized; 501 unsupported; canonical auth errors."
+      }
+    },
+    {
+      "id": "tool-catalog",
+      "current": [
+        "GET /api/v1/agent/catalog"
+      ],
+      "final": [
+        "GET /api/v1/agents/:agentTypeId/tools"
+      ],
+      "owner": "agent-host",
+      "auth": "authorized-scope",
+      "disposition": "replace",
+      "consumers": [
+        "agent/tool inspection",
+        "operator diagnostics"
+      ],
+      "slice": 2,
+      "proof": [
+        "addressed tool catalog tests"
+      ],
+      "contract": {
+        "request": "Preserve current validated request contract for tool-catalog except explicitly documented addressed agent/session parameters and required requestId fields.",
+        "response": "Preserve current success/error/status/stream framing contract for tool-catalog except documented URL/path changes."
+      }
+    },
+    {
+      "id": "session-changes",
+      "current": [
+        "GET /api/v1/agent/sessions/:sessionId/changes"
+      ],
+      "final": [
+        "GET /api/v1/agents/:agentTypeId/sessions/:sessionId/changes"
+      ],
+      "owner": "agent-host",
+      "auth": "authorized-scope",
+      "disposition": "replace",
+      "consumers": [
+        "session change indicators"
+      ],
+      "slice": 2,
+      "proof": [
+        "addressed session changes tests",
+        "cross-session denial"
+      ],
+      "contract": {
+        "request": "Preserve current validated request contract for session-changes except explicitly documented addressed agent/session parameters and required requestId fields.",
+        "response": "Preserve current success/error/status/stream framing contract for session-changes except documented URL/path changes."
+      }
+    },
+    {
+      "id": "agent-readiness",
+      "current": [
+        "GET /api/v1/ready-status"
+      ],
+      "final": [
+        "GET /api/v1/agents/:agentTypeId/ready-status"
+      ],
+      "owner": "agent-host",
+      "auth": "authorized-scope",
+      "disposition": "replace",
+      "consumers": [
+        "WorkspaceBackgroundBoot",
+        "workspacePreload"
+      ],
+      "slice": 2,
+      "proof": [
+        "addressed readiness SSE tests",
+        "boot/preload E2E"
+      ],
+      "contract": {
+        "request": "Addressed agentTypeId; authorized scope; SSE negotiation unchanged.",
+        "response": "SSE readiness snapshots/updates with preserved framing; stream holds Host lease until close."
+      }
+    },
+    {
+      "id": "files",
+      "current": [
+        "GET /api/v1/files",
+        "POST /api/v1/files",
+        "DELETE /api/v1/files",
+        "GET /api/v1/files/raw",
+        "GET /api/v1/files/records",
+        "POST /api/v1/files/upload",
+        "POST /api/v1/files/move",
+        "POST /api/v1/dirs",
+        "GET /api/v1/stat",
+        "GET /api/v1/fs/events"
+      ],
+      "final": [
+        "GET /api/v1/files",
+        "POST /api/v1/files",
+        "DELETE /api/v1/files",
+        "GET /api/v1/files/raw",
+        "GET /api/v1/files/records",
+        "POST /api/v1/files/upload",
+        "POST /api/v1/files/move",
+        "POST /api/v1/dirs",
+        "GET /api/v1/stat",
+        "GET /api/v1/fs/events"
+      ],
+      "owner": "app-environment",
+      "auth": "workspace-member",
+      "disposition": "retain",
+      "consumers": [
+        "Workspace file UI",
+        "raw previews",
+        "plugins",
+        "workbench"
+      ],
+      "slice": 3,
+      "proof": [
+        "Host Environment lease route tests",
+        "raw-query hostile workspace tests",
+        "FS stream shutdown tests"
+      ],
+      "contract": {
+        "request": "Preserve current validated request contract for files except explicitly documented addressed agent/session parameters and required requestId fields.",
+        "response": "Preserve current success/error/status/stream framing contract for files except documented URL/path changes."
+      }
+    },
+    {
+      "id": "tree-search",
+      "current": [
+        "GET /api/v1/tree",
+        "GET /api/v1/files/search"
+      ],
+      "final": [
+        "GET /api/v1/tree",
+        "GET /api/v1/files/search"
+      ],
+      "owner": "app-environment",
+      "auth": "workspace-member",
+      "disposition": "retain",
+      "consumers": [
+        "Workspace explorer",
+        "search UI"
+      ],
+      "slice": 3,
+      "proof": [
+        "Workspace route integration tests",
+        "Environment lease tests"
+      ],
+      "contract": {
+        "request": "Preserve current validated request contract for tree-search except explicitly documented addressed agent/session parameters and required requestId fields.",
+        "response": "Preserve current success/error/status/stream framing contract for tree-search except documented URL/path changes."
+      }
+    },
+    {
+      "id": "git",
+      "current": [
+        "GET /api/v1/git/file-url"
+      ],
+      "final": [
+        "GET /api/v1/git/file-url"
+      ],
+      "owner": "app-environment",
+      "auth": "workspace-member",
+      "disposition": "retain",
+      "consumers": [
+        "Workspace Git UI",
+        "agent-authored project tooling"
+      ],
+      "slice": 3,
+      "proof": [
+        "Git route tests through Environment lease"
+      ],
+      "contract": {
+        "request": "Preserve current validated request contract for git except explicitly documented addressed agent/session parameters and required requestId fields.",
+        "response": "Preserve current success/error/status/stream framing contract for git except documented URL/path changes."
+      }
+    },
+    {
+      "id": "share-link",
+      "current": [
+        "GET /a/:id"
+      ],
+      "final": [
+        "GET /a/:id"
+      ],
+      "owner": "app-core",
+      "auth": "app-policy",
+      "disposition": "retain",
+      "consumers": [
+        "shared entry links"
+      ],
+      "slice": 3,
+      "proof": [
+        "share-entry membership tests"
+      ],
+      "contract": {
+        "request": "Preserve current validated request contract for share-link except explicitly documented addressed agent/session parameters and required requestId fields.",
+        "response": "Preserve current success/error/status/stream framing contract for share-link except documented URL/path changes."
+      }
+    },
+    {
+      "id": "workspace-meta",
+      "current": [
+        "GET /api/v1/workspace/meta"
+      ],
+      "final": [
+        "GET /api/v1/workspace/meta"
+      ],
+      "owner": "app-core",
+      "auth": "workspace-member",
+      "disposition": "retain",
+      "consumers": [
+        "Workspace boot",
+        "plugin-cli workspace inference"
+      ],
+      "slice": 3,
+      "proof": [
+        "Core/Workspace meta tests",
+        "route-order tests"
+      ],
+      "contract": {
+        "request": "Preserve current validated request contract for workspace-meta except explicitly documented addressed agent/session parameters and required requestId fields.",
+        "response": "Preserve current success/error/status/stream framing contract for workspace-meta except documented URL/path changes."
+      }
+    },
+    {
+      "id": "old-agent-chat",
+      "current": [
+        "POST /api/v1/agent/chat",
+        "POST /api/v1/agent/chat/:sessionId/followup"
+      ],
+      "final": null,
+      "owner": "app-core",
+      "auth": "app-policy",
+      "disposition": "delete",
+      "consumers": [
+        "Core legacy interception only; matrix checker confirms no runtime caller"
+      ],
+      "slice": 6,
+      "proof": [
+        "source consumer scan",
+        "route absent test"
+      ],
+      "contract": {
+        "request": "Preserve current validated request contract for old-agent-chat except explicitly documented addressed agent/session parameters and required requestId fields.",
+        "response": "Preserve current success/error/status/stream framing contract for old-agent-chat except documented URL/path changes."
+      }
+    }
+  ]
+}
