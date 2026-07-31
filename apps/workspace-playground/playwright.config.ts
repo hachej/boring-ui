@@ -59,6 +59,7 @@ export default defineConfig({
       "BORING_AGENT_E2E_SCRIPTED_PI=1",
       "BORING_AGENT_E2E_SCRIPTED_PI_TICK_MS=300",
       "BORING_AGENT_E2E_SCRIPTED_PI_TOOL_DELAY_TICKS=20",
+      `BORING_PLAYGROUND_DIST_ONLY=${shell(process.env.BORING_PLAYGROUND_DIST_ONLY || "")}`,
       "BORING_AGENT_CUSTOM_MODEL_PROVIDER=scripted-e2e",
       "BORING_AGENT_CUSTOM_MODEL_ID=scripted-model",
       "BORING_AGENT_CUSTOM_MODEL_BASE_URL=http://127.0.0.1",
@@ -67,7 +68,7 @@ export default defineConfig({
       "pnpm exec vite",
     ].join(" ")}`,
     port: VITE_PORT,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !process.env.CI && !process.env.BORING_PLAYGROUND_DIST_ONLY,
     timeout: 300_000,
   },
 })
