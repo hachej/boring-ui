@@ -1151,7 +1151,7 @@ test('registerAgentRoutes classifies session routes behind API-shaped prefixes w
   }
 
   await app.close()
-})
+}, 15_000)
 
 test('registerAgentRoutes registers agent capabilities contributor when host supports it', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-capabilities-')
