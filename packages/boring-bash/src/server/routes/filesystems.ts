@@ -4,8 +4,6 @@ import { ERROR_CODE_INTERNAL } from './errorCodes'
 
 const USER_FILESYSTEM_ID = 'user'
 const MAX_FILESYSTEM_LENGTH = 128
-const MAX_LABEL_LENGTH = 128
-const MAX_ROOT_LENGTH = 512
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
 
 export interface FilesystemCatalogCapabilities {
@@ -63,27 +61,6 @@ function validFilesystem(value: unknown): value is string {
     && !CONTROL_CHARACTERS.test(value)
 }
 
-function safeText(value: unknown, fallback: string, maxLength: number): string {
-  return typeof value === 'string'
-    && value.length > 0
-    && value.length <= maxLength
-    && value.trim() === value
-    && !CONTROL_CHARACTERS.test(value)
-    ? value
-    : fallback
-}
-
-function safeLogicalRoot(value: unknown): LogicalFilesystemRoot {
-  if (value === '.') return '.'
-  if (typeof value !== 'string' || value.length === 0 || value.length > MAX_ROOT_LENGTH) return '/'
-  if (!value.startsWith('/') || value.includes('\\') || CONTROL_CHARACTERS.test(value)) return '/'
-  if (value === '/') return '/'
-  if (value.endsWith('/') || value.includes('//')) return '/'
-  const segments = value.slice(1).split('/')
-  if (segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')) return '/'
-  return value as LogicalFilesystemRoot
-}
-
 function capabilitiesFor(binding: RuntimeFilesystemBinding): FilesystemCatalogCapabilities {
   const operations = binding.operations as Partial<RuntimeFilesystemBinding['operations']>
   const mutable = binding.access === 'readwrite'
@@ -100,11 +77,10 @@ function capabilitiesFor(binding: RuntimeFilesystemBinding): FilesystemCatalogCa
 
 function catalogEntry(binding: RuntimeFilesystemBinding): FilesystemCatalogEntry | undefined {
   if (!validFilesystem(binding.filesystem) || binding.filesystem === USER_FILESYSTEM_ID) return undefined
-  const metadata = binding.catalog
   return {
     filesystem: binding.filesystem,
-    label: safeText(metadata?.label, binding.filesystem, MAX_LABEL_LENGTH),
-    rootDir: safeLogicalRoot(metadata?.rootDir),
+    label: binding.filesystem,
+    rootDir: '/',
     access: binding.access === 'readwrite' ? 'readwrite' : 'readonly',
     capabilities: capabilitiesFor(binding),
   }

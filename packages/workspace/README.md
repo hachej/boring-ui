@@ -82,9 +82,10 @@ The browser never invents governed roots or grants access. Every tree, search,
 open, and mutation request resolves and authorizes its binding again. Catalog
 loading or failure is fail-closed to the primary `user` workspace.
 
-Runtime binding metadata may provide browser-safe presentation fields such as a
-label and logical root. It must never contain host paths or authorization data.
-See `apps/workspace-playground/src/server/dev.ts` for a multi-root fixture.
+The catalog derives each named binding's label from its filesystem identity and
+uses `/` as its logical root. Runtime bindings therefore carry only identity,
+access, and authoritative operations. See
+`apps/workspace-playground/src/server/dev.ts` for a multi-root fixture.
 
 ## Documentation
 

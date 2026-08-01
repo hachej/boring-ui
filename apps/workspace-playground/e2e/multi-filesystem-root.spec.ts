@@ -73,11 +73,11 @@ test("opening files preserves the selected Workspace and Company roots", async (
   })
   await expect(rootSelector).toContainText("Workspace")
 
-  await selectRoot(page, "Company")
+  await selectRoot(page, "company_context")
   await openAndAssertFile(page, {
     path: COMPANY_FILE,
     filesystem: "company_context",
     content: COMPANY_CONTENT,
   })
-  await expect(rootSelector).toContainText("Company")
+  await expect(rootSelector).toContainText("company_context")
 })

@@ -226,7 +226,6 @@ export type {
   RuntimeBundle,
   RuntimeFilesystemBinding,
   RuntimeFilesystemBindingOperations,
-  RuntimeFilesystemCatalogMetadata,
   RuntimeModeAdapter,
   RuntimeModeId,
 } from './runtime/mode'

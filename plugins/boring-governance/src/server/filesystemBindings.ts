@@ -23,10 +23,6 @@ import type { GovernanceUserLike } from './policyTypes.js'
 import { normalizePolicyEmail } from './validatePolicy.js'
 
 const COMPANY_CONTEXT_MOUNT_PATH = '/company_context'
-const COMPANY_CONTEXT_CATALOG = {
-  label: 'Company context',
-  rootDir: '/',
-} as const
 const AGENT_MODE_ENV = 'BORING_AGENT_MODE'
 const AGENT_WORKSPACE_ROOT_ENV = 'BORING_AGENT_WORKSPACE_ROOT'
 const GOVERNANCE_COMPANY_CONTEXT_ROOT_ENV = 'BORING_GOVERNANCE_COMPANY_CONTEXT_ROOT'
@@ -312,7 +308,6 @@ export function createGovernanceFilesystemBindings(
         filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,
         access: 'readwrite',
         operations,
-        catalog: COMPANY_CONTEXT_CATALOG,
       } satisfies RuntimeFilesystemBinding]
     }
 
@@ -365,7 +360,6 @@ export function createGovernanceFilesystemBindings(
       filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,
       access: 'readonly',
       operations,
-      catalog: COMPANY_CONTEXT_CATALOG,
     } satisfies RuntimeFilesystemBinding]
   }
 }

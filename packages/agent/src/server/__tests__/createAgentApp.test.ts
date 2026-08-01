@@ -550,7 +550,6 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
           filesystem: 'company_context',
           access: 'readonly' as const,
           operations,
-          catalog: { label: 'Company context', rootDir: '/' },
         }],
       }
     },
@@ -598,7 +597,7 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
       expect.objectContaining({ filesystem: 'user', access: 'readwrite' }),
       {
         filesystem: 'company_context',
-        label: 'Company context',
+        label: 'company_context',
         rootDir: '/',
         access: 'readonly',
         capabilities: {

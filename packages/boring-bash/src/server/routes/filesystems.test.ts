@@ -49,7 +49,6 @@ describe('filesystemsRoutes', () => {
       filesystemBindings: [
         binding({
           filesystem: 'readonly_docs',
-          catalog: { label: 'Docs', rootDir: '/handbook' },
           operations: operations({ write: vi.fn(), delete: vi.fn() }),
         }),
         binding({
@@ -64,8 +63,8 @@ describe('filesystemsRoutes', () => {
     const [, readonly, partial] = response.json().filesystems
     expect(readonly).toEqual({
       filesystem: 'readonly_docs',
-      label: 'Docs',
-      rootDir: '/handbook',
+      label: 'readonly_docs',
+      rootDir: '/',
       access: 'readonly',
       capabilities: { read: true, list: true, search: true, write: false, delete: false, move: false, mkdir: false },
     })
@@ -79,13 +78,13 @@ describe('filesystemsRoutes', () => {
     await app.close()
   })
 
-  it('uses first-binding identity semantics, ignores user shadows, and sanitizes presentation metadata', async () => {
+  it('uses first-binding identity semantics and ignores user shadows and invalid identities', async () => {
     const app = Fastify()
     await app.register(filesystemsRoutes, {
       filesystemBindings: [
-        binding({ filesystem: 'user', catalog: { label: 'Shadow', rootDir: '/private/host' } }),
-        binding({ filesystem: 'docs', catalog: { label: 'Bad\n/host/private', rootDir: '/../private' } }),
-        binding({ filesystem: 'docs', catalog: { label: 'Second' } }),
+        binding({ filesystem: 'user' }),
+        binding({ filesystem: 'docs' }),
+        binding({ filesystem: 'docs' }),
         binding({ filesystem: 'bad\nidentity' }),
       ],
     })
@@ -93,8 +92,6 @@ describe('filesystemsRoutes', () => {
     const response = await app.inject({ method: 'GET', url: '/api/v1/filesystems' })
     expect(response.json().filesystems).toHaveLength(2)
     expect(response.json().filesystems[1]).toMatchObject({ filesystem: 'docs', label: 'docs', rootDir: '/' })
-    expect(response.body).not.toContain('/host/private')
-    expect(response.body).not.toContain('Second')
     await app.close()
   })
 

@@ -80,19 +80,10 @@ export interface RuntimeFilesystemBindingOperations {
   rejectMutation(operation: string, descriptor: { filesystem: string; path: string }): never
 }
 
-export interface RuntimeFilesystemCatalogMetadata {
-  /** Browser-safe presentation label. Never use this field for authorization. */
-  readonly label?: string
-  /** Logical filesystem-relative root (for example `/`), never a host path. */
-  readonly rootDir?: string
-}
-
 export interface RuntimeFilesystemBinding {
   readonly filesystem: string
   readonly access: 'readonly' | 'readwrite'
   readonly operations: RuntimeFilesystemBindingOperations
-  /** Optional browser presentation metadata. Operations remain authoritative. */
-  readonly catalog?: RuntimeFilesystemCatalogMetadata
 }
 
 
