@@ -25,7 +25,7 @@ import type { ResolvedPiHarnessOptions } from './harness/pi-coding-agent/createH
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { registerConfiguredModelProviders } from './models/modelConfig'
 import { mergeTools, type PluginToolRegistration } from './catalog/mergeTools'
-import type { AgentCoreSessionService } from '../core/piChatSessionService'
+import type { AgentCoreSessionService, PiChatSessionService } from '../core/piChatSessionService'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
@@ -50,6 +50,7 @@ import {
 } from './runtime/runtimeBindingLifecycle'
 import { mountOrderedAgentHostLegacyRoutes } from './agentHostLegacyRouteMount'
 import { resolveRequestPrincipal } from './http/requestPrincipal'
+import { bindTrustedPiSession } from './trustedPiSessionBinding'
 
 const DEFAULT_WORKSPACE_ID = 'default'
 const STANDARD_AGENT_TOOL_NAMES = ['bash', 'read', 'write', 'edit', 'find', 'grep', 'ls']
@@ -104,6 +105,7 @@ interface RuntimeBinding {
   tools: AgentTool[]
   readyTracker: ReadyStatusTracker
   piChatService: AgentCoreSessionService
+  trustedPiChatService: PiChatSessionService
   authorizedScope: import('../shared').AuthorizedAgentScope
   hostScope: CompatibilityResolvedAgentRuntimeScope
   lastHealthCheckMs?: number
@@ -731,6 +733,11 @@ export async function mountAgentHostLegacyRouteRuntime(
       tools,
       readyTracker,
       piChatService: composition.service,
+      trustedPiChatService: agentHost.createPiChatService({
+        service: composition.service,
+        scope: authorizedScope,
+        agentTypeId: defaultAgentTypeId,
+      }),
       authorizedScope,
       hostScope,
     }
@@ -896,7 +903,7 @@ export async function mountAgentHostLegacyRouteRuntime(
     initialBinding: RuntimeBinding,
     boundCtx: WorkspaceAgentDispatcherContext,
     request?: FastifyRequest,
-  ): Promise<{ dispatcher: WorkspaceAgentDispatcher; release: () => void }> {
+  ): Promise<{ binding: RuntimeBinding; dispatcher: WorkspaceAgentDispatcher; release: () => void }> {
     let binding = initialBinding
     while (true) {
       bindingLifecycle.assertAdmission(boundCtx.workspaceId, request)
@@ -909,6 +916,7 @@ export async function mountAgentHostLegacyRouteRuntime(
           throw error
         }
         return {
+          binding,
           dispatcher: createBoundWorkspaceAgentDispatcher({
             gateway: agentHost.gateway,
             scope: binding.authorizedScope,
@@ -920,6 +928,32 @@ export async function mountAgentHostLegacyRouteRuntime(
       if (staticBinding) throw createAgentBindingDisposedError(boundCtx.workspaceId)
       binding = await getOrCreateRuntimeBinding(boundCtx.workspaceId, undefined, { trustedCtx: boundCtx })
     }
+  }
+
+  async function ensureTrustedPiSessionBound(
+    initialBinding: RuntimeBinding,
+    boundCtx: WorkspaceAgentDispatcherContext,
+    boundSessionId: string,
+    request?: FastifyRequest,
+    requestedSessionCtx?: { workspaceId?: string; userId?: string },
+  ) {
+    return await bindTrustedPiSession({
+      ctx: boundCtx,
+      request,
+      sessionId: boundSessionId,
+      requested: requestedSessionCtx,
+      withServices: async (effect) => {
+        const operation = await acquireDispatcherOperation(initialBinding, boundCtx, request)
+        try {
+          return await effect({
+            binding: operation.binding.piChatService,
+            prompt: operation.binding.trustedPiChatService,
+          })
+        } finally {
+          operation.release()
+        }
+      },
+    })
   }
 
   function createLeasedWorkspaceAgentDispatcher(
@@ -1006,6 +1040,13 @@ export async function mountAgentHostLegacyRouteRuntime(
         return {
           dispatcher: createLeasedWorkspaceAgentDispatcher(staticBinding, boundCtx, options?.request),
           workspace: staticBinding.runtimeBundle.workspace,
+          bindPiSession: async (boundSessionId, requestedSessionCtx) => await ensureTrustedPiSessionBound(
+            staticBinding,
+            boundCtx,
+            boundSessionId,
+            options?.request,
+            requestedSessionCtx,
+          ),
         }
       }
       const binding = await getOrCreateRuntimeBinding(boundCtx.workspaceId, options?.request, { trustedCtx: boundCtx })
@@ -1013,6 +1054,13 @@ export async function mountAgentHostLegacyRouteRuntime(
       return {
         dispatcher: createLeasedWorkspaceAgentDispatcher(binding, boundCtx, options?.request),
         workspace: binding.runtimeBundle.workspace,
+        bindPiSession: async (boundSessionId, requestedSessionCtx) => await ensureTrustedPiSessionBound(
+          binding,
+          boundCtx,
+          boundSessionId,
+          options?.request,
+          requestedSessionCtx,
+        ),
       }
     },
   })

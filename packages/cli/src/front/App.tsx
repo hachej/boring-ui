@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { boringAutomationPlugin } from "@hachej/boring-automation/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
+import { liveTranscriptPlugin } from "@hachej/boring-live-transcription/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
 import * as WorkspaceSingleton from "@hachej/boring-workspace"
 import * as WorkspaceEventsSingleton from "@hachej/boring-workspace/events"
@@ -314,6 +315,7 @@ export function CliWorkspaceShell() {
     boringAutomationPlugin,
     diagramPlugin,
     createTasksPlugin(),
+    liveTranscriptPlugin,
   ], [workspacesMode])
   const activeWorkspaceRequestHeaders = useMemo(
     () => activeWorkspaceId ? { "x-boring-workspace-id": activeWorkspaceId } : null,

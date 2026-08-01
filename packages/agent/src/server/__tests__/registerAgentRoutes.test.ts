@@ -280,17 +280,29 @@ test('registerAgentRoutes composes a trusted dispatcher over the workspace runti
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     mode: 'direct',
-    sessionId: 'workspace-dispatcher',
+    sessionId: 'default',
     sessionRoot: await makeTempDir('boring-agent-dispatcher-sessions-'),
     harnessFactory: harness.factory,
+    resolvePiSessionRequestContext: (_request, defaultContext) => ({
+      ...defaultContext,
+      authSubject: 'user-dispatcher',
+    }),
     onWorkspaceAgentDispatcher: (value) => { resolver = value },
   })
 
   try {
     expect(resolver).toBeDefined()
-    const binding = await resolver!.resolveWithWorkspace!({ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' })
+    const binding = await resolver!.resolveWithWorkspace!({ workspaceId: 'default', userId: 'user-dispatcher' })
     expect(binding.workspace.root).toBe(workspaceRoot)
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions',
+      headers: { 'x-boring-workspace-id': 'default' },
+      payload: {},
+    })
+    expect(created.statusCode).toBe(201)
     const dispatcher = binding.dispatcher
+    const sessionId = created.json().id as string
     const events = []
     for await (const event of dispatcher.send({
       content: 'workspace prompt',
@@ -299,19 +311,98 @@ test('registerAgentRoutes composes a trusted dispatcher over the workspace runti
 
     expect(harness.factoryInputs).toHaveLength(1)
     expect(harness.sessions.createContexts).toEqual([
-      expect.objectContaining({ workspaceId: 'workspace-dispatcher' }),
+      expect.objectContaining({ workspaceId: 'default', userId: 'user-dispatcher' }),
+      expect.objectContaining({ workspaceId: 'default' }),
     ])
-    expect(harness.sessions.createContexts[0]).not.toHaveProperty('userId')
     expect(harness.sendInputs.find((input) => input.model)).toMatchObject({
-      ctx: expect.objectContaining({ workspaceId: 'workspace-dispatcher' }),
+      ctx: expect.objectContaining({ workspaceId: 'default' }),
       model: { provider: 'test', id: 'gpt-5.5' },
     })
     expect(events.some((event) => event.chunk.type === 'usage')).toBe(true)
     expect(events.at(-1)?.chunk).toMatchObject({ type: 'agent-end', status: 'ok' })
-    const sessionId = events[0]?.sessionId
-    expect(sessionId).toBe('dispatcher-session-1')
-    await expect(dispatcher.interrupt(sessionId!)).resolves.toMatchObject({ accepted: true })
-    await expect(dispatcher.stop(sessionId!)).resolves.toMatchObject({ accepted: true, stopped: true })
+    const gatewaySessionId = events[0]?.sessionId
+    expect(gatewaySessionId).not.toBe(sessionId)
+    const boundSession = await binding.bindPiSession!(sessionId)
+    expect(boundSession).toMatchObject({
+      visibleUserMessageTarget: {
+        isIdle: expect.any(Function),
+        sendIfIdle: expect.any(Function),
+      },
+    })
+    await expect(boundSession.visibleUserMessageTarget.isIdle()).resolves.toBe(true)
+    await expect(binding.bindPiSession!(sessionId, { workspaceId: 'wrong-workspace' })).rejects.toMatchObject({
+      code: ErrorCode.enum.UNAUTHORIZED,
+    })
+    await expect(binding.bindPiSession!(sessionId, { userId: 'wrong-user' })).rejects.toMatchObject({
+      code: ErrorCode.enum.UNAUTHORIZED,
+    })
+    const adapter = harness.adapters.get(sessionId)!
+    const retryableReview = {
+      requestId: 'retryable-review-1',
+      message: 'retry after busy',
+      displayMessage: 'Retry after busy',
+    }
+    adapter.setStreamingForTest(true)
+    await expect(boundSession.visibleUserMessageTarget.sendIfIdle(retryableReview))
+      .resolves.toEqual({ status: 'busy' })
+    adapter.setStreamingForTest(false)
+    await expect(boundSession.visibleUserMessageTarget.sendIfIdle(retryableReview))
+      .resolves.toMatchObject({ status: 'accepted' })
+
+    const releaseConcurrentPrompt = adapter.holdNextPrompt()
+    const concurrentReviews = [
+      { requestId: 'concurrent-review-1', message: 'concurrent one' },
+      { requestId: 'concurrent-review-2', message: 'concurrent two' },
+    ]
+    const concurrentResults = await Promise.all(concurrentReviews.map(async (review) =>
+      await boundSession.visibleUserMessageTarget.sendIfIdle(review)))
+    expect(concurrentResults.map((result) => result.status).sort()).toEqual(['accepted', 'busy'])
+    releaseConcurrentPrompt()
+    await vi.waitFor(() => expect(boundSession.visibleUserMessageTarget.isIdle()).resolves.toBe(true))
+    const busyReview = concurrentReviews[concurrentResults.findIndex((result) => result.status === 'busy')]!
+    await expect(boundSession.visibleUserMessageTarget.sendIfIdle(busyReview))
+      .resolves.toMatchObject({ status: 'accepted' })
+
+    const visibleReview = {
+      requestId: 'manual-review-1',
+      message: '[Manual transcript review] read live-transcripts/a.md',
+      displayMessage: 'Manual review requested',
+    }
+    const firstVisibleReview = await boundSession.visibleUserMessageTarget.sendIfIdle(visibleReview)
+    expect(firstVisibleReview).toMatchObject({ status: 'accepted', cursor: expect.any(Number) })
+    await expect(boundSession.visibleUserMessageTarget.sendIfIdle(visibleReview)).resolves.toEqual(firstVisibleReview)
+    await expect(boundSession.visibleUserMessageTarget.sendIfIdle({
+      ...visibleReview,
+      message: 'changed payload',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
+    await vi.waitFor(() => expect(harness.sendInputs).toContainEqual(expect.objectContaining({
+      content: '[Manual transcript review] read live-transcripts/a.md',
+      sessionId,
+      ctx: expect.objectContaining({ workspaceId: 'default' }),
+    })))
+    const secondCreated = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions',
+      headers: { 'x-boring-workspace-id': 'default' },
+      payload: {},
+    })
+    const secondSessionId = secondCreated.json().id as string
+    const secondBoundSession = await binding.bindPiSession!(secondSessionId)
+    await expect(secondBoundSession.visibleUserMessageTarget.sendIfIdle({
+      requestId: 'second-session-review',
+      message: 'second session only',
+      displayMessage: 'Second session only',
+    })).resolves.toMatchObject({ status: 'accepted' })
+    expect(harness.sendInputs).toContainEqual(expect.objectContaining({
+      content: 'second session only',
+      sessionId: secondSessionId,
+    }))
+    expect(harness.sendInputs).not.toContainEqual(expect.objectContaining({
+      content: 'second session only',
+      sessionId,
+    }))
+    await expect(dispatcher.interrupt(gatewaySessionId!)).resolves.toMatchObject({ accepted: true })
+    await expect(dispatcher.stop(gatewaySessionId!)).resolves.toMatchObject({ accepted: true, stopped: true })
     expect(harness.factoryInputs).toHaveLength(1)
     await expect(resolver!.resolve({ workspaceId: 'wrong-workspace', userId: 'user-dispatcher' })).rejects.toMatchObject({
       code: ErrorCode.enum.UNAUTHORIZED,

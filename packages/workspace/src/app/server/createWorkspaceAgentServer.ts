@@ -73,6 +73,7 @@ import {
   type ServerBootstrapOptions,
   type WorkspacePiPackageSource,
   type WorkspaceServerPlugin,
+  type WorkspaceAgentReloadBlocker,
   type WorkspaceProvisioningContribution,
   type WorkspaceRouteContribution,
 } from "../../server/plugins/bootstrapServer"
@@ -680,6 +681,7 @@ export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   routeContributions: WorkspaceRouteContribution[]
+  agentReloadBlockers: WorkspaceAgentReloadBlocker[]
   workspaceBridgeHandlers: WorkspaceServerPlugin["workspaceBridgeHandlers"]
   preservedUiStateKeys: string[]
   defaultPluginPackagePaths: string[]
@@ -687,6 +689,17 @@ export interface WorkspaceAgentServerPluginCollection {
     WorkspaceAgentCreateOptions,
     "extraTools" | "systemPromptAppend" | "pi"
   >
+}
+
+async function assertAgentReloadAvailable(blockers: readonly WorkspaceAgentReloadBlocker[]): Promise<void> {
+  for (const blocker of blockers) {
+    const block = await blocker.getBlock()
+    if (!block) continue
+    if (typeof block.code !== "string" || !block.code || typeof block.message !== "string" || !block.message) {
+      throw new Error(`server plugin "${blocker.id}": getAgentReloadBlock returned an invalid block`)
+    }
+    throw Object.assign(new Error(block.message), { code: block.code, pluginId: blocker.id })
+  }
 }
 
 export interface CollectWorkspaceAgentServerPluginsOptions
@@ -757,6 +770,7 @@ export function collectWorkspaceAgentServerPlugins(
       ...result.runtimePlugins,
     ],
     routeContributions: result.routeContributions,
+    agentReloadBlockers: result.agentReloadBlockers,
     workspaceBridgeHandlers: result.workspaceBridgeHandlers,
     preservedUiStateKeys: result.preservedUiStateKeys,
     defaultPluginPackagePaths: [],
@@ -1066,6 +1080,12 @@ export async function createWorkspaceAgentServer(
     async resolve(actor, options) {
       if (!workspaceAgentDispatcherResolver) throw new Error("workspace agent dispatcher is not ready")
       return await workspaceAgentDispatcherResolver.resolve(actor, options)
+    },
+    async resolveWithWorkspace(actor, options) {
+      if (!workspaceAgentDispatcherResolver?.resolveWithWorkspace) {
+        throw new Error("workspace-bound agent dispatcher is not ready")
+      }
+      return await workspaceAgentDispatcherResolver.resolveWithWorkspace(actor, options)
     },
   }
   const pluginCollection = await resolveWorkspaceAgentServerPluginCollection({
@@ -1469,134 +1489,138 @@ export async function createWorkspaceAgentServer(
   })
   try {
     await app.register(registerAgentRoutes, {
-      ...opts,
-      nativeSessionStartEnabled: opts.nativeSessionStartEnabled === true,
-      resolvePiSessionRequestContext: opts.resolvePiSessionRequestContext ?? ((request, defaultContext) => ({
-        ...defaultContext,
-        authSubject: authenticatedRequestUserId(request) ?? "local",
+    ...opts,
+    nativeSessionStartEnabled: opts.nativeSessionStartEnabled === true,
+    resolvePiSessionRequestContext: opts.resolvePiSessionRequestContext ?? ((request, defaultContext) => ({
+      ...defaultContext,
+      authSubject: authenticatedRequestUserId(request) ?? "local",
+    })),
+    agentHost: {
+      created: agentHost,
+      defaultAgentTypeId,
+      issueScope: scopeIssuer.issue,
+    },
+    onWorkspaceAgentDispatcher: (resolver) => {
+      workspaceAgentDispatcherResolver = resolver
+      opts.onWorkspaceAgentDispatcher?.(resolver)
+    },
+    mode: resolvedMode,
+    runtimeModeAdapter: modeAdapter,
+    runtimeHost,
+    getWorkspaceId: async (request) => trustedWorkspaceScopeId(
+      request,
+      workspaceScopeId,
+      allowedWorkspaceSelectors,
+    ),
+    provisionRuntime: async (context) => {
+      liveRuntimeBundle = context.runtimeBundle
+      await callerRuntimeProvisioner?.({
+        workspaceRoot: context.workspaceRoot,
+        runtimeMode: context.runtimeMode,
+        runtimeBundle: context.runtimeBundle,
+      })
+      return currentRuntimeProvisioning
+    },
+    workspaceRoot,
+    externalPlugins: externalPluginsEnabled,
+    runtimeEnvContributions: [
+      ...(opts.runtimeEnvContributions ?? []),
+      ...(workspaceBridgeRuntimeEnvContribution ? [workspaceBridgeRuntimeEnvContribution] : []),
+    ],
+    extraTools: [
+      ...(opts.extraTools ?? []),
+      ...uiTools,
+      ...(legacyGlobalPluginAgentContributions ? pluginCollection.agentOptions.extraTools ?? [] : []),
+    ],
+    systemPromptAppend: [
+      workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt({ pluginAuthoringEnabled }) : undefined,
+      // `boring-ui-plugin` resolves via PATH from the provisioned workspace
+      // runtime. It is the slim setup component for agent-authored plugins;
+      // do not route plugin authoring through the full human-facing CLI.
+      pluginAuthoringEnabled ? buildBoringSystemPrompt({
+        scaffoldCommand: "boring-ui-plugin scaffold",
+        verifyCommand: "boring-ui-plugin verify",
+        boringPiRootOverride: boringPiRootVisibleToAgentTools(
+          workspaceRoot,
+          resolvedMode,
+          opts.provisionWorkspace !== false,
+        ),
+      }) : undefined,
+      legacyGlobalPluginAgentContributions
+        ? pluginCollection.agentOptions.systemPromptAppend
+        : opts.systemPromptAppend,
+      staticPluginPackagePiSnapshot.systemPromptAppend,
+    ].filter(Boolean).join("\n\n") || undefined,
+    beforeReload: async () => {
+      // Fail fast, then check again immediately before replacement so work
+      // cannot become active during asynchronous reload preparation.
+      await assertAgentReloadAvailable(pluginCollection.agentReloadBlockers)
+      // Per-plugin scan/rebuild failures are surfaced via SSE error
+      // events + `.error` files (asset manager) and via the response
+      // body of POST /api/v1/agent/reload (rebuild diagnostics). They
+      // MUST NOT throw out of beforeReload — that would abort the
+      // entire reload, leaving every other plugin on stale code and
+      // contradicting the "previous live state untouched, other
+      // plugins unaffected" recovery story.
+      let restart_warnings: ReturnType<typeof collectRestartWarnings> = []
+      let diagnostics: PluginRebuildResult["diagnostics"] = []
+      refreshBoringPluginDirs()
+      const scan = await boringAssetManager.load()
+      const backendReload = await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
+      restart_warnings = collectRestartWarnings(scan.events)
+      const scanDiagnostics = scan.errors.map((error) => ({
+        source: `boring plugin asset scan (${error.id})`,
+        message: error.message,
+        pluginId: error.id,
+      }))
+      const rebuild = await rebuildPlugins()
+      diagnostics = [...scanDiagnostics, ...backendReload.diagnostics, ...rebuild.diagnostics]
+      await runRuntimeProvisioning(liveRuntimeBundle)
+      const callerResult = await opts.beforeReload?.()
+      await assertAgentReloadAvailable(pluginCollection.agentReloadBlockers)
+      const callerRestartWarnings = callerResult && typeof callerResult === "object"
+        ? callerResult.restart_warnings ?? []
+        : []
+      const callerDiagnostics = callerResult && typeof callerResult === "object"
+        ? callerResult.diagnostics ?? []
+        : []
+      const mergedRestartWarnings = [...restart_warnings, ...callerRestartWarnings]
+      const mergedDiagnostics = [...diagnostics, ...callerDiagnostics]
+      // Surface restart warnings and non-fatal rebuild diagnostics on the
+      // /api/v1/agent/reload response so the chat UI / agent can render
+      // actionable warnings even when partial plugin failures don't abort
+      // the reload.
+      if (mergedRestartWarnings.length === 0 && mergedDiagnostics.length === 0) return undefined
+      return {
+        ...(mergedRestartWarnings.length > 0 ? { restart_warnings: mergedRestartWarnings } : {}),
+        ...(mergedDiagnostics.length > 0 ? { diagnostics: mergedDiagnostics } : {}),
+      }
+    },
+    getPluginDiagnostics: async () => [
+      ...boringAssetManager.getErrors().map((error) => ({
+        source: "plugin-load",
+        message: error.message,
+        ...(error.id ? { pluginId: error.id } : {}),
       })),
-      agentHost: {
-        created: agentHost,
-        defaultAgentTypeId,
-        issueScope: scopeIssuer.issue,
-      },
-      onWorkspaceAgentDispatcher: (resolver) => {
-        workspaceAgentDispatcherResolver = resolver
-        opts.onWorkspaceAgentDispatcher?.(resolver)
-      },
-      mode: resolvedMode,
-      runtimeModeAdapter: modeAdapter,
-      runtimeHost,
-      getWorkspaceId: async (request) => trustedWorkspaceScopeId(
-        request,
-        workspaceScopeId,
-        allowedWorkspaceSelectors,
-      ),
-      provisionRuntime: async (context) => {
-        liveRuntimeBundle = context.runtimeBundle
-        await callerRuntimeProvisioner?.({
-          workspaceRoot: context.workspaceRoot,
-          runtimeMode: context.runtimeMode,
-          runtimeBundle: context.runtimeBundle,
-        })
-        return currentRuntimeProvisioning
-      },
-      workspaceRoot,
-      externalPlugins: externalPluginsEnabled,
-      runtimeEnvContributions: [
-        ...(opts.runtimeEnvContributions ?? []),
-        ...(workspaceBridgeRuntimeEnvContribution ? [workspaceBridgeRuntimeEnvContribution] : []),
-      ],
-      extraTools: [
-        ...(opts.extraTools ?? []),
-        ...uiTools,
-        ...(legacyGlobalPluginAgentContributions ? pluginCollection.agentOptions.extraTools ?? [] : []),
-      ],
-      systemPromptAppend: [
-        workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt({ pluginAuthoringEnabled }) : undefined,
-        // `boring-ui-plugin` resolves via PATH from the provisioned workspace
-        // runtime. It is the slim setup component for agent-authored plugins;
-        // do not route plugin authoring through the full human-facing CLI.
-        pluginAuthoringEnabled ? buildBoringSystemPrompt({
-          scaffoldCommand: "boring-ui-plugin scaffold",
-          verifyCommand: "boring-ui-plugin verify",
-          boringPiRootOverride: boringPiRootVisibleToAgentTools(
-            workspaceRoot,
-            resolvedMode,
-            opts.provisionWorkspace !== false,
-          ),
-        }) : undefined,
-        legacyGlobalPluginAgentContributions
-          ? pluginCollection.agentOptions.systemPromptAppend
-          : opts.systemPromptAppend,
-        staticPluginPackagePiSnapshot.systemPromptAppend,
-      ].filter(Boolean).join("\n\n") || undefined,
-      beforeReload: async () => {
-        // Per-plugin scan/rebuild failures are surfaced via SSE error
-        // events + `.error` files (asset manager) and via the response
-        // body of POST /api/v1/agent/reload (rebuild diagnostics). They
-        // MUST NOT throw out of beforeReload — that would abort the
-        // entire reload, leaving every other plugin on stale code and
-        // contradicting the "previous live state untouched, other
-        // plugins unaffected" recovery story.
-        let restart_warnings: ReturnType<typeof collectRestartWarnings> = []
-        let diagnostics: PluginRebuildResult["diagnostics"] = []
-        refreshBoringPluginDirs()
-        const scan = await boringAssetManager.load()
-        const backendReload = await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
-        restart_warnings = collectRestartWarnings(scan.events)
-        const scanDiagnostics = scan.errors.map((error) => ({
-          source: `boring plugin asset scan (${error.id})`,
-          message: error.message,
-          pluginId: error.id,
-        }))
-        const rebuild = await rebuildPlugins()
-        diagnostics = [...scanDiagnostics, ...backendReload.diagnostics, ...rebuild.diagnostics]
-        await runRuntimeProvisioning(liveRuntimeBundle)
-        const callerResult = await opts.beforeReload?.()
-        const callerRestartWarnings = callerResult && typeof callerResult === "object"
-          ? callerResult.restart_warnings ?? []
-          : []
-        const callerDiagnostics = callerResult && typeof callerResult === "object"
-          ? callerResult.diagnostics ?? []
-          : []
-        const mergedRestartWarnings = [...restart_warnings, ...callerRestartWarnings]
-        const mergedDiagnostics = [...diagnostics, ...callerDiagnostics]
-        // Surface restart warnings and non-fatal rebuild diagnostics on the
-        // /api/v1/agent/reload response so the chat UI / agent can render
-        // actionable warnings even when partial plugin failures don't abort
-        // the reload.
-        if (mergedRestartWarnings.length === 0 && mergedDiagnostics.length === 0) return undefined
-        return {
-          ...(mergedRestartWarnings.length > 0 ? { restart_warnings: mergedRestartWarnings } : {}),
-          ...(mergedDiagnostics.length > 0 ? { diagnostics: mergedDiagnostics } : {}),
-        }
-      },
-      getPluginDiagnostics: async () => [
-        ...boringAssetManager.getErrors().map((error) => ({
-          source: "plugin-load",
-          message: error.message,
-          ...(error.id ? { pluginId: error.id } : {}),
-        })),
-        ...boringAssetManager.preflight().errors.map((error) => ({
-          source: "plugin-preflight",
-          message: `${error.code}: ${error.message} (${error.pluginDir})`,
-          ...(error.pluginId ? { pluginId: error.pluginId } : {}),
-        })),
-      ],
-      pi: {
-        ...(legacyGlobalPluginAgentContributions ? pluginCollection.agentOptions.pi : opts.pi),
-        additionalSkillPaths: staticPiSkillPaths,
-        packages: staticPiPackages,
-        extensionPaths: staticPiExtensionPaths,
-        extensionFactories: opts.pi?.extensionFactories,
-        ...(legacyGlobalPluginAgentContributions
-          ? { getHotReloadableResources: getHotReloadablePiResources }
-          : {}),
-      },
-      systemPromptDynamic: legacyGlobalPluginAgentContributions
-        ? () => aggregatePluginPrompts(boringAssetManager)
-        : opts.systemPromptDynamic,
+      ...boringAssetManager.preflight().errors.map((error) => ({
+        source: "plugin-preflight",
+        message: `${error.code}: ${error.message} (${error.pluginDir})`,
+        ...(error.pluginId ? { pluginId: error.pluginId } : {}),
+      })),
+    ],
+    pi: {
+      ...(legacyGlobalPluginAgentContributions ? pluginCollection.agentOptions.pi : opts.pi),
+      additionalSkillPaths: staticPiSkillPaths,
+      packages: staticPiPackages,
+      extensionPaths: staticPiExtensionPaths,
+      extensionFactories: opts.pi?.extensionFactories,
+      ...(legacyGlobalPluginAgentContributions
+        ? { getHotReloadableResources: getHotReloadablePiResources }
+        : {}),
+    },
+    systemPromptDynamic: legacyGlobalPluginAgentContributions
+      ? () => aggregatePluginPrompts(boringAssetManager)
+      : opts.systemPromptDynamic,
     })
   } catch (error) {
     try { await app.close() } catch {}

@@ -31,6 +31,7 @@ import {
   type ChatPanelRuntimeDependenciesWarmupStatus,
   type ChatPanelWorkspaceWarmupStatus,
 } from './chatPanelWorkspaceWarmup'
+import { useComposerContributions, type ComposerDraftUpdate } from './composerContributions'
 import { selectMessagesForRender, selectQueuePreview, selectRuntimeNotices } from './pi/selectors'
 import { piChatErrorCode, type RemotePiSession, type RemotePiSessionOptions } from './pi/remotePiSession'
 import type { PiChatRuntimeNotice } from './pi/piChatReducer'
@@ -417,6 +418,11 @@ export function PiChatPanel<
   const localSubmittedSessionRef = useRef<string | undefined>(undefined)
   const submittingPromptTextRef = useRef('')
   const { attachmentNotice, setAttachmentNotice } = useAttachmentNotice()
+  const composerContributions = useComposerContributions()
+  const contributedCommands = useMemo(
+    () => composerContributions.flatMap((contribution) => contribution.commands ?? []),
+    [composerContributions],
+  )
 
   const markLocalSubmitted = useCallback((sessionId: string) => {
     localSubmittedSessionRef.current = sessionId
@@ -436,9 +442,10 @@ export function PiChatPanel<
     })
     const next = createCommandRegistry(effectiveBuiltins)
     for (const command of extraCommands ?? []) next.register(command)
+    for (const command of contributedCommands) next.register(command)
     for (const command of commands) next.register(command)
     return next
-  }, [apiBaseUrl, commands, excludeBuiltinCommands, extraCommands, hotReloadEnabled, normalizedRequestHeaders, serverResourcesEnabled, serverSkillsRefreshKey, storageScope])
+  }, [apiBaseUrl, commands, contributedCommands, excludeBuiltinCommands, extraCommands, hotReloadEnabled, normalizedRequestHeaders, serverResourcesEnabled, serverSkillsRefreshKey, storageScope])
   const commandsStamp = useServerCommands({
     registry,
     requestHeaders: normalizedRequestHeaders,
@@ -1224,6 +1231,9 @@ export function PiChatPanel<
               textareaRef={textareaRef}
               onTextareaChange={onTextareaChange}
               onTextareaKeyDown={onTextareaKeyDown}
+              updateDraft={(update: ComposerDraftUpdate, options) => {
+                setComposerDraft(update(draftRef.current), options?.focus ?? true)
+              }}
               onSubmitMessage={({ text, files }) => sendComposerMessage({ text, files })}
               onStop={stop}
             />

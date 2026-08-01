@@ -48,6 +48,9 @@ export interface PiSessionCreateInit {
   modelDefault?: ChatModelSelection
 }
 
+/** Server-only prompt admission selector; browser schemas never accept requireIdle. */
+export type AgentPromptPayload = PromptPayload & { readonly requireIdle?: true }
+
 export type PiChatReplayRangeError =
   | { type: 'replay_gap'; latestSeq: number; minReplaySeq: number }
   | { type: 'cursor_ahead'; latestSeq: number; minReplaySeq: number }
@@ -77,7 +80,7 @@ export interface PiChatSessionService {
   readAttachment?(ctx: PiSessionRequestContext, sessionId: string, messageId: string, index: number): Promise<PiChatAttachmentResult>
   readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot>
   subscribe(ctx: PiSessionRequestContext, sessionId: string, cursor: number, subscriber: PiChatEventSubscriber): Promise<PiChatEventStreamResult>
-  prompt(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt>
+  prompt(ctx: PiSessionRequestContext, sessionId: string, payload: AgentPromptPayload): Promise<PromptReceipt>
   followUp(ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload): Promise<FollowUpReceipt>
   clearQueue(ctx: PiSessionRequestContext, sessionId: string, payload: QueueClearPayload): Promise<QueueClearReceipt>
   interrupt(ctx: PiSessionRequestContext, sessionId: string, payload: InterruptPayload): Promise<CommandReceipt>
@@ -85,6 +88,11 @@ export interface PiChatSessionService {
 }
 
 export interface AgentCoreSessionService extends PiChatSessionService {
+  /** Trusted host-only validation/binding seam; never exposed as an HTTP route. */
+  ensurePiSessionBound?(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+  ): Promise<void>
   createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
   deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
   dispose?(): Promise<void>
@@ -125,7 +133,7 @@ export function isObservedSynchronousServiceError(error: unknown): boolean {
     && observedSynchronousServiceErrors.has(error as object)
 }
 
-type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'listSessions' | 'readAttachment' | 'readState' | 'subscribe' | 'dispose'>
+type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'ensurePiSessionBound' | 'listSessions' | 'readAttachment' | 'readState' | 'subscribe' | 'dispose'>
 
 export const AGENT_EFFECT_METHODS = {
   createSession: true,
@@ -143,6 +151,9 @@ export function withAgentEffectAdmission(
   admit: AgentEffectAdmission,
 ): AgentCoreSessionService {
   return {
+    ...(service.ensurePiSessionBound
+      ? { ensurePiSessionBound: (ctx, sessionId) => service.ensurePiSessionBound!(ctx, sessionId) }
+      : {}),
     ...(service.listSessions
       ? { listSessions: (ctx, options) => service.listSessions!(ctx, options) }
       : {}),

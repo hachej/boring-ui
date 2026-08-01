@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import type { BoringChatMessage } from '../../../../shared/chat'
 import { ArtifactOpenProvider } from '../../../ArtifactOpenContext'
+import { ChatMessageContributionProvider } from '../../messageContributions'
 import { PiTimelineMessage } from '../PiTimelineMessage'
 
 vi.mock('../../../primitives/message', () => ({
@@ -44,6 +45,27 @@ vi.mock('../../../primitives/attachments', () => ({
 }))
 
 describe('PiTimelineMessage', () => {
+  test('allows a provider to replace a message without feature logic in the timeline', () => {
+    const message: BoringChatMessage = {
+      id: 'custom-1',
+      role: 'user',
+      parts: [{ type: 'text', text: 'opaque integration payload' }],
+    }
+
+    render(
+      <ChatMessageContributionProvider contribution={{
+        id: 'test-renderer',
+        matches: (candidate) => candidate.id === message.id,
+        Component: () => <div>Custom message card</div>,
+      }}>
+        <PiTimelineMessage message={message} isLast isStreaming={false} showThoughts={false} toolRenderers={{}} />
+      </ChatMessageContributionProvider>,
+    )
+
+    expect(screen.getByText('Custom message card')).toBeTruthy()
+    expect(screen.queryByText('opaque integration payload')).toBeNull()
+  })
+
   test('renders live assistant parts in reasoning, tool, notice, text order and opens collapsed thoughts', () => {
     const message: BoringChatMessage = {
       id: 'a-live',

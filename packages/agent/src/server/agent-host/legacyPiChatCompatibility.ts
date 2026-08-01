@@ -1,4 +1,10 @@
-import type { AuthorizedAgentScope, JsonValue } from '../../shared/index'
+import {
+  AgentGatewayError,
+  AgentGatewayErrorCode,
+  type AgentGatewayErrorDTO,
+  type AuthorizedAgentScope,
+  type JsonValue,
+} from '../../shared/index'
 import type {
   AgentCoreSessionService,
   PiChatSessionService,
@@ -14,6 +20,7 @@ interface LegacyCompatibilityGateway {
     readonly requestId: string
     readonly payload: JsonValue
     readonly action: () => Promise<unknown>
+    readonly retryableGuard?: () => Promise<AgentGatewayErrorDTO | undefined>
   }): Promise<unknown>
 }
 
@@ -52,6 +59,7 @@ export function createLegacyPiChatCompatibilityService(input: {
     readonly requestId: string
     readonly payload: unknown
     readonly action: () => Promise<T>
+    readonly retryableGuard?: () => Promise<AgentGatewayErrorDTO | undefined>
   }): Promise<T> => await input.gateway.runLegacyCompatibilityEffect({
     scope: input.scope,
     operation: options.operation,
@@ -59,6 +67,7 @@ export function createLegacyPiChatCompatibilityService(input: {
     requestId: options.requestId,
     payload: jsonProjection(options.payload),
     action: options.action,
+    ...(options.retryableGuard ? { retryableGuard: options.retryableGuard } : {}),
   }) as T
 
   const runtimeCtx = (ctx: PiSessionRequestContext): PiSessionRequestContext => ({
@@ -110,6 +119,17 @@ export function createLegacyPiChatCompatibilityService(input: {
       target: sessionTarget(input.agentTypeId, sessionId),
       requestId: requestIdForPayload(ctx, payload.clientNonce),
       payload,
+      ...(payload.requireIdle ? {
+        retryableGuard: async () => {
+          const snapshot = await input.service.readState(runtimeCtx(ctx), sessionId)
+          if (snapshot.status === 'idle') return undefined
+          return new AgentGatewayError(
+            AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+            'session is not idle',
+            { status: snapshot.status },
+          ).toJSON()
+        },
+      } : {}),
       action: () => input.service.prompt(runtimeCtx(ctx), sessionId, payload),
     }),
     followUp: (ctx, sessionId, payload) => effect({

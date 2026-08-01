@@ -908,6 +908,22 @@ export class HarnessPiChatService implements PiChatSessionService {
     return typeof seq === 'number' && Number.isInteger(seq) && seq >= 0 ? seq : tailIndex + 1
   }
 
+  /**
+   * Validate the persisted session identity and instantiate its lazily-created
+   * Pi adapter under the same full cache key. This is intentionally a narrow
+   * trusted-host seam rather than another browser route.
+   */
+  async ensurePiSessionBound(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+  ): Promise<void> {
+    this.lifecycle.assertOpen()
+    await this.assertCanAccessSession(ctx, sessionId)
+    const adapter = await this.getAdapter(ctx, sessionId, '', { authorize: false })
+    await this.ensureChannel(ctx, sessionId, adapter)
+    this.lifecycle.assertOpen()
+  }
+
   private async assertCanAccessSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
     try {
       await this.sessionStore.load(toSessionCtx(ctx), sessionId)

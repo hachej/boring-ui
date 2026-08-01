@@ -1545,6 +1545,64 @@ describe("beforeReload triggers directory-source re-resolve", () => {
     expect(rebuilt).toEqual({ ok: true, diagnostics: [] })
   })
 
+  test("checks plugin reload availability before reload preparation", async () => {
+    const getAgentReloadBlock = vi.fn()
+    await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("phase5-lifecycle-order-host-"),
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [{ id: "lifecycle", getAgentReloadBlock }],
+      beforeReload: async () => { throw new Error("preparation failed") },
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { beforeReload?: () => Promise<void> },
+    ]
+    await expect(agentOptions.beforeReload?.()).rejects.toThrow("preparation failed")
+    expect(getAgentReloadBlock).toHaveBeenCalledOnce()
+  })
+
+  test("blocks Agent replacement with a structured plugin reload reason", async () => {
+    const getAgentReloadBlock = vi.fn(() => ({ code: "work_active", message: "Stop active work first." }))
+    await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("phase5-reload-block-host-"),
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [{ id: "active-work", getAgentReloadBlock }],
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { beforeReload?: () => Promise<void> },
+    ]
+    await expect(agentOptions.beforeReload?.()).rejects.toMatchObject({
+      code: "work_active",
+      message: "Stop active work first.",
+      pluginId: "active-work",
+    })
+    expect(getAgentReloadBlock).toHaveBeenCalledOnce()
+  })
+
+  test("rechecks reload blockers after asynchronous preparation", async () => {
+    const getAgentReloadBlock = vi.fn()
+      .mockReturnValueOnce(undefined)
+      .mockReturnValueOnce({ code: "work_started", message: "Work started during preparation." })
+    await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("phase5-reload-race-host-"),
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [{ id: "racing-work", getAgentReloadBlock }],
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { beforeReload?: () => Promise<void> },
+    ]
+    await expect(agentOptions.beforeReload?.()).rejects.toMatchObject({
+      code: "work_started",
+      pluginId: "racing-work",
+    })
+    expect(getAgentReloadBlock).toHaveBeenCalledTimes(2)
+  })
+
   test("beforeReload returns rebuild diagnostics merged with caller restart warnings", async () => {
     const dir = await makeTempDir("phase5-diagnostics-")
     await mkdir(join(dir, "src", "server"), { recursive: true })
