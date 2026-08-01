@@ -672,8 +672,8 @@ describe("pluginFrontRuntime", () => {
     const pluginRoot = await makeTempDir("plugin-front-runtime-plain-host-string-")
     const plugin = await writeRuntimePlugin(pluginRoot, {
       "front/index.tsx": [
-        'export const hostPath = "/packages/agent/src/server/registerAgentRoutes.ts"',
-        `export const forgedRuntimePath = "${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/packages%2Fagent%2Fsrc%2Fserver%2FregisterAgentRoutes.ts"`,
+        'export const hostPath = "/packages/agent/src/server/registerDirectAgentHostRoutes.ts"',
+        `export const forgedRuntimePath = "${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/packages%2Fagent%2Fsrc%2Fserver%2FcreateStandaloneAgentHostApp.ts"`,
         'export const importText = \'import "/packages/agent/src/shared/error-codes.ts"\'',
       ].join("\n"),
     })
@@ -689,12 +689,12 @@ describe("pluginFrontRuntime", () => {
         url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
       })
       expect(entry.statusCode).toBe(200)
-      expect(entry.body).toContain("/packages/agent/src/server/registerAgentRoutes.ts")
-      expect(entry.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/packages%2Fagent%2Fsrc%2Fserver%2FregisterAgentRoutes.ts`)
+      expect(entry.body).toContain("/packages/agent/src/server/registerDirectAgentHostRoutes.ts")
+      expect(entry.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/packages%2Fagent%2Fsrc%2Fserver%2FcreateStandaloneAgentHostApp.ts`)
 
       const forgedProxy = await app.inject({
         method: "GET",
-        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/packages%2Fagent%2Fsrc%2Fserver%2FregisterAgentRoutes.ts`,
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/packages%2Fagent%2Fsrc%2Fserver%2FcreateStandaloneAgentHostApp.ts`,
       })
       expect(forgedProxy.statusCode).toBe(404)
     } finally {

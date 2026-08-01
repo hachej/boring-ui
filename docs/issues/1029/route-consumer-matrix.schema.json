@@ -3,34 +3,73 @@
   "type": "object",
   "required": [
     "schemaVersion",
-    "slice1Gate",
+    "finalGate",
     "routes"
   ],
   "properties": {
     "schemaVersion": {
-      "const": 1
+      "const": 3
     },
-    "slice1Gate": {
+    "finalGate": {
       "type": "object",
-      "required": ["compositionRoots", "sourceInventories"],
+      "required": [
+        "compositionRoots",
+        "sourceInventories"
+      ],
       "properties": {
         "compositionRoots": {
           "type": "array",
           "minItems": 7,
           "items": {
             "type": "object",
-            "required": ["id", "source", "proof", "projection", "proofLevel", "packageRoot", "testName"],
+            "required": [
+              "id",
+              "source",
+              "proof",
+              "projection",
+              "applicableRouteIds",
+              "proofLevel",
+              "packageRoot",
+              "testName"
+            ],
             "properties": {
-              "id": { "type": "string", "minLength": 1 },
-              "source": { "type": "string", "minLength": 1 },
-              "proof": { "type": "string", "minLength": 1 },
-              "packageRoot": { "type": "string", "minLength": 1 },
-              "testName": { "type": "string", "minLength": 1 },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "proof": {
+                "type": "string",
+                "minLength": 1
+              },
+              "packageRoot": {
+                "type": "string",
+                "minLength": 1
+              },
+              "testName": {
+                "type": "string",
+                "minLength": 1
+              },
               "projection": {
-                "enum": ["direct", "compatibility", "delegates-to-workspace"]
+                "enum": [
+                  "direct",
+                  "delegates-to-workspace"
+                ]
+              },
+              "applicableRouteIds": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1 }
               },
               "proofLevel": {
-                "enum": ["exact-composed-table", "shared-exact-composed-table"]
+                "enum": [
+                  "exact-composed-table",
+                  "shared-exact-composed-table"
+                ]
               }
             },
             "additionalProperties": false
@@ -38,62 +77,78 @@
         },
         "sourceInventories": {
           "type": "object",
-          "required": ["legacyReferences", "publicServerExports", "generatedAttachmentUrls", "authorizationProof"],
+          "required": [
+            "forbiddenReferences",
+            "publicServerExports",
+            "generatedAttachmentUrls",
+            "authorizationProof",
+            "runtimeBridgeAuthority"
+          ],
           "properties": {
-            "legacyReferences": {
+            "forbiddenReferences": {
               "type": "object",
-              "required": ["count", "sha256", "files"],
+              "required": [
+                "patterns",
+                "count",
+                "files"
+              ],
               "properties": {
-                "count": { "type": "integer", "minimum": 1 },
-                "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-                "files": {
+                "patterns": {
                   "type": "array",
                   "minItems": 1,
                   "uniqueItems": true,
                   "items": {
-                    "type": "object",
-                    "required": ["source", "disposition"],
-                    "properties": {
-                      "source": { "type": "string", "minLength": 1 },
-                      "disposition": {
-                        "enum": ["slice-3", "slice-4", "slice-4-and-5", "slice-5", "slice-5-then-6", "slice-6"]
-                      }
-                    },
-                    "additionalProperties": false
+                    "type": "string",
+                    "minLength": 1
                   }
+                },
+                "count": {
+                  "const": 0
+                },
+                "files": {
+                  "type": "array",
+                  "maxItems": 0
                 }
               },
               "additionalProperties": false
             },
             "publicServerExports": {
               "type": "object",
-              "required": ["source", "symbols"],
+              "required": [
+                "source",
+                "symbols"
+              ],
               "properties": {
-                "source": { "type": "string", "minLength": 1 },
+                "source": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "symbols": {
                   "type": "array",
                   "minItems": 1,
                   "uniqueItems": true,
-                  "items": { "type": "string", "minLength": 1 }
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
                 }
               },
               "additionalProperties": false
             },
             "generatedAttachmentUrls": {
               "type": "object",
-              "required": ["addressed", "compatibility"],
+              "required": [
+                "addressed"
+              ],
               "properties": {
                 "addressed": {
                   "type": "array",
                   "minItems": 1,
                   "uniqueItems": true,
-                  "items": { "type": "string", "minLength": 1 }
-                },
-                "compatibility": {
-                  "type": "array",
-                  "minItems": 1,
-                  "uniqueItems": true,
-                  "items": { "type": "string", "minLength": 1 }
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
                 }
               },
               "additionalProperties": false
@@ -101,6 +156,20 @@
             "authorizationProof": {
               "type": "string",
               "minLength": 1
+            },
+            "runtimeBridgeAuthority": {
+              "type": "object",
+              "required": ["disposition", "implementation", "hostProductionCallers", "publicServerExport"],
+              "properties": {
+                "disposition": { "const": "standalone-core-only" },
+                "implementation": { "const": "packages/agent/src/core/createAgent.ts" },
+                "hostProductionCallers": {
+                  "type": "array",
+                  "maxItems": 0
+                },
+                "publicServerExport": { "const": false }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
@@ -130,6 +199,55 @@
             "type": "string",
             "minLength": 1
           },
+          "owner": {
+            "enum": [
+              "agent-host",
+              "app-environment",
+              "app-core"
+            ]
+          },
+          "auth": {
+            "enum": [
+              "public",
+              "authorized-scope",
+              "workspace-member",
+              "app-policy"
+            ]
+          },
+          "consumers": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "proof": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "contract": {
+            "type": "object",
+            "required": [
+              "request",
+              "response"
+            ],
+            "properties": {
+              "request": {
+                "type": "string",
+                "minLength": 1
+              },
+              "response": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          },
           "current": {
             "type": "array",
             "minItems": 1,
@@ -155,21 +273,6 @@
               }
             ]
           },
-          "owner": {
-            "enum": [
-              "agent-host",
-              "app-environment",
-              "app-core"
-            ]
-          },
-          "auth": {
-            "enum": [
-              "public",
-              "authorized-scope",
-              "workspace-member",
-              "app-policy"
-            ]
-          },
           "disposition": {
             "enum": [
               "retain",
@@ -177,42 +280,10 @@
               "delete"
             ]
           },
-          "consumers": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string"
-            }
-          },
           "slice": {
             "type": "integer",
             "minimum": 1,
             "maximum": 6
-          },
-          "proof": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string"
-            }
-          },
-          "contract": {
-            "type": "object",
-            "required": [
-              "request",
-              "response"
-            ],
-            "properties": {
-              "request": {
-                "type": "string",
-                "minLength": 1
-              },
-              "response": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "additionalProperties": false
           }
         },
         "additionalProperties": false

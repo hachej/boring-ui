@@ -7,7 +7,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../config/env'
 import {
-  createTestStandaloneAgentHostApp as createAgentApp,
+  createTestStandaloneAgentHostApp as createStandaloneAgentHostApp,
   createTestRuntimeModeAdapter,
   testRuntimeHostOperations,
 } from '@agent-test-host'
@@ -15,6 +15,7 @@ import { loadPlugins, flattenPluginTools } from '../harness/pi-coding-agent/plug
 import type { AgentHarness, AgentHarnessFactoryInput } from '../../shared/harness'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session'
 import { ErrorCode } from '../../shared/error-codes'
+import { AgentGatewayErrorCode } from '../../shared/gateway/errors'
 import type { RuntimeFilesystemBindingOperations, RuntimeModeAdapter } from '../runtime/mode'
 import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatcher'
 import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
@@ -108,7 +109,7 @@ function createNoopHarnessFactory() {
   return { factory, inputs, sessions }
 }
 
-test('createAgentApp stamps the explicit caller runtime host over the adapter host', async () => {
+test('createStandaloneAgentHostApp stamps the explicit caller runtime host over the adapter host', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-app-runtime-host-')
   const adapterBuildBwrapArgs = vi.fn(() => [])
   const callerBuildBwrapArgs = vi.fn(() => [])
@@ -127,7 +128,7 @@ test('createAgentApp stamps the explicit caller runtime host over the adapter ho
       }
     },
   }
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     runtimeModeAdapter,
     runtimeHost: callerHost,
@@ -142,11 +143,11 @@ test('createAgentApp stamps the explicit caller runtime host over the adapter ho
   }
 })
 
-test('createAgentApp composes its trusted dispatcher over the standalone runtime', async () => {
+test('createStandaloneAgentHostApp composes its trusted dispatcher over the standalone runtime', async () => {
   const harness = createDispatcherTestHarness()
   const workspaceRoot = await makeTempDir('boring-agent-app-dispatcher-workspace-')
   let resolver: WorkspaceAgentDispatcherResolver | undefined
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     sessionId: 'standalone-dispatcher',
@@ -183,7 +184,7 @@ test('createAgentApp composes its trusted dispatcher over the standalone runtime
   }
 })
 
-test('createAgentApp retires Agent, pair, then host adapter exactly once', async () => {
+test('createStandaloneAgentHostApp retires Agent, pair, then host adapter exactly once', async () => {
   const harness = createDispatcherTestHarness()
   const workspaceRoot = await makeTempDir('boring-agent-app-lifecycle-')
   let resolver: WorkspaceAgentDispatcherResolver | undefined
@@ -211,7 +212,7 @@ test('createAgentApp retires Agent, pair, then host adapter exactly once', async
       }
     },
   }
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     runtimeModeAdapter,
     sessionId: 'standalone-lifecycle',
@@ -231,7 +232,7 @@ test('createAgentApp retires Agent, pair, then host adapter exactly once', async
   expect(disposeAdapter).toHaveBeenCalledOnce()
 })
 
-test('createAgentApp preserves Agent disposal failure while attempting pair and provider cleanup', async () => {
+test('createStandaloneAgentHostApp preserves Agent disposal failure while attempting pair and provider cleanup', async () => {
   const harness = createDispatcherTestHarness()
   const workspaceRoot = await makeTempDir('boring-agent-app-cleanup-errors-')
   const agentError = new Error('agent cleanup failed first')
@@ -250,7 +251,7 @@ test('createAgentApp preserves Agent disposal failure while attempting pair and 
       return { ...bundle, disposeRuntime: disposePair }
     },
   }
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     runtimeModeAdapter,
     sessionId: 'standalone-cleanup-error',
@@ -271,10 +272,10 @@ test('createAgentApp preserves Agent disposal failure while attempting pair and 
   expect(disposeAdapter).toHaveBeenCalledOnce()
 })
 
-test('createAgentApp direct bash receives runtime env contributions without persisting values', async () => {
+test('createStandaloneAgentHostApp direct bash receives runtime env contributions without persisting values', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-direct-runtime-env-')
   let capturedTools: import('../../shared/tool').AgentTool[] = []
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -305,11 +306,11 @@ test('createAgentApp direct bash receives runtime env contributions without pers
   await app.close()
 })
 
-test('createAgentApp direct mode forwards sessionRoot to the harness', async () => {
+test('createStandaloneAgentHostApp direct mode forwards sessionRoot to the harness', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-direct-session-root-workspace-')
   const sessionRoot = await makeTempDir('boring-agent-direct-session-root-')
   const harness = createNoopHarnessFactory()
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -326,13 +327,13 @@ test('createAgentApp direct mode forwards sessionRoot to the harness', async () 
   }
 })
 
-test('createAgentApp rejects mode none without a workspace runtime adapter', async () => {
-  await expect(createAgentApp({ mode: 'none', logger: false })).rejects.toThrow(
+test('createStandaloneAgentHostApp rejects mode none without a workspace runtime adapter', async () => {
+  await expect(createStandaloneAgentHostApp({ mode: 'none', logger: false })).rejects.toThrow(
     'Runtime mode "none" has no built-in adapter',
   )
 })
 
-test('createAgentApp disposes its runtime once when profile initialization fails', async () => {
+test('createStandaloneAgentHostApp disposes its runtime once when profile initialization fails', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-init-failure-')
   const initializationError = new Error('runtime provisioning rejected')
   const disposePair = vi.fn(async () => {
@@ -357,7 +358,7 @@ test('createAgentApp disposes its runtime once when profile initialization fails
     dispose: disposeAdapter,
   }
 
-  await expect(createAgentApp({
+  await expect(createStandaloneAgentHostApp({
     workspaceRoot,
     runtimeModeAdapter,
     logger: false,
@@ -369,14 +370,14 @@ test('createAgentApp disposes its runtime once when profile initialization fails
   expect(disposeAdapter).toHaveBeenCalledOnce()
 })
 
-test('createAgentApp provisions from templatePath option', async () => {
+test('createStandaloneAgentHostApp provisions from templatePath option', async () => {
   const parent = await makeTempDir('boring-ui-app-parent-')
   const workspaceRoot = join(parent, 'workspace')
   const templateRoot = await createTemplate('boring-ui-template-', {
     'README.md': '# api-template\n',
   })
 
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -387,7 +388,7 @@ test('createAgentApp provisions from templatePath option', async () => {
   await expect(readFile(join(workspaceRoot, 'README.md'), 'utf-8')).resolves.toBe('# api-template\n')
 })
 
-test('createAgentApp falls back to BORING_AGENT_TEMPLATE_PATH', async () => {
+test('createStandaloneAgentHostApp falls back to BORING_AGENT_TEMPLATE_PATH', async () => {
   const parent = await makeTempDir('boring-ui-app-parent-')
   const workspaceRoot = join(parent, 'workspace')
   const templateRoot = await createTemplate('boring-ui-template-', {
@@ -395,7 +396,7 @@ test('createAgentApp falls back to BORING_AGENT_TEMPLATE_PATH', async () => {
   })
   setEnvForTest('BORING_AGENT_TEMPLATE_PATH', templateRoot)
 
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -405,7 +406,7 @@ test('createAgentApp falls back to BORING_AGENT_TEMPLATE_PATH', async () => {
   await expect(readFile(join(workspaceRoot, 'FROM_ENV.txt'), 'utf-8')).resolves.toBe('env-template\n')
 })
 
-test('createAgentApp wires runtime provisioning skill paths into harness and skills API', async () => {
+test('createStandaloneAgentHostApp wires runtime provisioning skill paths into harness and skills API', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-runtime-provisioning-')
   const generatedSkill = join(workspaceRoot, '.boring-agent', 'skills', 'plugin', 'macro-transform')
   await mkdir(generatedSkill, { recursive: true })
@@ -427,7 +428,7 @@ test('createAgentApp wires runtime provisioning skill paths into harness and ski
     },
   }))
 
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -450,7 +451,7 @@ test('createAgentApp wires runtime provisioning skill paths into harness and ski
   }
 })
 
-test('createAgentApp can use a custom harness factory for non-pi runtimes', async () => {
+test('createStandaloneAgentHostApp can use a custom harness factory for non-pi runtimes', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-custom-harness-')
   const reloadSession = vi.fn(async () => true)
   const telemetryEvents: Array<{ name: string; properties?: Record<string, unknown> }> = []
@@ -483,7 +484,7 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
     getSlashCommands,
   }))
 
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -520,7 +521,7 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
   }
 })
 
-test('createAgentApp exposes static filesystem bindings on files and tree routes', async () => {
+test('createStandaloneAgentHostApp exposes static filesystem bindings on files and tree routes', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-static-bindings-')
   const disposeRuntime = vi.fn()
   const operations: RuntimeFilesystemBindingOperations = {
@@ -551,7 +552,7 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
       }
     },
   }
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     runtimeModeAdapter,
     logger: false,
@@ -593,10 +594,10 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
   expect(disposeRuntime).toHaveBeenCalledOnce()
 })
 
-test('createAgentApp rejects command execution when metering is configured', async () => {
+test('createStandaloneAgentHostApp rejects command execution when metering is configured', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-metered-commands-')
   const executeSlashCommand = vi.fn(async () => {})
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -644,9 +645,9 @@ test('createAgentApp rejects command execution when metering is configured', asy
   }
 })
 
-test('POST /api/v1/agent/reload surfaces harness resource diagnostics', async () => {
+test('POST /api/v1/agents/default/reload surfaces harness resource diagnostics', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-reload-diagnostics-')
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -685,9 +686,9 @@ test('POST /api/v1/agent/reload surfaces harness resource diagnostics', async ()
   }
 })
 
-test('GET /api/v1/agent/commands reports command discovery failures', async () => {
+test('GET /api/v1/agents/default/commands reports command discovery failures', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-command-route-failure-')
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -719,9 +720,9 @@ test('GET /api/v1/agent/commands reports command discovery failures', async () =
   }
 })
 
-test('POST /api/v1/agent/reload awaits beforeReload and aborts on failure', async () => {
+test('POST /api/v1/agents/default/reload awaits beforeReload and aborts on failure', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-reload-hook-')
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -731,41 +732,18 @@ test('POST /api/v1/agent/reload awaits beforeReload and aborts on failure', asyn
   })
   try {
     const res = await app.inject({ method: 'POST', url: '/api/v1/agents/default/reload', payload: { requestId: 'failing-reload' } })
-    expect(res.statusCode).toBe(500)
-    expect(res.json()).toMatchObject({ message: 'before reload failed' })
-  } finally {
-    await app.close()
-  }
-})
-
-test('POST /api/v1/agent/reload includes beforeReload restart warnings and diagnostics', async () => {
-  const workspaceRoot = await makeTempDir('boring-ui-reload-hook-diagnostics-')
-  const app = await createAgentApp({
-    workspaceRoot,
-    mode: 'direct',
-    logger: false,
-    beforeReload: async () => ({
-      restart_warnings: [
-        { id: 'routes-plugin', surfaces: ['routes'], message: 'restart routes' },
-      ],
-      diagnostics: [
-        { source: 'directory (/plugin)', pluginId: 'broken-plugin', message: 'syntax error' },
-      ],
-    }),
-  })
-  try {
-    const res = await app.inject({ method: 'POST', url: '/api/v1/agents/default/reload', payload: { requestId: 'warning-reload' } })
-    expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({
-      ok: true,
-      reloaded: false,
+    expect(res.statusCode).toBe(409)
+    expect(res.json()).toMatchObject({
+      error: {
+        code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+      },
     })
   } finally {
     await app.close()
   }
 })
 
-test('createAgentApp option templatePath takes precedence over env fallback', async () => {
+test('createStandaloneAgentHostApp option templatePath takes precedence over env fallback', async () => {
   const parent = await makeTempDir('boring-ui-app-parent-')
   const workspaceRoot = join(parent, 'workspace')
   const envTemplate = await createTemplate('boring-ui-template-env-', {
@@ -776,7 +754,7 @@ test('createAgentApp option templatePath takes precedence over env fallback', as
   })
   setEnvForTest('BORING_AGENT_TEMPLATE_PATH', envTemplate)
 
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -807,7 +785,7 @@ test('extraTools appear in catalog endpoint', async () => {
     },
   }
 
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -844,7 +822,7 @@ test('extraTools are appended after bundle tools', async () => {
     },
   }
 
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -864,18 +842,20 @@ test('extraTools are appended after bundle tools', async () => {
   await app.close()
 })
 
-test('Slice 1 composed route/auth proof: standalone delegates its trusted scope to the canonical Host table', async () => {
+test('Final composed route/auth proof: standalone delegates its trusted scope to the canonical Host table', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-standalone-capabilities-')
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
+    authToken: 'composition-proof-token',
   })
 
   try {
     const catalogRes = await app.inject({
       method: 'GET',
       url: '/api/v1/agents/default/tools',
+      headers: { authorization: 'Bearer composition-proof-token' },
     })
     expect(catalogRes.statusCode).toBe(200)
     expect(
@@ -884,8 +864,19 @@ test('Slice 1 composed route/auth proof: standalone delegates its trusted scope 
         .tools.map((tool: { name: string }) => tool.name),
     ).toContain('bash')
 
-    const addressed = await app.inject({ method: 'GET', url: '/api/v1/agents' })
+    const denied = await app.inject({ method: 'GET', url: '/api/v1/agents' })
+    expect(denied.statusCode).toBe(401)
+    const addressed = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agents',
+      headers: { authorization: 'Bearer composition-proof-token' },
+    })
     expect(addressed.statusCode).toBe(200)
+    expect((await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/search?q=proof',
+      headers: { authorization: 'Bearer composition-proof-token' },
+    })).statusCode).toBe(200)
     expect(addressed.json()).toEqual([{ agentTypeId: 'default', label: 'Agent' }])
     assertComposedAgentHostRouteTable(app)
     expect(app.hasRoute({
@@ -896,6 +887,7 @@ test('Slice 1 composed route/auth proof: standalone delegates its trusted scope 
     const capabilitiesRes = await app.inject({
       method: 'GET',
       url: '/api/v1/capabilities',
+      headers: { authorization: 'Bearer composition-proof-token' },
     })
     expect(capabilitiesRes.statusCode).toBe(404)
   } finally {
@@ -903,13 +895,13 @@ test('Slice 1 composed route/auth proof: standalone delegates its trusted scope 
   }
 })
 
-test('createAgentApp throws clearly when templatePath is missing', async () => {
+test('createStandaloneAgentHostApp throws clearly when templatePath is missing', async () => {
   const parent = await makeTempDir('boring-ui-app-parent-')
   const workspaceRoot = join(parent, 'workspace')
   const missingTemplate = join(parent, 'missing-template')
 
   await expect(
-    createAgentApp({
+    createStandaloneAgentHostApp({
       workspaceRoot,
       mode: 'direct',
       logger: false,
@@ -936,7 +928,7 @@ test('externalPlugins=false keeps local plugin files out of the app catalog', as
     'utf-8',
   )
 
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -1000,7 +992,7 @@ test('real local plugin file remains callable and appears in app catalog', async
     content: [{ type: 'text', text: 'hello Ada' }],
   })
 
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -1031,7 +1023,7 @@ test('real local plugin file remains callable and appears in app catalog', async
 
 test('standalone catalog does NOT include get_ui_state or exec_ui', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-no-uitools-')
-  const app = await createAgentApp({ workspaceRoot, mode: 'direct', logger: false })
+  const app = await createStandaloneAgentHostApp({ workspaceRoot, mode: 'direct', logger: false })
   try {
     const res = await app.inject({ method: 'GET', url: '/api/v1/agents/default/tools' })
     expect(res.statusCode).toBe(200)
@@ -1050,7 +1042,7 @@ test('standalone catalog does NOT include get_ui_state or exec_ui', async () => 
 
 test('standalone /api/v1/ui/state does NOT exist (404)', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-no-uiroutes-')
-  const app = await createAgentApp({ workspaceRoot, mode: 'direct', logger: false })
+  const app = await createStandaloneAgentHostApp({ workspaceRoot, mode: 'direct', logger: false })
   try {
     const get = await app.inject({ method: 'GET', url: '/api/v1/ui/state' })
     expect(get.statusCode).toBe(404)
@@ -1074,7 +1066,7 @@ test('standalone /api/v1/ui/state does NOT exist (404)', async () => {
 
 test('addressed reload is available before the first turn', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-reload-route-')
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -1097,15 +1089,77 @@ test('addressed reload is available before the first turn', async () => {
   }
 })
 
+test('standalone reload digest follows relative Pi resource bytes from the workspace cwd', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-relative-reload-digest-')
+  await mkdir(join(workspaceRoot, 'skills', 'proof'), { recursive: true })
+  const skillPath = join(workspaceRoot, 'skills', 'proof', 'SKILL.md')
+  await writeFile(skillPath, '# Proof\n\nBefore.\n', 'utf8')
+  expect(workspaceRoot).not.toBe(process.cwd())
+  const app = await createStandaloneAgentHostApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    pi: { noSkills: true, additionalSkillPaths: ['skills'] },
+  })
+
+  try {
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/default/reload',
+      payload: { requestId: 'relative-resource-reload' },
+    })
+    expect(first.statusCode).toBe(200)
+
+    await writeFile(skillPath, '# Proof\n\nAfter.\n', 'utf8')
+    const changedReplay = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/default/reload',
+      payload: { requestId: 'relative-resource-reload' },
+    })
+    expect(changedReplay.statusCode).toBe(409)
+    expect(changedReplay.json()).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT } })
+  } finally {
+    await app.close()
+  }
+})
+
+test('standalone reload revalidates Pi resource bytes after applyReload', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-reload-revalidation-')
+  await mkdir(join(workspaceRoot, 'skills', 'proof'), { recursive: true })
+  const skillPath = join(workspaceRoot, 'skills', 'proof', 'SKILL.md')
+  await writeFile(skillPath, '# Proof\n\nBefore.\n', 'utf8')
+  const app = await createStandaloneAgentHostApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    pi: { noSkills: true, additionalSkillPaths: ['skills'] },
+    beforeReload: async () => {
+      await writeFile(skillPath, '# Proof\n\nChanged during reload.\n', 'utf8')
+    },
+  })
+
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/default/reload',
+      payload: { requestId: 'mutating-resource-reload' },
+    })
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN } })
+  } finally {
+    await app.close()
+  }
+})
+
 test('GET /api/v1/git/file-url 404-free and disabled for a non-git workspace', async () => {
   // Regression: the file-tree "Copy Git URL" action calls this route, which the
-  // workspace app serves via createAgentApp. It must be wired here (not only in
-  // registerAgentRoutes), or the action 404s. A bare temp dir is not a git
+  // workspace app serves via createStandaloneAgentHostApp. It must be wired here (not only in
+  // registerDirectAgentHostRoutes), or the action 404s. A bare temp dir is not a git
   // repo, so the route resolves to a disabled result rather than 404.
   const workspaceRoot = await makeTempDir('boring-ui-git-route-')
   const previousGitCeiling = process.env.GIT_CEILING_DIRECTORIES
   process.env.GIT_CEILING_DIRECTORIES = dirname(workspaceRoot)
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -1128,7 +1182,7 @@ test('GET /api/v1/git/file-url 404-free and disabled for a non-git workspace', a
 test('direct standalone sends every addressed mutation through the built-in ledger', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-app-legacy-ledger-')
   const harness = createDispatcherTestHarness()
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -1164,12 +1218,24 @@ test('direct standalone sends every addressed mutation through the built-in ledg
     expect((await followUp(2)).statusCode).toBe(202)
     expect((await followUp(1)).statusCode).toBe(202)
 
+    const conflictingClear = {
+      method: 'POST' as const,
+      url: `/api/v1/agents/default/sessions/${sessionId}/queue/clear`,
+      payload: { requestId: 'clear-conflict-ledger', clientNonce: 'clear-ledger', clientSeq: 1 },
+    }
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await app.inject(conflictingClear)
+      expect(response.statusCode).toBe(409)
+      expect(response.json()).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT } })
+    }
+
     for (const request of [
-      { url: `/api/v1/agents/default/sessions/${sessionId}/queue/clear`, payload: { requestId: 'clear-ledger', clientNonce: 'clear-ledger', clientSeq: 1 } },
+      { url: `/api/v1/agents/default/sessions/${sessionId}/queue/clear`, payload: { requestId: 'clear-ledger' } },
       { url: `/api/v1/agents/default/sessions/${sessionId}/interrupt`, payload: { requestId: 'interrupt-ledger' } },
       { url: `/api/v1/agents/default/sessions/${sessionId}/stop`, payload: { requestId: 'stop-ledger' } },
     ]) {
-      expect((await app.inject({ method: 'POST', ...request })).statusCode).toBe(202)
+      const response = await app.inject({ method: 'POST', ...request })
+      expect(response.statusCode, `${request.url}: ${response.body}`).toBe(202)
     }
     expect((await app.inject({ method: 'DELETE', url: `/api/v1/agents/default/sessions/${sessionId}?requestId=delete-ledger` })).statusCode).toBe(204)
   } finally {
@@ -1177,73 +1243,12 @@ test('direct standalone sends every addressed mutation through the built-in ledg
   }
 })
 
-test('createAgentApp preserves known legacy service errors and fences ambiguous completion', async () => {
-  const buildApp = async (failure: Error) => {
-    const harness = createDispatcherTestHarness()
-    const baseFactory = harness.factory
-    const app = await createAgentApp({
-      workspaceRoot: await makeTempDir('boring-agent-app-legacy-error-'),
-      mode: 'direct',
-      logger: false,
-      externalPlugins: false,
-      harnessFactory: async (input) => {
-        const built = await baseFactory(input)
-        return {
-          ...built,
-          async getPiSessionAdapter() {
-            throw failure
-          },
-        }
-      },
-    })
-    const created = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agents/default/sessions',
-      payload: { requestId: 'create-error-session' },
-    })
-    return { app, sessionId: created.json().sessionId as string }
-  }
-
-  const busy = await buildApp(Object.assign(new Error('session is busy'), {
-    statusCode: 409,
-    code: ErrorCode.enum.SESSION_LOCKED,
-    retryable: true,
-  }))
-  try {
-    const response = await busy.app.inject({
-      method: 'POST',
-      url: `/api/v1/agents/default/sessions/${busy.sessionId}/prompt`,
-      payload: { requestId: 'known-error', content: 'hello', clientNonce: 'known-error' },
-    })
-    expect(response.statusCode).toBe(409)
-    expect(response.json()).toMatchObject({ code: ErrorCode.enum.SESSION_LOCKED, message: 'session is busy' })
-  } finally {
-    await busy.app.close()
-  }
-
-  const ambiguous = await buildApp(new Error('connection dropped after dispatch'))
-  try {
-    const request = {
-      method: 'POST' as const,
-      url: `/api/v1/agents/default/sessions/${ambiguous.sessionId}/prompt`,
-      payload: { requestId: 'ambiguous-error', content: 'hello', clientNonce: 'ambiguous-error' },
-    }
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const response = await ambiguous.app.inject(request)
-      expect(response.statusCode).toBe(500)
-      expect(response.json()).toMatchObject({ error: 'Internal Server Error' })
-    }
-  } finally {
-    await ambiguous.app.close()
-  }
-})
-
-test('createAgentApp awaits the Agent Host funnel and contains no local construction path', async () => {
-  const source = await readFile(join(import.meta.dirname, '..', 'createAgentApp.ts'), 'utf8')
+test('createStandaloneAgentHostApp awaits the Agent Host funnel and contains no local construction path', async () => {
+  const source = await readFile(join(import.meta.dirname, '..', 'createStandaloneAgentHostApp.ts'), 'utf8')
 
   expect(source.match(/\bcreateAgentHost\s*\(/g)).toHaveLength(1)
-  expect(source).toMatch(/host\s*=\s*await createAgentHost\s*\(/)
-  expect(source).toMatch(/await resolveAgentHostCompatibilityComposition\s*\(/)
+  expect(source).toMatch(/created\s*=\s*await createAgentHost\s*\(/)
+  expect(source).toMatch(/created\.registerDirectRoutes\s*\(/)
   expect(source).not.toMatch(/\b(?:buildAgentComposition|createAgentRuntimeBridge|createCompositionRuntimeBridge|buildHarnessAgentTools|buildFilesystemAgentTools|createPiCodingAgentHarness)\s*\(/)
 })
 
@@ -1262,7 +1267,7 @@ test('GET /api/v1/git/file-url resolves a real repo via the host storage root', 
   await git('add', '.')
   await git('commit', '-m', 'init')
 
-  const app = await createAgentApp({ workspaceRoot, mode: 'direct', logger: false })
+  const app = await createStandaloneAgentHostApp({ workspaceRoot, mode: 'direct', logger: false })
   try {
     const res = await app.inject({ method: 'GET', url: '/api/v1/git/file-url?path=README.md' })
     expect(res.statusCode).toBe(200)

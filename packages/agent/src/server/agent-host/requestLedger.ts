@@ -82,6 +82,8 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
     this.transition(key, 'reject', (record) => {
       const allowed = failure.kind === 'gateway'
         ? record.state === 'pending-admission'
+          || record.state === 'admission-accepted'
+          || record.state === 'in-flight'
         : record.state === 'in-flight'
       if (!allowed) invalidTransition(record, 'reject')
       return { key: record.key, digest: record.digest, state: 'rejected', failure, updatedAt: Date.now() }

@@ -13,7 +13,7 @@ export function catalogRoutes(
   opts: CatalogRoutesOptions,
   done: (err?: Error) => void,
 ): void {
-  app.get(opts.path ?? "/api/v1/agent/catalog", async (request) => {
+  app.get(opts.path ?? "/api/v1/agents/:agentTypeId/tools", async (request) => {
     await opts.authorizeRequest?.(request)
     const tools = opts.getTools ? await opts.getTools(request) : opts.tools ?? []
     return {

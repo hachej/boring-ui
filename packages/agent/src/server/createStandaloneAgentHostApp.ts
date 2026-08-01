@@ -6,8 +6,6 @@ import { ErrorCode } from '../shared/error-codes'
 import type { AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
 import type { AgentTool } from '../shared/tool'
-import { canonicalDigest } from './agent-host/canonical'
-import type { CompatibilityResolvedAgentRuntimeScope } from './agent-host/buildAgentComposition'
 import { createAgentHost } from './agent-host/createAgentHost'
 import { registerAgentHostEnvironmentRoutes } from './agent-host/environmentHttpProjection'
 import type { AgentMeteringSink } from './pi-chat/metering'
@@ -20,6 +18,7 @@ import type { RuntimeBundle, RuntimeFilesystemBinding, RuntimeModeAdapter, Runti
 import { autoDetectMode, resolveMode } from './runtime/resolveMode'
 import type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
+import { createPiResourceDigestFence, createPiResourceDigestInput } from './piResourceDigest'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { WorkspaceProvisioningResult } from './workspace/provisioning'
 import {
@@ -41,13 +40,15 @@ export interface CreateStandaloneAgentHostAppOptions {
   authToken?: string
   version?: string
   logger?: boolean
-  /** Standalone compatibility defaults to a warm runtime; readiness smokes may keep binding lazy. */
+  /** Standalone defaults to a warm runtime; readiness smokes may keep binding lazy. */
   initializeRuntime?: boolean
   extraTools?: AgentTool[]
   disableDefaultFileTools?: boolean
   systemPromptAppend?: string
   harnessFactory?: AgentHarnessFactory
   pi?: PiHarnessOptions
+  /** Additional host roots allowed to contribute local Pi resource bytes. */
+  piResourceAuthorizedRoots?: string[]
   runtimeProvisioning?: WorkspaceProvisioningResult
   getRuntimeProvisioning?: () => WorkspaceProvisioningResult | undefined
   sessionNamespace?: string
@@ -76,8 +77,13 @@ export interface CreateStandaloneAgentHostAppOptions {
   sessionDir?: string
   sessionRoot?: string
   externalPlugins?: boolean
-  beforeReload?: () => void | import('./http/routes/reload').ReloadHookResult | undefined
-    | Promise<void | import('./http/routes/reload').ReloadHookResult | undefined>
+  beforeReload?: () => void | {
+    readonly diagnostics?: ReadonlyArray<{ source: string; message: string; pluginId?: string }>
+    readonly restart_warnings?: ReadonlyArray<{ id: string; surfaces: readonly string[]; message: string }>
+  } | undefined | Promise<void | {
+    readonly diagnostics?: ReadonlyArray<{ source: string; message: string; pluginId?: string }>
+    readonly restart_warnings?: ReadonlyArray<{ id: string; surfaces: readonly string[]; message: string }>
+  } | undefined>
   systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
   getPluginDiagnostics?: (args: {
     workspaceId: string
@@ -200,9 +206,53 @@ export async function createStandaloneAgentHostApp(
         return resolveEnvironment()
       },
       async resolveAuthorizedAgentRuntimeScope({ verifiedClaim, intent }) {
-        const reloadResult = intent.operation === 'reload' ? await options.beforeReload?.() : undefined
-        if (intent.operation === 'reload') lastReloadDiagnostics = reloadResult?.diagnostics ?? []
         const pi = resolvePi()
+        const identity = JSON.stringify([resolvedMode, sessionId, workspaceRoot, templatePath ?? null, pi, options.sessionNamespace ?? null])
+        const physicalBindingIdentity = JSON.stringify([resolvedMode, sessionId, workspaceRoot, templatePath ?? null])
+        const buildResourceDigestInput = async () => {
+          const hotResources = pi.getHotReloadableResources?.()
+          return createPiResourceDigestInput({
+            piCwd: workspaceRoot,
+            noSkills: pi.noSkills,
+            resourceSets: [{
+              promptParts: [
+                options.systemPromptAppend,
+                await options.systemPromptDynamic?.(),
+              ],
+              additionalSkillPaths: [
+                ...(pi.additionalSkillPaths ?? []),
+                ...(hotResources?.additionalSkillPaths ?? []),
+              ],
+              packages: [
+                ...(pi.packages ?? []),
+                ...(hotResources?.packages ?? []),
+              ],
+              extensionPaths: [
+                ...(pi.extensionPaths ?? []),
+                ...(hotResources?.extensionPaths ?? []),
+              ],
+            }],
+            authorizedRoots: [workspaceRoot, ...(options.piResourceAuthorizedRoots ?? [])],
+          })
+        }
+        const { resourceInputDigest, revalidateResourceInputs } = await createPiResourceDigestFence(buildResourceDigestInput)
+        if (intent.operation === 'reload') {
+          return {
+            identity,
+            physicalBindingIdentity,
+            resourceInputDigest,
+            revalidateResourceInputs,
+            sessionNamespace: options.sessionNamespace ?? '',
+            async applyReload() {
+              const result = await options.beforeReload?.()
+              lastReloadDiagnostics = result?.diagnostics ?? []
+              return result ? {
+                ...(result.diagnostics ? { diagnostics: result.diagnostics } : {}),
+                ...(result.restart_warnings ? { restartWarnings: result.restart_warnings } : {}),
+              } : undefined
+            },
+          }
+        }
         const externalTools: AgentTool[] = []
         if (options.externalPlugins !== false && modeAdapter.workspaceFsCapability === 'strong') {
           const loaded = await loadPlugins({ cwd: workspaceRoot })
@@ -219,12 +269,9 @@ export async function createStandaloneAgentHostApp(
           }))
         }
         return {
-          identity: JSON.stringify([resolvedMode, sessionId, workspaceRoot, templatePath ?? null, pi, options.sessionNamespace ?? null]),
-          physicalBindingIdentity: JSON.stringify([resolvedMode, sessionId, workspaceRoot, templatePath ?? null]),
-          resourceInputDigest: canonicalDigest(JSON.parse(JSON.stringify({
-            hotResources: pi.getHotReloadableResources?.() ?? null,
-            systemPromptAppend: options.systemPromptAppend ?? null,
-          }))),
+          identity,
+          physicalBindingIdentity,
+          resourceInputDigest,
           sessionNamespace: options.sessionNamespace ?? '',
           pi,
           extraTools: [...(options.extraTools ?? []), ...externalTools],
@@ -245,15 +292,9 @@ export async function createStandaloneAgentHostApp(
                 },
               }
             : {}),
-          ...(options.disableDefaultFileTools || options.sessionDir
-            ? {
-                compatibility: {
-                  ...(options.disableDefaultFileTools ? { includeFilesystemTools: false } : {}),
-                  ...(options.sessionDir ? { sessionDir: options.sessionDir } : {}),
-                },
-              }
-            : {}),
-        } as Omit<CompatibilityResolvedAgentRuntimeScope, 'environment'>
+          ...(options.disableDefaultFileTools ? { includeFilesystemTools: false } : {}),
+          ...(options.sessionDir ? { sessionDir: options.sessionDir } : {}),
+        }
       },
     })
 

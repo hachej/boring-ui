@@ -1621,7 +1621,6 @@ describe("WorkspaceAgentFront", () => {
       expect(call[1]?.headers).not.toHaveProperty("X-BORING-WORKSPACE-ID")
     }
     expect(fetchMock.mock.calls.some(([input]) => isDefaultSessionsCollectionUrl(String(input)))).toBe(false)
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/" + "chat"))).toBe(false)
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/ready-status"))).toBe(false)
   })
 

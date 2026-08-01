@@ -53,7 +53,7 @@ describe('embedded session isolation', () => {
     ])
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
     expect(results.filter((result) => result.status === 'rejected')).toEqual([
-      expect.objectContaining({ reason: expect.objectContaining({ code: 'AGENT_REQUEST_IN_PROGRESS' }) }),
+      expect.objectContaining({ reason: expect.objectContaining({ code: AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS }) }),
     ])
     expect((await fixture.gateway.listSessions({ scope, agentTypeId: 'alpha' })).sessions).toHaveLength(1)
   })

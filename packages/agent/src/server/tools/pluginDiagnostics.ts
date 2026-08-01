@@ -6,7 +6,7 @@
  * sources:
  *
  *  - `lastReloadDiagnostics`: diagnostics captured by the most recent
- *    /api/v1/agent/reload (hook + harness resource diagnostics).
+ *    /api/v1/agents/:agentTypeId/reload (hook + harness resource diagnostics).
  *  - `resourceDiagnostics`: live Pi skill/extension load diagnostics for the
  *    current session, read straight from the harness.
  *  - `pluginErrors`: host-provided plugin load/preflight errors for the

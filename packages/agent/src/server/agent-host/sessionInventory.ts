@@ -5,12 +5,6 @@ import type { SessionSummary } from '../../shared/session'
 import { PiSessionStore } from '../harness/pi-coding-agent/sessions'
 import type { CompiledAgentHostAgentSpec, ResolvedAgentRuntimeScope } from './types'
 
-interface InventoryRuntimeScope extends ResolvedAgentRuntimeScope {
-  readonly compatibility?: {
-    readonly sessionDir?: string
-  }
-}
-
 export interface AgentSessionRuntimeAuthority {
   readonly runtimeScope: ResolvedAgentRuntimeScope
   /** Absent only for a pre-AH0 transcript created before runtime pins existed. */
@@ -43,7 +37,7 @@ export class AgentSessionInventory {
   constructor(
     private readonly sessionRoot: string | undefined,
     private readonly compiledById: ReadonlyMap<string, CompiledAgentHostAgentSpec>,
-    private readonly resolveRuntimeScope: (
+    private readonly resolveAgentRuntimeScope: (
       agentTypeId: string,
       scope: AuthorizedAgentScope,
       claim: VerifiedAgentScopeClaim,
@@ -86,13 +80,13 @@ export class AgentSessionInventory {
     agentTypeId: string,
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
-  ): Promise<{ runtimeScope: InventoryRuntimeScope; store: PiSessionStore } | undefined> {
+  ): Promise<{ runtimeScope: ResolvedAgentRuntimeScope; store: PiSessionStore } | undefined> {
     const agent = this.compiledById.get(agentTypeId)
     if (!agent) return undefined
-    const runtimeScope = await this.resolveRuntimeScope(agentTypeId, scope, claim) as InventoryRuntimeScope
+    const runtimeScope = await this.resolveAgentRuntimeScope(agentTypeId, scope, claim)
     const sessionNamespace = sessionNamespaceForAgent(agent, claim.workspaceScopeId, runtimeScope.sessionNamespace)
     const candidate = new PiSessionStore(runtimeScope.environment.workspaceRoot, {
-      sessionDir: runtimeScope.compatibility?.sessionDir,
+      sessionDir: runtimeScope.sessionDir,
       sessionNamespace,
       sessionRoot: this.sessionRoot,
       storageCwd: runtimeScope.environment.workspaceRoot,

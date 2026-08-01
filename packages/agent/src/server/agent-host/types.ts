@@ -9,8 +9,7 @@ import type {
   JsonValue,
   VerifiedAgentScopeClaim,
 } from '../../shared/index'
-import type { Agent } from '../../shared/events'
-import type { AgentHarness, AgentHarnessFactory } from '../../shared/harness'
+import type { AgentHarnessFactory } from '../../shared/harness'
 import type { TelemetrySink } from '../../shared/telemetry'
 import type { AgentMeteringSink } from '../pi-chat/metering'
 import type {
@@ -21,8 +20,6 @@ import type {
 import type { AgentRuntimeHostOperations } from '../runtime/runtimeHost'
 import type { WorkspaceProvisioningResult } from '../workspace/provisioning'
 import type { PiHarnessOptions } from '../harness/pi-coding-agent/createHarness'
-import type { AgentCoreSessionService, PiChatSessionService } from '../../core/piChatSessionService'
-import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import type { AgentCapabilityReadiness } from '../runtime/readyStatus'
 import type { Workspace } from '../../shared/workspace'
 import type { FileSearch } from '../../shared/file-search'
@@ -59,25 +56,7 @@ export interface AgentRequestKey {
 }
 
 export type AgentRequestFailure =
-  | { readonly kind: 'gateway'; readonly error: AgentGatewayErrorDTO }
-  | {
-      /** Server-only compatibility envelope; never returned by AgentGateway. */
-      readonly kind: 'legacy-admission'
-      readonly code: string
-      readonly statusCode: 500
-      readonly message: string
-      readonly details?: JsonValue
-    }
-  | {
-      /** Server-only observed legacy service failure; never returned by AgentGateway. */
-      readonly kind: 'legacy-service'
-      readonly name: string
-      readonly message: string
-      readonly code?: string
-      readonly statusCode?: number
-      readonly retryable?: boolean
-      readonly details?: JsonValue
-    }
+  { readonly kind: 'gateway'; readonly error: AgentGatewayErrorDTO }
 
 export interface AgentRequestLedgerRecordBase {
   readonly key: AgentRequestKey
@@ -203,16 +182,34 @@ export interface ResolvedAgentRuntimeScope {
   readonly physicalBindingIdentity?: string
   /** Canonical digest of the immutable plugin/resource inputs used by reload. */
   readonly resourceInputDigest?: string
+  /**
+   * Side-effect-free fence for path-backed reload resources. The Host invokes
+   * it after classification, immediately before the effect, and after every
+   * awaited apply/load stage so a successful receipt always matches the
+   * resourceInputDigest recorded in the ledger.
+   */
+  readonly revalidateResourceInputs?: () => Promise<void>
   readonly environment: ResolvedEnvironmentScope
   readonly sessionNamespace: string
   readonly pi?: PiHarnessOptions
   readonly extraTools?: readonly AgentTool[]
   readonly includeFilesystemTools?: boolean
   readonly includeUploadTools?: boolean
+  readonly sessionDir?: string
   readonly reloadMetadata?: {
     readonly diagnostics?: ReadonlyArray<{ readonly source: string; readonly message: string; readonly pluginId?: string }>
     readonly restartWarnings?: ReadonlyArray<{ readonly id: string; readonly surfaces: readonly string[]; readonly message: string }>
   }
+  /**
+   * Host-internal reload mutation. Candidate identity fields above must be
+   * resolved without mutating plugin, backend, or runtime resource state.
+   * The Host invokes this callback only after durable ownership, admission,
+   * immutable identity classification, and the binding operation fence.
+   */
+  readonly applyReload?: (input: { readonly runtimeBundle: RuntimeBundle }) => Promise<{
+    readonly diagnostics?: ReadonlyArray<{ readonly source: string; readonly message: string; readonly pluginId?: string }>
+    readonly restartWarnings?: ReadonlyArray<{ readonly id: string; readonly surfaces: readonly string[]; readonly message: string }>
+  } | undefined>
   readonly getFilesystemBindings?: (input: {
     readonly scope: VerifiedAgentScopeClaim
     readonly sessionId?: string
@@ -254,78 +251,6 @@ export interface AgentHostDispatcherRunInput extends WorkspaceAgentDirectRunInpu
   readonly request?: FastifyRequest
 }
 
-export interface AgentHostLegacyProjectionComposition {
-  readonly agent: Agent
-  readonly harness: AgentHarness
-  readonly service: AgentCoreSessionService
-  readonly tools: readonly AgentTool[]
-  readonly runtimeBundle: RuntimeBundle
-  readonly readyTracker: ReadyStatusTracker
-  retire(): Promise<void>
-}
-
-/** Narrow Host-owned facade used only while mounting the compatibility profile. */
-export interface AgentHostLegacyProjectionRuntime {
-  readonly gateway: AgentGateway
-  runWithWorkspaceAgent(
-    input: AgentHostDispatcherRunInput,
-    run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,
-  ): Promise<void>
-  resolveComposition(
-    agentTypeId: string,
-    scope: AuthorizedAgentScope,
-  ): Promise<AgentHostLegacyProjectionComposition>
-  createAddressedRoutes(options: {
-    readonly authorizeRequest: (request: FastifyRequest) => Promise<AuthorizedAgentScope>
-    readonly defaultAgentTypeId: string
-    readonly defaultSessionId?: string
-    readonly filterModels?: import('../http/routes/models').ModelsRoutesOptions['filterModels']
-    readonly sessionChangesTracker?: import('../http/sessionChangesTracker').SessionChangesTracker
-  }): FastifyPluginAsync
-  createPiChatService(input: {
-    readonly service: AgentCoreSessionService
-    readonly scope: AuthorizedAgentScope
-    readonly agentTypeId: string
-  }): PiChatSessionService
-}
-
-export interface AgentHostLegacyProjectionLifecycle {
-  startDraining(): void
-  closeBindings(): Promise<void>
-}
-
-export interface AgentHostLegacyRoutePolicyMountInput {
-  readonly app: import('fastify').FastifyInstance
-  readonly runtime: AgentHostLegacyProjectionRuntime
-  readonly defaultAgentTypeId: string
-  registerLifecycle(lifecycle: AgentHostLegacyProjectionLifecycle): void
-}
-
-/**
- * Normalized legacy/application route profile mounted only through the Host.
- * Omission keeps the addressed-only HTTP projection.
- */
-export interface AgentHostLegacyRoutePolicy {
-  mount(input: AgentHostLegacyRoutePolicyMountInput): Promise<void>
-}
-
-interface AgentHostHttpProjectionBaseOptions {
-  readonly defaultAgentTypeId: string
-}
-
-/** Addressed Gateway projection, optionally with its frozen Pi-chat aliases. */
-export type AgentHostAddressedHttpProjectionOptions = AgentHostHttpProjectionBaseOptions & {
-  readonly authorizeRequest: (
-    request: FastifyRequest,
-  ) => Promise<AuthorizedAgentScope>
-  readonly legacyPiChatAliases?: boolean
-  readonly defaultSessionId?: string
-  readonly filterModels?: import('../http/routes/models').ModelsRoutesOptions['filterModels']
-  readonly sessionChangesTracker?: import('../http/sessionChangesTracker').SessionChangesTracker
-  readonly legacyRoutePolicy?: never
-}
-
-/** Final additive Host projection contract. Legacy union remains until Slice 6. */
 export interface AgentHostDirectProjectionOptions {
   readonly authorizeAgentRequest: (
     request: FastifyRequest,
@@ -334,17 +259,6 @@ export interface AgentHostDirectProjectionOptions {
   readonly sessionChangesTracker?: import('../http/sessionChangesTracker').SessionChangesTracker
   readonly defaultSessionId?: string
 }
-
-/** Full legacy/application route profile with its own normalized scope bridge. */
-export type AgentHostLegacyHttpProjectionOptions = AgentHostHttpProjectionBaseOptions & {
-  readonly legacyRoutePolicy: AgentHostLegacyRoutePolicy
-  readonly authorizeRequest?: never
-  readonly legacyPiChatAliases?: never
-}
-
-export type AgentHostHttpProjectionOptions =
-  | AgentHostAddressedHttpProjectionOptions
-  | AgentHostLegacyHttpProjectionOptions
 
 export interface AgentHostDescription {
   readonly hostId: string
@@ -370,11 +284,6 @@ export interface CreateAgentHostOptions {
   readonly runtimeModeAdapter: RuntimeModeAdapter
   readonly runtimeHost?: AgentRuntimeHostOperations
   readonly sessionRoot?: string
-  /** Compatibility resolver retained only until #1029 Slice 6. */
-  readonly resolveRuntimeScope?: (input: {
-    readonly agentTypeId: string
-    readonly scope: AuthorizedAgentScope
-  }) => Promise<ResolvedAgentRuntimeScope>
   readonly resolveAuthorizedEnvironmentScope?: (input: {
     readonly authorizedScope: AuthorizedAgentScope
     readonly verifiedClaim: VerifiedAgentScopeClaim
@@ -396,8 +305,8 @@ export interface CreateAgentHostOptions {
   readonly requestLedger?: AgentRequestLedger
   /** Durable effect ledger path, independent of transcript/session storage. */
   readonly requestLedgerPath?: string
-  /** Explicit test/dev bridge while legacy compositions still construct an in-memory ledger. */
-  readonly requestLedgerCompatibilityMode?: 'test' | 'development'
+  /** Explicit test/dev opt-in for an in-memory ledger. */
+  readonly inMemoryRequestLedgerMode?: 'test' | 'development'
   readonly requestRetentionMs?: number
   readonly effectAdmission?: AgentEffectAdmission
   readonly shutdownGraceMs?: number
@@ -407,7 +316,6 @@ export interface CreateAgentHostOptions {
 export interface CreatedAgentHost {
   readonly host: AgentHostHandle
   readonly gateway: AgentGateway
-  registerRoutes(options: AgentHostHttpProjectionOptions): FastifyPluginAsync
   registerDirectRoutes(options: AgentHostDirectProjectionOptions): FastifyPluginAsync
   acquireEnvironment(input: {
     readonly authorizedScope: AuthorizedAgentScope

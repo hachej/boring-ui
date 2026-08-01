@@ -22,11 +22,6 @@ import {
   createStandaloneAgentHostApp,
   type CreateStandaloneAgentHostAppOptions,
 } from '../src/server/createStandaloneAgentHostApp'
-import {
-  registerAgentRoutes as registerAgentRoutesBase,
-  type RegisterAgentRoutesOptions,
-} from '../src/server/registerAgentRoutes'
-import type { FastifyInstance } from 'fastify'
 
 export async function createTestStandaloneAgentHostApp(
   options: CreateStandaloneAgentHostAppOptions = {},
@@ -37,22 +32,6 @@ export async function createTestStandaloneAgentHostApp(
       ? createAgentSandboxRuntimeModeAdapter(mode)
       : undefined)
   return await createStandaloneAgentHostApp({
-    ...options,
-    ...(runtimeModeAdapter ? { runtimeModeAdapter } : {}),
-    runtimeHost: options.runtimeHost ?? agentSandboxRuntimeHostOperations,
-  })
-}
-
-export async function registerTestAgentRoutes(
-  app: FastifyInstance,
-  options: RegisterAgentRoutesOptions,
-): Promise<void> {
-  const mode = options.runtimeModeAdapter?.id ?? options.mode ?? 'direct'
-  const runtimeModeAdapter = options.runtimeModeAdapter
-    ?? (mode === 'direct' || mode === 'local' || mode === 'vercel-sandbox'
-      ? createAgentSandboxRuntimeModeAdapter(mode)
-      : undefined)
-  await registerAgentRoutesBase(app, {
     ...options,
     ...(runtimeModeAdapter ? { runtimeModeAdapter } : {}),
     runtimeHost: options.runtimeHost ?? agentSandboxRuntimeHostOperations,

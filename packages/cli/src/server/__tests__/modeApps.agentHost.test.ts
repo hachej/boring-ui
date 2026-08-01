@@ -1,6 +1,7 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import type { FastifyInstance } from "fastify"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import * as agentServer from "@hachej/boring-agent/server"
@@ -9,6 +10,39 @@ import { assertComposedAgentHostRouteTable } from "@hachej/boring-agent/server/a
 import { PiSessionStore } from "../../../../agent/src/server/harness/pi-coding-agent/sessions.js"
 import { createLocalWorkspaceRegistry } from "../localWorkspaces.js"
 import { createFolderModeApp, createWorkspacesModeApp } from "../modeApps.js"
+
+const automationFailure = vi.hoisted(() => ({ enabled: false }))
+const pluginFrontFailure = vi.hoisted(() => ({ enabled: false, closeCalls: 0 }))
+
+vi.mock("../pluginFrontRuntime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../pluginFrontRuntime.js")>()
+  return {
+    ...actual,
+    createPluginFrontRuntimeHost: async (...args: Parameters<typeof actual.createPluginFrontRuntimeHost>) => {
+      const host = await actual.createPluginFrontRuntimeHost(...args)
+      if (!pluginFrontFailure.enabled) return host
+      return {
+        ...host,
+        async registerRoutes() { throw new Error("injected folder runtime route failure") },
+        async close() {
+          pluginFrontFailure.closeCalls += 1
+          await host.close()
+        },
+      }
+    },
+  }
+})
+
+vi.mock("@hachej/boring-automation/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@hachej/boring-automation/server")>()
+  return {
+    ...actual,
+    automationRoutes: async (...args: Parameters<typeof actual.automationRoutes>) => {
+      if (automationFailure.enabled) throw new Error("injected post-mount CLI init failure")
+      return await actual.automationRoutes(...args)
+    },
+  }
+})
 
 vi.mock("../pluginDiscovery.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../pluginDiscovery.js")>()
@@ -35,6 +69,9 @@ function restoreEnv(name: "HOME" | "BORING_AGENT_SESSION_ROOT", value: string | 
 }
 
 afterEach(async () => {
+  automationFailure.enabled = false
+  pluginFrontFailure.enabled = false
+  pluginFrontFailure.closeCalls = 0
   restoreEnv("HOME", originalHome)
   restoreEnv("BORING_AGENT_SESSION_ROOT", originalSessionRoot)
   vi.restoreAllMocks()
@@ -53,6 +90,9 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
 
   const registryPath = join(registryRoot, "workspaces.yaml")
   const workspace = await createLocalWorkspaceRegistry(registryPath).add(workspaceRoot)
+  const skillPath = join(workspaceRoot, ".agents", "skills", "reload-fixture", "SKILL.md")
+  await mkdir(join(workspaceRoot, ".agents", "skills", "reload-fixture"), { recursive: true })
+  await writeFile(skillPath, "# Reload fixture\n\nBefore reload.\n", "utf8")
   const rollbackReader = new PiSessionStore(resolve(workspaceRoot))
   const created = await rollbackReader.create(
     { workspaceId: workspace.id, userId: "local" },
@@ -89,11 +129,48 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
     registryPath,
     provisionWorkspace: false,
   })
-  return { app, workspace, sessionId, compatibleSessionIds, transcript, transcriptPath, createAgentHost, rollbackReader }
+  return { app, workspace, sessionId, compatibleSessionIds, transcript, transcriptPath, skillPath, createAgentHost, rollbackReader }
 }
 
 describe.sequential("CLI Agent Host composition", () => {
-  it("Slice 4 composed route/auth proof: CLI folder mode inherits Workspace's direct Host projection", async () => {
+  it("closes folder-mode Host and front runtime when post-mount runtime route init fails", async () => {
+    const workspaceRoot = await temporaryRoot("boring-cli-folder-post-mount-cleanup-")
+    pluginFrontFailure.enabled = true
+    await expect(createFolderModeApp({
+      workspaceRoot,
+      mode: "direct",
+      provisionWorkspace: false,
+    })).rejects.toThrow("injected folder runtime route failure")
+    expect(pluginFrontFailure.closeCalls).toBe(1)
+  })
+
+  it("closes the CLI Host exactly once when awaited post-mount initialization fails", async () => {
+    const registryRoot = await temporaryRoot("boring-cli-post-mount-cleanup-")
+    const hostClose = vi.fn(async () => {})
+    vi.spyOn(agentServer, "createAgentHost").mockResolvedValue({
+      host: {
+        hostId: "cli-cleanup-test",
+        describe: async () => ({ hostId: "cli-cleanup-test", agents: [], draining: false }),
+        drain: vi.fn(async () => {}),
+        close: hostClose,
+      },
+      gateway: {} as never,
+      acquireEnvironment: vi.fn(async () => { throw new Error("unused") }),
+      runWithWorkspaceAgent: vi.fn(async () => { throw new Error("unused") }),
+      registerDirectRoutes: vi.fn(() => async (app: FastifyInstance) => {
+        app.addHook("onClose", hostClose)
+      }),
+    })
+    automationFailure.enabled = true
+    await expect(createWorkspacesModeApp({
+      mode: "direct",
+      registryPath: join(registryRoot, "workspaces.yaml"),
+      provisionWorkspace: false,
+    })).rejects.toThrow("injected post-mount CLI init failure")
+    expect(hostClose).toHaveBeenCalledOnce()
+  })
+
+  it("Final composed route/auth proof: CLI folder mode inherits Workspace's direct Host projection", async () => {
     const workspaceRoot = await temporaryRoot("boring-cli-folder-agent-host-")
     const sessionRoot = await temporaryRoot("boring-cli-folder-agent-sessions-")
     restoreEnv("BORING_AGENT_SESSION_ROOT", sessionRoot)
@@ -116,7 +193,11 @@ describe.sequential("CLI Agent Host composition", () => {
         url: "/api/v1/agents/:agentTypeId/sessions/:sessionId/attachments/:messageId/:index",
       })).toBe(true)
       expect((await app.inject({ method: "GET", url: "/api/v1/agents" })).statusCode).toBe(200)
-      expect((await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })).statusCode).toBe(404)
+      expect((await app.inject({ method: "GET", url: "/api/v1/files/search?q=proof" })).statusCode).toBe(200)
+      expect((await app.inject({
+        method: "GET",
+        url: "/api/v1/files/raw?path=missing.txt&workspaceId=foreign",
+      })).statusCode).toBe(403)
     } finally {
       await app.close()
     }
@@ -126,7 +207,7 @@ describe.sequential("CLI Agent Host composition", () => {
     ["unset", false],
     ["set", true],
   ] as const)(
-    "Slice 1 composed route/auth proof: CLI workspaces mode uses one Host and preserves transcript bytes with root %s",
+    "Final composed route/auth proof: CLI workspaces mode uses one Host and preserves transcript bytes with root %s",
     async (_label, useConfiguredSessionRoot) => {
       const fixture = await fixtureApp(useConfiguredSessionRoot)
       const headers = { "x-boring-workspace-id": fixture.workspace.id }
@@ -147,21 +228,22 @@ describe.sequential("CLI Agent Host composition", () => {
         const addressed = await fixture.app.inject({ method: "GET", url: "/api/v1/agents", headers })
         expect(addressed.statusCode, addressed.body).toBe(200)
         expect(addressed.json()).toEqual([{ agentTypeId: "default", label: "Agent" }])
+        expect((await fixture.app.inject({
+          method: "GET",
+          url: "/api/v1/files/search?q=proof",
+          headers,
+        })).statusCode).toBe(200)
         expect(fixture.app.hasRoute({
           method: "POST",
           url: "/api/v1/agents/:agentTypeId/reload",
         })).toBe(true)
-
-        const legacyCatalog = await fixture.app.inject({ method: "GET", url: "/api/v1/agent/catalog", headers })
-        expect(legacyCatalog.statusCode).toBe(404)
-        expect(fixture.app.hasRoute({ method: "GET", url: "/api/v1/agent/catalog" })).toBe(false)
 
         const addressedSessions = await fixture.app.inject({
           method: "GET",
           url: "/api/v1/agents/default/sessions",
           headers,
         })
-        expect(addressedSessions.statusCode).toBe(200)
+        expect(addressedSessions.statusCode, addressedSessions.body).toBe(200)
         expect(addressedSessions.json().sessions
           .map((session: { ref: { sessionId: string } }) => session.ref.sessionId)
           .sort()).toEqual(fixture.compatibleSessionIds)
@@ -177,6 +259,21 @@ describe.sequential("CLI Agent Host composition", () => {
           state: { sessionId: fixture.sessionId, status: "idle" },
         })
         expect(await readFile(fixture.transcriptPath, "utf8")).toBe(fixture.transcript)
+
+        const reloadRequest = {
+          method: "POST" as const,
+          url: "/api/v1/agents/default/reload",
+          headers,
+          payload: { requestId: "cli-resource-reload", sessionId: fixture.sessionId },
+        }
+        expect((await fixture.app.inject(reloadRequest)).statusCode).toBe(200)
+        expect((await fixture.app.inject(reloadRequest)).statusCode).toBe(200)
+        await writeFile(fixture.skillPath, "# Reload fixture\n\nAfter reload.\n", "utf8")
+        const changedResourceReplay = await fixture.app.inject(reloadRequest)
+        expect(changedResourceReplay.statusCode).toBe(409)
+        expect(changedResourceReplay.json()).toMatchObject({
+          error: { code: "AGENT_REQUEST_CONFLICT" },
+        })
 
         const unknownWorkspace = await fixture.app.inject({
           method: "GET",

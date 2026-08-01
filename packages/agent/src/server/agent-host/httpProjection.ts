@@ -13,33 +13,23 @@ import {
   type IdempotentQueueClear,
 } from '../../shared/index'
 import type { PiChatSessionService } from '../../core/piChatSessionService'
-import { piChatRoutes } from '../http/routes/piChat'
 import { ErrorCode } from '../../shared/error-codes'
-import type { AgentHostAddressedHttpProjectionOptions, AgentHostHandle } from './types'
+import type { AgentHostDirectProjectionOptions, AgentHostHandle } from './types'
 import {
   createAgentHostRuntimeCapabilityRoutes,
   type AgentHostRuntimeCapabilityProjection,
 } from './runtimeCapabilityProjection'
+import { projectStableServiceError } from './stableServiceError'
 
 const ADDRESSED_HEARTBEAT_INTERVAL_MS = 25_000
 const SAFE_AGENT_TYPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 
-type ProjectionOptions = Omit<AgentHostAddressedHttpProjectionOptions, 'defaultAgentTypeId'> & {
-  readonly defaultAgentTypeId?: string
-}
+type ProjectionOptions = AgentHostDirectProjectionOptions
 
 interface ProjectionInput {
   readonly host: AgentHostHandle
   readonly gateway: AgentGateway
   readonly options: ProjectionOptions
-  /** Compatibility wrappers already own parent Fastify lifecycle hooks. */
-  readonly manageLifecycle?: boolean
-  /** The compatibility parent claimed ownership before installing lifecycle hooks. */
-  readonly projectionClaimed?: boolean
-  readonly resolveLegacyPiChatService: (
-    request: FastifyRequest,
-    agentTypeId?: string,
-  ) => Promise<PiChatSessionService>
   readonly resolveAddressedPiChatService: (
     request: FastifyRequest,
     agentTypeId: string,
@@ -198,6 +188,10 @@ function sendError(reply: FastifyReply, error: unknown): FastifyReply {
   if (error instanceof AgentGatewayError) {
     return reply.code(statusForGatewayError(error.code)).send({ error: error.toJSON() })
   }
+  const stable = projectStableServiceError(error)
+  if (stable) {
+    return reply.code(stable.statusCode).send({ error: stable.error })
+  }
   throw error
 }
 
@@ -207,7 +201,7 @@ async function withConnection<T>(
   ref: AgentSessionRef,
   action: (connection: AgentSessionConnection) => Promise<T>,
 ): Promise<T> {
-  const scope = await input.options.authorizeRequest(request)
+  const scope = await input.options.authorizeAgentRequest(request)
   const connection = await input.gateway.connectSession({ scope, ref })
   try {
     return await action(connection)
@@ -221,7 +215,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     const query = parseWithSchema(EmptyQuerySchema, request.query, reply, 'query')
     if (!query) return
     try {
-      return await input.gateway.listAgents({ scope: await input.options.authorizeRequest(request) })
+      return await input.gateway.listAgents({ scope: await input.options.authorizeAgentRequest(request) })
     } catch (error) {
       return sendError(reply, error)
     }
@@ -234,7 +228,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!query) return
     try {
       return await input.gateway.listSessions({
-        scope: await input.options.authorizeRequest(request),
+        scope: await input.options.authorizeAgentRequest(request),
         agentTypeId: params.agentTypeId,
         cursor: query.cursor,
         limit: query.limit,
@@ -251,7 +245,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!body) return
     try {
       const ref = await input.gateway.createSession({
-        scope: await input.options.authorizeRequest(request),
+        scope: await input.options.authorizeAgentRequest(request),
         agentTypeId: params.agentTypeId,
         requestId: body.requestId ?? randomUUID(),
         title: body.title,
@@ -269,7 +263,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!query) return
     try {
       return await input.gateway.readSessionState({
-        scope: await input.options.authorizeRequest(request),
+        scope: await input.options.authorizeAgentRequest(request),
         ref: params,
       })
     } catch (error) {
@@ -332,32 +326,46 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!query) return
 
     let connection: AgentSessionConnection | undefined
+    let connectionClose: Promise<void> | undefined
+    let heartbeat: ReturnType<typeof setInterval> | undefined
+    let clientClosed = request.raw.aborted
+    let listenersRemoved = false
+    const closeConnection = () => {
+      if (!connection) return Promise.resolve()
+      connectionClose ??= connection.close().catch(() => {})
+      return connectionClose
+    }
+    const close = () => {
+      clientClosed = true
+      if (!listenersRemoved) {
+        listenersRemoved = true
+        request.raw.off('aborted', close)
+        reply.raw.off('close', close)
+      }
+      if (heartbeat) {
+        clearInterval(heartbeat)
+        heartbeat = undefined
+      }
+      void closeConnection()
+    }
+    request.raw.once('aborted', close)
+    reply.raw.once('close', close)
+    if (request.raw.aborted) close()
     try {
       connection = await input.gateway.connectSession({
-        scope: await input.options.authorizeRequest(request),
+        scope: await input.options.authorizeAgentRequest(request),
         ref: params,
         cursor: query.cursor,
       })
+      if (clientClosed) {
+        await closeConnection()
+        return reply
+      }
       const activeConnection = connection
       const stream = new PassThrough()
-      let heartbeat: ReturnType<typeof setInterval> | undefined
-      let closed = request.raw.aborted
       const writeFrame = (frame: unknown) => {
-        if (!closed) stream.write(`${JSON.stringify(frame)}\n`)
+        if (!clientClosed) stream.write(`${JSON.stringify(frame)}\n`)
       }
-      const close = () => {
-        if (closed) return
-        closed = true
-        request.raw.off('aborted', close)
-        reply.raw.off('close', close)
-        if (heartbeat) {
-          clearInterval(heartbeat)
-          heartbeat = undefined
-        }
-        void activeConnection.close().catch(() => {})
-      }
-      request.raw.once('aborted', close)
-      reply.raw.once('close', close)
       const writeHeartbeat = () => writeFrame({ type: 'heartbeat', now: new Date().toISOString() })
       heartbeat = setInterval(writeHeartbeat, ADDRESSED_HEARTBEAT_INTERVAL_MS)
       heartbeat.unref()
@@ -366,11 +374,11 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
         try {
           for await (const event of activeConnection.events) writeFrame(event)
         } finally {
-          if (!closed) stream.end()
+          if (!clientClosed) stream.end()
           close()
         }
       })().catch((error) => {
-        if (!closed) stream.destroy(error instanceof Error ? error : new Error(String(error)))
+        if (!clientClosed) stream.destroy(error instanceof Error ? error : new Error(String(error)))
         close()
       })
       return reply
@@ -379,7 +387,10 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
         .header('X-Accel-Buffering', 'no')
         .send(stream)
     } catch (error) {
-      await connection?.close().catch(() => {})
+      const wasClientClosed = clientClosed
+      close()
+      await closeConnection()
+      if (wasClientClosed) return reply
       return sendError(reply, error)
     }
   })
@@ -391,7 +402,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!body) return
     try {
       return await input.gateway.renameSession({
-        scope: await input.options.authorizeRequest(request),
+        scope: await input.options.authorizeAgentRequest(request),
         ref: params,
         requestId: body.requestId,
         title: body.title,
@@ -410,7 +421,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!body) return
     try {
       await input.gateway.deleteSession({
-        scope: await input.options.authorizeRequest(request),
+        scope: await input.options.authorizeAgentRequest(request),
         ref: params,
         requestId: query.requestId ?? randomUUID(),
       })
@@ -494,15 +505,13 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
 /** Awaited Fastify projection for the addressed Gateway surface. */
 export function createAgentHostRoutes(input: ProjectionInput): FastifyPluginAsync {
   return async (app) => {
-    if (!input.projectionClaimed) claimAgentHostProjection(app, input.host)
-    if (input.manageLifecycle !== false) {
-      app.addHook('preClose', async () => {
-        await input.host.drain()
-      })
-      app.addHook('onClose', async () => {
-        await input.host.close()
-      })
-    }
+    claimAgentHostProjection(app, input.host)
+    app.addHook('preClose', async () => {
+      await input.host.drain()
+    })
+    app.addHook('onClose', async () => {
+      await input.host.close()
+    })
     app.setErrorHandler((error, _request, reply) => {
       if ((error as { code?: unknown }).code === 'FST_ERR_CTP_INVALID_JSON_BODY') {
         sendValidationError(reply, 'body')
@@ -515,17 +524,6 @@ export function createAgentHostRoutes(input: ProjectionInput): FastifyPluginAsyn
     registerAddressedRoutes(app, input)
     if (input.runtimeCapabilities) {
       await app.register(createAgentHostRuntimeCapabilityRoutes(input.runtimeCapabilities))
-    }
-    if (input.options.legacyPiChatAliases) {
-      if (!input.options.defaultAgentTypeId) {
-        throw new TypeError('defaultAgentTypeId is required for legacy Pi-chat aliases')
-      }
-      await app.register(piChatRoutes, {
-        getService: (request) => input.resolveLegacyPiChatService(
-          request,
-          input.options.defaultAgentTypeId,
-        ),
-      })
     }
   }
 }

@@ -1,6 +1,6 @@
 import { ErrorCode, type AuthorizedAgentScope } from '@hachej/boring-agent/shared'
 import { randomUUID } from 'node:crypto'
-import { access, readFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Fastify from 'fastify'
@@ -108,6 +108,7 @@ vi.mock('../../../server/app/index.js', () => ({
     return app
   },
   registerRoutes: async () => {},
+  registerDirectRoutes: () => async () => {},
 }))
 
 vi.mock('../../../server/auth/index.js', () => ({
@@ -162,8 +163,7 @@ test('core production mounts only the awaited CreatedAgentHost route projection'
   const source = await readFile(join(import.meta.dirname, '..', 'createCoreWorkspaceAgentServer.ts'), 'utf8')
 
   expect(source.match(/\bcreateAgentHost\s*\(/g)).toHaveLength(1)
-  expect(source).not.toMatch(/\bregisterAgentRoutes\b/)
-  expect(source).not.toMatch(/AgentHostLegacyRoutePolicy|createAgentApp/)
+  expect(source).toMatch(/registerDirectRoutes/)
   expect(source).toMatch(/await app\.register\s*\(\s*agentHost\.registerDirectRoutes\s*\(/)
 
   const orderedCompositionEdges = [
@@ -248,7 +248,6 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
     config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
-    registerHealthRoute: false,
     admitEffect,
   })
 
@@ -297,9 +296,7 @@ test('core/full-app gives strong admission only to the direct Host projection', 
     const hostOptions = (mocks.createAgentHost as any).mock.calls.at(-1)?.[0]
     expect(hostOptions.effectAdmission).toBe(effectAdmission)
     expect(hostOptions).not.toHaveProperty('admitEffect')
-    expect((await app.inject({ method: 'POST', url: '/api/v1/agent/reload' })).statusCode).toBe(404)
-    expect(admitEffect).not.toHaveBeenCalled()
-    expect(effectAdmission.admit).not.toHaveBeenCalled()
+    expect(mocks.hostRegisterDirectRoutes).toHaveBeenCalledOnce()
   } finally {
     await app.close()
   }
@@ -511,7 +508,6 @@ test('core/full-app defaults an internal session namespace to workspace id', asy
     config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
-    registerHealthRoute: false,
   })
 
   try {
@@ -524,6 +520,60 @@ test('core/full-app defaults an internal session namespace to workspace id', asy
     await app.close()
   }
 })
+
+test('core/full-app fences Pi extension and prompt content through reload revalidation', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [], packages: [] },
+      systemPromptAppend: 'static prompt',
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'core-resource-fence-'))
+  const extensionPath = join(workspaceRoot, 'extension.ts')
+  await writeFile(extensionPath, "export default 'before'\n", 'utf8')
+  let dynamicPrompt = 'dynamic before'
+
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot,
+    getWorkspaceRoot: async () => workspaceRoot,
+    getPi: async () => ({ extensionPaths: [extensionPath] }),
+    getRuntimeScopeContribution: async () => ({
+      identity: 'dynamic-prompt',
+      loadSystemPromptAppend: async () => dynamicPrompt,
+    }),
+    serveFrontend: false,
+  })
+
+  try {
+    const hostOptions = (mocks.createAgentHost as any).mock.calls[0]?.[0]
+    const projection = (mocks.hostRegisterDirectRoutes as any).mock.calls[0]?.[0]
+    const scope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a'))
+    const runtime = await hostOptions.resolveAuthorizedAgentRuntimeScope({ authorizedScope: scope })
+    expect(runtime.resourceInputDigest).toMatch(/^sha256:/)
+    await expect(runtime.revalidateResourceInputs()).resolves.toBeUndefined()
+
+    await writeFile(extensionPath, "export default 'after'\n", 'utf8')
+    await expect(runtime.revalidateResourceInputs()).rejects.toMatchObject({
+      code: 'AGENT_REQUEST_CONFLICT',
+    })
+
+    const nextScope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a'))
+    const nextRuntime = await hostOptions.resolveAuthorizedAgentRuntimeScope({ authorizedScope: nextScope })
+    dynamicPrompt = 'dynamic after'
+    await expect(nextRuntime.revalidateResourceInputs()).rejects.toMatchObject({
+      code: 'AGENT_REQUEST_CONFLICT',
+    })
+  } finally {
+    await app.close()
+  }
+}, 15_000)
 
 test('core/full-app skips built-in plugin CLI provisioning unless plugin authoring is enabled', async () => {
   const runtimePlugin = {
@@ -547,7 +597,6 @@ test('core/full-app skips built-in plugin CLI provisioning unless plugin authori
     config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
-    registerHealthRoute: false,
   })
 
   try {
@@ -598,7 +647,6 @@ test('core/full-app can enable plugin CLI provisioning for remote plugin editing
     config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
-    registerHealthRoute: false,
     installPluginAuthoring: true,
     runtimeModeAdapter: {
       id: 'vercel-sandbox',
@@ -656,7 +704,6 @@ test('core/full-app composition honors BORING_AGENT_WORKSPACE_ROOT for workspace
     const app = await createCoreWorkspaceAgentServer({
       config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
       serveFrontend: false,
-      registerHealthRoute: false,
     })
 
     try {

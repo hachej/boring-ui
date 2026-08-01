@@ -71,7 +71,7 @@ export interface ExpectedCall {
 export type EvalModelSelection = string | { provider: string; id: string }
 
 export interface EvalPromptOptions {
-  /** A FastifyInstance from createAgentApp / createWorkspaceAgentApp / etc. */
+  /** A FastifyInstance from createStandaloneAgentHostApp / createWorkspaceAgentApp / etc. */
   app: FastifyInstance
   /** Addressed Agent owner exercised by this eval. */
   agentTypeId: string

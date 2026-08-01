@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * Eval: package-shaped plugin creation and reload via the boring-ui agent.
  *

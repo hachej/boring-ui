@@ -1,5 +1,5 @@
 /**
- * GET /api/v1/agent/models
+ * GET /api/v1/agents/:agentTypeId/models
  *
  * Returns the list of models pi-coding-agent has auth for (i.e. where
  * the corresponding provider API key is present in the environment or
@@ -71,7 +71,7 @@ export function modelsRoutes(
   const configuredModelSet = new Set(
     configuredModels.map((model) => `${model.provider}:${model.id}`),
   )
-  app.get(opts.path ?? '/api/v1/agent/models', async (request, reply) => {
+  app.get(opts.path ?? '/api/v1/agents/:agentTypeId/models', async (request, reply) => {
     await opts.authorizeRequest?.(request)
     const availableModels = registry.getAvailable()
     const availableSet = new Set(

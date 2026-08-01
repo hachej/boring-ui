@@ -301,7 +301,7 @@ export class HarnessPiChatService implements PiChatSessionService {
         ...(data ? { data } : {}),
         ...(mediaType ? { mediaType } : {}),
         ...(filename ? { filename } : {}),
-      }) ?? `/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(messageId)}/${index}`
+      }) ?? `/api/v1/agents/default/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(messageId)}/${index}`
     }
   }
 
