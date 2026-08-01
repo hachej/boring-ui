@@ -16,6 +16,10 @@ export default defineConfig({
       { find: /^@hachej\/boring-sandbox\/providers\/bwrap$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/bwrap/index.ts') },
       { find: /^@hachej\/boring-sandbox\/providers\/node-workspace$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/node-workspace/index.ts') },
       { find: /^@hachej\/boring-sandbox\/providers\/vercel-sandbox$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/vercel-sandbox/index.ts') },
+      { find: /^@hachej\/boring-workspace\/app\/server$/, replacement: resolve(repositoryRoot, 'packages/workspace/src/app/server/index.ts') },
+      { find: /^@hachej\/boring-workspace\/app\/front$/, replacement: resolve(repositoryRoot, 'packages/workspace/src/app/front/index.ts') },
+      { find: /^@hachej\/boring-workspace\/server$/, replacement: resolve(repositoryRoot, 'packages/workspace/src/server/index.ts') },
+      { find: /^@hachej\/boring-workspace$/, replacement: resolve(repositoryRoot, 'packages/workspace/src/index.ts') },
     ],
   },
   test: {

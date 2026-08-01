@@ -185,6 +185,7 @@ export type {
 } from '../shared/gateway/types'
 export type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../shared/harness'
 export { applyCspHeaders } from './http/csp'
+export { deepLinkRoutes } from './http/routes/deepLink'
 export type {
   PiExtensionFactory,
   PiHarnessOptions,
@@ -212,6 +213,7 @@ export type {
   WorkspaceAgentDispatcherResolver,
   WorkspaceAgentDispatcherResolveOptions,
 } from './workspaceAgentDispatcher'
+export { withRuntimeEnvContributions } from './runtimeEnvContributions'
 export type { RuntimeEnvContribution, RuntimeEnvContributionContext } from './runtimeEnvContributions'
 export type {
   AgentMeteringSink,

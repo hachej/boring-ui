@@ -57,7 +57,7 @@ describe("CLI live transcript composition", () => {
       expect(emptyStatus.statusCode).toBe(404)
       expect(emptyStatus.json()).toMatchObject({ error: { code: "live_transcript_not_active" } })
 
-      const createdSession = await app.inject({ method: "POST", url: "/api/v1/agent/pi-chat/sessions", payload: {} })
+      const createdSession = await app.inject({ method: "POST", url: "/api/v1/agents/default/sessions", payload: {} })
       expect(createdSession.statusCode).toBe(201)
       const sessionId = createdSession.json().id as string
       const started = await app.inject({

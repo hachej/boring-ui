@@ -508,7 +508,8 @@ export function createAgentHostRoutes(input: ProjectionInput): FastifyPluginAsyn
         sendValidationError(reply, 'body')
         return
       }
-      reply.send(error)
+      // Preserve the embedding app's canonical error envelope and telemetry.
+      throw error
     })
 
     registerAddressedRoutes(app, input)
