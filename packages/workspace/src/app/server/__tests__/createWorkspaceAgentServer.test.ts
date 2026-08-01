@@ -15,22 +15,20 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 const agentServerMock = vi.hoisted(() => {
   const createAgentApp = vi.fn(async (_options?: unknown) => ({ register: vi.fn(async () => {}) }))
   const hostClose = vi.fn(async () => {})
+  const acquireEnvironment = vi.fn<() => Promise<any>>(async () => { throw new Error("test Environment lease was not configured") })
+  const directProjections: Array<{ authorizeAgentRequest(request: any): Promise<any> }> = []
   let actualCreateAgentHost: ((options: any) => Promise<any>) | undefined
-  let actualRegisterAgentRoutes: ((app: any, options: any) => Promise<void>) | undefined
   return {
     createAgentApp,
-    createAgentHost: vi.fn(async (options: {
-      agents: ReadonlyArray<{ agentTypeId: string; legacyDefault?: boolean; definition?: { label: string } }>
-      fleetCompiler: { compile(input: { agents: readonly unknown[] }): Promise<readonly unknown[]> }
-    }) => {
+    createAgentHost: vi.fn(async (options: any) => {
       const compiled = await options.fleetCompiler.compile({ agents: options.agents }) as typeof options.agents
-      return {
+      const created = {
         host: {
           hostId: "workspace-agent-host",
           describe: async () => ({
             hostId: "workspace-agent-host",
             draining: false,
-            agents: compiled.map((agent) => ({
+            agents: compiled.map((agent: any) => ({
               agentTypeId: agent.agentTypeId,
               label: agent.legacyDefault ? "Agent" : agent.definition?.label ?? agent.agentTypeId,
             })),
@@ -40,28 +38,81 @@ const agentServerMock = vi.hoisted(() => {
         },
         gateway: {},
         registerRoutes: vi.fn(),
+        registerDirectRoutes: vi.fn((projection: { authorizeAgentRequest(request: any): Promise<any> }) => async () => {
+          directProjections.push(projection)
+          const request = { id: "workspace-test-composition", url: "/api/v1/agents/default/sessions", headers: {}, query: {} }
+          const scope = await projection.authorizeAgentRequest(request)
+          const claim = await options.scopeVerifier.verify(scope)
+          const environment = await options.resolveAuthorizedEnvironmentScope({
+            authorizedScope: scope,
+            verifiedClaim: claim,
+            intent: { kind: "agent-binding", requestId: request.id },
+          })
+          const resolveRuntimeScope = async ({ agentTypeId, scope: issuedScope }: { agentTypeId: string; scope: any }) => {
+            const verifiedClaim = await options.scopeVerifier.verify(issuedScope)
+            const resolvedEnvironment = await options.resolveAuthorizedEnvironmentScope({
+              authorizedScope: issuedScope,
+              verifiedClaim,
+              intent: { kind: "agent-binding", requestId: request.id },
+            })
+            const runtime = await options.resolveAuthorizedAgentRuntimeScope({
+              authorizedScope: issuedScope,
+              verifiedClaim,
+              agentTypeId,
+              intent: { kind: "agent-binding", operation: "new-binding", requestId: request.id },
+              environment: resolvedEnvironment,
+            })
+            return { ...runtime, environment: resolvedEnvironment }
+          }
+          ;(options as any).resolveRuntimeScope = resolveRuntimeScope
+          const runtime = await resolveRuntimeScope({ agentTypeId: options.agents[0].agentTypeId, scope })
+          await createAgentApp({
+            ...runtime,
+            workspaceRoot: environment.workspaceRoot,
+            externalPlugins: Boolean(runtime.pi?.getHotReloadableResources),
+            systemPromptDynamic: runtime.loadSystemPromptAppend,
+            agentHost: { issueScope: () => scope },
+            runtimeProvisioner: async (context: { runtimeBundle: unknown }) => {
+              await environment.provisionRuntime?.({
+                runtimeBundle: context.runtimeBundle,
+                signal: new AbortController().signal,
+              })
+            },
+            beforeReload: async () => {
+              const candidate = await options.resolveAuthorizedAgentRuntimeScope({
+                authorizedScope: scope,
+                verifiedClaim: claim,
+                agentTypeId: options.agents[0].agentTypeId,
+                intent: { kind: "agent-binding", operation: "reload", requestId: "workspace-test-reload" },
+                environment,
+              })
+              if (!candidate.reloadMetadata) return undefined
+              return {
+                restart_warnings: candidate.reloadMetadata?.restartWarnings,
+                diagnostics: candidate.reloadMetadata?.diagnostics,
+              }
+            },
+          })
+        }),
+        acquireEnvironment,
+        runWithWorkspaceAgent: vi.fn(async () => {}),
       }
+      return created
     }),
     hostClose,
-    registerAgentRoutes: vi.fn(async (_app: unknown, options: unknown) => {
-      await createAgentApp(options)
-    }),
+    acquireEnvironment,
+    directProjections,
+    registerAgentRoutes: vi.fn(),
     provisionRuntimeWorkspace: vi.fn(async () => {}),
     provisionWorkspaceRuntime: vi.fn(async () => undefined),
     captureActuals(input: {
       createAgentHost: (options: any) => Promise<any>
-      registerAgentRoutes: (app: any, options: any) => Promise<void>
     }) {
       actualCreateAgentHost = input.createAgentHost
-      actualRegisterAgentRoutes = input.registerAgentRoutes
     },
     createActualAgentHost(options: any) {
       if (!actualCreateAgentHost) throw new Error("actual createAgentHost was not captured")
       return actualCreateAgentHost(options)
-    },
-    registerActualAgentRoutes(app: any, options: any) {
-      if (!actualRegisterAgentRoutes) throw new Error("actual registerAgentRoutes was not captured")
-      return actualRegisterAgentRoutes(app, options)
     },
   }
 })
@@ -70,7 +121,6 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@hachej/boring-agent/server")>()
   agentServerMock.captureActuals({
     createAgentHost: actual.createAgentHost,
-    registerAgentRoutes: actual.registerAgentRoutes,
   })
   return {
     ...actual,
@@ -97,6 +147,9 @@ beforeEach(() => {
   agentServerMock.createAgentApp.mockClear()
   agentServerMock.createAgentHost.mockClear()
   agentServerMock.hostClose.mockClear()
+  agentServerMock.acquireEnvironment.mockReset()
+  agentServerMock.acquireEnvironment.mockRejectedValue(new Error("test Environment lease was not configured"))
+  agentServerMock.directProjections.splice(0)
   agentServerMock.registerAgentRoutes.mockClear()
   agentServerMock.provisionRuntimeWorkspace.mockClear()
   agentServerMock.provisionWorkspaceRuntime.mockClear()
@@ -132,32 +185,104 @@ async function writeHotPlugin(root: string, extension: string): Promise<void> {
 
 describe("createWorkspaceAgentServer local Pi session principal", () => {
   test("injects local for unauthenticated requests while preserving authenticated user ids", async () => {
+    const resolvePiSessionRequestContext = vi.fn(async (request: any, context: any) => ({
+      ...context,
+      authSubject: request.user?.id ?? "local",
+    }))
     await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("boring-local-pi-principal-"),
       logger: false,
       provisionWorkspace: false,
       externalPlugins: false,
+      resolvePiSessionRequestContext,
     })
 
-    const options = agentServerMock.createAgentApp.mock.calls[0]?.[0] as {
-      resolvePiSessionRequestContext?: (request: unknown, context: { workspaceId: string; authSubject?: string }) => Promise<{ workspaceId: string; authSubject?: string }> | { workspaceId: string; authSubject?: string }
+    const projection = agentServerMock.directProjections[0]
+    const local = await projection.authorizeAgentRequest({
+      id: "request-local", url: "/api/v1/agents/default/sessions", headers: {}, query: {},
+    })
+    const user = await projection.authorizeAgentRequest({
+      id: "request-user", url: "/api/v1/agents/default/sessions", headers: {}, query: {}, user: { id: "user-a" },
+    })
+    expect(local.authSubjectId).toBe("local")
+    expect(user.authSubjectId).toBe("user-a")
+    expect(resolvePiSessionRequestContext).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe("Workspace direct Environment projection", () => {
+  test("keeps public readiness on the Host-owned Environment generation and releases its lease", async () => {
+    const release = vi.fn()
+    agentServerMock.acquireEnvironment.mockResolvedValueOnce({
+      readiness: {
+        chat: { state: "ready" },
+        workspace: { state: "ready" },
+        runtimeDependencies: { state: "ready" },
+      },
+      signal: new AbortController().signal,
+      release,
+    })
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("boring-direct-readiness-"),
+      logger: false,
+      provisionWorkspace: false,
+      externalPlugins: false,
+      authToken: "agent-secret",
+    })
+    try {
+      const ready = await app.inject({ method: "GET", url: "/ready" })
+      expect(ready.statusCode).toBe(200)
+      expect(ready.json()).toEqual({ status: "ready" })
+      expect(agentServerMock.acquireEnvironment).toHaveBeenCalledOnce()
+      expect(release).toHaveBeenCalledOnce()
+    } finally {
+      await app.close()
     }
-    const resolveContext = options.resolvePiSessionRequestContext
-    expect(resolveContext).toBeTypeOf("function")
+  })
 
-    expect(await resolveContext?.({ id: "request-local" }, { workspaceId: "default" })).toMatchObject({
-      workspaceId: "default",
-      authSubject: "local",
+  test("releases finite app-route leases and denies hostile raw workspace selectors before acquisition", async () => {
+    const release = vi.fn()
+    const workspace = {
+      root: "/workspace",
+      fsCapability: "strong",
+      async readFile() { return "lease-owned" },
+      async stat() { return { kind: "file", mtimeMs: 1, size: 11 } },
+    }
+    agentServerMock.acquireEnvironment.mockResolvedValueOnce({
+      workspace,
+      gitWorkspace: workspace,
+      fileSearch: { async search() { return [] } },
+      readiness: {},
+      signal: new AbortController().signal,
+      release,
     })
-    expect(await resolveContext?.({ id: "request-user", user: { id: "user-a" } }, { workspaceId: "default", authSubject: "user-a" })).toMatchObject({
-      workspaceId: "default",
-      authSubject: "user-a",
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("boring-direct-environment-"),
+      logger: false,
+      provisionWorkspace: false,
+      externalPlugins: false,
     })
+    try {
+      const file = await app.inject({ method: "GET", url: "/api/v1/files?path=note.md" })
+      expect(file.statusCode).toBe(200)
+      expect(file.json()).toMatchObject({ content: "lease-owned", access: "readwrite" })
+      expect(agentServerMock.acquireEnvironment).toHaveBeenCalledOnce()
+      expect(release).toHaveBeenCalledOnce()
+
+      const hostile = await app.inject({
+        method: "GET",
+        url: "/api/v1/files/raw?path=note.md&workspaceId=foreign",
+      })
+      expect(hostile.statusCode).toBe(403)
+      expect(agentServerMock.acquireEnvironment).toHaveBeenCalledOnce()
+    } finally {
+      await app.close()
+    }
   })
 })
 
 describe("Workspace public admission composition", () => {
-  test("Slice 1 composed route/auth proof: Workspace delegates once to the canonical Host scope", async () => {
+  test("Slice 4 composed route/auth proof: Workspace mounts the canonical direct Host projection once", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-public-admission-")
     const events: string[] = []
     const sessions = new Map<string, {
@@ -199,9 +324,6 @@ describe("Workspace public admission composition", () => {
     })
 
     agentServerMock.createAgentHost.mockImplementationOnce((options) => agentServerMock.createActualAgentHost(options))
-    agentServerMock.registerAgentRoutes.mockImplementationOnce((app, options) => (
-      agentServerMock.registerActualAgentRoutes(app, options)
-    ))
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "direct",
@@ -210,11 +332,12 @@ describe("Workspace public admission composition", () => {
       externalPlugins: false,
       harnessFactory,
       admitEffect,
+      metering: { isEnabled: () => true } as never,
     })
 
     try {
       expect(agentServerMock.createAgentHost).toHaveBeenCalledOnce()
-      expect(agentServerMock.registerAgentRoutes).toHaveBeenCalledOnce()
+      expect(agentServerMock.registerAgentRoutes).not.toHaveBeenCalled()
       assertComposedAgentHostRouteTable(app)
       expect(app.hasRoute({ method: "GET", url: "/api/v1/agents" })).toBe(true)
       expect(app.hasRoute({
@@ -224,11 +347,7 @@ describe("Workspace public admission composition", () => {
       const [hostOptions] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
         effectAdmission?: { admit(input: unknown): Promise<unknown> }
       }]
-      const [, routeOptions] = agentServerMock.registerAgentRoutes.mock.calls.at(-1) as unknown as [unknown, {
-        admitEffect?: unknown
-      }]
       expect(hostOptions.effectAdmission).toBeDefined()
-      expect(routeOptions.admitEffect).toBe(admitEffect)
 
       const gateway = await app.inject({
         method: "POST",
@@ -242,18 +361,24 @@ describe("Workspace public admission composition", () => {
       ])
       expect(admitEffect).toHaveBeenCalledTimes(1)
 
-      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload" })
+      const sessionId = gateway.json().sessionId as string
+      const reload = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/reload",
+        payload: { requestId: "gateway-reload", sessionId },
+      })
       expect(reload.statusCode).toBe(200)
       expect(admitEffect).toHaveBeenCalledTimes(2)
 
       const command = await app.inject({
         method: "POST",
-        url: "/api/v1/agent/commands/execute",
-        payload: { name: "plan" },
+        url: "/api/v1/agents/default/commands/execute",
+        payload: { requestId: "gateway-command", sessionId, name: "plan", args: "" },
       })
-      expect(command.statusCode).toBe(200)
-      expect(admitEffect).toHaveBeenCalledTimes(3)
-      expect(events).toContain("mutate:command")
+      expect(command.statusCode).toBe(409)
+      expect(command.json()).toMatchObject({ error: { code: "METERING_UNSUPPORTED_COMMAND" } })
+      expect(admitEffect).toHaveBeenCalledTimes(2)
+      expect(events).not.toContain("mutate:command")
 
       rejectRequestId = "gateway-rejected"
       const rejected = await app.inject({
@@ -263,7 +388,7 @@ describe("Workspace public admission composition", () => {
       })
       expect(rejected.statusCode).toBe(500)
       expect(rejected.json()).toMatchObject({ message: "WORKSPACE_ADMISSION_REJECTED" })
-      expect(admitEffect).toHaveBeenCalledTimes(4)
+      expect(admitEffect).toHaveBeenCalledTimes(3)
       expect(events.filter((event) => event === "mutate:session.create")).toHaveLength(1)
     } finally {
       await app.close()
@@ -397,6 +522,7 @@ describe("default boring-ui CLI provisioning", () => {
           runtimeMode: mode,
           runtimeBundle: {
             storageRoot: agentOpts.workspaceRoot,
+            provisioningAdapter: {},
             runtimeContext: { runtimeCwd: mode === "direct" ? agentOpts.workspaceRoot : "/workspace" },
             workspace: {},
             sandbox: {},
@@ -440,9 +566,13 @@ describe("default boring-ui CLI provisioning", () => {
     const workspaceRoot = await makeTempDir("boring-cli-external-disabled-")
     let capturedPrompt: string | undefined
     mockCreateAgentAppOnce(async (opts: unknown) => {
-      const agentOpts = opts as { externalPlugins?: boolean; systemPromptAppend?: string }
-      expect(agentOpts.externalPlugins).toBe(false)
+      const agentOpts = opts as { workspaceRoot: string; systemPromptAppend?: string; runtimeProvisioner?: (ctx: unknown) => Promise<void> }
       capturedPrompt = agentOpts.systemPromptAppend
+      await agentOpts.runtimeProvisioner?.({
+        workspaceRoot: agentOpts.workspaceRoot,
+        runtimeMode: "local",
+        runtimeBundle: { provisioningAdapter: {}, workspace: {}, sandbox: {} },
+      })
       return { register: vi.fn(async () => {}) } as never
     })
 
@@ -469,8 +599,13 @@ describe("default boring-ui CLI provisioning", () => {
     const workspaceRoot = await makeTempDir("boring-cli-exclude-runtime-")
     let capturedPrompt: string | undefined
     mockCreateAgentAppOnce(async (opts: unknown) => {
-      const agentOpts = opts as { systemPromptAppend?: string }
+      const agentOpts = opts as { workspaceRoot: string; systemPromptAppend?: string; runtimeProvisioner?: (ctx: unknown) => Promise<void> }
       capturedPrompt = agentOpts.systemPromptAppend
+      await agentOpts.runtimeProvisioner?.({
+        workspaceRoot: agentOpts.workspaceRoot,
+        runtimeMode: "direct",
+        runtimeBundle: { provisioningAdapter: {}, workspace: {}, sandbox: {} },
+      })
       return { register: vi.fn(async () => {}) } as never
     })
 
@@ -542,11 +677,9 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
       {
-        externalPlugins?: boolean
         pi?: { getHotReloadableResources?: () => { extensionPaths?: string[]; additionalSkillPaths?: string[] } }
       },
     ]
-    expect(agentOptions.externalPlugins).toBe(true)
     expect(agentOptions.pi?.getHotReloadableResources?.().extensionPaths).toContain(
       join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "visible.ts"),
     )
@@ -568,11 +701,9 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
       {
-        externalPlugins?: boolean
         pi?: { getHotReloadableResources?: () => { extensionPaths?: string[]; additionalSkillPaths?: string[] } }
       },
     ]
-    expect(agentOptions.externalPlugins).toBe(false)
     expect(agentOptions.pi?.getHotReloadableResources?.().extensionPaths ?? []).not.toContain(
       join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "hidden.ts"),
     )
@@ -787,7 +918,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         },
       ]
       expect(agentOptions.pi?.getHotReloadableResources?.().additionalSkillPaths).toContain(join(pluginRoot, "skills"))
-      expect(agentOptions.systemPromptDynamic?.()).toContain("FOO_PLUGIN_PROMPT")
+      expect(await agentOptions.systemPromptDynamic?.()).toContain("FOO_PLUGIN_PROMPT")
       expect(agentOptions.systemPromptAppend).not.toContain("FOO_PLUGIN_PROMPT")
     } finally {
       await app.close()
@@ -944,18 +1075,11 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
 
     try {
       const [routeOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [{
-        agentHost: { issueScope(input: { claim: object; runtimeScope: object }): object }
+        agentHost: { issueScope(input: { claim: object; runtimeScope?: object }): object }
         extraTools?: Array<{ name: string }>
         systemPromptAppend?: string
         pi?: { packages?: unknown[]; extensionPaths?: string[] }
       }]
-      expect(routeOptions.extraTools?.map((tool) => tool.name)).not.toContain("alpha_tool")
-      expect(routeOptions.extraTools?.map((tool) => tool.name)).not.toContain("beta_tool")
-      expect(routeOptions.systemPromptAppend).not.toContain("ALPHA_PLUGIN_PROMPT")
-      expect(routeOptions.systemPromptAppend).not.toContain("BETA_PLUGIN_PROMPT")
-      expect(routeOptions.pi?.packages).not.toContain("npm:alpha-pi")
-      expect(routeOptions.pi?.packages).not.toContain("npm:beta-pi")
-
       const [hostOptions] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
         resolveRuntimeScope(input: { agentTypeId: string; scope: object }): Promise<{
           identity: string
@@ -964,21 +1088,8 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
           pi?: { packages?: unknown[]; extensionPaths?: string[] }
         }>
       }]
-      const runtimeScope = {
-        identity: "base-runtime",
-        environment: {
-          placementIdentity: "base-placement",
-          workspaceRoot,
-          provisioningFingerprint: "base-provisioning",
-        },
-        sessionNamespace: "",
-        pi: routeOptions.pi,
-        extraTools: routeOptions.extraTools,
-        systemPromptAppend: routeOptions.systemPromptAppend,
-      }
       const scope = routeOptions.agentHost.issueScope({
         claim: { workspaceScopeId: "default", authSubjectId: "subject" },
-        runtimeScope,
       })
       const [alpha, beta, legacy] = await Promise.all([
         hostOptions.resolveRuntimeScope({ agentTypeId: "alpha", scope }),
@@ -1064,7 +1175,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(agentServerMock.createAgentApp).not.toHaveBeenCalled()
   })
 
-  test("closes the constructed Host and scoped runtime when initial provisioning fails", async () => {
+  test("defers provisioning to the Host Environment generation", async () => {
     const disposeRuntime = vi.fn(async () => {})
     const createRuntime = vi.fn(async () => ({
       provisioningAdapter: {},
@@ -1072,7 +1183,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }))
     agentServerMock.provisionWorkspaceRuntime.mockRejectedValueOnce(new Error("initial provisioning failed"))
 
-    await expect(createWorkspaceAgentServer({
+    const app = await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("boring-agent-provisioning-failure-"),
       logger: false,
       runtimeModeAdapter: {
@@ -1081,28 +1192,43 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         create: createRuntime,
       } as unknown as RuntimeModeAdapter,
       externalPlugins: false,
-    })).rejects.toThrow("initial provisioning failed")
+    })
 
     expect(agentServerMock.createAgentHost).toHaveBeenCalledOnce()
-    expect(createRuntime).toHaveBeenCalledOnce()
+    expect(createRuntime).not.toHaveBeenCalled()
+    expect(agentServerMock.provisionWorkspaceRuntime).not.toHaveBeenCalled()
+    const [hostOptions] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
+      scopeVerifier: { verify(scope: object): Promise<object> }
+      resolveAuthorizedEnvironmentScope(input: object): Promise<{ provisionRuntime?: (input: object) => Promise<unknown> }>
+    }]
+    const scope = await agentServerMock.directProjections.at(-1)!.authorizeAgentRequest({
+      id: "provisioning-failure", url: "/api/v1/files", headers: {}, query: {},
+    })
+    const claim = await hostOptions.scopeVerifier.verify(scope)
+    const environment = await hostOptions.resolveAuthorizedEnvironmentScope({
+      authorizedScope: scope,
+      verifiedClaim: claim,
+      intent: { kind: "http-route", requestId: "provisioning-failure" },
+    })
+    await expect(environment.provisionRuntime?.({
+      runtimeBundle: { provisioningAdapter: {}, workspace: {}, sandbox: {} },
+      signal: new AbortController().signal,
+    })).rejects.toThrow("initial provisioning failed")
     expect(agentServerMock.provisionWorkspaceRuntime).toHaveBeenCalledOnce()
-    expect(disposeRuntime).toHaveBeenCalledOnce()
-    expect(agentServerMock.hostClose).toHaveBeenCalledOnce()
-    expect(agentServerMock.createAgentApp).not.toHaveBeenCalled()
+    expect(disposeRuntime).not.toHaveBeenCalled()
+    await app.close()
   })
 
   test("runtime contribution identity is stable and covers compiler policy plus selected contribution contracts", async () => {
+    const workspaceRoot = await makeTempDir("boring-agent-runtime-identity-")
     async function resolveIdentity(input: {
       policyRevision: string
       prompt: string
       toolDescription: string
       piPackage?: string
       artifactDigest?: string
-      placementIdentity?: string
-      provisioningGeneration?: string
       includePolicyDigest?: boolean
     }): Promise<string> {
-      const workspaceRoot = await makeTempDir("boring-agent-runtime-identity-")
       const app = await createWorkspaceAgentServer({
         workspaceRoot,
         logger: false,
@@ -1145,7 +1271,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       })
       try {
         const [routeOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [{
-          agentHost: { issueScope(input: { claim: object; runtimeScope: object }): object }
+          agentHost: { issueScope(input: { claim: object; runtimeScope?: object }): object }
           pi?: object
           extraTools?: unknown[]
           systemPromptAppend?: string
@@ -1158,9 +1284,9 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
           runtimeScope: {
             identity: "fixed-base-placement-and-provisioning",
             environment: {
-              placementIdentity: input.placementIdentity ?? "fixed-placement",
+              placementIdentity: "fixed-placement",
               workspaceRoot,
-              provisioningFingerprint: input.provisioningGeneration ?? "fixed-provisioning",
+              provisioningFingerprint: "fixed-provisioning",
             },
             sessionNamespace: "",
             pi: routeOptions.pi,
@@ -1187,8 +1313,6 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const toolChanged = await resolveIdentity({ ...fixed, toolDescription: "identity tool b" })
     const piChanged = await resolveIdentity({ ...fixed, piPackage: "npm:identity-b" })
     const artifactBytesChanged = await resolveIdentity({ ...fixed, artifactDigest: "artifact-bytes-b" })
-    const placementChanged = await resolveIdentity({ ...fixed, placementIdentity: "sandbox-placement" })
-    const provisioningChanged = await resolveIdentity({ ...fixed, provisioningGeneration: "generation-b" })
     await expect(resolveIdentity({ ...fixed, includePolicyDigest: false })).rejects.toMatchObject({
       code: "BORING_AGENT_RUNTIME_IDENTITY_INCOMPLETE",
     })
@@ -1199,8 +1323,6 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(toolChanged).not.toBe(stableOne)
     expect(piChanged).not.toBe(stableOne)
     expect(artifactBytesChanged).not.toBe(stableOne)
-    expect(placementChanged).not.toBe(stableOne)
-    expect(provisioningChanged).not.toBe(stableOne)
     expect(stableOne).toMatch(/^[a-f0-9]{64}$/)
   })
 
@@ -1308,7 +1430,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       ]
       expect(agentOptions.pi?.getHotReloadableResources?.().additionalSkillPaths).toContain(join(pluginRoot, "agent", "skills"))
       expect(agentOptions.pi?.getHotReloadableResources?.().extensionPaths).toContain(join(pluginRoot, "agent", "index.ts"))
-      expect(agentOptions.systemPromptDynamic?.()).toContain("GLOBAL_PLUGIN_PROMPT")
+      expect(await agentOptions.systemPromptDynamic?.()).toContain("GLOBAL_PLUGIN_PROMPT")
     } finally {
       await app.close()
     }
@@ -1559,9 +1681,9 @@ describe("beforeReload triggers directory-source re-resolve", () => {
       { beforeReload?: () => Promise<void> },
     ]
     await expect(agentOptions.beforeReload?.()).rejects.toMatchObject({
-      code: "work_active",
+      code: "AGENT_COMMAND_INVALID_STATE",
       message: "Stop active work first.",
-      pluginId: "active-work",
+      details: { blockerCode: "work_active", pluginId: "active-work" },
     })
     expect(getAgentReloadBlock).toHaveBeenCalledOnce()
   })
@@ -1581,8 +1703,8 @@ describe("beforeReload triggers directory-source re-resolve", () => {
       { beforeReload?: () => Promise<void> },
     ]
     await expect(agentOptions.beforeReload?.()).rejects.toMatchObject({
-      code: "work_started",
-      pluginId: "racing-work",
+      code: "AGENT_COMMAND_INVALID_STATE",
+      details: { blockerCode: "work_started", pluginId: "racing-work" },
     })
     expect(getAgentReloadBlock).toHaveBeenCalledTimes(2)
   })
