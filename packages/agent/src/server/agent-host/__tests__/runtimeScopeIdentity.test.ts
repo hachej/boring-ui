@@ -33,6 +33,9 @@ const agent = {
 function hostOptions(input: {
   sessionRoot: string
   runtimeIdentity: (scope: AuthorizedAgentScope) => string
+  runtimePhysicalIdentity?: (scope: AuthorizedAgentScope) => string
+  provisioningFingerprint?: (scope: AuthorizedAgentScope) => string
+  environmentPlacementIdentity?: (scope: AuthorizedAgentScope) => string
   createRuntime?: RuntimeModeAdapter['create']
   effectAdmission?: AgentEffectAdmission
 }): CreateAgentHostOptions {
@@ -54,10 +57,13 @@ function hostOptions(input: {
     ...(input.effectAdmission ? { effectAdmission: input.effectAdmission } : {}),
     resolveRuntimeScope: async ({ scope }: { scope: AuthorizedAgentScope }) => ({
       identity: input.runtimeIdentity(scope),
+      ...(input.runtimePhysicalIdentity
+        ? { physicalBindingIdentity: input.runtimePhysicalIdentity(scope) }
+        : {}),
       environment: {
-        placementIdentity: 'direct:workspace',
+        placementIdentity: input.environmentPlacementIdentity?.(scope) ?? 'direct:workspace',
         workspaceRoot: input.sessionRoot,
-        provisioningFingerprint: 'provider:generation-a',
+        provisioningFingerprint: input.provisioningFingerprint?.(scope) ?? 'provider:generation-a',
       },
       sessionNamespace: 'sessions',
     }),
@@ -259,6 +265,86 @@ describe('runtime scope identity', () => {
       source: 'pre-ah0-compatibility-fallback',
     })])
     expect(runtimeIdentity.mock.results.map(({ value }) => value)).toContain('runtime-current')
+    await restarted.host.close()
+  })
+
+  it('does not publish a historical pinned binding as current when it is accessed first', async () => {
+    const sessionRoot = await temporaryRoot()
+    const creator = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
+    const pinnedReader = { workspaceScopeId: 'workspace-a', authSubjectId: 'pinned-reader' } as AuthorizedAgentScope
+    const currentReader = { workspaceScopeId: 'workspace-a', authSubjectId: 'current-reader' } as AuthorizedAgentScope
+    const first = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => 'runtime-pinned' }))
+    const pinnedRef = await first.gateway.createSession({
+      scope: creator,
+      agentTypeId: 'alpha',
+      requestId: 'create-historical-pin',
+      title: 'Historical pin',
+    })
+    await first.host.close()
+
+    const restarted = await createAgentHost(hostOptions({
+      sessionRoot,
+      runtimeIdentity: (scope) => (
+        scope.authSubjectId === currentReader.authSubjectId ? 'runtime-current' : 'runtime-pinned'
+      ),
+    }))
+    await expect(restarted.gateway.readSessionState({ scope: pinnedReader, ref: pinnedRef }))
+      .resolves.toMatchObject({ ref: pinnedRef })
+
+    const currentRef = await restarted.gateway.createSession({
+      scope: currentReader,
+      agentTypeId: 'alpha',
+      requestId: 'create-after-historical-pin',
+      title: 'Canonical current',
+    })
+    const namespace = sessionNamespaceForAgent(agent, 'workspace-a', 'sessions')!
+    const transcriptPath = join(sessionRoot, namespace, `${currentRef.sessionId}.jsonl`)
+    const header = JSON.parse((await readFile(transcriptPath, 'utf8')).split('\n')[0]!) as {
+      boringSessionCtx?: { runtimeScopeIdentity?: string }
+    }
+    expect(header.boringSessionCtx?.runtimeScopeIdentity).toBe('runtime-current')
+    await restarted.host.close()
+  })
+
+  it('does not promote a pinned binding with the same semantic identity but a different generation', async () => {
+    const sessionRoot = await temporaryRoot()
+    const creator = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
+    const pinnedReader = { workspaceScopeId: 'workspace-a', authSubjectId: 'pinned-reader' } as AuthorizedAgentScope
+    const currentReader = { workspaceScopeId: 'workspace-a', authSubjectId: 'current-reader' } as AuthorizedAgentScope
+    const first = await createAgentHost(hostOptions({
+      sessionRoot,
+      runtimeIdentity: () => 'runtime-shared',
+      runtimePhysicalIdentity: () => 'physical-pinned',
+      provisioningFingerprint: () => 'fingerprint-pinned',
+    }))
+    const pinnedRef = await first.gateway.createSession({
+      scope: creator,
+      agentTypeId: 'alpha',
+      requestId: 'create-same-identity-pin',
+      title: 'Same identity pin',
+    })
+    await first.host.close()
+
+    const baseMode = createTestRuntimeModeAdapter('direct')
+    const createRuntime = vi.fn(baseMode.create.bind(baseMode))
+    const isCurrent = (scope: AuthorizedAgentScope) => scope.authSubjectId === currentReader.authSubjectId
+    const restarted = await createAgentHost(hostOptions({
+      sessionRoot,
+      runtimeIdentity: () => 'runtime-shared',
+      runtimePhysicalIdentity: (scope) => isCurrent(scope) ? 'physical-current' : 'physical-pinned',
+      provisioningFingerprint: (scope) => isCurrent(scope) ? 'fingerprint-current' : 'fingerprint-pinned',
+      environmentPlacementIdentity: (scope) => isCurrent(scope) ? 'direct:current' : 'direct:pinned',
+      createRuntime,
+    }))
+    await expect(restarted.gateway.readSessionState({ scope: pinnedReader, ref: pinnedRef }))
+      .resolves.toMatchObject({ ref: pinnedRef })
+    await expect(restarted.gateway.createSession({
+      scope: currentReader,
+      agentTypeId: 'alpha',
+      requestId: 'create-same-identity-current',
+      title: 'Same identity current',
+    })).resolves.toMatchObject({ agentTypeId: 'alpha' })
+    expect(createRuntime).toHaveBeenCalledTimes(2)
     await restarted.host.close()
   })
 

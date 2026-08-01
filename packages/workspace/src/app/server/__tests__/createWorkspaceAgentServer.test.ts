@@ -1,7 +1,9 @@
+// @vitest-environment node
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import Fastify from "fastify"
+import { assertComposedAgentHostRouteTable } from "@hachej/boring-agent/server/agent-host/testing/compositionRouteProof"
 import {
   createAgentHost,
   type AgentFleetCompiler,
@@ -155,7 +157,7 @@ describe("createWorkspaceAgentServer local Pi session principal", () => {
 })
 
 describe("Workspace public admission composition", () => {
-  test("adapts admitEffect for Gateway mutations while legacy routes admit exactly once", async () => {
+  test("Slice 1 composed route/auth proof: Workspace delegates once to the canonical Host scope", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-public-admission-")
     const events: string[] = []
     const sessions = new Map<string, {
@@ -211,6 +213,14 @@ describe("Workspace public admission composition", () => {
     })
 
     try {
+      expect(agentServerMock.createAgentHost).toHaveBeenCalledOnce()
+      expect(agentServerMock.registerAgentRoutes).toHaveBeenCalledOnce()
+      assertComposedAgentHostRouteTable(app)
+      expect(app.hasRoute({ method: "GET", url: "/api/v1/agents" })).toBe(true)
+      expect(app.hasRoute({
+        method: "GET",
+        url: "/api/v1/agents/:agentTypeId/sessions/:sessionId/attachments/:messageId/:index",
+      })).toBe(true)
       const [hostOptions] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
         effectAdmission?: { admit(input: unknown): Promise<unknown> }
       }]

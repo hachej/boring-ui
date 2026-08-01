@@ -130,6 +130,7 @@ export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
 export { createAuthMiddleware as createAgentAuthMiddleware } from './http/middleware'
 export { createAgentHost } from './agent-host/createAgentHost'
+export { SqliteAgentRequestLedger } from './agent-host/sqliteRequestLedger'
 export {
   AgentFleetCompilationError,
   AgentFleetCompilationErrorCode,
@@ -151,7 +152,11 @@ export type {
   AgentGatewayEffect,
   AgentHostAddressedHttpProjectionOptions,
   AgentHostAgentSpec,
+  AgentHostDirectProjectionOptions,
   AgentHostDescription,
+  AgentHostDispatcherRunInput,
+  AgentHostEnvironmentLease,
+  AgentHostEnvironmentScope,
   AgentHostHandle,
   AgentHostHttpProjectionOptions,
   AgentHostLegacyHttpProjectionOptions,
@@ -162,11 +167,14 @@ export type {
   AgentHostLegacyRoutePolicyMountInput,
   AgentRequestKey,
   AgentRequestLedger,
+  AgentRequestLedgerPrepareResult,
   AgentRequestLedgerRecord,
   CompiledAgentHostAgentSpec,
   ConfiguredAgentHostAgentSpec,
   CreateAgentHostOptions,
   CreatedAgentHost,
+  AuthorizedEnvironmentIntent,
+  LeaseBoundWorkspaceAgent,
   LegacyDefaultAgentHostSpec,
   ResolvedAgentRuntimeScope,
   ResolvedEnvironmentScope,

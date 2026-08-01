@@ -74,6 +74,15 @@ export interface HarnessPiChatServiceOptions {
   onEvent?: (sessionId: string, event: PiChatEvent) => void
   /** Receives non-fatal metering pipeline failures (default: console.warn). */
   meteringLogger?: MeteringErrorLogger
+  /** Canonical HTTP projection for lazily loaded persisted attachment bytes. */
+  attachmentUrl?: (input: {
+    readonly sessionId: string
+    readonly messageId: string
+    readonly index: number
+    readonly data?: string
+    readonly mediaType?: string
+    readonly filename?: string
+  }) => string
 }
 
 export class HarnessPiChatService implements PiChatSessionService {
@@ -83,6 +92,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly workspace?: Workspace
   private readonly eventStore?: EventStreamStore
   private readonly onEvent?: (sessionId: string, event: PiChatEvent) => void
+  private readonly attachmentUrl?: HarnessPiChatServiceOptions['attachmentUrl']
   private readonly channels = new Map<string, LiveSessionChannel>()
   // Coalesce cold callers so only one adapter subscription owns the channel.
   private readonly channelCreations = new Map<string, Promise<LiveSessionChannel>>()
@@ -90,6 +100,11 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly activePromptRuns = new Map<string, Promise<void>>()
   private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
   private readonly activeSyntheticPromptErrors = new Map<string, ChatError>()
+  private readonly liveAttachments = new Map<string, {
+    readonly data: Uint8Array
+    readonly mediaType: string
+    readonly filename?: string
+  }>()
   private readonly lifecycle = new HarnessPiChatServiceLifecycle()
   private readonly metering?: PiChatMeteringCoordinator
   private disposePromise?: Promise<void>
@@ -101,6 +116,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.workspace = options.workspace
     this.eventStore = options.eventStore
     this.onEvent = options.onEvent
+    this.attachmentUrl = options.attachmentUrl
     this.metering = options.metering
       ? new PiChatMeteringCoordinator(options.metering, options.meteringLogger)
       : undefined
@@ -170,6 +186,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.activePromptRuns.clear()
     this.syntheticPromptFailures.clear()
     this.activeSyntheticPromptErrors.clear()
+    this.liveAttachments.clear()
     if (errors.length > 0) throw errors[0]
   }
 
@@ -213,11 +230,16 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.syntheticPromptFailures.delete(sessionKey)
     this.activeSyntheticPromptErrors.delete(sessionKey)
     try { await this.sessionStore.delete(sessionCtx, sessionId) } catch (error) { teardownError ??= error }
+    for (const key of this.liveAttachments.keys()) {
+      if (key.startsWith(`${JSON.stringify(sessionId)}:`)) this.liveAttachments.delete(key)
+    }
     if (teardownError) throw teardownError
   }
 
   async readAttachment(ctx: PiSessionRequestContext, sessionId: string, messageId: string, index: number) {
     return this.lifecycle.run(async () => {
+      const live = this.liveAttachments.get(liveAttachmentKey(sessionId, messageId, index))
+      if (live) return live
       if (!this.sessionStore.loadAttachment) throw Object.assign(new Error('session attachment not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND })
       try {
         return await this.sessionStore.loadAttachment(toSessionCtx(ctx), sessionId, messageId, index)
@@ -245,6 +267,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       sessionId,
       activeTurnId: channel?.activeTurnId,
       messageTurnIds: channel?.messageTurnIds,
+      attachmentUrl: this.attachmentUrlFor(sessionId),
     }))
     return this.enrichSyntheticPromptFailures(sessionKey, snapshot)
   }
@@ -253,6 +276,33 @@ export class HarnessPiChatService implements PiChatSessionService {
     return typeof this.harness.hasPiSession === 'function'
       ? this.harness.hasPiSession(sessionId, toSessionCtx(ctx))
       : true
+  }
+
+  private attachmentUrlFor(sessionId: string) {
+    return ({ messageId, index, data, mediaType, filename }: {
+      messageId: string
+      index: number
+      data?: string
+      mediaType?: string
+      filename?: string
+    }) => {
+      const bytes = attachmentBytes(data)
+      if (bytes) {
+        this.liveAttachments.set(liveAttachmentKey(sessionId, messageId, index), {
+          data: bytes,
+          mediaType: mediaType ?? 'application/octet-stream',
+          ...(filename ? { filename } : {}),
+        })
+      }
+      return this.attachmentUrl?.({
+      sessionId,
+      messageId,
+      index,
+        ...(data ? { data } : {}),
+        ...(mediaType ? { mediaType } : {}),
+        ...(filename ? { filename } : {}),
+      }) ?? `/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(messageId)}/${index}`
+    }
   }
 
   private async readPersistedState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot | null> {
@@ -266,7 +316,7 @@ export class HarnessPiChatService implements PiChatSessionService {
         status: 'idle',
         messages: buildPiChatHistory(messages, {
           sessionId: id,
-          attachmentUrl: ({ messageId, index }) => `/api/v1/agent/pi-chat/${encodeURIComponent(id)}/attachments/${encodeURIComponent(messageId)}/${index}`,
+          attachmentUrl: this.attachmentUrlFor(id),
         }),
         queue: { followUps: [] },
         followUpMode: 'one-at-a-time',
@@ -812,7 +862,11 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
     await this.lifecycle.assertAdapterOwned(adapter)
     const buffer = new PiChatReplayBuffer({ initialLatestSeq: initialSeq })
-    const mapper = new PiChatEventMapper({ sessionId, initialSeq: buffer.latestSeq })
+    const mapper = new PiChatEventMapper({
+      sessionId,
+      initialSeq: buffer.latestSeq,
+      attachmentUrl: this.attachmentUrlFor(sessionId),
+    })
     const closed = deferred<void>()
     closed.promise.catch(() => {})
     const channel: LiveSessionChannel = {
@@ -1067,6 +1121,21 @@ function toSessionCtx(ctx: PiSessionRequestContext): SessionCtx {
     Object.assign(sessionCtx, { runtimeScopeIdentity: ctx.runtimeScopeIdentity })
   }
   return sessionCtx
+}
+
+function liveAttachmentKey(sessionId: string, messageId: string, index: number): string {
+  return `${JSON.stringify(sessionId)}:${JSON.stringify(messageId)}:${index}`
+}
+
+function attachmentBytes(data: string | undefined): Uint8Array | undefined {
+  if (!data) return undefined
+  const encoded = data.startsWith('data:') ? data.slice(data.indexOf(',') + 1) : data
+  try {
+    const bytes = Buffer.from(encoded, 'base64')
+    return bytes.byteLength > 0 ? new Uint8Array(bytes) : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {

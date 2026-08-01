@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
+import { join } from 'node:path'
 import type { AgentTool } from '../shared/tool'
 import type { AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
@@ -24,6 +25,7 @@ import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { ReloadHookDiagnostic } from './http/routes/reload'
 import type { CompatibilityResolvedAgentRuntimeScope } from './agent-host/buildAgentComposition'
+import { canonicalDigest } from './agent-host/canonical'
 import {
   createAgentHost,
   createAgentHostCompatibilityRoutes,
@@ -198,12 +200,18 @@ export async function createAgentApp(
       runtimeModeAdapter: modeAdapter,
       runtimeHost,
       sessionRoot: opts.sessionRoot,
+      requestLedgerPath: join(workspaceRoot, '.boring', 'agent-request-ledger.sqlite'),
       telemetry: opts.telemetry,
       metering: opts.metering,
       harnessFactory: opts.harnessFactory,
       async resolveRuntimeScope(): Promise<CompatibilityResolvedAgentRuntimeScope> {
         return {
           identity: JSON.stringify([resolvedMode, sessionId, workspaceRoot, templatePath ?? null, runtimePi, opts.sessionNamespace ?? null]),
+          physicalBindingIdentity: JSON.stringify([resolvedMode, sessionId, workspaceRoot, templatePath ?? null]),
+          resourceInputDigest: canonicalDigest(JSON.parse(JSON.stringify({
+            hotResources: runtimePi.getHotReloadableResources?.() ?? null,
+            systemPromptAppend: opts.systemPromptAppend ?? null,
+          }))),
           environment: {
             placementIdentity: JSON.stringify([resolvedMode, workspaceRoot, templatePath ?? null]),
             workspaceRoot,
@@ -368,6 +376,8 @@ export async function createAgentApp(
         }, undefined)
       },
       defaultAgentTypeId: 'default',
+      defaultSessionId: sessionId,
+      sessionChangesTracker: profile.sessionChangesTracker,
     }))
     await registerAgentRouteBindingProfile(app, profile)
     return app

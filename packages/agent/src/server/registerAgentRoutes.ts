@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify'
+import { join } from 'node:path'
 import type { AuthorizedAgentScope, VerifiedAgentScopeClaim } from '../shared/gateway/types'
 import type { CompatibilityResolvedAgentRuntimeScope } from './agent-host/buildAgentComposition'
 import { createAgentHost } from './agent-host/createAgentHost'
@@ -27,6 +28,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const runtimeModeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   const runtimeHost = opts.runtimeHost ?? runtimeModeAdapter.runtimeHost
+  const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const compatibilityIssuer = opts.agentHost
     ? undefined
     : createCompatibilityScopeIssuer<CompatibilityResolvedAgentRuntimeScope>()
@@ -38,6 +40,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     runtimeModeAdapter,
     runtimeHost,
     sessionRoot: opts.sessionRoot,
+    requestLedgerPath: join(workspaceRoot, '.boring', 'agent-request-ledger.sqlite'),
     telemetry: opts.telemetry,
     metering: opts.metering,
     harnessFactory: opts.harnessFactory,
@@ -67,7 +70,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   } = opts
   const legacyRoutePolicy = createAgentHostLegacyRoutePolicy({
     ...legacyOptions,
-    workspaceRoot: opts.workspaceRoot ?? process.cwd(),
+    workspaceRoot,
     templatePath: opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH'),
     mode: resolvedMode,
     runtimeModeAdapter,

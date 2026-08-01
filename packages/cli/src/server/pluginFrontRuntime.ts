@@ -1402,6 +1402,9 @@ export async function createPluginFrontRuntimeHost(
   const vite = await createServer({
     appType: "custom",
     configFile: false,
+    ...(process.env.BORING_PLUGIN_FRONT_VITE_CACHE_DIR
+      ? { cacheDir: process.env.BORING_PLUGIN_FRONT_VITE_CACHE_DIR }
+      : {}),
     logLevel: "silent",
     // Disable the dep optimizer entirely. With discovery on, Vite re-optimizes
     // mid-session as plugin imports surface new deps; each pass rewrites

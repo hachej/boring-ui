@@ -148,6 +148,19 @@ test('registerAgentRoutes reuses one prebuilt Host while retaining addressed and
     expect(agents.json()).toEqual([{ agentTypeId: 'default', label: 'Agent' }])
     expect((await app.inject({ method: 'GET', url: '/api/v1/agent/models' })).statusCode).toBe(200)
     expect((await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })).statusCode).toBe(200)
+    for (const [method, url] of [
+      ['GET', '/api/v1/agents/:agentTypeId/models'],
+      ['GET', '/api/v1/agents/:agentTypeId/skills'],
+      ['GET', '/api/v1/agents/:agentTypeId/commands'],
+      ['POST', '/api/v1/agents/:agentTypeId/commands/execute'],
+      ['GET', '/api/v1/agents/:agentTypeId/tools'],
+      ['POST', '/api/v1/agents/:agentTypeId/reload'],
+      ['GET', '/api/v1/agents/:agentTypeId/ready-status'],
+    ] as const) expect(app.hasRoute({ method, url }), `${method} ${url}`).toBe(true)
+    expect(app.hasRoute({
+      method: 'POST',
+      url: '/api/v1/agents/:agentTypeId/sessions/:sessionId/queue-clear',
+    })).toBe(false)
 
     const session = await app.inject({
       method: 'POST',
@@ -725,7 +738,7 @@ test.each([
       url: '/api/v1/agent/pi-chat/sessions',
       payload: { title: 'Ledger' },
     })
-    expect(created.statusCode).toBe(201)
+    expect(created.statusCode, created.body).toBe(201)
     const sessionId = created.json().id as string
     const prompt = {
       method: 'POST' as const,
@@ -887,7 +900,7 @@ test('registerAgentRoutes isolates same-root sessions with getSessionNamespace',
       headers: { 'x-boring-workspace-id': 'workspace-a' },
       payload: { title: 'Workspace A' },
     })
-    expect(created.statusCode).toBe(201)
+    expect(created.statusCode, created.body).toBe(201)
 
     const workspaceA = await app.inject({
       method: 'GET',

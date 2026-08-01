@@ -49,6 +49,8 @@ export type ModelFilterResult = {
 }
 
 export interface ModelsRoutesOptions {
+  path?: string
+  authorizeRequest?: (request: FastifyRequest) => void | Promise<void>
   filterModels?: (
     ctx: ModelFilterContext,
     models: readonly ModelSummary[],
@@ -69,7 +71,8 @@ export function modelsRoutes(
   const configuredModelSet = new Set(
     configuredModels.map((model) => `${model.provider}:${model.id}`),
   )
-  app.get('/api/v1/agent/models', async (request, reply) => {
+  app.get(opts.path ?? '/api/v1/agent/models', async (request, reply) => {
+    await opts.authorizeRequest?.(request)
     const availableModels = registry.getAvailable()
     const availableSet = new Set(
       availableModels.map((m) => `${m.provider}:${m.id}`),

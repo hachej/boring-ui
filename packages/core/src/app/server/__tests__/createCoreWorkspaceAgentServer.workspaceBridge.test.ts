@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionFactory, ToolDefinition } from '@mariozechner/pi-coding-agent'
 import Fastify from 'fastify'
+import { assertComposedAgentHostRouteTable } from '@hachej/boring-agent/server/agent-host/testing/compositionRouteProof'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const agentServerMock = vi.hoisted(() => ({
@@ -17,7 +18,8 @@ const workspaceServerMock = vi.hoisted(() => ({
   pluginContexts: [] as any[],
 }))
 
-vi.mock('@hachej/boring-agent/server', () => {
+vi.mock('@hachej/boring-agent/server', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@hachej/boring-agent/server')>()
   const mountLegacyRoutes = async (app: any, opts: Record<string, unknown>) => {
     agentServerMock.registerOpts.push(opts)
     app.post('/api/v1/agent/chat', async () => ({ ok: true }))
@@ -59,18 +61,47 @@ vi.mock('@hachej/boring-agent/server', () => {
     })
   }
   return {
+    ...actual,
     autoDetectMode: () => 'direct',
     compactPiPackages: (packages: unknown[]) => packages,
     createValidatingAgentFleetCompiler: ({ compiler }: { compiler?: unknown }) => compiler ?? {
       async compile({ agents }: { agents: readonly unknown[] }) { return agents },
     },
-    createAgentHostLegacyRoutePolicy: (options: Record<string, unknown>) => ({ options }),
-    createAgentHost: async () => ({
-      marker: 'prebuilt-agent-host',
-      registerRoutes: (projection: { legacyRoutePolicy: { options: Record<string, unknown> } }) => async (app: any) => {
-        await mountLegacyRoutes(app, projection.legacyRoutePolicy.options)
+    createAgentHostLegacyRoutePolicy: (
+      options: Record<string, unknown>,
+      scopePolicy: { issueScope(input: { claim: object; runtimeScope: object }): object },
+    ) => ({
+      async mount({ app, runtime, defaultAgentTypeId, registerLifecycle }: any) {
+        await app.register(runtime.createAddressedRoutes({
+          defaultAgentTypeId,
+          authorizeRequest: async (request: any) => {
+            const workspaceId = await (options.getWorkspaceId as Function)(request)
+            const workspaceRoot = await (options.getWorkspaceRoot as Function)(workspaceId, request)
+            return scopePolicy.issueScope({
+              claim: { workspaceScopeId: workspaceId, authSubjectId: request.user?.id ?? 'user-1' },
+              runtimeScope: {
+                identity: JSON.stringify(['core-proof', workspaceId, workspaceRoot]),
+                environment: {
+                  placementIdentity: JSON.stringify(['core-proof', workspaceRoot]),
+                  workspaceRoot,
+                  provisioningFingerprint: JSON.stringify(['core-proof', workspaceRoot]),
+                },
+                sessionNamespace: workspaceId,
+              },
+            })
+          },
+        }))
+        await mountLegacyRoutes(app, options)
+        registerLifecycle({ startDraining() {}, async closeBindings() {} })
       },
     }),
+    createAgentHost: vi.fn(async (options: Parameters<typeof actual.createAgentHost>[0]) => (
+      actual.createAgentHost({
+        ...options,
+        requestLedgerPath: undefined,
+        requestLedgerCompatibilityMode: 'test',
+      })
+    )),
   }
 })
 
@@ -283,7 +314,7 @@ afterEach(() => {
 })
 
 describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
-  it('authorizes browser storage claims and canonicalizes them on the composed HTTP path', async () => {
+  it('Slice 1 composed route/auth proof: Core delegates once and enforces browser scope policy', async () => {
     const workspaceId = 'workspace-1'
     const canonicalNamespace = `${workspaceId}_33982c6908977596_user_cf1025156133f4d4`
     const app = await createCoreWorkspaceAgentServer({
@@ -297,6 +328,10 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
       }),
       getSessionNamespace: async () => canonicalNamespace,
     })
+    assertComposedAgentHostRouteTable(app, {
+      testOnlyAllowed: ['GET /api/v1/agent/chat/:sessionId/messages'],
+    })
+    expect(agentServerMock.registerOpts).toHaveLength(1)
     const inject = (storageScope?: string) => app.inject({
       method: 'GET',
       url: '/api/v1/agent/pi-chat/sessions',

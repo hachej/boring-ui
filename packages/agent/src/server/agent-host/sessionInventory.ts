@@ -3,7 +3,7 @@ import type { PiChatEvent } from '../../shared/chat'
 import type { AgentSessionActivity, AgentSessionRef, AuthorizedAgentScope, VerifiedAgentScopeClaim } from '../../shared/index'
 import type { SessionSummary } from '../../shared/session'
 import { PiSessionStore } from '../harness/pi-coding-agent/sessions'
-import type { CompiledAgentHostAgentSpec, CreateAgentHostOptions, ResolvedAgentRuntimeScope } from './types'
+import type { CompiledAgentHostAgentSpec, ResolvedAgentRuntimeScope } from './types'
 
 interface InventoryRuntimeScope extends ResolvedAgentRuntimeScope {
   readonly compatibility?: {
@@ -41,8 +41,13 @@ export class AgentSessionInventory {
   private readonly stores = new Map<string, PiSessionStore>()
 
   constructor(
-    private readonly options: Pick<CreateAgentHostOptions, 'resolveRuntimeScope' | 'sessionRoot'>,
+    private readonly sessionRoot: string | undefined,
     private readonly compiledById: ReadonlyMap<string, CompiledAgentHostAgentSpec>,
+    private readonly resolveRuntimeScope: (
+      agentTypeId: string,
+      scope: AuthorizedAgentScope,
+      claim: VerifiedAgentScopeClaim,
+    ) => Promise<ResolvedAgentRuntimeScope>,
   ) {}
 
   async list(
@@ -84,12 +89,12 @@ export class AgentSessionInventory {
   ): Promise<{ runtimeScope: InventoryRuntimeScope; store: PiSessionStore } | undefined> {
     const agent = this.compiledById.get(agentTypeId)
     if (!agent) return undefined
-    const runtimeScope = await this.options.resolveRuntimeScope({ agentTypeId, scope }) as InventoryRuntimeScope
+    const runtimeScope = await this.resolveRuntimeScope(agentTypeId, scope, claim) as InventoryRuntimeScope
     const sessionNamespace = sessionNamespaceForAgent(agent, claim.workspaceScopeId, runtimeScope.sessionNamespace)
     const candidate = new PiSessionStore(runtimeScope.environment.workspaceRoot, {
       sessionDir: runtimeScope.compatibility?.sessionDir,
       sessionNamespace,
-      sessionRoot: this.options.sessionRoot,
+      sessionRoot: this.sessionRoot,
       storageCwd: runtimeScope.environment.workspaceRoot,
     })
     const key = JSON.stringify([agentTypeId, claim.workspaceScopeId, candidate.getSessionDir()])

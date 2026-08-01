@@ -7,6 +7,9 @@ import {
 import type { AgentHarness } from '../../../shared/harness'
 
 export interface SystemPromptRouteOptions {
+  path?: string
+  sessionIdParam?: string
+  authorizeRequest?: (request: FastifyRequest) => void | Promise<void>
   harness?: AgentHarness
   getHarness?: (request: FastifyRequest) => AgentHarness | Promise<AgentHarness>
 }
@@ -32,10 +35,11 @@ export function systemPromptRoutes(
   }
 
   app.get(
-    '/api/v1/agent/sessions/:id/system-prompt',
+    opts.path ?? '/api/v1/agent/sessions/:id/system-prompt',
     async (request, reply) => {
+      await opts.authorizeRequest?.(request)
       const params = request.params as Record<string, unknown>
-      const sessionId = params.id
+      const sessionId = params[opts.sessionIdParam ?? 'id']
       if (typeof sessionId !== 'string' || sessionId.length === 0) {
         return reply.code(400).send({
           error: {

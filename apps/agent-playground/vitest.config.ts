@@ -4,6 +4,7 @@ import { defineConfig } from 'vitest/config'
 const repositoryRoot = resolve(import.meta.dirname, '..', '..')
 
 export default defineConfig({
+  cacheDir: resolve(process.env.TMPDIR ?? '/tmp', 'boring-ui-v2-agent-playground-vitest-cache'),
   resolve: {
     alias: [
       { find: /^@hachej\/boring-agent\/server$/, replacement: resolve(repositoryRoot, 'packages/agent/src/server/index.ts') },
@@ -18,15 +19,5 @@ export default defineConfig({
       { find: /^@hachej\/boring-sandbox\/providers\/vercel-sandbox$/, replacement: resolve(repositoryRoot, 'packages/boring-sandbox/src/providers/vercel-sandbox/index.ts') },
     ],
   },
-  test: {
-    globals: true,
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'e2e/**/*.test.ts'],
-    environment: 'node',
-    setupFiles: [
-      './src/server/__tests__/_setup.ts',
-      './src/front/__tests__/_setup.ts',
-      './src/front/__tests__/_setup-matchers.ts',
-    ],
-    reporters: ['default'],
-  },
+  test: { environment: 'node' },
 })

@@ -15,6 +15,7 @@ import { InMemoryAgentRequestLedger } from '../requestLedger'
 import type {
   AgentHostHttpProjectionOptions,
   AgentRequestKey,
+  AgentRequestLedger,
   CreateAgentHostOptions,
 } from '../types'
 
@@ -181,6 +182,51 @@ describe('Agent Host lifecycle', () => {
     expect(fixture.dispose).toHaveBeenCalledOnce()
   })
 
+  it('terminalizes a created ledger claim without mutation when drain wins during prepare', async () => {
+    const fixture = await options()
+    const base = new InMemoryAgentRequestLedger()
+    const prepareStarted = deferred<void>()
+    const releasePrepare = deferred<void>()
+    const admit = vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'admitted' }))
+    const ledger: AgentRequestLedger = {
+      durability: 'in-memory',
+      async prepare(key, digest) {
+        prepareStarted.resolve()
+        await releasePrepare.promise
+        return await base.prepare(key, digest)
+      },
+      acceptAdmission: (key, receipt) => base.acceptAdmission(key, receipt),
+      beginEffect: (key) => base.beginEffect(key),
+      reject: (key, failure) => base.reject(key, failure),
+      complete: (key, receipt) => base.complete(key, receipt),
+      markOutcomeUnknown: (key, error) => base.markOutcomeUnknown(key, error),
+      read: (key) => base.read(key),
+    }
+    const created = await createAgentHost({
+      ...fixture.value,
+      requestLedger: ledger,
+      requestLedgerCompatibilityMode: 'test',
+      effectAdmission: { admit },
+    })
+    const request = created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'drain-during-prepare',
+    })
+    request.catch(() => {})
+    await prepareStarted.promise
+    await created.host.drain()
+    releasePrepare.resolve()
+
+    await expect(request).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED })
+    expect(admit).not.toHaveBeenCalled()
+    await expect(base.read(createRequestKey('drain-during-prepare'))).resolves.toMatchObject({
+      state: 'rejected',
+      failure: { kind: 'gateway', error: { code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED } },
+    })
+    await created.host.close()
+  })
+
   it('bounds adapter creation across drain and close, then disposes its late bundle exactly once', async () => {
     const fixture = await options()
     const baseAdapter = createTestRuntimeModeAdapter('direct')
@@ -192,6 +238,7 @@ describe('Agent Host lifecycle', () => {
     const created = await createAgentHost({
       ...fixture.value,
       requestLedger: ledger,
+      requestLedgerCompatibilityMode: 'test',
       runtimeModeAdapter: {
         ...baseAdapter,
         async create(ctx) {
@@ -241,7 +288,7 @@ describe('Agent Host lifecycle', () => {
         identity: 'runtime-provision',
         environment: {
           placementIdentity: 'direct-provision',
-          workspaceRoot: (await fixture.value.resolveRuntimeScope({ agentTypeId: 'alpha', scope })).environment.workspaceRoot,
+          workspaceRoot: (await fixture.value.resolveRuntimeScope!({ agentTypeId: 'alpha', scope })).environment.workspaceRoot,
           provisioningFingerprint: 'provision-stuck',
           async provisionRuntime({ signal }) {
             provisionStarted.resolve(signal)

@@ -10,6 +10,7 @@ export default defineConfig({
     "server/index": "src/server/index.ts",
     "server/pi-session-readability": "src/server/harness/pi-coding-agent/sessionReadability.ts",
     "server/agent-host/testing/gatewayConformance": "src/server/agent-host/testing/gatewayConformance.ts",
+    "server/agent-host/testing/compositionRouteProof": "src/server/agent-host/testing/compositionRouteProof.ts",
     "server/worker/index": "src/server/worker/index.ts",
     "front/index": "src/front/index.ts",
     "eval/index": "src/eval/index.ts",

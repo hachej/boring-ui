@@ -3,14 +3,98 @@
   "type": "object",
   "required": [
     "schemaVersion",
+    "slice1Gate",
     "routes"
   ],
   "properties": {
     "schemaVersion": {
       "const": 1
     },
+    "slice1Gate": {
+      "type": "object",
+      "required": ["compositionRoots", "sourceInventories"],
+      "properties": {
+        "compositionRoots": {
+          "type": "array",
+          "minItems": 7,
+          "items": {
+            "type": "object",
+            "required": ["id", "source", "proof", "projection", "proofLevel", "packageRoot", "testName"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "source": { "type": "string", "minLength": 1 },
+              "proof": { "type": "string", "minLength": 1 },
+              "packageRoot": { "type": "string", "minLength": 1 },
+              "testName": { "type": "string", "minLength": 1 },
+              "projection": {
+                "enum": ["direct", "compatibility", "delegates-to-workspace"]
+              },
+              "proofLevel": {
+                "enum": ["exact-composed-table", "shared-exact-composed-table"]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "sourceInventories": {
+          "type": "object",
+          "required": ["legacyReferences", "publicServerExports", "generatedAttachmentUrls", "authorizationProof"],
+          "properties": {
+            "legacyReferences": {
+              "type": "object",
+              "required": ["count", "sha256"],
+              "properties": {
+                "count": { "type": "integer", "minimum": 1 },
+                "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+              },
+              "additionalProperties": false
+            },
+            "publicServerExports": {
+              "type": "object",
+              "required": ["source", "symbols"],
+              "properties": {
+                "source": { "type": "string", "minLength": 1 },
+                "symbols": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": { "type": "string", "minLength": 1 }
+                }
+              },
+              "additionalProperties": false
+            },
+            "generatedAttachmentUrls": {
+              "type": "object",
+              "required": ["addressed", "compatibility"],
+              "properties": {
+                "addressed": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": { "type": "string", "minLength": 1 }
+                },
+                "compatibility": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": { "type": "string", "minLength": 1 }
+                }
+              },
+              "additionalProperties": false
+            },
+            "authorizationProof": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "routes": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
         "required": [
@@ -32,6 +116,8 @@
           },
           "current": {
             "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
             "items": {
               "type": "string",
               "pattern": "^(GET|POST|PUT|PATCH|DELETE) /"
@@ -44,6 +130,8 @@
               },
               {
                 "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
                 "items": {
                   "type": "string",
                   "pattern": "^(GET|POST|PUT|PATCH|DELETE) /"

@@ -19,6 +19,7 @@ import { AgentGatewayErrorCode } from '../../shared/gateway/errors'
 import type { RuntimeFilesystemBindingOperations, RuntimeModeAdapter } from '../runtime/mode'
 import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatcher'
 import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
+import { assertComposedAgentHostRouteTable } from '../agent-host/testing/compositionRouteProof'
 
 const tempDirs: string[] = []
 const ORIGINAL_TEMPLATE_PATH = getEnv('BORING_AGENT_TEMPLATE_PATH')
@@ -868,7 +869,7 @@ test('extraTools are appended after bundle tools', async () => {
   await app.close()
 })
 
-test('standalone createAgentApp keeps agent catalog and has no /api/v1/capabilities route', async () => {
+test('Slice 1 composed route/auth proof: standalone delegates its trusted scope to the canonical Host table', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-standalone-capabilities-')
   const app = await createAgentApp({
     workspaceRoot,
@@ -887,6 +888,15 @@ test('standalone createAgentApp keeps agent catalog and has no /api/v1/capabilit
         .json()
         .tools.map((tool: { name: string }) => tool.name),
     ).toContain('bash')
+
+    const addressed = await app.inject({ method: 'GET', url: '/api/v1/agents' })
+    expect(addressed.statusCode).toBe(200)
+    expect(addressed.json()).toEqual([{ agentTypeId: 'default', label: 'Agent' }])
+    assertComposedAgentHostRouteTable(app)
+    expect(app.hasRoute({
+      method: 'GET',
+      url: '/api/v1/agents/:agentTypeId/sessions/:sessionId/attachments/:messageId/:index',
+    })).toBe(true)
 
     const capabilitiesRes = await app.inject({
       method: 'GET',

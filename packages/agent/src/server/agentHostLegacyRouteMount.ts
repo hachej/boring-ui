@@ -282,6 +282,9 @@ export async function mountOrderedAgentHostLegacyRoutes(
       }, binding.hostScope)
     },
     defaultAgentTypeId,
+    defaultSessionId: sessionId,
+    filterModels: opts.filterModels,
+    sessionChangesTracker,
   }))
   await app.register(piChatRoutes, {
     getService: async (request) => {

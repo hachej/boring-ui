@@ -49,6 +49,7 @@ class FakeGateway implements AgentGateway {
   readonly calls: Array<{ method: string; input: unknown }> = []
   events: AgentSessionEvent[] = [event]
   sendError: AgentGatewayError | undefined
+  readStateError: AgentGatewayError | undefined
 
   async listAgents(input: Parameters<AgentGateway['listAgents']>[0]) {
     this.calls.push({ method: 'listAgents', input })
@@ -67,6 +68,7 @@ class FakeGateway implements AgentGateway {
 
   async readSessionState(input: Parameters<AgentGateway['readSessionState']>[0]) {
     this.calls.push({ method: 'readSessionState', input })
+    if (this.readStateError) throw this.readStateError
     return snapshot
   }
 
@@ -162,6 +164,8 @@ async function buildApp(options: {
   gateway?: FakeGateway
   authorizeRequest?: () => Promise<AuthorizedAgentScope>
   legacyPiChatAliases?: boolean
+  resolveLegacyPiChatService?: Parameters<typeof createAgentHostRoutes>[0]['resolveLegacyPiChatService']
+  resolveAddressedPiChatService?: Parameters<typeof createAgentHostRoutes>[0]['resolveAddressedPiChatService']
 } = {}) {
   const gateway = options.gateway ?? new FakeGateway()
   const host: AgentHostHandle = {
@@ -179,7 +183,11 @@ async function buildApp(options: {
       defaultAgentTypeId: 'alpha',
       legacyPiChatAliases: options.legacyPiChatAliases,
     },
-    resolveLegacyPiChatService: async () => legacyService(),
+    resolveLegacyPiChatService: options.resolveLegacyPiChatService ?? (async () => legacyService()),
+    resolveAddressedPiChatService: options.resolveAddressedPiChatService ?? (async () => ({
+      scope,
+      service: legacyService(),
+    })),
   }))
   await app.ready()
   return { app, gateway, host }
@@ -213,6 +221,17 @@ describe('addressed Agent Host HTTP projection', () => {
     expect(created.statusCode).toBe(201)
     expect(created.json()).toEqual(ref)
     expect((await app.inject({ method: 'GET', url: '/api/v1/agents/alpha/sessions/session-1/state' })).json()).toEqual(snapshot)
+    const attachment = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agents/alpha/sessions/session-1/attachments/message-1/0',
+    })
+    expect(attachment.statusCode).toBe(200)
+    expect(attachment.body).toBe('image-bytes')
+    expect(attachment.headers).toMatchObject({
+      'content-type': 'image/png',
+      'cache-control': 'private, max-age=300',
+      'x-content-type-options': 'nosniff',
+    })
     expect((await app.inject({
       method: 'POST',
       url: '/api/v1/agents/alpha/sessions/session-1/rename',
@@ -260,7 +279,7 @@ describe('addressed Agent Host HTTP projection', () => {
       method: 'POST',
       url: '/api/v1/agents/alpha/sessions/session-1/queue-clear',
       payload: { requestId: 'clear-legacy-addressed' },
-    })).statusCode).toBe(202)
+    })).statusCode).toBe(404)
     expect((await app.inject({
       method: 'DELETE',
       url: '/api/v1/agents/alpha/sessions/session-1?requestId=delete-1',
@@ -297,6 +316,30 @@ describe('addressed Agent Host HTTP projection', () => {
     expect(gateway.calls).toContainEqual({ method: 'connectSession', input: { scope, ref, cursor: 7 } })
     expect(gateway.calls).toContainEqual({ method: 'close', input: ref })
 
+    await app.close()
+  })
+
+  it('fails addressed attachment access closed before resolving raw bytes', async () => {
+    const gateway = new FakeGateway()
+    const resolveAddressedPiChatService = vi.fn(async () => { throw new AgentGatewayError(
+      AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND,
+      'session was not found',
+    ) })
+    const { app } = await buildApp({ gateway, resolveAddressedPiChatService })
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agents/beta/sessions/session-1/attachments/message-1/0',
+    })
+    expect(response.statusCode).toBe(404)
+    expect(response.json()).toMatchObject({
+      error: { code: AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND },
+    })
+    expect(resolveAddressedPiChatService).toHaveBeenCalledWith(
+      expect.anything(),
+      'beta',
+      'session-1',
+    )
+    expect(gateway.calls).not.toContainEqual(expect.objectContaining({ method: 'readSessionState' }))
     await app.close()
   })
 

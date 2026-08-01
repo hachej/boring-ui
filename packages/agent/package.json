@@ -37,6 +37,11 @@
       "import": "./dist/server/agent-host/testing/gatewayConformance.js",
       "default": "./dist/server/agent-host/testing/gatewayConformance.js"
     },
+    "./server/agent-host/testing/compositionRouteProof": {
+      "types": "./dist/server/agent-host/testing/compositionRouteProof.d.ts",
+      "import": "./dist/server/agent-host/testing/compositionRouteProof.js",
+      "default": "./dist/server/agent-host/testing/compositionRouteProof.js"
+    },
     "./server/worker": {
       "types": "./dist/server/worker/index.d.ts",
       "import": "./dist/server/worker/index.js",
