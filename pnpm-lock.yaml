@@ -408,6 +408,9 @@ importers:
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../agent
+      '@hachej/boring-bash':
+        specifier: workspace:*
+        version: link:../boring-bash
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.1

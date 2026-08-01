@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "slice1Gate": {
     "compositionRoots": [
-      { "id": "core", "source": "packages/core/src/app/server/createCoreWorkspaceAgentServer.ts", "proof": "packages/core/src/app/server/__tests__/createCoreWorkspaceAgentServer.workspaceBridge.test.ts", "packageRoot": "packages/core", "testName": "Core delegates once and enforces browser scope policy", "projection": "compatibility", "proofLevel": "shared-exact-composed-table" },
+      { "id": "core", "source": "packages/core/src/app/server/createCoreWorkspaceAgentServer.ts", "proof": "packages/core/src/app/server/__tests__/createCoreWorkspaceAgentServer.workspaceBridge.test.ts", "packageRoot": "packages/core", "testName": "Core mounts one direct Host table and enforces browser scope policy", "projection": "direct", "proofLevel": "shared-exact-composed-table" },
       { "id": "workspace", "source": "packages/workspace/src/app/server/createWorkspaceAgentServer.ts", "proof": "packages/workspace/src/app/server/__tests__/createWorkspaceAgentServer.test.ts", "packageRoot": "packages/workspace", "testName": "Workspace delegates once to the canonical Host scope", "projection": "compatibility", "proofLevel": "shared-exact-composed-table" },
       { "id": "cli-folder", "source": "packages/cli/src/server/modeApps.ts", "proof": "packages/cli/src/server/__tests__/modeApps.agentHost.test.ts", "packageRoot": "packages/cli", "testName": "CLI folder mode delegates to Workspace's canonical Host table", "projection": "delegates-to-workspace", "proofLevel": "shared-exact-composed-table" },
       { "id": "cli-workspaces", "source": "packages/cli/src/server/modeApps.ts", "proof": "packages/cli/src/server/__tests__/modeApps.agentHost.test.ts", "packageRoot": "packages/cli", "testName": "CLI workspaces mode uses one Host and preserves transcript bytes", "projection": "compatibility", "proofLevel": "shared-exact-composed-table" },
@@ -12,8 +12,8 @@
     ],
     "sourceInventories": {
       "legacyReferences": {
-        "count": 16,
-        "sha256": "5db1fd6a1b5cd26adbcee0a0d27e642edcf9df045c9dc448ab2d398b10292442",
+        "count": 15,
+        "sha256": "20e73ad4add4dad262fff51152bb506b4df2b1de48a453aff2b9dfa1524a31a9",
         "files": [
           { "source": "apps/agent-playground/src/server/agentHost.ts", "disposition": "slice-5" },
           { "source": "packages/agent/src/server/agent-host/createAgentHost.ts", "disposition": "slice-6" },
@@ -29,7 +29,6 @@
           { "source": "packages/agent/src/server/registerAgentRoutes.ts", "disposition": "slice-6" },
           { "source": "packages/agent/test-host/sandbox.ts", "disposition": "slice-5" },
           { "source": "packages/cli/src/server/modeApps.ts", "disposition": "slice-4-and-5" },
-          { "source": "packages/core/src/app/server/createCoreWorkspaceAgentServer.ts", "disposition": "slice-3" },
           { "source": "packages/workspace/src/app/server/createWorkspaceAgentServer.ts", "disposition": "slice-4" }
         ]
       },
