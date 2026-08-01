@@ -23,12 +23,12 @@ test.describe('M3a: pi-chat session CRUD', () => {
     expect(r2.ok()).toBe(true)
     const sessionB = (await r2.json()) as { id: string }
 
-    // List - both present
+    // Ordinary history listing suppresses turn-less sessions.
     const listBefore = await browserPage.request.get(`${api}/api/v1/agent/pi-chat/sessions`)
     const beforeList = (await listBefore.json()) as Array<{ id: string }>
     const idsBefore = beforeList.map((s) => s.id)
-    expect(idsBefore).toContain(sessionA.id)
-    expect(idsBefore).toContain(sessionB.id)
+    expect(idsBefore).not.toContain(sessionA.id)
+    expect(idsBefore).not.toContain(sessionB.id)
 
     // State - canonical snapshot with an empty timeline
     const state = await browserPage.request.get(
@@ -49,12 +49,22 @@ test.describe('M3a: pi-chat session CRUD', () => {
     )
     expect(del.status()).toBe(204)
 
-    // List again - only B remains
+    // Deletion removes A while the independently addressable empty B remains.
+    const deletedState = await browserPage.request.get(
+      `${api}/api/v1/agent/pi-chat/${sessionA.id}/state`,
+      { failOnStatusCode: false },
+    )
+    expect(deletedState.status()).toBe(404)
+    const remainingState = await browserPage.request.get(
+      `${api}/api/v1/agent/pi-chat/${sessionB.id}/state`,
+    )
+    expect(remainingState.ok()).toBe(true)
+
     const listAfter = await browserPage.request.get(`${api}/api/v1/agent/pi-chat/sessions`)
     const afterList = (await listAfter.json()) as Array<{ id: string }>
     const idsAfter = afterList.map((s) => s.id)
     expect(idsAfter).not.toContain(sessionA.id)
-    expect(idsAfter).toContain(sessionB.id)
+    expect(idsAfter).not.toContain(sessionB.id)
   })
 
   test('state of an unknown session returns stable not-found error', async ({

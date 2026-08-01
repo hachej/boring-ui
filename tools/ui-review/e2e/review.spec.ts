@@ -240,10 +240,13 @@ function monitorErrors(page: Page): UiReviewBrowserErrors {
   const errors: UiReviewBrowserErrors = { consoleErrors: [], pageErrors: [], requestFailures: [], httpErrors: [] }
   page.on("console", (message) => { if (message.type() === "error") errors.consoleErrors.push(message.text()) })
   page.on("pageerror", (error) => errors.pageErrors.push(error.message))
-  page.on("requestfailed", (request) => errors.requestFailures.push({
-    url: request.url(),
-    errorText: request.failure()?.errorText ?? "unknown request failure",
-  }))
+  page.on("requestfailed", (request) => {
+    const errorText = request.failure()?.errorText ?? "unknown request failure"
+    // React source transitions intentionally abort stale reads. HTTP failures
+    // and genuine transport errors remain hard gates; client cancellation does not.
+    if (errorText === "net::ERR_ABORTED") return
+    errors.requestFailures.push({ url: request.url(), errorText })
+  })
   page.on("response", (response) => {
     if (response.status() >= 400) errors.httpErrors.push({ url: response.url(), status: response.status() })
   })

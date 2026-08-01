@@ -64,6 +64,7 @@ export async function startPlaygroundServer(): Promise<void> {
       : undefined
     const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
     const multiFilesystemPlayground = process.env.BORING_WORKSPACE_PLAYGROUND_MULTI_FS === "1" || process.env.VITE_PLAYGROUND_MULTI_FS === "1"
+    const nativeSessionStartEnabled = process.env.BORING_WORKSPACE_PLAYGROUND_NATIVE_SESSION_START !== "0"
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
     console.log(`[workspace-playground] runtime mode: ${remoteWorkerModeAdapter ? "remote-worker" : localRuntimeMode}`)
     if (remoteWorkerWorkspaceId) {
@@ -73,7 +74,7 @@ export async function startPlaygroundServer(): Promise<void> {
       workspaceRoot,
       appRoot: APP_ROOT,
       sessionId: remoteWorkerWorkspaceId,
-      nativeSessionStartEnabled: true,
+      nativeSessionStartEnabled,
       mode: remoteWorkerModeAdapter ? undefined : localRuntimeMode,
       runtimeModeAdapter: remoteWorkerModeAdapter,
       logger: true,
@@ -129,7 +130,7 @@ export async function startPlaygroundServer(): Promise<void> {
         projectName: remoteWorkerWorkspaceId ? "Remote worker playground" : localName,
         workspaceId: remoteWorkerWorkspaceId ?? localName,
         workspaceRoot,
-        nativeSessionStartEnabled: true,
+        nativeSessionStartEnabled,
       }
     })
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })
