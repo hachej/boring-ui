@@ -18,6 +18,10 @@ interface TrustedPiSessionServices {
   prompt: Pick<PiChatSessionService, 'prompt'>
 }
 
+// TODO(agent-gateway migration): Delete this legacy partition bridge and
+// AgentCoreSessionService.ensurePiSessionBound once browser Pi chat creates and
+// addresses its sessions through AgentGateway instead of workspace/user storage.
+
 export async function bindTrustedPiSession(input: {
   ctx: WorkspaceAgentDispatcherContext
   request?: FastifyRequest
