@@ -96,20 +96,8 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
       data-boring-agent-message-id={message.id}
       data-boring-agent-message-role={role}
       data-boring-agent-message-status={message.status}
-      className="!max-w-full !gap-1.5"
     >
-      <MessageContent
-        className={cn(
-          '!overflow-visible text-[13px] leading-relaxed text-foreground',
-          role === 'user'
-            ? cn(
-                '!ml-auto !max-w-[80%] !rounded-[var(--radius-lg)]',
-                '!px-4 !py-2.5',
-                '!bg-secondary !text-secondary-foreground',
-              )
-            : '!w-full !bg-transparent !p-0',
-        )}
-      >
+      <MessageContent>
         {fileParts.length > 0 ? (
           <Attachments
             variant={role === 'user' ? 'inline' : 'list'}
@@ -193,20 +181,7 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
                 <MessageResponse
                   key={`${mentionSignature || 'no-message-mentions'}:${mentionsEnabled ? 'enabled' : 'static'}`}
                   components={mentionMarkdownComponents}
-                  className={cn(
-                    'max-w-none',
-                    'prose prose-invert prose-neutral',
-                    'prose-p:my-3 prose-p:leading-[1.7] prose-p:text-[13px]',
-                    'prose-headings:mt-5 prose-headings:mb-2 prose-headings:font-semibold prose-headings:tracking-[-0.01em]',
-                    'prose-ul:my-3 prose-ul:pl-6 prose-ol:my-3 prose-ol:pl-6',
-                    'prose-li:my-1.5 prose-li:leading-[1.7] prose-li:pl-1 prose-li:marker:text-muted-foreground/70',
-                    'prose-strong:font-semibold prose-strong:text-foreground',
-                    'prose-em:text-foreground/90',
-                    'prose-a:text-[color:var(--accent)] prose-a:underline-offset-4 hover:prose-a:underline',
-                    'prose-code:before:content-none prose-code:after:content-none',
-                    'prose-pre:my-0 prose-pre:rounded-none prose-pre:border-0',
-                    'prose-pre:bg-transparent prose-pre:p-0',
-                  )}
+                  className="boring-agent-markdown max-w-none"
                 >
                   {text}
                 </MessageResponse>
