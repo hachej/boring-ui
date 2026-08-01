@@ -1,7 +1,7 @@
 import { ErrorCode } from '../../shared/error-codes'
 import type { ChatError, PiChatSnapshot, PiChatStatus, QueuedUserMessage } from '../../shared/chat'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from './PiAgentSessionAdapter'
-import { buildPiChatHistory } from './piChatHistory'
+import { buildPiChatHistory, type BuildPiChatHistoryOptions } from './piChatHistory'
 
 export interface BuildPiChatSnapshotOptions {
   seq: number
@@ -10,6 +10,7 @@ export interface BuildPiChatSnapshotOptions {
   messageTurnIds?: ReadonlyMap<string, string>
   status?: PiChatStatus
   error?: ChatError
+  attachmentUrl?: BuildPiChatHistoryOptions['attachmentUrl']
 }
 
 function queueId(sessionId: string, index: number, text: string): string {
@@ -69,6 +70,7 @@ export function buildPiChatSnapshot(adapter: PiAgentSessionAdapter, options: Bui
     messages: buildPiChatHistory(piSnapshot.messages, {
       sessionId,
       messageTurnIds: options.messageTurnIds,
+      attachmentUrl: options.attachmentUrl,
     }),
     queue: { followUps: buildPiChatQueuedFollowUps(sessionId, piSnapshot.followUpMessages) },
     followUpMode: 'one-at-a-time',

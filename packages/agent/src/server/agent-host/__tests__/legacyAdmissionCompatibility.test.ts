@@ -160,7 +160,7 @@ function createFixture(options: {
       if (input !== scope) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SCOPE_DENIED, 'denied')
       return { workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' }
     },
-    trackEffect<T>(effect: Promise<T>) { return effect },
+    startPreparedEffect<T>(_key: AgentRequestKey, effect: () => Promise<T>) { return effect() },
   } as never)
   const compatibility = createLegacyPiChatCompatibilityService({
     gateway,

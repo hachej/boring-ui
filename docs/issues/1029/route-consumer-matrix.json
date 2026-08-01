@@ -1,5 +1,62 @@
 {
   "schemaVersion": 1,
+  "slice1Gate": {
+    "compositionRoots": [
+      { "id": "core", "source": "packages/core/src/app/server/createCoreWorkspaceAgentServer.ts", "proof": "packages/core/src/app/server/__tests__/createCoreWorkspaceAgentServer.workspaceBridge.test.ts", "packageRoot": "packages/core", "testName": "Core delegates once and enforces browser scope policy", "projection": "compatibility", "proofLevel": "shared-exact-composed-table" },
+      { "id": "workspace", "source": "packages/workspace/src/app/server/createWorkspaceAgentServer.ts", "proof": "packages/workspace/src/app/server/__tests__/createWorkspaceAgentServer.test.ts", "packageRoot": "packages/workspace", "testName": "Workspace delegates once to the canonical Host scope", "projection": "compatibility", "proofLevel": "shared-exact-composed-table" },
+      { "id": "cli-folder", "source": "packages/cli/src/server/modeApps.ts", "proof": "packages/cli/src/server/__tests__/modeApps.agentHost.test.ts", "packageRoot": "packages/cli", "testName": "CLI folder mode delegates to Workspace's canonical Host table", "projection": "delegates-to-workspace", "proofLevel": "shared-exact-composed-table" },
+      { "id": "cli-workspaces", "source": "packages/cli/src/server/modeApps.ts", "proof": "packages/cli/src/server/__tests__/modeApps.agentHost.test.ts", "packageRoot": "packages/cli", "testName": "CLI workspaces mode uses one Host and preserves transcript bytes", "projection": "compatibility", "proofLevel": "shared-exact-composed-table" },
+      { "id": "agent-playground", "source": "apps/agent-playground/src/server/agentHost.ts", "proof": "apps/agent-playground/src/server/__tests__/agentGateway.smoke.test.ts", "packageRoot": "apps/agent-playground", "testName": "playground delegates to one canonical Host and trusted scope", "projection": "compatibility", "proofLevel": "shared-exact-composed-table" },
+      { "id": "standalone", "source": "packages/agent/src/server/createAgentApp.ts", "proof": "packages/agent/src/server/__tests__/createAgentApp.test.ts", "packageRoot": "packages/agent", "testName": "standalone delegates its trusted scope to the canonical Host table", "projection": "compatibility", "proofLevel": "shared-exact-composed-table" },
+      { "id": "direct-agent-host", "source": "packages/agent/src/server/agent-host/createAgentHost.ts", "proof": "packages/agent/src/server/agent-host/__tests__/createAgentHost.test.ts", "packageRoot": "packages/agent", "testName": "direct Host mounts the exact table once behind authorization", "projection": "direct", "proofLevel": "exact-composed-table" }
+    ],
+    "sourceInventories": {
+      "legacyReferences": {
+        "count": 28,
+        "sha256": "575d73d51c1c4f975ef61f1f340e32cfceb3f2f106a2385bcd096ebb134a82c5"
+      },
+      "publicServerExports": {
+        "source": "packages/agent/src/server/index.ts",
+        "symbols": [
+          "AgentHostAddressedHttpProjectionOptions",
+          "AgentHostAgentSpec",
+          "AgentHostDescription",
+          "AgentHostDirectProjectionOptions",
+          "AgentHostDispatcherRunInput",
+          "AgentHostEnvironmentLease",
+          "AgentHostEnvironmentScope",
+          "AgentHostHandle",
+          "AgentHostHttpProjectionOptions",
+          "AgentHostLegacyHttpProjectionOptions",
+          "AgentHostLegacyProjectionComposition",
+          "AgentHostLegacyProjectionLifecycle",
+          "AgentHostLegacyProjectionRuntime",
+          "AgentHostLegacyRoutePolicy",
+          "AgentHostLegacyRoutePolicyMountInput",
+          "AgentHostLegacyRoutePolicyOptions",
+          "AgentHostLegacyRouteScopePolicy",
+          "AgentRequestLedger",
+          "AgentRequestLedgerPrepareResult",
+          "AgentRequestLedgerRecord",
+          "CompiledAgentHostAgentSpec",
+          "ConfiguredAgentHostAgentSpec",
+          "CreateAgentHostOptions",
+          "CreatedAgentHost",
+          "InMemoryAgentRequestLedger",
+          "LegacyDefaultAgentHostSpec",
+          "PrebuiltAgentHostRoutePolicy",
+          "SqliteAgentRequestLedger",
+          "createAgentHost",
+          "createAgentHostLegacyRoutePolicy"
+        ]
+      },
+      "generatedAttachmentUrls": {
+        "addressed": ["packages/agent/src/server/agent-host/buildAgentComposition.ts"],
+        "compatibility": ["packages/agent/src/server/pi-chat/harnessPiChatService.ts"]
+      },
+      "authorizationProof": "packages/agent/src/server/agent-host/__tests__/httpProjection.test.ts"
+    }
+  },
   "routes": [
     {
       "id": "health",
@@ -256,7 +313,7 @@
     {
       "id": "system-prompt",
       "current": [
-        "GET /api/v1/agent/sessions/:sessionId/system-prompt"
+        "GET /api/v1/agent/sessions/:id/system-prompt"
       ],
       "final": [
         "GET /api/v1/agents/:agentTypeId/sessions/:sessionId/system-prompt"
@@ -304,7 +361,7 @@
     {
       "id": "session-changes",
       "current": [
-        "GET /api/v1/agent/sessions/:sessionId/changes"
+        "GET /api/v1/agent/sessions/:id/changes"
       ],
       "final": [
         "GET /api/v1/agents/:agentTypeId/sessions/:sessionId/changes"

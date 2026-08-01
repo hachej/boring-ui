@@ -15,7 +15,7 @@ import type {
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
 import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
-import { basename, isAbsolute, join, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
 import { registerWorkspacePluginConfigRoutes, registerWorkspaceTaskRoutes } from "./workspacePluginRoutes.js"
 import type {
@@ -807,6 +807,7 @@ export async function createWorkspacesModeApp(opts: {
     scopeVerifier: trustedLocalScope.scopeVerifier,
     runtimeModeAdapter: sandboxRuntimeAdapter,
     runtimeHost: sandboxRuntimeHost,
+    requestLedgerPath: join(dirname(registry.path), "agent-request-ledger.sqlite"),
     async resolveRuntimeScope({ scope }) {
       return await trustedLocalScope.resolveRuntimeScope(scope)
     },

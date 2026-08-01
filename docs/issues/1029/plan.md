@@ -1,7 +1,7 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/1029
 issue: 1029
-state: ready-for-agent
+state: in-progress
 updated: 2026-07-31
 track: owner
 ---
@@ -540,3 +540,7 @@ Verdicts: **NOT READY**. The reviews found factual route errors and duplicate ro
 ### Round 7 — final steady-state review
 
 Verdict: **READY**. No unresolved BLOCKER or MAJOR defects. The reviewer explicitly confirmed that dispatcher iterators cannot escape lease scope, matrix routes are unique, and models are Host-owned with app-provided filtering policy. Remaining edits are marginal and non-blocking.
+
+### Slice 1 implementation review
+
+Seven adversarial code-review passes closed reload-before-mutation, durable-ledger, Environment-authority, session-pin, shutdown-race, attachment, scoped-change, readiness-stream, dispatcher-revocation, and composed-route proof defects. Final verdict: **READY**. The executable gate reconstructs the composed Fastify Agent route table for all seven named roots, requires every final Host route exactly once, and rejects duplicate or unclassified Agent routes against the normative matrix.

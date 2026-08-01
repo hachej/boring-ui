@@ -8,6 +8,7 @@ export default defineConfig({
     "shared/index": "src/shared/index.ts",
     "core/index": "src/core/index.ts",
     "server/index": "src/server/index.ts",
+    "server/agent-host/testing/compositionRouteProof": "src/server/agent-host/testing/compositionRouteProof.ts",
     "front/index": "src/front/index.ts",
     "eval/index": "src/eval/index.ts",
   },

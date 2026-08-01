@@ -44,6 +44,8 @@ function pathForWorkspaceEditor(workspaceRoot: string, filePath: string): string
 }
 
 export interface SkillsRoutesOptions {
+  path?: string
+  authorizeRequest?: (request: FastifyRequest) => void | Promise<void>
   workspace?: Workspace
   additionalSkillPaths?: string[]
   piPackages?: PiPackageSource[]
@@ -123,8 +125,9 @@ export function skillsRoutes(
     return entry
   }
 
-  app.get<{ Querystring: SkillsQuery }>('/api/v1/agent/skills', async (request, reply) => {
+  app.get<{ Querystring: SkillsQuery }>(opts.path ?? '/api/v1/agent/skills', async (request, reply) => {
     try {
+      await opts.authorizeRequest?.(request)
       const entry = await resolveSkillsForRequest(request, request.query.refresh === '1')
       return reply.code(200).send({ skills: entry.skills })
     } catch (error) {

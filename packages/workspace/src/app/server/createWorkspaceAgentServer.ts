@@ -1317,6 +1317,7 @@ export async function createWorkspaceAgentServer(
     runtimeModeAdapter: modeAdapter,
     runtimeHost,
     sessionRoot: opts.sessionRoot,
+    requestLedgerPath: join(workspaceRoot, ".boring", "agent-request-ledger.sqlite"),
     telemetry: opts.telemetry,
     metering: opts.metering,
     harnessFactory: opts.harnessFactory,

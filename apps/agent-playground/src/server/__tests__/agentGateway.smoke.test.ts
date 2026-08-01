@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { createSandboxRuntimeModeAdapter } from '@hachej/boring-agent/server'
+import { assertComposedAgentHostRouteTable } from '@hachej/boring-agent/server/agent-host/testing/compositionRouteProof'
 import type {
   AgentCoreHarness,
   AgentCoreHarnessFactory,
@@ -127,7 +128,7 @@ function createSmokeHarnessFactory(): AgentCoreHarnessFactory {
 }
 
 describe('agent-playground AgentGateway reference composition', () => {
-  test('runs create, connect, prompt, event, stop, unsubscribe, and bounded shutdown through one Host', async () => {
+  test('Slice 1 composed route/auth proof: playground delegates to one canonical Host and trusted scope', async () => {
     const sessionRoot = await mkdtemp(join(tmpdir(), 'agent-playground-gateway-'))
     tempDirs.push(sessionRoot)
     const directMode = createSandboxRuntimeModeAdapter('direct')
@@ -139,10 +140,18 @@ describe('agent-playground AgentGateway reference composition', () => {
       harnessFactory: createSmokeHarnessFactory(),
       logger: false,
     })
+    assertComposedAgentHostRouteTable(runtime.app)
 
     const modelsResponse = await runtime.app.inject({ method: 'GET', url: '/api/v1/agent/models' })
     expect(modelsResponse.statusCode).toBe(200)
     expect(modelsResponse.json()).toMatchObject({ models: expect.any(Array) })
+    const addressed = await runtime.app.inject({ method: 'GET', url: '/api/v1/agents' })
+    expect(addressed.statusCode).toBe(200)
+    expect(addressed.json()).toEqual([{ agentTypeId: PLAYGROUND_AGENT_TYPE_ID, label: 'Agent' }])
+    expect(runtime.app.hasRoute({
+      method: 'POST',
+      url: '/api/v1/agents/:agentTypeId/reload',
+    })).toBe(true)
 
     const agents = await runtime.gateway.listAgents({ scope: runtime.scope })
     expect(agents).toEqual([expect.objectContaining({ agentTypeId: PLAYGROUND_AGENT_TYPE_ID })])

@@ -221,6 +221,8 @@ export async function buildAgentComposition(
       workdir: runtimeBundle.workspace.root,
       workspace: runtimeBundle.workspace,
       onEvent: input.observeSessionEvent,
+      attachmentUrl: ({ sessionId, messageId, index }) =>
+        `/api/v1/agents/${encodeURIComponent(input.agent.agentTypeId)}/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(messageId)}/${index}`,
     },
   }
   const bridge = createAgentRuntimeBridge(config, bridgeOptions)

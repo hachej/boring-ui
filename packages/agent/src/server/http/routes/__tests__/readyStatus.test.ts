@@ -103,4 +103,25 @@ describe('GET /api/v1/ready-status', () => {
     expect(unsubscribe).toHaveBeenCalledOnce()
     await app.close()
   }, 15_000)
+
+  test('registers pending SSE with Host lifecycle and unregisters on terminal readiness', async () => {
+    const tracker = new ReadyStatusTracker({
+      sandboxReady: true,
+      harnessReady: true,
+      capabilities: { runtimeDependencies: { state: 'preparing' } },
+    })
+    const unregister = vi.fn()
+    const registerStreamClose = vi.fn(() => unregister)
+    const app = Fastify({ logger: false })
+    app.register(readyStatusRoutes, { tracker, registerStreamClose })
+    await app.ready()
+    setTimeout(() => tracker.updateRuntimeDependencies({ state: 'ready' }), 0)
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/ready-status' })
+
+    expect(response.statusCode).toBe(200)
+    expect(registerStreamClose).toHaveBeenCalledOnce()
+    expect(unregister).toHaveBeenCalledOnce()
+    await app.close()
+  })
 })

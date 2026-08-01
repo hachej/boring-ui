@@ -5,9 +5,19 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import * as agentServer from "@hachej/boring-agent/server"
 import type { AuthorizedAgentScope } from "@hachej/boring-agent/shared"
+import { assertComposedAgentHostRouteTable } from "@hachej/boring-agent/server/agent-host/testing/compositionRouteProof"
 import { PiSessionStore } from "../../../../agent/src/server/harness/pi-coding-agent/sessions.js"
 import { createLocalWorkspaceRegistry } from "../localWorkspaces.js"
-import { createWorkspacesModeApp } from "../modeApps.js"
+import { createFolderModeApp, createWorkspacesModeApp } from "../modeApps.js"
+
+vi.mock("../pluginDiscovery.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../pluginDiscovery.js")>()
+  return {
+    ...actual,
+    resolveCliDefaultPluginPackagePaths: () => [],
+    resolveCliBoringPluginDirs: () => [],
+  }
+})
 
 const roots: string[] = []
 const originalHome = process.env.HOME
@@ -83,16 +93,39 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
 }
 
 describe.sequential("CLI Agent Host composition", () => {
+  it("Slice 1 composed route/auth proof: CLI folder mode delegates to Workspace's canonical Host table", async () => {
+    const workspaceRoot = await temporaryRoot("boring-cli-folder-agent-host-")
+    const sessionRoot = await temporaryRoot("boring-cli-folder-agent-sessions-")
+    restoreEnv("BORING_AGENT_SESSION_ROOT", sessionRoot)
+    const app = await createFolderModeApp({
+      workspaceRoot,
+      mode: "direct",
+      provisionWorkspace: false,
+    })
+    try {
+      assertComposedAgentHostRouteTable(app)
+      expect(app.hasRoute({ method: "GET", url: "/api/v1/agents" })).toBe(true)
+      expect(app.hasRoute({
+        method: "GET",
+        url: "/api/v1/agents/:agentTypeId/sessions/:sessionId/attachments/:messageId/:index",
+      })).toBe(true)
+      expect((await app.inject({ method: "GET", url: "/api/v1/agents" })).statusCode).toBe(200)
+    } finally {
+      await app.close()
+    }
+  }, 30_000)
+
   it.each([
     ["unset", false],
     ["set", true],
   ] as const)(
-    "uses one prebuilt Host and preserves defaultSessionDir bytes with BORING_AGENT_SESSION_ROOT %s",
+    "Slice 1 composed route/auth proof: CLI workspaces mode uses one Host and preserves transcript bytes with root %s",
     async (_label, useConfiguredSessionRoot) => {
       const fixture = await fixtureApp(useConfiguredSessionRoot)
       const headers = { "x-boring-workspace-id": fixture.workspace.id }
       try {
         expect(fixture.createAgentHost).toHaveBeenCalledTimes(1)
+        assertComposedAgentHostRouteTable(fixture.app)
         expect(fixture.createAgentHost).toHaveBeenCalledWith(expect.objectContaining({
           agents: [{ agentTypeId: "default", legacyDefault: true }],
           hostId: "cli-trusted-local",
@@ -107,6 +140,10 @@ describe.sequential("CLI Agent Host composition", () => {
         const addressed = await fixture.app.inject({ method: "GET", url: "/api/v1/agents", headers })
         expect(addressed.statusCode, addressed.body).toBe(200)
         expect(addressed.json()).toEqual([{ agentTypeId: "default", label: "Agent" }])
+        expect(fixture.app.hasRoute({
+          method: "POST",
+          url: "/api/v1/agents/:agentTypeId/reload",
+        })).toBe(true)
 
         const legacyCatalog = await fixture.app.inject({ method: "GET", url: "/api/v1/agent/catalog", headers })
         expect(legacyCatalog.statusCode).toBe(200)

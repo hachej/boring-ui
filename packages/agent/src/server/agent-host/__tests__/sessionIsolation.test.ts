@@ -44,14 +44,17 @@ describe('embedded session isolation', () => {
     await second.close()
   })
 
-  it('coalesces concurrent retries into one session and one receipt', async () => {
+  it('allows only the created ledger owner to execute a concurrent retry', async () => {
     const fixture = await createEmbeddedGatewayFixture()
     const scope = fixture.issueScope()
-    const [first, retry] = await Promise.all([
+    const results = await Promise.allSettled([
       fixture.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'same-request' }),
       fixture.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'same-request' }),
     ])
-    expect(retry).toEqual(first)
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter((result) => result.status === 'rejected')).toEqual([
+      expect.objectContaining({ reason: expect.objectContaining({ code: 'AGENT_REQUEST_IN_PROGRESS' }) }),
+    ])
     expect((await fixture.gateway.listSessions({ scope, agentTypeId: 'alpha' })).sessions).toHaveLength(1)
   })
 })

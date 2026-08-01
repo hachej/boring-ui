@@ -49,6 +49,7 @@ import {
   type RuntimeBindingEntry as ManagedRuntimeBindingEntry,
 } from './runtime/runtimeBindingLifecycle'
 import { mountOrderedAgentHostLegacyRoutes } from './agentHostLegacyRouteMount'
+import { canonicalDigest } from './agent-host/canonical'
 
 const DEFAULT_WORKSPACE_ID = 'default'
 const STANDARD_AGENT_TOOL_NAMES = ['bash', 'read', 'write', 'edit', 'find', 'grep', 'ls']
@@ -580,6 +581,11 @@ export async function mountAgentHostLegacyRouteRuntime(
       : opts.systemPromptDynamic
     const hostScope: CompatibilityResolvedAgentRuntimeScope = {
       identity: scope.key,
+      physicalBindingIdentity: scope.key,
+      resourceInputDigest: canonicalDigest(JSON.parse(JSON.stringify({
+        hotResources: compositionPi.getHotReloadableResources(),
+        systemPromptAppend: [opts.systemPromptAppend, scopedSystemPromptAppend].filter(Boolean).join('\n\n') || null,
+      }))),
       environment: {
         // Compatibility projection preserves the legacy one-provider-per-binding
         // lifecycle; canonical multi-Agent consumers supply shared placement IDs.

@@ -14,22 +14,63 @@ import {
 } from '../../shared/index'
 import type { PiChatSessionService } from '../../core/piChatSessionService'
 import { piChatRoutes } from '../http/routes/piChat'
+import { ErrorCode } from '../../shared/error-codes'
 import type { AgentHostAddressedHttpProjectionOptions, AgentHostHandle } from './types'
+import {
+  createAgentHostRuntimeCapabilityRoutes,
+  type AgentHostRuntimeCapabilityProjection,
+} from './runtimeCapabilityProjection'
 
 const ADDRESSED_HEARTBEAT_INTERVAL_MS = 25_000
 const SAFE_AGENT_TYPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 
+type ProjectionOptions = Omit<AgentHostAddressedHttpProjectionOptions, 'defaultAgentTypeId'> & {
+  readonly defaultAgentTypeId?: string
+}
+
 interface ProjectionInput {
   readonly host: AgentHostHandle
   readonly gateway: AgentGateway
-  readonly options: AgentHostAddressedHttpProjectionOptions
+  readonly options: ProjectionOptions
   /** Compatibility wrappers already own parent Fastify lifecycle hooks. */
   readonly manageLifecycle?: boolean
-  readonly resolveLegacyPiChatService: (request: FastifyRequest) => Promise<PiChatSessionService>
+  /** The compatibility parent claimed ownership before installing lifecycle hooks. */
+  readonly projectionClaimed?: boolean
+  readonly resolveLegacyPiChatService: (
+    request: FastifyRequest,
+    agentTypeId?: string,
+  ) => Promise<PiChatSessionService>
+  readonly resolveAddressedPiChatService: (
+    request: FastifyRequest,
+    agentTypeId: string,
+    sessionId: string,
+  ) => Promise<{ readonly scope: import('../../shared/index').AuthorizedAgentScope; readonly service: PiChatSessionService }>
+  readonly runtimeCapabilities?: AgentHostRuntimeCapabilityProjection
+}
+
+const mountedHostsByServer = new WeakMap<object, WeakSet<object>>()
+
+export function claimAgentHostProjection(
+  app: Parameters<FastifyPluginAsync>[0],
+  host: AgentHostHandle,
+): void {
+  const server = app.server as object
+  let mounted = mountedHostsByServer.get(server)
+  if (!mounted) {
+    mounted = new WeakSet<object>()
+    mountedHostsByServer.set(server, mounted)
+  }
+  if (mounted.has(host)) {
+    throw Object.assign(
+      new TypeError('Agent Host projection is already registered on this Fastify app'),
+      { code: ErrorCode.enum.CONFIG_INVALID },
+    )
+  }
+  mounted.add(host)
 }
 
 const NonEmptyString = z.string().min(1)
-const RequestIdSchema = NonEmptyString.max(256)
+const RequestIdSchema = z.string().trim().min(1).max(128).regex(/^[A-Za-z0-9._:-]+$/)
 const AgentTypeIdSchema = z.string().regex(SAFE_AGENT_TYPE_ID)
 const SessionIdSchema = NonEmptyString.max(128)
 const EmptyObjectSchema = z.object({}).strict()
@@ -37,6 +78,13 @@ const OptionalEmptyBodySchema = z.preprocess((value) => value === undefined ? {}
 const EmptyQuerySchema = z.object({}).strict()
 const AgentParamsSchema = z.object({ agentTypeId: AgentTypeIdSchema }).strict()
 const SessionParamsSchema = AgentParamsSchema.extend({ sessionId: SessionIdSchema }).strict()
+const AttachmentParamsSchema = SessionParamsSchema.extend({
+  messageId: NonEmptyString.max(256),
+  index: z.preprocess(
+    (value) => typeof value === 'string' ? Number(value) : value,
+    z.number().int().nonnegative(),
+  ),
+}).strict()
 const ListSessionsQuerySchema = z.object({
   cursor: NonEmptyString.max(8_192).optional(),
   limit: z.preprocess(
@@ -130,7 +178,9 @@ function statusForGatewayError(code: string): number {
   if (code === AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND || code === AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN) return 404
   if (
     code === AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT
+    || code === AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS
     || code === AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN
+    || code === AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED
     || code === AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE
     || code === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
     || code.includes('CURSOR')
@@ -222,6 +272,54 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
         ref: params,
       })
     } catch (error) {
+      return sendError(reply, error)
+    }
+  })
+
+  app.get('/api/v1/agents/:agentTypeId/sessions/:sessionId/attachments/:messageId/:index', async (request, reply) => {
+    const params = parseWithSchema(AttachmentParamsSchema, request.params, reply, 'params')
+    if (!params) return
+    const query = parseWithSchema(EmptyQuerySchema, request.query, reply, 'query')
+    if (!query) return
+    try {
+      // The service comes from the exact pin-checked existing-session binding;
+      // never re-resolve a candidate/current binding after authorization.
+      const { scope, service } = await input.resolveAddressedPiChatService(
+        request,
+        params.agentTypeId,
+        params.sessionId,
+      )
+      if (!service.readAttachment) {
+        throw new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND,
+          'attachment not found',
+        )
+      }
+      const attachment = await service.readAttachment({
+        workspaceId: scope.workspaceScopeId,
+        storageScope: scope.workspaceScopeId,
+        authSubject: scope.authSubjectId,
+        sessionAuthority: 'workspace-scope',
+        requestId: request.id,
+      }, params.sessionId, params.messageId, params.index)
+      if (!attachment.mediaType.startsWith('image/')) {
+        throw new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND,
+          'attachment not found',
+        )
+      }
+      return reply
+        .header('Content-Type', attachment.mediaType)
+        .header('Cache-Control', 'private, max-age=300')
+        .header('X-Content-Type-Options', 'nosniff')
+        .send(Buffer.from(attachment.data))
+    } catch (error) {
+      if ((error as { code?: unknown })?.code === 'SESSION_NOT_FOUND') {
+        return sendError(reply, new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND,
+          'attachment not found',
+        ))
+      }
       return sendError(reply, error)
     }
   })
@@ -390,14 +488,12 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     }
   }
   app.post('/api/v1/agents/:agentTypeId/sessions/:sessionId/queue/clear', clearQueue)
-  // Preserve the addressed command spelling previously handled by the generic
-  // command route while keeping its body on the same closed parser.
-  app.post('/api/v1/agents/:agentTypeId/sessions/:sessionId/queue-clear', clearQueue)
 }
 
 /** Awaited Fastify projection for the addressed Gateway surface. */
 export function createAgentHostRoutes(input: ProjectionInput): FastifyPluginAsync {
   return async (app) => {
+    if (!input.projectionClaimed) claimAgentHostProjection(app, input.host)
     if (input.manageLifecycle !== false) {
       app.addHook('preClose', async () => {
         await input.host.drain()
@@ -415,9 +511,18 @@ export function createAgentHostRoutes(input: ProjectionInput): FastifyPluginAsyn
     })
 
     registerAddressedRoutes(app, input)
+    if (input.runtimeCapabilities) {
+      await app.register(createAgentHostRuntimeCapabilityRoutes(input.runtimeCapabilities))
+    }
     if (input.options.legacyPiChatAliases) {
+      if (!input.options.defaultAgentTypeId) {
+        throw new TypeError('defaultAgentTypeId is required for legacy Pi-chat aliases')
+      }
       await app.register(piChatRoutes, {
-        getService: input.resolveLegacyPiChatService,
+        getService: (request) => input.resolveLegacyPiChatService(
+          request,
+          input.options.defaultAgentTypeId,
+        ),
       })
     }
   }

@@ -1171,6 +1171,7 @@ export async function createCoreWorkspaceAgentServer(
       requireCompilerForModelPolicy: true,
     }),
     sessionRoot,
+    requestLedgerPath: path.join(sessionRoot ?? workspaceRoot, '.agent-request-ledger.sqlite'),
     hostId: options.agentHostId ?? (sessionRoot ? undefined : 'core-workspace-agent'),
     scopeVerifier: scopeAuthority.verifier,
     runtimeModeAdapter,
