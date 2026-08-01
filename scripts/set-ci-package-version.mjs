@@ -23,6 +23,7 @@ const PUBLISHABLE = [
   "packages/cli",
   "plugins/deck",
   "plugins/ask-user",
+  "plugins/live-transcription",
   "plugins/diagram",
   "plugins/tasks",
   "plugins/boring-automation",

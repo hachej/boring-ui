@@ -2,6 +2,7 @@
 import React from "react"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { liveTranscriptPlugin } from "@hachej/boring-live-transcription/front"
 import { CliWorkspaceShell } from "./App"
 
 const workspaceAgentFrontSpy = vi.fn((props: Record<string, unknown>) => (
@@ -153,6 +154,30 @@ describe("CliWorkspaceShell", () => {
     expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({ workspaceId: "target" })
   })
 
+  test("statically composes live transcription without knowing its commands", async () => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith("/api/v1/workspace/meta")) {
+        return new Response(JSON.stringify({
+          projectName: "Live Folder",
+          liveTranscripts: { ready: true },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }) as typeof fetch
+
+    render(<CliWorkspaceShell />)
+
+    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      plugins: expect.arrayContaining([liveTranscriptPlugin]),
+    })
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).not.toHaveProperty("extraCommands")
+  })
+
   test("enables runtime hot loading without rendering plugin helper pills", async () => {
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
@@ -184,6 +209,7 @@ describe("CliWorkspaceShell", () => {
         expect.any(Function),
         expect.objectContaining({ pluginId: "diagram" }),
         expect.objectContaining({ pluginId: "tasks" }),
+        liveTranscriptPlugin,
       ],
     })
 

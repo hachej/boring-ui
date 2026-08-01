@@ -6,6 +6,7 @@ import type { SessionSummary } from '../../../shared/session'
 import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
 import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSession'
 import { activeSessionStorageKey, scopedComposerStorageKey, type ActiveSessionStorageLike } from '../session'
+import { ComposerContributionProvider } from '../composerContributions'
 import { PiChatPanel } from '../PiChatPanel'
 
 vi.stubGlobal('ResizeObserver', class {
@@ -1765,6 +1766,36 @@ describe('PiChatPanel sandbox shell', () => {
     await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: 'skill: launch' })))
     expect(onPromptSubmitStarted).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'pi-1' }))
     expect((textarea as HTMLTextAreaElement).value).toBe('preserve this draft')
+  })
+
+  test('registers slash commands contributed by a composer plugin', async () => {
+    const remote = new FakeRemotePiSession(remoteState())
+    const handler = vi.fn(() => 'Contributed command ran.')
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    render(
+      <ComposerContributionProvider contribution={{
+        id: 'test-contribution',
+        commands: [{ name: 'contributed', description: 'Contributed command', kind: 'local', handler }],
+      }}>
+        <PiChatPanel
+          storageScope="workspace-a"
+          serverResourcesEnabled={false}
+          fetch={fetchMock as unknown as typeof fetch}
+          createRemoteSession={remoteFactory(remote)}
+        />
+      </ComposerContributionProvider>,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: '/contributed' } })
+    const commands = await screen.findByRole('listbox', { name: 'Commands' })
+    expect(within(commands).getByText('/contributed')).toBeTruthy()
+    expect(handler).not.toHaveBeenCalled()
   })
 
   test('inserts opted-in assistant commands and registered skills without executing them', async () => {

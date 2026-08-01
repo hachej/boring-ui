@@ -73,6 +73,7 @@ import {
   type ServerBootstrapOptions,
   type WorkspacePiPackageSource,
   type WorkspaceServerPlugin,
+  type WorkspaceAgentReloadBlocker,
   type WorkspaceProvisioningContribution,
   type WorkspaceRouteContribution,
 } from "../../server/plugins/bootstrapServer"
@@ -680,6 +681,7 @@ export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   routeContributions: WorkspaceRouteContribution[]
+  agentReloadBlockers: WorkspaceAgentReloadBlocker[]
   workspaceBridgeHandlers: WorkspaceServerPlugin["workspaceBridgeHandlers"]
   preservedUiStateKeys: string[]
   defaultPluginPackagePaths: string[]
@@ -687,6 +689,17 @@ export interface WorkspaceAgentServerPluginCollection {
     WorkspaceAgentCreateOptions,
     "extraTools" | "systemPromptAppend" | "pi"
   >
+}
+
+async function assertAgentReloadAvailable(blockers: readonly WorkspaceAgentReloadBlocker[]): Promise<void> {
+  for (const blocker of blockers) {
+    const block = await blocker.getBlock()
+    if (!block) continue
+    if (typeof block.code !== "string" || !block.code || typeof block.message !== "string" || !block.message) {
+      throw new Error(`server plugin "${blocker.id}": getAgentReloadBlock returned an invalid block`)
+    }
+    throw Object.assign(new Error(block.message), { code: block.code, pluginId: blocker.id })
+  }
 }
 
 export interface CollectWorkspaceAgentServerPluginsOptions
@@ -757,6 +770,7 @@ export function collectWorkspaceAgentServerPlugins(
       ...result.runtimePlugins,
     ],
     routeContributions: result.routeContributions,
+    agentReloadBlockers: result.agentReloadBlockers,
     workspaceBridgeHandlers: result.workspaceBridgeHandlers,
     preservedUiStateKeys: result.preservedUiStateKeys,
     defaultPluginPackagePaths: [],
@@ -1066,6 +1080,12 @@ export async function createWorkspaceAgentServer(
     async resolve(actor, options) {
       if (!workspaceAgentDispatcherResolver) throw new Error("workspace agent dispatcher is not ready")
       return await workspaceAgentDispatcherResolver.resolve(actor, options)
+    },
+    async resolveWithWorkspace(actor, options) {
+      if (!workspaceAgentDispatcherResolver?.resolveWithWorkspace) {
+        throw new Error("workspace-bound agent dispatcher is not ready")
+      }
+      return await workspaceAgentDispatcherResolver.resolveWithWorkspace(actor, options)
     },
   }
   const pluginCollection = await resolveWorkspaceAgentServerPluginCollection({
@@ -1531,6 +1551,9 @@ export async function createWorkspaceAgentServer(
       staticPluginPackagePiSnapshot.systemPromptAppend,
     ].filter(Boolean).join("\n\n") || undefined,
     beforeReload: async () => {
+      // Fail fast, then check again immediately before replacement so work
+      // cannot become active during asynchronous reload preparation.
+      await assertAgentReloadAvailable(pluginCollection.agentReloadBlockers)
       // Per-plugin scan/rebuild failures are surfaced via SSE error
       // events + `.error` files (asset manager) and via the response
       // body of POST /api/v1/agent/reload (rebuild diagnostics). They
@@ -1553,6 +1576,7 @@ export async function createWorkspaceAgentServer(
       diagnostics = [...scanDiagnostics, ...backendReload.diagnostics, ...rebuild.diagnostics]
       await runRuntimeProvisioning(liveRuntimeBundle)
       const callerResult = await opts.beforeReload?.()
+      await assertAgentReloadAvailable(pluginCollection.agentReloadBlockers)
       const callerRestartWarnings = callerResult && typeof callerResult === "object"
         ? callerResult.restart_warnings ?? []
         : []

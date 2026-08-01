@@ -294,6 +294,22 @@ describe('PiComposerPolicyController submit policy', () => {
       reason: 'busy-slash-command',
       preserveDraft: true,
     })
+
+    const control = vi.fn(() => 'controlled')
+    const controlRegistry = createCommandRegistry([{
+      name: 'live',
+      description: 'Live transcript controls',
+      allowWhileBusy: (args) => args.trim() === 'stop' || args.trim() === 'status',
+      handler: control,
+    }])
+    const controlPolicy = createPiComposerPolicyController({
+      session: new FakeComposerSession('streaming'),
+      registry: controlRegistry,
+      slashContext: context(),
+    })
+    await expect(controlPolicy.submit({ text: '/live stop' })).resolves.toMatchObject({ type: 'command', result: 'controlled' })
+    await expect(controlPolicy.submit({ text: '/live start' })).resolves.toMatchObject({ type: 'blocked', reason: 'busy-slash-command' })
+    expect(control).toHaveBeenCalledTimes(1)
   })
 
   it('expands skill slash commands to Pi text so streaming follow-up queueing is explicit and safe', async () => {
