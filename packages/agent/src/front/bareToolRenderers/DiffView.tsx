@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { createPatch } from 'diff'
 import { Button } from '@hachej/boring-ui-kit'
 import { cn } from '../lib'
@@ -10,6 +10,7 @@ export interface DiffViewProps {
   newString: string
   path: string
   replaceAll?: boolean
+  actions?: ReactNode
 }
 
 interface DiffLine {
@@ -40,7 +41,7 @@ const lineClass: Record<DiffLine['type'], string> = {
 
 const prefixMap: Record<DiffLine['type'], string> = { '+': '+', '-': '-', ' ': ' ' }
 
-export function DiffView({ oldString, newString, path, replaceAll }: DiffViewProps) {
+export function DiffView({ oldString, newString, path, replaceAll, actions }: DiffViewProps) {
   const [expanded, setExpanded] = useState(false)
 
   if (oldString === newString) {
@@ -58,8 +59,9 @@ export function DiffView({ oldString, newString, path, replaceAll }: DiffViewPro
 
   return (
     <div data-testid="diff-view">
-      <div className="px-3 py-1.5 font-[family-name:var(--boring-agent-font-mono,monospace)] text-xs opacity-70">
-        {path}{replaceAll ? ' (replace all)' : ''}
+      <div className="flex min-h-7 items-center justify-between gap-2 px-2 py-0.5 font-[family-name:var(--boring-agent-font-mono,monospace)] text-xs opacity-70">
+        <span className="min-w-0 truncate">{path}{replaceAll ? ' (replace all)' : ''}</span>
+        {actions ? <span className="flex shrink-0 items-center gap-0.5">{actions}</span> : null}
       </div>
       <pre className="m-0 overflow-auto py-2 font-[family-name:var(--boring-agent-font-mono,monospace)] text-[0.8125rem] leading-relaxed">
         {visible.map((line, i) => (
