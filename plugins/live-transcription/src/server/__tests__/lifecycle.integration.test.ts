@@ -24,7 +24,7 @@ interface SystemHarness {
   bindPiSession: ReturnType<typeof vi.fn>
   upstreamConnections: () => number
   upstreamPcm: Uint8Array[]
-  beforeAgentReload(): Promise<void>
+  getAgentReloadBlock(): Promise<{ code: string; message: string } | undefined>
   close(): Promise<void>
 }
 
@@ -111,7 +111,7 @@ async function createSystem(options: { emitSnapshots?: boolean; workspace?: Memo
     bindPiSession,
     upstreamConnections: () => upstreamConnections,
     upstreamPcm,
-    beforeAgentReload: async () => await plugin.beforeAgentReload!(),
+    getAgentReloadBlock: async () => await plugin.getAgentReloadBlock!(),
     async close() {
       await app.close()
       for (const client of upstream.clients) client.terminate()
@@ -382,9 +382,9 @@ describe("live transcription system lifecycle", () => {
     const system = await createSystem()
     try {
       const started = await start(system, "chat-reload")
-      await expect(system.beforeAgentReload()).rejects.toMatchObject({
+      await expect(system.getAgentReloadBlock()).resolves.toEqual({
         code: "live_transcript_already_active",
-        statusCode: 409,
+        message: "Stop the active transcription before reloading the Agent.",
       })
 
       const status = await system.app.inject({

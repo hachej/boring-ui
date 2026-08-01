@@ -332,13 +332,12 @@ export class LiveTranscriptManager {
     })
   }
 
-  assertAgentReloadAllowed(): void {
-    if (!this.active) return
-    throw new LiveTranscriptError(
-      "live_transcript_already_active",
-      "Stop the active transcription before reloading the Agent.",
-      409,
-    )
+  getAgentReloadBlock(): { code: string; message: string } | undefined {
+    if (!this.active) return undefined
+    return {
+      code: "live_transcript_already_active",
+      message: "Stop the active transcription before reloading the Agent.",
+    }
   }
 
   async interruptForSessionReplacement(): Promise<void> {

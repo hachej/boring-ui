@@ -25,6 +25,13 @@ export interface WorkspaceBridgeHandlerContribution {
   handler: WorkspaceBridgeHandler
 }
 
+export interface WorkspaceAgentReloadBlock {
+  /** Stable plugin-owned reason code. */
+  code: string
+  /** Human-readable action required before Agent reload can proceed. */
+  message: string
+}
+
 export interface WorkspaceServerPlugin {
   id: string
   label?: string
@@ -63,10 +70,10 @@ export interface WorkspaceServerPlugin {
   assets?: WorkspaceServerPluginAsset[]
   routes?: FastifyPluginAsync
   /**
-   * Final plugin guard before Agent replacement. May release session-bound work
-   * or throw to block reload while that work must retain the current Agent.
+   * Reports why Agent reload is currently unavailable. Undefined allows reload.
+   * This check must not mutate plugin state.
    */
-  beforeAgentReload?: () => void | Promise<void>
+  getAgentReloadBlock?: () => WorkspaceAgentReloadBlock | undefined | Promise<WorkspaceAgentReloadBlock | undefined>
   /** UI state keys owned by this plugin that browser state PUTs must not overwrite. */
   preservedUiStateKeys?: string[]
 }
@@ -341,8 +348,8 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
   if (plugin.routes !== undefined && typeof plugin.routes !== "function") {
     fail(plugin.id, "routes must be a Fastify plugin function when provided")
   }
-  if (plugin.beforeAgentReload !== undefined && typeof plugin.beforeAgentReload !== "function") {
-    fail(plugin.id, "beforeAgentReload must be a function when provided")
+  if (plugin.getAgentReloadBlock !== undefined && typeof plugin.getAgentReloadBlock !== "function") {
+    fail(plugin.id, "getAgentReloadBlock must be a function when provided")
   }
   if (plugin.preservedUiStateKeys !== undefined) {
     if (!Array.isArray(plugin.preservedUiStateKeys) || plugin.preservedUiStateKeys.some((key) => typeof key !== "string" || key.length === 0)) {

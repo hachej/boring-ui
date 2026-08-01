@@ -244,7 +244,7 @@ Every terminal outcome releases browser/server ownership and active-path view mo
 1. Replace Agent's `ComposerRecordingAdapter` with additive generic composer contributions: a top slot, an action slot, and a functional draft updater. Move recording state, timing, icons, labels, errors, and short-dictation insertion into the plugin.
 2. Express custom message replacement as the parallel generic message contribution. Agent supplies only message placement/fallback; the plugin owns review decoding and cards.
 3. Keep exact-session visible turns as a generic trusted-host capability: remove split run identity, use generic nonce/type names, make the bound visible target required, and distinguish internal session validation from resolver-level binding.
-4. Add a generic server-plugin `beforeAgentReload` lifecycle contribution. The live plugin rejects Agent reload while capture owns an exact Pi session and retains Fastify-close disposal; CLI no longer holds a transcription manager.
+4. Add a generic, side-effect-free server-plugin `getAgentReloadBlock` availability check. The live plugin reports why Agent reload is unavailable while capture owns an exact Pi session and retains Fastify-close disposal; CLI no longer holds a transcription manager.
 5. Install bounded CLI signal shutdown for every listening CLI app, not only when transcription is enabled. Keep flag, authority, upstream, and static package selection only at the CLI composition boundary.
 6. Prove contribution ordering/fallback, plugin-owned commands and recording UI, latest-draft functional updates, active-reload rejection, close cleanup, exact-session delivery, typechecks/builds/invariants, and run standards/spec/thermonuclear review.
 
