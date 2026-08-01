@@ -58,6 +58,12 @@
       "@hachej/boring-diagram/shared": [
         "../../plugins/diagram/src/shared/index.ts"
       ],
+      "@hachej/boring-live-transcription/front": [
+        "../../plugins/live-transcription/src/front/index.tsx"
+      ],
+      "@hachej/boring-live-transcription/server": [
+        "../../plugins/live-transcription/src/server/index.ts"
+      ],
       "@hachej/boring-tasks/front": [
         "../../plugins/tasks/src/front/index.tsx"
       ],

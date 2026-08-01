@@ -64,6 +64,7 @@ release_files=(
   plugins/diagram/package.json
   plugins/tasks/package.json
   plugins/boring-automation/package.json
+  plugins/live-transcription/package.json
   plugins/data-explorer/package.json
   plugins/data-catalog/package.json
   plugins/generated-pane/package.json

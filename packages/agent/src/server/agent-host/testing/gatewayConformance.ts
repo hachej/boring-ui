@@ -359,6 +359,89 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
       await connection.close()
     })
 
+    it('keeps strict-idle busy admission retryable and idempotent', async () => {
+      const fixture = await options.createFixture()
+      const scope = fixture.issueScope()
+      const ref = await createSession(fixture, scope, 'strict-idle-retry')
+      const connection = await fixture.gateway.connectSession({ scope, ref })
+      const input = {
+        kind: 'prompt' as const,
+        requestId: 'strict-review',
+        clientNonce: 'strict-review',
+        content: 'model-facing review',
+        displayContent: 'Visible review',
+        requireIdle: true as const,
+      }
+
+      fixture.setActivity(ref, 'running')
+      await expectCode(connection.send(input), AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE)
+      fixture.setActivity(ref, 'idle')
+      const accepted = await connection.send(input)
+      expect(accepted).toMatchObject({ accepted: true, disposition: 'prompt' })
+      await expect(connection.send(input)).resolves.toMatchObject({ ...accepted, duplicate: true })
+      await expectCode(
+        connection.send({ ...input, displayContent: 'changed payload' }),
+        AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
+      )
+      await connection.close()
+    })
+
+    it('admits exactly one of two concurrent strict-idle prompts', async () => {
+      const fixture = await options.createFixture()
+      const scope = fixture.issueScope()
+      const ref = await createSession(fixture, scope, 'strict-idle-race')
+      const connection = await fixture.gateway.connectSession({ scope, ref })
+      fixture.setActivity(ref, 'idle')
+
+      const outcome = async (requestId: string) => {
+        try {
+          await connection.send({
+            kind: 'prompt',
+            requestId,
+            clientNonce: requestId,
+            content: requestId,
+            requireIdle: true,
+          })
+          return 'accepted'
+        } catch (error) {
+          return (error as { code?: string }).code
+        }
+      }
+      const outcomes = await Promise.all([outcome('strict-a'), outcome('strict-b')])
+      expect(outcomes.sort()).toEqual([
+        AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+        'accepted',
+      ].sort())
+      await connection.close()
+    })
+
+    it('keeps ordinary error recovery while strict-idle prompts reject error state', async () => {
+      const fixture = await options.createFixture()
+      const scope = fixture.issueScope()
+      const strictRef = await createSession(fixture, scope, 'strict-error')
+      const strictConnection = await fixture.gateway.connectSession({ scope, ref: strictRef })
+      fixture.setActivity(strictRef, 'error')
+      await expectCode(strictConnection.send({
+        kind: 'prompt',
+        requestId: 'strict-error-prompt',
+        clientNonce: 'strict-error-prompt',
+        content: 'strict',
+        requireIdle: true,
+      }), AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE)
+      await strictConnection.close()
+
+      const recoveryRef = await createSession(fixture, scope, 'ordinary-error')
+      const recoveryConnection = await fixture.gateway.connectSession({ scope, ref: recoveryRef })
+      fixture.setActivity(recoveryRef, 'error')
+      await expect(recoveryConnection.send({
+        kind: 'prompt',
+        requestId: 'ordinary-recovery',
+        clientNonce: 'ordinary-recovery',
+        content: 'recover',
+      })).resolves.toMatchObject({ disposition: 'prompt' })
+      await recoveryConnection.close()
+    })
+
     it('covers the complete command-state table and queue selector semantics', async () => {
       const fixture = await options.createFixture()
       const scope = fixture.issueScope()

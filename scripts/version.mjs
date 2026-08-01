@@ -18,6 +18,7 @@ const PUBLISHABLE = [
   "packages/ui",
   "plugins/deck",
   "plugins/ask-user",
+  "plugins/live-transcription",
   "plugins/diagram",
   "plugins/tasks",
   "plugins/boring-automation",

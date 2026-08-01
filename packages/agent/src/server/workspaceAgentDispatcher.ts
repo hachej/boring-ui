@@ -20,9 +20,37 @@ export interface WorkspaceAgentDispatcherResolveOptions {
   request?: FastifyRequest
 }
 
+export interface PiSessionVisibleUserTurnTarget {
+  /** Advisory snapshot; sendIfIdle is the authoritative atomic admission. */
+  isIdle(): Promise<boolean>
+  sendIfIdle(input: {
+    /** Stable across busy/transient retries; also used as the Pi client nonce. */
+    requestId: string
+    message: string
+    displayMessage?: string
+  }): Promise<
+    | { status: 'accepted'; cursor: number; duplicate?: boolean }
+    | { status: 'busy' }
+    | { status: 'gone' }
+  >
+}
+
+export interface BoundPiSession {
+  /** Trusted target closed over one exact logical Pi session. */
+  visibleUserMessageTarget: PiSessionVisibleUserTurnTarget
+}
+
 export interface WorkspaceAgentDispatcherBinding {
   dispatcher: WorkspaceAgentDispatcher
   workspace: Workspace
+  /**
+   * Trusted host seam used by local integrations that must bind durable work
+   * to the exact logical Pi session before accepting it.
+   */
+  bindPiSession?(
+    sessionId: string,
+    sessionCtx?: { workspaceId?: string; userId?: string },
+  ): Promise<BoundPiSession>
 }
 
 export interface WorkspaceAgentDispatcherResolver {

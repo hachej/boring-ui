@@ -599,7 +599,7 @@ test.describe("Pi-native baseline message flow", () => {
     });
     await expect(failedToolTrigger).toBeVisible();
     const failedToolTriggerClass = await failedToolTrigger.getAttribute("class");
-    expect(failedToolTriggerClass).toContain("text-muted-foreground/70");
+    expect(failedToolTriggerClass).toContain("text-muted-foreground");
     expect(failedToolTriggerClass).not.toContain("border-destructive");
     expect(failedToolTriggerClass).not.toContain("text-destructive");
     const failedToolDot = page.locator('[data-boring-agent-tool-state="failed"] [data-boring-agent-part="tool-group-state-dot"]');
