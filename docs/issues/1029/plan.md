@@ -1,8 +1,8 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/1029
 issue: 1029
-state: in-progress
-updated: 2026-07-31
+state: ready-for-human
+updated: 2026-08-01
 track: owner
 ---
 
