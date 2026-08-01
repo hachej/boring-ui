@@ -1019,6 +1019,11 @@ export class PiSessionStore implements SessionStore {
   private nativeFileBelongsToCtx(header: SessionHeader | undefined, ctx: SessionCtx): boolean {
     if (this.allowNativeUnscopedAccess) return true;
     const pinned = readHeaderSessionCtx(header);
+    // Main's path-derived store is itself a trusted-local capability: terminal
+    // Pi and the local app intentionally share its unscoped/workspace-pinned
+    // transcripts. Explicit/namespaced hosted stores keep the stricter native
+    // gate from this branch and require an exact persisted tenancy pin.
+    if (this.pathDerivedLegacyAccess) return this.storedCtxBelongsToCtx(pinned, ctx);
     return pinned !== null && sameSessionCtx(pinned, ctx);
   }
 

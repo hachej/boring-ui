@@ -55,9 +55,13 @@ const noopTool: AgentTool = {
   },
 };
 
+let lastFixtureMessageTimestamp = Date.now();
+
 /**
  * `PiSessionStore.list` suppresses turn-less sessions (an unsent New chat), so
- * list/pagination fixtures need a session that actually has a turn.
+ * list/pagination fixtures need a session that actually has a turn. Keep their
+ * native message timestamps monotonic because native sorting intentionally
+ * follows transcript activity, not filesystem mtime.
  */
 async function createSessionWithTurn(
   store: PiSessionStore,
@@ -67,12 +71,14 @@ async function createSessionWithTurn(
   const session = await store.create(sessionCtx, init);
   const dir = store.getSessionDir();
   const file = (await readdir(dir)).find((name) => name.includes(session.id))!;
+  const messageTimestamp = Math.max(Date.now(), lastFixtureMessageTimestamp + 1);
+  lastFixtureMessageTimestamp = messageTimestamp;
   await appendFile(join(dir, file), JSON.stringify({
     type: "message",
     id: `m-${session.id}`,
     parentId: null,
-    timestamp: new Date().toISOString(),
-    message: { role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() },
+    timestamp: new Date(messageTimestamp).toISOString(),
+    message: { role: "user", content: [{ type: "text", text: "hi" }], timestamp: messageTimestamp },
   }) + "\n");
   return session;
 }
@@ -578,14 +584,24 @@ describe("PiSessionStore", () => {
     const writeSession = async (id: string, boringSessionCtx?: Record<string, string>) => {
       await writeFile(
         join(store.getSessionDir(), `${id}.jsonl`),
-        `${JSON.stringify({
-          type: "session",
-          version: 3,
-          id,
-          timestamp: "2026-07-30T00:00:00.000Z",
-          cwd: "/host/workspace",
-          ...(boringSessionCtx ? { boringSessionCtx } : {}),
-        })}\n`,
+        [
+          JSON.stringify({
+            type: "session",
+            version: 3,
+            id,
+            timestamp: "2026-07-30T00:00:00.000Z",
+            cwd: "/host/workspace",
+            ...(boringSessionCtx ? { boringSessionCtx } : {}),
+          }),
+          JSON.stringify({
+            type: "message",
+            id: `message-${id}`,
+            parentId: null,
+            timestamp: "2026-07-30T00:00:01.000Z",
+            message: { role: "user", content: [{ type: "text", text: id }] },
+          }),
+          "",
+        ].join("\n"),
         "utf-8",
       );
     };
