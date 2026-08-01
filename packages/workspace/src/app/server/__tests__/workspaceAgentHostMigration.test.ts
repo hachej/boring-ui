@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
@@ -42,7 +44,7 @@ function harnessFactory() {
 }
 
 describe("Workspace AgentHost composition root", () => {
-  test("serves an addressed fleet while preserving the default legacy session route", async () => {
+  test("serves an addressed fleet and addressed default-agent sessions", async () => {
     const root = await workspaceRoot()
     const app = await createWorkspaceAgentServer({
       workspaceRoot: root,
@@ -69,9 +71,13 @@ describe("Workspace AgentHost composition root", () => {
         { agentTypeId: "beta", label: "Beta" },
       ])
 
-      const legacy = await app.inject({ method: "GET", url: "/api/v1/agent/pi-chat/sessions", headers })
-      expect(legacy.statusCode).toBe(200)
-      expect(legacy.json()).toEqual([])
+      const sessions = await app.inject({ method: "GET", url: "/api/v1/agents/alpha/sessions", headers })
+      expect(sessions.statusCode).toBe(200)
+      expect(sessions.json()).toMatchObject({
+        sessions: expect.arrayContaining([
+          expect.objectContaining({ ref: { agentTypeId: "alpha", sessionId: expect.any(String) } }),
+        ]),
+      })
     } finally {
       await app.close()
     }

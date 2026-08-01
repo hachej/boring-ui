@@ -1,4 +1,6 @@
 import type postgres from "postgres"
+import type { AgentEvent, WorkspaceAgentDispatcherDispatchInput } from "@hachej/boring-agent/shared"
+import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import { describe, expect, it, vi } from "vitest"
 import { BORING_AUTOMATION_ERROR_CODES } from "../../shared"
 import { HostedDueRunService } from "../hostedDueRunService"
@@ -55,6 +57,37 @@ function uniqueRaceSql(constraintName: string): postgres.Sql {
   }) as unknown as postgres.Sql
 }
 
+function directResolver(
+  dispatch: (input: WorkspaceAgentDispatcherDispatchInput) => Promise<{
+    ref: { agentTypeId: string; sessionId: string }
+    receipt: { accepted: true; cursor: number; disposition: "prompt"; clientNonce: string }
+    events: AsyncIterable<AgentEvent>
+  }>,
+  workspace: object,
+): WorkspaceAgentDispatcherResolver & { runWithWorkspaceAgent: ReturnType<typeof vi.fn> } {
+  return {
+    runWithWorkspaceAgent: vi.fn(async (_input, run) => {
+      await run({
+        workspace: workspace as never,
+        signal: new AbortController().signal,
+        async dispatch(
+          input: WorkspaceAgentDispatcherDispatchInput,
+          onEvent: (event: AgentEvent) => void | Promise<void>,
+          onAccepted?: Parameters<import("@hachej/boring-agent/shared").LeaseBoundWorkspaceAgent["dispatch"]>[2],
+        ) {
+          const result = await dispatch(input)
+          await onAccepted?.({ ref: result.ref, receipt: result.receipt })
+          for await (const event of result.events) await onEvent(event)
+          return { ref: result.ref, receipt: result.receipt }
+        },
+        async interrupt() { return { accepted: true, cursor: 0 } },
+        async stop() { return { accepted: true, cursor: 0, stopped: true, clearedQueue: [] } },
+      })
+    }),
+    async resolve() { throw new Error("legacy resolver must not be used") },
+  }
+}
+
 describe("HostedDueRunService", () => {
   it("rejects an unauthorized creator before actor-scoped execution", async () => {
     const queries: string[] = []
@@ -66,6 +99,7 @@ describe("HostedDueRunService", () => {
     const resolve = vi.fn()
     const verifyActor = vi.fn(() => false)
     const service = new HostedDueRunService({
+      agentTypeId: "selected-agent",
       sql,
       dispatcherResolver: { resolve } as never,
       verifyActor,
@@ -105,18 +139,18 @@ describe("HostedDueRunService", () => {
       return []
     }), { json: (value: unknown) => value }) as unknown as postgres.Sql
     const dispatch = vi.fn(async (input: { requestId: string }) => ({
-      ref: { agentTypeId: "default", sessionId: "session-1" },
+      ref: { agentTypeId: "selected-agent", sessionId: "session-1" },
       receipt: { accepted: true as const, cursor: 0, disposition: "prompt" as const, clientNonce: input.requestId },
       events: (async function* () {})(),
     }))
     const dispatcher = { dispatch }
     const workspace = { readFile: vi.fn(async () => "Run") }
-    const resolve = vi.fn(async () => dispatcher)
-    const resolveWithWorkspace = vi.fn(async () => ({ dispatcher, workspace }))
+    const resolver = directResolver(dispatch, workspace)
     const verifyActor = vi.fn(() => true)
     const service = new HostedDueRunService({
+      agentTypeId: "selected-agent",
       sql,
-      dispatcherResolver: { resolve, resolveWithWorkspace } as never,
+      dispatcherResolver: resolver,
       verifyActor,
       clock: () => new Date("2026-07-23T09:00:15.000Z"),
     })
@@ -125,8 +159,10 @@ describe("HostedDueRunService", () => {
 
     const actor = { workspaceId: "workspace-a", userId: "user-a" }
     expect(verifyActor).toHaveBeenCalledWith(actor)
-    expect(resolveWithWorkspace).toHaveBeenCalledWith(actor, { request: undefined })
-    expect(resolve).toHaveBeenCalledWith(actor, undefined)
+    expect(resolver.runWithWorkspaceAgent).toHaveBeenCalledWith(expect.objectContaining({
+      agentTypeId: "selected-agent",
+      context: actor,
+    }), expect.any(Function))
     expect(dispatch).toHaveBeenCalledOnce()
     expect(workspace.readFile).toHaveBeenCalledOnce()
     expect(result.outcomes).toEqual([expect.objectContaining({
@@ -157,6 +193,7 @@ describe("HostedDueRunService", () => {
       return []
     }) as unknown as postgres.Sql
     const service = new HostedDueRunService({
+      agentTypeId: "selected-agent",
       sql,
       dispatcherResolver: { resolve } as never,
       verifyActor: vi.fn(() => true),
@@ -180,13 +217,11 @@ describe("HostedDueRunService", () => {
     ["boring_automation_runs_scheduled_once_idx", "duplicate-scheduled-run"],
   ])("reports %s cross-process races as skips", async (constraintName, reason) => {
     const resolve = vi.fn()
-    const resolveWithWorkspace = vi.fn(async () => ({
-      dispatcher: {},
-      workspace: { readFile: vi.fn(async () => "Run") },
-    }))
+    const resolver = directResolver(async () => { throw new Error("dispatch must not run") }, { readFile: vi.fn(async () => "Run") })
     const service = new HostedDueRunService({
+      agentTypeId: "selected-agent",
       sql: uniqueRaceSql(constraintName),
-      dispatcherResolver: { resolve, resolveWithWorkspace } as never,
+      dispatcherResolver: resolver,
       verifyActor: vi.fn(() => true),
       clock: () => new Date("2026-07-23T09:00:15.000Z"),
     })

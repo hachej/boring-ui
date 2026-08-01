@@ -187,13 +187,13 @@ describe('replay/gap recovery helpers', () => {
   it('builds active-reload reconnect URLs from /state seq without browser transcript cache', () => {
     const snapshot = activeSnapshot(37)
 
-    expect(buildReloadReconnectPlan(snapshot, 'https://boring.test/')).toEqual({
+    expect(buildReloadReconnectPlan(snapshot, 'default', 'https://boring.test/')).toEqual({
       sessionId: 'pi session/active',
       cursor: 37,
-      eventsUrl: 'https://boring.test/api/v1/agent/pi-chat/pi%20session%2Factive/events?cursor=37',
+      eventsUrl: 'https://boring.test/api/v1/agents/default/sessions/pi%20session%2Factive/events?cursor=37',
     })
-    expect(buildPiChatEventsUrl({ sessionId: snapshot.sessionId, cursor: snapshot.seq })).toBe(
-      '/api/v1/agent/pi-chat/pi%20session%2Factive/events?cursor=37',
+    expect(buildPiChatEventsUrl({ agentTypeId: 'default', sessionId: snapshot.sessionId, cursor: snapshot.seq })).toBe(
+      '/api/v1/agents/default/sessions/pi%20session%2Factive/events?cursor=37',
     )
   })
 })

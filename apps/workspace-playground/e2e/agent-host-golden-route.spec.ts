@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Response } from "@playwright/test"
 
-const operationPath = /\/api\/v1\/(?:agent\/pi-chat\/[^/]+\/(?:interrupt|stop)|agents\/default\/sessions(?:$|\?|\/[^/]+\/(?:events|prompt|followup|queue\/clear|rename)))/
+const operationPath = /\/api\/v1\/agents\/default\/sessions(?:$|\?|\/[^/]+\/(?:events|prompt|followup|queue\/clear|interrupt|stop|rename))/
 
 async function runCommand(page: Page, command: string): Promise<void> {
   await page.keyboard.press("ControlOrMeta+KeyK")
@@ -65,20 +65,20 @@ test.describe("checkpoint-D Agent Host golden route", () => {
     await composer.fill(continuedFollowup)
     await composer.press("Enter")
     await expect(page.locator('[data-boring-agent-part="composer-queue-preview-text"]')).toContainText(continuedFollowup, { timeout: 10_000 })
-    const interrupt = await page.request.post(`/api/v1/agent/pi-chat/${encodeURIComponent(sessionId!)}/interrupt`, {
+    const interrupt = await page.request.post(`/api/v1/agents/default/sessions/${encodeURIComponent(sessionId!)}/interrupt`, {
       headers: workspaceHeaders,
       data: {},
     })
     expect(interrupt.status(), await interrupt.text()).toBe(202)
-    responses.push({ method: "POST", path: `/api/v1/agent/pi-chat/${sessionId}/interrupt`, status: interrupt.status() })
+    responses.push({ method: "POST", path: `/api/v1/agents/default/sessions/${sessionId}/interrupt`, status: interrupt.status() })
     await expect(page.getByLabel("Agent conversation").getByText(continuedFollowup)).toBeVisible({ timeout: 15_000 })
     await expect(page.locator('[data-boring-agent-part="composer-queue-preview"]')).toHaveCount(0, { timeout: 10_000 })
-    const stop = await page.request.post(`/api/v1/agent/pi-chat/${encodeURIComponent(sessionId!)}/stop`, {
+    const stop = await page.request.post(`/api/v1/agents/default/sessions/${encodeURIComponent(sessionId!)}/stop`, {
       headers: workspaceHeaders,
       data: {},
     })
     expect(stop.status(), await stop.text()).toBe(202)
-    responses.push({ method: "POST", path: `/api/v1/agent/pi-chat/${sessionId}/stop`, status: stop.status() })
+    responses.push({ method: "POST", path: `/api/v1/agents/default/sessions/${sessionId}/stop`, status: stop.status() })
     await expect(page.getByTestId("chat-working")).toHaveCount(0, { timeout: 10_000 })
 
     await page.reload({ waitUntil: "domcontentloaded" })
@@ -120,8 +120,8 @@ test.describe("checkpoint-D Agent Host golden route", () => {
       ["POST", `/api/v1/agents/default/sessions/${sessionId}/prompt`, 202],
       ["POST", `/api/v1/agents/default/sessions/${sessionId}/followup`, 202],
       ["POST", `/api/v1/agents/default/sessions/${sessionId}/queue/clear`, 202],
-      ["POST", `/api/v1/agent/pi-chat/${sessionId}/interrupt`, 202],
-      ["POST", `/api/v1/agent/pi-chat/${sessionId}/stop`, 202],
+      ["POST", `/api/v1/agents/default/sessions/${sessionId}/interrupt`, 202],
+      ["POST", `/api/v1/agents/default/sessions/${sessionId}/stop`, 202],
       ["POST", `/api/v1/agents/default/sessions/${sessionId}/rename`, 200],
       ["DELETE", `/api/v1/agents/default/sessions/${sessionId}`, 204],
     ] as const

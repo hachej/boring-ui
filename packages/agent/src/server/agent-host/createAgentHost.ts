@@ -867,6 +867,7 @@ export async function createAgentHost(
 
   const legacyProjectionRuntime: AgentHostLegacyProjectionRuntime = Object.freeze({
     gateway,
+    runWithWorkspaceAgent,
     async resolveComposition(agentTypeId: string, scope: AuthorizedAgentScope) {
       const claim = await runtime.verify(scope)
       const composition = (await runtime.resolveBinding(agentTypeId, scope, claim)).composition

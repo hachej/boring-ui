@@ -73,6 +73,7 @@ describeIf("eval: skill routing", () => {
     async () => {
       const result = await evalAgentPrompt({
         app,
+        agentTypeId: "default",
         prompt: "skill: macro-deck\n\ncreate a one-slide deck titled 'Test deck' with the text 'hello world'",
         expect: {
           tool: "write",
@@ -91,6 +92,7 @@ describeIf("eval: skill routing", () => {
     async () => {
       const result = await evalAgentPrompt({
         app,
+        agentTypeId: "default",
         prompt: "what is 2 + 2?",
         expectNoToolCall: true,
         retries: 1,

@@ -26,12 +26,13 @@ import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import type { AgentCapabilityReadiness } from '../runtime/readyStatus'
 import type { Workspace } from '../../shared/workspace'
 import type { FileSearch } from '../../shared/file-search'
-import type { AgentEvent } from '../../shared/events'
-import type { InterruptReceipt, StopReceipt } from '../../shared/chat'
 import type {
+  LeaseBoundWorkspaceAgent,
+  WorkspaceAgentDirectRunInput,
   WorkspaceAgentDispatcherContext,
-  WorkspaceAgentDispatcherDispatchInput,
 } from '../../shared/workspaceAgentDispatcher'
+
+export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispatcher'
 
 export type AgentGatewayEffect =
   | 'session.create'
@@ -238,26 +239,9 @@ export interface AgentHostEnvironmentLease {
   release(): void
 }
 
-export interface AgentHostDispatcherRunInput {
+export interface AgentHostDispatcherRunInput extends WorkspaceAgentDirectRunInput {
   readonly authorizedScope: AuthorizedAgentScope
-  readonly agentTypeId: string
-  readonly context: WorkspaceAgentDispatcherContext
   readonly request?: FastifyRequest
-  readonly requestId: string
-}
-
-export interface LeaseBoundWorkspaceAgent {
-  readonly workspace: Workspace
-  readonly signal: AbortSignal
-  dispatch(
-    input: WorkspaceAgentDispatcherDispatchInput,
-    onEvent: (event: AgentEvent) => void | Promise<void>,
-  ): Promise<{
-    readonly ref: AgentSessionRef
-    readonly receipt: import('../../shared/gateway/types').AgentSendReceipt
-  }>
-  interrupt(sessionId: string, requestId: string): Promise<InterruptReceipt>
-  stop(sessionId: string, requestId: string): Promise<StopReceipt>
 }
 
 export interface AgentHostLegacyProjectionComposition {
@@ -273,6 +257,10 @@ export interface AgentHostLegacyProjectionComposition {
 /** Narrow Host-owned facade used only while mounting the compatibility profile. */
 export interface AgentHostLegacyProjectionRuntime {
   readonly gateway: AgentGateway
+  runWithWorkspaceAgent(
+    input: AgentHostDispatcherRunInput,
+    run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,
+  ): Promise<void>
   resolveComposition(
     agentTypeId: string,
     scope: AuthorizedAgentScope,

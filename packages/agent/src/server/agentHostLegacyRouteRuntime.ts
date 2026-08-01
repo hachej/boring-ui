@@ -985,6 +985,30 @@ export async function mountAgentHostLegacyRouteRuntime(
   }
 
   opts.onWorkspaceAgentDispatcher?.({
+    async runWithWorkspaceAgent(input, run) {
+      const boundCtx = normalizeWorkspaceAgentDispatcherContext(input.context)
+      assertWorkspaceAgentDispatcherRequestContext(boundCtx, input.request)
+      bindingLifecycle.assertAdmission(boundCtx.workspaceId, input.request)
+      const binding = staticBinding
+        ? (() => {
+            if (boundCtx.workspaceId !== sessionId) {
+              throw createWorkspaceAgentDispatcherError(
+                ErrorCode.enum.UNAUTHORIZED,
+                'workspace agent dispatcher context does not match bound workspace',
+                401,
+              )
+            }
+            return staticBinding
+          })()
+        : await getOrCreateRuntimeBinding(boundCtx.workspaceId, input.request, { trustedCtx: boundCtx })
+      await agentHost.runWithWorkspaceAgent({
+        authorizedScope: binding.authorizedScope,
+        agentTypeId: input.agentTypeId,
+        context: boundCtx,
+        request: input.request,
+        requestId: input.requestId,
+      }, run)
+    },
     async resolve(ctx, options) {
       return (await this.resolveWithWorkspace!(ctx, options)).dispatcher
     },

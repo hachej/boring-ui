@@ -33,6 +33,7 @@ import {
   resolveAgentHostCompatibilityComposition,
 } from './agent-host/createAgentHost'
 import { createCompatibilityScopeIssuer } from './agent-host/compatibilityScope'
+import type { CreatedAgentHost } from './agent-host/types'
 import {
   registerAgentRouteBindingProfile,
   toolNames,
@@ -151,8 +152,27 @@ export interface CreateAgentAppOptions {
 function createStaticWorkspaceAgentDispatcherResolver(
   binding: Parameters<typeof createBoundWorkspaceAgentDispatcher>[0],
   workspaceId: string,
+  runHostOperation: CreatedAgentHost['runWithWorkspaceAgent'],
 ): WorkspaceAgentDispatcherResolver {
   return {
+    async runWithWorkspaceAgent(input, run) {
+      const boundCtx = normalizeWorkspaceAgentDispatcherContext(input.context)
+      assertWorkspaceAgentDispatcherRequestContext(boundCtx, input.request)
+      if (boundCtx.workspaceId !== workspaceId) {
+        throw createWorkspaceAgentDispatcherError(
+          ErrorCode.enum.UNAUTHORIZED,
+          'workspace agent dispatcher context does not match bound workspace',
+          401,
+        )
+      }
+      await runHostOperation({
+        authorizedScope: binding.scope,
+        agentTypeId: input.agentTypeId,
+        context: boundCtx,
+        request: input.request,
+        requestId: input.requestId,
+      }, run)
+    },
     async resolve(ctx, options) {
       const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
       assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
@@ -295,7 +315,7 @@ export async function createAgentApp(
       gateway: host.gateway,
       scope,
       agentTypeId: 'default',
-    }, sessionId))
+    }, sessionId, host.runWithWorkspaceAgent))
     const runtimeBundle = composition.runtimeBundle
     const projectedRuntimeHost = runtimeHost ?? runtimeBundle.runtimeHost
     const filesystemBindingsForRequest = opts.getFilesystemBindings

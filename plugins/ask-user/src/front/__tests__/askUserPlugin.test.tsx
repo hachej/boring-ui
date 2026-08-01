@@ -53,7 +53,10 @@ function isOpenQuestionCommand(value: unknown, questionId: string): boolean {
 }
 
 function getProvider() {
-  return capturedPlugin.registrations.providers[0]!.component as any
+  const Provider = capturedPlugin.registrations.providers[0]!.component as any
+  return function TestProvider(props: any) {
+    return <Provider {...props} agentTypeId="alpha" />
+  }
 }
 
 function getPanel() {
@@ -457,7 +460,7 @@ describe("askUserPlugin front shell", () => {
     const Provider = getProvider()
 
     render(
-      <WorkspaceProvider apiBaseUrl="" plugins={[]} workspaceId="test-workspace">
+      <WorkspaceProvider agentTypeId="alpha" apiBaseUrl="" plugins={[]} workspaceId="test-workspace">
         <Provider apiBaseUrl="" activeSessionId="default" openSessionIds={["default"]}>
           <AttentionProbe />
         </Provider>
@@ -469,6 +472,7 @@ describe("askUserPlugin front shell", () => {
       label: "Choose A or B",
       inbox: expect.objectContaining({ kind: "question", sourceLabel: "question", priority: 10 }),
       sessionBadge: expect.objectContaining({ kind: "question" }),
+      agentTypeId: "alpha",
     })))
   })
 

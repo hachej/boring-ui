@@ -12,6 +12,7 @@ export type QuestionsStore = {
 }
 
 export type QuestionsRuntime = QuestionsStore & {
+  agentTypeId: string
   apiBaseUrl: string
   authHeaders?: Record<string, string>
   activeSessionId?: string | null

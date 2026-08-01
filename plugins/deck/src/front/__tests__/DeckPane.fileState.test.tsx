@@ -33,6 +33,7 @@ function Wrapper({ children }: { children: ReactNode }) {
 function FullPageWrapper({ children }: { children: ReactNode }) {
   return (
     <WorkspaceProvider
+      agentTypeId="alpha"
       persistenceEnabled={false}
       manageDocumentTitle={false}
       fullPageBasePath="/full-page?workspaceId=workspace-1"

@@ -148,3 +148,4 @@ describe("automation front client", () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 })
+// @vitest-environment jsdom

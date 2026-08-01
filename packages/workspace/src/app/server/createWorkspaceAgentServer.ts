@@ -19,14 +19,22 @@ import {
   type AgentFleetCompiler,
   type AgentHostAgentSpec,
   type AuthorizedAgentScope,
-  type CreateAgentAppOptions,
+  type AgentHarnessFactory,
+  type AgentMeteringSink,
+  type AgentRuntimeHostOperations,
   type PiExtensionFactory,
   type ProvisionWorkspaceRuntimeOptions,
-  type RegisterAgentRoutesOptions,
   type ResolvedAgentRuntimeScope,
+  type RuntimeBundle,
+  type RuntimeEnvContribution,
+  type RuntimeModeAdapter,
+  type RuntimeModeId,
   type VerifiedAgentScopeClaim,
+  type WorkspaceProvisioningResult,
   type WorkspaceAgentDispatcherResolver,
 } from "@hachej/boring-agent/server"
+import type { AgentEffectAdmission } from "@hachej/boring-agent/core"
+import type { AgentTool, TelemetrySink } from "@hachej/boring-agent/shared"
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify"
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
 import { createHash } from "node:crypto"
@@ -79,6 +87,27 @@ import {
 
 type HostExtensionFactory = PiExtensionFactory
 
+interface WorkspacePiSessionRequestContext {
+  workspaceId?: string
+  storageScope?: string
+  authSubject?: string
+  authEmail?: string
+  authEmailVerified?: boolean
+  sessionAuthority?: "workspace-scope"
+  runtimeScopeIdentity?: string
+  requestId: string
+}
+
+type WorkspacePiSessionRequestContextResolver = (
+  request: FastifyRequest,
+  defaultContext: WorkspacePiSessionRequestContext,
+) => WorkspacePiSessionRequestContext | Promise<WorkspacePiSessionRequestContext>
+
+interface WorkspaceReloadHookResult {
+  restart_warnings?: ReadonlyArray<{ id: string; surfaces: string[]; message: string }>
+  diagnostics?: ReadonlyArray<{ source: string; message: string; pluginId?: string }>
+}
+
 export interface WorkspaceAgentPiOptions {
   noContextFiles?: boolean
   noSkills?: boolean
@@ -88,16 +117,41 @@ export interface WorkspaceAgentPiOptions {
   extensionFactories?: HostExtensionFactory[]
 }
 
-type WorkspaceAgentCreateOptions = Omit<
-  CreateAgentAppOptions,
-  "pi"
-> & {
+interface WorkspaceAgentCreateOptions {
+  workspaceRoot?: string
+  sessionId?: string
+  mode?: RuntimeModeId
+  runtimeModeAdapter?: RuntimeModeAdapter
+  runtimeHost?: AgentRuntimeHostOperations
+  authToken?: string
+  logger?: boolean
+  extraTools?: AgentTool[]
+  disableDefaultFileTools?: boolean
+  systemPromptAppend?: string
+  harnessFactory?: AgentHarnessFactory
   pi?: WorkspaceAgentPiOptions
+  runtimeProvisioning?: WorkspaceProvisioningResult
+  telemetry?: TelemetrySink
+  metering?: AgentMeteringSink
+  resolvePiSessionRequestContext?: WorkspacePiSessionRequestContextResolver
+  runtimeEnvContributions?: RuntimeEnvContribution[]
+  runtimeProvisioner?: (ctx: {
+    workspaceRoot: string
+    runtimeMode: RuntimeModeId
+    runtimeBundle: RuntimeBundle
+  }) => Promise<void>
+  sessionRoot?: string
+  externalPlugins?: boolean
+  beforeReload?: () => void | WorkspaceReloadHookResult | undefined | Promise<void | WorkspaceReloadHookResult | undefined>
+  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
+  onWorkspaceAgentDispatcher?: (resolver: WorkspaceAgentDispatcherResolver) => void
 }
 
 export interface WorkspaceAgentServerPluginContext {
   workspaceRoot: string
   bridge: ReturnType<typeof createInMemoryBridge>
+  /** Host-selected Agent owner for package-level server plugin actions. */
+  agentTypeId?: string
   /** Available only to boot-time internal package plugins in standalone/local composition. */
   trusted?: {
     workspaceAgentDispatcherResolver: WorkspaceAgentDispatcherResolver
@@ -130,7 +184,7 @@ export interface CreateWorkspaceAgentServerOptions
   /** Agent selected by the compatibility browser wire. Defaults to `default`. */
   defaultAgentTypeId?: string
   /** Optional host admission called immediately before each Agent effect. */
-  admitEffect?: RegisterAgentRoutesOptions["admitEffect"]
+  admitEffect?: AgentEffectAdmission
   /**
    * Host-installed server plugins. Accepts pre-built `WorkspaceServerPlugin`
    * objects or `{ dir, options?, hotReload?, trust? }` directory-source entries.
@@ -706,6 +760,7 @@ export interface ResolveWorkspaceAgentServerPluginCollectionOptions
   appRoot?: string
   plugins?: WorkspacePluginEntry[]
   trustedPluginContext?: WorkspaceAgentServerPluginContext["trusted"]
+  agentTypeId?: string
 }
 
 export function buildWorkspaceContextPrompt(options: { pluginAuthoringEnabled?: boolean } = {}): string {
@@ -782,7 +837,11 @@ export function collectWorkspaceAgentServerPlugins(
 export async function resolveWorkspaceAgentServerPluginCollection(
   opts: ResolveWorkspaceAgentServerPluginCollectionOptions,
 ): Promise<WorkspaceAgentServerPluginCollection> {
-  const baseCtx: WorkspaceAgentServerPluginContext = { workspaceRoot: opts.workspaceRoot, bridge: opts.bridge }
+  const baseCtx: WorkspaceAgentServerPluginContext = {
+    workspaceRoot: opts.workspaceRoot,
+    bridge: opts.bridge,
+    ...(opts.agentTypeId ? { agentTypeId: opts.agentTypeId } : {}),
+  }
   const trustedCtx: WorkspaceAgentServerPluginContext = { ...baseCtx, trusted: opts.trustedPluginContext }
   const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
     workspaceRoot: opts.workspaceRoot,
@@ -1063,12 +1122,17 @@ export async function createWorkspaceAgentServer(
     && !(opts.excludeDefaults ?? []).includes("boring-ui-plugin-cli-package")
   let workspaceAgentDispatcherResolver: WorkspaceAgentDispatcherResolver | undefined
   const trustedDispatcherProxy: WorkspaceAgentDispatcherResolver = {
+    async runWithWorkspaceAgent(input, run) {
+      if (!workspaceAgentDispatcherResolver?.runWithWorkspaceAgent) throw new Error("workspace agent dispatcher run is not ready")
+      return await workspaceAgentDispatcherResolver.runWithWorkspaceAgent(input, run)
+    },
     async resolve(actor, options) {
       if (!workspaceAgentDispatcherResolver) throw new Error("workspace agent dispatcher is not ready")
       return await workspaceAgentDispatcherResolver.resolve(actor, options)
     },
   }
   const pluginCollection = await resolveWorkspaceAgentServerPluginCollection({
+    agentTypeId: opts.defaultAgentTypeId ?? opts.agents?.[0]?.agentTypeId ?? "default",
     trustedPluginContext: {
       workspaceAgentDispatcherResolver: trustedDispatcherProxy,
       actorResolver: (request) => ({
@@ -1181,7 +1245,7 @@ export async function createWorkspaceAgentServer(
     workspaceRoot,
   )
   const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(runtimeWorkspaceRoot)
-  type RuntimeProvisionerContext = Parameters<NonNullable<CreateAgentAppOptions["runtimeProvisioner"]>>[0]
+  type RuntimeProvisionerContext = Parameters<NonNullable<WorkspaceAgentCreateOptions["runtimeProvisioner"]>>[0]
   let liveRuntimeBundle: RuntimeProvisionerContext["runtimeBundle"] | undefined
   const runRuntimeProvisioning = async (runtimeBundle?: RuntimeProvisionerContext["runtimeBundle"]) => {
     if (opts.provisionWorkspace === false) return currentRuntimeProvisioning

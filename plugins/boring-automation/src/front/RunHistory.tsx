@@ -33,7 +33,8 @@ export function RunHistory({
       {runs.map((run) => {
         const tokens = tokenTotal(run)
         const startedOrScheduled = run.startedAt ?? run.scheduledFor ?? run.createdAt
-        const title = run.sessionId ? `Open session ${run.sessionId}` : "Run has no session"
+        const ref = run.dispatchReceipt?.ref
+        const title = ref ? `Open session ${ref.sessionId}` : "Run has no session"
         return (
           <li key={run.id} className="group flex min-h-12 items-center gap-2 px-4 py-2 text-left text-[12px] focus-within:bg-muted/40 hover:bg-muted/40 motion-reduce:transition-none">
             <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", statusTone(run.status))}>{statusLabel(run.status)}</span>
@@ -50,7 +51,7 @@ export function RunHistory({
               type="button"
               variant="ghost"
               size="sm"
-              disabled={!run.sessionId}
+              disabled={!ref}
               aria-label={title}
               title={title}
               className="shrink-0 px-2 text-xs"

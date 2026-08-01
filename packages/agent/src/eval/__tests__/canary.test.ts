@@ -42,6 +42,7 @@ describeIf("eval canary (live LLM)", () => {
     async () => {
       const result = await evalAgentPrompt({
         app,
+        agentTypeId: "default",
         prompt: "read the file README.md and tell me what it says",
         expect: { tool: "read", params: { path: "README.md" } },
         retries: 1,
@@ -57,6 +58,7 @@ describeIf("eval canary (live LLM)", () => {
     async () => {
       const result = await evalAgentPrompt({
         app,
+        agentTypeId: "default",
         prompt: "run `ls -la` to see the directory contents",
         expect: { tool: "bash", params: { command: EvalRegex("ls") } },
         retries: 1,
@@ -72,6 +74,7 @@ describeIf("eval canary (live LLM)", () => {
     async () => {
       const result = await evalAgentPrompt({
         app,
+        agentTypeId: "default",
         prompt: "what is 2 + 2? answer briefly with no tool calls",
         expectNoToolCall: true,
         retries: 1,

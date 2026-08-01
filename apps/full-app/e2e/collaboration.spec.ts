@@ -135,7 +135,7 @@ test.describe('signup-to-workspace flow', () => {
       }
 
       if (path === '/api/v1/tree') return route.fulfill(json({ entries: [] }))
-      if (path.startsWith('/api/v1/agent/')) return route.fulfill(json({}))
+      if (path.startsWith('/api/v1/agents/')) return route.fulfill(json({}))
 
       return route.continue()
     })
@@ -226,7 +226,7 @@ test.describe('workspace invite flow', () => {
       }
 
       if (path === '/api/v1/tree') return route.fulfill(json({ entries: [] }))
-      if (path.startsWith('/api/v1/agent/')) return route.fulfill(json({}))
+      if (path.startsWith('/api/v1/agents/')) return route.fulfill(json({}))
 
       return route.continue()
     })
@@ -308,7 +308,7 @@ test.describe('owner protection', () => {
 
       if (path === '/api/v1/workspaces') return route.fulfill(json({ workspaces: [WORKSPACE] }))
       if (path === '/api/v1/tree') return route.fulfill(json({ entries: [] }))
-      if (path.startsWith('/api/v1/agent/')) return route.fulfill(json({}))
+      if (path.startsWith('/api/v1/agents/')) return route.fulfill(json({}))
 
       return route.continue()
     })
@@ -371,7 +371,7 @@ test.describe('account deletion', () => {
 
       if (path === '/api/v1/workspaces') return route.fulfill(json({ workspaces: [] }))
       if (path === '/api/v1/tree') return route.fulfill(json({ entries: [] }))
-      if (path.startsWith('/api/v1/agent/')) return route.fulfill(json({}))
+      if (path.startsWith('/api/v1/agents/')) return route.fulfill(json({}))
 
       return route.continue()
     })

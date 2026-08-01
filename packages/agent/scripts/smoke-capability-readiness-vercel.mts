@@ -235,13 +235,13 @@ async function main(): Promise<void> {
     const address = await app.listen({ host: '127.0.0.1', port: 0 })
     log('server_ready', { server_ready_ms: nowMs(startedAt), workspaceId })
 
-    const readyPromise = watchReadyStatus(`${address}/api/v1/ready-status`, startedAt)
+    const readyPromise = watchReadyStatus(`${address}/api/v1/agents/default/ready-status`, startedAt)
     const chatStartedAt = Date.now()
     // The agent API must answer while runtime dependencies are still
-    // preparing — the pi-chat sessions list exercises the binding without an
+    // preparing — the addressed sessions list exercises the binding without an
     // LLM turn.
-    const chat = await fetch(`${address}/api/v1/agent/pi-chat/sessions`, { signal: abort })
-    if (!chat.ok) throw new Error(`pi-chat sessions failed with ${chat.status}: ${await chat.text()}`)
+    const chat = await fetch(`${address}/api/v1/agents/default/sessions`, { signal: abort })
+    if (!chat.ok) throw new Error(`addressed sessions failed with ${chat.status}: ${await chat.text()}`)
     const chatFirstByteMs = await readFirstChunkMs(chat, chatStartedAt)
     log('chat_first_byte', { chat_first_byte_ms: chatFirstByteMs })
 

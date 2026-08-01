@@ -9,7 +9,7 @@ export default defineConfig({
   test: {
     server: {
       deps: {
-        inline: [/^@hachej\/boring-(agent|automation|bash|workspace|ui-kit)(\/.*)?$/, /^@hachej\/boring-ui-plugin-cli$/],
+        inline: [/^@hachej\/boring-(agent|ask-user|automation|bash|tasks|workspace|ui-kit)(\/.*)?$/, /^@hachej\/boring-ui-plugin-cli$/],
       },
     },
     projects: [
@@ -57,6 +57,9 @@ export default defineConfig({
       { find: /^@hachej\/boring-workspace$/, replacement: resolve(repoRoot, "packages/workspace/src/index.ts") },
       { find: /^@hachej\/boring-ui-kit$/, replacement: resolve(repoRoot, "packages/ui/src/index.ts") },
       { find: /^@hachej\/boring-automation\/server$/, replacement: resolve(repoRoot, "plugins/boring-automation/src/server/index.ts") },
+      { find: /^@hachej\/boring-automation\/front$/, replacement: resolve(repoRoot, "plugins/boring-automation/src/front/index.tsx") },
+      { find: /^@hachej\/boring-ask-user\/front$/, replacement: resolve(repoRoot, "plugins/ask-user/src/front/index.tsx") },
+      { find: /^@hachej\/boring-tasks\/front$/, replacement: resolve(repoRoot, "plugins/tasks/src/front/index.tsx") },
       { find: /^@hachej\/boring-diagram\/front$/, replacement: resolve(repoRoot, "plugins/diagram/src/front/index.tsx") },
       { find: /^@hachej\/boring-diagram\/shared$/, replacement: resolve(repoRoot, "plugins/diagram/src/shared/index.ts") },
       { find: /^@hachej\/boring-ui-plugin-cli$/, replacement: resolve(repoRoot, "packages/plugin-cli/src/index.ts") },

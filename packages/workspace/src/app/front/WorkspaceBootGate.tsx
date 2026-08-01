@@ -15,6 +15,7 @@ import {
 } from "./workspacePreload"
 
 export interface WorkspaceBootGateProps {
+  agentTypeId: string
   workspaceId: string
   requestHeaders?: Record<string, string>
   apiBaseUrl?: string | null
@@ -56,6 +57,7 @@ function sleepUntilRetry(signal: AbortSignal): Promise<void> {
 }
 
 export function WorkspaceBootGate({
+  agentTypeId,
   workspaceId,
   requestHeaders,
   apiBaseUrl,
@@ -100,7 +102,7 @@ export function WorkspaceBootGate({
     async function boot() {
       setState({ status: "loading", label: "Waking workspace runtime" })
       try {
-        const paths = resolveBootPreloadPaths(preloadPaths, provisionWorkspace)
+        const paths = resolveBootPreloadPaths(preloadPaths, provisionWorkspace, agentTypeId)
         let results = await Promise.all(paths.map(async (path) => ({ path, status: await fetchOk(path) })))
         let preparingPaths = results.filter((result) => result.status === "preparing").map((result) => result.path)
         while (preparingPaths.length > 0) {
@@ -122,7 +124,7 @@ export function WorkspaceBootGate({
 
     void boot()
     return () => controller.abort()
-  }, [apiBaseUrl, preloadPaths, provisionWorkspace, requestHeaders, workspaceId])
+  }, [agentTypeId, apiBaseUrl, preloadPaths, provisionWorkspace, requestHeaders, workspaceId])
 
   if (state.status === "ready") return <>{children}</>
 

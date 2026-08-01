@@ -49,7 +49,7 @@ async function main(): Promise<number> {
   })
 
   try {
-    const report = await runEvalSuite({ app, fixturesPath })
+    const report = await runEvalSuite({ app, agentTypeId: "default", fixturesPath })
 
     console.log(
       `[eval] ${report.passed}/${report.total} passed (${(

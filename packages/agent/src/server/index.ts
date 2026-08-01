@@ -174,11 +174,11 @@ export type {
   CreateAgentHostOptions,
   CreatedAgentHost,
   AuthorizedEnvironmentIntent,
-  LeaseBoundWorkspaceAgent,
   LegacyDefaultAgentHostSpec,
   ResolvedAgentRuntimeScope,
   ResolvedEnvironmentScope,
 } from './agent-host/types'
+export type { LeaseBoundWorkspaceAgent } from '../shared/workspaceAgentDispatcher'
 export type {
   AuthorizedAgentScope,
   VerifiedAgentScopeClaim,

@@ -2,7 +2,7 @@
 
 import { useMemo, type Dispatch, type SetStateAction } from "react"
 import { dispatchUiCommand, type DispatchContext } from "../../front/bridge"
-import type { WorkspaceShellCapabilities, WorkspaceShellArtifactTarget } from "../../front/shell/WorkspaceShellCapabilitiesContext"
+import type { WorkspaceShellCapabilities, WorkspaceShellArtifactTarget, WorkspaceShellSessionRef } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 
 function panelInstanceId(prefix: string, id: string): string {
   const safe = id.replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 96)
@@ -15,7 +15,7 @@ export function useWorkspaceShellCapabilitiesController({
   refreshChatSessions,
   surfaceDispatch,
 }: {
-  setFloatingChatSession: Dispatch<SetStateAction<{ sessionId: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>>
+  setFloatingChatSession: Dispatch<SetStateAction<{ ref: WorkspaceShellSessionRef; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>>
   openChatPane: (sessionId: string) => void
   refreshChatSessions: () => Promise<void>
   surfaceDispatch: DispatchContext
@@ -50,10 +50,10 @@ export function useWorkspaceShellCapabilitiesController({
       }, surfaceDispatch)
       return { success: true }
     },
-    openDetachedChat: (sessionId: string, options) => {
-      if (!sessionId) return { success: false, reason: "invalid-session", message: "Missing chat session id." }
+    openDetachedChat: (ref, options) => {
+      if (!ref.agentTypeId || !ref.sessionId) return { success: false, reason: "invalid-session", message: "Missing chat Agent or session id." }
       setFloatingChatSession({
-        sessionId,
+        ref,
         title: options?.title,
         initialDraft: options?.initialDraft,
         composingEnabled: options?.composingEnabled,

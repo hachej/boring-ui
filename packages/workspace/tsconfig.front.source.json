@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.front.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": true,
+    "tsBuildInfoFile": "./.tsbuildinfo.front.source",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@hachej/boring-workspace": ["./src/index.ts"],
+      "@hachej/boring-agent/shared": ["../agent/src/shared/index.ts"],
+      "@hachej/boring-bash/server": ["../boring-bash/src/server/index.ts"],
+      "@hachej/boring-sandbox/shared": ["../boring-sandbox/src/shared/index.ts"],
+      "@hachej/boring-sandbox/providers/node-workspace": ["../boring-sandbox/src/providers/node-workspace/index.ts"]
+    }
+  }
+}

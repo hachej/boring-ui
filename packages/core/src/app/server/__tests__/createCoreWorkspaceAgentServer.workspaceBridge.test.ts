@@ -24,7 +24,7 @@ vi.mock('@hachej/boring-agent/server', async (importOriginal) => {
     agentServerMock.registerOpts.push(opts)
     app.post('/api/v1/agent/chat', async () => ({ ok: true }))
     app.get('/api/v1/agent/chat/:sessionId/messages', async () => ({ ok: true }))
-    app.get('/api/v1/agent/pi-chat/sessions', async (request: any, reply: any) => {
+    app.get('/api/v1/agents/default/sessions', async (request: any, reply: any) => {
       try {
         const workspaceId = await (opts.getWorkspaceId as Function)(request)
         const storageScope = await (opts.getSessionNamespace as Function)({
@@ -334,7 +334,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     expect(agentServerMock.registerOpts).toHaveLength(1)
     const inject = (storageScope?: string) => app.inject({
       method: 'GET',
-      url: '/api/v1/agent/pi-chat/sessions',
+      url: '/api/v1/agents/default/sessions',
       headers: {
         'x-test-user-id': 'user-1',
         ...(storageScope === undefined ? {} : { 'x-boring-storage-scope': storageScope }),

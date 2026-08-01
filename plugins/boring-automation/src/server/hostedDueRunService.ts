@@ -6,6 +6,7 @@ import { evaluateAutomationSchedule } from "../shared/schedule"
 import type { AutomationRun } from "../shared/types"
 import { type DueRunOutcome, type DueRunSummary } from "./dueRunService"
 import { ManualRunExecutor } from "./manualRunExecutor"
+import { createLeaseBoundHostedAutomationStore } from "./hostedStore"
 import { listHostedAutomationCandidates, PostgresAutomationStore, reconcileStaleHostedAutomationRuns, type HostedAutomationActor } from "./postgresStore"
 import type { AutomationRunEventPublisher } from "./runEventBus"
 import { AutomationStoreError } from "./store"
@@ -14,6 +15,7 @@ import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/serv
 const HOSTED_RUN_STALE_AFTER_MS = 5 * 60_000
 
 export interface HostedDueRunServiceOptions {
+  agentTypeId: string
   sql: postgres.Sql
   dispatcherResolver: WorkspaceAgentDispatcherResolver
   verifyActor: (actor: HostedAutomationActor) => Promise<boolean> | boolean
@@ -86,10 +88,15 @@ export class HostedDueRunService {
       }
 
       try {
-        if (!this.options.dispatcherResolver.resolveWithWorkspace) throw new Error("workspace-bound automation storage is unavailable")
-        const binding = await this.options.dispatcherResolver.resolveWithWorkspace(candidate.actor, { request })
-        const store = new PostgresAutomationStore(this.options.sql, candidate.actor, this.clock, binding.workspace)
+        const store = createLeaseBoundHostedAutomationStore(
+          this.options.sql,
+          candidate.actor,
+          this.options.dispatcherResolver,
+          this.options.agentTypeId,
+          request,
+        )
         const executor = new ManualRunExecutor({
+          agentTypeId: this.options.agentTypeId,
           store,
           dispatcherResolver: this.options.dispatcherResolver,
           actorResolver: () => candidate.actor,

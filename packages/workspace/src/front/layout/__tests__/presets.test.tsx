@@ -64,7 +64,7 @@ function renderWithRegistry(
 ) {
   const { panelRegistry, commandRegistry } = setup(panels)
   return render(
-    <WorkspaceProvider persistenceEnabled={false}>
+    <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
       <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
         {ui}
       </RegistryProvider>
@@ -78,7 +78,7 @@ function renderWithPanelRegistry(
 ) {
   const { panelRegistry, commandRegistry } = setup(panels)
   const result = render(
-    <WorkspaceProvider persistenceEnabled={false}>
+    <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
       <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
         {ui}
       </RegistryProvider>
@@ -550,7 +550,7 @@ describe("ChatLayout component", () => {
     panelRegistry.register("chat", { title: "chat", lazy: false, component: StreamingChatPanel })
 
     render(
-      <WorkspaceProvider persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
         <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
           <ChatLayout
             nav="session-list"
