@@ -1519,7 +1519,7 @@ describe("beforeReload triggers directory-source re-resolve", () => {
     expect(rebuilt).toEqual({ ok: true, diagnostics: [] })
   })
 
-  test("does not query plugin reload blockers when reload preparation fails", async () => {
+  test("checks plugin reload availability before reload preparation", async () => {
     const getAgentReloadBlock = vi.fn()
     await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("phase5-lifecycle-order-host-"),
@@ -1533,7 +1533,7 @@ describe("beforeReload triggers directory-source re-resolve", () => {
       { beforeReload?: () => Promise<void> },
     ]
     await expect(agentOptions.beforeReload?.()).rejects.toThrow("preparation failed")
-    expect(getAgentReloadBlock).not.toHaveBeenCalled()
+    expect(getAgentReloadBlock).toHaveBeenCalledOnce()
   })
 
   test("blocks Agent replacement with a structured plugin reload reason", async () => {
@@ -1554,6 +1554,27 @@ describe("beforeReload triggers directory-source re-resolve", () => {
       pluginId: "active-work",
     })
     expect(getAgentReloadBlock).toHaveBeenCalledOnce()
+  })
+
+  test("rechecks reload blockers after asynchronous preparation", async () => {
+    const getAgentReloadBlock = vi.fn()
+      .mockReturnValueOnce(undefined)
+      .mockReturnValueOnce({ code: "work_started", message: "Work started during preparation." })
+    await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("phase5-reload-race-host-"),
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [{ id: "racing-work", getAgentReloadBlock }],
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { beforeReload?: () => Promise<void> },
+    ]
+    await expect(agentOptions.beforeReload?.()).rejects.toMatchObject({
+      code: "work_started",
+      pluginId: "racing-work",
+    })
+    expect(getAgentReloadBlock).toHaveBeenCalledTimes(2)
   })
 
   test("beforeReload returns rebuild diagnostics merged with caller restart warnings", async () => {

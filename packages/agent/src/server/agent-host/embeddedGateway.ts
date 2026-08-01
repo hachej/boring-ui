@@ -36,6 +36,13 @@ const DEFAULT_PAGE_LIMIT = 50
 
 type RetryableSessionGuard = () => Promise<AgentGatewayErrorDTO | undefined>
 type EffectSerializer = <T>(effect: () => Promise<T>) => Promise<T>
+interface EffectOptions {
+  duplicateReceipt?: boolean
+  legacyAlias?: boolean
+  serialize?: EffectSerializer
+  guard?: RetryableSessionGuard
+}
+type SessionEffectOptions = Omit<EffectOptions, 'serialize'>
 const MAX_PAGE_LIMIT = 100
 
 type ReceiptObject = Readonly<Record<string, JsonValue>>
@@ -410,13 +417,16 @@ export class EmbeddedAgentGateway implements AgentGateway {
         })
         this.runtime.activity.set(claim.workspaceScopeId, ref, 'running')
         return { ...receipt, disposition: 'prompt' as const }
-      }, true, false, async () => await this.promptAdmission(
-        scope,
-        claim,
-        ref,
-        command.requestId,
-        command.requireIdle === true,
-      ))
+      }, {
+        duplicateReceipt: true,
+        guard: async () => await this.promptAdmission(
+          scope,
+          claim,
+          ref,
+          command.requestId,
+          command.requireIdle === true,
+        ),
+      })
     }
     return await this.sessionEffect(ref, claim, 'session.followup', command.requestId, command as unknown as JsonValue, async () => {
       const receipt = await service.followUp(context(claim, command.requestId), ref.sessionId, {
@@ -426,7 +436,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
         clientSeq: command.clientSeq,
       })
       return { ...receipt, disposition: 'followup' as const }
-    }, true)
+    }, { duplicateReceipt: true })
   }
 
   async renameSession(input: Parameters<AgentGateway['renameSession']>[0]) {
@@ -525,9 +535,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     requestId: string,
     payload: JsonValue,
     action: () => Promise<unknown>,
-    duplicateReceipt = false,
-    legacyAlias = false,
-    guard?: RetryableSessionGuard,
+    options: SessionEffectOptions = {},
   ): Promise<unknown> {
     return this.effect(
       claim,
@@ -536,10 +544,10 @@ export class EmbeddedAgentGateway implements AgentGateway {
       requestId,
       payload,
       action,
-      duplicateReceipt,
-      legacyAlias,
-      (effect) => this.withWriter(claim.workspaceScopeId, ref, effect),
-      guard,
+      {
+        ...options,
+        serialize: (effect) => this.withWriter(claim.workspaceScopeId, ref, effect),
+      },
     )
   }
 
@@ -563,8 +571,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
         input.requestId,
         input.payload,
         input.action,
-        false,
-        true,
+        { legacyAlias: true },
       )
     }
     if (input.target.kind !== 'session') throw new TypeError(`${input.operation} requires a session target`)
@@ -575,9 +582,10 @@ export class EmbeddedAgentGateway implements AgentGateway {
       input.requestId,
       input.payload,
       input.action,
-      false,
-      true,
-      input.retryableGuard,
+      {
+        legacyAlias: true,
+        guard: input.retryableGuard,
+      },
     )
   }
 
@@ -588,12 +596,15 @@ export class EmbeddedAgentGateway implements AgentGateway {
     requestId: string,
     payload: JsonValue,
     action: () => Promise<unknown>,
-    duplicateReceipt = false,
-    legacyAlias = false,
-    serialize?: EffectSerializer,
-    guard?: RetryableSessionGuard,
+    options: EffectOptions = {},
   ): Promise<unknown> {
     this.assertOpen()
+    const {
+      duplicateReceipt = false,
+      legacyAlias = false,
+      serialize,
+      guard,
+    } = options
     const key: AgentRequestKey = {
       workspaceScopeId: claim.workspaceScopeId,
       authSubjectId: claim.authSubjectId,

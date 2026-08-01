@@ -691,6 +691,17 @@ export interface WorkspaceAgentServerPluginCollection {
   >
 }
 
+async function assertAgentReloadAvailable(blockers: readonly WorkspaceAgentReloadBlocker[]): Promise<void> {
+  for (const blocker of blockers) {
+    const block = await blocker.getBlock()
+    if (!block) continue
+    if (typeof block.code !== "string" || !block.code || typeof block.message !== "string" || !block.message) {
+      throw new Error(`server plugin "${blocker.id}": getAgentReloadBlock returned an invalid block`)
+    }
+    throw Object.assign(new Error(block.message), { code: block.code, pluginId: blocker.id })
+  }
+}
+
 export interface CollectWorkspaceAgentServerPluginsOptions
   extends Pick<ServerBootstrapOptions, "plugins" | "defaults" | "excludeDefaults"> {
   workspaceRoot?: string
@@ -1540,6 +1551,9 @@ export async function createWorkspaceAgentServer(
       staticPluginPackagePiSnapshot.systemPromptAppend,
     ].filter(Boolean).join("\n\n") || undefined,
     beforeReload: async () => {
+      // Fail fast, then check again immediately before replacement so work
+      // cannot become active during asynchronous reload preparation.
+      await assertAgentReloadAvailable(pluginCollection.agentReloadBlockers)
       // Per-plugin scan/rebuild failures are surfaced via SSE error
       // events + `.error` files (asset manager) and via the response
       // body of POST /api/v1/agent/reload (rebuild diagnostics). They
@@ -1562,16 +1576,7 @@ export async function createWorkspaceAgentServer(
       diagnostics = [...scanDiagnostics, ...backendReload.diagnostics, ...rebuild.diagnostics]
       await runRuntimeProvisioning(liveRuntimeBundle)
       const callerResult = await opts.beforeReload?.()
-      // Plugin availability checks run only after every failure-capable reload
-      // preparation step has succeeded, immediately before replacement.
-      for (const blocker of pluginCollection.agentReloadBlockers) {
-        const block = await blocker.getBlock()
-        if (!block) continue
-        if (typeof block.code !== "string" || !block.code || typeof block.message !== "string" || !block.message) {
-          throw new Error(`server plugin "${blocker.id}": getAgentReloadBlock returned an invalid block`)
-        }
-        throw Object.assign(new Error(block.message), { code: block.code, pluginId: blocker.id })
-      }
+      await assertAgentReloadAvailable(pluginCollection.agentReloadBlockers)
       const callerRestartWarnings = callerResult && typeof callerResult === "object"
         ? callerResult.restart_warnings ?? []
         : []
