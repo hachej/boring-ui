@@ -207,6 +207,12 @@ export interface ResolvedAgentRuntimeScope {
   readonly sessionNamespace: string
   readonly pi?: PiHarnessOptions
   readonly extraTools?: readonly AgentTool[]
+  readonly includeFilesystemTools?: boolean
+  readonly includeUploadTools?: boolean
+  readonly reloadMetadata?: {
+    readonly diagnostics?: ReadonlyArray<{ readonly source: string; readonly message: string; readonly pluginId?: string }>
+    readonly restartWarnings?: ReadonlyArray<{ readonly id: string; readonly surfaces: readonly string[]; readonly message: string }>
+  }
   readonly getFilesystemBindings?: (input: {
     readonly scope: VerifiedAgentScopeClaim
     readonly sessionId?: string
@@ -222,6 +228,10 @@ export interface AuthorizedEnvironmentIntent {
 }
 
 export interface AgentHostEnvironmentScope extends ResolvedEnvironmentScope {
+  /** App-owned environment decoration applied once to the canonical provider generation. */
+  readonly transformRuntimeBundle?: (
+    runtimeBundle: RuntimeBundle,
+  ) => RuntimeBundle | Promise<RuntimeBundle>
   /** Evaluated for every authorized operation; never cached as placement authority. */
   readonly resolveFilesystemBindings?: (input: {
     readonly verifiedClaim: VerifiedAgentScopeClaim

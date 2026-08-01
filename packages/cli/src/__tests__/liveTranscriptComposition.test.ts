@@ -57,9 +57,13 @@ describe("CLI live transcript composition", () => {
       expect(emptyStatus.statusCode).toBe(404)
       expect(emptyStatus.json()).toMatchObject({ error: { code: "live_transcript_not_active" } })
 
-      const createdSession = await app.inject({ method: "POST", url: "/api/v1/agents/default/sessions", payload: {} })
+      const createdSession = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/sessions",
+        payload: { requestId: "live-transcript-session" },
+      })
       expect(createdSession.statusCode).toBe(201)
-      const sessionId = createdSession.json().id as string
+      const sessionId = createdSession.json().sessionId as string
       const started = await app.inject({
         method: "POST",
         url: "/api/v1/live-transcripts",
@@ -79,11 +83,18 @@ describe("CLI live transcript composition", () => {
       expect(review.statusCode).toBe(503)
       expect(review.json()).toMatchObject({ error: { code: "live_transcript_disabled" } })
 
-      const blockedReload = await app.inject({ method: "POST", url: "/api/v1/agent/reload" })
-      expect(blockedReload.statusCode).toBe(422)
+      const blockedReload = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/reload",
+        payload: { requestId: "blocked-live-transcript-reload", sessionId },
+      })
+      expect(blockedReload.statusCode).toBe(409)
       expect(blockedReload.json()).toMatchObject({
-        ok: false,
-        error: "Stop the active transcription before reloading the Agent.",
+        error: {
+          code: "AGENT_COMMAND_INVALID_STATE",
+          message: "Stop the active transcription before reloading the Agent.",
+          details: { blockerCode: "live_transcript_already_active", pluginId: "live-transcription" },
+        },
       })
 
       const stillActive = await app.inject({
@@ -102,7 +113,11 @@ describe("CLI live transcript composition", () => {
         payload: { reason: "attachment_failed" },
       })
       expect(interrupted.statusCode).toBe(200)
-      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload" })
+      const reload = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/reload",
+        payload: { requestId: "live-transcript-reload", sessionId },
+      })
       expect(reload.statusCode, reload.body).toBe(200)
     } finally {
       await app.close()

@@ -273,11 +273,18 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
             const reloaded = await current.composition.harness.reloadSession(reloadSessionId)
             const diagnostics = (current.composition.harness.getResourceDiagnostics?.(reloadSessionId) ?? [])
               .map((entry) => ({ source: entry.source, message: entry.message }))
+            const mergedDiagnostics = [
+              ...(candidate.reloadMetadata?.diagnostics ?? []),
+              ...diagnostics,
+            ]
             return {
               ok: true,
               ...(sessionId ? { sessionId } : {}),
               reloaded,
-              ...(diagnostics.length > 0 ? { diagnostics } : {}),
+              ...(mergedDiagnostics.length > 0 ? { diagnostics: mergedDiagnostics } : {}),
+              ...(candidate.reloadMetadata?.restartWarnings?.length
+                ? { restartWarnings: candidate.reloadMetadata.restartWarnings }
+                : {}),
             }
           })
         },

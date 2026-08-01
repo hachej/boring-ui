@@ -1,6 +1,6 @@
 import type { FastifyRequest } from "fastify"
-import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
-import type { Workspace } from "@hachej/boring-agent/shared"
+import type { WorkspaceAgentDispatcherBinding, WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
+import type { LeaseBoundWorkspaceAgent, Workspace } from "@hachej/boring-agent/shared"
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto"
 import type WebSocket from "ws"
 import {
@@ -43,10 +43,18 @@ interface LiveSession {
   upstreamMessages: number
   stopPromise?: Promise<LiveTranscriptTerminalResponse>
   terminalPromise?: Promise<LiveTranscriptTerminalResponse>
+  releaseWorkspaceLease?: () => void
+  removeWorkspaceAbortListener?: () => void
 }
+
+type PiSessionVisibleUserTurnTarget = Awaited<
+  ReturnType<NonNullable<WorkspaceAgentDispatcherBinding["bindPiSession"]>>
+>["visibleUserMessageTarget"]
 
 export interface LiveTranscriptManagerOptions {
   dispatcherResolver: WorkspaceAgentDispatcherResolver
+  /** Addressed Agent target used by direct callback-scoped hosts. Omit only for compatibility hosts. */
+  agentTypeId?: string
   actorResolver: (request: FastifyRequest) => Promise<{ workspaceId: string; userId: string }> | { workspaceId: string; userId: string }
   upstreamUrl: string
   upstreamBearerToken?: string
@@ -88,9 +96,11 @@ export class LiveTranscriptManager {
     const sessionId = input.sessionId.trim()
     if (!sessionId) throw new LiveTranscriptError("live_transcript_session_not_found", "Originating Pi session is required.", 404)
     this.leasePending = true
-    let created: { workspace: Workspace; path: string; markdown: string; mtimeMs: number } | undefined
     try {
       const actor = await this.options.actorResolver(request)
+      if (this.options.agentTypeId) {
+        return await this.startDirect(request, actor, sessionId, input.title)
+      }
       if (!this.options.dispatcherResolver.resolveWithWorkspace) {
         throw new LiveTranscriptError("live_transcript_disabled", "Trusted Workspace resolver is unavailable.", 503)
       }
@@ -112,75 +122,129 @@ export class LiveTranscriptManager {
       if (!binding.workspace.writeFileWithStat || !binding.workspace.readBinaryFile) {
         throw new LiveTranscriptError("live_transcript_disabled", "Workspace guarded file operations are unavailable.", 503)
       }
+      return await this.createSession(binding.workspace, sessionId, input.title, reviewTarget)
+    } finally {
+      this.leasePending = false
+    }
+  }
 
-      const title = cleanTitle(input.title)
-      const startedAt = new Date(this.now()).toISOString()
-      const path = `live-transcripts/${startedAt.slice(0, 10)}-${randomBytes(12).toString("hex")}.md`
-      await binding.workspace.mkdir("live-transcripts", { recursive: true })
-      const initialDocument: TranscriptDocument = { title, startedAt, state: "active", lines: [] }
-      const markdown = renderTranscriptMarkdown(initialDocument)
-      const stat = await binding.workspace.writeFileWithStat(path, markdown)
-      created = { workspace: binding.workspace, path, markdown, mtimeMs: stat.mtimeMs }
-
-      const id = randomUUID()
-      const socketNonce = randomBytes(LIVE_NONCE_BYTES).toString("base64url")
-      const nonce = encoder.encode(socketNonce)
-      const session: LiveSession = {
-        id,
-        transcriptPath: path,
-        originatingSessionId: sessionId,
-        startedAt,
-        title,
-        phase: "setup",
-        nonce,
-        projector: undefined as never,
-        lines: [],
-        speakerLabels: new Map(),
-        audioBytes: 0,
-        upstreamMessages: 0,
+  private async startDirect(
+    request: FastifyRequest,
+    actor: { workspaceId: string; userId: string },
+    sessionId: string,
+    title?: string,
+  ): Promise<LiveTranscriptStartResponse> {
+    let resolveSetup!: (response: LiveTranscriptStartResponse) => void
+    let rejectSetup!: (error: unknown) => void
+    const setup = new Promise<LiveTranscriptStartResponse>((resolve, reject) => {
+      resolveSetup = resolve
+      rejectSetup = reject
+    })
+    let releaseLease!: () => void
+    const leaseLifetime = new Promise<void>((resolve) => { releaseLease = resolve })
+    let setupSettled = false
+    const run = this.options.dispatcherResolver.runWithWorkspaceAgent({
+      agentTypeId: this.options.agentTypeId!,
+      context: actor,
+      requestId: `live-transcript:${randomUUID()}`,
+      request,
+    }, async (binding: LeaseBoundWorkspaceAgent) => {
+      try {
+        const response = await this.createSession(binding.workspace, sessionId, title)
+        const session = this.active
+        if (!session || session.id !== response.liveSessionId) {
+          throw new LiveTranscriptError("live_transcript_disabled", "Live transcript lease was not published.", 503)
+        }
+        session.releaseWorkspaceLease = releaseLease
+        if (session.phase === "terminal") releaseLease()
+        const onAbort = () => { void this.terminate(session, "interrupted", "live_transcript_attachment_failed") }
+        binding.signal.addEventListener("abort", onAbort, { once: true })
+        session.removeWorkspaceAbortListener = () => binding.signal.removeEventListener("abort", onAbort)
+        setupSettled = true
+        resolveSetup(response)
+        await leaseLifetime
+      } catch (error) {
+        if (!setupSettled) {
+          setupSettled = true
+          rejectSetup(error)
+        }
+        throw error
       }
-      session.projector = new LiveTranscriptProjector(binding.workspace, path, {
-        markdown,
-        mtimeMs: stat.mtimeMs,
-      }, {
-        now: () => this.now(),
-        onError: (error) => { void this.interruptFromFailure(session, error) },
-      })
+    })
+    void run.catch((error) => {
+      if (!setupSettled) {
+        setupSettled = true
+        rejectSetup(error)
+        return
+      }
+      const session = this.active
+      if (session) void this.terminate(session, "interrupted", "live_transcript_attachment_failed")
+    })
+    return await setup
+  }
+
+  private async createSession(
+    workspace: Workspace,
+    sessionId: string,
+    inputTitle?: string,
+    reviewTarget?: PiSessionVisibleUserTurnTarget,
+  ): Promise<LiveTranscriptStartResponse> {
+    if (!workspace.writeFileWithStat || !workspace.readBinaryFile) {
+      throw new LiveTranscriptError("live_transcript_disabled", "Workspace guarded file operations are unavailable.", 503)
+    }
+    const title = cleanTitle(inputTitle)
+    const startedAt = new Date(this.now()).toISOString()
+    const path = `live-transcripts/${startedAt.slice(0, 10)}-${randomBytes(12).toString("hex")}.md`
+    await workspace.mkdir("live-transcripts", { recursive: true })
+    const initialDocument: TranscriptDocument = { title, startedAt, state: "active", lines: [] }
+    const markdown = renderTranscriptMarkdown(initialDocument)
+    const stat = await workspace.writeFileWithStat(path, markdown)
+    const id = randomUUID()
+    const socketNonce = randomBytes(LIVE_NONCE_BYTES).toString("base64url")
+    const session: LiveSession = {
+      id,
+      transcriptPath: path,
+      originatingSessionId: sessionId,
+      startedAt,
+      title,
+      phase: "setup",
+      nonce: encoder.encode(socketNonce),
+      projector: undefined as never,
+      lines: [],
+      speakerLabels: new Map(),
+      audioBytes: 0,
+      upstreamMessages: 0,
+    }
+    session.projector = new LiveTranscriptProjector(workspace, path, { markdown, mtimeMs: stat.mtimeMs }, {
+      now: () => this.now(),
+      onError: (error) => { void this.interruptFromFailure(session, error) },
+    })
+    if (reviewTarget) {
       let broker: LiveReviewBroker
       broker = new LiveReviewBroker({
         transcriptPath: path,
         target: reviewTarget,
         getProjectionRevision: () => session.projector.projectionRevision,
-        getReviewInstructions: () => readReviewInstructions(binding.workspace),
+        getReviewInstructions: () => readReviewInstructions(workspace),
         intervalMs: this.options.reviewIntervalMs,
         retryMs: this.options.reviewRetryMs,
-        onTerminalFailure: () => {
-          void this.terminate(session, "interrupted", "live_transcript_session_not_found")
-        },
+        onTerminalFailure: () => { void this.terminate(session, "interrupted", "live_transcript_session_not_found") },
         onDrained: () => { this.reviewBrokers.delete(broker) },
       })
       session.reviewBroker = broker
       this.reviewBrokers.add(broker)
-      session.setupTimer = setTimeout(() => {
-        void this.terminate(session, "interrupted", "live_transcript_setup_timeout")
-      }, this.options.setupTimeoutMs ?? 30_000)
-      this.active = session
-      this.tombstone = undefined
-      return {
-        liveSessionId: id,
-        transcriptPath: path,
-        socketNonce,
-        reviewIntervalMs: this.options.reviewIntervalMs ?? 60_000,
-        state: "setup",
-      }
-    } catch (error) {
-      if (created) {
-        // A post-create failure is unlikely because the lease object is built
-        // synchronously. Preserve the created Markdown rather than deleting it.
-      }
-      throw error
-    } finally {
-      this.leasePending = false
+    }
+    session.setupTimer = setTimeout(() => {
+      void this.terminate(session, "interrupted", "live_transcript_setup_timeout")
+    }, this.options.setupTimeoutMs ?? 30_000)
+    this.active = session
+    this.tombstone = undefined
+    return {
+      liveSessionId: id,
+      transcriptPath: path,
+      socketNonce,
+      reviewIntervalMs: this.options.reviewIntervalMs ?? 60_000,
+      state: "setup",
     }
   }
 
@@ -414,7 +478,10 @@ export class LiveTranscriptManager {
       if (this.active === session) this.active = undefined
       this.tombstone = result
       return result
-    })()
+    })().finally(() => {
+      session.removeWorkspaceAbortListener?.()
+      session.releaseWorkspaceLease?.()
+    })
     return session.terminalPromise
   }
 

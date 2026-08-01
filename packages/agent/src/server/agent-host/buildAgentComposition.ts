@@ -125,7 +125,7 @@ export async function buildAgentComposition(
           }
         : undefined
     )),
-    ...(compatibility?.includeFilesystemTools === false ? [] : buildFilesystemAgentTools(bashRuntimeBundle, {
+    ...(runtimeScope.includeFilesystemTools === false || compatibility?.includeFilesystemTools === false ? [] : buildFilesystemAgentTools(bashRuntimeBundle, {
       getFilesystemBindings: compatibility?.getFilesystemBindings
         ?? (runtimeScope.getFilesystemBindings
           ? async (ctx) => [...await runtimeScope.getFilesystemBindings!({
@@ -138,7 +138,7 @@ export async function buildAgentComposition(
             }) ?? []]
           : undefined),
     })),
-    ...(compatibility?.includeUploadTools ? buildUploadAgentTools(bashRuntimeBundle) : []),
+    ...(runtimeScope.includeUploadTools || compatibility?.includeUploadTools ? buildUploadAgentTools(bashRuntimeBundle) : []),
     ...(compatibility?.additionalStandardTools ?? []),
   ]
   const groups: AgentCompositionToolGroups = {

@@ -213,8 +213,11 @@ export type {
   WorkspaceAgentDispatcherResolver,
   WorkspaceAgentDispatcherResolveOptions,
 } from './workspaceAgentDispatcher'
-export { withRuntimeEnvContributions } from './runtimeEnvContributions'
-export type { RuntimeEnvContribution, RuntimeEnvContributionContext } from './runtimeEnvContributions'
+export {
+  withRuntimeEnvContributions,
+  type RuntimeEnvContribution,
+  type RuntimeEnvContributionContext,
+} from './runtimeEnvContributions'
 export type {
   AgentMeteringSink,
   MeteringErrorLogger,

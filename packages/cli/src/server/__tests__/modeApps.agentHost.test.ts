@@ -93,10 +93,11 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
 }
 
 describe.sequential("CLI Agent Host composition", () => {
-  it("Slice 1 composed route/auth proof: CLI folder mode delegates to Workspace's canonical Host table", async () => {
+  it("Slice 4 composed route/auth proof: CLI folder mode inherits Workspace's direct Host projection", async () => {
     const workspaceRoot = await temporaryRoot("boring-cli-folder-agent-host-")
     const sessionRoot = await temporaryRoot("boring-cli-folder-agent-sessions-")
     restoreEnv("BORING_AGENT_SESSION_ROOT", sessionRoot)
+    const createAgentHost = vi.spyOn(agentServer, "createAgentHost")
     const app = await createFolderModeApp({
       workspaceRoot,
       mode: "direct",
@@ -104,12 +105,18 @@ describe.sequential("CLI Agent Host composition", () => {
     })
     try {
       assertComposedAgentHostRouteTable(app)
+      expect(createAgentHost).toHaveBeenCalledOnce()
+      expect(createAgentHost).toHaveBeenCalledWith(expect.objectContaining({
+        resolveAuthorizedEnvironmentScope: expect.any(Function),
+        resolveAuthorizedAgentRuntimeScope: expect.any(Function),
+      }))
       expect(app.hasRoute({ method: "GET", url: "/api/v1/agents" })).toBe(true)
       expect(app.hasRoute({
         method: "GET",
         url: "/api/v1/agents/:agentTypeId/sessions/:sessionId/attachments/:messageId/:index",
       })).toBe(true)
       expect((await app.inject({ method: "GET", url: "/api/v1/agents" })).statusCode).toBe(200)
+      expect((await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })).statusCode).toBe(404)
     } finally {
       await app.close()
     }
