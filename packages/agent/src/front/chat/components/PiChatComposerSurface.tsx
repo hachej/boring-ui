@@ -419,7 +419,7 @@ export function PiChatComposerSurface<
                   onStop={onStop}
                   disabled={submitDisabled}
                   className={cn(
-                    'h-8 w-8 shrink-0 rounded-full',
+                    '!h-11 !w-11 shrink-0 rounded-full sm:!h-8 sm:!w-8',
                     'bg-foreground',
                     'text-background',
                     'transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]',
