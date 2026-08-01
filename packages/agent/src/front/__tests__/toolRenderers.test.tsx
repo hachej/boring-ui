@@ -299,6 +299,23 @@ describe("shadcn exec_ui renderer", () => {
   })
 })
 
+describe("edit tool transparency", () => {
+  test("opens completed edits by default and renders the shared diff view", () => {
+    const part = makePart({
+      toolName: "edit",
+      input: { path: "README.md", edits: [{ oldText: "before", newText: "after" }] },
+      output: { text: "Successfully replaced 1 block" },
+    })
+
+    render(<>{shadcnDefaultToolRenderers.edit!(part)}</>)
+
+    expect(screen.getByText("before")).toBeTruthy()
+    expect(screen.getByText("after")).toBeTruthy()
+    expect(screen.queryByText("Successfully replaced 1 block")).toBeNull()
+    expect(screen.getByRole("button", { name: /edit.*README\.md.*Completed/ }).getAttribute("data-state")).toBe("open")
+  })
+})
+
 describe("write tool renderer copy action", () => {
   const originalExecCommand = document.execCommand
 
@@ -320,7 +337,7 @@ describe("write tool renderer copy action", () => {
 
     render(<>{shadcnDefaultToolRenderers.write!(part)}</>)
 
-    fireEvent.click(screen.getByRole("button", { name: /writesrc\/example\.tsCompleted/ }))
+    expect(screen.getByRole("button", { name: /writesrc\/example\.tsCompleted/ }).getAttribute("data-state")).toBe("open")
     fireEvent.click(screen.getByRole("button", { name: "Copy" }))
 
     await waitFor(() => {

@@ -246,6 +246,7 @@ describe('addressed Agent Host HTTP projection', () => {
         clientNonce: 'nonce-p',
         content: 'hello',
         displayContent: 'Hello',
+        requireIdle: true,
         model: { provider: 'anthropic', id: 'claude' },
         thinkingLevel: 'medium',
         attachments: [{ filename: 'chart.png', mediaType: 'image/png', url: 'data:image/png;base64,AA==', path: 'uploads/chart.png' }],
@@ -288,7 +289,7 @@ describe('addressed Agent Host HTTP projection', () => {
     expect(gateway.calls).toEqual(expect.arrayContaining([
       { method: 'listSessions', input: { scope, agentTypeId: 'alpha', cursor: undefined, limit: 25 } },
       { method: 'createSession', input: { scope, agentTypeId: 'alpha', requestId: 'create-1', title: 'Created' } },
-      { method: 'send', input: expect.objectContaining({ kind: 'prompt', requestId: 'prompt-1', attachments: [expect.objectContaining({ path: 'uploads/chart.png' })] }) },
+      { method: 'send', input: expect.objectContaining({ kind: 'prompt', requestId: 'prompt-1', requireIdle: true, attachments: [expect.objectContaining({ path: 'uploads/chart.png' })] }) },
       { method: 'send', input: { kind: 'followup', requestId: 'follow-1', clientNonce: 'nonce-f', content: 'next', displayContent: 'Next', clientSeq: 3 } },
       { method: 'interrupt', input: { requestId: 'interrupt-1' } },
       { method: 'stop', input: { requestId: 'stop-1' } },

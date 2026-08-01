@@ -19,6 +19,7 @@
 
 /* @hachej/boring-ui-kit styles imported as a regular package. */
 @import "@hachej/boring-ui-kit/styles.css";
+@import "../chat/components/chat-transcript.css";
 
 @source "../**/*.{ts,tsx}";
 

@@ -122,6 +122,7 @@ const PromptBodySchema = z.object({
   clientNonce: NonEmptyString.max(128),
   content: NonEmptyString.max(1_000_000),
   displayContent: NonEmptyString.max(1_000_000).optional(),
+  requireIdle: z.literal(true).optional(),
   model: ChatModelSelectionSchema.optional(),
   thinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
   attachments: z.array(ChatAttachmentPayloadSchema).max(20).optional(),

@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-deck",
-  "version": "0.1.93",
+  "version": "0.1.94",
   "type": "module",
   "license": "MIT",
   "description": "Front-only markdown deck plugin scaffold for Boring workspace.",

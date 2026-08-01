@@ -80,6 +80,8 @@ export function createDispatcherTestHarness() {
 class DispatcherTestAdapter implements PiAgentSessionAdapter {
   private readonly subscribers = new Set<(event: AgentSessionEvent) => void>()
   private streaming = false
+  private promptGate: Promise<void> | undefined
+  private releasePromptGate: (() => void) | undefined
   abortCount = 0
 
   constructor(private readonly sessionId: string) {}
@@ -104,6 +106,15 @@ class DispatcherTestAdapter implements PiAgentSessionAdapter {
     return () => this.subscribers.delete(listener)
   }
 
+  holdNextPrompt(): () => void {
+    this.promptGate = new Promise<void>((resolve) => { this.releasePromptGate = resolve })
+    return () => this.releasePromptGate?.()
+  }
+
+  setStreamingForTest(streaming: boolean): void {
+    this.streaming = streaming
+  }
+
   async prompt(_input: PiAgentPromptInput): Promise<void> {
     this.streaming = true
     const assistant = {
@@ -124,6 +135,11 @@ class DispatcherTestAdapter implements PiAgentSessionAdapter {
       timestamp: 0,
     }
     this.emit({ type: 'agent_start', turnId: 'turn-dispatcher' } as unknown as AgentSessionEvent)
+    if (this.promptGate) {
+      await this.promptGate
+      this.promptGate = undefined
+      this.releasePromptGate = undefined
+    }
     this.emit({
       type: 'message_update',
       message: assistant,
