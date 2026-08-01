@@ -1,5 +1,6 @@
 export type SlashCommandHandlerResult = string | void | { message?: string; preserveDraft?: boolean }
 export type SlashCommandHandler = (args: string, ctx: SlashCommandContext) => SlashCommandHandlerResult | Promise<SlashCommandHandlerResult>
+export type SlashCommandClickBehavior = 'execute' | 'insert' | 'disabled'
 
 export interface SlashCommand {
   name: string
@@ -12,6 +13,8 @@ export interface SlashCommand {
    * is needed.
    */
   kind?: 'local' | 'skill'
+  /** Explicit opt-in for assistant-message command links. Unset commands remain plain text. */
+  clickBehavior?: SlashCommandClickBehavior
   /**
    * Origin of the command, surfaced as a tag in the slash-command picker.
    * Mirrors Pi's command sources for server commands; `local` for built-in
