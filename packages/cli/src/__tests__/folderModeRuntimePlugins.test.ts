@@ -275,7 +275,7 @@ describe("folder mode runtime plugin wiring", () => {
         boring: { label: "front-removed-plugin" },
       }), "utf8")
 
-      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agents/default/reload", payload: { requestId: "folder-runtime-front-removed" } })
       expect(reload.statusCode).toBe(200)
 
       const runtimeAfterFrontRemoved = await app.inject({ method: "GET", url: plugin!.frontTarget!.entryUrl! })

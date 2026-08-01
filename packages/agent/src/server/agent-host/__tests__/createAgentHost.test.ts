@@ -11,10 +11,7 @@ import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { InMemorySessionChangesTracker } from '../../http/sessionChangesTracker'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { assertComposedAgentHostRouteTable } from '../testing/compositionRouteProof'
-import {
-  createAgentHost,
-  resolveAgentHostCompatibilityComposition,
-} from '../createAgentHost'
+import { createAgentHost } from '../createAgentHost'
 
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
@@ -34,20 +31,22 @@ function options(sessionRoot: string) {
     scopeVerifier: { verify: vi.fn(async () => ({ workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' })) },
     runtimeModeAdapter: createTestRuntimeModeAdapter('direct'),
     sessionRoot,
-    resolveRuntimeScope: vi.fn(async () => ({
+    resolveAuthorizedEnvironmentScope: vi.fn(async () => ({
+      placementIdentity: 'direct-a',
+      workspaceRoot: sessionRoot,
+      provisioningFingerprint: 'provision-a',
+    })),
+    resolveAuthorizedAgentRuntimeScope: vi.fn(async () => ({
       identity: 'runtime-a',
-      environment: {
-        placementIdentity: 'direct-a',
-        workspaceRoot: sessionRoot,
-        provisioningFingerprint: 'provision-a',
-      },
+      physicalBindingIdentity: 'runtime-a',
+      resourceInputDigest: 'runtime-a',
       sessionNamespace: 'alpha-a',
     })),
   }
 }
 
 describe('createAgentHost', () => {
-  it('requires durable transactional ledger ownership for the direct projection unless test/dev compatibility is explicit', async () => {
+  it('requires durable transactional ledger ownership for the direct projection unless test/dev in-memory mode is explicit', async () => {
     await expect(createAgentHost({
       ...options(await root()),
       requestLedger: new InMemoryAgentRequestLedger(),
@@ -62,14 +61,14 @@ describe('createAgentHost', () => {
     })
     await durableWithoutTranscripts.host.close()
 
-    const compatible = await createAgentHost({
+    const inMemory = await createAgentHost({
       ...options(await root()),
-      requestLedgerCompatibilityMode: 'test',
+      inMemoryRequestLedgerMode: 'test',
     })
-    expect(() => compatible.registerDirectRoutes({
+    expect(() => inMemory.registerDirectRoutes({
       authorizeAgentRequest: async () => scope,
     })).not.toThrow()
-    await compatible.host.close()
+    await inMemory.host.close()
   })
 
   it('awaits compilation, freezes the fleet, and publishes a stable durable identity', async () => {
@@ -111,13 +110,15 @@ describe('createAgentHost', () => {
     const restartOptions = () => ({
       ...options(sessionRoot),
       harnessFactory,
-      resolveRuntimeScope: vi.fn(async () => ({
+      resolveAuthorizedEnvironmentScope: vi.fn(async () => ({
+        placementIdentity: 'direct-prompt',
+        workspaceRoot: sessionRoot,
+        provisioningFingerprint: 'provision-prompt',
+      })),
+      resolveAuthorizedAgentRuntimeScope: vi.fn(async () => ({
         identity: 'runtime-prompt',
-        environment: {
-          placementIdentity: 'direct-prompt',
-          workspaceRoot: sessionRoot,
-          provisioningFingerprint: 'provision-prompt',
-        },
+        physicalBindingIdentity: 'runtime-prompt',
+        resourceInputDigest: 'runtime-prompt',
         sessionNamespace: 'alpha-prompt',
         // The Workspace resolver's observed deterministic fragment order is
         // alphabetical by plugin ID: alpha before zeta.
@@ -127,11 +128,11 @@ describe('createAgentHost', () => {
     })
 
     const first = await createAgentHost(restartOptions())
-    await resolveAgentHostCompatibilityComposition(first, 'alpha', scope)
+    await first.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'first-prompt-session' })
     await first.host.close()
 
     const second = await createAgentHost(restartOptions())
-    await resolveAgentHostCompatibilityComposition(second, 'alpha', scope)
+    await second.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'second-prompt-session' })
     await second.host.close()
 
     const golden = [
@@ -188,8 +189,7 @@ describe('createAgentHost', () => {
     }))
     const created = await createAgentHost({
       ...options(workspaceRoot),
-      resolveRuntimeScope: undefined,
-      requestLedgerCompatibilityMode: 'test',
+      inMemoryRequestLedgerMode: 'test',
       resolveAuthorizedEnvironmentScope,
       resolveAuthorizedAgentRuntimeScope,
     })
@@ -259,7 +259,6 @@ describe('createAgentHost', () => {
     const writeStarted = new Promise<void>((resolve) => { markWriteStarted = resolve })
     const created = await createAgentHost({
       ...options(workspaceRoot),
-      resolveRuntimeScope: undefined,
       runtimeModeAdapter: {
         ...baseAdapter,
         async create(context) {
@@ -345,7 +344,6 @@ describe('createAgentHost', () => {
     const created = await createAgentHost({
       ...options(workspaceRoot),
       shutdownGraceMs: 10,
-      resolveRuntimeScope: undefined,
       runtimeModeAdapter: {
         ...baseAdapter,
         async create(context) {
@@ -423,7 +421,7 @@ describe('createAgentHost', () => {
     await expect(run).rejects.toMatchObject({ code: ErrorCode.enum.AGENT_BINDING_DISPOSED })
   })
 
-  it('Slice 1 composed route/auth proof: direct Host mounts the exact table once behind authorization', async () => {
+  it('Final composed route/auth proof: direct Host mounts the exact table once behind authorization', async () => {
     const workspaceRoot = await root()
     let markSlowStarted!: () => void
     let releaseSlow!: () => void
@@ -442,6 +440,22 @@ describe('createAgentHost', () => {
     let reloadCandidateIdentity = 'direct-route-runtime-v1'
     let reloadPhysicalBindingIdentity = 'direct-route-binding-v1'
     let reloadResourceInputDigest = 'resources:direct-route:v1'
+    let resourceInputsValid = true
+    let invalidateDuringClassification = false
+    let invalidateDuringApply = false
+    const revalidateResourceInputs = vi.fn(async () => {
+      if (invalidateDuringClassification) {
+        invalidateDuringClassification = false
+        resourceInputsValid = false
+      }
+      if (!resourceInputsValid) {
+        throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, 'resource inputs changed')
+      }
+    })
+    const applyReload = vi.fn(async () => {
+      if (invalidateDuringApply) resourceInputsValid = false
+      return undefined
+    })
     const harnessFactory = vi.fn(async (input: Parameters<AgentHarnessFactory>[0]) => ({
       ...createScriptedPiHarness(input),
       executeSlashCommand,
@@ -450,14 +464,19 @@ describe('createAgentHost', () => {
     }))
     const created = await createAgentHost({
       ...options(workspaceRoot),
-      resolveRuntimeScope: undefined,
-      requestLedgerCompatibilityMode: 'test',
+      inMemoryRequestLedgerMode: 'test',
       metering: {
         isEnabled: () => meteringEnabled,
         reserveRun: vi.fn(),
         recordUsage: vi.fn(),
         settleRun: vi.fn(),
         releaseRun: vi.fn(),
+      },
+      effectAdmission: {
+        async admit({ key }) {
+          if (key.requestId === 'reload-mutated-during-admission') resourceInputsValid = false
+          return { type: 'accepted' as const, admissionReceipt: `accepted:${key.requestId}` }
+        },
       },
       harnessFactory,
       resolveAuthorizedEnvironmentScope: async () => ({
@@ -474,6 +493,7 @@ describe('createAgentHost', () => {
           : activePhysicalBindingIdentity,
         resourceInputDigest: reloadResourceInputDigest,
         sessionNamespace: 'direct-routes',
+        ...(intent.operation === 'reload' ? { applyReload, revalidateResourceInputs } : {}),
       }),
     })
     const app = Fastify({ logger: false })
@@ -508,11 +528,6 @@ describe('createAgentHost', () => {
     for (const route of expectedHostRoutes) {
       expect(mountedRoutes.filter((mounted) => mounted === route), route).toHaveLength(1)
     }
-    expect(app.hasRoute({
-      method: 'POST',
-      url: '/api/v1/agents/:agentTypeId/sessions/:sessionId/queue-clear',
-    })).toBe(false)
-
     const deniedHost = await createAgentHost({
       ...options(await root()),
       hostId: 'denied-direct-proof-host',
@@ -634,6 +649,48 @@ describe('createAgentHost', () => {
       payload: { requestId: 'reload-direct', sessionId },
     })).json()).toEqual({ ok: true, sessionId, reloaded: true })
     expect(reloadSession).toHaveBeenCalledTimes(2)
+    expect(applyReload).toHaveBeenCalledTimes(2)
+
+    invalidateDuringClassification = true
+    const classificationMutation = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/reload',
+      payload: { requestId: 'reload-mutated-during-classification', sessionId },
+    })
+    expect(classificationMutation.statusCode).toBe(409)
+    expect(classificationMutation.json()).toMatchObject({
+      error: { code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT },
+    })
+    expect(applyReload).toHaveBeenCalledTimes(2)
+
+    resourceInputsValid = true
+    const admissionMutation = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/reload',
+      payload: { requestId: 'reload-mutated-during-admission', sessionId },
+    })
+    expect(admissionMutation.statusCode).toBe(409)
+    expect(admissionMutation.json()).toMatchObject({
+      error: { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN },
+    })
+    expect(applyReload).toHaveBeenCalledTimes(2)
+    resourceInputsValid = true
+
+    invalidateDuringApply = true
+    const applyMutation = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/reload',
+      payload: { requestId: 'reload-mutated-during-apply', sessionId },
+    })
+    expect(applyMutation.statusCode).toBe(409)
+    expect(applyMutation.json()).toMatchObject({
+      error: { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN },
+    })
+    expect(applyReload).toHaveBeenCalledTimes(3)
+    expect(reloadSession).toHaveBeenCalledTimes(2)
+    invalidateDuringApply = false
+    resourceInputsValid = true
+
     reloadResourceInputDigest = 'resources:direct-route:v2'
     const changedResources = await app.inject({
       method: 'POST',
@@ -645,6 +702,7 @@ describe('createAgentHost', () => {
       error: { code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT },
     })
     expect(reloadSession).toHaveBeenCalledTimes(2)
+    expect(applyReload).toHaveBeenCalledTimes(3)
     reloadResourceInputDigest = 'resources:direct-route:v1'
     expect((await app.inject({
       method: 'POST',
@@ -652,6 +710,7 @@ describe('createAgentHost', () => {
       payload: { requestId: 'reload-direct', sessionId },
     })).json()).toEqual({ ok: true, sessionId, reloaded: true })
     expect(reloadSession).toHaveBeenCalledTimes(2)
+    expect(applyReload).toHaveBeenCalledTimes(3)
     const missingReloadPayload = { requestId: 'reload-missing-session', sessionId: 'missing-reload-session' }
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const missingReload = await app.inject({
@@ -665,6 +724,7 @@ describe('createAgentHost', () => {
       })
     }
     expect(reloadSession).toHaveBeenCalledTimes(2)
+    expect(applyReload).toHaveBeenCalledTimes(3)
     reloadCandidateIdentity = 'direct-route-runtime-v2'
     const restartRequired = await app.inject({
       method: 'POST',
@@ -684,6 +744,7 @@ describe('createAgentHost', () => {
       },
     })
     expect(reloadSession).toHaveBeenCalledTimes(2)
+    expect(applyReload).toHaveBeenCalledTimes(3)
 
     // A candidate identity observed by another sessionless capability route
     // must neither replace nor bypass the Host generation's current binding.
@@ -704,6 +765,7 @@ describe('createAgentHost', () => {
       error: { code: AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED },
     })
     expect(reloadSession).toHaveBeenCalledTimes(2)
+    expect(applyReload).toHaveBeenCalledTimes(3)
 
     activeRuntimeIdentity = 'direct-route-runtime-v1'
     reloadCandidateIdentity = 'direct-route-runtime-v1'
@@ -718,6 +780,7 @@ describe('createAgentHost', () => {
       error: { code: AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED },
     })
     expect(reloadSession).toHaveBeenCalledTimes(2)
+    expect(applyReload).toHaveBeenCalledTimes(3)
     await app.close()
 
     const duplicateHost = await createAgentHost({
@@ -725,12 +788,62 @@ describe('createAgentHost', () => {
       hostId: 'duplicate-projection-host',
     })
     const duplicateApp = Fastify({ logger: false })
-    const projection = duplicateHost.registerRoutes({
-      defaultAgentTypeId: 'alpha',
-      authorizeRequest: async () => scope,
+    const projection = duplicateHost.registerDirectRoutes({
+      authorizeAgentRequest: async () => scope,
     })
     await duplicateApp.register(projection)
     await expect(duplicateApp.register(projection)).rejects.toMatchObject({ code: ErrorCode.enum.CONFIG_INVALID })
     await duplicateApp.close()
+  })
+
+  it('preserves safe pre-mutation service errors and canonicalizes post-begin failures on first response and replay', async () => {
+    const workspaceRoot = await root()
+    const stable = Object.assign(new Error('session catalog is locked'), {
+      code: ErrorCode.enum.SESSION_LOCKED,
+      statusCode: 423,
+      retryable: true,
+    })
+    const created = await createAgentHost({
+      ...options(workspaceRoot),
+      inMemoryRequestLedgerMode: 'test',
+      harnessFactory: async (input) => {
+        const harness = createScriptedPiHarness(input)
+        return {
+          ...harness,
+          sessions: {
+            ...harness.sessions,
+            async create() { throw new Error('provider disconnected after create began') },
+          },
+          async getSlashCommands() { throw stable },
+        }
+      },
+    })
+    const app = Fastify({ logger: false })
+    await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const known = await app.inject({ method: 'GET', url: '/api/v1/agents/alpha/commands' })
+      expect(known.statusCode).toBe(423)
+      expect(known.json()).toEqual({
+        error: { code: ErrorCode.enum.SESSION_LOCKED, message: 'session catalog is locked', retryable: true },
+      })
+    }
+
+    const createRequest = {
+      method: 'POST' as const,
+      url: '/api/v1/agents/alpha/sessions',
+      payload: { requestId: 'ambiguous-create' },
+    }
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const ambiguous = await app.inject(createRequest)
+      expect(ambiguous.statusCode).toBe(409)
+      expect(ambiguous.json()).toEqual({
+        error: {
+          code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+          message: 'effect outcome could not be safely replayed',
+        },
+      })
+    }
+    await app.close()
   })
 })

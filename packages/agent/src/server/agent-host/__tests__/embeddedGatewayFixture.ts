@@ -209,9 +209,7 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
   }
   const activity = new AgentSessionActivityIndex()
   const runtime = {
-    options: {
-      resolveRuntimeScope: async () => ({ identity: 'shared-runtime' }),
-    },
+    options: {},
     compiledAgents: agents,
     compiledById: new Map(agents.map((agent) => [agent.agentTypeId, agent])),
     ledger: new InMemoryAgentRequestLedger(),

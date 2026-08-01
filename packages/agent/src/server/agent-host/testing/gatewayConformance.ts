@@ -293,7 +293,7 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
       expect(first).toBeDefined()
       expect(fulfilled.every((result) => JSON.stringify(result.value) === JSON.stringify(first))).toBe(true)
       const rejected = concurrent.find((result) => result.status === 'rejected')
-      if (rejected) expect(rejected).toMatchObject({ reason: { code: 'AGENT_REQUEST_IN_PROGRESS' } })
+      if (rejected) expect(rejected).toMatchObject({ reason: { code: AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS } })
       expect(await createSession(fixture, scopeA, 'same-id')).toEqual(first)
       await expectCode(
         fixture.gateway.createSession({ scope: scopeA, agentTypeId: 'alpha', requestId: 'same-id', title: 'different' }),

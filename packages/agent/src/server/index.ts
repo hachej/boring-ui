@@ -69,7 +69,6 @@ export {
 } from './runtime/sandboxRuntimeHost'
 export type { SandboxRuntimeModeOptions } from './runtime/sandboxRuntimeHost'
 export type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
-export { createAgent } from './createAgent'
 export {
   AgentDirectoryCompilerError,
   compileAgentDirectory,
@@ -126,8 +125,6 @@ export type {
   ManagedAgentWorkspaceResolutionInput,
   ShareEntryMcpResourceOptions,
 } from './mcp'
-export { createAgentApp } from './createAgentApp'
-export type { CreateAgentAppOptions } from './createAgentApp'
 export { createStandaloneAgentHostApp } from './createStandaloneAgentHostApp'
 export type { CreateStandaloneAgentHostAppOptions } from './createStandaloneAgentHostApp'
 export { registerAgentHostEnvironmentRoutes } from './agent-host/environmentHttpProjection'
@@ -154,7 +151,6 @@ export type {
   AgentEffectAdmission,
   AgentFleetCompiler,
   AgentGatewayEffect,
-  AgentHostAddressedHttpProjectionOptions,
   AgentHostAgentSpec,
   AgentHostDirectProjectionOptions,
   AgentHostDescription,
@@ -162,13 +158,6 @@ export type {
   AgentHostEnvironmentLease,
   AgentHostEnvironmentScope,
   AgentHostHandle,
-  AgentHostHttpProjectionOptions,
-  AgentHostLegacyHttpProjectionOptions,
-  AgentHostLegacyProjectionComposition,
-  AgentHostLegacyProjectionLifecycle,
-  AgentHostLegacyProjectionRuntime,
-  AgentHostLegacyRoutePolicy,
-  AgentHostLegacyRoutePolicyMountInput,
   AgentRequestKey,
   AgentRequestLedger,
   AgentRequestLedgerPrepareResult,
@@ -202,16 +191,17 @@ export {
   piPackageSourceKey,
   PI_PACKAGE_RESOURCE_FILTERS,
 } from './piPackages'
-export { registerAgentRoutes } from './registerAgentRoutes'
 export {
-  createAgentHostLegacyRoutePolicy,
-} from './agentHostLegacyRoutePolicy'
+  DEFAULT_PI_RESOURCE_DIGEST_LIMITS,
+  createPiResourceDigestFence,
+  createPiResourceDigestInput,
+  digestPiResourceInputs,
+} from './piResourceDigest'
 export type {
-  AgentHostLegacyRoutePolicyOptions,
-  AgentHostLegacyRouteScopePolicy,
-  PrebuiltAgentHostRoutePolicy,
-  RegisterAgentRoutesOptions,
-} from './registerAgentRoutes'
+  PiResourceDigestInput,
+  PiResourceDigestLimits,
+  PiResourceSet,
+} from './piResourceDigest'
 export type {
   WorkspaceAgentDispatcherBinding,
   WorkspaceAgentDispatcherResolver,

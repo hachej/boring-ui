@@ -89,7 +89,7 @@ export async function createAgentPlaygroundRuntime(
     runtimeModeAdapter: modeAdapter,
     runtimeHost: modeAdapter.runtimeHost,
     sessionRoot: options.sessionRoot,
-    ...(!options.sessionRoot ? { requestLedgerCompatibilityMode: 'development' as const } : {}),
+    ...(!options.sessionRoot ? { inMemoryRequestLedgerMode: 'development' as const } : {}),
     harnessFactory: options.harnessFactory,
     async resolveAuthorizedEnvironmentScope() {
       return {

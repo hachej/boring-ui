@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { createSandboxRuntimeModeAdapter } from '@hachej/boring-agent/server'
 import { assertComposedAgentHostRouteTable } from '@hachej/boring-agent/server/agent-host/testing/compositionRouteProof'
+import { AgentGatewayErrorCode, type AuthorizedAgentScope } from '@hachej/boring-agent/shared'
 import type {
   AgentCoreHarness,
   AgentCoreHarnessFactory,
@@ -128,7 +129,7 @@ function createSmokeHarnessFactory(): AgentCoreHarnessFactory {
 }
 
 describe('agent-playground AgentGateway reference composition', () => {
-  test('Slice 1 composed route/auth proof: playground delegates to one canonical Host and trusted scope', async () => {
+  test('Final composed route/auth proof: playground delegates to one canonical Host and trusted scope', async () => {
     const sessionRoot = await mkdtemp(join(tmpdir(), 'agent-playground-gateway-'))
     tempDirs.push(sessionRoot)
     const directMode = createSandboxRuntimeModeAdapter('direct')
@@ -148,9 +149,13 @@ describe('agent-playground AgentGateway reference composition', () => {
     })
     expect(modelsResponse.statusCode).toBe(200)
     expect(modelsResponse.json()).toMatchObject({ models: expect.any(Array) })
-    expect(runtime.app.hasRoute({ method: 'GET', url: '/api/v1/agent/models' })).toBe(false)
+    expect(runtime.app.hasRoute({ method: 'GET', url: '/api/v1/agents/default/models' })).toBe(false)
     const addressed = await runtime.app.inject({ method: 'GET', url: '/api/v1/agents' })
     expect(addressed.statusCode).toBe(200)
+    expect((await runtime.app.inject({ method: 'GET', url: '/api/v1/files/search?q=proof' })).statusCode).toBe(200)
+    await expect(runtime.gateway.listAgents({
+      scope: Object.freeze({ workspaceScopeId: 'agent-playground', authSubjectId: 'forged' }) as AuthorizedAgentScope,
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED })
     expect(addressed.json()).toEqual([{ agentTypeId: PLAYGROUND_AGENT_TYPE_ID, label: 'Agent' }])
     expect(runtime.app.hasRoute({
       method: 'POST',
@@ -159,6 +164,12 @@ describe('agent-playground AgentGateway reference composition', () => {
 
     const agents = await runtime.gateway.listAgents({ scope: runtime.scope })
     expect(agents).toEqual([expect.objectContaining({ agentTypeId: PLAYGROUND_AGENT_TYPE_ID })])
+    await expect(runtime.gateway.listAgents({
+      scope: Object.freeze({
+        workspaceScopeId: runtime.scope.workspaceScopeId,
+        authSubjectId: runtime.scope.authSubjectId,
+      }) as typeof runtime.scope,
+    })).rejects.toMatchObject({ code: 'AGENT_SCOPE_DENIED' })
 
     const ref = await runtime.gateway.createSession({
       scope: runtime.scope,

@@ -7,6 +7,8 @@ import {
   autoDetectMode,
   createAgentHost,
   createEnvironmentProvisioningFingerprint,
+  createPiResourceDigestFence,
+  createPiResourceDigestInput,
   createRemoteWorkerModeAdapter,
   createResolvedRuntimeScopeIdentity,
   createValidatingAgentFleetCompiler,
@@ -14,17 +16,30 @@ import {
   withRuntimeEnvContributions,
   type AgentEffectAdmission,
   type AgentFleetCompiler,
+  type AgentHarnessFactory,
   type AgentHostAgentSpec,
+  type AgentHostDirectProjectionOptions,
   type AgentHostEnvironmentScope,
+  type AgentMeteringSink,
+  type AgentRuntimeHostOperations,
   type AuthorizedAgentScope,
-  type RegisterAgentRoutesOptions,
+  type PiHarnessOptions,
   type ResolvedAgentRuntimeScope,
+  type RuntimeEnvContribution,
   type RuntimeEnvContributionContext,
+  type RuntimeFilesystemBinding,
+  type RuntimeModeAdapter,
+  type RuntimeModeId,
   type RuntimeProvisioningContribution,
   type VerifiedAgentScopeClaim,
   type WorkspaceAgentDispatcherResolver,
 } from '@hachej/boring-agent/server'
-import type { SandboxHandleStore } from '@hachej/boring-agent/shared'
+import type {
+  AgentTool,
+  SandboxHandleStore,
+  ShareEntryStore,
+  WorkspaceAgentDispatcherContext,
+} from '@hachej/boring-agent/shared'
 import {
   assertWorkspaceBridgeHandlersTrusted,
   collectWorkspaceAgentServerPlugins,
@@ -151,7 +166,7 @@ export type CoreWorkspaceDirPluginEntry = Omit<DirPluginEntry, 'hotReload'> & {
 
 export type CoreWorkspacePluginEntry = CoreWorkspaceAgentServerPlugin | CoreWorkspaceDirPluginEntry
 
-type CoreWorkspaceBridgeExtraTool = NonNullable<RegisterAgentRoutesOptions['extraTools']>[number]
+type CoreWorkspaceBridgeExtraTool = AgentTool
 
 export interface CoreWorkspaceBridgeExtraToolsContext {
   workspaceId: string
@@ -164,8 +179,73 @@ export interface CoreWorkspaceBridgeExtraToolsContext {
 
 export type CoreWorkspaceBridgePiContext = CoreWorkspaceBridgeExtraToolsContext
 
-export interface CreateCoreWorkspaceAgentServerOptions
-  extends Omit<RegisterAgentRoutesOptions, 'agentHost' | 'extraTools'> {
+export interface CreateCoreWorkspaceAgentServerOptions {
+  workspaceRoot?: string
+  sessionId?: string
+  sessionNamespace?: string
+  sessionRoot?: string
+  templatePath?: string
+  mode?: RuntimeModeId
+  runtimeModeAdapter?: RuntimeModeAdapter
+  runtimeHost?: AgentRuntimeHostOperations
+  extraTools?: AgentTool[]
+  systemPromptAppend?: string
+  harnessFactory?: AgentHarnessFactory
+  pi?: PiHarnessOptions
+  /** Additional trusted host roots containing Pi resources referenced by Core composition. */
+  piResourceAuthorizedRoots?: string[]
+  telemetry?: TelemetrySink
+  metering?: AgentMeteringSink
+  filterModels?: AgentHostDirectProjectionOptions['filterModels']
+  shareEntryStore?: ShareEntryStore
+  externalPlugins?: boolean
+  provisionWorkspace?: boolean
+  runtimeEnvContributions?: RuntimeEnvContribution[]
+  getWorkspaceId?: (request: FastifyRequest) => string | Promise<string>
+  getWorkspaceRoot?: (workspaceId: string, request: FastifyRequest) => string | Promise<string>
+  getTrustedWorkspaceRoot?: (ctx: WorkspaceAgentDispatcherContext) => string | Promise<string>
+  getTemplatePath?: (ctx: {
+    workspaceId: string
+    workspaceRoot: string
+    request?: FastifyRequest
+  }) => string | undefined | Promise<string | undefined>
+  getPi?: (ctx: {
+    workspaceId: string
+    workspaceRoot: string
+    request?: FastifyRequest
+  }) => PiHarnessOptions | undefined | Promise<PiHarnessOptions | undefined>
+  getSessionNamespace?: (ctx: {
+    workspaceId: string
+    workspaceRoot: string
+    request?: FastifyRequest
+    userId?: string
+  }) => string | undefined | Promise<string | undefined>
+  getRuntimeScopeContribution?: (ctx: {
+    workspaceId: string
+    workspaceRoot: string
+    request?: FastifyRequest
+  }) => Readonly<{ identity: string; loadSystemPromptAppend?: () => Promise<string | undefined> }>
+    | Promise<Readonly<{ identity: string; loadSystemPromptAppend?: () => Promise<string | undefined> }>>
+  getExtraTools?: (ctx: {
+    workspaceId: string
+    workspaceRoot: string
+    runtimeMode: RuntimeModeId
+    workspaceFsCapability?: RuntimeModeAdapter['workspaceFsCapability']
+    authSubject?: string
+  }) => AgentTool[] | Promise<AgentTool[]>
+  getFilesystemBindings?: (ctx: {
+    request?: FastifyRequest
+    workspaceId: string
+    workspaceRoot: string
+    sessionId?: string
+    userId?: string
+    userEmail?: string
+    userEmailVerified?: boolean
+    requestId?: string
+  }) => RuntimeFilesystemBinding[] | undefined | Promise<RuntimeFilesystemBinding[] | undefined>
+  onWorkspaceAgentDispatcher?: (resolver: WorkspaceAgentDispatcherResolver) => void
+  /** Compatibility only for Core's workspace-bridge admission; Host effects use effectAdmission. */
+  admitEffect?: (ctx: { workspaceId: string; requestId: string }) => Promise<void>
   appRoot?: string
   config?: CoreConfig
   loadConfigOptions?: LoadConfigOptions
@@ -192,11 +272,7 @@ export interface CreateCoreWorkspaceAgentServerOptions
   /** Core consumes plugins statically for now; app-level hot reload is explicitly unsupported. */
   hotReload?: false
   forceProvisioning?: boolean
-  extraTools?: RegisterAgentRoutesOptions['extraTools']
-  systemPromptAppend?: string
   serveFrontend?: boolean
-  /** Optional best-effort telemetry sink. Defaults to core's DB-backed env helper. */
-  telemetry?: TelemetrySink
   /** Verified actor resolver exposed only to boot-time internal plugins. */
   trustedPluginActorResolver?: NonNullable<WorkspaceAgentServerPluginContext['trusted']>['actorResolver']
   requestScopeResolver?: CoreRequestScopeResolver
@@ -220,7 +296,7 @@ export type CoreFrontendRootHandler = (
   reply: FastifyReply,
 ) => boolean | Promise<boolean>
 
-type AgentPiOptions = RegisterAgentRoutesOptions['pi']
+type AgentPiOptions = PiHarnessOptions | undefined
 
 function normalizeOptionalPath(value: string | undefined): string | undefined {
   const trimmed = value?.trim()
@@ -432,15 +508,6 @@ function agentSessionIdFromRequest(request: FastifyRequest): string | undefined 
     && /^\/api\/v1\/agents\/[^/]+\/sessions\/[^/]+\/(?:prompt|followup)$/.test(url)
   ) {
     const sessionId = (request.params as { sessionId?: unknown } | undefined)?.sessionId
-    return typeof sessionId === 'string' && sessionId.trim() ? sessionId : undefined
-  }
-  if (request.method === 'POST' && url === '/api/v1/agent/chat') {
-    const body = request.body as { sessionId?: unknown } | null | undefined
-    return typeof body?.sessionId === 'string' && body.sessionId.trim() ? body.sessionId : undefined
-  }
-  if (request.method === 'POST' && url.endsWith('/followup') && url.startsWith('/api/v1/agent/chat/')) {
-    const params = request.params as { sessionId?: unknown; id?: unknown } | null | undefined
-    const sessionId = params?.sessionId ?? params?.id
     return typeof sessionId === 'string' && sessionId.trim() ? sessionId : undefined
   }
   return undefined
@@ -1056,7 +1123,7 @@ export async function createCoreWorkspaceAgentServer(
       : await resolveAuthorizedWorkspaceId(request, workspaceStore, presentedWorkspaceId)
   const resolveRoot = async (
     workspaceId: string,
-    request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceRoot']>>[1],
+    request: FastifyRequest,
   ) => {
     const root = options.getWorkspaceRoot
       ? await options.getWorkspaceRoot(workspaceId, request)
@@ -1135,7 +1202,7 @@ export async function createCoreWorkspaceAgentServer(
     )
     return scopedPluginCollection.agentOptions.pi
   }
-  const resolvePiOptions: NonNullable<RegisterAgentRoutesOptions['getPi']> = async (ctx) => {
+  const resolvePiOptions: NonNullable<CreateCoreWorkspaceAgentServerOptions['getPi']> = async (ctx) => {
     // In remote-worker mode the workspace filesystem lives on the worker. Do
     // not scan per-workspace Pi skills/plugins from the public host path — it
     // can be stale after volume cutover and would reintroduce split-brain. Keep
@@ -1156,7 +1223,7 @@ export async function createCoreWorkspaceAgentServer(
     return mergePiOptions(mergePiOptions(pluginOptions, bridgePiOptions), callerOptions)
   }
 
-  const resolveSessionNamespace: NonNullable<RegisterAgentRoutesOptions['getSessionNamespace']> = async (ctx) => {
+  const resolveSessionNamespace: NonNullable<CreateCoreWorkspaceAgentServerOptions['getSessionNamespace']> = async (ctx) => {
     const canonicalScope = options.getSessionNamespace
       ? await options.getSessionNamespace(ctx)
       : options.sessionNamespace ?? ctx.workspaceId
@@ -1233,7 +1300,7 @@ export async function createCoreWorkspaceAgentServer(
     const templatePath = options.getTemplatePath
       ? await options.getTemplatePath({ workspaceId, workspaceRoot: root, request })
       : options.templatePath ?? normalizeOptionalPath(process.env.BORING_AGENT_TEMPLATE_PATH)
-    const pi = await resolvePiOptions({ workspaceId, workspaceRoot: root, request })
+    const pi = await resolvePiOptions({ workspaceId, workspaceRoot: root, request }) ?? {}
     const sessionNamespace = await resolveSessionNamespace({
       workspaceId,
       workspaceRoot: root,
@@ -1297,6 +1364,39 @@ export async function createCoreWorkspaceAgentServer(
       provisioningGeneration: provisioningFingerprint,
       bindingInputs: [sessionNamespace, contribution?.identity ?? null],
     })
+    const buildResourceDigestInput = async () => {
+      const hotResources = pi.getHotReloadableResources?.()
+      return createPiResourceDigestInput({
+        piCwd: root,
+        noSkills: pi.noSkills,
+        resourceSets: [{
+          promptParts: [
+            pluginCollection.agentOptions.systemPromptAppend,
+            await contribution?.loadSystemPromptAppend?.(),
+          ],
+          additionalSkillPaths: [
+            ...(pi.additionalSkillPaths ?? []),
+            ...(hotResources?.additionalSkillPaths ?? []),
+          ],
+          packages: [
+            ...(pi.packages ?? []),
+            ...(hotResources?.packages ?? []),
+          ],
+          extensionPaths: [
+            ...(pi.extensionPaths ?? []),
+            ...(hotResources?.extensionPaths ?? []),
+          ],
+        }],
+        authorizedRoots: [
+          root,
+          pluginWorkspaceRoot,
+          ...defaultPluginPackagePaths,
+          ...pluginEntries.flatMap((entry) => 'dir' in entry ? [entry.dir] : []),
+          ...(options.piResourceAuthorizedRoots ?? []),
+        ],
+      })
+    }
+    const { resourceInputDigest, revalidateResourceInputs } = await createPiResourceDigestFence(buildResourceDigestInput)
     const resolveFilesystemBindings = options.getFilesystemBindings
       ? async (input: {
           verifiedClaim: VerifiedAgentScopeClaim
@@ -1357,16 +1457,8 @@ export async function createCoreWorkspaceAgentServer(
     const agentRuntime: Omit<ResolvedAgentRuntimeScope, 'environment'> = {
       identity,
       physicalBindingIdentity: identity,
-      resourceInputDigest: createResolvedRuntimeScopeIdentity({
-        artifacts: pluginArtifacts,
-        validatedConfig: piIdentity,
-        grants: [],
-        placementIdentity,
-        isolationMode: runtimeModeAdapter.id,
-        toolContractDigests: extraTools.map((tool) => tool.name),
-        provisioningGeneration: provisioningFingerprint,
-        bindingInputs: [contribution?.identity ?? null],
-      }),
+      resourceInputDigest,
+      revalidateResourceInputs,
       sessionNamespace,
       pi,
       extraTools,

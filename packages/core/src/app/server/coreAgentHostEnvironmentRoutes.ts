@@ -7,17 +7,18 @@ import {
 } from '@hachej/boring-bash/server'
 import {
   deepLinkRoutes,
+  type AgentRuntimeHostOperations,
   type AuthorizedAgentScope,
   type CreatedAgentHost,
-  type RegisterAgentRoutesOptions,
 } from '@hachej/boring-agent/server'
+import type { ShareEntryStore } from '@hachej/boring-agent/shared'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 
 export interface CoreAgentHostEnvironmentRoutesOptions {
   readonly agentHost: CreatedAgentHost
   readonly authorizeAgentRequest: (request: FastifyRequest) => Promise<AuthorizedAgentScope>
-  readonly runtimeHost: NonNullable<RegisterAgentRoutesOptions['runtimeHost']>
-  readonly shareEntryStore?: RegisterAgentRoutesOptions['shareEntryStore']
+  readonly runtimeHost: AgentRuntimeHostOperations
+  readonly shareEntryStore?: ShareEntryStore
 }
 
 /**
@@ -66,7 +67,7 @@ export async function registerCoreAgentHostEnvironmentRoutes(
   app.addHook('onRequest', async (request, reply) => {
     const close = () => {
       transportClosed.add(request)
-      void release(request)
+      if (deferred.has(request)) void release(request)
     }
     request.raw.once('aborted', close)
     reply.raw.once('close', close)

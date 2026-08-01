@@ -31,7 +31,7 @@ vi.mock('@hachej/boring-agent/server', async (importOriginal) => {
       const created = await actual.createAgentHost({
         ...options,
         requestLedgerPath: undefined,
-        requestLedgerCompatibilityMode: 'test',
+        inMemoryRequestLedgerMode: 'test',
       })
       return {
         ...created,
@@ -114,7 +114,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     create: async (ctx: { workspaceRoot: string }) => ({
       workspace: { root: ctx.workspaceRoot, fsCapability: 'strong' },
       sandbox: { provider: 'direct', exec: vi.fn() },
-      fileSearch: {},
+      fileSearch: { async search() { return [] } },
     }),
   }),
   hasDirServerPlugin: () => false,
@@ -242,6 +242,7 @@ vi.mock('../../../server/auth/index.js', () => ({
 vi.mock('../../../server/app/index.js', () => ({
   createCoreApp: async (config: Record<string, unknown>, options?: { requestScopeResolver?: (request: unknown) => Promise<unknown> | unknown }) => {
     const app = Fastify({ logger: false })
+    app.get('/health', async () => ({ status: 'ok' }))
     app.decorate('config', config as any)
     app.setErrorHandler((error, request, reply) => {
       const status = (error as { status?: unknown }).status
@@ -270,6 +271,7 @@ vi.mock('../../../server/app/index.js', () => ({
     return app
   },
   registerRoutes: async () => {},
+  registerDirectRoutes: () => async () => {},
 }))
 
 vi.mock('../../../server/routes/index.js', () => ({
@@ -324,7 +326,7 @@ afterEach(() => {
 })
 
 describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
-  it('Slice 3 composed route/auth proof: Core mounts one direct Host table and enforces browser scope policy', async () => {
+  it('Final composed route/auth proof: Core mounts one direct Host table and enforces browser scope policy', async () => {
     const workspaceId = 'workspace-1'
     const canonicalNamespace = `${workspaceId}_33982c6908977596_user_cf1025156133f4d4`
     const app = await createCoreWorkspaceAgentServer({
@@ -351,6 +353,12 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
 
     const browserClaim = await inject(workspaceId)
     expect(browserClaim.statusCode).toBe(200)
+    const environmentRoute = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/search?q=proof',
+      headers: { 'x-test-user-id': 'user-1', 'x-boring-storage-scope': workspaceId },
+    })
+    expect(environmentRoute.statusCode).toBe(200)
 
     const omitted = await inject()
     expect(omitted.statusCode).toBe(200)

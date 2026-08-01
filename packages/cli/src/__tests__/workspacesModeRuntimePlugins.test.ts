@@ -282,7 +282,7 @@ describe("workspaces mode runtime plugin wiring", () => {
 
       const catalogA = await app.inject({
         method: "GET",
-        url: "/api/v1/agent/catalog",
+        url: "/api/v1/agents/default/tools",
         headers: { "x-boring-workspace-id": registeredA.id },
       })
       expect(catalogA.statusCode).toBe(200)
@@ -290,7 +290,7 @@ describe("workspaces mode runtime plugin wiring", () => {
 
       const catalogB = await app.inject({
         method: "GET",
-        url: "/api/v1/agent/catalog",
+        url: "/api/v1/agents/default/tools",
         headers: { "x-boring-workspace-id": registeredB.id },
       })
       expect(catalogB.statusCode).toBe(200)
@@ -330,6 +330,12 @@ describe("workspaces mode runtime plugin wiring", () => {
         "x-boring-workspace-id": workspace.id,
         "x-boring-session-id": "s1",
       }
+      const bridgeReady = await app.inject({
+        method: "GET",
+        url: "/api/v1/agents/default/ready-status",
+        headers,
+      })
+      expect(bridgeReady.statusCode, bridgeReady.body).toBe(200)
       const response = await app.inject({
         method: "POST",
         url: "/api/v1/workspace-bridge/call",
@@ -366,7 +372,7 @@ describe("workspaces mode runtime plugin wiring", () => {
       const state = await app.inject({ method: "GET", url: "/api/v1/ui/state", headers: stateHeaders })
       expect(state.json()).toMatchObject({ drawerOpen: true, "questions.pending": pendingState })
 
-      const catalog = await app.inject({ method: "GET", url: "/api/v1/agent/catalog", headers })
+      const catalog = await app.inject({ method: "GET", url: "/api/v1/agents/default/tools", headers })
       expect((catalog.json() as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)).toContain("ask_user")
     } finally {
       await app.close()
@@ -403,13 +409,19 @@ describe("workspaces mode runtime plugin wiring", () => {
 
     try {
       const headers = { "x-boring-workspace-id": workspace.id }
+      const routeReady = await app.inject({
+        method: "GET",
+        url: "/api/v1/agents/default/ready-status",
+        headers,
+      })
+      expect(routeReady.statusCode, routeReady.body).toBe(200)
       const first = await app.inject({ method: "GET", url: "/api/v1/plugins/routes-plugin/items", headers })
       expect(first.statusCode).toBe(200)
       expect(first.json()).toEqual({ payload: "v1" })
 
       // Edit the server module, /reload, and the route serves the new code.
       await writeServerModule("v2")
-      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", headers })
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agents/default/reload", headers, payload: { requestId: "workspace-runtime-server-v2" } })
       expect(reload.statusCode).toBe(200)
       const second = await app.inject({ method: "GET", url: "/api/v1/plugins/routes-plugin/items", headers })
       expect(second.statusCode).toBe(200)
@@ -497,8 +509,8 @@ describe("workspaces mode runtime plugin wiring", () => {
 
       const reload = await app.inject({
         method: "POST",
-        url: "/api/v1/agent/reload?workspaceId=" + encodeURIComponent(workspace.id),
-        payload: {},
+        url: "/api/v1/agents/default/reload?workspaceId=" + encodeURIComponent(workspace.id),
+        payload: { requestId: "workspace-runtime-query-reload-1" },
       })
       expect(reload.statusCode).toBe(200)
       expect(reload.json()).toMatchObject({ ok: true, sessionId: expect.any(String), reloaded: expect.any(Boolean) })
@@ -522,6 +534,12 @@ describe("workspaces mode runtime plugin wiring", () => {
 
     try {
       // Boot the workspace runtime with only the CLI default plugins.
+      const packageReady = await app.inject({
+        method: "GET",
+        url: "/api/v1/agents/default/ready-status",
+        headers: { "x-boring-workspace-id": workspace.id },
+      })
+      expect(packageReady.statusCode, packageReady.body).toBe(200)
       const before = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
       expect((before.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "boring-automation", "diagram", "tasks"])
 
@@ -536,8 +554,8 @@ describe("workspaces mode runtime plugin wiring", () => {
 
       const reload = await app.inject({
         method: "POST",
-        url: "/api/v1/agent/reload?workspaceId=" + encodeURIComponent(workspace.id),
-        payload: {},
+        url: "/api/v1/agents/default/reload?workspaceId=" + encodeURIComponent(workspace.id),
+        payload: { requestId: "workspace-runtime-query-reload-2" },
       })
       expect(reload.statusCode).toBe(200)
 
@@ -592,6 +610,12 @@ describe("workspaces mode runtime plugin wiring", () => {
     const sse = await openSse(`${address}/api/v1/agent-plugins/events?workspaceId=${encodeURIComponent(workspace.id)}`)
 
     try {
+      const frontReady = await app.inject({
+        method: "GET",
+        url: "/api/v1/agents/default/ready-status",
+        headers: { "x-boring-workspace-id": workspace.id },
+      })
+      expect(frontReady.statusCode, frontReady.body).toBe(200)
       const list = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
       const plugin = (list.json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>).find((item) => item.id === "front-removed-plugin")
       expect(plugin?.frontTarget?.entryUrl).toBeTruthy()
@@ -605,8 +629,8 @@ describe("workspaces mode runtime plugin wiring", () => {
 
       const reload = await app.inject({
         method: "POST",
-        url: "/api/v1/agent/reload?workspaceId=" + encodeURIComponent(workspace.id),
-        payload: {},
+        url: "/api/v1/agents/default/reload?workspaceId=" + encodeURIComponent(workspace.id),
+        payload: { requestId: "workspace-runtime-query-reload-3" },
       })
       expect(reload.statusCode).toBe(200)
 
@@ -632,6 +656,12 @@ describe("workspaces mode runtime plugin wiring", () => {
     const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
 
     try {
+      const noSseReady = await app.inject({
+        method: "GET",
+        url: "/api/v1/agents/default/ready-status",
+        headers: { "x-boring-workspace-id": workspace.id },
+      })
+      expect(noSseReady.statusCode, noSseReady.body).toBe(200)
       const list = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
       const plugin = (list.json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>).find((item) => item.id === "no-sse-plugin")
       expect(plugin?.frontTarget?.entryUrl).toBeTruthy()
@@ -644,8 +674,8 @@ describe("workspaces mode runtime plugin wiring", () => {
 
       const reload = await app.inject({
         method: "POST",
-        url: "/api/v1/agent/reload?workspaceId=" + encodeURIComponent(workspace.id),
-        payload: {},
+        url: "/api/v1/agents/default/reload?workspaceId=" + encodeURIComponent(workspace.id),
+        payload: { requestId: "workspace-runtime-query-reload-4" },
       })
       expect(reload.statusCode).toBe(200)
 
@@ -679,8 +709,8 @@ describe("workspaces mode runtime plugin wiring", () => {
 
       const reload = await app.inject({
         method: "POST",
-        url: "/api/v1/agent/reload?workspaceId=" + encodeURIComponent(workspace.id),
-        payload: {},
+        url: "/api/v1/agents/default/reload?workspaceId=" + encodeURIComponent(workspace.id),
+        payload: { requestId: "workspace-runtime-query-reload-5" },
       })
       expect(reload.statusCode).toBe(200)
       expect(reload.json()).toMatchObject({ ok: true, sessionId: expect.any(String), reloaded: expect.any(Boolean) })

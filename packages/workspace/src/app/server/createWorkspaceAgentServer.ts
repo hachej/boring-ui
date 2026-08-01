@@ -8,11 +8,15 @@ import {
   autoDetectMode,
   createAgentAuthMiddleware,
   createAgentHost,
+  createPiResourceDigestFence,
+  createPiResourceDigestInput,
   createResolvedRuntimeScopeIdentity,
   createSandboxRuntimeModeAdapter,
   createValidatingAgentFleetCompiler,
+  digestPiResourceInputs,
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
+  registerAgentHostEnvironmentRoutes,
   resolveBuiltinRuntimeLayoutRoot,
   sandboxRuntimeHostOperations,
   withRuntimeEnvContributions,
@@ -41,13 +45,6 @@ import {
   type AgentTool,
   type TelemetrySink,
 } from "@hachej/boring-agent/shared"
-import {
-  fileRoutes,
-  fsEventsRoutes,
-  gitRoutes,
-  searchRoutes,
-  treeRoutes,
-} from "@hachej/boring-bash/server"
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify"
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
 import { createHash } from "node:crypto"
@@ -61,7 +58,6 @@ import { PLUGIN_SIGNATURE_CACHE_FILE } from "../../server/agentPlugins/signature
 import type { BoringPluginFrontTargetResolver, BoringPluginSource, BoringPluginSourceInput } from "../../server/agentPlugins/types"
 import { boringPluginRoutes, collectRestartWarnings } from "../../server/agentPlugins/routes"
 import { RuntimeBackendRegistry, runtimeBackendGateway } from "../../server/runtimeBackend"
-import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
 import {
   assertWorkspaceBridgeHandlersTrusted,
@@ -71,6 +67,10 @@ import {
 } from "./pluginEntryResolver"
 import { rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerPlugins"
 import { resolveDefaultWorkspacePluginPackagePaths } from "./defaultPluginPackages"
+export {
+  createPiResourceDigestInput as createWorkspacePiResourceDigestInput,
+  digestPiResourceInputs as digestWorkspacePiResourceInputs,
+} from "@hachej/boring-agent/server"
 import { pluginRootFromExtensionPath, scanBoringPlugins } from "../../server/agentPlugins/scan"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { registerWorkspaceUiBridge } from "../../shared/plugins/uiBridgeRegistry"
@@ -156,6 +156,8 @@ export interface WorkspaceAgentCreateOptions {
   }) => Promise<void>
   sessionRoot?: string
   externalPlugins?: boolean
+  /** Independently trusted roots for configured Pi resources outside the workspace/plugin roots. */
+  piResourceAuthorizedRoots?: string[]
   beforeReload?: () => void | WorkspaceReloadHookResult | undefined | Promise<void | WorkspaceReloadHookResult | undefined>
   systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
   onWorkspaceAgentDispatcher?: (resolver: WorkspaceAgentDispatcherResolver) => void
@@ -1063,6 +1065,13 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)]
 }
 
+function localPiPackageRoot(source: WorkspacePiPackageSource | undefined): string | undefined {
+  if (!source) return undefined
+  const value = typeof source === "string" ? source : source.source
+  const candidate = value.startsWith("file:") ? value.slice("file:".length) : value
+  return isAbsolute(candidate) || candidate.startsWith(".") ? resolve(candidate) : undefined
+}
+
 export function readWorkspacePluginPackageRuntimePlugins(pluginDirs: BoringPluginSourceInput[]): WorkspaceRuntimeProvisioningInput[] {
   const scan = scanBoringPlugins(pluginDirs)
   return scan.plugins.map((plugin) => ({
@@ -1132,72 +1141,6 @@ function authenticatedRequestUserId(request: FastifyRequest): string | undefined
 function isAgentSessionRequest(request: FastifyRequest): boolean {
   const pathname = request.url.split("?", 1)[0] ?? request.url
   return /^\/api\/v1\/agents\/[^/]+\/sessions(?:\/|$)/.test(pathname)
-}
-
-function isWorkspaceEnvironmentRoute(request: FastifyRequest): boolean {
-  const pathname = request.url.split("?", 1)[0] ?? request.url
-  return pathname === "/api/v1/files"
-    || pathname.startsWith("/api/v1/files/")
-    || pathname === "/api/v1/dirs"
-    || pathname === "/api/v1/stat"
-    || pathname === "/api/v1/tree"
-    || pathname === "/api/v1/fs/events"
-    || pathname === "/api/v1/git/file-url"
-}
-
-interface WorkspaceEnvironmentRouteProjection {
-  getLease(request: FastifyRequest): Promise<AgentHostEnvironmentLease>
-  deferReleaseUntilTransportClose(request: FastifyRequest): void
-}
-
-function registerWorkspaceEnvironmentLeaseHooks(
-  app: FastifyInstance,
-  agentHost: Awaited<ReturnType<typeof createAgentHost>>,
-  authorizeRequest: (request: FastifyRequest) => Promise<AuthorizedAgentScope>,
-): WorkspaceEnvironmentRouteProjection {
-  const leases = new WeakMap<FastifyRequest, Promise<AgentHostEnvironmentLease>>()
-  const deferred = new WeakSet<FastifyRequest>()
-
-  const release = async (request: FastifyRequest) => {
-    const lease = leases.get(request)
-    if (!lease) return
-    leases.delete(request)
-    const acquired = await lease.catch(() => undefined)
-    acquired?.release()
-  }
-  const getLease = (request: FastifyRequest) => {
-    let lease = leases.get(request)
-    if (!lease) {
-      lease = authorizeRequest(request).then((authorizedScope) => agentHost.acquireEnvironment({
-        authorizedScope,
-        intent: { kind: "http-route", requestId: request.id },
-      }))
-      leases.set(request, lease)
-      lease.catch(() => leases.delete(request))
-    }
-    return lease
-  }
-
-  app.addHook("onRequest", async (request, reply) => {
-    if (!isWorkspaceEnvironmentRoute(request) || reply.sent) return
-    await getLease(request)
-    const onTransportClose = () => { void release(request) }
-    request.raw.once("aborted", onTransportClose)
-    reply.raw.once("close", onTransportClose)
-  })
-  app.addHook("onResponse", async (request) => {
-    if (!deferred.has(request)) await release(request)
-  })
-  app.addHook("onError", async (request) => {
-    await release(request)
-  })
-
-  return {
-    getLease,
-    deferReleaseUntilTransportClose(request) {
-      deferred.add(request)
-    },
-  }
 }
 
 function registerWorkspaceHealthRoutes(
@@ -1312,8 +1255,9 @@ export async function createWorkspaceAgentServer(
   // added later from the app-owned normalized contribution for that Agent.
   // Plugin package.json#pi resources remain dynamic for legacyDefault only.
   const workspacePackagePiPackage = pluginAuthoringEnabled ? createBoringPiPackageSource(workspaceRoot) : undefined
+  const builtInBoringPiSkillPaths = pluginAuthoringEnabled ? resolveBoringPiSkillPaths(workspaceRoot) : []
   const baseStaticPiSkillPaths = [
-    ...(pluginAuthoringEnabled ? resolveBoringPiSkillPaths(workspaceRoot) : []),
+    ...builtInBoringPiSkillPaths,
     ...(legacyGlobalPluginAgentContributions
       ? pluginCollection.agentOptions.pi?.additionalSkillPaths ?? []
       : [join(workspaceRoot, ".agents", "skills"), ...(opts.pi?.additionalSkillPaths ?? [])]),
@@ -1331,12 +1275,13 @@ export async function createWorkspaceAgentServer(
   // Boring plugin discovery: scan external workspace/global extension
   // collections plus internal app/plugin-provided sources. Source kind is
   // explicit so later activation code does not infer trust from paths.
-  const boringPluginDirs: BoringPluginSource[] = []
-  const refreshBoringPluginDirs = (): BoringPluginSource[] => {
-    const next = uniquePluginSources([
+  const resolveBoringPluginDirs = (): BoringPluginSource[] => uniquePluginSources([
       ...defaultPluginPackagePaths.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
       ...collectBoringPluginSources(workspaceRoot, pluginCollection, opts.additionalBoringPluginDirs, externalPluginsEnabled),
     ])
+  const boringPluginDirs: BoringPluginSource[] = []
+  const refreshBoringPluginDirs = (): BoringPluginSource[] => {
+    const next = resolveBoringPluginDirs()
     boringPluginDirs.splice(0, boringPluginDirs.length, ...next)
     return boringPluginDirs
   }
@@ -1360,7 +1305,7 @@ export async function createWorkspaceAgentServer(
     ...staticPluginPackagePiSnapshot.extensionPaths,
   ]
 
-  const getHotReloadablePiResources = () => readWorkspacePluginPackagePiSnapshot(refreshBoringPluginDirs())
+  const getHotReloadablePiResources = () => readWorkspacePluginPackagePiSnapshot(resolveBoringPluginDirs())
 
   const boringAssetManager = new BoringPluginAssetManager({
     pluginDirs: boringPluginDirs,
@@ -1372,7 +1317,7 @@ export async function createWorkspaceAgentServer(
   const buildRuntimeProvisioningInputs = () => {
     const inputs = mergeRuntimeProvisioningInputs([
       ...pluginCollection.runtimePlugins,
-      ...readWorkspacePluginPackageRuntimePlugins(refreshBoringPluginDirs()),
+      ...readWorkspacePluginPackageRuntimePlugins(resolveBoringPluginDirs()),
     ])
     if (resolvedMode === "direct") return omitPluginAuthoringProvisioning(inputs)
     return inputs
@@ -1529,9 +1474,13 @@ export async function createWorkspaceAgentServer(
       : opts.systemPromptAppend,
     staticPluginPackagePiSnapshot.systemPromptAppend,
   ].filter(Boolean).join("\n\n") || undefined
-  const refreshWorkspaceAgentResources = async (): Promise<WorkspaceReloadHookResult | undefined> => {
-    await assertAgentReloadAvailable(pluginCollection.agentReloadBlockers)
-    refreshBoringPluginDirs()
+  const refreshWorkspaceAgentResources = async (input?: {
+    availabilityPrechecked?: boolean
+  }): Promise<WorkspaceReloadHookResult | undefined> => {
+    if (!input?.availabilityPrechecked) {
+      await assertAgentReloadAvailable(pluginCollection.agentReloadBlockers)
+    }
+    boringAssetManager.setPluginDirs(refreshBoringPluginDirs())
     const scan = await boringAssetManager.load()
     const backendReload = await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
     const rebuild = await rebuildPlugins()
@@ -1632,9 +1581,6 @@ export async function createWorkspaceAgentServer(
       environment,
     }) {
       scopeIssuer.context(authorizedScope)
-      const reloadResult = intent.operation === "reload"
-        ? await refreshWorkspaceAgentResources()
-        : undefined
       const contribution = normalizedRuntimeContributions.get(agentTypeId)
       if (!contribution) throw new Error(`Agent runtime contribution was not compiled: ${agentTypeId}`)
 
@@ -1682,13 +1628,11 @@ export async function createWorkspaceAgentServer(
             }
           }
         : undefined
-      const baseDynamicPrompt = legacyGlobalPluginAgentContributions
-        ? () => aggregatePluginPrompts(boringAssetManager)
-        : opts.systemPromptDynamic
-      const loadSystemPromptAppend = baseDynamicPrompt || contribution.includeAllDiscoveredPluginResources
+      const baseDynamicPrompt = opts.systemPromptDynamic
+      const loadSystemPromptAppend = baseDynamicPrompt || getHotReloadableResources
         ? async () => [
             await baseDynamicPrompt?.(),
-            contribution.includeAllDiscoveredPluginResources ? aggregatePluginPrompts(boringAssetManager) : undefined,
+            getHotReloadableResources?.().systemPromptAppend,
           ].filter((part): part is string => Boolean(part)).join("\n\n") || undefined
         : undefined
 
@@ -1708,19 +1652,57 @@ export async function createWorkspaceAgentServer(
             contribution: contribution.bindingInputs,
           },
         })
-      const hotResources = getHotReloadableResources?.()
+      const staticSystemPromptAppend = [baseSystemPromptAppend, contribution.agentOptions.systemPromptAppend]
+        .filter((part): part is string => Boolean(part))
+        .join("\n\n") || undefined
+      const buildResourceDigestInput = async () => {
+        const hotResources = getHotReloadableResources?.()
+        const additionalSkillPaths = uniqueStrings([
+            ...(resolvedBasePi.additionalSkillPaths ?? []),
+            ...(selectedPi?.additionalSkillPaths ?? []),
+            ...(hotResources?.additionalSkillPaths ?? []),
+          ])
+        const packages = compactPiPackages([
+            ...(basePi.packages ?? []),
+            ...(selectedPi?.packages ?? []),
+            ...(hotResources?.packages ?? []),
+          ])
+        const extensionPaths = uniqueStrings([
+            ...(basePi.extensionPaths ?? []),
+            ...(selectedPi?.extensionPaths ?? []),
+            ...(hotResources?.extensionPaths ?? []),
+          ])
+        const dynamicSystemPromptAppend = [
+          await baseDynamicPrompt?.(),
+          hotResources?.systemPromptAppend,
+        ].filter((part): part is string => Boolean(part)).join("\n\n") || undefined
+        return createPiResourceDigestInput({
+          piCwd: workspaceRoot,
+          noSkills: selectedPi?.noSkills ?? resolvedBasePi.noSkills,
+          resourceSets: [{
+            promptParts: [staticSystemPromptAppend, dynamicSystemPromptAppend],
+            additionalSkillPaths,
+            packages,
+            extensionPaths,
+          }],
+          authorizedRoots: uniqueStrings([
+            workspaceRoot,
+            ...defaultPluginPackagePaths,
+            ...resolveBoringPluginDirs().map((source) => source.rootDir),
+            runtimeLayout.skills,
+            ...builtInBoringPiSkillPaths,
+            ...[localPiPackageRoot(workspacePackagePiPackage)]
+              .filter((path): path is string => Boolean(path)),
+            ...(opts.piResourceAuthorizedRoots ?? []),
+          ]),
+        })
+      }
+      const { resourceInputDigest, revalidateResourceInputs } = await createPiResourceDigestFence(buildResourceDigestInput)
       return {
         identity,
         physicalBindingIdentity: identity,
-        resourceInputDigest: identityDigest(canonicalIdentityJson({
-          identity,
-          hotResources: hotResources ? {
-            additionalSkillPaths: hotResources.additionalSkillPaths ?? [],
-            packages: hotResources.packages ?? [],
-            extensionPaths: hotResources.extensionPaths ?? [],
-          } : null,
-          dynamicPrompt: Boolean(loadSystemPromptAppend),
-        })),
+        resourceInputDigest,
+        ...(intent.operation === "reload" ? { revalidateResourceInputs } : {}),
         sessionNamespace: "",
         pi: {
           ...resolvedBasePi,
@@ -1745,17 +1727,20 @@ export async function createWorkspaceAgentServer(
         ],
         includeFilesystemTools: opts.disableDefaultFileTools !== true,
         includeUploadTools: true,
-        ...(reloadResult
+        ...(intent.operation === "reload"
           ? {
-              reloadMetadata: {
-                diagnostics: reloadResult.diagnostics,
-                restartWarnings: reloadResult.restart_warnings,
+              async applyReload(input?: { runtimeBundle: RuntimeProvisionerContext["runtimeBundle"] }) {
+                await assertAgentReloadAvailable(pluginCollection.agentReloadBlockers)
+                if (input) await runRuntimeProvisioning(input.runtimeBundle)
+                const result = await refreshWorkspaceAgentResources({ availabilityPrechecked: true })
+                return result && {
+                  diagnostics: result.diagnostics,
+                  restartWarnings: result.restart_warnings,
+                }
               },
             }
           : {}),
-        systemPromptAppend: [baseSystemPromptAppend, contribution.agentOptions.systemPromptAppend]
-          .filter((part): part is string => Boolean(part))
-          .join("\n\n") || undefined,
+        systemPromptAppend: staticSystemPromptAppend,
         loadSystemPromptAppend,
       }
     },
@@ -1816,31 +1801,21 @@ export async function createWorkspaceAgentServer(
       authorizedScope: await authorizeAgentRequest(request),
       intent: { kind: "http-route", requestId: request.id },
     }))
-    const environmentRoutes = registerWorkspaceEnvironmentLeaseHooks(app, agentHost, authorizeAgentRequest)
-    await app.register(fileRoutes, {
-      getWorkspace: async (request) => (await environmentRoutes.getLease(request)).workspace,
-      getFilesystemBindings: async (request) => [...((await environmentRoutes.getLease(request)).filesystemBindings ?? [])],
-    })
-    await app.register(fsEventsRoutes, {
-      getWorkspace: async (request) => (await environmentRoutes.getLease(request)).workspace,
-      deferLeaseRelease: environmentRoutes.deferReleaseUntilTransportClose,
-    })
-    await app.register(treeRoutes, {
-      getWorkspace: async (request) => (await environmentRoutes.getLease(request)).workspace,
-      getFilesystemBindings: async (request) => [...((await environmentRoutes.getLease(request)).filesystemBindings ?? [])],
-    })
-    await app.register(searchRoutes, {
-      getFileSearch: async (request) => (await environmentRoutes.getLease(request)).fileSearch,
-    })
-    await app.register(gitRoutes, {
-      getWorkspace: async (request) => (await environmentRoutes.getLease(request)).gitWorkspace,
-      getWorkspaceHostRoot: runtimeHost.getNodeWorkspaceHostRoot,
+    await registerAgentHostEnvironmentRoutes(app, {
+      created: agentHost,
+      authorizeAgentRequest,
+      runtimeHost,
+      getWorkspaceHostRoot: async () => workspaceRoot,
     })
     await app.register(agentHost.registerDirectRoutes({
       authorizeAgentRequest,
       defaultSessionId: opts.sessionId ?? "default",
     }))
     lifecycleTransferred = true
+    app.addHook("onClose", async () => {
+      await runtimeBackendRegistry.close()
+      unregisterUiBridge()
+    })
 
     const directDispatcher: WorkspaceAgentDispatcherResolver = {
       async runWithWorkspaceAgent(input, run) {
@@ -1873,46 +1848,45 @@ export async function createWorkspaceAgentServer(
     unregisterUiBridge()
     throw error
   }
-  refreshBoringPluginDirs()
-  await boringAssetManager.load()
-  await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
-  if (typeof app.addHook === "function") {
-    app.addHook("onClose", async () => {
-      await runtimeBackendRegistry.close()
-      unregisterUiBridge()
+  try {
+    refreshBoringPluginDirs()
+    await boringAssetManager.load()
+    await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
+    await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
+    await app.register(workspaceBridgeHttpRoutes, {
+      registry: workspaceBridgeRegistry,
+      runtimeTokenSecret: opts.workspaceBridge?.runtimeTokenSecret,
+      runtimeRefreshTokenSecret: opts.workspaceBridge?.runtimeRefreshTokenSecret,
+      ownerWorkspaceId: "default",
+      idempotencyStore: new InMemoryWorkspaceBridgeIdempotencyStore(),
+      browserAuthPolicy: resolveWorkspaceBridgeBrowserAuthPolicy(opts, workspaceBridgeRegistry),
     })
-  }
-  await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
-  await app.register(workspaceBridgeHttpRoutes, {
-    registry: workspaceBridgeRegistry,
-    runtimeTokenSecret: opts.workspaceBridge?.runtimeTokenSecret,
-    runtimeRefreshTokenSecret: opts.workspaceBridge?.runtimeRefreshTokenSecret,
-    ownerWorkspaceId: "default",
-    idempotencyStore: new InMemoryWorkspaceBridgeIdempotencyStore(),
-    browserAuthPolicy: resolveWorkspaceBridgeBrowserAuthPolicy(opts, workspaceBridgeRegistry),
-  })
-  // Internal handles exposed on the Fastify instance for external callers /
-  // tests (e.g. the CLI reads __boringAssetManager). The rebuild closure is
-  // also wired into `beforeReload` so /reload triggers it automatically.
-  interface BoringWorkspaceInternals {
-    __boringWorkspaceBridgeRegistry?: WorkspaceBridgeRegistry
-    __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
-    __boringAssetManager?: BoringPluginAssetManager
-    __boringRuntimeBackendRegistry?: RuntimeBackendRegistry
-  }
-  const internals = app as FastifyInstance & BoringWorkspaceInternals
-  internals.__boringWorkspaceBridgeRegistry = workspaceBridgeRegistry
-  internals.__boringRebuildPlugins = rebuildPlugins
-  internals.__boringAssetManager = boringAssetManager
-  internals.__boringRuntimeBackendRegistry = runtimeBackendRegistry
+    // Internal handles exposed on the Fastify instance for external callers /
+    // tests (e.g. the CLI reads __boringAssetManager). The rebuild closure is
+    // also wired into `beforeReload` so /reload triggers it automatically.
+    interface BoringWorkspaceInternals {
+      __boringWorkspaceBridgeRegistry?: WorkspaceBridgeRegistry
+      __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
+      __boringAssetManager?: BoringPluginAssetManager
+      __boringRuntimeBackendRegistry?: RuntimeBackendRegistry
+    }
+    const internals = app as FastifyInstance & BoringWorkspaceInternals
+    internals.__boringWorkspaceBridgeRegistry = workspaceBridgeRegistry
+    internals.__boringRebuildPlugins = rebuildPlugins
+    internals.__boringAssetManager = boringAssetManager
+    internals.__boringRuntimeBackendRegistry = runtimeBackendRegistry
 
-  await app.register(boringPluginRoutes, {
-    manager: boringAssetManager,
-  })
-  await app.register(runtimeBackendGateway, { registry: runtimeBackendRegistry, defaultWorkspaceId: workspaceRoot })
-  for (const { routes } of pluginCollection.routeContributions) {
-    await app.register(routes)
-  }
+    await app.register(boringPluginRoutes, {
+      manager: boringAssetManager,
+    })
+    await app.register(runtimeBackendGateway, { registry: runtimeBackendRegistry, defaultWorkspaceId: workspaceRoot })
+    for (const { routes } of pluginCollection.routeContributions) {
+      await app.register(routes)
+    }
 
-  return app
+    return app
+  } catch (error) {
+    try { await app.close() } catch {}
+    throw error
+  }
 }

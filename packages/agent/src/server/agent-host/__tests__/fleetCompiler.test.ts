@@ -23,13 +23,15 @@ async function base(agents: readonly AgentHostAgentSpec[], fleetCompiler: AgentF
     scopeVerifier: { verify: async () => ({ workspaceScopeId: 'workspace', authSubjectId: 'subject' }) },
     runtimeModeAdapter: createTestRuntimeModeAdapter('direct'),
     sessionRoot,
-    resolveRuntimeScope: async () => ({
+    resolveAuthorizedEnvironmentScope: async () => ({
+      placementIdentity: 'direct',
+      workspaceRoot: sessionRoot,
+      provisioningFingerprint: 'provision',
+    }),
+    resolveAuthorizedAgentRuntimeScope: async () => ({
       identity: 'runtime',
-      environment: {
-        placementIdentity: 'direct',
-        workspaceRoot: sessionRoot,
-        provisioningFingerprint: 'provision',
-      },
+      physicalBindingIdentity: 'runtime',
+      resourceInputDigest: 'runtime',
       sessionNamespace: 'sessions',
     }),
   }
@@ -93,7 +95,7 @@ describe('fleet compilation validation', () => {
     })
     const hostOptions = await base([agent], compiler)
     const createRuntime = vi.fn(hostOptions.runtimeModeAdapter.create.bind(hostOptions.runtimeModeAdapter))
-    const resolveRuntimeScope = vi.fn(hostOptions.resolveRuntimeScope)
+    const resolveAuthorizedAgentRuntimeScope = vi.fn(hostOptions.resolveAuthorizedAgentRuntimeScope)
     const harnessFactory = vi.fn(async () => {
       throw new Error('harness must not be constructed')
     })
@@ -101,13 +103,13 @@ describe('fleet compilation validation', () => {
       ...hostOptions,
       hostId: undefined,
       runtimeModeAdapter: { ...hostOptions.runtimeModeAdapter, create: createRuntime },
-      resolveRuntimeScope,
+      resolveAuthorizedAgentRuntimeScope,
       harnessFactory,
     })
 
     await expect(result).rejects.toMatchObject({ code, details })
     expect(createRuntime).not.toHaveBeenCalled()
-    expect(resolveRuntimeScope).not.toHaveBeenCalled()
+    expect(resolveAuthorizedAgentRuntimeScope).not.toHaveBeenCalled()
     expect(harnessFactory).not.toHaveBeenCalled()
     await expect(access(join(hostOptions.sessionRoot, '.agent-host-id'))).rejects.toThrow()
   })

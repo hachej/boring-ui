@@ -36,7 +36,7 @@ describe('system prompt route', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/sessions/abc/system-prompt',
+      url: '/api/v1/agents/default/sessions/abc/system-prompt',
     })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ systemPrompt: 'You are a helpful agent.' })
@@ -51,7 +51,7 @@ describe('system prompt route', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/sessions/never-sent/system-prompt',
+      url: '/api/v1/agents/default/sessions/never-sent/system-prompt',
     })
     expect(res.statusCode).toBe(404)
     expect(res.json().error.code).toBe('not_found')
@@ -62,7 +62,7 @@ describe('system prompt route', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/sessions/abc/system-prompt',
+      url: '/api/v1/agents/default/sessions/abc/system-prompt',
     })
     expect(res.statusCode).toBe(501)
     expect(res.json().error.code).toBe('not_implemented')
@@ -74,7 +74,7 @@ describe('system prompt route', () => {
 
     await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/sessions/xyz/system-prompt',
+      url: '/api/v1/agents/default/sessions/xyz/system-prompt',
     })
     expect(spy).toHaveBeenCalledWith('xyz')
   })

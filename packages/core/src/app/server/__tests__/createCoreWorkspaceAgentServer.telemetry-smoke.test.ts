@@ -189,6 +189,7 @@ vi.mock('../../../server/app/index.js', () => ({
     return app
   },
   registerRoutes: async () => {},
+  registerDirectRoutes: () => async () => {},
 }))
 
 vi.mock('../../../server/routes/index.js', () => ({

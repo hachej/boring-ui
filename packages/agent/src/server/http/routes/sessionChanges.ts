@@ -36,10 +36,10 @@ export function sessionChangesRoutes(
 ): void {
   const tracker = opts.tracker ?? new InMemorySessionChangesTracker()
 
-  app.get(opts.path ?? '/api/v1/agent/sessions/:id/changes', async (request, reply) => {
+  app.get(opts.path ?? '/api/v1/agents/:agentTypeId/sessions/:sessionId/changes', async (request, reply) => {
     await opts.authorizeRequest?.(request)
     const params = request.params as Record<string, unknown>
-    const sessionId = requireSessionId(params[opts.sessionIdParam ?? 'id'], reply)
+    const sessionId = requireSessionId(params[opts.sessionIdParam ?? 'sessionId'], reply)
     if (sessionId === null) return
 
     return {

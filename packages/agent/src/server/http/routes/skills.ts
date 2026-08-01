@@ -1,5 +1,5 @@
 /**
- * GET /api/v1/agent/skills
+ * GET /api/v1/agents/:agentTypeId/skills
  *
  * Returns the list of PI skills discovered for the current workspace —
  * global skills (~/.pi/agent/skills) plus any project-local SKILL.md files.
@@ -125,16 +125,16 @@ export function skillsRoutes(
     return entry
   }
 
-  app.get<{ Querystring: SkillsQuery }>(opts.path ?? '/api/v1/agent/skills', async (request, reply) => {
+  app.get<{ Querystring: SkillsQuery }>(opts.path ?? '/api/v1/agents/:agentTypeId/skills', async (request, reply) => {
+    await opts.authorizeRequest?.(request)
     try {
-      await opts.authorizeRequest?.(request)
       const entry = await resolveSkillsForRequest(request, request.query.refresh === '1')
       return reply.code(200).send({ skills: entry.skills })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       request.log.warn({ err: error }, '[agent] failed to load skills')
-      // Still 200 so the slash-command picker keeps working; the `error`
-      // field makes the failure observable to callers that inspect it.
+      // Discovery is best-effort for the slash-command picker after the
+      // request has passed authorization.
       return reply.code(200).send({ skills: [], error: message })
     }
   })

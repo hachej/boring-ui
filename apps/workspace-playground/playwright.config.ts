@@ -41,7 +41,7 @@ export default defineConfig({
     // localStorage keys would diverge from the playground's defaults).
     // AGENT_API_PORT is shifted off its default (5210) too because
     // boring-macro-v2 also binds 5210. The vite proxy reads that env
-    // var and forwards /api/v1/agent + /api/v1/ui to the right
+    // var and forwards /api/v1/agents + /api/v1/ui to the right
     // backend.
     command: `cd ${shell(APP_DIR)} && env -i ${[
       `PATH=${shell(process.env.PATH || "")}`,

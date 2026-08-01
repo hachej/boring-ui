@@ -139,18 +139,9 @@ function requestKey(
   }
 }
 
-const LEGACY_ADMISSION_CODE = 'CUSTOM_DENIAL'
-
 const gatewayFailure: AgentRequestFailure = {
   kind: 'gateway',
   error: { code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED, message: 'denied' },
-}
-const legacyFailure: AgentRequestFailure = {
-  kind: 'legacy-admission',
-  code: LEGACY_ADMISSION_CODE,
-  statusCode: 500,
-  message: 'legacy denied',
-  details: { reason: 'policy' },
 }
 const outcomeUnknown: AgentGatewayErrorDTO = {
   code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
@@ -243,12 +234,6 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
     await expect(ledger.read(key)).resolves.toMatchObject({ state: 'in-flight' })
   })
 
-  it('records a legacy observed rejection only from in-flight without widening public errors', async () => {
-    const { ledger, key } = await ledgerAt('in-flight')
-    await ledger.reject(key, legacyFailure)
-    await expect(ledger.read(key)).resolves.toMatchObject({ state: 'rejected', failure: legacyFailure })
-  })
-
   it('completes only from in-flight and replays the typed JSON receipt', async () => {
     const { ledger, key } = await ledgerAt('in-flight')
     const receipt = { accepted: true, cursor: 7 }
@@ -276,7 +261,6 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
       ['acceptAdmission', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.acceptAdmission(key, 'receipt'), 'pending-admission'],
       ['beginEffect', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.beginEffect(key), 'admission-accepted'],
       ['strong reject', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.reject(key, gatewayFailure), 'pending-admission'],
-      ['legacy reject', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.reject(key, legacyFailure), 'in-flight'],
       ['complete', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.complete(key, { ok: true }), 'in-flight'],
       ['markOutcomeUnknown', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.markOutcomeUnknown(key, outcomeUnknown), 'in-flight'],
     ] as const

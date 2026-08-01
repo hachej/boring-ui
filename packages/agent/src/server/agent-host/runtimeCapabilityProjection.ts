@@ -18,7 +18,8 @@ import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { canonicalDigest } from './canonical'
 import type { AgentHostRuntime, RuntimeBinding } from './createAgentHost'
 import type { EmbeddedAgentGateway } from './embeddedGateway'
-import type { AgentHostAddressedHttpProjectionOptions } from './types'
+import type { AgentHostDirectProjectionOptions } from './types'
+import { projectStableServiceError } from './stableServiceError'
 
 const SAFE_REQUEST_ID = /^[A-Za-z0-9._:-]+$/
 const AgentParams = z.object({ agentTypeId: z.string().min(1).max(128) }).passthrough()
@@ -78,8 +79,8 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
   readonly runtime: AgentHostRuntime
   readonly gateway: EmbeddedAgentGateway
   readonly options: Pick<
-    AgentHostAddressedHttpProjectionOptions,
-    'authorizeRequest' | 'defaultSessionId' | 'filterModels' | 'sessionChangesTracker'
+    AgentHostDirectProjectionOptions,
+    'authorizeAgentRequest' | 'defaultSessionId' | 'filterModels' | 'sessionChangesTracker'
   >
 }): AgentHostRuntimeCapabilityProjection {
   const { runtime, gateway, options } = input
@@ -91,7 +92,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
     let result = authorized.get(request)
     if (!result) {
       result = (async () => {
-        const scope = await options.authorizeRequest(request)
+        const scope = await options.authorizeAgentRequest(request)
         const claim = await runtime.verify(scope)
         return { scope, claim }
       })()
@@ -128,6 +129,24 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
     },
     async resolveBinding({ request, agentTypeId, sessionId }) {
       const { claim, binding } = await resolve(request, agentTypeId, sessionId)
+      const hotResources = binding.scope.pi?.getHotReloadableResources?.()
+      const pi = hotResources
+        ? {
+            ...binding.scope.pi,
+            additionalSkillPaths: [
+              ...(binding.scope.pi?.additionalSkillPaths ?? []),
+              ...(hotResources.additionalSkillPaths ?? []),
+            ],
+            packages: [
+              ...(binding.scope.pi?.packages ?? []),
+              ...(hotResources.packages ?? []),
+            ],
+            extensionPaths: [
+              ...(binding.scope.pi?.extensionPaths ?? []),
+              ...(hotResources.extensionPaths ?? []),
+            ],
+          }
+        : binding.scope.pi
       const user = (request as typeof request & {
         user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null
       }).user
@@ -136,7 +155,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
         tools: binding.composition.tools,
         workspace: binding.composition.runtimeBundle.workspace,
         readyTracker: binding.composition.readyTracker,
-        pi: binding.scope.pi,
+        pi,
         additionalSkillPaths: binding.environmentLease.provisioning?.skillPaths,
         runContext: {
           abortSignal: new AbortController().signal,
@@ -211,7 +230,13 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
           candidateInputDigest: candidate.resourceInputDigest,
         },
         classify: async () => {
-          const current = runtime.findPublishedCurrentBinding(agentTypeId, claim.workspaceScopeId)
+          const current = runtime.findPublishedCurrentBinding(
+            agentTypeId,
+            claim.workspaceScopeId,
+            candidate.physicalBindingIdentity ?? candidate.identity,
+            candidate.identity,
+            candidate.environment.provisioningFingerprint,
+          )
           if (sessionId) {
             const pinned = (await gateway.inspectPublishedSessionBinding(scope, { agentTypeId, sessionId })).binding
             if (current && pinned.generation !== current.generation) {
@@ -258,32 +283,47 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
               },
             }
           }
+          await candidate.revalidateResourceInputs?.()
           return { kind: 'execute' as const }
         },
         action: async () => {
           const current = binding
           if (!current) throw new TypeError('reload executed before binding classification')
           return await runtime.runBindingOperation(current.key, async () => {
+            // Admission is asynchronous and occurs after classification. Fence
+            // again before the first external reload mutation; failures from
+            // this post-begin point intentionally remain outcome-unknown.
+            await candidate.revalidateResourceInputs?.()
             if (!current.composition.harness.reloadSession) {
               throw new AgentGatewayError(
                 AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
                 'Agent harness does not support reload',
               )
             }
+            const applied = await candidate.applyReload?.({
+              runtimeBundle: current.composition.runtimeBundle,
+            })
+            await candidate.revalidateResourceInputs?.()
             const reloaded = await current.composition.harness.reloadSession(reloadSessionId)
+            await candidate.revalidateResourceInputs?.()
             const diagnostics = (current.composition.harness.getResourceDiagnostics?.(reloadSessionId) ?? [])
               .map((entry) => ({ source: entry.source, message: entry.message }))
             const mergedDiagnostics = [
               ...(candidate.reloadMetadata?.diagnostics ?? []),
+              ...(applied?.diagnostics ?? []),
               ...diagnostics,
+            ]
+            const restartWarnings = [
+              ...(candidate.reloadMetadata?.restartWarnings ?? []),
+              ...(applied?.restartWarnings ?? []),
             ]
             return {
               ok: true,
               ...(sessionId ? { sessionId } : {}),
               reloaded,
               ...(mergedDiagnostics.length > 0 ? { diagnostics: mergedDiagnostics } : {}),
-              ...(candidate.reloadMetadata?.restartWarnings?.length
-                ? { restartWarnings: candidate.reloadMetadata.restartWarnings }
+              ...(restartWarnings.length
+                ? { restartWarnings }
                 : {}),
             }
           })
@@ -326,6 +366,7 @@ function statusFor(error: AgentGatewayError): number {
   if (
     error.code === AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT
     || error.code === AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS
+    || error.code === AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN
     || error.code === AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED
     || error.code === AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE
     || error.code === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
@@ -337,6 +378,10 @@ function statusFor(error: AgentGatewayError): number {
 function sendError(reply: FastifyReply, error: unknown): FastifyReply {
   if (error instanceof AgentGatewayError) {
     return reply.code(statusFor(error)).send({ error: error.toJSON() })
+  }
+  const stable = projectStableServiceError(error)
+  if (stable) {
+    return reply.code(stable.statusCode).send({ error: stable.error })
   }
   throw error
 }
@@ -436,7 +481,10 @@ export function createAgentHostRuntimeCapabilityRoutes(
         const sessionId = typeof query.sessionId === 'string' && query.sessionId.trim()
           ? query.sessionId.trim()
           : 'default'
-        const binding = await resolve(request, value.agentTypeId, sessionId)
+        // Catalog discovery targets the current Agent generation. A caller may
+        // provide the session ID used by harness resource loaders, but listing
+        // commands must not require that session to be persisted already.
+        const binding = await resolve(request, value.agentTypeId)
         const commands = await binding.harness.getSlashCommands?.(sessionId, binding.runContext) ?? []
         return reply.code(200).send({ commands })
       } catch (error) {

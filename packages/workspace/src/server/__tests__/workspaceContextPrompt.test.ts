@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * Tests for workspace context prompt injection.
  *
@@ -24,13 +25,32 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@hachej/boring-agent/server")>()
   return {
     ...mod,
-    createAgentHost: async () => ({
-      host: { hostId: "test", describe: vi.fn(), drain: vi.fn(async () => {}), close: vi.fn(async () => {}) },
-      gateway: {},
-      registerRoutes: vi.fn(),
-    }),
-    registerAgentRoutes: async (_app: unknown, opts: Parameters<typeof mod.registerAgentRoutes>[1]) => {
-      capturedSystemPromptAppend = opts?.systemPromptAppend
+    createAgentHost: async (options: any) => {
+      const compiled = await options.fleetCompiler.compile({ agents: options.agents })
+      return {
+        host: { hostId: "test", describe: vi.fn(), drain: vi.fn(async () => {}), close: vi.fn(async () => {}) },
+        gateway: {},
+        registerDirectRoutes: vi.fn((projection: any) => async () => {
+        const request = { id: "workspace-context-prompt", url: "/api/v1/agents/default/sessions", headers: {}, query: {} }
+        const authorizedScope = await projection.authorizeAgentRequest(request)
+        const verifiedClaim = await options.scopeVerifier.verify(authorizedScope)
+        const environment = await options.resolveAuthorizedEnvironmentScope({
+          authorizedScope,
+          verifiedClaim,
+          intent: { kind: "agent-binding", requestId: request.id },
+        })
+        const runtime = await options.resolveAuthorizedAgentRuntimeScope({
+          authorizedScope,
+          verifiedClaim,
+          agentTypeId: compiled[0].agentTypeId,
+          intent: { kind: "agent-binding", operation: "new-binding", requestId: request.id },
+          environment,
+        })
+        capturedSystemPromptAppend = runtime.systemPromptAppend
+        }),
+        acquireEnvironment: vi.fn(),
+        runWithWorkspaceAgent: vi.fn(),
+      }
     },
   }
 })

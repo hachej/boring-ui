@@ -55,16 +55,15 @@ function hostOptions(input: {
     },
     sessionRoot: input.sessionRoot,
     ...(input.effectAdmission ? { effectAdmission: input.effectAdmission } : {}),
-    resolveRuntimeScope: async ({ scope }: { scope: AuthorizedAgentScope }) => ({
+    resolveAuthorizedEnvironmentScope: async ({ authorizedScope: scope }: { authorizedScope: AuthorizedAgentScope }) => ({
+      placementIdentity: input.environmentPlacementIdentity?.(scope) ?? 'direct:workspace',
+      workspaceRoot: input.sessionRoot,
+      provisioningFingerprint: input.provisioningFingerprint?.(scope) ?? 'provider:generation-a',
+    }),
+    resolveAuthorizedAgentRuntimeScope: async ({ authorizedScope: scope }: { authorizedScope: AuthorizedAgentScope }) => ({
       identity: input.runtimeIdentity(scope),
-      ...(input.runtimePhysicalIdentity
-        ? { physicalBindingIdentity: input.runtimePhysicalIdentity(scope) }
-        : {}),
-      environment: {
-        placementIdentity: input.environmentPlacementIdentity?.(scope) ?? 'direct:workspace',
-        workspaceRoot: input.sessionRoot,
-        provisioningFingerprint: input.provisioningFingerprint?.(scope) ?? 'provider:generation-a',
-      },
+      physicalBindingIdentity: input.runtimePhysicalIdentity?.(scope) ?? input.runtimeIdentity(scope),
+      resourceInputDigest: input.runtimeIdentity(scope),
       sessionNamespace: 'sessions',
     }),
   }
@@ -180,7 +179,7 @@ describe('runtime scope identity', () => {
     await restarted.host.close()
   })
 
-  it('uses the first Host-lifetime compatibility runtime for a pre-AH0 unpinned transcript', async () => {
+  it('uses the first Host-lifetime runtime for a pre-AH0 unpinned transcript', async () => {
     const sessionRoot = await temporaryRoot()
     const firstReader = { workspaceScopeId: 'workspace-a', authSubjectId: 'legacy-reader-a' } as AuthorizedAgentScope
     const laterReader = { workspaceScopeId: 'workspace-a', authSubjectId: 'legacy-reader-b' } as AuthorizedAgentScope
@@ -203,23 +202,23 @@ describe('runtime scope identity', () => {
     await expect(restarted.gateway.readSessionState({ scope: firstReader, ref })).resolves.toMatchObject({ ref })
     expect(resolution).toHaveBeenCalledTimes(2)
     expect(resolution).toHaveBeenNthCalledWith(1, {
-      source: 'pre-ah0-compatibility-fallback',
+      source: 'unpinned-session-fallback',
       runtimeScopeIdentity: 'runtime-first',
     })
     expect(resolution).toHaveBeenNthCalledWith(2, {
-      source: 'pre-ah0-compatibility-fallback',
+      source: 'unpinned-session-fallback',
       runtimeScopeIdentity: 'runtime-first',
     })
 
     await expect(restarted.gateway.readSessionState({ scope: laterReader, ref }))
       .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH })
     expect(resolution).toHaveBeenCalledTimes(2)
-    expect(runtimeIdentity).toHaveBeenCalledTimes(3)
+    expect(runtimeIdentity).toHaveBeenCalled()
     expect(await readFile(transcriptPath, 'utf8')).toBe(before)
     await restarted.host.close()
   })
 
-  it('uses a persisted post-AH0 runtime pin without the compatibility fallback when another runtime exists', async () => {
+  it('uses a persisted post-AH0 runtime pin without the unpinned fallback when another runtime exists', async () => {
     const sessionRoot = await temporaryRoot()
     const creator = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
     const pinnedReader = { workspaceScopeId: 'workspace-a', authSubjectId: 'pinned-reader' } as AuthorizedAgentScope
@@ -262,7 +261,7 @@ describe('runtime scope identity', () => {
       runtimeScopeIdentity: 'runtime-pinned',
     })
     expect(resolution.mock.calls).not.toContainEqual([expect.objectContaining({
-      source: 'pre-ah0-compatibility-fallback',
+      source: 'unpinned-session-fallback',
     })])
     expect(runtimeIdentity.mock.results.map(({ value }) => value)).toContain('runtime-current')
     await restarted.host.close()

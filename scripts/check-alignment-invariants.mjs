@@ -46,18 +46,14 @@ const createAgentHostAllowlist = new Set([
   "packages/core/src/app/server/createCoreWorkspaceAgentServer.ts",
   // Workspace application composition root.
   "packages/workspace/src/app/server/createWorkspaceAgentServer.ts",
+  // Thin standalone composition root over the canonical Host.
+  "packages/agent/src/server/createStandaloneAgentHostApp.ts",
   // Canonical factory implementation.
   "packages/agent/src/server/agent-host/createAgentHost.ts",
   // Embedded gateway machinery owned by the Agent Host.
   "packages/agent/src/server/agent-host/embeddedGateway.ts",
   // HTTP projection machinery owned by the Agent Host.
   "packages/agent/src/server/agent-host/httpProjection.ts",
-  // Legacy-route policy machinery owned by the Agent Host.
-  "packages/agent/src/server/agent-host/agentHostLegacyRoutePolicy.ts",
-  // Delegating compatibility composition wrapper.
-  "packages/agent/src/server/createAgentApp.ts",
-  // Delegating route-registration composition wrapper.
-  "packages/agent/src/server/registerAgentRoutes.ts",
   // Public Agent server barrel that exposes the factory.
   "packages/agent/src/server/index.ts",
 ]);

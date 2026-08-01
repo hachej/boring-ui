@@ -13,6 +13,7 @@ import {
   type IdempotentQueueClear,
 } from '../../../shared/index'
 import type { PiChatSessionService } from '../../../core/piChatSessionService'
+import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentHostHandle } from '../types'
 import { createAgentHostRoutes } from '../httpProjection'
 
@@ -48,7 +49,7 @@ const event: AgentSessionEvent = {
 class FakeGateway implements AgentGateway {
   readonly calls: Array<{ method: string; input: unknown }> = []
   events: AgentSessionEvent[] = [event]
-  sendError: AgentGatewayError | undefined
+  sendError: unknown
   readStateError: AgentGatewayError | undefined
 
   async listAgents(input: Parameters<AgentGateway['listAgents']>[0]) {
@@ -123,7 +124,25 @@ class FakeGateway implements AgentGateway {
   async close() {}
 }
 
-function legacyService(): PiChatSessionService {
+class DeferredConnectGateway extends FakeGateway {
+  private releaseConnect!: () => void
+  private connectStarted!: () => void
+  readonly started = new Promise<void>((resolve) => { this.connectStarted = resolve })
+  private readonly released = new Promise<void>((resolve) => { this.releaseConnect = resolve })
+
+  release() {
+    this.releaseConnect()
+  }
+
+  override async connectSession(input: Parameters<AgentGateway['connectSession']>[0]): Promise<AgentSessionConnection> {
+    const connection = await super.connectSession(input)
+    this.connectStarted()
+    await this.released
+    return connection
+  }
+}
+
+function sessionService(): PiChatSessionService {
   return {
     async listSessions() {
       return [{ id: 'session-1', title: 'Legacy', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:01.000Z', turnCount: 1 }]
@@ -162,9 +181,7 @@ function legacyService(): PiChatSessionService {
 
 async function buildApp(options: {
   gateway?: FakeGateway
-  authorizeRequest?: () => Promise<AuthorizedAgentScope>
-  legacyPiChatAliases?: boolean
-  resolveLegacyPiChatService?: Parameters<typeof createAgentHostRoutes>[0]['resolveLegacyPiChatService']
+  authorizeAgentRequest?: () => Promise<AuthorizedAgentScope>
   resolveAddressedPiChatService?: Parameters<typeof createAgentHostRoutes>[0]['resolveAddressedPiChatService']
 } = {}) {
   const gateway = options.gateway ?? new FakeGateway()
@@ -179,14 +196,11 @@ async function buildApp(options: {
     host,
     gateway,
     options: {
-      authorizeRequest: options.authorizeRequest ?? (async () => scope),
-      defaultAgentTypeId: 'alpha',
-      legacyPiChatAliases: options.legacyPiChatAliases,
+      authorizeAgentRequest: options.authorizeAgentRequest ?? (async () => scope),
     },
-    resolveLegacyPiChatService: options.resolveLegacyPiChatService ?? (async () => legacyService()),
     resolveAddressedPiChatService: options.resolveAddressedPiChatService ?? (async () => ({
       scope,
-      service: legacyService(),
+      service: sessionService(),
     })),
   }))
   await app.ready()
@@ -277,11 +291,6 @@ describe('addressed Agent Host HTTP projection', () => {
       payload: { requestId: 'clear-1', clientNonce: 'nonce-f', clientSeq: 3 },
     })).statusCode).toBe(202)
     expect((await app.inject({
-      method: 'POST',
-      url: '/api/v1/agents/alpha/sessions/session-1/queue-clear',
-      payload: { requestId: 'clear-legacy-addressed' },
-    })).statusCode).toBe(404)
-    expect((await app.inject({
       method: 'DELETE',
       url: '/api/v1/agents/alpha/sessions/session-1?requestId=delete-1',
     })).statusCode).toBe(204)
@@ -320,6 +329,24 @@ describe('addressed Agent Host HTTP projection', () => {
     await app.close()
   })
 
+  it('closes an addressed event connection acquired after the request aborts during connect', async () => {
+    const gateway = new DeferredConnectGateway()
+    const { app } = await buildApp({ gateway })
+    const response = app.inject({
+      method: 'GET',
+      url: '/api/v1/agents/alpha/sessions/session-1/events?cursor=7',
+      simulate: { end: false, split: false, error: false, close: true },
+    })
+    await gateway.started
+    gateway.release()
+    await response
+    await vi.waitFor(() => {
+      expect(gateway.calls).toContainEqual({ method: 'close', input: ref })
+    })
+    expect(gateway.calls.filter((call) => call.method === 'close')).toHaveLength(1)
+    await app.close()
+  })
+
   it('fails addressed attachment access closed before resolving raw bytes', async () => {
     const gateway = new FakeGateway()
     const resolveAddressedPiChatService = vi.fn(async () => { throw new AgentGatewayError(
@@ -345,8 +372,8 @@ describe('addressed Agent Host HTTP projection', () => {
   })
 
   it('rejects malformed, extra, and invalid addressed inputs before authorization or Gateway dispatch', async () => {
-    const authorizeRequest = vi.fn(async () => scope)
-    const { app, gateway } = await buildApp({ authorizeRequest })
+    const authorizeAgentRequest = vi.fn(async () => scope)
+    const { app, gateway } = await buildApp({ authorizeAgentRequest })
     const cases = [
       { request: { method: 'GET', url: '/api/v1/agents?extra=1' }, field: 'query' },
       { request: { method: 'GET', url: '/api/v1/agents/alpha/sessions?limit=0' }, field: 'query.limit' },
@@ -373,7 +400,7 @@ describe('addressed Agent Host HTTP projection', () => {
       payload: '{',
     })
     expectValidation(malformed, 'body')
-    expect(authorizeRequest).not.toHaveBeenCalled()
+    expect(authorizeAgentRequest).not.toHaveBeenCalled()
     expect(gateway.calls).toEqual([])
 
     await app.close()
@@ -381,7 +408,7 @@ describe('addressed Agent Host HTTP projection', () => {
 
   it('maps authorization, replay, lifecycle, and invalid-state failures to stable Gateway errors', async () => {
     const denied = await buildApp({
-      authorizeRequest: async () => {
+      authorizeAgentRequest: async () => {
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SCOPE_DENIED, 'denied')
       },
     })
@@ -420,35 +447,23 @@ describe('addressed Agent Host HTTP projection', () => {
     await invalidState.app.close()
   })
 
-  it('mounts frozen Pi-chat aliases only when requested, including attachment bytes and unwrapped heartbeat frames', async () => {
-    const withoutAliases = await buildApp()
-    expect((await withoutAliases.app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })).statusCode).toBe(404)
-    await withoutAliases.app.close()
-
-    const withAliases = await buildApp({ legacyPiChatAliases: true })
-    const list = await withAliases.app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
-    expect(list.statusCode).toBe(200)
-    expect(list.json()).toEqual([{ id: 'session-1', title: 'Legacy', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:01.000Z', turnCount: 1 }])
-
-    const attachment = await withAliases.app.inject({
-      method: 'GET',
-      url: '/api/v1/agent/pi-chat/session-1/attachments/message-1/0',
+  it('maps code-only PAYMENT_REQUIRED from the addressed prompt route to HTTP 402', async () => {
+    const gateway = new FakeGateway()
+    gateway.sendError = Object.assign(new Error('insufficient credit'), {
+      code: ErrorCode.enum.PAYMENT_REQUIRED,
     })
-    expect(attachment.statusCode).toBe(200)
-    expect(attachment.headers['content-type']).toContain('image/png')
-    expect(attachment.headers['x-content-type-options']).toBe('nosniff')
-    expect(attachment.body).toBe('image-bytes')
-
-    const events = await withAliases.app.inject({
-      method: 'GET',
-      url: '/api/v1/agent/pi-chat/session-1/events?cursor=7',
+    const { app } = await buildApp({ gateway })
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions/session-1/prompt',
+      payload: { requestId: 'payment-required', clientNonce: 'nonce', content: 'hello' },
     })
-    const frames = events.body.trim().split('\n').map((line) => JSON.parse(line))
-    expect(frames[0]).toEqual({ type: 'agent-start', seq: 8, turnId: 'turn-1' })
-    expect(frames[0]).not.toHaveProperty('ref')
-    expect(frames[0]).not.toHaveProperty('event')
-    expect(frames[1]).toMatchObject({ type: 'heartbeat', now: expect.any(String) })
-
-    await withAliases.app.close()
+    expect(response.statusCode).toBe(402)
+    expect(response.json()).toEqual({
+      error: { code: ErrorCode.enum.PAYMENT_REQUIRED, message: 'insufficient credit' },
+    })
+    expect(gateway.calls).toContainEqual({ method: 'close', input: ref })
+    await app.close()
   })
+
 })

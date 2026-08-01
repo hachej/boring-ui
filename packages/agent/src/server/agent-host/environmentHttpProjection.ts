@@ -28,9 +28,20 @@ export async function registerAgentHostEnvironmentRoutes(
   const leases = new WeakMap<FastifyRequest, Promise<Awaited<ReturnType<CreatedAgentHost['acquireEnvironment']>>>>()
   const deferred = new WeakSet<FastifyRequest>()
   const released = new WeakSet<FastifyRequest>()
+  const observingTransport = new WeakSet<FastifyRequest>()
+  const transportClosed = new WeakSet<FastifyRequest>()
   const gitHostRoots = new WeakMap<object, string>()
 
   const acquire = (request: FastifyRequest) => {
+    if (!observingTransport.has(request)) {
+      observingTransport.add(request)
+      const markClosed = () => {
+        transportClosed.add(request)
+        if (deferred.has(request)) void release(request)
+      }
+      request.raw.once('aborted', markClosed)
+      request.raw.socket.once('close', markClosed)
+    }
     let lease = leases.get(request)
     if (!lease) {
       lease = options.authorizeAgentRequest(request).then(async (authorizedScope) => {
@@ -78,8 +89,11 @@ export async function registerAgentHostEnvironmentRoutes(
   const deferLeaseRelease = (request: FastifyRequest, reply: import('fastify').FastifyReply) => {
     if (deferred.has(request)) return
     deferred.add(request)
-    request.raw.once('aborted', () => { void release(request) })
-    reply.raw.once('close', () => { void release(request) })
+    reply.raw.once('close', () => {
+      transportClosed.add(request)
+      void release(request)
+    })
+    if (transportClosed.has(request)) void release(request)
   }
 
   await app.register(fileRoutes, { getWorkspace, getFilesystemBindings })

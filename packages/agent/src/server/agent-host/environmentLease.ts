@@ -129,15 +129,11 @@ export class EnvironmentLeaseManager {
     environment: ResolvedEnvironmentScope,
     signal: AbortSignal,
   ): Promise<EnvironmentGeneration> {
-    const compatibilityModeContext = (environment as ResolvedEnvironmentScope & {
-      readonly compatibilityModeContext?: Partial<Parameters<RuntimeModeAdapter['create']>[0]>
-    }).compatibilityModeContext
     const providerBundle = await this.adapter.create({
       workspaceRoot: environment.workspaceRoot,
       sessionId: workspaceScopeId,
       workspaceId: workspaceScopeId,
       templatePath: environment.templatePath,
-      ...compatibilityModeContext,
     })
     let bundle = providerBundle
     try {

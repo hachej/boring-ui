@@ -92,7 +92,10 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
   }
 
   async reject(key: AgentRequestKey, failure: AgentRequestFailure): Promise<void> {
-    this.transition(key, [failure.kind === 'gateway' ? 'pending-admission' : 'in-flight'], (record) => ({
+    this.transition(key, [
+      ...(failure.kind === 'gateway' ? ['pending-admission', 'admission-accepted'] as const : []),
+      'in-flight',
+    ], (record) => ({
       key: record.key,
       digest: record.digest,
       state: 'rejected',

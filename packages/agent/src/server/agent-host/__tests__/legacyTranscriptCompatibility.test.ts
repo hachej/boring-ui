@@ -82,9 +82,11 @@ async function proveDirectHostCutover(
       signal: abort.signal,
     })
     expect(response.status).toBe(200)
-    expect(response.headers.get('content-type')).toContain('text/event-stream')
-    const firstFrame = new TextDecoder().decode((await response.body!.getReader().read()).value)
-    expect(firstFrame).toContain('"type":"heartbeat"')
+    expect(response.headers.get('content-type')).toContain('application/x-ndjson')
+    const firstFrameBytes = (await response.body!.getReader().read()).value
+    expect(firstFrameBytes).toBeDefined()
+    const firstFrame = new TextDecoder().decode(firstFrameBytes).trim().split('\n')[0]
+    expect(JSON.parse(firstFrame)).toMatchObject({ type: 'heartbeat', now: expect.any(String) })
     abort.abort()
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error
