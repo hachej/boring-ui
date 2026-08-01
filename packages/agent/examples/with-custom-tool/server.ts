@@ -6,7 +6,7 @@ import { createServer as createViteServer } from 'vite'
 
 import { applyCspHeaders } from '../csp'
 import type { AgentTool } from '../../src/shared/tool'
-import { createAgentApp } from '../../src/server/createAgentApp'
+import { createStandaloneAgentHostApp } from '../../src/server/createStandaloneAgentHostApp'
 import {
   agentSandboxRuntimeHostOperations,
   createAgentSandboxRuntimeModeAdapter,
@@ -32,7 +32,7 @@ const reverseTool: AgentTool = {
   },
 }
 
-const app = await createAgentApp({
+const app = await createStandaloneAgentHostApp({
   extraTools: [reverseTool],
   mode: 'direct',
   runtimeModeAdapter: createAgentSandboxRuntimeModeAdapter('direct'),
