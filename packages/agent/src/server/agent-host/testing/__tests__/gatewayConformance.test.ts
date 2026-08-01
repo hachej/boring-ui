@@ -576,8 +576,13 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
         const digest = JSON.stringify(input)
         const replay = this.replayRequest<Awaited<ReturnType<AgentSessionConnection['send']>>>(key, digest)
         if (replay !== undefined) return { ...replay, duplicate: true }
-        if (input.kind === 'prompt' && session.activity !== 'idle' && session.activity !== 'error') {
-          throw this.error(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'prompt is invalid in current state')
+        if (input.kind === 'prompt') {
+          const admissible = input.requireIdle
+            ? session.activity === 'idle'
+            : session.activity === 'idle' || session.activity === 'error'
+          if (!admissible) {
+            throw this.error(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'prompt is invalid in current state')
+          }
         }
         this.applyAdmission(operation, key, digest)
         if (input.kind === 'prompt') {

@@ -16,6 +16,7 @@ import {
   ThinkingSelectTrigger,
 } from '../../chatPanelComposerControls'
 import { cn } from '../../lib'
+import { useComposerContributions, type ComposerDraftUpdate } from '../composerContributions'
 import type { MentionState } from '../../primitives/mention-picker'
 import { MentionPicker } from '../../primitives/mention-picker'
 import {
@@ -119,6 +120,7 @@ export interface PiChatComposerSurfaceProps<
   textareaRef: RefObject<HTMLTextAreaElement | null>
   onTextareaChange: (event: ChangeEvent<HTMLTextAreaElement>) => void
   onTextareaKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void
+  updateDraft: (update: ComposerDraftUpdate, options?: { focus?: boolean }) => void
   onSubmitMessage: (payload: { text: string; files: PromptInputFilePart[] }) => false | void | Promise<false | void>
   onStop: () => void
 }
@@ -180,10 +182,12 @@ export function PiChatComposerSurface<
   textareaRef,
   onTextareaChange,
   onTextareaKeyDown,
+  updateDraft,
   onSubmitMessage,
   onStop,
 }: PiChatComposerSurfaceProps<TComposerBlocker>) {
   const workspaceRequestId = getHeaderValue(requestHeaders, 'x-boring-workspace-id')
+  const composerContributions = useComposerContributions()
   const uploadAttachment = useCallback((file: File) => uploadFile(file, {
     apiBaseUrl,
     workspaceRequestId,
@@ -315,6 +319,16 @@ export function PiChatComposerSurface<
           />
         ) : null}
       </div>
+      {composerContributions.map(({ id, Top }) => Top ? (
+        <div
+          key={id}
+          data-boring-agent-part="composer-contribution-top"
+          data-boring-agent-contribution-id={id}
+          className={cn('mx-auto mb-2 w-full empty:hidden', chrome ? 'max-w-3xl' : 'max-w-[680px]')}
+        >
+          <Top />
+        </div>
+      ) : null)}
       <div
         data-boring-agent-part="composer-rail"
         data-composer-multiline="false"
@@ -389,6 +403,16 @@ export function PiChatComposerSurface<
               className="!order-none !w-auto shrink-0 self-center justify-between border-0 bg-transparent !px-2 !py-0"
             >
               <div className="ml-auto flex items-center gap-1.5">
+                {composerContributions.map(({ id, Action }) => Action ? (
+                  <span
+                    key={id}
+                    data-boring-agent-part="composer-contribution-action"
+                    data-boring-agent-contribution-id={id}
+                    className="contents"
+                  >
+                    <Action updateDraft={updateDraft} />
+                  </span>
+                ) : null)}
                 <PromptInputSubmit
                   data-boring-agent-part="composer-submit"
                   status={submitStatus}
