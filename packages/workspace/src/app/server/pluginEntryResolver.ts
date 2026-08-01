@@ -60,6 +60,8 @@ function readPluginPackageJson(dir: string): BoringPluginPackageJson | null {
 export interface PluginResolveContext {
   workspaceRoot: string
   bridge: unknown
+  /** Host-selected Agent owner for package factories that dispatch Agent work. */
+  agentTypeId?: string
 }
 
 function resolveDirFrontPluginId(dir: string, pkg: BoringPluginPackageJson): string | undefined {

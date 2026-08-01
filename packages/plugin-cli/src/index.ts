@@ -192,6 +192,7 @@ async function handleTest(argv: string[], positionals: string[], json: boolean):
   if (timeoutRaw && (timeoutMs == null || !Number.isFinite(timeoutMs) || timeoutMs <= 0)) throw new Error("--timeout-ms must be a positive number")
   const result = await runPluginSelfTest({
     pluginId: name,
+    agentTypeId: readOption(argv, "--agent-type") ?? "default",
     ...(readOption(argv, "--url") ? { url: readOption(argv, "--url") } : {}),
     ...(readOption(argv, "--workspace") ? { workspaceId: readOption(argv, "--workspace") } : {}),
     ...(readOption(argv, "--panel-id") ? { panelId: readOption(argv, "--panel-id") } : {}),
@@ -254,4 +255,3 @@ export type {
 } from "./server/index"
 export { formatSelfTestResult, runPluginSelfTest } from "./server/testPlugin"
 export type { PaneSelfTestState, RunPluginSelfTestOptions, SelfTestEvent, SelfTestResult } from "./server/testPlugin"
-

@@ -222,17 +222,23 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
       return route.fulfill(json({ error: 'not_found' }, 404))
     }
 
-    if (path === '/api/v1/agent/models') {
+    if (path === '/api/v1/agents/default/models') {
       return route.fulfill(json({ models: [] }))
     }
 
-    if (path === '/api/v1/agent/pi-chat/sessions' && method === 'GET') {
+    if (path === '/api/v1/agents/default/sessions' && method === 'GET') {
       const workspaceId = workspaceIdFromRequest(route)
       sessionRequests.push(workspaceId)
-      return route.fulfill(json(sessionsByWorkspace.get(workspaceId) ?? []))
+      return route.fulfill(json({ sessions: (sessionsByWorkspace.get(workspaceId) ?? []).map((session) => ({
+        ref: { agentTypeId: 'default', sessionId: session.id },
+        title: session.title,
+        status: 'idle',
+        createdAt: Date.parse(session.createdAt),
+        updatedAt: Date.parse(session.updatedAt),
+      })) }))
     }
 
-    if (path === '/api/v1/agent/pi-chat/sessions' && method === 'POST') {
+    if (path === '/api/v1/agents/default/sessions' && method === 'POST') {
       const workspaceId = workspaceIdFromRequest(route)
       sessionRequests.push(workspaceId)
       const body = JSON.parse(request.postData() ?? '{}') as { title?: string }
@@ -249,13 +255,13 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
         session,
         ...(sessionsByWorkspace.get(workspaceId) ?? []),
       ])
-      return route.fulfill(json(session, 201))
+      return route.fulfill(json({ agentTypeId: 'default', sessionId: session.id }, 201))
     }
 
-    const piChatMatch = path.match(/^\/api\/v1\/agent\/pi-chat\/([^/]+)\/(state|events|prompt)$/)
-    if (piChatMatch) {
+    const sessionOperationMatch = path.match(/^\/api\/v1\/agents\/default\/sessions\/([^/]+)\/(state|events|prompt)$/)
+    if (sessionOperationMatch) {
       const workspaceId = workspaceIdFromRequest(route)
-      const [, sessionId, endpoint] = piChatMatch
+      const [, sessionId, endpoint] = sessionOperationMatch
       piChatRequests.push({ workspaceId, sessionId, endpoint, method })
       if (endpoint === 'events') {
         return route.fulfill({
@@ -265,24 +271,21 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
         })
       }
       if (endpoint === 'prompt') return route.fulfill(json({ accepted: true, cursor: 0, clientNonce: sessionId }))
+      const ref = { agentTypeId: 'default', sessionId }
       return route.fulfill(json({
-        protocolVersion: 1,
-        sessionId,
+        ref,
         seq: 0,
-        status: 'idle',
-        messages: [],
-        queue: { followUps: [] },
-        followUpMode: 'one-at-a-time',
+        summary: { ref, title: 'Session', status: 'idle', createdAt: 0, updatedAt: 0 },
+        state: {
+          protocolVersion: 1,
+          sessionId,
+          seq: 0,
+          status: 'idle',
+          messages: [],
+          queue: { followUps: [] },
+          followUpMode: 'one-at-a-time',
+        },
       }))
-    }
-
-    const sessionDetailMatch = path.match(/^\/api\/v1\/agent\/sessions\/([^/]+)$/)
-    if (sessionDetailMatch && method === 'GET') {
-      const workspaceId = workspaceIdFromRequest(route)
-      const session = (sessionsByWorkspace.get(workspaceId) ?? [])
-        .find((item) => item.id === sessionDetailMatch[1])
-      if (!session) return route.fulfill(json({ error: 'not_found' }, 404))
-      return route.fulfill(json({ ...session, messages: [] }))
     }
 
     if (path === '/api/v1/ui/state' && method === 'PUT') {
@@ -312,7 +315,7 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
       })
     }
 
-    if (path.startsWith('/api/v1/agent/')) {
+    if (path.startsWith('/api/v1/agents/')) {
       return route.fulfill(json({}))
     }
 

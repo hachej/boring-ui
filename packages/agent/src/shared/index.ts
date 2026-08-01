@@ -32,6 +32,9 @@ export {
   sessionStreamPath,
 } from './events'
 export type {
+  LeaseBoundWorkspaceAgent,
+  WorkspaceAgentDirectRunCallback,
+  WorkspaceAgentDirectRunInput,
   WorkspaceAgentDispatch,
   WorkspaceAgentDispatcher,
   WorkspaceAgentDispatcherContext,

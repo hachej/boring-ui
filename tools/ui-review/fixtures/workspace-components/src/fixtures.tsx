@@ -119,7 +119,7 @@ function renderFixture(name: string): ReactNode {
       return <MarkdownEditor className="h-[560px]" content={RICH_MARKDOWN} onChange={() => {}} />
     case "dock-group":
       return (
-        <WorkspaceProvider panels={panels} persistenceEnabled={false}>
+        <WorkspaceProvider agentTypeId="default" panels={panels} persistenceEnabled={false}>
           <div className="h-[640px] w-full overflow-hidden rounded border border-border">
             <DockviewShell
               layout={{
@@ -137,7 +137,7 @@ function renderFixture(name: string): ReactNode {
     case "file-tree-pane":
       return (
         <MockWorkspaceApiProvider>
-          <WorkspaceProvider persistenceEnabled={false}>
+          <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
             <WorkspaceFilesProvider apiBaseUrl="">
               <div className="h-[640px] w-full max-w-[1200px] overflow-hidden rounded-md border border-border">
                 <FileTreePane rootDir="." />
@@ -219,8 +219,8 @@ function AutomationPaneFixture() {
   }), [])
   return (
     <MockWorkspaceApiProvider>
-      <WorkspaceProvider persistenceEnabled={false}>
-        <AutomationClientProvider value={client}>
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
+        <AutomationClientProvider value={client} agentTypeId="default">
           <AutomationPanel onClose={() => {}} />
         </AutomationClientProvider>
       </WorkspaceProvider>
@@ -270,7 +270,7 @@ function makeMockFetch(originalFetch: typeof fetch): typeof fetch {
   return async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost")
     const method = (init?.method ?? (typeof input === "object" && "method" in input ? input.method : undefined) ?? "GET").toUpperCase()
-    if (url.pathname === "/api/v1/agent/models" && method === "GET") {
+    if (url.pathname === "/api/v1/agents/default/models" && method === "GET") {
       return jsonResponse({ models: [{ provider: "openai", id: "gpt-5.5", label: "GPT-5.5", available: true }] })
     }
     if (url.pathname === "/api/v1/tree" && method === "GET") {

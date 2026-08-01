@@ -12,8 +12,26 @@
     ],
     "sourceInventories": {
       "legacyReferences": {
-        "count": 28,
-        "sha256": "575d73d51c1c4f975ef61f1f340e32cfceb3f2f106a2385bcd096ebb134a82c5"
+        "count": 16,
+        "sha256": "5db1fd6a1b5cd26adbcee0a0d27e642edcf9df045c9dc448ab2d398b10292442",
+        "files": [
+          { "source": "apps/agent-playground/src/server/agentHost.ts", "disposition": "slice-5" },
+          { "source": "packages/agent/src/server/agent-host/createAgentHost.ts", "disposition": "slice-6" },
+          { "source": "packages/agent/src/server/agent-host/types.ts", "disposition": "slice-6" },
+          { "source": "packages/agent/src/server/agentHostLegacyRouteMount.ts", "disposition": "slice-6" },
+          { "source": "packages/agent/src/server/agentHostLegacyRouteOptions.ts", "disposition": "slice-6" },
+          { "source": "packages/agent/src/server/agentHostLegacyRoutePolicy.ts", "disposition": "slice-6" },
+          { "source": "packages/agent/src/server/agentHostLegacyRouteRuntime.ts", "disposition": "slice-6" },
+          { "source": "packages/agent/src/server/createAgentApp.ts", "disposition": "slice-5-then-6" },
+          { "source": "packages/agent/src/server/http/routes/piChat.ts", "disposition": "slice-6" },
+          { "source": "packages/agent/src/server/index.ts", "disposition": "slice-6" },
+          { "source": "packages/agent/src/server/pi-chat/harnessPiChatService.ts", "disposition": "slice-6" },
+          { "source": "packages/agent/src/server/registerAgentRoutes.ts", "disposition": "slice-6" },
+          { "source": "packages/agent/test-host/sandbox.ts", "disposition": "slice-5" },
+          { "source": "packages/cli/src/server/modeApps.ts", "disposition": "slice-4-and-5" },
+          { "source": "packages/core/src/app/server/createCoreWorkspaceAgentServer.ts", "disposition": "slice-3" },
+          { "source": "packages/workspace/src/app/server/createWorkspaceAgentServer.ts", "disposition": "slice-4" }
+        ]
       },
       "publicServerExports": {
         "source": "packages/agent/src/server/index.ts",

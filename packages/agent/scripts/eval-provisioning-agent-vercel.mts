@@ -128,6 +128,7 @@ When asked to validate provisioning, follow the test-sdk skill exactly.
     })
 
     const result = await evalAgentPrompt({
+        agentTypeId: "default",
       app,
       model: { provider: 'openrouter', id: 'qwen/qwen3.6-plus' },
       retries: 1,

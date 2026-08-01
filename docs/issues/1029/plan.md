@@ -544,3 +544,7 @@ Verdict: **READY**. No unresolved BLOCKER or MAJOR defects. The reviewer explici
 ### Slice 1 implementation review
 
 Seven adversarial code-review passes closed reload-before-mutation, durable-ledger, Environment-authority, session-pin, shutdown-race, attachment, scoped-change, readiness-stream, dispatcher-revocation, and composed-route proof defects. Final verdict: **READY**. The executable gate reconstructs the composed Fastify Agent route table for all seven named roots, requires every final Host route exactly once, and rejects duplicate or unclassified Agent routes against the normative matrix.
+
+### Slice 2 implementation review
+
+Three adversarial code-review passes closed addressed-envelope parsing, strict payload, workspace-scope, E2E fixture, detached-chat identity, pane-owner reload, selected-Agent propagation, automation durability, plugin self-test, provider-consumer, and deny-scan defects. Final verdict: **READY**. The matrix gate now records the 16 exact intentional legacy server/test survivors and rejects legacy Pi-chat URLs in migrated client, eval, bin, plugin, smoke, and E2E surfaces.

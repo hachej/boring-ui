@@ -17,7 +17,7 @@ export function useExternalRemotePiSession({
   remoteSessionOptions,
 }: {
   sessionId?: string
-  agentTypeId?: string
+  agentTypeId: string
   workspaceId?: string
   storageScope: string
   apiBaseUrl?: string

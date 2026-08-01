@@ -6,6 +6,9 @@ import type { AgentEvent, AgentMessageContent } from '../shared/events'
 import { ErrorCode } from '../shared/error-codes'
 import type { Workspace } from '../shared/workspace'
 import type {
+  LeaseBoundWorkspaceAgent,
+  WorkspaceAgentDirectRunCallback,
+  WorkspaceAgentDirectRunInput,
   WorkspaceAgentDispatch,
   WorkspaceAgentDispatcher,
   WorkspaceAgentDispatcherContext,
@@ -23,6 +26,11 @@ export interface WorkspaceAgentDispatcherBinding {
 }
 
 export interface WorkspaceAgentDispatcherResolver {
+  /** Callback-scoped canonical Host operation; no dispatcher or Workspace escapes. */
+  runWithWorkspaceAgent(
+    input: WorkspaceAgentDirectRunInput & { request?: FastifyRequest },
+    run: WorkspaceAgentDirectRunCallback,
+  ): Promise<void>
   resolve(
     ctx: WorkspaceAgentDispatcherContext,
     options?: WorkspaceAgentDispatcherResolveOptions,

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { CommandRegistry } from '../slashCommands/registry'
 
 export function useServerSkills({
+  agentTypeId,
   apiBaseUrl,
   fetch: fetchImpl,
   registry,
@@ -10,6 +11,7 @@ export function useServerSkills({
   refreshKey,
   enabled = true,
 }: {
+  agentTypeId: string
   apiBaseUrl?: string
   fetch?: typeof globalThis.fetch
   registry: CommandRegistry
@@ -28,7 +30,8 @@ export function useServerSkills({
     if (!enabled) return
     let aborted = false
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
-    const path = refreshKey ? '/api/v1/agent/skills?refresh=1' : '/api/v1/agent/skills'
+    const resourcePath = `/api/v1/agents/${encodeURIComponent(agentTypeId)}/skills`
+    const path = refreshKey ? `${resourcePath}?refresh=1` : resourcePath
     nextFetch(agentResourceUrl(apiBaseUrl, path), {
       headers: scopedHeaders(requestHeaders, storageScope),
     })
@@ -46,7 +49,7 @@ export function useServerSkills({
       })
       .catch(() => {})
     return () => { aborted = true }
-  }, [apiBaseUrl, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
+  }, [agentTypeId, apiBaseUrl, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
 
   return skillsStamp
 }

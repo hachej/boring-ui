@@ -466,6 +466,7 @@ function CoreFullPagePanelRoute<TSession extends WorkspaceAgentSession = Workspa
 
   return (
     <WorkspaceProvider
+      agentTypeId={workspaceProps.agentTypeId}
       chatPanel={workspaceProps.chatPanel}
       plugins={workspaceProps.plugins}
       excludeDefaults={workspaceProps.excludeDefaults}
@@ -492,6 +493,7 @@ function CoreFullPagePanelRoute<TSession extends WorkspaceAgentSession = Workspa
       fullPageBasePath={scopedFullPageBasePath}
     >
       <WorkspaceBootGate
+        agentTypeId={workspaceProps.agentTypeId}
         workspaceId={workspaceId}
         requestHeaders={requestHeaders}
         apiBaseUrl={workspaceProps.apiBaseUrl}

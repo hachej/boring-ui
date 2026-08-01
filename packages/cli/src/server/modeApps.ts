@@ -651,6 +651,7 @@ export async function createWorkspacesModeApp(opts: {
     const workspace = await workspaceFromRequest(request)
     if (!workspaceAgentDispatcher) throw httpError("workspace agent dispatcher is unavailable", 503)
     return new ManualRunExecutor({
+      agentTypeId: "default",
       store: automationStore(workspace),
       dispatcherResolver: workspaceAgentDispatcher,
       actorResolver: () => ({ workspaceId: workspace.id, userId: "local" }),
@@ -666,6 +667,7 @@ export async function createWorkspacesModeApp(opts: {
         resolveExecutor: async (actor, store) => {
           if (!workspaceAgentDispatcher) throw httpError("workspace agent dispatcher is unavailable", 503)
           return new ManualRunExecutor({
+            agentTypeId: "default",
             store,
             dispatcherResolver: workspaceAgentDispatcher,
             actorResolver: () => actor,

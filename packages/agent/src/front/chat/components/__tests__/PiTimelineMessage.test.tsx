@@ -180,14 +180,14 @@ describe('PiTimelineMessage', () => {
       role: 'user',
       status: 'done',
       parts: [
-        { type: 'file', id: 'u-lazy-url:file', filename: 'image.png', mediaType: 'image/png', url: '/api/v1/agent/pi-chat/pi-1/attachments/m-user-image/1' },
+        { type: 'file', id: 'u-lazy-url:file', filename: 'image.png', mediaType: 'image/png', url: '/api/v1/agents/default/sessions/pi-1/attachments/m-user-image/1' },
       ],
     }
 
     render(<PiTimelineMessage message={message} isLast={false} isStreaming={false} showThoughts={false} toolRenderers={{}} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Open image.png' }))
-    expect(open).toHaveBeenCalledWith('/api/v1/agent/pi-chat/pi-1/attachments/m-user-image/1', '_blank', 'noopener,noreferrer')
+    expect(open).toHaveBeenCalledWith('/api/v1/agents/default/sessions/pi-1/attachments/m-user-image/1', '_blank', 'noopener,noreferrer')
     open.mockRestore()
   })
 

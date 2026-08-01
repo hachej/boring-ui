@@ -42,16 +42,23 @@ describe('system-prompt-size regression', () => {
       logger: false,
     })
 
-    const sessionId = 'prompt-size-test'
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/default/sessions',
+      payload: { requestId: 'create-prompt-size-test', title: 'Prompt size test' },
+    })
+    expect(created.statusCode).toBe(201)
+    const sessionId = created.json<{ sessionId: string }>().sessionId
 
     // Send a minimal message to trigger pi session creation (lazy init).
     // This costs one LLM turn but is required for the system prompt to
     // materialize — pi builds it during session bootstrap.
     await app.inject({
       method: 'POST',
-      url: `/api/v1/agent/pi-chat/${sessionId}/prompt`,
+      url: `/api/v1/agents/default/sessions/${sessionId}/prompt`,
       payload: {
-        message: 'Say only the word "ok" and nothing else.',
+        requestId: 'prompt-size-test',
+        content: 'Say only the word "ok" and nothing else.',
         clientNonce: 'prompt-size-test',
         model: { provider: 'anthropic', id: 'claude-haiku-4-5-20251001' },
       },
@@ -59,7 +66,7 @@ describe('system-prompt-size regression', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: `/api/v1/agent/sessions/${sessionId}/system-prompt`,
+      url: `/api/v1/agents/default/sessions/${sessionId}/system-prompt`,
     })
 
     expect(res.statusCode).toBe(200)

@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { AsyncLocalStorage } from 'node:async_hooks'
 
@@ -10,9 +11,10 @@ import {
   createManagedAgentMcpHttpHandler,
   type ManagedAgentBoundRunnerWorkspace,
   type ManagedAgentDelegateRunner,
+  type LeaseBoundWorkspaceAgent,
   type WorkspaceAgentDispatcherResolver,
 } from '@hachej/boring-agent/server'
-import { ErrorCode } from '@hachej/boring-agent/shared'
+import { ErrorCode, type Workspace } from '@hachej/boring-agent/shared'
 import type { CoreWorkspaceAgentServer } from '@hachej/boring-core/app/server'
 
 export const FULL_APP_MANAGED_AGENT_MCP_PATH = '/mcp/managed-agent'
@@ -73,10 +75,10 @@ export function registerFullAppManagedAgentMcpRoutes(
   const config = readFullAppManagedAgentMcpConfig(options.env)
   if (!config.enabled) return
   const dispatcherResolver = options.dispatcherResolver
-  if (!dispatcherResolver?.resolveWithWorkspace) {
+  if (!dispatcherResolver?.runWithWorkspaceAgent) {
     throw new ManagedAgentMcpError(
       ErrorCode.enum.CONFIG_INVALID,
-      'managed-agent MCP requires a workspace agent dispatcher binding resolver',
+      'managed-agent MCP requires callback-scoped AgentHost dispatch',
     )
   }
   const bearerToken = config.bearerToken!
@@ -85,6 +87,7 @@ export function registerFullAppManagedAgentMcpRoutes(
   const requestStorage = new AsyncLocalStorage<FastifyRequest>()
 
   const controller = createManagedAgentMcpDelegateController({
+    agentTypeId: 'default',
     redactionCanaries: config.redactionCanaries,
     resolveSessionCtx: () => ({ workspaceId, userId }),
     resolveRunnerWorkspace: async ({ ctx, actor }): Promise<ManagedAgentBoundRunnerWorkspace> => {
@@ -93,14 +96,7 @@ export function registerFullAppManagedAgentMcpRoutes(
       }
       await authorizeConfiguredTarget(app, workspaceId, userId)
       const request = requestStorage.getStore()
-      const binding = await dispatcherResolver.resolveWithWorkspace!(
-        { workspaceId, userId },
-        request ? { request } : undefined,
-      )
-      return {
-        workspace: binding.workspace,
-        runner: createDispatcherDelegateRunner(binding.dispatcher, actor),
-      }
+      return createLeaseBoundDelegateRuntime(dispatcherResolver, { workspaceId, userId }, actor, request)
     },
   })
   const handler = createManagedAgentMcpHttpHandler({
@@ -142,22 +138,58 @@ async function authorizeConfiguredTarget(
   }
 }
 
-function createDispatcherDelegateRunner(
-  dispatcher: Awaited<ReturnType<WorkspaceAgentDispatcherResolver['resolve']>>,
+function createLeaseBoundDelegateRuntime(
+  resolver: WorkspaceAgentDispatcherResolver,
+  context: { workspaceId: string; userId: string },
   actor: { id?: string; name?: string },
-): ManagedAgentDelegateRunner {
-  return {
-    run(input) {
-      return dispatcher.send({
-        content: input.brief,
-        actor,
-        originSurface: MANAGED_AGENT_MCP_ORIGIN_SURFACE,
+  request?: FastifyRequest,
+): ManagedAgentBoundRunnerWorkspace {
+  const runWithWorkspaceAgent = resolver.runWithWorkspaceAgent
+  const withBinding = async <T>(operation: (binding: LeaseBoundWorkspaceAgent) => Promise<T>): Promise<T> => {
+    let result!: T
+    await runWithWorkspaceAgent.call(resolver, {
+      agentTypeId: 'default',
+      context,
+      requestId: `managed-mcp:${randomUUID()}`,
+      ...(request ? { request } : {}),
+    }, async (binding) => {
+      result = await operation(binding)
+    })
+    return result
+  }
+
+  const runner: ManagedAgentDelegateRunner = {
+    async *run(input) {
+      const events: import('@hachej/boring-agent/shared').AgentEvent[] = []
+      await withBinding(async (binding) => {
+        const dispatched = await binding.dispatch({
+          requestId: `managed-mcp-dispatch:${randomUUID()}`,
+          content: input.brief,
+          actor,
+          originSurface: MANAGED_AGENT_MCP_ORIGIN_SURFACE,
+        }, (event) => {
+          events.push(event)
+          input.onSessionStarted?.(event.sessionId)
+        })
+        input.onSessionStarted?.(dispatched.ref.sessionId)
       })
+      for (const event of events) yield event
     },
     async stop(sessionId) {
-      await dispatcher.stop(sessionId)
+      await withBinding(async (binding) => {
+        await binding.stop(sessionId, `managed-mcp-stop:${randomUUID()}`)
+      })
     },
   }
+  const workspace = {
+    stat: async (path: string) => await withBinding(async (binding) => await binding.workspace.stat(path)),
+    readFile: async (path: string) => await withBinding(async (binding) => await binding.workspace.readFile(path)),
+    readBinaryFile: async (path: string) => await withBinding(async (binding) => {
+      if (!binding.workspace.readBinaryFile) throw new Error('binary workspace reads are unavailable')
+      return await binding.workspace.readBinaryFile(path)
+    }),
+  } as Workspace
+  return { runner, workspace }
 }
 
 async function handleStreamableHttpRequest(

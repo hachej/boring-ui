@@ -1,6 +1,5 @@
 import type { FastifyRequest } from "fastify"
-import type { AgentEvent } from "@hachej/boring-agent/shared"
-import type { WorkspaceAgentDispatcher } from "@hachej/boring-agent/shared"
+import type { AgentEvent, WorkspaceAgentDispatcher, WorkspaceAgentDispatcherDispatchInput } from "@hachej/boring-agent/shared"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { BORING_AUTOMATION_ERROR_CODES } from "../../shared/error-codes"
@@ -47,7 +46,11 @@ describe("ManualRunExecutor", () => {
     await harness.executor.run({ automationId: harness.automation.id, request })
 
     expect(harness.actorResolver).toHaveBeenCalledWith(request)
-    expect(harness.resolver.resolve).toHaveBeenCalledWith(harness.actor, { request })
+    expect(harness.resolver.runWithWorkspaceAgent).toHaveBeenCalledWith(expect.objectContaining({
+      agentTypeId: "default",
+      context: harness.actor,
+      request,
+    }), expect.any(Function))
     expect(harness.dispatcher.dispatch).toHaveBeenCalledWith(expect.objectContaining({
       actor: { id: harness.actor.userId },
       originSurface: "boring-automation",
@@ -60,7 +63,10 @@ describe("ManualRunExecutor", () => {
     await harness.executor.run({ automationId: harness.automation.id, actor: harness.actor })
 
     expect(harness.actorResolver).not.toHaveBeenCalled()
-    expect(harness.resolver.resolve).toHaveBeenCalledWith(harness.actor, undefined)
+    expect(harness.resolver.runWithWorkspaceAgent).toHaveBeenCalledWith(expect.objectContaining({
+      agentTypeId: "default",
+      context: harness.actor,
+    }), expect.any(Function))
     expect(harness.dispatcher.dispatch).toHaveBeenCalledWith(expect.objectContaining({
       actor: { id: harness.actor.userId },
       originSurface: "boring-automation",
@@ -124,7 +130,7 @@ describe("ManualRunExecutor", () => {
       interrupt: vi.fn(),
       stop: vi.fn(),
     }
-    const harness = createHarness({ resolver: { resolve: vi.fn(async () => dispatcher) } as never })
+    const harness = createHarness({ resolver: createDirectResolver(dispatcher) })
 
     const execution = harness.executor.run({ automationId: harness.automation.id, request: harness.request })
     await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce())
@@ -238,6 +244,7 @@ describe("ManualRunExecutor", () => {
     expect(run).toMatchObject({
       status: "failed",
       sessionId: "session-1",
+      dispatchReceipt: expect.objectContaining({ ref: { agentTypeId: "default", sessionId: "session-1" } }),
       inputTokens: null,
       outputTokens: null,
       totalTokens: null,
@@ -258,7 +265,7 @@ describe("ManualRunExecutor", () => {
 
     expect(run).toMatchObject({
       status: "failed",
-      sessionId: "session-1",
+      sessionId: "session-partial",
       inputTokens: 8,
       outputTokens: null,
       totalTokens: 8,
@@ -349,14 +356,15 @@ describe("ManualRunExecutor", () => {
   })
 
   it("finalizes the queued run when dispatcher resolution fails", async () => {
-    const resolver = { resolve: vi.fn(async () => { throw new Error("no dispatcher") }) }
+    const resolver = createDirectResolver(createDispatcher([], undefined), new Error("no dispatcher"))
     const harness = createHarness({ resolver })
 
     const run = await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
 
-    expect(run).toMatchObject({ status: "failed", startedAt: null, sessionId: null, error: "no dispatcher" })
+    expect(run).toMatchObject({ status: "failed", startedAt: "2026-07-10T00:00:02.000Z", sessionId: null, error: "no dispatcher" })
     expect(harness.store.lifecyclePatches).toEqual([
       expect.objectContaining({ status: "dispatching" }),
+      expect.objectContaining({ status: "dispatching", startedAt: "2026-07-10T00:00:02.000Z" }),
       expect.objectContaining({ status: "failed", sessionId: null }),
     ])
   })
@@ -389,15 +397,16 @@ function createHarness(options: HarnessOptions = {}) {
     ? []
     : [event(0, { type: "agent-end", seq: 1, turnId: "turn-1", status: "ok" })]
   const dispatcher = createDispatcher(options.events ?? defaultEvents, options.streamError)
-  const resolver = options.resolver ?? { resolve: vi.fn(async () => dispatcher) }
+  const resolver = options.resolver ?? createDirectResolver(dispatcher)
   const clock = clockFrom(options.clockDates)
-  const executor = new ManualRunExecutor({ store, dispatcherResolver: resolver, actorResolver, eventPublisher: options.eventPublisher, clock })
+  const executor = new ManualRunExecutor({ agentTypeId: "default", store, dispatcherResolver: resolver, actorResolver, eventPublisher: options.eventPublisher, clock })
   return { store, automation, actor, actorResolver, request, dispatcher, resolver, executor }
 }
 
 function createDispatcher(events: AgentEvent[], streamError: unknown): WorkspaceAgentDispatcher & { dispatch: ReturnType<typeof vi.fn> } {
+  const sessionId = events[0]?.sessionId ?? "session-1"
   const dispatch = vi.fn(async (input: { requestId: string }) => ({
-    ref: { agentTypeId: "default", sessionId: "session-1" },
+    ref: { agentTypeId: "default", sessionId },
     receipt: { accepted: true as const, cursor: 0, disposition: "prompt" as const, clientNonce: input.requestId },
     events: (async function* () {
       for (const item of events) yield item
@@ -411,6 +420,30 @@ function createDispatcher(events: AgentEvent[], streamError: unknown): Workspace
     stop: vi.fn(async () => ({ accepted: true as const, cursor: 0, stopped: true, clearedQueue: [] })),
   }
   return dispatcher
+}
+
+function createDirectResolver(
+  dispatcher: WorkspaceAgentDispatcher & { dispatch: ReturnType<typeof vi.fn> },
+  runError?: Error,
+): WorkspaceAgentDispatcherResolver & { runWithWorkspaceAgent: ReturnType<typeof vi.fn> } {
+  return {
+    runWithWorkspaceAgent: vi.fn(async (_input, run) => {
+      if (runError) throw runError
+      await run({
+        workspace: {} as never,
+        signal: new AbortController().signal,
+        async dispatch(input: WorkspaceAgentDispatcherDispatchInput, onEvent: (event: AgentEvent) => void | Promise<void>, onAccepted?: Parameters<import("@hachej/boring-agent/shared").LeaseBoundWorkspaceAgent["dispatch"]>[2]) {
+          const dispatched = await dispatcher.dispatch!(input)
+          await onAccepted?.({ ref: dispatched.ref, receipt: dispatched.receipt })
+          for await (const item of dispatched.events) await onEvent(item)
+          return { ref: dispatched.ref, receipt: dispatched.receipt }
+        },
+        async interrupt(sessionId: string, _requestId: string) { return await dispatcher.interrupt(sessionId) },
+        async stop(sessionId: string, _requestId: string) { return await dispatcher.stop(sessionId) },
+      })
+    }),
+    async resolve() { throw new Error("legacy resolver must not be used") },
+  }
 }
 
 function event(eventIndex: number, chunk: AgentEvent["chunk"], sessionId = "session-1"): AgentEvent {

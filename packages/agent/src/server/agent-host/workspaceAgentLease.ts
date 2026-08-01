@@ -230,10 +230,12 @@ export async function runWithWorkspaceAgentLease(input: {
     async dispatch(
       dispatchInput: Parameters<LeaseBoundWorkspaceAgent['dispatch']>[0],
       onEvent: Parameters<LeaseBoundWorkspaceAgent['dispatch']>[1],
+      onAccepted: Parameters<LeaseBoundWorkspaceAgent['dispatch']>[2],
     ) {
       assertActive()
       return await trackOperation((async () => {
         const dispatched = await dispatcher.dispatch!(dispatchInput)
+        await onAccepted?.({ ref: dispatched.ref, receipt: dispatched.receipt })
         for await (const event of dispatched.events) {
           if (revoked) throw bindingDisposedError()
           await onEvent(event)

@@ -199,6 +199,42 @@ if (legacyConsumerFiles.length !== inventories.legacyReferences.count
   || legacyDigest !== inventories.legacyReferences.sha256) {
   fail(`legacy reference inventory changed; found count=${legacyConsumerFiles.length} sha256=${legacyDigest}`)
 }
+const reviewedLegacyFiles = inventories.legacyReferences.files.map((entry) => entry.source).sort()
+if (JSON.stringify(legacyConsumerFiles) !== JSON.stringify(reviewedLegacyFiles)) {
+  fail(`reviewed legacy reference files changed; found ${JSON.stringify(legacyConsumerFiles)}`)
+}
+
+const legacyServerTestAllowlist = new Set([
+  'packages/agent/src/server/__tests__/createAgentApp.test.ts',
+  'packages/agent/src/server/__tests__/registerAgentRoutes.lifecycle.test.ts',
+  'packages/agent/src/server/__tests__/registerAgentRoutes.test.ts',
+  'packages/agent/src/server/agent-host/__tests__/httpProjection.test.ts',
+  'packages/agent/src/server/agent-host/__tests__/legacyTranscriptCompatibility.test.ts',
+  'packages/agent/src/server/agent-host/__tests__/lifecycle.test.ts',
+  'packages/agent/src/server/harness/pi-coding-agent/__tests__/sessions.load.test.ts',
+  'packages/agent/src/server/http/routes/__tests__/piChat.test.ts',
+  'packages/agent/src/server/pi-chat/__tests__/piChatHistory.test.ts',
+])
+const forbiddenLegacyPiChatRoute = '/api/v1/agent/' + 'pi-chat'
+const forbiddenLegacyClientReferences = []
+for (const path of sourcePaths) {
+  const sourcePath = relative(repositoryRoot, path)
+  const isTest = sourcePath.includes('/__tests__/') || /\.(?:test|spec)\.[^.]+$/.test(sourcePath)
+  const isTargetedSurface = isTest
+    || sourcePath.startsWith('plugins/')
+    || sourcePath.includes('/e2e/')
+    || sourcePath.includes('/src/front/')
+    || sourcePath.includes('/src/eval/')
+    || sourcePath.includes('/src/bin/')
+    || /(?:^|\/)[^/]*(?:eval|smoke|e2e)[^/]*\.(?:ts|tsx|mts|mjs)$/.test(sourcePath)
+    || sourcePath.startsWith('packages/plugin-cli/')
+  if (!isTargetedSurface || legacyServerTestAllowlist.has(sourcePath)) continue
+  const source = await readFile(path, 'utf8')
+  if (source.includes(forbiddenLegacyPiChatRoute)) forbiddenLegacyClientReferences.push(sourcePath)
+}
+if (forbiddenLegacyClientReferences.length > 0) {
+  fail(`legacy pi-chat route remains in migrated client/eval/bin/plugin/smoke/E2E surfaces:\n${forbiddenLegacyClientReferences.sort().join('\n')}`)
+}
 if (JSON.stringify(addressedGenerators) !== JSON.stringify([...inventories.generatedAttachmentUrls.addressed].sort())) {
   fail(`addressed attachment URL generator inventory changed; found ${JSON.stringify(addressedGenerators)}`)
 }

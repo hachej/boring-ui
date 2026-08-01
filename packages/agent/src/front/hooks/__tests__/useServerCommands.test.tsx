@@ -4,17 +4,21 @@ import { describe, expect, it, vi } from 'vitest'
 import { WORKSPACE_COMMAND_NOTIFY_EVENT } from '../../../shared/agentPluginEvents'
 import { ErrorCode } from '../../../shared/error-codes'
 import { createCommandRegistry } from '../../slashCommands/registry'
-import { useServerCommands } from '../useServerCommands'
+import { useServerCommands as useAddressedServerCommands } from '../useServerCommands'
+
+function useServerCommands(options: Omit<Parameters<typeof useAddressedServerCommands>[0], 'agentTypeId'>) {
+  return useAddressedServerCommands({ agentTypeId: 'default', ...options })
+}
 
 describe('useServerCommands', () => {
   it('surfaces structured command execution errors in notifications', async () => {
     const registry = createCommandRegistry()
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.includes('/api/v1/agent/commands?')) {
+      if (url.includes('/api/v1/agents/default/commands?')) {
         return new Response(JSON.stringify({ commands: [{ name: 'plan', source: 'prompt' }] }), { status: 200 })
       }
-      if (url.includes('/api/v1/agent/commands/execute?')) {
+      if (url.includes('/api/v1/agents/default/commands/execute')) {
         return new Response(JSON.stringify({
           error: {
             code: ErrorCode.enum.METERING_UNSUPPORTED_COMMAND,

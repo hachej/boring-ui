@@ -353,7 +353,7 @@ describe("CommandPalette", () => {
       window.addEventListener(UI_COMMAND_EVENT, onUiCommand)
       try {
         render(
-          <WorkspaceProvider
+          <WorkspaceProvider agentTypeId="default"
             apiBaseUrl="/api-base"
             authHeaders={{ Authorization: "Bearer test-token" }}
             workspaceId="workspace-a"

@@ -77,6 +77,7 @@ The command installed by provisioning is .boring-agent/bin/boring-provision-test
     })
 
     const result = await evalAgentPrompt({
+        agentTypeId: "default",
       app,
       retries: 1,
       timeoutMs: 90_000,

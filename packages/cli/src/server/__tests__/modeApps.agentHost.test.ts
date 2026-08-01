@@ -148,18 +148,6 @@ describe.sequential("CLI Agent Host composition", () => {
         const legacyCatalog = await fixture.app.inject({ method: "GET", url: "/api/v1/agent/catalog", headers })
         expect(legacyCatalog.statusCode).toBe(200)
 
-        const sessions = await fixture.app.inject({
-          method: "GET",
-          url: "/api/v1/agent/pi-chat/sessions",
-          headers,
-        })
-        expect(sessions.statusCode).toBe(200)
-        expect(sessions.json()).toEqual(expect.arrayContaining([
-          expect.objectContaining({ id: fixture.sessionId, title: "pre-MIG-CLI fixture" }),
-        ]))
-        expect(sessions.json().map((session: { id: string }) => session.id).sort())
-          .toEqual(fixture.compatibleSessionIds)
-
         const addressedSessions = await fixture.app.inject({
           method: "GET",
           url: "/api/v1/agents/default/sessions",
@@ -172,11 +160,14 @@ describe.sequential("CLI Agent Host composition", () => {
 
         const state = await fixture.app.inject({
           method: "GET",
-          url: `/api/v1/agent/pi-chat/${fixture.sessionId}/state`,
+          url: `/api/v1/agents/default/sessions/${fixture.sessionId}/state`,
           headers,
         })
         expect(state.statusCode).toBe(200)
-        expect(state.json()).toMatchObject({ sessionId: fixture.sessionId, status: "idle" })
+        expect(state.json()).toMatchObject({
+          ref: { agentTypeId: "default", sessionId: fixture.sessionId },
+          state: { sessionId: fixture.sessionId, status: "idle" },
+        })
         expect(await readFile(fixture.transcriptPath, "utf8")).toBe(fixture.transcript)
 
         const unknownWorkspace = await fixture.app.inject({

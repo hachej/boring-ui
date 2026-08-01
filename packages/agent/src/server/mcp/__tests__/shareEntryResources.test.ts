@@ -151,6 +151,7 @@ async function connect(
   resolveShareWorkspace: () => Workspace,
 ): Promise<Client> {
   const options: ManagedAgentMcpHttpHandlerOptions = {
+    agentTypeId: 'default',
     resolveSessionCtx: () => resolveShareSessionCtx(),
     shareEntryStore: store,
     resolveShareSessionCtx: () => resolveShareSessionCtx(),

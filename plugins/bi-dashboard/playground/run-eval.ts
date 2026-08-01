@@ -35,7 +35,7 @@ async function main(): Promise<number> {
   })
 
   try {
-    const report = await runEvalSuite({ app, fixturesPath, concurrency: 1 })
+    const report = await runEvalSuite({ app, agentTypeId: "default", fixturesPath, concurrency: 1 })
     console.log(
       `[bi-dashboard playground] ${report.passed}/${report.total} passed (${(report.passRate * 100).toFixed(1)}%) in ${(report.totalDurationMs / 1000).toFixed(1)}s`,
     )

@@ -8,7 +8,17 @@ import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
 import type { PanelConfig } from "../../../front/registry/types"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
-import { WorkspaceAgentFront } from "../WorkspaceAgentFront"
+import {
+  WorkspaceAgentFront as WorkspaceAgentFrontImpl,
+  type WorkspaceAgentFrontProps,
+  type WorkspaceAgentSession,
+} from "../WorkspaceAgentFront"
+
+function WorkspaceAgentFront<TSession extends WorkspaceAgentSession = WorkspaceAgentSession>(
+  props: Omit<WorkspaceAgentFrontProps<TSession>, "agentTypeId"> & { agentTypeId?: string },
+) {
+  return <WorkspaceAgentFrontImpl agentTypeId="default" {...props} />
+}
 
 type CapturedChatPanelProps = WorkspaceChatPanelProps & {
   initialDraft?: string
@@ -43,6 +53,20 @@ function TextareaChatPanel(props: WorkspaceChatPanelProps) {
 
 function visibleChatSessionIds(): string[] {
   return screen.getAllByTestId("chat-pane").map((node) => node.getAttribute("data-session-id") ?? "")
+}
+
+function addressedSession(sessionId: string, title: string) {
+  return {
+    ref: { agentTypeId: "default", sessionId },
+    title,
+    status: "idle",
+    createdAt: 0,
+    updatedAt: 0,
+  }
+}
+
+function isDefaultSessionsCollectionUrl(url: string): boolean {
+  return new URL(url, "http://workspace.test").pathname === "/api/v1/agents/default/sessions"
 }
 
 // History starts collapsed when chat panes are open; expand it so tests can
@@ -91,18 +115,18 @@ describe("WorkspaceAgentFront", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
+      if (isDefaultSessionsCollectionUrl(url)) {
         // Only the cold-start GET race is simulated; POST/DELETE pass through.
         const method = init?.method ?? "GET"
         if (method === "GET" && sessionsFailuresRemaining > 0) {
           sessionsFailuresRemaining -= 1
           return new Response(null, { status: 503 })
         }
-        return new Response(JSON.stringify([]), { status: 200 })
+        return new Response(JSON.stringify({ sessions: [] }), { status: 200 })
       }
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
       if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
-      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     }))
@@ -450,9 +474,9 @@ describe("WorkspaceAgentFront", () => {
     await user.click(screen.getByLabelText("Delete Literal legacy"))
 
     expect(onSwitchSession.mock.calls).toContainEqual(["shared", "alpha"])
-    expect(onSwitchSession.mock.calls).toContainEqual([legacyId])
-    expect(onDeleteSession).toHaveBeenCalledWith(legacyId)
-    expect(onDeleteSession.mock.calls.at(-1)).toHaveLength(1)
+    expect(onSwitchSession.mock.calls).toContainEqual([legacyId, "default"])
+    expect(onDeleteSession).toHaveBeenCalledWith(legacyId, "default")
+    expect(onDeleteSession.mock.calls.at(-1)).toHaveLength(2)
   })
 
   it("renders plugin-tabs app navigation without classic session edge controls", async () => {
@@ -509,7 +533,7 @@ describe("WorkspaceAgentFront", () => {
     expect(secondRow).toHaveAttribute("data-boring-session-state", "normal")
 
     await user.click(within(secondRow!).getByText("Second session"))
-    expect(onSwitchSession).toHaveBeenCalledWith("s2")
+    expect(onSwitchSession).toHaveBeenCalledWith("s2", "default")
 
     const switchCallsAfterRowClick = onSwitchSession.mock.calls.length
     await user.click(within(appNav).getByRole("button", { name: "Pin Second session" }))
@@ -518,7 +542,7 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).getByText("Chats")).toBeInTheDocument()
 
     await user.click(within(appNav).getByRole("button", { name: "Open Third session in new chat pane" }))
-    expect(onSwitchSession).toHaveBeenCalledWith("s3")
+    expect(onSwitchSession).toHaveBeenCalledWith("s3", "default")
 
     await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
     expect(screen.queryByLabelText("App navigation")).not.toBeInTheDocument()
@@ -748,11 +772,11 @@ describe("WorkspaceAgentFront", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
       if (url.includes("/api/v1/agent-plugins")) {
         return new Response(JSON.stringify([{ id: "external-plugin", boring: { label: "External Plugin" }, version: "1.2.3", revision: 4, frontTarget: { kind: "module-url", revision: 4 } }]), { status: 200 })
       }
-      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     }))
@@ -795,8 +819,8 @@ describe("WorkspaceAgentFront", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
-      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
       if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
@@ -830,28 +854,35 @@ describe("WorkspaceAgentFront", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
-      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
       if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
-      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     }))
 
-    render(
-      <WorkspaceAgentFront
-        workspaceId={`plugin-tabs-${part}-session-switch`}
-        workspaceLayout="plugin-tabs"
-        chatPanel={SessionIdChatPanel}
-        sessions={[
-          { id: "s1", title: "First session" },
-          { id: "s2", title: "Second session" },
-        ]}
-        activeSessionId="s1"
-        onSwitchSession={onSwitchSession}
-        persistenceEnabled={false}
-      />,
-    )
+    function Harness() {
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId={`plugin-tabs-${part}-session-switch`}
+          workspaceLayout="plugin-tabs"
+          chatPanel={SessionIdChatPanel}
+          sessions={[
+            { id: "s1", title: "First session" },
+            { id: "s2", title: "Second session" },
+          ]}
+          activeSessionId={activeSessionId}
+          onSwitchSession={(id, owner) => {
+            onSwitchSession(id, owner)
+            setActiveSessionId(id)
+          }}
+          persistenceEnabled={false}
+        />
+      )
+    }
+    render(<Harness />)
 
     const appNav = screen.getByLabelText("App navigation")
     await user.click(within(appNav).getByRole("button", { name: action }))
@@ -859,7 +890,7 @@ describe("WorkspaceAgentFront", () => {
 
     await user.click(within(appNav).getByText("Second session"))
 
-    expect(onSwitchSession).toHaveBeenCalledWith("s2")
+    expect(onSwitchSession).toHaveBeenCalledWith("s2", "default")
     expect(document.querySelector(`[data-boring-workspace-part="${part}"]`)).toBeNull()
     expect(visibleChatSessionIds()).toEqual(["s2"])
   })
@@ -870,7 +901,7 @@ describe("WorkspaceAgentFront", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
       if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
@@ -894,7 +925,7 @@ describe("WorkspaceAgentFront", () => {
 
     await user.click(within(appNav).getByText("First session"))
 
-    expect(onSwitchSession).toHaveBeenCalledWith("s1")
+    expect(onSwitchSession).toHaveBeenCalledWith("s1", "default")
     expect(document.querySelector('[data-boring-workspace-part="plugins-overlay"]')).toBeNull()
   })
 
@@ -903,8 +934,8 @@ describe("WorkspaceAgentFront", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
-      if (url.includes("/api/v1/agent/skills")) {
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/skills")) {
         return new Response(JSON.stringify({
           skills: [{
             name: "review",
@@ -920,7 +951,7 @@ describe("WorkspaceAgentFront", () => {
       if (url.includes("/api/v1/agent-plugins")) {
         return new Response(JSON.stringify([{ id: "external-overlay-plugin", boring: { label: "External Overlay" }, revision: 2 }]), { status: 200 })
       }
-      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     }))
@@ -1226,8 +1257,8 @@ describe("WorkspaceAgentFront", () => {
           sessions={sessions}
           activeSessionId={activeSessionId}
           onSwitchSession={setActiveSessionId}
-          onDeleteSession={(id) => {
-            deleted(id)
+          onDeleteSession={(id, owner) => {
+            deleted(id, owner)
             setSessions((previous) => previous.filter((session) => session.id !== id))
           }}
           defaultNavOpen
@@ -1245,7 +1276,7 @@ describe("WorkspaceAgentFront", () => {
     await user.click(screen.getByLabelText("Delete Second session"))
 
     await waitFor(() => {
-      expect(deleted).toHaveBeenCalledWith("s2")
+      expect(deleted).toHaveBeenCalledWith("s2", "default")
       expect(visibleChatSessionIds()).toEqual(["s1"])
       expect(screen.queryByText("Second session")).not.toBeInTheDocument()
     })
@@ -1566,8 +1597,8 @@ describe("WorkspaceAgentFront", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
       return new Response(null, { status: 204 })
     })
     vi.stubGlobal("fetch", fetchMock)
@@ -1589,9 +1620,9 @@ describe("WorkspaceAgentFront", () => {
       expect(call[1]?.headers).toMatchObject({ "x-boring-workspace-id": "no-provision" })
       expect(call[1]?.headers).not.toHaveProperty("X-BORING-WORKSPACE-ID")
     }
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => isDefaultSessionsCollectionUrl(String(input)))).toBe(false)
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/" + "chat"))).toBe(false)
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/ready-status"))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/ready-status"))).toBe(false)
   })
 
   it("creates a fresh remote session for auth-return auto-submit instead of reusing the old active session", async () => {
@@ -1713,10 +1744,10 @@ describe("WorkspaceAgentFront", () => {
         return new Promise<Response>((resolve) => { resolveWorkspaceBTree = resolve })
       }
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) return new Response(JSON.stringify([{ id: `session-${workspaceId ?? "unknown"}`, title: "Session" }]), { status: 200 })
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
-      if (url.includes("/api/v1/agent/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (isDefaultSessionsCollectionUrl(url)) return new Response(JSON.stringify({ sessions: [addressedSession(`session-${workspaceId ?? "unknown"}`, "Session")] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
       return new Response(null, { status: 204 })
     })
     vi.stubGlobal("fetch", fetchMock)
@@ -1730,10 +1761,10 @@ describe("WorkspaceAgentFront", () => {
     )
 
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/sessions"))).toBe(true)
     })
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/session-workspace-a/state"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/sessions/session-workspace-a/state"))).toBe(true)
     })
     fetchMock.mockClear()
 
@@ -1751,14 +1782,14 @@ describe("WorkspaceAgentFront", () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
 
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/sessions"))).toBe(true)
     })
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/session-workspace-b/state"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/sessions/session-workspace-b/state"))).toBe(true)
     })
     expect(fetchMock.mock.calls.some(([input, init]) => {
       const headers = init?.headers as Record<string, string> | undefined
-      return String(input).includes("/api/v1/agent/pi-chat/session-workspace-a/state") && headers?.["x-boring-workspace-id"] === "workspace-b"
+      return String(input).includes("/api/v1/agents/default/sessions/session-workspace-a/state") && headers?.["x-boring-workspace-id"] === "workspace-b"
     })).toBe(false)
     resolveWorkspaceBTree?.(new Response(JSON.stringify({ entries: [] }), { status: 200 }))
   })
@@ -1769,12 +1800,12 @@ describe("WorkspaceAgentFront", () => {
       const headers = init?.headers as Record<string, string> | undefined
       const workspaceId = headers?.["x-boring-workspace-id"]
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
-        return new Response(JSON.stringify([{ id: "default", title: `Session ${workspaceId}` }]), { status: 200 })
+      if (isDefaultSessionsCollectionUrl(url)) {
+        return new Response(JSON.stringify({ sessions: [addressedSession("default", `Session ${workspaceId}`)] }), { status: 200 })
       }
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
-      if (url.includes("/api/v1/agent/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
       return new Response(null, { status: 204 })
     })
     vi.stubGlobal("fetch", fetchMock)
@@ -1790,7 +1821,7 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([input, init]) => {
         const headers = init?.headers as Record<string, string> | undefined
-        return String(input).includes("/api/v1/agent/pi-chat/default/state") && headers?.["x-boring-workspace-id"] === "workspace-a"
+        return String(input).includes("/api/v1/agents/default/sessions/default/state") && headers?.["x-boring-workspace-id"] === "workspace-a"
       })).toBe(true)
     })
     fetchMock.mockClear()
@@ -1806,7 +1837,7 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([input, init]) => {
         const headers = init?.headers as Record<string, string> | undefined
-        return String(input).includes("/api/v1/agent/pi-chat/default/state") && headers?.["x-boring-workspace-id"] === "workspace-b"
+        return String(input).includes("/api/v1/agents/default/sessions/default/state") && headers?.["x-boring-workspace-id"] === "workspace-b"
       })).toBe(true)
     })
     expect(screen.queryByText("Loading sessions…")).not.toBeInTheDocument()
@@ -1894,8 +1925,8 @@ describe("WorkspaceAgentFront", () => {
         return new Promise<Response>((resolve) => { resolveWorkspaceBTree = resolve })
       }
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/pi-chat/sessions") && workspaceId === "workspace-b") return new Response(JSON.stringify({ message: "nope" }), { status: 500 })
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) return new Response(JSON.stringify([{ id: "session-workspace-a", title: "A" }]), { status: 200 })
+      if (isDefaultSessionsCollectionUrl(url) && workspaceId === "workspace-b") return new Response(JSON.stringify({ message: "nope" }), { status: 500 })
+      if (isDefaultSessionsCollectionUrl(url)) return new Response(JSON.stringify({ sessions: [addressedSession("session-workspace-a", "A")] }), { status: 200 })
       return new Response(JSON.stringify([]), { status: 200 })
     })
     vi.stubGlobal("fetch", fetchMock)
@@ -1904,18 +1935,18 @@ describe("WorkspaceAgentFront", () => {
       <WorkspaceAgentFront workspaceId="workspace-a" persistenceEnabled={false} />,
     )
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/session-workspace-a/state"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/sessions/session-workspace-a/state"))).toBe(true)
     })
     fetchMock.mockClear()
 
     rerender(<WorkspaceAgentFront workspaceId="workspace-b" persistenceEnabled={false} />)
     resolveWorkspaceBTree?.(new Response(JSON.stringify({ entries: [] }), { status: 200 }))
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/sessions"))).toBe(true)
     })
     expect(fetchMock.mock.calls.some(([input, init]) => {
       const headers = init?.headers as Record<string, string> | undefined
-      return String(input).includes("/api/v1/agent/pi-chat/session-workspace-a/state") && headers?.["x-boring-workspace-id"] === "workspace-b"
+      return String(input).includes("/api/v1/agents/default/sessions/session-workspace-a/state") && headers?.["x-boring-workspace-id"] === "workspace-b"
     })).toBe(false)
   })
 
@@ -1970,19 +2001,26 @@ describe("WorkspaceAgentFront", () => {
 
   it("loads the target chat session before opening a session-bound surface", async () => {
     const onSwitchSession = vi.fn()
-    render(
-      <WorkspaceAgentFront
-        workspaceId="session-gated-surface"
-        chatPanel={SessionIdChatPanel}
-        sessions={[
-          { id: "s1", title: "Open", updatedAt: new Date(0).toISOString(), turnCount: 0 },
-          { id: "s2", title: "Closed", updatedAt: new Date(0).toISOString(), turnCount: 0 },
-        ]}
-        activeSessionId="s1"
-        onSwitchSession={onSwitchSession}
-        persistenceEnabled={false}
-      />,
-    )
+    function Harness() {
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="session-gated-surface"
+          chatPanel={SessionIdChatPanel}
+          sessions={[
+            { id: "s1", title: "Open", updatedAt: new Date(0).toISOString(), turnCount: 0 },
+            { id: "s2", title: "Closed", updatedAt: new Date(0).toISOString(), turnCount: 0 },
+          ]}
+          activeSessionId={activeSessionId}
+          onSwitchSession={(id, owner) => {
+            onSwitchSession(id, owner)
+            setActiveSessionId(id)
+          }}
+          persistenceEnabled={false}
+        />
+      )
+    }
+    render(<Harness />)
 
     await screen.findByText("Chat pane s1")
     expect(screen.queryByLabelText("Surface")).not.toBeInTheDocument()
@@ -1996,7 +2034,7 @@ describe("WorkspaceAgentFront", () => {
 
     await waitFor(() => {
       expect(visibleChatSessionIds()).toEqual(["s2"])
-      expect(onSwitchSession).toHaveBeenCalledWith("s2")
+      expect(onSwitchSession).toHaveBeenCalledWith("s2", "default")
       expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
     })
   })
@@ -2283,11 +2321,11 @@ describe("WorkspaceAgentFront", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
-      if (url.endsWith("/api/v1/agent/reload")) {
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
+      if (url.endsWith("/api/v1/agents/default/reload")) {
         expect(init?.method).toBe("POST")
         expect(init?.headers).toMatchObject({ "x-boring-workspace-id": "reload-workspace", "content-type": "application/json" })
-        expect(JSON.parse(String(init?.body))).toEqual({ sessionId: "pi-reload" })
+        expect(JSON.parse(String(init?.body))).toEqual(expect.objectContaining({ sessionId: "pi-reload", requestId: expect.any(String) }))
         return new Response(JSON.stringify({ reloaded: false, diagnostics: [{ message: "rebuilt plugin front" }] }), { status: 200 })
       }
       return new Response(JSON.stringify([]), { status: 200 })
@@ -2325,11 +2363,58 @@ describe("WorkspaceAgentFront", () => {
         message: "Extensions will reload on the next message.\n\nWarnings:\nrebuilt plugin front",
         reloaded: false,
       })
-      expect(fetchMock).toHaveBeenCalledWith("/agent/api/v1/agent/reload", expect.objectContaining({ method: "POST" }))
+      expect(fetchMock).toHaveBeenCalledWith("/agent/api/v1/agents/default/reload", expect.objectContaining({ method: "POST" }))
       expect(reloadEvents).toContainEqual({ reloaded: false, diagnostics: [{ message: "rebuilt plugin front" }] })
     } finally {
       window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
     }
+  })
+
+  it("reloads colliding panes through each pane's full Agent owner ref", async () => {
+    const user = userEvent.setup()
+    const captured = new Map<string, WorkspaceChatPanelProps>()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.endsWith("/api/v1/agents/beta/reload")) return new Response(JSON.stringify({ reloaded: true, diagnostics: [] }), { status: 200 })
+      return new Response(JSON.stringify([]), { status: 200 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    function ReloadOwnerProbe(props: WorkspaceChatPanelProps) {
+      captured.set(`${props.agentTypeId}/${props.sessionId}`, props)
+      return <div>{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        agentTypeId="alpha"
+        workspaceId="reload-colliding-owner"
+        chatPanel={ReloadOwnerProbe}
+        sessions={[
+          { id: "shared", agentTypeId: "alpha", title: "Alpha shared", updatedAt: Date.now() },
+          { id: "shared", agentTypeId: "beta", title: "Beta shared", updatedAt: Date.now() - 1 },
+        ]}
+        activeSessionId="shared"
+        activeSessionAgentTypeId="alpha"
+        onSwitchSession={vi.fn()}
+        apiBaseUrl="/agent"
+        defaultNavOpen
+        persistenceEnabled={false}
+      />,
+    )
+
+    expandHistory()
+    await user.click(screen.getByLabelText("Open Beta shared in chat pane"))
+    await waitFor(() => expect(captured.has("beta/shared")).toBe(true))
+    await captured.get("beta/shared")!.onReloadAgentPlugins!()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/agent/api/v1/agents/beta/reload",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining('"sessionId":"shared"'),
+      }),
+    )
   })
 
   it("adds workspace id to request headers when host omits them", async () => {
@@ -2451,7 +2536,7 @@ describe("WorkspaceAgentFront", () => {
 
     expandHistory()
     await user.click(screen.getByText("Session two"))
-    expect(onSwitchSession).toHaveBeenCalledWith("s2")
+    expect(onSwitchSession).toHaveBeenCalledWith("s2", "default")
     expect(observed).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.objectContaining({ sessionId: "s1", reason: "session-switch" }) }))
 
     window.removeEventListener("boring:workspace-composer-stop", observed)
@@ -2471,16 +2556,16 @@ describe("WorkspaceAgentFront", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
+      if (isDefaultSessionsCollectionUrl(url)) {
         const method = init?.method ?? "GET"
         if (method === "GET" && sessionsFailuresRemaining > 0) {
           sessionsFailuresRemaining -= 1
           return new Response(null, { status: 503 })
         }
-        if (method === "GET") return new Response(JSON.stringify([{ id: "s1", title: "Existing" }]), { status: 200 })
+        if (method === "GET") return new Response(JSON.stringify({ sessions: [addressedSession("s1", "Existing")] }), { status: 200 })
       }
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
-      if (url.includes("/api/v1/agent/pi-chat/") && url.includes("/state")) return new Response(JSON.stringify({ protocolVersion: 1, sessionId: "existing", seq: 0, status: "idle", messages: [], queue: { followUps: [] }, followUpMode: "one-at-a-time" }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/sessions/") && url.includes("/state")) return new Response(JSON.stringify({ protocolVersion: 1, sessionId: "existing", seq: 0, status: "idle", messages: [], queue: { followUps: [] }, followUpMode: "one-at-a-time" }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     })
@@ -2513,7 +2598,7 @@ describe("WorkspaceAgentFront", () => {
     // And the chat must NOT have given up by auto-creating a brand-new empty
     // session as if none existed (no POST to the sessions endpoint).
     expect(fetchMock.mock.calls.some(([input, init]) =>
-      String(input).includes("/api/v1/agent/pi-chat/sessions") && (init?.method ?? "GET") === "POST",
+      String(input).includes("/api/v1/agents/default/sessions") && (init?.method ?? "GET") === "POST",
     )).toBe(false)
   })
 

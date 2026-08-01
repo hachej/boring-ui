@@ -42,10 +42,26 @@
           "properties": {
             "legacyReferences": {
               "type": "object",
-              "required": ["count", "sha256"],
+              "required": ["count", "sha256", "files"],
               "properties": {
                 "count": { "type": "integer", "minimum": 1 },
-                "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+                "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "files": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "required": ["source", "disposition"],
+                    "properties": {
+                      "source": { "type": "string", "minLength": 1 },
+                      "disposition": {
+                        "enum": ["slice-3", "slice-4", "slice-4-and-5", "slice-5", "slice-5-then-6", "slice-6"]
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
               },
               "additionalProperties": false
             },

@@ -44,6 +44,7 @@ export function PlaygroundApp() {
 
   return (
     <WorkspaceAgentFront
+      agentTypeId="default"
       workspaceId={PLAYGROUND_WORKSPACE_ID}
       apiBaseUrl=""
       appTitle={meta.projectName ?? "BI Dashboard"}

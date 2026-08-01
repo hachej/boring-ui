@@ -946,6 +946,10 @@ export async function createCoreWorkspaceAgentServer(
   ]
   let workspaceAgentDispatcherResolver: WorkspaceAgentDispatcherResolver | undefined
   const trustedDispatcherProxy: WorkspaceAgentDispatcherResolver = {
+    async runWithWorkspaceAgent(input, run) {
+      if (!workspaceAgentDispatcherResolver?.runWithWorkspaceAgent) throw new Error('workspace agent dispatcher run is not ready')
+      return await workspaceAgentDispatcherResolver.runWithWorkspaceAgent(input, run)
+    },
     async resolve(actor, resolveOptions) {
       if (!workspaceAgentDispatcherResolver) throw new Error('workspace agent dispatcher is not ready')
       return await workspaceAgentDispatcherResolver.resolve(actor, resolveOptions)

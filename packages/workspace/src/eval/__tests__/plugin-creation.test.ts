@@ -60,6 +60,13 @@ const EVAL_CROSS_PACKAGE = join(EVAL_CROSS_DIR, "package.json")
 
 describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (EVAL_MODEL) => {
   let app: FastifyInstance
+  let reloadRequestSequence = 0
+
+  const injectReload = () => app.inject({
+    method: "POST",
+    url: "/api/v1/agents/default/reload",
+    payload: { requestId: `plugin-creation-reload-${++reloadRequestSequence}` },
+  })
 
   beforeAll(async () => {
     rmSync(EVAL_WORKSPACE_ROOT, { recursive: true, force: true })
@@ -80,6 +87,7 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
     "agent creates a package plugin, /reload discovers it, and later front/agent metadata changes reload",
     async () => {
       const result = await evalAgentPrompt({
+        agentTypeId: "default",
         app,
         prompt: [
           "Build me a task-list plugin. Call it `eval-task-list`. I want a",
@@ -106,7 +114,7 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
       expect(existsSync(EVAL_PLUGIN_PACKAGE), "agent did not produce a package.json").toBe(true)
 
       // /reload discovers the plugin — the headline test point.
-      const reloadOne = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const reloadOne = await injectReload()
       expect(reloadOne.statusCode).toBe(200)
       const pluginOne = (await app.inject({ method: "GET", url: "/api/v1/agent-plugins" }))
         .json()
@@ -124,7 +132,7 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
         : EVAL_PLUGIN_FRONT
       const frontBefore = readFileSync(frontPath, "utf8")
       writeFileSync(frontPath, `${frontBefore}\n// eval scenario A: front edit\n`, "utf8")
-      const reloadFront = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const reloadFront = await injectReload()
       expect(reloadFront.statusCode).toBe(200)
       const pluginAfterFront = (await app.inject({ method: "GET", url: "/api/v1/agent-plugins" }))
         .json()
@@ -138,7 +146,7 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
       packageJson.pi = packageJson.pi ?? {}
       packageJson.pi.systemPrompt = "EVAL-SCENARIO-B-MARKER: metadata edit reload check"
       writeFileSync(EVAL_PLUGIN_PACKAGE, JSON.stringify(packageJson, null, 2), "utf8")
-      const reloadAgent = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const reloadAgent = await injectReload()
       expect(reloadAgent.statusCode).toBe(200)
       const pluginAfterAgent = (await app.inject({ method: "GET", url: "/api/v1/agent-plugins" }))
         .json()
@@ -153,6 +161,7 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
     "agent creates a CSV visualizer plugin with a table and chart that reloads cleanly",
     async () => {
       const result = await evalAgentPrompt({
+        agentTypeId: "default",
         app,
         prompt: [
           "Make a CSV viewer plugin. Call it `eval-csv-viz`. When I open a",
@@ -215,7 +224,7 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
       expect(frontSource).not.toContain('from "d3"')
       expect(frontSource).not.toContain("from 'd3'")
 
-      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const reload = await injectReload()
       expect(reload.statusCode).toBe(200)
       const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       const plugin = list.json().find((entry: { id: string }) => entry.id === "eval-csv-viz")
@@ -253,7 +262,7 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
       )
 
       // Baseline reload works.
-      const baseline = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const baseline = await injectReload()
       expect(baseline.statusCode).toBe(200)
 
       // Corrupt package.json — asset manager's preflight catches this on
@@ -261,7 +270,7 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
       // route tolerates per-plugin failures (returns 200) and surfaces the
       // structured diagnostic the agent can act on.
       writeFileSync(pkgPath, "{ not json at all", "utf8")
-      const agentReload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const agentReload = await injectReload()
       expect(agentReload.statusCode).toBe(200)
       const failedBody = agentReload.json() as { diagnostics?: Array<{ message: string }> }
       const errorMessage = (failedBody.diagnostics ?? []).map((e) => e.message).join("\n")
@@ -269,6 +278,7 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
 
       // Ask the agent to fix it.
       const result = await evalAgentPrompt({
+        agentTypeId: "default",
         app,
         prompt: `
 The plugin at .pi/extensions/eval-recover/package.json is malformed.
@@ -292,7 +302,7 @@ Then run /reload to verify.
       expect(result.ok, formatFailure(result)).toBe(true)
 
       // Reload after the fix succeeds on the canonical route.
-      const recovered = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const recovered = await injectReload()
       expect(recovered.statusCode).toBe(200)
 
       rmSync(pluginDir, { recursive: true, force: true })
@@ -309,6 +319,7 @@ Then run /reload to verify.
     "minimal prompt + bundled skill is enough to produce a working plugin",
     async () => {
       const result = await evalAgentPrompt({
+        agentTypeId: "default",
         app,
         prompt: [
           "Create a hot-reloadable boring-ui plugin under",
@@ -400,7 +411,7 @@ Then run /reload to verify.
       expect(frontSource).toMatch(/<ul|<li|createElement\(["'](ul|li)["']/)
 
       // /reload discovers it cleanly.
-      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const reload = await injectReload()
       expect(reload.statusCode).toBe(200)
       const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       const plugin = list.json().find((entry: { id: string }) => entry.id === "eval-min-tasks")
@@ -417,6 +428,7 @@ Then run /reload to verify.
     "agent creates a multi-file plugin with front/index.tsx + a sibling component file",
     async () => {
       const result = await evalAgentPrompt({
+        agentTypeId: "default",
         app,
         prompt: [
           "Build me a plugin called `eval-split-files`. The panel component",
@@ -466,7 +478,7 @@ Then run /reload to verify.
       const hasSplitMarker = tsxFiles.some((p) => readFileSync(p, "utf8").includes("split-files plugin works"))
       expect(hasSplitMarker, "no sibling file contains the expected marker text").toBe(true)
 
-      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const reload = await injectReload()
       expect(reload.statusCode).toBe(200)
       const plugin = (await app.inject({ method: "GET", url: "/api/v1/agent-plugins" }))
         .json()
@@ -528,7 +540,7 @@ Then run /reload to verify.
         ``,
       ].join("\n")
       writeFileSync(EVAL_REFINE_FRONT, initialFront, "utf8")
-      const baseline = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const baseline = await injectReload()
       expect(baseline.statusCode).toBe(200)
       const baselineRevision = (await app.inject({ method: "GET", url: "/api/v1/agent-plugins" }))
         .json()
@@ -537,6 +549,7 @@ Then run /reload to verify.
 
       // Now ask the agent to refine.
       const result = await evalAgentPrompt({
+        agentTypeId: "default",
         app,
         prompt: [
           "The plugin at `.pi/extensions/eval-refine/front/index.tsx` already exists.",
@@ -570,7 +583,7 @@ Then run /reload to verify.
       expect(updatedFront).toContain('"eval-refine.panel"')
       expect(updatedFront).toContain('"eval-refine.open"')
 
-      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const reload = await injectReload()
       expect(reload.statusCode).toBe(200)
       const refreshed = (await app.inject({ method: "GET", url: "/api/v1/agent-plugins" }))
         .json()
@@ -588,6 +601,7 @@ Then run /reload to verify.
     "agent creates a cross-concern plugin (server tool + front panel) that reloads cleanly",
     async () => {
       const result = await evalAgentPrompt({
+        agentTypeId: "default",
         app,
         prompt: [
           "Build me a plugin called `eval-cross` that does two things:",
@@ -642,7 +656,7 @@ Then run /reload to verify.
         "declared eval_cross_ping tool does not return eval-cross pong",
       ).toMatch(/eval_cross_ping[\s\S]*(return|text\s*:)[\s\S]*["']eval-cross pong["']/)
 
-      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const reload = await injectReload()
       expect(reload.statusCode).toBe(200)
       const pluginsList = (await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })).json()
       const plugin = pluginsList.find((entry: { id: string }) => entry.id === "eval-cross")

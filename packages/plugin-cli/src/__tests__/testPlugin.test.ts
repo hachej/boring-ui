@@ -1,4 +1,4 @@
-import Fastify from "fastify"
+import Fastify, { type FastifyRequest } from "fastify"
 import { afterEach, describe, expect, test } from "vitest"
 import { formatSelfTestResult, runPluginSelfTest } from "../server/testPlugin"
 
@@ -19,10 +19,30 @@ afterEach(async () => {
 })
 
 describe("runPluginSelfTest", () => {
+  test("scopes reload by workspace header without inventing an Agent session id", async () => {
+    let reloadRequest: { workspaceId?: string; body?: unknown } = {}
+    const url = await startApp((app) => {
+      app.post("/api/v1/agents/alpha/reload", async (request: FastifyRequest) => {
+        reloadRequest = {
+          workspaceId: request.headers["x-boring-workspace-id"] as string | undefined,
+          body: request.body,
+        }
+        return { ok: true }
+      })
+      app.post("/api/v1/ui/commands", async () => ({ seq: 1, status: "ok" }))
+      app.get("/api/v1/ui/panels/status", async () => ({ ok: true, connected: false, state: "no-browser-connected" }))
+    })
+
+    await runPluginSelfTest({ pluginId: "demo", agentTypeId: "alpha", workspaceId: "workspace-alpha", url, timeoutMs: 800 })
+
+    expect(reloadRequest.workspaceId).toBe("workspace-alpha")
+    expect(reloadRequest.body).toEqual({ requestId: expect.any(String) })
+  })
+
   test("returns no-browser-connected when the UI has not connected", async () => {
     let openPanelCalls = 0
     const url = await startApp((app) => {
-      app.post("/api/v1/agent/reload", async () => ({ ok: true }))
+      app.post("/api/v1/agents/default/reload", async () => ({ ok: true }))
       app.post("/api/v1/ui/commands", async () => {
         openPanelCalls += 1
         return { seq: openPanelCalls, status: "ok" }
@@ -30,7 +50,7 @@ describe("runPluginSelfTest", () => {
       app.get("/api/v1/ui/panels/status", async () => ({ ok: true, connected: false, state: "no-browser-connected" }))
     })
 
-    const result = await runPluginSelfTest({ pluginId: "demo", url, timeoutMs: 1600 })
+    const result = await runPluginSelfTest({ pluginId: "demo", agentTypeId: "default", url, timeoutMs: 1600 })
     expect(openPanelCalls).toBeGreaterThan(0)
     expect(result.ok).toBe(false)
     expect(result.pane.state).toBe("no-browser-connected")
@@ -39,7 +59,7 @@ describe("runPluginSelfTest", () => {
   test("opens the self-test panel before concluding no browser is connected", async () => {
     let openPanelCalls = 0
     const url = await startApp((app) => {
-      app.post("/api/v1/agent/reload", async () => ({ ok: true }))
+      app.post("/api/v1/agents/default/reload", async () => ({ ok: true }))
       app.post("/api/v1/ui/commands", async () => {
         openPanelCalls += 1
         return { seq: openPanelCalls, status: "ok" }
@@ -60,7 +80,7 @@ describe("runPluginSelfTest", () => {
           })
     })
 
-    const result = await runPluginSelfTest({ pluginId: "demo", url, timeoutMs: 1000 })
+    const result = await runPluginSelfTest({ pluginId: "demo", agentTypeId: "default", url, timeoutMs: 1000 })
     expect(openPanelCalls).toBeGreaterThan(0)
     expect(result.ok).toBe(true)
     expect(result.pane).toMatchObject({ state: "ready", found: true })
@@ -70,7 +90,7 @@ describe("runPluginSelfTest", () => {
     let opened = false
     const staleReportedAt = new Date(Date.now() - 60_000).toISOString()
     const url = await startApp((app) => {
-      app.post("/api/v1/agent/reload", async () => ({ ok: true }))
+      app.post("/api/v1/agents/default/reload", async () => ({ ok: true }))
       app.post("/api/v1/ui/commands", async () => {
         opened = true
         return { seq: 1, status: "ok" }
@@ -102,14 +122,14 @@ describe("runPluginSelfTest", () => {
           })
     })
 
-    const result = await runPluginSelfTest({ pluginId: "demo", url, timeoutMs: 1000 })
+    const result = await runPluginSelfTest({ pluginId: "demo", agentTypeId: "default", url, timeoutMs: 1000 })
     expect(opened).toBe(true)
     expect(result.ok).toBe(true)
   })
 
   test("fails with the captured front import error reported by the browser", async () => {
     const url = await startApp((app) => {
-      app.post("/api/v1/agent/reload", async () => ({ ok: true, diagnostics: [] }))
+      app.post("/api/v1/agents/default/reload", async () => ({ ok: true, diagnostics: [] }))
       // Server scan is green, but the browser reported the front module failed
       // to evaluate — the self-test must surface it and fail.
       app.get("/api/v1/runtime-plugin-diagnostics", async () => ({
@@ -127,7 +147,7 @@ describe("runPluginSelfTest", () => {
       app.get("/api/v1/ui/panels/status", async () => ({ ok: true, connected: true, state: "missing" }))
     })
 
-    const result = await runPluginSelfTest({ pluginId: "demo", url, timeoutMs: 800 })
+    const result = await runPluginSelfTest({ pluginId: "demo", agentTypeId: "default", url, timeoutMs: 800 })
     expect(result.ok).toBe(false)
     expect(result.revision).toBe(3)
     expect(result.reloadErrors).toContainEqual(
@@ -141,7 +161,7 @@ describe("runPluginSelfTest", () => {
   test("opens the panel and returns ready status", async () => {
     let opened = false
     const url = await startApp((app) => {
-      app.post("/api/v1/agent/reload", async () => ({ ok: true }))
+      app.post("/api/v1/agents/default/reload", async () => ({ ok: true }))
       app.post("/api/v1/ui/commands", async () => {
         opened = true
         return { seq: 1, status: "ok" }
@@ -163,7 +183,7 @@ describe("runPluginSelfTest", () => {
         : { ok: true, connected: true, state: "missing" })
     })
 
-    const result = await runPluginSelfTest({ pluginId: "demo", url, timeoutMs: 1000 })
+    const result = await runPluginSelfTest({ pluginId: "demo", agentTypeId: "default", url, timeoutMs: 1000 })
     expect(result.ok).toBe(true)
     expect(result.revision).toBe(2)
     expect(result.pane).toMatchObject({ state: "ready", found: true })
