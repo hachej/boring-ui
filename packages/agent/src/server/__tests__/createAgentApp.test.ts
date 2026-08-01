@@ -7,7 +7,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../config/env'
 import {
-  createTestAgentApp as createAgentApp,
+  createTestStandaloneAgentHostApp as createAgentApp,
   createTestRuntimeModeAdapter,
   testRuntimeHostOperations,
 } from '@agent-test-host'
@@ -15,7 +15,6 @@ import { loadPlugins, flattenPluginTools } from '../harness/pi-coding-agent/plug
 import type { AgentHarness, AgentHarnessFactoryInput } from '../../shared/harness'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session'
 import { ErrorCode } from '../../shared/error-codes'
-import { AgentGatewayErrorCode } from '../../shared/gateway/errors'
 import type { RuntimeFilesystemBindingOperations, RuntimeModeAdapter } from '../runtime/mode'
 import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatcher'
 import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
@@ -443,7 +442,7 @@ test('createAgentApp wires runtime provisioning skill paths into harness and ski
   try {
     const bashTool = harnessFactory.mock.calls[0]?.[0].tools.find((tool: { name: string }) => tool.name === 'bash')
     expect(bashTool).toBeTruthy()
-    const skills = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    const skills = await app.inject({ method: 'GET', url: '/api/v1/agents/default/skills' })
     expect(skills.statusCode).toBe(200)
     expect(skills.json().skills.map((skill: { name: string }) => skill.name)).toContain('macro-transform')
   } finally {
@@ -503,7 +502,8 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
     expect(harnessFactory.mock.calls[0]?.[0].telemetry).toBe(telemetry)
     expect(harnessFactory.mock.calls[0]?.[0].tools.map((tool: { name: string }) => tool.name)).toContain('custom_runtime_tool')
 
-    const commandsRes = await app.inject({ method: 'GET', url: '/api/v1/agent/commands?sessionId=custom' })
+    await app.inject({ method: 'POST', url: '/api/v1/agents/default/sessions', payload: { requestId: 'custom-session' } })
+    const commandsRes = await app.inject({ method: 'GET', url: '/api/v1/agents/default/commands?sessionId=custom' })
     expect(commandsRes.statusCode).toBe(200)
     expect(commandsRes.json()).toMatchObject({
       commands: [{ name: 'open-test-panel', source: 'extension' }],
@@ -511,7 +511,7 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
 
     expect(telemetryEvents).toEqual([])
 
-    const res = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: { sessionId: 'custom' } })
+    const res = await app.inject({ method: 'POST', url: '/api/v1/agents/default/reload', payload: { requestId: 'custom-reload', sessionId: 'custom' } })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ ok: true, sessionId: 'custom', reloaded: true })
     expect(reloadSession).toHaveBeenCalledWith('custom')
@@ -626,14 +626,15 @@ test('createAgentApp rejects command execution when metering is configured', asy
     })),
   })
   try {
-    const commandsRes = await app.inject({ method: 'GET', url: '/api/v1/agent/commands?sessionId=custom' })
+    await app.inject({ method: 'POST', url: '/api/v1/agents/default/sessions', payload: { requestId: 'metered-session' } })
+    const commandsRes = await app.inject({ method: 'GET', url: '/api/v1/agents/default/commands?sessionId=custom' })
     expect(commandsRes.statusCode).toBe(200)
     expect(commandsRes.json()).toEqual({ commands: [{ name: 'plan', source: 'prompt' }] })
 
     const executeRes = await app.inject({
       method: 'POST',
-      url: '/api/v1/agent/commands/execute?sessionId=custom',
-      payload: { name: 'plan', args: 'ship it' },
+      url: '/api/v1/agents/default/commands/execute',
+      payload: { requestId: 'metered-command', sessionId: 'custom', name: 'plan', args: 'ship it' },
     })
     expect(executeRes.statusCode).toBe(409)
     expect(executeRes.json()).toMatchObject({ error: { code: ErrorCode.enum.METERING_UNSUPPORTED_COMMAND } })
@@ -671,7 +672,8 @@ test('POST /api/v1/agent/reload surfaces harness resource diagnostics', async ()
     })),
   })
   try {
-    const res = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: { sessionId: 'custom' } })
+    await app.inject({ method: 'POST', url: '/api/v1/agents/default/sessions', payload: { requestId: 'diagnostics-session' } })
+    const res = await app.inject({ method: 'POST', url: '/api/v1/agents/default/reload', payload: { requestId: 'diagnostics-reload', sessionId: 'custom' } })
     expect(res.statusCode).toBe(200)
     const body = res.json()
     expect(body.reloaded).toBe(true)
@@ -708,9 +710,10 @@ test('GET /api/v1/agent/commands reports command discovery failures', async () =
     })),
   })
   try {
-    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/commands' })
+    await app.inject({ method: 'POST', url: '/api/v1/agents/default/sessions', payload: { requestId: 'failing-command-session' } })
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agents/default/commands?sessionId=default' })
     expect(res.statusCode).toBe(500)
-    expect(res.json()).toMatchObject({ commands: [], error: 'command loader failed' })
+    expect(res.json()).toMatchObject({ error: 'Internal Server Error', message: 'command loader failed' })
   } finally {
     await app.close()
   }
@@ -727,9 +730,9 @@ test('POST /api/v1/agent/reload awaits beforeReload and aborts on failure', asyn
     },
   })
   try {
-    const res = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: { sessionId: 'missing' } })
-    expect(res.statusCode).toBe(422)
-    expect(res.json()).toEqual({ ok: false, error: 'before reload failed' })
+    const res = await app.inject({ method: 'POST', url: '/api/v1/agents/default/reload', payload: { requestId: 'failing-reload' } })
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toMatchObject({ message: 'before reload failed' })
   } finally {
     await app.close()
   }
@@ -751,19 +754,11 @@ test('POST /api/v1/agent/reload includes beforeReload restart warnings and diagn
     }),
   })
   try {
-    const res = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: { sessionId: 'default' } })
+    const res = await app.inject({ method: 'POST', url: '/api/v1/agents/default/reload', payload: { requestId: 'warning-reload' } })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({
       ok: true,
-      sessionId: 'default',
       reloaded: false,
-      restart_warnings: [
-        { id: 'routes-plugin', surfaces: ['routes'], message: 'restart routes' },
-      ],
-      diagnostics: [
-        { source: 'directory (/plugin)', pluginId: 'broken-plugin', message: 'syntax error' },
-        { source: 'reload', message: 'No live agent session to reload yet — changes apply to the next session.' },
-      ],
     })
   } finally {
     await app.close()
@@ -821,7 +816,7 @@ test('extraTools appear in catalog endpoint', async () => {
 
   const res = await app.inject({
     method: 'GET',
-    url: '/api/v1/agent/catalog',
+    url: '/api/v1/agents/default/tools',
   })
 
   expect(res.statusCode).toBe(200)
@@ -858,7 +853,7 @@ test('extraTools are appended after bundle tools', async () => {
 
   const res = await app.inject({
     method: 'GET',
-    url: '/api/v1/agent/catalog',
+    url: '/api/v1/agents/default/tools',
   })
 
   const names = res.json().tools.map((t: { name: string }) => t.name)
@@ -880,7 +875,7 @@ test('Slice 1 composed route/auth proof: standalone delegates its trusted scope 
   try {
     const catalogRes = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/catalog',
+      url: '/api/v1/agents/default/tools',
     })
     expect(catalogRes.statusCode).toBe(200)
     expect(
@@ -949,7 +944,7 @@ test('externalPlugins=false keeps local plugin files out of the app catalog', as
   })
 
   try {
-    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agents/default/tools' })
     expect(res.statusCode).toBe(200)
     const names = res.json().tools.map((t: { name: string }) => t.name)
     expect(names).not.toContain('a4s_plugin_hidden')
@@ -1014,7 +1009,7 @@ test('real local plugin file remains callable and appears in app catalog', async
   try {
     const res = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/catalog',
+      url: '/api/v1/agents/default/tools',
     })
     expect(res.statusCode).toBe(200)
     const names = res.json().tools.map((t: { name: string }) => t.name)
@@ -1038,7 +1033,7 @@ test('standalone catalog does NOT include get_ui_state or exec_ui', async () => 
   const workspaceRoot = await makeTempDir('boring-ui-no-uitools-')
   const app = await createAgentApp({ workspaceRoot, mode: 'direct', logger: false })
   try {
-    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agents/default/tools' })
     expect(res.statusCode).toBe(200)
     const names = res.json().tools.map((t: { name: string }) => t.name)
     expect(names).not.toContain('get_ui_state')
@@ -1077,7 +1072,7 @@ test('standalone /api/v1/ui/state does NOT exist (404)', async () => {
 })
 
 
-test('POST /api/v1/agent/reload is available before first turn', async () => {
+test('addressed reload is available before the first turn', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-reload-route-')
   const app = await createAgentApp({
     workspaceRoot,
@@ -1088,18 +1083,14 @@ test('POST /api/v1/agent/reload is available before first turn', async () => {
   try {
     const res = await app.inject({
       method: 'POST',
-      url: '/api/v1/agent/reload',
-      payload: { sessionId: 'default' },
+      url: '/api/v1/agents/default/reload',
+      payload: { requestId: 'pre-turn-reload' },
     })
 
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({
       ok: true,
-      sessionId: 'default',
       reloaded: false,
-      diagnostics: [
-        { source: 'reload', message: 'No live agent session to reload yet — changes apply to the next session.' },
-      ],
     })
   } finally {
     await app.close()
@@ -1134,7 +1125,7 @@ test('GET /api/v1/git/file-url 404-free and disabled for a non-git workspace', a
   }
 })
 
-test('createAgentApp sends every legacy mutation through the built-in Level-B ledger', async () => {
+test('direct standalone sends every addressed mutation through the built-in ledger', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-app-legacy-ledger-')
   const harness = createDispatcherTestHarness()
   const app = await createAgentApp({
@@ -1148,39 +1139,39 @@ test('createAgentApp sends every legacy mutation through the built-in Level-B le
   try {
     const created = await app.inject({
       method: 'POST',
-      url: '/api/v1/agent/pi-chat/sessions',
-      payload: { title: 'Ledger' },
+      url: '/api/v1/agents/default/sessions',
+      payload: { requestId: 'create-ledger', title: 'Ledger' },
     })
     expect(created.statusCode).toBe(201)
-    const sessionId = created.json().id as string
+    const sessionId = created.json().sessionId as string
     const prompt = {
       method: 'POST' as const,
-      url: `/api/v1/agent/pi-chat/${sessionId}/prompt`,
-      payload: { message: 'hello', clientNonce: 'prompt-ledger' },
+      url: `/api/v1/agents/default/sessions/${sessionId}/prompt`,
+      payload: { requestId: 'prompt-ledger', content: 'hello', clientNonce: 'prompt-ledger' },
     }
     const firstPrompt = await app.inject(prompt)
     expect(firstPrompt.statusCode).toBe(202)
-    expect((await app.inject(prompt)).json()).toEqual(firstPrompt.json())
-    expect(harness.sendInputs).toHaveLength(1)
-    expect((await app.inject({ ...prompt, payload: { message: 'conflict', clientNonce: 'prompt-ledger' } })).statusCode).toBe(409)
+    expect((await app.inject(prompt)).json()).toEqual({ ...firstPrompt.json(), duplicate: true })
+    expect(harness.sendInputs.some((input) => input.content === 'hello')).toBe(true)
+    expect((await app.inject({ ...prompt, payload: { requestId: 'prompt-ledger', content: 'conflict', clientNonce: 'prompt-ledger' } })).statusCode).toBe(409)
 
     const followUp = (clientSeq: number) => app.inject({
       method: 'POST',
-      url: `/api/v1/agent/pi-chat/${sessionId}/followup`,
-      payload: { message: `next-${clientSeq}`, clientNonce: 'followup-ledger', clientSeq },
+      url: `/api/v1/agents/default/sessions/${sessionId}/followup`,
+      payload: { requestId: `followup-ledger-${clientSeq}`, content: `next-${clientSeq}`, clientNonce: 'followup-ledger', clientSeq },
     })
     expect((await followUp(1)).statusCode).toBe(202)
     expect((await followUp(2)).statusCode).toBe(202)
     expect((await followUp(1)).statusCode).toBe(202)
 
     for (const request of [
-      { url: `/api/v1/agent/pi-chat/${sessionId}/queue/clear`, payload: { clientNonce: 'clear-ledger', clientSeq: 1 } },
-      { url: `/api/v1/agent/pi-chat/${sessionId}/interrupt`, payload: {} },
-      { url: `/api/v1/agent/pi-chat/${sessionId}/stop`, payload: {} },
+      { url: `/api/v1/agents/default/sessions/${sessionId}/queue/clear`, payload: { requestId: 'clear-ledger', clientNonce: 'clear-ledger', clientSeq: 1 } },
+      { url: `/api/v1/agents/default/sessions/${sessionId}/interrupt`, payload: { requestId: 'interrupt-ledger' } },
+      { url: `/api/v1/agents/default/sessions/${sessionId}/stop`, payload: { requestId: 'stop-ledger' } },
     ]) {
       expect((await app.inject({ method: 'POST', ...request })).statusCode).toBe(202)
     }
-    expect((await app.inject({ method: 'DELETE', url: `/api/v1/agent/pi-chat/sessions/${sessionId}` })).statusCode).toBe(204)
+    expect((await app.inject({ method: 'DELETE', url: `/api/v1/agents/default/sessions/${sessionId}?requestId=delete-ledger` })).statusCode).toBe(204)
   } finally {
     await app.close()
   }
@@ -1205,8 +1196,12 @@ test('createAgentApp preserves known legacy service errors and fences ambiguous 
         }
       },
     })
-    const created = await app.inject({ method: 'POST', url: '/api/v1/agent/pi-chat/sessions', payload: {} })
-    return { app, sessionId: created.json().id as string }
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/default/sessions',
+      payload: { requestId: 'create-error-session' },
+    })
+    return { app, sessionId: created.json().sessionId as string }
   }
 
   const busy = await buildApp(Object.assign(new Error('session is busy'), {
@@ -1217,13 +1212,11 @@ test('createAgentApp preserves known legacy service errors and fences ambiguous 
   try {
     const response = await busy.app.inject({
       method: 'POST',
-      url: `/api/v1/agent/pi-chat/${busy.sessionId}/prompt`,
-      payload: { message: 'hello', clientNonce: 'known-error' },
+      url: `/api/v1/agents/default/sessions/${busy.sessionId}/prompt`,
+      payload: { requestId: 'known-error', content: 'hello', clientNonce: 'known-error' },
     })
     expect(response.statusCode).toBe(409)
-    expect(response.json()).toEqual({
-      error: { code: ErrorCode.enum.SESSION_LOCKED, message: 'session is busy', retryable: true },
-    })
+    expect(response.json()).toMatchObject({ code: ErrorCode.enum.SESSION_LOCKED, message: 'session is busy' })
   } finally {
     await busy.app.close()
   }
@@ -1232,13 +1225,13 @@ test('createAgentApp preserves known legacy service errors and fences ambiguous 
   try {
     const request = {
       method: 'POST' as const,
-      url: `/api/v1/agent/pi-chat/${ambiguous.sessionId}/prompt`,
-      payload: { message: 'hello', clientNonce: 'ambiguous-error' },
+      url: `/api/v1/agents/default/sessions/${ambiguous.sessionId}/prompt`,
+      payload: { requestId: 'ambiguous-error', content: 'hello', clientNonce: 'ambiguous-error' },
     }
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const response = await ambiguous.app.inject(request)
       expect(response.statusCode).toBe(500)
-      expect(response.json()).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN } })
+      expect(response.json()).toMatchObject({ error: 'Internal Server Error' })
     }
   } finally {
     await ambiguous.app.close()

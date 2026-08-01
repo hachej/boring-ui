@@ -126,7 +126,7 @@ async function main() {
   await rm(join(workspaceRoot, workspaceId), { recursive: true, force: true })
 
   const { agent, worker } = await importBuiltModules()
-  const { createAgentApp, createRemoteWorkerModeAdapter } = agent
+  const { createStandaloneAgentHostApp, createRemoteWorkerModeAdapter } = agent
   const { createAgentWorkerApp } = worker
 
   const { app: workerApp } = await createAgentWorkerApp()
@@ -134,7 +134,7 @@ async function main() {
   const workerAddress = workerApp.server.address()
   const workerBaseUrl = `http://127.0.0.1:${workerAddress.port}`
 
-  const publicApp = await createAgentApp({
+  const publicApp = await createStandaloneAgentHostApp({
     logger: false,
     sessionId: workspaceId,
     workspaceRoot: join(tmpdir(), 'remote-worker-smoke-public-host-unused'),

@@ -128,6 +128,10 @@ export type {
 } from './mcp'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
+export { createStandaloneAgentHostApp } from './createStandaloneAgentHostApp'
+export type { CreateStandaloneAgentHostAppOptions } from './createStandaloneAgentHostApp'
+export { registerAgentHostEnvironmentRoutes } from './agent-host/environmentHttpProjection'
+export type { AgentHostEnvironmentHttpProjectionOptions } from './agent-host/environmentHttpProjection'
 export { createAuthMiddleware as createAgentAuthMiddleware } from './http/middleware'
 export { createAgentHost } from './agent-host/createAgentHost'
 export { SqliteAgentRequestLedger } from './agent-host/sqliteRequestLedger'
@@ -218,6 +222,8 @@ export {
   type RuntimeEnvContribution,
   type RuntimeEnvContributionContext,
 } from './runtimeEnvContributions'
+export { createBoundWorkspaceAgentDispatcher } from './workspaceAgentDispatcher'
+export { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 export type {
   AgentMeteringSink,
   MeteringErrorLogger,

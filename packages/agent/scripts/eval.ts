@@ -1,6 +1,6 @@
 #!/usr/bin/env -S tsx
 /**
- * CLI for the eval framework. Runs a YAML suite against `createAgentApp`
+ * CLI for the eval framework. Runs a YAML suite against a direct standalone Agent Host
  * with the agent's standard tool catalog. Hosts that need to eval against
  * a workspace-aware app (`createWorkspaceAgentApp`) or a custom catalog
  * should write their own driver script — this CLI is the agent-package
@@ -18,7 +18,7 @@ import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { dirname } from "node:path"
 import { runEvalSuite } from "../src/eval"
-import { createAgentApp } from "../src/server"
+import { createStandaloneAgentHostApp } from "../src/server"
 import {
   agentSandboxRuntimeHostOperations,
   createAgentSandboxRuntimeModeAdapter,
@@ -40,7 +40,7 @@ async function main(): Promise<number> {
   )
   console.log(`[eval] running suite: ${fixturesPath}`)
 
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot: process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd(),
     mode: "direct",
     runtimeModeAdapter: createAgentSandboxRuntimeModeAdapter("direct"),

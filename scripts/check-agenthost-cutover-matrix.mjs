@@ -181,8 +181,9 @@ const addressedGenerators = []
 const compatibilityGenerators = []
 for (const path of productionSourcePaths) {
   const source = await readFile(path, 'utf8')
+  const sourcePath = relative(repositoryRoot, path)
   if (/\/api\/v1\/agent\/pi-chat|registerAgentRoutes|AgentHostLegacy/.test(source)) {
-    legacyConsumerFiles.push(relative(repositoryRoot, path))
+    legacyConsumerFiles.push(sourcePath)
   }
   if (/\/api\/v1\/agents\/\$\{[^}]+\}\/sessions\/\$\{[^}]+\}\/attachments\//.test(source)) {
     addressedGenerators.push(relative(repositoryRoot, path))
@@ -194,6 +195,24 @@ for (const path of productionSourcePaths) {
 legacyConsumerFiles.sort()
 addressedGenerators.sort()
 compatibilityGenerators.sort()
+const createAgentAppConsumers = []
+for (const path of sourcePaths) {
+  const sourcePath = relative(repositoryRoot, path)
+  if (sourcePath.includes('/__tests__/') || /\.(?:test|spec)\.[^.]+$/.test(sourcePath)) continue
+  if (
+    sourcePath === 'packages/agent/src/server/createAgentApp.ts'
+    || sourcePath === 'packages/agent/src/server/index.ts'
+    || sourcePath === 'scripts/check-agenthost-cutover-matrix.mjs'
+  ) continue
+  const source = await readFile(path, 'utf8')
+  if (/import[^\n]*\bcreateAgentApp\b/.test(source) || /\.createAgentApp\s*\(/.test(source)) {
+    createAgentAppConsumers.push(sourcePath)
+  }
+}
+createAgentAppConsumers.sort()
+if (createAgentAppConsumers.length > 0) {
+  fail(`createAgentApp still has production consumers:\n${createAgentAppConsumers.join('\n')}`)
+}
 const legacyDigest = createHash('sha256').update(JSON.stringify(legacyConsumerFiles)).digest('hex')
 if (legacyConsumerFiles.length !== inventories.legacyReferences.count
   || legacyDigest !== inventories.legacyReferences.sha256) {

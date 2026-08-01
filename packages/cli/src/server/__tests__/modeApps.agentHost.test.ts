@@ -153,7 +153,8 @@ describe.sequential("CLI Agent Host composition", () => {
         })).toBe(true)
 
         const legacyCatalog = await fixture.app.inject({ method: "GET", url: "/api/v1/agent/catalog", headers })
-        expect(legacyCatalog.statusCode).toBe(200)
+        expect(legacyCatalog.statusCode).toBe(404)
+        expect(fixture.app.hasRoute({ method: "GET", url: "/api/v1/agent/catalog" })).toBe(false)
 
         const addressedSessions = await fixture.app.inject({
           method: "GET",

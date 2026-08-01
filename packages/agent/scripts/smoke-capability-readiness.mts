@@ -1,5 +1,4 @@
 #!/usr/bin/env tsx
-import Fastify from 'fastify'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,7 +7,8 @@ import { ErrorCode } from '../src/shared/error-codes'
 import type { AgentHarness } from '../src/shared/harness'
 import type { AgentTool } from '../src/shared/tool'
 import { mergeTools } from '../src/server/catalog/mergeTools'
-import { registerAgentRoutes } from '../src/server/registerAgentRoutes'
+import { createStandaloneAgentHostApp } from '../src/server/createStandaloneAgentHostApp'
+import type { WorkspaceProvisioningResult } from '../src/server/workspace/provisioning'
 import {
   agentSandboxRuntimeHostOperations,
   createAgentSandboxRuntimeModeAdapter,
@@ -42,20 +42,19 @@ async function main(): Promise<void> {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-capability-readiness-smoke-'))
   let resolveProvision: (() => void) | undefined
   const provisioningPromise = new Promise<void>((resolve) => { resolveProvision = resolve })
-  const app = Fastify({ logger: false })
-
+  let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   const startedAt = performance.now()
-  await app.register(registerAgentRoutes, {
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot,
+    sessionId: 'smoke-workspace',
     mode: 'direct',
     runtimeModeAdapter: createAgentSandboxRuntimeModeAdapter('direct'),
     runtimeHost: agentSandboxRuntimeHostOperations,
-    getWorkspaceId: () => 'smoke-workspace',
-    getWorkspaceRoot: () => workspaceRoot,
-    provisionRuntime: async () => {
+    getRuntimeProvisioning: () => runtimeProvisioning,
+    runtimeProvisioner: async () => {
       log('runtime_dependencies_started', { at_ms: Math.round(performance.now() - startedAt) })
       await provisioningPromise
-      return {
+      runtimeProvisioning = {
         changed: false,
         env: { BORING_AGENT_WORKSPACE_ROOT: workspaceRoot },
         pathEntries: [
@@ -66,6 +65,9 @@ async function main(): Promise<void> {
       }
     },
     harnessFactory: async () => makeHarness(),
+    externalPlugins: false,
+    initializeRuntime: false,
+    logger: false,
   })
   await app.ready()
   log('app_ready', { app_ready_ms: Math.round(performance.now() - startedAt) })

@@ -142,9 +142,13 @@ describe('agent-playground AgentGateway reference composition', () => {
     })
     assertComposedAgentHostRouteTable(runtime.app)
 
-    const modelsResponse = await runtime.app.inject({ method: 'GET', url: '/api/v1/agent/models' })
+    const modelsResponse = await runtime.app.inject({
+      method: 'GET',
+      url: `/api/v1/agents/${PLAYGROUND_AGENT_TYPE_ID}/models`,
+    })
     expect(modelsResponse.statusCode).toBe(200)
     expect(modelsResponse.json()).toMatchObject({ models: expect.any(Array) })
+    expect(runtime.app.hasRoute({ method: 'GET', url: '/api/v1/agent/models' })).toBe(false)
     const addressed = await runtime.app.inject({ method: 'GET', url: '/api/v1/agents' })
     expect(addressed.statusCode).toBe(200)
     expect(addressed.json()).toEqual([{ agentTypeId: PLAYGROUND_AGENT_TYPE_ID, label: 'Agent' }])

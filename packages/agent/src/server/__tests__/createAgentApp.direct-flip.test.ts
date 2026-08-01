@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 
-import { createTestAgentApp as createAgentApp } from '@agent-test-host'
+import { createTestStandaloneAgentHostApp as createAgentApp } from '@agent-test-host'
 
 const tempDirs: string[] = []
 
@@ -29,7 +29,7 @@ test('direct mode produces pi tool names: bash, read, write, edit, find, grep, l
     logger: false,
   })
 
-  const response = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+  const response = await app.inject({ method: 'GET', url: '/api/v1/agents/default/tools' })
   const catalog = JSON.parse(response.body)
   const names = catalog.tools.map((t: { name: string }) => t.name)
 
@@ -53,7 +53,7 @@ test('disableDefaultFileTools omits filesystem tools', async () => {
     logger: false,
   })
 
-  const response = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+  const response = await app.inject({ method: 'GET', url: '/api/v1/agents/default/tools' })
   const catalog = JSON.parse(response.body)
   const names = catalog.tools.map((t: { name: string }) => t.name)
 
@@ -84,7 +84,7 @@ test('extraTools are included after bundle tools', async () => {
     }],
   })
 
-  const response = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+  const response = await app.inject({ method: 'GET', url: '/api/v1/agents/default/tools' })
   const catalog = JSON.parse(response.body)
   const names = catalog.tools.map((t: { name: string }) => t.name)
 

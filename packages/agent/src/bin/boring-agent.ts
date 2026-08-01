@@ -18,7 +18,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { createServer as createViteServer } from 'vite'
 import react from '@vitejs/plugin-react'
-import { createAgentApp } from '../server/createAgentApp'
+import { createStandaloneAgentHostApp } from '../server/createStandaloneAgentHostApp'
 import type { RuntimeModeId } from '../server/runtime/mode'
 import { projectNameFromWorkspaceRoot } from './projectName'
 import { createScriptedPiHarness } from '../server/testing/scriptedPiHarness'
@@ -126,7 +126,7 @@ const { port, mode, workspaceRoot } = parseArgs(process.argv.slice(2))
 const version = await readVersion()
 const projectName = projectNameFromWorkspaceRoot(workspaceRoot)
 
-const app = await createAgentApp({
+const app = await createStandaloneAgentHostApp({
   mode,
   runtimeModeAdapter: createAgentSandboxRuntimeModeAdapter(mode),
   runtimeHost: agentSandboxRuntimeHostOperations,
