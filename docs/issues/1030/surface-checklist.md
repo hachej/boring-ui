@@ -20,9 +20,9 @@ This is the durable status board for recovering approved UI improvements from Cl
 | --- | --- | --- | --- |
 | App-wide palette and foundation | #1030 | **rejected** | Keep the original application palette. Do not port Claude’s global color redesign. |
 | Chat transcript and tool transparency | #1030 / PR #1031 | **merged** | Accepted: transcript typography, read-only grouping, standalone edit/write/bash, open diffs, compact actions, discreet reasoning. |
-| Chat composer | #1033 | **implementing** | Keyboard hint removed; original compact send button restored; empty state being changed to title → centered composer → quick actions. Validate agent and workspace hosts next. |
+| Chat composer | #1033 | **owner-review** | Empty state now uses title → centered composer → quick actions; keyboard hint removed; compact send restored. Agent/workspace parity verified for controls. Await owner decision. |
 | Chat top bar / pane chrome | #1032 | **owner-review** | Workspace playground available. Owner needs to validate title fallback, action alignment, split/multi-pane behavior, and mobile header. |
-| Chat terminal errors and recovery | #1036 | **implementing** | Port focused Claude error precedence and recovery. Run tests, then expose fixture/playground for owner review. |
+| Chat terminal errors and recovery | #1036 | **owner-review** | Focused tests/typecheck/build pass; deterministic error URL is live. Await owner decision on copy, details, and reload action. |
 | Navigation and session rail | TBD | **queued** | Inventory Claude changes after composer/top-bar decisions. Keep separate from pane top bar. |
 | General loading, empty, and unavailable states | TBD | **queued** | Reassess after composer empty state and chat terminal errors merge; avoid duplicating those slices. |
 | Inbox and Tasks | TBD | **queued** | Port as a dedicated plugin/workspace surface with original palette. |
@@ -33,14 +33,13 @@ This is the durable status board for recovering approved UI improvements from Cl
 ## Current live review URLs
 
 - Composer in agent playground: `http://100.68.199.114:5204/`
-- Composer in workspace playground: temporarily blocked by `workspace/storage selector is not allowed`; fix before owner parity review.
+- Composer in workspace playground: `http://100.68.199.114:5206/?showcase=1`
 - Chat top bar in workspace playground: `http://100.68.199.114:5205/?showcase=1`
+- Chat terminal error fixture: `http://100.68.199.114:5207/?chatError=1`
 
 ## Immediate next steps
 
-1. Validate and stabilize the composer empty-state restructure.
-2. Fix the workspace-playground selector setup and compare composer rendering in agent vs workspace hosts.
-3. Ask the owner to approve/revise the composer.
-4. In parallel, collect owner feedback on the chat top bar.
-5. Finish tests and a review fixture for chat terminal errors.
-6. Open separate PRs only after each surface is individually approved.
+1. Collect owner approval/revision for composer, chat top bar, and chat terminal errors.
+2. Apply requested revisions independently in each worktree.
+3. Generate handoff evidence and open separate PRs for approved surfaces.
+4. Start navigation/session rail inventory after one active owner-review slot closes.
