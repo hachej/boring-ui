@@ -93,7 +93,9 @@ export function PiConversationSurface({
 
   return (
     <Conversation
-      className={emptyHero ? 'max-h-[45vh] flex-none' : 'flex-1'}
+      className={emptyHero
+        ? cn('flex-none', runtimeNotices.length > 0 ? 'max-h-[45vh]' : 'max-h-[20vh]')
+        : 'flex-1'}
       aria-label="Agent conversation"
       aria-live="polite"
       onScrollToBottomReady={onScrollToBottomReady}
@@ -114,9 +116,9 @@ export function PiConversationSurface({
             eyebrow={emptyState?.eyebrow}
             title={emptyState?.title}
             description={emptyState?.description}
-            footer={emptyState?.footer}
-            suggestions={suggestions}
-            className={emptyHero ? 'items-center text-center [&>p]:mx-auto' : undefined}
+            footer={emptyHero ? undefined : emptyState?.footer}
+            suggestions={emptyHero ? [] : suggestions}
+            hero={emptyHero}
             onSelect={(suggestion) => {
               const text = suggestion.prompt ?? suggestion.label
               if (!text.trim()) return
