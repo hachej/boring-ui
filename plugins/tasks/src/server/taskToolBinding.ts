@@ -1,7 +1,7 @@
 import { TASK_ERROR_CODES } from "../shared"
 import type { ToolExecContext } from "@hachej/boring-workspace"
 import type { WorkspaceAgentServerPluginContext } from "@hachej/boring-workspace/app/server"
-import { FileTaskSessionLinkStore, type TaskSessionLinkStore, type TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
+import { taskSessionLinkStoreForWorkspace, type TaskSessionLinkStore, type TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
 
 type TaskSessionLinkTrustedContext = NonNullable<WorkspaceAgentServerPluginContext["trusted"]>
 
@@ -56,7 +56,7 @@ export function createTrustedTaskToolBindingResolver(
             actor,
             agentTypeId,
             workspace,
-            linkStore: new FileTaskSessionLinkStore(workspace),
+            linkStore: taskSessionLinkStoreForWorkspace(workspace),
             authorizeSession: async (sessionId) => {
               if (!resolver.authorizeSession) throw new TaskToolBindingError(TASK_ERROR_CODES.TOOL_CONTEXT_UNAVAILABLE, "Trusted task session authorization is unavailable.")
               try {

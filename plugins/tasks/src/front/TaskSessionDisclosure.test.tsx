@@ -124,6 +124,28 @@ describe("TaskSessionDisclosure", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "0 sessions" })).toBeInTheDocument())
   })
 
+  it("drops stale link responses after task ownership changes", async () => {
+    let resolveFirst!: (value: { ok: true; links: BoringTaskSessionLink[] }) => void
+    const firstResponse = new Promise<{ ok: true; links: BoringTaskSessionLink[] }>((resolve) => { resolveFirst = resolve })
+    const secondTask = { ...task, id: "777", number: "#777" }
+    const postJson = vi.fn(async (_path: string, body: unknown) => {
+      if ((body as { taskId?: string }).taskId === task.id) return await firstResponse
+      return { ok: true as const, links: [{ ...link("second", "native-second", "2026-07-19T01:00:00.000Z"), taskId: secondTask.id }] }
+    })
+    const client = {
+      postJson: postJson as unknown as WorkspacePluginClient["postJson"],
+      getJson: vi.fn() as WorkspacePluginClient["getJson"],
+    }
+    const view = render(<TaskSessionDisclosure task={task} shell={shell()} pluginClient={client} />)
+    view.rerender(<TaskSessionDisclosure task={secondTask} shell={shell()} pluginClient={client} />)
+
+    expect(await screen.findByRole("button", { name: "1 session" })).toBeInTheDocument()
+    resolveFirst({ ok: true, links: [link("stale-a", "native-a", "2026-07-19T01:00:00.000Z"), link("stale-b", "native-b", "2026-07-19T02:00:00.000Z")] })
+    await firstResponse
+    await waitFor(() => expect(screen.getByRole("button", { name: "1 session" })).toBeInTheDocument())
+    expect(screen.queryByRole("button", { name: "2 sessions" })).not.toBeInTheDocument()
+  })
+
   it("keeps only the session menu opened in the exact task disclosure", async () => {
     const user = userEvent.setup()
     const secondTask = { ...task, id: "777", number: "#777", title: "Second task" }

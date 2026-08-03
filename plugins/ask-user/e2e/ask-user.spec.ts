@@ -98,6 +98,9 @@ test.describe("ask_user Questions pane", () => {
     const chat = page.locator('[data-boring-agent-part="chat"]')
     await expect(chat).toHaveAttribute("data-pi-chat-session-id", /.+/, { timeout: 10_000 })
     targetSessionId = (await chat.getAttribute("data-pi-chat-session-id")) ?? undefined
+    // The mock can only address the canonical session after first boot. Reload
+    // so the next state hydration carries that exact owner/session pair.
+    await page.reload({ waitUntil: "domcontentloaded" })
     await expect(page.getByRole("button", { name: "Cancel question" })).toBeVisible({ timeout: 10_000 })
     // Visibility can precede the pending bridge hydration when this spec runs
     // after the long playground matrix. Wait for the handler's source record

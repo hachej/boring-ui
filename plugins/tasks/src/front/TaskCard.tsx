@@ -54,13 +54,17 @@ export async function createLinkedTaskChat(
   const title = `${task.number}: ${task.title}`
   const sessionsPath = `/api/v1/agents/${encodeURIComponent(pluginClient.agentTypeId)}/sessions`
   const session = await pluginClient.postJson<CreatedAgentSession>(sessionsPath, { title })
-  if (typeof session.sessionId !== "string" || !session.sessionId) throw new Error("Chat session was not created.")
-  const ref = {
-    agentTypeId: typeof session.agentTypeId === "string" && session.agentTypeId
-      ? session.agentTypeId
-      : pluginClient.agentTypeId,
-    sessionId: session.sessionId,
+  const createdSessionId = typeof session.sessionId === "string" ? session.sessionId.trim() : ""
+  if (
+    typeof session.agentTypeId !== "string"
+    || !session.agentTypeId
+    || session.agentTypeId !== pluginClient.agentTypeId
+    || !createdSessionId
+  ) {
+    if (createdSessionId) await pluginClient.deleteJson(`${sessionsPath}/${encodeURIComponent(createdSessionId)}`).catch(() => undefined)
+    throw new Error("Chat session creation returned an invalid addressed session.")
   }
+  const ref = { agentTypeId: session.agentTypeId, sessionId: createdSessionId }
   try {
     await pluginClient.postJson("/api/boring-tasks/sessions/link", {
       adapterId: task.adapterId,

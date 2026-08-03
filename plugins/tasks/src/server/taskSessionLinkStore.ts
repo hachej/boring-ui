@@ -21,6 +21,9 @@ export interface TaskSessionLinkStore {
 const STORE_PATH = ".pi/tasks/session-links.json"
 const STORE_DIR = ".pi/tasks"
 const MAX_ID_BYTES = 512
+const MAX_CREATED_AT_BYTES = 64
+const MAX_LINKS = 10_000
+const MAX_STORE_BYTES = 4 * 1024 * 1024
 const encoder = new TextEncoder()
 
 interface StoredLinks { version: 1; links: BoringTaskSessionLink[] }
@@ -59,13 +62,15 @@ function validateStoredLink(value: unknown): value is BoringTaskSessionLink {
   const keys = ["id", "adapterId", "taskId", "agentTypeId", "sessionId", "createdAt"] as const
   if (Object.keys(link).length !== keys.length || !keys.every((key) => typeof link[key] === "string" && (link[key] as string).length > 0)) return false
   return ["id", "adapterId", "taskId", "agentTypeId", "sessionId"].every((key) => encoder.encode(link[key] as string).byteLength <= MAX_ID_BYTES)
+    && encoder.encode(link.createdAt as string).byteLength <= MAX_CREATED_AT_BYTES
     && !Number.isNaN(Date.parse(link.createdAt as string))
 }
 
 function parseStore(raw: string): StoredLinks {
   try {
+    if (encoder.encode(raw).byteLength > MAX_STORE_BYTES) throw new Error()
     const value = JSON.parse(raw) as Partial<StoredLinks>
-    if (value.version !== 1 || !Array.isArray(value.links) || !value.links.every(validateStoredLink)) throw new Error()
+    if (value.version !== 1 || !Array.isArray(value.links) || value.links.length > MAX_LINKS || !value.links.every(validateStoredLink)) throw new Error()
     return value as StoredLinks
   } catch {
     throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_STORE_INVALID, "Task session link store is invalid.")
@@ -83,6 +88,17 @@ function compareLinks(left: BoringTaskSessionLink, right: BoringTaskSessionLink)
     || compareText(left.agentTypeId, right.agentTypeId)
     || compareText(left.sessionId, right.sessionId)
     || compareText(left.id, right.id)
+}
+
+const storesByWorkspace = new WeakMap<TaskSessionLinkWorkspace, FileTaskSessionLinkStore>()
+
+/** One writer queue per live Workspace prevents request-local stores from losing concurrent updates. */
+export function taskSessionLinkStoreForWorkspace(workspace: TaskSessionLinkWorkspace): FileTaskSessionLinkStore {
+  const existing = storesByWorkspace.get(workspace)
+  if (existing) return existing
+  const store = new FileTaskSessionLinkStore(workspace)
+  storesByWorkspace.set(workspace, store)
+  return store
 }
 
 export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
@@ -122,6 +138,9 @@ export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
     return await this.mutate(async (store) => {
       const existing = store.links.find((link) => link.adapterId === normalized.adapterId && link.taskId === normalized.taskId && link.agentTypeId === normalized.agentTypeId && link.sessionId === normalized.sessionId)
       if (existing) return existing
+      if (store.links.length >= MAX_LINKS) {
+        throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_STORE_ERROR, "Task session link store is at capacity.")
+      }
       const link: BoringTaskSessionLink = { id: randomUUID(), ...normalized, createdAt: new Date().toISOString() }
       store.links.push(link)
       await this.write(store)
