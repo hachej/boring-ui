@@ -761,7 +761,7 @@ jobs:
           pnpm --filter @hachej/boring-core build
           pnpm --filter @hachej/boring-deck build
           pnpm --filter @hachej/boring-diagram build
-          pnpm --filter @hachej/boring-live-transcription build
+          pnpm --filter @hachej/boring-transcription build
           pnpm --filter @hachej/boring-ui-cli build:full
           pnpm --filter @hachej/boring-ask-user build
           pnpm --filter @hachej/boring-data-explorer build
