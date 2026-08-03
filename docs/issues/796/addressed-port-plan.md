@@ -51,7 +51,7 @@ Create one new PR stacked on PR #1044 that preserves the product behavior while 
 
 ## Proof
 
-- Ask User: 114 passed, 1 skipped; Tasks: 65 passed.
+- Ask User: 114 passed, 1 skipped; Tasks: 66 passed.
 - Agent, Workspace, Core, Ask User, and Tasks typechecks passed.
 - AgentHost cutover matrix: 19 rows, 39 final routes, 23 deleted routes, zero forbidden compatibility references.
 - All seven AgentHost composition roots passed.

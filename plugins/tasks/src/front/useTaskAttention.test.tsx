@@ -7,7 +7,7 @@ import { taskAttentionKey, useTaskAttention } from "./useTaskAttention"
 let blockers: WorkspaceAttentionBlocker[] = []
 const { postJson, pluginClient } = vi.hoisted(() => {
   const postJson = vi.fn()
-  return { postJson, pluginClient: { postJson } }
+  return { postJson, pluginClient: { agentTypeId: "alpha", postJson } }
 })
 
 vi.mock("@hachej/boring-workspace", async (importOriginal) => {
@@ -29,6 +29,7 @@ function blocker(id: string, sessionId: string): WorkspaceAttentionBlocker {
     id,
     reason: "plugin.question",
     label: `Question ${id}`,
+    agentTypeId: "alpha",
     sessionId,
     inbox: { kind: "question", sourceLabel: "question", createdAt: "2026-01-01T00:00:00.000Z", artifacts: [] },
   }
@@ -56,6 +57,13 @@ describe("useTaskAttention", () => {
     window.dispatchEvent(new Event("boring-workspace:task-provenance-changed"))
     await waitFor(() => expect(postJson).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(result.current.size).toBe(0))
+  })
+
+  it("ignores blockers owned by another Agent without probing their session ids", async () => {
+    blockers = [{ ...blocker("foreign", "shared-id"), agentTypeId: "beta" }]
+    const { result } = renderHook(() => useTaskAttention(tasks))
+    await waitFor(() => expect(result.current.size).toBe(0))
+    expect(postJson).not.toHaveBeenCalled()
   })
 
   it("clears resolved blockers and treats denied/unavailable provenance as no attention", async () => {

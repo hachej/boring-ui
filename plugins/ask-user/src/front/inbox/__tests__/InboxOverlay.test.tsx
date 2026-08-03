@@ -11,6 +11,7 @@ const blocker = {
   surfaceKind: "questions",
   target: "q1",
   label: "Need input",
+  agentTypeId: "alpha",
   sessionId: "s1",
   pruneWhenSessionMissing: true,
   sessionBadge: { kind: "question", label: "question", priority: 10 },

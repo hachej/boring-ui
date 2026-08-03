@@ -28,15 +28,8 @@ export const HandoverOperationsDetailsSchema = z.object({
   operations: z.array(HandoverOperationSchema).max(HUMAN_ARTIFACT_LIMITS.maxArtifactsPerRun),
 }).strict()
 
-export const HandoverSnapshotDetailsSchema = z.object({
-  kind: z.literal("boring.handover.snapshot"),
-  wireVersion: z.literal(1),
-  artifacts: HumanArtifactListSchema,
-}).strict()
-
 export type HandoverOperationDetails = z.infer<typeof HandoverOperationDetailsSchema>
 export type HandoverOperationsDetails = z.infer<typeof HandoverOperationsDetailsSchema>
-export type HandoverSnapshotDetails = z.infer<typeof HandoverSnapshotDetailsSchema>
 
 export interface ProjectedHandover {
   id: string
@@ -90,10 +83,6 @@ export type HandoverProjectionEvent =
   | { type: "tool-result"; entryId: string; isError: boolean; details?: unknown }
   | { type: "run-terminal"; entryId: string; state: "success" | "error" | "aborted" | "interrupted"; createdAt?: string }
 
-export interface StructuredDetailRecord {
-  detail: unknown
-}
-
 export function projectHandovers(events: readonly HandoverProjectionEvent[]): ProjectedHandover[] {
   const handovers: ProjectedHandover[] = []
   let active: ActiveRun | null = null
@@ -124,11 +113,3 @@ export function projectHandovers(events: readonly HandoverProjectionEvent[]): Pr
   return handovers
 }
 
-export function currentHandoverArtifactsFromStructuredDetails(
-  details: readonly StructuredDetailRecord[],
-): HumanArtifact[] {
-  return details.reduce(
-    (artifacts, record) => applyHandoverOperations(artifacts, handoverOperationsFromDetails(record.detail)),
-    [] as HumanArtifact[],
-  )
-}

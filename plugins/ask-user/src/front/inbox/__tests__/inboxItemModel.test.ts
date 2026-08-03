@@ -24,6 +24,7 @@ describe('inbox item model', () => {
       id: 'b1',
       reason: 'ask-user.question',
       label: 'Need input',
+      agentTypeId: 'alpha',
       sessionId: 's1',
       target: 'file.ts',
       surfaceKind: 'file',
@@ -37,6 +38,7 @@ describe('inbox item model', () => {
       id: 'b1',
       kind: 'question',
       title: 'Need input',
+      agentTypeId: 'alpha',
       sessionId: 's1',
       targetLabel: 'file.ts',
       priority: 5,
@@ -46,8 +48,16 @@ describe('inbox item model', () => {
     expect(inbox.actions).toEqual([{ id: 'open', label: 'Open' }])
   })
 
-  it('only admits blockers explicitly contributed to inbox', () => {
+  it('only admits explicit Inbox blockers and never infers missing chat ownership', () => {
     expect(isInboxAttentionBlocker({ id: 'plain', reason: 'composer.blocked', label: 'Plain blocker' })).toBe(false)
+    expect(attentionBlockerToInboxItem({
+      id: 'ownerless',
+      reason: 'ask-user.question',
+      label: 'Ownerless',
+      sessionId: 'shared-id',
+      pruneWhenSessionMissing: true,
+      inbox: { kind: 'question', sourceLabel: 'question' },
+    }).chatAvailable).toBe(false)
     expect(isInboxAttentionBlocker({
       id: 'question',
       reason: 'ask-user.question',

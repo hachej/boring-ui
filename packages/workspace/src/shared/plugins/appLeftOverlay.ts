@@ -18,10 +18,6 @@ export function appLeftOverlayRequestFromEvent(event: Event): AppLeftOverlayRequ
   return { id, params: Object.fromEntries(entries) as Record<string, string> }
 }
 
-export function appLeftOverlayIdFromEvent(event: Event): string | null {
-  return appLeftOverlayRequestFromEvent(event)?.id ?? null
-}
-
 export function requestAppLeftOverlay(id: string, params?: Readonly<Record<string, string>>): boolean {
   const normalized = id.trim()
   const browserWindow = (globalThis as typeof globalThis & { window?: { dispatchEvent(event: Event): boolean } }).window

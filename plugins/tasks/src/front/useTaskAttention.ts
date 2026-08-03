@@ -23,8 +23,10 @@ export function useTaskAttention(tasks: readonly BoringTaskCard[]): ReadonlyMap<
   const [provenanceRevision, setProvenanceRevision] = useState(0)
   const generation = useRef(0)
   const relevant = useMemo(
-    () => blockers.filter((blocker): blocker is WorkspaceAttentionBlocker & { sessionId: string } => Boolean(blocker.inbox && blocker.sessionId)),
-    [blockers],
+    () => blockers.filter((blocker): blocker is WorkspaceAttentionBlocker & { agentTypeId: string; sessionId: string } => (
+      Boolean(blocker.inbox && blocker.agentTypeId === pluginClient.agentTypeId && blocker.sessionId)
+    )),
+    [blockers, pluginClient.agentTypeId],
   )
   const sessionKey = useMemo(
     () => Array.from(new Set(relevant.map((blocker) => blocker.sessionId))).sort().join("\u0000"),
@@ -60,7 +62,7 @@ export function useTaskAttention(tasks: readonly BoringTaskCard[]): ReadonlyMap<
               id: blocker.id,
               title: blocker.label || blocker.reason,
               kind: blocker.inbox!.kind,
-              agentTypeId: blocker.agentTypeId ?? pluginClient.agentTypeId,
+              agentTypeId: blocker.agentTypeId,
               sessionId: blocker.sessionId,
               createdAt: blocker.inbox?.createdAt,
               blocker,
