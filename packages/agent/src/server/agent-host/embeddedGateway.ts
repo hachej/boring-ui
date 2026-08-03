@@ -331,11 +331,37 @@ export class EmbeddedAgentGateway implements AgentGateway {
       'session.create',
       target,
       input.requestId,
-      { agentTypeId: input.agentTypeId, title: input.title ?? null },
+      {
+        agentTypeId: input.agentTypeId,
+        title: input.title ?? null,
+        resumeSessionId: input.resumeSessionId ?? null,
+      },
       async () => {
         const preparedBinding = binding
         if (!preparedBinding) throw new TypeError('session creation executed before binding preflight')
         return await this.runtime.runBindingOperation(preparedBinding.key, async () => {
+          if (input.resumeSessionId) {
+            const candidateRef = { agentTypeId: input.agentTypeId, sessionId: input.resumeSessionId }
+            const authority = await this.runtime.resolveSessionRuntime(
+              input.agentTypeId,
+              input.scope,
+              claim,
+              input.resumeSessionId,
+            ).catch(() => undefined)
+            if (authority?.runtimeScopeIdentity === preparedBinding.scope.identity) {
+              const rows = await preparedBinding.composition.service.listSessions?.(
+                context(claim, input.requestId, preparedBinding.scope.identity),
+                { includeId: input.resumeSessionId, includeEmpty: true },
+              ) ?? []
+              const candidate = rows.find((row) => row.id === input.resumeSessionId)
+              if (candidate?.turnCount === 0) {
+                this.pins.set(sessionKey(claim.workspaceScopeId, candidateRef), preparedBinding.scope.identity)
+                this.runtime.activity.set(claim.workspaceScopeId, candidateRef, 'idle')
+                return candidateRef
+              }
+            }
+          }
+
           const created = await preparedBinding.composition.service.createSession!(
             context(claim, input.requestId, preparedBinding.scope.identity),
             { title: input.title },

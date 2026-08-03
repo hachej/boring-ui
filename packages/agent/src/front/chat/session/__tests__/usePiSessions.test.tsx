@@ -3,7 +3,11 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { SessionSummary } from '../../../../shared/session'
 import type { RemotePiSession, RemotePiSessionOptions } from '../../pi/remotePiSession'
-import { activeSessionStorageKey, type ActiveSessionStorageLike } from '../activeSessionStorage'
+import {
+  activeSessionStorageKey,
+  bootResumeSessionStorageKey,
+  type ActiveSessionStorageLike,
+} from '../activeSessionStorage'
 import { usePiSessions as useAddressedPiSessions, type UsePiSessionsOptions } from '../usePiSessions'
 
 function usePiSessions(options: Omit<UsePiSessionsOptions, 'agentTypeId'> & { agentTypeId?: string }) {
@@ -12,6 +16,26 @@ function usePiSessions(options: Omit<UsePiSessionsOptions, 'agentTypeId'> & { ag
 
 function session(id: string, updatedAt = '2026-06-03T00:00:00.000Z'): SessionSummary {
   return { id, title: `Session ${id}`, createdAt: updatedAt, updatedAt, turnCount: 0 }
+}
+
+function addressedBootResumeKey({
+  agentTypeId = 'default',
+  apiBaseUrl = '',
+  workspaceId,
+  storageScope = 'scope-a',
+}: {
+  agentTypeId?: string
+  apiBaseUrl?: string
+  workspaceId?: string
+  storageScope?: string
+} = {}): string {
+  return bootResumeSessionStorageKey({
+    apiBaseUrl,
+    sessionsApiPath: `/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions`,
+    agentTypeId,
+    workspaceId,
+    storageScope,
+  })
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -71,7 +95,69 @@ describe('usePiSessions', () => {
 
   beforeEach(() => {
     window.localStorage.clear()
+    window.sessionStorage.clear()
     fetchMock = vi.fn()
+  })
+
+  test('exposes an exact tab-owned empty session only as boot resume intent', async () => {
+    const key = addressedBootResumeKey({ agentTypeId: 'alpha' })
+    const tab = storage({ [key]: 'empty-native' })
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return jsonResponse({ agentTypeId: 'alpha', sessionId: 'empty-native' }, 201)
+      }
+      return jsonResponse({ sessions: [] })
+    })
+
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      storageScope: 'scope-a',
+      bootResumeStorage: tab,
+      fetch: fetchMock as unknown as typeof fetch,
+      connectActiveSession: false,
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.resumeSessionId).toBe('empty-native')
+    expect(result.current.activeSessionId).toBeUndefined()
+
+    await act(async () => {
+      await result.current.create({ resumeSessionId: result.current.resumeSessionId })
+    })
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')
+    expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({ resumeSessionId: 'empty-native' })
+    expect(result.current.activeSessionId).toBe('empty-native')
+    expect(result.current.resumeSessionId).toBeUndefined()
+    expect(tab.values.get(key)).toBe('empty-native')
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ sessions: [{
+      ref: { agentTypeId: 'alpha', sessionId: 'empty-native' },
+      title: 'Now visible',
+      status: 'idle',
+      createdAt: 1,
+      updatedAt: 2,
+      turnCount: 1,
+    }] }))
+    await act(async () => { await result.current.refresh() })
+    expect(tab.values.get(key)).toBeUndefined()
+  })
+
+  test('does not expose another tab-owned empty session', async () => {
+    const firstTab = storage({ [addressedBootResumeKey({ agentTypeId: 'alpha' })]: 'empty-native' })
+    const secondTab = storage()
+    fetchMock.mockResolvedValue(jsonResponse({ sessions: [] }))
+
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      storageScope: 'scope-a',
+      bootResumeStorage: secondTab,
+      fetch: fetchMock as unknown as typeof fetch,
+      connectActiveSession: false,
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.resumeSessionId).toBeUndefined()
+    expect(firstTab.values.get(addressedBootResumeKey({ agentTypeId: 'alpha' }))).toBe('empty-native')
   })
 
   test('preserves a valid v2 persisted active session while streaming and opens one remote session', async () => {

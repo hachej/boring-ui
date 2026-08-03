@@ -2707,6 +2707,35 @@ describe("WorkspaceAgentFront", () => {
     }, { timeout: 3000 })
   })
 
+  it("passes the exact hidden boot candidate only to initial auto-create", async () => {
+    const createSession = vi.fn(async () => ({ id: "empty-native", title: "Fresh session" }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="remote-sessions"
+        chatPanel={ChatPanel}
+        defaultSessionTitle="Fresh session"
+        useSessions={() => ({
+          sessions: [],
+          loading: false,
+          activeSessionId: null,
+          activeSession: null,
+          resumeSessionId: "empty-native",
+          switch: vi.fn(),
+          create: createSession,
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledWith({
+        title: "Fresh session",
+        resumeSessionId: "empty-native",
+      })
+    }, { timeout: 3000 })
+  })
+
   it("connects the first auto-created empty remote session after the transition", async () => {
     const captured: CapturedChatPanelProps[] = []
     const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {

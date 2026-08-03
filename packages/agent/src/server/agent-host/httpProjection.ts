@@ -91,6 +91,7 @@ const EventsQuerySchema = z.object({
 const CreateSessionBodySchema = z.preprocess((value) => value === undefined ? {} : value, z.object({
   requestId: RequestIdSchema.optional(),
   title: NonEmptyString.max(200).optional(),
+  resumeSessionId: SessionIdSchema.optional(),
 }).strict())
 const RenameSessionBodySchema = z.object({
   requestId: RequestIdSchema,
@@ -249,6 +250,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
         agentTypeId: params.agentTypeId,
         requestId: body.requestId ?? randomUUID(),
         title: body.title,
+        ...(body.resumeSessionId ? { resumeSessionId: body.resumeSessionId } : {}),
       })
       return reply.code(201).send(ref)
     } catch (error) {
