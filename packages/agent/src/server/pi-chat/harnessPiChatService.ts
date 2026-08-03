@@ -807,6 +807,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       workspaceId: ctx.workspaceId,
       requestId: ctx.requestId,
       userId: ctx.authSubject,
+      sessionCtx: toSessionCtx(ctx),
       userEmail: ctx.authEmail,
       userEmailVerified: ctx.authEmailVerified,
     })

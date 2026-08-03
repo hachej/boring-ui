@@ -1,5 +1,14 @@
 import { describe, expect, test, vi } from 'vitest'
-import { activeSessionStorageKey, clearActiveSessionId, readActiveSessionId, writeActiveSessionId, type ActiveSessionStorageLike } from '../activeSessionStorage'
+import {
+  activeSessionStorageKey,
+  bootResumeSessionStorageKey,
+  clearActiveSessionId,
+  readActiveSessionId,
+  readBootResumeSessionId,
+  writeActiveSessionId,
+  writeBootResumeSessionId,
+  type ActiveSessionStorageLike,
+} from '../activeSessionStorage'
 
 function memoryStorage(): ActiveSessionStorageLike & { values: Map<string, string> } {
   const values = new Map<string, string>()
@@ -15,6 +24,25 @@ describe('activeSessionStorage', () => {
   test('uses scoped v2 active-session keys without legacy transcript storage', () => {
     expect(activeSessionStorageKey('workspace-a:user-opaque')).toBe('boring-agent:v2:workspace-a:user-opaque:activeSessionId')
     expect(activeSessionStorageKey()).toBe('boring-agent:v2:default:activeSessionId')
+    expect(bootResumeSessionStorageKey('workspace-a:user-opaque')).toBe('boring-agent:v2:workspace-a:user-opaque:bootResumeSessionId')
+  })
+
+  test('keys boot ownership by the full normalized addressed source', () => {
+    const alpha = bootResumeSessionStorageKey({
+      apiBaseUrl: '/api/', sessionsApiPath: '/custom/sessions', agentTypeId: 'alpha', workspaceId: 'workspace-a', storageScope: 'scope-a',
+    })
+    const normalizedAlpha = bootResumeSessionStorageKey({
+      apiBaseUrl: '/api', sessionsApiPath: '/custom/sessions', agentTypeId: 'alpha', workspaceId: 'workspace-a', storageScope: 'scope-a',
+    })
+    const beta = bootResumeSessionStorageKey({
+      apiBaseUrl: '/api', sessionsApiPath: '/custom/sessions', agentTypeId: 'beta', workspaceId: 'workspace-a', storageScope: 'scope-a',
+    })
+    const otherApi = bootResumeSessionStorageKey({
+      apiBaseUrl: '/other', sessionsApiPath: '/custom/sessions', agentTypeId: 'alpha', workspaceId: 'workspace-a', storageScope: 'scope-a',
+    })
+
+    expect(alpha).toBe(normalizedAlpha)
+    expect(new Set([alpha, beta, otherApi])).toHaveLength(3)
   })
 
   test('reads, writes, and clears only the active session id', () => {
@@ -27,6 +55,18 @@ describe('activeSessionStorage', () => {
     clearActiveSessionId({ storageScope: 'scope-a', storage })
     expect(storage.removeItem).toHaveBeenCalledWith('boring-agent:v2:scope-a:activeSessionId')
     expect(readActiveSessionId({ storageScope: 'scope-a', storage })).toBeUndefined()
+  })
+
+  test('keeps boot resume ownership in its separate storage seam', () => {
+    const activeStorage = memoryStorage()
+    const tabStorage = memoryStorage()
+
+    writeActiveSessionId('pi-empty', { storageScope: 'scope-a', storage: activeStorage })
+    writeBootResumeSessionId('pi-empty', { storageScope: 'scope-a', storage: tabStorage })
+
+    expect(readActiveSessionId({ storageScope: 'scope-a', storage: activeStorage })).toBe('pi-empty')
+    expect(readBootResumeSessionId({ storageScope: 'scope-a', storage: tabStorage })).toBe('pi-empty')
+    expect(readBootResumeSessionId({ storageScope: 'scope-a', storage: activeStorage })).toBeUndefined()
   })
 
   test('storage failures are non-fatal', () => {

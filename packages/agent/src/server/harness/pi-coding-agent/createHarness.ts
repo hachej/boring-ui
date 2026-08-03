@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import {
@@ -470,6 +470,12 @@ export function createPiCodingAgentHarness(opts: {
   // createAgentSession, and the loser's handle is overwritten — leaking a Pi
   // session and breaking the single-writer guarantee.
   const piSessionCreations = new Map<string, Promise<PiSessionHandle>>();
+  // Session-incarnation fence, mirroring the chat service's. A delete that lands
+  // while createAgentSession is still running must not leave the late handle
+  // installed — it would keep a live AgentSession (and its transcript writer)
+  // for a session that no longer exists.
+  const sessionGenerations = new Map<string, number>();
+  const generationOf = (sessionKey: string): number => sessionGenerations.get(sessionKey) ?? 0;
 
   async function getOrCreatePiSession(
     sessionId: string,
@@ -491,8 +497,17 @@ export function createPiCodingAgentHarness(opts: {
       return handle;
     }
 
-    const creation = createPiSession(sessionId, sessionCtx, input, ctx);
+    const generation = generationOf(sessionKey);
+    const creation = createPiSession(sessionId, sessionCtx, input, ctx).then((handle) => {
+      if (generationOf(sessionKey) === generation) return handle;
+      disposeHandleAt(sessionKey, handle);
+      throw Object.assign(new Error("session not found"), {
+        code: ErrorCode.enum.SESSION_NOT_FOUND,
+        statusCode: 404,
+      });
+    });
     piSessionCreations.set(sessionKey, creation);
+    creation.catch(() => {});
     try {
       return await creation;
     } finally {
@@ -534,35 +549,43 @@ export function createPiCodingAgentHarness(opts: {
     const authStorage = AuthStorage.create();
     const modelRegistry = ModelRegistry.create(authStorage);
     registerConfiguredModelProviders(modelRegistry);
-
-    // Restore file-backed pi session so the agent remembers the conversation
-    // across server restarts. On first turn, create a new file-backed session
-    // and persist its path. On subsequent restarts, open the existing file.
-    // Synchronous read keeps this function free of async I/O before
-    // createAgentSession (required for test-timer compatibility).
-    const savedPiFile = sessionStore.loadPiSessionFileSync(sessionCtx, sessionId);
-    let sessionManager: SessionManager;
-    let isNewPiSession = false;
-    const runtimeCwd = opts.runtimeCwd ?? ctx.workdir;
-    const nativeSessionDir = sessionStore.getSessionDir();
-    if (savedPiFile) {
-      try {
-        sessionManager = SessionManager.open(savedPiFile, undefined, runtimeCwd);
-      } catch {
-        sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir);
-        isNewPiSession = true;
-      }
-    } else {
-      sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir);
-      isNewPiSession = true;
-    }
-
+    // Strict model validation must fail before native transcript creation.
     const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
     // Prefer an explicit available UI selection; otherwise use configured
     // Boring/Pi default if present. Undefined is intentional: Pi/session owns
     // the final fallback model selection.
     const model = resolvedModel ?? resolveDefaultModel(modelRegistry, pi.defaultModel, pi.strictModelResolution);
 
+    // Restore Boring-owned sessions as before: every session id is minted (and
+    // its transcript written) server-side at create, so there is no id-less
+    // create path here.
+    const savedPiFile = await sessionStore.loadPiSessionFile(sessionCtx, sessionId);
+    const runtimeCwd = opts.runtimeCwd ?? ctx.workdir;
+    if (!savedPiFile) {
+      // `SessionStore.create` writes the transcript (in pi's own native form)
+      // before any client can hold the id, and every caller of this path has
+      // already resolved the session through the store. A missing transcript is
+      // therefore a genuine error. Creating one here instead — the old
+      // "insurance" branch — silently forked state into a second file that
+      // nothing durable ever read back.
+      throw Object.assign(
+        new Error(`Session not found: ${sessionId}`),
+        { code: ErrorCode.enum.SESSION_NOT_FOUND, statusCode: 404 },
+      );
+    }
+    let sessionManager: SessionManager;
+    try {
+      sessionManager = SessionManager.open(savedPiFile, undefined, runtimeCwd);
+    } catch (error) {
+      // Never recover by minting a fresh pi id: the session id is stable from
+      // birth and the client is already holding it, so a silent swap here
+      // would strand the transcript under an id nobody addresses. Fail with a
+      // stable code instead (invariant 8).
+      throw Object.assign(
+        new Error(`failed to open pi session transcript for '${sessionId}'`),
+        { code: ErrorCode.enum.SESSION_TRANSCRIPT_UNREADABLE, statusCode: 500, cause: error },
+      );
+    }
     // Hosts may extend pi's base prompt and/or isolate resource discovery.
     // We keep pi's default system prompt but always tack on a workspace-paths
     // guideline (relative-paths only) on top of whatever the host supplied —
@@ -627,7 +650,7 @@ export function createPiCodingAgentHarness(opts: {
       // adapted tool catalog active. Do NOT pass an explicit empty tool-name
       // allowlist: in the current Pi SDK that disables custom tools too.
       noTools: "builtin",
-      customTools: adaptToolsForPi(opts.tools, input.sessionId, opts.telemetry, () => runContextStorage.getStore()),
+      customTools: adaptToolsForPi(opts.tools, sessionId, opts.telemetry, () => runContextStorage.getStore()),
       model,
       thinkingLevel: input.thinkingLevel ?? "off",
       sessionManager,
@@ -635,13 +658,6 @@ export function createPiCodingAgentHarness(opts: {
       modelRegistry,
       ...(resourceLoader ? { resourceLoader } : {}),
     });
-
-    if (isNewPiSession) {
-      const piFile = sessionManager.getSessionFile();
-      if (piFile) {
-        sessionStore.savePiSessionFile(sessionCtx, sessionId, piFile).catch(() => {});
-      }
-    }
 
     const restoreFollowUpContextWrapper = rememberQueuedFollowUpRunContexts(piSession, runContextState, () => runContextStorage.getStore());
     const unsubscribePiRunContextListener = piSession.subscribe((event) => updateRunContextStateFromPiEvent(runContextState, event, (ctx) => runContextStorage.enterWith(ctx)));
@@ -654,7 +670,7 @@ export function createPiCodingAgentHarness(opts: {
       modelRegistry,
       sessionManager,
       resourceLoader,
-      sessionId,
+      sessionId: sessionId,
       sessionCtx,
       runContextState,
       unsubscribeRunContextListener,
@@ -671,21 +687,23 @@ export function createPiCodingAgentHarness(opts: {
     return true;
   }
 
+  function disposeHandleAt(key: string, handle: PiSessionHandle): void {
+    handle.unsubscribeRunContextListener();
+    handle.piSession.dispose();
+    if (piSessions.get(key) === handle) piSessions.delete(key);
+  }
+
   function disposePiSession(sessionId: string, ctx?: SessionCtx): void {
     if (ctx) {
       const key = sessionCacheKey(sessionId, ctx);
       const handle = piSessions.get(key);
       if (!handle) return;
-      handle.unsubscribeRunContextListener();
-      handle.piSession.dispose();
-      piSessions.delete(key);
+      disposeHandleAt(key, handle);
       return;
     }
     for (const [key, handle] of piSessions) {
       if (handle.sessionId !== sessionId) continue;
-      handle.unsubscribeRunContextListener();
-      handle.piSession.dispose();
-      piSessions.delete(key);
+      disposeHandleAt(key, handle);
     }
   }
 
@@ -693,15 +711,28 @@ export function createPiCodingAgentHarness(opts: {
     return [...piSessions.values()].filter((handle) => handle.sessionId === sessionId);
   }
 
+  /**
+   * Commands and prompts resolve through the SAME keyed resolver. The caller
+   * supplies the session identity on the RunContext whenever it knows it (the
+   * addressed Gateway and the scope-converged legacy wire both do); otherwise
+   * the plain legacy workspace/user pair is the identity. There is deliberately
+   * no fallback scan across other keys: a scan was asymmetric (commands could
+   * adopt a prompt's handle, never the reverse) and let two AgentSessions open
+   * one transcript when discovery ran before the first prompt.
+   */
   async function getOrCreatePiSessionForCommand(sessionId: string, ctx: RunContext): Promise<PiSessionHandle> {
-    const sessionCtx = sessionCtxFromRunContext(ctx);
-    const existing = piSessions.get(sessionCacheKey(sessionId, sessionCtx));
-    if (existing) return existing;
+    const sessionCtx = normalizeSessionCtx(ctx.sessionCtx) ?? sessionCtxFromRunContext(ctx);
     return getOrCreatePiSession(sessionId, { sessionId, content: "", ctx: sessionCtx }, ctx);
   }
 
   const originalDelete = sessionStore.delete.bind(sessionStore);
   sessionStore.delete = async (ctx, sessionId) => {
+    const key = sessionCacheKey(sessionId, ctx);
+    // Invalidate before the storage delete so a creation still inside
+    // createAgentSession is fenced out rather than installed afterwards, then
+    // settle it so this call returns with nothing live left behind.
+    sessionGenerations.set(key, generationOf(key) + 1);
+    await Promise.allSettled([piSessionCreations.get(key)]);
     await originalDelete(ctx, sessionId);
     disposePiSession(sessionId, ctx);
   };
