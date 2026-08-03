@@ -318,22 +318,26 @@ export function PiChatComposerSurface<
           </div>
         ) : null}
         {mentionState === null && slashQuery === null && modelPickerOpen ? (
-          <ModelPickerMenu
-            value={selectedModel}
-            onChange={onModelChange}
-            options={modelOptions}
-            disabled={isStreaming || modelControlled}
-            hideDefaultOption={hideDefaultModelOption}
-            onClose={() => onSetModelPickerOpen(false)}
-          />
+          <div className="mr-px mb-1 ml-[43px]">
+            <ModelPickerMenu
+              value={selectedModel}
+              onChange={onModelChange}
+              options={modelOptions}
+              disabled={isStreaming || modelControlled}
+              hideDefaultOption={hideDefaultModelOption}
+              onClose={() => onSetModelPickerOpen(false)}
+            />
+          </div>
         ) : null}
         {mentionState === null && slashQuery === null && thinkingPickerOpen ? (
-          <ThinkingPickerMenu
-            value={selectedThinking}
-            onChange={onThinkingChange}
-            disabled={isStreaming || thinkingControlled}
-            onClose={() => onSetThinkingPickerOpen(false)}
-          />
+          <div className="mr-px mb-1 ml-[43px]">
+            <ThinkingPickerMenu
+              value={selectedThinking}
+              onChange={onThinkingChange}
+              disabled={isStreaming || thinkingControlled}
+              onClose={() => onSetThinkingPickerOpen(false)}
+            />
+          </div>
         ) : null}
       </div>
       {composerContributions.map(({ id, Top }) => Top ? (

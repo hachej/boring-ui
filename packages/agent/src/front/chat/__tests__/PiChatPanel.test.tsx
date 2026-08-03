@@ -638,9 +638,9 @@ describe('PiChatPanel sandbox shell', () => {
     )
 
     const title = await screen.findByText('What should we work on?')
-    const emptyState = title.closest('[data-boring-agent-part="empty-state"]')
-    const composer = emptyState?.querySelector('[data-boring-agent-part="composer-rail"]')
-    const suggestions = emptyState?.querySelector('[data-boring-agent-part="suggestion-grid"]')
+    const composer = document.querySelector('[data-boring-agent-part="composer-rail"]')
+    const suggestions = document.querySelector('[data-boring-agent-part="suggestion-grid"]')
+    const textarea = screen.getByLabelText('Agent prompt') as HTMLTextAreaElement
 
     expect(composer).toBeTruthy()
     expect(suggestions).toBeTruthy()
@@ -648,6 +648,24 @@ describe('PiChatPanel sandbox shell', () => {
     expect(composer!.compareDocumentPosition(suggestions!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByText('Ask a question, open a file from the workbench, or start from a template.')).toBeNull()
     expect(document.querySelectorAll('[data-boring-agent-part="composer-rail"]')).toHaveLength(1)
+
+    fireEvent.change(textarea, { target: { value: 'preserve this draft' } })
+    textarea.focus()
+    remote.setState(remoteState({
+      sessionId: 'pi-empty',
+      committedMessages: [{
+        id: 'user-1',
+        role: 'user',
+        status: 'done',
+        parts: [{ type: 'text', id: 'user-1:text', text: 'First message' }],
+      }],
+    }))
+
+    await screen.findByText('First message')
+    expect(document.querySelector('[data-boring-agent-part="composer-rail"]')).toBe(composer)
+    expect(screen.getByLabelText('Agent prompt')).toBe(textarea)
+    expect(textarea.value).toBe('preserve this draft')
+    expect(document.activeElement).toBe(textarea)
   })
 
   test('shows loading instead of empty suggestions before selected session state is available', async () => {

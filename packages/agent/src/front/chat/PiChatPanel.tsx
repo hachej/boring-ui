@@ -13,7 +13,7 @@ import type { PiChatEvent, PiChatStatus } from '../../shared/chat'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../chatPanelSettings'
 import { DEFAULT_THINKING } from '../chatPanelSettings'
 import { cn } from '../lib'
-import { defaultChatSuggestions, type ChatSuggestion } from '../ChatEmptyState'
+import { ChatSuggestionGrid, defaultChatSuggestions, type ChatSuggestion } from '../ChatEmptyState'
 import type { SlashCommand } from '../slashCommands'
 import { builtinCommands, createCommandRegistry } from '../slashCommands'
 import type { ToolRendererOverrides } from '../bareToolRenderers'
@@ -1091,6 +1091,14 @@ export function PiChatPanel<
     handleComposerKeyDown(event)
   }, [handleComposerKeyDown, interrupt, isStreaming, mentionState, slashQuery])
 
+  const selectEmptySuggestion = useCallback((suggestion: ChatSuggestion) => {
+    const text = suggestion.prompt ?? suggestion.label
+    if (!text.trim()) return
+    void sendComposerMessage({ text, files: [], source: 'suggestion' }).then((result) => {
+      if (result === false) setComposerDraft(text)
+    })
+  }, [sendComposerMessage, setComposerDraft])
+
   const composerSurface = (
     <PiChatComposerSurface
               chrome={chrome}
@@ -1191,8 +1199,8 @@ export function PiChatPanel<
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div
             className={cn(
-              'flex h-full min-h-0 flex-col overflow-hidden',
-              emptyHero && 'justify-center',
+              'flex h-full min-h-0 flex-col',
+              emptyHero ? 'justify-center overflow-y-auto py-6' : 'overflow-hidden',
               chrome &&
                 'mx-3 my-3 rounded-xl bg-[color:var(--surface-chat)] shadow-[0_1px_0_oklch(0_0_0/0.02),0_1px_2px_-1px_oklch(0_0_0/0.04),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.6)]',
             )}
@@ -1200,7 +1208,6 @@ export function PiChatPanel<
             <PiConversationSurface
               chrome={chrome}
               emptyHero={emptyHero}
-              emptyHeroComposer={emptyHero ? composerSurface : undefined}
               messages={messages}
               emptyStateHydrating={emptyStateHydrating}
               emptyState={emptyState}
@@ -1221,7 +1228,16 @@ export function PiChatPanel<
               windowResetKey={activeSessionId}
             />
 
-            {emptyHero ? null : composerSurface}
+            {composerSurface}
+            {emptyHero ? (
+              <div
+                data-boring-agent-part="empty-hero-suggestions"
+                className="@container mx-auto w-full max-w-[640px] px-2 pb-4"
+              >
+                <ChatSuggestionGrid suggestions={suggestions} onSelect={selectEmptySuggestion} className="mt-4" />
+                {emptyState?.footer}
+              </div>
+            ) : null}
           </div>
         </div>
         {debug ? (

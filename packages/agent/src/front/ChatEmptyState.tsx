@@ -84,13 +84,72 @@ export interface ChatEmptyStateProps {
    * resolves this to `sendMessage` with the suggestion's prompt.
    */
   onSelect?: (suggestion: ChatSuggestion) => void
-  /** Optional content rendered between the title and suggestions. */
-  composer?: ReactNode
-  /** Uses the concise empty-chat hierarchy: title, composer, suggestions. */
+  /** Uses the concise empty-chat hierarchy. */
   hero?: boolean
   /** Optional content rendered below the suggestion grid. */
   footer?: ReactNode
   className?: string
+}
+
+interface ChatSuggestionGridProps {
+  suggestions: ChatSuggestion[]
+  onSelect?: (suggestion: ChatSuggestion) => void
+  className?: string
+}
+
+export function ChatSuggestionGrid({ suggestions, onSelect, className }: ChatSuggestionGridProps) {
+  if (suggestions.length === 0) return null
+  return (
+    <div
+      data-boring-agent-part="suggestion-grid"
+      style={{
+        ["--chat-empty-card-hover" as string]: "var(--accent-soft)",
+        ["--chat-empty-accent" as string]: "var(--accent)",
+      }}
+      className={cn(
+        "grid w-full grid-cols-1 gap-px overflow-hidden rounded-xl bg-border/70 ring-1 ring-border/70 @[480px]:grid-cols-2",
+        className,
+      )}
+    >
+      {suggestions.map((suggestion) => {
+        const Icon = suggestion.icon
+        return (
+          <Button
+            key={suggestion.label}
+            type="button"
+            variant="ghost"
+            data-boring-agent-part="suggestion-card"
+            onClick={() => {
+              if (suggestion.onSelect) {
+                suggestion.onSelect()
+                return
+              }
+              onSelect?.(suggestion)
+            }}
+            className="group h-auto justify-start gap-3 rounded-none bg-background px-4 py-3.5 text-left hover:bg-[color:var(--chat-empty-card-hover)] focus-visible:bg-[color:var(--chat-empty-card-hover)]"
+          >
+            {Icon && (
+              <Icon
+                className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-[color:var(--chat-empty-accent)]"
+                strokeWidth={1.75}
+              />
+            )}
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="text-[13px] font-medium text-foreground">{suggestion.label}</span>
+              {suggestion.hint && <span className="text-[12px] text-muted-foreground">{suggestion.hint}</span>}
+            </span>
+            <ArrowUpRight
+              className={cn(
+                "mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                "group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100 group-hover:text-[color:var(--chat-empty-accent)]",
+              )}
+              strokeWidth={2}
+            />
+          </Button>
+        )
+      })}
+    </div>
+  )
 }
 
 export function ChatEmptyState({
@@ -99,7 +158,6 @@ export function ChatEmptyState({
   description = "Ask a question, open a file from the workbench, or start from a template.",
   suggestions = defaultChatSuggestions,
   onSelect,
-  composer,
   hero = false,
   footer,
   className,
@@ -136,65 +194,12 @@ export function ChatEmptyState({
           {title}
         </h3>
       )}
-      {composer ? <div className={cn("w-full", hero && "mt-6")}>{composer}</div> : null}
       {!hero && description && (
         <p className="mt-3 hidden max-w-[440px] text-[14px] leading-relaxed text-[color:var(--chat-empty-description-color)] @[420px]:block">
           {description}
         </p>
       )}
-      {suggestions.length > 0 && (
-        <div
-          data-boring-agent-part="suggestion-grid"
-          className={cn(
-            "grid w-full grid-cols-1 gap-px overflow-hidden rounded-xl bg-border/70 ring-1 ring-border/70 @[480px]:grid-cols-2",
-            hero ? "mt-4" : "mt-8",
-          )}
-        >
-          {suggestions.map((suggestion) => {
-            const Icon = suggestion.icon
-            return (
-              <Button
-                key={suggestion.label}
-                type="button"
-                variant="ghost"
-                data-boring-agent-part="suggestion-card"
-                onClick={() => {
-                  if (suggestion.onSelect) {
-                    suggestion.onSelect()
-                    return
-                  }
-                  onSelect?.(suggestion)
-                }}
-                className="group h-auto justify-start gap-3 rounded-none bg-background px-4 py-3.5 text-left hover:bg-[color:var(--chat-empty-card-hover)] focus-visible:bg-[color:var(--chat-empty-card-hover)]"
-              >
-                {Icon && (
-                  <Icon
-                    className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-[color:var(--chat-empty-accent)]"
-                    strokeWidth={1.75}
-                  />
-                )}
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="text-[13px] font-medium text-foreground">
-                    {suggestion.label}
-                  </span>
-                  {suggestion.hint && (
-                    <span className="text-[12px] text-muted-foreground">
-                      {suggestion.hint}
-                    </span>
-                  )}
-                </span>
-                <ArrowUpRight
-                  className={cn(
-                    "mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                    "group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100 group-hover:text-[color:var(--chat-empty-accent)]",
-                  )}
-                  strokeWidth={2}
-                />
-              </Button>
-            )
-          })}
-        </div>
-      )}
+      <ChatSuggestionGrid suggestions={suggestions} onSelect={onSelect} className={hero ? "mt-4" : "mt-8"} />
       {footer}
     </div>
   )
