@@ -16,6 +16,8 @@ test.describe("checkpoint-D Agent Host golden route", () => {
     test.setTimeout(90_000)
 
     const responses: Array<{ method: string; path: string; status: number }> = []
+    const pageErrors: string[] = []
+    page.on("pageerror", (error) => pageErrors.push(error.message))
     page.on("response", (response: Response) => {
       const url = new URL(response.url())
       if (operationPath.test(`${url.pathname}${url.search}`)) {
@@ -24,7 +26,10 @@ test.describe("checkpoint-D Agent Host golden route", () => {
     })
 
     await page.goto("/")
-    await expect(page.locator('aside[aria-label="App navigation"]')).toBeVisible({ timeout: 10_000 })
+    const navigation = page.locator('aside[aria-label="App navigation"]')
+    await navigation.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {
+      throw new Error(`workspace shell did not render; page errors: ${pageErrors.join(" | ") || "none"}`)
+    })
     const composer = page.getByRole("textbox", { name: "Agent prompt" })
     const chat = page.locator('[data-boring-agent-part="chat"]')
     await expect(composer).toBeVisible()
