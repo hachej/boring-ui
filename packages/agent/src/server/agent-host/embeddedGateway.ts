@@ -385,11 +385,13 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const binding = await this.bindingForSession(input.scope, claim, input.ref)
     let state: PiChatSnapshot
     try {
-      state = await binding.composition.service.readState(context(claim, randomUUID()), input.ref.sessionId)
+      state = await binding.composition.service.readState(
+        context(claim, randomUUID(), binding.scope.identity), input.ref.sessionId,
+      )
     } catch {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     }
-    const loaded = await this.loadSummary(binding.composition.service, claim, input.ref)
+    const loaded = await this.loadSummary(binding.composition.service, claim, input.ref, binding.scope.identity)
     const status = this.runtime.activity.get(claim.workspaceScopeId, input.ref)
     return {
       ref: input.ref,
@@ -402,14 +404,14 @@ export class EmbeddedAgentGateway implements AgentGateway {
   async connectSession(input: Parameters<AgentGateway['connectSession']>[0]): Promise<AgentSessionConnection> {
     const claim = await this.verify(input.scope)
     const binding = await this.bindingForSession(input.scope, claim, input.ref)
-    await this.loadSummary(binding.composition.service, claim, input.ref)
+    await this.loadSummary(binding.composition.service, claim, input.ref, binding.scope.identity)
     const queue = new EventQueue()
     const initialCursor = input.cursor ?? (await binding.composition.service.readState(
-      context(claim, randomUUID()),
+      context(claim, randomUUID(), binding.scope.identity),
       input.ref.sessionId,
     )).seq
     const subscribed = await binding.composition.service.subscribe(
-      context(claim, randomUUID()),
+      context(claim, randomUUID(), binding.scope.identity),
       input.ref.sessionId,
       initialCursor,
       (event) => {
@@ -457,7 +459,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
         const current = await reverify()
         const currentBinding = await this.bindingForSession(input.scope, current, input.ref)
         return await this.sessionEffect(input.ref, current, 'session.interrupt', requestId, {}, async () => {
-          const receipt = await currentBinding.composition.service.interrupt(context(current, requestId), input.ref.sessionId, {})
+          const receipt = await currentBinding.composition.service.interrupt(
+            context(current, requestId, currentBinding.scope.identity), input.ref.sessionId, {},
+          )
           if (this.runtime.activity.get(current.workspaceScopeId, input.ref) === 'running') {
             this.runtime.activity.set(current.workspaceScopeId, input.ref, 'aborting')
           }
@@ -468,7 +472,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
         const current = await reverify()
         const currentBinding = await this.bindingForSession(input.scope, current, input.ref)
         return await this.sessionEffect(input.ref, current, 'session.stop', requestId, {}, async () => {
-          const receipt = await currentBinding.composition.service.stop(context(current, requestId), input.ref.sessionId, {})
+          const receipt = await currentBinding.composition.service.stop(
+            context(current, requestId, currentBinding.scope.identity), input.ref.sessionId, {},
+          )
           this.runtime.activity.set(current.workspaceScopeId, input.ref, 'idle')
           return receipt
         }, { bindingKey: currentBinding.key }) as Awaited<ReturnType<AgentSessionConnection['stop']>>
@@ -480,7 +486,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
           clientNonce: clientNonce ?? null,
           clientSeq: clientSeq ?? null,
         }, () => currentBinding.composition.service.clearQueue(
-          context(current, requestId),
+          context(current, requestId, currentBinding.scope.identity),
           input.ref.sessionId,
           { ...(clientNonce ? { clientNonce } : {}), ...(clientSeq === undefined ? {} : { clientSeq }) },
         ), {
@@ -490,6 +496,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
               currentBinding.composition.service,
               current,
               input.ref,
+              currentBinding.scope.identity,
               requestId,
               clientNonce,
               clientSeq,
@@ -512,7 +519,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const service = binding.composition.service
     if (command.kind === 'prompt') {
       return await this.sessionEffect(ref, claim, 'session.prompt', command.requestId, command as unknown as JsonValue, async () => {
-        const receipt = await service.prompt(context(claim, command.requestId), ref.sessionId, {
+        const receipt = await service.prompt(context(claim, command.requestId, binding.scope.identity), ref.sessionId, {
           message: command.content,
           displayMessage: command.displayContent,
           clientNonce: command.clientNonce,
@@ -535,7 +542,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       })
     }
     return await this.sessionEffect(ref, claim, 'session.followup', command.requestId, command as unknown as JsonValue, async () => {
-      const receipt = await service.followUp(context(claim, command.requestId), ref.sessionId, {
+      const receipt = await service.followUp(context(claim, command.requestId, binding.scope.identity), ref.sessionId, {
         message: command.content,
         displayMessage: command.displayContent,
         clientNonce: command.clientNonce,
@@ -567,7 +574,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const binding = await this.bindingForSession(input.scope, claim, input.ref)
     await this.sessionEffect(input.ref, claim, 'session.delete', input.requestId, {}, async () => {
       await binding.composition.service.deleteSession!(
-        context(claim, input.requestId), input.ref.sessionId,
+        context(claim, input.requestId, binding.scope.identity), input.ref.sessionId,
       )
       // Keep the verified pin cached until Host shutdown so a same-process
       // idempotent delete retry can reach its completed ledger receipt.
@@ -656,8 +663,12 @@ export class EmbeddedAgentGateway implements AgentGateway {
     service: PiChatSessionService,
     claim: VerifiedAgentScopeClaim,
     ref: AgentSessionRef,
+    runtimeScopeIdentity: string,
   ) {
-    const list = await service.listSessions?.(context(claim, randomUUID()), { includeId: ref.sessionId }) ?? []
+    const list = await service.listSessions?.(
+      context(claim, randomUUID(), runtimeScopeIdentity),
+      { includeId: ref.sessionId, includeEmpty: true },
+    ) ?? []
     const summary = list.find((item) => item.id === ref.sessionId)
     if (!summary) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     return summary
@@ -912,12 +923,15 @@ export class EmbeddedAgentGateway implements AgentGateway {
     service: PiChatSessionService,
     claim: VerifiedAgentScopeClaim,
     ref: AgentSessionRef,
+    runtimeScopeIdentity: string,
     requestId: string,
     clientNonce?: string,
     clientSeq?: number,
   ): Promise<AgentGatewayErrorDTO | undefined> {
     if (clientNonce === undefined || clientSeq === undefined) return undefined
-    const snapshot = await service.readState(context(claim, requestId), ref.sessionId)
+    const snapshot = await service.readState(
+      context(claim, requestId, runtimeScopeIdentity), ref.sessionId,
+    )
     const byNonce = snapshot.queue.followUps.find((item) => item.clientNonce === clientNonce)
     const bySeq = snapshot.queue.followUps.find((item) => item.clientSeq === clientSeq)
     if (byNonce && byNonce === bySeq) return undefined

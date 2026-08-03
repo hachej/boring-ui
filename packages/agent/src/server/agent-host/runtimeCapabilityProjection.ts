@@ -163,7 +163,10 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
           workspaceId: claim.workspaceScopeId,
           requestId: request.id,
           userId: claim.authSubjectId,
-          sessionCtx: { workspaceId: claim.workspaceScopeId },
+          sessionCtx: {
+            workspaceId: claim.workspaceScopeId,
+            runtimeScopeIdentity: binding.scope.identity,
+          },
           ...(typeof user?.email === 'string' && user.email.trim()
             ? { userEmail: user.email.trim() }
             : {}),
@@ -193,7 +196,10 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
             workspaceId: scope.workspaceScopeId,
             requestId,
             userId: scope.authSubjectId,
-            sessionCtx: { workspaceId: scope.workspaceScopeId },
+            sessionCtx: {
+              workspaceId: scope.workspaceScopeId,
+              runtimeScopeIdentity: binding.scope.identity,
+            },
           })
           return { ok: true, sessionId, name }
         }),

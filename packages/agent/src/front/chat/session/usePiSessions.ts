@@ -73,6 +73,7 @@ export interface UsePiSessionsResult {
   error: Error | undefined
   refresh: (options?: PiSessionRefreshOptions) => Promise<void>
   create: (init?: PiSessionCreateInit) => Promise<SessionSummary>
+  rename: (id: string, title: string) => Promise<SessionSummary>
   switch: (id: string) => void
   delete: (id: string) => Promise<void>
   loadMore: () => Promise<void>
@@ -440,6 +441,24 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     persistActive(next)
   }, [persistActive, requestScopeKey, sourceIsCurrent])
 
+  const rename = useCallback(async (id: string, title: string): Promise<SessionSummary> => {
+    const scope = requestScopeKey
+    if (!sourceIsCurrent(scope)) throw new StaleSessionsSourceError()
+    if (!enabled) throw new Error('Pi sessions are disabled')
+    const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}/rename`), {
+      method: 'POST',
+      headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestId: createRequestId('rename'), title }),
+    })
+    if (!response.ok) throw new Error(`Failed to rename session: ${response.status}`)
+    const renamed = toAddressedSessionSummary(await response.json())
+    if (!sourceIsCurrent(scope)) throw new StaleSessionsSourceError()
+    ensurePendingScope()
+    if (pendingCreatedRef.current.has(id)) pendingCreatedRef.current.set(id, renamed)
+    setSessions((current) => current.map((session) => session.id === id ? renamed : session))
+    return renamed
+  }, [enabled, ensurePendingScope, fetchImpl, requestHeaders, requestScopeKey, sessionsUrl, sourceIsCurrent])
+
   const deleteSession = useCallback(async (id: string): Promise<void> => {
     const scope = requestScopeKey
     if (!sourceIsCurrent(scope)) throw new StaleSessionsSourceError()
@@ -507,6 +526,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     error,
     refresh,
     create,
+    rename,
     switch: switchSession,
     delete: deleteSession,
     loadMore,
@@ -638,6 +658,11 @@ function buildRequestHeaders(headers: Record<string, string | undefined> | undef
 
 function headersScopeKey(headers: Record<string, string | undefined> | undefined, storageScope: string): string {
   return JSON.stringify({ storageScope, headers: Object.entries(headers ?? {}).sort(([a], [b]) => a.localeCompare(b)) })
+}
+
+function createRequestId(operation: string): string {
+  const suffix = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  return `${operation}:${suffix}`
 }
 
 function requestScopeIdentity(

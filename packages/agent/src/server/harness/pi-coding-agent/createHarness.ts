@@ -250,23 +250,23 @@ function sessionCtxForInput(input: AgentSendInput, ctx: RunContext): SessionCtx 
   // RunContext carries the live auth context for tools and commands; when a
   // direct harness caller omits input.ctx, do not let a read-only lookup from a
   // different user fork the native Pi session while another run is in flight.
-  return normalizeSessionCtx(input.ctx ?? { workspaceId: ctx.workspaceId }) ?? {};
+  return normalizeSessionCtx(input.ctx ?? ctx.sessionCtx ?? { workspaceId: ctx.workspaceId }) ?? {};
 }
 
 function sessionCtxFromRunContext(ctx: RunContext): SessionCtx {
-  return normalizeSessionCtx({ workspaceId: ctx.workspaceId, userId: ctx.userId }) ?? {};
+  return normalizeSessionCtx(ctx.sessionCtx ?? { workspaceId: ctx.workspaceId }) ?? {};
 }
 
 function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
-  if (!ctx?.workspaceId && !ctx?.userId) return undefined;
+  if (!ctx?.workspaceId && !ctx?.runtimeScopeIdentity) return undefined;
   return {
     ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
-    ...(ctx.userId ? { userId: ctx.userId } : {}),
+    ...(ctx.runtimeScopeIdentity ? { runtimeScopeIdentity: ctx.runtimeScopeIdentity } : {}),
   };
 }
 
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
-  return JSON.stringify([sessionId, ctx.workspaceId ?? "", ctx.userId ?? ""]);
+  return JSON.stringify([sessionId, ctx.workspaceId ?? "", ctx.runtimeScopeIdentity ?? ""]);
 }
 
 async function applyRequestedSessionOptions(

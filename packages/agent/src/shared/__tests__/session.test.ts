@@ -31,6 +31,7 @@ test('Session shapes', () => {
   expectTypeOf<SessionCtx>().toEqualTypeOf<{
     workspaceId?: string
     userId?: string
+    runtimeScopeIdentity?: string
   }>()
 
   expectTypeOf<SessionSummary>().toEqualTypeOf<{
