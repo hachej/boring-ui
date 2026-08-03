@@ -102,6 +102,8 @@ export interface CreateAgentSessionInput {
   readonly agentTypeId: string
   readonly requestId: string
   readonly title?: string
+  /** Boot-only intent to resume this exact tab-owned empty session. */
+  readonly resumeSessionId?: string
 }
 
 export interface ConnectAgentSessionInput {

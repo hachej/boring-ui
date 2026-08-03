@@ -89,13 +89,15 @@ export interface WorkspaceAgentSessionsApi<
   hasMore?: boolean
   error?: Error | null
   activeSessionId?: string | null
+  /** Hidden addressed boot candidate; not active until create confirms it. */
+  resumeSessionId?: string | null
   /** Explicit owner for controlled colliding ids; falls back to activeSession.agentTypeId. */
   activeSessionAgentTypeId?: string | null
   activeSession?: TSession | null
   workspaceId?: string | null
   switch: (id: string, agentTypeId?: string) => void
   /** Returns the canonical created row; void providers are a protocol violation. */
-  create: (input?: { title?: string }) => TSession | Promise<TSession>
+  create: (input?: { title?: string; resumeSessionId?: string }) => TSession | Promise<TSession>
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
   refresh?: (options?: { background?: boolean; throwOnError?: boolean }) => void | Promise<unknown>
@@ -876,7 +878,7 @@ export function WorkspaceAgentFront<
   })
   const coordinateRemoteCreate = useCallback((
     dedupeKey: string,
-    input?: { title?: string },
+    input?: { title?: string; resumeSessionId?: string },
   ): Promise<TSession | undefined> => {
     if (!sessionSourceIsCurrent() || !remoteSessionsAvailable) return Promise.resolve(undefined)
     const create = remoteSessionApi.create
@@ -1201,7 +1203,10 @@ export function WorkspaceAgentFront<
     autoCreateSessionRef.current = true
     setInitialRemoteSessionCreating({ workspaceId, creating: true })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
-    void coordinateRemoteCreate("initial-auto", { title: defaultSessionTitle })
+    void coordinateRemoteCreate("initial-auto", {
+      title: defaultSessionTitle,
+      ...(sessionApi.resumeSessionId ? { resumeSessionId: sessionApi.resumeSessionId } : {}),
+    })
       .catch(() => {
         if (!sessionSourceIsCurrent()) return
         autoCreateSessionRef.current = false
