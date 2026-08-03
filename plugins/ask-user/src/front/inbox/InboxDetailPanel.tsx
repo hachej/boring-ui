@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react"
-import { ArrowLeft, ExternalLink, MailOpen, MessageSquare } from "lucide-react"
+import { ArrowLeft, MailOpen, MessageSquare } from "lucide-react"
 import { HumanArtifactList, emitWorkspaceAttentionAction, useWorkspaceAttention, useWorkspaceShellCapabilities, cn, type HumanArtifact, type WorkspaceAttentionBlocker } from "@hachej/boring-workspace"
 import { attentionBlockerToInboxItem } from "./attentionBlockerAdapter"
 import { formatInboxTime, inboxItemDate, inboxItemSender, type WorkspaceInboxItem } from "./inboxItemModel"
@@ -10,6 +10,7 @@ import { useQuestionsRuntime } from "../runtime"
 import { createQuestionsClient } from "../client"
 import { QuestionFormProvider, QuestionForm, QuestionFields } from "../primitives"
 import type { RelatedTaskRef } from "./taskProvenanceClient"
+import { RelatedTaskList } from "./RelatedTaskList"
 
 function InboxActions({ item, blocker, primary = false, onShellError }: { item: WorkspaceInboxItem; blocker?: WorkspaceAttentionBlocker; primary?: boolean; onShellError?: (message: string) => void }) {
   const shell = useWorkspaceShellCapabilities()
@@ -68,7 +69,7 @@ export function InboxDetailPanel({
   const blocker = useMemo(() => blockers.find((entry) => entry.id === id), [blockers, id])
   const item = useMemo(() => blocker ? attentionBlockerToInboxItem(blocker) : null, [blocker])
   const runtime = useQuestionsRuntime()
-  const paneSessionId = item?.sessionId
+  const paneSessionId = item?.agentTypeId === runtime.agentTypeId ? item.sessionId : undefined
   const pending = useSyncExternalStore(runtime.subscribe, () => runtime.getPending(paneSessionId), () => runtime.getPending(paneSessionId))
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -78,6 +79,19 @@ export function InboxDetailPanel({
     if (!result.success) setError(result.message)
   }, [item, shell])
   const client = useMemo(() => createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }), [runtime.apiBaseUrl, runtime.authHeaders])
+  const cancelPending = useCallback(async () => {
+    if (!pending) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      await client.cancel(pending)
+      runtime.setPending(null, pending.sessionId)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }, [client, pending, runtime])
 
   if (!item) {
     return (
@@ -90,6 +104,9 @@ export function InboxDetailPanel({
   }
 
   const subtitle = [item.sessionId ? `Session ${item.sessionId}` : null, item.targetLabel || null].filter(Boolean).join(" · ")
+  const chatRef = item.chatAvailable && item.agentTypeId && item.sessionId
+    ? { agentTypeId: item.agentTypeId, sessionId: item.sessionId }
+    : null
 
   return (
     <div className={cn(embedded ? "bg-background text-foreground" : "flex h-full min-h-0 flex-col bg-background text-foreground")} data-boring-workspace-part="inbox-detail-panel" data-embedded={embedded ? "true" : "false"}>
@@ -137,18 +154,7 @@ export function InboxDetailPanel({
                       setSubmitting(false)
                     }
                   }}
-                  onCancel={async () => {
-                    setSubmitting(true)
-                    setError(null)
-                    try {
-                      await client.cancel(pending)
-                      runtime.setPending(null, pending.sessionId)
-                    } catch (err) {
-                      setError(err instanceof Error ? err.message : String(err))
-                    } finally {
-                      setSubmitting(false)
-                    }
-                  }}
+                  onCancel={cancelPending}
                 >
                   <QuestionForm className="space-y-4">
                     <div className="space-y-4">
@@ -166,18 +172,7 @@ export function InboxDetailPanel({
                         type="button"
                         disabled={submitting}
                         onClick={async () => {
-                          if (window.confirm("Discard your answer?")) {
-                            setSubmitting(true)
-                            setError(null)
-                            try {
-                              await client.cancel(pending)
-                              runtime.setPending(null, pending.sessionId)
-                            } catch (err) {
-                              setError(err instanceof Error ? err.message : String(err))
-                            } finally {
-                              setSubmitting(false)
-                            }
-                          }
+                          if (window.confirm("Discard your answer?")) await cancelPending()
                         }}
                         className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/60 disabled:opacity-50 transition"
                       >
@@ -198,39 +193,14 @@ export function InboxDetailPanel({
                 </dl>
               </div>
             )}
-            {relatedTasks.length > 0 ? (
-              <div className="mt-5">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Related tasks</div>
-                <div className="flex flex-wrap gap-2">
-                  {relatedTasks.map((task) => task.url ? (
-                    <a
-                      key={`${task.adapterId}:${task.taskId}`}
-                      href={task.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium hover:bg-muted"
-                      aria-label={`Open task ${task.number} ${task.title}`}
-                    >
-                      <span>{task.number}</span><span className="max-w-48 truncate text-muted-foreground">{task.title}</span><ExternalLink className="size-3" aria-hidden="true" />
-                    </a>
-                  ) : (
-                    <span key={`${task.adapterId}:${task.taskId}`} className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium">
-                      <span>{task.number}</span><span className="max-w-48 truncate text-muted-foreground">{task.title}</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
+            <RelatedTaskList tasks={relatedTasks} className="mt-5" />
             <HumanArtifactList artifacts={item.artifacts} onOpen={openArtifact} className="mt-5" />
             <div className="mt-5 flex flex-wrap gap-2">
-              {item.sessionId && item.chatAvailable ? (
+              {chatRef ? (
                 <button
                   type="button"
                   onClick={() => {
-                    const result = shell.openDetachedChat({
-                      agentTypeId: item.agentTypeId ?? runtime.agentTypeId,
-                      sessionId: item.sessionId!,
-                    }, { title: item.title })
+                    const result = shell.openDetachedChat(chatRef, { title: item.title })
                     if (!result.success) setError(result.message)
                   }}
                   className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted"

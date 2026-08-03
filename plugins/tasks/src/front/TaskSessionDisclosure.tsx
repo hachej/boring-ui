@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react"
 import { ChevronDown, ExternalLink, MessageSquare, MoreHorizontal, Unlink } from "lucide-react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@hachej/boring-ui-kit"
 import { HumanArtifactList, emitWorkspaceTaskProvenanceChanged, openHumanArtifact, type WorkspacePluginClient } from "@hachej/boring-workspace"
 import type { WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard, BoringTaskSessionLink, SessionHandoverResolution, SessionHandoverSummary } from "../shared"
@@ -87,7 +88,6 @@ export function TaskSessionDisclosure({
   const [unavailableArtifacts, setUnavailableArtifacts] = useState<ReadonlyMap<string, ReadonlySet<string>>>(() => new Map())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [openMenuLinkId, setOpenMenuLinkId] = useState<string | null>(null)
   const eventOrigin = useRef({})
   const sourceKey = JSON.stringify([task.adapterId, task.id])
   const requestScope = useRef({ sourceKey, version: 0 })
@@ -96,26 +96,6 @@ export function TaskSessionDisclosure({
     const version = ++requestScope.current.version
     return () => requestScope.current.sourceKey === sourceKey && requestScope.current.version === version
   }, [sourceKey])
-
-  useEffect(() => {
-    if (!openMenuLinkId) return
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      const target = event.target
-      const menuRoot = target instanceof Element
-        ? target.closest<HTMLElement>("[data-task-session-actions-root]")
-        : null
-      if (menuRoot?.dataset.taskSessionActionsRoot !== openMenuLinkId) setOpenMenuLinkId(null)
-    }
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpenMenuLinkId(null)
-    }
-    document.addEventListener("pointerdown", closeOnOutsidePointer)
-    document.addEventListener("keydown", closeOnEscape)
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer)
-      document.removeEventListener("keydown", closeOnEscape)
-    }
-  }, [openMenuLinkId])
 
   const loadLinks = useCallback(async (isCurrent: () => boolean) => {
     try {
@@ -216,7 +196,6 @@ export function TaskSessionDisclosure({
     event.stopPropagation()
     const next = !expanded
     setExpanded(next)
-    if (!next) setOpenMenuLinkId(null)
     if (next) void refresh(true)
   }
 
@@ -228,18 +207,14 @@ export function TaskSessionDisclosure({
     if (!result.success) console.error("Failed to open linked task chat", result.message)
   }
 
-  const openFull = (event: MouseEvent<HTMLButtonElement>, row: TaskSessionRow) => {
-    event.stopPropagation()
-    setOpenMenuLinkId(null)
+  const openFull = (row: TaskSessionRow) => {
     const sessionId = row.link.sessionId
     if (!sessionId) return
     const result = shell.openFullChat({ agentTypeId: row.link.agentTypeId, sessionId })
     if (!result.success) console.error("Failed to open linked task chat", result.message)
   }
 
-  const unlinkSession = async (event: MouseEvent<HTMLButtonElement>, row: TaskSessionRow) => {
-    event.stopPropagation()
-    setOpenMenuLinkId(null)
+  const unlinkSession = async (row: TaskSessionRow) => {
     if (!window.confirm(`Unlink this chat from ${task.number}? The transcript will be kept.`)) return
     try {
       await pluginClient.postJson("/api/boring-tasks/sessions/unlink", { linkId: row.link.id })
@@ -307,25 +282,25 @@ export function TaskSessionDisclosure({
                     <MessageSquare className="size-3" aria-hidden="true" />
                   </button>
                 ) : null}
-                <div className="relative shrink-0" data-task-session-actions-root={row.link.id}>
-                  <button type="button" onClick={(event) => { event.stopPropagation(); setOpenMenuLinkId((current) => current === row.link.id ? null : row.link.id) }} className="grid size-6 place-items-center rounded-md text-muted-foreground opacity-70 transition-opacity hover:bg-background hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={`Open session actions for ${task.number}`} aria-expanded={openMenuLinkId === row.link.id} title="Session actions">
-                    <MoreHorizontal className="size-3" aria-hidden="true" />
-                  </button>
-                  {openMenuLinkId === row.link.id ? (
-                    <div className="absolute right-0 top-7 z-40 w-52 overflow-hidden rounded-xl border border-border bg-popover p-1 text-xs text-popover-foreground shadow-xl">
-                      {row.available && sessionId ? (
-                        <button type="button" onClick={(event) => openFull(event, row)} className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left hover:bg-muted" aria-label={`Open ${row.activity?.title ?? "session"} in full chat`}>
-                          <ExternalLink className="size-3.5" aria-hidden="true" />
-                          Open in full chat
-                        </button>
-                      ) : null}
-                      <button type="button" onClick={(event) => void unlinkSession(event, row)} className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left text-destructive hover:bg-destructive/10" aria-label={`Unlink session from ${task.number}`}>
-                        <Unlink className="size-3.5" aria-hidden="true" />
-                        Unlink from task
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button type="button" onClick={(event) => event.stopPropagation()} className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground opacity-70 transition-opacity hover:bg-background hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={`Open session actions for ${task.number}`} title="Session actions">
+                      <MoreHorizontal className="size-3" aria-hidden="true" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" sideOffset={4} className="w-52" onClick={(event) => event.stopPropagation()}>
+                    {row.available && sessionId ? (
+                      <DropdownMenuItem onSelect={() => openFull(row)} aria-label={`Open ${row.activity?.title ?? "session"} in full chat`}>
+                        <ExternalLink className="size-3.5" aria-hidden="true" />
+                        Open in full chat
+                      </DropdownMenuItem>
+                    ) : null}
+                    <DropdownMenuItem onSelect={() => void unlinkSession(row)} variant="destructive" aria-label={`Unlink session from ${task.number}`}>
+                      <Unlink className="size-3.5" aria-hidden="true" />
+                      Unlink from task
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
               {handover ? (
                 <HumanArtifactList

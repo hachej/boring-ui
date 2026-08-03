@@ -105,7 +105,10 @@ Base: PR #1044 (`fix/775-post-agenthost-cutover`). Every source path has exactly
 - `packages/agent/src/server/__tests__/sessionRunDetails.test.ts` — projection privacy proof.
 - `plugins/tasks/src/server/taskSessionRoutes.ts` — extracted addressed route boundary; keeps authorization, body validation, Handover projection, and workspace-scoped link-store access out of plugin composition.
 - `plugins/tasks/src/server/taskSessionLinkStore.ts` — one writer queue per live Workspace prevents concurrent route/tool instances from losing durable links.
-- `plugins/tasks/src/front/TaskSessionDisclosure.tsx` — source-version fencing drops stale task/session/activity/Handover responses after ownership changes.
+- `plugins/tasks/src/front/TaskSessionDisclosure.tsx` — source-version fencing drops stale task/session/activity/Handover responses after ownership changes; canonical UI-kit menus replace bespoke document listeners.
+- `plugins/ask-user/src/front/inbox/RelatedTaskList.tsx` — one shared related-task renderer replaces duplicate Inbox/detail implementations.
+- Human Intention chat and task-attention joins fail closed unless both exact Agent owner and session ID are present; no runtime/default-Agent fallback remains.
+- Unused Handover snapshot/current-list APIs were removed; the port exposes only the operation reducer and terminal projection actually consumed by the addressed architecture.
 
 ## Forbidden architecture check
 

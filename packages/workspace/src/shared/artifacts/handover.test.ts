@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
   applyHandoverOperations,
-  currentHandoverArtifactsFromStructuredDetails,
   handoverOperationsFromDetails,
   projectHandovers,
   type HandoverOperation,
@@ -61,11 +60,4 @@ describe("handover registry reducer", () => {
     expect(projectHandovers(events)).toEqual([])
   })
 
-  it("folds only the already-authorized structured detail projection for current-run list", () => {
-    expect(currentHandoverArtifactsFromStructuredDetails([
-      { detail: operation({ action: "upsert", artifact: artifact("a") }) },
-      { detail: operation({ action: "upsert", artifact: artifact("b") }) },
-      { detail: operation({ action: "remove", artifactId: "a" }) },
-    ])).toEqual([artifact("b")])
-  })
 })

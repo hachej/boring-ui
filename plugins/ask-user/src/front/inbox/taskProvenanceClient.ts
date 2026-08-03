@@ -1,5 +1,5 @@
 import { WORKSPACE_TASK_PROVENANCE_CHANGED_EVENT } from "@hachej/boring-workspace"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 export interface RelatedTaskRef {
   adapterId: string
@@ -65,30 +65,15 @@ export function useRelatedTasks(options: {
 }): ReadonlyMap<string, readonly RelatedTaskRef[]> {
   const [bySession, setBySession] = useState<ReadonlyMap<string, readonly RelatedTaskRef[]>>(() => new Map())
   const [revision, setRevision] = useState(0)
-  const cacheRef = useRef(new Map<string, ReadonlyMap<string, readonly RelatedTaskRef[]>>())
-  const contextRef = useRef({ apiBaseUrl: options.apiBaseUrl, headers: options.headers })
-  if (contextRef.current.apiBaseUrl !== options.apiBaseUrl || contextRef.current.headers !== options.headers) {
-    cacheRef.current.clear()
-    contextRef.current = { apiBaseUrl: options.apiBaseUrl, headers: options.headers }
-  }
   const sessionKey = useMemo(() => Array.from(new Set(options.sessionIds)).sort().join("\u0000"), [options.sessionIds])
-  const cacheKey = `${revision}:${sessionKey}`
 
   useEffect(() => {
-    const invalidate = () => {
-      cacheRef.current.clear()
-      setRevision((current) => current + 1)
-    }
+    const invalidate = () => setRevision((current) => current + 1)
     window.addEventListener(WORKSPACE_TASK_PROVENANCE_CHANGED_EVENT, invalidate)
     return () => window.removeEventListener(WORKSPACE_TASK_PROVENANCE_CHANGED_EVENT, invalidate)
   }, [])
 
   useEffect(() => {
-    const cached = cacheRef.current.get(cacheKey)
-    if (cached) {
-      setBySession(cached)
-      return
-    }
     const controller = new AbortController()
     void resolveRelatedTasks({
       apiBaseUrl: options.apiBaseUrl,
@@ -97,14 +82,12 @@ export function useRelatedTasks(options: {
       signal: controller.signal,
     }).then((resolution) => {
       if (controller.signal.aborted) return
-      const next = new Map(resolution.matches.map((match) => [match.sessionId, match.tasks] as const))
-      cacheRef.current.set(cacheKey, next)
-      setBySession(next)
+      setBySession(new Map(resolution.matches.map((match) => [match.sessionId, match.tasks] as const)))
     }).catch((error) => {
       if (!controller.signal.aborted && (error as { name?: unknown })?.name !== "AbortError") setBySession(new Map())
     })
     return () => controller.abort()
-  }, [cacheKey, options.apiBaseUrl, options.headers, sessionKey])
+  }, [options.apiBaseUrl, options.headers, revision, sessionKey])
 
   return bySession
 }

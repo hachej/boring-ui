@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { ExternalLink, Inbox, MailOpen, X } from "lucide-react"
+import { Inbox, MailOpen, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { HumanArtifactList, useWorkspaceAttention, useAppLeftOverlayChrome, cn, type HumanArtifact } from "@hachej/boring-workspace"
 import { attentionBlockerToInboxItem, isInboxAttentionBlocker } from "./attentionBlockerAdapter"
@@ -18,6 +18,7 @@ import { useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"
 import { useRelatedTasks } from "./taskProvenanceClient"
 import { useQuestionsRuntime } from "../runtime"
 import { useInboxSessionTitles } from "./sessionTitleClient"
+import { RelatedTaskList } from "./RelatedTaskList"
 
 export interface InboxOverlayProps {
   onClose: () => void
@@ -67,7 +68,9 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
   const items = useMemo(() => mergeInboxPinnedState(filtered, pinnedIds), [filtered, pinnedIds])
   const pinnedItems = useMemo(() => items.filter((item) => item.pinned), [items])
   const unpinnedItems = useMemo(() => items.filter((item) => !item.pinned), [items])
-  const inboxSessionIds = useMemo(() => sorted.flatMap((item) => item.sessionId ? [item.sessionId] : []), [sorted])
+  const inboxSessionIds = useMemo(() => sorted.flatMap((item) => (
+    item.agentTypeId === runtime.agentTypeId && item.sessionId ? [item.sessionId] : []
+  )), [runtime.agentTypeId, sorted])
   const relatedTasks = useRelatedTasks({
     apiBaseUrl: runtime.apiBaseUrl,
     headers: runtime.authHeaders,
@@ -102,9 +105,9 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
     setSelectedItemId((current) => current === item.id ? null : item.id)
   }, [])
   const openChat = useCallback((item: WorkspaceInboxItemViewModel) => {
-    if (!item.sessionId) return
-    handleShellResult(shell.openDetachedChat({ agentTypeId: item.agentTypeId ?? runtime.agentTypeId, sessionId: item.sessionId }, { title: item.title }))
-  }, [handleShellResult, runtime.agentTypeId, shell])
+    if (!item.agentTypeId || !item.sessionId) return
+    handleShellResult(shell.openDetachedChat({ agentTypeId: item.agentTypeId, sessionId: item.sessionId }, { title: item.title }))
+  }, [handleShellResult, shell])
   const renderExpandedItem = useCallback((item: WorkspaceInboxItemViewModel) => {
     const blocker = blockers.find((entry) => entry.id === item.id)
     const questionArtifact: HumanArtifact | null = blocker?.surfaceKind && blocker.target
@@ -121,22 +124,7 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
     return (
       <div className="px-4 py-3">
         <HumanArtifactList artifacts={artifacts} onOpen={(artifact) => handleShellResult(shell.openInboxArtifact(item, artifact))} />
-        {tasks.length > 0 ? (
-          <div className="mt-3">
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Related tasks</div>
-            <div className="flex flex-wrap gap-1.5">
-              {tasks.map((task) => task.url ? (
-                <a key={`${task.adapterId}:${task.taskId}`} href={task.url} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] font-medium hover:bg-muted">
-                  <span>{task.number}</span><span className="max-w-48 truncate text-muted-foreground">{task.title}</span><ExternalLink className="size-3" aria-hidden="true" />
-                </a>
-              ) : (
-                <span key={`${task.adapterId}:${task.taskId}`} className="inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] font-medium">
-                  <span>{task.number}</span><span className="max-w-48 truncate text-muted-foreground">{task.title}</span>
-                </span>
-              ))}
-            </div>
-          </div>
-        ) : null}
+        <RelatedTaskList tasks={tasks} className="mt-3" />
       </div>
     )
   }, [blockers, handleShellResult, relatedTasks, shell])
