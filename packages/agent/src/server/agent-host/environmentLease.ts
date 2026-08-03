@@ -129,10 +129,11 @@ export class EnvironmentLeaseManager {
     environment: ResolvedEnvironmentScope,
     signal: AbortSignal,
   ): Promise<EnvironmentGeneration> {
+    const runtimeWorkspaceId = environment.runtimeWorkspaceId ?? workspaceScopeId
     const providerBundle = await this.adapter.create({
       workspaceRoot: environment.workspaceRoot,
-      sessionId: workspaceScopeId,
-      workspaceId: workspaceScopeId,
+      sessionId: runtimeWorkspaceId,
+      workspaceId: runtimeWorkspaceId,
       templatePath: environment.templatePath,
     })
     let bundle = providerBundle
