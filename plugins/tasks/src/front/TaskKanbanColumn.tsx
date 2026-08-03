@@ -3,6 +3,7 @@ import type { BoringTaskCard } from "../shared"
 import type { BoringTaskColumnView } from "./taskBoardModel"
 import { canDropInColumn } from "./taskBoardModel"
 import { TaskCard } from "./TaskCard"
+import { taskAttentionKey, type TaskAttentionItem } from "./useTaskAttention"
 
 interface TaskKanbanColumnProps {
   column: BoringTaskColumnView
@@ -14,6 +15,7 @@ interface TaskKanbanColumnProps {
   onTaskDelete?: (task: BoringTaskCard) => void
   canDragTask?: (task: BoringTaskCard) => boolean
   canDeleteTask?: (task: BoringTaskCard) => boolean
+  attentionByTask?: ReadonlyMap<string, readonly TaskAttentionItem[]>
 }
 
 export function TaskKanbanColumn({
@@ -26,6 +28,7 @@ export function TaskKanbanColumn({
   onTaskDelete,
   canDragTask = () => moveEnabled,
   canDeleteTask = () => false,
+  attentionByTask = new Map(),
 }: TaskKanbanColumnProps) {
   const acceptsDrop = moveEnabled && canDropInColumn(column)
 
@@ -94,6 +97,7 @@ export function TaskKanbanColumn({
             draggable={!column.unmapped && canDragTask(task)}
             unmapped={column.unmapped}
             deleteEnabled={canDeleteTask(task)}
+            attention={attentionByTask.get(taskAttentionKey(task))}
             onDelete={onTaskDelete}
             onDragStart={onTaskDragStart}
             onDragEnd={onTaskDragEnd}

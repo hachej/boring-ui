@@ -109,10 +109,11 @@ function InboxCountBadge() {
   )
 }
 
-function AskUserInboxOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
+function AskUserInboxOverlay({ onClose, params }: BoringFrontAppLeftOverlayProps) {
   const { workspaceId } = useWorkspaceContext()
   return <InboxOverlay
     onClose={onClose}
+    initialItemId={params?.itemId}
     pinStorageKey={`boring-workspace:inbox-pins:${workspaceId ?? "workspace"}`}
   />
 }

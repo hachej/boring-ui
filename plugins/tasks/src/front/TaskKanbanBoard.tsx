@@ -4,6 +4,7 @@ import type { BoringTaskAdapter, BoringTaskBoardConfig, BoringTaskCard, BoringTa
 import { groupTasksByColumn } from "./taskBoardModel"
 import { TaskCard } from "./TaskCard"
 import { TaskKanbanColumn } from "./TaskKanbanColumn"
+import { taskAttentionKey, useTaskAttention } from "./useTaskAttention"
 
 interface TaskKanbanBoardProps {
   adapters: readonly BoringTaskAdapter[]
@@ -129,6 +130,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const requestSeq = useRef(0)
   const toolbarRef = useRef<HTMLDivElement | null>(null)
   const adaptersById = useMemo(() => new Map(adapters.map((adapter) => [adapter.id, adapter])), [adapters])
+  const attentionByTask = useTaskAttention(state?.tasks ?? [])
 
   const setViewMode = (mode: TaskBoardViewMode) => {
     setViewModeState(mode)
@@ -515,6 +517,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                           draggable={false}
                           unmapped={column.unmapped}
                           compact
+                          attention={attentionByTask.get(taskAttentionKey(task))}
                           deleteEnabled={Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
                           onDelete={(task) => void deleteTask(task)}
                           onDragStart={handleTaskDragStart}
@@ -539,6 +542,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                 onTaskDragEnd={() => setActiveTaskRef(null)}
                 onTaskDrop={(taskId, adapterId, statusId) => void moveTask(taskId, adapterId, statusId)}
                 onTaskDelete={(task) => void deleteTask(task)}
+              attentionByTask={attentionByTask}
                 canDragTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.move && adaptersById.get(task.adapterId)?.moveTask)}
                 canDeleteTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
               />

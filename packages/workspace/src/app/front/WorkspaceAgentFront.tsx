@@ -39,6 +39,7 @@ import { WorkspaceBackgroundBoot } from "./WorkspaceBackgroundBoot"
 import { ChatSessionTransitionState, WorkbenchWarmupOverlay } from "./WorkspaceAgentStatusStates"
 import { WorkspaceUiStateSync } from "./WorkspaceUiStateSync"
 import { PluginAppLeftOverlayHost, assertUniqueAppLeftActionIds, pluginAppLeftActionIds, usePluginAppLeftActions, type AppLeftOverlayId } from "./PluginAppLeftHost"
+import { WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, appLeftOverlayRequestFromEvent } from "../../shared/plugins/appLeftOverlay"
 import { CloseLeftPaneOnAttention } from "./CloseLeftPaneOnAttention"
 import { workspaceRequestHeaders, type WorkspaceWarmupStatus } from "./workspacePreload"
 import {
@@ -1110,7 +1111,18 @@ export function WorkspaceAgentFront<
     defaultLeftOverlay,
     shellPersistenceEnabled,
   ) as [AppLeftOverlayId, (next: AppLeftOverlayId | ((previous: AppLeftOverlayId) => AppLeftOverlayId)) => void]
+  const [leftOverlayParams, setLeftOverlayParams] = useState<Readonly<Record<string, string>> | undefined>()
   const pluginOverlayActionIds = useMemo(() => pluginAppLeftActionIds(capturedPlugins), [capturedPlugins])
+  useEffect(() => {
+    const onOpenOverlay = (event: Event) => {
+      const request = appLeftOverlayRequestFromEvent(event)
+      if (!request || !pluginOverlayActionIds.has(request.id)) return
+      setLeftOverlayParams(request.params)
+      setLeftOverlay(request.id)
+    }
+    window.addEventListener(WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, onOpenOverlay)
+    return () => window.removeEventListener(WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, onOpenOverlay)
+  }, [pluginOverlayActionIds, setLeftOverlay])
   useEffect(() => {
     const customOverlayActive = Boolean(leftOverlay && appLeftOverlayActions?.some((action) => action.id === leftOverlay))
     if (
@@ -1969,6 +1981,7 @@ export function WorkspaceAgentFront<
       await remoteSessionApi.refresh?.({ background: true, throwOnError: true })
     },
     surfaceDispatch,
+    isAppLeftOverlayAvailable: (id) => pluginOverlayActionIds.has(id),
     onDockOverlay: () => setLeftOverlay(null),
   })
   const createChatSessionInPopover = useCallback(() => {
@@ -2061,6 +2074,7 @@ export function WorkspaceAgentFront<
     plugins: capturedPlugins,
     activeOverlay: leftOverlay,
     onClose: () => setLeftOverlay(null),
+    params: leftOverlayParams,
     headerInsetStart: appLeftPaneCollapsed,
     headerInsetEnd: !surfaceOpen,
   })

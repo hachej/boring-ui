@@ -2,15 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react"
 
-interface SessionActivityResponse {
-  sessions?: Array<{ sessionId?: unknown; title?: unknown }>
+interface SessionStateResponse {
+  summary?: { title?: unknown }
 }
 
 export function useInboxSessionTitles({
+  agentTypeId,
   apiBaseUrl,
   headers,
   sessionIds,
 }: {
+  agentTypeId: string
   apiBaseUrl: string
   headers?: Record<string, string>
   sessionIds: readonly string[]
@@ -27,26 +29,23 @@ export function useInboxSessionTitles({
     }
     const controller = new AbortController()
     const stableHeaders = Object.fromEntries(JSON.parse(headersKey) as Array<[string, string]>)
-    void fetch(`${apiBaseUrl}/api/v1/agent/pi-chat/sessions/activity`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...stableHeaders },
-      body: JSON.stringify({ sessionIds: requested }),
-      signal: controller.signal,
-    }).then(async (response) => {
-      if (!response.ok) throw new Error("session titles unavailable")
-      const payload = await response.json() as SessionActivityResponse
-      const next = new Map<string, string>()
-      for (const session of payload.sessions ?? []) {
-        if (typeof session.sessionId !== "string" || typeof session.title !== "string") continue
-        const title = session.title.trim()
-        if (title) next.set(session.sessionId, title)
-      }
-      setTitles(next)
+    void Promise.all(requested.map(async (sessionId) => {
+      const response = await fetch(`${apiBaseUrl}/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions/${encodeURIComponent(sessionId)}/state`, {
+        method: "GET",
+        headers: stableHeaders,
+        signal: controller.signal,
+      })
+      if (!response.ok) return undefined
+      const payload = await response.json() as SessionStateResponse
+      const title = typeof payload.summary?.title === "string" ? payload.summary.title.trim() : ""
+      return title ? [sessionId, title] as const : undefined
+    })).then((entries) => {
+      setTitles(new Map(entries.filter((entry): entry is readonly [string, string] => entry !== undefined)))
     }).catch(() => {
       if (!controller.signal.aborted) setTitles(new Map())
     })
     return () => controller.abort()
-  }, [apiBaseUrl, headersKey, key])
+  }, [agentTypeId, apiBaseUrl, headersKey, key])
 
   return titles
 }
