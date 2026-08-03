@@ -271,7 +271,7 @@ async function createPiSession(apiUrl: string, title: string): Promise<RuntimeSe
       'Content-Type': 'application/json',
       'x-boring-storage-scope': STORAGE_SCOPE,
     },
-    body: JSON.stringify({ requestId: `create-${title}`, title }),
+    body: JSON.stringify({ requestId: `create-${title.replace(/[^A-Za-z0-9._:-]+/g, '-')}`, title }),
   })
   expect(response.status).toBe(201)
   const ref = await response.json() as { agentTypeId: string; sessionId: string }

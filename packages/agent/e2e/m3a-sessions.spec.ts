@@ -1,4 +1,4 @@
-import { ErrorCode } from '../src/shared/error-codes'
+import { AgentGatewayErrorCode } from '../src/shared/gateway/errors'
 import { expect, test } from './fixtures'
 
 test.describe('M3a: pi-chat session CRUD', () => {
@@ -68,7 +68,7 @@ test.describe('M3a: pi-chat session CRUD', () => {
     )
     expect(r.status()).toBe(404)
     const body = (await r.json()) as { error?: { code?: string } }
-    expect(body.error?.code).toBe(ErrorCode.enum.SESSION_NOT_FOUND)
+    expect(body.error?.code).toBe(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND)
   })
 
   test('delete returns stable not-found error for unknown sessions', async ({ browserPage, backend }) => {
@@ -78,7 +78,7 @@ test.describe('M3a: pi-chat session CRUD', () => {
     )
     expect(r.status()).toBe(404)
     const body = (await r.json()) as { error?: { code?: string } }
-    expect(body.error?.code).toBe(ErrorCode.enum.SESSION_NOT_FOUND)
+    expect(body.error?.code).toBe(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND)
   })
 
   test('create with default title', async ({ browserPage, backend }) => {
