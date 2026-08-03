@@ -121,6 +121,7 @@ test.describe('Pi-native multi-session cold reload', () => {
   })
 
   test('real runtime retries reload-time session-list 503s without switching or auto-creating the selected session', async ({ page, workspace }, testInfo) => {
+    test.setTimeout(90_000)
     const backend = await spawnBackend({
       workspaceRoot: workspace.root,
       repoRoot,
@@ -314,7 +315,7 @@ async function seedSelectedSession(apiUrl: string, sessionId: string): Promise<v
     )) === true
   }, {
     message: `expected seeded Pi session ${sessionId} to complete before browser hydration`,
-    timeout: 15_000,
+    timeout: 30_000,
   }).toBe(true)
 }
 

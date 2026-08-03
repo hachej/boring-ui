@@ -71,13 +71,14 @@ describe("Workspace AgentHost composition root", () => {
         { agentTypeId: "beta", label: "Beta" },
       ])
 
-      const sessions = await app.inject({ method: "GET", url: "/api/v1/agents/alpha/sessions", headers })
-      expect(sessions.statusCode).toBe(200)
-      expect(sessions.json()).toMatchObject({
-        sessions: expect.arrayContaining([
-          expect.objectContaining({ ref: { agentTypeId: "alpha", sessionId: expect.any(String) } }),
-        ]),
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/alpha/sessions",
+        headers,
+        payload: { title: "Alpha session" },
       })
+      expect(created.statusCode).toBe(201)
+      expect(created.json()).toEqual({ agentTypeId: "alpha", sessionId: expect.any(String) })
     } finally {
       await app.close()
     }
