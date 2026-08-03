@@ -215,7 +215,7 @@ export function PiChatPanel<
   hotReloadEnabled = true,
   suggestions = defaultChatSuggestions,
   emptyState,
-  emptyPlacement = 'default',
+  emptyPlacement = 'hero',
   composerPlaceholder,
   initialDraft,
   autoSubmitInitialDraft = false,
@@ -1091,72 +1091,10 @@ export function PiChatPanel<
     handleComposerKeyDown(event)
   }, [handleComposerKeyDown, interrupt, isStreaming, mentionState, slashQuery])
 
-  return (
-    <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
-      <div
-        data-boring-agent=""
-        data-boring-agent-part="chat"
-        data-pi-chat-session-id={activeSessionId}
-        data-pi-chat-connection={debugState?.connection ?? 'disconnected'}
-        data-pi-chat-last-seq={debugState?.lastSeq ?? 0}
-        className={cn(
-          'flex h-full min-h-0 overflow-hidden text-foreground antialiased',
-          debug ? 'flex-row' : showSessionSidebar ? 'flex-row' : 'flex-col',
-          chrome ? 'bg-[color:var(--canvas)] text-[13px]' : 'bg-transparent text-[13px]',
-          className,
-        )}
-        role="region"
-        aria-label="Agent assistant"
-      >
-        {showSessionSidebar ? (
-          <aside data-boring-agent-part="pi-chat-session-sidebar" className="min-h-0 w-64 shrink-0 border-r border-border/60">
-            <SessionList
-              sessions={sessionList}
-              activeId={activeSessionId}
-              loading={sessionsLoading}
-              onCreate={createSession}
-              onSwitch={sessions.switch}
-              onDelete={deleteSession}
-              onLoadMore={sessions.loadMore}
-              hasMore={sessions.hasMore}
-              loadingMore={sessions.loadingMore}
-            />
-          </aside>
-        ) : null}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div
-            className={cn(
-              'flex h-full min-h-0 flex-col overflow-hidden',
-              emptyHero && 'justify-center',
-              chrome &&
-                'mx-3 my-3 rounded-xl bg-[color:var(--surface-chat)] shadow-[0_1px_0_oklch(0_0_0/0.02),0_1px_2px_-1px_oklch(0_0_0/0.04),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.6)]',
-            )}
-          >
-            <PiConversationSurface
+  const composerSurface = (
+    <PiChatComposerSurface
               chrome={chrome}
-              emptyHero={emptyHero}
-              messages={messages}
-              emptyStateHydrating={emptyStateHydrating}
-              emptyState={emptyState}
-              suggestions={suggestions}
-              isStreaming={isStreaming}
-              showThoughts={showThoughts}
-              toolRenderers={mergedToolRenderers}
-              mentionCatalog={assistantMentionCatalog}
-              onMentionActivate={activateAssistantMention}
-              runtimeNotices={runtimeNotices}
-              onDismissNotice={clearLocalNotice}
-              renderNoticeAction={renderNoticeAction}
-              onScrollToBottomReady={(scrollToBottom) => {
-                scrollToBottomRef.current = scrollToBottom
-              }}
-              onSuggestionSubmit={({ text, files, source }) => sendComposerMessage({ text, files, source })}
-              onRestoreDraft={setComposerDraft}
-              windowResetKey={activeSessionId}
-            />
-
-            <PiChatComposerSurface
-              chrome={chrome}
+              pickerPlacement={emptyHero ? 'above-compact' : 'above'}
               isStreaming={isStreaming}
               status={status}
               disabled={disabled}
@@ -1215,7 +1153,75 @@ export function PiChatPanel<
               }}
               onSubmitMessage={({ text, files }) => sendComposerMessage({ text, files })}
               onStop={stop}
+    />
+  )
+
+  return (
+    <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
+      <div
+        data-boring-agent=""
+        data-boring-agent-part="chat"
+        data-pi-chat-session-id={activeSessionId}
+        data-pi-chat-connection={debugState?.connection ?? 'disconnected'}
+        data-pi-chat-last-seq={debugState?.lastSeq ?? 0}
+        className={cn(
+          'flex h-full min-h-0 overflow-hidden text-foreground antialiased',
+          debug ? 'flex-row' : showSessionSidebar ? 'flex-row' : 'flex-col',
+          chrome ? 'bg-[color:var(--canvas)] text-[13px]' : 'bg-transparent text-[13px]',
+          className,
+        )}
+        role="region"
+        aria-label="Agent assistant"
+      >
+        {showSessionSidebar ? (
+          <aside data-boring-agent-part="pi-chat-session-sidebar" className="min-h-0 w-64 shrink-0 border-r border-border/60">
+            <SessionList
+              sessions={sessionList}
+              activeId={activeSessionId}
+              loading={sessionsLoading}
+              onCreate={createSession}
+              onSwitch={sessions.switch}
+              onDelete={deleteSession}
+              onLoadMore={sessions.loadMore}
+              hasMore={sessions.hasMore}
+              loadingMore={sessions.loadingMore}
             />
+          </aside>
+        ) : null}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div
+            className={cn(
+              'flex h-full min-h-0 flex-col overflow-hidden',
+              emptyHero && 'justify-center',
+              chrome &&
+                'mx-3 my-3 rounded-xl bg-[color:var(--surface-chat)] shadow-[0_1px_0_oklch(0_0_0/0.02),0_1px_2px_-1px_oklch(0_0_0/0.04),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.6)]',
+            )}
+          >
+            <PiConversationSurface
+              chrome={chrome}
+              emptyHero={emptyHero}
+              emptyHeroComposer={emptyHero ? composerSurface : undefined}
+              messages={messages}
+              emptyStateHydrating={emptyStateHydrating}
+              emptyState={emptyState}
+              suggestions={suggestions}
+              isStreaming={isStreaming}
+              showThoughts={showThoughts}
+              toolRenderers={mergedToolRenderers}
+              mentionCatalog={assistantMentionCatalog}
+              onMentionActivate={activateAssistantMention}
+              runtimeNotices={runtimeNotices}
+              onDismissNotice={clearLocalNotice}
+              renderNoticeAction={renderNoticeAction}
+              onScrollToBottomReady={(scrollToBottom) => {
+                scrollToBottomRef.current = scrollToBottom
+              }}
+              onSuggestionSubmit={({ text, files, source }) => sendComposerMessage({ text, files, source })}
+              onRestoreDraft={setComposerDraft}
+              windowResetKey={activeSessionId}
+            />
+
+            {emptyHero ? null : composerSurface}
           </div>
         </div>
         {debug ? (

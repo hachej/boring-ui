@@ -28,6 +28,7 @@ const LOAD_OLDER_THRESHOLD_PX = 320
 export interface PiConversationSurfaceProps {
   chrome: boolean
   emptyHero: boolean
+  emptyHeroComposer?: ReactNode
   messages: BoringChatMessage[]
   emptyStateHydrating: boolean
   emptyState?: {
@@ -57,6 +58,7 @@ export interface PiConversationSurfaceProps {
 export function PiConversationSurface({
   chrome,
   emptyHero,
+  emptyHeroComposer,
   messages,
   emptyStateHydrating,
   emptyState,
@@ -93,7 +95,9 @@ export function PiConversationSurface({
 
   return (
     <Conversation
-      className={emptyHero ? 'max-h-[45vh] flex-none' : 'flex-1'}
+      className={emptyHero
+        ? 'max-h-[45vh] flex-none !overflow-visible [&>div]:!overflow-visible [&>div>div]:!overflow-visible'
+        : 'flex-1'}
       aria-label="Agent conversation"
       aria-live="polite"
       onScrollToBottomReady={onScrollToBottomReady}
@@ -116,7 +120,8 @@ export function PiConversationSurface({
             description={emptyState?.description}
             footer={emptyState?.footer}
             suggestions={suggestions}
-            className={emptyHero ? 'items-center text-center [&>p]:mx-auto' : undefined}
+            composer={emptyHeroComposer}
+            hero={emptyHero}
             onSelect={(suggestion) => {
               const text = suggestion.prompt ?? suggestion.label
               if (!text.trim()) return

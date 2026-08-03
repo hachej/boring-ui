@@ -67,6 +67,7 @@ export interface PiChatComposerSurfaceProps<
   TComposerBlocker extends ComposerBlocker = ComposerBlocker,
 > {
   chrome: boolean
+  pickerPlacement?: 'above' | 'above-compact'
   isStreaming: boolean
   status: string
   disabled: boolean
@@ -129,6 +130,7 @@ export function PiChatComposerSurface<
   TComposerBlocker extends ComposerBlocker = ComposerBlocker,
 >({
   chrome,
+  pickerPlacement = 'above',
   isStreaming,
   status,
   disabled,
@@ -224,7 +226,12 @@ export function PiChatComposerSurface<
   }, [draft, resizeTextarea, textareaRef])
 
   return (
-    <div className={cn('relative z-20', chrome ? 'px-4 pb-4 pt-2 sm:px-6 sm:pb-5' : 'px-3 pb-2 pt-1')}>
+    <div className={cn(
+      'relative z-20',
+      chrome
+        ? 'pb-[calc(1rem+env(safe-area-inset-bottom))] pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))] pt-2 sm:pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:pl-[calc(1.5rem+env(safe-area-inset-left))] sm:pr-[calc(1.5rem+env(safe-area-inset-right))]'
+        : 'pb-[calc(0.5rem+env(safe-area-inset-bottom))] pl-[calc(0.75rem+env(safe-area-inset-left))] pr-[calc(0.75rem+env(safe-area-inset-right))] pt-1',
+    )}>
       <div
         data-boring-agent-part="chat-working-slot"
         className={cn(
@@ -280,8 +287,15 @@ export function PiChatComposerSurface<
           {attachmentNotice}
         </div>
       ) : null}
-      <div className={cn('mx-auto w-full', chrome ? 'max-w-3xl' : 'max-w-[680px]')}>
+      <div className={cn('@container group/composer relative mx-auto w-full', chrome ? 'max-w-3xl' : 'max-w-[680px]')}>
+        <div className={cn(
+          'absolute inset-x-0 z-30',
+          pickerPlacement === 'above-compact'
+            ? 'bottom-[calc(100%+4px)] [&_[cmdk-list]]:!max-h-[200px]'
+            : 'bottom-[calc(100%+4px)]',
+        )}>
         {mentionState ? (
+          <div className="mr-px ml-[43px]">
           <MentionPicker
             mention={mentionState}
             apiBaseUrl={apiBaseUrl}
@@ -291,14 +305,17 @@ export function PiChatComposerSurface<
             onSelect={onSelectMention}
             onDismiss={onDismissMention}
           />
+          </div>
         ) : null}
         {slashQuery !== null ? (
+          <div className="mr-px ml-[43px]">
           <SlashCommandPicker
             query={slashQuery}
             commands={commands}
             onSelect={onSelectSlashCommand}
             onDismiss={onDismissSlash}
           />
+          </div>
         ) : null}
         {mentionState === null && slashQuery === null && modelPickerOpen ? (
           <ModelPickerMenu
@@ -334,12 +351,12 @@ export function PiChatComposerSurface<
         data-composer-multiline="false"
         style={{ '--composer-input-group-height': `${COMPOSER_INPUT_GROUP_MIN_HEIGHT}px` } as CSSProperties}
         className={cn(
-          'relative mx-auto w-full overflow-visible rounded-[28px]',
+          'relative mx-auto w-full overflow-visible rounded-xl',
           chrome ? 'max-w-3xl bg-transparent shadow-[0_1px_2px_-1px_oklch(0_0_0/0.06),0_6px_18px_-12px_oklch(0_0_0/0.12),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)] focus-within:shadow-[0_1px_3px_-1px_oklch(0_0_0/0.08),0_10px_28px_-14px_oklch(0_0_0/0.16),inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.45)]' : 'max-w-[680px] bg-transparent shadow-[inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)] focus-within:shadow-[inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.45)]',
           'transition-shadow duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]',
           '[&_[data-slot=input-group]]:!h-auto [&_[data-slot=input-group]]:!min-h-[var(--composer-input-group-height)]',
           '[&_[data-slot=input-group]]:!flex-col [&_[data-slot=input-group]]:!items-stretch [&_[data-slot=input-group]]:!overflow-hidden',
-          '[&_[data-slot=input-group]]:!border-0 [&_[data-slot=input-group]]:!rounded-[28px]',
+          '[&_[data-slot=input-group]]:!border-0 [&_[data-slot=input-group]]:!rounded-xl',
           '[&_[data-slot=input-group]]:!bg-transparent [&_[data-slot=input-group]]:!shadow-none',
           '[&_[data-slot=input-group]]:dark:!bg-transparent [&_[data-slot=input-group]]:!ring-0',
           '[&_[data-slot=input-group]]:has-[:focus]:!ring-0',
@@ -392,8 +409,8 @@ export function PiChatComposerSurface<
               className={cn(
                 'min-w-0 flex-1 !min-h-10 !max-h-40 resize-none overflow-hidden border-0 bg-transparent shadow-none',
                 '[field-sizing:fixed]',
-                'px-2 py-2 text-[13px] leading-6',
-                'placeholder:text-muted-foreground/45',
+                'px-2 py-2 text-sm leading-6 text-foreground',
+                'placeholder:text-muted-foreground/60',
                 'focus-visible:ring-0 focus-visible:ring-offset-0',
               )}
             />
@@ -420,8 +437,7 @@ export function PiChatComposerSurface<
                   disabled={submitDisabled}
                   className={cn(
                     'h-8 w-8 shrink-0 rounded-full',
-                    'bg-foreground',
-                    'text-background',
+                    'bg-foreground text-background',
                     'transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]',
                     'hover:bg-foreground/90 hover:shadow-[0_0_0_3px_oklch(from_var(--foreground)_l_c_h/0.12)] hover:scale-[1.04]',
                     'active:scale-[0.93] active:brightness-95',
@@ -439,10 +455,11 @@ export function PiChatComposerSurface<
       <div
         data-boring-agent-part="composer-settings-row"
         className={cn(
-          'mx-auto mt-1.5 flex w-full items-center justify-center gap-1.5 text-[10.5px] text-muted-foreground/45',
+          'mx-auto mt-2 grid min-h-8 w-full grid-cols-[minmax(0,1fr)_auto] items-center text-xs text-muted-foreground',
           chrome ? 'max-w-3xl' : 'max-w-[680px]',
         )}
       >
+        <div className="flex min-w-0 items-center justify-center gap-1">
         <ModelSelectTrigger
           value={selectedModel}
           options={modelOptions}
@@ -472,8 +489,10 @@ export function PiChatComposerSurface<
             }}
           />
         ) : null}
+        </div>
       </div>
       )}
+      </div>
     </div>
   )
 }

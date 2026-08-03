@@ -196,7 +196,7 @@ describe('ModelSelect', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Model' }))
-    fireEvent.click(screen.getByText('auto'))
+    fireEvent.click(screen.getByText('Auto'))
 
     expect(onChange).toHaveBeenCalledWith(null)
   })
@@ -256,7 +256,7 @@ describe('ModelSelect', () => {
     )
 
     const trigger = screen.getByRole('button', { name: /Current model: Default model/ })
-    expect(trigger.textContent).toContain('/model: Default model')
+    expect(trigger.textContent).toContain('Model · Default model')
     expect(trigger.className).toContain('whitespace-nowrap')
     expect(trigger.className).toContain('overflow-hidden')
     expect(trigger.className).toContain('text-ellipsis')
@@ -332,7 +332,7 @@ describe('ThinkingSelect', () => {
     const { rerender } = render(<ThinkingSelect value="medium" onChange={() => {}} trigger="slash" openSignal={0} />)
 
     const trigger = screen.getByRole('button', { name: 'Thinking level: Med' })
-    expect(trigger.textContent).toContain('/thinking: medium')
+    expect(trigger.textContent).toContain('Thinking · Medium')
     expect(screen.queryByText('Deep reasoning')).toBeNull()
 
     rerender(<ThinkingSelect value="medium" onChange={() => {}} trigger="slash" openSignal={1} />)

@@ -84,6 +84,10 @@ export interface ChatEmptyStateProps {
    * resolves this to `sendMessage` with the suggestion's prompt.
    */
   onSelect?: (suggestion: ChatSuggestion) => void
+  /** Optional content rendered between the title and suggestions. */
+  composer?: ReactNode
+  /** Uses the concise empty-chat hierarchy: title, composer, suggestions. */
+  hero?: boolean
   /** Optional content rendered below the suggestion grid. */
   footer?: ReactNode
   className?: string
@@ -91,10 +95,12 @@ export interface ChatEmptyStateProps {
 
 export function ChatEmptyState({
   eyebrow = "New session",
-  title = "What are we building?",
+  title = "What should we work on?",
   description = "Ask a question, open a file from the workbench, or start from a template.",
   suggestions = defaultChatSuggestions,
   onSelect,
+  composer,
+  hero = false,
   footer,
   className,
 }: ChatEmptyStateProps) {
@@ -112,21 +118,26 @@ export function ChatEmptyState({
         // @container lets the hero scale to the pane it lives in, not the
         // viewport — split chat panes get the compact variant.
         "@container mx-auto flex w-full max-w-[640px] flex-col px-2 pt-12 pb-4",
+        hero && "items-center py-0 text-center",
         className,
       )}
     >
-      {eyebrow && (
+      {!hero && eyebrow && (
         <div className="flex items-center gap-2 text-[10.5px] font-medium uppercase tracking-[0.16em] text-[color:var(--chat-empty-eyebrow-color)]">
           <span className="inline-block h-px w-4 bg-[color:var(--chat-empty-accent)]" aria-hidden="true" />
           {eyebrow}
         </div>
       )}
       {title && (
-        <h3 className="mt-3 text-[24px] font-medium leading-[1.05] tracking-[-0.02em] text-[color:var(--chat-empty-title-color)] @[480px]:text-[34px]">
+        <h3 className={cn(
+          "text-[24px] font-medium leading-[1.05] tracking-[-0.02em] text-[color:var(--chat-empty-title-color)] @[480px]:text-[34px]",
+          hero ? "m-0" : "mt-3",
+        )}>
           {title}
         </h3>
       )}
-      {description && (
+      {composer ? <div className={cn("w-full", hero && "mt-6")}>{composer}</div> : null}
+      {!hero && description && (
         <p className="mt-3 hidden max-w-[440px] text-[14px] leading-relaxed text-[color:var(--chat-empty-description-color)] @[420px]:block">
           {description}
         </p>
@@ -134,7 +145,10 @@ export function ChatEmptyState({
       {suggestions.length > 0 && (
         <div
           data-boring-agent-part="suggestion-grid"
-          className="mt-8 grid w-full grid-cols-1 gap-px overflow-hidden rounded-xl bg-border/70 ring-1 ring-border/70 @[480px]:grid-cols-2"
+          className={cn(
+            "grid w-full grid-cols-1 gap-px overflow-hidden rounded-xl bg-border/70 ring-1 ring-border/70 @[480px]:grid-cols-2",
+            hero ? "mt-4" : "mt-8",
+          )}
         >
           {suggestions.map((suggestion) => {
             const Icon = suggestion.icon
