@@ -1,6 +1,6 @@
 # PR #968 → post-#1038 semantic-port ledger
 
-This ledger is the omission-control surface for the selective port. Status values are closed: `port`, `adapt`, `superseded`, or `drop`. A slice may not close with an unresolved row. “Reference” means `origin/pr-968` at `2fcd4f31cd312289250f0f72237bc52d6868e110`; destination starts from PR #1038 at `c040838c89c95294a421df4e525a5f2d03185b5e`.
+This ledger is the omission-control surface for the selective port. Disposition values are closed and singular: `port`, `adapt`, `superseded`, or `drop`. Completion is independently `complete` or `pending`; a slice may not close while any exact-path row assigned to it is pending. The family tables explain intent, while the exact-path table is the operational closure record. “Reference” means `origin/pr-968` at `2fcd4f31cd312289250f0f72237bc52d6868e110`; destination starts from PR #1038 at `c040838c89c95294a421df4e525a5f2d03185b5e`.
 
 ## Production contracts and browser state
 
@@ -71,13 +71,13 @@ This ledger is the omission-control surface for the selective port. Status value
 | #968 test family | Disposition | Destination / proof |
 | --- | --- | --- |
 | addressed summary-field regression | port | `usePiSessions` test must fail with hardcoded `turnCount: 0` or missing owner/native fields |
-| source switch, late refresh/create/delete/rename | port/adapt | addressed-only hook and Workspace tests |
+| source switch, late refresh/create/delete/rename | adapt | addressed-only hook and Workspace tests |
 | creation coordinator StrictMode/settlement/cancel | port | coordinator unit + Workspace integration |
-| boot resume tab/agent/API/workspace/storage isolation | port/adapt | addressed hook + Gateway inventory tests |
-| native creation/exact reopen/no duplicate transcript | port/adapt | store/harness integration |
+| boot resume tab/agent/API/workspace/storage isolation | adapt | addressed hook + Gateway inventory tests |
+| native creation/exact reopen/no duplicate transcript | adapt | store/harness integration |
 | malformed JSONL, pagination fill, timestamp ordering | port | native transcript/store suite |
-| rename verification and assistant gate | port/adapt | store + service + UI tests |
-| handle/channel single-flight and delete cold-open generation | port/adapt | harness/service concurrency suites |
+| rename verification and assistant gate | adapt | store + service + UI tests |
+| handle/channel single-flight and delete cold-open generation | adapt | harness/service concurrency suites |
 | command registry ownership/stale handler/session route | adapt | #1038 route shape + hook/Gateway/runtime capability suites |
 | legacy route/principal/native capability tests | drop | replaced by #1038 negative contraction and auth matrices |
 | scripted restart/browser proof | adapt | addressed-only workspace playground |
@@ -94,3 +94,107 @@ This ledger is the omission-control surface for the selective port. Status value
 | #976 | already merged through Wave 1 / #1008 and contained by #1038 |
 | #982 | already merged through Wave 1 / #1008 and contained by #1038 |
 | #968 | immutable semantic reference; superseded after this follow-up is proven |
+
+
+## Exact production-path coverage
+
+Source command: `git diff --name-only 1f1cb8264...2fcd4f31c`, filtered only for docs, tests/specs, E2E artifacts, images/HTML, and `pnpm-lock.yaml`. The resulting 96 production paths are listed exactly once below. `pending` rows keep Slice 4 open; every other row has a single closed disposition.
+
+| Exact #968 production path | Disposition | Slice | Completion | Evidence |
+| --- | --- | --- | --- | --- |
+| `apps/agent-playground/src/server/agentHost.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `apps/full-app/scripts/remote-worker-smoke.mjs` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `apps/full-app/src/front/main.tsx` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `apps/full-app/src/server/dev.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `apps/full-app/src/server/main.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `apps/workspace-playground/peek.mjs` | drop | S4 | complete | cutover contraction matrix / policy supersession |
+| `apps/workspace-playground/peek3.mjs` | drop | S4 | complete | cutover contraction matrix / policy supersession |
+| `apps/workspace-playground/repro-first-send.mjs` | drop | S4 | complete | cutover contraction matrix / policy supersession |
+| `apps/workspace-playground/repro-poll.mjs` | drop | S4 | complete | cutover contraction matrix / policy supersession |
+| `apps/workspace-playground/repro-popover.mjs` | drop | S4 | complete | cutover contraction matrix / policy supersession |
+| `apps/workspace-playground/scripts/bridge-e2e.ts` | drop | S4 | complete | cutover contraction matrix / policy supersession |
+| `apps/workspace-playground/src/eval/run.ts` | drop | S4 | complete | cutover contraction matrix / policy supersession |
+| `apps/workspace-playground/src/front/App.tsx` | adapt | S4 | pending | addressed browser/scripted proof not yet recorded |
+| `apps/workspace-playground/src/server/dev.ts` | adapt | S4 | pending | addressed browser/scripted proof not yet recorded |
+| `apps/workspace-playground/src/server/testing/scriptedPiHarness.ts` | adapt | S4 | pending | addressed browser/scripted proof not yet recorded |
+| `packages/agent/examples/with-custom-tool/server.ts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
+| `packages/agent/scripts/eval-provisioning-agent-vercel.mts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
+| `packages/agent/scripts/eval-provisioning-agent.mts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
+| `packages/agent/scripts/eval.ts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
+| `packages/agent/scripts/smoke-capability-readiness-vercel.mts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
+| `packages/agent/scripts/smoke-capability-readiness.mts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
+| `packages/agent/src/bin/boring-agent.ts` | superseded | S3 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/agent/src/core/piChatSessionService.ts` | superseded | S3 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/agent/src/front/chat/PiChatPanel.tsx` | superseded | S3 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/agent/src/front/chat/components/PiChatComposerSurface.tsx` | adapt | S4 | complete | branch implementation + Agent/Workspace focused/full tests |
+| `packages/agent/src/front/chat/pi/remotePiSession.ts` | superseded | S3 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/agent/src/front/chat/piChatPanelHooks.ts` | superseded | S3 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/agent/src/front/chat/session/activeSessionStorage.ts` | port | S2 | complete | branch implementation + focused package tests |
+| `packages/agent/src/front/chat/session/index.ts` | superseded | S3 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/agent/src/front/chat/session/usePiSessions.ts` | adapt | S4 | complete | branch implementation + Agent/Workspace focused/full tests |
+| `packages/agent/src/front/hooks/useServerCommands.ts` | adapt | S4 | complete | branch implementation + Agent/Workspace focused/full tests |
+| `packages/agent/src/front/index.ts` | superseded | S3 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/agent/src/server/agent-host/buildAgentComposition.ts` | superseded | S3 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/agent/src/server/agent-host/embeddedGateway.ts` | adapt | S2 | complete | branch implementation + Agent/Workspace focused/full tests |
+| `packages/agent/src/server/agent-host/httpProjection.ts` | adapt | S2 | complete | branch implementation + Agent/Workspace focused/full tests |
+| `packages/agent/src/server/agent-host/legacyPiChatCompatibility.ts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
+| `packages/agent/src/server/agent-host/sessionInventory.ts` | superseded | S3 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/agent/src/server/agent-host/types.ts` | superseded | S3 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/agent/src/server/agentHostLegacyRouteMount.ts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
+| `packages/agent/src/server/agentHostLegacyRouteOptions.ts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
+| `packages/agent/src/server/agentHostLegacyRouteRuntime.ts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
+| `packages/agent/src/server/codedError.ts` | port | S3 | complete | branch implementation + focused package tests |
+| `packages/agent/src/server/createAgent.ts` | superseded | S3 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/agent/src/server/createAgentApp.ts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
+| `packages/agent/src/server/dev.ts` | superseded | S3 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/agent/src/server/harness/pi-coding-agent/createHarness.ts` | adapt | S2 | complete | branch implementation + Agent/Workspace focused/full tests |
+| `packages/agent/src/server/harness/pi-coding-agent/nativeSessionRename.ts` | port | S2 | complete | branch implementation + focused package tests |
+| `packages/agent/src/server/harness/pi-coding-agent/nativeSessionTranscript.ts` | port | S2 | complete | branch implementation + focused package tests |
+| `packages/agent/src/server/harness/pi-coding-agent/piSessionMessages.ts` | port | S2 | complete | branch implementation + focused package tests |
+| `packages/agent/src/server/harness/pi-coding-agent/sessionJsonlPrefix.ts` | port | S2 | complete | branch implementation + focused package tests |
+| `packages/agent/src/server/harness/pi-coding-agent/sessions.ts` | adapt | S2 | complete | branch implementation + Agent/Workspace focused/full tests |
+| `packages/agent/src/server/http/middleware.ts` | superseded | S3 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/agent/src/server/http/requestPrincipal.ts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
+| `packages/agent/src/server/http/routes/commands.ts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
+| `packages/agent/src/server/http/routes/piChat.ts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
+| `packages/agent/src/server/pi-chat/harnessPiChatService.ts` | adapt | S3 | complete | branch implementation + Agent/Workspace focused/full tests |
+| `packages/agent/src/server/registerAgentRoutes.ts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
+| `packages/agent/src/shared/error-codes.ts` | adapt | S3 | complete | branch implementation + Agent/Workspace focused/full tests |
+| `packages/agent/src/shared/gateway/types.ts` | adapt | S2 | complete | branch implementation + Agent/Workspace focused/full tests |
+| `packages/agent/src/shared/harness.ts` | adapt | S3 | complete | branch implementation + Agent/Workspace focused/full tests |
+| `packages/agent/src/shared/index.ts` | superseded | S3 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/agent/src/shared/session.ts` | adapt | S2 | complete | branch implementation + Agent/Workspace focused/full tests |
+| `packages/cli/src/front/App.tsx` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/cli/src/server/modeApps.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/core/src/app/front/chatFirst/ChatFirstAuthenticatedShell.tsx` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/app/front/WorkspaceAgentFront.tsx` | adapt | S1 | complete | branch implementation + Agent/Workspace focused/full tests |
+| `packages/workspace/src/app/front/WorkspaceAgentStatusStates.tsx` | adapt | S4 | pending | addressed browser/scripted proof not yet recorded |
+| `packages/workspace/src/app/front/WorkspaceShellCapabilitiesHost.tsx` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/app/front/index.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/app/front/localStorageSessions.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/app/front/sessionCreationCoordinator.ts` | port | S1 | complete | branch implementation + focused package tests |
+| `packages/workspace/src/app/front/useSessionCreationCoordinator.ts` | port | S2 | complete | branch implementation + focused package tests |
+| `packages/workspace/src/app/front/useWorkspaceShellCapabilitiesController.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/app/server/createWorkspaceAgentServer.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/front/attention/WorkspaceAttentionProvider.tsx` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/front/chrome/chat/DetachedChatPopover.tsx` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/front/chrome/chat/types.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/front/chrome/session-list/SessionBrowser.tsx` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/front/components/SessionList.tsx` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/front/layout/ChatPaneStage.tsx` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/front/layout/ChatPaneStageDock.tsx` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/front/layout/plugin-tabs/AppLeftPane.tsx` | adapt | S4 | complete | branch implementation + Agent/Workspace focused/full tests |
+| `packages/workspace/src/front/layout/plugin-tabs/AppLeftPaneSessionRow.tsx` | adapt | S4 | complete | branch implementation + Agent/Workspace focused/full tests |
+| `packages/workspace/src/front/layout/plugin-tabs/AppSessionActionsMenu.tsx` | port | S2 | complete | branch implementation + focused package tests |
+| `packages/workspace/src/front/layout/plugin-tabs/InlineSessionRename.tsx` | port | S2 | complete | branch implementation + focused package tests |
+| `packages/workspace/src/front/sessionCreateProtocol.ts` | port | S1 | complete | branch implementation + focused package tests |
+| `packages/workspace/src/front/sessionIdentity.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/front/testing/createLocalStorageSessions.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/front/testing/createMockSessions.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `packages/workspace/src/index.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
+| `plugins/bi-dashboard/playground/run-eval.ts` | drop | S4 | complete | cutover contraction matrix / policy supersession |
+| `plugins/bi-dashboard/playground/src/server.ts` | drop | S4 | complete | cutover contraction matrix / policy supersession |
+| `plugins/boring-mcp/src/server/appServerBinding.ts` | drop | S4 | complete | cutover contraction matrix / policy supersession |
+| `plugins/generated-pane/playground/run-eval.ts` | drop | S4 | complete | cutover contraction matrix / policy supersession |
+| `tools/ui-review/src/review-specs/workspace-command-palette/spec.ts` | drop | S4 | complete | cutover contraction matrix / policy supersession |
