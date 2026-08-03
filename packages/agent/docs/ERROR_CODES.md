@@ -81,6 +81,7 @@ All API failures must use the response envelope:
 | `METERING_UNSUPPORTED_COMMAND` | Slash-command execution is disabled because metering cannot yet reserve/settle that path | 409 | user-fix | warn | stable (public API) |
 | `SESSION_NOT_FOUND` | Session id does not exist | 404 | user-fix | warn | stable (public API) |
 | `SESSION_LOCKED` | Session currently locked by concurrent writer | 409 | retry | warn | stable (public API) |
+| `SESSION_TRANSCRIPT_UNREADABLE` | Canonical native session transcript exists but cannot be opened safely | 500 | retry | error | stable (public API) |
 | `STREAM_BUFFER_EVICTED` | Resume cursor evicted from in-memory stream buffer | 410 | retry | warn | stable (public API) |
 | `CURSOR_OUT_OF_RANGE` | Resume cursor invalid/out of range | 416 | user-fix | warn | stable (public API) |
 | `BRIDGE_COMMAND_INVALID` | UI bridge command kind/params invalid | 400 | user-fix | warn | stable (public API) |

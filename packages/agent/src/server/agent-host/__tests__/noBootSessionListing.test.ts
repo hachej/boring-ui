@@ -1,9 +1,10 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
+import { sessionFilePath } from '../../harness/pi-coding-agent/__tests__/fixtures/sessionFiles'
 import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
 import { createAgentHost } from '../createAgentHost'
 import { AgentSessionActivityIndex, sessionNamespaceForAgent } from '../sessionInventory'
@@ -37,6 +38,10 @@ function transcript(id: string, title: string, workspaceScopeId: string, timesta
       parentId: null,
       timestamp,
       name: title,
+    }),
+    JSON.stringify({
+      type: 'message', id: `message-${id}`, parentId: null, timestamp,
+      message: { role: 'user', content: [{ type: 'text', text: 'hello' }], timestamp: 1 },
     }),
     '',
   ].join('\n')
@@ -87,6 +92,13 @@ describe('no-boot addressed session inventory', () => {
     const alphaSession = await alphaStore.create(
       { workspaceId: workspaceScopeId },
       { title: 'Configured authoritative title' },
+    )
+    await appendFile(
+      await sessionFilePath(alphaStore.getSessionDir(), alphaSession.id),
+      `${JSON.stringify({
+        type: 'message', id: 'alpha-user', parentId: null, timestamp: '2026-07-20T00:00:01.000Z',
+        message: { role: 'user', content: [{ type: 'text', text: 'hello' }], timestamp: 1 },
+      })}\n`,
     )
 
     const host = await createAgentHost({

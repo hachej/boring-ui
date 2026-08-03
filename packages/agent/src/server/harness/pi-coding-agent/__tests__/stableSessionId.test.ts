@@ -20,7 +20,7 @@ const noopTool: AgentTool = {
   },
 };
 
-const WORKSPACE_CTX = { workspaceId: "workspace-a", userId: "user-a" };
+const WORKSPACE_CTX = { workspaceId: "workspace-a" };
 const STABLE_ID = "11111111-2222-4333-8444-555555555555";
 
 function makeHarness(cwd: string) {

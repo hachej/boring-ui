@@ -269,6 +269,7 @@ describe('usePiSessions', () => {
 
     await expect(saved.create()).rejects.toMatchObject({ name: 'StaleSessionsSourceError' })
     await expect(saved.delete('source-a')).rejects.toMatchObject({ name: 'StaleSessionsSourceError' })
+    await expect(saved.rename('source-a', 'Renamed')).rejects.toMatchObject({ name: 'StaleSessionsSourceError' })
     await expect(saved.refresh()).rejects.toMatchObject({ name: 'StaleSessionsSourceError' })
     saved.switch('source-a')
     saved.reset()
@@ -277,6 +278,28 @@ describe('usePiSessions', () => {
     await act(async () => {
       sourceB.resolve(jsonResponse([session('source-b')]))
       await sourceB.promise
+    })
+  })
+
+  test('renames through the addressed route and preserves canonical metadata', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ sessions: [{
+        ref: { agentTypeId: 'alpha', sessionId: 'native-1' }, title: 'Before', status: 'idle', createdAt: 1, updatedAt: 1, turnCount: 1,
+      }] }))
+      .mockResolvedValueOnce(jsonResponse({
+        ref: { agentTypeId: 'alpha', sessionId: 'native-1' }, title: 'After', status: 'idle', createdAt: 1, updatedAt: 2, turnCount: 1,
+        nativeSessionId: 'native-1', hasAssistantReply: true,
+      }))
+
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha', storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, connectActiveSession: false,
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => { await result.current.rename('native-1', 'After') })
+
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/v1/agents/alpha/sessions/native-1/rename')
+    expect(result.current.sessions[0]).toMatchObject({
+      title: 'After', nativeSessionId: 'native-1', hasAssistantReply: true,
     })
   })
 

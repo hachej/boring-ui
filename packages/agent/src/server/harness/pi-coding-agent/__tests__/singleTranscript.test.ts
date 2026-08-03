@@ -28,7 +28,7 @@ const noopTool: AgentTool = {
   },
 };
 
-const WORKSPACE_CTX = { workspaceId: "workspace-a", userId: "user-a" };
+const WORKSPACE_CTX = { workspaceId: "workspace-a" };
 
 function makeHarness(cwd: string) {
   return createPiCodingAgentHarness({ tools: [noopTool], cwd, sessionRoot: cwd });
