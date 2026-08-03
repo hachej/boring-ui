@@ -1,7 +1,7 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/775
 issue: 775
-state: in-progress
+state: ready-for-review
 updated: 2026-08-03
 track: owner
 ---
