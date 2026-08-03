@@ -16,6 +16,7 @@ export default defineConfig({
       "@hachej/boring-agent/server/agent-host/testing/compositionRouteProof": resolve(PACKAGES, "agent/src/server/agent-host/testing/compositionRouteProof.ts"),
       "@hachej/boring-agent/server": resolve(PACKAGES, "agent/src/server/index.ts"),
       "@hachej/boring-agent/shared": resolve(PACKAGES, "agent/src/shared/index.ts"),
+      "@hachej/boring-ui-kit": resolve(PACKAGES, "ui/src/index.ts"),
       "@boring/agent/server": resolve(PACKAGES, "agent/src/server/index.ts"),
       "@hachej/boring-sandbox/shared": resolve(PACKAGES, "boring-sandbox/src/shared/index.ts"),
       "@hachej/boring-sandbox/providers/direct": resolve(PACKAGES, "boring-sandbox/src/providers/direct/index.ts"),

@@ -21,7 +21,7 @@ import react from '@vitejs/plugin-react'
 import { createStandaloneAgentHostApp } from '../server/createStandaloneAgentHostApp'
 import type { RuntimeModeId } from '../server/runtime/mode'
 import { projectNameFromWorkspaceRoot } from './projectName'
-import { createScriptedPiHarness } from '../server/testing/scriptedPiHarness'
+import { createPersistedScriptedPiHarness } from '../server/testing/scriptedPiHarness'
 import {
   agentSandboxRuntimeHostOperations,
   createAgentSandboxRuntimeModeAdapter,
@@ -135,7 +135,7 @@ const app = await createStandaloneAgentHostApp({
   version,
   logger: false,
   ...(process.env.BORING_AGENT_E2E_SCRIPTED_PI === '1'
-    ? { harnessFactory: createScriptedPiHarness }
+    ? { harnessFactory: createPersistedScriptedPiHarness }
     : {}),
 })
 
