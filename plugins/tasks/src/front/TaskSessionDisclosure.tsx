@@ -89,6 +89,13 @@ export function TaskSessionDisclosure({
   const [error, setError] = useState<string | null>(null)
   const [openMenuLinkId, setOpenMenuLinkId] = useState<string | null>(null)
   const eventOrigin = useRef({})
+  const sourceKey = JSON.stringify([task.adapterId, task.id])
+  const requestScope = useRef({ sourceKey, version: 0 })
+  if (requestScope.current.sourceKey !== sourceKey) requestScope.current = { sourceKey, version: requestScope.current.version + 1 }
+  const beginRequest = useCallback(() => {
+    const version = ++requestScope.current.version
+    return () => requestScope.current.sourceKey === sourceKey && requestScope.current.version === version
+  }, [sourceKey])
 
   useEffect(() => {
     if (!openMenuLinkId) return
@@ -110,25 +117,26 @@ export function TaskSessionDisclosure({
     }
   }, [openMenuLinkId])
 
-  const loadLinks = useCallback(async () => {
+  const loadLinks = useCallback(async (isCurrent: () => boolean) => {
     try {
       const response = await pluginClient.postJson<LinkListResponse>("/api/boring-tasks/sessions/list", {
         adapterId: task.adapterId,
         taskId: task.id,
       })
+      if (!isCurrent()) return null
       setLinks(response.links)
       setError(null)
       return response.links
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load linked sessions.")
+      if (isCurrent()) setError(cause instanceof Error ? cause.message : "Could not load linked sessions.")
       return null
     }
   }, [pluginClient, task.adapterId, task.id])
 
-  const loadActivity = useCallback(async (nextLinks: TaskSessionLinkDisclosure[]) => {
+  const loadActivity = useCallback(async (nextLinks: TaskSessionLinkDisclosure[], isCurrent: () => boolean) => {
     const sessionIds = nextLinks.flatMap((link) => link.sessionId ? [link.sessionId] : [])
     if (sessionIds.length === 0) {
-      setActivity({ sessions: [], omittedSessionIds: [] })
+      if (isCurrent()) setActivity({ sessions: [], omittedSessionIds: [] })
       return
     }
     const sessions: TaskSessionActivity[] = []
@@ -154,36 +162,40 @@ export function TaskSessionDisclosure({
         omittedSessionIds.push(link.sessionId)
       }
     }))
+    if (!isCurrent()) return
     setActivity({ sessions, omittedSessionIds })
     setError(null)
   }, [pluginClient])
 
-  const loadHandovers = useCallback(async (nextLinks: TaskSessionLinkDisclosure[]) => {
+  const loadHandovers = useCallback(async (nextLinks: TaskSessionLinkDisclosure[], isCurrent: () => boolean) => {
     const sessionIds = nextLinks.flatMap((link) => link.sessionId ? [link.sessionId] : [])
     if (sessionIds.length === 0) {
-      setHandovers(new Map())
+      if (isCurrent()) setHandovers(new Map())
       return
     }
     try {
       const response = await pluginClient.postJson<{ ok: true } & SessionHandoverResolution>("/api/boring-tasks/sessions/handovers", {
         sessionIds: Array.from(new Set(sessionIds.slice(0, 20))),
       })
-      setHandovers(new Map(response.matches.map((match) => [match.sessionId, match.handover] as const)))
+      if (isCurrent()) setHandovers(new Map(response.matches.map((match) => [match.sessionId, match.handover] as const)))
     } catch {
-      setHandovers(new Map())
+      if (isCurrent()) setHandovers(new Map())
     }
   }, [pluginClient])
 
   const refresh = useCallback(async (includeActivity: boolean) => {
+    const isCurrent = beginRequest()
     setLoading(true)
-    const nextLinks = await loadLinks()
-    if (includeActivity && nextLinks) await Promise.all([loadActivity(nextLinks), loadHandovers(nextLinks)])
-    setLoading(false)
-  }, [loadActivity, loadHandovers, loadLinks])
+    const nextLinks = await loadLinks(isCurrent)
+    if (includeActivity && nextLinks) await Promise.all([loadActivity(nextLinks, isCurrent), loadHandovers(nextLinks, isCurrent)])
+    if (isCurrent()) setLoading(false)
+  }, [beginRequest, loadActivity, loadHandovers, loadLinks])
 
   useEffect(() => {
-    void loadLinks()
-  }, [loadLinks])
+    const isCurrent = beginRequest()
+    void loadLinks(isCurrent)
+    return () => { requestScope.current.version += 1 }
+  }, [beginRequest, loadLinks])
 
   useEffect(() => {
     const onLinksChanged = (event: Event) => {

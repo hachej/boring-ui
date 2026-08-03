@@ -81,6 +81,8 @@ export async function startPlaygroundServer(): Promise<void> {
         ? { harnessFactory: createPersistedScriptedPiHarness }
         : {}),
       plugins: [createTasksServerPlugin({
+        agentTypeId: "default",
+        contentDigest: "workspace-playground:tasks-agent-bindings-v1",
         workspaceRoot,
         config: { providers: [{ provider: "github", repo: "auto" }] },
       })],

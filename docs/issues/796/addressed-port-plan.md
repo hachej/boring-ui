@@ -1,7 +1,7 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/796
 issue: 796
-state: in-progress
+state: ready-for-review
 updated: 2026-08-03
 track: owner
 ---
@@ -51,11 +51,12 @@ Create one new PR stacked on PR #1044 that preserves the product behavior while 
 
 ## Proof
 
-- `pnpm --filter @hachej/boring-ask-user test`
-- `pnpm --filter @hachej/boring-tasks test`
-- Agent, Workspace, Core, Ask User, and Tasks typechecks.
-- AgentHost cutover matrix and composition checks.
-- Focused browser proof for Inbox artifact/open-chat actions and task create-bind-open/reload.
+- Ask User: 114 passed, 1 skipped; Tasks: 65 passed.
+- Agent, Workspace, Core, Ask User, and Tasks typechecks passed.
+- AgentHost cutover matrix: 19 rows, 39 final routes, 23 deleted routes, zero forbidden compatibility references.
+- All seven AgentHost composition roots passed.
+- Focused Ask User browser proofs passed individually, including exact-session reload/cancel and explicit Questions opening.
+- Workspace playground production dependency builds passed; the full shared-state browser batch had three order-dependent failures, while 22 scenarios passed and the affected Ask User scenarios passed in isolation.
 
 ## Slices
 

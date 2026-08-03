@@ -1,6 +1,6 @@
 import { TASK_ERROR_CODES } from "../shared"
 import { describe, expect, it } from "vitest"
-import { FileTaskSessionLinkStore, TaskSessionLinkStoreError, type TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
+import { FileTaskSessionLinkStore, TaskSessionLinkStoreError, taskSessionLinkStoreForWorkspace, type TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
 
 class MemoryWorkspace implements TaskSessionLinkWorkspace {
   readonly files = new Map<string, string>()
@@ -70,8 +70,10 @@ describe("FileTaskSessionLinkStore", () => {
     expect(grouped.get("missing")).toEqual([])
   })
 
-  it("serializes concurrent writes without losing links", async () => {
-    const store = new FileTaskSessionLinkStore(new MemoryWorkspace())
+  it("reuses one workspace writer queue and serializes concurrent writes without losing links", async () => {
+    const workspace = new MemoryWorkspace()
+    const store = taskSessionLinkStoreForWorkspace(workspace)
+    expect(taskSessionLinkStoreForWorkspace(workspace)).toBe(store)
     await Promise.all(Array.from({ length: 12 }, (_, index) => store.link({
       adapterId: "github",
       taskId: "776",

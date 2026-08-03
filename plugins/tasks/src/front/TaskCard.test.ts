@@ -52,6 +52,21 @@ describe("task native session creation handoff", () => {
     expect(deleteJson).not.toHaveBeenCalled()
   })
 
+  it("rejects create responses that do not preserve canonical Agent ownership", async () => {
+    const postJson = vi.fn().mockResolvedValueOnce({ sessionId: "native-without-owner" })
+    const deleteJson = vi.fn(async () => undefined)
+    const target = shell()
+
+    await expect(createLinkedTaskChat(task, anchor, target, {
+      agentTypeId: "alpha",
+      postJson: postJson as WorkspacePluginClient["postJson"],
+      deleteJson: deleteJson as WorkspacePluginClient["deleteJson"],
+    })).rejects.toThrow("invalid addressed session")
+    expect(postJson).toHaveBeenCalledTimes(1)
+    expect(deleteJson).toHaveBeenCalledWith("/api/v1/agents/alpha/sessions/native-without-owner")
+    expect(target.openDetachedChat).not.toHaveBeenCalled()
+  })
+
   it("deletes the new empty session when durable task binding fails", async () => {
     const postJson = vi.fn()
       .mockResolvedValueOnce({ agentTypeId: "alpha", sessionId: "native-pi-exact" })

@@ -97,11 +97,15 @@ Base: PR #1044 (`fix/775-post-agenthost-cutover`). Every source path has exactly
 
 ## New addressed integration paths
 
+- `apps/workspace-playground/src/server/dev.ts` — playground host explicitly selects the `default` Agent for its directly constructed Tasks plugin; the plugin itself has no fallback.
 - `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts` — exact Gateway state authorization and redacted run projection.
 - `packages/workspace/src/app/server/createWorkspaceAgentServer.ts` — same authority for standalone Workspace composition.
 - `packages/workspace/src/app/front/PluginAppLeftHost.tsx` and `WorkspaceAgentFront.tsx` — validated parameterized Inbox overlay requests.
 - `packages/workspace/src/front/plugin/useWorkspacePluginClient.ts` — canonical delete rollback support for failed task binding.
 - `packages/agent/src/server/__tests__/sessionRunDetails.test.ts` — projection privacy proof.
+- `plugins/tasks/src/server/taskSessionRoutes.ts` — extracted addressed route boundary; keeps authorization, body validation, Handover projection, and workspace-scoped link-store access out of plugin composition.
+- `plugins/tasks/src/server/taskSessionLinkStore.ts` — one writer queue per live Workspace prevents concurrent route/tool instances from losing durable links.
+- `plugins/tasks/src/front/TaskSessionDisclosure.tsx` — source-version fencing drops stale task/session/activity/Handover responses after ownership changes.
 
 ## Forbidden architecture check
 
