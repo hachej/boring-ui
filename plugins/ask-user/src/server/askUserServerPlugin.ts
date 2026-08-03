@@ -1,6 +1,7 @@
 import { join } from "node:path"
 import type { FastifyPluginAsync } from "fastify"
 import { defineServerPlugin, type UiBridge, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
+import { getWorkspaceUiBridge } from "@hachej/boring-workspace/plugin"
 import { ASK_USER_PLUGIN_ID, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { AskUserRuntime } from "./askUserRuntime"
 import { FileAskUserStore, type AskUserStore } from "./askUserStore"
@@ -21,10 +22,21 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
   if ((options as { routes?: unknown }).routes) {
     throw new Error("createAskUserServerPlugin no longer registers /api/v1/questions/commands; use WorkspaceBridge ask-user.v1.* handlers or import questionsRoutes for manual legacy wiring")
   }
-  const store = options.store ?? createDefaultStore(options.workspaceRoot)
-  const runtime = options.runtime ?? new AskUserRuntime({ store, uiBridge: options.bridge })
-  const stopPublisher = options.bridge ? new AskUserStatePublisher(store, options.bridge).start() : undefined
+  if (options.store && options.runtime && options.store !== options.runtime.store) {
+    throw new Error("createAskUserServerPlugin requires runtime and bridge handlers to share one AskUserStore")
+  }
+  const store = options.store ?? options.runtime?.store ?? createDefaultStore(options.workspaceRoot)
+  const runtime = options.runtime ?? new AskUserRuntime({ store })
+  let stopPublisher: (() => void) | undefined
+  const ensurePublisher = () => {
+    if (stopPublisher) return
+    const bridge = options.bridge ?? getWorkspaceUiBridge()
+    if (bridge) stopPublisher = new AskUserStatePublisher(store, bridge).start()
+  }
   const lifecycle: FastifyPluginAsync = async (app) => {
+    const pending = await store.listPending()
+    await runtime.abandonOrphanedPending(pending.map((question) => question.sessionId))
+    ensurePublisher()
     app.addHook("onClose", async () => {
       stopPublisher?.()
       options.onClose?.()
@@ -34,13 +46,20 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
   return defineServerPlugin({
     id: ASK_USER_PLUGIN_ID,
     label: "Questions",
-    systemPrompt: "When you need a blocking decision from the user, call the `ask_user` tool. Do not roleplay or simulate the form in chat; the active form appears in the Workspace Questions pane.",
+    systemPrompt: [
+      "Use `ask_user` only when blocked on a human decision; it creates a blocking Human Intention in Chat and Inbox.",
+      "When asking for review or approval, include explicitly known human-facing deliverables in the plural artifacts array.",
+      "Do not register routine source edits, lockfiles, caches, logs, or inferred files unless the user explicitly requested them as outputs. Never infer artifacts from prose, git state, branches, titles, prompts, diffs, or filesystem changes.",
+    ].join("\n"),
     agentTools: [{
       name: askUserTool.name,
       description: askUserTool.description,
       promptSnippet: askUserTool.promptSnippet,
       parameters: askUserTool.parameters,
-      execute(params, ctx) { return askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal, ctx.sessionId) },
+      execute(params, ctx) {
+        ensurePublisher()
+        return askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal, ctx.sessionId, undefined)
+      },
     }],
     workspaceBridgeHandlers: createAskUserBridgeHandlers({ runtime, store }),
     routes: lifecycle,
