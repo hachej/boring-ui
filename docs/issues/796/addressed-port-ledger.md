@@ -109,6 +109,8 @@ Base: PR #1044 (`fix/775-post-agenthost-cutover`). Every source path has exactly
 - `plugins/ask-user/src/front/inbox/RelatedTaskList.tsx` — one shared related-task renderer replaces duplicate Inbox/detail implementations.
 - Human Intention chat and task-attention joins fail closed unless both exact Agent owner and session ID are present; no runtime/default-Agent fallback remains.
 - Unused Handover snapshot/current-list APIs were removed; the port exposes only the operation reducer and terminal projection actually consumed by the addressed architecture.
+- The Tasks package keeps its pre-existing public server API instead of exporting route/store/tool internals; trusted Workspace bindings now carry `root` directly, removing cross-layer casts.
+- Ask User cancellation and task attention require an exact addressed session owner and never fall back to whichever session happens to be active.
 
 ## Forbidden architecture check
 

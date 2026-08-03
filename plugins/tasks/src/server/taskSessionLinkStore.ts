@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import type { BoringTaskSessionLink } from "../shared"
 
 export interface TaskSessionLinkWorkspace {
+  readonly root: string
   readFile(path: string): Promise<string>
   writeFile(path: string, data: string): Promise<void>
   mkdir(path: string, options?: { recursive?: boolean }): Promise<void>

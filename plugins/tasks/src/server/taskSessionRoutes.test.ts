@@ -6,6 +6,7 @@ import type { BoringTaskSourceRuntime } from "./sourceRuntime"
 import type { TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
 
 class MemoryWorkspace implements TaskSessionLinkWorkspace {
+  readonly root = "/workspace"
   readonly files = new Map<string, string>()
   async readFile(path: string) {
     const value = this.files.get(path)
