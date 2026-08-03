@@ -1157,7 +1157,11 @@ function registerWorkspaceHealthRoutes(
     let lease: AgentHostEnvironmentLease | undefined
     try {
       lease = await getEnvironmentReadiness(request)
-      const capabilities = Object.values(lease.readiness)
+      // This endpoint reports application/Environment readiness. Chat belongs
+      // to an Agent binding and may remain `not-started` until the first
+      // addressed Agent request; it must not keep an otherwise-ready Workspace
+      // deployment out of service.
+      const capabilities = [lease.readiness.workspace, lease.readiness.runtimeDependencies]
       const failed = capabilities.find((capability) => capability.state === "failed")
       if (failed) {
         return reply.code(503).send({ status: "degraded", reason: failed.message ?? "runtime provisioning failed" })
