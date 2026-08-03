@@ -143,6 +143,25 @@ test('createStandaloneAgentHostApp stamps the explicit caller runtime host over 
   }
 })
 
+test('createStandaloneAgentHostApp uses sessionId for the physical provider workspace without changing transcript scope', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-app-provider-workspace-')
+  const directAdapter = createTestRuntimeModeAdapter('direct')
+  const create = vi.fn(directAdapter.create.bind(directAdapter))
+  const sessionId = '4b878cac-fff5-4ce0-84f7-e123666ceea8'
+  const app = await createStandaloneAgentHostApp({
+    workspaceRoot,
+    sessionId,
+    runtimeModeAdapter: { ...directAdapter, create },
+    logger: false,
+  })
+
+  try {
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ sessionId, workspaceId: sessionId }))
+  } finally {
+    await app.close()
+  }
+})
+
 test('createStandaloneAgentHostApp composes its trusted dispatcher over the standalone runtime', async () => {
   const harness = createDispatcherTestHarness()
   const workspaceRoot = await makeTempDir('boring-agent-app-dispatcher-workspace-')
