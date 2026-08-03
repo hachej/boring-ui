@@ -1,10 +1,10 @@
 {
-  "version": "0.1.94",
-  "date": "2026-08-01T07:39:39.529Z",
+  "version": "0.1.95",
+  "date": "2026-08-03T14:41:03.421Z",
   "seconds": {
-    "compileAgentDirectory": 0.015844,
-    "resolveAgentDeployment": 0.002842,
-    "total": 0.018702
+    "compileAgentDirectory": 0.014508,
+    "resolveAgentDeployment": 0.002608,
+    "total": 0.01713
   },
   "stagesCovered": [
     "A1 compileAgentDirectory (#624)",
