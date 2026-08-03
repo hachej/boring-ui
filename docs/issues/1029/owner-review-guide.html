@@ -423,6 +423,7 @@
     .status-chip.confirmed { color: var(--risk); }
     .status-chip.conditional { color: var(--warn); }
     .status-chip.decision { color: var(--accent); }
+    .status-chip.accepted { color: var(--good); }
     .risk-group { margin-top: var(--s7); }
     .risk-group > h3 { display: flex; align-items: center; gap: var(--s3); }
     .risk-register { display: grid; gap: var(--s3); }
@@ -617,7 +618,7 @@
             <ol>
               <li><strong>Close the confirmed defects:</strong> malformed attachment bodies must not escape as 500, and unknown Agents must not open dispatcher or app-runtime work before rejection.</li>
               <li><strong>Accept or change the persistence contract:</strong> production deployments must supply a durable admission ledger; in-memory mode is explicitly test/development-only.</li>
-              <li><strong>Confirm the session-sharing policy:</strong> the implementation isolates by verified workspace/storage scope, not creator user; workspace members can share sessions unless the server derives a per-user namespace or enforces ACLs.</li>
+              <li><strong>Session-sharing policy accepted:</strong> sessions are collaborative within a verified workspace/storage scope, not private to their creator. Fine-grained session roles or private chats would be a separate product feature.</li>
               <li><strong>Confirm the access boundary:</strong> app filesystem/Git routes stay app-owned but can only obtain Workspace capability through short Host-issued Environment leases.</li>
               <li><strong>Confirm the breaking cutover:</strong> legacy composition exports and <code>/api/v1/agent/*</code> compatibility routes are intentionally gone.</li>
               <li><strong>Verify shutdown under real load:</strong> abort, bounded grace, late-publication fences, ledger closure, and lease drain must behave as one lifecycle.</li>
@@ -988,7 +989,13 @@
             <div class="risk-item"><div class="severity p2">D1</div><strong>Durable ledger is mandatory in production</strong><div>In-memory mode cannot survive crash or coordinate writers. It remains useful for hermetic tests and local development only.<span class="merge-criterion">Decision: require durable configuration in production startup and monitoring, or reject the current deployment contract.</span></div></div>
             <div class="risk-item"><div class="severity p2">D2</div><strong>No compatibility window</strong><div>Old imports and <code>/api/v1/agent/*</code> callers fail immediately. Atomic migration is simpler and safer internally, but demands coordinated rollout of every client.<span class="merge-criterion">Decision: approve the breaking cutover and verified consumer inventory; do not add a dual-authority fallback.</span></div></div>
             <div class="risk-item"><div class="severity p2">D3</div><strong>Ambiguous provider completion is operator work</strong><div>A reload/effect that mutates externally and loses confirmation becomes <code>outcome-unknown</code>. The system intentionally refuses blind replay rather than promising impossible exactly-once semantics.<span class="merge-criterion">Decision: accept the operator reconciliation path and define its runbook/telemetry.</span></div></div>
-            <div class="risk-item"><div class="severity">D4</div><strong>Sessions are workspace-shared, not user-private</strong><div>The Gateway uses <code>authSubjectId</code> for authorization, attribution, runtime inputs, and ledger ownership, but deliberately omits it from addressed session ownership. A second authorized subject in the same workspace scope can connect to the creator’s session; the isolation test encodes this behavior. <a href="https://github.com/hachej/boring-ui/blob/3c82c9960a542949e2fef648353ab7a2c45abc9f/packages/agent/src/server/pi-chat/harnessPiChatService.ts#L1127-L1138">Evidence: harnessPiChatService.ts L1127–1138</a>, <a href="https://github.com/hachej/boring-ui/blob/3c82c9960a542949e2fef648353ab7a2c45abc9f/packages/agent/src/server/agent-host/__tests__/sessionIsolation.test.ts#L23-L44">sessionIsolation.test.ts L23–44</a>.<span class="merge-criterion">Decision: explicitly approve collaborative workspace sessions, or require server-derived per-user partitioning/session ACLs before merge.</span></div></div>
+          </div>
+        </div>
+
+        <div class="risk-group">
+          <h3><span class="status-chip accepted">Accepted</span> Collaborative session ownership</h3>
+          <div class="risk-register">
+            <div class="risk-item"><div class="severity p2">OK</div><strong>Sessions are workspace-shared, not user-private</strong><div>The Gateway uses <code>authSubjectId</code> for authorization, attribution, runtime inputs, and ledger ownership, but deliberately omits it from addressed session ownership. A second authorized subject in the same workspace scope can connect to the same session; a different workspace scope receives not-found. <a href="https://github.com/hachej/boring-ui/blob/3c82c9960a542949e2fef648353ab7a2c45abc9f/packages/agent/src/server/pi-chat/harnessPiChatService.ts#L1127-L1138">Evidence: harnessPiChatService.ts L1127–1138</a>, <a href="https://github.com/hachej/boring-ui/blob/3c82c9960a542949e2fef648353ab7a2c45abc9f/packages/agent/src/server/agent-host/__tests__/sessionIsolation.test.ts#L23-L44">sessionIsolation.test.ts L23–44</a>.<span class="merge-criterion">Owner disposition: accepted for collaborative workspaces. Per-session roles, private chats, or restricted delete/rename rights belong in a separate product story if desired.</span></div></div>
           </div>
         </div>
       </section>
