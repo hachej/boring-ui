@@ -64,6 +64,140 @@ afterEach(() => {
 })
 
 describe('PiConversationSurface', () => {
+  test.each([
+    'chat-error',
+    'protocol-error',
+    'session-navigation-error',
+  ])('gives %s precedence over empty-chat hydration', (id) => {
+    render(
+      <PiConversationSurface
+        chrome
+        emptyHero={false}
+        messages={[]}
+        emptyStateHydrating
+        suggestions={[]}
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        runtimeNotices={[{ id, level: 'error', text: 'Request failed with 500' }]}
+        onDismissNotice={() => {}}
+        onScrollToBottomReady={() => {}}
+        onSuggestionSubmit={async () => undefined}
+        onRestoreDraft={() => {}}
+      />,
+    )
+
+    expect(screen.getByRole('alert').textContent).toContain('Chat history unavailable')
+    expect(screen.queryByText('Loading chat history…')).toBeNull()
+    expect(document.querySelector('[data-boring-agent-part="empty-state"]')).toBeNull()
+  })
+
+  test('gives a known terminal error precedence over the empty hero', () => {
+    render(
+      <PiConversationSurface
+        chrome
+        emptyHero
+        messages={[]}
+        emptyStateHydrating={false}
+        emptyState={{ title: 'Start a new conversation' }}
+        suggestions={[]}
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        runtimeNotices={[{ id: 'chat-error', level: 'error', text: 'History failed' }]}
+        onDismissNotice={() => {}}
+        onScrollToBottomReady={() => {}}
+        onSuggestionSubmit={async () => undefined}
+        onRestoreDraft={() => {}}
+      />,
+    )
+
+    expect(screen.getByText('Chat history unavailable')).toBeTruthy()
+    expect(screen.queryByText('Start a new conversation')).toBeNull()
+    expect(document.querySelector('[data-boring-agent-part="empty-state"]')).toBeNull()
+  })
+
+  test('does not give a generic error terminal empty-chat precedence', () => {
+    render(
+      <PiConversationSurface
+        chrome
+        emptyHero
+        messages={[]}
+        emptyStateHydrating={false}
+        emptyState={{ title: 'Start a new conversation' }}
+        suggestions={[]}
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        runtimeNotices={[{ id: 'generic-error', level: 'error', text: 'Generic failure' }]}
+        onDismissNotice={() => {}}
+        onScrollToBottomReady={() => {}}
+        onSuggestionSubmit={async () => undefined}
+        onRestoreDraft={() => {}}
+      />,
+    )
+
+    expect(screen.getByText('Start a new conversation')).toBeTruthy()
+    expect(screen.getByText('Generic failure')).toBeTruthy()
+    expect(screen.queryByText('Chat history unavailable')).toBeNull()
+  })
+
+  test('suppresses only reconnect and warmup notices in a known terminal empty state', () => {
+    render(
+      <PiConversationSurface
+        chrome
+        emptyHero={false}
+        messages={[]}
+        emptyStateHydrating
+        suggestions={[]}
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        runtimeNotices={[
+          { id: 'chat-error', level: 'error', text: 'History failed' },
+          { id: 'connection-reconnecting', level: 'warning', text: 'Reconnecting…' },
+          { id: 'runtime-warmup', level: 'warning', text: 'Starting runtime…' },
+          { id: 'generic-warning', level: 'warning', text: 'Other warning remains' },
+        ]}
+        onDismissNotice={() => {}}
+        onScrollToBottomReady={() => {}}
+        onSuggestionSubmit={async () => undefined}
+        onRestoreDraft={() => {}}
+      />,
+    )
+
+    expect(screen.getByText('Chat history unavailable')).toBeTruthy()
+    expect(screen.queryByText('Reconnecting…')).toBeNull()
+    expect(screen.queryByText('Starting runtime…')).toBeNull()
+    expect(screen.getByText('Other warning remains')).toBeTruthy()
+  })
+
+  test('keeps reconnect and warmup notices outside a terminal empty state', () => {
+    render(
+      <PiConversationSurface
+        chrome
+        emptyHero={false}
+        messages={textMessages(1)}
+        emptyStateHydrating={false}
+        suggestions={[]}
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        runtimeNotices={[
+          { id: 'connection-reconnecting', level: 'warning', text: 'Reconnecting…' },
+          { id: 'runtime-warmup', level: 'warning', text: 'Starting runtime…' },
+        ]}
+        onDismissNotice={() => {}}
+        onScrollToBottomReady={() => {}}
+        onSuggestionSubmit={async () => undefined}
+        onRestoreDraft={() => {}}
+      />,
+    )
+
+    expect(screen.getByText('Reconnecting…')).toBeTruthy()
+    expect(screen.getByText('Starting runtime…')).toBeTruthy()
+  })
+
   test('keeps assistant render keys unique when same-turn rows pass through', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const messages: BoringChatMessage[] = [

@@ -36,7 +36,9 @@ export function App() {
   const [thinkingControl, setThinkingControl] = useState(true)
   const [theme, setTheme] = useState<Theme>(() => readStoredTheme())
   const reloadAgentPlugins = useStandalonePluginReload()
-  const showSessionsParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('showSessions') : null
+  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
+  const showSessionsParam = searchParams?.get('showSessions') ?? null
+  const errorShowcase = searchParams?.get('chatError') === '1'
   const [showSessions, setShowSessions] = useState(showSessionsParam === '1')
 
   useEffect(() => {
@@ -89,6 +91,7 @@ export function App() {
         ) : (
           <div className="agent-playground-chat-pane h-full min-w-0 border-r border-border/60 bg-background">
             <PiChatPanel
+              apiBaseUrl={errorShowcase ? '/chat-error-showcase' : undefined}
               chrome={chrome}
               thinkingControl={thinkingControl}
               debug={debug}

@@ -4,6 +4,45 @@ import { describe, expect, test, vi } from 'vitest'
 import { RuntimeNotices, type RuntimeNotice } from '../RuntimeNotices'
 
 describe('RuntimeNotices', () => {
+  test.each([
+    'chat-error',
+    'protocol-error',
+    'session-navigation-error',
+  ])('presents %s as a recoverable chat history error', (id) => {
+    const onReloadWorkspace = vi.fn()
+    const rawDetails = '<img src=x onerror="alert(1)"> Request failed with 500'
+
+    render(
+      <RuntimeNotices
+        notices={[{ id, level: 'error', text: rawDetails }]}
+        onReloadWorkspace={onReloadWorkspace}
+      />,
+    )
+
+    const alert = screen.getByRole('alert')
+    expect(within(alert).getByText('Chat history unavailable')).toBeTruthy()
+    expect(within(alert).getByText(/Reload the workspace to try again/)).toBeTruthy()
+    const details = within(alert).getByText('Error details').closest('details')
+    expect(details?.open).toBe(false)
+    expect(within(details as HTMLElement).getByText(rawDetails)).toBeTruthy()
+    expect(details?.querySelector('img')).toBeNull()
+
+    fireEvent.click(within(alert).getByRole('button', { name: 'Reload workspace' }))
+    expect(onReloadWorkspace).toHaveBeenCalledOnce()
+  })
+
+  test('leaves generic errors in their existing raw notice presentation', () => {
+    render(
+      <RuntimeNotices notices={[{ id: 'generic-error', level: 'error', text: 'A generic failure' }]} />,
+    )
+
+    const alert = screen.getByRole('alert')
+    expect(within(alert).getByText('A generic failure')).toBeTruthy()
+    expect(within(alert).queryByText('Chat history unavailable')).toBeNull()
+    expect(within(alert).queryByText('Error details')).toBeNull()
+    expect(within(alert).queryByRole('button', { name: 'Reload workspace' })).toBeNull()
+  })
+
   test('renders reconnect, protocol, warmup, plugin, and retry notices with stable data attrs', () => {
     const notices: RuntimeNotice[] = [
       { id: 'connection-reconnecting', kind: 'reconnect', level: 'warning', text: 'Reconnecting to the agent session…' },

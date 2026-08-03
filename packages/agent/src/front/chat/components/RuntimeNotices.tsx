@@ -15,17 +15,36 @@ export interface RuntimeNotice extends PiChatRuntimeNotice {
   actionLabel?: string
 }
 
+const TERMINAL_CHAT_ERROR_IDS = new Set([
+  'chat-error',
+  'protocol-error',
+  'session-navigation-error',
+])
+
+export function isTerminalChatErrorNotice(notice: Pick<RuntimeNotice, 'id' | 'level'>): boolean {
+  return notice.level === 'error' && TERMINAL_CHAT_ERROR_IDS.has(notice.id)
+}
+
 export interface RuntimeNoticesProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
   notices: RuntimeNotice[]
   onDismiss?: (id: string) => void
   onAction?: (id: string) => void
+  onReloadWorkspace?: () => void
   /** Host-supplied action node for a notice, rendered before the built-in
    * onAction button. Lets a host attach a recovery action for a specific error
    * code without this component knowing the code. */
   renderAction?: (notice: RuntimeNotice) => ReactNode
 }
 
-export const RuntimeNotices = memo(({ notices, onDismiss, onAction, renderAction, className, ...props }: RuntimeNoticesProps) => {
+export const RuntimeNotices = memo(({
+  notices,
+  onDismiss,
+  onAction,
+  onReloadWorkspace,
+  renderAction,
+  className,
+  ...props
+}: RuntimeNoticesProps) => {
   if (notices.length === 0) return null
 
   return (
@@ -35,7 +54,14 @@ export const RuntimeNotices = memo(({ notices, onDismiss, onAction, renderAction
       {...props}
     >
       {notices.map((notice) => (
-        <RuntimeNoticeRow key={notice.id} notice={notice} onDismiss={onDismiss} onAction={onAction} renderAction={renderAction} />
+        <RuntimeNoticeRow
+          key={notice.id}
+          notice={notice}
+          onDismiss={onDismiss}
+          onAction={onAction}
+          onReloadWorkspace={onReloadWorkspace}
+          renderAction={renderAction}
+        />
       ))}
     </div>
   )
@@ -47,14 +73,16 @@ interface RuntimeNoticeRowProps {
   notice: RuntimeNotice
   onDismiss?: (id: string) => void
   onAction?: (id: string) => void
+  onReloadWorkspace?: () => void
   renderAction?: (notice: RuntimeNotice) => ReactNode
 }
 
-function RuntimeNoticeRow({ notice, onDismiss, onAction, renderAction }: RuntimeNoticeRowProps) {
+function RuntimeNoticeRow({ notice, onDismiss, onAction, onReloadWorkspace, renderAction }: RuntimeNoticeRowProps) {
   const kind = inferNoticeKind(notice)
   const Icon = iconForNotice(kind, notice.level)
   const actionLabel = notice.actionLabel ?? defaultActionLabel(kind)
   const hostAction = renderAction?.(notice)
+  const terminalChatError = isTerminalChatErrorNotice(notice)
 
   return (
     <div
@@ -71,9 +99,33 @@ function RuntimeNoticeRow({ notice, onDismiss, onAction, renderAction }: Runtime
     >
       <Icon className={cn(noticeIconClass(notice.level), kind === 'retry' && 'animate-spin motion-reduce:animate-none')} aria-hidden="true" />
       <div className="min-w-0 flex-1">
-        <p className={noticeTextClass()}>{notice.text}</p>
+        {terminalChatError ? (
+          <>
+            <p className="text-sm font-semibold text-foreground">Chat history unavailable</p>
+            <p className={noticeTextClass('mt-0.5')}>
+              The saved conversation could not be loaded. Reload the workspace to try again.
+            </p>
+            <details className="mt-2 text-xs text-muted-foreground">
+              <summary className="cursor-pointer">Error details</summary>
+              <p className="mt-1 whitespace-pre-wrap break-words">{notice.text}</p>
+            </details>
+          </>
+        ) : (
+          <p className={noticeTextClass()}>{notice.text}</p>
+        )}
       </div>
       {hostAction ?? null}
+      {terminalChatError ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0 bg-background text-foreground hover:bg-muted hover:text-foreground"
+          onClick={onReloadWorkspace ?? reloadWorkspace}
+        >
+          Reload workspace
+        </Button>
+      ) : null}
       {actionLabel && onAction ? (
         <Button type="button" variant="ghost" size="sm" onClick={() => onAction(notice.id)}>
           {actionLabel}
@@ -93,6 +145,10 @@ function RuntimeNoticeRow({ notice, onDismiss, onAction, renderAction }: Runtime
       ) : null}
     </div>
   )
+}
+
+function reloadWorkspace(): void {
+  window.location.reload()
 }
 
 function inferNoticeKind(notice: RuntimeNotice): RuntimeNoticeKind {

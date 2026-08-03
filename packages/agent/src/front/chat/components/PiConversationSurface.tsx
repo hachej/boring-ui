@@ -16,6 +16,7 @@ import {
 } from '../../primitives/conversation'
 import { RuntimeNoticeMessages, type PanelNotice } from './ChatNotices'
 import { PiTimelineMessage } from './PiTimelineMessage'
+import { isTerminalChatErrorNotice } from './RuntimeNotices'
 import type { MessageMention, MessageMentionCatalog } from './MessageMentions'
 
 // Heavy sessions (tool-heavy runs reach thousands of messages) must not mount
@@ -90,6 +91,10 @@ export function PiConversationSurface({
   const loadOlder = useCallback(() => {
     setVisibleCount((count) => count + TRANSCRIPT_WINDOW_STEP)
   }, [])
+  const terminalEmptyError = messages.length === 0 && runtimeNotices.some(isTerminalChatErrorNotice)
+  const visibleRuntimeNotices = terminalEmptyError
+    ? runtimeNotices.filter((notice) => !isReconnectOrWarmupNotice(notice))
+    : runtimeNotices
 
   return (
     <Conversation
@@ -103,13 +108,13 @@ export function PiConversationSurface({
         chrome ? 'max-w-3xl px-6 py-8' : 'max-w-[680px] px-4 py-4',
         emptyHero && 'py-4 text-center',
       )}>
-        {messages.length === 0 && emptyStateHydrating ? (
+        {messages.length === 0 && emptyStateHydrating && !terminalEmptyError ? (
           <div className="flex items-center gap-2 rounded-xl border border-border bg-card/70 px-4 py-3 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading chat history…
           </div>
         ) : null}
-        {messages.length === 0 && !emptyStateHydrating ? (
+        {messages.length === 0 && !emptyStateHydrating && !terminalEmptyError ? (
           <ChatEmptyState
             eyebrow={emptyState?.eyebrow}
             title={emptyState?.title}
@@ -141,7 +146,7 @@ export function PiConversationSurface({
             onMentionActivate={onMentionActivate}
           />
         ))}
-        <RuntimeNoticeMessages notices={runtimeNotices} onDismiss={onDismissNotice} renderAction={renderNoticeAction} />
+        <RuntimeNoticeMessages notices={visibleRuntimeNotices} onDismiss={onDismissNotice} renderAction={renderNoticeAction} />
       </ConversationContent>
       <ConversationScrollButton />
     </Conversation>
@@ -199,6 +204,10 @@ function TranscriptHistoryLoader({ olderCount, onLoadOlder }: { olderCount: numb
       </button>
     </div>
   )
+}
+
+function isReconnectOrWarmupNotice(notice: PanelNotice): boolean {
+  return notice.id.includes('reconnect') || notice.id.includes('warmup')
 }
 
 function buildMessageRenderItems(messages: BoringChatMessage[]): Array<{ message: BoringChatMessage; key: string }> {
