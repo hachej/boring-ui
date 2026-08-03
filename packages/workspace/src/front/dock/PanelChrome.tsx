@@ -64,7 +64,7 @@ export function PanelChrome({
             type="button"
             variant="ghost"
             size="icon-xs"
-            className="h-5 w-5 text-muted-foreground"
+            className="h-11 w-11 text-muted-foreground md:h-5 md:w-5"
             onClick={() => panelApi.close()}
             aria-label={`Close ${title}`}
           >
