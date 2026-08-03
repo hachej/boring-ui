@@ -192,9 +192,9 @@ Every terminal outcome releases browser/server ownership and active-path view mo
   pnpm --filter @hachej/boring-ui-cli test
   pnpm --filter @hachej/boring-ui-cli typecheck
   pnpm --filter @hachej/boring-ui-cli build:front
-  pnpm --filter @hachej/boring-live-transcription test
-  pnpm --filter @hachej/boring-live-transcription typecheck
-  pnpm --filter @hachej/boring-live-transcription lint
+  pnpm --filter @hachej/boring-transcription test
+  pnpm --filter @hachej/boring-transcription typecheck
+  pnpm --filter @hachej/boring-transcription lint
   pnpm audit:imports
   git diff --check
   node docs/issues/912/spikes/whisperlivekit/gh912-wlk-contract-proof.mjs /path/to/clean/WhisperLiveKit /path/to/faster-whisper-tiny-snapshot /path/to/diart-checkout

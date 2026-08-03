@@ -2,7 +2,7 @@
 import React from "react"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { liveTranscriptPlugin } from "@hachej/boring-live-transcription/front"
+import { liveTranscriptPlugin } from "@hachej/boring-transcription/front"
 import { CliWorkspaceShell } from "./App"
 
 const workspaceAgentFrontSpy = vi.fn((props: Record<string, unknown>) => (
