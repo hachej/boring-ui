@@ -1064,6 +1064,7 @@ export async function createCoreWorkspaceAgentServer(
   const basePluginResolveContext: WorkspaceAgentServerPluginContext = {
     workspaceRoot: pluginWorkspaceRoot,
     bridge: createUnavailableCorePluginBridge(),
+    ...(options.defaultAgentTypeId ? { agentTypeId: options.defaultAgentTypeId } : {}),
   }
   const defaultPluginActorResolver = async (request: FastifyRequest) => {
     const workspaceId = await resolveAuthorizedWorkspaceId(request, workspaceStore)
