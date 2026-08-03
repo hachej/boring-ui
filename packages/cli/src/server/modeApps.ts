@@ -444,7 +444,7 @@ export async function createFolderModeApp(opts: {
     },
   }
   const liveTranscriptPlugin = liveTranscriptEnabled && opts.liveTranscripts
-    ? (await import("@hachej/boring-live-transcription/server")).createLiveTranscriptServerPlugin({
+    ? (await import("@hachej/boring-transcription/server")).createLiveTranscriptServerPlugin({
         dispatcherResolver: liveTranscriptDispatcherProxy,
         agentTypeId: "default",
         actorResolver: () => ({ workspaceId: "default", userId: "local" }),

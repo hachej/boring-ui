@@ -255,13 +255,24 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async readStateBeforeDispose(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot> {
     const sessionKey = this.sessionKey(ctx, sessionId)
-    const channel = this.channels.get(sessionKey)
+    let channel = this.channels.get(sessionKey)
     if (!channel && !this.harnessMayHaveLiveSession(ctx, sessionId)) {
       const persisted = await this.readPersistedState(ctx, sessionId)
-      if (persisted) return persisted
+      channel = this.channels.get(sessionKey)
+      if (persisted && !channel && !this.harnessMayHaveLiveSession(ctx, sessionId)) return persisted
     }
 
     const adapter = await this.getAdapter(ctx, sessionId, '')
+    if (this.canRefreshFromPersistedState(sessionKey, adapter)) {
+      const persisted = await this.readPersistedState(ctx, sessionId)
+      if (persisted && this.canRefreshFromPersistedState(sessionKey, adapter)) {
+        return this.enrichSyntheticPromptFailures(
+          sessionKey,
+          this.messageMetadata.enrichSnapshot(sessionKey, persisted),
+        )
+      }
+    }
+
     const snapshot = this.messageMetadata.enrichSnapshot(sessionKey, buildPiChatSnapshot(adapter, {
       seq: channel?.buffer.latestSeq ?? 0,
       sessionId,
@@ -270,6 +281,16 @@ export class HarnessPiChatService implements PiChatSessionService {
       attachmentUrl: this.attachmentUrlFor(sessionId),
     }))
     return this.enrichSyntheticPromptFailures(sessionKey, snapshot)
+  }
+
+  private canRefreshFromPersistedState(sessionKey: string, adapter: PiAgentSessionAdapter): boolean {
+    if (this.activePromptRuns.has(sessionKey)) return false
+    const snapshot = adapter.readSnapshot()
+    return !snapshot.isStreaming
+      && !snapshot.isRetrying
+      && snapshot.pendingMessageCount === 0
+      && snapshot.steeringMessages.length === 0
+      && snapshot.followUpMessages.length === 0
   }
 
   private harnessMayHaveLiveSession(ctx: PiSessionRequestContext, sessionId: string): boolean {

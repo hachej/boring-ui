@@ -51,7 +51,7 @@ jobs:
             --filter @hachej/boring-core \
             --filter @hachej/boring-deck \
             --filter @hachej/boring-ask-user \
-            --filter @hachej/boring-live-transcription \
+            --filter @hachej/boring-transcription \
             --filter @hachej/boring-diagram \
             --filter @hachej/boring-tasks \
             --filter @hachej/boring-automation \

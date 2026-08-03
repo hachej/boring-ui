@@ -19,8 +19,8 @@ test.describe('Pi-native baseline composer controls', () => {
     const thinkingSelect = page.locator('[data-boring-agent-part="thinking-select"]')
 
     await expect(chat).toHaveAttribute('data-pi-chat-connection', 'connected', { timeout: 10_000 })
-    await expect(modelSelect).toContainText('/model:', { timeout: 10_000 })
-    await expect(thinkingSelect).toContainText('/thinking:')
+    await expect(modelSelect).toContainText('Model ·', { timeout: 10_000 })
+    await expect(thinkingSelect).toContainText('Thinking ·')
     await expect(page.getByRole('option', { name: /Claude Sonnet/ })).toHaveCount(0)
     await expect(page.getByRole('option', { name: /Deep reasoning/ })).toHaveCount(0)
 
@@ -31,7 +31,7 @@ test.describe('Pi-native baseline composer controls', () => {
     expect(chrome.rail.backgroundColor).toBe('rgba(0, 0, 0, 0)')
     expect(chrome.rail.boxShadow).toContain('inset')
     expect(chrome.rail.borderWidth).toBe('0px')
-    expect(chrome.rail.borderRadius).toBeGreaterThan(20)
+    expect(chrome.rail.borderRadius).toBe(14)
     expect(Math.round(chrome.inputGroup.height)).toBe(56)
     // The composer input-group is a column shell (textarea row stacked over the
     // controls row); the visible horizontal bar is the inner items-center row.
@@ -40,7 +40,7 @@ test.describe('Pi-native baseline composer controls', () => {
     expect(chrome.inputGroup.backgroundColor).toBe('rgba(0, 0, 0, 0)')
     expect(chrome.inputGroup.boxShadow).not.toContain('inset')
     expect(chrome.inputGroup.borderWidth).toBe('0px')
-    expect(chrome.inputGroup.borderRadius).toBeGreaterThan(20)
+    expect(chrome.inputGroup.borderRadius).toBe(14)
     expect(chrome.formClass).not.toContain('!bg-[color:var(--background)]')
     expect(chrome.formClass).not.toContain('shadow-[inset')
     expect(chrome.viewport.height - chrome.chat.bottom).toBeLessThanOrEqual(1)
@@ -52,16 +52,15 @@ test.describe('Pi-native baseline composer controls', () => {
     expect(chrome.submit.status).toBe('ready')
     expect(chrome.submit.className).toContain('text-background')
     expect(chrome.submit.className).not.toContain('!text-background')
-    expect(Math.round(chrome.settings.top - chrome.rail.bottom)).toBe(6)
+    expect(Math.round(chrome.settings.top - chrome.rail.bottom)).toBe(8)
     expect(Math.round(chrome.settings.width)).toBe(Math.round(chrome.rail.width))
-    expect(chrome.settings.justifyContent).toBe('center')
-    expect(chrome.settings.gap).toBe('6px')
-    expect(chrome.settings.fontSize).toBe('10.5px')
-    expect(chrome.settings.color).toContain('/ 0.45')
+    expect(chrome.settings.justifyContent).toBe('normal')
+    expect(chrome.settings.gap).toBe('normal')
+    expect(chrome.settings.fontSize).toBe('12px')
     expect(chrome.modelSelect.borderRadius).toBeGreaterThan(0)
-    expect(Math.round(chrome.modelSelect.height)).toBe(20)
+    expect(Math.round(chrome.modelSelect.height)).toBe(32)
     expect(chrome.thinkingSelect.borderRadius).toBeGreaterThan(0)
-    expect(Math.round(chrome.thinkingSelect.height)).toBe(20)
+    expect(Math.round(chrome.thinkingSelect.height)).toBe(32)
 
     await testInfo.attach('pi-native-baseline-composer-rail.json', {
       body: Buffer.from(JSON.stringify({
