@@ -17,7 +17,7 @@ export class TaskToolBindingError extends Error {
 export interface TrustedTaskToolBinding {
   actor: { workspaceId: string; userId: string }
   agentTypeId: string
-  workspace: TaskSessionLinkWorkspace & { readonly root: string }
+  workspace: TaskSessionLinkWorkspace
   linkStore: TaskSessionLinkStore
   authorizeSession(sessionId: string): Promise<void>
 }
@@ -51,7 +51,7 @@ export function createTrustedTaskToolBindingResolver(
           context: actor,
           requestId: ctx.requestId?.trim() || ctx.toolCallId,
         }, async (lease) => {
-          const workspace = lease.workspace as TaskSessionLinkWorkspace & { readonly root: string }
+          const workspace: TaskSessionLinkWorkspace = lease.workspace
           result = await operation({
             actor,
             agentTypeId,

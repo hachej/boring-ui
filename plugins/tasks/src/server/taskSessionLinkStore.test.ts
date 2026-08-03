@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { FileTaskSessionLinkStore, TaskSessionLinkStoreError, taskSessionLinkStoreForWorkspace, type TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
 
 class MemoryWorkspace implements TaskSessionLinkWorkspace {
+  readonly root = "/workspace"
   readonly files = new Map<string, string>()
   readonly writes: string[] = []
   readonly unlinks: string[] = []

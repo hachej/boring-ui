@@ -50,8 +50,9 @@ export function buildTaskSessionRows(
   const activityById = new Map(sessions.map((activity) => [activity.sessionId, activity]))
   const omitted = new Set(omittedSessionIds)
   return links.map((link): TaskSessionRow => {
-    const activity = link.sessionId ? activityById.get(link.sessionId) : undefined
-    const available = Boolean(link.sessionId && activity) && !omitted.has(link.sessionId ?? "")
+    const sessionId = link.sessionId
+    const activity = sessionId ? activityById.get(sessionId) : undefined
+    const available = Boolean(sessionId && activity && !omitted.has(sessionId))
     return { link, activity: available ? activity : undefined, available, status: statusFor(available ? activity : undefined) }
   }).sort((left, right) => {
     if (left.available !== right.available) return left.available ? -1 : 1

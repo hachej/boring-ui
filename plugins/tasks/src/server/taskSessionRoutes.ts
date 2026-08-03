@@ -115,7 +115,7 @@ export function registerTaskSessionLinkRoutes(
         requestId: request.id,
         request,
       }, async (binding) => {
-        const workspace = binding.workspace as TaskSessionLinkWorkspace
+        const workspace: TaskSessionLinkWorkspace = binding.workspace
         result = await run({
           actor,
           workspace,
@@ -160,7 +160,7 @@ export function registerTaskSessionLinkRoutes(
       return await withTrustedStore(request, async ({ actor, workspace, store, resolver }) => {
         if (!resolver.authorizeSession) throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session provenance is unavailable.")
         const resolution = await service.resolveSessionTasks(
-          { workspaceId: actor.workspaceId, workspace: workspace as unknown as { readonly root: string } },
+          { workspaceId: actor.workspaceId, workspace },
           sessionIds,
           {
             agentTypeId,

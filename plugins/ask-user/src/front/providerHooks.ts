@@ -61,7 +61,8 @@ export function useAskUserAttentionActions(runtime: QuestionsRuntime): void {
     const onAction = (event: Event) => {
       const detail = (event as CustomEvent<WorkspaceAttentionActionDetail>).detail
       if (!detail || detail.actionId !== "cancel" || detail.blocker.reason !== "ask-user.question") return
-      const sessionId = detail.blocker.sessionId ?? detail.sessionId ?? runtime.activeSessionId
+      const sessionId = detail.blocker.sessionId ?? detail.sessionId
+      if (!sessionId) return
       const pending = runtime.getPending(sessionId)
       if (!pending || (detail.blocker.target && pending.questionId !== detail.blocker.target)) return
       runtime.setPending(null, pending.sessionId)

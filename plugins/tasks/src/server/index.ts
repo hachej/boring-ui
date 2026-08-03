@@ -182,29 +182,4 @@ export default function defaultTasksServerPlugin(options?: TasksServerPluginOpti
 
 export { createGitHubTaskSource, createWorkspaceGitHubTaskSource, createGhCliGitHubIssueExecutor, createGhCliGitHubRepositoryDetector } from "./githubSource"
 export { createTaskSourceRegistry } from "./sourceRuntime"
-export {
-  createTaskSourceService,
-  TaskSourceServiceError,
-  type TaskManagementService,
-  type TaskSessionBindingContext,
-  type TaskKeyInput,
-  type TaskListInput,
-  type TaskListOutput,
-} from "./taskSourceService"
-export {
-  FileTaskSessionLinkStore,
-  TaskSessionLinkStoreError,
-  taskSessionLinkStoreForWorkspace,
-  type TaskSessionLinkStore,
-  type TaskSessionLinkStoreErrorCode,
-  type TaskSessionLinkWorkspace,
-} from "./taskSessionLinkStore"
-export { registerTaskSessionLinkRoutes, type TaskSessionLinkTrustedContext } from "./taskSessionRoutes"
-export { createManageTasksTool, manageTasksParameters, parseManageTasksInput } from "./manageTasksTool"
-export {
-  createTrustedTaskToolBindingResolver,
-  TaskToolBindingError,
-  type TaskToolBindingErrorCode,
-  type TrustedTaskToolBinding,
-  type TrustedTaskToolBindingResolver,
-} from "./taskToolBinding"
+export { createTaskSourceService, TaskSourceServiceError } from "./taskSourceService"
