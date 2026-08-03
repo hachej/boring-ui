@@ -289,7 +289,7 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
             variant="ghost"
             size="icon-xs"
             className={cn(
-              "h-11 w-11 shrink-0 text-muted-foreground/80 opacity-0 md:h-5 md:w-5",
+              "h-11 min-h-11 w-11 min-w-11 shrink-0 text-muted-foreground/80 opacity-0 md:h-5 md:w-5",
               "focus-visible:opacity-100 group-hover:opacity-100",
               "[.dv-active-tab_&]:opacity-55 [.active-tab_&]:opacity-55",
               "[.dv-active-tab_&]:hover:opacity-100 [.active-tab_&]:hover:opacity-100",

@@ -6,7 +6,7 @@ import { ControlTooltip } from "../components/ControlTooltip"
 import { cn } from "../lib/utils"
 
 const CORNER_CHROME_CLASS =
-  "pointer-events-auto relative h-11 w-11 border border-border/70 bg-muted text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground md:h-8 md:w-8"
+  "pointer-events-auto relative h-11 min-h-11 w-11 min-w-11 border border-border/70 bg-muted text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground md:h-8 md:w-8"
 
 const CORNER_CHROME_PRESSED_CLASS =
   "border-border bg-foreground/[0.09] text-foreground"
