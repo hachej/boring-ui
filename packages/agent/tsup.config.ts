@@ -23,7 +23,4 @@ export default defineConfig({
   target: "es2022",
   removeNodeProtocol: false,
   external: [...EXTERNALS, ...DEV_BUNDLE_EXTERNALS],
-  esbuildOptions(options) {
-    options.supported = { ...options.supported, 'node-colon-prefix-import': true }
-  },
 });
