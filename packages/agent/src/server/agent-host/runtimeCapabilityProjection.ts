@@ -483,10 +483,14 @@ export function createAgentHostRuntimeCapabilityRoutes(
         const sessionId = typeof query.sessionId === 'string' && query.sessionId.trim()
           ? query.sessionId.trim()
           : 'default'
-        // Catalog discovery targets the current Agent generation. A caller may
-        // provide the session ID used by harness resource loaders, but listing
-        // commands must not require that session to be persisted already.
-        const binding = await resolve(request, value.agentTypeId)
+        // A session-addressed catalog must use the same verified pinned binding
+        // and handle identity as execution; an absent session keeps the explicit
+        // current-generation discovery fallback for non-session host tooling.
+        const binding = await resolve(
+          request,
+          value.agentTypeId,
+          typeof query.sessionId === 'string' && query.sessionId.trim() ? sessionId : undefined,
+        )
         const commands = await binding.harness.getSlashCommands?.(sessionId, binding.runContext) ?? []
         return reply.code(200).send({ commands })
       } catch (error) {
