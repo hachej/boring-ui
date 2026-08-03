@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 /**
  * Eval: a real model should choose the Workspace-owned ask_user tool when it
  * needs a missing blocking decision. This talks to an OpenAI-compatible chat

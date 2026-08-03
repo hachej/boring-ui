@@ -534,7 +534,7 @@ function ChatPaneHeaderActions({ activePanel }: IDockviewHeaderActionsProps) {
             variant="ghost"
             size="icon-xs"
             data-boring-workspace-part="chat-pane-control"
-            className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-55 hover:opacity-100 focus-visible:opacity-100"
+            className="h-11 w-11 shrink-0 text-muted-foreground/80 opacity-55 hover:opacity-100 focus-visible:opacity-100 md:h-5 md:w-5"
             onClick={() => stage.onClosePane?.(api.id)}
             aria-label={`Close ${title} pane`}
           >
