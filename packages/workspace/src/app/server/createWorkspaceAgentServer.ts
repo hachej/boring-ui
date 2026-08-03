@@ -1706,7 +1706,12 @@ export async function createWorkspaceAgentServer(
         identity,
         physicalBindingIdentity: identity,
         resourceInputDigest,
-        ...(intent.operation === "reload" ? { revalidateResourceInputs } : {}),
+        ...(intent.operation === "reload" ? {
+          async revalidateResourceInputs() {
+            await assertAgentReloadAvailable(pluginCollection.agentReloadBlockers)
+            await revalidateResourceInputs()
+          },
+        } : {}),
         sessionNamespace: "",
         pi: {
           ...resolvedBasePi,
