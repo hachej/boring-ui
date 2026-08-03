@@ -9,15 +9,30 @@ import type { PanelConfig } from "../../../front/registry/types"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
 import {
-  WorkspaceAgentFront as WorkspaceAgentFrontImpl,
+  WorkspaceAgentFront as RawWorkspaceAgentFront,
+  type UseWorkspaceAgentSessions,
   type WorkspaceAgentFrontProps,
   type WorkspaceAgentSession,
+  type WorkspaceAgentSessionsApi,
 } from "../WorkspaceAgentFront"
 
+type AttestedWorkspaceAgentFrontProps<TSession extends WorkspaceAgentSession> =
+  Omit<WorkspaceAgentFrontProps<TSession>, "agentTypeId" | "useSessions"> & {
+    agentTypeId?: string
+    useSessions?: (
+      options: Parameters<UseWorkspaceAgentSessions<TSession>>[0],
+    ) => Omit<WorkspaceAgentSessionsApi<TSession>, "sourceIdentity"> & { sourceIdentity?: string }
+  }
+
+/** Existing custom-hook fixtures consciously attest the source they were invoked for. */
 function WorkspaceAgentFront<TSession extends WorkspaceAgentSession = WorkspaceAgentSession>(
-  props: Omit<WorkspaceAgentFrontProps<TSession>, "agentTypeId"> & { agentTypeId?: string },
+  props: AttestedWorkspaceAgentFrontProps<TSession>,
 ) {
-  return <WorkspaceAgentFrontImpl agentTypeId="default" {...props} />
+  const useSessions = props.useSessions
+  const attestedUseSessions: UseWorkspaceAgentSessions<TSession> | undefined = useSessions
+    ? (options) => ({ ...useSessions(options), sourceIdentity: options.sourceIdentity })
+    : undefined
+  return <RawWorkspaceAgentFront agentTypeId="default" {...props} useSessions={attestedUseSessions} />
 }
 
 type CapturedChatPanelProps = WorkspaceChatPanelProps & {
@@ -1210,8 +1225,9 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByRole("button", { name: "Split created chat horizontally" })).toBeEnabled()
   })
 
-  it("creates a split pane when session creation returns void and sessions update later", async () => {
+  it("does not infer a split-pane identity when a custom creator returns void", async () => {
     const user = userEvent.setup()
+    const createCalled = vi.fn()
 
     function Harness() {
       const [sessions, setSessions] = useState([
@@ -1223,12 +1239,13 @@ describe("WorkspaceAgentFront", () => {
           chatPanel={SessionIdChatPanel}
           sessions={sessions}
           activeSessionId="s1"
-          onCreateSession={() => {
+          onCreateSession={(() => {
+            createCalled()
             setTimeout(() => setSessions((current) => [
               ...current,
               { id: "created", title: "Created later", updatedAt: Date.now() },
             ]), 0)
-          }}
+          }) as unknown as () => { id: string }}
           persistenceEnabled={false}
         />
       )
@@ -1236,8 +1253,9 @@ describe("WorkspaceAgentFront", () => {
 
     render(<Harness />)
     await user.click(screen.getByRole("button", { name: "Split First session chat horizontally" }))
-
-    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "created"]))
+    await waitFor(() => expect(createCalled).toHaveBeenCalledOnce())
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
+    expect(visibleChatSessionIds()).toEqual(["s1"])
   })
 
   it("removes an open chat pane when its session is deleted from history", async () => {
@@ -1842,6 +1860,67 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByText("Loading sessions…")).not.toBeInTheDocument()
   })
 
+  it("keeps one-render-stale custom rows and saved actions inert until source attestation matches", async () => {
+    let alphaSourceIdentity = ""
+    let capturedPanel: WorkspaceChatPanelProps | undefined
+    const alphaRefresh = vi.fn()
+    const betaRefresh = vi.fn()
+    const CapturingSessionPanel = (props: WorkspaceChatPanelProps) => {
+      capturedPanel = props
+      return <SessionIdChatPanel {...props} />
+    }
+
+    function Harness() {
+      const [agentTypeId, setAgentTypeId] = useState("alpha")
+      const [betaReady, setBetaReady] = useState(false)
+      return (
+        <>
+          <button type="button" onClick={() => setAgentTypeId("beta")}>Switch source</button>
+          <button type="button" onClick={() => setBetaReady(true)}>Settle source</button>
+          <RawWorkspaceAgentFront
+            workspaceId="custom-source-boundary"
+            agentTypeId={agentTypeId}
+            chatPanel={CapturingSessionPanel}
+            persistenceEnabled={false}
+            useSessions={(options) => {
+              if (agentTypeId === "alpha") {
+                alphaSourceIdentity = options.sourceIdentity
+                const session = { id: "alpha-row", agentTypeId: "alpha", title: "Alpha row" }
+                return {
+                  sourceIdentity: options.sourceIdentity,
+                  sessions: [session], activeSession: session, activeSessionId: session.id,
+                  loading: false, create: vi.fn(), switch: vi.fn(), delete: vi.fn(), refresh: alphaRefresh,
+                }
+              }
+              const session = betaReady
+                ? { id: "beta-row", agentTypeId: "beta", title: "Beta row" }
+                : { id: "alpha-row", agentTypeId: "alpha", title: "Alpha row" }
+              return {
+                sourceIdentity: betaReady ? options.sourceIdentity : alphaSourceIdentity,
+                sessions: [session], activeSession: session, activeSessionId: session.id,
+                loading: !betaReady, create: vi.fn(), switch: vi.fn(), delete: vi.fn(), refresh: betaRefresh,
+              }
+            }}
+          />
+        </>
+      )
+    }
+
+    render(<Harness />)
+    expect(await screen.findByText("Chat pane alpha-row")).toBeInTheDocument()
+    const savedAlphaTurnComplete = capturedPanel?.onTurnComplete
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch source" }))
+    act(() => { savedAlphaTurnComplete?.() })
+    expect(alphaRefresh).not.toHaveBeenCalled()
+    expect(betaRefresh).not.toHaveBeenCalled()
+    expect(screen.queryByText("Chat pane alpha-row")).not.toBeInTheDocument()
+    expect(screen.queryByText("Alpha row")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Settle source" }))
+    expect(await screen.findByText("Chat pane beta-row")).toBeInTheDocument()
+  })
+
   it("uses the workspace's persisted active chat while session list refreshes", async () => {
     localStorage.setItem("boring-workspace:sessions:workspace-b", "persisted-workspace-b")
     let workspaceBLoading = true
@@ -2193,7 +2272,7 @@ describe("WorkspaceAgentFront", () => {
     expect(deleted).not.toHaveBeenCalled()
   })
 
-  it("does not pass the New chat click event into remote session creation", () => {
+  it("does not pass the New chat click event into remote session creation", async () => {
     const create = vi.fn(async () => ({ id: "manual", title: "Manual", updatedAt: Date.now(), turnCount: 0 }))
 
     render(
@@ -2215,7 +2294,7 @@ describe("WorkspaceAgentFront", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "New chat" }))
 
-    expect(create).toHaveBeenCalledOnce()
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
     expect(create.mock.calls[0]).toEqual([])
   })
 

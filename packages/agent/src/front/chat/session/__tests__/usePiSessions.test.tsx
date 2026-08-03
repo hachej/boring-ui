@@ -100,6 +100,100 @@ describe('usePiSessions', () => {
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-running')
   })
 
+  test('preserves addressed owner, turn count, and native rename metadata', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({
+      sessions: [{
+        ref: { agentTypeId: 'alpha', sessionId: 'native-1' },
+        title: 'Native',
+        status: 'idle',
+        createdAt: 1,
+        updatedAt: 2,
+        turnCount: 4,
+        nativeSessionId: 'native-1',
+        hasAssistantReply: true,
+      }],
+    }))
+
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      fetch: fetchMock as unknown as typeof fetch,
+      connectActiveSession: false,
+      storageScope: 'default',
+      retry: { maxRetries: 0 },
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions[0]).toMatchObject({
+      id: 'native-1',
+      agentTypeId: 'alpha',
+      turnCount: 4,
+      nativeSessionId: 'native-1',
+      hasAssistantReply: true,
+    })
+  })
+
+  test('attests rows only after the requested source has loaded', async () => {
+    const sourceB = deferred<Response>()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([session('source-a')]))
+      .mockReturnValueOnce(sourceB.promise)
+
+    const { result, rerender } = renderHook(
+      ({ sourceIdentity }) => usePiSessions({
+        sourceIdentity,
+        storageScope: 'scope-a',
+        fetch: fetchMock as unknown as typeof fetch,
+        connectActiveSession: false,
+      }),
+      { initialProps: { sourceIdentity: 'source-a' } },
+    )
+
+    await waitFor(() => expect(result.current.sourceIdentity).toBe('source-a'))
+    rerender({ sourceIdentity: 'source-b' })
+    expect(result.current.sourceIdentity).toBeUndefined()
+
+    await act(async () => {
+      sourceB.resolve(jsonResponse([session('source-b')]))
+      await sourceB.promise
+    })
+    await waitFor(() => expect(result.current.sourceIdentity).toBe('source-b'))
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['source-b'])
+  })
+
+  test('saved mutation callbacks fail closed after a new source commits', async () => {
+    const sourceB = deferred<Response>()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([session('source-a')]))
+      .mockReturnValueOnce(sourceB.promise)
+
+    const { result, rerender } = renderHook(
+      ({ sourceIdentity }) => usePiSessions({
+        sourceIdentity,
+        storageScope: 'scope-a',
+        fetch: fetchMock as unknown as typeof fetch,
+        connectActiveSession: false,
+      }),
+      { initialProps: { sourceIdentity: 'source-a' } },
+    )
+    await waitFor(() => expect(result.current.sourceIdentity).toBe('source-a'))
+    const saved = result.current
+
+    rerender({ sourceIdentity: 'source-b' })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+
+    await expect(saved.create()).rejects.toMatchObject({ name: 'StaleSessionsSourceError' })
+    await expect(saved.delete('source-a')).rejects.toMatchObject({ name: 'StaleSessionsSourceError' })
+    await expect(saved.refresh()).rejects.toMatchObject({ name: 'StaleSessionsSourceError' })
+    saved.switch('source-a')
+    saved.reset()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      sourceB.resolve(jsonResponse([session('source-b')]))
+      await sourceB.promise
+    })
+  })
+
   test('does not dispose the active remote session when equal remote options are re-created by the host', async () => {
     const remote = remoteFactory()
     fetchMock.mockResolvedValue(jsonResponse([session('pi-running')]))

@@ -22,6 +22,12 @@ export interface SessionSummary {
   createdAt: string
   updatedAt: string
   turnCount: number
+  /** Owning Agent type projected by addressed session routes. */
+  agentTypeId?: string
+  /** Native Pi transcript identity used by session controls. */
+  nativeSessionId?: string
+  /** Native transcript metadata used to gate rename until a reply exists. */
+  hasAssistantReply?: boolean
 }
 
 export type SessionDetail = SessionSummary
