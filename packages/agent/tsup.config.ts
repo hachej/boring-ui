@@ -1,6 +1,6 @@
 import { defineConfig } from "tsup";
 
-const EXTERNALS = ["react", "react-dom"];
+const EXTERNALS = ["react", "react-dom", "node:sqlite"];
 const DEV_BUNDLE_EXTERNALS = ["@vitejs/plugin-react", "@babel/core", "vitest"];
 
 export default defineConfig({
@@ -21,5 +21,9 @@ export default defineConfig({
   clean: true,
   outDir: "dist",
   target: "es2022",
+  removeNodeProtocol: false,
   external: [...EXTERNALS, ...DEV_BUNDLE_EXTERNALS],
+  esbuildOptions(options) {
+    options.supported = { ...options.supported, 'node-colon-prefix-import': true }
+  },
 });

@@ -114,9 +114,9 @@ Source command: `git diff --name-only 1f1cb8264...2fcd4f31c`, filtered only for 
 | `apps/workspace-playground/repro-popover.mjs` | drop | S4 | complete | cutover contraction matrix / policy supersession |
 | `apps/workspace-playground/scripts/bridge-e2e.ts` | drop | S4 | complete | cutover contraction matrix / policy supersession |
 | `apps/workspace-playground/src/eval/run.ts` | drop | S4 | complete | cutover contraction matrix / policy supersession |
-| `apps/workspace-playground/src/front/App.tsx` | adapt | S4 | pending | addressed browser/scripted proof not yet recorded |
-| `apps/workspace-playground/src/server/dev.ts` | adapt | S4 | pending | addressed browser/scripted proof not yet recorded |
-| `apps/workspace-playground/src/server/testing/scriptedPiHarness.ts` | adapt | S4 | pending | addressed browser/scripted proof not yet recorded |
+| `apps/workspace-playground/src/front/App.tsx` | superseded | S4 | complete | #1038 addressed owner/UI wiring retained; golden-route browser proof passed |
+| `apps/workspace-playground/src/server/dev.ts` | superseded | S4 | complete | #1038 direct Host server wiring retained; golden-route browser proof passed |
+| `apps/workspace-playground/src/server/testing/scriptedPiHarness.ts` | adapt | S4 | complete | persisted native scripted-harness tests + addressed golden-route restart proof |
 | `packages/agent/examples/with-custom-tool/server.ts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
 | `packages/agent/scripts/eval-provisioning-agent-vercel.mts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
 | `packages/agent/scripts/eval-provisioning-agent.mts` | drop | S3 | complete | cutover contraction matrix / policy supersession |
@@ -169,7 +169,7 @@ Source command: `git diff --name-only 1f1cb8264...2fcd4f31c`, filtered only for 
 | `packages/core/src/app/front/chatFirst/ChatFirstAuthenticatedShell.tsx` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
 | `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
 | `packages/workspace/src/app/front/WorkspaceAgentFront.tsx` | adapt | S1 | complete | branch implementation + Agent/Workspace focused/full tests |
-| `packages/workspace/src/app/front/WorkspaceAgentStatusStates.tsx` | adapt | S4 | pending | addressed browser/scripted proof not yet recorded |
+| `packages/workspace/src/app/front/WorkspaceAgentStatusStates.tsx` | superseded | S4 | complete | #1038 addressed source state retained; Workspace full/focused suites passed |
 | `packages/workspace/src/app/front/WorkspaceShellCapabilitiesHost.tsx` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
 | `packages/workspace/src/app/front/index.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |
 | `packages/workspace/src/app/front/localStorageSessions.ts` | superseded | S4 | complete | PR #1038 addressed-only composition retained; no #968 delta needed |

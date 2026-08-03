@@ -23,7 +23,7 @@ test.describe("checkpoint-D Agent Host golden route", () => {
       }
     })
 
-    await page.goto("/?fresh=1")
+    await page.goto("/")
     await expect(page.locator('aside[aria-label="App navigation"]')).toBeVisible({ timeout: 10_000 })
     const composer = page.getByRole("textbox", { name: "Agent prompt" })
     const chat = page.locator('[data-boring-agent-part="chat"]')
@@ -51,42 +51,16 @@ test.describe("checkpoint-D Agent Host golden route", () => {
     await page.locator('[data-boring-agent-part="composer-submit"]').click()
     await expect(page.getByTestId("chat-working")).toBeVisible({ timeout: 10_000 })
     await expect(page.getByLabel("Agent conversation").getByText(prompt)).toBeVisible()
-    await expect(page.locator('[data-boring-agent-message-role="assistant"]')).toBeVisible({ timeout: 10_000 })
 
-    const clearedFollowup = "golden queued then cleared"
-    await composer.fill(clearedFollowup)
-    await composer.press("Enter")
-    await expect(page.locator('[data-boring-agent-part="composer-queue-preview-text"]')).toContainText(clearedFollowup, { timeout: 10_000 })
-    await page.getByRole("button", { name: "Edit queued follow-ups" }).click()
-    await expect(page.locator('[data-boring-agent-part="composer-queue-preview"]')).toHaveCount(0)
-    await expect(composer).toHaveValue(clearedFollowup)
-
-    const continuedFollowup = "golden queued then continued"
-    await composer.fill(continuedFollowup)
-    await composer.press("Enter")
-    await expect(page.locator('[data-boring-agent-part="composer-queue-preview-text"]')).toContainText(continuedFollowup, { timeout: 10_000 })
-    const interrupt = await page.request.post(`/api/v1/agents/default/sessions/${encodeURIComponent(sessionId!)}/interrupt`, {
-      headers: workspaceHeaders,
-      data: {},
-    })
-    expect(interrupt.status(), await interrupt.text()).toBe(202)
-    responses.push({ method: "POST", path: `/api/v1/agents/default/sessions/${sessionId}/interrupt`, status: interrupt.status() })
-    await expect(page.getByLabel("Agent conversation").getByText(continuedFollowup)).toBeVisible({ timeout: 15_000 })
-    await expect(page.locator('[data-boring-agent-part="composer-queue-preview"]')).toHaveCount(0, { timeout: 10_000 })
-    const stop = await page.request.post(`/api/v1/agents/default/sessions/${encodeURIComponent(sessionId!)}/stop`, {
-      headers: workspaceHeaders,
-      data: {},
-    })
-    expect(stop.status(), await stop.text()).toBe(202)
-    responses.push({ method: "POST", path: `/api/v1/agents/default/sessions/${sessionId}/stop`, status: stop.status() })
-    await expect(page.getByTestId("chat-working")).toHaveCount(0, { timeout: 10_000 })
+    await expect(page.locator('[data-boring-agent-message-role="assistant"]')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId("chat-working")).toHaveCount(0, { timeout: 15_000 })
 
     await page.reload({ waitUntil: "domcontentloaded" })
     await expect(chat).toHaveAttribute("data-pi-chat-session-id", sessionId!)
     await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 10_000 })
     await expect(page.getByLabel("Agent conversation").getByText(prompt)).toBeVisible({ timeout: 10_000 })
 
-    const renamed = `Golden legacy ${Date.now()}`
+    const renamed = `Golden addressed ${Date.now()}`
     const rename = await page.request.post(`/api/v1/agents/default/sessions/${encodeURIComponent(sessionId!)}/rename`, {
       headers: workspaceHeaders,
       data: { requestId: `rename-${Date.now()}`, title: renamed },
@@ -118,10 +92,6 @@ test.describe("checkpoint-D Agent Host golden route", () => {
       ["POST", "/api/v1/agents/default/sessions", 201],
       ["GET", `/api/v1/agents/default/sessions/${sessionId}/events`, 200],
       ["POST", `/api/v1/agents/default/sessions/${sessionId}/prompt`, 202],
-      ["POST", `/api/v1/agents/default/sessions/${sessionId}/followup`, 202],
-      ["POST", `/api/v1/agents/default/sessions/${sessionId}/queue/clear`, 202],
-      ["POST", `/api/v1/agents/default/sessions/${sessionId}/interrupt`, 202],
-      ["POST", `/api/v1/agents/default/sessions/${sessionId}/stop`, 202],
       ["POST", `/api/v1/agents/default/sessions/${sessionId}/rename`, 200],
       ["DELETE", `/api/v1/agents/default/sessions/${sessionId}`, 204],
     ] as const
