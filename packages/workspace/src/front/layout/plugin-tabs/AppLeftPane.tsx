@@ -16,6 +16,9 @@ export interface AppLeftPaneSession {
   title?: string | null
   updatedAt?: string | number
   turnCount?: number
+  nativeSessionId?: string
+  hasAssistantReply?: boolean
+  ephemeral?: boolean
 }
 
 export interface AppLeftPaneProjectSession {
@@ -93,7 +96,8 @@ export interface AppLeftPaneProps {
   onSwitchSession: (id: string, agentTypeId?: string) => void
   onOpenSessionAsPane: (id: string, agentTypeId?: string) => void
   onToggleSessionPinned: (id: string, agentTypeId?: string) => void
-  onDeleteSession?: (id: string, agentTypeId?: string) => void
+  onDeleteSession?: (id: string, agentTypeId?: string) => unknown
+  onRenameSession?: (id: string, title: string, agentTypeId?: string) => void | Promise<unknown>
   /** Primary app-left actions supplied by the host/app/plugin shell after New chat/Search. */
   actions?: readonly AppLeftPaneAction[]
   /**
@@ -162,6 +166,7 @@ export function AppLeftPane({
   onOpenSessionAsPane,
   onToggleSessionPinned,
   onDeleteSession,
+  onRenameSession,
   actions = [],
   layoutMode = "single-project",
 }: AppLeftPaneProps) {
@@ -285,6 +290,9 @@ export function AppLeftPane({
         onTogglePinned={session.agentTypeId
           ? () => onToggleSessionPinned(session.id, session.agentTypeId)
           : () => onToggleSessionPinned(session.id)}
+        onRename={isActiveProjectSession && onRenameSession
+          ? (id, title) => onRenameSession(id, title, session.agentTypeId)
+          : undefined}
         onDelete={isActiveProjectSession && onDeleteSession
           ? session.agentTypeId
             ? () => onDeleteSession(session.id, session.agentTypeId)

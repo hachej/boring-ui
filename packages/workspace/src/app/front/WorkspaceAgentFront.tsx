@@ -76,6 +76,9 @@ export interface WorkspaceAgentSession {
   title?: string | null
   updatedAt?: string | number
   turnCount?: number
+  nativeSessionId?: string
+  hasAssistantReply?: boolean
+  ephemeral?: boolean
 }
 
 export interface WorkspaceAgentSessionsApi<
@@ -98,6 +101,7 @@ export interface WorkspaceAgentSessionsApi<
   switch: (id: string, agentTypeId?: string) => void
   /** Returns the canonical created row; void providers are a protocol violation. */
   create: (input?: { title?: string; resumeSessionId?: string }) => TSession | Promise<TSession>
+  rename?: (id: string, title: string, agentTypeId?: string) => void | Promise<unknown>
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
   refresh?: (options?: { background?: boolean; throwOnError?: boolean }) => void | Promise<unknown>
@@ -1034,6 +1038,10 @@ export function WorkspaceAgentFront<
     const created = onCreateSession ? onCreateSession() : localSessionStore.create()
     return Promise.resolve(created).then((session) => validateCreatedSession<TSession>(session))
   }, [coordinateRemoteCreate, localSessionStore, onCreateSession, remoteSessionsPending, sessionApi])
+  const resolvedRename = useCallback((id: string, title: string, sessionAgentTypeId?: string) => {
+    if (!sessionSourceIsCurrent() || remoteSessionsPending || !sessionApi?.rename) return undefined
+    return sessionApi.rename(id, title, sessionAgentTypeId)
+  }, [remoteSessionsPending, sessionApi, sessionSourceIsCurrent])
   const rawDelete: (id: string, agentTypeId?: string) => unknown = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove
@@ -2201,6 +2209,7 @@ export function WorkspaceAgentFront<
           onOpenSessionAsPane={openChatPane}
           onToggleSessionPinned={toggleSessionPinned}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
+          onRenameSession={sessionApi?.rename ? resolvedRename : undefined}
           actions={managementActions}
         />
       )}
