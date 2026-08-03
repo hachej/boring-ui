@@ -20,6 +20,7 @@ import { followUpSelector, hasFollowUpSelector, PiChatMessageMetadataReconciler 
 import { buildPiChatHistory } from './piChatHistory'
 import { PiChatMeteringCoordinator, type AgentMeteringSink, type MeteringErrorLogger } from './metering'
 import { HarnessPiChatServiceLifecycle } from './piChatServiceLifecycle'
+import { codedError } from '../codedError'
 
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
@@ -96,6 +97,8 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly channels = new Map<string, LiveSessionChannel>()
   // Coalesce cold callers so only one adapter subscription owns the channel.
   private readonly channelCreations = new Map<string, Promise<LiveSessionChannel>>()
+  // Fence slow cold opens from publishing an adapter after deletion retires its incarnation.
+  private readonly sessionGenerations = new Map<string, number>()
   private readonly messageMetadata = new PiChatMessageMetadataReconciler()
   private readonly activePromptRuns = new Map<string, Promise<void>>()
   private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
@@ -183,6 +186,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
     this.channels.clear()
     this.channelCreations.clear()
+    this.sessionGenerations.clear()
     this.activePromptRuns.clear()
     this.syntheticPromptFailures.clear()
     this.activeSyntheticPromptErrors.clear()
@@ -210,6 +214,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     } catch (error) {
       throw normalizeSessionAccessError(error, sessionId)
     }
+    // Retire this incarnation before waiting on any cold open. Late adapters
+    // are disposed instead of being installed or recreating deleted storage.
+    this.sessionGenerations.set(sessionKey, this.generationOf(sessionKey) + 1)
+    await Promise.allSettled([this.channelCreations.get(sessionKey)])
     const channel = this.channels.get(sessionKey)
     if (channel) {
       // Keep the native listener through abort/run drain so terminal usage is metered.
@@ -816,22 +824,31 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private async getChannel(ctx: PiSessionRequestContext, sessionId: string): Promise<LiveSessionChannel> {
-    await this.assertCanAccessSession(ctx, sessionId)
     const sessionKey = this.sessionKey(ctx, sessionId)
+    // Pin the incarnation before authorization: the entire cold open belongs
+    // to the session generation that existed when the caller arrived.
+    const generation = this.generationOf(sessionKey)
+    await this.assertCanAccessSession(ctx, sessionId)
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
-    return this.createChannelOnce(sessionKey, sessionId, () => this.getAdapter(ctx, sessionId, '', { authorize: false }))
+    return this.createChannelOnce(sessionKey, sessionId, generation, () => this.getAdapter(ctx, sessionId, '', { authorize: false }))
   }
 
   private async ensureChannel(ctx: PiSessionRequestContext, sessionId: string, adapter: PiAgentSessionAdapter): Promise<LiveSessionChannel> {
     const sessionKey = this.sessionKey(ctx, sessionId)
+    const generation = this.generationOf(sessionKey)
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
-    return this.createChannelOnce(sessionKey, sessionId, async () => adapter)
+    return this.createChannelOnce(sessionKey, sessionId, generation, async () => adapter)
   }
 
   /** Coalesce concurrent cold callers so only one adapter subscription wins. */
-  private async createChannelOnce(sessionKey: string, sessionId: string, resolveAdapter: () => Promise<PiAgentSessionAdapter>): Promise<LiveSessionChannel> {
+  private async createChannelOnce(
+    sessionKey: string,
+    sessionId: string,
+    generation: number,
+    resolveAdapter: () => Promise<PiAgentSessionAdapter>,
+  ): Promise<LiveSessionChannel> {
     const inFlight = this.channelCreations.get(sessionKey)
     if (inFlight) return inFlight
     const creation = (async () => {
@@ -839,7 +856,8 @@ export class HarnessPiChatService implements PiChatSessionService {
       if (existing) return existing
       const adapter = await resolveAdapter()
       await this.lifecycle.assertAdapterOwned(adapter)
-      return this.buildChannel(sessionKey, sessionId, adapter)
+      await this.assertSessionIncarnation(sessionKey, generation, adapter)
+      return this.buildChannel(sessionKey, sessionId, adapter, generation)
     })()
     this.channelCreations.set(sessionKey, creation)
     try {
@@ -849,7 +867,28 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
   }
 
-  private async buildChannel(sessionKey: string, sessionId: string, adapter: PiAgentSessionAdapter): Promise<LiveSessionChannel> {
+  private generationOf(sessionKey: string): number {
+    return this.sessionGenerations.get(sessionKey) ?? 0
+  }
+
+  private async assertSessionIncarnation(
+    sessionKey: string,
+    generation: number,
+    adapter: PiAgentSessionAdapter,
+  ): Promise<void> {
+    if (this.generationOf(sessionKey) === generation) return
+    await this.lifecycle.rejectLateAdapter(
+      adapter,
+      codedError('session not found', ErrorCode.enum.SESSION_NOT_FOUND, 404),
+    )
+  }
+
+  private async buildChannel(
+    sessionKey: string,
+    sessionId: string,
+    adapter: PiAgentSessionAdapter,
+    generation: number,
+  ): Promise<LiveSessionChannel> {
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
     const streamPath = sessionStreamPath(sessionKey)
@@ -862,6 +901,8 @@ export class HarnessPiChatService implements PiChatSessionService {
       throw error
     }
     await this.lifecycle.assertAdapterOwned(adapter)
+    // Durable stream setup is another await window deletion can cross.
+    await this.assertSessionIncarnation(sessionKey, generation, adapter)
     const buffer = new PiChatReplayBuffer({ initialLatestSeq: initialSeq })
     const mapper = new PiChatEventMapper({
       sessionId,
