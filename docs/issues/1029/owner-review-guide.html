@@ -617,6 +617,7 @@
             <ol>
               <li><strong>Close the confirmed defects:</strong> malformed attachment bodies must not escape as 500, and unknown Agents must not open dispatcher or app-runtime work before rejection.</li>
               <li><strong>Accept or change the persistence contract:</strong> production deployments must supply a durable admission ledger; in-memory mode is explicitly test/development-only.</li>
+              <li><strong>Confirm the session-sharing policy:</strong> the implementation isolates by verified workspace/storage scope, not creator user; workspace members can share sessions unless the server derives a per-user namespace or enforces ACLs.</li>
               <li><strong>Confirm the access boundary:</strong> app filesystem/Git routes stay app-owned but can only obtain Workspace capability through short Host-issued Environment leases.</li>
               <li><strong>Confirm the breaking cutover:</strong> legacy composition exports and <code>/api/v1/agent/*</code> compatibility routes are intentionally gone.</li>
               <li><strong>Verify shutdown under real load:</strong> abort, bounded grace, late-publication fences, ledger closure, and lease drain must behave as one lifecycle.</li>
@@ -650,7 +651,7 @@
               <li>Apps compose direct routes through <code>registerDirectRoutes()</code>.</li>
               <li>Agent routes are exclusively addressed under <code>/api/v1/agents/:agentTypeId/*</code>.</li>
               <li>Internal access is callback-scoped and revocable.</li>
-              <li>Session identity is the pair <code>{agentTypeId, sessionId}</code>.</li>
+              <li>The wire reference is <code>{agentTypeId, sessionId}</code>; authoritative lookup also includes the verified workspace/storage scope.</li>
             </ul>
           </article>
         </div>
@@ -769,7 +770,7 @@
       <section id="sessions" data-search="sessions transcript pin storage legacyDefault namespace bytes">
         <div class="section-head">
           <div><div class="section-no">06 · Persistence</div><h2>Sessions are addressed and pinned</h2></div>
-          <div class="section-intro">A transcript’s public identity is no longer a bare session ID. It is <code>{agentTypeId, sessionId}</code>, plus a verified workspace/storage scope and runtime pin behind the boundary.</div>
+          <div class="section-intro">A transcript’s wire reference is <code>{agentTypeId, sessionId}</code>. Its authority key is <code>{verifiedWorkspaceStorageScope, agentTypeId, sessionId}</code>, plus a runtime pin. The authenticated subject is verified and attributed on every request, but is not session ownership in the current workspace-shared model.</div>
         </div>
         <div class="decision-list">
           <div class="decision"><div class="num">01</div><div><h3>Listing stays storage-first</h3><p>Once app authorization resolves the permitted session namespace, inventory reads transcript metadata without building an Agent binding or booting a harness. Browsing history should not cold-start Agent compute; authorization may still resolve policy.</p></div></div>
@@ -777,7 +778,8 @@
           <div class="decision"><div class="num">03</div><div><h3>Existing mutations resolve through the pin</h3><p>Prompt, follow-up, interrupt, stop, queue clear, rename, delete, attachment, and runtime-capability routes all resolve the exact existing-session binding.</p></div></div>
           <div class="decision"><div class="num">04</div><div><h3>Historical bytes are not rewritten</h3><p>Explicit <code>sessionDir</code>, <code>sessionRoot/sessionNamespace</code>, <code>legacyDefault</code>, CLI defaults, and Core’s sibling <code>/data/pi-sessions</code> inference remain byte/path compatible.</p></div></div>
         </div>
-        <div class="callout warn"><strong>Review principle</strong><p>If current configuration no longer matches a pinned session, the system fails closed. It does not guess a migration and does not silently repin the transcript.</p></div>
+        <div class="callout warn"><strong>Isolation contract</strong><p>The addressed Gateway intentionally makes sessions workspace/storage-scope owned, not creator-user owned. Two authorized members of the same workspace scope can address the same session; a different workspace scope receives not-found. If product policy requires private per-user chats, the current default is insufficient: issue a server-derived per-user storage scope/session namespace or add explicit session ACL/owner enforcement. Never trust a client-supplied user or storage key.</p></div>
+        <div class="callout warn"><strong>Runtime-pin principle</strong><p>If current configuration no longer matches a pinned session, the system fails closed. It does not guess a migration and does not silently repin the transcript.</p></div>
       </section>
 
       <section id="effects" data-search="effects ledger idempotency admission sqlite outcome unknown replay">
@@ -986,6 +988,7 @@
             <div class="risk-item"><div class="severity p2">D1</div><strong>Durable ledger is mandatory in production</strong><div>In-memory mode cannot survive crash or coordinate writers. It remains useful for hermetic tests and local development only.<span class="merge-criterion">Decision: require durable configuration in production startup and monitoring, or reject the current deployment contract.</span></div></div>
             <div class="risk-item"><div class="severity p2">D2</div><strong>No compatibility window</strong><div>Old imports and <code>/api/v1/agent/*</code> callers fail immediately. Atomic migration is simpler and safer internally, but demands coordinated rollout of every client.<span class="merge-criterion">Decision: approve the breaking cutover and verified consumer inventory; do not add a dual-authority fallback.</span></div></div>
             <div class="risk-item"><div class="severity p2">D3</div><strong>Ambiguous provider completion is operator work</strong><div>A reload/effect that mutates externally and loses confirmation becomes <code>outcome-unknown</code>. The system intentionally refuses blind replay rather than promising impossible exactly-once semantics.<span class="merge-criterion">Decision: accept the operator reconciliation path and define its runbook/telemetry.</span></div></div>
+            <div class="risk-item"><div class="severity">D4</div><strong>Sessions are workspace-shared, not user-private</strong><div>The Gateway uses <code>authSubjectId</code> for authorization, attribution, runtime inputs, and ledger ownership, but deliberately omits it from addressed session ownership. A second authorized subject in the same workspace scope can connect to the creator’s session; the isolation test encodes this behavior. <a href="https://github.com/hachej/boring-ui/blob/3c82c9960a542949e2fef648353ab7a2c45abc9f/packages/agent/src/server/pi-chat/harnessPiChatService.ts#L1127-L1138">Evidence: harnessPiChatService.ts L1127–1138</a>, <a href="https://github.com/hachej/boring-ui/blob/3c82c9960a542949e2fef648353ab7a2c45abc9f/packages/agent/src/server/agent-host/__tests__/sessionIsolation.test.ts#L23-L44">sessionIsolation.test.ts L23–44</a>.<span class="merge-criterion">Decision: explicitly approve collaborative workspace sessions, or require server-derived per-user partitioning/session ACLs before merge.</span></div></div>
           </div>
         </div>
       </section>
