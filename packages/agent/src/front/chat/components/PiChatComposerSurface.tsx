@@ -238,7 +238,7 @@ export function PiChatComposerSurface<
           data-testid={isStreaming ? 'chat-working' : undefined}
           role={isStreaming ? 'status' : undefined}
           aria-live={isStreaming ? 'polite' : undefined}
-          className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-muted-foreground/75 shadow-sm backdrop-blur"
+          className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-foreground shadow-sm backdrop-blur"
         >
           <motion.span
             aria-hidden="true"

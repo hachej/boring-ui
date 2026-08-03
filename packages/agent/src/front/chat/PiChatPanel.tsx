@@ -534,11 +534,11 @@ export function PiChatPanel<
     if (resetInProgressRef.current) return
     if (autoCreateInFlightRef.current) return
     autoCreateInFlightRef.current = true
-    void sessions.create().catch((error) => {
+    void sessions.create({ resumeSessionId: sessions.resumeSessionId }).catch((error) => {
       autoCreateInFlightRef.current = false
       addLocalNotice({ id: 'session-auto-create-error', level: 'error', text: errorMessage(error, 'Could not create a chat session.'), dismissible: true })
     })
-  }, [activeSessionId, addLocalNotice, externalSessionId, sessionList.length, sessions.create, sessionsError, sessionsLoading])
+  }, [activeSessionId, addLocalNotice, externalSessionId, sessionList.length, sessions.create, sessions.resumeSessionId, sessionsError, sessionsLoading])
 
   useEffect(() => {
     if (externalSessionId || sessionsError || activeSessionId || sessionList.length > 0) {

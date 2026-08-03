@@ -6,6 +6,7 @@ import type { SessionSummary } from '../../../shared/session'
 import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
 import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSession'
 import { activeSessionStorageKey, scopedComposerStorageKey, type ActiveSessionStorageLike } from '../session'
+import { bootResumeSessionStorageKey } from '../session/activeSessionStorage'
 import { ComposerContributionProvider } from '../composerContributions'
 import { PiChatPanel as AddressedPiChatPanel, type PiChatPanelProps } from '../PiChatPanel'
 import type { ComposerBlocker } from '../components/ChatNotices'
@@ -552,10 +553,19 @@ describe('PiChatPanel sandbox shell', () => {
       throw new Error(`unexpected fetch ${url}`)
     })
 
+    window.sessionStorage.setItem(bootResumeSessionStorageKey({
+      apiBaseUrl: '',
+      sessionsApiPath: '/api/v1/agents/default/sessions',
+      agentTypeId: 'default',
+      storageScope: 'scope-a',
+    }), 'pi-empty-owned-by-this-tab')
     render(<PiChatPanel storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} />)
 
     const createCalls = () => fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agents/default/sessions') && call[1]?.method === 'POST')
     await waitFor(() => expect(createCalls()).toHaveLength(1))
+    expect(JSON.parse(String(createCalls()[0]?.[1]?.body))).toMatchObject({
+      resumeSessionId: 'pi-empty-owned-by-this-tab',
+    })
 
     await act(async () => {
       modelsResponse.resolve(jsonResponse({ models: [] }))
