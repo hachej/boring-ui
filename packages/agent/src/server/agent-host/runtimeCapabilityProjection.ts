@@ -489,9 +489,8 @@ export function createAgentHostRuntimeCapabilityRoutes(
         const sessionId = typeof query.sessionId === 'string' && query.sessionId.trim()
           ? query.sessionId.trim()
           : 'default'
-        // A session-addressed catalog must use the same verified pinned binding
-        // and handle identity as execution; an absent session keeps the explicit
-        // current-generation discovery fallback for non-session host tooling.
+        // Session-addressed discovery shares execution's pinned binding. The
+        // sessionless form remains current-generation Host tooling only.
         const binding = await resolve(
           request,
           value.agentTypeId,
