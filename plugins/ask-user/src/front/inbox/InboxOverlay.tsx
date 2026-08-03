@@ -74,6 +74,7 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
     sessionIds: inboxSessionIds,
   })
   const sessionTitles = useInboxSessionTitles({
+    agentTypeId: runtime.agentTypeId,
     apiBaseUrl: runtime.apiBaseUrl,
     headers: runtime.authHeaders,
     sessionIds: inboxSessionIds,

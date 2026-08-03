@@ -25,6 +25,7 @@ export function useWorkspaceShellCapabilitiesHost({
   refreshChatSessions,
   surfaceDispatch,
   onDockOverlay,
+  isAppLeftOverlayAvailable,
 }: {
   appLeftPaneCollapsed: boolean
   workspaceId: string
@@ -36,12 +37,19 @@ export function useWorkspaceShellCapabilitiesHost({
   refreshChatSessions: () => Promise<void>
   surfaceDispatch: DispatchContext
   onDockOverlay?: () => void
+  isAppLeftOverlayAvailable?: (id: string) => boolean
 }): WorkspaceShellCapabilitiesHostResult {
   const [floatingChatSession, setFloatingChatSession] = useState<{ ref: WorkspaceShellSessionRef; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>(null)
   useEffect(() => {
     setFloatingChatSession(null)
   }, [workspaceId])
-  const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSession, openChatPane, refreshChatSessions, surfaceDispatch })
+  const shellCapabilities = useWorkspaceShellCapabilitiesController({
+    setFloatingChatSession,
+    openChatPane,
+    refreshChatSessions,
+    surfaceDispatch,
+    isAppLeftOverlayAvailable,
+  })
 
   useEffect(() => {
     const onOpenDetachedChat = (event: Event) => {

@@ -16,6 +16,7 @@ import {
   digestPiResourceInputs,
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
+  projectAuthorizedSessionRunDetails,
   registerAgentHostEnvironmentRoutes,
   resolveBuiltinRuntimeLayoutRoot,
   sandboxRuntimeHostOperations,
@@ -1219,6 +1220,14 @@ export async function createWorkspaceAgentServer(
       if (!workspaceAgentDispatcherResolver) throw new Error("workspace agent dispatcher is not ready")
       return await workspaceAgentDispatcherResolver.resolve(actor, options)
     },
+    async authorizeSession(actor, ref, options) {
+      if (!workspaceAgentDispatcherResolver?.authorizeSession) throw new Error("workspace agent session authorization is not ready")
+      await workspaceAgentDispatcherResolver.authorizeSession(actor, ref, options)
+    },
+    async readSessionRunDetails(actor, ref, detailKinds, options) {
+      if (!workspaceAgentDispatcherResolver?.readSessionRunDetails) throw new Error("workspace agent run details are not ready")
+      return await workspaceAgentDispatcherResolver.readSessionRunDetails(actor, ref, detailKinds, options)
+    },
   }
   const pluginCollection = await resolveWorkspaceAgentServerPluginCollection({
     agentTypeId: opts.defaultAgentTypeId ?? opts.agents?.[0]?.agentTypeId ?? "default",
@@ -1838,6 +1847,22 @@ export async function createWorkspaceAgentServer(
       },
       async resolve() {
         throw new Error("unbounded workspace agent dispatcher access was removed; use runWithWorkspaceAgent")
+      },
+      async authorizeSession(context, ref, resolveOptions) {
+        const scope = resolveOptions?.request
+          ? await authorizeAgentRequest(resolveOptions.request)
+          : scopeIssuer.issue({ claim: { workspaceScopeId, authSubjectId: context.userId.trim() } })
+        await agentHost.gateway.readSessionState({ scope, ref })
+      },
+      async readSessionRunDetails(context, ref, detailKinds, resolveOptions) {
+        if (detailKinds.length < 1 || detailKinds.length > 16 || detailKinds.some((kind) => !kind || kind.length > 128)) {
+          throw new TypeError("invalid structured detail kinds")
+        }
+        const scope = resolveOptions?.request
+          ? await authorizeAgentRequest(resolveOptions.request)
+          : scopeIssuer.issue({ claim: { workspaceScopeId, authSubjectId: context.userId.trim() } })
+        const snapshot = await agentHost.gateway.readSessionState({ scope, ref })
+        return projectAuthorizedSessionRunDetails(snapshot.state.messages, detailKinds)
       },
     }
     workspaceAgentDispatcherResolver = directDispatcher

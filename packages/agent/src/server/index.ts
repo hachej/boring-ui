@@ -213,6 +213,7 @@ export {
   type RuntimeEnvContributionContext,
 } from './runtimeEnvContributions'
 export { createBoundWorkspaceAgentDispatcher } from './workspaceAgentDispatcher'
+export { projectAuthorizedSessionRunDetails, type AuthorizedSessionRunDetails } from './sessionRunDetails'
 export { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 export type {
   AgentMeteringSink,
