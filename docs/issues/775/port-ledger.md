@@ -1,6 +1,6 @@
 # PR #968 → post-#1038 semantic-port ledger
 
-This ledger is the omission-control surface for the selective port. Disposition values are closed and singular: `port`, `adapt`, `superseded`, or `drop`. Completion is independently `complete` or `pending`; a slice may not close while any exact-path row assigned to it is pending. The family tables explain intent, while the exact-path table is the operational closure record. “Reference” means `origin/pr-968` at `2fcd4f31cd312289250f0f72237bc52d6868e110`; destination starts from PR #1038 at `c040838c89c95294a421df4e525a5f2d03185b5e`.
+This ledger is the omission-control surface for the selective port. Disposition values are closed and singular: `port`, `adapt`, `superseded`, or `drop`. Completion is independently `complete` or `pending`; a slice may not close while any exact-path row assigned to it is pending. The family tables explain intent, while the exact-path table is the operational closure record. “Reference” means `origin/pr-968` at `2fcd4f31cd312289250f0f72237bc52d6868e110`; destination was created from PR #1038 at `c040838c89c95294a421df4e525a5f2d03185b5e` and is integrated through current PR #1038 head `3c9947b9a6198c57f34723cab159912a04ea6813`.
 
 ## Production contracts and browser state
 
