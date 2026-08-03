@@ -1221,7 +1221,6 @@ export async function createWorkspaceAgentServer(
     },
   }
   const pluginCollection = await resolveWorkspaceAgentServerPluginCollection({
-    agentTypeId: opts.defaultAgentTypeId ?? opts.agents?.[0]?.agentTypeId ?? "default",
     trustedPluginContext: {
       workspaceAgentDispatcherResolver: trustedDispatcherProxy,
       actorResolver: (request) => ({
@@ -1230,6 +1229,7 @@ export async function createWorkspaceAgentServer(
       }),
     },
     ...opts,
+    agentTypeId: opts.defaultAgentTypeId ?? opts.agents?.[0]?.agentTypeId ?? "default",
     workspaceRoot,
     bridge,
     installPluginAuthoring: pluginAuthoringEnabled,
