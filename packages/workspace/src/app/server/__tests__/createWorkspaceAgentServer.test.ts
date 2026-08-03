@@ -212,11 +212,11 @@ describe("createWorkspaceAgentServer local Pi session principal", () => {
 })
 
 describe("Workspace direct Environment projection", () => {
-  test("keeps public readiness on the Host-owned Environment generation and releases its lease", async () => {
+  test("ignores lazy Agent chat state when the Host-owned Environment is ready and releases its lease", async () => {
     const release = vi.fn()
     agentServerMock.acquireEnvironment.mockResolvedValueOnce({
       readiness: {
-        chat: { state: "ready" },
+        chat: { state: "not-started" },
         workspace: { state: "ready" },
         runtimeDependencies: { state: "ready" },
       },
