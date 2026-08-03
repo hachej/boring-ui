@@ -112,4 +112,3 @@ export function projectHandovers(events: readonly HandoverProjectionEvent[]): Pr
 
   return handovers
 }
-
