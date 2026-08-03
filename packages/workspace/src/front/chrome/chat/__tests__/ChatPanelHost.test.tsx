@@ -77,7 +77,7 @@ describe("ChatPanelHost", () => {
 
     render(
       <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
-        <ChatPanelHost sessionId="s1" onData={onData} />
+        <ChatPanelHost agentTypeId="default" sessionId="s1" onData={onData} />
       </WorkspaceProvider>,
     )
 
@@ -101,7 +101,7 @@ describe("ChatPanelHost", () => {
 
     render(
       <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
-        <ChatPanelHost sessionId="s1" />
+        <ChatPanelHost agentTypeId="default" sessionId="s1" />
       </WorkspaceProvider>,
     )
 
@@ -122,7 +122,7 @@ describe("ChatPanelHost", () => {
       <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
         <Blocker sessionId="s1" />
         <Blocker sessionId="other" />
-        <ChatPanelHost sessionId="s1" />
+        <ChatPanelHost agentTypeId="default" sessionId="s1" />
       </WorkspaceProvider>,
     )
 
@@ -136,7 +136,7 @@ describe("ChatPanelHost", () => {
     try {
       render(
         <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
-          <ChatPanelHost sessionId="s1" onComposerStop={onStop} />
+          <ChatPanelHost agentTypeId="default" sessionId="s1" onComposerStop={onStop} />
         </WorkspaceProvider>,
       )
       fireEvent.click(screen.getByRole("button", { name: "stop composer" }))
@@ -154,7 +154,7 @@ describe("ChatPanelHost", () => {
       render(
         <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
           <Blocker sessionId="s1" />
-          <ChatPanelHost sessionId="s1" />
+          <ChatPanelHost agentTypeId="default" sessionId="s1" />
         </WorkspaceProvider>,
       )
 
@@ -186,7 +186,7 @@ describe("ChatPanelHost", () => {
     render(
       <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
         <Blocker sessionId="s1" />
-        <ChatPanelHost sessionId="s1" surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => true, openWorkbench: vi.fn(), shouldOpenSurface: () => true }} />
+        <ChatPanelHost agentTypeId="default" sessionId="s1" surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => true, openWorkbench: vi.fn(), shouldOpenSurface: () => true }} />
       </WorkspaceProvider>,
     )
     expect(await screen.findByTestId("blocker-count")).toHaveTextContent("1")
@@ -208,6 +208,7 @@ describe("ChatPanelHost", () => {
     render(
       <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
         <ChatPanelHost
+          agentTypeId="default"
           sessionId="s1"
           onOpenArtifact={onOpenArtifact}
           surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => true, openWorkbench: vi.fn() }}
@@ -243,6 +244,7 @@ describe("ChatPanelHost", () => {
       render(
         <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
           <ChatPanelHost
+            agentTypeId="default"
             sessionId="s1"
             onOpenArtifact={onOpenArtifact}
             surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => false, openWorkbench: () => setSurfaceOpen(true) }}
