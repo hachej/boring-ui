@@ -1557,7 +1557,7 @@ describe("WorkspaceAgentFront", () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText("Session browser")).toHaveAttribute("aria-hidden", "true")
-      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+      expect(screen.getByRole("complementary", { name: "Workbench" })).toHaveAttribute("aria-hidden", "false")
     })
 
     rerender(
@@ -2032,7 +2032,7 @@ describe("WorkspaceAgentFront", () => {
     await user.click(await screen.findByRole("button", { name: "Open artifact" }))
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+      expect(screen.getByRole("complementary", { name: "Workbench" })).toHaveAttribute("aria-hidden", "false")
     })
   })
 
@@ -2072,7 +2072,7 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(visibleChatSessionIds()).toEqual(["s2"])
       expect(onSwitchSession).toHaveBeenCalledWith("s2", "default")
-      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+      expect(screen.getByRole("complementary", { name: "Workbench" })).toHaveAttribute("aria-hidden", "false")
     })
   })
 
@@ -2100,7 +2100,7 @@ describe("WorkspaceAgentFront", () => {
     window.dispatchEvent(new CustomEvent(UI_COMMAND_EVENT, { detail: command }))
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+      expect(screen.getByRole("complementary", { name: "Workbench" })).toHaveAttribute("aria-hidden", "false")
     })
     await waitFor(() => {
       expect(screen.getByText("Global command panel body")).toBeInTheDocument()
@@ -2152,7 +2152,7 @@ describe("WorkspaceAgentFront", () => {
     }))
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+      expect(screen.getByRole("complementary", { name: "Workbench" })).toHaveAttribute("aria-hidden", "false")
     })
     await waitFor(() => {
       expect(screen.getByText("Global command panel body")).toBeInTheDocument()

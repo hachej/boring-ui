@@ -283,6 +283,12 @@
   color: var(--foreground);
 }
 
+/* SurfaceShell owns a stable, Workbench-wide open-tabs menu beside the
+   fullscreen/collapse controls. Hide Dockview's editor-width overflow trigger. */
+.workbench-dockview .dv-tabs-overflow-dropdown-root {
+  display: none;
+}
+
 /* Drag ghost */
 .dv-shell .dv-drag-image {
   opacity: 0.85;

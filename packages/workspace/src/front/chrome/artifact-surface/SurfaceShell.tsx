@@ -2,17 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { DockviewApi } from "dockview-react"
-import { ChevronRight, PanelLeftOpen } from "lucide-react"
-import { ControlTooltip } from "../../components/ControlTooltip"
+import { PanelRightOpen } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
-import { PaneCollapseButton } from "../../layout/paneCollapseButton"
 import { ArtifactSurfacePane } from "./ArtifactSurfacePane"
+import { WorkbenchHeaderActions } from "./WorkbenchHeaderActions"
 import type { WorkspaceBridge, CommandResult, BridgeEventMap } from "../../bridge/types"
 import type { WorkspaceState, PanelState } from "../../store/types"
 import { WorkbenchLeftPane } from "../workbench-left/WorkbenchLeftPane"
 import { useRegistry, useSurfaceResolverRegistry } from "../../registry"
 import { normalizeUiFilesystem, type FilesystemId } from "../../../shared/types/filesystem"
+import { closeWorkbenchPreview, workbenchPreviewParams } from "../../dock/workbenchPreview"
 import type { SurfaceOpenRequest } from "../../../shared/types/surface"
 import { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "../../../shared/types/surface"
 import { isSharedDockviewPlacement, isWorkspacePagePlacement } from "../../../shared/types/panel"
@@ -85,6 +85,16 @@ export interface SurfaceShellProps {
   onChange?: (snapshot: SurfaceShellSnapshot) => void
   /** Optional close action for hosts that model the workbench as collapsible. */
   onClose?: () => void
+  /** Host-level collapsed mode: render only the persistent activity rail. */
+  hostRailOnly?: boolean
+  /** Mobile hosts already render their own level-one return bar. */
+  hideLevelOneHeader?: boolean
+  /** Expand the host-level workbench from its persistent activity rail. */
+  onHostExpand?: () => void
+  /** Whether the host has expanded the Workbench to fill the workspace. */
+  hostFullscreen?: boolean
+  /** Toggle between split-view and full-workspace Workbench layouts. */
+  onHostToggleFullscreen?: () => void
   /** Render the built-in top-right close affordance. Hosts can set false when they provide their own chrome. */
   showCloseAction?: boolean
   /**
@@ -147,11 +157,6 @@ function initialWorkbenchLeftState(storageKey: string | undefined, defaultLeftTa
 function hideWorkbenchLeft(state: WorkbenchLeftState): WorkbenchLeftState {
   if (state.mode === "hidden") return state
   return { mode: "hidden", activeTab: state.activeTab, restoreMode: state.mode === "source" ? "source" : "rail" }
-}
-
-function showWorkbenchLeft(state: WorkbenchLeftState): WorkbenchLeftState {
-  if (state.mode !== "hidden") return state
-  return { mode: state.restoreMode, activeTab: state.activeTab }
 }
 
 function openWorkbenchSource(state: WorkbenchLeftState, activeTab = state.activeTab): WorkbenchLeftState {
@@ -222,6 +227,11 @@ export function SurfaceShell({
   onReady,
   onChange,
   onClose,
+  hostRailOnly = false,
+  hideLevelOneHeader = false,
+  onHostExpand,
+  hostFullscreen = false,
+  onHostToggleFullscreen,
   showCloseAction = true,
   extraPanels,
   defaultLeftTab,
@@ -233,8 +243,11 @@ export function SurfaceShell({
   // illegal combinations like "hidden but source-open" and lets full-block
   // collapse restore the same active source (Files, Macro, …) on uncollapse.
   const [leftState, setLeftState] = useState<WorkbenchLeftState>(() => initialWorkbenchLeftState(storageKey, defaultLeftTab))
-  const leftBlockCollapsed = leftState.mode === "hidden"
-  const sourcePaneOpen = leftState.mode === "source"
+  // The far-right activity rail is structural and never disappears on desktop.
+  // Legacy "hidden" state now means rail-only; hostRailOnly additionally hides
+  // the editor and source content while preserving that same rail.
+  const leftBlockCollapsed = false
+  const sourcePaneOpen = !hostRailOnly && leftState.mode === "source"
   const activeLeftTab = leftState.activeTab
   const setActiveLeftTab = useCallback((tab: string) => {
     setLeftState((state) => setWorkbenchActiveTab(state, tab))
@@ -259,6 +272,7 @@ export function SurfaceShell({
   // a workspace-page icon only while its page is the focused surface tab (the rail's
   // own activeTab is set on icon-click and goes stale when you switch surface tabs).
   const [activeSurfacePanelId, setActiveSurfacePanelId] = useState<string | null>(null)
+  const [openSurfacePanels, setOpenSurfacePanels] = useState<Array<{ id: string; title: string }>>([])
   const [fileTreeRevealRequest, setFileTreeRevealRequest] = useState<{ path: string; seq: number } | null>(null)
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
@@ -304,17 +318,22 @@ export function SurfaceShell({
     setLeftState(hideWorkbenchLeft)
   }, [])
 
-  const expandLeftBlock = useCallback((): void => {
-    setLeftState(showWorkbenchLeft)
-  }, [])
-
   const openSourcePane = useCallback((tab?: string): void => {
     setLeftState((state) => openWorkbenchSource(state, tab))
-  }, [])
+    onHostExpand?.()
+  }, [onHostExpand])
 
   const closeSourcePane = useCallback((): void => {
     setLeftState(showWorkbenchRail)
   }, [])
+
+  const toggleHostWorkbench = useCallback((): void => {
+    if (hostRailOnly) {
+      onHostExpand?.()
+      return
+    }
+    onCloseRef.current?.()
+  }, [hostRailOnly, onHostExpand])
 
   const applyPanelPlacementTransition = useCallback((component: string): void => {
     const panel = panelRegistryRef.current.get(component)
@@ -391,11 +410,12 @@ export function SurfaceShell({
       const params = fileBackedParams(resolved.params, normalizedPath, { filesystem: request.filesystem, mode: options?.mode })
       fileBackedPanelIdsRef.current.add(panelId)
       if (activateExistingFilePanel(api, normalizedPath, normalizeUiFilesystem(request.filesystem), resolved.component, params)) return
+      closeWorkbenchPreview(api)
       activateDockviewPanel({
         id: panelId,
         component: resolved.component,
         title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-        params,
+        params: workbenchPreviewParams(params),
       })
       return
     }
@@ -447,11 +467,16 @@ export function SurfaceShell({
       apiRef.current &&
       activateExistingFilePanel(apiRef.current, normalizedRequest.target, normalizeUiFilesystem(normalizedRequest.filesystem), resolved.component, resolvedParams ?? {})
     ) return
+    if (normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND && apiRef.current) {
+      closeWorkbenchPreview(apiRef.current)
+    }
     if (!activateDockviewPanel({
       id: panelId,
       component: resolved.component,
       title: resolved.title ?? normalizedRequest.target,
-      params: resolvedParams,
+      params: normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
+        ? workbenchPreviewParams(resolvedParams)
+        : resolvedParams,
     })) {
       console.warn("[SurfaceShell] openSurface: surface not ready (dockview not initialized)")
     }
@@ -471,6 +496,10 @@ export function SurfaceShell({
       existing.api.setActive()
       return
     }
+    // File-tree/plugin launches share one reusable preview tab. Pinned tabs
+    // clear this marker from their tab chrome and are never replaced.
+    closeWorkbenchPreview(api)
+
     // Validate the component is actually registered. Without this check,
     // dockview happily creates an empty tab when handed an unknown
     // component name (it falls back to a no-op renderer). That's how the
@@ -490,7 +519,7 @@ export function SurfaceShell({
       id: config.id,
       component: config.component,
       title: config.title ?? config.id,
-      params: config.params,
+      params: workbenchPreviewParams(config.params),
     })
   }, [activateDockviewPanel])
 
@@ -596,6 +625,7 @@ export function SurfaceShell({
     // SurfaceShell unmounts disposes the dockview itself.
     const emit = () => {
       setActiveSurfacePanelId(ready.activePanel?.id ?? null)
+      setOpenSurfacePanels(ready.panels.map((panel) => ({ id: panel.id, title: panel.title ?? panel.id })))
       onChangeRef.current?.(getSnapshot())
       emitBridgeState()
     }
@@ -634,11 +664,12 @@ export function SurfaceShell({
           const params = fileBackedParams(resolved.params, normalizedPath, { filesystem: request.filesystem, mode: options?.mode })
           fileBackedPanelIdsRef.current.add(panelId)
           if (activateExistingFilePanel(api, normalizedPath, normalizeUiFilesystem(request.filesystem), resolved.component, params)) return ok()
+          closeWorkbenchPreview(api)
           activateDockviewPanel({
             id: panelId,
             component: resolved.component,
             title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-            params,
+            params: workbenchPreviewParams(params),
           })
           return ok()
         }
@@ -739,8 +770,10 @@ export function SurfaceShell({
     (e: React.PointerEvent<HTMLDivElement>) => {
       const state = dragStateRef.current
       if (!state) return
+      // The source pane is docked on the right, so dragging its left edge
+      // leftward increases width and dragging rightward decreases it.
       const delta = e.clientX - state.startX
-      const next = Math.max(sidebarMinWidth, Math.min(sidebarMaxWidth, state.startWidth + delta))
+      const next = Math.max(sidebarMinWidth, Math.min(sidebarMaxWidth, state.startWidth - delta))
       setSidebarWidth(next)
     },
     [sidebarMinWidth, sidebarMaxWidth],
@@ -758,10 +791,10 @@ export function SurfaceShell({
       const step = e.shiftKey ? 32 : 16
       if (e.key === "ArrowLeft") {
         e.preventDefault()
-        setSidebarWidth((w) => Math.max(sidebarMinWidth, w - step))
+        setSidebarWidth((w) => Math.min(sidebarMaxWidth, w + step))
       } else if (e.key === "ArrowRight") {
         e.preventDefault()
-        setSidebarWidth((w) => Math.min(sidebarMaxWidth, w + step))
+        setSidebarWidth((w) => Math.max(sidebarMinWidth, w - step))
       } else if (e.key === "Home") {
         e.preventDefault()
         setSidebarWidth(sidebarMinWidth)
@@ -792,23 +825,114 @@ export function SurfaceShell({
   }, [leftState, storageKey])
 
   const workbenchRailWidth = 44
-  const workbenchSidebarWidth = leftBlockCollapsed ? 0 : sourcePaneOpen ? sidebarWidth : workbenchRailWidth
+  const workbenchHeaderHeight = 44
+  const workbenchSidebarWidth = sourcePaneOpen ? sidebarWidth : workbenchRailWidth
 
   return (
     <div
       ref={containerRef}
       data-boring-workspace-part="surface"
-      className={cn("flex h-full min-h-0 w-full bg-background", className)}
+      data-boring-state={hostRailOnly ? "rail" : "expanded"}
+      className={cn("flex h-full min-h-0 w-full flex-col bg-background", className)}
       data-testid="surface-shell"
     >
-      <aside
-        data-boring-workspace-part="surface-sidebar"
-        data-boring-state={leftBlockCollapsed ? "collapsed" : sourcePaneOpen ? "expanded" : "rail"}
-        className="relative z-10 flex h-full min-h-0 flex-col overflow-hidden"
-        style={{ width: workbenchSidebarWidth, minWidth: workbenchSidebarWidth, maxWidth: workbenchSidebarWidth }}
-        aria-label="Workbench left pane"
+      {!hideLevelOneHeader ? <header
+        data-boring-workspace-part="workbench-level-one-header"
+        data-boring-state={hostRailOnly ? "collapsed" : "expanded"}
+        className={cn(
+          "pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center",
+          hostRailOnly ? "justify-center border-b border-border/60 bg-background" : "justify-end px-3",
+        )}
+        style={{ height: workbenchHeaderHeight }}
       >
-        {!leftBlockCollapsed && (
+        {hostRailOnly ? (
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="pointer-events-auto"
+            onClick={toggleHostWorkbench}
+            aria-label="Open workbench"
+            title="Open workbench (⌘2)"
+          >
+            <PanelRightOpen className="h-4 w-4" strokeWidth={1.75} />
+          </IconButton>
+        ) : (
+          <WorkbenchHeaderActions
+            panels={openSurfacePanels}
+            activePanelId={activeSurfacePanelId}
+            onActivatePanel={(panelId) => apiRef.current?.getPanel(panelId)?.api.setActive()}
+            fullscreen={hostFullscreen}
+            onToggleFullscreen={onHostToggleFullscreen}
+            onClose={showCloseAction ? onClose : undefined}
+          />
+        )}
+      </header> : null}
+
+      <div
+        data-boring-workspace-part="workbench-body"
+        className="flex h-full min-h-0 w-full"
+        style={{ height: "100%" }}
+      >
+        <div
+          data-boring-workspace-part="workbench-content"
+          aria-hidden={hostRailOnly}
+          inert={hostRailOnly ? true : undefined}
+          className={cn("relative min-w-0 flex-1 overflow-hidden", hostRailOnly && "w-0 flex-none")}
+        >
+          <div
+            data-boring-workspace-part="surface-tabs"
+            data-boring-state={sourcePaneOpen ? "expanded" : "rail"}
+            className="workbench-dockview h-full"
+            data-collapsed-sources={!sourcePaneOpen ? "true" : undefined}
+          >
+            <ArtifactSurfacePane
+              storageKey={storageKey}
+              onReady={handleReady}
+              allowedPanels={allowedPanels}
+            />
+          </div>
+          <EmptyWorkbenchOverlay api={api} />
+        </div>
+
+        {sourcePaneOpen ? (
+          <div
+            data-boring-workspace-part="workbench-source-resize"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize workspace sources"
+            tabIndex={0}
+            onPointerDown={startDrag}
+            onPointerMove={onDrag}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+            onKeyDown={onHandleKeyDown}
+            className={cn(
+              "relative w-px shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-primary/40",
+              !hideLevelOneHeader && "mt-11",
+              "focus-visible:outline-none focus-visible:bg-primary/50",
+            )}
+            style={{ height: hideLevelOneHeader ? "100%" : `calc(100% - ${workbenchHeaderHeight}px)` }}
+          >
+            <span aria-hidden="true" className="absolute inset-y-0 -left-1.5 -right-1.5" />
+          </div>
+        ) : null}
+
+        <aside
+          data-boring-workspace-part="surface-sidebar"
+          data-boring-state={hostRailOnly ? "host-collapsed" : sourcePaneOpen ? "expanded" : "rail"}
+          className={cn(
+            "relative z-10 flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-border/60",
+            !hideLevelOneHeader && "mt-11",
+          )}
+          style={{
+            width: workbenchSidebarWidth,
+            minWidth: workbenchSidebarWidth,
+            maxWidth: workbenchSidebarWidth,
+            height: hideLevelOneHeader ? "100%" : `calc(100% - ${workbenchHeaderHeight}px)`,
+          }}
+          aria-label={hostRailOnly ? "Workbench activity rail" : "Workbench sources and activity rail"}
+        >
           <WorkbenchLeftPane
             rootDir={rootDir}
             bridge={bridge}
@@ -819,86 +943,14 @@ export function SurfaceShell({
             revealFileTreeRequest={fileTreeRevealRequest}
             onOpenPanel={openPanelSync}
             onReloadAgentPlugins={onReloadAgentPlugins}
-            onCollapse={collapseLeftBlock}
             onExpand={openSourcePane}
             onCloseSourcePane={closeSourcePane}
             railOnly={!sourcePaneOpen}
+            railSide="right"
           />
-        )}
-      </aside>
-
-      {!leftBlockCollapsed && sourcePaneOpen && (
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize sidebar"
-          tabIndex={0}
-          onPointerDown={startDrag}
-          onPointerMove={onDrag}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
-          onKeyDown={onHandleKeyDown}
-          className={cn(
-            "relative w-px shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-primary/40",
-            "focus-visible:outline-none focus-visible:bg-primary/50",
-          )}
-        >
-          <span aria-hidden="true" className="absolute inset-y-0 -left-1.5 -right-1.5" />
-        </div>
-      )}
-
-      <div className="relative min-w-0 flex-1">
-        <div
-          data-boring-workspace-part="surface-tabs"
-          data-boring-state={leftBlockCollapsed ? "collapsed" : sourcePaneOpen ? "expanded" : "rail"}
-          className="workbench-dockview h-full"
-          data-collapsed-sources={!sourcePaneOpen ? "true" : undefined}
-          data-left-block-collapsed={leftBlockCollapsed ? "true" : undefined}
-        >
-          <ArtifactSurfacePane
-            storageKey={storageKey}
-            onReady={handleReady}
-            allowedPanels={allowedPanels}
-          />
-        </div>
-        {/* Header overlays — always reachable, including existing/single-tab
-            dockview groups where header action slots can be squeezed/hidden.
-            zIndex must beat dockview's "open tabs" overflow popover (built by
-            PopupService at --dv-overlay-z-index 999, sometimes doubled to ~1998)
-            so the close-workspace control on the right edge is never covered by
-            an open dropdown menu. */}
-        <div
-          className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between"
-          style={{ height: 44, zIndex: 2000 }}
-        >
-          <div className="self-start pl-1.5 pt-2">
-            {leftBlockCollapsed && (
-              <PaneCollapseButton label="Show workspace menu" side="right" onClick={expandLeftBlock}>
-                <PanelLeftOpen className="h-4 w-4" strokeWidth={1.75} />
-              </PaneCollapseButton>
-            )}
-          </div>
-          {showCloseAction && onClose && <WorkbenchCloseAction onClose={onClose} />}
-        </div>
-        <EmptyWorkbenchOverlay api={api} />
+        </aside>
       </div>
     </div>
-  )
-}
-
-function WorkbenchCloseAction({ onClose }: { onClose: () => void }) {
-  return (
-    <IconButton
-      type="button"
-      variant="ghost"
-      size="icon-xs"
-      onClick={onClose}
-      className="pointer-events-auto mx-1"
-      aria-label="Close workbench"
-      title="Close workbench (⌘2)"
-    >
-      <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
-    </IconButton>
   )
 }
 
