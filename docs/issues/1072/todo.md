@@ -11,41 +11,41 @@ loop, stop convergence and split rather than weakening acceptance.
 
 ## A — Handoff, identities, trusted skill composition
 
-- [ ] Port the independently reviewed handoff skill/procedure and pinned Matt
+- [x] Port the independently reviewed handoff skill/procedure and pinned Matt
   Pocock source attribution.
-- [ ] Add handoff discovery/routing without duplicating canonical policy.
-- [ ] Add `agents/boring/{concierge,triage,steward,worker,reviewer}` authored
+- [x] Add handoff discovery/routing without duplicating canonical policy.
+- [x] Add `agents/boring/{concierge,triage,steward,worker,reviewer}` authored
   manifests/instructions using identity-only schema.
-- [ ] State role restrictions as behavioral policy, not enforced capabilities.
-- [ ] Add the generic trusted authored-source → configured-AgentHost-spec mapper.
-- [ ] Add playground role composition that resolves canonical skill files from
+- [x] State role restrictions as behavioral policy, not enforced capabilities.
+- [x] Add the generic trusted authored-source → configured-AgentHost-spec mapper.
+- [x] Add playground role composition that resolves canonical skill files from
   admitted roots, verifies digests, appends exact content, and fails boot on
   missing/mismatched content.
-- [ ] Prove every role binding resolves only canonical `.agents/skills/**`
+- [x] Prove every role binding resolves only canonical `.agents/skills/**`
   sources—including feedback, fresh-eyes, and handoff—and equals one-shot content/digest.
-- [ ] Test optional host-supplied `model.preferred` isolation and prove manifests
+- [x] Test optional host-supplied `model.preferred` isolation and prove manifests
   cannot select model/plugins/tools/skills.
-- [ ] Run Agent compiler/materializer/mapper/model tests and build.
-- [ ] Complete tier-1 and tier-2 review gate.
+- [x] Run Agent compiler/materializer/mapper/model tests and build.
+- [x] Complete tier-1 and tier-2 review gate.
 
 ## B — Fleet selector and addressed sessions
 
 Final integration blocked by A; may develop against configured-agent fixtures.
 
-- [ ] Treat existing `WorkspaceAgentFront.agentTypeId` as immutable host default.
-- [ ] Fetch fleet options and keep separate selected-new-session owner state.
-- [ ] Persist selection per Workspace storage scope; validate stale values.
-- [ ] Filter inventory to selected agent in v1.
-- [ ] Route only future session creation/plugin chat creation through selection.
-- [ ] Preserve old/in-flight addressed panes and colliding session IDs.
-- [ ] Preserve single-agent/loading/error/default compatibility and expose
+- [x] Treat existing `WorkspaceAgentFront.agentTypeId` as immutable host default.
+- [x] Fetch fleet options and keep separate selected-new-session owner state.
+- [x] Persist selection per Workspace storage scope; validate stale values.
+- [x] Filter inventory to selected agent in v1.
+- [x] Route only future session creation/plugin chat creation through selection.
+- [x] Preserve old/in-flight addressed panes and colliding session IDs.
+- [x] Preserve single-agent/loading/error/default compatibility and expose
   non-blocking diagnostic when host default is absent from fleet.
-- [ ] Compose five agents through real workspace-playground AgentHost.
-- [ ] Test fleet list, selection persistence/fallback, inventory filter, addressed
+- [x] Compose five agents through real workspace-playground AgentHost.
+- [x] Test fleet list, selection persistence/fallback, inventory filter, addressed
   create, open-pane preservation, collisions, and model policy.
-- [ ] Run Agent/Workspace/playground tests, typechecks, builds, and automated
+- [x] Run Agent/Workspace/playground tests, typechecks, builds, and automated
   browser assertions.
-- [ ] Complete tier-1 and tier-2 review gate.
+- [x] Complete tier-1 and tier-2 review gate.
 
 ## C — Generic detail, typed errors, source isolation
 

@@ -24,7 +24,7 @@ interface RoleBinding {
 }
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../..')
-const ROLE_BINDINGS: readonly RoleBinding[] = Object.freeze([
+const ROLE_BINDING_DEFINITIONS = [
   {
     role: 'concierge',
     agentTypeId: 'boring-concierge',
@@ -66,7 +66,8 @@ const ROLE_BINDINGS: readonly RoleBinding[] = Object.freeze([
       { name: 'handoff', digest: 'sha256:23c8bcce191a4ba2b0af5392aadfac1bc4999fd50f0c1bf797eed3611f1892a6' },
     ],
   },
-].map((binding) => Object.freeze({
+] as const satisfies readonly RoleBinding[]
+const ROLE_BINDINGS: readonly RoleBinding[] = Object.freeze(ROLE_BINDING_DEFINITIONS.map((binding) => Object.freeze({
   ...binding,
   skills: Object.freeze(binding.skills.map((skill) => Object.freeze({ ...skill }))),
 })))
