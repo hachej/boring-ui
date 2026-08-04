@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { PiChatState } from './pi/piChatReducer'
 import { createRemotePiSession, type RemotePiSession, type RemotePiSessionOptions } from './pi/remotePiSession'
+import { headersContentKey, normalizedHeadersFromContentKey } from './piChatPanelUtils'
 import type { UsePiSessionsOptions } from './session'
 
 export function useExternalRemotePiSession({
@@ -29,9 +30,9 @@ export function useExternalRemotePiSession({
   const [session, setSession] = useState<RemotePiSession | undefined>()
   const remoteSessionOptionsRef = useRef(remoteSessionOptions)
   remoteSessionOptionsRef.current = remoteSessionOptions
-  const requestHeadersKey = stableRequestHeadersKey(requestHeaders)
-  const stableRequestHeaders = useMemo<Record<string, string | undefined>>(
-    () => Object.fromEntries(JSON.parse(requestHeadersKey) as Array<[string, string]>),
+  const requestHeadersKey = headersContentKey(requestHeaders)
+  const stableRequestHeaders = useMemo(
+    () => normalizedHeadersFromContentKey(requestHeadersKey),
     [requestHeadersKey],
   )
   const remoteSessionOptionsKey = useMemo(
@@ -57,12 +58,6 @@ export function useExternalRemotePiSession({
     return () => next.dispose()
   }, [agentTypeId, apiBaseUrl, createRemoteSession, fetch, remoteSessionOptionsKey, sessionId, stableRequestHeaders, storageScope, workspaceId])
   return session
-}
-
-function stableRequestHeadersKey(headers?: Record<string, string | undefined>): string {
-  return JSON.stringify(Object.entries(headers ?? {})
-    .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-    .sort(([left], [right]) => left.localeCompare(right)))
 }
 
 const remoteSessionOptionObjectIds = new WeakMap<object, number>()

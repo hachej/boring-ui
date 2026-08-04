@@ -907,6 +907,8 @@ export function WorkspaceAgentFront<
       ? remoteSessionSnapshot.activeSessionAgentTypeId
       : null
   const sessionApi = shouldUseRemoteSessions && (remoteSessionsAvailable || remoteSessionsHaveStaleData) ? remoteSessionApi : undefined
+  const sessionRefreshRef = useRef(sessionApi?.refresh)
+  sessionRefreshRef.current = sessionApi?.refresh
   const committedSessionSourceRef = useRef(sessionSourceIdentity)
   useIsomorphicLayoutEffect(() => {
     committedSessionSourceRef.current = sessionSourceIdentity
@@ -1801,15 +1803,15 @@ export function WorkspaceAgentFront<
   }, [requestedAutoSubmitInitialDraft, workspaceId])
   const autoSubmittingInitialDraft = requestedAutoSubmitInitialDraft
   const delayAutoSubmitDraft = autoSubmittingInitialDraft && shouldUseRemoteSessions && !effectiveActiveSessionId
-  const hasInventoriedChatPane = activeChatPaneState.ids.some((paneId) =>
-    resolvedSessions.some((session) => workspaceSessionKeyFor(session) === paneId),
+  const activeChatPaneIsInventoried = resolvedSessions.some(
+    (session) => workspaceSessionKeyFor(session) === activeChatPaneId,
   )
-  // A restored/open pane that survived authoritative inventory reconciliation
-  // owns enough addressed identity to hydrate even when the mutable global
-  // active preference is absent. An implicit boot placeholder does not.
+  // A restored/open active pane that survived authoritative inventory
+  // reconciliation owns enough addressed identity to hydrate even when the
+  // mutable global active preference is absent. An implicit placeholder does not.
   const hydrateMessages = !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
     shouldUseRemoteSessions
-      ? Boolean(effectiveActiveSessionId || hasInventoriedChatPane)
+      ? Boolean(effectiveActiveSessionId || activeChatPaneIsInventoried)
       : true
   )
   const handleWorkspaceWarmupStatusChange = useCallback((status: WorkspaceWarmupStatus) => {
@@ -1906,7 +1908,7 @@ export function WorkspaceAgentFront<
         })
       },
       onTurnComplete: () => {
-        if (sessionSourceIsCurrent()) void sessionApi?.refresh?.({ background: true })
+        if (sessionSourceIsCurrent()) void sessionRefreshRef.current?.({ background: true })
         const existing = chatParams?.onTurnComplete
         if (typeof existing === "function") existing()
       },
@@ -1923,40 +1925,21 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionKey),
     [chatSessionKey, makeCenterParams],
   )
-  // Stabilise each pane's params by session id. UI command streaming is owned
-  // once by the Workspace above, so active-pane changes do not alter pane props.
-  // The cache resets whenever makeCenterParams changes (i.e. a real input
-  // changed), so genuine updates still flow to every pane.
-  const paneParamsCacheRef = useRef<{
-    make: typeof makeCenterParams
-    cache: Map<string, ReturnType<typeof makeCenterParams>>
-  } | null>(null)
-  const chatPanes = useMemo(() => {
-    if (!paneParamsCacheRef.current || paneParamsCacheRef.current.make !== makeCenterParams) {
-      paneParamsCacheRef.current = { make: makeCenterParams, cache: new Map() }
+  const chatPanes = useMemo(() => chatPaneIds.map((id) => {
+    const sessionRef = workspaceSessionRefFromKey(id)
+    return {
+      id,
+      title: sessionTitleById.get(id) ?? (sessionRef.sessionId === "default" ? defaultSessionTitle : sessionRef.sessionId),
+      panel: "chat",
+      params: makeCenterParams(id),
     }
-    const { cache } = paneParamsCacheRef.current
-    return chatPaneIds.map((id) => {
-      let params = cache.get(id)
-      if (!params) {
-        params = makeCenterParams(id)
-        cache.set(id, params)
-      }
-      const sessionRef = workspaceSessionRefFromKey(id)
-      return {
-        id,
-        title: sessionTitleById.get(id) ?? (sessionRef.sessionId === "default" ? defaultSessionTitle : sessionRef.sessionId),
-        panel: "chat",
-        params,
-      }
-    })
-  }, [chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
+  }), [chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
   const providerChatPaneSessionRefs = useMemo(
     () => chatPaneIds.map(workspaceSessionRefFromKey),
     [chatPaneIds],
