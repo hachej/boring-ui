@@ -8,10 +8,16 @@ export interface RuntimeScopeIdentityInput {
   }[]
   readonly validatedConfig: JsonValue
   readonly grants: readonly string[]
-  readonly placementIdentity: string
+  /** Stable semantic placement class; never an absolute root or lease key. */
+  readonly placementClassIdentity?: string
+  /** v1 physical placement input, used only for exact predecessor reconstruction. */
+  readonly placementIdentity?: string
   readonly isolationMode: string
   readonly toolContractDigests: readonly string[]
-  readonly provisioningGeneration: string
+  /** Stable semantic provisioning contract. */
+  readonly provisioningIdentity?: string
+  /** v1 physical generation input, used only for exact predecessor reconstruction. */
+  readonly provisioningGeneration?: string
   readonly bindingInputs?: JsonValue
 }
 
@@ -44,18 +50,47 @@ function digest(value: JsonValue): string {
 export function createResolvedRuntimeScopeIdentity(
   input: RuntimeScopeIdentityInput,
 ): string {
+  const placementClassIdentity = input.placementClassIdentity ?? input.placementIdentity
+  const provisioningIdentity = input.provisioningIdentity ?? input.provisioningGeneration
+  if (!placementClassIdentity || !provisioningIdentity) {
+    throw new Error('runtime scope identity requires stable placement and provisioning identities')
+  }
   return digest({
-    artifacts: [...input.artifacts]
-      .map((artifact) => ({ pluginId: artifact.pluginId, digest: artifact.digest }))
-      .sort((a, b) => a.pluginId.localeCompare(b.pluginId) || a.digest.localeCompare(b.digest)),
+    schemaVersion: 2,
+    artifacts: normalizedArtifacts(input),
     validatedConfig: input.validatedConfig,
     grants: [...input.grants].sort(),
-    placementIdentity: input.placementIdentity,
+    placementClassIdentity,
     isolationMode: input.isolationMode,
     toolContractDigests: [...input.toolContractDigests].sort(),
-    provisioningGeneration: input.provisioningGeneration,
+    provisioningIdentity,
     ...(input.bindingInputs === undefined ? {} : { bindingInputs: input.bindingInputs }),
   })
+}
+
+/** Reconstructs the exact v1 digest from trusted server-side predecessor inputs. */
+export function createLegacyRuntimeScopeIdentityV1(input: RuntimeScopeIdentityInput): string {
+  const placementIdentity = input.placementIdentity ?? input.placementClassIdentity
+  const provisioningGeneration = input.provisioningGeneration ?? input.provisioningIdentity
+  if (!placementIdentity || !provisioningGeneration) {
+    throw new Error('legacy runtime scope identity requires placement and provisioning identities')
+  }
+  return digest({
+    artifacts: normalizedArtifacts(input),
+    validatedConfig: input.validatedConfig,
+    grants: [...input.grants].sort(),
+    placementIdentity,
+    isolationMode: input.isolationMode,
+    toolContractDigests: [...input.toolContractDigests].sort(),
+    provisioningGeneration,
+    ...(input.bindingInputs === undefined ? {} : { bindingInputs: input.bindingInputs }),
+  })
+}
+
+function normalizedArtifacts(input: RuntimeScopeIdentityInput) {
+  return [...input.artifacts]
+    .map((artifact) => ({ pluginId: artifact.pluginId, digest: artifact.digest }))
+    .sort((a, b) => a.pluginId.localeCompare(b.pluginId) || a.digest.localeCompare(b.digest))
 }
 
 /**

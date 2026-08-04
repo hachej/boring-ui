@@ -52,6 +52,7 @@ interface SessionEffectOptions extends Omit<EffectOptions, 'serialize'> {
   bindingKey?: string
 }
 const MAX_PAGE_LIMIT = 100
+const UNAUTHORIZED_HISTORICAL_RUNTIME_IDENTITY = '33293674ddb7f24bcc036f4b5bedbf2457ac3a639e2969353ccb0175d385d7fe'
 
 type ReceiptObject = Readonly<Record<string, JsonValue>>
 
@@ -618,8 +619,48 @@ export class EmbeddedAgentGateway implements AgentGateway {
         `session:${ref.sessionId}`,
         ref.sessionId,
       )
-    const persistedPin = authority?.runtimeScopeIdentity
-    const pinned = persistedPin ?? cached
+    let persistedPin = authority?.runtimeScopeIdentity
+    let pinned = persistedPin ?? cached
+    let preparedBinding: Awaited<ReturnType<AgentHostRuntime['resolveBinding']>> | undefined
+    if (pinned && pinned !== resolved.identity) {
+      const migrations = resolved.sessionIdentityMigrations ?? []
+      const candidates = migrations.filter((migration) => (
+        migration.schemaVersion === 1
+        && migration.agentTypeId === ref.agentTypeId
+        && migration.workspaceScopeId === claim.workspaceScopeId
+        && migration.sessionNamespace === resolved.sessionNamespace
+        && migration.fromIdentity === pinned
+        && migration.toIdentity === resolved.identity
+        && migration.fromIdentity !== UNAUTHORIZED_HISTORICAL_RUNTIME_IDENTITY
+        && /^[a-f0-9]{64}$/.test(migration.fromIdentity)
+        && /^[a-f0-9]{64}$/.test(migration.toIdentity)
+        && /^[a-f0-9]{64}$/.test(migration.evidenceDigest)
+      ))
+      if (authority && candidates.length === 1) {
+        try {
+          preparedBinding = await this.runtime.resolveBinding(
+            ref.agentTypeId,
+            scope,
+            claim,
+            resolved,
+            'current',
+          )
+          const result = await authority.migrateRuntimeScopeIdentity({
+            expectedIdentity: candidates[0]!.fromIdentity,
+            nextIdentity: candidates[0]!.toIdentity,
+            evidenceDigest: candidates[0]!.evidenceDigest,
+          })
+          if (result === 'mismatch') throw new Error('runtime identity migration compare-and-swap failed')
+        } catch {
+          throw new AgentGatewayError(
+            AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+            'session is pinned to a different runtime scope',
+          )
+        }
+        persistedPin = resolved.identity
+        pinned = resolved.identity
+      }
+    }
     const publishedPinned = pinned && typeof this.runtime.findPublishedBinding === 'function'
       ? this.runtime.findPublishedBinding(
           ref.agentTypeId,
@@ -650,7 +691,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     })
     this.pins.set(key, runtimeScopeIdentity)
     if (!pinned) this.unpinnedSessionFallbackPins.add(key)
-    return await this.runtime.resolveBinding(
+    return preparedBinding ?? await this.runtime.resolveBinding(
       ref.agentTypeId,
       scope,
       claim,
