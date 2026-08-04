@@ -1,3 +1,4 @@
+import type { FunctionComponent } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { SurfaceShell, type SurfaceShellApi, type SurfaceShellProps } from "../SurfaceShell"
@@ -10,6 +11,8 @@ import { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "../../../../shared/types/surfa
 let capturedSurfaceStorageKey: string | undefined
 let capturedAllowedPanels: string[] | undefined
 let capturedWorkbenchBridge: any
+let capturedWorkbenchProps: any
+let capturedRightHeaderActions: FunctionComponent<unknown> | undefined
 let mockAddPanel = vi.fn()
 let mockPanels: any[] = []
 let mockGetPanel: (id: string) => unknown = vi.fn(() => undefined)
@@ -17,15 +20,24 @@ let mockGetPanel: (id: string) => unknown = vi.fn(() => undefined)
 vi.mock("../../workbench-left/WorkbenchLeftPane", () => ({
   WorkbenchLeftPane: (props: any) => {
     capturedWorkbenchBridge = props.bridge
-    return <div data-testid="mock-left-pane" />
+    capturedWorkbenchProps = props
+    return (
+      <div data-testid="mock-left-pane">
+        {props.workbenchCollapsed && props.onToggleWorkbench ? (
+          <button type="button" onClick={props.onToggleWorkbench}>Open workbench</button>
+        ) : null}
+      </div>
+    )
   },
 }))
 
 vi.mock("../ArtifactSurfacePane", async () => {
   const React = await import("react")
-  function MockArtifactSurfacePane(props: { storageKey?: string; allowedPanels?: string[]; onReady?: (api: unknown) => void }) {
+  function MockArtifactSurfacePane(props: { storageKey?: string; allowedPanels?: string[]; onReady?: (api: unknown) => void; rightHeaderActions?: FunctionComponent<unknown> }) {
     capturedSurfaceStorageKey = props.storageKey
     capturedAllowedPanels = props.allowedPanels
+    capturedRightHeaderActions = props.rightHeaderActions
+    const RightHeaderActions = props.rightHeaderActions
     React.useEffect(() => {
       props.onReady?.({
         panels: mockPanels,
@@ -37,7 +49,7 @@ vi.mock("../ArtifactSurfacePane", async () => {
         onDidActivePanelChange: vi.fn(() => ({ dispose: vi.fn() })),
       })
     }, [props.onReady])
-    return <div data-testid="mock-artifact-surface" />
+    return <div data-testid="mock-artifact-surface">{RightHeaderActions ? <RightHeaderActions /> : null}</div>
   }
   MockArtifactSurfacePane.defaultAllowedPanels = [] as string[]
   return { ArtifactSurfacePane: MockArtifactSurfacePane }
@@ -65,6 +77,8 @@ describe("SurfaceShell", () => {
     capturedSurfaceStorageKey = undefined
     capturedAllowedPanels = undefined
     capturedWorkbenchBridge = undefined
+    capturedWorkbenchProps = undefined
+    capturedRightHeaderActions = undefined
     mockAddPanel = vi.fn()
     mockPanels = []
     mockGetPanel = vi.fn(() => undefined)
@@ -88,6 +102,47 @@ describe("SurfaceShell", () => {
     )
 
     expect(capturedSurfaceStorageKey).toBe("workspace-b")
+  })
+
+  it("reserves the level-one tab row above the full expanded Workbench body", () => {
+    const onHostToggleFullscreen = vi.fn()
+    const onClose = vi.fn()
+    renderSurface("workspace-a", { hostFullscreen: true, onHostToggleFullscreen, onClose })
+
+    const shell = screen.getByTestId("surface-shell")
+    const header = shell.querySelector<HTMLElement>('[data-boring-workspace-part="workbench-level-one-header"]')
+    const body = shell.querySelector<HTMLElement>('[data-boring-workspace-part="workbench-body"]')
+    const rail = shell.querySelector<HTMLElement>('[data-boring-workspace-part="surface-sidebar"]')
+
+    expect(capturedRightHeaderActions).toBeUndefined()
+    expect(header).not.toBeNull()
+    expect(header).toHaveStyle({ height: "44px" })
+    expect(header?.parentElement).toBe(shell)
+    expect(body?.previousElementSibling).toBe(header)
+    expect(body).toHaveStyle({ height: "100%" })
+    expect(rail).toHaveStyle({ height: "calc(100% - 44px)" })
+    expect(rail?.parentElement).toBe(body)
+    expect(header).toHaveTextContent("")
+    expect(screen.getByRole("button", { name: "Restore split view" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Close workbench" })).toBeInTheDocument()
+  })
+
+  it("lets the collapsed activity rail fill the host and reopen the Workbench", () => {
+    const onHostExpand = vi.fn()
+    renderSurface("workspace-a", { hostRailOnly: true, onHostExpand })
+
+    const shell = screen.getByTestId("surface-shell")
+    const body = shell.querySelector<HTMLElement>('[data-boring-workspace-part="workbench-body"]')
+    const rail = shell.querySelector<HTMLElement>('[data-boring-workspace-part="surface-sidebar"]')
+
+    const header = shell.querySelector('[data-boring-workspace-part="workbench-level-one-header"]')
+    expect(header).toHaveAttribute("data-boring-state", "collapsed")
+    expect(body).toHaveStyle({ height: "100%" })
+    expect(rail).toHaveStyle({ height: "calc(100% - 44px)" })
+    expect(rail).toHaveAttribute("data-boring-state", "host-collapsed")
+    expect(rail?.parentElement).toBe(body)
+    fireEvent.click(screen.getByRole("button", { name: "Open workbench" }))
+    expect(onHostExpand).toHaveBeenCalledOnce()
   })
 
   it("updates allowed surface panels when hot-loaded dockview/plugin-page panels register after mount", async () => {
@@ -259,7 +314,7 @@ describe("SurfaceShell", () => {
     panelRegistry.register("plugin.page", { title: "Plugin Page", placement: "workspace-page", component: () => null })
 
     renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry)
-    expect(screen.getByLabelText("Workbench left pane")).toBeInTheDocument()
+    expect(screen.getByLabelText("Workbench sources and activity rail")).toBeInTheDocument()
     await waitFor(() => expect(surface).toBeDefined())
 
     act(() => {
@@ -267,7 +322,7 @@ describe("SurfaceShell", () => {
     })
 
     expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({ id: "plugin.page", component: "plugin.page" }))
-    expect(screen.getByLabelText("Workbench left pane")).toHaveAttribute("data-boring-state", "rail")
+    expect(screen.getByLabelText("Workbench sources and activity rail")).toHaveAttribute("data-boring-state", "rail")
   })
 
   it("keeps the workbench left pane open when opening a shared-dockview panel", async () => {
@@ -276,7 +331,7 @@ describe("SurfaceShell", () => {
     panelRegistry.register("plugin.chart", { title: "Plugin Chart", placement: "shared-dockview", component: () => null })
 
     renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry)
-    expect(screen.getByLabelText("Workbench left pane")).toBeInTheDocument()
+    expect(screen.getByLabelText("Workbench sources and activity rail")).toBeInTheDocument()
     await waitFor(() => expect(surface).toBeDefined())
 
     act(() => {
@@ -284,7 +339,7 @@ describe("SurfaceShell", () => {
     })
 
     expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({ id: "plugin.chart", component: "plugin.chart" }))
-    expect(screen.getByLabelText("Workbench left pane")).toBeInTheDocument()
+    expect(screen.getByLabelText("Workbench sources and activity rail")).toBeInTheDocument()
   })
 
   it("renders a reachable close-workbench button as an overlay regardless of tab state", async () => {
@@ -300,6 +355,53 @@ describe("SurfaceShell", () => {
     renderSurface("workspace-a")
 
     expect(screen.queryByRole("button", { name: "Close workbench" })).not.toBeInTheDocument()
+  })
+
+  it("owns fullscreen and close controls in the expanded Workbench header", () => {
+    const onClose = vi.fn()
+    const onToggleFullscreen = vi.fn()
+    const { rerender } = renderSurface("workspace-a", {
+      onClose,
+      onHostToggleFullscreen: onToggleFullscreen,
+    })
+
+    const headerActions = screen.getByRole("button", { name: "Fullscreen workbench" }).closest('[data-boring-workspace-part="workbench-header-actions"]')
+    expect(headerActions).not.toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Fullscreen workbench" }))
+    fireEvent.click(screen.getByRole("button", { name: "Close workbench" }))
+    expect(onToggleFullscreen).toHaveBeenCalledOnce()
+    expect(onClose).toHaveBeenCalledOnce()
+
+    rerender(
+      <RegistryProvider
+        panelRegistry={new PanelRegistry()}
+        commandRegistry={new CommandRegistry()}
+        surfaceResolverRegistry={new SurfaceResolverRegistry()}
+      >
+        <SurfaceShell
+          storageKey="workspace-a"
+          hostFullscreen
+          onClose={onClose}
+          onHostToggleFullscreen={onToggleFullscreen}
+        />
+      </RegistryProvider>,
+    )
+    expect(screen.getByRole("button", { name: "Restore split view" })).toBeInTheDocument()
+  })
+
+  it("hides expanded-header actions in rail-only mode and delegates reopen to the rail", () => {
+    const onHostExpand = vi.fn()
+    renderSurface("workspace-a", {
+      hostRailOnly: true,
+      onClose: vi.fn(),
+      onHostExpand,
+      onHostToggleFullscreen: vi.fn(),
+    })
+
+    expect(screen.queryByRole("button", { name: "Close workbench" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Fullscreen workbench" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Open workbench" }))
+    expect(onHostExpand).toHaveBeenCalledOnce()
   })
 
   it("surface-backed source bridge opens panels and reports unsupported requests as errors", async () => {
@@ -332,7 +434,7 @@ describe("SurfaceShell", () => {
       },
     })
 
-    const sidebar = screen.getByLabelText("Workbench left pane")
+    const sidebar = screen.getByLabelText("Workbench sources and activity rail")
     expect(sidebar).toBeInTheDocument()
     expect(sidebar).toHaveAttribute("data-boring-state", "expanded")
     await waitFor(() => expect(surface).toBeDefined())
@@ -341,10 +443,10 @@ describe("SurfaceShell", () => {
       surface?.closeWorkbenchLeftPane()
     })
 
-    expect(screen.getByLabelText("Workbench left pane")).toHaveAttribute("data-boring-state", "collapsed")
+    expect(screen.getByLabelText("Workbench sources and activity rail")).toHaveAttribute("data-boring-state", "rail")
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Show workspace menu" })[0]!)
+    act(() => capturedWorkbenchProps.onExpand("files"))
 
-    expect(screen.getByLabelText("Workbench left pane")).toHaveAttribute("data-boring-state", "expanded")
+    expect(screen.getByLabelText("Workbench sources and activity rail")).toHaveAttribute("data-boring-state", "expanded")
   })
 })

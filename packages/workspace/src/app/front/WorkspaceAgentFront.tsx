@@ -1163,8 +1163,8 @@ export function WorkspaceAgentFront<
   }, [setSurfaceOpen, setWorkbenchLeftOpen])
   const closeWorkbench = useCallback(() => {
     surfaceOpenRef.current = false
-    surfaceRef.current = null
-    setSurfaceReady(false)
+    // The persistent activity rail keeps SurfaceShell mounted while collapsed,
+    // so its API remains valid and queued surface operations can reopen it.
     setSurfaceOpen(false)
   }, [setSurfaceOpen])
   const openChatSessionIdsRef = useRef<ReadonlySet<string>>(new Set())
