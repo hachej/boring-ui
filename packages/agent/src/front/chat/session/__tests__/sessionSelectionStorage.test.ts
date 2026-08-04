@@ -2,13 +2,12 @@ import { describe, expect, test, vi } from 'vitest'
 import {
   activeSessionStorageKey,
   bootResumeSessionStorageKey,
-  clearActiveSessionId,
   readActiveSessionId,
   readBootResumeSessionId,
   writeActiveSessionId,
   writeBootResumeSessionId,
   type ActiveSessionStorageLike,
-} from '../activeSessionStorage'
+} from '../sessionSelectionStorage'
 
 function memoryStorage(): ActiveSessionStorageLike & { values: Map<string, string> } {
   const values = new Map<string, string>()
@@ -20,7 +19,7 @@ function memoryStorage(): ActiveSessionStorageLike & { values: Map<string, strin
   }
 }
 
-describe('activeSessionStorage', () => {
+describe('sessionSelectionStorage', () => {
   test('uses scoped v2 active-session keys without legacy transcript storage', () => {
     expect(activeSessionStorageKey('workspace-a:user-opaque')).toBe('boring-agent:v2:workspace-a:user-opaque:activeSessionId')
     expect(activeSessionStorageKey()).toBe('boring-agent:v2:default:activeSessionId')
@@ -52,7 +51,7 @@ describe('activeSessionStorage', () => {
     expect(storage.setItem).toHaveBeenCalledWith('boring-agent:v2:scope-a:activeSessionId', 'pi-running')
     expect(readActiveSessionId({ storageScope: 'scope-a', storage })).toBe('pi-running')
 
-    clearActiveSessionId({ storageScope: 'scope-a', storage })
+    writeActiveSessionId(undefined, { storageScope: 'scope-a', storage })
     expect(storage.removeItem).toHaveBeenCalledWith('boring-agent:v2:scope-a:activeSessionId')
     expect(readActiveSessionId({ storageScope: 'scope-a', storage })).toBeUndefined()
   })
@@ -78,6 +77,6 @@ describe('activeSessionStorage', () => {
 
     expect(readActiveSessionId({ storageScope: 'scope-a', storage })).toBeUndefined()
     expect(() => writeActiveSessionId('pi-1', { storageScope: 'scope-a', storage })).not.toThrow()
-    expect(() => clearActiveSessionId({ storageScope: 'scope-a', storage })).not.toThrow()
+    expect(() => writeActiveSessionId(undefined, { storageScope: 'scope-a', storage })).not.toThrow()
   })
 })

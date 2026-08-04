@@ -4,7 +4,7 @@ import {
   type AvailableModel,
   type ModelSelection,
 } from '../chatPanelSettings'
-import type { ActiveSessionStorageLike } from '../chat/session/activeSessionStorage'
+import type { ActiveSessionStorageLike } from '../chat/session/sessionSelectionStorage'
 import {
   readPiComposerSettings,
   writePiComposerModelSelection,

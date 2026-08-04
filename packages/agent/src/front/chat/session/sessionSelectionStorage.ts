@@ -61,10 +61,6 @@ export function writeActiveSessionId(sessionId: string | undefined, options: Act
   } catch {}
 }
 
-export function clearActiveSessionId(options: ActiveSessionStorageOptions = {}): void {
-  writeActiveSessionId(undefined, options)
-}
-
 export function readBootResumeSessionId(options: ActiveSessionStorageOptions = {}): string | undefined {
   const storage = resolveBootStorage(options.storage)
   if (!storage) return undefined

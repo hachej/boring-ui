@@ -43,7 +43,6 @@ export {
   activeSessionStorageKey,
   readActiveSessionId,
   writeActiveSessionId,
-  clearActiveSessionId,
   SessionList as PiSessionList,
   SessionBrowser as PiSessionBrowser,
   searchPiSessions,
