@@ -797,7 +797,7 @@ describe("ChatLayout component", () => {
 
     const user = userEvent.setup()
     render(
-      <WorkspaceProvider persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
         <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
           <Host />
         </RegistryProvider>
