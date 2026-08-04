@@ -2310,6 +2310,52 @@ describe("WorkspaceAgentFront", () => {
     expect(deleted).not.toHaveBeenCalled()
   })
 
+  it("lets a manual create own an empty-list transition without a queued boot duplicate", async () => {
+    let releaseCreate!: () => void
+    let clearSessions!: () => void
+    const createGate = new Promise<void>((resolve) => { releaseCreate = resolve })
+    const create = vi.fn(async () => {
+      await createGate
+      return { id: "manual", title: "New session", updatedAt: Date.now(), turnCount: 0 }
+    })
+
+    function useSessionsThatBecomeEmpty() {
+      const [sessions, setSessions] = useState([
+        { id: "existing", title: "Existing", updatedAt: Date.now(), turnCount: 1 },
+      ])
+      clearSessions = () => setSessions([])
+      return {
+        sessions,
+        activeSessionId: sessions[0]?.id ?? null,
+        activeSession: sessions[0] ?? null,
+        loading: false,
+        create,
+        switch: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="manual-empty-transition"
+        chatPanel={ChatPanel}
+        useSessions={useSessionsThatBecomeEmpty}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }))
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    act(() => clearSessions())
+
+    // Let the empty-session grace period expire while the user-owned create is
+    // active. The initial boot effect must not enqueue a second create.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 2_100)))
+    expect(create).toHaveBeenCalledOnce()
+
+    await act(async () => { releaseCreate() })
+  })
+
   it("does not pass the New chat click event into remote session creation", async () => {
     const create = vi.fn(async () => ({ id: "manual", title: "Manual", updatedAt: Date.now(), turnCount: 0 }))
 
@@ -2742,6 +2788,30 @@ describe("WorkspaceAgentFront", () => {
 
     await waitFor(() => {
       expect(createSession).toHaveBeenCalledWith({ title: "Fresh session" })
+    }, { timeout: 3000 })
+  })
+
+  it("keeps the default New session label provisional for first-message titling", async () => {
+    const createSession = vi.fn(async () => ({ id: "empty-native", title: "New session" }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="remote-provisional-title"
+        chatPanel={ChatPanel}
+        useSessions={() => ({
+          sessions: [],
+          loading: false,
+          activeSessionId: null,
+          activeSession: null,
+          switch: vi.fn(),
+          create: createSession,
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledWith({})
     }, { timeout: 3000 })
   })
 
