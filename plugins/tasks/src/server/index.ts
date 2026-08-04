@@ -13,9 +13,9 @@ function workspaceIdFromRequest(request: { headers: Record<string, string | stri
 
 function responseError(cause: unknown) {
   if (cause instanceof TaskSourceServiceError) {
-    return { ok: false, code: cause.code, error: cause.message }
+    return { ok: false, code: cause.code, error: cause.message, message: cause.message, retryable: cause.retryable }
   }
-  return { ok: false, code: "TASK_SOURCE_ERROR", error: "Task source request failed." }
+  return { ok: false, code: "TASK_SOURCE_ERROR", error: "Task source request failed.", message: "Task source request failed.", retryable: true }
 }
 
 function statusFor(cause: unknown): number {
@@ -106,6 +106,19 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
         }
       })
 
+      app.post("/api/boring-tasks/sources/tasks/get", async (request, reply) => {
+        try {
+          const body = bodyObject(request.body)
+          const detail = await service.getTask({ workspaceId: workspaceIdFromRequest(request), workspaceRoot: options.workspaceRoot }, {
+            sourceId: requiredString(body, "sourceId"),
+            taskId: requiredString(body, "taskId"),
+          })
+          return { ok: true, detail }
+        } catch (cause) {
+          return reply.status(statusFor(cause)).send(responseError(cause))
+        }
+      })
+
       app.post("/api/boring-tasks/sources/tasks/move", async (request, reply) => {
         try {
           const body = bodyObject(request.body)
@@ -143,3 +156,4 @@ export default function defaultTasksServerPlugin(options?: TasksServerPluginOpti
 export { createGitHubTaskSource, createWorkspaceGitHubTaskSource, createGhCliGitHubIssueExecutor, createGhCliGitHubRepositoryDetector } from "./githubSource"
 export { createTaskSourceRegistry } from "./sourceRuntime"
 export { createTaskSourceService, TaskSourceServiceError } from "./taskSourceService"
+export { TASK_DETAIL_LIMITS, TaskDetailValidationError, validateTaskDetail } from "./taskDtoValidation"

@@ -51,20 +51,20 @@ Final integration blocked by A; may develop against configured-agent fixtures.
 
 Independent of A/B.
 
-- [ ] Add exact bounded `BoringTaskDetail`, metadata, and relation DTOs plus
+- [x] Add exact bounded `BoringTaskDetail`, metadata, and relation DTOs plus
   generic optional card priority/issueType/assignee fields.
-- [ ] Enforce documented string/section/count/total-byte bounds and exact
+- [x] Enforce documented string/section/count/total-byte bounds and exact
   dependency/dependent/parent/child relation mapping.
-- [ ] Add optional detail capability/get contract to front/server adapters.
-- [ ] Add stable unknown-source/unsupported-detail/not-found service behavior.
-- [ ] Add Tasks get-detail route and HTTP adapter preserving code/retryability.
-- [ ] Replace board-wide failure with per-source all-settled loading.
-- [ ] Preserve successful cached source data as visibly stale on refresh failure.
-- [ ] Add per-source retry and all-source refresh.
-- [ ] Avoid duplicate config/list reads where practical.
-- [ ] Test bounds, ordering/dedup, typed errors, source isolation, retry, and stale
+- [x] Add optional detail capability/get contract to front/server adapters.
+- [x] Add stable unknown-source/unsupported-detail/not-found service behavior.
+- [x] Add Tasks get-detail route and HTTP adapter preserving code/retryability.
+- [x] Replace board-wide failure with per-source all-settled loading.
+- [x] Preserve successful cached source data as visibly stale on refresh failure.
+- [x] Add per-source retry and all-source refresh.
+- [x] Avoid duplicate config/list reads where practical.
+- [x] Test bounds, ordering/dedup, typed errors, source isolation, retry, and stale
   behavior.
-- [ ] Pass Tasks test/typecheck gate.
+- [x] Pass Tasks test/typecheck gate.
 
 ## D — Workspace-authorized read-only Beads provider
 
