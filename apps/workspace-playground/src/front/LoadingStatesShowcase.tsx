@@ -2,7 +2,7 @@ import { WorkspaceLoadingState } from "@hachej/boring-workspace"
 import {
   ChatSessionTransitionState,
   WorkbenchWarmupOverlay,
-} from "../../../../packages/workspace/src/app/front/WorkspaceAgentStatusStates"
+} from "@hachej/boring-workspace/app/front"
 
 export type LoadingStateMode = "workspace" | "sessions" | "workbench" | "error"
 
