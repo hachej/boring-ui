@@ -23,6 +23,10 @@ function isMultiFilesystemPlaygroundRoute(): boolean {
   return (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_PLAYGROUND_MULTI_FS === "1"
 }
 
+function factoryAgentsEnabled(): boolean {
+  return (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_FACTORY_AGENTS === "1"
+}
+
 interface WorkspaceMeta {
   projectName?: string
   workspaceId?: string
@@ -150,6 +154,8 @@ export function WorkspaceShell() {
   const showcase = useMemo(isShowcaseRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const multiFilesystem = useMemo(isMultiFilesystemPlaygroundRoute, [])
+  const factoryAgents = useMemo(factoryAgentsEnabled, [])
+  const defaultAgentTypeId = factoryAgents ? "boring-concierge" : "default"
   const activeWorkspacePlugins = multiFilesystem ? multiFilesystemWorkspacePlugins : workspacePlugins
   const [projectName, setProjectName] = useState("Workspace")
   const [workspaceId, setWorkspaceId] = useState("Workspace")
@@ -227,7 +233,8 @@ export function WorkspaceShell() {
   return (
     <WorkspaceAgentFront
       workspaceId={showcase ? "playground" : workspaceId}
-      agentTypeId="default"
+      agentTypeId={defaultAgentTypeId}
+      showAgentSelector={factoryAgents && !showcase}
       apiBaseUrl=""
       persistenceEnabled
       providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${multiFilesystem ? "multi-fs:" : ""}${workspaceId}`}
