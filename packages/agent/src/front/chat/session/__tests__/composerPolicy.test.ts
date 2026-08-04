@@ -17,7 +17,7 @@ import {
   writePiComposerShowThoughts,
   writePiComposerThinking,
 } from '../composerPolicy'
-import type { ActiveSessionStorageLike } from '../activeSessionStorage'
+import type { ActiveSessionStorageLike } from '../sessionSelectionStorage'
 
 class FakeComposerSession implements PiQueueSessionLike {
   state: PiChatState

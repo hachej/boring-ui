@@ -8,7 +8,7 @@ import {
   writeBootResumeSessionId,
   type ActiveSessionStorageLike,
   type BootResumeSessionSource,
-} from './activeSessionStorage'
+} from './sessionSelectionStorage'
 
 const SESSION_PAGE_SIZE = 50
 // 60 attempts with the 2s backoff cap ≈ two minutes of resilience — enough
