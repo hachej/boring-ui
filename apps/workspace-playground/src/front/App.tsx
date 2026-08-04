@@ -214,15 +214,26 @@ export function WorkspaceShell() {
   const [showcaseActiveSessionId, setShowcaseActiveSessionId] = useState(SHOWCASE_SESSION_ID)
   const [showcaseSessions, setShowcaseSessions] = useState(createInitialShowcaseSessions)
   const sessions = showcase ? showcaseSessions : undefined
-  const showcaseSessionSequence = useRef(0)
-  const createShowcaseSession = useCallback(() => {
-    showcaseSessionSequence.current += 1
+  const liveShowcaseSessionIds = useRef(new Set<string>())
+  const createShowcaseSession = useCallback(async () => {
+    const response = await fetch("/api/v1/agents/default/sessions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-boring-workspace-id": "default",
+      },
+      body: JSON.stringify({ title: "New chat" }),
+    })
+    if (!response.ok) throw new Error(`showcase session create failed (${response.status})`)
+    const payload = await response.json() as { agentTypeId?: string; sessionId?: string }
+    if (!payload.sessionId) throw new Error("showcase session create returned no session id")
     const session = {
-      id: `showcase-${Date.now()}-${showcaseSessionSequence.current}`,
+      id: payload.sessionId,
+      agentTypeId: payload.agentTypeId ?? "default",
       title: "New chat",
       updatedAt: Date.now(),
     }
-    seedShowcase(session.id)
+    liveShowcaseSessionIds.current.add(session.id)
     setShowcaseSessions((current) => [...current, session])
     setShowcaseActiveSessionId(session.id)
     return session
@@ -235,7 +246,7 @@ export function WorkspaceShell() {
   const handleActiveSessionIdChange = useCallback(
     (sessionId: string | null) => {
       if (showcase && sessionId) {
-        seedShowcase(sessionId)
+        if (!liveShowcaseSessionIds.current.has(sessionId)) seedShowcase(sessionId)
         setShowcaseActiveSessionId(sessionId)
       }
     },
