@@ -414,6 +414,19 @@ function validateCreatedSession<TSession extends WorkspaceAgentSession>(value: u
   return value as TSession
 }
 
+function automaticSessionCreateInput(
+  defaultSessionTitle: string,
+  resumeSessionId?: string,
+): { title?: string; resumeSessionId?: string } {
+  const title = defaultSessionTitle.trim()
+  return {
+    // "New session" is presentation fallback, not a durable user title. Omitting
+    // it lets the native transcript derive its title from the first user turn.
+    ...(title && title !== "New session" ? { title } : {}),
+    ...(resumeSessionId ? { resumeSessionId } : {}),
+  }
+}
+
 function sessionDataSourceIdentity(input: {
   workspaceId: string
   agentTypeId: string
@@ -1012,7 +1025,7 @@ export function WorkspaceAgentFront<
     if (!sessionApi || autoSubmitSessionId !== null) return
     if (autoSubmitSessionCreateRef.current) return
     autoSubmitSessionCreateRef.current = true
-    void coordinateRemoteCreate("auto-submit", { title: defaultSessionTitle })
+    void coordinateRemoteCreate("auto-submit", automaticSessionCreateInput(defaultSessionTitle))
       .then((session) => {
         if (!session || !sessionSourceIsCurrent()) return
         setAutoSubmitSessionId(session.id)
@@ -1039,10 +1052,27 @@ export function WorkspaceAgentFront<
   }, [effectiveActiveSessionId, rawSwitch, sessionSourceIsCurrent])
   const resolvedCreate = useCallback((dedupeKey = "manual"): Promise<TSession | undefined> => {
     if (remoteSessionsPending) return Promise.resolve(undefined)
-    if (sessionApi) return coordinateRemoteCreate(dedupeKey)
+    if (sessionApi) {
+      // A user create owns the empty-list transition. Cancel only a queued boot
+      // create; an already-started boot create remains authoritative, while this
+      // explicit action still mints its own session.
+      suppressEmptyAutoCreateRef.current = true
+      sessionCreation.cancel((task) => task.phase === "queued" && task.dedupeKey === "initial-auto")
+      return coordinateRemoteCreate(dedupeKey)
+        .catch((error) => {
+          // A canceled queued boot create resolves without running its own error
+          // path. Re-arm boot creation if the user-owned request failed.
+          autoCreateSessionRef.current = false
+          setInitialRemoteSessionCreating({ workspaceId, creating: false })
+          throw error
+        })
+        .finally(() => {
+          suppressEmptyAutoCreateRef.current = false
+        })
+    }
     const created = onCreateSession ? onCreateSession() : localSessionStore.create()
     return Promise.resolve(created).then((session) => validateCreatedSession<TSession>(session))
-  }, [coordinateRemoteCreate, localSessionStore, onCreateSession, remoteSessionsPending, sessionApi])
+  }, [coordinateRemoteCreate, localSessionStore, onCreateSession, remoteSessionsPending, sessionApi, sessionCreation, workspaceId])
   const resolvedRename = useCallback((id: string, title: string, sessionAgentTypeId?: string) => {
     if (!sessionSourceIsCurrent() || remoteSessionsPending || !sessionApi?.rename) return undefined
     return sessionApi.rename(id, title, sessionAgentTypeId)
@@ -1066,7 +1096,10 @@ export function WorkspaceAgentFront<
       pendingLastSessionDeleteRef.current.add(sessionKey)
       autoCreateSessionRef.current = true
       setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
-      const replacement = coordinateRemoteCreate(`replacement:${sessionKey}`, { title: defaultSessionTitle })
+      const replacement = coordinateRemoteCreate(
+        `replacement:${sessionKey}`,
+        automaticSessionCreateInput(defaultSessionTitle),
+      )
       return replacement.then((created) => {
         if (!created) return undefined
         return sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
@@ -1227,10 +1260,10 @@ export function WorkspaceAgentFront<
     autoCreateSessionRef.current = true
     setInitialRemoteSessionCreating({ workspaceId, creating: true })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
-    void coordinateRemoteCreate("initial-auto", {
-      title: defaultSessionTitle,
-      ...(sessionApi.resumeSessionId ? { resumeSessionId: sessionApi.resumeSessionId } : {}),
-    })
+    void coordinateRemoteCreate(
+      "initial-auto",
+      automaticSessionCreateInput(defaultSessionTitle, sessionApi.resumeSessionId ?? undefined),
+    )
       .catch(() => {
         if (!sessionSourceIsCurrent()) return
         autoCreateSessionRef.current = false
