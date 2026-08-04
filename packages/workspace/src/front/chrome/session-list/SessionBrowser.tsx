@@ -11,6 +11,7 @@ import type { SessionItem } from "../../components/SessionList"
 import { encodeWorkspaceSessionDrag, workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
 
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
+const CHAT_SESSION_STATUS_REQUEST_EVENT = "boring:chat-session-status-request"
 
 /**
  * Session ids whose chat panel is currently streaming. Fed by the
@@ -37,6 +38,7 @@ function useWorkingSessionIds(): ReadonlySet<string> {
       })
     }
     window.addEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
+    window.dispatchEvent(new Event(CHAT_SESSION_STATUS_REQUEST_EVENT))
     return () => window.removeEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
   }, [])
   return working

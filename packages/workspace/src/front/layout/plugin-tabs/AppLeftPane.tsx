@@ -111,6 +111,7 @@ export interface AppLeftPaneProps {
 type SessionRowState = AppSessionRowState
 
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
+const CHAT_SESSION_STATUS_REQUEST_EVENT = "boring:chat-session-status-request"
 
 function useWorkingSessionIds(): ReadonlySet<string> {
   const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set())
@@ -129,6 +130,7 @@ function useWorkingSessionIds(): ReadonlySet<string> {
       })
     }
     window.addEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
+    window.dispatchEvent(new Event(CHAT_SESSION_STATUS_REQUEST_EVENT))
     return () => window.removeEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
   }, [])
   return working
