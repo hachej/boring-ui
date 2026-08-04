@@ -20,30 +20,35 @@ export interface SessionCreationTask<TSession extends SessionCreationResult>
   reject: (error: unknown) => void
 }
 
+export interface SessionCreationCoordinatorRuntime<TSession extends SessionCreationResult> {
+  sourceKey: string
+  validateResult: (value: unknown) => TSession
+  ownerIsCurrent: () => boolean
+  ownershipReady: boolean
+  mounted: boolean
+}
+
 export type SessionCreationOutcome<TSession extends SessionCreationResult> =
   | { value: TSession | undefined }
   | { error: unknown }
 
-/** Source-owned queue for session creates. React lifecycle and invocation live in the hook. */
+/** Serializes creates for one authoritative session source and fences stale settlements. */
 export class SessionCreationCoordinator<TSession extends SessionCreationResult> {
-  sourceKey: string
-  active: SessionCreationTask<TSession> | null = null
-  queue: SessionCreationTask<TSession>[] = []
+  private active: SessionCreationTask<TSession> | null = null
+  private queue: SessionCreationTask<TSession>[] = []
   private resetting = false
 
-  constructor(sourceKey: string) {
-    this.sourceKey = sourceKey
-  }
+  constructor(private runtime: SessionCreationCoordinatorRuntime<TSession>) {}
 
-  reset(sourceKey: string): void {
-    if (this.resetting) return
-    this.resetting = true
-    try {
-      this.cancel(() => true)
-      this.sourceKey = sourceKey
-    } finally {
-      this.resetting = false
+  update(runtime: SessionCreationCoordinatorRuntime<TSession>): void {
+    const sourceChanged = runtime.sourceKey !== this.runtime.sourceKey
+    this.runtime = runtime
+    if (sourceChanged) {
+      this.resetting = true
+      try { this.cancel(() => true) } finally { this.resetting = false }
     }
+    if (!this.available()) this.cancel(() => true)
+    this.drain()
   }
 
   coordinate(options: CoordinateSessionCreateOptions<TSession>): Promise<TSession | undefined> {
@@ -53,6 +58,7 @@ export class SessionCreationCoordinator<TSession extends SessionCreationResult> 
         { code: "SESSION_CREATE_COORDINATOR_UNAVAILABLE" as const },
       ))
     }
+    if (!this.available()) return Promise.resolve(undefined)
     const duplicate = this.active?.dedupeKey === options.dedupeKey
       ? this.active
       : this.queue.find((task) => task.dedupeKey === options.dedupeKey)
@@ -66,41 +72,77 @@ export class SessionCreationCoordinator<TSession extends SessionCreationResult> 
     })
     this.queue.push({
       ...options,
-      sourceKey: this.sourceKey,
+      sourceKey: this.runtime.sourceKey,
       phase: "queued",
       promise,
       resolve,
       reject,
     })
+    this.drain()
     return promise
-  }
-
-  takeNext(): SessionCreationTask<TSession> | null {
-    if (this.active) return null
-    const task = this.queue.shift() ?? null
-    if (!task) return null
-    task.phase = "active"
-    this.active = task
-    return task
-  }
-
-  finish(task: SessionCreationTask<TSession>, outcome: SessionCreationOutcome<TSession>): boolean {
-    if (this.active !== task || task.phase === "finished") return false
-    this.active = null
-    this.settleTask(task, outcome)
-    return true
   }
 
   cancel(matches: (task: SessionCreationTask<TSession>) => boolean): void {
     const active = this.active
-    const cancelActive = active !== null && matches(active)
     const canceled = this.queue.filter(matches)
-    this.queue = this.queue.filter((task) => !matches(task))
-    if (active && cancelActive) {
+    this.queue = this.queue.filter((task) => !canceled.includes(task))
+    if (active && matches(active)) {
       this.active = null
       this.settleTask(active, { value: undefined })
     }
     for (const task of canceled) this.settleTask(task, { value: undefined })
+    this.drainSoon()
+  }
+
+  private available(task?: SessionCreationTask<TSession>): boolean {
+    return this.runtime.mounted
+      && this.runtime.ownershipReady
+      && this.runtime.ownerIsCurrent()
+      && (task === undefined || task.sourceKey === this.runtime.sourceKey)
+  }
+
+  private drain(): void {
+    if (this.active || !this.available()) return
+    const task = this.queue.shift()
+    if (!task) return
+    task.phase = "active"
+    this.active = task
+    void Promise.resolve().then(async () => {
+      if (this.active !== task || !this.available(task)) {
+        this.cancel((candidate) => candidate === task)
+        return
+      }
+      try {
+        const value = await task.create()
+        if (this.active !== task) return
+        if (!this.available(task)) {
+          this.cancel((candidate) => candidate === task)
+          return
+        }
+        let session: TSession
+        try {
+          session = this.runtime.validateResult(value)
+        } catch (error) {
+          this.finish(task, { error })
+          return
+        }
+        this.finish(task, { value: session })
+      } catch (error) {
+        if (this.active !== task) return
+        if (!this.available(task)) this.cancel((candidate) => candidate === task)
+        else this.finish(task, { error })
+      }
+    }).finally(() => this.drainSoon())
+  }
+
+  private drainSoon(): void {
+    queueMicrotask(() => this.drain())
+  }
+
+  private finish(task: SessionCreationTask<TSession>, outcome: SessionCreationOutcome<TSession>): void {
+    if (this.active !== task || task.phase === "finished") return
+    this.active = null
+    this.settleTask(task, outcome)
   }
 
   private settleTask(task: SessionCreationTask<TSession>, outcome: SessionCreationOutcome<TSession>): void {
