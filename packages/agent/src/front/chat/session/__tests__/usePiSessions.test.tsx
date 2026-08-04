@@ -7,7 +7,7 @@ import {
   activeSessionStorageKey,
   bootResumeSessionStorageKey,
   type ActiveSessionStorageLike,
-} from '../activeSessionStorage'
+} from '../sessionSelectionStorage'
 import { usePiSessions as useAddressedPiSessions, type UsePiSessionsOptions } from '../usePiSessions'
 
 function usePiSessions(options: Omit<UsePiSessionsOptions, 'agentTypeId'> & { agentTypeId?: string }) {

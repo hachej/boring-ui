@@ -12,7 +12,7 @@ import {
   type PiQueueSessionLike,
   type PiQueueSubmitResult,
 } from '../pi/piFollowUpQueueController'
-import type { ActiveSessionStorageLike } from './activeSessionStorage'
+import type { ActiveSessionStorageLike } from './sessionSelectionStorage'
 
 const COMPOSER_SETTINGS_PREFIX = 'boring-agent:v2'
 const DEFAULT_STORAGE_SCOPE = 'default'
