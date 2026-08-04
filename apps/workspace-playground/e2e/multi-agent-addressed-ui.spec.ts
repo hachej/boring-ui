@@ -43,10 +43,13 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
   const seededAlphaSessionId = await createSession("alpha")
   const addressedPaths: string[] = []
   const legacyPaths: string[] = []
+  const apiPrefix = ["", "api", "v1"].join("/")
+  const addressedPrefix = `${apiPrefix}/agents/`
+  const legacyPrefix = `${apiPrefix}/agent/`
   page.on("request", (request) => {
     const path = new URL(request.url()).pathname
-    if (path.startsWith("/api/v1/agents/")) addressedPaths.push(path)
-    if (path.startsWith("/api/v1/agent/")) legacyPaths.push(path)
+    if (path.startsWith(addressedPrefix)) addressedPaths.push(path)
+    if (path.startsWith(legacyPrefix)) legacyPaths.push(path)
   })
 
   await page.goto("/?fresh=1")
@@ -100,7 +103,7 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
   await filter.selectOption("all")
   await expect(alphaRow).toBeVisible()
 
-  expect(addressedPaths.some((path) => path.startsWith("/api/v1/agents/alpha/"))).toBe(true)
-  expect(addressedPaths.some((path) => path.startsWith("/api/v1/agents/beta/"))).toBe(true)
+  expect(addressedPaths.some((path) => path.startsWith(`${addressedPrefix}alpha/`))).toBe(true)
+  expect(addressedPaths.some((path) => path.startsWith(`${addressedPrefix}beta/`))).toBe(true)
   expect(legacyPaths).toEqual([])
 })
