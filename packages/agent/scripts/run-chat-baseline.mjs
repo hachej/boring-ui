@@ -29,7 +29,7 @@ const unitTests = [
   "src/front/__tests__/toolRenderers.pi.test.tsx",
   "src/front/primitives/__tests__/message.test.tsx",
   "src/front/primitives/__tests__/tool-call-group.test.tsx",
-  "src/server/http/routes/__tests__/piChat.test.ts",
+  "src/server/agent-host/__tests__/httpProjection.test.ts",
   "src/server/pi-chat/__tests__/harnessPiChatService.test.ts",
   "src/server/pi-chat/__tests__/harnessPiChatService.realLoop.test.ts",
   "src/server/pi-chat/__tests__/PiAgentSessionAdapter.test.ts",
