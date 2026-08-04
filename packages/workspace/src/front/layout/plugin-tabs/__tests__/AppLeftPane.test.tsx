@@ -1,5 +1,5 @@
 import { useEffect } from "react"
-import { act, fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
 import { workspaceSessionKey } from "../../../sessionIdentity"
@@ -42,6 +42,22 @@ describe("AppLeftPane", () => {
     const badge = document.querySelector('[data-boring-badge="working"]')
     expect(badge).toBeInTheDocument()
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
+  })
+
+  it("requests current working state when the session list mounts after the chat panel", async () => {
+    const onRequest = () => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+      detail: { sessionId: "s2", working: true },
+    }))
+    window.addEventListener("boring:chat-session-status-request", onRequest)
+
+    try {
+      renderPane()
+
+      await waitFor(() => expect(document.querySelector('[data-boring-badge="working"]')
+        ?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session"))
+    } finally {
+      window.removeEventListener("boring:chat-session-status-request", onRequest)
+    }
   })
 
   it("shows a hover action for creating a quick popover chat", () => {
