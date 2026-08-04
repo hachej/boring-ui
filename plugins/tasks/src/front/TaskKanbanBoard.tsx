@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react"
 import { Columns3, List } from "lucide-react"
-import type { BoringTaskAdapter, BoringTaskBoardConfig, BoringTaskCard, BoringTaskColumn } from "../shared"
+import type { BoringTaskAdapter, BoringTaskBoardConfig, BoringTaskCard, BoringTaskColumn, BoringTaskErrorCode, BoringTaskSourceError } from "../shared"
 import { groupTasksByColumn } from "./taskBoardModel"
 import { TaskCard } from "./TaskCard"
 import { TaskKanbanColumn } from "./TaskKanbanColumn"
@@ -12,9 +12,13 @@ interface TaskKanbanBoardProps {
 interface BoardState {
   configs: Record<string, BoringTaskBoardConfig>
   tasks: BoringTaskCard[]
+  errors: Record<string, BoringTaskSourceError>
 }
 
-interface CachedBoardState extends BoardState {
+interface CachedBoardState {
+  configs: Record<string, BoringTaskBoardConfig>
+  tasks: BoringTaskCard[]
+  errors: Record<string, BoringTaskSourceError>
   cachedAt: number
 }
 
@@ -71,6 +75,9 @@ function readCachedBoardState(cacheKey: string): CachedBoardState | null {
     return {
       configs: parsed.configs as Record<string, BoringTaskBoardConfig>,
       tasks: parsed.tasks as BoringTaskCard[],
+      errors: parsed.errors && typeof parsed.errors === "object"
+        ? parsed.errors as Record<string, BoringTaskSourceError>
+        : {},
       cachedAt: typeof parsed.cachedAt === "number" ? parsed.cachedAt : 0,
     }
   } catch {
@@ -81,7 +88,14 @@ function readCachedBoardState(cacheKey: string): CachedBoardState | null {
 function writeCachedBoardState(cacheKey: string, state: BoardState): void {
   if (typeof window === "undefined") return
   try {
-    window.localStorage.setItem(cacheKey, JSON.stringify({ ...state, cachedAt: Date.now() } satisfies CachedBoardState))
+    window.localStorage.setItem(cacheKey, JSON.stringify({
+      configs: state.configs,
+      tasks: state.tasks,
+      errors: state.errors,
+      // A failed source must reconcile immediately on remount; never make its
+      // stale data look fresh merely because another source succeeded.
+      cachedAt: Object.keys(state.errors).length > 0 ? 0 : Date.now(),
+    } satisfies CachedBoardState))
   } catch {
     // Best-effort cache only.
   }
@@ -93,6 +107,19 @@ function readViewMode(cacheKey: string): TaskBoardViewMode {
     return window.localStorage.getItem(`${cacheKey}:view`) === "list" ? "list" : "kanban"
   } catch {
     return "kanban"
+  }
+}
+
+function sourceError(adapterId: string, cause: unknown, stale: boolean): BoringTaskSourceError {
+  const typed = cause && typeof cause === "object"
+    ? cause as { code?: unknown; retryable?: unknown; message?: unknown }
+    : undefined
+  return {
+    sourceId: adapterId,
+    code: typeof typed?.code === "string" ? typed.code as BoringTaskErrorCode : "TASK_SOURCE_ERROR",
+    message: typeof typed?.message === "string" ? typed.message : "Task source request failed.",
+    retryable: typed?.retryable === true || !typed?.code,
+    stale,
   }
 }
 
@@ -114,7 +141,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     [cachedState],
   )
   const [selectedAdapterIds, setSelectedAdapterIds] = useState<ReadonlySet<string>>(() => new Set(allAdapterIds))
-  const [state, setState] = useState<BoardState | null>(() => cachedState ? { configs: cachedState.configs, tasks: cachedState.tasks } : null)
+  const [state, setState] = useState<BoardState | null>(() => cachedState ? { configs: cachedState.configs, tasks: cachedState.tasks, errors: cachedState.errors } : null)
   const [visibleColumnIds, setVisibleColumnIds] = useState<ReadonlySet<string>>(cachedColumnIds)
   const [tagFilter, setTagFilter] = useState("all")
   const [epicFilter, setEpicFilter] = useState("all")
@@ -127,6 +154,8 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const [viewMode, setViewModeState] = useState<TaskBoardViewMode>(() => readViewMode(cacheKey))
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<ReadonlySet<string>>(new Set())
   const requestSeq = useRef(0)
+  const stateRef = useRef(state)
+  stateRef.current = state
   const toolbarRef = useRef<HTMLDivElement | null>(null)
   const adaptersById = useMemo(() => new Map(adapters.map((adapter) => [adapter.id, adapter])), [adapters])
 
@@ -143,18 +172,23 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     })
   }, [adaptersById, allAdapterIds])
 
-  const load = useCallback(async (options: { force?: boolean } = {}) => {
+  const load = useCallback(async (options: { force?: boolean; sourceIds?: readonly string[] } = {}) => {
     if (adapters.length === 0) {
       setState(null)
+      stateRef.current = null
       setLoading(false)
       setError("No task adapters are registered.")
       return
     }
     const cached = readCachedBoardState(cacheKey)
-    const cacheFresh = cached && Date.now() - cached.cachedAt < TASK_BOARD_CACHE_TTL_MS
-    if (cached && !options.force) {
+    const cacheFresh = cached
+      && Object.keys(cached.errors).length === 0
+      && Date.now() - cached.cachedAt < TASK_BOARD_CACHE_TTL_MS
+    if (cached && !options.force && !options.sourceIds) {
       const columnIds = new Set(Object.values(cached.configs).flatMap((config) => config.columns.map((column) => column.id)))
-      setState({ configs: cached.configs, tasks: cached.tasks })
+      const cachedBoard = { configs: cached.configs, tasks: cached.tasks, errors: cached.errors }
+      setState(cachedBoard)
+      stateRef.current = cachedBoard
       setVisibleColumnIds((current) => current.size > 0 ? current : columnIds)
       if (cacheFresh) {
         setLoading(false)
@@ -163,33 +197,48 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
       }
     }
 
+    const requested = options.sourceIds
+      ? adapters.filter((adapter) => options.sourceIds?.includes(adapter.id))
+      : adapters
     const requestId = requestSeq.current + 1
     requestSeq.current = requestId
     setLoading(true)
     setError(null)
-    try {
-      const entries = await Promise.all(adapters.map(async (adapter) => {
+    const entries = await Promise.all(requested.map(async (adapter) => {
+      try {
         const [config, tasks] = await Promise.all([adapter.getBoardConfig(), adapter.listTasks()])
-        return { adapterId: adapter.id, config, tasks }
-      }))
-      if (requestSeq.current !== requestId) return
-      const configs = Object.fromEntries(entries.map((entry) => [entry.adapterId, entry.config]))
-      const tasks = entries.flatMap((entry) => entry.tasks)
-      const columnIds = new Set(entries.flatMap((entry) => entry.config.columns.map((column) => column.id)))
-      const nextState = { configs, tasks }
-      setState(nextState)
-      writeCachedBoardState(cacheKey, nextState)
-      setVisibleColumnIds(columnIds)
+        return { ok: true as const, adapterId: adapter.id, config, tasks }
+      } catch (cause) {
+        return { ok: false as const, adapterId: adapter.id, cause }
+      }
+    }))
+    if (requestSeq.current !== requestId) return
+
+    const previous = stateRef.current ?? { configs: {}, tasks: [], errors: {} }
+    const configs = { ...previous.configs }
+    const errors = { ...previous.errors }
+    let tasks = previous.tasks
+    for (const entry of entries) {
+      if (entry.ok) {
+        configs[entry.adapterId] = entry.config
+        tasks = tasks.filter((task) => task.adapterId !== entry.adapterId).concat(entry.tasks)
+        delete errors[entry.adapterId]
+      } else {
+        const stale = Boolean(configs[entry.adapterId] || tasks.some((task) => task.adapterId === entry.adapterId))
+        errors[entry.adapterId] = sourceError(entry.adapterId, entry.cause, stale)
+      }
+    }
+    const nextState = { configs, tasks, errors }
+    stateRef.current = nextState
+    setState(nextState)
+    writeCachedBoardState(cacheKey, nextState)
+    const columnIds = new Set(Object.values(configs).flatMap((config) => config.columns.map((column) => column.id)))
+    setVisibleColumnIds((current) => options.sourceIds && current.size > 0 ? current : columnIds)
+    if (!options.sourceIds) {
       setTagFilter("all")
       setEpicFilter("all")
-    } catch (cause) {
-      if (requestSeq.current === requestId) {
-        setError(cause instanceof Error ? cause.message : String(cause))
-        setState((current) => current ?? null)
-      }
-    } finally {
-      if (requestSeq.current === requestId) setLoading(false)
     }
+    setLoading(false)
   }, [adapters, cacheKey])
 
   useEffect(() => {
@@ -208,6 +257,9 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     if (!state) return []
     return state.tasks.filter((task) => selectedAdapterIds.has(task.adapterId))
   }, [selectedAdapterIds, state])
+  const selectedSourceErrors = useMemo(() => (
+    state ? Object.values(state.errors).filter((failure) => selectedAdapterIds.has(failure.sourceId)) : []
+  ), [selectedAdapterIds, state])
 
   const tags = useMemo(() => uniqueTags(selectedTasks), [selectedTasks])
   const epics = useMemo(() => uniqueEpics(selectedTasks), [selectedTasks])
@@ -468,6 +520,32 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
       {error ? (
         <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
           {error}
+        </div>
+      ) : null}
+
+      {selectedSourceErrors.length > 0 ? (
+        <div className="flex flex-col gap-2" aria-label="Task source errors">
+          {selectedSourceErrors.map((failure) => (
+            <div key={failure.sourceId} className="flex items-start justify-between gap-3 rounded-xl border border-destructive/35 bg-destructive/10 p-3 text-sm">
+              <div className="min-w-0">
+                <div className="font-medium text-foreground">
+                  {adaptersById.get(failure.sourceId)?.label ?? failure.sourceId}
+                  {failure.stale ? " · showing cached data" : ""}
+                </div>
+                <div className="mt-0.5 text-muted-foreground">{failure.message}</div>
+              </div>
+              {failure.retryable ? (
+                <button
+                  type="button"
+                  className="h-8 shrink-0 rounded-lg border border-border bg-background px-3 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                  disabled={loading}
+                  onClick={() => void load({ force: true, sourceIds: [failure.sourceId] })}
+                >
+                  Retry
+                </button>
+              ) : null}
+            </div>
+          ))}
         </div>
       ) : null}
 
