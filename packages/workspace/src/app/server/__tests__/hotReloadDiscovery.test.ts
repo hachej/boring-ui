@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * Regression test: asset manager discovers plugin dirs created AFTER
  * boot. Synthetic, no LLM — proves the reload pipeline works
@@ -32,6 +33,7 @@ describe("synthetic: asset manager discovers newly-created plugin dirs on /reloa
   test("plugin created AFTER boot appears in /api/v1/agent-plugins after /reload", async () => {
     const before = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
     expect(before.json().find((p: { id: string }) => p.id === "synth-after-boot")).toBeUndefined()
+    expect((await app.inject({ method: "GET", url: "/api/v1/agents/default/ready-status" })).statusCode).toBe(200)
 
     const pluginDir = join(workspaceRoot, ".pi", "extensions", "synth-after-boot")
     await mkdir(join(pluginDir, "front"), { recursive: true })
@@ -43,7 +45,7 @@ describe("synthetic: asset manager discovers newly-created plugin dirs on /reloa
       pi: { systemPrompt: "synth" },
     }), "utf8")
 
-    const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+    const reload = await app.inject({ method: "POST", url: "/api/v1/agents/default/reload", payload: { requestId: "hot-reload-discovery" } })
     expect(reload.statusCode).toBe(200)
 
     const after = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })

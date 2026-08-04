@@ -364,6 +364,63 @@ describe("WorkbenchLeftPane", () => {
     expect(onExpand).toHaveBeenCalledTimes(1)
   })
 
+  test("puts Files at the top of the right activity rail", () => {
+    const sources = new WorkspaceSourceRegistry()
+    sources.register("files", { title: "Files", component: () => <div>files body</div> })
+
+    renderLeftPane({
+      sources,
+      children: <WorkbenchLeftPane railOnly railSide="right" />,
+    })
+
+    const rail = screen.getByRole("navigation", { name: "Workspace categories" })
+    const filesButton = screen.getByRole("button", { name: "Files" })
+    const filesSlot = Array.from(rail.children).findIndex((child) => child.contains(filesButton))
+    expect(rail.querySelector('[data-boring-workspace-part="workbench-host-control-slot"]')).not.toBeInTheDocument()
+    expect(filesSlot).toBe(0)
+  })
+
+  test("toggles the source menu from the fixed Files rail slot", () => {
+    const sources = new WorkspaceSourceRegistry()
+    sources.register("files", { title: "Files", component: () => <div>files body</div> })
+    const onCloseSourcePane = vi.fn()
+
+    const { rerender } = renderLeftPane({
+      sources,
+      children: (
+        <WorkbenchLeftPane
+          railSide="right"
+          onCloseSourcePane={onCloseSourcePane}
+        />
+      ),
+    })
+
+    const rail = screen.getByRole("navigation", { name: "Workspace categories" })
+    const filesButton = screen.getByRole("button", { name: "Files" })
+    const expandedSlot = Array.from(rail.children).findIndex((child) => child.contains(filesButton))
+    expect(expandedSlot).toBe(0)
+    expect(screen.queryByRole("button", { name: "Collapse Files" })).not.toBeInTheDocument()
+
+    fireEvent.click(filesButton)
+    expect(onCloseSourcePane).toHaveBeenCalledOnce()
+
+    rerender(
+      <RegistryProvider
+        panelRegistry={new PanelRegistry()}
+        workspaceSourceRegistry={sources}
+        commandRegistry={new CommandRegistry()}
+        surfaceResolverRegistry={new SurfaceResolverRegistry()}
+      >
+        <WorkbenchLeftPane railOnly railSide="right" />
+      </RegistryProvider>,
+    )
+    const collapsedRail = screen.getByRole("navigation", { name: "Workspace categories" })
+    const collapsedFiles = screen.getByRole("button", { name: "Files" })
+    const collapsedSlot = Array.from(collapsedRail.children).findIndex((child) => child.contains(collapsedFiles))
+    expect(collapsedSlot).toBe(expandedSlot)
+    expect(screen.queryByRole("button", { name: "Collapse Files" })).not.toBeInTheDocument()
+  })
+
   test("icon-less categories fall back to an initial-letter glyph", () => {
     const sources = new WorkspaceSourceRegistry()
     sources.register("files", {

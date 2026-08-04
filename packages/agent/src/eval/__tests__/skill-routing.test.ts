@@ -14,7 +14,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { evalAgentPrompt } from "../evalPrompt"
 import { EvalRegex } from "../types"
-import { createTestAgentApp as createAgentApp } from "@agent-test-host"
+import { createTestStandaloneAgentHostApp as createStandaloneAgentHostApp } from "@agent-test-host"
 import type { FastifyInstance } from "fastify"
 
 const HAS_KEY = !!process.env.ANTHROPIC_API_KEY
@@ -57,7 +57,7 @@ describeIf("eval: skill routing", () => {
       MACRO_DECK_SKILL,
     )
 
-    app = await createAgentApp({
+    app = await createStandaloneAgentHostApp({
       workspaceRoot,
       mode: "direct",
       logger: false,
@@ -73,6 +73,7 @@ describeIf("eval: skill routing", () => {
     async () => {
       const result = await evalAgentPrompt({
         app,
+        agentTypeId: "default",
         prompt: "skill: macro-deck\n\ncreate a one-slide deck titled 'Test deck' with the text 'hello world'",
         expect: {
           tool: "write",
@@ -91,6 +92,7 @@ describeIf("eval: skill routing", () => {
     async () => {
       const result = await evalAgentPrompt({
         app,
+        agentTypeId: "default",
         prompt: "what is 2 + 2?",
         expectNoToolCall: true,
         retries: 1,

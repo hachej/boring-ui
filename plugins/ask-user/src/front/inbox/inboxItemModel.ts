@@ -1,4 +1,4 @@
-import type { WorkspaceShellArtifactTarget, WorkspaceShellCapabilityResult, WorkspaceShellAnchorRect } from "@hachej/boring-workspace"
+import type { WorkspaceShellArtifactTarget, WorkspaceShellCapabilityResult, WorkspaceShellAnchorRect, WorkspaceShellSessionRef } from "@hachej/boring-workspace"
 
 export type InboxItemKind = "question" | "review" | "approval" | "notice"
 export type InboxItemStatus = "open" | "resolved" | "dismissed"
@@ -30,6 +30,7 @@ export interface WorkspaceInboxItem {
   description: string
   source: WorkspaceInboxItemSource
   sessionId: string | null
+  agentTypeId?: string | null
   /** True only when sessionId is known to be a local workspace chat session. */
   chatAvailable?: boolean
   targetLabel: string
@@ -48,7 +49,7 @@ export type WorkspaceInboxShellResult = WorkspaceShellCapabilityResult
 
 export interface WorkspaceInboxShellApi {
   openInboxArtifact(item: WorkspaceInboxItem): WorkspaceInboxShellResult
-  openDetachedChat(sessionId: string, options?: { anchor?: WorkspaceShellAnchorRect; title?: string }): WorkspaceInboxShellResult
+  openDetachedChat(ref: WorkspaceShellSessionRef, options?: { anchor?: WorkspaceShellAnchorRect; title?: string }): WorkspaceInboxShellResult
 }
 
 export function inboxItemDate(item: WorkspaceInboxItem): Date {

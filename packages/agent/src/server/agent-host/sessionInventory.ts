@@ -3,13 +3,7 @@ import type { PiChatEvent } from '../../shared/chat'
 import type { AgentSessionActivity, AgentSessionRef, AuthorizedAgentScope, VerifiedAgentScopeClaim } from '../../shared/index'
 import type { SessionSummary } from '../../shared/session'
 import { PiSessionStore } from '../harness/pi-coding-agent/sessions'
-import type { CompiledAgentHostAgentSpec, CreateAgentHostOptions, ResolvedAgentRuntimeScope } from './types'
-
-interface InventoryRuntimeScope extends ResolvedAgentRuntimeScope {
-  readonly compatibility?: {
-    readonly sessionDir?: string
-  }
-}
+import type { CompiledAgentHostAgentSpec, ResolvedAgentRuntimeScope } from './types'
 
 export interface AgentSessionRuntimeAuthority {
   readonly runtimeScope: ResolvedAgentRuntimeScope
@@ -41,8 +35,13 @@ export class AgentSessionInventory {
   private readonly stores = new Map<string, PiSessionStore>()
 
   constructor(
-    private readonly options: Pick<CreateAgentHostOptions, 'resolveRuntimeScope' | 'sessionRoot'>,
+    private readonly sessionRoot: string | undefined,
     private readonly compiledById: ReadonlyMap<string, CompiledAgentHostAgentSpec>,
+    private readonly resolveAgentRuntimeScope: (
+      agentTypeId: string,
+      scope: AuthorizedAgentScope,
+      claim: VerifiedAgentScopeClaim,
+    ) => Promise<ResolvedAgentRuntimeScope>,
   ) {}
 
   async list(
@@ -81,15 +80,15 @@ export class AgentSessionInventory {
     agentTypeId: string,
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
-  ): Promise<{ runtimeScope: InventoryRuntimeScope; store: PiSessionStore } | undefined> {
+  ): Promise<{ runtimeScope: ResolvedAgentRuntimeScope; store: PiSessionStore } | undefined> {
     const agent = this.compiledById.get(agentTypeId)
     if (!agent) return undefined
-    const runtimeScope = await this.options.resolveRuntimeScope({ agentTypeId, scope }) as InventoryRuntimeScope
+    const runtimeScope = await this.resolveAgentRuntimeScope(agentTypeId, scope, claim)
     const sessionNamespace = sessionNamespaceForAgent(agent, claim.workspaceScopeId, runtimeScope.sessionNamespace)
     const candidate = new PiSessionStore(runtimeScope.environment.workspaceRoot, {
-      sessionDir: runtimeScope.compatibility?.sessionDir,
+      sessionDir: runtimeScope.sessionDir,
       sessionNamespace,
-      sessionRoot: this.options.sessionRoot,
+      sessionRoot: this.sessionRoot,
       storageCwd: runtimeScope.environment.workspaceRoot,
     })
     const key = JSON.stringify([agentTypeId, claim.workspaceScopeId, candidate.getSessionDir()])

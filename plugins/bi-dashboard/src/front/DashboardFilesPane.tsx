@@ -12,7 +12,7 @@ interface DashboardSearchState {
 }
 
 interface DashboardSearchResponse {
-  results?: string[]
+  resources?: Array<{ filesystem: string; path: string }>
 }
 
 function titleFromPath(path: string): string {
@@ -54,7 +54,11 @@ export function DashboardFilesPane({ params, openPanel }: DashboardFilesPaneProp
       .then((body) => {
         setState({
           loading: false,
-          paths: [...new Set(body.results ?? [])].filter(isWorkspaceDashboardPath).sort((a, b) => a.localeCompare(b)),
+          paths: [...new Set((body.resources ?? [])
+            .filter((resource) => resource.filesystem === "user")
+            .map((resource) => resource.path))]
+            .filter(isWorkspaceDashboardPath)
+            .sort((a, b) => a.localeCompare(b)),
         })
       })
       .catch((error) => {

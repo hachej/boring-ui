@@ -8,6 +8,7 @@ import {
   TooltipTrigger,
 } from "@hachej/boring-ui-kit";
 import { cn } from "../lib";
+import { INLINE_CODE_CLASS_NAME } from "./markdownStyles";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
@@ -41,7 +42,7 @@ export const Message = ({ className, from, ...props }: MessageProps) => (
   <div
     data-boring-agent-message-role={from}
     className={cn(
-      "group flex w-full max-w-[95%] flex-col gap-2",
+      "group flex w-full max-w-full flex-col gap-1.5",
       from === "user" ? "is-user ml-auto justify-end" : "is-assistant",
       className
     )}
@@ -58,9 +59,9 @@ export const MessageContent = ({
 }: MessageContentProps) => (
   <div
     className={cn(
-      "is-user:dark flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden text-sm",
-      "group-[.is-user]:ml-auto group-[.is-user]:rounded-lg group-[.is-user]:bg-secondary group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:text-foreground",
-      "group-[.is-assistant]:text-foreground",
+      "is-user:dark flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-visible text-[13px] leading-5",
+      "group-[.is-user]:ml-auto group-[.is-user]:max-w-[80%] group-[.is-user]:rounded-[var(--radius-lg)] group-[.is-user]:bg-secondary group-[.is-user]:px-4 group-[.is-user]:py-2.5 group-[.is-user]:text-foreground",
+      "group-[.is-assistant]:w-full group-[.is-assistant]:max-w-[40.5rem] group-[.is-assistant]:bg-transparent group-[.is-assistant]:p-0 group-[.is-assistant]:text-foreground",
       className
     )}
     {...props}
@@ -407,8 +408,7 @@ const MarkdownCode = ({
   return (
     <code
       className={cn(
-        "rounded-[0.3em] bg-muted/55 px-[0.32em] py-[0.08em]",
-        "font-mono text-[0.9em] font-medium text-foreground/90",
+        INLINE_CODE_CLASS_NAME,
         className,
       )}
       {...(props as Record<string, unknown>)}
@@ -438,7 +438,8 @@ export const MessageResponse = memo(
   ),
   (prevProps, nextProps) =>
     prevProps.children === nextProps.children &&
-    nextProps.isAnimating === prevProps.isAnimating
+    nextProps.isAnimating === prevProps.isAnimating &&
+    nextProps.components === prevProps.components
 );
 
 MessageResponse.displayName = "MessageResponse";

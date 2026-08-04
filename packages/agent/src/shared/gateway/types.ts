@@ -129,6 +129,8 @@ export interface AgentPromptCommand {
   readonly clientNonce: string
   readonly content: string
   readonly displayContent?: string
+  /** Require an actually idle Pi session; busy is a retryable admission result. */
+  readonly requireIdle?: true
   readonly model?: ChatModelSelection
   readonly thinkingLevel?: ThinkingLevel
   readonly attachments?: readonly ChatAttachmentPayload[]

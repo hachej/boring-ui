@@ -77,6 +77,27 @@ describe('EnvironmentLeaseManager', () => {
     },
   )
 
+  it('keeps verified storage scope separate from the physical provider workspace id', async () => {
+    const workspaceRoot = await makeRoot()
+    const baseAdapter = createTestRuntimeModeAdapter('direct')
+    const create = vi.fn(baseAdapter.create.bind(baseAdapter))
+    const manager = new EnvironmentLeaseManager({ ...baseAdapter, create })
+
+    const lease = await manager.acquire('historical-storage-scope', {
+      placementIdentity: 'direct:physical-workspace',
+      workspaceRoot,
+      runtimeWorkspaceId: '4b878cac-fff5-4ce0-84f7-e123666ceea8',
+      provisioningFingerprint: 'generation-a',
+    })
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: '4b878cac-fff5-4ce0-84f7-e123666ceea8',
+      workspaceId: '4b878cac-fff5-4ce0-84f7-e123666ceea8',
+    }))
+    lease.release()
+    await manager.close()
+  })
+
   it('reloads only after the final old-generation lease retires', async () => {
     const workspaceRoot = await makeRoot()
     const baseAdapter = createTestRuntimeModeAdapter('direct')

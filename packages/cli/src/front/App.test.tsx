@@ -2,6 +2,7 @@
 import React from "react"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { liveTranscriptPlugin } from "@hachej/boring-transcription/front"
 import { CliWorkspaceShell } from "./App"
 
 const workspaceAgentFrontSpy = vi.fn((props: Record<string, unknown>) => (
@@ -80,7 +81,7 @@ describe("CliWorkspaceShell", () => {
           headers: { "Content-Type": "application/json" },
         })
       }
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
+      if (url.includes("/api/v1/agents/default/sessions")) {
         return new Response(JSON.stringify([]), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -153,6 +154,30 @@ describe("CliWorkspaceShell", () => {
     expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({ workspaceId: "target" })
   })
 
+  test("statically composes live transcription without knowing its commands", async () => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith("/api/v1/workspace/meta")) {
+        return new Response(JSON.stringify({
+          projectName: "Live Folder",
+          liveTranscripts: { ready: true },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }) as typeof fetch
+
+    render(<CliWorkspaceShell />)
+
+    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      plugins: expect.arrayContaining([liveTranscriptPlugin]),
+    })
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).not.toHaveProperty("extraCommands")
+  })
+
   test("enables runtime hot loading without rendering plugin helper pills", async () => {
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
@@ -184,6 +209,7 @@ describe("CliWorkspaceShell", () => {
         expect.any(Function),
         expect.objectContaining({ pluginId: "diagram" }),
         expect.objectContaining({ pluginId: "tasks" }),
+        liveTranscriptPlugin,
       ],
     })
 
@@ -267,11 +293,11 @@ describe("CliWorkspaceShell", () => {
           headers: { "Content-Type": "application/json" },
         })
       }
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
-        return new Response(JSON.stringify([
-          { id: "chat-1", title: "Check Qwen compatibility", updatedAt: "2026-06-15T00:00:00.000Z" },
-          { id: "chat-2", title: "Research account deletion", updatedAt: "2026-06-14T00:00:00.000Z" },
-        ]), {
+      if (url.includes("/api/v1/agents/default/sessions")) {
+        return new Response(JSON.stringify({ sessions: [
+          { ref: { agentTypeId: "default", sessionId: "chat-1" }, title: "Check Qwen compatibility", updatedAt: "2026-06-15T00:00:00.000Z" },
+          { ref: { agentTypeId: "default", sessionId: "chat-2" }, title: "Research account deletion", updatedAt: "2026-06-14T00:00:00.000Z" },
+        ] }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         })
@@ -326,7 +352,7 @@ describe("CliWorkspaceShell", () => {
           headers: { "Content-Type": "application/json" },
         })
       }
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
+      if (url.includes("/api/v1/agents/default/sessions")) {
         return new Response(JSON.stringify([]), {
           status: 200,
           headers: { "Content-Type": "application/json" },

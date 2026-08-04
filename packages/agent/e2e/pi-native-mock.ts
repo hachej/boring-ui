@@ -84,7 +84,7 @@ export async function installPiNativeMock(page: Page): Promise<void> {
     }
     const save = (state: MockState) => localStorage.setItem(stateKey, JSON.stringify(state))
     const sessionIdFromUrl = (url: string) => {
-      const match = url.match(/\/api\/v1\/agent\/pi-chat\/([^/]+)\//)
+      const match = url.match(/\/api\/v1\/agents\/default\/sessions\/([^/]+)\//)
       return match ? decodeURIComponent(match[1] ?? '') : undefined
     }
     const cursorFromUrl = (url: string) => {
@@ -128,13 +128,18 @@ export async function installPiNativeMock(page: Page): Promise<void> {
       headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
     })
     const snapshot = (sessionId: string, state: MockState) => ({
-      protocolVersion: 1,
-      sessionId,
+      ref: { agentTypeId: 'default', sessionId },
       seq: state.seq,
-      status: state.status,
-      messages: state.messages,
-      queue: state.queue,
-      followUpMode: 'one-at-a-time',
+      summary: { ref: { agentTypeId: 'default', sessionId }, title: 'Pi Native E2E', status: state.status, createdAt: Date.parse('2026-06-03T00:00:00.000Z'), updatedAt: Date.parse('2026-06-03T00:00:00.000Z') },
+      state: {
+        protocolVersion: 1,
+        sessionId,
+        seq: state.seq,
+        status: state.status,
+        messages: state.messages,
+        queue: state.queue,
+        followUpMode: 'one-at-a-time',
+      },
     })
     const finalAssistant = (id: string, parts: unknown[]) => ({ id, role: 'assistant' as const, status: 'done', parts })
     const emitPiE2E = (frame: unknown) => emit('pi-e2e', frame)
@@ -157,7 +162,7 @@ export async function installPiNativeMock(page: Page): Promise<void> {
       const method = init?.method ?? (input instanceof Request ? input.method : 'GET')
       const state = load()
 
-      if (pathname.endsWith('/api/v1/agent/models') && method === 'GET') {
+      if (pathname.endsWith('/api/v1/agents/default/models') && method === 'GET') {
         return json({
           models: [
             { provider: 'anthropic', id: 'claude-sonnet', label: 'Claude Sonnet', available: true },
@@ -168,7 +173,7 @@ export async function installPiNativeMock(page: Page): Promise<void> {
           defaultModel: { provider: 'anthropic', id: 'claude-sonnet' },
         })
       }
-      if (pathname.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'GET') {
+      if (pathname.endsWith('/api/v1/agents/default/sessions') && method === 'GET') {
         state.sessionListRequests = (state.sessionListRequests ?? 0) + 1
         if ((state.sessionList503Remaining ?? 0) > 0) {
           state.sessionList503Remaining = (state.sessionList503Remaining ?? 0) - 1
@@ -177,18 +182,25 @@ export async function installPiNativeMock(page: Page): Promise<void> {
           return json({ error: { message: 'preparing' } }, { status: 503 })
         }
         save(state)
-        return json(state.sessions ?? [{ id: 'pi-e2e', title: 'Pi Native E2E', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: state.messages.length }])
+        const sessions = state.sessions ?? [{ id: 'pi-e2e', title: 'Pi Native E2E', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: state.messages.length }]
+        return json({ sessions: sessions.map((session) => ({
+          ref: { agentTypeId: 'default', sessionId: session.id },
+          title: session.title,
+          status: 'idle',
+          createdAt: Date.parse(session.createdAt),
+          updatedAt: Date.parse(session.updatedAt),
+        })) })
       }
-      if (pathname.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'POST') {
+      if (pathname.endsWith('/api/v1/agents/default/sessions') && method === 'POST') {
         state.sessionCreates = (state.sessionCreates ?? 0) + 1
         save(state)
-        return json({ id: 'pi-e2e-new', title: 'New Pi Native E2E', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 0 }, { status: 201 })
+        return json({ agentTypeId: 'default', sessionId: 'pi-e2e-new' }, { status: 201 })
       }
       const sessionId = sessionIdFromUrl(url)
-      if (sessionId && url.includes(`/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/state`)) {
+      if (sessionId && url.includes(`/api/v1/agents/default/sessions/${encodeURIComponent(sessionId)}/state`)) {
         return json(snapshot(sessionId, readSessionState(state, sessionId)))
       }
-      if (sessionId && url.includes(`/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/events`)) {
+      if (sessionId && url.includes(`/api/v1/agents/default/sessions/${encodeURIComponent(sessionId)}/events`)) {
         const cursor = cursorFromUrl(url)
         state.eventStreamRequests = [...(state.eventStreamRequests ?? []), { sessionId, cursor }]
         const sessionState = readSessionState(state, sessionId)
@@ -230,8 +242,9 @@ export async function installPiNativeMock(page: Page): Promise<void> {
         })
         return new Response(stream, { status: 200, headers: { 'content-type': 'application/x-ndjson' } })
       }
-      if (url.includes('/api/v1/agent/pi-chat/pi-e2e/prompt') && method === 'POST') {
-        const payload = JSON.parse(String(init?.body ?? '{}')) as { message: string; clientNonce: string; model?: unknown; thinkingLevel?: unknown }
+      if (url.includes('/api/v1/agents/default/sessions/pi-e2e/prompt') && method === 'POST') {
+        const payload = JSON.parse(String(init?.body ?? '{}')) as { requestId: string; content: string; clientNonce: string; model?: unknown; thinkingLevel?: unknown }
+        if (!payload.requestId || !payload.clientNonce || typeof payload.content !== 'string') throw new Error('invalid addressed prompt body')
         if ((state.promptResponseDelayMs ?? 0) > 0) {
           await new Promise((resolve) => setTimeout(resolve, state.promptResponseDelayMs))
         }
@@ -260,7 +273,7 @@ export async function installPiNativeMock(page: Page): Promise<void> {
         const textId = `t${turnIndex}`
         state.status = 'streaming'
         nextSeq(state); emitPiE2E({ type: 'agent-start', seq: state.seq, turnId: `turn-${turnIndex}` })
-        nextSeq(state); emitPiE2E({ type: 'message-start', seq: state.seq, messageId: userId, role: 'user', clientNonce: payload.clientNonce, text: payload.message })
+        nextSeq(state); emitPiE2E({ type: 'message-start', seq: state.seq, messageId: userId, role: 'user', clientNonce: payload.clientNonce, text: payload.content })
         nextSeq(state); emitPiE2E({ type: 'message-start', seq: state.seq, messageId: assistantId, role: 'assistant' })
         nextSeq(state); emitPiE2E({ type: 'message-delta', seq: state.seq, messageId: assistantId, partId: reasoningId, kind: 'reasoning', delta: 'Reasoning visible' })
         nextSeq(state); emitPiE2E({ type: 'message-part-end', seq: state.seq, messageId: assistantId, partId: reasoningId, kind: 'reasoning', text: 'Reasoning visible' })
@@ -318,16 +331,17 @@ export async function installPiNativeMock(page: Page): Promise<void> {
         save(state)
         return json({ accepted: true, cursor: state.seq, clientNonce: payload.clientNonce })
       }
-      if (url.includes('/api/v1/agent/pi-chat/pi-e2e/followup') && method === 'POST') {
-        const payload = JSON.parse(String(init?.body ?? '{}')) as { message: string; clientNonce: string; clientSeq: number }
+      if (url.includes('/api/v1/agents/default/sessions/pi-e2e/followup') && method === 'POST') {
+        const payload = JSON.parse(String(init?.body ?? '{}')) as { requestId: string; content: string; clientNonce: string; clientSeq: number }
+        if (!payload.requestId || !payload.clientNonce || typeof payload.content !== 'string') throw new Error('invalid addressed follow-up body')
         state.followups.push({ message: '<redacted>', clientSeq: payload.clientSeq, clientNonce: payload.clientNonce })
         state.status = 'streaming'
-        state.queue.followUps.push({ id: `q${payload.clientSeq}`, kind: 'followup', displayText: payload.message, clientSeq: payload.clientSeq, clientNonce: payload.clientNonce })
+        state.queue.followUps.push({ id: `q${payload.clientSeq}`, kind: 'followup', displayText: payload.content, clientSeq: payload.clientSeq, clientNonce: payload.clientNonce })
         nextSeq(state); emitPiE2E({ type: 'queue-updated', seq: state.seq, queue: state.queue })
         save(state)
         return json({ accepted: true, cursor: state.seq, clientNonce: payload.clientNonce, clientSeq: payload.clientSeq, queued: true })
       }
-      if (url.includes('/api/v1/agent/pi-chat/pi-e2e/queue/clear') && method === 'POST') {
+      if (url.includes('/api/v1/agents/default/sessions/pi-e2e/queue/clear') && method === 'POST') {
         const payload = JSON.parse(String(init?.body ?? '{}')) as { clientNonce?: string; clientSeq?: number }
         const before = state.queue.followUps.length
         if (payload.clientNonce || payload.clientSeq !== undefined) {
@@ -344,7 +358,7 @@ export async function installPiNativeMock(page: Page): Promise<void> {
         save(state)
         return json({ accepted: true, cursor: state.seq, cleared })
       }
-      if (url.includes('/api/v1/agent/pi-chat/pi-e2e/stop') && method === 'POST') {
+      if (url.includes('/api/v1/agents/default/sessions/pi-e2e/stop') && method === 'POST') {
         state.stops += 1
         state.status = 'idle'
         const clearedQueue = state.queue.followUps
@@ -353,7 +367,7 @@ export async function installPiNativeMock(page: Page): Promise<void> {
         save(state)
         return json({ accepted: true, cursor: state.seq, stopped: true, clearedQueue })
       }
-      if (url.includes('/api/v1/agent/pi-chat/pi-e2e/interrupt') && method === 'POST') {
+      if (url.includes('/api/v1/agents/default/sessions/pi-e2e/interrupt') && method === 'POST') {
         state.interrupts += 1
         state.status = 'idle'
         nextSeq(state); emitPiE2E({ type: 'agent-end', seq: state.seq, turnId: 'turn-1', status: 'aborted' })
@@ -387,7 +401,7 @@ export async function installPiNativeMock(page: Page): Promise<void> {
         save(state)
         return json({ accepted: true, cursor: state.seq })
       }
-      if (pathname.endsWith('/api/v1/agent/reload') && method === 'POST') {
+      if (pathname.endsWith('/api/v1/agents/default/reload') && method === 'POST') {
         state.reloads += 1
         save(state)
         window.dispatchEvent(new CustomEvent('boring-ui:agent-plugins-reloaded', { detail: { reloaded: true, diagnostics: [] } }))

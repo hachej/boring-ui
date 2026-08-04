@@ -12,6 +12,11 @@ export default defineConfig({
       "@hachej/boring-agent/server": fileURLToPath(new URL("./src/server/index.ts", import.meta.url)),
       "@hachej/boring-agent/shared": fileURLToPath(new URL("./src/shared/index.ts", import.meta.url)),
       "@agent-test-host": fileURLToPath(new URL("./test-host/sandbox.ts", import.meta.url)),
+      "@hachej/boring-sandbox/shared": fileURLToPath(new URL("../boring-sandbox/src/shared/index.ts", import.meta.url)),
+      "@hachej/boring-sandbox/providers/direct": fileURLToPath(new URL("../boring-sandbox/src/providers/direct/index.ts", import.meta.url)),
+      "@hachej/boring-sandbox/providers/bwrap": fileURLToPath(new URL("../boring-sandbox/src/providers/bwrap/index.ts", import.meta.url)),
+      "@hachej/boring-sandbox/providers/node-workspace": fileURLToPath(new URL("../boring-sandbox/src/providers/node-workspace/index.ts", import.meta.url)),
+      "@hachej/boring-sandbox/providers/vercel-sandbox": fileURLToPath(new URL("../boring-sandbox/src/providers/vercel-sandbox/index.ts", import.meta.url)),
     },
   },
   test: {

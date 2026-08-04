@@ -18,12 +18,20 @@ export interface ChatPanePendingPlacement {
   direction: ChatPaneSplitDirection
 }
 
+export interface ChatPaneSessionActions {
+  isPinned: (id: string) => boolean
+  onTogglePin: (id: string) => void
+  onRename?: (id: string, currentTitle: string) => void | Promise<void>
+  onDelete?: (id: string) => void | Promise<void>
+}
+
 export interface ChatPaneStageProps {
   panes: ChatPaneDescriptor[]
   activePaneId?: string | null
   renderPane: (pane: ChatPaneDescriptor) => ReactNode
   /** Optional host actions rendered in each chat pane header. */
   topActions?: ReactNode
+  sessionActions?: ChatPaneSessionActions
   /** Create a new chat pane split from the requested pane. */
   onSplitPane?: (id: string, direction: ChatPaneSplitDirection) => void
   /** Disable split controls while a previous pane creation is unresolved. */

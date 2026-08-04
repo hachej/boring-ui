@@ -38,9 +38,9 @@ The agent tool requires explicit `provider:model-id` syntax for model-bearing `c
 
 Existing UI and HTTP routes retain compatibility with legacy unqualified saved model values. Those values remain editable but fail safely when run until corrected. The tool does not silently guess a provider.
 
-## Local and hosted execution
-
 Every mode stores the canonical prompt as a normal workspace Markdown file at `.agents/automation/<automation-id>.md`. PostgreSQL stores hosted automation metadata only; the prompt path is derived deterministically from the automation id, and runtime reads use the workspace file.
+
+## Local and hosted execution
 
 Local CLI support includes:
 
@@ -51,15 +51,17 @@ Local CLI support includes:
 - partial live usage totals when providers emit usage events;
 - deterministic current-minute cron evaluation invoked through the loopback due endpoint.
 
-Scheduling has no background timer. User-owned cron/systemd may invoke `POST /api/v1/boring-automation/due` once per minute while the CLI server is running. Missed minutes are not backfilled.
+Local scheduling has no background timer. User-owned cron/systemd may invoke `POST /api/v1/boring-automation/due` once per minute while the CLI server is running. Missed minutes are not backfilled.
 
-Hosted metadata persistence and creator-scoped execution are available in full-app. The deployment migration removes the unused prototype prompt columns if they exist. Configure `BORING_AUTOMATION_TRIGGER_TOKEN` and have the platform scheduler invoke `POST /api/v1/boring-automation/due/hosted` with `Authorization: Bearer <token>`. The endpoint re-checks each creator and fails closed when authorization is lost.
+Hosted persistence and creator-scoped execution are available in full-app. The deployment migration callback is `runBoringAutomationMigrations`. When hosted due execution is composed, the plugin starts an internal Croner wake-up once per minute and evaluates the current minute once at startup. Every tick re-checks each creator, prevents process-local overlap, and relies on database active-run and scheduled-minute constraints as the cross-process execution guard. Active executors heartbeat durable run rows every 30 seconds; each hosted tick terminalizes active rows whose heartbeat is more than five minutes stale before evaluating new work. This releases automations abandoned by an ungraceful worker exit without terminating healthy runs owned by another replica. Fastify shutdown stops future timer ticks without waiting for an active execution; durable heartbeat reconciliation owns interrupted runs across deploys or crashes. The timer is unreferenced so it cannot keep Node alive by itself.
+
+Set `BORING_AUTOMATION_INTERNAL_SCHEDULER=false` (or compose `hostedSchedulerEnabled: false`) when a multi-replica deployment intentionally owns wake-ups externally. For that mode, configure `BORING_AUTOMATION_TRIGGER_TOKEN` and invoke `POST /api/v1/boring-automation/due/hosted` with `Authorization: Bearer <token>`. The authenticated endpoint remains available as an operational fallback when the internal scheduler is enabled.
 
 ## Enable gate and rollback
 
 The trusted server plugin enables the agent tool by default. Host composition can set `agentToolEnabled: false` at boot to remove only `boring_automation`; UI, HTTP routes, stored automations, prompts, runs, and sessions remain available. Server tool changes and gate changes require a host restart; `/reload` only affects runtime plugin resources.
 
-Prompt rollback uses the normal workspace file history/backups; PostgreSQL does not mirror prompt bodies.
+Rollback is capability-only: disable/remove the tool contribution and restart. No data migration or deletion is required. Prompt rollback uses the normal workspace file history/backups; PostgreSQL does not mirror prompt bodies.
 
 ## Deterministic UI review
 

@@ -16,7 +16,12 @@ export {
 } from "./defineServerPlugin"
 export { compactPiPackages } from "./piPackages"
 export { definePluginAsset, resolvePluginAssetPath } from "./assets"
-export type { WorkspaceBridgeHandlerContribution, WorkspaceServerPlugin, WorkspaceServerPluginAsset } from "./defineServerPlugin"
+export type {
+  WorkspaceAgentReloadBlock,
+  WorkspaceBridgeHandlerContribution,
+  WorkspaceServerPlugin,
+  WorkspaceServerPluginAsset,
+} from "./defineServerPlugin"
 export type { WorkspacePiPackageSource } from "./piPackages"
 
 export interface ServerBootstrapOptions {
@@ -37,6 +42,11 @@ export type WorkspaceRouteContribution = {
   routes: FastifyPluginAsync
 }
 
+export type WorkspaceAgentReloadBlocker = {
+  id: string
+  getBlock: NonNullable<WorkspaceServerPlugin["getAgentReloadBlock"]>
+}
+
 export interface ServerBootstrapResult {
   registered: string[]
   systemPromptAppend: string
@@ -46,6 +56,7 @@ export interface ServerBootstrapResult {
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
+  agentReloadBlockers: WorkspaceAgentReloadBlocker[]
   workspaceBridgeHandlers: WorkspaceBridgeHandlerContribution[]
   preservedUiStateKeys: string[]
 }
@@ -96,6 +107,10 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     .filter((p) => p.routes)
     .map((p) => ({ id: p.id, routes: p.routes! }))
 
+  const agentReloadBlockers = finalPlugins
+    .filter((p) => p.getAgentReloadBlock)
+    .map((p) => ({ id: p.id, getBlock: p.getAgentReloadBlock! }))
+
   const workspaceBridgeHandlers = finalPlugins.flatMap((p) => p.workspaceBridgeHandlers ?? [])
 
   const preservedUiStateKeys = [...new Set(finalPlugins.flatMap((p) => p.preservedUiStateKeys ?? []))]
@@ -109,6 +124,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     runtimePlugins,
     provisioningContributions,
     routeContributions,
+    agentReloadBlockers,
     workspaceBridgeHandlers,
     preservedUiStateKeys,
   }

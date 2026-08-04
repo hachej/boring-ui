@@ -113,6 +113,7 @@ export type {
   WorkspaceShellArtifactTarget,
   WorkspaceShellCapabilityResult,
   WorkspaceShellCapabilities,
+  WorkspaceShellSessionRef,
 } from "./shared/plugins/workspaceShellCapabilities"
 export { getFileIcon } from "./front/registry"
 export type {

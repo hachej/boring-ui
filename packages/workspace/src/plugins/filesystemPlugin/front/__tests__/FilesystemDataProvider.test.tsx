@@ -35,7 +35,7 @@ describe("filesystem data provider auth snapshots", () => {
     vi.stubGlobal("fetch", fetchMock)
     const headers = { Authorization: "Bearer one" }
     const renderWorkspace = (authScopeKey: string) => (
-      <WorkspaceProvider authHeaders={headers} authScopeKey={authScopeKey} persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" authHeaders={headers} authScopeKey={authScopeKey} persistenceEnabled={false}>
         <Probe />
       </WorkspaceProvider>
     )

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { boringAutomationPlugin } from "@hachej/boring-automation/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
+import { liveTranscriptPlugin } from "@hachej/boring-transcription/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
 import * as WorkspaceSingleton from "@hachej/boring-workspace"
 import * as WorkspaceEventsSingleton from "@hachej/boring-workspace/events"
@@ -46,6 +47,7 @@ interface LocalWorkspace {
 
 interface ProjectSessionSummary {
   id: string
+  agentTypeId: string
   title?: string | null
   updatedAt?: string | number
 }
@@ -122,24 +124,28 @@ function piActiveSessionStorageKey(workspaceId: string): string {
 function toProjectSessionSummary(value: unknown): ProjectSessionSummary | null {
   if (typeof value !== "object" || value === null) return null
   const record = value as Record<string, unknown>
-  if (typeof record.id !== "string" || record.id.length === 0) return null
+  const ref = record.ref as { agentTypeId?: unknown; sessionId?: unknown } | undefined
+  if (typeof ref?.agentTypeId !== "string" || typeof ref.sessionId !== "string" || ref.sessionId.length === 0) return null
   return {
-    id: record.id,
+    id: ref.sessionId,
+    agentTypeId: ref.agentTypeId,
     title: typeof record.title === "string" ? record.title : "Untitled",
     updatedAt: typeof record.updatedAt === "string" || typeof record.updatedAt === "number" ? record.updatedAt : undefined,
   }
 }
 
 async function fetchProjectSessionOverview(workspaceId: string): Promise<ProjectSessionSummary[]> {
+  const agentTypeId = "default"
   const query = new URLSearchParams({ limit: String(PROJECT_SESSION_PREVIEW_FETCH_LIMIT) })
-  const response = await fetch(`/api/v1/agent/pi-chat/sessions?${query.toString()}`, {
+  const response = await fetch(`/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions?${query.toString()}`, {
     headers: { "x-boring-workspace-id": workspaceId },
   })
   if (!response.ok) throw new Error(`sessions ${response.status}`)
   const payload = await response.json()
-  return Array.isArray(payload)
-    ? payload.map(toProjectSessionSummary).filter((session): session is ProjectSessionSummary => Boolean(session))
+  const sessions = typeof payload === "object" && payload !== null && Array.isArray((payload as { sessions?: unknown }).sessions)
+    ? (payload as { sessions: unknown[] }).sessions
     : []
+  return sessions.map(toProjectSessionSummary).filter((session): session is ProjectSessionSummary => Boolean(session))
 }
 
 export function CliVersionBadge({ version }: { version?: string | null }) {
@@ -314,6 +320,7 @@ export function CliWorkspaceShell() {
     boringAutomationPlugin,
     diagramPlugin,
     createTasksPlugin(),
+    liveTranscriptPlugin,
   ], [workspacesMode])
   const activeWorkspaceRequestHeaders = useMemo(
     () => activeWorkspaceId ? { "x-boring-workspace-id": activeWorkspaceId } : null,
@@ -443,6 +450,7 @@ export function CliWorkspaceShell() {
     return (
       <WorkspaceAgentFront
         key={activeWorkspace.id}
+        agentTypeId="default"
         workspaceId={activeWorkspace.id}
         workspaceLabel={activeWorkspace.name}
         workspaceSectionTitle="Projects"
@@ -493,6 +501,7 @@ export function CliWorkspaceShell() {
 
   return (
     <WorkspaceAgentFront
+      agentTypeId="default"
       workspaceId={projectName}
       plugins={plugins}
       apiBaseUrl=""

@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 /**
  * Live-LLM regression: open a file, simulate the user closing the tab, ask
  * the agent to open the same file again. The agent MUST call exec_ui
@@ -42,15 +44,28 @@ async function setUiState(
   }
 }
 
+async function createChatSession(app: FastifyInstance, title: string): Promise<string> {
+  const requestId = `create-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/agents/default/sessions",
+    payload: { requestId, title },
+  })
+  if (response.statusCode !== 201) throw new Error(`POST /sessions returned ${response.statusCode}: ${response.body}`)
+  return response.json<{ sessionId: string }>().sessionId
+}
+
 async function readChatState(app: FastifyInstance, sessionId: string): Promise<Record<string, unknown>> {
   const res = await app.inject({
     method: "GET",
-    url: `/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/state`,
+    url: `/api/v1/agents/default/sessions/${encodeURIComponent(sessionId)}/state`,
   })
   if (res.statusCode !== 200) {
     throw new Error(`GET /pi-chat/state returned ${res.statusCode}: ${res.body}`)
   }
-  return JSON.parse(res.body) as Record<string, unknown>
+  const envelope = JSON.parse(res.body) as { state?: Record<string, unknown> }
+  if (!envelope.state) throw new Error("addressed state response omitted state")
+  return envelope.state
 }
 
 function captureTurn(messages: unknown[], fromIndex: number): { calls: ToolCall[]; text: string } {
@@ -84,8 +99,12 @@ async function sendTurn(
 
   const res = await app.inject({
     method: "POST",
-    url: `/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/prompt`,
-    payload: { message, clientNonce: `turn-${Date.now()}-${Math.random().toString(36).slice(2)}` },
+    url: `/api/v1/agents/default/sessions/${encodeURIComponent(sessionId)}/prompt`,
+    payload: {
+      requestId: `turn-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      content: message,
+      clientNonce: `turn-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    },
   })
   if (res.statusCode !== 202 && res.statusCode !== 200) {
     throw new Error(`POST /pi-chat/prompt returned ${res.statusCode}: ${res.body}`)
@@ -130,7 +149,7 @@ describeIf("exec_ui openFile — re-open after close (live LLM)", () => {
   test(
     "agent re-calls exec_ui openFile after the tab is closed",
     async () => {
-      const sessionId = `reopen-${Date.now()}`
+      const sessionId = await createChatSession(app, "Re-open after close")
 
       // Turn 1: empty workspace, ask to open the file.
       await setUiState(app, { workbenchOpen: true, openTabs: [], activeTab: null })
@@ -183,7 +202,7 @@ describeIf("exec_ui openFile — re-open after close (live LLM)", () => {
       // says the file IS already open, but the user typed "open readme"
       // again — they want it focused, not a "Already done" reply. The agent
       // must call exec_ui regardless of what state says.
-      const sessionId = `reopen-stateopen-${Date.now()}`
+      const sessionId = await createChatSession(app, "Re-open while state says open")
 
       // Pre-set state: README.md is already in openTabs and active.
       await setUiState(app, {

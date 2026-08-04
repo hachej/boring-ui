@@ -46,6 +46,32 @@ describe("PostgresAutomationStore actor isolation", () => {
     }
   })
 
+  it("pushes the requested run-history limit into Postgres", async () => {
+    const recorded = recordingSql([])
+    const store = new PostgresAutomationStore(recorded.sql, { workspaceId: "workspace-a", userId: "user-a" })
+
+    await store.listRuns("automation-a", 1)
+
+    expect(recorded.queries[0]?.text).toContain("LIMIT ?")
+    expect(recorded.queries[0]?.values).toContain(1)
+  })
+
+  it("claims queued dispatch atomically within the actor scope", async () => {
+    const recorded = recordingSql([])
+    const actor = { workspaceId: "workspace-a", userId: "user-a" }
+    const store = new PostgresAutomationStore(recorded.sql, actor)
+
+    await expect(store.claimRunForDispatch("run-1")).resolves.toBeNull()
+
+    expect(recorded.queries).toHaveLength(1)
+    expect(recorded.queries[0]!.text).toContain("UPDATE boring_automation_runs")
+    expect(recorded.queries[0]!.text).toContain("status = 'queued'")
+    expect(recorded.queries[0]!.text).toContain("RETURNING *")
+    expect(recorded.queries[0]!.values).toEqual(expect.arrayContaining([
+      "run-1", actor.workspaceId, actor.userId,
+    ]))
+  })
+
   it("reads canonical prompts from the workspace without querying PostgreSQL prompt bodies", async () => {
     const row = {
       id: "automation-1",
@@ -162,9 +188,14 @@ describe("PostgresAutomationStore actor isolation", () => {
   it("excludes tombstoned automations from hosted due candidates", async () => {
     const recorded = recordingSql([])
 
-    await expect(listHostedAutomationCandidates(recorded.sql)).resolves.toEqual([])
+    await expect(listHostedAutomationCandidates(recorded.sql, "2026-07-23T09:00:00.000Z")).resolves.toEqual([])
 
     expect(recorded.queries[0]!.text).toContain("FROM boring_automation_automations")
     expect(recorded.queries[0]!.text).toContain("WHERE deleted_at IS NULL")
+    expect(recorded.queries[0]!.text).not.toContain("prompt")
+    expect(recorded.queries[1]!.text).toContain("runs.status IN ('queued', 'dispatching', 'running')")
+    expect(recorded.queries[1]!.text).toContain("runs.scheduled_for = ?")
+    expect(recorded.queries[1]!.text).not.toContain("SELECT *")
+    expect(recorded.queries[1]!.values).toContain("2026-07-23T09:00:00.000Z")
   })
 })

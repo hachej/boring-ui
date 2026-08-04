@@ -17,11 +17,17 @@
     ]
   },
   "scripts": {
-    "build": "esbuild front/index.tsx --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/front/index.js --external:react --external:react-dom --external:@hachej/boring-workspace/plugin && esbuild server/index.ts --bundle --format=esm --platform=node --target=node22 --outfile=dist/server/index.js --external:@hachej/boring-workspace/server && esbuild agent/index.ts --bundle --format=esm --platform=node --target=node22 --outfile=dist/agent/index.js",
+    "build": "esbuild front/index.tsx --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/front/index.js --external:react --external:react-dom --external:@hachej/boring-workspace --external:@hachej/boring-workspace/plugin && esbuild server/index.ts --bundle --format=esm --platform=node --target=node22 --outfile=dist/server/index.js --external:@hachej/boring-workspace/server && esbuild agent/index.ts --bundle --format=esm --platform=node --target=node22 --outfile=dist/agent/index.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@pierre/diffs": "1.2.12",
     "@pierre/trees": "1.0.0-beta.5"
+  },
+  "devDependencies": {
+    "@hachej/boring-workspace": "workspace:*"
+  },
+  "peerDependencies": {
+    "@hachej/boring-workspace": "workspace:*"
   }
 }

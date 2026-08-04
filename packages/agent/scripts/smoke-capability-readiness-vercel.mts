@@ -1,5 +1,4 @@
 #!/usr/bin/env tsx
-import Fastify from 'fastify'
 import { Sandbox } from '@vercel/sandbox'
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -7,7 +6,8 @@ import { join } from 'node:path'
 import type { AgentHarness } from '../src/shared/harness'
 import type { AgentTool } from '../src/shared/tool'
 import { ErrorCode } from '../src/shared/error-codes'
-import { registerAgentRoutes } from '../src/server/registerAgentRoutes'
+import { mergeTools } from '../src/server/catalog/mergeTools'
+import { createStandaloneAgentHostApp } from '../src/server/createStandaloneAgentHostApp'
 import {
   createVercelSandboxProvider,
   FileHandleStore,
@@ -16,7 +16,7 @@ import {
 } from '@hachej/boring-sandbox/providers/vercel-sandbox'
 import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
 import { agentSandboxRuntimeHostOperations } from '../host/sandbox'
-import { provisionWorkspaceRuntime } from '../src/server/workspace/provisioning'
+import { provisionWorkspaceRuntime, type WorkspaceProvisioningResult } from '../src/server/workspace/provisioning'
 
 const SAFE_TIMEOUT_MS = 10 * 60_000
 
@@ -190,9 +190,10 @@ async function main(): Promise<void> {
     workspaceRoot: VERCEL_SANDBOX_WORKSPACE_ROOT,
   })
   const workspaceId = `readiness-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  const app = Fastify({ logger: false })
+  let app: Awaited<ReturnType<typeof createStandaloneAgentHostApp>> | undefined
   let capturedTools: AgentTool[] = []
   let provisioningStartedMs: number | undefined
+  let runtimeProvisioning: WorkspaceProvisioningResult | undefined
 
   const abort = AbortSignal.timeout(SAFE_TIMEOUT_MS)
   abort.addEventListener('abort', () => {
@@ -201,20 +202,25 @@ async function main(): Promise<void> {
 
   try {
     const packageRoot = await createSmokePythonPackage(tempDir)
-    await app.register(registerAgentRoutes, {
+    app = await createStandaloneAgentHostApp({
+      workspaceRoot: tempDir,
+      sessionId: workspaceId,
       mode: 'vercel-sandbox',
       runtimeModeAdapter,
       runtimeHost: agentSandboxRuntimeHostOperations,
-      getWorkspaceId: () => workspaceId,
-      getWorkspaceRoot: () => tempDir,
       harnessFactory: makeHarness((tools) => { capturedTools = tools }),
-      provisionRuntime: async ({ provisioningAdapter, runtimeLayout }) => {
+      getRuntimeProvisioning: () => runtimeProvisioning,
+      runtimeProvisioner: async ({ runtimeBundle }) => {
+        const provisioningAdapter = runtimeBundle.provisioningAdapter
         if (!provisioningAdapter) throw new Error('missing Vercel provisioning adapter')
         provisioningStartedMs = nowMs(startedAt)
         log('runtime_dependencies_started', { runtime_dependencies_started_ms: provisioningStartedMs })
-        return await provisionWorkspaceRuntime({
+        runtimeProvisioning = await provisionWorkspaceRuntime({
           adapter: provisioningAdapter,
-          runtimeLayout,
+          runtimeLayout: agentSandboxRuntimeHostOperations.getBoringAgentRuntimePaths(
+            runtimeModeAdapter.getRuntimeLayoutRoot?.({ workspaceRoot: tempDir, workspaceId, sessionId: workspaceId })
+              ?? tempDir,
+          ),
           runtimeHost: agentSandboxRuntimeHostOperations,
           plugins: [{
             id: 'vercel-readiness-smoke',
@@ -229,26 +235,37 @@ async function main(): Promise<void> {
           }],
         })
       },
+      externalPlugins: false,
+      initializeRuntime: false,
+      logger: false,
     })
     await app.ready()
 
     const address = await app.listen({ host: '127.0.0.1', port: 0 })
     log('server_ready', { server_ready_ms: nowMs(startedAt), workspaceId })
 
-    const readyPromise = watchReadyStatus(`${address}/api/v1/ready-status`, startedAt)
+    const readyPromise = watchReadyStatus(`${address}/api/v1/agents/default/ready-status`, startedAt)
     const chatStartedAt = Date.now()
     // The agent API must answer while runtime dependencies are still
-    // preparing — the pi-chat sessions list exercises the binding without an
+    // preparing — the addressed sessions list exercises the binding without an
     // LLM turn.
-    const chat = await fetch(`${address}/api/v1/agent/pi-chat/sessions`, { signal: abort })
-    if (!chat.ok) throw new Error(`pi-chat sessions failed with ${chat.status}: ${await chat.text()}`)
+    const chat = await fetch(`${address}/api/v1/agents/default/sessions`, { signal: abort })
+    if (!chat.ok) throw new Error(`addressed sessions failed with ${chat.status}: ${await chat.text()}`)
     const chatFirstByteMs = await readFirstChunkMs(chat, chatStartedAt)
     log('chat_first_byte', { chat_first_byte_ms: chatFirstByteMs })
 
-    const bash = capturedTools.find((tool) => tool.name === 'bash')
-    if (!bash) throw new Error('bash tool was not registered')
-    const preReady = await bash.execute(
-      { command: 'bm --help' },
+    const [blockedTool] = mergeTools({
+      standardTools: [{
+        name: 'bm_readiness_probe',
+        description: 'Readiness smoke probe.',
+        readinessRequirements: ['runtime:python'],
+        parameters: { type: 'object', properties: {} },
+        async execute() { return { content: [{ type: 'text', text: 'ok' }] } },
+      }],
+      checkReadiness: () => ({ ready: false, state: 'preparing', workspaceId, retryable: true }),
+    })
+    const preReady = await blockedTool!.execute(
+      {},
       { toolCallId: 'vercel-readiness-pre-ready', abortSignal: new AbortController().signal },
     )
     const preReadyCode = (preReady.details as { code?: unknown } | undefined)?.code
@@ -260,6 +277,8 @@ async function main(): Promise<void> {
     const ready = await readyPromise
     if (ready.runtimeReadyMs === undefined) throw new Error('runtimeDependencies did not become ready')
 
+    const bash = capturedTools.find((tool) => tool.name === 'bash')
+    if (!bash) throw new Error('bash tool was not registered')
     const postReady = await bash.execute(
       { command: 'bm' },
       { toolCallId: 'vercel-readiness-post-ready', abortSignal: new AbortController().signal },
@@ -269,7 +288,7 @@ async function main(): Promise<void> {
     log('dependency_tool_post_ready', { dependency_tool_post_ready: postReadyOk ? 'ok' : 'failed' })
     if (!postReadyOk) throw new Error(`bm smoke failed after runtime ready: ${postReadyText}`)
   } finally {
-    await app.close().catch(() => undefined)
+    await app?.close().catch(() => undefined)
     await cleanupSandboxes(store)
     await rm(tempDir, { recursive: true, force: true })
   }

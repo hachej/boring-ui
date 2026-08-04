@@ -294,6 +294,7 @@ function WorkspacePluginBindings({ plugins }: { plugins: CapturedFrontPlugin[] }
 
 function WorkspacePluginProviders({
   plugins,
+  agentTypeId,
   apiBaseUrl,
   authHeaders,
   authScopeKey,
@@ -304,6 +305,7 @@ function WorkspacePluginProviders({
   children,
 }: {
   plugins: CapturedFrontPlugin[]
+  agentTypeId: string
   apiBaseUrl: string
   authHeaders?: Record<string, string>
   authScopeKey?: string
@@ -322,6 +324,7 @@ function WorkspacePluginProviders({
     return (
       <Provider
         key={`${plugin.id}:provider:${provider.id}`}
+        agentTypeId={agentTypeId}
         apiBaseUrl={apiBaseUrl}
         authHeaders={authHeaders}
         authScopeKey={authScopeKey}
@@ -361,6 +364,8 @@ function WorkspaceOpenFileBinding({ onOpenFile }: { onOpenFile?: WorkspaceOpenFi
 // ---------------------------------------------------------------------------
 
 export interface WorkspaceProviderProps {
+  /** Addressed Agent owner used by plugin runtime clients. */
+  agentTypeId: string
   children: ReactNode
   chatPanel?: WorkspaceChatPanelComponent
   /**
@@ -440,6 +445,7 @@ function scopedAuthHeaders(
 }
 
 export function WorkspaceProvider({
+  agentTypeId,
   children,
   chatPanel,
   plugins,
@@ -681,9 +687,10 @@ export function WorkspaceProvider({
                 {/* Merge: keep the branch's WorkspacePluginClientProvider wrapper
                     + CommandPalette session search, AND main's #71 plugin-provider
                     session context (activeSessionId/openSessionIds). */}
-                <WorkspacePluginClientProvider apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} authHeaders={resolvedAuthHeaders}>
+                <WorkspacePluginClientProvider agentTypeId={agentTypeId} apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} authHeaders={resolvedAuthHeaders}>
                   <WorkspacePluginProviders
                     plugins={pluginsWithBindings}
+                    agentTypeId={agentTypeId}
                     apiBaseUrl={apiBaseUrl}
                     authHeaders={resolvedAuthHeaders}
                     authScopeKey={authScopeKey}

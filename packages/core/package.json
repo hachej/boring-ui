@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-core",
-  "version": "0.1.92",
+  "version": "0.1.95",
   "type": "module",
   "license": "MIT",
   "description": "Foundation package for boring-ui-v2 apps: DB, auth, config, HTTP app factory, and frontend app shell.",
@@ -72,6 +72,7 @@
     "@fastify/proxy-addr": "^5.1.0",
     "@fastify/rate-limit": "^11.1.0",
     "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-bash": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@hookform/resolvers": "^5.4.0",

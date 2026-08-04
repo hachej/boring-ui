@@ -1,7 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify"
 import type {
   ProvisionWorkspaceRuntimeOptions,
-  ResolvedAgentRuntimeScope,
   RuntimeModeAdapter,
   RuntimeModeId,
   WorkspaceAgentDispatcherResolver,
@@ -15,7 +14,7 @@ import type {
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
 import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
-import { basename, isAbsolute, join, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
 import { registerWorkspacePluginConfigRoutes, registerWorkspaceTaskRoutes } from "./workspacePluginRoutes.js"
 import type {
@@ -42,23 +41,17 @@ const PLUGIN_CLI_PACKAGE_NAME = "@hachej/boring-ui-plugin-cli"
 const TRUSTED_LOCAL_AGENT_SUBJECT = "local"
 
 function createTrustedLocalAgentScopeAuthority() {
-  const runtimeScopes = new WeakMap<object, ResolvedAgentRuntimeScope>()
+  const workspaces = new WeakMap<object, LocalWorkspace>()
 
-  function issueScope(input: {
-    readonly claim: VerifiedAgentScopeClaim
-    readonly runtimeScope: ResolvedAgentRuntimeScope
-  }): AuthorizedAgentScope {
-    if (
-      input.claim.authSubjectId !== TRUSTED_LOCAL_AGENT_SUBJECT
-      || !input.claim.workspaceScopeId.trim()
-    ) {
+  function issueScope(workspace: LocalWorkspace): AuthorizedAgentScope {
+    if (!workspace.id.trim()) {
       throw new Error("CLI Agent Host scope is not the trusted-local mapping")
     }
     const scope = Object.freeze({
-      workspaceScopeId: input.claim.workspaceScopeId,
+      workspaceScopeId: workspace.id,
       authSubjectId: TRUSTED_LOCAL_AGENT_SUBJECT,
     }) as AuthorizedAgentScope
-    runtimeScopes.set(scope as object, input.runtimeScope)
+    workspaces.set(scope as object, workspace)
     return scope
   }
 
@@ -66,7 +59,7 @@ function createTrustedLocalAgentScopeAuthority() {
     issueScope,
     scopeVerifier: {
       async verify(scope: AuthorizedAgentScope): Promise<VerifiedAgentScopeClaim> {
-        if (!runtimeScopes.has(scope as object) || scope.authSubjectId !== TRUSTED_LOCAL_AGENT_SUBJECT) {
+        if (!workspaces.has(scope as object) || scope.authSubjectId !== TRUSTED_LOCAL_AGENT_SUBJECT) {
           throw new Error("CLI Agent Host scope was not issued by this process")
         }
         return {
@@ -75,10 +68,10 @@ function createTrustedLocalAgentScopeAuthority() {
         }
       },
     },
-    async resolveRuntimeScope(scope: AuthorizedAgentScope): Promise<ResolvedAgentRuntimeScope> {
-      const resolved = runtimeScopes.get(scope as object)
-      if (!resolved) throw new Error("CLI Agent Host scope was not issued by this process")
-      return resolved
+    workspace(scope: AuthorizedAgentScope): LocalWorkspace {
+      const workspace = workspaces.get(scope as object)
+      if (!workspace) throw new Error("CLI Agent Host scope was not issued by this process")
+      return workspace
     },
   }
 }
@@ -418,6 +411,16 @@ export async function createFolderModeApp(opts: {
   projectName?: string
   provisionWorkspace?: boolean
   allowInsecureLocalBridgeAuth?: boolean
+  loadAmbientSkills?: boolean
+  liveTranscripts?: {
+    enabled: boolean
+    listenerHost: string
+    canonicalHost: string
+    canonicalOrigin: string
+    upstreamUrl: string
+    upstreamBearerToken?: string
+    reviewIntervalMs?: number
+  }
 }): Promise<FastifyInstance> {
   const workspaceRoot = resolve(opts.workspaceRoot)
   const projectName = opts.projectName ?? (basename(workspaceRoot) || "workspace")
@@ -426,36 +429,79 @@ export async function createFolderModeApp(opts: {
     import("./pluginFrontRuntime.js"),
     import("./pluginDiscovery.js"),
   ])
+  const liveTranscriptEnabled = opts.liveTranscripts?.enabled ?? process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1"
+  if (liveTranscriptEnabled && !opts.liveTranscripts) {
+    throw new Error("live_transcript_local_only: folder-mode live transcripts require explicit listener and canonical browser authority")
+  }
+  let liveTranscriptDispatcher: WorkspaceAgentDispatcherResolver | undefined
+  const liveTranscriptDispatcherProxy: WorkspaceAgentDispatcherResolver = {
+    async runWithWorkspaceAgent(input, run) {
+      if (!liveTranscriptDispatcher?.runWithWorkspaceAgent) throw new Error("live_transcript_disabled: agent dispatcher is not ready")
+      return await liveTranscriptDispatcher.runWithWorkspaceAgent(input, run)
+    },
+    async resolve(ctx, options) {
+      if (!liveTranscriptDispatcher) throw new Error("live_transcript_disabled: agent dispatcher is not ready")
+      return await liveTranscriptDispatcher.resolve(ctx, options)
+    },
+  }
+  const liveTranscriptPlugin = liveTranscriptEnabled && opts.liveTranscripts
+    ? (await import("@hachej/boring-transcription/server")).createLiveTranscriptServerPlugin({
+        dispatcherResolver: liveTranscriptDispatcherProxy,
+        agentTypeId: "default",
+        actorResolver: () => ({ workspaceId: "default", userId: "local" }),
+        authority: {
+          listenerHost: opts.liveTranscripts.listenerHost,
+          canonicalHost: opts.liveTranscripts.canonicalHost,
+          canonicalOrigin: opts.liveTranscripts.canonicalOrigin,
+        },
+        upstreamUrl: opts.liveTranscripts.upstreamUrl,
+        upstreamBearerToken: opts.liveTranscripts.upstreamBearerToken,
+        reviewIntervalMs: opts.liveTranscripts.reviewIntervalMs,
+      })
+    : undefined
   const diagnosticsStore = createRuntimePluginDiagnosticsStore()
   const runtimeHost = await createPluginFrontRuntimeHost({
     onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
   })
   const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot, { includeFolderModeAutomation: true })
-  const runtimeProvisioning = await provisionCliWorkspaceRuntime({
-    workspaceRoot,
-    mode: opts.mode,
-    provisionWorkspace: opts.provisionWorkspace,
-    plugins: readWorkspacePluginPackageRuntimePlugins(pluginDirs),
-  })
-  const app = await createWorkspaceAgentServer({
-    workspaceRoot,
-    mode: opts.mode,
-    logger: false,
-    provisionWorkspace: false,
-    runtimeProvisioning,
-    // The standalone CLI runs on the user's own machine, so ambient skill
-    // discovery (workspace + user-global ~/.pi skills) is on. The library
-    // default is off (withPiHarnessDefaults) to keep hosted agents isolated.
-    pi: { noSkills: false },
-    // CLI-bundled internal plugins, resolved to absolute package dirs. This
-    // drives the server-side install array (boot-time routes/agentTools);
-    // additionalBoringPluginDirs only feeds the asset-manager scan.
-    defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true }),
-    additionalBoringPluginDirs: pluginDirs,
-    workspaceBridge: { allowInsecureLocalCliBrowserAuth: opts.allowInsecureLocalBridgeAuth === true },
-    boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
-  })
-  await runtimeHost.registerRoutes(app as FastifyInstance)
+  let app: FastifyInstance | undefined
+  try {
+    const runtimeProvisioning = await provisionCliWorkspaceRuntime({
+      workspaceRoot,
+      mode: opts.mode,
+      provisionWorkspace: opts.provisionWorkspace,
+      plugins: readWorkspacePluginPackageRuntimePlugins(pluginDirs),
+    })
+    app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: opts.mode,
+      logger: false,
+      provisionWorkspace: false,
+      runtimeProvisioning,
+      // The standalone CLI runs on the user's own machine, so ambient skill
+      // discovery (workspace + user-global ~/.pi skills) is on. The library
+      // default is off (withPiHarnessDefaults) to keep hosted agents isolated.
+      pi: { noSkills: opts.loadAmbientSkills === false },
+      // CLI-bundled internal plugins, resolved to absolute package dirs. This
+      // drives the server-side install array (boot-time routes/agentTools);
+      // additionalBoringPluginDirs only feeds the asset-manager scan.
+      defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true }),
+      plugins: liveTranscriptPlugin ? [liveTranscriptPlugin] : undefined,
+      additionalBoringPluginDirs: pluginDirs,
+      workspaceBridge: { allowInsecureLocalCliBrowserAuth: opts.allowInsecureLocalBridgeAuth === true },
+      boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
+      onWorkspaceAgentDispatcher: (resolver) => {
+        liveTranscriptDispatcher = resolver
+      },
+    })
+    await runtimeHost.registerRoutes(app)
+  } catch (error) {
+    if (app) {
+      try { await app.close() } catch {}
+    }
+    try { await runtimeHost.close() } catch {}
+    throw error
+  }
   const folderAssetManager = (app as FastifyInstance & {
     __boringAssetManager?: {
       subscribe(listener: (event: { type: string; id: string; frontTarget?: unknown }) => void): () => void
@@ -503,6 +549,12 @@ export async function createFolderModeApp(opts: {
     runtimePluginTrustLabel: RUNTIME_PLUGIN_TRUST_LABEL,
     runtimePluginTrustDescription: RUNTIME_PLUGIN_TRUST_DESCRIPTION,
     runtimePluginDiagnosticsEnabled: true,
+    ...(liveTranscriptEnabled ? {
+      liveTranscripts: {
+        ready: true,
+        commands: ["/live start", "/live stop", "/live status", "/review transcript"],
+      },
+    } : {}),
   }))
 
   return app as FastifyInstance
@@ -511,8 +563,12 @@ export async function createWorkspacesModeApp(opts: {
   mode: RuntimeMode
   registryPath?: string
   provisionWorkspace?: boolean
+  loadAmbientSkills?: boolean
 }): Promise<FastifyInstance> {
-  const [workspaceAppServer, workspaceServer, agentServer, agentShared, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createBoringAutomationTool, DueRunService, FileAutomationStore, ManualRunExecutor, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
+  if (process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1") {
+    throw new Error("live_transcript_local_only: live transcripts are supported only by boring-ui [folder]")
+  }
+  const [workspaceAppServer, workspaceServer, agentServer, agentShared, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createBoringAutomationTool, DueRunService, FileAutomationStore, InMemoryAutomationRunEventBus, ManualRunExecutor, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
     import("@hachej/boring-agent/server"),
@@ -582,8 +638,10 @@ export async function createWorkspacesModeApp(opts: {
     ensureLoaded: Promise<void>
   }>()
   const pluginPiSnapshots = new Map<string, CliPluginPiSnapshot>()
-  const runtimeProvisioningByWorkspace = new Map<string, WorkspaceProvisioningResult | undefined>()
+  const lastReloadDiagnostics = new Map<string, Array<{ source: string; message: string; pluginId?: string }>>()
   const automationStores = new Map<string, InstanceType<typeof FileAutomationStore>>()
+  const automationEventBus = new InMemoryAutomationRunEventBus()
+  app.addHook("onClose", async () => await automationEventBus.close())
   let workspaceAgentDispatcher: WorkspaceAgentDispatcherResolver | undefined
 
   function getBridge(workspaceId: string) {
@@ -631,6 +689,13 @@ export async function createWorkspacesModeApp(opts: {
     return workspace
   }
 
+  const piResourceAuthorizedRoots = (workspace: LocalWorkspace): string[] => [
+    workspace.path,
+    ...pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
+    ...pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, { includeFolderModeAutomation: true })
+      .map((source) => typeof source === "string" ? source : source.rootDir),
+  ]
+
   async function workspaceFromRequest(request: { headers?: Record<string, unknown>; query?: unknown }) {
     return await requireWorkspace(resolveWorkspaceIdFromRequest(request))
   }
@@ -649,9 +714,11 @@ export async function createWorkspacesModeApp(opts: {
     const workspace = await workspaceFromRequest(request)
     if (!workspaceAgentDispatcher) throw httpError("workspace agent dispatcher is unavailable", 503)
     return new ManualRunExecutor({
+      agentTypeId: "default",
       store: automationStore(workspace),
       dispatcherResolver: workspaceAgentDispatcher,
       actorResolver: () => ({ workspaceId: workspace.id, userId: "local" }),
+      eventPublisher: automationEventBus,
     })
   }
 
@@ -663,9 +730,11 @@ export async function createWorkspacesModeApp(opts: {
         resolveExecutor: async (actor, store) => {
           if (!workspaceAgentDispatcher) throw httpError("workspace agent dispatcher is unavailable", 503)
           return new ManualRunExecutor({
+            agentTypeId: "default",
             store,
             dispatcherResolver: workspaceAgentDispatcher,
             actorResolver: () => actor,
+            eventPublisher: automationEventBus,
           })
         },
         localUserId: "local",
@@ -738,20 +807,12 @@ export async function createWorkspacesModeApp(opts: {
     }
     pluginRuntimes.delete(runtimeKey)
     pluginPiSnapshots.delete(runtimeKey)
-    runtimeProvisioningByWorkspace.delete(workspace.id)
+    lastReloadDiagnostics.delete(runtimeKey)
     automationStores.delete(runtimeKey)
     workspaceBridgeCores.delete(workspace.id)
     bridges.delete(workspace.id)
     diagnosticsStore.disposeWorkspace(workspace.id)
     await runtimeHost.disposeWorkspace(workspace.id)
-  }
-
-  function reloadDiagnostics(scan: Awaited<ReturnType<InstanceType<typeof workspaceServer.BoringPluginAssetManager>["load"]>>) {
-    return scan.errors.map((error) => ({
-      source: "workspaces-plugin-manager",
-      message: error.message,
-      pluginId: error.id,
-    }))
   }
 
   app.get("/api/v1/local-workspaces", async () => ({
@@ -796,6 +857,9 @@ export async function createWorkspacesModeApp(opts: {
   })
 
   const trustedLocalScope = createTrustedLocalAgentScopeAuthority()
+  const authorizeAgentRequest = async (request: FastifyRequest) => {
+    return trustedLocalScope.issueScope(await workspaceFromRequest(request))
+  }
   const agentHost = await agentServer.createAgentHost({
     agents: [{ agentTypeId: "default", legacyDefault: true }],
     fleetCompiler: { async compile({ agents }) { return agents } },
@@ -803,154 +867,224 @@ export async function createWorkspacesModeApp(opts: {
     scopeVerifier: trustedLocalScope.scopeVerifier,
     runtimeModeAdapter: sandboxRuntimeAdapter,
     runtimeHost: sandboxRuntimeHost,
-    async resolveRuntimeScope({ scope }) {
-      return await trustedLocalScope.resolveRuntimeScope(scope)
-    },
-  })
-
-  await app.register(agentServer.registerAgentRoutes, {
-    agentHost: {
-      created: agentHost,
-      defaultAgentTypeId: "default",
-      issueScope: trustedLocalScope.issueScope,
-    },
-    mode: opts.mode,
-    runtimeModeAdapter: sandboxRuntimeAdapter,
-    runtimeHost: sandboxRuntimeHost,
-    systemPromptAppend: workspaceAppServer.buildWorkspaceContextPrompt(),
-    getSystemPromptDynamic: async ({ workspaceId }) => {
-      const workspace = await requireWorkspace(workspaceId)
-      await getLoadedPluginRuntime(workspace)
-      return getLoadedPluginPiSnapshot(workspace).systemPromptAppend
-    },
-    getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
-    getWorkspaceRoot: async (workspaceId) => (await requireWorkspace(workspaceId)).path,
-    // Intentionally NOT namespaced by workspace id. Returning undefined makes the
-    // session store fall back to defaultSessionDir(workspaceRoot), whose cwd-encoding
-    // is byte-identical to pi-coding-agent's getDefaultSessionDirPath. So CLI-mode
-    // sessions land in the exact ~/.pi/agent/sessions/--<path>-- folder a standalone
-    // `pi` run in the same workspace uses, and the two share one session list both
-    // ways. Trade-off: sessions are keyed by filesystem path, not registry id — moving
-    // a workspace orphans its old sessions (acceptable; unification is the goal).
-    getSessionNamespace: async () => undefined,
-    provisionRuntime: async ({ workspaceId, workspaceRoot, runtimeMode, runtimeLayout, provisioningAdapter }) => {
-      if (runtimeProvisioningByWorkspace.has(workspaceId)) {
-        return runtimeProvisioningByWorkspace.get(workspaceId)
-      }
-      const provisioned = await provisionCliWorkspaceRuntime({
-        workspaceRoot,
-        mode: runtimeMode,
-        provisionWorkspace: opts.provisionWorkspace,
-        adapter: provisioningAdapter,
-        runtimeLayout,
-        plugins: workspaceAppServer.readWorkspacePluginPackageRuntimePlugins(pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot)),
-      })
-      runtimeProvisioningByWorkspace.set(workspaceId, provisioned)
-      return provisioned
-    },
-    beforeReload: async ({ workspaceId }) => {
-      const workspace = await requireWorkspace(workspaceId)
-      const runtime = await getLoadedPluginRuntime(workspace)
-      // Re-resolve discovery roots before rescanning: package sources in
-      // .pi/settings.json can gain entries after boot (boring-ui-plugin
-      // install), but the manager's dirs were resolved once when this
-      // workspace runtime was created. Without this, newly installed plugin
-      // sources stay invisible until a full process restart.
-      runtime.manager.setPluginDirs(pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, { includeFolderModeAutomation: true }))
-      const scan = await runtime.manager.load()
-      syncLoadedPluginPiSnapshot(workspace, runtime.manager)
-      syncRuntimeHostFromPluginEvents(runtimeHost, workspaceId, scan.events)
-      const backendReload = await runtime.backendRegistry.reloadFromLoadedPlugins(runtime.manager.inspectLoaded())
+    requestLedgerPath: join(dirname(registry.path), "agent-request-ledger.sqlite"),
+    async resolveAuthorizedEnvironmentScope({ authorizedScope }) {
+      const workspace = trustedLocalScope.workspace(authorizedScope)
+      const runtimeLayoutRoot = sandboxRuntimeAdapter.getRuntimeLayoutRoot?.({
+        workspaceRoot: workspace.path,
+        workspaceId: workspace.id,
+        sessionId: workspace.id,
+      }) ?? workspace.path
       return {
-        restart_warnings: workspaceServer.collectRestartWarnings(scan.events),
-        diagnostics: [
-          ...reloadDiagnostics(scan),
-          ...backendReload.diagnostics.map((diagnostic) => ({
-            source: diagnostic.source,
-            message: diagnostic.message,
-            ...(diagnostic.pluginId ? { pluginId: diagnostic.pluginId } : {}),
-          })),
-        ],
+        placementIdentity: JSON.stringify([opts.mode, workspace.path]),
+        workspaceRoot: workspace.path,
+        provisioningFingerprint: JSON.stringify([opts.mode, workspace.path]),
+        async provisionRuntime({ runtimeBundle }) {
+          return await provisionCliWorkspaceRuntime({
+            workspaceRoot: workspace.path,
+            mode: opts.mode,
+            provisionWorkspace: opts.provisionWorkspace,
+            adapter: runtimeBundle.provisioningAdapter,
+            runtimeLayout: sandboxRuntimeHost.getBoringAgentRuntimePaths(runtimeLayoutRoot),
+            plugins: workspaceAppServer.readWorkspacePluginPackageRuntimePlugins(
+              pluginDiscovery.resolveCliBoringPluginDirs(workspace.path),
+            ),
+          })
+        },
       }
     },
-    getPluginDiagnostics: async ({ workspaceId }) => {
-      const workspace = await requireWorkspace(workspaceId)
+    async resolveAuthorizedAgentRuntimeScope({ authorizedScope, intent }) {
+      const workspace = trustedLocalScope.workspace(authorizedScope)
+      if (intent.operation === "reload") {
+        const buildResourceDigestInput = () => {
+          const hotResources = pluginDiscovery.readCliPluginPiSnapshot(workspace.path, {
+            includeFolderModeAutomation: true,
+          })
+          const additionalSkillPaths = [
+            join(workspace.path, ".agents", "skills"),
+            ...hotResources.additionalSkillPaths,
+          ]
+          return agentServer.createPiResourceDigestInput({
+            piCwd: workspace.path,
+            noSkills: opts.loadAmbientSkills === false,
+            resourceSets: [{
+              promptParts: [workspaceAppServer.buildWorkspaceContextPrompt(), hotResources.systemPromptAppend],
+              additionalSkillPaths,
+              packages: hotResources.packages,
+              extensionPaths: hotResources.extensionPaths,
+            }],
+            authorizedRoots: piResourceAuthorizedRoots(workspace),
+          })
+        }
+        const { resourceInputDigest, revalidateResourceInputs } = await agentServer.createPiResourceDigestFence(buildResourceDigestInput)
+        return {
+          identity: JSON.stringify([opts.mode, workspace.id, workspace.path]),
+          physicalBindingIdentity: JSON.stringify([opts.mode, workspace.path]),
+          resourceInputDigest,
+          revalidateResourceInputs,
+          sessionNamespace: "",
+          async applyReload() {
+            const runtime = await getLoadedPluginRuntime(workspace)
+            runtime.manager.setPluginDirs(pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, { includeFolderModeAutomation: true }))
+            const scan = await runtime.manager.load()
+            syncLoadedPluginPiSnapshot(workspace, runtime.manager)
+            syncRuntimeHostFromPluginEvents(runtimeHost, workspace.id, scan.events)
+            const backendReload = await runtime.backendRegistry.reloadFromLoadedPlugins(runtime.manager.inspectLoaded())
+            const diagnostics = [
+              ...scan.errors.map((error) => ({
+                source: "workspaces-plugin-manager",
+                message: error.message,
+                pluginId: error.id,
+              })),
+              ...backendReload.diagnostics.map((diagnostic) => ({
+                source: diagnostic.source,
+                message: diagnostic.message,
+                ...(diagnostic.pluginId ? { pluginId: diagnostic.pluginId } : {}),
+              })),
+            ]
+            lastReloadDiagnostics.set(pluginRuntimeKey(workspace), diagnostics)
+            return { diagnostics }
+          },
+        }
+      }
       const runtime = await getLoadedPluginRuntime(workspace)
-      return [
-        ...runtime.manager.getErrors().map((error) => ({
-          source: "plugin-load",
-          message: error.message,
-          ...(error.id ? { pluginId: error.id } : {}),
-        })),
-        ...runtime.manager.preflight().errors.map((error) => ({
-          source: "plugin-preflight",
-          message: `${error.code}: ${error.message} (${error.pluginDir})`,
-          ...(error.pluginId ? { pluginId: error.pluginId } : {}),
-        })),
-        // Browser-reported front import failures: the server scan/transform is
-        // green, so without these a plugin that never renders looks healthy to
-        // the agent. The plugin_diagnostics tool consumes this array.
-        ...diagnosticsStore.frontErrors(workspace.id).map((error) => ({
-          source: "plugin-front",
-          message: error.message,
-          pluginId: error.pluginId,
-        })),
+      const hotResources = getLoadedPluginPiSnapshot(workspace)
+      const extraTools = [
+        ...workspaceServer.createWorkspaceUiTools(getBridge(workspace.id), {
+          workspaceRoot: sandboxRuntimeAdapter.workspaceFsCapability === "strong" ? workspace.path : undefined,
+        }),
+        ...(await getWorkspaceBridgeCore(workspace)).extraTools,
+        automationTool(),
+        agentServer.createPluginDiagnosticsTool({
+          getLastReloadDiagnostics: () => lastReloadDiagnostics.get(pluginRuntimeKey(workspace)) ?? [],
+          getHarness: () => undefined,
+          getPluginErrors: async () => [
+            ...runtime.manager.getErrors().map((error) => ({
+              source: "plugin-load",
+              message: error.message,
+              ...(error.id ? { pluginId: error.id } : {}),
+            })),
+            ...runtime.manager.preflight().errors.map((error) => ({
+              source: "plugin-preflight",
+              message: `${error.code}: ${error.message} (${error.pluginDir})`,
+              ...(error.pluginId ? { pluginId: error.pluginId } : {}),
+            })),
+            ...diagnosticsStore.frontErrors(workspace.id).map((error) => ({
+              source: "plugin-front",
+              message: error.message,
+              pluginId: error.pluginId,
+            })),
+          ],
+        }),
       ]
-    },
-    getPi: async ({ workspaceId, workspaceRoot }) => {
-      const workspace = await requireWorkspace(workspaceId)
-      await getLoadedPluginRuntime(workspace)
-      return {
-        // Same policy as folder mode: the local hub runs on the user's own
-        // machine, so ambient skill discovery is on (library default is off).
-        noSkills: false,
-        additionalSkillPaths: [join(workspaceRoot, ".agents", "skills")],
+      const pi = {
+        noSkills: opts.loadAmbientSkills === false,
+        additionalSkillPaths: [join(workspace.path, ".agents", "skills")],
         packages: [],
         extensionPaths: [],
         getHotReloadableResources: () => getLoadedPluginPiSnapshot(workspace),
       }
+      return {
+        identity: JSON.stringify([opts.mode, workspace.id, workspace.path]),
+        physicalBindingIdentity: JSON.stringify([opts.mode, workspace.path]),
+        resourceInputDigest: await agentServer.digestPiResourceInputs(
+          agentServer.createPiResourceDigestInput({
+            piCwd: workspace.path,
+            noSkills: opts.loadAmbientSkills === false,
+            resourceSets: [{
+              promptParts: [workspaceAppServer.buildWorkspaceContextPrompt(), hotResources.systemPromptAppend],
+              additionalSkillPaths: [
+                join(workspace.path, ".agents", "skills"),
+                ...hotResources.additionalSkillPaths,
+              ],
+              packages: hotResources.packages,
+              extensionPaths: hotResources.extensionPaths,
+            }],
+            authorizedRoots: piResourceAuthorizedRoots(workspace),
+          }),
+        ),
+        sessionNamespace: "",
+        pi,
+        extraTools,
+        systemPromptAppend: workspaceAppServer.buildWorkspaceContextPrompt(),
+        loadSystemPromptAppend: async () => getLoadedPluginPiSnapshot(workspace).systemPromptAppend,
+      }
     },
-    onWorkspaceAgentDispatcher: (resolver) => {
-      workspaceAgentDispatcher = resolver
-    },
-    getExtraTools: async ({ workspaceId, workspaceRoot, workspaceFsCapability }) => [
-      ...workspaceServer.createWorkspaceUiTools(getBridge(workspaceId), {
-        workspaceRoot: workspaceFsCapability === "strong" ? workspaceRoot : undefined,
-      }),
-      ...(await getWorkspaceBridgeCore(await requireWorkspace(workspaceId))).extraTools,
-      automationTool(),
-    ],
   })
 
-  await automationRoutes(app, {
-    store: new FileAutomationStore(join(process.cwd(), ".pi", "automation-unused")),
-    storeForRequest: async (request) => automationStore(await workspaceFromRequest(request)),
-    manualRunExecutorForRequest: automationExecutorForRequest,
-    dueRunServiceForRequest: async (request) => {
-      const workspace = await workspaceFromRequest(request)
-      return new DueRunService({
-        store: automationStore(workspace),
-        executor: await automationExecutorForRequest(request),
-      })
+  workspaceAgentDispatcher = {
+    async runWithWorkspaceAgent(input, run) {
+      const workspace = await requireWorkspace(input.context.workspaceId)
+      await agentHost.runWithWorkspaceAgent({
+        ...input,
+        authorizedScope: trustedLocalScope.issueScope(workspace),
+      }, run)
     },
-  })
+    async resolve(context) {
+      const workspace = await requireWorkspace(context.workspaceId)
+      return agentServer.createBoundWorkspaceAgentDispatcher({
+        gateway: agentHost.gateway,
+        scope: trustedLocalScope.issueScope(workspace),
+        agentTypeId: "default",
+      }, context)
+    },
+  }
 
-  await app.register(workspaceServer.uiRoutes, {
-    getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
-    getBridge: async (request) => getBridge((await workspaceFromRequest(request)).id),
-    getPreserveStateKeys: async (request) => (await getWorkspaceBridgeCore(await workspaceFromRequest(request))).preservedUiStateKeys,
-  })
+  app.get("/health", async () => ({ status: "ok", version: CLI_VERSION }))
+  app.get("/ready", async () => ({ status: "ready" }))
+  let agentHostLifecycleTransferred = false
+  try {
+    await agentServer.registerAgentHostEnvironmentRoutes(app, {
+      created: agentHost,
+      authorizeAgentRequest,
+      runtimeHost: sandboxRuntimeHost,
+      getWorkspaceHostRoot: async (request) => (await workspaceFromRequest(request)).path,
+    })
+    await app.register(agentHost.registerDirectRoutes({
+      authorizeAgentRequest,
+      defaultSessionId: "default",
+    }))
+    agentHostLifecycleTransferred = true
+  } catch (error) {
+    try { await app.close() } catch {}
+    if (!agentHostLifecycleTransferred) {
+      try { await agentHost.host.close() } catch {}
+    }
+    throw error
+  }
 
-  await app.register(workspaceServer.workspaceBridgeHttpRoutes, {
-    getRegistry: async (request) => (await getWorkspaceBridgeCore(await workspaceFromRequest(request))).registry,
-    getOwnerWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
-    getIdempotencyStore: async (request) => (await getWorkspaceBridgeCore(await workspaceFromRequest(request))).idempotencyStore,
-    browserAuthPolicy: {
-      resolve(input) {
-        return workspaceServer.createLocalCliBridgeAuthPolicy({ workspaceId: input.workspaceId }).resolve(input)
+  try {
+    await automationRoutes(app, {
+      store: new FileAutomationStore(join(process.cwd(), ".pi", "automation-unused")),
+      storeForRequest: async (request) => automationStore(await workspaceFromRequest(request)),
+      manualRunExecutorForRequest: automationExecutorForRequest,
+      dueRunServiceForRequest: async (request) => {
+        const workspace = await workspaceFromRequest(request)
+        return new DueRunService({
+          store: automationStore(workspace),
+          executor: await automationExecutorForRequest(request),
+        })
       },
-    },
-  })
+      actorResolver: async (request) => ({ workspaceId: (await workspaceFromRequest(request)).id, userId: "local" }),
+      eventBus: automationEventBus,
+    })
+
+    await app.register(workspaceServer.uiRoutes, {
+      getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
+      getBridge: async (request) => getBridge((await workspaceFromRequest(request)).id),
+      getPreserveStateKeys: async (request) => (await getWorkspaceBridgeCore(await workspaceFromRequest(request))).preservedUiStateKeys,
+    })
+
+    await app.register(workspaceServer.workspaceBridgeHttpRoutes, {
+      getRegistry: async (request) => (await getWorkspaceBridgeCore(await workspaceFromRequest(request))).registry,
+      getOwnerWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
+      getIdempotencyStore: async (request) => (await getWorkspaceBridgeCore(await workspaceFromRequest(request))).idempotencyStore,
+      browserAuthPolicy: {
+        resolve(input) {
+          return workspaceServer.createLocalCliBridgeAuthPolicy({ workspaceId: input.workspaceId }).resolve(input)
+        },
+      },
+    })
 
   app.get("/api/v1/runtime-plugin-diagnostics", async (request) => {
     const workspace = await workspaceFromRequest(request)
@@ -1100,5 +1234,9 @@ export async function createWorkspacesModeApp(opts: {
     }
   })()
 
-  return app
+    return app
+  } catch (error) {
+    try { await app.close() } catch {}
+    throw error
+  }
 }

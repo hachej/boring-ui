@@ -1,15 +1,15 @@
+// @vitest-environment node
 /**
  * Pins that exec_ui / get_ui_state survive mode:"vercel-sandbox".
  *
- * In vercel-sandbox mode createAgentApp skips the pi plugin loader, but the
- * UI tools arrive via extraTools from the workspace wrapper — they must still
+ * In vercel-sandbox mode the direct Host runtime receives UI tools through the
+ * Workspace resolver's extraTools — they must still
  * appear in the catalog and the bridge routes must still be wired.
  *
  * We cannot boot an actual Vercel sandbox in unit tests (requires live Vercel
- * credentials and microVMs). vi.mock redirects mode:"vercel-sandbox" → "direct"
- * inside createAgentApp while passing all other options (extraTools,
- * systemPromptAppend, etc.) through unchanged. This tests the workspace
- * wrapper's bridge wiring contract, not Vercel infrastructure.
+ * credentials and microVMs). The runtime adapter below preserves the direct
+ * Host contract while substituting local operations. This tests the Workspace
+ * bridge wiring contract, not Vercel infrastructure.
  */
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -21,21 +21,40 @@ import type { ExecUiToolOptions } from "../ui-control/tools/uiTools"
 import type { WorkspaceBridge } from "../../shared/ui-bridge"
 
 // ── spies ─────────────────────────────────────────────────────────────────────
-// Captures the workspaceRoot that createAgentApp receives so we can assert bash
-// tools are given the same base path as exec_ui.
+// Captures the direct Host Environment root so we can assert bash tools and
+// exec_ui agree on the sandbox-relative workspace contract.
 let capturedAgentWorkspaceRoot: string | undefined
 vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@hachej/boring-agent/server")>()
   return {
     ...mod,
-    createAgentHost: async () => ({
-      host: { hostId: "test", describe: vi.fn(), drain: vi.fn(async () => {}), close: vi.fn(async () => {}) },
-      gateway: {},
-      registerRoutes: vi.fn(),
-    }),
-    registerAgentRoutes: async (app: { get(path: string, handler: () => unknown): void }, opts: Parameters<typeof mod.registerAgentRoutes>[1]) => {
-      capturedAgentWorkspaceRoot = opts?.workspaceRoot
-      app.get("/api/v1/agent/catalog", () => ({ tools: opts.extraTools ?? [] }))
+    createAgentHost: async (options: any) => {
+      const compiled = await options.fleetCompiler.compile({ agents: options.agents })
+      return {
+        host: { hostId: "test", describe: vi.fn(), drain: vi.fn(async () => {}), close: vi.fn(async () => {}) },
+        gateway: {},
+        registerDirectRoutes: vi.fn((projection: any) => async (app: { get(path: string, handler: () => unknown): void }) => {
+        const request = { id: "vercel-sandbox-tools", url: "/api/v1/agents/default/sessions", headers: {}, query: {} }
+        const authorizedScope = await projection.authorizeAgentRequest(request)
+        const verifiedClaim = await options.scopeVerifier.verify(authorizedScope)
+        const environment = await options.resolveAuthorizedEnvironmentScope({
+          authorizedScope,
+          verifiedClaim,
+          intent: { kind: "agent-binding", requestId: request.id },
+        })
+        capturedAgentWorkspaceRoot = environment.workspaceRoot
+        const runtime = await options.resolveAuthorizedAgentRuntimeScope({
+          authorizedScope,
+          verifiedClaim,
+          agentTypeId: compiled[0].agentTypeId,
+          intent: { kind: "agent-binding", operation: "new-binding", requestId: request.id },
+          environment,
+        })
+        app.get("/api/v1/agents/default/tools", () => ({ tools: runtime.extraTools ?? [] }))
+        }),
+        acquireEnvironment: vi.fn(),
+        runWithWorkspaceAgent: vi.fn(),
+      }
     },
   }
 })
@@ -92,7 +111,7 @@ describe("createWorkspaceAgentServer — vercel-sandbox mode UI bridge", () => {
       provisionWorkspace: false,
     })
     try {
-      const res = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
+      const res = await app.inject({ method: "GET", url: "/api/v1/agents/default/tools" })
       expect(res.statusCode).toBe(200)
       const names = res.json().tools.map((t: { name: string }) => t.name)
       expect(names).toContain("get_ui_state")
@@ -179,8 +198,8 @@ describe("createWorkspaceAgentServer — vercel-sandbox mode UI bridge", () => {
     // the host FS — that would always fail for VM-produced files. Bash tools DO
     // operate from workspaceRoot (the VM receives it as its workspace root).
     //
-    // This test pins that createWorkspaceAgentServer passes workspaceRoot to
-    // createAgentApp (bash tools) but NOT to createWorkspaceUiTools (exec_ui),
+    // This test pins that createWorkspaceAgentServer resolves workspaceRoot in
+    // the direct Host Environment but NOT in createWorkspaceUiTools (exec_ui),
     // so both tools share the same base path reference without the host
     // incorrectly blocking VM-relative paths.
     const workspaceRoot = await makeTempDir("boring-vs-basepath-")

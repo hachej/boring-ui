@@ -81,7 +81,7 @@ describe("evaluateAutomationSchedule", () => {
     expect(missed.decisions).toEqual([expect.objectContaining({ kind: "skip", reason: "not-current-minute" })])
   })
 
-  it("skips disabled automations, duplicates for the scheduled instant, and active queued or running runs", () => {
+  it("skips disabled automations, duplicates for the scheduled instant, and active runs", () => {
     const now = "2026-01-01T09:00:15.000Z"
     expect(evaluateAt(now, [automation({ enabled: false })]).decisions).toEqual([
       expect.objectContaining({ kind: "skip", reason: "disabled", scheduledFor: null }),
@@ -91,9 +91,11 @@ describe("evaluateAutomationSchedule", () => {
       expect.objectContaining({ kind: "skip", reason: "duplicate-scheduled-run", scheduledFor: "2026-01-01T09:00:00.000Z" }),
     ])
 
-    expect(evaluateAt(now, [automation()], [run({ trigger: "manual", scheduledFor: null, status: "running" })]).decisions).toEqual([
-      expect.objectContaining({ kind: "skip", reason: "active-run", scheduledFor: "2026-01-01T09:00:00.000Z" }),
-    ])
+    for (const status of ["queued", "dispatching", "running"] as const) {
+      expect(evaluateAt(now, [automation()], [run({ trigger: "manual", scheduledFor: null, status })]).decisions).toEqual([
+        expect.objectContaining({ kind: "skip", reason: "active-run", scheduledFor: "2026-01-01T09:00:00.000Z" }),
+      ])
+    }
   })
 
   it("skips spring DST nonexistent local minutes", () => {

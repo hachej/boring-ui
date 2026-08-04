@@ -621,7 +621,7 @@ jobs:
       - name: Smoke reference web image
         run: |
           container_name="full-app-reference-${GITHUB_RUN_ID}"
-          docker run -d --rm \
+          docker run -d \
             --name "$container_name" \
             --add-host=host.docker.internal:host-gateway \
             -p 3000:3000 \
@@ -637,7 +637,7 @@ jobs:
             -e VERCEL_TEAM_ID=team_smoke \
             -e VERCEL_PROJECT_ID=prj_smoke \
             boring-full-app-reference:ci
-          trap 'docker logs "$container_name" || true; docker stop "$container_name" || true' EXIT
+          trap 'docker logs "$container_name" || true; docker rm -f "$container_name" || true' EXIT
           for i in $(seq 1 60); do
             if curl -fsS http://localhost:3000/health; then
               exit 0
@@ -761,6 +761,7 @@ jobs:
           pnpm --filter @hachej/boring-core build
           pnpm --filter @hachej/boring-deck build
           pnpm --filter @hachej/boring-diagram build
+          pnpm --filter @hachej/boring-transcription build
           pnpm --filter @hachej/boring-ui-cli build:full
           pnpm --filter @hachej/boring-ask-user build
           pnpm --filter @hachej/boring-data-explorer build
@@ -775,7 +776,7 @@ jobs:
 
       - name: Publish packages with ci dist-tag
         run: |
-          for pkg in packages/ui packages/boring-bash packages/agent packages/plugin-cli packages/workspace packages/core packages/cli plugins/deck plugins/diagram plugins/tasks plugins/ask-user plugins/boring-automation plugins/data-explorer plugins/data-catalog plugins/generated-pane plugins/data-bridge plugins/bi-dashboard packages/boring-sandbox plugins/boring-mcp plugins/boring-governance; do
+          for pkg in packages/ui packages/boring-bash packages/agent packages/plugin-cli packages/workspace packages/core plugins/live-transcription packages/cli plugins/deck plugins/diagram plugins/tasks plugins/ask-user plugins/boring-automation plugins/data-explorer plugins/data-catalog plugins/generated-pane plugins/data-bridge plugins/bi-dashboard packages/boring-sandbox plugins/boring-mcp plugins/boring-governance; do
             tarball=$(cd $pkg && pnpm pack 2>&1 | tail -1)
             if ! npm publish "$pkg/$tarball" --access public --tag ci --provenance; then
               echo "::warning::CI package publish failed for $pkg; continuing because release publishing is handled by release.yml"

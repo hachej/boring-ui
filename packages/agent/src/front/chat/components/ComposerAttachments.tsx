@@ -24,11 +24,11 @@ export function AttachmentButton({ disabled, className }: { disabled?: boolean; 
       onClick={() => {
         if (!disabled) attachments.openFileDialog()
       }}
-      className={cn(composerActionClass, 'w-8', className)}
+      className={cn(composerActionClass, '!h-10 !w-10', className)}
       aria-label="Attach files"
       title={disabled ? 'Attachments are available when the composer is ready.' : 'Attach files'}
     >
-      <PaperclipIcon className="h-3.5 w-3.5" strokeWidth={1.75} />
+      <PaperclipIcon className="h-4 w-4" strokeWidth={1.75} />
     </IconButton>
   )
 }

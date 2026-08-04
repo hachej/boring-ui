@@ -18,12 +18,11 @@ import {
 import type { PiChatEvent, PiChatSnapshot } from '../../shared/chat'
 import { ErrorCode } from '../../shared/error-codes'
 import {
-  AgentEffectAdmissionError,
-  isObservedSynchronousServiceError,
   type PiChatSessionService,
   type PiSessionRequestContext,
 } from '../../core/piChatSessionService'
 import { canonicalDigest } from './canonical'
+import { projectStableServiceError } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
 import type {
   AgentGatewayEffect,
@@ -33,6 +32,27 @@ import type {
 } from './types'
 
 const DEFAULT_PAGE_LIMIT = 50
+
+type RetryableSessionGuard = () => Promise<AgentGatewayErrorDTO | undefined>
+type EffectSerializer = <T>(effect: () => Promise<T>) => Promise<T>
+type EffectClassification =
+  | { readonly kind: 'execute' }
+  | { readonly kind: 'reject'; readonly error: AgentGatewayErrorDTO }
+type EffectClassifier = () => Promise<EffectClassification>
+
+interface EffectOptions {
+  duplicateReceipt?: boolean
+  serialize?: EffectSerializer
+  guard?: RetryableSessionGuard
+  classify?: EffectClassifier
+  /** Deterministic validation that must run while holding the session writer. */
+  serializedClassify?: EffectClassifier
+  /** Host/Gateway-only work that must finish before provider mutation begins. */
+  preflight?: () => Promise<void>
+}
+interface SessionEffectOptions extends Omit<EffectOptions, 'serialize'> {
+  bindingKey?: string
+}
 const MAX_PAGE_LIMIT = 100
 
 type ReceiptObject = Readonly<Record<string, JsonValue>>
@@ -112,46 +132,6 @@ function sessionKey(workspaceScopeId: string, ref: AgentSessionRef): string {
   return JSON.stringify([workspaceScopeId, ref.agentTypeId, ref.sessionId])
 }
 
-function requestKeyString(key: AgentRequestKey): string {
-  return JSON.stringify(key)
-}
-
-function projectJson(value: unknown): JsonValue | undefined {
-  const encoded = JSON.stringify(value)
-  return encoded === undefined ? undefined : JSON.parse(encoded) as JsonValue
-}
-
-function legacyServiceFailure(error: unknown): AgentRequestFailure & { readonly kind: 'legacy-service' } {
-  const candidate = error as {
-    readonly name?: unknown
-    readonly message?: unknown
-    readonly code?: unknown
-    readonly statusCode?: unknown
-    readonly retryable?: unknown
-    readonly details?: unknown
-  }
-  const details = projectJson(candidate?.details)
-  return {
-    kind: 'legacy-service',
-    name: typeof candidate?.name === 'string' ? candidate.name : 'Error',
-    message: typeof candidate?.message === 'string' ? candidate.message : String(error),
-    ...(typeof candidate?.code === 'string' ? { code: candidate.code } : {}),
-    ...(typeof candidate?.statusCode === 'number' ? { statusCode: candidate.statusCode } : {}),
-    ...(candidate?.retryable === true ? { retryable: true } : {}),
-    ...(details === undefined ? {} : { details }),
-  }
-}
-
-function isKnownLegacyServiceFailure(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const candidate = error as { readonly code?: unknown; readonly statusCode?: unknown }
-  return (typeof candidate.statusCode === 'number'
-    && Number.isInteger(candidate.statusCode)
-    && candidate.statusCode >= 400
-    && candidate.statusCode < 600)
-    || ErrorCode.safeParse(candidate.code).success
-}
-
 function compareSessions(a: AgentSessionSummary, b: AgentSessionSummary): number {
   return b.updatedAt - a.updatedAt
     || a.ref.agentTypeId.localeCompare(b.ref.agentTypeId)
@@ -172,21 +152,100 @@ function isAfterCursor(
 export class EmbeddedAgentGateway implements AgentGateway {
   private readonly cursorSecret = randomUUID()
   private readonly connections = new Set<() => Promise<void>>()
-  private readonly effects = new Map<string, Promise<JsonValue>>()
   private readonly pins = new Map<string, string>()
+  private readonly unpinnedSessionFallbackPins = new Set<string>()
   private readonly writerTails = new Map<string, Promise<void>>()
   private sessionRuntimeResolutionObserver?: (input: {
-    readonly source: 'pre-ah0-compatibility-fallback' | 'persisted-runtime-pin'
+    readonly source: 'unpinned-session-fallback' | 'persisted-runtime-pin'
     readonly runtimeScopeIdentity: string
   }) => void
   private closed = false
 
   constructor(private readonly runtime: AgentHostRuntime) {}
 
+  /** Host-owned addressed runtime-capability effect seam. */
+  async runHostEffect(input: {
+    readonly scope: AuthorizedAgentScope
+    readonly operation: 'agent.reload' | 'session.command.execute'
+    readonly target: AgentRequestTarget
+    readonly requestId: string
+    readonly payload: JsonValue
+    readonly action: () => Promise<JsonValue>
+    readonly classify?: () => Promise<
+      | { readonly kind: 'execute' }
+      | { readonly kind: 'reject'; readonly error: AgentGatewayErrorDTO }
+    >
+  }): Promise<JsonValue> {
+    const claim = await this.verify(input.scope)
+    if (input.operation === 'agent.reload') {
+      if (input.target.kind !== 'agent') throw new TypeError('agent.reload requires an Agent target')
+      return await this.effect(
+        claim,
+        input.operation,
+        input.target,
+        input.requestId,
+        input.payload,
+        input.action,
+        { classify: input.classify },
+      ) as JsonValue
+    }
+    if (input.target.kind !== 'session') {
+      throw new TypeError('session.command.execute requires a session target')
+    }
+    return await this.sessionEffect(
+      input.target.ref,
+      claim,
+      input.operation,
+      input.requestId,
+      input.payload,
+      input.action,
+    ) as JsonValue
+  }
+
+  /** Host-internal resolver shared by every session-bearing capability route. */
+  async resolveHostSessionBinding(scope: AuthorizedAgentScope, ref: AgentSessionRef) {
+    const claim = await this.verify(scope)
+    const binding = await this.bindingForSession(scope, claim, ref)
+    return { claim, binding }
+  }
+
+  /** Side-effect-free reload lookup: validates persisted existence/pin and requires an already-published binding. */
+  async inspectPublishedSessionBinding(scope: AuthorizedAgentScope, ref: AgentSessionRef) {
+    const claim = await this.verify(scope)
+    if (!this.runtime.compiledById.has(ref.agentTypeId)) {
+      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
+    }
+    const authority = await this.runtime.resolveSessionRuntime(
+      ref.agentTypeId,
+      scope,
+      claim,
+      ref.sessionId,
+    )
+    const cached = this.pins.get(sessionKey(claim.workspaceScopeId, ref))
+    if (!authority && !cached) {
+      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
+    }
+    const runtimeScopeIdentity = authority?.runtimeScopeIdentity ?? cached ?? authority?.runtimeScope.identity
+    const binding = this.runtime.findPublishedBinding(
+      ref.agentTypeId,
+      claim.workspaceScopeId,
+      runtimeScopeIdentity,
+      authority?.runtimeScope.physicalBindingIdentity ?? authority?.runtimeScope.identity,
+      authority?.runtimeScope.environment.provisioningFingerprint,
+    )
+    if (!binding) {
+      throw new AgentGatewayError(
+        AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+        'session runtime binding is not currently published',
+      )
+    }
+    return { claim, binding }
+  }
+
   /** Server-only test observer for distinguishing runtime pin resolution paths. */
   setSessionRuntimeResolutionObserverForTesting(
     observer: (input: {
-      readonly source: 'pre-ah0-compatibility-fallback' | 'persisted-runtime-pin'
+      readonly source: 'unpinned-session-fallback' | 'persisted-runtime-pin'
       readonly runtimeScopeIdentity: string
     }) => void,
   ): void {
@@ -258,6 +317,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
     }
     const target: AgentRequestTarget = { kind: 'agent', agentTypeId: input.agentTypeId }
+    let binding: Awaited<ReturnType<AgentHostRuntime['resolveBinding']>> | undefined
     return await this.effect(
       claim,
       'session.create',
@@ -265,15 +325,23 @@ export class EmbeddedAgentGateway implements AgentGateway {
       input.requestId,
       { agentTypeId: input.agentTypeId, title: input.title ?? null },
       async () => {
-        const binding = await this.runtime.resolveBinding(input.agentTypeId, input.scope, claim)
-        const created = await binding.composition.service.createSession!(
-          context(claim, input.requestId, binding.scope.identity),
-          { title: input.title },
-        )
-        const ref = { agentTypeId: input.agentTypeId, sessionId: created.id }
-        this.pins.set(sessionKey(claim.workspaceScopeId, ref), binding.scope.identity)
-        this.runtime.activity.set(claim.workspaceScopeId, ref, 'idle')
-        return ref
+        const preparedBinding = binding
+        if (!preparedBinding) throw new TypeError('session creation executed before binding preflight')
+        return await this.runtime.runBindingOperation(preparedBinding.key, async () => {
+          const created = await preparedBinding.composition.service.createSession!(
+            context(claim, input.requestId, preparedBinding.scope.identity),
+            { title: input.title },
+          )
+          const ref = { agentTypeId: input.agentTypeId, sessionId: created.id }
+          this.pins.set(sessionKey(claim.workspaceScopeId, ref), preparedBinding.scope.identity)
+          this.runtime.activity.set(claim.workspaceScopeId, ref, 'idle')
+          return ref
+        })
+      },
+      {
+        preflight: async () => {
+          binding = await this.runtime.resolveBinding(input.agentTypeId, input.scope, claim)
+        },
       },
     ) as AgentSessionRef
   }
@@ -360,7 +428,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
             this.runtime.activity.set(current.workspaceScopeId, input.ref, 'aborting')
           }
           return receipt
-        }) as Awaited<ReturnType<AgentSessionConnection['interrupt']>>
+        }, { bindingKey: currentBinding.key }) as Awaited<ReturnType<AgentSessionConnection['interrupt']>>
       },
       stop: async ({ requestId }) => {
         const current = await reverify()
@@ -369,7 +437,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
           const receipt = await currentBinding.composition.service.stop(context(current, requestId), input.ref.sessionId, {})
           this.runtime.activity.set(current.workspaceScopeId, input.ref, 'idle')
           return receipt
-        }) as Awaited<ReturnType<AgentSessionConnection['stop']>>
+        }, { bindingKey: currentBinding.key }) as Awaited<ReturnType<AgentSessionConnection['stop']>>
       },
       clearQueue: async ({ requestId, clientNonce, clientSeq }) => {
         const current = await reverify()
@@ -381,7 +449,20 @@ export class EmbeddedAgentGateway implements AgentGateway {
           context(current, requestId),
           input.ref.sessionId,
           { ...(clientNonce ? { clientNonce } : {}), ...(clientSeq === undefined ? {} : { clientSeq }) },
-        )) as Awaited<ReturnType<AgentSessionConnection['clearQueue']>>
+        ), {
+          bindingKey: currentBinding.key,
+          serializedClassify: async () => {
+            const error = await this.queueClearAdmission(
+              currentBinding.composition.service,
+              current,
+              input.ref,
+              requestId,
+              clientNonce,
+              clientSeq,
+            )
+            return error ? { kind: 'reject', error } : { kind: 'execute' }
+          },
+        }) as Awaited<ReturnType<AgentSessionConnection['clearQueue']>>
       },
       close,
     }
@@ -407,7 +488,17 @@ export class EmbeddedAgentGateway implements AgentGateway {
         })
         this.runtime.activity.set(claim.workspaceScopeId, ref, 'running')
         return { ...receipt, disposition: 'prompt' as const }
-      }, true)
+      }, {
+        duplicateReceipt: true,
+        bindingKey: binding.key,
+        guard: async () => await this.promptAdmission(
+          scope,
+          claim,
+          ref,
+          command.requestId,
+          command.requireIdle === true,
+        ),
+      })
     }
     return await this.sessionEffect(ref, claim, 'session.followup', command.requestId, command as unknown as JsonValue, async () => {
       const receipt = await service.followUp(context(claim, command.requestId), ref.sessionId, {
@@ -417,7 +508,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
         clientSeq: command.clientSeq,
       })
       return { ...receipt, disposition: 'followup' as const }
-    }, true)
+    }, { duplicateReceipt: true, bindingKey: binding.key })
   }
 
   async renameSession(input: Parameters<AgentGateway['renameSession']>[0]) {
@@ -434,7 +525,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
         { workspaceId: claim.workspaceScopeId }, input.ref.sessionId, input.title,
       )
       return summaryFromLegacy(input.ref, renamed, this.runtime.activity.get(claim.workspaceScopeId, input.ref))
-    }) as AgentSessionSummary
+    }, { bindingKey: binding.key }) as AgentSessionSummary
   }
 
   async deleteSession(input: Parameters<AgentGateway['deleteSession']>[0]): Promise<void> {
@@ -448,7 +539,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       // idempotent delete retry can reach its completed ledger receipt.
       this.runtime.activity.delete(claim.workspaceScopeId, input.ref)
       return null
-    })
+    }, { bindingKey: binding.key })
   }
 
   async close(): Promise<void> {
@@ -478,24 +569,53 @@ export class EmbeddedAgentGateway implements AgentGateway {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     }
     const resolved = authority?.runtimeScope
-      ?? await this.runtime.options.resolveRuntimeScope({ agentTypeId: ref.agentTypeId, scope })
+      ?? await this.runtime.resolveAgentRuntimeScope(
+        ref.agentTypeId,
+        scope,
+        claim,
+        'existing-session',
+        `session:${ref.sessionId}`,
+        ref.sessionId,
+      )
     const persistedPin = authority?.runtimeScopeIdentity
     const pinned = persistedPin ?? cached
+    const publishedPinned = pinned && typeof this.runtime.findPublishedBinding === 'function'
+      ? this.runtime.findPublishedBinding(
+          ref.agentTypeId,
+          claim.workspaceScopeId,
+          pinned,
+        )
+      : undefined
+    if (publishedPinned && !this.unpinnedSessionFallbackPins.has(key)) {
+      this.sessionRuntimeResolutionObserver?.({
+        source: persistedPin ? 'persisted-runtime-pin' : 'unpinned-session-fallback',
+        runtimeScopeIdentity: pinned!,
+      })
+      this.pins.set(key, pinned!)
+      return publishedPinned
+    }
     if (pinned && pinned !== resolved.identity) {
       throw new AgentGatewayError(
         AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
         'session is pinned to a different runtime scope',
       )
     }
-    // Missing pins are pre-AH0 compatibility transcripts. They use the first
+    // Pre-AH0 transcripts have no pin. They use the first
     // current runtime for this Host lifetime without mutating historical JSONL.
     const runtimeScopeIdentity = pinned ?? resolved.identity
     this.sessionRuntimeResolutionObserver?.({
-      source: persistedPin ? 'persisted-runtime-pin' : 'pre-ah0-compatibility-fallback',
+      source: persistedPin ? 'persisted-runtime-pin' : 'unpinned-session-fallback',
       runtimeScopeIdentity,
     })
     this.pins.set(key, runtimeScopeIdentity)
-    return await this.runtime.resolveBinding(ref.agentTypeId, scope, claim, resolved)
+    if (!pinned) this.unpinnedSessionFallbackPins.add(key)
+    return await this.runtime.resolveBinding(
+      ref.agentTypeId,
+      scope,
+      claim,
+      resolved,
+      pinned ? 'pinned' : 'current',
+    )
   }
 
   private async loadSummary(
@@ -516,54 +636,24 @@ export class EmbeddedAgentGateway implements AgentGateway {
     requestId: string,
     payload: JsonValue,
     action: () => Promise<unknown>,
-    duplicateReceipt = false,
-    legacyAlias = false,
+    options: SessionEffectOptions = {},
   ): Promise<unknown> {
+    const { bindingKey, ...effectOptions } = options
     return this.effect(
       claim,
       operation,
       sessionTarget(ref),
       requestId,
       payload,
-      () => this.withWriter(claim.workspaceScopeId, ref, action),
-      duplicateReceipt,
-      legacyAlias,
-    )
-  }
-
-  /** Internal legacy-alias seam; never exposed through the public Gateway contract. */
-  async runLegacyCompatibilityEffect(input: {
-    readonly scope: AuthorizedAgentScope
-    readonly operation: AgentGatewayEffect
-    readonly target: AgentRequestTarget
-    readonly requestId: string
-    readonly payload: JsonValue
-    readonly action: () => Promise<unknown>
-  }): Promise<unknown> {
-    const claim = await this.verify(input.scope)
-    if (input.operation === 'session.create') {
-      if (input.target.kind !== 'agent') throw new TypeError('session.create requires an Agent target')
-      return await this.effect(
-        claim,
-        input.operation,
-        input.target,
-        input.requestId,
-        input.payload,
-        input.action,
-        false,
-        true,
-      )
-    }
-    if (input.target.kind !== 'session') throw new TypeError(`${input.operation} requires a session target`)
-    return await this.sessionEffect(
-      input.target.ref,
-      claim,
-      input.operation,
-      input.requestId,
-      input.payload,
-      input.action,
-      false,
-      true,
+      action,
+      {
+        ...effectOptions,
+        serialize: (effect) => this.withWriter(
+          claim.workspaceScopeId,
+          ref,
+          () => bindingKey ? this.runtime.runBindingOperation(bindingKey, effect) : effect(),
+        ),
+      },
     )
   }
 
@@ -574,10 +664,17 @@ export class EmbeddedAgentGateway implements AgentGateway {
     requestId: string,
     payload: JsonValue,
     action: () => Promise<unknown>,
-    duplicateReceipt = false,
-    legacyAlias = false,
+    options: EffectOptions = {},
   ): Promise<unknown> {
     this.assertOpen()
+    const {
+      duplicateReceipt = false,
+      serialize,
+      guard,
+      classify,
+      serializedClassify,
+      preflight,
+    } = options
     const key: AgentRequestKey = {
       workspaceScopeId: claim.workspaceScopeId,
       authSubjectId: claim.authSubjectId,
@@ -586,93 +683,170 @@ export class EmbeddedAgentGateway implements AgentGateway {
       requestId,
     }
     const digest = canonicalDigest(payload)
-    const record = await this.runtime.ledger.prepare(key, digest)
+    const prepared = await this.runtime.ledger.prepare(key, digest)
+    const record = prepared.record
     if (record.state === 'completed') return this.replayReceipt(record.receipt, duplicateReceipt)
-    if (record.state === 'rejected') throw this.failure(record.failure, legacyAlias)
+    if (record.state === 'rejected') throw this.failure(record.failure)
     if (record.state === 'outcome-unknown') throw gatewayError(record.error)
-    const id = requestKeyString(key)
-    const existing = this.effects.get(id)
-    if (existing) return this.replayReceipt(await existing, duplicateReceipt)
+    const requestInProgress = () => new AgentGatewayError(
+      AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS,
+      'request is already in progress',
+      {
+        operation,
+        target: target.kind === 'agent'
+          ? { kind: 'agent', agentTypeId: target.agentTypeId }
+          : {
+              kind: 'session',
+              ref: {
+                agentTypeId: target.ref.agentTypeId,
+                sessionId: target.ref.sessionId,
+              },
+            },
+        requestId,
+      },
+    )
+    if (prepared.ownership === 'existing' && !guard) throw requestInProgress()
 
-    const running = this.runtime.trackEffect((async (): Promise<JsonValue> => {
-      const current = await this.runtime.ledger.read(key)
-      if (current?.state === 'pending-admission') {
-        const admission = await this.runtime.effectAdmission.admit({ key, digest, scope: claim, operation, target })
-        if (admission.type === 'retryable') throw gatewayError(admission.error)
-        if (admission.type === 'rejected') {
-          await this.runtime.ledger.reject(key, { kind: 'gateway', error: admission.error })
-          throw gatewayError(admission.error)
-        }
-        await this.runtime.ledger.acceptAdmission(key, admission.admissionReceipt)
-      }
-      await this.runtime.ledger.beginEffect(key)
-      let actionResult: Promise<unknown>
-      try {
-        actionResult = action()
-      } catch (error) {
-        if (legacyAlias) {
-          if (error instanceof AgentEffectAdmissionError) {
-            const details = projectJson(error.details)
-            const failure: AgentRequestFailure = {
-              kind: 'legacy-admission',
-              code: error.code,
-              statusCode: 500,
-              message: error.message,
-              ...(details === undefined ? {} : { details }),
-            }
-            await this.runtime.ledger.reject(key, failure)
-            throw this.failure(failure, true)
-          }
-          const failure = legacyServiceFailure(error)
-          await this.runtime.ledger.reject(key, failure)
-          throw this.failure(failure, true)
-        }
-        const unknown = new AgentGatewayError(
-          AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
-          'effect outcome could not be safely replayed',
-        )
-        await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
-        throw error
-      }
-      try {
-        const receipt = await actionResult as JsonValue
-        // Drain is a generation fence: a late effect may finish in its own
-        // adapter, but it cannot publish a success receipt into a retired Host.
-        this.runtime.assertOpen()
-        await this.runtime.ledger.complete(key, receipt)
-        return receipt
-      } catch (error) {
-        if (legacyAlias && error instanceof AgentEffectAdmissionError) {
-          const details = projectJson(error.details)
-          const failure: AgentRequestFailure = {
-            kind: 'legacy-admission',
-            code: error.code,
-            statusCode: 500,
-            message: error.message,
-            ...(details === undefined ? {} : { details }),
-          }
-          await this.runtime.ledger.reject(key, failure)
-          throw this.failure(failure, true)
-        }
-        if (legacyAlias && (isObservedSynchronousServiceError(error) || isKnownLegacyServiceFailure(error))) {
-          const failure = legacyServiceFailure(error)
-          await this.runtime.ledger.reject(key, failure)
-          throw this.failure(failure, true)
-        }
-        const unknown = new AgentGatewayError(
-          AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
-          'effect outcome could not be safely replayed',
-        )
-        await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
-        if (legacyAlias) throw unknown
-        throw error
-      }
-    })(), key)
-    this.effects.set(id, running)
+    let effect: Promise<JsonValue>
     try {
-      return await running
-    } finally {
-      if (this.effects.get(id) === running) this.effects.delete(id)
+      effect = this.runtime.startPreparedEffect(key, async (): Promise<JsonValue> => {
+        if (classify) await this.applyClassification(key, classify)
+
+        const admitted = await this.runtime.ledger.read(key)
+        let admissionReceipt: string | undefined
+        if (admitted?.state === 'pending-admission') {
+          const admission = await this.runtime.effectAdmission.admit({ key, digest, scope: claim, operation, target })
+          if (admission.type === 'retryable') throw gatewayError(admission.error)
+          if (admission.type === 'rejected') {
+            await this.runtime.ledger.reject(key, { kind: 'gateway', error: admission.error })
+            throw gatewayError(admission.error)
+          }
+          admissionReceipt = admission.admissionReceipt
+        }
+        const runEffect = async (): Promise<JsonValue> => {
+          const current = await this.runtime.ledger.read(key)
+          if (current?.state === 'completed') return this.replayReceipt(current.receipt, duplicateReceipt)
+          if (current?.state === 'rejected') throw this.failure(current.failure)
+          if (current?.state === 'outcome-unknown') throw gatewayError(current.error)
+          if (current?.state === 'admission-accepted' || current?.state === 'in-flight') {
+            throw requestInProgress()
+          }
+          if (current?.state !== 'pending-admission') {
+            throw new AgentGatewayError(
+              AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+              'request ledger record was unavailable',
+            )
+          }
+          if (admissionReceipt === undefined) {
+            throw new AgentGatewayError(
+              AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+              'request admission receipt was unavailable',
+            )
+          }
+          if (serializedClassify) await this.applyClassification(key, serializedClassify)
+          const retryableGuardError = await guard?.()
+          if (retryableGuardError) throw gatewayError(retryableGuardError)
+          await this.runtime.ledger.acceptAdmission(key, admissionReceipt)
+          if (preflight) {
+            try {
+              await preflight()
+              this.runtime.assertOpen()
+            } catch (error) {
+              if (error instanceof AgentGatewayError) {
+                await this.runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
+                throw error
+              }
+              const unknown = new AgentGatewayError(
+                AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+                'effect outcome could not be safely replayed',
+              )
+              await this.runtime.ledger.beginEffect(key).catch(() => {})
+              await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
+              throw unknown
+            }
+          }
+          await this.runtime.ledger.beginEffect(key)
+          let actionResult: Promise<unknown>
+          try {
+            actionResult = action()
+          } catch {
+            const unknown = new AgentGatewayError(
+              AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+              'effect outcome could not be safely replayed',
+            )
+            await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
+            throw unknown
+          }
+          let receipt: JsonValue
+          try {
+            receipt = await actionResult as JsonValue
+          } catch (error) {
+            // Metering rejects PAYMENT_REQUIRED before model/session mutation. Keep
+            // that explicitly stable rejection durable and replayable instead of
+            // misclassifying it as an ambiguous post-effect failure.
+            const stable = projectStableServiceError(error)
+            if (stable?.error.code === ErrorCode.enum.PAYMENT_REQUIRED) {
+              await this.runtime.ledger.reject(key, { kind: 'service', error: stable }).catch(() => {})
+              throw error
+            }
+            const unknown = new AgentGatewayError(
+              AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+              'effect outcome could not be safely replayed',
+            )
+            await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
+            throw unknown
+          }
+          // Drain is an explicit Host generation fence: a late provider result
+          // cannot publish, and the stable closure rejection is safe to replay.
+          try {
+            this.runtime.assertOpen()
+          } catch (error) {
+            if (error instanceof AgentGatewayError) {
+              await this.runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
+            }
+            throw error
+          }
+          try {
+            await this.runtime.ledger.complete(key, receipt)
+            return receipt
+          } catch {
+            const unknown = new AgentGatewayError(
+              AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+              'effect outcome could not be safely replayed',
+            )
+            await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
+            throw unknown
+          }
+        }
+        return serialize ? serialize(runEffect) : runEffect()
+      })
+    } catch (error) {
+      const closed = error instanceof AgentGatewayError
+        ? error
+        : new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'agent host is closing')
+      await this.runtime.ledger.reject(key, { kind: 'gateway', error: closed.toJSON() }).catch(() => {})
+      throw error
+    }
+    return await effect
+  }
+
+  private async applyClassification(key: AgentRequestKey, classify: EffectClassifier): Promise<void> {
+    let classification: EffectClassification
+    try {
+      classification = await classify()
+    } catch (error) {
+      const classifiedError = error instanceof AgentGatewayError
+        ? error
+        : new AgentGatewayError(
+            AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+            error instanceof Error ? error.message : 'effect classification failed',
+          )
+      await this.runtime.ledger.reject(key, { kind: 'gateway', error: classifiedError.toJSON() })
+      throw classifiedError
+    }
+    if (classification.kind === 'reject') {
+      await this.runtime.ledger.reject(key, { kind: 'gateway', error: classification.error })
+      throw gatewayError(classification.error)
     }
   }
 
@@ -681,26 +855,57 @@ export class EmbeddedAgentGateway implements AgentGateway {
     return { ...(receipt as ReceiptObject), duplicate: true }
   }
 
-  private failure(failure: AgentRequestFailure, preserveLegacy = false): Error {
+  private failure(failure: AgentRequestFailure): Error {
     if (failure.kind === 'gateway') return gatewayError(failure.error)
-    if (preserveLegacy && failure.kind === 'legacy-admission') {
-      const error = new AgentEffectAdmissionError(failure.code, failure.details)
-      error.message = failure.message
-      return error
-    }
-    if (preserveLegacy && failure.kind === 'legacy-service') {
-      return Object.assign(new Error(failure.message), {
-        name: failure.name,
-        ...(failure.code === undefined ? {} : { code: failure.code }),
-        ...(failure.statusCode === undefined ? {} : { statusCode: failure.statusCode }),
-        ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }),
-        ...(failure.details === undefined ? {} : { details: failure.details }),
-      })
-    }
-    return new AgentGatewayError(
-      AgentGatewayErrorCode.AGENT_SCOPE_DENIED,
-      'effect admission was rejected',
+    return Object.assign(new Error(failure.error.error.message), {
+      code: failure.error.error.code,
+      statusCode: failure.error.statusCode,
+      ...(failure.error.error.retryable === undefined
+        ? {}
+        : { retryable: failure.error.error.retryable }),
+    })
+  }
+
+  private async promptAdmission(
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    ref: AgentSessionRef,
+    requestId: string,
+    requireIdle: boolean,
+  ): Promise<AgentGatewayErrorDTO | undefined> {
+    const binding = await this.bindingForSession(scope, claim, ref)
+    const snapshot = await binding.composition.service.readState(
+      context(claim, requestId, binding.scope.identity),
+      ref.sessionId,
     )
+    const admissible = requireIdle
+      ? snapshot.status === 'idle'
+      : snapshot.status === 'idle' || snapshot.status === 'error'
+    if (admissible) return undefined
+    return new AgentGatewayError(
+      AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+      requireIdle ? 'session is not idle' : 'prompt is invalid in current state',
+      { status: snapshot.status },
+    ).toJSON()
+  }
+
+  private async queueClearAdmission(
+    service: PiChatSessionService,
+    claim: VerifiedAgentScopeClaim,
+    ref: AgentSessionRef,
+    requestId: string,
+    clientNonce?: string,
+    clientSeq?: number,
+  ): Promise<AgentGatewayErrorDTO | undefined> {
+    if (clientNonce === undefined || clientSeq === undefined) return undefined
+    const snapshot = await service.readState(context(claim, requestId), ref.sessionId)
+    const byNonce = snapshot.queue.followUps.find((item) => item.clientNonce === clientNonce)
+    const bySeq = snapshot.queue.followUps.find((item) => item.clientSeq === clientSeq)
+    if (byNonce && byNonce === bySeq) return undefined
+    return new AgentGatewayError(
+      AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
+      'queue selectors disagree',
+    ).toJSON()
   }
 
   private async withWriter<T>(workspaceScopeId: string, ref: AgentSessionRef, action: () => Promise<T>): Promise<T> {

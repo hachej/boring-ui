@@ -1,7 +1,7 @@
 "use client"
 
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CheckIcon, CopyIcon } from 'lucide-react'
 import { Button } from '@hachej/boring-ui-kit'
 import type { BoringChatMessage, BoringChatPart } from '../../../shared/chat'
@@ -17,7 +17,13 @@ import {
 import { Message, MessageContent, MessageResponse } from '../../primitives/message'
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/reasoning'
 import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
+import { ChatMessageContributionBoundary } from '../messageContributions'
 import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
+import {
+  createMessageMentionMarkdownComponents,
+  type MessageMention,
+  type MessageMentionCatalog,
+} from './MessageMentions'
 
 /**
  * Read-only / inspection tools collapse into the grouped "Used X · Y" summary;
@@ -25,6 +31,8 @@ import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
  * an individual card, expanded by default, so the command / diff / output is
  * visible without a click. Tweak this set to change which tools stay collapsed.
  */
+const EMPTY_MENTION_CATALOG: MessageMentionCatalog = { commands: [], skills: [], files: false }
+
 const COLLAPSIBLE_TOOL_NAMES = new Set([
   'read', 'ls', 'find', 'grep', 'search', 'web_search', 'code_search', 'fetch_content',
 ])
@@ -39,9 +47,19 @@ export interface PiTimelineMessageProps {
   isStreaming: boolean
   showThoughts: boolean
   toolRenderers: ToolRendererOverrides
+  mentionCatalog?: MessageMentionCatalog
+  onMentionActivate?: (mention: Exclude<MessageMention, { kind: 'file' }>) => void
 }
 
-export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers }: PiTimelineMessageProps) {
+export function PiTimelineMessage(props: PiTimelineMessageProps) {
+  return (
+    <ChatMessageContributionBoundary message={props.message}>
+      <DefaultPiTimelineMessage {...props} />
+    </ChatMessageContributionBoundary>
+  )
+}
+
+function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers, mentionCatalog = EMPTY_MENTION_CATALOG, onMentionActivate }: PiTimelineMessageProps) {
   const role = message.role
   const isAssistant = role === 'assistant'
   const textParts = message.parts.filter((part): part is Extract<BoringChatPart, { type: 'text' }> => part.type === 'text')
@@ -49,6 +67,35 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
   const finalParts = groupRenderableParts(message)
   const attachmentSummaryPaths = role === 'user' ? attachmentPathsFromTextParts(textParts) : []
   const openArtifact = useOpenArtifact()
+  const effectiveMentionCatalog = useMemo<MessageMentionCatalog>(() => ({
+    commands: mentionCatalog.commands,
+    skills: mentionCatalog.skills,
+    files: mentionCatalog.files && Boolean(openArtifact),
+  }), [mentionCatalog, openArtifact])
+  const mentionSignature = [
+    ...effectiveMentionCatalog.commands.map((command) => `command:${command.name}:${command.clickBehavior}`),
+    ...effectiveMentionCatalog.skills.map((skill) => `skill:${skill.name}:${skill.commandName}`),
+    effectiveMentionCatalog.files ? 'files:enabled' : 'files:disabled',
+  ].join('|')
+  const mentionActivateRef = useRef(onMentionActivate)
+  mentionActivateRef.current = onMentionActivate
+  const activateCurrentMention = useCallback((mention: MessageMention) => {
+    if (mention.kind === 'file') {
+      openArtifact?.(mention.path)
+      return
+    }
+    mentionActivateRef.current?.(mention)
+  }, [openArtifact])
+  const hasMentions = effectiveMentionCatalog.files
+    || effectiveMentionCatalog.commands.length > 0
+    || effectiveMentionCatalog.skills.length > 0
+  const mentionsEnabled = Boolean(isAssistant && !(isStreaming && isLast) && hasMentions)
+  const mentionMarkdownComponents = useMemo(
+    () => mentionsEnabled
+      ? createMessageMentionMarkdownComponents(effectiveMentionCatalog, activateCurrentMention)
+      : undefined,
+    [activateCurrentMention, effectiveMentionCatalog, mentionSignature, mentionsEnabled],
+  )
   const shouldReserveStreamingActions = isStreaming && isAssistant && isLast
 
   return (
@@ -58,20 +105,8 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
       data-boring-agent-message-id={message.id}
       data-boring-agent-message-role={role}
       data-boring-agent-message-status={message.status}
-      className="!max-w-full !gap-1.5"
     >
-      <MessageContent
-        className={cn(
-          '!overflow-visible text-[13px] leading-relaxed text-foreground',
-          role === 'user'
-            ? cn(
-                '!ml-auto !max-w-[80%] !rounded-[var(--radius-lg)]',
-                '!px-4 !py-2.5',
-                '!bg-secondary !text-secondary-foreground',
-              )
-            : '!w-full !bg-transparent !p-0',
-        )}
-      >
+      <MessageContent>
         {fileParts.length > 0 ? (
           <Attachments
             variant={role === 'user' ? 'inline' : 'list'}
@@ -153,20 +188,9 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
             return (
               <div key={item.key} data-boring-agent-part="message-text">
                 <MessageResponse
-                  className={cn(
-                    'max-w-none',
-                    'prose prose-invert prose-neutral',
-                    'prose-p:my-3 prose-p:leading-[1.7] prose-p:text-[13px]',
-                    'prose-headings:mt-5 prose-headings:mb-2 prose-headings:font-semibold prose-headings:tracking-[-0.01em]',
-                    'prose-ul:my-3 prose-ul:pl-6 prose-ol:my-3 prose-ol:pl-6',
-                    'prose-li:my-1.5 prose-li:leading-[1.7] prose-li:pl-1 prose-li:marker:text-muted-foreground/70',
-                    'prose-strong:font-semibold prose-strong:text-foreground',
-                    'prose-em:text-foreground/90',
-                    'prose-a:text-[color:var(--accent)] prose-a:underline-offset-4 hover:prose-a:underline',
-                    'prose-code:before:content-none prose-code:after:content-none',
-                    'prose-pre:my-0 prose-pre:rounded-none prose-pre:border-0',
-                    'prose-pre:bg-transparent prose-pre:p-0',
-                  )}
+                  key={`${mentionSignature || 'no-message-mentions'}:${mentionsEnabled ? 'enabled' : 'static'}`}
+                  components={mentionMarkdownComponents}
+                  className="boring-agent-markdown max-w-none"
                 >
                   {text}
                 </MessageResponse>

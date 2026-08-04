@@ -61,7 +61,7 @@ export const MessageTimeline = memo(({
         {isEmpty ? (
           <ConversationEmptyState
             data-boring-agent-part="chat-empty-state"
-            title={emptyState?.title ?? 'What are we building?'}
+            title={emptyState?.title ?? 'What should we work on?'}
             description={emptyState?.description ?? 'Send a prompt to start an assistant session.'}
             icon={emptyState?.icon}
           />

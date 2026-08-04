@@ -84,7 +84,7 @@ afterEach(() => {
 
 function wrapper({ children }: { children: ReactNode }) {
   return (
-    <WorkspaceProvider panels={[testPanel]} persistenceEnabled={false}>
+    <WorkspaceProvider agentTypeId="default" panels={[testPanel]} persistenceEnabled={false}>
       {children}
     </WorkspaceProvider>
   )
@@ -98,7 +98,7 @@ describe("WorkspaceProvider — context composition", () => {
     }
 
     render(
-      <WorkspaceProvider panels={[testPanel]} persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" panels={[testPanel]} persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
@@ -113,7 +113,7 @@ describe("WorkspaceProvider — context composition", () => {
     }
 
     render(
-      <WorkspaceProvider
+      <WorkspaceProvider agentTypeId="default"
         commands={[{ id: "test-command", title: "Test command", run: () => {} }]}
         persistenceEnabled={false}
       >
@@ -133,7 +133,7 @@ describe("WorkspaceProvider — context composition", () => {
     }
 
     render(
-      <WorkspaceProvider persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
@@ -150,7 +150,7 @@ describe("WorkspaceProvider — context composition", () => {
     }
 
     render(
-      <WorkspaceProvider excludeDefaults={["filesystem"]} persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" excludeDefaults={["filesystem"]} persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
@@ -181,7 +181,7 @@ describe("WorkspaceProvider — context composition", () => {
 
   it("scopes filesystem requests from workspaceId by default", () => {
     const scopedWrapper = ({ children }: { children: ReactNode }) => (
-      <WorkspaceProvider workspaceId="workspace-scope" persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" workspaceId="workspace-scope" persistenceEnabled={false}>
         {children}
       </WorkspaceProvider>
     )
@@ -199,7 +199,7 @@ describe("WorkspaceProvider — panel registration", () => {
     }
 
     render(
-      <WorkspaceProvider
+      <WorkspaceProvider agentTypeId="default"
         panels={[testPanel, { ...chatPanel }]}
         capabilities={{ "agent.chat": true }}
         persistenceEnabled={false}
@@ -227,7 +227,7 @@ describe("WorkspaceProvider — panel registration", () => {
     }
 
     render(
-      <WorkspaceProvider persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
@@ -243,7 +243,7 @@ describe("WorkspaceProvider — panel registration", () => {
     }
 
     render(
-      <WorkspaceProvider
+      <WorkspaceProvider agentTypeId="default"
         panels={[testPanel, { ...chatPanel }]}
         capabilities={{ "agent.chat": true }}
         excludeDefaults={["filesystem"]}
@@ -280,7 +280,7 @@ describe("WorkspaceProvider — panel registration", () => {
     }
 
     render(
-      <WorkspaceProvider
+      <WorkspaceProvider agentTypeId="default"
         catalogs={[reportsCatalog]}
         persistenceEnabled={false}
       >
@@ -306,7 +306,7 @@ describe("WorkspaceProvider — panel registration", () => {
 
     const { result } = renderHook(() => useCatalogRegistry(), {
       wrapper: ({ children }) => (
-        <WorkspaceProvider
+        <WorkspaceProvider agentTypeId="default"
           persistenceEnabled={false}
         >
           {children}
@@ -347,7 +347,7 @@ describe("WorkspaceProvider — panel registration", () => {
     const onOpenFile = vi.fn()
     const { result } = renderHook(() => useCatalogRegistry(), {
       wrapper: ({ children }) => (
-        <WorkspaceProvider
+        <WorkspaceProvider agentTypeId="default"
           persistenceEnabled={false}
           onOpenFile={onOpenFile}
         >
@@ -375,7 +375,7 @@ describe("WorkspaceProvider — panel registration", () => {
     const onOpenFile = vi.fn()
     const { result } = renderHook(() => useCatalogRegistry(), {
       wrapper: ({ children }) => (
-        <WorkspaceProvider persistenceEnabled={false} onOpenFile={onOpenFile}>
+        <WorkspaceProvider agentTypeId="default" persistenceEnabled={false} onOpenFile={onOpenFile}>
           {children}
         </WorkspaceProvider>
       ),
@@ -406,7 +406,7 @@ describe("WorkspaceProvider — panel registration", () => {
     }
 
     render(
-      <WorkspaceProvider
+      <WorkspaceProvider agentTypeId="default"
         panels={[testPanel, chatPanel]}
         capabilities={{}}
         persistenceEnabled={false}
@@ -436,7 +436,7 @@ describe("WorkspaceProvider — panel registration", () => {
     }
 
     render(
-      <WorkspaceProvider
+      <WorkspaceProvider agentTypeId="default"
         panels={[testPanel, overridePanel]}
         persistenceEnabled={false}
       >
@@ -455,7 +455,7 @@ describe("WorkspaceProvider — panel registration", () => {
     }
 
     render(
-      <WorkspaceProvider
+      <WorkspaceProvider agentTypeId="default"
         panels={[chatPanel]}
         capabilities={{ "agent.chat": true }}
         persistenceEnabled={false}
@@ -482,7 +482,7 @@ describe("WorkspaceProvider — panel registration", () => {
     }
 
     render(
-      <WorkspaceProvider
+      <WorkspaceProvider agentTypeId="default"
         panels={[lazyPanel]}
         capabilities={{ "agent.chat": true }}
         persistenceEnabled={false}
@@ -498,7 +498,7 @@ describe("WorkspaceProvider — panel registration", () => {
     function Harness() {
       const [enabled, setEnabled] = useState(false)
       return (
-        <WorkspaceProvider
+        <WorkspaceProvider agentTypeId="default"
           panels={[chatPanel]}
           capabilities={enabled ? { "agent.chat": true } : {}}
           persistenceEnabled={false}
@@ -534,7 +534,7 @@ describe("WorkspaceProvider — panel registration", () => {
     }
 
     render(
-      <WorkspaceProvider panels={undefined} persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" panels={undefined} persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
@@ -542,7 +542,7 @@ describe("WorkspaceProvider — panel registration", () => {
     expect(screen.getByTestId("count").textContent).toBe("11")
 
     render(
-      <WorkspaceProvider
+      <WorkspaceProvider agentTypeId="default"
         panels={null as unknown as PanelConfig[]}
         persistenceEnabled={false}
       >
@@ -586,7 +586,7 @@ describe("WorkspaceProvider — document title", () => {
 
   it("updates document.title when workspace metadata changes", () => {
     const { rerender } = render(
-      <WorkspaceProvider appTitle="Seneca AI" workspaceId="workspace-a" workspaceLabel="Workspace A" persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" appTitle="Seneca AI" workspaceId="workspace-a" workspaceLabel="Workspace A" persistenceEnabled={false}>
         <div />
       </WorkspaceProvider>,
     )
@@ -594,7 +594,7 @@ describe("WorkspaceProvider — document title", () => {
     expect(document.title).toBe("Workspace A · Seneca AI")
 
     rerender(
-      <WorkspaceProvider appTitle="Seneca AI" workspaceId="workspace-b" workspaceLabel="Workspace B" persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" appTitle="Seneca AI" workspaceId="workspace-b" workspaceLabel="Workspace B" persistenceEnabled={false}>
         <div />
       </WorkspaceProvider>,
     )
@@ -604,7 +604,7 @@ describe("WorkspaceProvider — document title", () => {
 
   it("falls back to workspaceId in document.title when label is missing", () => {
     render(
-      <WorkspaceProvider workspaceId="workspace-scope" persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" workspaceId="workspace-scope" persistenceEnabled={false}>
         <div />
       </WorkspaceProvider>,
     )
@@ -614,7 +614,7 @@ describe("WorkspaceProvider — document title", () => {
 
   it("falls back to workspaceId in document.title when workspaceLabel is unsafe", () => {
     render(
-      <WorkspaceProvider workspaceId="workspace-scope" workspaceLabel="localhost:5212" persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" workspaceId="workspace-scope" workspaceLabel="localhost:5212" persistenceEnabled={false}>
         <div />
       </WorkspaceProvider>,
     )
@@ -627,7 +627,7 @@ describe("WorkspaceProvider — theme", () => {
   it("defaultTheme=dark sets initial theme to dark", () => {
     const { result } = renderHook(() => useTheme(), {
       wrapper: ({ children }: { children: ReactNode }) => (
-        <WorkspaceProvider defaultTheme="dark" persistenceEnabled={false}>
+        <WorkspaceProvider agentTypeId="default" defaultTheme="dark" persistenceEnabled={false}>
           {children}
         </WorkspaceProvider>
       ),
@@ -641,7 +641,7 @@ describe("WorkspaceProvider — theme", () => {
 
     const { result } = renderHook(() => useTheme(), {
       wrapper: ({ children }: { children: ReactNode }) => (
-        <WorkspaceProvider onThemeChange={onChange} persistenceEnabled={false}>
+        <WorkspaceProvider agentTypeId="default" onThemeChange={onChange} persistenceEnabled={false}>
           {children}
         </WorkspaceProvider>
       ),
@@ -665,7 +665,7 @@ describe("WorkspaceProvider — theme", () => {
 describe("WorkspaceProvider — persistence", () => {
   it("workspaceId scopes persistence key", () => {
     render(
-      <WorkspaceProvider workspaceId="my-project">
+      <WorkspaceProvider agentTypeId="default" workspaceId="my-project">
         <div />
       </WorkspaceProvider>,
     )
@@ -677,7 +677,7 @@ describe("WorkspaceProvider — persistence", () => {
 
   it("storageKey overrides workspaceId", () => {
     render(
-      <WorkspaceProvider workspaceId="ignored" storageKey="custom-key">
+      <WorkspaceProvider agentTypeId="default" workspaceId="ignored" storageKey="custom-key">
         <div />
       </WorkspaceProvider>,
     )
@@ -690,7 +690,7 @@ describe("WorkspaceProvider — persistence", () => {
 
   it("persistenceEnabled=false prevents localStorage reads/writes", () => {
     render(
-      <WorkspaceProvider persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
         <div />
       </WorkspaceProvider>,
     )
@@ -707,7 +707,7 @@ describe("WorkspaceProvider — bridge", () => {
   it("bridgeEndpoint provided starts disconnected until server responds", () => {
     const { result } = renderHook(() => useWorkspaceBridge(), {
       wrapper: ({ children }: { children: ReactNode }) => (
-        <WorkspaceProvider
+        <WorkspaceProvider agentTypeId="default"
           bridgeEndpoint="http://localhost:3000"
           persistenceEnabled={false}
         >
@@ -722,7 +722,7 @@ describe("WorkspaceProvider — bridge", () => {
   it("bridgeEndpoint=null sets connected=false", () => {
     const { result } = renderHook(() => useWorkspaceBridge(), {
       wrapper: ({ children }: { children: ReactNode }) => (
-        <WorkspaceProvider bridgeEndpoint={null} persistenceEnabled={false}>
+        <WorkspaceProvider agentTypeId="default" bridgeEndpoint={null} persistenceEnabled={false}>
           {children}
         </WorkspaceProvider>
       ),
@@ -741,7 +741,7 @@ describe("WorkspaceProvider — data wiring", () => {
   it("apiBaseUrl is passed through to the filesystem plugin DataProvider output", () => {
     const { result } = renderHook(() => useApiBaseUrl(), {
       wrapper: ({ children }: { children: ReactNode }) => (
-        <WorkspaceProvider apiBaseUrl="https://api.example.com" persistenceEnabled={false}>
+        <WorkspaceProvider agentTypeId="default" apiBaseUrl="https://api.example.com" persistenceEnabled={false}>
           {children}
         </WorkspaceProvider>
       ),
@@ -759,7 +759,7 @@ describe("WorkspaceProvider — data wiring", () => {
     expect(() =>
       renderHook(() => useDataClient(), {
         wrapper: ({ children }: { children: ReactNode }) => (
-          <WorkspaceProvider excludeDefaults={["filesystem"]} persistenceEnabled={false}>
+          <WorkspaceProvider agentTypeId="default" excludeDefaults={["filesystem"]} persistenceEnabled={false}>
             {children}
           </WorkspaceProvider>
         ),

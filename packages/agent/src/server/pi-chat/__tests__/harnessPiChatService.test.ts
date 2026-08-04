@@ -133,6 +133,40 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
+  it('serves id-less live attachment bytes from the addressed event URL', async () => {
+    const adapter = createAdapter()
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore,
+      workdir: '/workspace',
+      attachmentUrl: ({ sessionId, messageId, index }) => `/addressed/${sessionId}/${messageId}/${index}`,
+    })
+    const events: PiChatEvent[] = []
+    const subscription = await service.subscribe(ctx, 's1', 0, (event) => { events.push(event) })
+    expect(subscription.type).toBe('ok')
+    adapter.emit({
+      type: 'message_start',
+      message: {
+        role: 'user',
+        content: [{ type: 'image', mimeType: 'image/png', filename: 'live.png', data: 'bGl2ZS1ieXRlcw==' }],
+      },
+    } as unknown as AgentSessionEvent)
+    await vi.waitFor(() => expect(events).toHaveLength(1))
+    const start = events[0]
+    if (start?.type !== 'message-start') throw new Error('expected message-start')
+    expect(start.files?.[0]).toMatchObject({
+      url: `/addressed/s1/${start.messageId}/0`,
+      filename: 'live.png',
+    })
+    await expect(service.readAttachment(ctx, 's1', start.messageId, 0)).resolves.toMatchObject({
+      data: new Uint8Array(Buffer.from('live-bytes')),
+      mediaType: 'image/png',
+      filename: 'live.png',
+    })
+    subscription.type === 'ok' && subscription.unsubscribe()
+    await service.dispose()
+  })
+
   it('disposes a receipt-only prompt, native channel, and metering exactly once', async () => {
     const adapter = createAdapter()
     const run = deferred<void>()
@@ -1079,6 +1113,112 @@ describe('HarnessPiChatService', () => {
           ],
         }),
       ],
+    })
+  })
+
+  it('keeps live state when a cold persisted read gains a channel during loading', async () => {
+    const adapter = createAdapter()
+    adapter.readSnapshot().messages = [
+      { id: 'live-user', message: { role: 'user', content: [{ type: 'text', text: 'live prompt' }] } },
+    ]
+    const persisted = deferred<{ id: string; messages: unknown[] }>()
+    const persistedStore: PersistedSessionStore = {
+      ...sessionStore,
+      loadEntries: vi.fn(() => persisted.promise),
+    }
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore: persistedStore,
+      workdir: '/workspace',
+    })
+
+    const statePromise = service.readState(ctx, 's1')
+    await vi.waitFor(() => expect(persistedStore.loadEntries).toHaveBeenCalled())
+    const subscription = await service.subscribe(ctx, 's1', 0, () => {})
+    expect(subscription.type).toBe('ok')
+    persisted.resolve({
+      id: 's1',
+      messages: [{ id: 'stale-user', role: 'user', content: [{ type: 'text', text: 'stale prompt' }] }],
+    })
+
+    await expect(statePromise).resolves.toMatchObject({
+      status: 'streaming',
+      messages: [expect.objectContaining({ id: 'live-user' })],
+    })
+    if (subscription.type === 'ok') subscription.unsubscribe()
+  })
+
+  it('refreshes an idle previously-opened session from persisted history', async () => {
+    const adapter = createAdapter()
+    adapter.readSnapshot().isStreaming = false
+    adapter.readSnapshot().messages = [
+      { id: 'old-user', message: { role: 'user', content: [{ type: 'text', text: 'old prompt' }] } },
+    ]
+    let persistedMessages: unknown[] = [
+      { id: 'old-user', role: 'user', content: [{ type: 'text', text: 'old prompt' }] },
+    ]
+    const persistedStore: PersistedSessionStore = {
+      ...sessionStore,
+      loadEntries: vi.fn(async () => ({ id: 's1', messages: persistedMessages })),
+    }
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore: persistedStore,
+      workdir: '/workspace',
+    })
+
+    await service.readState(ctx, 's1')
+    const subscription = await service.subscribe(ctx, 's1', 0, () => {})
+    expect(subscription.type).toBe('ok')
+    if (subscription.type === 'ok') subscription.unsubscribe()
+
+    persistedMessages = [
+      ...persistedMessages,
+      { id: 'cli-user', role: 'user', content: [{ type: 'text', text: 'added from pi CLI' }] },
+    ]
+
+    const state = await service.readState(ctx, 's1')
+
+    expect(state.status).toBe('idle')
+    expect(state.messages).toEqual([
+      expect.objectContaining({ id: 'old-user' }),
+      expect.objectContaining({
+        id: 'cli-user',
+        parts: [expect.objectContaining({ type: 'text', text: 'added from pi CLI' })],
+      }),
+    ])
+  })
+
+  it('keeps live state when an idle session becomes active during persisted refresh', async () => {
+    const adapter = createAdapter()
+    adapter.readSnapshot().isStreaming = false
+    const persisted = deferred<{ id: string; messages: unknown[] }>()
+    const persistedStore: PersistedSessionStore = {
+      ...sessionStore,
+      loadEntries: vi.fn(() => persisted.promise),
+    }
+    const harness = createHarness(adapter)
+    vi.mocked(harness.hasPiSession).mockReturnValue(true)
+    const service = new HarnessPiChatService({
+      harness,
+      sessionStore: persistedStore,
+      workdir: '/workspace',
+    })
+
+    const statePromise = service.readState(ctx, 's1')
+    await vi.waitFor(() => expect(persistedStore.loadEntries).toHaveBeenCalled())
+    adapter.readSnapshot().isStreaming = true
+    adapter.readSnapshot().messages = [
+      { id: 'live-user', message: { role: 'user', content: [{ type: 'text', text: 'live prompt' }] } },
+    ]
+    persisted.resolve({
+      id: 's1',
+      messages: [{ id: 'stale-user', role: 'user', content: [{ type: 'text', text: 'stale prompt' }] }],
+    })
+
+    await expect(statePromise).resolves.toMatchObject({
+      status: 'streaming',
+      messages: [expect.objectContaining({ id: 'live-user' })],
     })
   })
 

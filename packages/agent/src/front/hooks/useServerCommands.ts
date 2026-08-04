@@ -22,6 +22,7 @@ function serverCommandErrorMessage(body: ServerCommandErrorBody, fallback: strin
 function toSlashCommand(
   command: ServerCommandSummary,
   getSessionId: () => string,
+  agentTypeId: string,
   apiBaseUrl: string | undefined,
   requestHeaders: Record<string, string> | undefined,
   fetchImpl: typeof globalThis.fetch,
@@ -33,13 +34,13 @@ function toSlashCommand(
     ...(command.sourcePlugin ? { sourcePlugin: command.sourcePlugin } : {}),
     handler: async (args) => {
       const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-      const params = new URLSearchParams({ sessionId: getSessionId() })
-      const url = `${base}/api/v1/agent/commands/execute?${params.toString()}`
+      const url = `${base}/api/v1/agents/${encodeURIComponent(agentTypeId)}/commands/execute`
+      const sessionId = getSessionId()
       try {
         const res = await fetchImpl(url, {
           method: 'POST',
           headers: { ...(requestHeaders ?? {}), 'content-type': 'application/json' },
-          body: JSON.stringify({ name: command.name, args }),
+          body: JSON.stringify({ requestId: createRequestId('command'), sessionId, name: command.name, args }),
         })
         if (!res.ok) {
           const body = await res.json().catch(() => ({})) as ServerCommandErrorBody
@@ -61,6 +62,7 @@ function toSlashCommand(
 }
 
 export function useServerCommands({
+  agentTypeId,
   registry,
   requestHeaders,
   sessionId,
@@ -70,6 +72,7 @@ export function useServerCommands({
   enabled = true,
   refreshKey = 0,
 }: {
+  agentTypeId: string
   registry: CommandRegistry
   requestHeaders?: Record<string, string>
   sessionId: string
@@ -102,7 +105,7 @@ export function useServerCommands({
     let aborted = false
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
     const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-    const url = `${base}/api/v1/agent/commands?sessionId=${encodeURIComponent(sessionIdRef.current)}`
+    const url = `${base}/api/v1/agents/${encodeURIComponent(agentTypeId)}/commands?sessionId=${encodeURIComponent(sessionIdRef.current)}`
     const headers = scopedHeaders(requestHeaders, storageScope)
 
     nextFetch(url, { headers })
@@ -116,7 +119,7 @@ export function useServerCommands({
         const removed = clearRegistered()
         let added = false
         for (const serverCommand of payload.commands ?? []) {
-          const command = toSlashCommand(serverCommand, () => sessionIdRef.current, apiBaseUrl, headers, nextFetch)
+          const command = toSlashCommand(serverCommand, () => sessionIdRef.current, agentTypeId, apiBaseUrl, headers, nextFetch)
           if (registry.get(command.name)) continue
           registry.register(command)
           registeredNamesRef.current.add(command.name)
@@ -130,9 +133,14 @@ export function useServerCommands({
       })
 
     return () => { aborted = true }
-  }, [apiBaseUrl, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
+  }, [agentTypeId, apiBaseUrl, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
 
   return stamp
+}
+
+function createRequestId(operation: string): string {
+  const suffix = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  return `${operation}:${suffix}`
 }
 
 function scopedHeaders(

@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-agent",
-  "version": "0.1.92",
+  "version": "0.1.95",
   "type": "module",
   "license": "MIT",
   "description": "Pane-embeddable coding agent. Ships direct/local/vercel-sandbox execution modes behind one interface.",
@@ -36,6 +36,11 @@
       "types": "./dist/server/agent-host/testing/gatewayConformance.d.ts",
       "import": "./dist/server/agent-host/testing/gatewayConformance.js",
       "default": "./dist/server/agent-host/testing/gatewayConformance.js"
+    },
+    "./server/agent-host/testing/compositionRouteProof": {
+      "types": "./dist/server/agent-host/testing/compositionRouteProof.d.ts",
+      "import": "./dist/server/agent-host/testing/compositionRouteProof.js",
+      "default": "./dist/server/agent-host/testing/compositionRouteProof.js"
     },
     "./server/worker": {
       "types": "./dist/server/worker/index.d.ts",

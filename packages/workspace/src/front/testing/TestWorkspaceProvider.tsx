@@ -53,6 +53,7 @@ export function TestWorkspaceProvider({
   return (
     <div data-boring-workspace-testing="" className={defaultTheme === "dark" ? "dark" : undefined}>
       <WorkspaceProvider
+        agentTypeId="default"
         panels={panels}
         apiBaseUrl={apiBaseUrl}
         authHeaders={authHeaders}

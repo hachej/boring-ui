@@ -38,20 +38,6 @@ function mockTool(opts: {
 
 const settledGroup = [
   mockTool({
-    toolName: 'bash',
-    state: 'output-available',
-    id: 'mock-bash-list',
-    input: { command: 'ls -la packages/', description: '' },
-    output: { stdout: 'drwxr-xr-x  agent\ndrwxr-xr-x  ui\ndrwxr-xr-x  workspace\n' },
-  }),
-  mockTool({
-    toolName: 'bash',
-    state: 'output-available',
-    id: 'mock-bash-version',
-    input: { command: 'cat packages/agent/package.json | grep version', description: '' },
-    output: { stdout: '  "version": "0.1.0"' },
-  }),
-  mockTool({
     toolName: 'read',
     state: 'output-available',
     id: 'mock-read-chat-panel',
@@ -59,15 +45,18 @@ const settledGroup = [
     output: { text: '"use client"\n\nimport { useCallback } from "react"\n// ... 1493 lines' },
   }),
   mockTool({
-    toolName: 'edit',
+    toolName: 'grep',
     state: 'output-available',
-    id: 'mock-edit-renderers',
-    input: {
-      path: 'packages/agent/src/front/toolRenderers.tsx',
-      oldString: "  <h4 className=\"font-medium text-muted-foreground text-xs uppercase tracking-wide\">\n    Parameters\n  </h4>",
-      newString: '',
-    },
-    output: { text: 'OK' },
+    id: 'mock-grep-tool-groups',
+    input: { pattern: 'ToolCallGroup', path: 'packages/agent/src/front' },
+    output: { text: 'chat/components/PiTimelineMessage.tsx: ToolCallGroup\nprimitives/tool-call-group.tsx: ToolCallGroup' },
+  }),
+  mockTool({
+    toolName: 'find',
+    state: 'output-available',
+    id: 'mock-find-tests',
+    input: { pattern: '*.test.tsx', path: 'packages/agent/src/front' },
+    output: { text: 'primitives/__tests__/message.test.tsx\nchat/components/__tests__/PiTimelineMessage.test.tsx' },
   }),
 ]
 
@@ -195,13 +184,13 @@ function ShowcaseMessageSession() {
           <div className="mx-auto flex max-w-3xl flex-col gap-6">
             <Message from="system" data-boring-agent-message-id="showcase-system" data-boring-agent-message-status="done">
               <MessageContent className="rounded-lg border border-border/60 bg-background/60 px-3 py-2 text-muted-foreground">
-                <MessageResponse>Session loaded from the static playground fixture.</MessageResponse>
+                <MessageResponse className="boring-agent-markdown">Session loaded from the static playground fixture.</MessageResponse>
               </MessageContent>
             </Message>
 
             <Message from="user" data-boring-agent-message-id="showcase-user" data-boring-agent-message-status="done">
               <MessageContent>
-                <MessageResponse>Can you inspect `README.md`, explain the issue, and update the fixture?</MessageResponse>
+                <MessageResponse className="boring-agent-markdown">Can you inspect `README.md`, explain the issue, and update the fixture?</MessageResponse>
               </MessageContent>
             </Message>
 
@@ -232,7 +221,7 @@ function ShowcaseMessageSession() {
                   tools={settledGroup.slice(0, 2).map((part, index) => ({ part, key: `settled-${index}` }))}
                   mergedToolRenderers={renderers}
                 />
-                <MessageResponse>
+                <MessageResponse className="boring-agent-markdown">
                   Done. Inline filenames like `README.md` now render as quiet chips, and fenced blocks still use the code block primitive.
 
                   ```ts
@@ -264,7 +253,7 @@ function ShowcaseMessageSession() {
                   tools={abortedGroup.map((part, index) => ({ part, key: `aborted-${index}` }))}
                   mergedToolRenderers={renderers}
                 />
-                <MessageResponse>
+                <MessageResponse className="boring-agent-markdown">
                   The active turn was stopped. The tool state stays stopped instead of being reported as a used command.
                 </MessageResponse>
               </MessageContent>
@@ -290,7 +279,7 @@ function ShowcaseMessageSession() {
 
 export function Showcase() {
   return (
-    <div style={{ minHeight: '100vh' }}>
+    <div data-boring-agent style={{ minHeight: '100vh' }}>
       <div className="mx-auto max-w-5xl px-6 py-10 text-foreground">
         {/* header */}
         <div className="mb-8">
@@ -310,7 +299,7 @@ export function Showcase() {
             />
 
             <GroupDemo
-              label="Running — auto-expanded + shimmer title"
+              label="Running — collapsed live status"
               parts={runningGroup}
             />
 

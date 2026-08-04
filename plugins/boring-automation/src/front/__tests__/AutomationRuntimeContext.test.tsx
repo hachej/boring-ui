@@ -42,7 +42,7 @@ describe("AutomationRuntimeProvider", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     render(
-      <AutomationRuntimeProvider apiBaseUrl="https://workspace.example/" authHeaders={{ Authorization: "Bearer provider" }} onAuthError={onAuthError}>
+      <AutomationRuntimeProvider agentTypeId="default" apiBaseUrl="https://workspace.example/" authHeaders={{ Authorization: "Bearer provider" }} onAuthError={onAuthError}>
         <ClientProbe onError={onError} />
       </AutomationRuntimeProvider>,
     )
@@ -63,7 +63,7 @@ describe("AutomationRuntimeProvider", () => {
     })))
 
     render(
-      <AutomationRuntimeProvider apiBaseUrl="" apiTimeout={10}>
+      <AutomationRuntimeProvider agentTypeId="default" apiBaseUrl="" apiTimeout={10}>
         <ClientProbe onError={onError} />
       </AutomationRuntimeProvider>,
     )
@@ -93,3 +93,4 @@ describe("AutomationRuntimeProvider", () => {
     }))
   })
 })
+// @vitest-environment jsdom

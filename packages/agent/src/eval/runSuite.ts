@@ -115,6 +115,7 @@ async function runOnePrompt(
 
   return evalAgentPrompt({
     app: opts.app,
+    agentTypeId: opts.agentTypeId,
     prompt: p.prompt,
     expect: p.expect,
     expectFirst: p.expectFirst,

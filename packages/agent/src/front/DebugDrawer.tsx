@@ -74,12 +74,14 @@ const RETRY_DELAY_MS = 2500
 const MAX_RETRIES = 20
 
 function SystemPromptTab({
+  agentTypeId,
   apiBaseUrl,
   fetch: fetchImpl,
   sessionId,
   requestHeaders,
   storageScope,
 }: {
+  agentTypeId: string
   apiBaseUrl?: string
   fetch?: typeof globalThis.fetch
   sessionId: string
@@ -106,7 +108,7 @@ function SystemPromptTab({
     setState({ kind: 'loading' })
 
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
-    nextFetch(agentResourceUrl(apiBaseUrl, `/api/v1/agent/sessions/${encodeURIComponent(sessionId)}/system-prompt`), {
+    nextFetch(agentResourceUrl(apiBaseUrl, `/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions/${encodeURIComponent(sessionId)}/system-prompt`), {
       headers: scopedHeaders(requestHeaders, storageScope),
     })
       .then(async (res) => {
@@ -141,7 +143,7 @@ function SystemPromptTab({
       aborted = true
       if (retryTimer) clearTimeout(retryTimer)
     }
-  }, [apiBaseUrl, fetchImpl, sessionId, requestHeaders, retryKey, storageScope])
+  }, [agentTypeId, apiBaseUrl, fetchImpl, sessionId, requestHeaders, retryKey, storageScope])
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -324,6 +326,7 @@ const MAX_WIDTH = 800
 const DEFAULT_WIDTH = 440
 
 interface DebugDrawerProps {
+  agentTypeId: string
   apiBaseUrl?: string
   fetch?: typeof globalThis.fetch
   sessionId: string
@@ -334,7 +337,7 @@ interface DebugDrawerProps {
   onWidthChange: (w: number) => void
 }
 
-export function DebugDrawer({ apiBaseUrl, fetch, sessionId, messages, requestHeaders, storageScope, width, onWidthChange }: DebugDrawerProps) {
+export function DebugDrawer({ agentTypeId, apiBaseUrl, fetch, sessionId, messages, requestHeaders, storageScope, width, onWidthChange }: DebugDrawerProps) {
   const [tab, setTab] = useState<Tab>('session')
 
   const onDragStart = useCallback((e: React.MouseEvent) => {
@@ -389,7 +392,7 @@ export function DebugDrawer({ apiBaseUrl, fetch, sessionId, messages, requestHea
             <SessionTab sessionId={sessionId} />
           </TabsContent>
           <TabsContent value="prompt" forceMount className="flex flex-col flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden">
-            <SystemPromptTab apiBaseUrl={apiBaseUrl} fetch={fetch} sessionId={sessionId} requestHeaders={requestHeaders} storageScope={storageScope} />
+            <SystemPromptTab agentTypeId={agentTypeId} apiBaseUrl={apiBaseUrl} fetch={fetch} sessionId={sessionId} requestHeaders={requestHeaders} storageScope={storageScope} />
           </TabsContent>
           <TabsContent value="messages" forceMount className="flex flex-col flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden">
             <MessagesTab messages={messages} />

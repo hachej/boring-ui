@@ -3,12 +3,16 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import type { BoringChatMessage } from '../../../../shared/chat'
 import { ArtifactOpenProvider } from '../../../ArtifactOpenContext'
+import { ChatMessageContributionProvider } from '../../messageContributions'
 import { PiTimelineMessage } from '../PiTimelineMessage'
 
 vi.mock('../../../primitives/message', () => ({
   Message: ({ children, from, ...props }: any) => <article data-from={from} {...props}>{children}</article>,
   MessageContent: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-  MessageResponse: ({ children }: any) => <div data-testid="message-response">{children}</div>,
+  MessageResponse: ({ children, components }: any) => {
+    const Paragraph = components?.p
+    return <div data-testid="message-response">{Paragraph ? <Paragraph>{children}</Paragraph> : children}</div>
+  },
 }))
 
 vi.mock('../../../primitives/reasoning', () => ({
@@ -41,6 +45,27 @@ vi.mock('../../../primitives/attachments', () => ({
 }))
 
 describe('PiTimelineMessage', () => {
+  test('allows a provider to replace a message without feature logic in the timeline', () => {
+    const message: BoringChatMessage = {
+      id: 'custom-1',
+      role: 'user',
+      parts: [{ type: 'text', text: 'opaque integration payload' }],
+    }
+
+    render(
+      <ChatMessageContributionProvider contribution={{
+        id: 'test-renderer',
+        matches: (candidate) => candidate.id === message.id,
+        Component: () => <div>Custom message card</div>,
+      }}>
+        <PiTimelineMessage message={message} isLast isStreaming={false} showThoughts={false} toolRenderers={{}} />
+      </ChatMessageContributionProvider>,
+    )
+
+    expect(screen.getByText('Custom message card')).toBeTruthy()
+    expect(screen.queryByText('opaque integration payload')).toBeNull()
+  })
+
   test('renders live assistant parts in reasoning, tool, notice, text order and opens collapsed thoughts', () => {
     const message: BoringChatMessage = {
       id: 'a-live',
@@ -177,14 +202,14 @@ describe('PiTimelineMessage', () => {
       role: 'user',
       status: 'done',
       parts: [
-        { type: 'file', id: 'u-lazy-url:file', filename: 'image.png', mediaType: 'image/png', url: '/api/v1/agent/pi-chat/pi-1/attachments/m-user-image/1' },
+        { type: 'file', id: 'u-lazy-url:file', filename: 'image.png', mediaType: 'image/png', url: '/api/v1/agents/default/sessions/pi-1/attachments/m-user-image/1' },
       ],
     }
 
     render(<PiTimelineMessage message={message} isLast={false} isStreaming={false} showThoughts={false} toolRenderers={{}} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Open image.png' }))
-    expect(open).toHaveBeenCalledWith('/api/v1/agent/pi-chat/pi-1/attachments/m-user-image/1', '_blank', 'noopener,noreferrer')
+    expect(open).toHaveBeenCalledWith('/api/v1/agents/default/sessions/pi-1/attachments/m-user-image/1', '_blank', 'noopener,noreferrer')
     open.mockRestore()
   })
 
@@ -265,6 +290,112 @@ describe('PiTimelineMessage', () => {
     expect(screen.getByTestId('message-response').textContent).toBe('please review')
     expect(screen.queryByText(/attachment data-boring-agent/)).toBeNull()
     expect(screen.queryByText(/# spec/)).toBeNull()
+  })
+
+  test('renders only explicitly actionable assistant slash commands as buttons', () => {
+    const onMentionActivate = vi.fn()
+    const message: BoringChatMessage = {
+      id: 'a-command',
+      role: 'assistant',
+      status: 'done',
+      parts: [{
+        type: 'text',
+        id: 'a-command:text',
+        text: 'Run /reload, not /reset, /unknown, /reload/config, /reload.md, /reload?unknown, /reload:unknown, /reload#unknown, /reload=unknown, or /reloadé.',
+      }],
+    }
+
+    render(
+      <PiTimelineMessage
+        message={message}
+        isLast
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        mentionCatalog={{ commands: [{ name: 'reload', clickBehavior: 'execute' }], skills: [], files: false }}
+        onMentionActivate={onMentionActivate}
+      />,
+    )
+
+    const button = screen.getByRole('button', { name: 'Run /reload command' })
+    expect(button.textContent).toBe('/reload')
+    expect(screen.getAllByText(/\/reload/).length).toBeGreaterThan(0)
+    fireEvent.click(button)
+    expect(onMentionActivate).toHaveBeenCalledWith({ kind: 'command', name: 'reload', label: '/reload', behavior: 'execute' })
+    expect(onMentionActivate).toHaveBeenCalledTimes(1)
+  })
+
+  test('opens explicit workspace file mentions through the artifact opener', () => {
+    const onOpenArtifact = vi.fn()
+    const message: BoringChatMessage = {
+      id: 'a-file-mention',
+      role: 'assistant',
+      status: 'done',
+      parts: [{ type: 'text', id: 'a-file-mention:text', text: 'Open @packages/agent/README.md.' }],
+    }
+
+    render(
+      <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
+        <PiTimelineMessage
+          message={message}
+          isLast
+          isStreaming={false}
+          showThoughts={false}
+          toolRenderers={{}}
+          mentionCatalog={{ commands: [], skills: [], files: true }}
+        />
+      </ArtifactOpenProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open packages/agent/README.md' }))
+    expect(onOpenArtifact).toHaveBeenCalledWith('packages/agent/README.md')
+  })
+
+  test('does not make a partial command actionable while its assistant message is streaming', () => {
+    const message: BoringChatMessage = {
+      id: 'a-streaming-command',
+      role: 'assistant',
+      status: 'streaming',
+      parts: [{ type: 'text', id: 'a-streaming-command:text', text: 'Run /reload' }],
+    }
+
+    render(
+      <PiTimelineMessage
+        message={message}
+        isLast
+        isStreaming
+        showThoughts={false}
+        toolRenderers={{}}
+        mentionCatalog={{ commands: [{ name: 'reload', clickBehavior: 'execute' }], skills: [], files: false }}
+        onMentionActivate={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Run /reload command' })).toBeNull()
+  })
+
+  test('does not make slash commands in user messages actionable', () => {
+    const message: BoringChatMessage = {
+      id: 'u-command',
+      role: 'user',
+      status: 'done',
+      parts: [{ type: 'text', id: 'u-command:text', text: 'Run /reload' }],
+    }
+
+    render(
+      <PiTimelineMessage
+        message={message}
+        isLast
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        mentionCatalog={{ commands: [{ name: 'reload', clickBehavior: 'execute' }], skills: [], files: false }}
+        onMentionActivate={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Run /reload command' })).toBeNull()
+    expect(screen.getByText('Run /reload')).toBeTruthy()
   })
 
   test('strips generated text attachment blocks from recovered user text', () => {

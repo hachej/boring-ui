@@ -118,7 +118,7 @@ function renderFixture(name: string): ReactNode {
     case "dock-group":
       return (
         <MockWorkspaceApiProvider>
-          <WorkspaceProvider panels={panels} persistenceEnabled={false}>
+          <WorkspaceProvider agentTypeId="default" panels={panels} persistenceEnabled={false}>
             <div className="h-[640px] w-full overflow-hidden rounded border border-border">
               <DockviewShell
                 layout={{
@@ -174,6 +174,9 @@ const AUTOMATION_RUNS: AutomationRun[] = []
 
 function AutomationPaneFixture() {
   const client = useMemo<AutomationClient>(() => ({
+    subscribeRunEvents: async (_onEvent, options = {}) => await new Promise<void>((resolve) => {
+      options.signal?.addEventListener("abort", () => resolve(), { once: true })
+    }),
     listAutomations: async () => AUTOMATIONS,
     createAutomation: async (input) => ({ ...AUTOMATIONS[0]!, ...input, id: "created-automation" }),
     getAutomation: async (id) => AUTOMATIONS.find((automation) => automation.id === id) ?? AUTOMATIONS[0]!,
@@ -204,8 +207,8 @@ function AutomationPaneFixture() {
   }), [])
   return (
     <MockWorkspaceApiProvider>
-      <WorkspaceProvider persistenceEnabled={false}>
-        <AutomationClientProvider value={client}>
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
+        <AutomationClientProvider value={client} agentTypeId="default">
           <AutomationPanel onClose={() => {}} />
         </AutomationClientProvider>
       </WorkspaceProvider>
@@ -255,7 +258,7 @@ function makeMockFetch(originalFetch: typeof fetch): typeof fetch {
   return async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost")
     const method = (init?.method ?? (typeof input === "object" && "method" in input ? input.method : undefined) ?? "GET").toUpperCase()
-    if (url.pathname === "/api/v1/agent/models" && method === "GET") {
+    if (url.pathname === "/api/v1/agents/default/models" && method === "GET") {
       return jsonResponse({ models: [{ provider: "openai", id: "gpt-5.5", label: "GPT-5.5", available: true }] })
     }
     if (url.pathname === "/api/v1/filesystems" && method === "GET") {

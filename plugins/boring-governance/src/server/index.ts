@@ -1,8 +1,11 @@
 import path from 'node:path'
 import type { FastifyRequest } from 'fastify'
-import type { AgentMeteringSink, RegisterAgentRoutesOptions } from '@hachej/boring-agent/server'
+import type { AgentMeteringSink } from '@hachej/boring-agent/server'
 import type { CoreConfig } from '@hachej/boring-core/shared'
-import type { CoreWorkspaceAgentServerPlugin } from '@hachej/boring-core/app/server'
+import type {
+  CoreWorkspaceAgentServerPlugin,
+  CreateCoreWorkspaceAgentServerOptions,
+} from '@hachej/boring-core/app/server'
 import { PostgresBudgetReservationStore } from '@hachej/boring-core/server'
 import { loadGovernancePolicy, type LoadGovernancePolicyOptions } from './loadPolicy.js'
 import { createGovernanceService, type GovernanceService, type GovernanceUsageSpendReader } from './governanceService.js'
@@ -57,9 +60,9 @@ export interface CreateGovernanceResult {
   service: GovernanceService
   status: ReturnType<GovernanceService['policyStatus']>
   serverPlugin: CoreWorkspaceAgentServerPlugin
-  filterModels: RegisterAgentRoutesOptions['filterModels']
+  filterModels: NonNullable<CreateCoreWorkspaceAgentServerOptions['filterModels']>
   createMeteringSink(delegate: AgentMeteringSink, getDb: GovernanceMeteringOptions['getDb']): AgentMeteringSink
-  getFilesystemBindings(options?: CreateGovernanceFilesystemBindingsOptions): NonNullable<RegisterAgentRoutesOptions['getFilesystemBindings']>
+  getFilesystemBindings(options?: CreateGovernanceFilesystemBindingsOptions): NonNullable<CreateCoreWorkspaceAgentServerOptions['getFilesystemBindings']>
   pi: { strictModelResolution: boolean }
 }
 
@@ -109,7 +112,9 @@ function governanceUserFromRequest(request: FastifyRequest) {
   return user ? { id: user.id, email: user.email, emailVerified: user.emailVerified } : null
 }
 
-export function createGovernanceModelFilter(service: GovernanceService): RegisterAgentRoutesOptions['filterModels'] {
+export function createGovernanceModelFilter(
+  service: GovernanceService,
+): NonNullable<CreateCoreWorkspaceAgentServerOptions['filterModels']> {
   return async ({ request }, models, defaultModel) => {
     const user = governanceUserFromRequest(request)
     if (!service.isEnabled()) return { models, defaultModel }

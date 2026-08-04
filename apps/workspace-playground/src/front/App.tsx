@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
 import { WorkspaceProvider } from "@hachej/boring-workspace"
@@ -91,6 +91,7 @@ function WorkspaceFullPageShell() {
 
   return (
     <WorkspaceProvider
+      agentTypeId="default"
       apiBaseUrl=""
       plugins={workspacePlugins}
       persistenceEnabled
@@ -111,23 +112,34 @@ export function WorkspaceShell() {
   const [projectName, setProjectName] = useState("Workspace")
   const [workspaceId, setWorkspaceId] = useState("Workspace")
   const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
-
-  const sessions = useMemo(
-    () =>
-      showcase
-        ? [
-            {
-              id: SHOWCASE_SESSION_ID,
-              title: "Showcase conversation",
-              updatedAt: Date.now(),
-            },
-          ]
-        : undefined,
-    [showcase],
-  )
+  const [showcaseActiveSessionId, setShowcaseActiveSessionId] = useState(SHOWCASE_SESSION_ID)
+  const [showcaseSessions, setShowcaseSessions] = useState(() => [
+    {
+      id: SHOWCASE_SESSION_ID,
+      title: "Showcase conversation",
+      updatedAt: Date.now(),
+    },
+  ])
+  const sessions = showcase ? showcaseSessions : undefined
+  const showcaseSessionSequence = useRef(0)
+  const createShowcaseSession = useCallback(() => {
+    showcaseSessionSequence.current += 1
+    const session = {
+      id: `showcase-${Date.now()}-${showcaseSessionSequence.current}`,
+      title: "New chat",
+      updatedAt: Date.now(),
+    }
+    seedShowcase(session.id)
+    setShowcaseSessions((current) => [...current, session])
+    setShowcaseActiveSessionId(session.id)
+    return session
+  }, [])
   const handleActiveSessionIdChange = useCallback(
     (sessionId: string | null) => {
-      if (showcase && sessionId) seedShowcase(sessionId)
+      if (showcase && sessionId) {
+        seedShowcase(sessionId)
+        setShowcaseActiveSessionId(sessionId)
+      }
     },
     [showcase],
   )
@@ -168,7 +180,7 @@ export function WorkspaceShell() {
   return (
     <WorkspaceAgentFront
       workspaceId={showcase ? "playground" : workspaceId}
-      agentTypeId={showcase ? undefined : "default"}
+      agentTypeId="default"
       apiBaseUrl=""
       persistenceEnabled
       providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${multiFilesystem ? "multi-fs:" : ""}${workspaceId}`}
@@ -181,8 +193,10 @@ export function WorkspaceShell() {
       fullPageBasePath="/full-page"
       provisionWorkspace={!showcase}
       sessions={sessions}
-      activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
+      activeSessionId={showcase ? showcaseActiveSessionId : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}
+      onSwitchSession={showcase ? handleActiveSessionIdChange : undefined}
+      onCreateSession={showcase ? createShowcaseSession : undefined}
       plugins={workspacePlugins}
       chatParams={{ thinkingControl: true }}
     />

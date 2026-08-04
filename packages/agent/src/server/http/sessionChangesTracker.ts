@@ -14,17 +14,33 @@ export interface SessionFileChange {
 }
 
 export interface SessionChangesTracker {
-  record(sessionId: string, change: SessionFileChange): void
-  list(sessionId: string): SessionFileChange[]
-  clear(sessionId: string): void
+  record(scope: SessionChangesScope | string, change: SessionFileChange): void
+  list(scope: SessionChangesScope | string): SessionFileChange[]
+  clear(scope: SessionChangesScope | string): void
+}
+
+export interface SessionChangesScope {
+  readonly workspaceScopeId?: string
+  readonly agentTypeId?: string
+  readonly sessionId: string
+}
+
+function scopeKey(scope: SessionChangesScope | string): string {
+  const value = typeof scope === 'string' ? { sessionId: scope } : scope
+  return JSON.stringify([
+    value.workspaceScopeId ?? null,
+    value.agentTypeId ?? null,
+    value.sessionId,
+  ])
 }
 
 export class InMemorySessionChangesTracker implements SessionChangesTracker {
   private static readonly MAX_CHANGES_PER_SESSION = 1000
   private readonly bySession = new Map<string, SessionFileChange[]>()
 
-  record(sessionId: string, change: SessionFileChange): void {
-    const existing = this.bySession.get(sessionId)
+  record(scope: SessionChangesScope | string, change: SessionFileChange): void {
+    const key = scopeKey(scope)
+    const existing = this.bySession.get(key)
     if (existing) {
       existing.push(change)
       if (existing.length > InMemorySessionChangesTracker.MAX_CHANGES_PER_SESSION) {
@@ -35,15 +51,15 @@ export class InMemorySessionChangesTracker implements SessionChangesTracker {
       }
       return
     }
-    this.bySession.set(sessionId, [change])
+    this.bySession.set(key, [change])
   }
 
-  list(sessionId: string): SessionFileChange[] {
-    return [...(this.bySession.get(sessionId) ?? [])]
+  list(scope: SessionChangesScope | string): SessionFileChange[] {
+    return [...(this.bySession.get(scopeKey(scope)) ?? [])]
   }
 
-  clear(sessionId: string): void {
-    this.bySession.delete(sessionId)
+  clear(scope: SessionChangesScope | string): void {
+    this.bySession.delete(scopeKey(scope))
   }
 }
 

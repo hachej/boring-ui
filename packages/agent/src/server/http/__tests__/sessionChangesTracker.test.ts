@@ -43,4 +43,21 @@ describe('sessionChangesTracker', () => {
     expect(files[0].path).toBe('file-105.ts')
     expect(files[files.length - 1].path).toBe('file-1104.ts')
   })
+
+  test('isolates equal session IDs by verified workspace and Agent scope while preserving legacy keys', () => {
+    const tracker = new InMemorySessionChangesTracker()
+    const change = (path: string) => ({ op: 'write' as const, path, timestamp: '2026-07-31T00:00:00.000Z' })
+    tracker.record({ workspaceScopeId: 'workspace-a', agentTypeId: 'alpha', sessionId: 'same' }, change('a.ts'))
+    tracker.record({ workspaceScopeId: 'workspace-a', agentTypeId: 'beta', sessionId: 'same' }, change('b.ts'))
+    tracker.record({ workspaceScopeId: 'workspace-b', agentTypeId: 'alpha', sessionId: 'same' }, change('c.ts'))
+    tracker.record('same', change('legacy.ts'))
+
+    expect(tracker.list({ workspaceScopeId: 'workspace-a', agentTypeId: 'alpha', sessionId: 'same' }))
+      .toEqual([expect.objectContaining({ path: 'a.ts' })])
+    expect(tracker.list({ workspaceScopeId: 'workspace-a', agentTypeId: 'beta', sessionId: 'same' }))
+      .toEqual([expect.objectContaining({ path: 'b.ts' })])
+    expect(tracker.list({ workspaceScopeId: 'workspace-b', agentTypeId: 'alpha', sessionId: 'same' }))
+      .toEqual([expect.objectContaining({ path: 'c.ts' })])
+    expect(tracker.list('same')).toEqual([expect.objectContaining({ path: 'legacy.ts' })])
+  })
 })

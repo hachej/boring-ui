@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-workspace",
-  "version": "0.1.92",
+  "version": "0.1.95",
   "type": "module",
   "license": "MIT",
   "description": "Workspace UI, plugin, and bridge package for composing chat, files, catalogs, editors, and app-specific panes.",
@@ -74,7 +74,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsup && vite build && node ./scripts/build-workspace-css.mjs && node ./scripts/assert-build-artifacts.mjs",
-    "typecheck": "tsc --noEmit -p tsconfig.front.json && tsc --noEmit -p tsconfig.server.json",
+    "typecheck": "tsc --noEmit -p tsconfig.front.source.json && tsc --noEmit -p tsconfig.server.source.json",
     "test": "vitest run",
     "check:bundle-size": "node ./scripts/check-bundle-size.mjs",
     "lint:plugin-invariants": "node ./scripts/check-plugin-invariants.mjs",

@@ -47,6 +47,8 @@ export interface WorkbenchLeftPaneProps {
   onExpand?: (tab?: WorkbenchLeftTabId) => void
   onCloseSourcePane?: () => void
   railOnly?: boolean
+  /** Mirrors the activity rail to the far-right edge of its source pane. */
+  railSide?: "left" | "right"
   className?: string
 }
 
@@ -64,6 +66,7 @@ export function WorkbenchLeftPane({
   onExpand,
   onCloseSourcePane,
   railOnly = false,
+  railSide = "left",
   className,
 }: WorkbenchLeftPaneProps) {
   const { actions: tabs, activeTab, activeAction, activeSource } = useWorkbenchLeftPaneModel({
@@ -134,23 +137,34 @@ export function WorkbenchLeftPane({
   // background on the icon and the pane, bridged across the rail gutter,
   // with no accent marker or side stripe (see WORKSPACE_LEFT_NAV_UX_SPEC).
   // Instant tooltips (no OS hover delay) name the icon-only categories.
+  const tooltipSide = railSide === "right" ? "left" : "right"
   const rail = (
     <nav
+      data-boring-workspace-part="workbench-activity-rail"
+      data-boring-side={railSide}
       className="flex w-11 shrink-0 flex-col items-center gap-1 bg-muted/35 px-1.5 py-2"
       aria-label="Workspace categories"
     >
-      {onCollapse && (
-        <PaneCollapseButton label="Hide workspace menu" side="right" onClick={onCollapse} className="mb-1">
-          <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
-        </PaneCollapseButton>
-      )}
+      {railSide === "left" ? (
+        <>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center" data-boring-workspace-part="workbench-host-control-slot">
+            {onCollapse ? (
+              <PaneCollapseButton label="Hide workspace menu" side={tooltipSide} onClick={onCollapse}>
+                <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
+              </PaneCollapseButton>
+            ) : null}
+          </div>
+          <span aria-hidden="true" className="my-1 h-px w-6 shrink-0 bg-border/70" />
+        </>
+      ) : null}
       {tabs.map((entry) => {
         return (
-          <ControlTooltip key={entry.id} label={entry.title} side="right">
+          <ControlTooltip key={entry.id} label={entry.title} side={tooltipSide}>
             <button
               type="button"
               aria-label={entry.title}
               aria-pressed={entry.active}
+              data-boring-workspace-rail-id={entry.id}
               onClick={entry.select}
               onContextMenu={(event) => {
                 if (!entry.reloadAgentPlugins) return
@@ -187,9 +201,9 @@ export function WorkbenchLeftPane({
 
   return (
     <div data-boring-workspace-part="workbench-left" className={cn("workbench-left-root flex h-full min-h-0", className)}>
-      {rail}
+      {railSide === "left" ? rail : null}
 
-      <div className="flex h-full min-w-0 flex-1 flex-col bg-muted/35">
+      <div data-boring-workspace-part="workbench-source-pane" className="flex h-full min-w-0 flex-1 flex-col bg-muted/35">
         {!activeOwnsSearch && (
           <div className="flex h-11 items-center gap-1 border-b border-border/60 bg-muted/35 px-2.5">
             <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -252,6 +266,8 @@ export function WorkbenchLeftPane({
           )}
         </div>
       </div>
+
+      {railSide === "right" ? rail : null}
     </div>
   )
 }

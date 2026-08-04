@@ -1,7 +1,7 @@
 import type { RuntimeBundle, RuntimeModeAdapter } from '../runtime/mode'
 import { AgentGatewayError, AgentGatewayErrorCode } from '../../shared/index'
 import type { WorkspaceProvisioningResult } from '../workspace/provisioning'
-import type { ResolvedEnvironmentScope } from './types'
+import type { AgentHostEnvironmentScope, ResolvedEnvironmentScope } from './types'
 
 export interface EnvironmentProvisioningSnapshot {
   readonly changed: boolean
@@ -129,25 +129,25 @@ export class EnvironmentLeaseManager {
     environment: ResolvedEnvironmentScope,
     signal: AbortSignal,
   ): Promise<EnvironmentGeneration> {
-    const compatibilityModeContext = (environment as ResolvedEnvironmentScope & {
-      readonly compatibilityModeContext?: Partial<Parameters<RuntimeModeAdapter['create']>[0]>
-    }).compatibilityModeContext
-    const bundle = await this.adapter.create({
+    const runtimeWorkspaceId = environment.runtimeWorkspaceId ?? workspaceScopeId
+    const providerBundle = await this.adapter.create({
       workspaceRoot: environment.workspaceRoot,
-      sessionId: workspaceScopeId,
-      workspaceId: workspaceScopeId,
+      sessionId: runtimeWorkspaceId,
+      workspaceId: runtimeWorkspaceId,
       templatePath: environment.templatePath,
-      ...compatibilityModeContext,
     })
+    let bundle = providerBundle
     try {
       if (signal.aborted) throw closedError()
+      bundle = await (environment as AgentHostEnvironmentScope).transformRuntimeBundle?.(providerBundle)
+        ?? providerBundle
       const provisioning = freezeProvisioningSnapshot(
         await environment.provisionRuntime?.({ runtimeBundle: bundle, signal }),
       )
       if (signal.aborted) throw closedError()
       return { bundle, provisioning }
     } catch (error) {
-      await bundle.disposeRuntime?.().catch(() => {})
+      await providerBundle.disposeRuntime?.().catch(() => {})
       throw error
     }
   }
