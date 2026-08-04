@@ -152,6 +152,46 @@
   opacity: 0.7;
 }
 
+/* Chat headers are a single, calm session strip rather than workbench tabs. */
+.dv-chat-stage {
+  --dv-tabs-and-actions-container-height: 44px;
+}
+
+.dv-chat-stage .dv-tabs-and-actions-container,
+.dv-chat-stage .tabs-and-actions-container {
+  height: 44px !important;
+  padding: 0 8px 0 0;
+  align-items: center;
+  gap: 8px;
+  background: oklch(from var(--muted) l c h / 0.22) !important;
+  border-bottom: 1px solid oklch(from var(--border) l c h / 0.55);
+}
+
+.dv-chat-stage .dv-tabs-container,
+.dv-chat-stage .tab-container {
+  align-items: stretch;
+}
+
+.dv-chat-stage .dv-tab,
+.dv-chat-stage .tab,
+.dv-chat-stage .dv-tab.dv-active-tab,
+.dv-chat-stage .tab.active-tab {
+  height: 44px;
+  min-width: 0;
+  max-width: min(420px, 55vw);
+  margin: 0;
+  align-self: stretch;
+  color: var(--foreground) !important;
+  background: transparent !important;
+  border: 0;
+  border-radius: 0;
+}
+
+.dv-chat-stage .dv-tab::before,
+.dv-chat-stage .tab::before {
+  display: none;
+}
+
 /* Sash (resize handle)
    Dockview's default 4px grab zone is easy to miss. Keep the visible divider
    subtle, but expand the pointer target to 12px so pane resizing is forgiving. */

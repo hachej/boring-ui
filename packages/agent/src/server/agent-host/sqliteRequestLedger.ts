@@ -1,5 +1,8 @@
-import { DatabaseSync } from 'node:sqlite'
+import { createRequire } from 'node:module'
+import type { DatabaseSync } from 'node:sqlite'
 import { AgentGatewayError, AgentGatewayErrorCode } from '../../shared/index'
+
+const require = createRequire(import.meta.url)
 import type {
   AgentRequestFailure,
   AgentRequestKey,
@@ -38,7 +41,8 @@ export class SqliteAgentRequestLedger implements AgentRequestLedger {
   private readonly database: DatabaseSync
 
   constructor(path: string) {
-    this.database = new DatabaseSync(path)
+    const { DatabaseSync: SqliteDatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+    this.database = new SqliteDatabaseSync(path)
     this.database.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;')
     this.database.exec(`
       CREATE TABLE IF NOT EXISTS agent_request_ledger (

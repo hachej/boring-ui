@@ -168,6 +168,7 @@ export async function createStandaloneAgentHostApp(
   const resolveEnvironment = () => ({
     placementIdentity: JSON.stringify([resolvedMode, workspaceRoot, templatePath ?? null]),
     workspaceRoot,
+    runtimeWorkspaceId: sessionId,
     templatePath,
     provisioningFingerprint: JSON.stringify([resolvedMode, workspaceRoot, templatePath ?? null]),
     async provisionRuntime({ runtimeBundle }: { runtimeBundle: RuntimeBundle; signal: AbortSignal }) {

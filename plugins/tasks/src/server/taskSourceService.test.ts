@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { describe, expect, test, vi } from "vitest"
 import type { BoringTaskSourceRuntime } from "./sourceRuntime"
 import { createTaskSourceRegistry } from "./sourceRuntime"
