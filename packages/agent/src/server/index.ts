@@ -87,6 +87,15 @@ export type {
   MaterializeAgentDirectoryInput,
 } from './agentDefinition/materializeAgentDirectory'
 export {
+  createConfiguredAgentHostAgentSpec,
+  TrustedAgentCompositionError,
+} from './agentDefinition/createConfiguredAgentHostAgentSpec'
+export type {
+  CreateConfiguredAgentHostAgentSpecInput,
+  TrustedAgentInstructionAppendix,
+  TrustedAuthoredAgentPolicy,
+} from './agentDefinition/createConfiguredAgentHostAgentSpec'
+export {
   createResolvedAgentDigest,
   resolveAgentDeployment,
   type ResolvedAgentDigestInput,

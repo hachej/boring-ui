@@ -15,6 +15,7 @@ Active explicit-only skills live in `.agents/skills/`. Invoke with
 | coding/invariants/commands | [`procedures/`](procedures/) |
 | proof | [`procedures/proof-of-work.md`](procedures/proof-of-work.md) |
 | human handoff | [`procedures/owner-review-card.md`](procedures/owner-review-card.md) |
+| agent/session handoff | [`procedures/session-handoff.md`](procedures/session-handoff.md) |
 | issue intake | [`procedures/well-documented-issue.md`](procedures/well-documented-issue.md) |
 | plans | [`procedures/issue-plans.md`](procedures/issue-plans.md) |
 | worktree agents | [`procedures/worktree-agent.md`](procedures/worktree-agent.md) |
