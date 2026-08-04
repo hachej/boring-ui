@@ -33,8 +33,8 @@ shutdown, and fresh-process restart. Provider, manager, projector, review, and
 drain race/boundary suites run in the same gate:
 
 ```bash
-pnpm --filter @hachej/boring-live-transcription test:system
-pnpm --filter @hachej/boring-live-transcription typecheck
+pnpm --filter @hachej/boring-transcription test:system
+pnpm --filter @hachej/boring-transcription typecheck
 ```
 
 The deterministic gate does not claim that a deployed host has `ffmpeg`, model

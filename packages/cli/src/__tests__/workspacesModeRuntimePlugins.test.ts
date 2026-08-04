@@ -507,13 +507,20 @@ describe("workspaces mode runtime plugin wiring", () => {
       const stillBeforeReload = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
       expect((stillBeforeReload.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "boring-automation", "diagram", "tasks"])
 
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/sessions?workspaceId=" + encodeURIComponent(workspace.id),
+        payload: { requestId: "workspace-runtime-query-session-1" },
+      })
+      expect(created.statusCode, created.body).toBe(201)
+
       const reload = await app.inject({
         method: "POST",
         url: "/api/v1/agents/default/reload?workspaceId=" + encodeURIComponent(workspace.id),
         payload: { requestId: "workspace-runtime-query-reload-1" },
       })
-      expect(reload.statusCode).toBe(200)
-      expect(reload.json()).toMatchObject({ ok: true, sessionId: expect.any(String), reloaded: expect.any(Boolean) })
+      expect(reload.statusCode, reload.body).toBe(200)
+      expect(reload.json()).toMatchObject({ ok: true, reloaded: expect.any(Boolean) })
 
       const afterReload = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
       expect((afterReload.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "boring-automation", "diagram", "later-plugin", "tasks"])
@@ -707,13 +714,20 @@ describe("workspaces mode runtime plugin wiring", () => {
       const pluginRoot = join(workspaceRoot, ".pi", "extensions", "live-plugin")
       await rename(pluginRoot, join(workspaceRoot, ".pi", "hidden-live-plugin"))
 
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/sessions?workspaceId=" + encodeURIComponent(workspace.id),
+        payload: { requestId: "workspace-runtime-query-session-5" },
+      })
+      expect(created.statusCode, created.body).toBe(201)
+
       const reload = await app.inject({
         method: "POST",
         url: "/api/v1/agents/default/reload?workspaceId=" + encodeURIComponent(workspace.id),
         payload: { requestId: "workspace-runtime-query-reload-5" },
       })
-      expect(reload.statusCode).toBe(200)
-      expect(reload.json()).toMatchObject({ ok: true, sessionId: expect.any(String), reloaded: expect.any(Boolean) })
+      expect(reload.statusCode, reload.body).toBe(200)
+      expect(reload.json()).toMatchObject({ ok: true, reloaded: expect.any(Boolean) })
 
       const unload = await sse.nextEvent((event) => event.event === "boring.plugin.unload")
       expect(unload.data).toMatchObject({ id: "live-plugin", workspaceId: workspace.id, replay: false })

@@ -22,6 +22,7 @@ describe("CLI live transcript composition", () => {
       workspaceRoot,
       mode: "direct",
       provisionWorkspace: false,
+      loadAmbientSkills: false,
       liveTranscripts: {
         enabled: true,
         listenerHost: "127.0.0.1",
@@ -62,7 +63,7 @@ describe("CLI live transcript composition", () => {
         url: "/api/v1/agents/default/sessions",
         payload: { requestId: "live-transcript-session" },
       })
-      expect(createdSession.statusCode).toBe(201)
+      expect(createdSession.statusCode, createdSession.body).toBe(201)
       const sessionId = createdSession.json().sessionId as string
       const started = await app.inject({
         method: "POST",
@@ -201,6 +202,7 @@ describe("CLI live transcript composition", () => {
       workspaceRoot,
       mode: "direct",
       provisionWorkspace: false,
+      loadAmbientSkills: false,
       liveTranscripts: {
         enabled: false,
         listenerHost: "127.0.0.1",

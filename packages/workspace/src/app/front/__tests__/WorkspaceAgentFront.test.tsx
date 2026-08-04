@@ -364,6 +364,44 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByText("First session")).toBeInTheDocument()
   })
 
+  it("replaces the sole closed chat pane with a fresh New chat pane", async () => {
+    const user = userEvent.setup()
+    const createSession = vi.fn()
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "s1", title: "First session", updatedAt: Date.now() },
+      ])
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="singleton-close"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSwitchSession={setActiveSessionId}
+          onCreateSession={() => {
+            createSession()
+            const session = { id: "fresh", title: "New chat", updatedAt: Date.now() }
+            setSessions((current) => [...current, session])
+            setActiveSessionId(session.id)
+            return session
+          }}
+          persistenceEnabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    expect(visibleChatSessionIds()).toEqual(["s1"])
+
+    await user.click(screen.getByLabelText("Close First session pane"))
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["fresh"]))
+    expect(createSession).toHaveBeenCalledOnce()
+    expect(screen.getByLabelText("Close New chat pane")).toBeInTheDocument()
+  })
+
   it("keeps colliding addressed sessions distinct through pane activation and deletion", async () => {
     const user = userEvent.setup()
     const switched: Array<[string, string | undefined]> = []

@@ -478,15 +478,15 @@ importers:
       '@hachej/boring-diagram':
         specifier: workspace:*
         version: link:../../plugins/diagram
-      '@hachej/boring-live-transcription':
-        specifier: workspace:*
-        version: link:../../plugins/live-transcription
       '@hachej/boring-sandbox':
         specifier: workspace:*
         version: link:../boring-sandbox
       '@hachej/boring-tasks':
         specifier: workspace:*
         version: link:../../plugins/tasks
+      '@hachej/boring-transcription':
+        specifier: workspace:*
+        version: link:../../plugins/live-transcription
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui

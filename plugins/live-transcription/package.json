@@ -1,6 +1,6 @@
 {
-  "name": "@hachej/boring-live-transcription",
-  "version": "0.1.94",
+  "name": "@hachej/boring-transcription",
+  "version": "0.1.95",
   "type": "module",
   "private": false,
   "license": "MIT",
