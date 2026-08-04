@@ -1,5 +1,6 @@
 import { useEffect } from "react"
 import { act, fireEvent, render, screen, within } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
 import { workspaceSessionKey } from "../../../sessionIdentity"
@@ -275,7 +276,8 @@ describe("AppLeftPane", () => {
     expect(onSwitchSession).toHaveBeenCalledWith("s2")
   })
 
-  it("keeps structured addressed refs distinct from a colliding raw legacy id", () => {
+  it("keeps structured addressed refs distinct from a colliding raw legacy id", async () => {
+    const user = userEvent.setup()
     const addressedKey = workspaceSessionKey("shared", "alpha")
     const onSwitchSession = vi.fn()
     const onToggleSessionPinned = vi.fn()
@@ -303,7 +305,8 @@ describe("AppLeftPane", () => {
     expect(screen.getByText("Legacy collision").closest('[data-boring-workspace-part="app-session-row"]')).toHaveAttribute("data-boring-session-state", "open")
     fireEvent.click(screen.getByText("Addressed session"))
     fireEvent.click(screen.getByText("Legacy collision"))
-    fireEvent.click(screen.getByRole("button", { name: "Unpin Addressed session" }))
+    await user.click(screen.getByRole("button", { name: "Chat actions for Addressed session" }))
+    await user.click(screen.getByRole("menuitem", { name: "Unpin chat" }))
     expect(onSwitchSession).toHaveBeenNthCalledWith(1, "shared", "alpha")
     expect(onSwitchSession).toHaveBeenNthCalledWith(2, addressedKey)
     expect(onToggleSessionPinned).toHaveBeenCalledWith("shared", "alpha")

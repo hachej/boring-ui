@@ -1,6 +1,13 @@
 "use client"
 
-import { MessageSquare, MessageSquarePlus, Pin, X } from "lucide-react"
+import { MessageSquare, MessageSquarePlus, MoreHorizontal, Pin, PinOff, Trash2 } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
 import type { WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
@@ -45,14 +52,9 @@ export function AppSessionRow({
 }) {
   const title = session.title || "Untitled"
   const activate = () => onSwitch(session.id)
-  const actionCount = Number(state === "normal" && canSplit) + Number(canPin) + Number(Boolean(onDelete))
-  const actionWidthClassName = actionCount >= 3
-    ? "w-[88px]"
-    : actionCount === 2
-      ? "w-[58px]"
-      : actionCount === 1
-        ? "w-7"
-        : "w-0"
+  const hasActions = (state === "normal" && canSplit) || canPin || Boolean(onDelete)
+  const actionCount = hasActions ? 1 : 0
+  const actionWidthClassName = hasActions ? "w-7" : "w-0"
   const statusWidthClassName = attentionBadge || working ? "w-[88px]" : actionWidthClassName
 
   return (
@@ -127,45 +129,49 @@ export function AppSessionRow({
           "group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100",
         )}
       >
-        {state === "normal" && canSplit ? (
-          <button
-            type="button"
-            aria-label={`Open ${title} in new chat pane`}
-            title="Open in new chat pane"
-            data-boring-mobile-dismiss="true"
-            onClick={() => onOpenAsPane(session.id)}
-            className="app-left-session-secondary-action grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-foreground/[0.08] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <MessageSquarePlus className="h-4 w-4" strokeWidth={1.75} />
-          </button>
-        ) : null}
-        {canPin ? (
-          <button
-            type="button"
-            aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
-            title={pinned ? "Unpin" : "Pin"}
-            aria-pressed={pinned}
-            onClick={() => onTogglePinned(session.id)}
-            className={cn(
-              "app-left-session-secondary-action grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-foreground/[0.08] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              pinned && "text-[color:var(--accent)]",
-            )}
-          >
-            <Pin className={cn("h-4 w-4", pinned && "fill-current")} strokeWidth={1.75} />
-          </button>
-        ) : null}
-        {onDelete ? (
-          <button
-            type="button"
-            aria-label={`Delete ${title}`}
-            title="Delete"
-            onClick={() => {
-              if (typeof window !== "undefined" && window.confirm(`Delete “${title}”?`)) onDelete(session.id)
-            }}
-            className="app-left-session-secondary-action grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-foreground/[0.08] hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <X className="h-4 w-4" strokeWidth={1.75} />
-          </button>
+        {hasActions ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label={`Chat actions for ${title}`}
+                title="Chat actions"
+                onClick={(event) => event.stopPropagation()}
+                className="app-left-session-secondary-action grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-foreground/[0.08] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <MoreHorizontal className="h-4 w-4" strokeWidth={1.75} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" sideOffset={6} className="min-w-48">
+              {state === "normal" && canSplit ? (
+                <DropdownMenuItem data-boring-mobile-dismiss="true" onSelect={() => onOpenAsPane(session.id)}>
+                  <MessageSquarePlus className="mr-2 h-4 w-4" />
+                  Open in new chat pane
+                </DropdownMenuItem>
+              ) : null}
+              {canPin ? (
+                <DropdownMenuItem onSelect={() => onTogglePinned(session.id)}>
+                  {pinned ? <PinOff className="mr-2 h-4 w-4" /> : <Pin className="mr-2 h-4 w-4" />}
+                  {pinned ? "Unpin chat" : "Pin chat"}
+                </DropdownMenuItem>
+              ) : null}
+              {onDelete ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    data-boring-mobile-dismiss="true"
+                    onSelect={() => {
+                      if (typeof window !== "undefined" && window.confirm(`Delete “${title}”?`)) onDelete(session.id)
+                    }}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete chat
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : null}
       </span>
     </div>

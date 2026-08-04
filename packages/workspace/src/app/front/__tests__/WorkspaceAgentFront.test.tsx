@@ -574,12 +574,14 @@ describe("WorkspaceAgentFront", () => {
     expect(onSwitchSession).toHaveBeenCalledWith("s2", "default")
 
     const switchCallsAfterRowClick = onSwitchSession.mock.calls.length
-    await user.click(within(appNav).getByRole("button", { name: "Pin Second session" }))
+    await user.click(within(appNav).getByRole("button", { name: "Chat actions for Second session" }))
+    await user.click(screen.getByRole("menuitem", { name: "Pin chat" }))
     expect(onSwitchSession).toHaveBeenCalledTimes(switchCallsAfterRowClick)
     expect(within(appNav).getByText("Pinned")).toBeInTheDocument()
     expect(within(appNav).getByText("Chats")).toBeInTheDocument()
 
-    await user.click(within(appNav).getByRole("button", { name: "Open Third session in new chat pane" }))
+    await user.click(within(appNav).getByRole("button", { name: "Chat actions for Third session" }))
+    await user.click(screen.getByRole("menuitem", { name: "Open in new chat pane" }))
     expect(onSwitchSession).toHaveBeenCalledWith("s3", "default")
 
     await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
@@ -726,7 +728,8 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).getByText("Chats")).toBeInTheDocument()
   })
 
-  it("renders multi-project app navigation with pinned sessions above the inline projects tree", () => {
+  it("renders multi-project app navigation with pinned sessions above the inline projects tree", async () => {
+    const user = userEvent.setup()
     const sessions = [
       { id: "s1", title: "Active project session", updatedAt: Date.now() - 1_000 },
       { id: "s2", title: "Pinned session", updatedAt: Date.now() - 2_000 },
@@ -769,18 +772,23 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).getByText("Beta kickoff")).toBeInTheDocument()
     expect(within(appNav).queryByRole("button", { name: "Pin Beta kickoff" })).not.toBeInTheDocument()
     expect(within(appNav).getByText("Active project session")).toBeInTheDocument()
-    // The active session is already open, so it offers no "open in a new pane".
-    expect(within(appNav).queryByRole("button", { name: "Open Active project session in new chat pane" })).not.toBeInTheDocument()
-    // A session that isn't open still does.
-    expect(within(appNav).getByRole("button", { name: "Open Pinned session in new chat pane" })).toBeInTheDocument()
-    expect(within(appNav).getByRole("button", { name: "Pin Active project session" })).toBeInTheDocument()
+    // The active session is already open, so its menu offers pinning but no split action.
+    await user.click(within(appNav).getByRole("button", { name: "Chat actions for Active project session" }))
+    expect(screen.queryByRole("menuitem", { name: "Open in new chat pane" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("menuitem", { name: "Pin chat" }))
+    // A session that isn't open still offers the split action.
+    await user.click(within(appNav).getByRole("button", { name: "Chat actions for Pinned session" }))
+    await user.click(screen.getByRole("menuitem", { name: "Open in new chat pane" }))
+    // Restore the active project session to its project tree before collapsing it.
+    await user.click(within(appNav).getByRole("button", { name: "Chat actions for Active project session" }))
+    await user.click(screen.getByRole("menuitem", { name: "Unpin chat" }))
     expect(within(appNav).getByText("Pinned session")).toBeInTheDocument()
     expect(within(appNav).getByText("Chats")).toBeInTheDocument()
     // Per-project action: start a new chat inside a specific project.
     expect(within(appNav).getByRole("button", { name: "New chat in Project Alpha" })).toBeInTheDocument()
 
     // The chevron (not the row) toggles expansion.
-    fireEvent.click(collapseAlpha)
+    fireEvent.click(within(appNav).getByRole("button", { name: "Collapse Project Alpha" }))
     expect(within(appNav).getByRole("button", { name: "Expand Project Alpha" })).toHaveAttribute("aria-expanded", "false")
     expect(within(appNav).queryByText("Active project session")).not.toBeInTheDocument()
   })
