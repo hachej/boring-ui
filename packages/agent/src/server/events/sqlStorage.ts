@@ -1,6 +1,9 @@
 import { mkdirSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync } from 'node:sqlite'
+
+const require = createRequire(import.meta.url)
 
 export interface SqlResult {
   toArray(): Array<Record<string, unknown>>
@@ -59,7 +62,8 @@ export function openDatabase(path: string): OpenDatabaseResult {
     mkdirSync(dirname(path), { recursive: true })
   }
 
-  const db = new DatabaseSync(path)
+  const { DatabaseSync: SqliteDatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+  const db = new SqliteDatabaseSync(path)
   if (path !== ':memory:') {
     db.exec('PRAGMA journal_mode=WAL')
   }

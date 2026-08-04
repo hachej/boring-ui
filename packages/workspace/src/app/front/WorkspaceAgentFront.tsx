@@ -65,8 +65,10 @@ import {
 interface PendingCreatePane {
   afterId: string
   knownIds: Set<string>
+  workspaceId: string
   placementDirection?: ChatPaneSplitDirection
   createdId?: string
+  mode: "insert" | "replace"
 }
 
 export interface WorkspaceAgentSession {
@@ -725,6 +727,8 @@ export function WorkspaceAgentFront<
     (shellPersistenceEnabled ? readStoredChatPaneState(chatPaneStorageKey, workspaceId, agentTypeId) : null)
       ?? { workspaceId, ids: [], activeId: null },
   )
+  const chatPaneStateRef = useRef(chatPaneState)
+  chatPaneStateRef.current = chatPaneState
   const [pendingChatPanePlacement, setPendingChatPanePlacement] = useState<ChatPanePendingPlacement | null>(null)
   const [chatPaneSplitPending, setChatPaneSplitPending] = useState(false)
   const consumePendingChatPanePlacement = useCallback((paneId: string) => {
@@ -1372,7 +1376,20 @@ export function WorkspaceAgentFront<
   const sessionListAuthoritative = !sessionApi?.hasMore && !remoteSessionsPending
   useEffect(() => {
     if (remoteSessionsTransitioning) return
-    const pendingCreatePane = pendingCreatePaneRef.current
+    const ownedPendingCreatePane = pendingCreatePaneRef.current?.workspaceId === workspaceId
+      ? pendingCreatePaneRef.current
+      : null
+    const pendingPaneState = chatPaneStateRef.current
+    const pendingPaneIds = pendingPaneState.workspaceId === workspaceId && pendingPaneState.ids.length > 0
+      ? pendingPaneState.ids
+      : [chatSessionKey]
+    const pendingCreatePane = ownedPendingCreatePane && pendingPaneIds.includes(ownedPendingCreatePane.afterId)
+      ? ownedPendingCreatePane
+      : null
+    if (ownedPendingCreatePane && !pendingCreatePane && pendingCreatePaneRef.current === ownedPendingCreatePane) {
+      pendingCreatePaneRef.current = null
+      if (ownedPendingCreatePane.placementDirection) setChatPaneSplitPending(false)
+    }
     const sessionKeys = new Set(resolvedSessions.map(workspaceSessionKeyFor))
     for (const key of optimisticCreatedPaneKeysRef.current) {
       if (sessionKeys.has(key)) optimisticCreatedPaneKeysRef.current.delete(key)
@@ -1430,13 +1447,17 @@ export function WorkspaceAgentFront<
       const ids = prunedIds.length > 0 ? prunedIds : [resolvedDesiredSessionId]
       const activeId = current.activeId && ids.includes(current.activeId) ? current.activeId : ids[0] ?? resolvedDesiredSessionId
       const nextIds = pendingCreatedId
-        ? insertPaneAfter(ids, pendingCreatePane?.afterId, pendingCreatedId)
+        ? pendingCreatePane?.mode === "replace"
+          ? replaceActivePane(ids, pendingCreatePane.afterId, pendingCreatedId)
+          : insertPaneAfter(ids, pendingCreatePane?.afterId, pendingCreatedId)
         : resolvedDesiredSessionId === activeId || ids.includes(resolvedDesiredSessionId)
           ? ids
           : replaceActivePane(ids, activeId, resolvedDesiredSessionId)
-      const nextActiveId = nextIds.includes(resolvedDesiredSessionId)
-        ? resolvedDesiredSessionId
-        : nextIds[0] ?? resolvedDesiredSessionId
+      const nextActiveId = pendingCreatedId && nextIds.includes(pendingCreatedId)
+        ? pendingCreatedId
+        : nextIds.includes(resolvedDesiredSessionId)
+          ? resolvedDesiredSessionId
+          : nextIds[0] ?? resolvedDesiredSessionId
       if (
         previous.workspaceId === workspaceId
         && previous.activeId === nextActiveId
@@ -1548,53 +1569,67 @@ export function WorkspaceAgentFront<
     return nextAgentTypeId ? rawSwitch(nextSessionId, nextAgentTypeId) : rawSwitch(nextSessionId)
   }, [chatPaneState, chatSessionKey, rawSwitch, workspaceId])
 
-  const closeChatPane = useCallback((sessionKey: string) => {
-    const current = chatPaneState.workspaceId === workspaceId
-      ? chatPaneState
-      : { workspaceId, ids: [chatSessionKey], activeId: chatSessionKey }
-    if (current.ids.length <= 1) return
-    const closingIndex = current.ids.indexOf(sessionKey)
-    if (closingIndex < 0) return
-    const nextIds = current.ids.filter((id) => id !== sessionKey)
-    const nextActiveId = current.activeId === sessionKey
-      ? nextIds[Math.max(0, closingIndex - 1)] ?? nextIds[0] ?? null
-      : current.activeId
-    setChatPaneState({ workspaceId, ids: nextIds, activeId: nextActiveId })
-    if (nextActiveId && current.activeId === sessionKey) {
-      const next = workspaceSessionRefFromKey(nextActiveId)
-      if (next.agentTypeId) rawSwitch(next.sessionId, next.agentTypeId)
-      else rawSwitch(next.sessionId)
-    }
-  }, [chatPaneState, chatSessionKey, rawSwitch, workspaceId])
-
-  const createChatSession = useCallback(() => {
-    const pendingCreatePane = {
-      afterId: activeChatPaneId,
+  const createChatPaneTransaction = useCallback((
+    afterId: string,
+    mode: "insert" | "replace",
+    placementDirection?: ChatPaneSplitDirection,
+  ) => {
+    if (pendingCreatePaneRef.current) return
+    const pendingCreatePane: PendingCreatePane = {
+      afterId,
       knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
+      workspaceId,
+      mode,
+      placementDirection,
     }
     pendingCreatePaneRef.current = pendingCreatePane
-    const created = resolvedCreate("manual")
-    void created.then((session) => {
+    if (placementDirection) setChatPaneSplitPending(true)
+
+    const settleIfOwner = () => {
+      if (pendingCreatePaneRef.current !== pendingCreatePane) return false
+      pendingCreatePaneRef.current = null
+      if (placementDirection) setChatPaneSplitPending(false)
+      return true
+    }
+
+    const createReason = placementDirection
+      ? `split:${afterId}:${placementDirection}`
+      : "manual"
+    const created = resolvedCreate(createReason)
+    void Promise.resolve(created).then((session) => {
       const id = createdSessionId(session)
+      // Some session providers signal creation through a later sessions update.
+      // Keep the transaction owned until the reconciliation effect observes it.
       if (!id) return
+      if (pendingCreatePaneRef.current !== pendingCreatePane) return
+
+      if (chatPaneStateRef.current.workspaceId !== pendingCreatePane.workspaceId) {
+        settleIfOwner()
+        return
+      }
+      const current = chatPaneStateRef.current
+      const ids = current.ids.length > 0 ? current.ids : [chatSessionKey]
+      if (!ids.includes(afterId)) {
+        settleIfOwner()
+        return
+      }
+
       const createdAgentTypeId = typeof (session as { agentTypeId?: unknown } | null)?.agentTypeId === "string"
         ? (session as { agentTypeId: string }).agentTypeId
         : agentTypeId
       const createdKey = workspaceSessionKey(id, createdAgentTypeId)
+      const nextIds = mode === "replace"
+        ? replaceActivePane(ids, afterId, createdKey)
+        : insertPaneAfter(ids, afterId, createdKey)
+      const nextState = { workspaceId, ids: nextIds, activeId: createdKey }
+
+      if (!settleIfOwner()) return
       optimisticCreatedPaneKeysRef.current.add(createdKey)
-      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
-      setChatPaneState((previous) => {
-        const current = previous.workspaceId === workspaceId
-          ? previous
-          : { workspaceId, ids: [chatSessionKey], activeId: chatSessionKey }
-        const ids = current.ids.length > 0 ? current.ids : [chatSessionKey]
-        const activeId = current.activeId ?? ids[0] ?? chatSessionKey
-        return {
-          workspaceId,
-          ids: replaceActivePane(ids, activeId, createdKey),
-          activeId: createdKey,
-        }
-      })
+      chatPaneStateRef.current = nextState
+      setChatPaneState(nextState)
+      if (placementDirection) {
+        setPendingChatPanePlacement({ paneId: createdKey, referencePaneId: afterId, direction: placementDirection })
+      }
       // The remote session API's create() already selects/persists the new
       // session. Calling switch() immediately after create races against its
       // stale sessionsRef and can snap back to the previous session.
@@ -1604,59 +1639,53 @@ export function WorkspaceAgentFront<
       }
       scheduleActiveAgentComposerFocus()
     }).catch(() => {
-      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
-      // Creation errors are surfaced by the session API/chat layer; the left
-      // action should not leave stale optimistic panes behind.
-    })
-    return created
-  }, [activeChatPaneId, agentTypeId, chatSessionKey, rawSwitch, resolvedCreate, resolvedSessions, sessionApi, workspaceId])
-
-  const createChatPaneAfter = useCallback((afterId: string, placementDirection?: ChatPaneSplitDirection) => {
-    if (pendingCreatePaneRef.current) return
-    setChatPaneSplitPending(true)
-    const pendingCreatePane = {
-      afterId,
-      placementDirection,
-      knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
-    }
-    pendingCreatePaneRef.current = pendingCreatePane
-    const created = resolvedCreate(`split:${afterId}:${placementDirection ?? "default"}`)
-    void created.then((session) => {
-      const id = createdSessionId(session)
-      if (!id) return
-      const createdAgentTypeId = typeof (session as { agentTypeId?: unknown } | null)?.agentTypeId === "string"
-        ? (session as { agentTypeId: string }).agentTypeId
-        : agentTypeId
-      const createdKey = workspaceSessionKey(id, createdAgentTypeId)
-      optimisticCreatedPaneKeysRef.current.add(createdKey)
-      if (pendingCreatePaneRef.current === pendingCreatePane) {
-        pendingCreatePaneRef.current = null
-        if (placementDirection) {
-          setPendingChatPanePlacement({ paneId: createdKey, referencePaneId: afterId, direction: placementDirection })
-        }
-        setChatPaneSplitPending(false)
-      }
-      setChatPaneState((previous) => {
-        const current = previous.workspaceId === workspaceId
-          ? previous
-          : { workspaceId, ids: [chatSessionKey], activeId: chatSessionKey }
-        return {
-          workspaceId,
-          ids: insertPaneAfter(current.ids, afterId, createdKey),
-          activeId: createdKey,
-        }
-      })
-      if (!sessionApi) {
-        if (createdAgentTypeId) rawSwitch(id, createdAgentTypeId)
-        else rawSwitch(id)
-      }
-      scheduleActiveAgentComposerFocus()
-    }).catch(() => {
-      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
-      setChatPaneSplitPending(false)
+      settleIfOwner()
+      // Creation errors are surfaced by the session API/chat layer; the pane
+      // transaction only owns clearing its pending state.
     })
     return created
   }, [agentTypeId, chatSessionKey, rawSwitch, resolvedCreate, resolvedSessions, sessionApi, workspaceId])
+
+  useEffect(() => {
+    const pending = pendingCreatePaneRef.current
+    if (!pending || pending.workspaceId === workspaceId) return
+    pendingCreatePaneRef.current = null
+    if (pending.placementDirection) setChatPaneSplitPending(false)
+  }, [workspaceId])
+
+  const createChatSession = useCallback(() => (
+    createChatPaneTransaction(activeChatPaneId, "replace")
+  ), [activeChatPaneId, createChatPaneTransaction])
+
+  const closeChatPane = useCallback((sessionKey: string) => {
+    if (pendingCreatePaneRef.current) return
+    const current = chatPaneStateRef.current.workspaceId === workspaceId
+      ? chatPaneStateRef.current
+      : { workspaceId, ids: [chatSessionKey], activeId: chatSessionKey }
+    const ids = current.ids.length > 0 ? current.ids : [chatSessionKey]
+    const closingIndex = ids.indexOf(sessionKey)
+    if (closingIndex < 0) return
+    if (ids.length === 1) {
+      createChatPaneTransaction(sessionKey, "replace")
+      return
+    }
+    const nextIds = ids.filter((id) => id !== sessionKey)
+    const nextActiveId = current.activeId === sessionKey
+      ? nextIds[Math.max(0, closingIndex - 1)] ?? nextIds[0] ?? null
+      : current.activeId
+    const nextState = { workspaceId, ids: nextIds, activeId: nextActiveId }
+    chatPaneStateRef.current = nextState
+    setChatPaneState(nextState)
+    if (nextActiveId && current.activeId === sessionKey) {
+      const next = workspaceSessionRefFromKey(nextActiveId)
+      if (next.agentTypeId) rawSwitch(next.sessionId, next.agentTypeId)
+      else rawSwitch(next.sessionId)
+    }
+  }, [chatSessionKey, createChatPaneTransaction, rawSwitch, workspaceId])
+
+  const createChatPaneAfter = useCallback((afterId: string, placementDirection?: ChatPaneSplitDirection) => (
+    createChatPaneTransaction(afterId, "insert", placementDirection)
+  ), [createChatPaneTransaction])
 
   const deleteSessionAndPane = useCallback((sessionId: string, sessionAgentTypeId?: string) => {
     const sessionKey = workspaceSessionKey(sessionId, sessionAgentTypeId)

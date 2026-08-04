@@ -167,6 +167,8 @@ export interface AgentFleetCompiler {
 export interface ResolvedEnvironmentScope {
   readonly placementIdentity: string
   readonly workspaceRoot: string
+  /** Physical provider workspace identifier; defaults to the verified storage scope. */
+  readonly runtimeWorkspaceId?: string
   readonly templatePath?: string
   readonly provisioningFingerprint: string
   readonly provisionRuntime?: (input: {

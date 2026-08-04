@@ -1221,7 +1221,6 @@ export async function createWorkspaceAgentServer(
     },
   }
   const pluginCollection = await resolveWorkspaceAgentServerPluginCollection({
-    agentTypeId: opts.defaultAgentTypeId ?? opts.agents?.[0]?.agentTypeId ?? "default",
     trustedPluginContext: {
       workspaceAgentDispatcherResolver: trustedDispatcherProxy,
       actorResolver: (request) => ({
@@ -1230,6 +1229,7 @@ export async function createWorkspaceAgentServer(
       }),
     },
     ...opts,
+    agentTypeId: opts.defaultAgentTypeId ?? opts.agents?.[0]?.agentTypeId ?? "default",
     workspaceRoot,
     bridge,
     installPluginAuthoring: pluginAuthoringEnabled,
@@ -1706,7 +1706,12 @@ export async function createWorkspaceAgentServer(
         identity,
         physicalBindingIdentity: identity,
         resourceInputDigest,
-        ...(intent.operation === "reload" ? { revalidateResourceInputs } : {}),
+        ...(intent.operation === "reload" ? {
+          async revalidateResourceInputs() {
+            await assertAgentReloadAvailable(pluginCollection.agentReloadBlockers)
+            await revalidateResourceInputs()
+          },
+        } : {}),
         sessionNamespace: "",
         pi: {
           ...resolvedBasePi,

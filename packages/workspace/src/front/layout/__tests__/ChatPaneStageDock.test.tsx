@@ -37,7 +37,7 @@ vi.mock("dockview-react/dist/styles/dockview.css", () => ({}))
 vi.mock("../dock/dockview-overrides.css", () => ({}))
 vi.mock("../chat-pane-stage.css", () => ({}))
 
-import { ChatPaneStageDock } from "../ChatPaneStageDock"
+import { ChatPaneStageDock, readablePaneTitle } from "../ChatPaneStageDock"
 import { dispatchChatSessionDragPayload } from "../ChatPaneStage"
 
 function mockPanel(id: string) {
@@ -102,7 +102,7 @@ describe("ChatPaneStageDock", () => {
     expect(dockviewProps.mock.calls[0][0]).toMatchObject({ defaultRenderer: "always" })
   })
 
-  it("renders chat top actions in every pane header, not only the active pane", () => {
+  it("renders chat top actions only in the active pane header", () => {
     dockviewProps.mockClear()
     render(
       <ChatPaneStageDock
@@ -116,7 +116,7 @@ describe("ChatPaneStageDock", () => {
       />,
     )
 
-    expect(screen.getAllByRole("button", { name: "Pane menu" })).toHaveLength(2)
+    expect(screen.getAllByRole("button", { name: "Pane menu" })).toHaveLength(1)
   })
   it.each(["right", "below"] as const)(
     "consumes a compound-key pending %s placement beside its reference pane",
@@ -193,8 +193,9 @@ describe("ChatPaneStageDock", () => {
     expect(splitPane).not.toHaveBeenCalled()
   })
 
-  it("wires vertical and horizontal split controls to the pane they belong to", () => {
+  it("gives every pane its own split and close controls", () => {
     const splitPane = vi.fn()
+    const closePane = vi.fn()
     render(
       <ChatPaneStageDock
         panes={[
@@ -203,14 +204,30 @@ describe("ChatPaneStageDock", () => {
         ]}
         activePaneId="a"
         onSplitPane={splitPane}
+        onClosePane={closePane}
         renderPane={(pane) => <div>{pane.id}</div>}
       />,
     )
 
     fireEvent.click(screen.getByRole("button", { name: "Split A chat vertically" }))
+    fireEvent.click(screen.getByRole("button", { name: "Split A chat horizontally" }))
+    fireEvent.click(screen.getByRole("button", { name: "Split B chat vertically" }))
     fireEvent.click(screen.getByRole("button", { name: "Split B chat horizontally" }))
+    fireEvent.click(screen.getByRole("button", { name: "Close A pane" }))
+    fireEvent.click(screen.getByRole("button", { name: "Close B pane" }))
 
     expect(splitPane).toHaveBeenNthCalledWith(1, "a", "right")
-    expect(splitPane).toHaveBeenNthCalledWith(2, "b", "below")
+    expect(splitPane).toHaveBeenNthCalledWith(2, "a", "below")
+    expect(splitPane).toHaveBeenNthCalledWith(3, "b", "right")
+    expect(splitPane).toHaveBeenNthCalledWith(4, "b", "below")
+    expect(closePane).toHaveBeenNthCalledWith(1, "a")
+    expect(closePane).toHaveBeenNthCalledWith(2, "b")
+  })
+
+  it("replaces machine session identifiers with a readable title", () => {
+    const id = "agent::123e4567-e89b-12d3-a456-426614174000"
+    expect(readablePaneTitle(id, id)).toBe("New chat")
+    expect(readablePaneTitle("123e4567-e89b-12d3-a456-426614174000", id)).toBe("New chat")
+    expect(readablePaneTitle("Quarterly planning", id)).toBe("Quarterly planning")
   })
 })

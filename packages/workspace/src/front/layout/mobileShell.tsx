@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, X } from "lucide-react"
 import { paneTitle, type ChatPaneDescriptor } from "./ChatPaneStage"
+import { readablePaneTitle } from "./ChatPaneStageDock"
 
 export function MobileSingleChatPane({
   pane,
@@ -15,23 +16,25 @@ export function MobileSingleChatPane({
   onClosePane?: (id: string) => void
   renderPane: (pane: ChatPaneDescriptor) => ReactNode
 }) {
+  const title = readablePaneTitle(paneTitle(pane), pane.id)
   return (
     <div data-boring-workspace-part="mobile-chat-pane" className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex min-h-11 items-center gap-2 border-b border-border px-3 py-2">
+      <div className="flex min-h-11 items-center gap-2 border-b border-border pb-2 pl-[calc(0.75rem+env(safe-area-inset-left))] pr-[calc(0.75rem+env(safe-area-inset-right))] pt-2">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold">{paneTitle(pane)}</div>
+          <div className="truncate text-sm font-semibold">{title}</div>
           {totalPanes > 1 ? (
             <div className="text-[11px] font-medium text-muted-foreground">Showing 1 of {totalPanes} chats — split panes are disabled on mobile.</div>
           ) : null}
         </div>
         {topActions ? <div className="flex shrink-0 items-center gap-1">{topActions}</div> : null}
-        {totalPanes > 1 && onClosePane ? (
+        {onClosePane ? (
           <button
             type="button"
-            className="min-h-9 rounded-full border border-border px-3 text-xs font-semibold text-muted-foreground"
+            className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
             onClick={() => onClosePane(pane.id)}
+            aria-label={`Close ${title} pane`}
           >
-            Close
+            <X className="size-4" aria-hidden="true" />
           </button>
         ) : null}
       </div>
@@ -54,7 +57,10 @@ export function MobileChatBar({
   onOpenWorkspace: () => void
 }) {
   return (
-    <div data-boring-workspace-part="mobile-chat-bar" className="flex min-h-12 items-center gap-2 border-b border-border bg-background px-2 py-2" style={{ paddingLeft: "4rem" }}>
+    <div
+      data-boring-workspace-part="mobile-chat-bar"
+      className="flex min-h-12 items-center gap-2 border-b border-border bg-background pb-2 pl-[calc(4rem+env(safe-area-inset-left))] pr-[calc(0.5rem+env(safe-area-inset-right))] pt-[calc(0.5rem+env(safe-area-inset-top))]"
+    >
       {canOpenNav ? (
         <button
           type="button"
@@ -66,7 +72,6 @@ export function MobileChatBar({
       ) : null}
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold">Chat</div>
-        <div className="truncate text-[11px] font-medium text-muted-foreground">One active thread on mobile</div>
       </div>
       {canOpenWorkspace ? (
         <button
@@ -83,7 +88,10 @@ export function MobileChatBar({
 
 export function MobileWorkspaceBar({ onBack }: { onBack: () => void }) {
   return (
-    <div data-boring-workspace-part="mobile-workspace-bar" className="flex min-h-12 items-center gap-2 border-b border-border bg-background px-2 py-2" style={{ paddingLeft: "4rem" }}>
+    <div
+      data-boring-workspace-part="mobile-workspace-bar"
+      className="flex min-h-12 items-center gap-2 border-b border-border bg-background pb-2 pl-[calc(4rem+env(safe-area-inset-left))] pr-[calc(0.5rem+env(safe-area-inset-right))] pt-[calc(0.5rem+env(safe-area-inset-top))]"
+    >
       <button
         type="button"
         className="inline-flex min-h-10 items-center gap-1 rounded-full border border-border px-3 text-sm font-semibold text-foreground"
@@ -94,7 +102,6 @@ export function MobileWorkspaceBar({ onBack }: { onBack: () => void }) {
       </button>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold">Workspace</div>
-        <div className="truncate text-[11px] font-medium text-muted-foreground">One active panel on mobile</div>
       </div>
     </div>
   )
