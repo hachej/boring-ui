@@ -18,7 +18,8 @@ import {
 import "dockview-react/dist/styles/dockview.css"
 import "../dock/dockview-overrides.css"
 import "./chat-pane-stage.css"
-import { GripVertical, X } from "lucide-react"
+import { GripVertical, MoreHorizontal, Pencil, Pin, PinOff, Trash2, X } from "lucide-react"
+import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, IconButton, Input } from "@hachej/boring-ui-kit"
 import { cn } from "../lib/utils"
 import { CornerChromeButton } from "./cornerChrome"
 import { CHAT_SESSION_DRAG_TYPE, dispatchChatSessionDragPayload, PaneFocusRing, paneTitle, type ChatPaneDescriptor, type ChatPaneStageProps } from "./ChatPaneStage"
@@ -43,6 +44,7 @@ interface StageContextValue {
   flashPaneId: string | null
   renderPane: ChatPaneStageProps["renderPane"]
   topActions?: ChatPaneStageProps["topActions"]
+  sessionActions?: ChatPaneStageProps["sessionActions"]
   onSplitPane?: ChatPaneStageProps["onSplitPane"]
   splitPending: boolean
   onActivePaneChange?: (id: string) => void
@@ -191,6 +193,7 @@ export function ChatPaneStageDock({
   activePaneId,
   renderPane,
   topActions,
+  sessionActions,
   onSplitPane,
   splitPending = false,
   pendingPanePlacement,
@@ -221,11 +224,12 @@ export function ChatPaneStageDock({
     flashPaneId: flashPaneId ?? null,
     renderPane,
     topActions,
+    sessionActions,
     onSplitPane,
     splitPending,
     onActivePaneChange,
     onClosePane,
-  }), [panes, resolvedActiveId, flashPaneId, renderPane, topActions, onSplitPane, splitPending, onActivePaneChange, onClosePane])
+  }), [panes, resolvedActiveId, flashPaneId, renderPane, topActions, sessionActions, onSplitPane, splitPending, onActivePaneChange, onClosePane])
 
   const handleReady = useCallback((event: DockviewReadyEvent) => {
     const api = event.api
@@ -460,7 +464,7 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
     <div
       data-boring-workspace-part="chat-pane-title"
       className={cn(
-        "group flex h-full w-full min-w-0 select-none items-center gap-2 px-3 text-[13px] font-medium leading-none tracking-[-0.01em]",
+        "group flex h-full min-w-0 select-none items-center gap-2 px-3 text-[13px] font-medium leading-none tracking-[-0.01em]",
         multiPane && "cursor-grab active:cursor-grabbing",
       )}
       title={title}
@@ -473,10 +477,89 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
           strokeWidth={1.75}
         />
       ) : null}
-      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-foreground/90">
+      <span className="min-w-0 max-w-[min(340px,45vw)] overflow-hidden text-ellipsis whitespace-nowrap text-foreground/90">
         {title}
       </span>
     </div>
+  )
+}
+
+function ChatPaneSessionMenu({ paneId, title, actions }: {
+  paneId: string
+  title: string
+  actions: NonNullable<ChatPaneStageProps["sessionActions"]>
+}) {
+  const pinned = actions.isPinned(paneId)
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameDraft, setRenameDraft] = useState(title)
+  const rename = () => {
+    const next = renameDraft.trim()
+    if (!actions.onRename || !next || next === title) return setRenameOpen(false)
+    void Promise.resolve(actions.onRename(paneId, next)).then(() => setRenameOpen(false))
+  }
+  const remove = () => {
+    if (!actions.onDelete || typeof window === "undefined") return
+    if (window.confirm(`Delete “${title}”?`)) void actions.onDelete(paneId)
+  }
+
+  return (
+    <>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <IconButton
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="border border-transparent bg-transparent text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+          aria-label={`Chat actions for ${title}`}
+          title={`Chat actions for ${title}`}
+        >
+          <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.9} />
+        </IconButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={6} className="min-w-48">
+        <DropdownMenuItem onSelect={() => actions.onTogglePin(paneId)}>
+          {pinned ? <PinOff className="mr-2 h-4 w-4" /> : <Pin className="mr-2 h-4 w-4" />}
+          {pinned ? "Unpin chat" : "Pin chat"}
+        </DropdownMenuItem>
+        {actions.onRename ? (
+          <DropdownMenuItem onSelect={() => { setRenameDraft(title); setRenameOpen(true) }}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Rename chat
+          </DropdownMenuItem>
+        ) : null}
+        {actions.onDelete ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={remove} className="text-destructive focus:text-destructive">
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete chat
+            </DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+    <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Rename chat</DialogTitle>
+          <DialogDescription>Choose a concise name for this conversation.</DialogDescription>
+        </DialogHeader>
+        <form className="flex flex-col gap-4" onSubmit={(event) => { event.preventDefault(); rename() }}>
+          <Input
+            autoFocus
+            value={renameDraft}
+            onChange={(event) => setRenameDraft(event.target.value)}
+            aria-label="Chat name"
+          />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setRenameOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={!renameDraft.trim()}>Rename</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }
 
@@ -496,9 +579,12 @@ function ChatPaneHeaderActions({ activePanel }: IDockviewHeaderActionsProps) {
 
   if (!api) return null
   return (
-      <div data-boring-workspace-part="chat-pane-actions" className="pointer-events-auto flex h-full shrink-0 items-center gap-1 pr-2">
+      <div data-boring-workspace-part="chat-pane-actions" className="pointer-events-auto flex h-full min-w-0 flex-1 items-center gap-1 pr-2">
+        {stage.sessionActions ? (
+          <ChatPaneSessionMenu paneId={api.id} title={title} actions={stage.sessionActions} />
+        ) : null}
         {stage.onSplitPane ? (
-          <div data-boring-workspace-part="chat-pane-split-controls" className="flex shrink-0 items-center gap-1">
+          <div data-boring-workspace-part="chat-pane-split-controls" className="ml-auto flex shrink-0 items-center gap-1">
             <CornerChromeButton
               label={`Split ${title} chat vertically`}
               appearance="chat"
