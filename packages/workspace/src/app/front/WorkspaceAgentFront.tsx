@@ -27,7 +27,7 @@ import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginT
 import { useViewportWidth } from "../../front/layout/useViewportWidth"
 import { captureWorkspaceFrontPlugins } from "./workspaceBuiltinPlugins"
 import type { FilesystemId } from "../../shared/types/filesystem"
-import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
+import { UI_COMMAND_EVENT, dispatchUiCommand, startUiCommandStream } from "../../front/bridge"
 import type { CommandPaletteSessionItem } from "../../front/components/CommandPalette"
 import type { CommandResult, DispatchContext, FileTreeBridge, Unsubscribe } from "../../front/bridge"
 import { readStoredBoolean, readStoredNumber, writeStoredBoolean, writeStoredNumber } from "../../front/store/localStorageValues"
@@ -433,6 +433,27 @@ function validateCreatedSession<TSession extends WorkspaceAgentSession>(value: u
     throw sessionCreateProtocolError("created session has an invalid owner")
   }
   return value as TSession
+}
+
+function uiCommandStreamEndpoint(endpoint: string | null | undefined): string | undefined {
+  if (!endpoint) return undefined
+  const normalized = endpoint.replace(/\/$/, "")
+  const suffix = "/api/v1/ui"
+  if (normalized.endsWith(suffix)) return normalized.slice(0, -suffix.length) || undefined
+  return normalized
+}
+
+function automaticSessionCreateInput(
+  defaultSessionTitle: string,
+  resumeSessionId?: string,
+): { title?: string; resumeSessionId?: string } {
+  const title = defaultSessionTitle.trim()
+  return {
+    // "New session" is presentation fallback, not a durable user title. Omitting
+    // it lets the native transcript derive its title from the first user turn.
+    ...(title && title !== "New session" ? { title } : {}),
+    ...(resumeSessionId ? { resumeSessionId } : {}),
+  }
 }
 
 function sessionDataSourceIdentity(input: {
@@ -1069,7 +1090,7 @@ export function WorkspaceAgentFront<
     if (!sessionApi || autoSubmitSessionId !== null) return
     if (autoSubmitSessionCreateRef.current) return
     autoSubmitSessionCreateRef.current = true
-    void coordinateRemoteCreate("auto-submit", { title: defaultSessionTitle })
+    void coordinateRemoteCreate("auto-submit", automaticSessionCreateInput(defaultSessionTitle))
       .then((session) => {
         if (!session || !sessionSourceIsCurrent()) return
         setAutoSubmitSessionId(session.id)
@@ -1096,10 +1117,28 @@ export function WorkspaceAgentFront<
   }, [effectiveActiveSessionId, rawSwitch, sessionSourceIsCurrent])
   const resolvedCreate = useCallback((dedupeKey = "manual", ownerAgentTypeId?: string): Promise<TSession | undefined> => {
     if (remoteSessionsPending) return Promise.resolve(undefined)
-    if (sessionApi) return coordinateRemoteCreate(dedupeKey, ownerAgentTypeId ? { agentTypeId: ownerAgentTypeId } : undefined)
+    if (sessionApi) {
+      // A user create owns the empty-list transition. Cancel only a queued boot
+      // create; an already-started boot create remains authoritative, while this
+      // explicit action still mints its own session.
+      suppressEmptyAutoCreateRef.current = true
+      sessionCreation.cancel((task) => task.phase === "queued" && task.dedupeKey === "initial-auto")
+      return coordinateRemoteCreate(
+        dedupeKey,
+        ownerAgentTypeId ? { agentTypeId: ownerAgentTypeId } : undefined,
+      ).catch((error) => {
+        // A canceled queued boot create resolves without running its own error
+        // path. Re-arm boot creation if the user-owned request failed.
+        autoCreateSessionRef.current = false
+        setInitialRemoteSessionCreating({ workspaceId, creating: false })
+        throw error
+      }).finally(() => {
+        suppressEmptyAutoCreateRef.current = false
+      })
+    }
     const created = onCreateSession ? onCreateSession() : localSessionStore.create()
     return Promise.resolve(created).then((session) => validateCreatedSession<TSession>(session))
-  }, [coordinateRemoteCreate, localSessionStore, onCreateSession, remoteSessionsPending, sessionApi])
+  }, [coordinateRemoteCreate, localSessionStore, onCreateSession, remoteSessionsPending, sessionApi, sessionCreation, workspaceId])
   const resolvedRename = useCallback((id: string, title: string, sessionAgentTypeId?: string) => {
     if (!sessionSourceIsCurrent() || remoteSessionsPending || !sessionApi?.rename) return undefined
     return sessionApi.rename(id, title, sessionAgentTypeId)
@@ -1123,7 +1162,10 @@ export function WorkspaceAgentFront<
       pendingLastSessionDeleteRef.current.add(sessionKey)
       autoCreateSessionRef.current = true
       setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
-      const replacement = coordinateRemoteCreate(`replacement:${sessionKey}`, { title: defaultSessionTitle })
+      const replacement = coordinateRemoteCreate(
+        `replacement:${sessionKey}`,
+        automaticSessionCreateInput(defaultSessionTitle),
+      )
       return replacement.then((created) => {
         if (!created) return undefined
         return sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
@@ -1284,10 +1326,10 @@ export function WorkspaceAgentFront<
     autoCreateSessionRef.current = true
     setInitialRemoteSessionCreating({ workspaceId, creating: true })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
-    void coordinateRemoteCreate("initial-auto", {
-      title: defaultSessionTitle,
-      ...(sessionApi.resumeSessionId ? { resumeSessionId: sessionApi.resumeSessionId } : {}),
-    })
+    void coordinateRemoteCreate(
+      "initial-auto",
+      automaticSessionCreateInput(defaultSessionTitle, sessionApi.resumeSessionId ?? undefined),
+    )
       .catch(() => {
         if (!sessionSourceIsCurrent()) return
         autoCreateSessionRef.current = false
@@ -1377,6 +1419,18 @@ export function WorkspaceAgentFront<
     enqueue: enqueueSurfaceOp,
     shouldOpenSurface,
   }), [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, enqueueSurfaceOp, shouldOpenSurface])
+
+  // UI commands address the Workspace surface, not an individual chat pane.
+  // Keep exactly one stream across pane switches so inactive pane cleanup cannot
+  // strand proxy-side SSE requests and starve ordinary Agent HTTP requests.
+  useEffect(() => {
+    if (bridgeEndpoint === null) return
+    return startUiCommandStream({
+      endpoint: uiCommandStreamEndpoint(bridgeEndpoint),
+      query: { workspaceId },
+      ctx: surfaceDispatch,
+    })
+  }, [bridgeEndpoint, surfaceDispatch, workspaceId])
 
   const openWorkspacePanel = useCallback((panel?: OpenPanelConfig) => {
     surfaceOpenRef.current = true
@@ -1863,8 +1917,7 @@ export function WorkspaceAgentFront<
   }, [apiTimeout, chatParams?.remoteSessionOptions])
 
   const makeCenterParams = useCallback(
-    (sessionKey: string, options: { bridgeEnabled?: boolean } = {}) => {
-      const bridgeEnabled = options.bridgeEnabled ?? true
+    (sessionKey: string) => {
       const sessionRef = workspaceSessionRefFromKey(sessionKey)
       const sessionId = sessionRef.sessionId
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
@@ -1883,7 +1936,7 @@ export function WorkspaceAgentFront<
       showSessions: false,
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession({ agentTypeId: sessionRef.agentTypeId ?? agentTypeId, sessionId })),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
-      bridgeEndpoint: bridgeEnabled ? bridgeEndpoint : null,
+      bridgeEndpoint: null,
       surfaceDispatch,
       extraCommands,
       workspaceWarmupStatus,
@@ -1917,19 +1970,16 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionKey),
     [chatSessionKey, makeCenterParams],
   )
-  // Stabilise each pane's params by (sessionId, bridgeEnabled). Switching the
-  // active pane only flips one pane's bridge flag, so every *other* open pane
-  // must keep its exact same params object — otherwise it re-renders with a
-  // fresh-identity-but-equal params and reloads its transcript, which read as
-  // "the other pane changed too" when opening a third session. The cache resets
-  // whenever makeCenterParams changes (i.e. a real input changed), so genuine
-  // updates still flow to every pane.
+  // Stabilise each pane's params by session id. UI command streaming is owned
+  // once by the Workspace above, so active-pane changes do not alter pane props.
+  // The cache resets whenever makeCenterParams changes (i.e. a real input
+  // changed), so genuine updates still flow to every pane.
   const paneParamsCacheRef = useRef<{
     make: typeof makeCenterParams
     cache: Map<string, ReturnType<typeof makeCenterParams>>
@@ -1940,12 +1990,10 @@ export function WorkspaceAgentFront<
     }
     const { cache } = paneParamsCacheRef.current
     return chatPaneIds.map((id) => {
-      const bridgeEnabled = id === activeChatPaneId
-      const cacheKey = `${id}:${bridgeEnabled}`
-      let params = cache.get(cacheKey)
+      let params = cache.get(id)
       if (!params) {
-        params = makeCenterParams(id, { bridgeEnabled })
-        cache.set(cacheKey, params)
+        params = makeCenterParams(id)
+        cache.set(id, params)
       }
       const sessionRef = workspaceSessionRefFromKey(id)
       return {
@@ -1955,7 +2003,7 @@ export function WorkspaceAgentFront<
         params,
       }
     })
-  }, [activeChatPaneId, chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
+  }, [chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
   const providerChatPaneSessionRefs = useMemo(
     () => chatPaneIds.map(workspaceSessionRefFromKey),
     [chatPaneIds],
