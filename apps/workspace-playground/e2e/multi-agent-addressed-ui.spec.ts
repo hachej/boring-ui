@@ -25,6 +25,13 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
     })
     expect(prompt.ok(), await prompt.text()).toBe(true)
     await expect.poll(async () => {
+      const state = await request.get(`/api/v1/agents/${agentTypeId}/sessions/${sessionId}/state`, { headers: scopeHeaders })
+      if (!state.ok()) return false
+      const body = await state.json() as { state?: { status?: string; messages?: unknown[] } }
+      return body.state?.status === "idle"
+        && JSON.stringify(body.state.messages ?? []).includes(`PI_NATIVE_ASSISTANT_DONE:${agentTypeId}`)
+    }, { timeout: 60_000 }).toBe(true)
+    await expect.poll(async () => {
       const listed = await request.get(`/api/v1/agents/${agentTypeId}/sessions`, { headers: scopeHeaders })
       if (!listed.ok()) return false
       const body = await listed.json() as { sessions?: Array<{ ref?: { sessionId?: string } }> }
