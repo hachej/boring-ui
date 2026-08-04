@@ -585,6 +585,12 @@ describe("WorkspaceAgentFront", () => {
     await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
     expect(screen.queryByLabelText("App navigation")).not.toBeInTheDocument()
     expect(document.querySelector('[data-boring-workspace-part="app-left-pane"]')).toBeNull()
+    const collapsedRail = screen.getByLabelText("Collapsed app navigation")
+    expect(collapsedRail).toHaveClass("w-11")
+    expect(within(collapsedRail).getByRole("button", { name: "Search" })).toBeInTheDocument()
+    expect(within(collapsedRail).getByRole("button", { name: "Plugins" })).toBeInTheDocument()
+    expect(within(collapsedRail).getByRole("button", { name: "Skills" })).toBeInTheDocument()
+    expect(within(collapsedRail).getByRole("button", { name: "New chat" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
   })
 
@@ -611,6 +617,7 @@ describe("WorkspaceAgentFront", () => {
 
     await user.click(automations)
     expect(automations).toHaveAttribute("data-active", "true")
+    expect(automations).toHaveAttribute("aria-current", "page")
     expect(plugins).not.toHaveAttribute("data-active")
 
     await user.click(plugins)
@@ -768,7 +775,7 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).getByRole("button", { name: "Open Pinned session in new chat pane" })).toBeInTheDocument()
     expect(within(appNav).getByRole("button", { name: "Pin Active project session" })).toBeInTheDocument()
     expect(within(appNav).getByText("Pinned session")).toBeInTheDocument()
-    expect(within(appNav).queryByText("Chats")).not.toBeInTheDocument()
+    expect(within(appNav).getByText("Chats")).toBeInTheDocument()
     // Per-project action: start a new chat inside a specific project.
     expect(within(appNav).getByRole("button", { name: "New chat in Project Alpha" })).toBeInTheDocument()
 
@@ -1031,7 +1038,7 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByText("/review")).toBeInTheDocument()
 
       await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
-      expect(screen.getByText("Skills").closest("header")?.className).toContain("pl-12")
+      expect(screen.getByText("Skills").closest("header")?.className).not.toContain("pl-12")
 
       await user.click(screen.getByRole("button", { name: "Close skills" }))
       expect(screen.queryByText("/review")).not.toBeInTheDocument()
