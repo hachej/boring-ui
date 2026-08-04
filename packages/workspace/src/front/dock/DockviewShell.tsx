@@ -27,7 +27,7 @@ import type {
   GroupConfig,
   SerializedLayout,
 } from "./types"
-import { LoadingState } from "@hachej/boring-ui-kit"
+import { WorkspaceWorkbenchLoadingSurface } from "../components/WorkspaceLoadingState"
 import { ShadcnTab } from "./ShadcnTab"
 
 const PERSIST_DEBOUNCE_MS = 300
@@ -457,7 +457,15 @@ export function DockviewShell({
 
 function LoadingSkeleton() {
   return (
-    <LoadingState centered className="bg-background" label="Loading workspace..." />
+    <div
+      role="status"
+      aria-label="Loading workspace"
+      aria-busy="true"
+      data-boring-workspace-part="dock-loading-surface"
+      className="h-full min-h-0 bg-background"
+    >
+      <WorkspaceWorkbenchLoadingSurface />
+    </div>
   )
 }
 

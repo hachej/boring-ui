@@ -422,6 +422,19 @@
   }
 }
 
+@media (max-width: 639px) {
+  .workspace-loading-sidebar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-boring-workspace-part$="loading-shell"] [data-slot="skeleton"],
+  [data-boring-workspace-part$="loading-surface"] [data-slot="skeleton"] {
+    animation: none;
+  }
+}
+
 @media (pointer: coarse) {
   .workbench-open-button {
     min-height: 44px;
