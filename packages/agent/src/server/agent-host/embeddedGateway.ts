@@ -21,6 +21,7 @@ import {
   type PiSessionRequestContext,
 } from '../../core/piChatSessionService'
 import { canonicalDigest } from './canonical'
+import { projectStableServiceError } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
 import type {
   AgentGatewayEffect,
@@ -37,6 +38,7 @@ type EffectClassification =
   | { readonly kind: 'execute' }
   | { readonly kind: 'reject'; readonly error: AgentGatewayErrorDTO }
 type EffectClassifier = () => Promise<EffectClassification>
+type SafeActionFailureClassifier = (error: unknown) => AgentRequestFailure | undefined
 
 interface EffectOptions {
   duplicateReceipt?: boolean
@@ -47,6 +49,8 @@ interface EffectOptions {
   serializedClassify?: EffectClassifier
   /** Host/Gateway-only work that must finish before provider mutation begins. */
   preflight?: () => Promise<void>
+  /** Opt-in only when a rejected action promise proves no provider mutation began. */
+  classifySafeActionFailure?: SafeActionFailureClassifier
 }
 interface SessionEffectOptions extends Omit<EffectOptions, 'serialize'> {
   bindingKey?: string
@@ -91,6 +95,18 @@ class EventQueue implements AsyncIterable<AgentSessionEvent> {
 
 function gatewayError(dto: AgentGatewayErrorDTO): AgentGatewayError {
   return new AgentGatewayError(dto.code, dto.message, dto.details)
+}
+
+function stableServiceActionFailure(error: unknown): AgentRequestFailure | undefined {
+  const projected = projectStableServiceError(error)
+  if (!projected) return undefined
+  return {
+    kind: 'service',
+    error: {
+      ...projected.error,
+      statusCode: projected.statusCode,
+    },
+  }
 }
 
 function sessionTarget(ref: AgentSessionRef): AgentRequestTarget {
@@ -532,6 +548,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       }, {
         duplicateReceipt: true,
         bindingKey: binding.key,
+        classifySafeActionFailure: stableServiceActionFailure,
         guard: async () => await this.promptAdmission(
           scope,
           claim,
@@ -549,7 +566,11 @@ export class EmbeddedAgentGateway implements AgentGateway {
         clientSeq: command.clientSeq,
       })
       return { ...receipt, disposition: 'followup' as const }
-    }, { duplicateReceipt: true, bindingKey: binding.key })
+    }, {
+      duplicateReceipt: true,
+      bindingKey: binding.key,
+      classifySafeActionFailure: stableServiceActionFailure,
+    })
   }
 
   async renameSession(input: Parameters<AgentGateway['renameSession']>[0]) {
@@ -719,6 +740,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       classify,
       serializedClassify,
       preflight,
+      classifySafeActionFailure,
     } = options
     const key: AgentRequestKey = {
       workspaceScopeId: claim.workspaceScopeId,
@@ -825,7 +847,12 @@ export class EmbeddedAgentGateway implements AgentGateway {
           let receipt: JsonValue
           try {
             receipt = await actionResult as JsonValue
-          } catch {
+          } catch (error) {
+            const safeFailure = classifySafeActionFailure?.(error)
+            if (safeFailure) {
+              await this.runtime.ledger.reject(key, safeFailure)
+              throw this.failure(safeFailure)
+            }
             const unknown = new AgentGatewayError(
               AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
               'effect outcome could not be safely replayed',
@@ -893,7 +920,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
   }
 
   private failure(failure: AgentRequestFailure): Error {
-    return gatewayError(failure.error)
+    if (failure.kind === 'gateway') return gatewayError(failure.error)
+    return Object.assign(new Error(failure.error.message), failure.error)
   }
 
   private async promptAdmission(
