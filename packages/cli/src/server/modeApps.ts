@@ -411,6 +411,7 @@ export async function createFolderModeApp(opts: {
   projectName?: string
   provisionWorkspace?: boolean
   allowInsecureLocalBridgeAuth?: boolean
+  loadAmbientSkills?: boolean
   liveTranscripts?: {
     enabled: boolean
     listenerHost: string
@@ -444,7 +445,7 @@ export async function createFolderModeApp(opts: {
     },
   }
   const liveTranscriptPlugin = liveTranscriptEnabled && opts.liveTranscripts
-    ? (await import("@hachej/boring-live-transcription/server")).createLiveTranscriptServerPlugin({
+    ? (await import("@hachej/boring-transcription/server")).createLiveTranscriptServerPlugin({
         dispatcherResolver: liveTranscriptDispatcherProxy,
         agentTypeId: "default",
         actorResolver: () => ({ workspaceId: "default", userId: "local" }),
@@ -480,7 +481,7 @@ export async function createFolderModeApp(opts: {
       // The standalone CLI runs on the user's own machine, so ambient skill
       // discovery (workspace + user-global ~/.pi skills) is on. The library
       // default is off (withPiHarnessDefaults) to keep hosted agents isolated.
-      pi: { noSkills: false },
+      pi: { noSkills: opts.loadAmbientSkills === false },
       // CLI-bundled internal plugins, resolved to absolute package dirs. This
       // drives the server-side install array (boot-time routes/agentTools);
       // additionalBoringPluginDirs only feeds the asset-manager scan.
@@ -562,6 +563,7 @@ export async function createWorkspacesModeApp(opts: {
   mode: RuntimeMode
   registryPath?: string
   provisionWorkspace?: boolean
+  loadAmbientSkills?: boolean
 }): Promise<FastifyInstance> {
   if (process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1") {
     throw new Error("live_transcript_local_only: live transcripts are supported only by boring-ui [folder]")
@@ -904,7 +906,7 @@ export async function createWorkspacesModeApp(opts: {
           ]
           return agentServer.createPiResourceDigestInput({
             piCwd: workspace.path,
-            noSkills: false,
+            noSkills: opts.loadAmbientSkills === false,
             resourceSets: [{
               promptParts: [workspaceAppServer.buildWorkspaceContextPrompt(), hotResources.systemPromptAppend],
               additionalSkillPaths,
@@ -976,7 +978,7 @@ export async function createWorkspacesModeApp(opts: {
         }),
       ]
       const pi = {
-        noSkills: false,
+        noSkills: opts.loadAmbientSkills === false,
         additionalSkillPaths: [join(workspace.path, ".agents", "skills")],
         packages: [],
         extensionPaths: [],
@@ -988,7 +990,7 @@ export async function createWorkspacesModeApp(opts: {
         resourceInputDigest: await agentServer.digestPiResourceInputs(
           agentServer.createPiResourceDigestInput({
             piCwd: workspace.path,
-            noSkills: false,
+            noSkills: opts.loadAmbientSkills === false,
             resourceSets: [{
               promptParts: [workspaceAppServer.buildWorkspaceContextPrompt(), hotResources.systemPromptAppend],
               additionalSkillPaths: [

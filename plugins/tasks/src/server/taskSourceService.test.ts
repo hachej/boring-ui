@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { TASK_ERROR_CODES } from "../shared"
 import { describe, expect, test, vi } from "vitest"
 import type { BoringTaskSourceRuntime } from "./sourceRuntime"
