@@ -568,6 +568,10 @@ function toAddressedSessionSummary(value: unknown): SessionSummary {
   const createdAt = typeof record.createdAt === 'number' ? new Date(record.createdAt).toISOString() : new Date(0).toISOString()
   const updatedAt = typeof record.updatedAt === 'number' ? new Date(record.updatedAt).toISOString() : createdAt
   const agentTypeId = (ref as { agentTypeId?: unknown }).agentTypeId
+  const status = record.status
+  const addressedStatus = status === 'idle' || status === 'running' || status === 'aborting' || status === 'error'
+    ? status
+    : undefined
   return {
     id: (ref as { sessionId: string }).sessionId,
     title: typeof record.title === 'string' ? record.title : 'Untitled',
@@ -577,6 +581,7 @@ function toAddressedSessionSummary(value: unknown): SessionSummary {
     ...(typeof agentTypeId === 'string' ? { agentTypeId } : {}),
     ...(typeof record.nativeSessionId === 'string' ? { nativeSessionId: record.nativeSessionId } : {}),
     ...(typeof record.hasAssistantReply === 'boolean' ? { hasAssistantReply: record.hasAssistantReply } : {}),
+    ...(addressedStatus ? { status: addressedStatus } : {}),
   }
 }
 

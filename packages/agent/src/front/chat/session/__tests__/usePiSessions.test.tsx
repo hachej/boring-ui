@@ -299,7 +299,7 @@ describe('usePiSessions', () => {
 
     expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/v1/agents/alpha/sessions/native-1/rename')
     expect(result.current.sessions[0]).toMatchObject({
-      title: 'After', nativeSessionId: 'native-1', hasAssistantReply: true,
+      title: 'After', nativeSessionId: 'native-1', hasAssistantReply: true, status: 'idle',
     })
   })
 

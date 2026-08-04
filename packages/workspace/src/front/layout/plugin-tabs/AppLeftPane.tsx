@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { Plus, Search } from "lucide-react"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
 import { PrimaryAction, NewChatAction, KbdHint } from "./AppLeftPaneActions"
@@ -9,6 +9,7 @@ import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import { workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
+import { useWorkingSessionIds } from "../../sessionActivity"
 
 export interface AppLeftPaneSession {
   id: string
@@ -19,6 +20,7 @@ export interface AppLeftPaneSession {
   nativeSessionId?: string
   hasAssistantReply?: boolean
   ephemeral?: boolean
+  status?: "idle" | "running" | "aborting" | "error"
 }
 
 export interface AppLeftPaneProjectSession {
@@ -110,32 +112,6 @@ export interface AppLeftPaneProps {
 
 type SessionRowState = AppSessionRowState
 
-const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
-const CHAT_SESSION_STATUS_REQUEST_EVENT = "boring:chat-session-status-request"
-
-function useWorkingSessionIds(): ReadonlySet<string> {
-  const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set())
-  useEffect(() => {
-    const onStatus = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; working?: unknown } | undefined
-      if (typeof detail?.sessionId !== "string") return
-      const key = workspaceSessionKey(detail.sessionId, typeof detail.agentTypeId === "string" ? detail.agentTypeId : undefined)
-      const isWorking = detail.working === true
-      setWorking((current) => {
-        if (current.has(key) === isWorking) return current
-        const next = new Set(current)
-        if (isWorking) next.add(key)
-        else next.delete(key)
-        return next
-      })
-    }
-    window.addEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
-    window.dispatchEvent(new Event(CHAT_SESSION_STATUS_REQUEST_EVENT))
-    return () => window.removeEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
-  }, [])
-  return working
-}
-
 export function AppLeftPane({
   width = 268,
   appTitle,
@@ -189,7 +165,7 @@ export function AppLeftPane({
   )
   const openSet = useMemo(() => new Set(normalizedOpenSessionIds), [normalizedOpenSessionIds])
   const pinnedSet = useMemo(() => new Set(normalizedPinnedSessionIds), [normalizedPinnedSessionIds])
-  const workingSessionIds = useWorkingSessionIds()
+  const workingSessionIds = useWorkingSessionIds(sessions)
   const { blockers } = useWorkspaceAttention()
   const sessionBadges = useMemo(() => {
     const badges = new Map<string, WorkspaceAttentionSessionBadge>()
