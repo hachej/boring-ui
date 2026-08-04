@@ -49,7 +49,7 @@ This ledger is the omission-control surface for the selective port. Disposition 
 | `ChatPaneStage*`, detached chat, pin/split state | adapt | retain #1038 multi-Agent panes; source/action ownership only | split/Quick/switch E2E |
 | `WorkspaceAgentStatusStates.tsx` fatal state | port | addressed source terminal/recoverable error distinction | UI state tests |
 | `PiChatComposerSurface.tsx` mobile Stop target | port | unchanged component | 390/639px 44×44 and desktop 32×32 proof |
-| attention/presence/working-state adjustments | adapt | only behavior required by canonical session status | focused UI tests |
+| attention/presence/working-state adjustments | adapt | AgentHost `status` projection plus bounded reconciliation in `WorkspaceAgentFront.tsx` and `front/sessionActivity.ts` | focused UI tests |
 
 ## Composition and compatibility
 
