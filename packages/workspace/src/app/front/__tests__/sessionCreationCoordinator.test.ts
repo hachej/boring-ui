@@ -1,94 +1,108 @@
 import { describe, expect, it, vi } from "vitest"
-import { SessionCreationCoordinator } from "../sessionCreationCoordinator"
+import { SessionCreationCoordinator, type SessionCreationCoordinatorRuntime } from "../sessionCreationCoordinator"
 
 interface Session { id: string; agentTypeId?: string }
+function runtime(sourceKey = "source"): SessionCreationCoordinatorRuntime<Session> {
+  return {
+    sourceKey,
+    validateResult: (value) => value as Session,
+    ownerIsCurrent: () => true,
+    ownershipReady: true,
+    mounted: true,
+  }
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((nextResolve) => { resolve = nextResolve })
+  return { promise, resolve }
+}
+
 
 describe("session creation coordinator", () => {
-  it("serializes tasks and deduplicates matching queued intent", async () => {
-    const coordinator = new SessionCreationCoordinator<Session>("source")
-    const first = coordinator.coordinate({ dedupeKey: "first", create: vi.fn() })
+  it("serializes tasks and deduplicates matching intent", async () => {
+    const coordinator = new SessionCreationCoordinator(runtime())
+    const gate = deferred<Session>()
+    const firstCreate = vi.fn(() => gate.promise)
+    const secondCreate = vi.fn(() => ({ id: "second" }))
+    const first = coordinator.coordinate({ dedupeKey: "first", create: firstCreate })
     const duplicate = coordinator.coordinate({ dedupeKey: "first", create: vi.fn() })
-    const second = coordinator.coordinate({ dedupeKey: "second", create: vi.fn() })
+    const second = coordinator.coordinate({ dedupeKey: "second", create: secondCreate })
     expect(duplicate).toBe(first)
-    const firstTask = coordinator.takeNext()!
-    expect(coordinator.takeNext()).toBeNull()
-    expect(coordinator.finish(firstTask, { value: { id: "first" } })).toBe(true)
-    const secondTask = coordinator.takeNext()!
-    expect(secondTask.dedupeKey).toBe("second")
-    expect(coordinator.finish(secondTask, { value: { id: "second" } })).toBe(true)
+    await vi.waitFor(() => expect(firstCreate).toHaveBeenCalledOnce())
+    expect(secondCreate).not.toHaveBeenCalled()
+    gate.resolve({ id: "first" })
     await expect(first).resolves.toEqual({ id: "first" })
     await expect(second).resolves.toEqual({ id: "second" })
   })
 
   it("cancels active and queued work before settlement callbacks can re-enter", async () => {
-    const coordinator = new SessionCreationCoordinator<Session>("source")
+    const coordinator = new SessionCreationCoordinator(runtime())
+    const gate = deferred<Session>()
     let reentrant!: Promise<Session | undefined>
-    const active = coordinator.coordinate({ dedupeKey: "active", create: vi.fn() })
+    const active = coordinator.coordinate({ dedupeKey: "active", create: () => gate.promise })
     const queued = coordinator.coordinate({
-      dedupeKey: "queued", create: vi.fn(),
-      onSettled: () => { reentrant = coordinator.coordinate({ dedupeKey: "reentrant", create: vi.fn() }) },
+      dedupeKey: "queued",
+      create: vi.fn(),
+      onSettled: () => { reentrant = coordinator.coordinate({ dedupeKey: "reentrant", create: () => ({ id: "reentrant" }) }) },
     })
-    coordinator.takeNext()
     coordinator.cancel(() => true)
     await expect(active).resolves.toBeUndefined()
     await expect(queued).resolves.toBeUndefined()
-    expect(coordinator.takeNext()?.dedupeKey).toBe("reentrant")
-    coordinator.cancel(() => true)
-    await expect(reentrant).resolves.toBeUndefined()
+    await expect(reentrant).resolves.toEqual({ id: "reentrant" })
+    gate.resolve({ id: "late" })
   })
 
-  it("rejects reentrant settlement work while resetting", async () => {
-    const coordinator = new SessionCreationCoordinator<Session>("source")
+  it("rejects reentrant settlement work while changing source", async () => {
+    const coordinator = new SessionCreationCoordinator(runtime())
     let duringReset!: Promise<Session | undefined>
     const resetTask = coordinator.coordinate({
-      dedupeKey: "reset", create: vi.fn(),
+      dedupeKey: "reset",
+      create: vi.fn(),
       onSettled: () => { duringReset = coordinator.coordinate({ dedupeKey: "during-reset", create: vi.fn() }) },
     })
-    coordinator.reset("next")
+    coordinator.update(runtime("next"))
     await expect(resetTask).resolves.toBeUndefined()
     await expect(duringReset).rejects.toMatchObject({ code: "SESSION_CREATE_COORDINATOR_UNAVAILABLE" })
-    expect(coordinator.sourceKey).toBe("next")
   })
 
   it("detaches the active task before canonical callbacks run", async () => {
-    const coordinator = new SessionCreationCoordinator<Session>("source")
+    const coordinator = new SessionCreationCoordinator(runtime())
     let next!: Promise<Session | undefined>
     const creation = coordinator.coordinate({
-      dedupeKey: "first", create: vi.fn(),
-      onResolved: () => { next = coordinator.coordinate({ dedupeKey: "next", create: vi.fn() }) },
+      dedupeKey: "first",
+      create: () => ({ id: "created" }),
+      onResolved: () => { next = coordinator.coordinate({ dedupeKey: "next", create: () => ({ id: "next" }) }) },
     })
-    const task = coordinator.takeNext()!
-    coordinator.finish(task, { value: { id: "created" } })
     await expect(creation).resolves.toEqual({ id: "created" })
-    expect(coordinator.takeNext()?.dedupeKey).toBe("next")
-    coordinator.cancel(() => true)
-    await expect(next).resolves.toBeUndefined()
+    await expect(next).resolves.toEqual({ id: "next" })
   })
 
   it("runs onSettled and rejects with an onResolved failure while leaving the queue available", async () => {
-    const coordinator = new SessionCreationCoordinator<Session>("source")
+    const coordinator = new SessionCreationCoordinator(runtime())
     const callbackError = new Error("resolved callback failed")
     const onSettled = vi.fn()
     const creation = coordinator.coordinate({
-      dedupeKey: "first", create: vi.fn(), onResolved: () => { throw callbackError }, onSettled,
+      dedupeKey: "first",
+      create: () => ({ id: "created" }),
+      onResolved: () => { throw callbackError },
+      onSettled,
     })
-    coordinator.finish(coordinator.takeNext()!, { value: { id: "created" } })
     await expect(creation).rejects.toBe(callbackError)
     expect(onSettled).toHaveBeenCalledOnce()
-    const retry = coordinator.coordinate({ dedupeKey: "retry", create: vi.fn() })
-    coordinator.finish(coordinator.takeNext()!, { value: { id: "retry" } })
-    await expect(retry).resolves.toEqual({ id: "retry" })
+    await expect(coordinator.coordinate({ dedupeKey: "retry", create: () => ({ id: "retry" }) }))
+      .resolves.toEqual({ id: "retry" })
   })
 
   it("runs onSettled and rejects with an onError failure", async () => {
-    const coordinator = new SessionCreationCoordinator<Session>("source")
-    const transportError = new Error("transport failed")
+    const coordinator = new SessionCreationCoordinator(runtime())
     const callbackError = new Error("error callback failed")
     const onSettled = vi.fn()
     const creation = coordinator.coordinate({
-      dedupeKey: "first", create: vi.fn(), onError: () => { throw callbackError }, onSettled,
+      dedupeKey: "first",
+      create: () => { throw new Error("transport failed") },
+      onError: () => { throw callbackError },
+      onSettled,
     })
-    coordinator.finish(coordinator.takeNext()!, { error: transportError })
     await expect(creation).rejects.toBe(callbackError)
     expect(onSettled).toHaveBeenCalledOnce()
   })
