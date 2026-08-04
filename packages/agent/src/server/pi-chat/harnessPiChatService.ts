@@ -274,9 +274,16 @@ export class HarnessPiChatService implements PiChatSessionService {
     if (this.canRefreshFromPersistedState(sessionKey, adapter)) {
       const persisted = await this.readPersistedState(ctx, sessionId)
       if (persisted && this.canRefreshFromPersistedState(sessionKey, adapter)) {
+        const liveSeq = this.channels.get(sessionKey)?.buffer.latestSeq ?? 0
         return this.enrichSyntheticPromptFailures(
           sessionKey,
-          this.messageMetadata.enrichSnapshot(sessionKey, persisted),
+          this.messageMetadata.enrichSnapshot(sessionKey, {
+            ...persisted,
+            // Without a durable event store, an idle channel can still retain
+            // already-rendered live events. The transcript snapshot includes
+            // those turns, so its cursor must fence their in-memory replay.
+            seq: Math.max(persisted.seq, liveSeq),
+          }),
         )
       }
     }

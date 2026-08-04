@@ -1220,6 +1220,40 @@ describe('HarnessPiChatService', () => {
     ])
   })
 
+  it('fences in-memory event replay behind an idle persisted snapshot cursor', async () => {
+    const adapter = createAdapter()
+    adapter.readSnapshot().isStreaming = false
+    const persistedStore: PersistedSessionStore = {
+      ...sessionStore,
+      loadEntries: vi.fn(async () => ({
+        id: 's1',
+        messages: [{ id: 'u1', role: 'user', content: [{ type: 'text', text: 'persisted prompt' }] }],
+      })),
+    }
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore: persistedStore,
+      workdir: '/workspace',
+    })
+    const delivered: PiChatEvent[] = []
+    const first = await service.subscribe(ctx, 's1', 0, (event) => delivered.push(event))
+    expect(first.type).toBe('ok')
+
+    adapter.emit({ type: 'queue_update', followUp: ['already rendered'] } as unknown as AgentSessionEvent)
+    await vi.waitFor(() => expect(delivered.length).toBeGreaterThan(0))
+    if (first.type === 'ok') first.unsubscribe()
+
+    const state = await service.readState(ctx, 's1')
+    expect(state.seq).toBe(delivered.at(-1)?.seq)
+    expect(state.messages).toEqual([expect.objectContaining({ id: 'u1' })])
+
+    const replayed: PiChatEvent[] = []
+    const reopened = await service.subscribe(ctx, 's1', state.seq, (event) => replayed.push(event))
+    expect(reopened.type).toBe('ok')
+    expect(replayed).toEqual([])
+    if (reopened.type === 'ok') reopened.unsubscribe()
+  })
+
   it('keeps live state when an idle session becomes active during persisted refresh', async () => {
     const adapter = createAdapter()
     adapter.readSnapshot().isStreaming = false
