@@ -230,7 +230,7 @@ describe('addressed Agent Host HTTP projection', () => {
     const controller = new AbortController()
 
     try {
-      const response = await fetch(`${address}/api/v1/agents/session-activity/events`, { signal: controller.signal })
+      const response = await fetch(`${address}/api/v1/agents/session-activity/events?workspaceId=workspace-a`, { signal: controller.signal })
       expect(response.headers.get('content-type')).toContain('text/event-stream')
       const reader = response.body!.getReader()
       const decoder = new TextDecoder()
