@@ -176,6 +176,11 @@ export function WorkspaceShell() {
     setShowcaseActiveSessionId(session.id)
     return session
   }, [])
+  const renameShowcaseSession = useCallback((sessionId: string, title: string) => {
+    setShowcaseSessions((current) => current.map((session) => (
+      session.id === sessionId ? { ...session, title, updatedAt: Date.now() } : session
+    )))
+  }, [])
   const handleActiveSessionIdChange = useCallback(
     (sessionId: string | null) => {
       if (showcase && sessionId) {
@@ -239,6 +244,7 @@ export function WorkspaceShell() {
       onActiveSessionIdChange={handleActiveSessionIdChange}
       onSwitchSession={showcase ? handleActiveSessionIdChange : undefined}
       onCreateSession={showcase ? createShowcaseSession : undefined}
+      onRenameSession={showcase ? renameShowcaseSession : undefined}
       plugins={activeWorkspacePlugins}
       chatParams={{ thinkingControl: true }}
     />

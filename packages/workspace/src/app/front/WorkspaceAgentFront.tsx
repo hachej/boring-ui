@@ -247,6 +247,7 @@ export interface WorkspaceAgentFrontProps<
   onSwitchSession?: (id: string, agentTypeId?: string) => void
   onCreateSession?: () => unknown | Promise<unknown>
   onDeleteSession?: (id: string, agentTypeId?: string) => void
+  onRenameSession?: (id: string, title: string, agentTypeId?: string) => void | Promise<void>
   onActiveSessionIdChange?: (sessionId: string | null) => void
   chatParams?: Record<string, unknown>
   /**
@@ -566,6 +567,7 @@ export function WorkspaceAgentFront<
   onSwitchSession,
   onCreateSession,
   onDeleteSession,
+  onRenameSession,
   onActiveSessionIdChange,
   appTitle = "Boring UI",
   workspaceLabel,
@@ -1648,6 +1650,24 @@ export function WorkspaceAgentFront<
 
   const workbenchBlocked = workspaceWarmupStatus.status !== "ready"
   const workbenchOverlay = workbenchBlocked ? <WorkbenchWarmupOverlay status={workspaceWarmupStatus} /> : undefined
+  const renameChatSession = useCallback(async (sessionKey: string, title: string) => {
+    const ref = workspaceSessionRefFromKey(sessionKey)
+    if (onRenameSession) {
+      await onRenameSession(ref.sessionId, title, ref.agentTypeId)
+      return
+    }
+    const owner = ref.agentTypeId ?? agentTypeId
+    const endpoint = `${apiBaseUrl?.replace(/\/$/, "") ?? ""}/api/v1/agents/${encodeURIComponent(owner)}/sessions/${encodeURIComponent(ref.sessionId)}/rename`
+    const requestId = `session-rename:${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { ...resolvedRequestHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ requestId, title }),
+    })
+    if (!response.ok) throw new Error(`rename failed (${response.status})`)
+    await sessionApi?.refresh?.({ background: true })
+  }, [agentTypeId, apiBaseUrl, onRenameSession, resolvedRequestHeaders, sessionApi])
+
   const reloadAgentPluginsForSession = useCallback(async (ref: { agentTypeId: string; sessionId: string }) => {
     const endpoint = `${apiBaseUrl?.replace(/\/$/, "") ?? ""}/api/v1/agents/${encodeURIComponent(ref.agentTypeId)}/reload`
     const requestId = `reload:${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`
@@ -1863,6 +1883,21 @@ export function WorkspaceAgentFront<
     onClose: () => setNavOpen(false),
   }
   const canDeleteSessions = Boolean(sessionApi || onDeleteSession || !hasExplicitSessionProps)
+  const canRenameSessions = Boolean(sessionApi || onRenameSession || !hasExplicitSessionProps)
+  const chatPaneSessionActions = useMemo(() => ({
+    isPinned: (sessionKey: string) => pinnedIds.includes(sessionKey),
+    onTogglePin: (sessionKey: string) => {
+      const ref = workspaceSessionRefFromKey(sessionKey)
+      toggleSessionPinned(ref.sessionId, ref.agentTypeId)
+    },
+    ...(canRenameSessions ? { onRename: renameChatSession } : {}),
+    ...(canDeleteSessions ? {
+      onDelete: async (sessionKey: string) => {
+        const ref = workspaceSessionRefFromKey(sessionKey)
+        await deleteSessionAndPane(ref.sessionId, ref.agentTypeId)
+      },
+    } : {}),
+  }), [canDeleteSessions, canRenameSessions, deleteSessionAndPane, pinnedIds, renameChatSession, toggleSessionPinned])
   const commandPaletteSessionSearch = useMemo(() => (
     isPluginTabsLayout
       ? {
@@ -2021,6 +2056,7 @@ export function WorkspaceAgentFront<
       centerParams={centerParams}
       chatPanes={chatPanes}
       chatTopActions={chatTopOverlayActions}
+      chatPaneSessionActions={chatPaneSessionActions}
       activeChatPaneId={activeChatPaneId}
       onActiveChatPaneChange={activateChatPane}
       onCloseChatPane={closeChatPane}
