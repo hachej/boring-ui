@@ -16,11 +16,13 @@ import {
   type VerifiedAgentScopeClaim,
 } from '../../shared/index'
 import type { PiChatEvent, PiChatSnapshot } from '../../shared/chat'
+import { ErrorCode } from '../../shared/error-codes'
 import {
   type PiChatSessionService,
   type PiSessionRequestContext,
 } from '../../core/piChatSessionService'
 import { canonicalDigest } from './canonical'
+import { projectStableServiceError } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
 import type {
   AgentGatewayEffect,
@@ -778,7 +780,15 @@ export class EmbeddedAgentGateway implements AgentGateway {
           let receipt: JsonValue
           try {
             receipt = await actionResult as JsonValue
-          } catch {
+          } catch (error) {
+            // Metering rejects PAYMENT_REQUIRED before model/session mutation. Keep
+            // that explicitly stable rejection durable and replayable instead of
+            // misclassifying it as an ambiguous post-effect failure.
+            const stable = projectStableServiceError(error)
+            if (stable?.error.code === ErrorCode.enum.PAYMENT_REQUIRED) {
+              await this.runtime.ledger.reject(key, { kind: 'service', error: stable }).catch(() => {})
+              throw error
+            }
             const unknown = new AgentGatewayError(
               AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
               'effect outcome could not be safely replayed',
@@ -846,7 +856,14 @@ export class EmbeddedAgentGateway implements AgentGateway {
   }
 
   private failure(failure: AgentRequestFailure): Error {
-    return gatewayError(failure.error)
+    if (failure.kind === 'gateway') return gatewayError(failure.error)
+    return Object.assign(new Error(failure.error.error.message), {
+      code: failure.error.error.code,
+      statusCode: failure.error.statusCode,
+      ...(failure.error.error.retryable === undefined
+        ? {}
+        : { retryable: failure.error.error.retryable }),
+    })
   }
 
   private async promptAdmission(
