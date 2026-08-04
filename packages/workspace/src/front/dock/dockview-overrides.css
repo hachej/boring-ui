@@ -169,13 +169,35 @@
 
 .dv-chat-stage .dv-tabs-container,
 .dv-chat-stage .tab-container {
+  flex: 0 1 auto !important;
+  width: fit-content !important;
+  min-width: 0;
+  max-width: min(420px, 55vw);
   align-items: stretch;
+}
+
+/* Dockview's scroll wrapper otherwise consumes the whole header and pushes
+   the session menu away from its title. */
+.dv-chat-stage .dv-scrollable {
+  flex: 0 1 auto !important;
+  width: fit-content !important;
+  min-width: 0;
+}
+
+/* Keep session actions adjacent to the readable title while preserving the
+   split/close cluster at the far edge of each pane header. */
+.dv-chat-stage .right-actions-container,
+.dv-chat-stage .dv-right-actions-container {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .dv-chat-stage .dv-tab,
 .dv-chat-stage .tab,
 .dv-chat-stage .dv-tab.dv-active-tab,
 .dv-chat-stage .tab.active-tab {
+  flex: 0 1 auto !important;
+  width: fit-content !important;
   height: 44px;
   min-width: 0;
   max-width: min(420px, 55vw);

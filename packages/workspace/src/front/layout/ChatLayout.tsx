@@ -538,6 +538,7 @@ export function ChatLayout(props: ChatLayoutProps) {
               <ChatPaneStage
                 panes={chatPanes}
                 topActions={props.chatTopActions}
+                sessionActions={props.chatPaneSessionActions}
                 activePaneId={props.activeChatPaneId}
                 onActivePaneChange={props.onActiveChatPaneChange}
                 onClosePane={props.onCloseChatPane}
