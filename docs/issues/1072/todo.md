@@ -70,27 +70,29 @@ Independent of A/B.
 
 Blocked by C.
 
-- [ ] Define injected `BeadsOperations` with no caller-selectable cwd/path.
-- [ ] Add local/playground adapter bound to one admitted Workspace root; remote
+- [x] Define injected `BeadsOperations` with no caller-selectable cwd/path.
+- [x] Add local/playground adapter bound to one admitted Workspace root; remote
   without matching operations returns runtime-unavailable.
-- [ ] Pin/check `br 0.2.16`; use fixed `execFile` argv and bounded timeout/output.
-- [ ] Validate IDs with ASCII/NFC/length grammar and mandatory `--` terminator.
-- [ ] Test leading option, DB/config option, traversal, whitespace/control,
+- [x] Pin/check `br 0.2.16`; use fixed sandboxed argv, read-only copies of
+  Workspace-admitted Beads files, and bounded timeout/output.
+- [x] Validate IDs with ASCII/NFC/length grammar and mandatory `--` terminator.
+- [x] Test leading option, DB/config option, traversal, whitespace/control,
   overlength, and Unicode inputs before execution.
-- [ ] Parse list object/show array defensively; ignore unknown fields and reject
+- [x] Parse list object/show array defensively; ignore unknown fields and reject
   malformed required shapes/duplicates.
-- [ ] Map explicit statuses including unknown → `other`.
-- [ ] Map ID/title/preview/status/labels/priority/type/assignee/parent/epic.
-- [ ] Map full description/acceptance/notes/metadata and ordered relations.
-- [ ] Strip source_repo_path/path-shaped unknowns and redact command errors.
-- [ ] Implement/export the complete generic + `TASK_BEADS_*`
+- [x] Map explicit statuses including unknown → `other`.
+- [x] Map ID/title/preview/status/labels/priority/type/assignee/parent/epic.
+- [x] Map full description/acceptance/notes/metadata and ordered relations.
+- [x] Strip source_repo_path/path-shaped unknowns and redact command errors.
+- [x] Implement/export the complete generic + `TASK_BEADS_*`
   code/status/retryability table, including unsupported version.
-- [ ] Return typed per-source partial-list errors without hiding healthy sources.
-- [ ] Strictly validate provider config and reject duplicate Beads providers.
-- [ ] Add playground GitHub + Beads config.
-- [ ] Prove canonical public-output and byte-level JSONL/DB/WAL/SHM/metadata/config
-  fingerprints do not change; report transient locks separately.
-- [ ] Run Tasks tests/typecheck/build and security/path review gate.
+- [x] Return typed per-source partial-list errors without hiding healthy sources.
+- [x] Strictly validate provider config and reject duplicate Beads providers.
+- [x] Add playground GitHub + Beads config.
+- [x] Prove the admitted `issues.jsonl`/metadata/config snapshot and untouched
+  DB/WAL/SHM files all keep byte-level fingerprints; separately prove canonical
+  public output is unchanged and report transient locks.
+- [x] Run Tasks tests/typecheck/build and security/path review gate.
 
 ## E — Accessible Bead detail dialog
 

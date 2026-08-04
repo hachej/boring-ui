@@ -3,9 +3,10 @@ import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node
 import { readFile, readdir, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path"
 import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
+import { createNodeWorkspace } from "@hachej/boring-sandbox/providers/node-workspace"
 import { createPersistedScriptedPiHarness } from "./testing/scriptedPiHarness"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
-import { createTasksServerPlugin } from "@hachej/boring-tasks/server"
+import { createTasksServerPlugin, createWorkspaceBeadsOperations } from "@hachej/boring-tasks/server"
 import { loadBoringFactoryAgents } from "./factoryAgents"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
@@ -63,6 +64,9 @@ export async function startPlaygroundServer(): Promise<void> {
     const remoteWorkerWorkspaceId = remoteWorkerModeAdapter
       ? (process.env.BORING_WORKSPACE_PLAYGROUND_WORKSPACE_ID?.trim() || randomUUID())
       : undefined
+    const beadsOperations = remoteWorkerModeAdapter
+      ? undefined
+      : createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
     const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
     const factoryAgentsEnabled = process.env.VITE_BORING_FACTORY_AGENTS === "1"
     const factoryAgents = factoryAgentsEnabled ? await loadBoringFactoryAgents() : undefined
@@ -86,7 +90,8 @@ export async function startPlaygroundServer(): Promise<void> {
         : {}),
       plugins: [createTasksServerPlugin({
         workspaceRoot,
-        config: { providers: [{ provider: "github", repo: "auto" }] },
+        beadsOperations,
+        config: { providers: [{ provider: "github", repo: "auto" }, { provider: "beads" }] },
       })],
       defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
       runtimeProvisioner: multiFilesystemPlayground

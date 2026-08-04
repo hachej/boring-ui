@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "platform": "linux",
+  "protocol": {
+    "version": [
+      "br",
+      "--version"
+    ],
+    "list": [
+      "br",
+      "list",
+      "--all",
+      "--json",
+      "--no-auto-flush",
+      "--no-auto-import",
+      "--no-db"
+    ],
+    "show": [
+      "br",
+      "show",
+      "--json",
+      "--no-auto-flush",
+      "--no-auto-import",
+      "--no-db",
+      "--",
+      "<validated-id>"
+    ]
+  },
+  "before": {
+    "files": {
+      "issues.jsonl": {
+        "size": 625259,
+        "sha256": "97e6f970a34e976c0c5ef859b7090f0f0d64d879afc5a2cc8ca8a0c5d3cdab23"
+      },
+      "beads.db": {
+        "size": 3276800,
+        "sha256": "27eb5fd03585ddd23373b3dbd0348eeb35fae90130af0718c9b78b702a66bff8"
+      },
+      "beads.db-wal": {
+        "size": 32,
+        "sha256": "b14e7d418d84563aced415d39a5a13498c441386c0f6aa5cf0596fc2f2f3d881"
+      },
+      "beads.db-shm": {
+        "size": 32768,
+        "sha256": "fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb"
+      },
+      "metadata.json": {
+        "size": 62,
+        "sha256": "cb62a60cf62c180a3cf6bb59a13f4e3a4ddf63f45a6a4da2befaa0e7c84cd252"
+      },
+      "config.yaml": {
+        "size": 104,
+        "sha256": "075fff7e4799bae4060e169a38a0e4afd17811d155e57b60e2eef62427647421"
+      }
+    },
+    "locks": {
+      ".sync.lock": {
+        "size": 0,
+        "mtimeMs": 1785875773242.5203
+      },
+      ".write.lock": {
+        "size": 0,
+        "mtimeMs": 1785874671543.1292
+      }
+    },
+    "semantic": {
+      "count": 226,
+      "bytes": 1231908,
+      "sha256": "cc4221c82c50571584868af23412518c6885d4ee630a65dc5a0e4cfb2be72006"
+    }
+  },
+  "after": {
+    "semantic": {
+      "count": 226,
+      "bytes": 1231908,
+      "sha256": "cc4221c82c50571584868af23412518c6885d4ee630a65dc5a0e4cfb2be72006"
+    },
+    "files": {
+      "issues.jsonl": {
+        "size": 625259,
+        "sha256": "97e6f970a34e976c0c5ef859b7090f0f0d64d879afc5a2cc8ca8a0c5d3cdab23"
+      },
+      "beads.db": {
+        "size": 3276800,
+        "sha256": "27eb5fd03585ddd23373b3dbd0348eeb35fae90130af0718c9b78b702a66bff8"
+      },
+      "beads.db-wal": {
+        "size": 32,
+        "sha256": "b14e7d418d84563aced415d39a5a13498c441386c0f6aa5cf0596fc2f2f3d881"
+      },
+      "beads.db-shm": {
+        "size": 32768,
+        "sha256": "fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb"
+      },
+      "metadata.json": {
+        "size": 62,
+        "sha256": "cb62a60cf62c180a3cf6bb59a13f4e3a4ddf63f45a6a4da2befaa0e7c84cd252"
+      },
+      "config.yaml": {
+        "size": 104,
+        "sha256": "075fff7e4799bae4060e169a38a0e4afd17811d155e57b60e2eef62427647421"
+      }
+    },
+    "locks": {
+      ".sync.lock": {
+        "size": 0,
+        "mtimeMs": 1785875773242.5203
+      },
+      ".write.lock": {
+        "size": 0,
+        "mtimeMs": 1785874671543.1292
+      }
+    }
+  },
+  "observed": {
+    "cardCount": 226,
+    "detailId": "wt-391-forward-gh-1072-factory-agents-beads-020e",
+    "notFound": {
+      "code": "TASK_BEADS_NOT_FOUND",
+      "status": 404,
+      "retryable": false
+    },
+    "uninitializedStore": {
+      "before": [
+        ".gitkeep"
+      ],
+      "after": [
+        ".gitkeep"
+      ],
+      "error": {
+        "code": "TASK_BEADS_STORE_NOT_FOUND",
+        "status": 404,
+        "retryable": false
+      },
+      "unchanged": true
+    }
+  },
+  "filesUnchanged": true,
+  "semanticUnchanged": true
+}

@@ -236,11 +236,22 @@ source.
 Supported runtime is pinned/tested at `br 0.2.16`. Fixed commands are:
 
 ```text
-br list --all --json --no-auto-flush --no-auto-import
-br show --json --no-auto-flush --no-auto-import -- <validated-id>
+br list --all --json --no-auto-flush --no-auto-import --no-db
+br show --json --no-auto-flush --no-auto-import --no-db -- <validated-id>
 ```
 
-The adapter uses `execFile`, never a shell. Bead IDs must be NFC ASCII matching
+The Linux local adapter resolves and pins the verified `br` executable and
+`/usr/bin/bwrap` by file descriptor. It spawns no shell. It opens
+`issues.jsonl`, `metadata.json`, and `config.yaml` relative to pinned
+Workspace-root and `.beads` directory FDs, then bubblewrap copies only those
+three admitted files into a private sandbox as read-only data. The Workspace
+root itself is never mounted or exposed to `br`. The sandbox disables
+networking, clears the environment, and confines `br --no-db` temporary SQLite
+and lock work to private tmpfs files. Empty/uninitialized stores reject before
+launch. Pinned runtime FDs dispose idempotently on Fastify shutdown after
+in-flight reads settle. Remote or unsupported runtimes fail closed.
+
+Bead IDs must be NFC ASCII matching
 `^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$`; control/whitespace/non-ASCII/traversal-like
 or leading-dash IDs fail before execution. `--` remains mandatory. Tests include
 `--db=...`, `--config`, `../`, whitespace/control, overlength, and Unicode.
