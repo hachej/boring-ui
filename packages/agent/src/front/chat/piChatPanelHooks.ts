@@ -29,6 +29,11 @@ export function useExternalRemotePiSession({
   const [session, setSession] = useState<RemotePiSession | undefined>()
   const remoteSessionOptionsRef = useRef(remoteSessionOptions)
   remoteSessionOptionsRef.current = remoteSessionOptions
+  const requestHeadersKey = stableRequestHeadersKey(requestHeaders)
+  const stableRequestHeaders = useMemo<Record<string, string | undefined>>(
+    () => Object.fromEntries(JSON.parse(requestHeadersKey) as Array<[string, string]>),
+    [requestHeadersKey],
+  )
   const remoteSessionOptionsKey = useMemo(
     () => remoteSessionOptionsIdentity(remoteSessionOptions),
     [remoteSessionOptions],
@@ -45,13 +50,19 @@ export function useExternalRemotePiSession({
       workspaceId,
       storageScope,
       apiBaseUrl,
-      headers: requestHeaders,
+      headers: stableRequestHeaders,
       fetch,
     })
     setSession(next)
     return () => next.dispose()
-  }, [agentTypeId, apiBaseUrl, createRemoteSession, fetch, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
+  }, [agentTypeId, apiBaseUrl, createRemoteSession, fetch, remoteSessionOptionsKey, sessionId, stableRequestHeaders, storageScope, workspaceId])
   return session
+}
+
+function stableRequestHeadersKey(headers?: Record<string, string | undefined>): string {
+  return JSON.stringify(Object.entries(headers ?? {})
+    .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+    .sort(([left], [right]) => left.localeCompare(right)))
 }
 
 const remoteSessionOptionObjectIds = new WeakMap<object, number>()
