@@ -435,6 +435,13 @@
   }
 }
 
+@media (pointer: coarse) {
+  .workbench-open-button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
 @media (hover: none) {
   .app-left-new-chat-secondary {
     width: auto;
