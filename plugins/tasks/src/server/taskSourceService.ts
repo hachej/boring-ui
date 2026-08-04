@@ -1,3 +1,4 @@
+import { BORING_TASK_ERROR_DEFINITIONS } from "../shared"
 import type {
   BoringTaskBoardConfig,
   BoringTaskCard,
@@ -10,14 +11,20 @@ import type { BoringTaskSourceContext, BoringTaskSourceRegistry, BoringTaskSourc
 import { TaskDetailValidationError, validateTaskDetail } from "./taskDtoValidation"
 
 export class TaskSourceServiceError extends Error {
+  readonly status: number
+  readonly retryable: boolean
+
   constructor(
-    readonly status: number,
+    _status: number,
     readonly code: BoringTaskErrorCode,
     message: string,
-    readonly retryable = false,
+    _retryable?: boolean,
   ) {
     super(message)
     this.name = "TaskSourceServiceError"
+    const definition = BORING_TASK_ERROR_DEFINITIONS[code]
+    this.status = definition.status
+    this.retryable = definition.retryable
   }
 }
 

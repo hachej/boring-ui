@@ -84,6 +84,17 @@ describe("task source service", () => {
     })
   })
 
+  test("uses the closed error definition table as status/retry authority", () => {
+    expect(new TaskSourceServiceError(500, "TASK_GITHUB_COMMAND_FAILED", "redacted", false)).toMatchObject({
+      status: 502,
+      retryable: true,
+    })
+    expect(new TaskSourceServiceError(502, "TASK_SOURCE_ERROR", "redacted", true)).toMatchObject({
+      status: 500,
+      retryable: true,
+    })
+  })
+
   test("rejects unknown sources with stable error", async () => {
     const service = createTaskSourceService(createTaskSourceRegistry([]))
     await expect(service.moveTask({}, { sourceId: "missing", taskId: "1", statusId: "todo" })).rejects.toMatchObject({

@@ -34,6 +34,34 @@ export const BORING_TASK_ERROR_CODES = [
 
 export type BoringTaskErrorCode = (typeof BORING_TASK_ERROR_CODES)[number]
 
+export const BORING_TASK_ERROR_DEFINITIONS: Readonly<Record<BoringTaskErrorCode, { status: number; retryable: boolean }>> = Object.freeze({
+  TASK_INVALID_BODY: { status: 400, retryable: false },
+  TASK_BEADS_ID_INVALID: { status: 400, retryable: false },
+  TASK_SOURCE_NOT_FOUND: { status: 404, retryable: false },
+  TASK_NOT_FOUND: { status: 404, retryable: false },
+  TASK_BEADS_NOT_FOUND: { status: 404, retryable: false },
+  TASK_BEADS_STORE_NOT_FOUND: { status: 404, retryable: false },
+  TASK_SOURCE_DETAIL_UNSUPPORTED: { status: 409, retryable: false },
+  TASK_INVALID_ID: { status: 400, retryable: false },
+  TASK_STATUS_NOT_FOUND: { status: 400, retryable: false },
+  TASK_GITHUB_COMMAND_FAILED: { status: 502, retryable: true },
+  TASK_GITHUB_REPO_NOT_FOUND: { status: 404, retryable: false },
+  TASK_SOURCE_MOVE_UNSUPPORTED: { status: 409, retryable: false },
+  TASK_SOURCE_DELETE_UNSUPPORTED: { status: 409, retryable: false },
+  TASK_BEADS_STORE_UNHEALTHY: { status: 409, retryable: true },
+  TASK_BEADS_RUNTIME_UNAVAILABLE: { status: 409, retryable: false },
+  TASK_BEADS_VERSION_UNSUPPORTED: { status: 409, retryable: false },
+  TASK_BEADS_BINARY_NOT_FOUND: { status: 503, retryable: false },
+  TASK_BEADS_TIMEOUT: { status: 504, retryable: true },
+  TASK_BEADS_OUTPUT_TOO_LARGE: { status: 502, retryable: true },
+  TASK_BEADS_COMMAND_FAILED: { status: 502, retryable: true },
+  TASK_BEADS_INVALID_JSON: { status: 502, retryable: true },
+  TASK_BEADS_INVALID_RESPONSE: { status: 502, retryable: true },
+  TASK_BEADS_DUPLICATE_ID: { status: 502, retryable: false },
+  TASK_SOURCE_LIST_FAILED: { status: 502, retryable: true },
+  TASK_SOURCE_ERROR: { status: 500, retryable: true },
+})
+
 export interface BoringTaskSourceError {
   sourceId: string
   code: BoringTaskErrorCode
