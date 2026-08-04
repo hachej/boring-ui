@@ -15,6 +15,65 @@ export interface SessionActivityItem {
   status?: SessionActivity
 }
 
+export interface AddressedSessionActivity {
+  ref: { agentTypeId: string; sessionId: string }
+  status: SessionActivity
+}
+
+function parseActivity(value: unknown): AddressedSessionActivity | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const { ref, status } = value as { ref?: unknown; status?: unknown }
+  if (!ref || typeof ref !== "object") return undefined
+  const { agentTypeId, sessionId } = ref as { agentTypeId?: unknown; sessionId?: unknown }
+  if (typeof agentTypeId !== "string" || typeof sessionId !== "string") return undefined
+  if (status !== "idle" && status !== "running" && status !== "aborting" && status !== "error") return undefined
+  return { ref: { agentTypeId, sessionId }, status }
+}
+
+/** Opens one Workspace-owned native SSE stream. EventSource reconnects automatically. */
+export function startSessionActivityStream(options: {
+  endpoint?: string
+  onActivity: (activity: AddressedSessionActivity) => void
+  eventSourceCtor?: typeof EventSource | null
+}): () => void {
+  const EventSourceCtor = options.eventSourceCtor === null
+    ? null
+    : options.eventSourceCtor ?? (typeof EventSource === "undefined" ? null : EventSource)
+  if (!EventSourceCtor) return () => {}
+  const endpoint = options.endpoint?.replace(/\/$/, "") ?? ""
+  const source = new EventSourceCtor(`${endpoint}/api/v1/agents/session-activity/events`)
+  let workingRefs = new Map<string, AddressedSessionActivity["ref"]>()
+  const keyFor = (activity: AddressedSessionActivity) => JSON.stringify([
+    activity.ref.agentTypeId,
+    activity.ref.sessionId,
+  ])
+  const publish = (activity: AddressedSessionActivity) => {
+    const key = keyFor(activity)
+    if (activity.status === "running" || activity.status === "aborting") workingRefs.set(key, activity.ref)
+    else workingRefs.delete(key)
+    options.onActivity(activity)
+  }
+  source.addEventListener("snapshot", (event) => {
+    try {
+      const parsed = JSON.parse((event as MessageEvent).data) as { sessions?: unknown }
+      if (!Array.isArray(parsed.sessions)) return
+      const activities = parsed.sessions.map(parseActivity).filter((item): item is AddressedSessionActivity => Boolean(item))
+      const seen = new Set(activities.map(keyFor))
+      const stale = [...workingRefs].filter(([key]) => !seen.has(key)).map(([, ref]) => ref)
+      workingRefs = new Map()
+      activities.forEach(publish)
+      stale.forEach((ref) => options.onActivity({ ref, status: "idle" }))
+    } catch { /* Ignore malformed server frames. */ }
+  })
+  source.addEventListener("activity", (event) => {
+    try {
+      const activity = parseActivity(JSON.parse((event as MessageEvent).data))
+      if (activity) publish(activity)
+    } catch { /* Ignore malformed server frames. */ }
+  })
+  return () => source.close()
+}
+
 /** Optimistic panel events reconciled by changed AgentHost activity snapshots. */
 export function useWorkingSessionIds(sessions: readonly SessionActivityItem[]): ReadonlySet<string> {
   const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set())

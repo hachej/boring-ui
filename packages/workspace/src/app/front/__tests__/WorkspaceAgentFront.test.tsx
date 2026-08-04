@@ -108,12 +108,24 @@ const globalCommandPanel: PanelConfig = {
 
 class MockEventSource {
   static instances: MockEventSource[] = []
+  private readonly listeners = new Map<string, Set<EventListener>>()
   close = vi.fn()
-  addEventListener = vi.fn()
-  removeEventListener = vi.fn()
+  addEventListener = vi.fn((type: string, listener: EventListener) => {
+    const listeners = this.listeners.get(type) ?? new Set<EventListener>()
+    listeners.add(listener)
+    this.listeners.set(type, listeners)
+  })
+  removeEventListener = vi.fn((type: string, listener: EventListener) => {
+    this.listeners.get(type)?.delete(listener)
+  })
 
   constructor(readonly url: string) {
     MockEventSource.instances.push(this)
+  }
+
+  emit(type: string, data: unknown) {
+    const event = new MessageEvent(type, { data: JSON.stringify(data) })
+    for (const listener of this.listeners.get(type) ?? []) listener(event)
   }
 }
 
@@ -238,11 +250,16 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getAllByText("Loading sessions…").length).toBeGreaterThan(0)
   })
 
-  it("polls authoritative session activity while a background session reports working", async () => {
-    const refresh = vi.fn().mockResolvedValue(undefined)
-    render(
+  it("owns one addressed activity stream and publishes terminal transitions", () => {
+    MockEventSource.instances = []
+    vi.stubGlobal("EventSource", MockEventSource)
+    const statuses: unknown[] = []
+    const onStatus = (event: Event) => statuses.push((event as CustomEvent).detail)
+    window.addEventListener("boring:chat-session-status", onStatus)
+
+    const { unmount } = render(
       <WorkspaceAgentFront
-        workspaceId="working-session-refresh"
+        workspaceId="working-session-stream"
         chatPanel={SessionIdChatPanel}
         useSessions={() => ({
           sessions: [{ id: "session-1", title: "Session one", status: "idle" }],
@@ -253,16 +270,24 @@ describe("WorkspaceAgentFront", () => {
           create: vi.fn(),
           switch: vi.fn(),
           delete: vi.fn(),
-          refresh,
         })}
       />,
     )
+    const stream = MockEventSource.instances.find((instance) => instance.url.endsWith("/api/v1/agents/session-activity/events"))
+    expect(stream).toBeDefined()
 
-    act(() => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
-      detail: { sessionId: "session-1", agentTypeId: "default", working: true },
-    })))
+    act(() => {
+      stream?.emit("snapshot", { sessions: [{ ref: { agentTypeId: "default", sessionId: "session-1" }, status: "running" }] })
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "session-1" }, status: "idle" })
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "session-1" }, status: "running" })
+      stream?.emit("snapshot", { sessions: [] })
+    })
 
-    await waitFor(() => expect(refresh).toHaveBeenCalledWith({ background: true }), { timeout: 2000 })
+    expect(statuses).toContainEqual({ sessionId: "session-1", agentTypeId: "default", working: true })
+    expect(statuses.at(-1)).toEqual({ sessionId: "session-1", agentTypeId: "default", working: false })
+    unmount()
+    expect(stream?.close).toHaveBeenCalledTimes(1)
+    window.removeEventListener("boring:chat-session-status", onStatus)
   })
 
   it("renders a known active session while remote sessions are still loading", () => {

@@ -62,6 +62,7 @@ import {
   workspaceSessionRefFromPersisted,
   type WorkspaceSessionRef,
 } from "../../front/sessionIdentity"
+import { startSessionActivityStream } from "../../front/sessionActivity"
 
 interface PendingCreatePane {
   afterId: string
@@ -847,69 +848,19 @@ export function WorkspaceAgentFront<
     && !remoteSessionApi.error
     && !remoteSessionsArePreviousWorkspace
   const remoteSessionsPending = remoteSessionHookEnabled && !remoteSessionsAvailable
-  const [reportedWorkingSessionKeys, setReportedWorkingSessionKeys] = useState<ReadonlySet<string>>(() => new Set())
-  const activityPollStartedRef = useRef(false)
   useEffect(() => {
-    activityPollStartedRef.current = false
-    setReportedWorkingSessionKeys(new Set())
-    const onStatus = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; working?: unknown } | undefined
-      if (typeof detail?.sessionId !== "string") return
-      const key = workspaceSessionKey(detail.sessionId, typeof detail.agentTypeId === "string" ? detail.agentTypeId : agentTypeId)
-      setReportedWorkingSessionKeys((current) => {
-        const working = detail.working === true
-        if (current.has(key) === working) return current
-        const next = new Set(current)
-        if (working) next.add(key)
-        else next.delete(key)
-        return next
-      })
-    }
-    window.addEventListener("boring:chat-session-status", onStatus)
-    window.dispatchEvent(new Event("boring:chat-session-status-request"))
-    return () => window.removeEventListener("boring:chat-session-status", onStatus)
-  }, [agentTypeId, sessionSourceIdentity])
-  const remoteSessionActivitySnapshot = useMemo(() => JSON.stringify(remoteSessionApi.sessions.map((session) => [
-    session.agentTypeId ?? agentTypeId,
-    session.id,
-    session.status,
-    session.updatedAt,
-  ])), [agentTypeId, remoteSessionApi.sessions])
-  const reconciledActivitySnapshotRef = useRef<string | undefined>(undefined)
-  useEffect(() => {
-    reconciledActivitySnapshotRef.current = undefined
-  }, [sessionSourceIdentity])
-  useEffect(() => {
-    if (!remoteSessionsAvailable || reconciledActivitySnapshotRef.current === remoteSessionActivitySnapshot) return
-    reconciledActivitySnapshotRef.current = remoteSessionActivitySnapshot
-    setReportedWorkingSessionKeys((current) => {
-      const next = new Set(current)
-      for (const session of remoteSessionApi.sessions) {
-        if (!session.status) continue
-        const key = workspaceSessionKey(session.id, session.agentTypeId ?? agentTypeId)
-        if (session.status === "running" || session.status === "aborting") next.add(key)
-        else if (activityPollStartedRef.current) next.delete(key)
-      }
-      if (next.size === current.size && [...next].every((key) => current.has(key))) return current
-      return next
+    if (!remoteSessionsAvailable) return
+    return startSessionActivityStream({
+      endpoint: apiBaseUrl,
+      onActivity: ({ ref, status }) => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: {
+          sessionId: ref.sessionId,
+          agentTypeId: ref.agentTypeId,
+          working: status === "running" || status === "aborting",
+        },
+      })),
     })
-  }, [agentTypeId, remoteSessionActivitySnapshot, remoteSessionApi.sessions, remoteSessionsAvailable])
-  useEffect(() => {
-    if (!remoteSessionsAvailable || reportedWorkingSessionKeys.size === 0 || !remoteSessionApi.refresh) return
-    activityPollStartedRef.current = true
-    let disposed = false
-    let timeout: ReturnType<typeof globalThis.setTimeout> | undefined
-    const poll = async () => {
-      await remoteSessionApi.refresh?.({ background: true })
-      if (!disposed) timeout = globalThis.setTimeout(poll, 1000)
-    }
-    timeout = globalThis.setTimeout(poll, 750)
-    return () => {
-      disposed = true
-      activityPollStartedRef.current = false
-      if (timeout) globalThis.clearTimeout(timeout)
-    }
-  }, [remoteSessionApi.refresh, remoteSessionsAvailable, reportedWorkingSessionKeys.size])
+  }, [apiBaseUrl, remoteSessionsAvailable, sessionSourceIdentity])
   useEffect(() => {
     if (!remoteSessionsAvailable) return
     setRemoteSessionSnapshot((previous) => {
