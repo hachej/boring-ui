@@ -579,6 +579,7 @@ function options(
 ): ManagedAgentMcpDelegateOptions {
   let ids = 0
   return {
+    agentTypeId: 'default',
     gateway: legacyAgentGateway(agent),
     resolveGatewayScope: () => ({ workspaceScopeId: CTX.workspaceId!, authSubjectId: CTX.userId! } as AuthorizedAgentScope),
     createDelegationId: () => {

@@ -57,13 +57,15 @@ describe('no-boot addressed session inventory', () => {
     const harnessFactory = vi.fn(async () => {
       throw new Error('listing must not create a harness')
     })
-    const resolveRuntimeScope = vi.fn(async ({ agentTypeId }: { agentTypeId: string }) => ({
+    const resolveAuthorizedEnvironmentScope = vi.fn(async () => ({
+      placementIdentity: 'direct-a',
+      workspaceRoot: sessionRoot,
+      provisioningFingerprint: 'provision-a',
+    }))
+    const resolveAuthorizedAgentRuntimeScope = vi.fn(async ({ agentTypeId }: { agentTypeId: string }) => ({
       identity: `${agentTypeId}:runtime`,
-      environment: {
-        placementIdentity: 'direct-a',
-        workspaceRoot: sessionRoot,
-        provisioningFingerprint: 'provision-a',
-      },
+      physicalBindingIdentity: `${agentTypeId}:runtime`,
+      resourceInputDigest: `${agentTypeId}:runtime`,
       sessionNamespace: agentTypeId === 'default' ? 'legacy-sessions' : 'configured-sessions',
     }))
 
@@ -99,7 +101,8 @@ describe('no-boot addressed session inventory', () => {
       },
       runtimeModeAdapter: { ...mode, create: createRuntime },
       sessionRoot,
-      resolveRuntimeScope,
+      resolveAuthorizedEnvironmentScope,
+      resolveAuthorizedAgentRuntimeScope,
       harnessFactory,
     })
 

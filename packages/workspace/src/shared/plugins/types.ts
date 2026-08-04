@@ -69,6 +69,7 @@ export type CatalogAdapter = {
 export type PluginBinding = ComponentType<unknown>
 
 export interface PluginProviderProps {
+  agentTypeId: string
   apiBaseUrl: string
   authHeaders?: Record<string, string>
   onAuthError?: (statusCode: number) => void

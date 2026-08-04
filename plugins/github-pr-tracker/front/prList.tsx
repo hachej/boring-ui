@@ -1,4 +1,5 @@
 import React from "react"
+import { useWorkspacePluginClient } from "@hachej/boring-workspace"
 import { buildPortUrl, fetchPrData, relativeTime, requestAgentRefresh, requestServerRefresh, timestamp } from "./data"
 import { attentionNotes, needsAttention, StatusInline, toneText } from "./status"
 import type { IssueCard, PrData, PullRequest } from "./types"
@@ -153,6 +154,7 @@ export interface PrListPaneProps {
 }
 
 export function PrListPane({ onOpenPr, onOpenPrDashboard, onOpenIssueDashboard }: PrListPaneProps) {
+  const { agentTypeId } = useWorkspacePluginClient()
   const [data, setData] = React.useState<PrData | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -203,7 +205,7 @@ export function PrListPane({ onOpenPr, onOpenPrDashboard, onOpenIssueDashboard }
     setRefetchMessage("Refreshing from GitHub…")
     const before = data?.generatedAt
     try {
-      await requestAgentRefresh()
+      await requestAgentRefresh(agentTypeId)
       // The agent executes the refresh tool on its own schedule — poll until
       // the data file actually changes instead of trusting the chat response.
       for (let waited = 0; waited <= 120_000; waited += 4_000) {

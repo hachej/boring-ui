@@ -15,6 +15,8 @@ export interface VerifiedAutomationActor {
 }
 
 export interface ManualRunExecutorOptions {
+  /** Explicit Agent selected for automation runs. */
+  agentTypeId: string
   store: AutomationStore
   storeForRequest?: (request: FastifyRequest, actor: VerifiedAutomationActor) => Promise<AutomationStore> | AutomationStore
   dispatcherResolver: WorkspaceAgentDispatcherResolver
@@ -104,50 +106,66 @@ export class ManualRunExecutor {
     let startedAt: string | null = null
 
     try {
-      const dispatcher = await this.options.dispatcherResolver.resolve(
-        actor,
-        input.request ? { request: input.request } : undefined,
-      )
+      const runWithWorkspaceAgent = this.options.dispatcherResolver.runWithWorkspaceAgent
+      if (!runWithWorkspaceAgent) {
+        throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE, "automation dispatcher does not support callback-scoped AgentHost runs")
+      }
       startedAt = this.nowIso()
       current = await store.updateRunLifecycle(run.id, { status: "dispatching", startedAt, sessionId: null })
       await this.publishRunChange(actor, current)
-      if (!dispatcher.dispatch) {
-        throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE, "automation dispatcher does not support addressed Gateway dispatch")
+      let dispatchReceipt: AutomationRun["dispatchReceipt"] | null = null
+      let durableSessionId: string | null = null
+      const persistDispatchIdentity = async (
+        ref: { agentTypeId: string; sessionId: string },
+        receipt?: Omit<NonNullable<AutomationRun["dispatchReceipt"]>, "ref">,
+      ) => {
+        sessionId = ref.sessionId
+        if (receipt) dispatchReceipt = { ref, ...receipt }
+        if (durableSessionId === ref.sessionId && (!receipt || current.dispatchReceipt)) return
+        current = await store.updateRunLifecycle(run.id, {
+          status: "dispatching",
+          sessionId: ref.sessionId,
+          ...(dispatchReceipt ? { dispatchReceipt } : {}),
+        })
+        durableSessionId = ref.sessionId
+        await this.publishRunChange(actor, current)
       }
-      const dispatched = await dispatcher.dispatch({
+      await runWithWorkspaceAgent.call(this.options.dispatcherResolver, {
+        agentTypeId: this.options.agentTypeId,
+        context: actor,
         requestId: run.id,
-        title: automationSessionTitle(automation.title, promptSnapshot),
-        content: promptSnapshot,
-        model,
-        ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
-        actor: { id: actor.userId },
-        originSurface: "boring-automation",
+        ...(input.request ? { request: input.request } : {}),
+      }, async (binding) => {
+        const dispatched = await binding.dispatch({
+          requestId: run.id,
+          title: automationSessionTitle(automation.title, promptSnapshot),
+          content: promptSnapshot,
+          model,
+          ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
+          actor: { id: actor.userId },
+          originSurface: "boring-automation",
+        }, async (event) => {
+          const eventSessionId = sessionIdFromEvent(event)
+          if (!durableSessionId && eventSessionId) {
+            await persistDispatchIdentity({ agentTypeId: this.options.agentTypeId, sessionId: eventSessionId })
+          }
+          aggregateUsage(usage, event)
+          const outcome = terminalOutcomeFromEvent(event)
+          if (outcome && !terminalStatus) {
+            terminalStatus = outcome.status
+            terminalError = outcome.error
+          }
+        }, async ({ ref, receipt }) => {
+          await persistDispatchIdentity(ref, receipt)
+        })
+        if (!dispatchReceipt) await persistDispatchIdentity(dispatched.ref, dispatched.receipt)
       })
-      sessionId = dispatched.ref.sessionId
       current = await store.updateRunLifecycle(run.id, {
         status: "running",
         sessionId,
-        dispatchReceipt: {
-          ref: dispatched.ref,
-          ...dispatched.receipt,
-        },
+        dispatchReceipt,
       })
       await this.publishRunChange(actor, current)
-
-      for await (const event of dispatched.events) {
-        const eventSessionId = sessionIdFromEvent(event)
-        if (!sessionId && eventSessionId) {
-          sessionId = eventSessionId
-          current = await store.updateRunLifecycle(run.id, { sessionId })
-          await this.publishRunChange(actor, current)
-        }
-        aggregateUsage(usage, event)
-        const outcome = terminalOutcomeFromEvent(event)
-        if (outcome && !terminalStatus) {
-          terminalStatus = outcome.status
-          terminalError = outcome.error
-        }
-      }
 
       const completedAt = this.nowIso()
       await stopHeartbeat()

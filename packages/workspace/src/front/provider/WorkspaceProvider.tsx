@@ -293,6 +293,7 @@ function WorkspacePluginBindings({ plugins }: { plugins: CapturedFrontPlugin[] }
 
 function WorkspacePluginProviders({
   plugins,
+  agentTypeId,
   apiBaseUrl,
   authHeaders,
   onAuthError,
@@ -302,6 +303,7 @@ function WorkspacePluginProviders({
   children,
 }: {
   plugins: CapturedFrontPlugin[]
+  agentTypeId: string
   apiBaseUrl: string
   authHeaders?: Record<string, string>
   onAuthError?: (statusCode: number) => void
@@ -319,6 +321,7 @@ function WorkspacePluginProviders({
     return (
       <Provider
         key={`${plugin.id}:provider:${provider.id}`}
+        agentTypeId={agentTypeId}
         apiBaseUrl={apiBaseUrl}
         authHeaders={authHeaders}
         onAuthError={onAuthError}
@@ -350,6 +353,8 @@ function WorkspaceOpenFileBinding({ onOpenFile }: { onOpenFile?: (path: string) 
 // ---------------------------------------------------------------------------
 
 export interface WorkspaceProviderProps {
+  /** Addressed Agent owner used by plugin runtime clients. */
+  agentTypeId: string
   children: ReactNode
   chatPanel?: WorkspaceChatPanelComponent
   /**
@@ -419,6 +424,7 @@ function scopedAuthHeaders(
 }
 
 export function WorkspaceProvider({
+  agentTypeId,
   children,
   chatPanel,
   plugins,
@@ -656,9 +662,10 @@ export function WorkspaceProvider({
                 {/* Merge: keep the branch's WorkspacePluginClientProvider wrapper
                     + CommandPalette session search, AND main's #71 plugin-provider
                     session context (activeSessionId/openSessionIds). */}
-                <WorkspacePluginClientProvider apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} authHeaders={resolvedAuthHeaders}>
+                <WorkspacePluginClientProvider agentTypeId={agentTypeId} apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} authHeaders={resolvedAuthHeaders}>
                   <WorkspacePluginProviders
                     plugins={pluginsWithBindings}
+                    agentTypeId={agentTypeId}
                     apiBaseUrl={apiBaseUrl}
                     authHeaders={resolvedAuthHeaders}
                     onAuthError={onAuthError}

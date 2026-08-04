@@ -19,11 +19,19 @@ const FILE_CHANGE_OPS = new Set<FileChangeOp>(['write', 'edit', 'unlink', 'renam
 export interface PiChatEventMapperOptions {
   sessionId: string
   initialSeq?: number
+  attachmentUrl?: (attachment: {
+    messageId: string
+    index: number
+    data?: string
+    mediaType?: string
+    filename?: string
+  }) => string | undefined
 }
 
 export class PiChatEventMapper {
   private seq: number
   private readonly sessionId: string
+  private readonly attachmentUrl?: PiChatEventMapperOptions['attachmentUrl']
   private activeTurnId: string | undefined
   private activeAssistantMessageId: string | undefined
   private readonly pendingUserStarts: Array<{ messageId: string; text?: string }> = []
@@ -35,6 +43,7 @@ export class PiChatEventMapper {
 
   constructor(options: PiChatEventMapperOptions) {
     this.sessionId = options.sessionId
+    this.attachmentUrl = options.attachmentUrl
     this.seq = Math.max(0, Math.floor(options.initialSeq ?? 0))
   }
 
@@ -167,7 +176,7 @@ export class PiChatEventMapper {
       clientSeq,
       createdAt: messageTimestamp(message),
       text,
-      files: filePartsFromContent(message.content, messageId),
+      files: filePartsFromContent(message.content, messageId, this.attachmentUrl),
     })
 
     if (role === 'user' && clientNonce !== undefined && clientSeq !== undefined) {
@@ -248,10 +257,18 @@ export class PiChatEventMapper {
 
   private mapMessageEnd(event: RecordLike): PiChatEvent[] {
     if (!isRecord(event.message)) return []
-    const final = buildPiChatHistory([event.message], { sessionId: this.sessionId, turnId: this.activeTurnId })[0]
-    if (!final) return []
-    const messageId = this.finalMessageId(final)
-    const canonicalFinal = final.id === messageId ? final : rewriteMessageId(final, messageId)
+    const projected = buildPiChatHistory([event.message], {
+      sessionId: this.sessionId,
+      turnId: this.activeTurnId,
+    })[0]
+    if (!projected) return []
+    const messageId = this.finalMessageId(projected)
+    const canonicalFinal = buildPiChatHistory([{ id: messageId, message: event.message }], {
+      sessionId: this.sessionId,
+      turnId: this.activeTurnId,
+      attachmentUrl: this.attachmentUrl,
+    })[0]
+    if (!canonicalFinal) return []
     if (this.endedMessageIds.has(messageId)) return []
     this.endedMessageIds.add(messageId)
     if (canonicalFinal.role === 'assistant') {
@@ -325,10 +342,15 @@ export class PiChatEventMapper {
       return buildPiChatHistory([{ id: this.activeAssistantMessageId ?? fallbackAgentEndAssistantId(this.sessionId, turnId), message: rawAssistant }], {
         sessionId: this.sessionId,
         turnId,
+        attachmentUrl: this.attachmentUrl,
       })[0]
     }
 
-    const assistants = buildPiChatHistory(messages, { sessionId: this.sessionId, turnId })
+    const assistants = buildPiChatHistory(messages, {
+      sessionId: this.sessionId,
+      turnId,
+      attachmentUrl: this.attachmentUrl,
+    })
       .filter((message) => message.role === 'assistant')
     return assistants[assistants.length - 1]
   }
@@ -452,12 +474,22 @@ function hasDisplayableAssistantContent(content: unknown): boolean {
   })
 }
 
-function filePartsFromContent(content: unknown, messageId: string): BoringChatPart[] {
+function filePartsFromContent(
+  content: unknown,
+  messageId: string,
+  attachmentUrl?: PiChatEventMapperOptions['attachmentUrl'],
+): BoringChatPart[] {
   if (!Array.isArray(content)) return []
   return content.flatMap((part, index): BoringChatPart[] => {
     if (!isRecord(part) || part.type !== 'image') return []
     const mediaType = optionalString(part.mimeType)
-    const url = imagePartUrl(part, mediaType)
+    const url = attachmentUrl?.({
+      messageId,
+      index,
+      ...(optionalString(part.data) ? { data: optionalString(part.data) } : {}),
+      ...(mediaType ? { mediaType } : {}),
+      ...(optionalString(part.filename) ? { filename: optionalString(part.filename) } : {}),
+    }) ?? imagePartUrl(part, mediaType)
     return [{
       type: 'file',
       id: `${messageId}:file:${index}`,
@@ -490,24 +522,6 @@ function messageText(message: BoringChatMessage): string | undefined {
 
 function isTerminalAssistantFinal(message: BoringChatMessage): boolean {
   return message.role === 'assistant' && !message.parts.some((part) => part.type === 'tool-call')
-}
-
-function rewriteMessageId(message: BoringChatMessage, id: string): BoringChatMessage {
-  return {
-    ...message,
-    id,
-    parts: message.parts.map((part, index): BoringChatPart => {
-      if (part.type === 'text') return { ...part, id: rewritePartId(part.id, message.id, id, `text:${index}`) }
-      if (part.type === 'file') return { ...part, id: rewritePartId(part.id, message.id, id, `file:${index}`) }
-      if (part.type === 'reasoning') return { ...part, id: rewritePartId(part.id, message.id, id, `reasoning:${index}`) }
-      return part
-    }),
-  }
-}
-
-function rewritePartId(partId: string | undefined, previousMessageId: string, nextMessageId: string, fallbackSuffix: string): string {
-  if (partId?.startsWith(previousMessageId)) return `${nextMessageId}${partId.slice(previousMessageId.length)}`
-  return `${nextMessageId}:${fallbackSuffix}`
 }
 
 function partIdFromAssistantEvent(assistantEvent: RecordLike): string {

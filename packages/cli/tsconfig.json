@@ -19,6 +19,9 @@
       "@hachej/boring-bash/agent": [
         "../boring-bash/src/agent/index.ts"
       ],
+      "@hachej/boring-bash/server": [
+        "../boring-bash/src/server/index.ts"
+      ],
       "@hachej/boring-agent/front": [
         "../agent/src/front/index.ts"
       ],
@@ -27,6 +30,9 @@
       ],
       "@hachej/boring-agent/server": [
         "../agent/src/server/index.ts"
+      ],
+      "@hachej/boring-agent/server/agent-host/testing/compositionRouteProof": [
+        "../agent/src/server/agent-host/testing/compositionRouteProof.ts"
       ],
       "@hachej/boring-agent/eval": [
         "../agent/src/eval/index.ts"
@@ -40,6 +46,12 @@
       "@hachej/boring-ask-user/shared": [
         "../../plugins/ask-user/src/shared/index.ts"
       ],
+      "@hachej/boring-automation/front": [
+        "../../plugins/boring-automation/src/front/index.tsx"
+      ],
+      "@hachej/boring-automation/server": [
+        "../../plugins/boring-automation/src/server/index.ts"
+      ],
       "@hachej/boring-diagram/front": [
         "../../plugins/diagram/src/front/index.tsx"
       ],
@@ -52,8 +64,38 @@
       "@hachej/boring-transcription/server": [
         "../../plugins/live-transcription/src/server/index.ts"
       ],
+      "@hachej/boring-tasks/front": [
+        "../../plugins/tasks/src/front/index.tsx"
+      ],
+      "@hachej/boring-tasks/server": [
+        "../../plugins/tasks/src/server/index.ts"
+      ],
+      "@hachej/boring-sandbox/shared": [
+        "../boring-sandbox/src/shared/index.ts"
+      ],
+      "@hachej/boring-sandbox/providers/direct": [
+        "../boring-sandbox/src/providers/direct/index.ts"
+      ],
+      "@hachej/boring-sandbox/providers/bwrap": [
+        "../boring-sandbox/src/providers/bwrap/index.ts"
+      ],
+      "@hachej/boring-sandbox/providers/node-workspace": [
+        "../boring-sandbox/src/providers/node-workspace/index.ts"
+      ],
+      "@hachej/boring-sandbox/providers/vercel-sandbox": [
+        "../boring-sandbox/src/providers/vercel-sandbox/index.ts"
+      ],
       "@hachej/boring-workspace": [
         "../workspace/src/index.ts"
+      ],
+      "@hachej/boring-workspace/events": [
+        "../workspace/src/front/events/index.ts"
+      ],
+      "@hachej/boring-workspace/plugin": [
+        "../workspace/src/plugin.ts"
+      ],
+      "@hachej/boring-workspace/app/front": [
+        "../workspace/src/app/front/index.ts"
       ],
       "@hachej/boring-workspace/server": [
         "../workspace/src/server/index.ts"

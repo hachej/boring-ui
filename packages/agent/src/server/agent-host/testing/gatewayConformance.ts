@@ -114,7 +114,9 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
         'AGENT_SESSION_CURSOR_EXPIRED',
         'AGENT_SESSION_CURSOR_INVALID',
         'AGENT_REQUEST_CONFLICT',
+        'AGENT_REQUEST_IN_PROGRESS',
         'AGENT_REQUEST_OUTCOME_UNKNOWN',
+        'AGENT_RUNTIME_RESTART_REQUIRED',
         'AGENT_COMMAND_INVALID_STATE',
         'AGENT_SESSION_RUNTIME_SCOPE_MISMATCH',
         'AGENT_SHARED_ENVIRONMENT_UNAVAILABLE',
@@ -260,11 +262,11 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
         requestId: 'retryable',
       }), 'AGENT_GATEWAY_CLOSED')
       await expect(fixture.gateway.listSessions({ scope })).resolves.toEqual({ sessions: [] })
-      await expect(fixture.gateway.createSession({
+      await expectCode(fixture.gateway.createSession({
         scope,
         agentTypeId: 'alpha',
         requestId: 'retryable',
-      })).resolves.toMatchObject({ agentTypeId: 'alpha' })
+      }), 'AGENT_REQUEST_IN_PROGRESS')
     })
 
     it('fails unknown agents and hidden cross-scope sessions with stable errors', async () => {
@@ -282,11 +284,16 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
       const fixture = await options.createFixture()
       const scopeA = fixture.issueScope({ workspaceScopeId: 'workspace-a' })
       const scopeB = fixture.issueScope({ workspaceScopeId: 'workspace-b' })
-      const [first, concurrentRetry] = await Promise.all([
+      const concurrent = await Promise.allSettled([
         createSession(fixture, scopeA, 'same-id'),
         createSession(fixture, scopeA, 'same-id'),
       ])
-      expect(concurrentRetry).toEqual(first)
+      const fulfilled = concurrent.filter((result): result is PromiseFulfilledResult<AgentSessionRef> => result.status === 'fulfilled')
+      const first = fulfilled[0]?.value
+      expect(first).toBeDefined()
+      expect(fulfilled.every((result) => JSON.stringify(result.value) === JSON.stringify(first))).toBe(true)
+      const rejected = concurrent.find((result) => result.status === 'rejected')
+      if (rejected) expect(rejected).toMatchObject({ reason: { code: AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS } })
       expect(await createSession(fixture, scopeA, 'same-id')).toEqual(first)
       await expectCode(
         fixture.gateway.createSession({ scope: scopeA, agentTypeId: 'alpha', requestId: 'same-id', title: 'different' }),

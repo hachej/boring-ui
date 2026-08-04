@@ -19,40 +19,19 @@ import {
   createAgentSandboxRuntimeModeAdapter,
 } from '../host/sandbox'
 import {
-  createAgentApp as createAgentAppBase,
-  type CreateAgentAppOptions,
-} from '../src/server/createAgentApp'
-import {
-  registerAgentRoutes as registerAgentRoutesBase,
-  type RegisterAgentRoutesOptions,
-} from '../src/server/registerAgentRoutes'
-import type { FastifyInstance } from 'fastify'
+  createStandaloneAgentHostApp,
+  type CreateStandaloneAgentHostAppOptions,
+} from '../src/server/createStandaloneAgentHostApp'
 
-export async function createTestAgentApp(
-  options: CreateAgentAppOptions = {},
-): ReturnType<typeof createAgentAppBase> {
+export async function createTestStandaloneAgentHostApp(
+  options: CreateStandaloneAgentHostAppOptions = {},
+): ReturnType<typeof createStandaloneAgentHostApp> {
   const mode = options.runtimeModeAdapter?.id ?? options.mode ?? 'direct'
   const runtimeModeAdapter = options.runtimeModeAdapter
     ?? (mode === 'direct' || mode === 'local' || mode === 'vercel-sandbox'
       ? createAgentSandboxRuntimeModeAdapter(mode)
       : undefined)
-  return await createAgentAppBase({
-    ...options,
-    ...(runtimeModeAdapter ? { runtimeModeAdapter } : {}),
-    runtimeHost: options.runtimeHost ?? agentSandboxRuntimeHostOperations,
-  })
-}
-
-export async function registerTestAgentRoutes(
-  app: FastifyInstance,
-  options: RegisterAgentRoutesOptions,
-): Promise<void> {
-  const mode = options.runtimeModeAdapter?.id ?? options.mode ?? 'direct'
-  const runtimeModeAdapter = options.runtimeModeAdapter
-    ?? (mode === 'direct' || mode === 'local' || mode === 'vercel-sandbox'
-      ? createAgentSandboxRuntimeModeAdapter(mode)
-      : undefined)
-  await registerAgentRoutesBase(app, {
+  return await createStandaloneAgentHostApp({
     ...options,
     ...(runtimeModeAdapter ? { runtimeModeAdapter } : {}),
     runtimeHost: options.runtimeHost ?? agentSandboxRuntimeHostOperations,

@@ -133,6 +133,40 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
+  it('serves id-less live attachment bytes from the addressed event URL', async () => {
+    const adapter = createAdapter()
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore,
+      workdir: '/workspace',
+      attachmentUrl: ({ sessionId, messageId, index }) => `/addressed/${sessionId}/${messageId}/${index}`,
+    })
+    const events: PiChatEvent[] = []
+    const subscription = await service.subscribe(ctx, 's1', 0, (event) => { events.push(event) })
+    expect(subscription.type).toBe('ok')
+    adapter.emit({
+      type: 'message_start',
+      message: {
+        role: 'user',
+        content: [{ type: 'image', mimeType: 'image/png', filename: 'live.png', data: 'bGl2ZS1ieXRlcw==' }],
+      },
+    } as unknown as AgentSessionEvent)
+    await vi.waitFor(() => expect(events).toHaveLength(1))
+    const start = events[0]
+    if (start?.type !== 'message-start') throw new Error('expected message-start')
+    expect(start.files?.[0]).toMatchObject({
+      url: `/addressed/s1/${start.messageId}/0`,
+      filename: 'live.png',
+    })
+    await expect(service.readAttachment(ctx, 's1', start.messageId, 0)).resolves.toMatchObject({
+      data: new Uint8Array(Buffer.from('live-bytes')),
+      mediaType: 'image/png',
+      filename: 'live.png',
+    })
+    subscription.type === 'ok' && subscription.unsubscribe()
+    await service.dispose()
+  })
+
   it('disposes a receipt-only prompt, native channel, and metering exactly once', async () => {
     const adapter = createAdapter()
     const run = deferred<void>()

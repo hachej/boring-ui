@@ -45,13 +45,13 @@ export async function evalAgentPrompt(opts: EvalPromptOptions): Promise<EvalResu
     let captured: CapturedStream
     try {
       captured = await runOnce(opts.app, {
+        agentTypeId: opts.agentTypeId,
         sessionId: `${sessionId}-attempt-${attempts}`,
         prompt: opts.prompt,
         systemPrompt: opts.systemPrompt,
         model,
         timeoutMs,
         headers: opts.headers,
-        query: opts.query,
       })
     } catch (err) {
       lastResult = {
@@ -133,20 +133,31 @@ function matchExpectations(
 }
 
 interface RunOnceOpts {
+  agentTypeId: string
   sessionId: string
   prompt: string
   systemPrompt?: string
   model: { provider: string; id: string }
   timeoutMs: number
   headers?: Record<string, string>
-  query?: Record<string, string | number | boolean | undefined>
 }
 
 async function runOnce(
   app: FastifyInstance,
   opts: RunOnceOpts,
 ): Promise<CapturedStream> {
-  const querySuffix = formatQuerySuffix(opts.query)
+  const sessionsPath = `/api/v1/agents/${encodeURIComponent(opts.agentTypeId)}/sessions`
+  const created = await app.inject({
+    method: "POST",
+    url: sessionsPath,
+    headers: opts.headers,
+    payload: { requestId: `eval-create-${opts.sessionId}`, title: opts.sessionId },
+  })
+  if (created.statusCode !== 201) {
+    throw new Error(`Agent session create returned ${created.statusCode}: ${created.body.slice(0, 256)}`)
+  }
+  const sessionId = (created.json() as { sessionId?: unknown }).sessionId
+  if (typeof sessionId !== "string" || !sessionId) throw new Error("Agent session create did not return sessionId")
 
   // System prompt path: the agent's prompt schema doesn't accept a system
   // prompt directly today (it lives on the harness or model config). For
@@ -161,10 +172,11 @@ async function runOnce(
     const res = await withTimeout(
       app.inject({
         method: "POST",
-        url: `/api/v1/agent/pi-chat/${encodeURIComponent(opts.sessionId)}/prompt${querySuffix}`,
+        url: `${sessionsPath}/${encodeURIComponent(sessionId)}/prompt`,
         headers: opts.headers,
         payload: {
-          message: userMessage,
+          requestId: `eval-${sessionId}`,
+          content: userMessage,
           clientNonce: `eval-${opts.sessionId}`,
           model: opts.model,
         },
@@ -182,7 +194,7 @@ async function runOnce(
     }
 
     const snapshot = await withTimeout(
-      waitForSettledState(app, opts, querySuffix),
+      waitForSettledState(app, opts, sessionId),
       opts.timeoutMs,
       `chat turn did not settle within ${opts.timeoutMs}ms`,
     )
@@ -194,7 +206,7 @@ async function runOnce(
     void app
       .inject({
         method: "DELETE",
-        url: `/api/v1/agent/pi-chat/sessions/${encodeURIComponent(opts.sessionId)}${querySuffix}`,
+        url: `${sessionsPath}/${encodeURIComponent(sessionId)}`,
         headers: opts.headers,
       })
       .catch(() => {})
@@ -206,19 +218,24 @@ const STATE_POLL_INTERVAL_MS = 250
 async function waitForSettledState(
   app: FastifyInstance,
   opts: RunOnceOpts,
-  querySuffix: string,
+  sessionId: string,
 ): Promise<Record<string, unknown>> {
   for (;;) {
     const state = await app.inject({
       method: "GET",
-      url: `/api/v1/agent/pi-chat/${encodeURIComponent(opts.sessionId)}/state${querySuffix}`,
+      url: `/api/v1/agents/${encodeURIComponent(opts.agentTypeId)}/sessions/${encodeURIComponent(sessionId)}/state`,
       headers: opts.headers,
     })
     if (state.statusCode !== 200) {
       throw new Error(`Pi chat state returned ${state.statusCode}: ${state.body.slice(0, 256)}`)
     }
-    const snapshot = JSON.parse(state.body) as Record<string, unknown>
-    if (snapshot.status !== "streaming") return snapshot
+    const envelope = JSON.parse(state.body) as Record<string, unknown>
+    const snapshot = envelope.state
+    if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+      throw new Error("Pi chat state did not return an addressed state envelope")
+    }
+    const addressedState = snapshot as Record<string, unknown>
+    if (addressedState.status !== "streaming") return addressedState
     await new Promise((resolve) => setTimeout(resolve, STATE_POLL_INTERVAL_MS))
   }
 }
@@ -242,17 +259,6 @@ function capturePiChatSnapshot(snapshot: Record<string, unknown>): CapturedStrea
     }
   }
   return { toolCalls, text: textParts.join(''), errorText }
-}
-
-function formatQuerySuffix(query: RunOnceOpts["query"]): string {
-  if (!query) return ""
-  const params = new URLSearchParams()
-  for (const [key, value] of Object.entries(query)) {
-    if (value === undefined) continue
-    params.set(key, String(value))
-  }
-  const encoded = params.toString()
-  return encoded ? `?${encoded}` : ""
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {

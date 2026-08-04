@@ -3,6 +3,7 @@ import type {
   AgentRequestFailure,
   AgentRequestKey,
   AgentRequestLedger,
+  AgentRequestLedgerPrepareResult,
   AgentRequestLedgerRecord,
 } from './types'
 
@@ -33,16 +34,25 @@ function invalidTransition(record: AgentRequestLedgerRecord, operation: string):
   )
 }
 
+function validateTarget(key: AgentRequestKey): void {
+  const requiresAgent = key.operation === 'session.create' || key.operation === 'agent.reload'
+  if ((requiresAgent && key.target.kind !== 'agent') || (!requiresAgent && key.target.kind !== 'session')) {
+    throw new TypeError('request ledger effect/target mismatch')
+  }
+}
+
 /** Process-lifetime Level-B ledger with the exact published state machine. */
 export class InMemoryAgentRequestLedger implements AgentRequestLedger {
+  readonly durability = 'in-memory' as const
   private readonly records = new Map<string, AgentRequestLedgerRecord>()
 
-  async prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerRecord> {
+  async prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerPrepareResult> {
+    validateTarget(key)
     const id = keyString(key)
     const existing = this.records.get(id)
     if (existing) {
       if (existing.digest !== digest) conflict()
-      return existing
+      return { ownership: 'existing', record: existing }
     }
     const record: AgentRequestLedgerRecord = {
       key,
@@ -51,7 +61,7 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
       updatedAt: Date.now(),
     }
     this.records.set(id, record)
-    return record
+    return { ownership: 'created', record }
   }
 
   async acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void> {
@@ -72,6 +82,8 @@ export class InMemoryAgentRequestLedger implements AgentRequestLedger {
     this.transition(key, 'reject', (record) => {
       const allowed = failure.kind === 'gateway'
         ? record.state === 'pending-admission'
+          || record.state === 'admission-accepted'
+          || record.state === 'in-flight'
         : record.state === 'in-flight'
       if (!allowed) invalidTransition(record, 'reject')
       return { key: record.key, digest: record.digest, state: 'rejected', failure, updatedAt: Date.now() }

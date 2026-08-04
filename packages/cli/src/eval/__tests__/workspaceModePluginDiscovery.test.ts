@@ -53,7 +53,8 @@ describeIf("CLI workspaces-mode plugin discovery eval (live LLM) [$provider/$id]
     try {
       const result = await evalAgentPrompt({
         app,
-        query: { workspaceId: workspace.id },
+        agentTypeId: "default",
+        headers: { "x-boring-workspace-id": workspace.id },
         prompt: [
           "Create a hot-reloadable boring-ui plugin named `eval-cli-detect`.",
           "First run `boring-ui-plugin status --json` and only continue if workspaceLocalPluginRoots is true.",
@@ -74,8 +75,9 @@ describeIf("CLI workspaces-mode plugin discovery eval (live LLM) [$provider/$id]
 
       const reload = await app.inject({
         method: "POST",
-        url: `/api/v1/agent/reload?workspaceId=${encodeURIComponent(workspace.id)}`,
-        payload: {},
+        url: "/api/v1/agents/default/reload",
+        headers: { "x-boring-workspace-id": workspace.id },
+        payload: { requestId: `eval-cli-reload-${workspace.id}` },
       })
       expect(reload.statusCode, reload.body).toBe(200)
 

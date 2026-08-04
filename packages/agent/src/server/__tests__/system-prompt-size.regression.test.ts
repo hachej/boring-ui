@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
-import { createTestAgentApp as createAgentApp } from '@agent-test-host'
+import { createTestStandaloneAgentHostApp as createStandaloneAgentHostApp } from '@agent-test-host'
 
 function ensureApiKey(): boolean {
   if (process.env.ANTHROPIC_API_KEY) return true
@@ -36,22 +36,29 @@ describe('system-prompt-size regression', () => {
 
   test.skipIf(!hasKey)('prompt size stays within budget and contains no per-tool guideline patterns', async () => {
     const workspaceRoot = await makeTempDir()
-    const app = await createAgentApp({
+    const app = await createStandaloneAgentHostApp({
       workspaceRoot,
       mode: 'direct',
       logger: false,
     })
 
-    const sessionId = 'prompt-size-test'
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/default/sessions',
+      payload: { requestId: 'create-prompt-size-test', title: 'Prompt size test' },
+    })
+    expect(created.statusCode).toBe(201)
+    const sessionId = created.json<{ sessionId: string }>().sessionId
 
     // Send a minimal message to trigger pi session creation (lazy init).
     // This costs one LLM turn but is required for the system prompt to
     // materialize — pi builds it during session bootstrap.
     await app.inject({
       method: 'POST',
-      url: `/api/v1/agent/pi-chat/${sessionId}/prompt`,
+      url: `/api/v1/agents/default/sessions/${sessionId}/prompt`,
       payload: {
-        message: 'Say only the word "ok" and nothing else.',
+        requestId: 'prompt-size-test',
+        content: 'Say only the word "ok" and nothing else.',
         clientNonce: 'prompt-size-test',
         model: { provider: 'anthropic', id: 'claude-haiku-4-5-20251001' },
       },
@@ -59,7 +66,7 @@ describe('system-prompt-size regression', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: `/api/v1/agent/sessions/${sessionId}/system-prompt`,
+      url: `/api/v1/agents/default/sessions/${sessionId}/system-prompt`,
     })
 
     expect(res.statusCode).toBe(200)

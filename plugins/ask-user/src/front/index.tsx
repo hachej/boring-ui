@@ -37,9 +37,10 @@ import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvide
 import { InboxOverlay } from "./inbox/InboxOverlay"
 import { isInboxAttentionBlocker } from "./inbox/attentionBlockerAdapter"
 
-function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, openSessionIds, children }: PluginProviderProps) {
+function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, activeSessionId, openSessionIds, children }: PluginProviderProps) {
   const runtime = useMemo<QuestionsRuntime>(() => ({
     ...sharedQuestionsStore,
+    agentTypeId,
     apiBaseUrl,
     authHeaders,
     activeSessionId,
@@ -49,7 +50,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, openSession
       sharedQuestionsStore.setPending(pending, sessionId)
       return pending
     },
-  }), [activeSessionId, apiBaseUrl, authHeaders, openSessionIds])
+  }), [activeSessionId, agentTypeId, apiBaseUrl, authHeaders, openSessionIds])
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
 
   useAskUserAttentionBlockers(runtime, pendingSnapshot)

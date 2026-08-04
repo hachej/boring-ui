@@ -111,16 +111,16 @@ export function parseRetryableWarmupPreparing(payload: unknown): WarmupPreparing
 
 export function isAgentRuntimeWarmupPath(path: string): boolean {
   const url = new URL(path, "http://workspace.local")
-  return url.pathname === "/api/v1/agent/pi-chat/sessions" || url.pathname === "/api/v1/ready-status"
+  return /^\/api\/v1\/agents\/[^/]+\/(?:sessions|ready-status)$/.test(url.pathname)
 }
 
 export function isReadyStatusPath(path: string): boolean {
-  return new URL(path, "http://workspace.local").pathname === "/api/v1/ready-status"
+  return /^\/api\/v1\/agents\/[^/]+\/ready-status$/.test(new URL(path, "http://workspace.local").pathname)
 }
 
-export function resolveBootPreloadPaths(preloadPaths: string[], provisionWorkspace: boolean): string[] {
+export function resolveBootPreloadPaths(preloadPaths: string[], provisionWorkspace: boolean, agentTypeId: string): string[] {
   const paths = provisionWorkspace
-    ? [...preloadPaths, "/api/v1/ready-status"]
+    ? [...preloadPaths, `/api/v1/agents/${encodeURIComponent(agentTypeId)}/ready-status`]
     : preloadPaths.filter((path) => !isAgentRuntimeWarmupPath(path))
   return Array.from(new Set(paths))
 }

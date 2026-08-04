@@ -560,6 +560,9 @@ importers:
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../agent
+      '@hachej/boring-bash':
+        specifier: workspace:*
+        version: link:../boring-bash
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui
@@ -1676,6 +1679,10 @@ importers:
       '@pierre/trees':
         specifier: 1.0.0-beta.5
         version: 1.0.0-beta.5(@pierre/theme@1.1.0)(@shikijs/themes@4.3.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(shiki@4.3.1)
+    devDependencies:
+      '@hachej/boring-workspace':
+        specifier: workspace:*
+        version: link:../../packages/workspace
 
   plugins/live-transcription:
     dependencies:

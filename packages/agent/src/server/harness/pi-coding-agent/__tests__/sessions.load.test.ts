@@ -148,14 +148,14 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     const { id, messages } = await store.loadEntries(ctx, sessionId);
     const history = buildPiChatHistory(messages, {
       sessionId: id,
-      attachmentUrl: ({ messageId, index }) => `/api/v1/agent/pi-chat/${id}/attachments/${messageId}/${index}`,
+      attachmentUrl: ({ messageId, index }) => `/api/v1/agents/default/sessions/${id}/attachments/${messageId}/${index}`,
     });
     const attachment = await store.loadAttachment(ctx, sessionId, "m-user-image", 1);
 
     expect(history[0].id).toBe("m-user-image");
     expect(history[0].parts).toEqual([
       { type: "text", id: "m-user-image:text:0", text: "attached" },
-      { type: "file", id: "m-user-image:file:1", filename: "image.png", mediaType: "image/png", url: `/api/v1/agent/pi-chat/${sessionId}/attachments/m-user-image/1` },
+      { type: "file", id: "m-user-image:file:1", filename: "image.png", mediaType: "image/png", url: `/api/v1/agents/default/sessions/${sessionId}/attachments/m-user-image/1` },
     ]);
     expect(attachment.mediaType).toBe("image/png");
     expect(attachment.filename).toBe("image.png");

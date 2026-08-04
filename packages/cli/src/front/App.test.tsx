@@ -81,7 +81,7 @@ describe("CliWorkspaceShell", () => {
           headers: { "Content-Type": "application/json" },
         })
       }
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
+      if (url.includes("/api/v1/agents/default/sessions")) {
         return new Response(JSON.stringify([]), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -293,11 +293,11 @@ describe("CliWorkspaceShell", () => {
           headers: { "Content-Type": "application/json" },
         })
       }
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
-        return new Response(JSON.stringify([
-          { id: "chat-1", title: "Check Qwen compatibility", updatedAt: "2026-06-15T00:00:00.000Z" },
-          { id: "chat-2", title: "Research account deletion", updatedAt: "2026-06-14T00:00:00.000Z" },
-        ]), {
+      if (url.includes("/api/v1/agents/default/sessions")) {
+        return new Response(JSON.stringify({ sessions: [
+          { ref: { agentTypeId: "default", sessionId: "chat-1" }, title: "Check Qwen compatibility", updatedAt: "2026-06-15T00:00:00.000Z" },
+          { ref: { agentTypeId: "default", sessionId: "chat-2" }, title: "Research account deletion", updatedAt: "2026-06-14T00:00:00.000Z" },
+        ] }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         })
@@ -352,7 +352,7 @@ describe("CliWorkspaceShell", () => {
           headers: { "Content-Type": "application/json" },
         })
       }
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
+      if (url.includes("/api/v1/agents/default/sessions")) {
         return new Response(JSON.stringify([]), {
           status: 200,
           headers: { "Content-Type": "application/json" },

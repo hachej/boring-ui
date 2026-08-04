@@ -10,6 +10,7 @@ import { transcribeShortDictation } from "./dictation"
 
 export interface LiveTranscriptServerPluginOptions {
   dispatcherResolver: WorkspaceAgentDispatcherResolver
+  agentTypeId?: string
   actorResolver: LiveTranscriptManagerOptions["actorResolver"]
   authority: LiveTranscriptAuthority
   upstreamUrl: string
@@ -29,6 +30,7 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
   validateLocalAuthority(options.authority, options.upstreamUrl)
   const manager = new LiveTranscriptManager({
     dispatcherResolver: options.dispatcherResolver,
+    agentTypeId: options.agentTypeId,
     actorResolver: options.actorResolver,
     upstreamUrl: options.upstreamUrl,
     upstreamBearerToken: options.upstreamBearerToken,

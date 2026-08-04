@@ -20,7 +20,7 @@ export const COMMAND_PALETTE_HARD_GATE_CONTRACT = {
       rationale: "The fixture shell cancels duplicate startup tree refreshes when its fresh-state reset completes.",
     },
     {
-      path: "/api/v1/ready-status",
+      path: "/api/v1/agents/default/ready-status",
       errorText: "net::ERR_ABORTED",
       rationale: "The fixture shell cancels its readiness poll after the workspace becomes ready.",
     },

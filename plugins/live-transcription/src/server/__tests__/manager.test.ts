@@ -34,6 +34,7 @@ function resolver(
   })),
 ): WorkspaceAgentDispatcherResolver {
   return {
+    async runWithWorkspaceAgent() { throw new Error("direct resolver must not be used") },
     async resolve() {
       return {
         async *send() {},
@@ -56,6 +57,45 @@ const request = { id: "request-1", headers: {} } as FastifyRequest
 afterEach(() => vi.useRealTimers())
 
 describe("LiveTranscriptManager", () => {
+  it("keeps direct Workspace access inside the AgentHost callback until the live session terminates", async () => {
+    const workspace = new MemoryWorkspace()
+    const abort = new AbortController()
+    let callbackCompleted = false
+    const runWithWorkspaceAgent = vi.fn(async (input, run) => {
+      expect(input).toMatchObject({
+        agentTypeId: "default",
+        context: { workspaceId: "default", userId: "local" },
+        request,
+      })
+      await run({
+        workspace,
+        signal: abort.signal,
+        dispatch: vi.fn(),
+        interrupt: vi.fn(),
+        stop: vi.fn(),
+      })
+      callbackCompleted = true
+    })
+    const manager = new LiveTranscriptManager({
+      dispatcherResolver: {
+        runWithWorkspaceAgent,
+        async resolve() { throw new Error("compatibility resolver must not be used") },
+      } as WorkspaceAgentDispatcherResolver,
+      agentTypeId: "default",
+      actorResolver: () => ({ workspaceId: "default", userId: "local" }),
+      upstreamUrl: "ws://127.0.0.1:18772/asr",
+    })
+
+    const started = await manager.start(request, { sessionId: "chat-1" })
+    expect(runWithWorkspaceAgent).toHaveBeenCalledOnce()
+    expect(callbackCompleted).toBe(false)
+    await expect(manager.review(started.liveSessionId)).rejects.toMatchObject({ code: "live_transcript_disabled" })
+
+    await manager.interruptBeforeAttachment(started.liveSessionId, "attachment_failed")
+    await vi.waitFor(() => expect(callbackCompleted).toBe(true))
+    expect(await workspace.readFile(started.transcriptPath)).toContain("- State: interrupted")
+  })
+
   it("owns one process lease, redeems one nonce, projects full snapshots, and stops idempotently", async () => {
     const workspace = new MemoryWorkspace()
     let callbacks: { onSnapshot: (snapshot: WhisperLiveKitSnapshot) => void; onFailure: (error: never) => void } | undefined

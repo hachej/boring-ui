@@ -529,7 +529,7 @@ async function startWorkspacesMode(opts: {
   // Do not run checkAuth() in workspaces server startup. It imports Pi's model
   // registry after the socket is listening, which can block the event loop and
   // make the first direct workspace URL wait on static assets. The browser can
-  // surface provider/auth state through /api/v1/agent/models when needed.
+  // surface provider/auth state through the addressed Agent models route when needed.
   openBrowser(initialUrl)
 }
 

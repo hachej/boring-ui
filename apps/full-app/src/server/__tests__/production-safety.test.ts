@@ -77,7 +77,7 @@ describe('production full-app safety guards', () => {
     expect(boringMcp).not.toMatch(/requestScope|AgentHost|AGENT_HOST/)
     expect(main).not.toMatch(/\.\/deployment\//)
     expect(main).not.toMatch(/BORING_AGENT_HOST_ID|createAgentHost|startAgentHost|\bagentHost\b/)
-    expect(managedAgentMcp).not.toMatch(/requestScope|AgentHost|AGENT_HOST/)
+    expect(managedAgentMcp).not.toMatch(/requestScope|AgentHostError|AGENT_HOST/)
     expect(plugins).not.toMatch(/\.\/deployment\//)
     expect(plugins).not.toMatch(/AgentHostError|AgentHostErrorCode/)
     expect(Object.keys(packageJson.scripts)).not.toContain('agent-host:revision')

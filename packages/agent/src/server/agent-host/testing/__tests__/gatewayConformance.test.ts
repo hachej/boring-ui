@@ -24,6 +24,7 @@ import type {
   AgentRequestFailure,
   AgentRequestKey,
   AgentRequestLedger,
+  AgentRequestLedgerPrepareResult,
   AgentRequestLedgerRecord,
 } from '../../types'
 
@@ -35,10 +36,11 @@ function keyIdentity(key: AgentRequestKey): string {
 }
 
 class InMemoryAgentRequestLedger implements AgentRequestLedger {
+  readonly durability = 'in-memory' as const
   private readonly records = new Map<string, AgentRequestLedgerRecord>()
   private clock = 0
 
-  async prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerRecord> {
+  async prepare(key: AgentRequestKey, digest: string): Promise<AgentRequestLedgerPrepareResult> {
     this.validateTarget(key)
     const identity = keyIdentity(key)
     const current = this.records.get(identity)
@@ -46,7 +48,7 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
       if (current.digest !== digest) {
         throw new AgentGatewayError('AGENT_REQUEST_CONFLICT', 'request id reused with a different payload')
       }
-      return current
+      return { ownership: 'existing', record: current }
     }
     const record: AgentRequestLedgerRecord = {
       state: 'pending-admission',
@@ -55,7 +57,7 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
       updatedAt: this.tick(),
     }
     this.records.set(identity, record)
-    return record
+    return { ownership: 'created', record }
   }
 
   async acceptAdmission(key: AgentRequestKey, admissionReceipt: string): Promise<void> {
@@ -89,7 +91,7 @@ class InMemoryAgentRequestLedger implements AgentRequestLedger {
   }
 
   private validateTarget(key: AgentRequestKey): void {
-    const valid = key.operation === 'session.create'
+    const valid = key.operation === 'session.create' || key.operation === 'agent.reload'
       ? key.target.kind === 'agent'
       : key.target.kind === 'session'
     if (!valid) throw new Error('ledger effect/target mismatch')
@@ -137,18 +139,9 @@ function requestKey(
   }
 }
 
-const LEGACY_ADMISSION_CODE = 'CUSTOM_DENIAL'
-
 const gatewayFailure: AgentRequestFailure = {
   kind: 'gateway',
   error: { code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED, message: 'denied' },
-}
-const legacyFailure: AgentRequestFailure = {
-  kind: 'legacy-admission',
-  code: LEGACY_ADMISSION_CODE,
-  statusCode: 500,
-  message: 'legacy denied',
-  details: { reason: 'policy' },
 }
 const outcomeUnknown: AgentGatewayErrorDTO = {
   code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
@@ -186,8 +179,8 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
     const ledger = new InMemoryAgentRequestLedger()
     const key = requestKey()
     const prepared = await ledger.prepare(key, 'digest-a')
-    expect(prepared).toMatchObject({ state: 'pending-admission', key, digest: 'digest-a' })
-    expect(await ledger.prepare(key, 'digest-a')).toBe(prepared)
+    expect(prepared).toMatchObject({ ownership: 'created', record: { state: 'pending-admission', key, digest: 'digest-a' } })
+    expect(await ledger.prepare(key, 'digest-a')).toEqual({ ownership: 'existing', record: prepared.record })
     await expect(ledger.prepare(key, 'digest-b')).rejects.toMatchObject({
       code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
     })
@@ -201,7 +194,8 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
       ledger.prepare(key, 'digest-a'),
       ledger.prepare(key, 'digest-a'),
     ])
-    expect(records.every((record) => record === records[0])).toBe(true)
+    expect(records.filter((record) => record.ownership === 'created')).toHaveLength(1)
+    expect(records.every((record) => record.record === records[0]!.record)).toBe(true)
   })
 
   it('replays every current state for the same digest and conflicts every state for a different digest', async () => {
@@ -214,7 +208,7 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
       'outcome-unknown',
     ] as const) {
       const { ledger, key } = await ledgerAt(state)
-      await expect(ledger.prepare(key, 'digest-a')).resolves.toMatchObject({ state })
+      await expect(ledger.prepare(key, 'digest-a')).resolves.toMatchObject({ ownership: 'existing', record: { state } })
       await expect(ledger.prepare(key, 'digest-b')).rejects.toMatchObject({
         code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT,
       })
@@ -231,7 +225,7 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
     const { ledger, key } = await ledgerAt('pending-admission')
     await ledger.reject(key, gatewayFailure)
     await expect(ledger.read(key)).resolves.toMatchObject({ state: 'rejected', failure: gatewayFailure })
-    expect(await ledger.prepare(key, 'digest-a')).toMatchObject({ state: 'rejected', failure: gatewayFailure })
+    expect(await ledger.prepare(key, 'digest-a')).toMatchObject({ record: { state: 'rejected', failure: gatewayFailure } })
   })
 
   it('begins an effect only after accepted admission', async () => {
@@ -240,18 +234,12 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
     await expect(ledger.read(key)).resolves.toMatchObject({ state: 'in-flight' })
   })
 
-  it('records a legacy observed rejection only from in-flight without widening public errors', async () => {
-    const { ledger, key } = await ledgerAt('in-flight')
-    await ledger.reject(key, legacyFailure)
-    await expect(ledger.read(key)).resolves.toMatchObject({ state: 'rejected', failure: legacyFailure })
-  })
-
   it('completes only from in-flight and replays the typed JSON receipt', async () => {
     const { ledger, key } = await ledgerAt('in-flight')
     const receipt = { accepted: true, cursor: 7 }
     await ledger.complete(key, receipt)
     await expect(ledger.read(key)).resolves.toMatchObject({ state: 'completed', receipt })
-    expect(await ledger.prepare(key, 'digest-a')).toMatchObject({ state: 'completed', receipt })
+    expect(await ledger.prepare(key, 'digest-a')).toMatchObject({ record: { state: 'completed', receipt } })
   })
 
   it('marks outcome unknown only from in-flight', async () => {
@@ -273,7 +261,6 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
       ['acceptAdmission', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.acceptAdmission(key, 'receipt'), 'pending-admission'],
       ['beginEffect', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.beginEffect(key), 'admission-accepted'],
       ['strong reject', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.reject(key, gatewayFailure), 'pending-admission'],
-      ['legacy reject', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.reject(key, legacyFailure), 'in-flight'],
       ['complete', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.complete(key, { ok: true }), 'in-flight'],
       ['markOutcomeUnknown', (ledger: AgentRequestLedger, key: AgentRequestKey) => ledger.markOutcomeUnknown(key, outcomeUnknown), 'in-flight'],
     ] as const
@@ -289,7 +276,7 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
     }
   })
 
-  it('validates create Agent targets and full session targets for all other effects', async () => {
+  it('validates Agent targets for create/reload and full session targets for all other effects', async () => {
     const ledger = new InMemoryAgentRequestLedger()
     await expect(ledger.prepare(requestKey('session.create', sessionTarget), 'digest')).rejects.toThrow('effect/target mismatch')
     for (const effect of [
@@ -300,10 +287,13 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
       'session.interrupt',
       'session.stop',
       'session.queue.clear',
+      'session.command.execute',
     ] as const) {
       await expect(ledger.prepare(requestKey(effect, agentTarget, { requestId: effect }), 'digest')).rejects.toThrow('effect/target mismatch')
-      await expect(ledger.prepare(requestKey(effect, sessionTarget, { requestId: effect }), 'digest')).resolves.toMatchObject({ state: 'pending-admission' })
+      await expect(ledger.prepare(requestKey(effect, sessionTarget, { requestId: effect }), 'digest')).resolves.toMatchObject({ record: { state: 'pending-admission' } })
     }
+    await expect(ledger.prepare(requestKey('agent.reload', sessionTarget), 'digest')).rejects.toThrow('effect/target mismatch')
+    await expect(ledger.prepare(requestKey('agent.reload', agentTarget), 'digest')).resolves.toMatchObject({ record: { state: 'pending-admission' } })
   })
 
   it('isolates equal request IDs across scope, subject, effect, Agent, and session targets', async () => {
@@ -317,7 +307,7 @@ describe('AgentRequestLedger exact state machine (process-lifetime Level B fake)
       requestKey('session.rename', { kind: 'session', ref: { agentTypeId: 'alpha', sessionId: 'session-2' } }),
     ]
     for (const [index, key] of keys.entries()) {
-      await expect(ledger.prepare(key, `digest-${index}`)).resolves.toMatchObject({ state: 'pending-admission' })
+      await expect(ledger.prepare(key, `digest-${index}`)).resolves.toMatchObject({ record: { state: 'pending-admission' } })
     }
   })
 
@@ -359,6 +349,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
     readonly digest: string
     readonly error: AgentGatewayError
   }>()
+  private readonly pendingRequests = new Map<string, string>()
   private readonly admissionQueue = new Map<AgentRequestKey['operation'], Array<'strong-reject' | 'retryable'>>()
   private readonly connections = new Set<{
     closed: boolean
@@ -725,6 +716,13 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
   }
 
   private replayRequest<T>(key: string, digest: string): T | undefined {
+    const pendingDigest = this.pendingRequests.get(key)
+    if (pendingDigest !== undefined) {
+      if (pendingDigest !== digest) {
+        throw this.error(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, 'request id reused with different payload')
+      }
+      throw this.error(AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS, 'request is already in progress')
+    }
     const failure = this.requestFailures.get(key)
     if (failure !== undefined) {
       if (failure.digest !== digest) {
@@ -753,6 +751,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
       throw error
     }
     if (disposition === 'retryable') {
+      this.pendingRequests.set(key, digest)
       throw this.error(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'admission temporarily unavailable')
     }
   }

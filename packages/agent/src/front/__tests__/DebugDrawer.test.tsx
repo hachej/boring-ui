@@ -30,6 +30,7 @@ describe('DebugDrawer', () => {
   test('shows runtime session id by default', () => {
     const html = renderToStaticMarkup(
       <DebugDrawer
+        agentTypeId="default"
         sessionId="sess-debug-123"
         messages={[]}
         width={440}
@@ -50,6 +51,7 @@ describe('DebugDrawer', () => {
 
     render(
       <DebugDrawer
+        agentTypeId="default"
         sessionId="sess-debug-123"
         messages={[]}
         width={440}

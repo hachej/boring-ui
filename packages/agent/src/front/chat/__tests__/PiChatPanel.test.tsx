@@ -7,7 +7,12 @@ import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
 import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSession'
 import { activeSessionStorageKey, scopedComposerStorageKey, type ActiveSessionStorageLike } from '../session'
 import { ComposerContributionProvider } from '../composerContributions'
-import { PiChatPanel } from '../PiChatPanel'
+import { PiChatPanel as AddressedPiChatPanel, type PiChatPanelProps } from '../PiChatPanel'
+import type { ComposerBlocker } from '../components/ChatNotices'
+
+function PiChatPanel<TBlocker extends ComposerBlocker = ComposerBlocker>(props: Omit<PiChatPanelProps<TBlocker>, 'agentTypeId'> & { agentTypeId?: string }) {
+  return <AddressedPiChatPanel agentTypeId="default" {...props} />
+}
 
 vi.stubGlobal('ResizeObserver', class {
   observe() {}
@@ -23,7 +28,22 @@ function session(id: string, title = `Session ${id}`): SessionSummary {
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+  const addressed = Array.isArray(body)
+    ? {
+        sessions: body.map((item: SessionSummary) => ({
+          ref: { agentTypeId: 'default', sessionId: item.id },
+          title: item.title,
+          status: 'idle',
+          createdAt: Date.parse(item.createdAt),
+          updatedAt: Date.parse(item.updatedAt),
+        })),
+      }
+    : typeof body === 'object' && body !== null && 'protocolVersion' in body
+      ? { ref: { agentTypeId: 'default', sessionId: (body as { sessionId?: unknown }).sessionId }, state: body }
+      : typeof body === 'object' && body !== null && 'id' in body
+        ? { agentTypeId: 'default', sessionId: (body as SessionSummary).id }
+        : body
+  return new Response(JSON.stringify(addressed), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
 function deferred<T>() {
@@ -194,7 +214,7 @@ describe('PiChatPanel sandbox shell', () => {
     await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: 'first prompt' })))
 
     fireEvent.click(screen.getByRole('button', { name: 'New session' }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/pi-chat/sessions', expect.objectContaining({ method: 'POST' })))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agents/default/sessions', expect.objectContaining({ method: 'POST' })))
   })
 
   test('clears the composer immediately after local prompt acceptance', async () => {
@@ -353,7 +373,7 @@ describe('PiChatPanel sandbox shell', () => {
   test('keeps session working badge signal when a streaming panel unmounts', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
-    const statusEvents: Array<{ sessionId?: string; working?: boolean }> = []
+    const statusEvents: Array<{ sessionId?: string; agentTypeId?: string; working?: boolean }> = []
     const onStatus = (event: Event) => {
       statusEvents.push((event as CustomEvent).detail ?? {})
     }
@@ -368,8 +388,8 @@ describe('PiChatPanel sandbox shell', () => {
     unmount()
     window.removeEventListener('boring:chat-session-status', onStatus)
 
-    expect(statusEvents).toContainEqual({ sessionId: 'pi-1', working: true })
-    expect(statusEvents.at(-1)).toEqual({ sessionId: 'pi-1', working: true })
+    expect(statusEvents).toContainEqual({ sessionId: 'pi-1', agentTypeId: 'default', working: true })
+    expect(statusEvents.at(-1)).toEqual({ sessionId: 'pi-1', agentTypeId: 'default', working: true })
   })
 
   test('includes the addressed Agent owner in session working badge signals', async () => {
@@ -525,16 +545,16 @@ describe('PiChatPanel sandbox shell', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const method = init?.method ?? 'GET'
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'GET') return jsonResponse([])
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'POST') return createSessionResponse.promise
-      if (url.endsWith('/api/v1/agent/models')) return modelsResponse.promise
-      if (url.includes('/api/v1/agent/commands')) return skillsResponse.promise
+      if (url.includes('/api/v1/agents/default/sessions?') && method === 'GET') return jsonResponse([])
+      if (url.endsWith('/api/v1/agents/default/sessions') && method === 'POST') return createSessionResponse.promise
+      if (url.endsWith('/api/v1/agents/default/models')) return modelsResponse.promise
+      if (url.includes('/api/v1/agents/default/commands')) return skillsResponse.promise
       throw new Error(`unexpected fetch ${url}`)
     })
 
     render(<PiChatPanel storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} />)
 
-    const createCalls = () => fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST')
+    const createCalls = () => fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agents/default/sessions') && call[1]?.method === 'POST')
     await waitFor(() => expect(createCalls()).toHaveLength(1))
 
     await act(async () => {
@@ -543,7 +563,7 @@ describe('PiChatPanel sandbox shell', () => {
       await Promise.resolve()
     })
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/models', expect.anything()))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agents/default/models', expect.anything()))
     expect(createCalls()).toHaveLength(1)
 
     await act(async () => {
@@ -555,9 +575,9 @@ describe('PiChatPanel sandbox shell', () => {
   test('routes model and skill discovery through apiBaseUrl with scoped headers', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input)
-      if (url === 'https://agent.test/api/v1/agent/pi-chat/sessions') return jsonResponse([])
-      if (url === 'https://agent.test/api/v1/agent/models') return jsonResponse({ models: [] })
-      if (url.startsWith('https://agent.test/api/v1/agent/commands')) return jsonResponse({ commands: [] })
+      if (url.startsWith('https://agent.test/api/v1/agents/default/sessions?')) return jsonResponse([])
+      if (url === 'https://agent.test/api/v1/agents/default/models') return jsonResponse({ models: [] })
+      if (url.startsWith('https://agent.test/api/v1/agents/default/commands')) return jsonResponse({ commands: [] })
       throw new Error(`unexpected fetch ${url}`)
     })
 
@@ -572,9 +592,9 @@ describe('PiChatPanel sandbox shell', () => {
 
     await waitFor(() => {
       expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual(expect.arrayContaining([
-        'https://agent.test/api/v1/agent/pi-chat/sessions',
-        'https://agent.test/api/v1/agent/models',
-        expect.stringContaining('https://agent.test/api/v1/agent/commands'),
+        'https://agent.test/api/v1/agents/default/sessions?limit=50',
+        'https://agent.test/api/v1/agents/default/models',
+        expect.stringContaining('https://agent.test/api/v1/agents/default/commands'),
       ]))
     })
     for (const [, init] of fetchMock.mock.calls) {
@@ -1567,13 +1587,13 @@ describe('PiChatPanel sandbox shell', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const method = init?.method ?? 'GET'
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'GET') return jsonResponse(serverSessions)
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions/pi-1') && method === 'DELETE') {
+      if (url.includes('/api/v1/agents/default/sessions?') && method === 'GET') return jsonResponse(serverSessions)
+      if (url.endsWith('/api/v1/agents/default/sessions/pi-1') && method === 'DELETE') {
         serverSessions = []
         return new Response(null, { status: 204 })
       }
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'POST') {
-        const created = session(`pi-new-${fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST').length}`, 'Reset session')
+      if (url.endsWith('/api/v1/agents/default/sessions') && method === 'POST') {
+        const created = session(`pi-new-${fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agents/default/sessions') && call[1]?.method === 'POST').length}`, 'Reset session')
         serverSessions = [created]
         return jsonResponse(created, 201)
       }
@@ -1587,11 +1607,11 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
 
     await waitFor(() => {
-      const createCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST')
+      const createCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agents/default/sessions') && call[1]?.method === 'POST')
       expect(createCalls).toHaveLength(1)
     })
     await act(async () => {})
-    const createCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST')
+    const createCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agents/default/sessions') && call[1]?.method === 'POST')
     expect(createCalls).toHaveLength(1)
   })
 
@@ -1703,7 +1723,7 @@ describe('PiChatPanel sandbox shell', () => {
     const remote = new FakeRemotePiSession(remoteState())
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
       throw new Error(`unexpected fetch ${url}`)
     })
     const onReloadAgentPlugins = vi.fn(async () => ({
@@ -1744,7 +1764,7 @@ describe('PiChatPanel sandbox shell', () => {
     }))
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
       throw new Error(`unexpected fetch ${url}`)
     })
     const onReloadAgentPlugins = vi.fn(async () => ({ message: 'Extensions reloaded.', reloaded: true }))
@@ -1783,7 +1803,7 @@ describe('PiChatPanel sandbox shell', () => {
     }))
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
       throw new Error(`unexpected fetch ${url}`)
     })
     const onPromptSubmitStarted = vi.fn()
@@ -1819,7 +1839,7 @@ describe('PiChatPanel sandbox shell', () => {
     const handler = vi.fn(() => 'Contributed command ran.')
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
       throw new Error(`unexpected fetch ${url}`)
     })
 
@@ -1855,7 +1875,7 @@ describe('PiChatPanel sandbox shell', () => {
     }))
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
       throw new Error(`unexpected fetch ${url}`)
     })
     const handler = vi.fn()
@@ -1940,8 +1960,8 @@ describe('PiChatPanel sandbox shell', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       const parsed = new URL(url, 'https://agent.test')
-      if (parsed.pathname === '/api/v1/agent/pi-chat/sessions') return jsonResponse([session('pi-1')])
-      if (parsed.pathname === '/api/v1/agent/commands') {
+      if (parsed.pathname === '/api/v1/agents/default/sessions') return jsonResponse([session('pi-1')])
+      if (parsed.pathname === '/api/v1/agents/default/commands') {
         return jsonResponse({
           commands: reloadTriggered
             ? [{ name: 'fresh-skill', description: 'Fresh plugin skill', source: 'skill' }]
@@ -1986,8 +2006,8 @@ describe('PiChatPanel sandbox shell', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       const parsed = new URL(url, 'https://agent.test')
-      if (parsed.pathname === '/api/v1/agent/pi-chat/sessions') return jsonResponse([session('pi-1')])
-      if (parsed.pathname === '/api/v1/agent/commands') {
+      if (parsed.pathname === '/api/v1/agents/default/sessions') return jsonResponse([session('pi-1')])
+      if (parsed.pathname === '/api/v1/agents/default/commands') {
         commandsRequestCount += 1
         return jsonResponse({ commands: [] })
       }
@@ -2023,7 +2043,7 @@ describe('PiChatPanel sandbox shell', () => {
     const remote = new FakeRemotePiSession(remoteState())
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
       throw new Error(`unexpected fetch ${url}`)
     })
     const onReloadAgentPlugins = vi.fn(async () => 'Agent harness does not support reload')
@@ -2054,8 +2074,8 @@ describe('PiChatPanel sandbox shell', () => {
     const remote = new FakeRemotePiSession(remoteState())
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
-      if (url.endsWith('/api/v1/agent/reload')) throw new Error('reload route should not be called')
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
+      if (url.endsWith('/api/v1/agents/default/reload')) throw new Error('reload route should not be called')
       throw new Error(`unexpected fetch ${url}`)
     })
 
@@ -2074,7 +2094,7 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.keyDown(textarea, { key: 'Enter' })
 
     await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: '/reload' })))
-    expect(fetchMock).not.toHaveBeenCalledWith('/api/v1/agent/reload', expect.anything())
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/v1/agents/default/reload', expect.anything())
   })
 
   test('reload-ish hydration uses persisted active id and renders state notices/queue from server snapshot', async () => {

@@ -143,6 +143,7 @@ describe('CoreWorkspaceAgentFront', () => {
 
     render(
       <CoreWorkspaceAgentFront
+        agentTypeId="default"
         requestHeaders={{ existing: 'request' }}
         authHeaders={{ existing: 'auth' }}
         apiBaseUrl="/api-base"
@@ -170,7 +171,7 @@ describe('CoreWorkspaceAgentFront', () => {
   it('allows apps to suppress the default workspace switcher', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
 
-    render(<CoreWorkspaceAgentFront topBarLeft={null} />)
+    render(<CoreWorkspaceAgentFront agentTypeId="default" topBarLeft={null} />)
 
     expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
     expect(workspaceAgentProps?.topBarLeft).toBeNull()
@@ -181,7 +182,7 @@ describe('CoreWorkspaceAgentFront', () => {
     currentWorkspaceId = 'workspace-other'
     routeStatus = { status: 'mismatched', workspaceId: 'workspace-a', currentWorkspaceId: 'workspace-other' } as never
 
-    render(<CoreWorkspaceAgentFront loadingFallback={<div>Loading identity</div>} />)
+    render(<CoreWorkspaceAgentFront agentTypeId="default" loadingFallback={<div>Loading identity</div>} />)
 
     expect(screen.getByText('Loading identity')).toBeInTheDocument()
     expect(screen.queryByTestId('workspace-agent-front')).not.toBeInTheDocument()
@@ -195,7 +196,7 @@ describe('CoreWorkspaceAgentFront', () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
     routeStatus = { status, workspaceId: 'workspace-a', message: 'No access' }
 
-    render(<CoreWorkspaceAgentFront />)
+    render(<CoreWorkspaceAgentFront agentTypeId="default" />)
 
     expect(screen.getByText(title)).toBeInTheDocument()
     expect(screen.getByText('No access')).toBeInTheDocument()
@@ -210,6 +211,7 @@ describe('CoreWorkspaceAgentFront', () => {
 
     render(
       <CoreWorkspaceAgentFront
+        agentTypeId="default"
         workspaceRoute="/projects/:workspaceSlug"
         workspaceIdParam="workspaceSlug"
       />,
@@ -228,7 +230,7 @@ describe('CoreWorkspaceAgentFront', () => {
   it('scopes full-page panel links to the routed workspace', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
 
-    render(<CoreWorkspaceAgentFront />)
+    render(<CoreWorkspaceAgentFront agentTypeId="default" />)
 
     expect(workspaceAgentProps).toMatchObject({
       workspaceId: 'workspace-a',
@@ -243,6 +245,7 @@ describe('CoreWorkspaceAgentFront', () => {
 
     render(
       <CoreWorkspaceAgentFront
+        agentTypeId="default"
         plugins={[plugin] as never}
         apiBaseUrl="/api-base"
         requestHeaders={{ request: 'header' }}
@@ -291,7 +294,7 @@ describe('CoreWorkspaceAgentFront', () => {
     currentWorkspaceId = null
     routePath = '/workspace/workspace-a'
 
-    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" loadingFallback={<div>Checking session</div>} />)
+    render(<CoreWorkspaceAgentFront agentTypeId="default" chatEntryMode="chat-first" loadingFallback={<div>Checking session</div>} />)
 
     expect(screen.getByText('Checking session')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument()
@@ -304,7 +307,7 @@ describe('CoreWorkspaceAgentFront', () => {
     currentWorkspaceId = null
     routePath = '/'
 
-    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" appTitle="Full App" />)
+    render(<CoreWorkspaceAgentFront agentTypeId="default" chatEntryMode="chat-first" appTitle="Full App" />)
 
     expect(coreFrontProps).toMatchObject({ publicPaths: ['/', '/workspace/:id', '/w/:id'] })
     expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
@@ -331,6 +334,7 @@ describe('CoreWorkspaceAgentFront', () => {
 
     render(
       <CoreWorkspaceAgentFront
+        agentTypeId="default"
         chatEntryMode="chat-first"
         chatFirstPublicShell={{
           composerPlaceholder: 'Ask about macro data…',
@@ -366,6 +370,7 @@ describe('CoreWorkspaceAgentFront', () => {
 
     render(
       <CoreWorkspaceAgentFront
+        agentTypeId="default"
         chatEntryMode="chat-first"
         chatFirstPublicWorkspaceProps={{
           plugins: [publicPlugin] as never,
@@ -385,6 +390,7 @@ describe('CoreWorkspaceAgentFront', () => {
 
     render(
       <CoreWorkspaceAgentFront
+        agentTypeId="default"
         chatEntryMode="chat-first"
         chatFirstPublicWorkspaceProps={{
           plugins: [publicPlugin] as never,
@@ -406,7 +412,7 @@ describe('CoreWorkspaceAgentFront', () => {
     sessionState = { data: null, isPending: false }
     currentWorkspaceId = null
     routePath = '/'
-    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" />)
+    render(<CoreWorkspaceAgentFront agentTypeId="default" chatEntryMode="chat-first" />)
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Sign in' }).at(-1)!)
     const dialog = screen.getByRole('dialog')
@@ -424,7 +430,7 @@ describe('CoreWorkspaceAgentFront', () => {
     currentWorkspaceId = null
     routePath = '/'
 
-    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" />)
+    render(<CoreWorkspaceAgentFront agentTypeId="default" chatEntryMode="chat-first" />)
 
     await act(async () => {
       await (workspaceAgentProps?.chatParams as { onBeforeSubmit: (draft: string) => Promise<false> | false }).onBeforeSubmit('Build a dashboard')
@@ -447,7 +453,7 @@ describe('CoreWorkspaceAgentFront', () => {
       createdAt: Date.now(),
     }))
 
-    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" />)
+    render(<CoreWorkspaceAgentFront agentTypeId="default" chatEntryMode="chat-first" />)
 
     expect(workspaceAgentProps?.chatParams).toMatchObject({ initialDraft: 'Restore this', autoSubmitInitialDraft: true })
   })
@@ -463,7 +469,7 @@ describe('CoreWorkspaceAgentFront', () => {
       createdAt: Date.now(),
     }))
 
-    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" loadingFallback={<div>Loading identity</div>} />)
+    render(<CoreWorkspaceAgentFront agentTypeId="default" chatEntryMode="chat-first" loadingFallback={<div>Loading identity</div>} />)
 
     expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
     expect(screen.queryByText('Loading identity')).not.toBeInTheDocument()
@@ -496,7 +502,7 @@ describe('CoreWorkspaceAgentFront', () => {
       createdAt: Date.now(),
     }))
 
-    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" loadingFallback={<div>Loading identity</div>} />)
+    render(<CoreWorkspaceAgentFront agentTypeId="default" chatEntryMode="chat-first" loadingFallback={<div>Loading identity</div>} />)
 
     expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
     expect(workspaceAgentProps?.chatParams).toMatchObject({ initialDraft: 'Keep this draft' })
@@ -514,7 +520,7 @@ describe('CoreWorkspaceAgentFront', () => {
       createdAt: Date.now(),
     }))
 
-    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" loadingFallback={<div>Loading identity</div>} />)
+    render(<CoreWorkspaceAgentFront agentTypeId="default" chatEntryMode="chat-first" loadingFallback={<div>Loading identity</div>} />)
 
     expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
     expect(screen.queryByText('Loading identity')).not.toBeInTheDocument()
@@ -543,7 +549,7 @@ describe('CoreWorkspaceAgentFront', () => {
       createdAt: Date.now(),
     }))
 
-    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" />)
+    render(<CoreWorkspaceAgentFront agentTypeId="default" chatEntryMode="chat-first" />)
 
     expect(workspaceAgentProps?.chatParams).not.toMatchObject({
       initialDraft: 'Wrong workspace draft',
@@ -563,7 +569,7 @@ describe('CoreWorkspaceAgentFront', () => {
       createdAt: Date.now(),
     }))
 
-    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" />)
+    render(<CoreWorkspaceAgentFront agentTypeId="default" chatEntryMode="chat-first" />)
 
     expect(workspaceAgentProps?.chatParams).not.toMatchObject({
       initialDraft: 'Mismatched intended workspace',
@@ -585,6 +591,7 @@ describe('CoreWorkspaceAgentFront', () => {
 
     render(
       <CoreWorkspaceAgentFront
+        agentTypeId="default"
         chatEntryMode="chat-first"
         chatParams={{ onBeforeSubmit: hostBeforeSubmit }}
       />,
@@ -603,6 +610,7 @@ describe('CoreWorkspaceAgentFront', () => {
 
     render(
       <CoreWorkspaceAgentFront
+        agentTypeId="default"
         chatEntryMode="chat-first"
         workspaceRoute="/projects/:workspaceSlug"
         workspaceIdParam="workspaceSlug"
@@ -619,7 +627,7 @@ describe('CoreWorkspaceAgentFront', () => {
     currentWorkspaceId = null
     routePath = '/'
 
-    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" loadingFallback={<div>Loading identity</div>} />)
+    render(<CoreWorkspaceAgentFront agentTypeId="default" chatEntryMode="chat-first" loadingFallback={<div>Loading identity</div>} />)
 
     expect(screen.getByText('Loading identity')).toBeInTheDocument()
     expect(screen.queryByTestId('workspace-agent-front')).not.toBeInTheDocument()
@@ -630,6 +638,7 @@ describe('CoreWorkspaceAgentFront', () => {
 
     render(
       <CoreWorkspaceAgentFront
+        agentTypeId="default"
         apiBaseUrl="/api-base"
         defaultSurfaceOpen={false}
         extraPanels={['demo-panel']}
@@ -651,6 +660,7 @@ describe('CoreWorkspaceAgentFront', () => {
 
     expect(() => render(
       <CoreWorkspaceAgentFront
+        agentTypeId="default"
         hotReload={true as false}
       />,
     )).toThrow(/does not support hotReload/)

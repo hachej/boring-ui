@@ -77,32 +77,33 @@ async function readResponseError(response: Response): Promise<string> {
   }
 }
 
-async function sendAgentChat(message: string): Promise<void> {
+async function sendAgentChat(agentTypeId: string, message: string): Promise<void> {
   const workspaceId = workspaceIdFromLocation()
-  const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""
   const headers: Record<string, string> = { "content-type": "application/json" }
   if (workspaceId) headers["x-boring-workspace-id"] = workspaceId
 
-  // The old /api/v1/agent/chat endpoint no longer exists. Use the Pi chat
-  // API directly: create a short-lived session and submit the prompt to it.
-  const sessionResponse = await fetch(`/api/v1/agent/pi-chat/sessions${query}`, {
+  const sessionsPath = `/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions`
+  const createRequestId = `github-pr-tracker-create-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  const sessionResponse = await fetch(sessionsPath, {
     method: "POST",
     credentials: "include",
     headers,
-    body: JSON.stringify({ title: "GitHub PR Tracker refresh" }),
+    body: JSON.stringify({ requestId: createRequestId, title: "GitHub PR Tracker refresh" }),
   })
   if (!sessionResponse.ok) throw new Error(await readResponseError(sessionResponse))
-  const session = await sessionResponse.json().catch(() => null) as { id?: unknown } | null
-  const sessionId = typeof session?.id === "string" ? session.id : undefined
+  const session = await sessionResponse.json().catch(() => null) as { sessionId?: unknown } | null
+  const sessionId = typeof session?.sessionId === "string" ? session.sessionId : undefined
   if (!sessionId) throw new Error("agent session creation did not return a session id")
 
-  const promptResponse = await fetch(`/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/prompt${query}`, {
+  const clientNonce = `github-pr-tracker-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  const promptResponse = await fetch(`${sessionsPath}/${encodeURIComponent(sessionId)}/prompt`, {
     method: "POST",
     credentials: "include",
     headers,
     body: JSON.stringify({
-      message,
-      clientNonce: `github-pr-tracker-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+      requestId: clientNonce,
+      content: message,
+      clientNonce,
     }),
   })
   if (!promptResponse.ok) throw new Error(await readResponseError(promptResponse))
@@ -119,29 +120,29 @@ export async function requestServerRefresh(): Promise<void> {
   await response.json().catch(() => undefined)
 }
 
-export async function requestAgentRefresh(): Promise<void> {
+export async function requestAgentRefresh(agentTypeId: string): Promise<void> {
   try { await requestServerRefresh(); return } catch {}
-  await sendAgentChat("refresh github pr tracker")
+  await sendAgentChat(agentTypeId, "refresh github pr tracker")
 }
 
-export async function requestAgentClassifyIssues(): Promise<void> {
-  await sendAgentChat("Classify all open GitHub issues in the GitHub PR Tracker data into exactly one difficulty label: easy or needs-plan. Then apply labels with label_github_issue. Use easy only for small, self-contained issues; use needs-plan for broad/ambiguous/risky/multi-file work. If an issue is ready for boring-claw/bead workflow, add bclaw:ready. Also keep/assign one board status label if obvious: status:to-plan, status:to-review, or status:to-merge. Refresh github pr tracker after labeling.")
+export async function requestAgentClassifyIssues(agentTypeId: string): Promise<void> {
+  await sendAgentChat(agentTypeId, "Classify all open GitHub issues in the GitHub PR Tracker data into exactly one difficulty label: easy or needs-plan. Then apply labels with label_github_issue. Use easy only for small, self-contained issues; use needs-plan for broad/ambiguous/risky/multi-file work. If an issue is ready for boring-claw/bead workflow, add bclaw:ready. Also keep/assign one board status label if obvious: status:to-plan, status:to-review, or status:to-merge. Refresh github pr tracker after labeling.")
 }
 
-export async function requestAgentLabelIssue(number: number, add: string[], remove: string[] = []): Promise<void> {
+export async function requestAgentLabelIssue(agentTypeId: string, number: number, add: string[], remove: string[] = []): Promise<void> {
   const parts = [
     add.length > 0 ? `add ${add.map((label) => JSON.stringify(label)).join(", ")}` : null,
     remove.length > 0 ? `remove ${remove.map((label) => JSON.stringify(label)).join(", ")}` : null,
   ].filter(Boolean).join(" and ")
-  await sendAgentChat(`Use the label_github_issue tool to update labels on issue #${number}: ${parts}.`)
+  await sendAgentChat(agentTypeId, `Use the label_github_issue tool to update labels on issue #${number}: ${parts}.`)
 }
 
-export async function requestAgentLabel(number: number, add: string[], remove: string[]): Promise<void> {
+export async function requestAgentLabel(agentTypeId: string, number: number, add: string[], remove: string[]): Promise<void> {
   const parts = [
     add.length > 0 ? `add ${add.map((label) => JSON.stringify(label)).join(", ")}` : null,
     remove.length > 0 ? `remove ${remove.map((label) => JSON.stringify(label)).join(", ")}` : null,
   ].filter(Boolean).join(" and ")
-  await sendAgentChat(`Use the label_github_pr tool to update labels on PR #${number}: ${parts}.`)
+  await sendAgentChat(agentTypeId, `Use the label_github_pr tool to update labels on PR #${number}: ${parts}.`)
 }
 
 export function isDocOrTestFile(path: string): boolean {

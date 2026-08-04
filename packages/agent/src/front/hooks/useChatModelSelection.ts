@@ -11,6 +11,7 @@ import {
 } from '../chat/session/composerPolicy'
 
 export function useChatModelSelection({
+  agentTypeId,
   apiBaseUrl,
   defaultModel,
   fetch: fetchImpl,
@@ -19,6 +20,7 @@ export function useChatModelSelection({
   storageScope,
   enabled = true,
 }: {
+  agentTypeId: string
   apiBaseUrl?: string
   defaultModel?: ModelSelection
   fetch?: typeof globalThis.fetch
@@ -50,6 +52,7 @@ export function useChatModelSelection({
   const discoveryKey = useMemo(
     () => JSON.stringify({
       apiBaseUrl: apiBaseUrl ?? '',
+      agentTypeId,
       headers: Object.entries(requestHeaders ?? {}).sort(([a], [b]) => a.localeCompare(b)),
       storageScope: storageScope ?? '',
     }),
@@ -89,7 +92,7 @@ export function useChatModelSelection({
     let aborted = false
     setLoaded(false)
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
-    nextFetch(agentResourceUrl(apiBaseUrl, '/api/v1/agent/models'), {
+    nextFetch(agentResourceUrl(apiBaseUrl, `/api/v1/agents/${encodeURIComponent(agentTypeId)}/models`), {
       headers: scopedHeaders(requestHeaders, storageScope),
     })
       .then((res) => (res.ok ? res.json() : null))
@@ -135,7 +138,7 @@ export function useChatModelSelection({
         setLoaded(true)
       })
     return () => { aborted = true }
-  }, [apiBaseUrl, discoveryKey, enabled, fetchImpl, requestHeaders, storage, storageScope])
+  }, [agentTypeId, apiBaseUrl, discoveryKey, enabled, fetchImpl, requestHeaders, storage, storageScope])
 
   // Optional integration hook for host slash commands. Accepts explicit
   // provider-qualified selections only ({ provider, id } or "provider:id");

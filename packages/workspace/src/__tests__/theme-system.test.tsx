@@ -93,7 +93,7 @@ function themeProviderWrapper({ children }: { children: ReactNode }) {
 
 function workspaceWrapper({ children }: { children: ReactNode }) {
   return (
-    <WorkspaceProvider persistenceEnabled={false}>{children}</WorkspaceProvider>
+    <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>{children}</WorkspaceProvider>
   )
 }
 
@@ -168,7 +168,7 @@ describe("ThemeProvider", () => {
 
     function Wrapper({ children }: { children: ReactNode }) {
       return (
-        <WorkspaceProvider persistenceEnabled={true}>
+        <WorkspaceProvider agentTypeId="default" persistenceEnabled={true}>
           {children}
         </WorkspaceProvider>
       )
@@ -195,7 +195,7 @@ describe("ThemeProvider", () => {
 
     function Wrapper({ children }: { children: ReactNode }) {
       return (
-        <WorkspaceProvider persistenceEnabled={true}>
+        <WorkspaceProvider agentTypeId="default" persistenceEnabled={true}>
           {children}
         </WorkspaceProvider>
       )
@@ -211,7 +211,7 @@ describe("ThemeProvider", () => {
 
     function Wrapper({ children }: { children: ReactNode }) {
       return (
-        <WorkspaceProvider persistenceEnabled={true}>
+        <WorkspaceProvider agentTypeId="default" persistenceEnabled={true}>
           {children}
         </WorkspaceProvider>
       )

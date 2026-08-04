@@ -26,19 +26,23 @@ const dbMock = vi.hoisted(() => {
   return { rows, insert, values }
 })
 
-vi.mock('@hachej/boring-agent/server', () => ({
+vi.mock('@hachej/boring-agent/server', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@hachej/boring-agent/server')>(),
   autoDetectMode: () => 'direct',
   compactPiPackages: (packages: unknown[]) => packages,
   createValidatingAgentFleetCompiler: ({ compiler }: { compiler?: unknown }) => compiler ?? {
     async compile({ agents }: { agents: readonly unknown[] }) { return agents },
   },
-  createAgentHostLegacyRoutePolicy: (options: Record<string, unknown>) => ({ options }),
-  createAgentHost: async () => ({
-    marker: 'prebuilt-agent-host',
-    registerRoutes: (projection: { legacyRoutePolicy: { options: Record<string, unknown> } }) => async () => {
-      agentMock.registerOptions.push(projection.legacyRoutePolicy.options)
-    },
-  }),
+  createAgentHost: async (options: Record<string, unknown>) => {
+    agentMock.registerOptions.push(options)
+    return {
+      marker: 'prebuilt-agent-host',
+      host: { close: async () => {}, drain: async () => {} },
+      registerDirectRoutes: () => async () => {},
+      acquireEnvironment: vi.fn(),
+      runWithWorkspaceAgent: vi.fn(),
+    }
+  },
 }))
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
@@ -50,6 +54,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     },
     preservedUiStateKeys: [],
     provisioningContributions: [],
+    runtimePlugins: [],
     routeContributions: [],
   }),
   createSandboxRuntimeModeAdapter: () => ({ id: 'direct' }),
@@ -110,6 +115,7 @@ vi.mock('../../../server/app/index.js', () => ({
     return app
   },
   registerRoutes: async () => {},
+  registerDirectRoutes: () => async () => {},
 }))
 
 vi.mock('../../../server/routes/index.js', () => ({
