@@ -21,7 +21,7 @@ import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
-import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
+import { AppLeftPane, AppLeftRail } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { useViewportWidth } from "../../front/layout/useViewportWidth"
 import { captureWorkspaceFrontPlugins } from "./workspaceBuiltinPlugins"
@@ -2014,7 +2014,7 @@ export function WorkspaceAgentFront<
     plugins: capturedPlugins,
     activeOverlay: leftOverlay,
     onClose: () => setLeftOverlay(null),
-    headerInsetStart: appLeftPaneCollapsed,
+    headerInsetStart: mobileShellActive,
     headerInsetEnd: !surfaceOpen,
   })
   const customLeftOverlayNode = useMemo(() => {
@@ -2022,16 +2022,16 @@ export function WorkspaceAgentFront<
     if (!overlay) return null
     return overlay.render({
       onClose: () => setLeftOverlay(null),
-      headerInsetStart: appLeftPaneCollapsed,
+      headerInsetStart: mobileShellActive,
       headerInsetEnd: !surfaceOpen,
       workspaceId,
     })
-  }, [appLeftOverlayActions, appLeftPaneCollapsed, leftOverlay, surfaceOpen, workspaceId])
+  }, [appLeftOverlayActions, leftOverlay, mobileShellActive, surfaceOpen, workspaceId])
 
   const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
     <SkillsPage
       onClose={() => setLeftOverlay(null)}
-      headerInsetStart={appLeftPaneCollapsed}
+      headerInsetStart={mobileShellActive}
       headerInsetEnd={!surfaceOpen}
     />
   ) : leftOverlay === "plugins" && pluginsActionEnabled ? (
@@ -2041,7 +2041,7 @@ export function WorkspaceAgentFront<
         agentTypeId: effectiveActiveSessionAgentTypeId ?? agentTypeId,
         sessionId: effectiveActiveSessionId ?? chatSessionId,
       })}
-      headerInsetStart={appLeftPaneCollapsed}
+      headerInsetStart={mobileShellActive}
       headerInsetEnd={!surfaceOpen}
     />
   ) : null)
@@ -2115,6 +2115,17 @@ export function WorkspaceAgentFront<
       minLeftPaneWidth={220}
       maxLeftPaneWidth={420}
       mobileShellEnabled={mobileShellEnabled}
+      collapsedRail={(
+        <AppLeftRail
+          actions={managementActions}
+          footerSlot={showThemeToggle ? <ThemeToggle /> : undefined}
+          onOpenCommandPalette={openCommandPalette}
+          onCreateSession={() => {
+            setLeftOverlay(null)
+            void createChatSession()
+          }}
+        />
+      )}
       leftPane={(
         <AppLeftPane
           width={effectiveAppLeftPaneWidth}
@@ -2145,6 +2156,7 @@ export function WorkspaceAgentFront<
           topSlot={topBarLeft}
           bottomSlot={showThemeToggle || topBarRight != null ? <div className="flex w-full min-w-0 items-center gap-2">{topBarRightContent}</div> : undefined}
           sessions={resolvedSessions}
+          sessionsLoading={remoteSessionsTransitioning}
           activeSessionRef={activeChatPaneRef}
           muteActiveSession={Boolean(leftOverlay)}
           openSessionRefs={openChatPaneRefs}

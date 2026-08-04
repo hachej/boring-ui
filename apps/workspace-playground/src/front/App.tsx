@@ -14,6 +14,55 @@ function isShowcaseRoute(): boolean {
   return new URLSearchParams(window.location.search).get("showcase") === "1"
 }
 
+const showcaseSessionTitles = [
+  "Navigation polish review",
+  "Fix mobile drawer focus",
+  "Investigate session persistence",
+  "Prepare release checklist",
+  "Review workspace permissions",
+  "Refactor command routing",
+  "Debug background task status",
+  "Plan analytics dashboard",
+  "Improve empty states",
+  "Audit keyboard navigation",
+  "Update onboarding copy",
+  "Long-running migration follow-up and rollback planning",
+  "Trace file synchronization",
+  "Review pull request feedback",
+  "Prototype data explorer",
+  "Resolve flaky integration test",
+  "Document runtime architecture",
+  "Optimize initial workspace load",
+  "Design notification preferences",
+  "Test narrow viewport behavior",
+  "Review dependency updates",
+  "Investigate API timeout",
+  "Draft customer handoff",
+  "Polish dark mode contrast",
+  "Verify deployment health",
+  "Explore plugin permissions",
+  "Triage accessibility findings",
+  "Plan session search",
+  "Compare model responses",
+  "Archive completed experiments",
+]
+
+function showcaseSessionCount(): number {
+  if (typeof window === "undefined") return 1
+  const requested = Number(new URLSearchParams(window.location.search).get("sessions") ?? 1)
+  return Number.isFinite(requested) ? Math.min(100, Math.max(1, Math.floor(requested))) : 1
+}
+
+function createInitialShowcaseSessions() {
+  const count = showcaseSessionCount()
+  const now = Date.now()
+  return Array.from({ length: count }, (_, index) => ({
+    id: index === 0 ? SHOWCASE_SESSION_ID : `${SHOWCASE_SESSION_ID}-${index + 1}`,
+    title: showcaseSessionTitles[index % showcaseSessionTitles.length] ?? `Session ${index + 1}`,
+    updatedAt: now - index * 60_000,
+  }))
+}
+
 function isFullPageRoute(): boolean {
   if (typeof window === "undefined") return false
   return window.location.pathname === "/full-page" || window.location.pathname === "/full-page/"
@@ -155,13 +204,7 @@ export function WorkspaceShell() {
   const [workspaceId, setWorkspaceId] = useState("Workspace")
   const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
   const [showcaseActiveSessionId, setShowcaseActiveSessionId] = useState(SHOWCASE_SESSION_ID)
-  const [showcaseSessions, setShowcaseSessions] = useState(() => [
-    {
-      id: SHOWCASE_SESSION_ID,
-      title: "Showcase conversation",
-      updatedAt: Date.now(),
-    },
-  ])
+  const [showcaseSessions, setShowcaseSessions] = useState(createInitialShowcaseSessions)
   const sessions = showcase ? showcaseSessions : undefined
   const showcaseSessionSequence = useRef(0)
   const createShowcaseSession = useCallback(() => {
@@ -226,7 +269,7 @@ export function WorkspaceShell() {
 
   return (
     <WorkspaceAgentFront
-      workspaceId={showcase ? "playground" : workspaceId}
+      workspaceId={showcase ? "default" : workspaceId}
       agentTypeId="default"
       apiBaseUrl=""
       persistenceEnabled

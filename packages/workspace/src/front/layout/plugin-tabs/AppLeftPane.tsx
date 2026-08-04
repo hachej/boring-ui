@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { Plus, Search } from "lucide-react"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
-import { PrimaryAction, NewChatAction, KbdHint } from "./AppLeftPaneActions"
+import { PrimaryAction, NewChatAction, KbdHint, RailAction } from "./AppLeftPaneActions"
 import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
 import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
@@ -72,6 +72,7 @@ export interface AppLeftPaneProps {
   /** full: brand + workspace, workspace: workspace picker only, hidden: reserve collapse clearance only. */
   headerMode?: AppLeftPaneHeaderMode
   sessions: AppLeftPaneSession[]
+  sessionsLoading?: boolean
   /** Raw legacy native session id. */
   activeSessionId?: string | null
   /** Structured Workspace-internal active session ref. */
@@ -130,6 +131,51 @@ function useWorkingSessionIds(): ReadonlySet<string> {
   return working
 }
 
+export function AppLeftRail({
+  actions = [],
+  footerSlot,
+  onCreateSession,
+  onOpenCommandPalette,
+}: Pick<AppLeftPaneProps, "actions" | "onCreateSession" | "onOpenCommandPalette"> & { footerSlot?: ReactNode }) {
+  return (
+    <aside
+      data-boring-workspace-part="app-left-rail"
+      className="flex h-full w-11 shrink-0 flex-col items-center border-r border-border bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)] px-1 pb-1 pt-12"
+      aria-label="Collapsed app navigation"
+    >
+      <nav className="boring-scrollbar-discreet flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto overflow-x-hidden" aria-label="Workspace shortcuts">
+        <RailAction
+          icon={<Search className="h-4 w-4" strokeWidth={1.75} />}
+          label="Search"
+          onClick={onOpenCommandPalette}
+        />
+        {actions.map((action) => (
+          <RailAction
+            key={action.id}
+            icon={action.icon}
+            label={action.label}
+            onClick={action.onClick}
+            active={action.active}
+            trailing={action.trailing}
+          />
+        ))}
+      </nav>
+      <div className="flex w-full shrink-0 flex-col items-center gap-1 border-t border-border/50 pt-1">
+        <RailAction
+          icon={<Plus className="h-4 w-4" strokeWidth={2} />}
+          label="New chat"
+          onClick={onCreateSession}
+        />
+        {footerSlot ? (
+          <div className="flex w-9 justify-center" data-boring-workspace-part="app-left-rail-footer">
+            {footerSlot}
+          </div>
+        ) : null}
+      </div>
+    </aside>
+  )
+}
+
 export function AppLeftPane({
   width = 268,
   appTitle,
@@ -147,6 +193,7 @@ export function AppLeftPane({
   bottomSlot,
   headerMode = "full",
   sessions,
+  sessionsLoading = false,
   activeSessionId,
   activeSessionRef,
   muteActiveSession = false,
@@ -339,77 +386,80 @@ export function AppLeftPane({
         <div className="h-12 shrink-0" aria-hidden="true" />
       )}
 
-      <nav className="shrink-0 space-y-0.5 px-2 pb-1 pt-1" aria-label="Primary workspace actions">
-        <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
-        {actions.map((action) => (
-          <PrimaryAction
-            key={action.id}
-            icon={action.icon}
-            label={action.label}
-            onClick={action.onClick}
-            trailing={action.trailing}
-            emphasis={action.emphasis}
-            active={action.active}
-          />
-        ))}
-      </nav>
+      <section className="boring-scrollbar-discreet min-h-0 max-h-[45%] shrink overflow-y-auto px-2 pb-3" aria-labelledby="app-left-workspace-heading">
+        <h2 id="app-left-workspace-heading" className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
+          Workspace
+        </h2>
+        <nav className="space-y-0.5" aria-label="Workspace actions">
+          <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
+          {actions.map((action) => (
+            <PrimaryAction
+              key={action.id}
+              icon={action.icon}
+              label={action.label}
+              onClick={action.onClick}
+              trailing={action.trailing}
+              emphasis={action.emphasis}
+              active={action.active}
+            />
+          ))}
+        </nav>
+      </section>
 
-      <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        <div className="pb-2">
+      <section className="flex min-h-24 flex-1 flex-col border-t border-border/40 pt-3" aria-labelledby="app-left-chats-heading">
+        <h2 id="app-left-chats-heading" className="shrink-0 px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
+          Chats
+        </h2>
+        <div data-boring-workspace-part="app-left-new-chat" className="shrink-0 px-2 pb-2">
           <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
         </div>
-        {/* Multi-project (PR2): the Workspaces/projects tree. Single-project
-            shows no projects section — the workspace lives in the header above
-            and the body is just the session list. */}
-        {layoutMode === "multi-project" ? (
-          <div className="space-y-3 py-1">
-            {/* Pinned: pinned sessions + pinned projects (as full, expandable
-                rows). Pinned projects are removed from the Projects list below so
-                they're never shown twice. Hidden entirely when empty. */}
-            {pinnedSessions.length > 0 || pinnedProjects.length > 0 ? (
-              <SessionSubSection title="Pinned">
-                {pinnedSessions.map((session) => renderSession(session, true))}
-                {pinnedProjects.length > 0 ? renderProjectTree(pinnedProjects) : null}
+        <div
+          data-boring-workspace-part="app-left-session-scroll"
+          className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 pb-2 [mask-image:linear-gradient(to_bottom,transparent_0,black_8px,black_calc(100%_-_8px),transparent_100%)] motion-reduce:[mask-image:none]"
+        >
+          {/* Multi-project (PR2): projects remain inside the Chats region. */}
+          {layoutMode === "multi-project" ? (
+            <div className="space-y-3 py-1">
+              {pinnedSessions.length > 0 || pinnedProjects.length > 0 ? (
+                <SessionSubSection title="Pinned">
+                  {pinnedSessions.map((session) => renderSession(session, true))}
+                  {pinnedProjects.length > 0 ? renderProjectTree(pinnedProjects) : null}
+                </SessionSubSection>
+              ) : null}
+              <section data-boring-workspace-part="app-left-pane-section" className="space-y-1">
+                <div className="flex items-center justify-between gap-1 px-2 pb-0.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/65">{workspaceSectionTitle}</span>
+                  {onCreateProject ? (
+                    <button
+                      type="button"
+                      aria-label="New project"
+                      title="New project"
+                      onClick={onCreateProject}
+                      className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    >
+                      <Plus className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
+                {renderProjectTree(unpinnedProjectItems)}
+              </section>
+            </div>
+          ) : (
+            <div className="space-y-4 py-1">
+              {pinnedSessions.length > 0 ? (
+                <SessionSubSection title="Pinned">
+                  {pinnedSessions.map((session) => renderSession(session, true))}
+                </SessionSubSection>
+              ) : null}
+              <SessionSubSection title={pinnedSessions.length > 0 ? "Recent" : undefined} empty={sessionsLoading ? "Loading chats…" : "No chats yet."}>
+                {regularSessions.map((session) => renderSession(session, false))}
               </SessionSubSection>
-            ) : null}
-            <section data-boring-workspace-part="app-left-pane-section" className="space-y-1">
-              {/* Plain label header (matches "Pinned") — projects collapse
-                  individually via their own chevrons, so a section-level chevron
-                  here would just stutter against the first project's. */}
-              <div className="flex items-center justify-between gap-1 px-2 pb-0.5">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/65">{workspaceSectionTitle}</span>
-                {onCreateProject ? (
-                  <button
-                    type="button"
-                    aria-label="New project"
-                    title="New project"
-                    onClick={onCreateProject}
-                    className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                  >
-                    <Plus className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
-                  </button>
-                ) : null}
-              </div>
-              {renderProjectTree(unpinnedProjectItems)}
-            </section>
-          </div>
-        ) : (
-          /* Single-project: no "Chats" wrapper — the session list is the whole
-             point of the body, so show Pinned + Sessions directly. */
-          <div className="space-y-4 py-1">
-            {pinnedSessions.length > 0 ? (
-              <SessionSubSection title="Pinned">
-                {pinnedSessions.map((session) => renderSession(session, true))}
-              </SessionSubSection>
-            ) : null}
-            <SessionSubSection title="Chats" empty="No chats yet.">
-              {regularSessions.map((session) => renderSession(session, false))}
-            </SessionSubSection>
-          </div>
-        )}
-      </div>
+            </div>
+          )}
+        </div>
+      </section>
 
-      {bottomSlot ? <footer className="shrink-0 border-t border-border/40 p-2">{bottomSlot}</footer> : null}
+      {bottomSlot ? <footer data-boring-workspace-part="app-left-footer" className="shrink-0 border-t border-border/40 p-2">{bottomSlot}</footer> : null}
     </aside>
   )
 }
