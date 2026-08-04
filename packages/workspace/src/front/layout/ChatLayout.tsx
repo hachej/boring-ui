@@ -16,6 +16,7 @@ import { useWorkspaceAttention, useWorkspaceContext, workspaceAttentionSessionBa
 import { ChatPaneStage } from "./ChatPaneStage"
 import { CornerChromeButton } from "./cornerChrome"
 import { MobileChatBar, MobileSingleChatPane, MobileWorkspaceBar } from "./mobileShell"
+import { WorkbenchOverlayFrame } from "./WorkbenchOverlayFrame"
 import { useViewportWidth } from "./useViewportWidth"
 import { workspaceSessionRef, workspaceSessionRefFromKey, workspaceSessionRefsEqual } from "../sessionIdentity"
 
@@ -159,13 +160,21 @@ export function ChatLayout(props: ChatLayoutProps) {
     }
     props.onOpenNav?.()
   }, [closeNav, navOpen, props.onOpenNav])
+  const openWorkbenchSplit = useCallback(() => {
+    if (chatCollapsed) setChatCollapsed(false)
+    props.onOpenSurface?.()
+  }, [chatCollapsed, props.onOpenSurface, setChatCollapsed])
+  const collapseWorkbench = useCallback(() => {
+    if (chatCollapsed) setChatCollapsed(false)
+    closeSurface?.()
+  }, [chatCollapsed, closeSurface, setChatCollapsed])
   const toggleSurface = useCallback(() => {
     if (surfaceOpen) {
-      closeSurface?.()
+      collapseWorkbench()
       return
     }
-    props.onOpenSurface?.()
-  }, [closeSurface, props.onOpenSurface, surfaceOpen])
+    openWorkbenchSplit()
+  }, [collapseWorkbench, openWorkbenchSplit, surfaceOpen])
   const toggleSidebar = useCallback(() => {
     if (sidebarOpen) {
       closeSidebar?.()
@@ -567,23 +576,23 @@ export function ChatLayout(props: ChatLayoutProps) {
           <aside
             data-boring-workspace-part="workbench"
             data-boring-state={surfaceOpen ? "expanded" : "collapsed"}
-            aria-label={surfaceOpen ? "Surface" : undefined}
-            aria-hidden={!surfaceOpen}
+            aria-label={surfaceOpen ? "Workbench" : "Workbench activity rail"}
+            aria-hidden={mobileShell && !surfaceOpen}
             className={cn(
               mobileShell ? "absolute inset-0 z-40" : "relative",
               "h-full min-h-0 overflow-hidden bg-background",
               // Collapsed/mobile workbench fills available width; otherwise it is a side panel.
               (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen ? "min-w-0 flex-1" : "shrink-0",
               "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-              surfaceOpen && !mobileShell && "border-l border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+              !mobileShell && "border-l border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
             )}
             style={
               (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen
-                ? { width: surfaceOpen ? effectiveSurfaceWidth : 0, minWidth: surfaceOpen ? effectiveSurfaceWidth : 0, maxWidth: surfaceOpen ? effectiveSurfaceWidth : 0, willChange: "width" }
+                ? { width: "auto", minWidth: 0, maxWidth: "none", flex: "1 1 0%", willChange: "width" }
                 : {
-                    width: surfaceOpen ? effectiveSurfaceWidth : 0,
-                    minWidth: surfaceOpen ? effectiveSurfaceWidth : 0,
-                    maxWidth: surfaceOpen ? effectiveSurfaceWidth : 0,
+                    width: surfaceOpen ? effectiveSurfaceWidth : mobileShell ? 0 : 44,
+                    minWidth: surfaceOpen ? effectiveSurfaceWidth : mobileShell ? 0 : 44,
+                    maxWidth: surfaceOpen ? effectiveSurfaceWidth : mobileShell ? 0 : 44,
                     willChange: "width",
                   }
             }
@@ -592,7 +601,7 @@ export function ChatLayout(props: ChatLayoutProps) {
               className={cn(
                 "h-full min-h-0 overflow-hidden",
                 "transition-[opacity,padding] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-                surfaceOpen ? "opacity-100" : "opacity-0",
+                surfaceOpen || !mobileShell ? "opacity-100" : "opacity-0",
               )}
             >
               {mobileWorkspaceOpen ? (
@@ -603,14 +612,34 @@ export function ChatLayout(props: ChatLayoutProps) {
                       <div className="relative h-full min-h-0">
                         {props.surfaceOverlay}
                       </div>
-                    ) : <PanelSlot id={surfaceId} params={props.surfaceParams} />}
+                    ) : <PanelSlot
+                      id={surfaceId}
+                      params={{ ...props.surfaceParams, hideLevelOneHeader: true }}
+                    />}
                   </div>
                 </div>
               ) : props.surfaceOverlay ? (
-                <div className="relative h-full min-h-0">
+                <WorkbenchOverlayFrame
+                  open={surfaceOpen}
+                  fullscreen={chatCollapsed}
+                  onOpen={openWorkbenchSplit}
+                  onClose={collapseWorkbench}
+                  onToggleFullscreen={toggleChatCollapsed}
+                >
                   {props.surfaceOverlay}
-                </div>
-              ) : <PanelSlot id={surfaceId} params={props.surfaceParams} />}
+                </WorkbenchOverlayFrame>
+              ) : <PanelSlot
+                id={surfaceId}
+                params={{
+                  ...props.surfaceParams,
+                  hostRailOnly: !surfaceOpen,
+                  showCloseAction: true,
+                  onClose: collapseWorkbench,
+                  onHostExpand: openWorkbenchSplit,
+                  hostFullscreen: chatCollapsed,
+                  onHostToggleFullscreen: toggleChatCollapsed,
+                }}
+              />}
             </div>
             {surfaceOpen && !chatCollapsed && !mobileShell ? (
               <ResizeHandle
@@ -624,13 +653,13 @@ export function ChatLayout(props: ChatLayoutProps) {
 
       </div>
 
-      {!mobileShell ? (
+      {!mobileShell && !surfaceConfigured ? (
         <TopRightWorkspaceControls
           surfaceOpen={surfaceOpen}
-          canToggleSurface={canControlSurface}
+          canToggleSurface={false}
           onToggleSurface={toggleSurface}
           chatCollapsed={chatCollapsed}
-          canToggleChat={centerId === "chat" && (!surfaceConfigured || (surfaceOpen && !chatCollapsed))}
+          canToggleChat={centerId === "chat"}
           onToggleChat={toggleChatCollapsed}
           chatPulse={chatRailPulse || blockers.length > 0}
           surfaceConfigured={surfaceConfigured}
@@ -895,7 +924,10 @@ function TopRightWorkspaceControls({
     : surfaceConfigured ? "Expand workbench" : "Collapse chat"
 
   return (
-    <div className="pointer-events-none absolute right-3 top-2.5 z-[70] flex items-center gap-1">
+    <div className={cn(
+      "pointer-events-none absolute top-2.5 z-[70] flex items-center gap-1",
+      surfaceConfigured ? "right-14" : "right-3",
+    )}>
       {showChatToggle ? (
         <CornerChromeButton
           label={chatLabel}

@@ -10,6 +10,7 @@ export interface PaneCollapseButtonProps {
   children: ReactNode
   side?: "top" | "right" | "bottom" | "left"
   className?: string
+  dataPart?: string
 }
 
 /**
@@ -24,12 +25,14 @@ export function PaneCollapseButton({
   children,
   side = "right",
   className,
+  dataPart,
 }: PaneCollapseButtonProps) {
   return (
     <ControlTooltip label={label} side={side}>
       <button
         type="button"
         aria-label={label}
+        data-boring-workspace-part={dataPart}
         onClick={onClick}
         className={cn(
           "pointer-events-auto flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors",
