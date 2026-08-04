@@ -20,6 +20,9 @@ jobs:
       - name: Assert workflow actions are pinned to commit SHAs
         run: bash scripts/check-action-pins.sh
 
+      - name: Test exact-SHA and atomic release controls
+        run: node --test scripts/atomic-release-tag.test.mjs scripts/require-release-candidate-check.test.mjs scripts/validate-release-resume.test.mjs
+
   runtime-refactor-p8:
     name: Runtime Refactor P8
     runs-on: ubuntu-latest
