@@ -27,6 +27,7 @@ const PREPARING_RETRY_DELAY_MS = 500
 const WARMUP_ATTEMPT_TIMEOUT_MS = 10_000
 
 export interface WorkspaceBackgroundBootProps {
+  agentTypeId: string
   workspaceId: string
   requestHeaders?: Record<string, string>
   apiBaseUrl?: string | null
@@ -105,7 +106,7 @@ async function fetchReadyStatusWarmupPath(response: Response): Promise<WarmupPat
     const payload = await readResponsePayload(response)
     const preparing = parseRetryableWarmupPreparing(payload)
     if (preparing) return { status: "preparing" }
-    throw new Error(errorMessageFromPayload(payload) ?? `/api/v1/ready-status failed with ${response.status}`)
+    throw new Error(errorMessageFromPayload(payload) ?? `Agent ready-status failed with ${response.status}`)
   }
 
   const readyStatus = await readFirstReadyStatusSnapshot(response)
@@ -172,6 +173,7 @@ async function fetchWarmupPath({
 }
 
 export function WorkspaceBackgroundBoot({
+  agentTypeId,
   workspaceId,
   requestHeaders,
   apiBaseUrl,
@@ -187,7 +189,7 @@ export function WorkspaceBackgroundBoot({
     async function warmup() {
       onStatusChange?.({ status: "preparing" })
       try {
-        const paths = resolveBootPreloadPaths(preloadPaths, provisionWorkspace)
+        const paths = resolveBootPreloadPaths(preloadPaths, provisionWorkspace, agentTypeId)
         const warmupPath = (path: string) => fetchWarmupPath({
           apiBaseUrl,
           path,
@@ -220,7 +222,7 @@ export function WorkspaceBackgroundBoot({
         while (runtimeDependencies?.state === "preparing") {
           await sleepUntilRetry(controller.signal)
           if (stale || controller.signal.aborted) return
-          const result = await warmupPath("/api/v1/ready-status")
+          const result = await warmupPath(`/api/v1/agents/${encodeURIComponent(agentTypeId)}/ready-status`)
           if (stale || controller.signal.aborted) return
           runtimeDependencies = result.runtimeDependencies
           if (runtimeDependencies) {
@@ -241,7 +243,7 @@ export function WorkspaceBackgroundBoot({
       stale = true
       controller.abort()
     }
-  }, [apiBaseUrl, onStatusChange, preloadPaths, provisionWorkspace, requestHeaders, workspaceId])
+  }, [agentTypeId, apiBaseUrl, onStatusChange, preloadPaths, provisionWorkspace, requestHeaders, workspaceId])
 
   return null
 }

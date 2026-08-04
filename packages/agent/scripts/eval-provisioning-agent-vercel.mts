@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url'
 
 import { evalAgentPrompt } from '../src/eval/evalPrompt'
 import { EvalRegex } from '../src/eval/types'
-import { createAgentApp } from '../src/server/createAgentApp'
+import { createStandaloneAgentHostApp } from '../src/server/createStandaloneAgentHostApp'
 import type { RuntimeModeAdapter } from '../src/server/runtime/mode'
 import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
 import {
@@ -65,7 +65,7 @@ async function main(): Promise<number> {
 
   const templatePath = await createTemplateWithSdk()
   const workspaceRoot = `vercel-provisioning-eval-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  let app: Awaited<ReturnType<typeof createAgentApp>> | null = null
+  let app: Awaited<ReturnType<typeof createStandaloneAgentHostApp>> | null = null
   let adapter: RuntimeModeAdapter | null = null
   let setupBundle: Awaited<ReturnType<RuntimeModeAdapter['create']>> | null = null
   let operationError: unknown
@@ -114,7 +114,7 @@ async function main(): Promise<number> {
     assert(setupStdout.includes('from-agent-provisioner'), 'setup command did not run fixture CLI with env')
     assert(setupStdout.includes('alpha') && setupStdout.includes('beta'), 'setup command did not run fixture CLI with args')
 
-    app = await createAgentApp({
+    app = await createStandaloneAgentHostApp({
       workspaceRoot,
       sessionId: workspaceRoot,
       templatePath,
@@ -128,6 +128,7 @@ When asked to validate provisioning, follow the test-sdk skill exactly.
     })
 
     const result = await evalAgentPrompt({
+        agentTypeId: "default",
       app,
       model: { provider: 'openrouter', id: 'qwen/qwen3.6-plus' },
       retries: 1,

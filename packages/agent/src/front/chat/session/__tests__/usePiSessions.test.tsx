@@ -4,14 +4,32 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { SessionSummary } from '../../../../shared/session'
 import type { RemotePiSession, RemotePiSessionOptions } from '../../pi/remotePiSession'
 import { activeSessionStorageKey, type ActiveSessionStorageLike } from '../activeSessionStorage'
-import { usePiSessions } from '../usePiSessions'
+import { usePiSessions as useAddressedPiSessions, type UsePiSessionsOptions } from '../usePiSessions'
+
+function usePiSessions(options: Omit<UsePiSessionsOptions, 'agentTypeId'> & { agentTypeId?: string }) {
+  return useAddressedPiSessions({ agentTypeId: 'default', ...options })
+}
 
 function session(id: string, updatedAt = '2026-06-03T00:00:00.000Z'): SessionSummary {
   return { id, title: `Session ${id}`, createdAt: updatedAt, updatedAt, turnCount: 0 }
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+  const addressed = Array.isArray(body)
+    ? {
+        sessions: body.map((item: SessionSummary) => ({
+          ref: { agentTypeId: 'default', sessionId: item.id },
+          title: item.title,
+          status: 'idle',
+          createdAt: Date.parse(item.createdAt),
+          updatedAt: Date.parse(item.updatedAt),
+        })),
+        ...(body.length >= 50 ? { nextCursor: '50' } : {}),
+      }
+    : typeof body === 'object' && body !== null && 'id' in body
+      ? { agentTypeId: 'default', sessionId: (body as SessionSummary).id }
+      : body
+  return new Response(JSON.stringify(addressed), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
 function deferred<T>() {
@@ -76,7 +94,7 @@ describe('usePiSessions', () => {
     expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-running'])
     expect(remote.factory).toHaveBeenCalledTimes(1)
     expect(remote.created[0]?.options).toMatchObject({ sessionId: 'pi-running', workspaceId: 'workspace-a', storageScope: 'scope-a' })
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/pi-chat/sessions?activeSessionId=pi-running', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/agents/default/sessions?limit=50', {
       headers: { authorization: 'Bearer redacted', 'x-boring-storage-scope': 'scope-a' },
     })
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-running')
@@ -148,7 +166,7 @@ describe('usePiSessions', () => {
 
     expect(result.current.sessions).toHaveLength(50)
     expect(result.current.hasMore).toBe(true)
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/pi-chat/sessions', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/agents/default/sessions?limit=50', {
       headers: { 'x-boring-storage-scope': 'scope-a' },
     })
 
@@ -156,7 +174,7 @@ describe('usePiSessions', () => {
       await result.current.loadMore()
     })
 
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/agent/pi-chat/sessions?limit=50&offset=50', {
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/agents/default/sessions?limit=50&cursor=50', {
       headers: { 'x-boring-storage-scope': 'scope-a' },
     })
     expect(result.current.sessions.map((item) => item.id)).toEqual([
@@ -188,7 +206,7 @@ describe('usePiSessions', () => {
     expect(result.current.activeSessionId).toBe('pi-older-active')
     expect(result.current.activeSession).toEqual(expect.objectContaining({ id: 'pi-older-active' }))
     expect(remote.created[0]?.options.sessionId).toBe('pi-older-active')
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/pi-chat/sessions?activeSessionId=pi-older-active', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/agents/default/sessions?limit=50', {
       headers: { 'x-boring-storage-scope': 'scope-a' },
     })
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-older-active')
@@ -324,7 +342,7 @@ describe('usePiSessions', () => {
     rerender({ scope: 'scope-b' })
 
     await waitFor(() => expect(result.current.activeSessionId).toBe('b-active'))
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/agent/pi-chat/sessions?activeSessionId=b-active', {
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/agents/default/sessions?limit=50', {
       headers: { 'x-boring-storage-scope': 'scope-b' },
     })
     expect(persisted.values.get(activeSessionStorageKey('scope-b'))).toBe('b-active')
@@ -385,7 +403,7 @@ describe('usePiSessions', () => {
     rerender({ apiBaseUrl: 'http://new.example' })
 
     await waitFor(() => expect(result.current.activeSessionId).toBe('new-0'))
-    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://new.example/api/v1/agent/pi-chat/sessions', {
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://new.example/api/v1/agents/default/sessions?limit=50', {
       headers: { 'x-boring-storage-scope': 'scope-a' },
     })
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('new-0')
@@ -417,7 +435,7 @@ describe('usePiSessions', () => {
     rerender({ token: 'new' })
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
-    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/agent/pi-chat/sessions?activeSessionId=pi-active', {
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/agents/default/sessions?limit=50', {
       headers: {
         authorization: 'Bearer new',
         'x-boring-storage-scope': 'scope-a',
@@ -646,7 +664,7 @@ describe('usePiSessions', () => {
       await result.current.loadMore()
     })
 
-    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/agent/pi-chat/sessions?limit=50&offset=50', {
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/agents/default/sessions?limit=50&cursor=50', {
       headers: { 'x-boring-storage-scope': 'scope-a' },
     })
     expect(result.current.sessions.map((item) => item.id)).toContain('pi-50')

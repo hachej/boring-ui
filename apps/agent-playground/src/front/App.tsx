@@ -17,10 +17,11 @@ type PluginReloadPayload = { reloaded?: boolean }
 
 function useStandalonePluginReload() {
   return useCallback(async () => {
-    const response = await fetch('/api/v1/agent/reload', {
+    const requestId = `reload:${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`
+    const response = await fetch('/api/v1/agents/default/reload', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ requestId }),
     })
     if (!response.ok) return `reload failed (${response.status})`
     const payload = await response.json().catch(() => ({})) as PluginReloadPayload
@@ -89,6 +90,7 @@ export function App() {
         ) : (
           <div className="agent-playground-chat-pane h-full min-w-0 border-r border-border/60 bg-background">
             <PiChatPanel
+              agentTypeId="default"
               chrome={chrome}
               thinkingControl={thinkingControl}
               debug={debug}

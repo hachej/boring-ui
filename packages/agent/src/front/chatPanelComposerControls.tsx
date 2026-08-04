@@ -364,7 +364,7 @@ export function ModelPickerMenu({
 
 /**
  * Model picker whose options are pi-coding-agent's actual available
- * models (fetched from /api/v1/agent/models). Groups by provider and
+ * models (fetched from the addressed Agent models route). Groups by provider and
  * shows a concise human-friendly label with the raw pi id as the
  * option's stored value, encoded as "{provider}:{id}" to keep
  * ids stable across providers.

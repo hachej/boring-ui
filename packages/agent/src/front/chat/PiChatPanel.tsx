@@ -131,8 +131,8 @@ export interface PiChatPanelProps<
 > {
   /** Optional externally selected Pi session id. When provided, session navigation is owned by the host. */
   sessionId?: string
-  /** Selects the additive addressed AgentGateway transport. Omit for legacy wire. */
-  agentTypeId?: string
+  /** Addressed AgentGateway owner for every chat/session request. */
+  agentTypeId: string
   /** Alias kept for consumers that still pass the pre-cutover prop name. */
   extraCommands?: SlashCommand[]
   apiBaseUrl?: string
@@ -329,6 +329,7 @@ export function PiChatPanel<
   const selectedSessionPending = Boolean(activeSessionId && !selectedChatState)
   const modelDiscoveryEnabled = serverResourcesEnabled && availableModels === undefined
   const modelDiscovery = useChatModelSelection({
+    agentTypeId,
     apiBaseUrl,
     defaultModel,
     fetch,
@@ -433,6 +434,7 @@ export function PiChatPanel<
     return next
   }, [apiBaseUrl, commands, contributedCommands, excludeBuiltinCommands, extraCommands, hotReloadEnabled, normalizedRequestHeaders, serverResourcesEnabled, serverSkillsRefreshKey, storageScope])
   const commandsStamp = useServerCommands({
+    agentTypeId,
     registry,
     requestHeaders: normalizedRequestHeaders,
     sessionId: activeSessionId ?? 'default',
@@ -1244,6 +1246,7 @@ export function PiChatPanel<
           <Suspense fallback={null}>
             <div aria-label="Chat debug metadata" className="contents" role="region">
               <DebugDrawer
+                agentTypeId={agentTypeId}
                 apiBaseUrl={apiBaseUrl}
                 fetch={fetch}
                 sessionId={activeSessionId ?? activeChatSessionId ?? 'unknown'}

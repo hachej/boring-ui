@@ -1,6 +1,6 @@
 import { defineConfig } from "tsup"
 
-const EXTERNALS = ["react", "react-dom"]
+const EXTERNALS = ["react", "react-dom", "node:sqlite"]
 const DEV_BUNDLE_EXTERNALS = ["@vitejs/plugin-react", "@babel/core"]
 
 export default defineConfig({
@@ -8,6 +8,7 @@ export default defineConfig({
     "shared/index": "src/shared/index.ts",
     "core/index": "src/core/index.ts",
     "server/index": "src/server/index.ts",
+    "server/agent-host/testing/compositionRouteProof": "src/server/agent-host/testing/compositionRouteProof.ts",
     "front/index": "src/front/index.ts",
     "eval/index": "src/eval/index.ts",
   },
@@ -17,5 +18,6 @@ export default defineConfig({
   clean: true,
   outDir: "dist",
   target: "es2022",
+  removeNodeProtocol: false,
   external: [...EXTERNALS, ...DEV_BUNDLE_EXTERNALS],
 })

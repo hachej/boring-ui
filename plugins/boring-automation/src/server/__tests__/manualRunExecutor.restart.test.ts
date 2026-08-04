@@ -22,6 +22,48 @@ async function seed(store: FileAutomationStore) {
 }
 
 describe("ManualRunExecutor durable restart saga", () => {
+  it("preserves an accepted addressed receipt and session across restart reconciliation", async () => {
+    const root = await createStoreRoot()
+    const firstProcess = new FileAutomationStore(root, {
+      clock: () => new Date("2026-07-24T00:00:00.000Z"),
+    })
+    const automation = await seed(firstProcess)
+    const admitted = await firstProcess.beginRun({
+      automationId: automation.id,
+      invocationId: "manual:accepted-before-crash",
+      trigger: "manual",
+      promptSnapshot: "run",
+      modelSnapshot: "test:model",
+    })
+    await firstProcess.updateRunLifecycle(admitted.id, {
+      status: "dispatching",
+      startedAt: "2026-07-24T00:00:01.000Z",
+      sessionId: "shared",
+      dispatchReceipt: {
+        ref: { agentTypeId: "beta", sessionId: "shared" },
+        accepted: true,
+        cursor: 7,
+        disposition: "prompt",
+        clientNonce: admitted.id,
+      },
+    })
+
+    const restarted = new FileAutomationStore(root, {
+      clock: () => new Date("2026-07-24T00:01:00.000Z"),
+    })
+    await restarted.reconcileOrphanedRuns(automation.id)
+
+    await expect(restarted.listRuns(automation.id)).resolves.toEqual([
+      expect.objectContaining({
+        id: admitted.id,
+        status: "failed",
+        sessionId: "shared",
+        dispatchReceipt: expect.objectContaining({ ref: { agentTypeId: "beta", sessionId: "shared" } }),
+        error: "Automation host restarted before the run completed",
+      }),
+    ])
+  })
+
   it("persists the invocation receipt before dispatch and resolves ambiguity without redispatch", async () => {
     const root = await createStoreRoot()
     const firstProcess = new FileAutomationStore(root, {
@@ -69,8 +111,12 @@ describe("ManualRunExecutor durable restart saga", () => {
       stop: vi.fn(),
     }))
     const restartedExecutor = new ManualRunExecutor({
+      agentTypeId: "default",
       store: restarted,
-      dispatcherResolver: { resolve },
+      dispatcherResolver: {
+        runWithWorkspaceAgent: vi.fn(async () => { throw new Error("unexpected dispatch") }),
+        resolve,
+      },
       actorResolver: vi.fn(),
     })
     const sameInvocation = await restartedExecutor.run({

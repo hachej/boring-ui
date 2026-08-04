@@ -209,9 +209,7 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
   }
   const activity = new AgentSessionActivityIndex()
   const runtime = {
-    options: {
-      resolveRuntimeScope: async () => ({ identity: 'shared-runtime' }),
-    },
+    options: {},
     compiledAgents: agents,
     compiledById: new Map(agents.map((agent) => [agent.agentTypeId, agent])),
     ledger: new InMemoryAgentRequestLedger(),
@@ -253,6 +251,9 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
       if (!runtimeScopeIdentity) return undefined
       return { runtimeScope: { identity: 'shared-runtime' }, runtimeScopeIdentity }
     },
+    async resolveAgentRuntimeScope() {
+      return { identity: 'shared-runtime' }
+    },
     async resolveBinding(agentTypeId: string, _scope: AuthorizedAgentScope, claim: { workspaceScopeId: string }) {
       const service = serviceFor(claim.workspaceScopeId, agentTypeId)
       return {
@@ -269,7 +270,8 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     },
     startDrain() {},
     registerSubscription() { return () => {} },
-    trackEffect<T>(effect: Promise<T>) { return effect },
+    startPreparedEffect<T>(_key: import('../types').AgentRequestKey, effect: () => Promise<T>) { return effect() },
+    runBindingOperation<T>(_bindingKey: string, operation: () => Promise<T>) { return operation() },
     async closeRuntime() {},
   }
   const embedded = new EmbeddedAgentGateway(runtime as never)

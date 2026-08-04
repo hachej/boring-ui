@@ -44,6 +44,7 @@ export type {
   WorkspaceShellArtifactTarget,
   WorkspaceShellCapabilityResult,
   WorkspaceShellCapabilities,
+  WorkspaceShellSessionRef,
 } from "./shared/plugins/workspaceShellCapabilities"
 
 // In-process UI bridge access for plugin Pi slash commands. Lets a command

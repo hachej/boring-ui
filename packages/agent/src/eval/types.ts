@@ -71,8 +71,10 @@ export interface ExpectedCall {
 export type EvalModelSelection = string | { provider: string; id: string }
 
 export interface EvalPromptOptions {
-  /** A FastifyInstance from createAgentApp / createWorkspaceAgentApp / etc. */
+  /** A FastifyInstance from createStandaloneAgentHostApp / createWorkspaceAgentApp / etc. */
   app: FastifyInstance
+  /** Addressed Agent owner exercised by this eval. */
+  agentTypeId: string
   /** User prompt sent to the agent. */
   prompt: string
   /**
@@ -102,8 +104,6 @@ export interface EvalPromptOptions {
   sessionId?: string
   /** Optional headers sent to session/chat requests (e.g. workspace scoping). */
   headers?: Record<string, string>
-  /** Optional query params appended to session/chat requests (e.g. workspaceId). */
-  query?: Record<string, string | number | boolean | undefined>
   /** Per-call timeout in ms. Defaults to 30_000. */
   timeoutMs?: number
   /** Per-prompt retry count. Default: 0. */
@@ -129,6 +129,8 @@ export interface EvalResult {
  */
 export interface SuiteOptions {
   app: FastifyInstance
+  /** Addressed Agent owner exercised by every fixture. */
+  agentTypeId: string
   /** Path to a YAML fixture file. See AGENT_EVAL_FRAMEWORK.md for format. */
   fixturesPath: string
   /** Stop on first failure. Default: false. */

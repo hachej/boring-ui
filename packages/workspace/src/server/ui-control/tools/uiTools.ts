@@ -8,7 +8,7 @@
  * harness with no UI knowledge. Hosts that want UI-aware agent tools
  * use `createWorkspaceAgentServer` (which closes over a bridge instance and
  * registers these factories), or pass the result of `createWorkspaceUiTools`
- * via `createAgentApp({ extraTools })` if they prefer hand-wiring.
+ * via `createStandaloneAgentHostApp({ extraTools })` if they prefer hand-wiring.
  */
 import { stat } from "node:fs/promises"
 import { resolve, isAbsolute, relative, win32 } from "node:path"
@@ -433,7 +433,7 @@ export function createExecUiTool(
  * want manual control can use it directly:
  *
  *   const bridge = createInMemoryBridge()
- *   const app = await createAgentApp({
+ *   const app = await createStandaloneAgentHostApp({
  *     extraTools: createWorkspaceUiTools(bridge),
  *   })
  *   await app.register(uiRoutes, { bridge })

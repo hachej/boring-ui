@@ -64,6 +64,7 @@ describe("folder mode runtime plugin wiring", () => {
       mode: "direct",
       projectName: "Folder Workspace",
       provisionWorkspace: false,
+      loadAmbientSkills: false,
     })
 
     const address = await app.listen({ port: 0, host: "127.0.0.1" })
@@ -170,6 +171,7 @@ describe("folder mode runtime plugin wiring", () => {
       workspaceRoot,
       mode: "direct",
       provisionWorkspace: false,
+      loadAmbientSkills: false,
     })
 
     try {
@@ -224,6 +226,7 @@ describe("folder mode runtime plugin wiring", () => {
       mode: "direct",
       projectName: "Folder Workspace",
       provisionWorkspace: false,
+      loadAmbientSkills: false,
     })
 
     try {
@@ -262,12 +265,19 @@ describe("folder mode runtime plugin wiring", () => {
       mode: "direct",
       projectName: "Folder Workspace",
       provisionWorkspace: false,
+      loadAmbientSkills: false,
     })
 
     try {
       const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       const plugin = (list.json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>).find((item) => item.id === "front-removed-plugin")
       expect(plugin?.frontTarget?.entryUrl).toBeTruthy()
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/sessions",
+        payload: { requestId: "folder-runtime-front-removed-session" },
+      })
+      expect(created.statusCode, created.body).toBe(201)
 
       await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
         name: "front-removed-plugin",
@@ -275,8 +285,8 @@ describe("folder mode runtime plugin wiring", () => {
         boring: { label: "front-removed-plugin" },
       }), "utf8")
 
-      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
-      expect(reload.statusCode).toBe(200)
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agents/default/reload", payload: { requestId: "folder-runtime-front-removed" } })
+      expect(reload.statusCode, reload.body).toBe(200)
 
       const runtimeAfterFrontRemoved = await app.inject({ method: "GET", url: plugin!.frontTarget!.entryUrl! })
       expect(runtimeAfterFrontRemoved.statusCode).toBe(404)
@@ -294,6 +304,7 @@ describe("folder mode runtime plugin wiring", () => {
       mode: "direct",
       projectName: "Folder Workspace",
       provisionWorkspace: false,
+      loadAmbientSkills: false,
     })
 
     try {

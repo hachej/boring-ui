@@ -14,9 +14,10 @@ import type {
   Workspace,
   WorkspaceAgentDispatcher,
   WorkspaceAgentDispatcherContext,
+  WorkspaceAgentDirectRunCallback,
+  WorkspaceAgentDirectRunInput,
 } from '@hachej/boring-agent/shared'
 import type {
-  WorkspaceAgentDispatcherBinding,
   WorkspaceAgentDispatcherResolver,
 } from '@hachej/boring-agent/server'
 import type { CoreWorkspaceAgentServer } from '@hachej/boring-core/app/server'
@@ -207,11 +208,27 @@ function fakeResolver(options: {
     resolveContexts,
     sessionIds,
     async resolve(): Promise<WorkspaceAgentDispatcher> {
-      throw new Error('managed-agent smoke must use resolveWithWorkspace')
+      throw new Error('managed-agent smoke must use runWithWorkspaceAgent')
     },
-    async resolveWithWorkspace(ctx: WorkspaceAgentDispatcherContext): Promise<WorkspaceAgentDispatcherBinding> {
-      resolveContexts.push({ ...ctx })
-      return { dispatcher, workspace: options.workspace }
+    async runWithWorkspaceAgent(input: WorkspaceAgentDirectRunInput, run: WorkspaceAgentDirectRunCallback): Promise<void> {
+      resolveContexts.push({ ...input.context })
+      await run({
+        workspace: options.workspace,
+        signal: new AbortController().signal,
+        async dispatch(dispatchInput, onEvent) {
+          let sessionId = dispatchInput.sessionId ?? `managed-smoke-session-${runCount + 1}`
+          for await (const agentEvent of dispatcher.send(dispatchInput)) {
+            sessionId = agentEvent.sessionId
+            await onEvent(agentEvent)
+          }
+          return {
+            ref: { agentTypeId: input.agentTypeId, sessionId },
+            receipt: { accepted: true, cursor: 0, disposition: 'prompt', clientNonce: dispatchInput.requestId },
+          }
+        },
+        interrupt: (sessionId) => dispatcher.interrupt(sessionId),
+        stop: (sessionId) => dispatcher.stop(sessionId),
+      })
     },
   }
   return resolver

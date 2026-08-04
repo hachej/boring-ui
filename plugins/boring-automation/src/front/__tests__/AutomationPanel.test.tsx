@@ -35,10 +35,21 @@ function automation(overrides: Partial<Automation> = {}): Automation {
 }
 
 function automationRun(overrides: Partial<AutomationRun> = {}): AutomationRun {
+  const sessionId = overrides.sessionId === undefined ? "session-1" : overrides.sessionId
+  const dispatchReceipt = overrides.dispatchReceipt === undefined
+    ? sessionId ? {
+        ref: { agentTypeId: "alpha", sessionId },
+        accepted: true as const,
+        cursor: 1,
+        disposition: "prompt" as const,
+        clientNonce: "run-1",
+      } : null
+    : overrides.dispatchReceipt
   return {
     id: "run-1",
     automationId: "auto-1",
-    sessionId: "session-1",
+    dispatchReceipt,
+    sessionId,
     status: "succeeded",
     trigger: "manual",
     scheduledFor: null,
@@ -87,7 +98,7 @@ function deferred<T>() {
 
 function renderPanel(client: AutomationClient) {
   return render(
-    <AutomationClientProvider value={client}>
+    <AutomationClientProvider value={client} agentTypeId="alpha">
       <AutomationPanel />
     </AutomationClientProvider>,
   )
@@ -592,7 +603,7 @@ describe("AutomationPanel", () => {
     const client = createClient({
       listAutomations: vi.fn(async () => [existing]),
       listRuns: vi.fn(async () => [
-        automationRun({ id: "run-no-session", sessionId: null }),
+        automationRun({ id: "run-no-session", sessionId: null, dispatchReceipt: null }),
         automationRun({ id: "run-with-session", sessionId: "session-1" }),
       ]),
     })
@@ -606,7 +617,8 @@ describe("AutomationPanel", () => {
     expect(await screen.findByLabelText("Run has no session")).toBeDisabled()
     fireEvent.click(screen.getByLabelText("Open session session-1"))
 
-    expect(shellState.current!.openDetachedChat).toHaveBeenCalledWith("session-1", { title: "gpt-5.5", composingEnabled: true })
+    expect(shellState.current!.openDetachedChat).toHaveBeenCalledWith({ agentTypeId: "alpha", sessionId: "session-1" }, { title: "gpt-5.5", composingEnabled: true })
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not open chat.")
   })
 })
+// @vitest-environment jsdom

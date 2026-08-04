@@ -1,6 +1,6 @@
 // Minimal server plugin used by the workspace's defaultPluginPackages
 // discovery test. Exercises the full package → boring.server →
-// jiti-import → defineServerPlugin → /api/v1/agent/catalog pipeline
+// jiti-import → defineServerPlugin → /api/v1/agents/default/tools pipeline
 // without depending on any external plugin package.
 //
 // Bare object form (no `(options, ctx) => ...` factory) — sufficient

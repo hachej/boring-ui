@@ -29,7 +29,7 @@ function rectFromElement(element: HTMLElement): WorkspaceShellAnchorRect {
   return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left }
 }
 
-interface CreatedPiChatSession { id?: unknown }
+interface CreatedAgentSession { sessionId?: unknown }
 
 function taskChatDraft(task: BoringTaskCard): string {
   return [
@@ -58,12 +58,12 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     const anchor = rectFromElement(event.currentTarget)
     const title = `${task.number}: ${task.title}`
     setOpeningChat(true)
-    void pluginClient.postJson<CreatedPiChatSession>("/api/v1/agent/pi-chat/sessions", { title })
+    void pluginClient.postJson<CreatedAgentSession>(`/api/v1/agents/${encodeURIComponent(pluginClient.agentTypeId)}/sessions`, { title })
       .then((session) => {
-        if (typeof session.id !== "string" || session.id.length === 0) throw new Error("Chat session was not created.")
+        if (typeof session.sessionId !== "string" || session.sessionId.length === 0) throw new Error("Chat session was not created.")
         const initialDraft = taskChatDraft(task)
-        shell.openDetachedChat(session.id, { anchor, title, initialDraft, composingEnabled: true })
-        window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", { detail: { sessionId: session.id, title, initialDraft, composingEnabled: true } }))
+        shell.openDetachedChat({ agentTypeId: pluginClient.agentTypeId, sessionId: session.sessionId }, { anchor, title, initialDraft, composingEnabled: true })
+        window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", { detail: { sessionId: session.sessionId, agentTypeId: pluginClient.agentTypeId, title, initialDraft, composingEnabled: true } }))
       })
       .catch((error) => console.error("Failed to open task chat", error))
       .finally(() => setOpeningChat(false))

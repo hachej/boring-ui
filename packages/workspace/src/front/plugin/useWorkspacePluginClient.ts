@@ -1,6 +1,7 @@
 import { createContext, createElement, useContext, useMemo, type ReactNode } from "react"
 
 export interface WorkspacePluginClient {
+  agentTypeId: string
   apiBaseUrl: string
   workspaceId?: string
   workspaceHeaders(): Record<string, string>
@@ -11,6 +12,7 @@ export interface WorkspacePluginClient {
 }
 
 interface WorkspacePluginClientProviderProps {
+  agentTypeId: string
   apiBaseUrl: string
   workspaceId?: string
   authHeaders?: Record<string, string>
@@ -61,6 +63,8 @@ function assertSameOriginApiPath(path: string): string {
 
 function withWorkspaceQuery(path: string, workspaceId: string | undefined): string {
   if (!workspaceId) return path
+  const pathname = path.split("?", 1)[0]
+  if (pathname === "/api/v1/agents" || pathname.startsWith("/api/v1/agents/")) return path
   const separator = path.includes("?") ? "&" : "?"
   return `${path}${separator}workspaceId=${encodeURIComponent(workspaceId)}`
 }
@@ -92,6 +96,7 @@ async function responseError(response: Response, fallback: string, options?: { p
 
 function createWorkspacePluginClientWithOptions(
   apiBaseUrl: string,
+  agentTypeId: string,
   workspaceId: string | undefined,
   authHeaders: Record<string, string> | undefined,
   options: { allowCrossOriginBase: boolean },
@@ -145,14 +150,17 @@ function createWorkspacePluginClientWithOptions(
     message: string,
     options?: { title?: string; noncePrefix?: string },
   ): Promise<void> => {
-    const session = await postJson<{ id?: unknown }>("/api/v1/agent/pi-chat/sessions", {
+    const sessionsPath = `/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions`
+    const session = await postJson<{ sessionId?: unknown }>(sessionsPath, {
       title: options?.title ?? "Plugin action",
     })
-    if (typeof session.id !== "string") throw new Error("agent session creation did not return a session id")
+    if (typeof session.sessionId !== "string") throw new Error("agent session creation did not return a session id")
     const noncePrefix = options?.noncePrefix ?? "workspace-plugin"
-    await postJson(`/api/v1/agent/pi-chat/${encodeURIComponent(session.id)}/prompt`, {
-      message,
-      clientNonce: `${noncePrefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+    const clientNonce = `${noncePrefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+    await postJson(`${sessionsPath}/${encodeURIComponent(session.sessionId)}/prompt`, {
+      requestId: clientNonce,
+      content: message,
+      clientNonce,
     })
   }
   const readJsonFile = async <T,>(
@@ -166,6 +174,7 @@ function createWorkspacePluginClientWithOptions(
     })
   }
   return {
+    agentTypeId,
     apiBaseUrl: base,
     ...(workspaceId ? { workspaceId } : {}),
     workspaceHeaders,
@@ -178,21 +187,23 @@ function createWorkspacePluginClientWithOptions(
 
 export function createWorkspacePluginClient(
   apiBaseUrl: string,
+  agentTypeId: string,
   workspaceId?: string,
   authHeaders?: Record<string, string>,
 ): WorkspacePluginClient {
-  return createWorkspacePluginClientWithOptions(apiBaseUrl, workspaceId, authHeaders, { allowCrossOriginBase: false })
+  return createWorkspacePluginClientWithOptions(apiBaseUrl, agentTypeId, workspaceId, authHeaders, { allowCrossOriginBase: false })
 }
 
 export function WorkspacePluginClientProvider({
   apiBaseUrl,
+  agentTypeId,
   workspaceId,
   authHeaders,
   children,
 }: WorkspacePluginClientProviderProps) {
   const client = useMemo(
-    () => createWorkspacePluginClientWithOptions(apiBaseUrl, workspaceId, authHeaders, { allowCrossOriginBase: true }),
-    [apiBaseUrl, authHeaders, workspaceId],
+    () => createWorkspacePluginClientWithOptions(apiBaseUrl, agentTypeId, workspaceId, authHeaders, { allowCrossOriginBase: true }),
+    [agentTypeId, apiBaseUrl, authHeaders, workspaceId],
   )
   return createElement(WorkspacePluginClientContext.Provider, { value: client }, children)
 }

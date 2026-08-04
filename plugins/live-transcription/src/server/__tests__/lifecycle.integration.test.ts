@@ -35,6 +35,7 @@ function resolver(
   bindPiSession: ReturnType<typeof vi.fn>,
 ): WorkspaceAgentDispatcherResolver {
   return {
+    async runWithWorkspaceAgent() { throw new Error("direct resolver must not be used") },
     async resolve() {
       return {
         async *send() {},

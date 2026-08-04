@@ -122,9 +122,10 @@ async function withBrowser(run: (page: import("@playwright/test").Page, trace: s
 
 async function reloadViaBrowser(page: import("@playwright/test").Page, headers?: Record<string, string>) {
   return await page.evaluate(async (requestHeaders) => {
-    const response = await fetch("/api/v1/agent/reload", {
+    const response = await fetch("/api/v1/agents/default/reload", {
       method: "POST",
-      headers: requestHeaders,
+      headers: { ...requestHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ requestId: `browser-reload:${crypto.randomUUID()}` }),
     })
     return {
       status: response.status,

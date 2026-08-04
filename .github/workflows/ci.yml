@@ -621,7 +621,7 @@ jobs:
       - name: Smoke reference web image
         run: |
           container_name="full-app-reference-${GITHUB_RUN_ID}"
-          docker run -d --rm \
+          docker run -d \
             --name "$container_name" \
             --add-host=host.docker.internal:host-gateway \
             -p 3000:3000 \
@@ -637,7 +637,7 @@ jobs:
             -e VERCEL_TEAM_ID=team_smoke \
             -e VERCEL_PROJECT_ID=prj_smoke \
             boring-full-app-reference:ci
-          trap 'docker logs "$container_name" || true; docker stop "$container_name" || true' EXIT
+          trap 'docker logs "$container_name" || true; docker rm -f "$container_name" || true' EXIT
           for i in $(seq 1 60); do
             if curl -fsS http://localhost:3000/health; then
               exit 0

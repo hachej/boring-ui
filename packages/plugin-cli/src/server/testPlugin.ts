@@ -23,6 +23,7 @@ export interface SelfTestResult {
 
 export interface RunPluginSelfTestOptions {
   pluginId: string
+  agentTypeId: string
   url?: string
   workspaceId?: string
   panelId?: string
@@ -219,12 +220,14 @@ export async function runPluginSelfTest(options: RunPluginSelfTestOptions): Prom
   let revision: number | undefined
 
   try {
-    const reload = await fetchJson(apiUrl(baseUrl, "/api/v1/agent/reload"), {
+    const reloadPath = `/api/v1/agents/${encodeURIComponent(options.agentTypeId)}/reload`
+    const requestId = `plugin-self-test:${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+    const reload = await fetchJson(apiUrl(baseUrl, reloadPath), {
       method: "POST",
       headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify({ ...(workspaceId ? { sessionId: workspaceId } : {}) }),
+      body: JSON.stringify({ requestId }),
     })
-    if (reload.status < 200 || reload.status >= 300) reloadErrors.push(event("RELOAD_HTTP_ERROR", `/api/v1/agent/reload returned ${reload.status}`))
+    if (reload.status < 200 || reload.status >= 300) reloadErrors.push(event("RELOAD_HTTP_ERROR", `${reloadPath} returned ${reload.status}`))
     reloadErrors.push(...collectReloadDiagnostics(pluginId, reload.body))
   } catch (error) {
     reloadErrors.push(event("RELOAD_FAILED", error instanceof Error ? error.message : String(error)))

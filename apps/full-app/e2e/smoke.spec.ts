@@ -118,12 +118,12 @@ test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
       return route.fulfill(json({ entries: [] }))
     }
 
-    if (path === '/api/v1/agent/models') {
+    if (path === '/api/v1/agents/default/models') {
       return route.fulfill(json({ models: [] }))
     }
 
-    if (path === '/api/v1/agent/pi-chat/sessions') {
-      return route.fulfill(json([]))
+    if (path === '/api/v1/agents/default/sessions') {
+      return route.fulfill(json({ sessions: [] }))
     }
 
     if (path === '/api/v1/ui/state' && request.method() === 'PUT') {
@@ -147,7 +147,7 @@ test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
       })
     }
 
-    if (path.startsWith('/api/v1/agent/')) {
+    if (path.startsWith('/api/v1/agents/')) {
       return route.fulfill(json({}))
     }
 

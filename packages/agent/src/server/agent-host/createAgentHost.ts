@@ -1,14 +1,22 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import type { FastifyInstance } from 'fastify'
+import { dirname, join } from 'node:path'
 import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope, type VerifiedAgentScopeClaim } from '../../shared/index'
 import { buildAgentComposition, type BuiltAgentComposition } from './buildAgentComposition'
 import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
+import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
 import { createAgentHostRoutes } from './httpProjection'
-import { createLegacyPiChatCompatibilityService } from './legacyPiChatCompatibility'
 import { InMemoryAgentRequestLedger } from './requestLedger'
+import { SqliteAgentRequestLedger } from './sqliteRequestLedger'
+import {
+  createAgentHostRuntimeCapabilityProjection,
+} from './runtimeCapabilityProjection'
+import {
+  bindingDisposedError,
+  guardMethods,
+  runWithWorkspaceAgentLease,
+} from './workspaceAgentLease'
 import {
   AgentSessionActivityIndex,
   AgentSessionInventory,
@@ -21,9 +29,11 @@ import type {
   CompiledAgentHostAgentSpec,
   CreatedAgentHost,
   CreateAgentHostOptions,
-  AgentHostAddressedHttpProjectionOptions,
-  AgentHostHttpProjectionOptions,
-  AgentHostLegacyProjectionRuntime,
+  AgentHostDirectProjectionOptions,
+  AgentHostEnvironmentLease,
+  AgentHostEnvironmentScope,
+  AuthorizedEnvironmentIntent,
+  LeaseBoundWorkspaceAgent,
   ResolvedAgentRuntimeScope,
 } from './types'
 
@@ -31,15 +41,15 @@ const SAFE_AGENT_TYPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 const SAFE_HOST_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/
 const DEFAULT_SHUTDOWN_GRACE_MS = 5_000
 
-interface RuntimeBinding {
+export interface RuntimeBinding {
   readonly key: string
+  readonly agentTypeId: string
+  readonly workspaceScopeId: string
+  readonly generation: number
   readonly scope: ResolvedAgentRuntimeScope
   readonly environmentLease: EnvironmentLease
   readonly composition: BuiltAgentComposition
 }
-
-const compatibilityRuntimes = new WeakMap<CreatedAgentHost, AgentHostRuntime>()
-const compatibilityGateways = new WeakMap<CreatedAgentHost, EmbeddedAgentGateway>()
 
 export interface AgentHostRuntime {
   readonly options: CreateAgentHostOptions
@@ -48,6 +58,7 @@ export interface AgentHostRuntime {
   readonly ledger: import('./types').AgentRequestLedger
   readonly effectAdmission: import('./types').AgentEffectAdmission
   readonly activity: AgentSessionActivityIndex
+  readonly shutdownGraceMs: number
   listSessionSummaries(
     agentTypeId: string,
     scope: AuthorizedAgentScope,
@@ -56,23 +67,60 @@ export interface AgentHostRuntime {
   isDraining(): boolean
   assertOpen(): void
   verify(scope: AuthorizedAgentScope): Promise<VerifiedAgentScopeClaim>
+  resolveEnvironmentScope(
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    intent: AuthorizedEnvironmentIntent,
+  ): Promise<AgentHostEnvironmentScope>
+  acquireEnvironment(
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    intent: AuthorizedEnvironmentIntent,
+  ): Promise<EnvironmentLease>
+  acquireResolvedEnvironment(
+    workspaceScopeId: string,
+    environment: AgentHostEnvironmentScope,
+  ): Promise<EnvironmentLease>
   resolveSessionRuntime(
     agentTypeId: string,
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
     sessionId: string,
   ): Promise<AgentSessionRuntimeAuthority | undefined>
+  resolveAgentRuntimeScope(
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    operation: 'new-binding' | 'existing-session' | 'reload',
+    requestId: string,
+    sessionId?: string,
+  ): Promise<ResolvedAgentRuntimeScope>
   resolveBinding(
     agentTypeId: string,
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
     resolvedRuntimeScope?: ResolvedAgentRuntimeScope,
+    purpose?: 'current' | 'pinned',
   ): Promise<RuntimeBinding>
+  findPublishedBinding(
+    agentTypeId: string,
+    workspaceScopeId: string,
+    runtimeScopeIdentity?: string,
+    physicalBindingIdentity?: string,
+    provisioningFingerprint?: string,
+  ): RuntimeBinding | undefined
+  findPublishedCurrentBinding(
+    agentTypeId: string,
+    workspaceScopeId: string,
+    physicalBindingIdentity: string,
+    runtimeScopeIdentity?: string,
+    provisioningFingerprint?: string,
+  ): RuntimeBinding | undefined
   startDrain(): void
   drainRuntime(): Promise<void>
   registerSubscription(close: () => void | Promise<void>): () => void
-  trackEffect<T>(effect: Promise<T>, key: AgentRequestKey): Promise<T>
-  retireCompatibilityComposition(composition: BuiltAgentComposition): Promise<void>
+  startPreparedEffect<T>(key: AgentRequestKey, effect: () => Promise<T>): Promise<T>
+  runBindingOperation<T>(bindingKey: string, operation: () => Promise<T>): Promise<T>
   closeRuntime(): Promise<void>
 }
 
@@ -160,24 +208,97 @@ function validateResolvedRuntimeScope(resolved: ResolvedAgentRuntimeScope): void
   }
 }
 
+function validateDirectResolvedRuntimeScope(
+  resolved: Omit<ResolvedAgentRuntimeScope, 'environment'>,
+): void {
+  if (!resolved.identity.trim()) throw new TypeError('resolved runtime scope identity must be non-empty')
+  if (!resolved.resourceInputDigest?.trim()) {
+    throw new TypeError('direct resolved runtime scope resourceInputDigest must be non-empty')
+  }
+  if (!resolved.physicalBindingIdentity?.trim()) {
+    throw new TypeError('direct resolved runtime scope physicalBindingIdentity must be non-empty')
+  }
+}
+
+function validateEnvironmentScope(resolved: AgentHostEnvironmentScope): void {
+  if (!resolved.placementIdentity.trim() || !resolved.provisioningFingerprint.trim()) {
+    throw new TypeError('resolved environment identity must be non-empty')
+  }
+  if (!resolved.workspaceRoot.trim()) throw new TypeError('resolved environment workspaceRoot must be non-empty')
+}
+
 function createRuntime(
   options: CreateAgentHostOptions,
   compiledAgents: readonly CompiledAgentHostAgentSpec[],
 ): AgentHostRuntime {
   const compiledById = new Map(compiledAgents.map((agent) => [agent.agentTypeId, agent]))
   const environments = new EnvironmentLeaseManager(options.runtimeModeAdapter)
-  const inventory = new AgentSessionInventory(options, compiledById)
+  const resolveAgentRuntimeScope = async (
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    operation: 'new-binding' | 'existing-session' | 'reload',
+    requestId: string,
+    sessionId?: string,
+  ): Promise<ResolvedAgentRuntimeScope> => {
+    if (options.resolveAuthorizedEnvironmentScope && options.resolveAuthorizedAgentRuntimeScope) {
+      const environment = await options.resolveAuthorizedEnvironmentScope({
+        authorizedScope: scope,
+        verifiedClaim: claim,
+        intent: { kind: 'agent-binding', requestId },
+      })
+      validateEnvironmentScope(environment)
+      const resolved = await options.resolveAuthorizedAgentRuntimeScope({
+        authorizedScope: scope,
+        verifiedClaim: claim,
+        agentTypeId,
+        intent: {
+          kind: 'agent-binding',
+          operation,
+          requestId,
+          ...(sessionId ? { sessionId } : {}),
+        },
+        environment,
+      })
+      validateDirectResolvedRuntimeScope(resolved)
+      return Object.freeze({ ...resolved, environment })
+    }
+    throw new TypeError('createAgentHost requires direct Environment and Agent runtime scope resolvers')
+  }
+  const inventory = new AgentSessionInventory(
+    options.sessionRoot,
+    compiledById,
+    (agentTypeId, scope, claim) => resolveAgentRuntimeScope(
+      agentTypeId,
+      scope,
+      claim,
+      'existing-session',
+      `inventory:${agentTypeId}`,
+    ),
+  )
   const activity = new AgentSessionActivityIndex()
   const bindings = new Map<string, Promise<RuntimeBinding>>()
+  const publishedBindings = new Map<string, RuntimeBinding>()
+  const publishedCurrentBindings = new Map<string, RuntimeBinding>()
+  const currentBindingReservations = new Map<string, string>()
+  const nextBindingGeneration = new Map<string, number>()
   const pendingBindings = new Set<Promise<RuntimeBinding>>()
   const rejectPendingBindings = new Set<(error: unknown) => void>()
   const bindingDisposals = new WeakMap<RuntimeBinding, Promise<void>>()
   const subscriptions = new Set<() => void | Promise<void>>()
+  const subscriptionClosures = new Set<Promise<void>>()
   const finiteEffects = new Map<Promise<unknown>, AgentRequestKey>()
+  const bindingOperationTails = new Map<string, Promise<void>>()
   const graceMs = Math.max(0, options.shutdownGraceMs ?? DEFAULT_SHUTDOWN_GRACE_MS)
   let draining = false
   let drainPromise: Promise<void> | undefined
   let closePromise: Promise<void> | undefined
+  const ledger: import('./types').AgentRequestLedger = options.requestLedger
+    ?? (options.inMemoryRequestLedgerMode
+      ? new InMemoryAgentRequestLedger()
+      : options.requestLedgerPath || options.sessionRoot
+        ? new SqliteAgentRequestLedger(options.requestLedgerPath ?? join(options.sessionRoot!, '.agent-request-ledger.sqlite'))
+        : new InMemoryAgentRequestLedger())
 
   const disposeBinding = (binding: RuntimeBinding): Promise<void> => {
     let disposal = bindingDisposals.get(binding)
@@ -199,13 +320,14 @@ function createRuntime(
     options,
     compiledAgents,
     compiledById,
-    ledger: options.requestLedger ?? new InMemoryAgentRequestLedger(),
+    ledger,
     effectAdmission: options.effectAdmission ?? {
       async admit({ key }) {
         return { type: 'accepted', admissionReceipt: `trusted-local:${key.requestId}` }
       },
     },
     activity,
+    shutdownGraceMs: graceMs,
     listSessionSummaries(agentTypeId, scope, claim) {
       runtime.assertOpen()
       return inventory.list(agentTypeId, scope, claim)
@@ -222,6 +344,27 @@ function createRuntime(
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SCOPE_DENIED, 'agent scope is not authorized')
       }
     },
+    async resolveEnvironmentScope(scope, claim, intent) {
+      runtime.assertOpen()
+      if (!options.resolveAuthorizedEnvironmentScope) {
+        throw new TypeError('direct Environment projection requires resolveAuthorizedEnvironmentScope')
+      }
+      const environment = await options.resolveAuthorizedEnvironmentScope({
+        authorizedScope: scope,
+        verifiedClaim: claim,
+        intent,
+      })
+      validateEnvironmentScope(environment)
+      return environment
+    },
+    async acquireEnvironment(scope, claim, intent) {
+      const environment = await runtime.resolveEnvironmentScope(scope, claim, intent)
+      return await environments.acquire(claim.workspaceScopeId, environment)
+    },
+    async acquireResolvedEnvironment(workspaceScopeId, environment) {
+      validateEnvironmentScope(environment)
+      return await environments.acquire(workspaceScopeId, environment)
+    },
     async resolveSessionRuntime(agentTypeId, scope, claim, sessionId) {
       runtime.assertOpen()
       try {
@@ -236,13 +379,41 @@ function createRuntime(
         )
       }
     },
-    async resolveBinding(agentTypeId, scope, claim, resolvedRuntimeScope) {
+    resolveAgentRuntimeScope,
+    async resolveBinding(agentTypeId, scope, claim, resolvedRuntimeScope, purpose = 'current') {
       runtime.assertOpen()
       const agent = compiledById.get(agentTypeId)
       if (!agent) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
-      const resolved = resolvedRuntimeScope ?? await options.resolveRuntimeScope({ agentTypeId, scope })
+      const resolved = resolvedRuntimeScope ?? await runtime.resolveAgentRuntimeScope(
+        agentTypeId,
+        scope,
+        claim,
+        'new-binding',
+        `binding:${agentTypeId}`,
+      )
       validateResolvedRuntimeScope(resolved)
-      const key = JSON.stringify([agentTypeId, claim.workspaceScopeId, resolved.identity])
+      const key = JSON.stringify([
+        agentTypeId,
+        claim.workspaceScopeId,
+        resolved.identity,
+        resolved.environment.provisioningFingerprint,
+        resolved.physicalBindingIdentity ?? resolved.identity,
+      ])
+      const physicalBindingIdentity = resolved.physicalBindingIdentity ?? resolved.identity
+      const currentKey = JSON.stringify([agentTypeId, claim.workspaceScopeId, physicalBindingIdentity])
+      const useCanonicalCurrent = purpose === 'current'
+        && options.resolveAuthorizedAgentRuntimeScope !== undefined
+      if (useCanonicalCurrent) {
+        const current = publishedCurrentBindings.get(currentKey)
+        if (current) return current
+        const reservedKey = currentBindingReservations.get(currentKey)
+        if (reservedKey && reservedKey !== key) {
+          const reserved = bindings.get(reservedKey)
+          if (reserved) return await reserved
+        } else if (!reservedKey) {
+          currentBindingReservations.set(currentKey, key)
+        }
+      }
       let promise = bindings.get(key)
       if (!promise) {
         let rejectForDrain!: (error: unknown) => void
@@ -268,10 +439,33 @@ function createRuntime(
                 }
               },
             })
-            binding = { key, scope: resolved, environmentLease, composition }
+            const generation = (nextBindingGeneration.get(currentKey) ?? 0) + 1
+            nextBindingGeneration.set(currentKey, generation)
+            binding = {
+              key,
+              agentTypeId,
+              workspaceScopeId: claim.workspaceScopeId,
+              generation,
+              scope: resolved,
+              environmentLease,
+              composition,
+            }
             if (draining || bindings.get(key) !== promise) {
               await disposeBinding(binding)
               throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'agent host is closing')
+            }
+            publishedBindings.set(key, binding)
+            // A Host generation has exactly one canonical current binding per
+            // workspace + Agent. Other identity-keyed bindings may remain
+            // published solely for persisted session pins; resolving one never
+            // makes it current implicitly.
+            if (
+              useCanonicalCurrent
+              && currentBindingReservations.get(currentKey) === key
+              && !publishedCurrentBindings.has(currentKey)
+            ) {
+              publishedCurrentBindings.set(currentKey, binding)
+              currentBindingReservations.delete(currentKey)
             }
             return binding
           } catch (error) {
@@ -289,36 +483,111 @@ function createRuntime(
         }).catch(() => {})
         promise.catch(() => {
           if (bindings.get(key) === promise) bindings.delete(key)
+          if (currentBindingReservations.get(currentKey) === key) currentBindingReservations.delete(currentKey)
         })
       }
-      return await promise
+      const binding = await promise
+      // A pinned lookup may have published this exact binding before a current
+      // lookup reserved it. The explicit current reservation still owns the
+      // canonical publication; pinned creation alone never does.
+      if (
+        useCanonicalCurrent
+        && currentBindingReservations.get(currentKey) === key
+        && !publishedCurrentBindings.has(currentKey)
+      ) {
+        publishedCurrentBindings.set(currentKey, binding)
+        currentBindingReservations.delete(currentKey)
+      }
+      return binding
+    },
+    findPublishedBinding(
+      agentTypeId,
+      workspaceScopeId,
+      runtimeScopeIdentity,
+      physicalBindingIdentity,
+      provisioningFingerprint,
+    ) {
+      const matches = [...publishedBindings.values()].filter((binding) =>
+        binding.agentTypeId === agentTypeId
+        && binding.workspaceScopeId === workspaceScopeId
+        && (!runtimeScopeIdentity || binding.scope.identity === runtimeScopeIdentity)
+        && (!physicalBindingIdentity
+          || (binding.scope.physicalBindingIdentity ?? binding.scope.identity) === physicalBindingIdentity)
+        && (!provisioningFingerprint
+          || binding.scope.environment.provisioningFingerprint === provisioningFingerprint))
+      return matches.length === 1 ? matches[0] : undefined
+    },
+    findPublishedCurrentBinding(
+      agentTypeId,
+      workspaceScopeId,
+      physicalBindingIdentity,
+      runtimeScopeIdentity,
+      provisioningFingerprint,
+    ) {
+      const exact = publishedCurrentBindings.get(JSON.stringify([
+        agentTypeId,
+        workspaceScopeId,
+        physicalBindingIdentity,
+      ]))
+      if (exact) return exact
+      const matches = [...publishedCurrentBindings.values()].filter((binding) =>
+        binding.agentTypeId === agentTypeId
+        && binding.workspaceScopeId === workspaceScopeId
+        && (!runtimeScopeIdentity || binding.scope.identity === runtimeScopeIdentity)
+        && (!provisioningFingerprint
+          || binding.scope.environment.provisioningFingerprint === provisioningFingerprint))
+      return matches.length === 1 ? matches[0] : undefined
     },
     startDrain() {
       if (draining) return
       draining = true
       environments.startDrain()
-      for (const close of [...subscriptions]) void Promise.resolve(close()).catch(() => {})
+      for (const close of [...subscriptions]) {
+        const closing = Promise.resolve().then(close).then(() => undefined)
+        subscriptionClosures.add(closing)
+        closing.finally(() => subscriptionClosures.delete(closing)).catch(() => {})
+        closing.catch(() => {})
+      }
       subscriptions.clear()
     },
     drainRuntime() {
       runtime.startDrain()
       drainPromise ??= (async () => {
-        const work = [...finiteEffects.keys(), ...pendingBindings]
+        const work = [...finiteEffects.keys(), ...pendingBindings, ...subscriptionClosures]
         if (work.length === 0) return
         const completed = await Promise.race([
-          Promise.allSettled(work).then(() => true),
-          new Promise<false>((resolve) => setTimeout(() => resolve(false), graceMs)),
+          Promise.allSettled(work).then((results) => ({ completed: true as const, results })),
+          new Promise<{ completed: false }>((resolve) => {
+            setTimeout(() => resolve({ completed: false }), graceMs)
+          }),
         ])
-        if (completed) return
+        if (completed.completed) {
+          const failed = completed.results.find(
+            (result): result is PromiseRejectedResult => result.status === 'rejected',
+          )
+          if (failed) throw failed.reason
+          return
+        }
         const closed = new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'agent host is closing')
         for (const reject of [...rejectPendingBindings]) reject(closed)
+        const terminalizations: Promise<void>[] = []
         for (const key of finiteEffects.values()) {
-          const unknown = new AgentGatewayError(
-            AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
-            'effect outcome could not be safely replayed',
-          )
-          void runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
+          terminalizations.push((async () => {
+            const record = await runtime.ledger.read(key)
+            if (record?.state === 'pending-admission' || record?.state === 'admission-accepted') {
+              await runtime.ledger.reject(key, { kind: 'gateway', error: closed.toJSON() })
+              return
+            }
+            if (record?.state === 'in-flight') {
+              const unknown = new AgentGatewayError(
+                AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+                'effect outcome could not be safely replayed',
+              )
+              await runtime.ledger.markOutcomeUnknown(key, unknown.toJSON())
+            }
+          })().catch(() => {}))
         }
+        await Promise.allSettled(terminalizations)
       })()
       return drainPromise
     },
@@ -327,37 +596,52 @@ function createRuntime(
       subscriptions.add(close)
       return () => subscriptions.delete(close)
     },
-    trackEffect(effect, key) {
+    startPreparedEffect(key, start) {
+      runtime.assertOpen()
+      let resolveEffect!: (value: Awaited<ReturnType<typeof start>>) => void
+      let rejectEffect!: (error: unknown) => void
+      const effect = new Promise<Awaited<ReturnType<typeof start>>>((resolve, reject) => {
+        resolveEffect = resolve
+        rejectEffect = reject
+      })
       finiteEffects.set(effect, key)
       effect.finally(() => finiteEffects.delete(effect)).catch(() => {})
+      try {
+        Promise.resolve(start()).then(resolveEffect, rejectEffect)
+      } catch (error) {
+        rejectEffect(error)
+      }
       return effect
     },
-    async retireCompatibilityComposition(composition) {
-      for (const [key, promise] of bindings) {
-        const result = await promise.catch(() => undefined)
-        if (!result || result.composition !== composition) continue
-        if (bindings.get(key) === promise) bindings.delete(key)
-        let firstError: unknown
-        try {
-          await result.composition.dispose()
-        } catch (error) {
-          firstError = error
-        }
-        try {
-          await result.environmentLease.retire()
-        } catch (error) {
-          firstError ??= error
-        }
-        if (firstError !== undefined) throw firstError
-        return
+    async runBindingOperation(bindingKey, operation) {
+      const previous = bindingOperationTails.get(bindingKey) ?? Promise.resolve()
+      let release!: () => void
+      const current = new Promise<void>((resolve) => { release = resolve })
+      const tail = previous.then(() => current)
+      bindingOperationTails.set(bindingKey, tail)
+      await previous
+      runtime.assertOpen()
+      try {
+        return await operation()
+      } finally {
+        release()
+        if (bindingOperationTails.get(bindingKey) === tail) bindingOperationTails.delete(bindingKey)
       }
     },
     closeRuntime() {
       closePromise ??= (async () => {
-        await runtime.drainRuntime()
         let firstError: unknown
+        try {
+          await runtime.drainRuntime()
+        } catch (error) {
+          firstError = error
+        }
         const resolvedBindings = await Promise.allSettled([...bindings.values()])
         bindings.clear()
+        publishedBindings.clear()
+        publishedCurrentBindings.clear()
+        nextBindingGeneration.clear()
+        currentBindingReservations.clear()
         const bindingCleanup = Promise.allSettled(resolvedBindings.flatMap((result) =>
           result.status === 'fulfilled' ? [disposeBinding(result.value)] : [],
         ))
@@ -384,6 +668,11 @@ function createRuntime(
         } catch (error) {
           firstError ??= error
         }
+        try {
+          await ledger.close?.()
+        } catch (error) {
+          firstError ??= error
+        }
         if (firstError !== undefined) throw firstError
       })()
       return closePromise
@@ -392,13 +681,58 @@ function createRuntime(
   return runtime
 }
 
+
+function readyEnvironmentCapabilities(): import('../runtime/readyStatus').AgentCapabilityReadiness {
+  return Object.freeze({
+    chat: Object.freeze({ state: 'not-started' as const }),
+    workspace: Object.freeze({ state: 'ready' as const }),
+    runtimeDependencies: Object.freeze({ state: 'ready' as const }),
+  })
+}
+
 export async function createAgentHost(
   options: CreateAgentHostOptions,
 ): Promise<CreatedAgentHost> {
+  const hasEnvironmentResolver = options.resolveAuthorizedEnvironmentScope !== undefined
+  const hasAgentResolver = options.resolveAuthorizedAgentRuntimeScope !== undefined
+  if (hasEnvironmentResolver !== hasAgentResolver) {
+    throw new TypeError('direct Environment and Agent runtime scope resolvers must be provided together')
+  }
+  if (!hasEnvironmentResolver) {
+    throw new TypeError('createAgentHost requires direct Environment and Agent runtime scope resolvers')
+  }
   const compiledAgents = await compileFleet(options)
   const hostId = await resolveHostId(options)
+  const durableLedgerPath = options.requestLedgerPath
+    ?? (options.sessionRoot ? join(options.sessionRoot, '.agent-request-ledger.sqlite') : undefined)
+  if (!options.requestLedger && !options.inMemoryRequestLedgerMode && !durableLedgerPath) {
+    throw new TypeError(
+      'createAgentHost requires requestLedgerPath or sessionRoot for its durable transactional ledger',
+    )
+  }
+  if (durableLedgerPath) await mkdir(dirname(durableLedgerPath), { recursive: true })
   const runtime = createRuntime(options, compiledAgents)
+  if (
+    runtime.ledger.durability !== 'durable-transactional'
+    && options.inMemoryRequestLedgerMode === undefined
+  ) {
+    throw new TypeError(
+      'createAgentHost requires a transactional durable AgentRequestLedger; '
+      + 'in-memory mode must be explicitly limited to test/development',
+    )
+  }
   const gateway = new EmbeddedAgentGateway(runtime)
+  const assertStrongLedger = () => {
+    if (
+      runtime.ledger.durability !== 'durable-transactional'
+      && options.inMemoryRequestLedgerMode === undefined
+    ) {
+      throw new TypeError(
+        'Agent Host production routes require a transactional durable AgentRequestLedger; '
+        + 'in-memory mode must be explicitly limited to test/development',
+      )
+    }
+  }
   let hostClose: Promise<void> | undefined
   let drainPromise: Promise<void> | undefined
   const host: AgentHostHandle = Object.freeze({
@@ -424,183 +758,113 @@ export async function createAgentHost(
     },
   })
 
-  const legacyProjectionRuntime: AgentHostLegacyProjectionRuntime = Object.freeze({
+  const runtimeCapabilityProjection = (
+    projectionOptions: AgentHostDirectProjectionOptions,
+  ) => createAgentHostRuntimeCapabilityProjection({
+    runtime,
     gateway,
-    async resolveComposition(agentTypeId: string, scope: AuthorizedAgentScope) {
-      const claim = await runtime.verify(scope)
-      const composition = (await runtime.resolveBinding(agentTypeId, scope, claim)).composition
-      return {
-        agent: composition.agent,
-        harness: composition.harness,
-        service: composition.service,
-        tools: composition.tools,
-        runtimeBundle: composition.runtimeBundle,
-        readyTracker: composition.readyTracker,
-        retire: () => runtime.retireCompatibilityComposition(composition),
-      }
-    },
-    createAddressedRoutes(addressedOptions: Parameters<AgentHostLegacyProjectionRuntime['createAddressedRoutes']>[0]) {
-      return createAgentHostRoutes({
-        host,
-        gateway,
-        options: { ...addressedOptions, legacyPiChatAliases: false },
-        manageLifecycle: false,
-        async resolveLegacyPiChatService(request) {
-          const scope = await addressedOptions.authorizeRequest(request)
-          const claim = await runtime.verify(scope)
-          const binding = await runtime.resolveBinding(addressedOptions.defaultAgentTypeId, scope, claim)
-          return createLegacyPiChatCompatibilityService({
-            gateway,
-            service: binding.composition.service,
-            scope,
-            agentTypeId: addressedOptions.defaultAgentTypeId,
-          })
-        },
-      })
-    },
-    createPiChatService({ service, scope, agentTypeId }: Parameters<AgentHostLegacyProjectionRuntime['createPiChatService']>[0]) {
-      return createLegacyPiChatCompatibilityService({ gateway, service, scope, agentTypeId })
-    },
+    options: projectionOptions,
   })
+
+  const acquireAppEnvironment = async (input: {
+    readonly authorizedScope: AuthorizedAgentScope
+    readonly intent: AuthorizedEnvironmentIntent
+  }): Promise<AgentHostEnvironmentLease> => {
+    const claim = await runtime.verify(input.authorizedScope)
+    const environment = await runtime.resolveEnvironmentScope(
+      input.authorizedScope,
+      claim,
+      input.intent,
+    )
+    const providerLease = await runtime.acquireResolvedEnvironment(
+      claim.workspaceScopeId,
+      environment,
+    )
+    const abort = new AbortController()
+    let active = true
+    let unregister = () => {}
+    const release = () => {
+      if (!active) return
+      active = false
+      abort.abort()
+      unregister()
+      providerLease.release()
+    }
+    try {
+      unregister = runtime.registerSubscription(release)
+      const filesystemBindings = environment.resolveFilesystemBindings
+        ? await environment.resolveFilesystemBindings({
+            verifiedClaim: claim,
+            requestId: input.intent.requestId,
+          })
+        : providerLease.bundle.filesystemBindings
+      if (!active) throw bindingDisposedError()
+      const assertActive = () => {
+        if (!active) throw bindingDisposedError()
+      }
+      const workspace = guardMethods(providerLease.bundle.workspace, assertActive)
+      const storageRoot = getOptionalRuntimeBundleStorageRoot(providerLease.bundle)
+      const gitWorkspaceSource = storageRoot
+        ? (options.runtimeHost ?? providerLease.bundle.runtimeHost)?.createNodeWorkspace(storageRoot)
+          ?? providerLease.bundle.workspace
+        : providerLease.bundle.workspace
+      const guardedFilesystemBindings = filesystemBindings?.map((binding) => Object.freeze({
+        ...binding,
+        operations: guardMethods(binding.operations, assertActive),
+      }))
+      return Object.freeze({
+        workspace,
+        gitWorkspace: guardMethods(gitWorkspaceSource, assertActive),
+        fileSearch: guardMethods(providerLease.bundle.fileSearch, assertActive),
+        ...(guardedFilesystemBindings
+          ? { filesystemBindings: Object.freeze(guardedFilesystemBindings) }
+          : {}),
+        readiness: readyEnvironmentCapabilities(),
+        signal: abort.signal,
+        release,
+      })
+    } catch (error) {
+      release()
+      throw error
+    }
+  }
+
+  const runWithWorkspaceAgent = (
+    input: import('./types').AgentHostDispatcherRunInput,
+    run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,
+  ) => runWithWorkspaceAgentLease({ runtime, gateway, request: input, run })
+
+  const resolveProjectionPiChatService = async (
+    authorizeAgentRequest: (request: import('fastify').FastifyRequest) => Promise<AuthorizedAgentScope>,
+    request: import('fastify').FastifyRequest,
+    agentTypeId: string,
+    sessionId: string,
+  ) => {
+    const scope = await authorizeAgentRequest(request)
+    const binding = (await gateway.resolveHostSessionBinding(scope, { agentTypeId, sessionId })).binding
+    return {
+      scope,
+      service: binding.composition.service,
+    }
+  }
 
   const created = Object.freeze({
     host,
     gateway,
-    registerRoutes(projectionOptions: AgentHostHttpProjectionOptions) {
-      if (!runtime.compiledById.has(projectionOptions.defaultAgentTypeId)) {
-        throw new TypeError(`unknown defaultAgentTypeId: ${projectionOptions.defaultAgentTypeId}`)
-      }
-      if (projectionOptions.legacyRoutePolicy) {
-        return async (app: FastifyInstance) => {
-          let lifecycle: import('./types').AgentHostLegacyProjectionLifecycle | undefined
-          app.addHook('preClose', async () => {
-            lifecycle?.startDraining()
-            await host.drain()
-          })
-          app.addHook('onClose', async () => {
-            let firstError: unknown
-            try {
-              await lifecycle?.closeBindings()
-            } catch (error) {
-              firstError = error
-            }
-            try {
-              await host.close()
-            } catch (error) {
-              if (firstError === undefined) firstError = error
-              else app.log.warn({ err: error }, '[agent] failed to close Agent Host after an earlier cleanup error')
-            }
-            if (firstError !== undefined) throw firstError
-          })
-          await projectionOptions.legacyRoutePolicy.mount({
-            app,
-            runtime: legacyProjectionRuntime,
-            defaultAgentTypeId: projectionOptions.defaultAgentTypeId,
-            registerLifecycle(next) {
-              if (lifecycle) throw new TypeError('legacy route lifecycle already registered')
-              lifecycle = next
-            },
-          })
-          if (!lifecycle) throw new TypeError('legacy route policy did not register its lifecycle')
-        }
-      }
-      const authorizeRequest = projectionOptions.authorizeRequest
-      if (!authorizeRequest) {
-        throw new TypeError('authorizeRequest is required for the addressed Agent Host projection')
-      }
+    acquireEnvironment: acquireAppEnvironment,
+    runWithWorkspaceAgent,
+    registerDirectRoutes(projectionOptions: AgentHostDirectProjectionOptions) {
+      assertStrongLedger()
       return createAgentHostRoutes({
         host,
         gateway,
-        options: { ...projectionOptions, authorizeRequest },
-        async resolveLegacyPiChatService(request) {
-          const scope = await authorizeRequest(request)
-          const claim = await runtime.verify(scope)
-          const binding = await runtime.resolveBinding(projectionOptions.defaultAgentTypeId, scope, claim)
-          return createLegacyPiChatCompatibilityService({
-            gateway,
-            service: binding.composition.service,
-            scope,
-            agentTypeId: projectionOptions.defaultAgentTypeId,
-          })
+        options: projectionOptions,
+        runtimeCapabilities: runtimeCapabilityProjection(projectionOptions),
+        resolveAddressedPiChatService(request, agentTypeId, sessionId) {
+          return resolveProjectionPiChatService(projectionOptions.authorizeAgentRequest, request, agentTypeId, sessionId)
         },
       })
     },
   })
-  compatibilityRuntimes.set(created, runtime)
-  compatibilityGateways.set(created, gateway)
   return created
-}
-
-/**
- * Additive addressed projection for compatibility wrappers that already own
- * their parent Fastify lifecycle. Legacy aliases remain registered by the
- * wrapper in their historical order.
- */
-export function createAgentHostCompatibilityRoutes(
-  created: CreatedAgentHost,
-  projectionOptions: AgentHostAddressedHttpProjectionOptions,
-): import('fastify').FastifyPluginAsync {
-  const runtime = compatibilityRuntimes.get(created)
-  const gateway = compatibilityGateways.get(created)
-  if (!runtime || !gateway) throw new TypeError('unknown Agent Host compatibility handle')
-  if (!runtime.compiledById.has(projectionOptions.defaultAgentTypeId)) {
-    throw new TypeError(`unknown defaultAgentTypeId: ${projectionOptions.defaultAgentTypeId}`)
-  }
-  const authorizeRequest = projectionOptions.authorizeRequest
-  if (!authorizeRequest) {
-    throw new TypeError('authorizeRequest is required for compatibility routes')
-  }
-  return createAgentHostRoutes({
-    host: created.host,
-    gateway,
-    options: { ...projectionOptions, authorizeRequest, legacyPiChatAliases: false },
-    manageLifecycle: false,
-    async resolveLegacyPiChatService(request) {
-      const scope = await authorizeRequest(request)
-      const claim = await runtime.verify(scope)
-      const binding = await runtime.resolveBinding(projectionOptions.defaultAgentTypeId, scope, claim)
-      return createLegacyPiChatCompatibilityService({
-        gateway,
-        service: binding.composition.service,
-        scope,
-        agentTypeId: projectionOptions.defaultAgentTypeId,
-      })
-    },
-  })
-}
-
-/**
- * Internal compatibility projection for the two legacy public wrappers. It
- * deliberately resolves through the same Host runtime/binding funnel used by
- * the Gateway; it cannot construct a composition independently.
- */
-export async function resolveAgentHostCompatibilityComposition(
-  created: CreatedAgentHost,
-  agentTypeId: string,
-  scope: AuthorizedAgentScope,
-): Promise<BuiltAgentComposition> {
-  const runtime = compatibilityRuntimes.get(created)
-  if (!runtime) throw new TypeError('unknown Agent Host compatibility handle')
-  const claim = await runtime.verify(scope)
-  return (await runtime.resolveBinding(agentTypeId, scope, claim)).composition
-}
-
-export function createAgentHostLegacyPiChatCompatibilityService(
-  created: CreatedAgentHost,
-  service: import('../../core/piChatSessionService').AgentCoreSessionService,
-  scope: AuthorizedAgentScope,
-  agentTypeId: string,
-): import('../../core/piChatSessionService').PiChatSessionService {
-  const gateway = compatibilityGateways.get(created)
-  if (!gateway) throw new TypeError('unknown Agent Host compatibility handle')
-  return createLegacyPiChatCompatibilityService({ gateway, service, scope, agentTypeId })
-}
-
-export async function retireAgentHostCompatibilityComposition(
-  created: CreatedAgentHost,
-  composition: BuiltAgentComposition,
-): Promise<void> {
-  const runtime = compatibilityRuntimes.get(created)
-  if (!runtime) throw new TypeError('unknown Agent Host compatibility handle')
-  await runtime.retireCompatibilityComposition(composition)
 }

@@ -11,7 +11,7 @@ import defaultBoringAutomationServerPlugin, { createBoringAutomationServerPlugin
 describe("boring automation server plugin", () => {
   it("wires default-export ctx.workspaceRoot into file-backed routes", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "boring-automation-plugin-"))
-    const plugin = defaultBoringAutomationServerPlugin({}, { workspaceRoot })
+    const plugin = defaultBoringAutomationServerPlugin(undefined, { workspaceRoot, agentTypeId: "selected-agent" })
     expect(plugin.id).toBe(BORING_AUTOMATION_PLUGIN_ID)
 
     const app = Fastify()
@@ -26,7 +26,7 @@ describe("boring automation server plugin", () => {
 
   it("contributes the tool through trusted boot-time server composition", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "boring-automation-tool-"))
-    const plugin = createBoringAutomationServerPlugin({ workspaceRoot })
+    const plugin = createBoringAutomationServerPlugin({ agentTypeId: "selected-agent", workspaceRoot })
     const collection = bootstrapServer({ plugins: [plugin] })
 
     expect(plugin.agentTools?.map((tool) => tool.name)).toEqual([BORING_AUTOMATION_TOOL_NAME])
@@ -37,7 +37,7 @@ describe("boring automation server plugin", () => {
 
   it("boot-time gate disables only the tool while routes remain available", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "boring-automation-disabled-tool-"))
-    const plugin = createBoringAutomationServerPlugin({ workspaceRoot, agentToolEnabled: false })
+    const plugin = createBoringAutomationServerPlugin({ agentTypeId: "selected-agent", workspaceRoot, agentToolEnabled: false })
     expect(plugin.agentTools).toEqual([])
 
     const app = Fastify()
@@ -53,12 +53,18 @@ describe("boring automation server plugin", () => {
   it("binds hosted routes to the actor workspace before selecting prompt metadata", async () => {
     const sql = vi.fn(async () => [])
     const workspace = { root: "/workspace", runtimeContext: {} } as never
-    const resolveWithWorkspace = vi.fn(async () => ({ workspace, dispatcher: {} }))
-    const plugin = defaultBoringAutomationServerPlugin({}, {
+    const runWithWorkspaceAgent = vi.fn(async (_input, run) => run({
+      workspace,
+      signal: new AbortController().signal,
+      async dispatch() { throw new Error("unexpected dispatch") },
+      async interrupt() { return { accepted: true, cursor: 0 } },
+      async stop() { return { accepted: true, cursor: 0, stopped: true, clearedQueue: [] } },
+    }))
+    const plugin = defaultBoringAutomationServerPlugin({ agentTypeId: "selected-agent" }, {
       workspaceRoot: "/hosted/workspace",
       trusted: {
         sql: sql as never,
-        workspaceAgentDispatcherResolver: { resolve: vi.fn(), resolveWithWorkspace } as never,
+        workspaceAgentDispatcherResolver: { resolve: vi.fn(), runWithWorkspaceAgent } as never,
         actorResolver: vi.fn(() => ({ workspaceId: "workspace-1", userId: "user-1" })),
         actorVerifier: vi.fn(() => true),
       },
@@ -70,9 +76,14 @@ describe("boring automation server plugin", () => {
 
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual({ ok: true, automations: [] })
-    expect(resolveWithWorkspace).toHaveBeenCalledWith(
-      { workspaceId: "workspace-1", userId: "user-1" },
-      { request: expect.any(Object) },
+    expect(runWithWorkspaceAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentTypeId: "selected-agent",
+        context: { workspaceId: "workspace-1", userId: "user-1" },
+        request: expect.any(Object),
+        requestId: expect.any(String),
+      }),
+      expect.any(Function),
     )
     expect(sql).toHaveBeenCalled()
     await app.close()
@@ -80,7 +91,7 @@ describe("boring automation server plugin", () => {
 
   it("hosted tool fails closed before the unbound fallback store can be queried", async () => {
     const sql = vi.fn(async () => [])
-    const plugin = defaultBoringAutomationServerPlugin({}, {
+    const plugin = defaultBoringAutomationServerPlugin({ agentTypeId: "selected-agent" }, {
       workspaceRoot: "/hosted/workspace",
       trusted: {
         sql: sql as never,
@@ -105,6 +116,7 @@ describe("boring automation server plugin", () => {
   it("starts hosted due evaluation internally when Fastify becomes ready", async () => {
     const runDue = vi.fn(async () => ({ now: "2026-07-23T09:00:00.000Z", outcomes: [] }))
     const plugin = createBoringAutomationServerPlugin({
+      agentTypeId: "selected-agent",
       store: {} as never,
       hostedDueRunService: { runDue },
     })
@@ -122,6 +134,7 @@ describe("boring automation server plugin", () => {
     const activeRun = new Promise<{ now: string; outcomes: [] }>((resolve) => { resolveRun = resolve })
     const runDue = vi.fn(async () => await activeRun)
     const plugin = createBoringAutomationServerPlugin({
+      agentTypeId: "selected-agent",
       store: {} as never,
       hostedDueRunService: { runDue },
       hostedTriggerToken: "trigger-secret",
@@ -148,6 +161,7 @@ describe("boring automation server plugin", () => {
     let resolveRun!: (value: { now: string; outcomes: [] }) => void
     const activeRun = new Promise<{ now: string; outcomes: [] }>((resolve) => { resolveRun = resolve })
     const plugin = createBoringAutomationServerPlugin({
+      agentTypeId: "selected-agent",
       store: {} as never,
       hostedDueRunService: { runDue: async () => await activeRun },
     })
@@ -164,6 +178,7 @@ describe("boring automation server plugin", () => {
   it("leaves a caller-owned event bus open and closes a plugin-owned bus", async () => {
     const callerClose = vi.fn(async () => {})
     const callerPlugin = createBoringAutomationServerPlugin({
+      agentTypeId: "selected-agent",
       store: {} as never,
       eventBus: { publish: vi.fn(), subscribe: vi.fn(), close: callerClose } as never,
     })
@@ -174,6 +189,7 @@ describe("boring automation server plugin", () => {
 
     const pluginClose = vi.fn(async () => {})
     const ownedPlugin = createBoringAutomationServerPlugin({
+      agentTypeId: "selected-agent",
       store: {} as never,
       eventBus: { publish: vi.fn(), subscribe: vi.fn(), close: pluginClose } as never,
       eventBusOwner: "plugin",
@@ -187,6 +203,7 @@ describe("boring automation server plugin", () => {
   it("allows hosted composition to opt out when an external scheduler owns wake-ups", async () => {
     const runDue = vi.fn(async () => ({ now: "2026-07-23T09:00:00.000Z", outcomes: [] }))
     const plugin = createBoringAutomationServerPlugin({
+      agentTypeId: "selected-agent",
       store: {} as never,
       hostedDueRunService: { runDue },
       hostedSchedulerEnabled: false,
@@ -202,7 +219,7 @@ describe("boring automation server plugin", () => {
   it("honors the hosted scheduler environment opt-out in default composition", async () => {
     vi.stubEnv("BORING_AUTOMATION_INTERNAL_SCHEDULER", "false")
     const sql = vi.fn(async () => [])
-    const plugin = defaultBoringAutomationServerPlugin({}, {
+    const plugin = defaultBoringAutomationServerPlugin({ agentTypeId: "selected-agent" }, {
       workspaceRoot: "/hosted/workspace",
       trusted: {
         sql: sql as never,
@@ -223,7 +240,7 @@ describe("boring automation server plugin", () => {
   })
 
   it("requires workspaceRoot when no store is provided", () => {
-    expect(() => createBoringAutomationServerPlugin()).toThrow(/requires workspaceRoot/)
+    expect(() => createBoringAutomationServerPlugin({ agentTypeId: "selected-agent" })).toThrow(/requires workspaceRoot/)
   })
 
   it("fails scoped actor resolution before selecting an automation store", async () => {
@@ -235,6 +252,7 @@ describe("boring automation server plugin", () => {
     })
     const storeForRequest = vi.fn()
     const plugin = createBoringAutomationServerPlugin({
+      agentTypeId: "selected-agent",
       store: {} as never,
       actorResolver,
       storeForRequest,

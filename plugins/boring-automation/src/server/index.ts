@@ -13,6 +13,7 @@ import { HostedDueCoordinator } from "./hostedDueCoordinator"
 import { HostedDueRunService } from "./hostedDueRunService"
 import { HostedAutomationScheduler } from "./hostedScheduler"
 import { PostgresAutomationStore } from "./postgresStore"
+import { createLeaseBoundHostedAutomationStore } from "./hostedStore"
 import { createBoringAutomationTool } from "./automationTool"
 import { ManualRunExecutor, type VerifiedAutomationActor } from "./manualRunExecutor"
 import { resolveAutomationOperationsForActor, type AutomationStoreMode } from "./operations"
@@ -21,6 +22,7 @@ import { automationRoutes } from "./routes"
 import type { AutomationStore } from "./store"
 
 export interface BoringAutomationServerPluginOptions {
+  agentTypeId: string
   workspaceRoot?: string
   store?: AutomationStore
   dispatcherResolver?: WorkspaceAgentDispatcherResolver
@@ -41,12 +43,13 @@ export interface BoringAutomationServerPluginOptions {
   hostedSchedulerEnabled?: boolean
 }
 
-export function createBoringAutomationServerPlugin(options: BoringAutomationServerPluginOptions = {}): WorkspaceServerPlugin {
+export function createBoringAutomationServerPlugin(options: BoringAutomationServerPluginOptions): WorkspaceServerPlugin {
   const store = options.store ?? createDefaultStore(options.workspaceRoot)
   const eventBus = options.eventBus ?? new InMemoryAutomationRunEventBus()
   const eventBusOwner = options.eventBusOwner ?? (options.eventBus ? "caller" : "plugin")
   const manualRunExecutor = options.dispatcherResolver && options.actorResolver
-    ? new ManualRunExecutor({
+      ? new ManualRunExecutor({
+        agentTypeId: options.agentTypeId,
         store,
         storeForRequest: options.storeForRequest,
         dispatcherResolver: options.dispatcherResolver,
@@ -68,6 +71,7 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
       resolveStore: async (actor) => options.storeForActor ? options.storeForActor(actor) : store,
       resolveExecutor: options.dispatcherResolver
         ? async (actor, actorStore) => new ManualRunExecutor({
+            agentTypeId: options.agentTypeId,
             store: actorStore,
             dispatcherResolver: options.dispatcherResolver!,
             actorResolver: () => actor,
@@ -126,50 +130,53 @@ async function createHostedStore(
   sql: postgres.Sql,
   actor: VerifiedAutomationActor,
   dispatcherResolver: WorkspaceAgentDispatcherResolver,
+  agentTypeId: string,
   request?: FastifyRequest,
-): Promise<PostgresAutomationStore> {
-  if (!dispatcherResolver.resolveWithWorkspace) throw new Error("workspace-bound automation storage is unavailable")
-  const binding = await dispatcherResolver.resolveWithWorkspace(actor, request ? { request } : undefined)
-  return new PostgresAutomationStore(sql, actor, undefined, binding.workspace)
+): Promise<AutomationStore> {
+  return createLeaseBoundHostedAutomationStore(sql, actor, dispatcherResolver, agentTypeId, request)
 }
 
 export default function defaultBoringAutomationServerPlugin(
-  options?: BoringAutomationServerPluginOptions,
-  ctx?: Pick<WorkspaceAgentServerPluginContext, "workspaceRoot"> & Partial<Pick<WorkspaceAgentServerPluginContext, "trusted">>,
+  options: BoringAutomationServerPluginOptions | undefined,
+  ctx?: Pick<WorkspaceAgentServerPluginContext, "workspaceRoot"> & Partial<Pick<WorkspaceAgentServerPluginContext, "agentTypeId" | "trusted">>,
 ): WorkspaceServerPlugin {
+  const agentTypeId = options?.agentTypeId ?? ctx?.agentTypeId
+  if (!agentTypeId) throw new Error("boring automation requires a host-selected agentTypeId")
+  const resolvedOptions: BoringAutomationServerPluginOptions = { ...options, agentTypeId }
   const trusted = ctx?.trusted
-  if (!options?.store && trusted?.sql && trusted.workspaceAgentDispatcherResolver && trusted.actorResolver) {
+  if (!resolvedOptions.store && trusted?.sql && trusted.workspaceAgentDispatcherResolver && trusted.actorResolver) {
     const sql = trusted.sql as postgres.Sql
-    const dispatcherResolver = options?.dispatcherResolver ?? trusted.workspaceAgentDispatcherResolver
-    const eventBus = options?.eventBus ?? new PostgresAutomationRunEventBus(sql)
-    const eventBusOwner = options?.eventBusOwner ?? (options?.eventBus ? "caller" : "plugin")
+    const dispatcherResolver = resolvedOptions.dispatcherResolver ?? trusted.workspaceAgentDispatcherResolver
+    const eventBus = resolvedOptions.eventBus ?? new PostgresAutomationRunEventBus(sql)
+    const eventBusOwner = resolvedOptions.eventBusOwner ?? (resolvedOptions.eventBus ? "caller" : "plugin")
     const fallbackStore = new PostgresAutomationStore(sql, { workspaceId: "unbound", userId: "unbound" })
     return createBoringAutomationServerPlugin({
-      ...options,
-      hostedSchedulerEnabled: options?.hostedSchedulerEnabled ?? process.env.BORING_AUTOMATION_INTERNAL_SCHEDULER !== "false",
+      ...resolvedOptions,
+      hostedSchedulerEnabled: resolvedOptions.hostedSchedulerEnabled ?? process.env.BORING_AUTOMATION_INTERNAL_SCHEDULER !== "false",
       store: fallbackStore,
       storeMode: "hosted",
       eventBus,
       eventBusOwner,
-      storeForRequest: async (request, actor) => await createHostedStore(sql, actor, dispatcherResolver, request),
-      storeForActor: async (actor) => await createHostedStore(sql, actor, dispatcherResolver),
+      storeForRequest: async (request, actor) => await createHostedStore(sql, actor, dispatcherResolver, agentTypeId, request),
+      storeForActor: async (actor) => await createHostedStore(sql, actor, dispatcherResolver, agentTypeId),
       dispatcherResolver,
-      actorResolver: options?.actorResolver ?? trusted.actorResolver,
-      actorVerifier: options?.actorVerifier ?? trusted.actorVerifier,
-      hostedTriggerToken: options?.hostedTriggerToken ?? trusted.hostedAutomationTriggerToken,
-      hostedDueRunService: options?.hostedDueRunService ?? new HostedDueRunService({
+      actorResolver: resolvedOptions.actorResolver ?? trusted.actorResolver,
+      actorVerifier: resolvedOptions.actorVerifier ?? trusted.actorVerifier,
+      hostedTriggerToken: resolvedOptions.hostedTriggerToken ?? trusted.hostedAutomationTriggerToken,
+      hostedDueRunService: resolvedOptions.hostedDueRunService ?? new HostedDueRunService({
+        agentTypeId,
         sql,
         dispatcherResolver,
-        verifyActor: options?.actorVerifier ?? trusted.actorVerifier!,
+        verifyActor: resolvedOptions.actorVerifier ?? trusted.actorVerifier!,
         eventPublisher: eventBus,
       }),
     })
   }
   return createBoringAutomationServerPlugin({
-    ...options,
-    workspaceRoot: options?.workspaceRoot ?? ctx?.workspaceRoot,
-    dispatcherResolver: options?.dispatcherResolver ?? trusted?.workspaceAgentDispatcherResolver,
-    actorResolver: options?.actorResolver ?? trusted?.actorResolver,
+    ...resolvedOptions,
+    workspaceRoot: resolvedOptions.workspaceRoot ?? ctx?.workspaceRoot,
+    dispatcherResolver: resolvedOptions.dispatcherResolver ?? trusted?.workspaceAgentDispatcherResolver,
+    actorResolver: resolvedOptions.actorResolver ?? trusted?.actorResolver,
   })
 }
 

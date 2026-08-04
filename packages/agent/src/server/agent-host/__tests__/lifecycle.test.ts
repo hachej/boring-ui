@@ -1,20 +1,16 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import Fastify from 'fastify'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
 import type { AgentCoreHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { createAgentHost } from '../createAgentHost'
-import { createCompatibilityScopeIssuer } from '../compatibilityScope'
-import { createAgentHostLegacyRoutePolicy } from '../../agentHostLegacyRoutePolicy'
-import type { CompatibilityResolvedAgentRuntimeScope } from '../buildAgentComposition'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import type {
-  AgentHostHttpProjectionOptions,
   AgentRequestKey,
+  AgentRequestLedger,
   CreateAgentHostOptions,
 } from '../types'
 
@@ -38,18 +34,20 @@ async function options(overrides: Partial<CreateAgentHostOptions> = {}) {
     sessionRoot,
     shutdownGraceMs: 10,
     harnessFactory: createScriptedPiHarness as AgentCoreHarnessFactory,
-    resolveRuntimeScope: async () => ({
+    resolveAuthorizedEnvironmentScope: async () => ({
+      placementIdentity: 'direct-a',
+      workspaceRoot,
+      provisioningFingerprint: 'provision-a',
+    }),
+    resolveAuthorizedAgentRuntimeScope: async () => ({
       identity: 'runtime-a',
-      environment: {
-        placementIdentity: 'direct-a',
-        workspaceRoot,
-        provisioningFingerprint: 'provision-a',
-      },
+      physicalBindingIdentity: 'runtime-a',
+      resourceInputDigest: 'runtime-a',
       sessionNamespace: 'alpha-a',
     }),
     ...overrides,
   }
-  return { value, dispose }
+  return { value, dispose, workspaceRoot }
 }
 
 const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' } as AuthorizedAgentScope
@@ -79,73 +77,6 @@ async function expectBounded(operation: () => Promise<void>): Promise<void> {
 }
 
 describe('Agent Host lifecycle', () => {
-  it('mounts the real full route profile once and drains bindings and Host exactly once', async () => {
-    const sessionRoot = await mkdtemp(join(tmpdir(), 'agent-host-legacy-profile-'))
-    roots.push(sessionRoot)
-    const workspaceRoot = await mkdtemp(join(tmpdir(), 'agent-host-legacy-workspace-'))
-    roots.push(workspaceRoot)
-    const baseAdapter = createTestRuntimeModeAdapter('direct')
-    const disposeRuntime = vi.fn(async () => {})
-    const disposeAdapter = vi.fn(async () => baseAdapter.dispose?.())
-    const runtimeModeAdapter = {
-      ...baseAdapter,
-      async create(ctx: Parameters<typeof baseAdapter.create>[0]) {
-        return { ...(await baseAdapter.create(ctx)), disposeRuntime }
-      },
-      dispose: disposeAdapter,
-    }
-    const issuer = createCompatibilityScopeIssuer<CompatibilityResolvedAgentRuntimeScope>()
-    const created = await createAgentHost({
-      agents: [{ agentTypeId: 'default', legacyDefault: true }],
-      fleetCompiler: { compile: async ({ agents }) => agents },
-      hostId: 'legacy-profile-host',
-      scopeVerifier: issuer.verifier,
-      runtimeModeAdapter,
-      sessionRoot,
-      harnessFactory: createScriptedPiHarness as AgentCoreHarnessFactory,
-      resolveRuntimeScope: async ({ scope }) => issuer.context(scope),
-    })
-    const legacyRoutePolicy = createAgentHostLegacyRoutePolicy({
-      workspaceRoot,
-      sessionRoot,
-      runtimeModeAdapter,
-      externalPlugins: false,
-      registerHealthRoute: false,
-      harnessFactory: createScriptedPiHarness as AgentCoreHarnessFactory,
-    }, {
-      issueScope: ({ claim, runtimeScope }) => issuer.issue(claim, runtimeScope as CompatibilityResolvedAgentRuntimeScope),
-      gatewayUsesLegacyAdmission: true,
-    })
-    const app = Fastify({ logger: false })
-    await app.register(created.registerRoutes({ defaultAgentTypeId: 'default', legacyRoutePolicy }))
-    await app.ready()
-
-    expect((await app.inject({ method: 'GET', url: '/api/v1/agents' })).statusCode).toBe(200)
-    expect((await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })).statusCode).toBe(200)
-    expect((await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })).statusCode).toBe(200)
-
-    await Promise.all([app.close(), app.close()])
-    expect((await created.host.describe()).draining).toBe(true)
-    expect(disposeRuntime).toHaveBeenCalledOnce()
-    expect(disposeAdapter).toHaveBeenCalledOnce()
-  })
-
-  it('fails fast for an unknown default Agent and malformed addressed-only projection', async () => {
-    const fixture = await options()
-    const created = await createAgentHost(fixture.value)
-    const authorizeRequest = vi.fn(async () => scope)
-
-    expect(() => created.registerRoutes({
-      defaultAgentTypeId: 'unknown',
-      authorizeRequest,
-    })).toThrow(/unknown defaultAgentTypeId/)
-    expect(() => created.registerRoutes({
-      defaultAgentTypeId: 'alpha',
-    } as AgentHostHttpProjectionOptions)).toThrow(/authorizeRequest is required/)
-    expect(authorizeRequest).not.toHaveBeenCalled()
-    await created.host.close()
-  })
-
   it('closes active unbounded subscriptions and disposes bindings, Environment, and adapter once', async () => {
     const fixture = await options()
     const created = await createAgentHost(fixture.value)
@@ -181,6 +112,51 @@ describe('Agent Host lifecycle', () => {
     expect(fixture.dispose).toHaveBeenCalledOnce()
   })
 
+  it('terminalizes a created ledger claim without mutation when drain wins during prepare', async () => {
+    const fixture = await options()
+    const base = new InMemoryAgentRequestLedger()
+    const prepareStarted = deferred<void>()
+    const releasePrepare = deferred<void>()
+    const admit = vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'admitted' }))
+    const ledger: AgentRequestLedger = {
+      durability: 'in-memory',
+      async prepare(key, digest) {
+        prepareStarted.resolve()
+        await releasePrepare.promise
+        return await base.prepare(key, digest)
+      },
+      acceptAdmission: (key, receipt) => base.acceptAdmission(key, receipt),
+      beginEffect: (key) => base.beginEffect(key),
+      reject: (key, failure) => base.reject(key, failure),
+      complete: (key, receipt) => base.complete(key, receipt),
+      markOutcomeUnknown: (key, error) => base.markOutcomeUnknown(key, error),
+      read: (key) => base.read(key),
+    }
+    const created = await createAgentHost({
+      ...fixture.value,
+      requestLedger: ledger,
+      inMemoryRequestLedgerMode: 'test',
+      effectAdmission: { admit },
+    })
+    const request = created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'drain-during-prepare',
+    })
+    request.catch(() => {})
+    await prepareStarted.promise
+    await created.host.drain()
+    releasePrepare.resolve()
+
+    await expect(request).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED })
+    expect(admit).not.toHaveBeenCalled()
+    await expect(base.read(createRequestKey('drain-during-prepare'))).resolves.toMatchObject({
+      state: 'rejected',
+      failure: { kind: 'gateway', error: { code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED } },
+    })
+    await created.host.close()
+  })
+
   it('bounds adapter creation across drain and close, then disposes its late bundle exactly once', async () => {
     const fixture = await options()
     const baseAdapter = createTestRuntimeModeAdapter('direct')
@@ -192,6 +168,7 @@ describe('Agent Host lifecycle', () => {
     const created = await createAgentHost({
       ...fixture.value,
       requestLedger: ledger,
+      inMemoryRequestLedgerMode: 'test',
       runtimeModeAdapter: {
         ...baseAdapter,
         async create(ctx) {
@@ -208,7 +185,10 @@ describe('Agent Host lifecycle', () => {
     await createStarted.promise
 
     await expectBounded(() => created.host.drain())
-    await expect(ledger.read(createRequestKey('adapter-stuck'))).resolves.toMatchObject({ state: 'outcome-unknown' })
+    await expect(ledger.read(createRequestKey('adapter-stuck'))).resolves.toMatchObject({
+      state: 'rejected',
+      failure: { kind: 'gateway', error: { code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED } },
+    })
     await expect(request).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED })
     await expectBounded(() => Promise.all([created.host.close(), created.host.close()]).then(() => {}))
     expect(disposeAdapter).toHaveBeenCalledOnce()
@@ -237,17 +217,19 @@ describe('Agent Host lifecycle', () => {
         },
         dispose: disposeAdapter,
       },
-      resolveRuntimeScope: async () => ({
-        identity: 'runtime-provision',
-        environment: {
-          placementIdentity: 'direct-provision',
-          workspaceRoot: (await fixture.value.resolveRuntimeScope({ agentTypeId: 'alpha', scope })).environment.workspaceRoot,
-          provisioningFingerprint: 'provision-stuck',
-          async provisionRuntime({ signal }) {
-            provisionStarted.resolve(signal)
-            await releaseProvision.promise
-          },
+      resolveAuthorizedEnvironmentScope: async () => ({
+        placementIdentity: 'direct-provision',
+        workspaceRoot: fixture.workspaceRoot,
+        provisioningFingerprint: 'provision-stuck',
+        async provisionRuntime({ signal }) {
+          provisionStarted.resolve(signal)
+          await releaseProvision.promise
         },
+      }),
+      resolveAuthorizedAgentRuntimeScope: async () => ({
+        identity: 'runtime-provision',
+        physicalBindingIdentity: 'runtime-provision',
+        resourceInputDigest: 'runtime-provision',
         sessionNamespace: 'alpha-provision',
       }),
     })

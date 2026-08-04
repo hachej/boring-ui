@@ -18,7 +18,7 @@ describe("mobile chat chrome", () => {
     expect(screen.queryByText("One active thread on mobile")).toBeNull()
   })
 
-  it("uses a compact accessible close action even for the sole pane", () => {
+  it("uses an accessible touch target for the close action even for the sole pane", () => {
     const onClosePane = vi.fn()
     render(
       <MobileSingleChatPane
@@ -29,7 +29,9 @@ describe("mobile chat chrome", () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "Close Planning pane" }))
+    const close = screen.getByRole("button", { name: "Close Planning pane" })
+    expect(close.className).toContain("size-11")
+    fireEvent.click(close)
     expect(onClosePane).toHaveBeenCalledWith("pane-a")
   })
 
