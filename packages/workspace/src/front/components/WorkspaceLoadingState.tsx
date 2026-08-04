@@ -16,10 +16,10 @@ export function WorkspaceTranscriptLoadingSurface() {
       className="flex min-h-0 flex-1 flex-col"
       aria-hidden="true"
     >
-      <div className="mx-auto flex min-h-0 w-full max-w-[55rem] flex-1 flex-col gap-7 overflow-hidden px-6 py-8">
+      <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-1 flex-col gap-7 overflow-hidden px-4 py-8">
         <div className="flex items-start gap-3">
           <Skeleton className="mt-0.5 size-7 shrink-0 rounded-lg" />
-          <div className="flex w-full max-w-[34rem] flex-col gap-2.5">
+          <div className="flex min-w-0 flex-1 flex-col gap-2.5">
             <Skeleton className="h-3 w-24 rounded-sm" />
             <Skeleton className="h-3 w-full rounded-sm" />
             <Skeleton className="h-3 w-4/5 rounded-sm" />
@@ -30,7 +30,7 @@ export function WorkspaceTranscriptLoadingSurface() {
         </div>
         <div className="flex items-start gap-3">
           <Skeleton className="mt-0.5 size-7 shrink-0 rounded-lg" />
-          <div className="flex w-full max-w-[38rem] flex-col gap-3">
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
             <Skeleton className="h-3 w-20 rounded-sm" />
             <Skeleton className="h-20 w-full rounded-lg" />
             <Skeleton className="h-3 w-3/5 rounded-sm" />
