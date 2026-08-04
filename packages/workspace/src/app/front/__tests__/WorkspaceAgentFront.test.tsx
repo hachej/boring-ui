@@ -53,7 +53,7 @@ function ChatPanel(props: WorkspaceChatPanelProps) {
 }
 
 function SessionIdChatPanel(props: WorkspaceChatPanelProps) {
-  return <div data-testid="chat-pane" data-session-id={props.sessionId}>Chat pane {props.sessionId}</div>
+  return <div data-testid="chat-pane" data-agent-type-id={props.agentTypeId} data-session-id={props.sessionId}>Chat pane {props.sessionId}</div>
 }
 
 function TextareaChatPanel(props: WorkspaceChatPanelProps) {
@@ -472,6 +472,85 @@ describe("WorkspaceAgentFront", () => {
 
     await user.click(screen.getByLabelText("Delete Alpha shared"))
     expect(deleted).toEqual([["shared", "beta"], ["shared", "alpha"]])
+  })
+
+  it("discovers an addressed fleet, groups its chats, and creates through the chosen owner", async () => {
+    const user = userEvent.setup()
+    const createdBy = vi.fn()
+    const selected = vi.fn()
+    const agents = [
+      { agentTypeId: "alpha", label: "Alpha" },
+      { agentTypeId: "beta", label: "Beta" },
+    ]
+    const useAgentSelection = () => {
+      const [selectedAgentTypeId, setSelectedAgentTypeId] = useState("alpha")
+      return {
+        agents,
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: (agentTypeId: string) => {
+          selected(agentTypeId)
+          setSelectedAgentTypeId(agentTypeId)
+        },
+      }
+    }
+    const useFleetSessions: AttestedWorkspaceAgentFrontProps<WorkspaceAgentSession>["useSessions"] = (options) => {
+      const owner = options.agentTypeId
+      const [owned, setOwned] = useState(() => [{
+        id: `${owner}-one`,
+        agentTypeId: owner,
+        title: `${owner === "alpha" ? "Alpha" : "Beta"} one`,
+        updatedAt: owner === "alpha" ? 2 : 1,
+      }])
+      return {
+        sessions: owned,
+        loading: false,
+        activeSessionId: owned[0]?.id,
+        activeSessionAgentTypeId: owner,
+        activeSession: owned[0],
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: async () => {
+          createdBy(owner)
+          const session = { id: `${owner}-new`, agentTypeId: owner, title: `${owner} new`, updatedAt: 3 }
+          setOwned((current) => [session, ...current])
+          return session
+        },
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-ui"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAgentSelection}
+        useSessions={useFleetSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "New chat with Alpha" })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "New chat with Beta" })).toBeInTheDocument()
+      expect(screen.getAllByText("Alpha one").length).toBeGreaterThan(0)
+      expect(screen.getAllByText("Beta one").length).toBeGreaterThan(0)
+    })
+
+    const betaSessionButton = screen.getAllByText("Beta one").find((node) => node.tagName === "BUTTON")
+    expect(betaSessionButton).toBeDefined()
+    await user.click(betaSessionButton!)
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-agent-type-id", "beta")
+      expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "beta-one")
+    })
+
+    await user.click(screen.getByRole("button", { name: "New chat with Beta" }))
+    await waitFor(() => expect(createdBy).toHaveBeenCalledWith("beta"))
+    expect(selected).toHaveBeenCalledWith("beta")
   })
 
   it("initializes a controlled colliding id to its explicit active owner", () => {

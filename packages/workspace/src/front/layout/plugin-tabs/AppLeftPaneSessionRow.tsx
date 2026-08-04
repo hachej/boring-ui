@@ -80,6 +80,8 @@ export function AppSessionRow({
   return (
     <div
       data-boring-workspace-part="app-session-row"
+      data-boring-session-id={session.id}
+      data-boring-agent-type-id={session.agentTypeId}
       data-boring-session-state={state}
       // Drag a session onto the chat stage to open it as a split pane (the
       // stage accepts CHAT_SESSION_DRAG_TYPE; see ChatPaneStageDock). Only

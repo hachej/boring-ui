@@ -1171,6 +1171,7 @@ export function PiChatPanel<
       <div
         data-boring-agent=""
         data-boring-agent-part="chat"
+        data-agent-type-id={agentTypeId}
         data-pi-chat-session-id={activeSessionId}
         data-pi-chat-connection={debugState?.connection ?? 'disconnected'}
         data-pi-chat-last-seq={debugState?.lastSeq ?? 0}

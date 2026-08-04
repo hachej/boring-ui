@@ -1211,6 +1211,34 @@ describe('usePiSessions', () => {
     expect(remote.factory).not.toHaveBeenCalled()
   })
 
+  test('keeps a deleting session tombstoned while a stale list response races the delete', async () => {
+    const deletion = deferred<Response>()
+    let listCalls = 0
+    fetchMock.mockImplementation(async (_input, init) => {
+      if (init?.method === 'DELETE') return deletion.promise
+      listCalls += 1
+      return jsonResponse(listCalls < 3 ? [session('pi-delete')] : [])
+    })
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remoteFactory().factory,
+    }))
+    await waitFor(() => expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-delete']))
+
+    let deleting!: Promise<void>
+    act(() => { deleting = result.current.delete('pi-delete') })
+    await waitFor(() => expect(result.current.sessions).toEqual([]))
+    await act(async () => { await result.current.refresh({ background: true }) })
+    expect(result.current.sessions).toEqual([])
+
+    deletion.resolve(new Response(null, { status: 204 }))
+    await act(async () => { await deleting })
+    await waitFor(() => expect(listCalls).toBe(3))
+    expect(result.current.sessions).toEqual([])
+  })
+
   test('delete of active session clears storage when no fallback remains and disposes remote session', async () => {
     const persisted = storage()
     const remote = remoteFactory()
