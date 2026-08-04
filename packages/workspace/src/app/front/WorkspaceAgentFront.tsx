@@ -1813,8 +1813,16 @@ export function WorkspaceAgentFront<
   }, [requestedAutoSubmitInitialDraft, workspaceId])
   const autoSubmittingInitialDraft = requestedAutoSubmitInitialDraft
   const delayAutoSubmitDraft = autoSubmittingInitialDraft && shouldUseRemoteSessions && !effectiveActiveSessionId
+  const hasInventoriedChatPane = activeChatPaneState.ids.some((paneId) =>
+    resolvedSessions.some((session) => workspaceSessionKeyFor(session) === paneId),
+  )
+  // A restored/open pane that survived authoritative inventory reconciliation
+  // owns enough addressed identity to hydrate even when the mutable global
+  // active preference is absent. An implicit boot placeholder does not.
   const hydrateMessages = !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
-    shouldUseRemoteSessions ? Boolean(effectiveActiveSessionId) : true
+    shouldUseRemoteSessions
+      ? Boolean(effectiveActiveSessionId || hasInventoriedChatPane)
+      : true
   )
   const handleWorkspaceWarmupStatusChange = useCallback((status: WorkspaceWarmupStatus) => {
     setWorkspaceWarmupState({ workspaceId, status })
