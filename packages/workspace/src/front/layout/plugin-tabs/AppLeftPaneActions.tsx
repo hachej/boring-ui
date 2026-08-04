@@ -38,7 +38,6 @@ export function PrimaryAction({
     >
       <span className={cn("grid size-5 shrink-0 place-items-center", active ? "text-[color:var(--accent)]" : emphasis ? "text-foreground/90" : "text-muted-foreground")} aria-hidden="true">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {active ? <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-[color:var(--accent)]" /> : null}
       {trailing ? <span className="shrink-0">{trailing}</span> : null}
     </button>
   )

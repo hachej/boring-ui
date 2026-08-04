@@ -31,7 +31,7 @@ function renderPane() {
 }
 
 describe("AppLeftPane", () => {
-  it("separates fixed workspace actions from the scrolling chat list and bottom New chat action", () => {
+  it("places New chat at the top of Chats before the scrolling session list", () => {
     renderPane()
 
     const appNav = screen.getByLabelText("App navigation")
@@ -41,6 +41,8 @@ describe("AppLeftPane", () => {
     const newChat = appNav.querySelector('[data-boring-workspace-part="app-left-new-chat"]')
 
     expect(workspaceHeading.compareDocumentPosition(chatsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(chatsHeading.compareDocumentPosition(newChat as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect((newChat as Node).compareDocumentPosition(sessionScroll as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(sessionScroll).toContainElement(screen.getByText("First session"))
     expect(sessionScroll).not.toContainElement(screen.getByRole("button", { name: "New chat" }))
     expect(newChat).toContainElement(screen.getByRole("button", { name: "New chat" }))

@@ -410,6 +410,9 @@ export function AppLeftPane({
         <h2 id="app-left-chats-heading" className="shrink-0 px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
           Chats
         </h2>
+        <div data-boring-workspace-part="app-left-new-chat" className="shrink-0 px-2 pb-2">
+          <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
+        </div>
         <div
           data-boring-workspace-part="app-left-session-scroll"
           className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 pb-2 [mask-image:linear-gradient(to_bottom,transparent_0,black_8px,black_calc(100%_-_8px),transparent_100%)] motion-reduce:[mask-image:none]"
@@ -453,9 +456,6 @@ export function AppLeftPane({
               </SessionSubSection>
             </div>
           )}
-        </div>
-        <div data-boring-workspace-part="app-left-new-chat" className="shrink-0 border-t border-border/40 px-2 py-2">
-          <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
         </div>
       </section>
 
