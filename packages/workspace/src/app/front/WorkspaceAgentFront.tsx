@@ -851,6 +851,7 @@ export function WorkspaceAgentFront<
     if (!remoteSessionsAvailable) return
     return startSessionActivityStream({
       endpoint: apiBaseUrl,
+      workspaceId,
       onActivity: ({ ref, status }) => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
         detail: {
           sessionId: ref.sessionId,
@@ -859,7 +860,7 @@ export function WorkspaceAgentFront<
         },
       })),
     })
-  }, [apiBaseUrl, remoteSessionsAvailable, sessionSourceIdentity])
+  }, [apiBaseUrl, remoteSessionsAvailable, sessionSourceIdentity, workspaceId])
   useEffect(() => {
     if (!remoteSessionsAvailable) return
     setRemoteSessionSnapshot((previous) => {

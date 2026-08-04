@@ -85,6 +85,7 @@ const ListSessionsQuerySchema = z.object({
     z.number().int().min(1).max(100).optional(),
   ),
 }).strict()
+const ActivityEventsQuerySchema = z.object({ workspaceId: NonEmptyString.max(256).optional() }).strict()
 const EventsQuerySchema = z.object({
   cursor: z.preprocess(
     (value) => typeof value === 'string' && value.length > 0 ? Number(value) : value,
@@ -226,7 +227,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
   })
 
   app.get('/api/v1/agents/session-activity/events', async (request, reply) => {
-    const query = parseWithSchema(EmptyQuerySchema, request.query, reply, 'query')
+    const query = parseWithSchema(ActivityEventsQuerySchema, request.query, reply, 'query')
     if (!query) return
     let workspaceScopeId: string
     try {
