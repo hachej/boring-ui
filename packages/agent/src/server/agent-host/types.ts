@@ -56,7 +56,16 @@ export interface AgentRequestKey {
 }
 
 export type AgentRequestFailure =
-  { readonly kind: 'gateway'; readonly error: AgentGatewayErrorDTO }
+  | { readonly kind: 'gateway'; readonly error: AgentGatewayErrorDTO }
+  | {
+      readonly kind: 'service'
+      readonly error: {
+        readonly code: string
+        readonly message: string
+        readonly statusCode: number
+        readonly retryable?: boolean
+      }
+    }
 
 export interface AgentRequestLedgerRecordBase {
   readonly key: AgentRequestKey
