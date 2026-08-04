@@ -45,10 +45,7 @@ export function startSessionActivityStream(options: {
   const query = options.workspaceId ? `?workspaceId=${encodeURIComponent(options.workspaceId)}` : ""
   const source = new EventSourceCtor(`${endpoint}/api/v1/agents/session-activity/events${query}`)
   let workingRefs = new Map<string, AddressedSessionActivity["ref"]>()
-  const keyFor = (activity: AddressedSessionActivity) => JSON.stringify([
-    activity.ref.agentTypeId,
-    activity.ref.sessionId,
-  ])
+  const keyFor = ({ ref }: AddressedSessionActivity) => workspaceSessionKey(ref.sessionId, ref.agentTypeId)
   const publish = (activity: AddressedSessionActivity) => {
     const key = keyFor(activity)
     if (activity.status === "running" || activity.status === "aborting") workingRefs.set(key, activity.ref)
