@@ -3,6 +3,7 @@ import type { PiChatEvent } from '../../shared/chat'
 import type { AgentSessionActivity, AgentSessionRef, AuthorizedAgentScope, VerifiedAgentScopeClaim } from '../../shared/index'
 import type { SessionSummary } from '../../shared/session'
 import { PiSessionStore } from '../harness/pi-coding-agent/sessions'
+import { agentSessionKey } from './agentSessionKey'
 import type { CompiledAgentHostAgentSpec, ResolvedAgentRuntimeScope } from './types'
 
 export interface AgentSessionRuntimeAuthority {
@@ -116,11 +117,11 @@ export class AgentSessionActivityIndex {
   private readonly subscribers = new Map<string, Set<(update: AgentSessionActivityUpdate) => void>>()
 
   get(workspaceScopeId: string, ref: AgentSessionRef): AgentSessionActivity {
-    return this.activity.get(activityKey(workspaceScopeId, ref))?.status ?? 'idle'
+    return this.activity.get(agentSessionKey(workspaceScopeId, ref))?.status ?? 'idle'
   }
 
   set(workspaceScopeId: string, ref: AgentSessionRef, status: AgentSessionActivity): void {
-    const key = activityKey(workspaceScopeId, ref)
+    const key = agentSessionKey(workspaceScopeId, ref)
     if (this.activity.get(key)?.status === status) return
     const update = { ref, status }
     this.activity.set(key, { workspaceScopeId, ...update })
@@ -146,7 +147,7 @@ export class AgentSessionActivityIndex {
   }
 
   delete(workspaceScopeId: string, ref: AgentSessionRef): void {
-    this.activity.delete(activityKey(workspaceScopeId, ref))
+    this.activity.delete(agentSessionKey(workspaceScopeId, ref))
   }
 
   observe(workspaceScopeId: string, ref: AgentSessionRef, event: PiChatEvent): void {
@@ -154,8 +155,4 @@ export class AgentSessionActivityIndex {
     if (event.type === 'agent-end') this.set(workspaceScopeId, ref, event.status === 'error' ? 'error' : 'idle')
     if (event.type === 'error') this.set(workspaceScopeId, ref, 'error')
   }
-}
-
-function activityKey(workspaceScopeId: string, ref: AgentSessionRef): string {
-  return JSON.stringify([workspaceScopeId, ref.agentTypeId, ref.sessionId])
 }

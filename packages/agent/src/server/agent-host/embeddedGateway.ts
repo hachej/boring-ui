@@ -21,6 +21,7 @@ import {
   type PiSessionRequestContext,
 } from '../../core/piChatSessionService'
 import { AgentSessionEventQueue } from './agentSessionEventQueue'
+import { agentSessionKey } from './agentSessionKey'
 import { canonicalDigest } from './canonical'
 import { stableServiceActionFailure } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
@@ -105,10 +106,6 @@ function summaryFromLegacy(
     ...(typeof summary.nativeSessionId === 'string' ? { nativeSessionId: summary.nativeSessionId } : {}),
     ...(typeof summary.hasAssistantReply === 'boolean' ? { hasAssistantReply: summary.hasAssistantReply } : {}),
   }
-}
-
-function sessionKey(workspaceScopeId: string, ref: AgentSessionRef): string {
-  return JSON.stringify([workspaceScopeId, ref.agentTypeId, ref.sessionId])
 }
 
 function compareSessions(a: AgentSessionSummary, b: AgentSessionSummary): number {
@@ -200,7 +197,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       claim,
       ref.sessionId,
     )
-    const cached = this.pins.get(sessionKey(claim.workspaceScopeId, ref))
+    const cached = this.pins.get(agentSessionKey(claim.workspaceScopeId, ref))
     if (!authority && !cached) {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     }
@@ -326,7 +323,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
               ) ?? []
               const candidate = rows.find((row) => row.id === input.resumeSessionId)
               if (candidate?.turnCount === 0) {
-                this.pins.set(sessionKey(claim.workspaceScopeId, candidateRef), preparedBinding.scope.identity)
+                this.pins.set(agentSessionKey(claim.workspaceScopeId, candidateRef), preparedBinding.scope.identity)
                 this.runtime.activity.set(claim.workspaceScopeId, candidateRef, 'idle')
                 return candidateRef
               }
@@ -338,7 +335,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
             { title: input.title },
           )
           const ref = { agentTypeId: input.agentTypeId, sessionId: created.id }
-          this.pins.set(sessionKey(claim.workspaceScopeId, ref), preparedBinding.scope.identity)
+          this.pins.set(agentSessionKey(claim.workspaceScopeId, ref), preparedBinding.scope.identity)
           this.runtime.activity.set(claim.workspaceScopeId, ref, 'idle')
           return ref
         })
@@ -574,7 +571,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     if (!this.runtime.compiledById.has(ref.agentTypeId)) {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     }
-    const key = sessionKey(claim.workspaceScopeId, ref)
+    const key = agentSessionKey(claim.workspaceScopeId, ref)
     const authority = await this.runtime.resolveSessionRuntime(
       ref.agentTypeId,
       scope,
@@ -925,7 +922,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
   }
 
   private async withWriter<T>(workspaceScopeId: string, ref: AgentSessionRef, action: () => Promise<T>): Promise<T> {
-    const key = sessionKey(workspaceScopeId, ref)
+    const key = agentSessionKey(workspaceScopeId, ref)
     const previous = this.writerTails.get(key) ?? Promise.resolve()
     let release!: () => void
     const current = new Promise<void>((resolve) => { release = resolve })

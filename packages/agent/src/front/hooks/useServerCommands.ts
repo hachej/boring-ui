@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { WORKSPACE_COMMAND_NOTIFY_EVENT } from '../../shared/agentPluginEvents'
+import { createRequestId, withStorageScope } from '../agentHttp'
 import type { CommandRegistry, SlashCommand } from '../slashCommands/registry'
 
 interface ServerCommandSummary {
@@ -125,7 +126,7 @@ export function useServerCommands({
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
     const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
     const url = `${base}/api/v1/agents/${encodeURIComponent(agentTypeId)}/commands?sessionId=${encodeURIComponent(canonicalSessionId)}`
-    const headers = scopedHeaders(requestHeaders, storageScope)
+    const headers = withStorageScope(requestHeaders, storageScope)
 
     nextFetch(url, { headers })
       .then(async (res) => {
@@ -163,20 +164,4 @@ export function useServerCommands({
   }, [agentTypeId, apiBaseUrl, canonicalSessionId, enabled, fetchImpl, identityKey, refreshKey, requestHeaders, registry, storageScope])
 
   return stamp
-}
-
-function createRequestId(operation: string): string {
-  const suffix = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
-  return `${operation}:${suffix}`
-}
-
-function scopedHeaders(
-  headers: Record<string, string> | undefined,
-  storageScope: string | undefined,
-): Record<string, string> | undefined {
-  if (!headers && !storageScope) return undefined
-  const result: Record<string, string> = { ...(headers ?? {}) }
-  const hasScope = Object.keys(result).some((k) => k.toLowerCase() === 'x-boring-storage-scope')
-  if (storageScope && !hasScope) result['x-boring-storage-scope'] = storageScope
-  return result
 }

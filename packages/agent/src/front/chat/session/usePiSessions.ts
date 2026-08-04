@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { SessionSummary } from '../../../shared/session'
+import { createRequestId, withStorageScope } from '../../agentHttp'
 import { createRemotePiSession, type RemotePiSession, type RemotePiSessionOptions } from '../pi/remotePiSession'
 import {
   readActiveSessionId,
@@ -114,7 +115,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
   const retryBaseMs = options.retry?.baseMs ?? DEFAULT_RETRY_BASE_MS
   const retryMaxMs = options.retry?.maxMs ?? DEFAULT_RETRY_MAX_MS
   const headersKey = useMemo(() => headersScopeKey(options.requestHeaders, storageScope), [options.requestHeaders, storageScope])
-  const normalizedHeaders = useMemo(() => buildRequestHeaders(options.requestHeaders, storageScope), [headersKey, storageScope])
+  const normalizedHeaders = useMemo(() => withStorageScope(options.requestHeaders, storageScope) ?? {}, [headersKey, storageScope])
   const requestScopeKey = useMemo(
     () => requestScopeIdentity(apiBaseUrl, sessionsApiPath, options.agentTypeId, storageScope, headersKey, options.workspaceId, options.sourceIdentity),
     [apiBaseUrl, headersKey, options.agentTypeId, options.sourceIdentity, options.workspaceId, sessionsApiPath, storageScope],
@@ -197,13 +198,9 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
 
   const requestHeaders = useCallback((): Record<string, string> => normalizedHeaders, [normalizedHeaders])
   const sessionsUrl = useCallback((suffix = '') => `${apiBaseUrl}${sessionsApiPath}${suffix}`, [apiBaseUrl, sessionsApiPath])
-  const sessionsListUrl = useCallback((offset = 0, includeId?: string, cursor?: string) => {
-    const query = new URLSearchParams()
-    void offset
-    void includeId
-    query.set('limit', String(SESSION_PAGE_SIZE))
+  const sessionsListUrl = useCallback((cursor?: string) => {
+    const query = new URLSearchParams({ limit: String(SESSION_PAGE_SIZE) })
     if (cursor) query.set('cursor', cursor)
-    if (query.size === 0) return sessionsUrl()
     return sessionsUrl(`?${query.toString()}`)
   }, [sessionsUrl])
 
@@ -312,7 +309,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       let page: SessionPage | undefined
       for (let attempt = 0; ; attempt += 1) {
         try {
-          page = await fetchSessionList(fetchImpl, sessionsListUrl(0, preferredSessionId()), requestHeaders())
+          page = await fetchSessionList(fetchImpl, sessionsListUrl(), requestHeaders())
           break
         } catch (err) {
           const transient = err instanceof SessionsPreparingError || isNetworkFetchError(err)
@@ -352,10 +349,9 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     loadMoreInFlightRef.current = true
     const version = refreshVersionRef.current
     const scope = requestScopeKey
-    const offset = canonicalLoadedCountRef.current
     setLoadingMore(true)
     try {
-      const page = await fetchSessionList(fetchImpl, sessionsListUrl(offset, undefined, nextCursorRef.current), requestHeaders())
+      const page = await fetchSessionList(fetchImpl, sessionsListUrl(nextCursorRef.current), requestHeaders())
       const data = page.sessions
       if (requestSeq !== loadMoreRequestSeqRef.current || version !== refreshVersionRef.current || !sourceIsCurrent(scope)) return
       const merged = mergeSessions(sessionsRef.current, data)
@@ -652,22 +648,8 @@ function mergeSessions(...lists: SessionSummary[][]): SessionSummary[] {
   return merged
 }
 
-function buildRequestHeaders(headers: Record<string, string | undefined> | undefined, storageScope: string): Record<string, string> {
-  const result: Record<string, string> = {}
-  for (const [key, value] of Object.entries(headers ?? {})) {
-    if (typeof value === 'string') result[key] = value
-  }
-  if (storageScope && !hasHeader(result, 'x-boring-storage-scope')) result['x-boring-storage-scope'] = storageScope
-  return result
-}
-
 function headersScopeKey(headers: Record<string, string | undefined> | undefined, storageScope: string): string {
   return JSON.stringify({ storageScope, headers: Object.entries(headers ?? {}).sort(([a], [b]) => a.localeCompare(b)) })
-}
-
-function createRequestId(operation: string): string {
-  const suffix = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
-  return `${operation}:${suffix}`
 }
 
 function requestScopeIdentity(
@@ -691,11 +673,6 @@ function dataSourceIdentity(
   sourceIdentity?: string,
 ): string {
   return `${apiBaseUrl}\n${sessionsApiPath}\n${agentTypeId}\n${storageScope}\n${workspaceId ?? ''}\n${sourceIdentity ?? ''}`
-}
-
-function hasHeader(headers: Record<string, string>, name: string): boolean {
-  const lower = name.toLowerCase()
-  return Object.keys(headers).some((key) => key.toLowerCase() === lower)
 }
 
 function retryDelayMs(attempt: number, retry: NonNullable<UsePiSessionsOptions['retry']>): number {
