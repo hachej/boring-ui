@@ -405,6 +405,29 @@ describe('piChatReducer', () => {
     })
   })
 
+  it('accepts the first canonical snapshot when an unhydrated cursor is ahead', () => {
+    const pending = {
+      ...initial(),
+      lastSeq: 30,
+      status: 'hydrating' as const,
+      hydrated: false,
+    }
+
+    const recovered = piChatReducer(pending, {
+      type: 'hydrate',
+      snapshot: snapshot({
+        seq: 0,
+        status: 'idle',
+        messages: [userMessage('u1', 'canonical'), assistantFinal('a1', 'history')],
+      }),
+    })
+
+    expect(recovered.hydrated).toBe(true)
+    expect(recovered.lastSeq).toBe(0)
+    expect(recovered.status).toBe('idle')
+    expect(recovered.committedMessages).toHaveLength(2)
+  })
+
   it('allows explicit cursor-ahead recovery to rewind to canonical /state', () => {
     const hydrated = piChatReducer(initial(), {
       type: 'hydrate',
