@@ -273,8 +273,8 @@ describe("WorkspaceAgentFront", () => {
         })}
       />,
     )
-    const stream = MockEventSource.instances.find((instance) => instance.url.endsWith("/api/v1/agents/session-activity/events"))
-    expect(stream).toBeDefined()
+    const stream = MockEventSource.instances.find((instance) => instance.url.includes("/api/v1/agents/session-activity/events"))
+    expect(stream?.url).toContain("workspaceId=working-session-stream")
 
     act(() => {
       stream?.emit("snapshot", { sessions: [{ ref: { agentTypeId: "default", sessionId: "session-1" }, status: "running" }] })
