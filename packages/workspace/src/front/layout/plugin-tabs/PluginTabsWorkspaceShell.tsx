@@ -1,7 +1,8 @@
 "use client"
 
-import { useCallback, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react"
+import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { PaneCollapseButton } from "../paneCollapseButton"
 import { useViewportWidth } from "../useViewportWidth"
@@ -109,6 +110,9 @@ export function PluginTabsWorkspaceShell({
   const viewport = useViewportWidth()
   const mobileShell = mobileShellEnabled === true && viewport < 640
   const effectiveCollapsed = mobileShell ? !mobileOpen : collapsed
+  useEffect(() => {
+    if (!mobileShell) setMobileOpen(false)
+  }, [mobileShell])
   return (
     <div
       data-boring-workspace-part="plugin-tabs-shell"
@@ -129,34 +133,43 @@ export function PluginTabsWorkspaceShell({
         {children}
       </div>
 
-      {mobileShell && mobileOpen ? (
-        <>
-          <div
-            aria-hidden="true"
-            data-boring-workspace-part="app-left-mobile-scrim"
-            className="absolute inset-0 z-[64] bg-foreground/30"
-            onClick={() => setMobileOpen(false)}
-          />
-          <div
+      {mobileShell ? (
+        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+          <SheetContent
+            side="left"
+            showCloseButton={false}
             data-boring-workspace-part="app-left-mobile-overlay"
             data-boring-state="open"
             onClick={(event) => {
               const target = event.target as HTMLElement | null
               if (target?.closest('[data-boring-mobile-dismiss="true"]')) setMobileOpen(false)
             }}
-            className="absolute inset-y-0 left-0 z-[65] flex w-[min(86vw,360px)] max-w-[360px] shadow-2xl [&>[data-boring-workspace-part=app-left-pane]]:!w-full [&>[data-boring-workspace-part=app-left-pane]]:!min-w-0 [&>[data-boring-workspace-part=app-left-pane]]:!max-w-none"
+            className="w-[min(86vw,360px)] max-w-[360px] gap-0 p-0 shadow-2xl [&>[data-boring-workspace-part=app-left-pane]]:!w-full [&>[data-boring-workspace-part=app-left-pane]]:!min-w-0 [&>[data-boring-workspace-part=app-left-pane]]:!max-w-none"
           >
+            <SheetTitle className="sr-only">App navigation</SheetTitle>
+            <SheetDescription className="sr-only">Workspace actions and chats</SheetDescription>
+            <SheetClose asChild>
+              <button
+                type="button"
+                aria-label="Close app navigation"
+                className="absolute left-1.5 top-1.5 z-10 grid size-11 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
+              </button>
+            </SheetClose>
             {leftPane}
-          </div>
-        </>
+          </SheetContent>
+        </Sheet>
       ) : null}
 
       {/* The same control owns both states. Expanded chrome reserves matching
           header space; collapsed chrome occupies the rail's fixed top slot. */}
+      {!mobileShell || !mobileOpen ? (
       <div className="pointer-events-none absolute left-1.5 top-2 z-[70]">
         <PaneCollapseButton
           label={effectiveCollapsed ? "Open app navigation" : "Hide app navigation"}
           side="right"
+          className="app-left-pane-toggle"
           onClick={mobileShell ? () => setMobileOpen((open) => !open) : collapsed ? onExpand : onCollapse}
         >
           {effectiveCollapsed ? (
@@ -166,6 +179,7 @@ export function PluginTabsWorkspaceShell({
           )}
         </PaneCollapseButton>
       </div>
+      ) : null}
     </div>
   )
 }

@@ -387,7 +387,7 @@ export function AppLeftPane({
       )}
 
       <section className="boring-scrollbar-discreet min-h-0 max-h-[45%] shrink overflow-y-auto px-2 pb-3" aria-labelledby="app-left-workspace-heading">
-        <h2 id="app-left-workspace-heading" className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+        <h2 id="app-left-workspace-heading" className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
           Workspace
         </h2>
         <nav className="space-y-0.5" aria-label="Workspace actions">
@@ -407,7 +407,7 @@ export function AppLeftPane({
       </section>
 
       <section className="flex min-h-24 flex-1 flex-col border-t border-border/40 pt-3" aria-labelledby="app-left-chats-heading">
-        <h2 id="app-left-chats-heading" className="shrink-0 px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+        <h2 id="app-left-chats-heading" className="shrink-0 px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
           Chats
         </h2>
         <div data-boring-workspace-part="app-left-new-chat" className="shrink-0 px-2 pb-2">
@@ -451,7 +451,7 @@ export function AppLeftPane({
                   {pinnedSessions.map((session) => renderSession(session, true))}
                 </SessionSubSection>
               ) : null}
-              <SessionSubSection title="Recent" empty={sessionsLoading ? "Loading chats…" : "No chats yet."}>
+              <SessionSubSection title={pinnedSessions.length > 0 ? "Recent" : undefined} empty={sessionsLoading ? "Loading chats…" : "No chats yet."}>
                 {regularSessions.map((session) => renderSession(session, false))}
               </SessionSubSection>
             </div>
@@ -459,7 +459,7 @@ export function AppLeftPane({
         </div>
       </section>
 
-      {bottomSlot ? <footer className="shrink-0 border-t border-border/40 p-2">{bottomSlot}</footer> : null}
+      {bottomSlot ? <footer data-boring-workspace-part="app-left-footer" className="shrink-0 border-t border-border/40 p-2">{bottomSlot}</footer> : null}
     </aside>
   )
 }

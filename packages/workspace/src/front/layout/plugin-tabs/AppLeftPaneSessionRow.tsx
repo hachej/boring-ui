@@ -18,15 +18,6 @@ function sessionBadgeToneClassName(tone: WorkspaceAttentionSessionBadge["tone"])
   }
 }
 
-function sessionBadgeDotClassName(tone: WorkspaceAttentionSessionBadge["tone"]): string {
-  switch (tone) {
-    case "danger": return "bg-destructive"
-    case "warning": return "bg-amber-500"
-    case "neutral": return "bg-muted-foreground/70"
-    default: return "bg-[color:var(--accent)]"
-  }
-}
-
 export function AppSessionRow({
   session,
   state,
@@ -54,6 +45,15 @@ export function AppSessionRow({
 }) {
   const title = session.title || "Untitled"
   const activate = () => onSwitch(session.id)
+  const actionCount = Number(state === "normal" && canSplit) + Number(canPin) + Number(Boolean(onDelete))
+  const actionWidthClassName = actionCount >= 3
+    ? "w-[88px]"
+    : actionCount === 2
+      ? "w-[58px]"
+      : actionCount === 1
+        ? "w-7"
+        : "w-0"
+  const statusWidthClassName = attentionBadge || working ? "w-[88px]" : actionWidthClassName
 
   return (
     <div
@@ -68,7 +68,7 @@ export function AppSessionRow({
         event.dataTransfer.setData("text/plain", title)
         event.dataTransfer.effectAllowed = "copyMove"
       } : undefined}
-      className="group relative h-9 w-full"
+      className="app-left-session-row group relative h-9 w-full"
     >
       <button
         type="button"
@@ -91,28 +91,25 @@ export function AppSessionRow({
             className={cn("h-4 w-4", state === "active" ? "text-[color:var(--accent)]" : "text-muted-foreground/65")}
             strokeWidth={1.75}
           />
-          {state === "active" ? <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-[color:var(--accent)] ring-2 ring-background" /> : null}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5">
+        <span className={cn("min-w-0 flex-1 truncate text-[13px] leading-5", state === "active" ? "font-semibold" : "font-medium")}>
           {title}
         </span>
-        <span className="flex w-[88px] shrink-0 justify-end overflow-hidden group-hover:opacity-0 group-focus-within:opacity-0">
+        <span data-action-count={actionCount} data-has-status={attentionBadge || working ? "true" : "false"} className={cn("app-left-session-trailing flex shrink-0 justify-end overflow-hidden group-hover:opacity-0 group-focus-within:opacity-0", statusWidthClassName)}>
           {attentionBadge ? (
             <span
               data-boring-workspace-part="app-session-badge"
               data-boring-badge={attentionBadge.kind}
-              className={cn("pointer-events-none inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none", sessionBadgeToneClassName(attentionBadge.tone))}
+              className={cn("pointer-events-none inline-flex max-w-full shrink-0 truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none", sessionBadgeToneClassName(attentionBadge.tone))}
             >
-              <span aria-hidden="true" className={cn("h-1.5 w-1.5 animate-pulse rounded-full motion-reduce:animate-none", sessionBadgeDotClassName(attentionBadge.tone))} />
               {attentionBadge.label}
             </span>
           ) : working ? (
             <span
               data-boring-workspace-part="app-session-badge"
               data-boring-badge="working"
-              className="pointer-events-none inline-flex shrink-0 items-center gap-1 rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+              className="pointer-events-none inline-flex shrink-0 rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
             >
-              <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-[color:var(--accent)] motion-reduce:animate-none" />
               working
             </span>
           ) : pinned ? (
@@ -123,8 +120,10 @@ export function AppSessionRow({
 
       <span
         data-boring-workspace-part="app-session-actions"
+        data-action-count={actionCount}
         className={cn(
-          "pointer-events-none absolute inset-y-0 right-1 z-10 flex w-[88px] items-center justify-end gap-0.5 opacity-0 transition-opacity motion-reduce:transition-none",
+          "app-left-session-actions pointer-events-none absolute inset-y-0 right-1 z-10 flex items-center justify-end gap-0.5 opacity-0 transition-opacity motion-reduce:transition-none",
+          actionWidthClassName,
           "group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100",
         )}
       >
@@ -135,7 +134,7 @@ export function AppSessionRow({
             title="Open in new chat pane"
             data-boring-mobile-dismiss="true"
             onClick={() => onOpenAsPane(session.id)}
-            className="grid size-7 place-items-center rounded-md bg-background/90 text-muted-foreground shadow-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="app-left-session-secondary-action grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-foreground/[0.08] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <MessageSquarePlus className="h-4 w-4" strokeWidth={1.75} />
           </button>
@@ -148,7 +147,7 @@ export function AppSessionRow({
             aria-pressed={pinned}
             onClick={() => onTogglePinned(session.id)}
             className={cn(
-              "grid size-7 place-items-center rounded-md bg-background/90 text-muted-foreground shadow-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+              "app-left-session-secondary-action grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-foreground/[0.08] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               pinned && "text-[color:var(--accent)]",
             )}
           >
@@ -163,7 +162,7 @@ export function AppSessionRow({
             onClick={() => {
               if (typeof window !== "undefined" && window.confirm(`Delete “${title}”?`)) onDelete(session.id)
             }}
-            className="grid size-7 place-items-center rounded-md bg-background/90 text-muted-foreground shadow-sm hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="app-left-session-secondary-action grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-foreground/[0.08] hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <X className="h-4 w-4" strokeWidth={1.75} />
           </button>
