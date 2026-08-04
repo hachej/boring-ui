@@ -52,6 +52,35 @@ export function WorkspaceTranscriptLoadingSurface() {
   )
 }
 
+export function WorkspaceWorkbenchLoadingSurface() {
+  return (
+    <div
+      aria-hidden="true"
+      data-boring-workspace-part="workbench-loading-geometry"
+      className="flex h-full min-h-0 flex-col overflow-hidden bg-background"
+    >
+      <div className="flex h-11 shrink-0 items-center gap-3 border-b border-border/40 px-4">
+        <Skeleton className="size-5 rounded-md" />
+        <Skeleton className="h-3 w-28 rounded-sm" />
+      </div>
+      <div className="grid min-h-64 flex-1 grid-cols-[minmax(0,1fr)_minmax(12rem,0.42fr)]">
+        <div className="flex min-h-64 flex-col gap-4 border-r border-border/40 p-4">
+          <Skeleton className="h-3 w-24 rounded-sm" />
+          <Skeleton className="h-8 w-full rounded-md" />
+          <Skeleton className="h-8 w-4/5 rounded-md" />
+          <Skeleton className="h-8 w-11/12 rounded-md" />
+          <Skeleton className="mt-auto h-8 w-2/3 rounded-md" />
+        </div>
+        <div className="flex min-h-64 flex-col gap-4 p-4">
+          <Skeleton className="h-3 w-20 rounded-sm" />
+          <Skeleton className="h-24 w-full rounded-lg" />
+          <Skeleton className="h-16 w-full rounded-lg" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function WorkspaceLoadingState({
   title = "Loading workspace",
   description = "Preparing the workspace context.",
