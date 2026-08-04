@@ -860,6 +860,11 @@ export async function createAgentHost(
         gateway,
         options: projectionOptions,
         runtimeCapabilities: runtimeCapabilityProjection(projectionOptions),
+        activity: runtime.activity,
+        async resolveActivityWorkspaceScope(request) {
+          const scope = await projectionOptions.authorizeAgentRequest(request)
+          return (await runtime.verify(scope)).workspaceScopeId
+        },
         resolveAddressedPiChatService(request, agentTypeId, sessionId) {
           return resolveProjectionPiChatService(projectionOptions.authorizeAgentRequest, request, agentTypeId, sessionId)
         },
