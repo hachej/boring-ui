@@ -20,8 +20,9 @@ import {
   type PiChatSessionService,
   type PiSessionRequestContext,
 } from '../../core/piChatSessionService'
+import { AgentSessionEventQueue } from './agentSessionEventQueue'
 import { canonicalDigest } from './canonical'
-import { projectStableServiceError } from './stableServiceError'
+import { stableServiceActionFailure } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
 import type {
   AgentGatewayEffect,
@@ -59,54 +60,8 @@ const MAX_PAGE_LIMIT = 100
 
 type ReceiptObject = Readonly<Record<string, JsonValue>>
 
-class EventQueue implements AsyncIterable<AgentSessionEvent> {
-  private readonly pending: AgentSessionEvent[] = []
-  private readonly waiters: Array<(result: IteratorResult<AgentSessionEvent>) => void> = []
-  private ended = false
-
-  push(event: AgentSessionEvent): void {
-    if (this.ended) return
-    const waiter = this.waiters.shift()
-    if (waiter) waiter({ done: false, value: event })
-    else this.pending.push(event)
-  }
-
-  close(): void {
-    if (this.ended) return
-    this.ended = true
-    for (const waiter of this.waiters.splice(0)) waiter({ done: true, value: undefined })
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<AgentSessionEvent> {
-    return {
-      next: async () => {
-        const event = this.pending.shift()
-        if (event) return { done: false, value: event }
-        if (this.ended) return { done: true, value: undefined }
-        return await new Promise<IteratorResult<AgentSessionEvent>>((resolve) => this.waiters.push(resolve))
-      },
-      return: async () => {
-        this.close()
-        return { done: true, value: undefined }
-      },
-    }
-  }
-}
-
 function gatewayError(dto: AgentGatewayErrorDTO): AgentGatewayError {
   return new AgentGatewayError(dto.code, dto.message, dto.details)
-}
-
-function stableServiceActionFailure(error: unknown): AgentRequestFailure | undefined {
-  const projected = projectStableServiceError(error)
-  if (!projected) return undefined
-  return {
-    kind: 'service',
-    error: {
-      ...projected.error,
-      statusCode: projected.statusCode,
-    },
-  }
 }
 
 function sessionTarget(ref: AgentSessionRef): AgentRequestTarget {
@@ -421,7 +376,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const claim = await this.verify(input.scope)
     const binding = await this.bindingForSession(input.scope, claim, input.ref)
     await this.loadSummary(binding.composition.service, claim, input.ref, binding.scope.identity)
-    const queue = new EventQueue()
+    const queue = new AgentSessionEventQueue()
     const initialCursor = input.cursor ?? (await binding.composition.service.readState(
       context(claim, randomUUID(), binding.scope.identity),
       input.ref.sessionId,
