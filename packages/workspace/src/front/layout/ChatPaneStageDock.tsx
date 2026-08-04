@@ -224,7 +224,7 @@ export function ChatPaneStageDock({
     onSplitPane,
     splitPending,
     onActivePaneChange,
-    onClosePane,
+    onClosePane: panes.length > 1 ? onClosePane : undefined,
   }), [panes, resolvedActiveId, flashPaneId, renderPane, topActions, onSplitPane, splitPending, onActivePaneChange, onClosePane])
 
   const handleReady = useCallback((event: DockviewReadyEvent) => {

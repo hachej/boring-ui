@@ -189,6 +189,7 @@ describe("ChatPaneStageDock", () => {
 
     expect(screen.getByRole("button", { name: "Split A chat vertically" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "Split A chat horizontally" })).toBeDisabled()
+    expect(screen.queryByRole("button", { name: "Close A pane" })).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "Split A chat horizontally" }))
     expect(splitPane).not.toHaveBeenCalled()
   })

@@ -18,9 +18,9 @@ describe("mobile chat chrome", () => {
     expect(screen.queryByText("One active thread on mobile")).toBeNull()
   })
 
-  it("uses an accessible touch target for the close action even for the sole pane", () => {
+  it("omits close for the sole pane and keeps a touch target when multiple panes exist", () => {
     const onClosePane = vi.fn()
-    render(
+    const { rerender } = render(
       <MobileSingleChatPane
         pane={{ id: "pane-a", title: "Planning" }}
         totalPanes={1}
@@ -29,6 +29,15 @@ describe("mobile chat chrome", () => {
       />,
     )
 
+    expect(screen.queryByRole("button", { name: "Close Planning pane" })).toBeNull()
+    rerender(
+      <MobileSingleChatPane
+        pane={{ id: "pane-a", title: "Planning" }}
+        totalPanes={2}
+        onClosePane={onClosePane}
+        renderPane={() => <div>Transcript</div>}
+      />,
+    )
     const close = screen.getByRole("button", { name: "Close Planning pane" })
     expect(close.className).toContain("size-11")
     fireEvent.click(close)
@@ -47,7 +56,7 @@ describe("mobile chat chrome", () => {
     )
 
     expect(screen.getByText("New chat")).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Close New chat pane" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Close New chat pane" })).toBeNull()
   })
 
   it("keeps the workspace return bar concise", () => {
