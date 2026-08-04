@@ -60,6 +60,37 @@ describe("AppLeftPane", () => {
     }
   })
 
+  it("clears optimistic working state from an authoritative idle session refresh", async () => {
+    const props = {
+      appTitle: "Test",
+      activeSessionId: "s1",
+      openSessionIds: ["s1"],
+      pinnedSessionIds: [],
+      onCreateSession: vi.fn(),
+      onOpenCommandPalette: vi.fn(),
+      onSwitchSession: vi.fn(),
+      onOpenSessionAsPane: vi.fn(),
+      onToggleSessionPinned: vi.fn(),
+    }
+    const { rerender } = render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...props} sessions={sessions} />
+      </WorkspaceAttentionProvider>,
+    )
+    act(() => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+      detail: { sessionId: "s2", working: true },
+    })))
+    expect(document.querySelector('[data-boring-badge="working"]')).toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...props} sessions={sessions.map((session) => ({ ...session, status: "idle" as const }))} />
+      </WorkspaceAttentionProvider>,
+    )
+
+    await waitFor(() => expect(document.querySelector('[data-boring-badge="working"]')).toBeNull())
+  })
+
   it("shows a hover action for creating a quick popover chat", () => {
     const onCreateSession = vi.fn()
     const onCreatePopoverSession = vi.fn()
