@@ -33,6 +33,7 @@ function parseActivity(value: unknown): AddressedSessionActivity | undefined {
 /** Opens one Workspace-owned native SSE stream. EventSource reconnects automatically. */
 export function startSessionActivityStream(options: {
   endpoint?: string
+  workspaceId?: string
   onActivity: (activity: AddressedSessionActivity) => void
   eventSourceCtor?: typeof EventSource | null
 }): () => void {
@@ -41,7 +42,8 @@ export function startSessionActivityStream(options: {
     : options.eventSourceCtor ?? (typeof EventSource === "undefined" ? null : EventSource)
   if (!EventSourceCtor) return () => {}
   const endpoint = options.endpoint?.replace(/\/$/, "") ?? ""
-  const source = new EventSourceCtor(`${endpoint}/api/v1/agents/session-activity/events`)
+  const query = options.workspaceId ? `?workspaceId=${encodeURIComponent(options.workspaceId)}` : ""
+  const source = new EventSourceCtor(`${endpoint}/api/v1/agents/session-activity/events${query}`)
   let workingRefs = new Map<string, AddressedSessionActivity["ref"]>()
   const keyFor = (activity: AddressedSessionActivity) => JSON.stringify([
     activity.ref.agentTypeId,
