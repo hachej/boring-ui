@@ -110,6 +110,8 @@ packages/workspace/src/plugins/eval-*/
 !/.agents/skills/fresh-eyes/**
 !/.agents/skills/grill-for-unknowns/
 !/.agents/skills/grill-for-unknowns/**
+!/.agents/skills/handoff/
+!/.agents/skills/handoff/**
 !/.agents/skills/plan/
 !/.agents/skills/plan/**
 !/.agents/skills/skill-management/
