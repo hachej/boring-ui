@@ -101,8 +101,12 @@ describe("live transcript front surface", () => {
     liveTranscriptBrowserState.set({ recordingKind: "short", phase: "recording", startedAt: Date.now() })
     let draft = "newer draft "
 
-    render(<LiveTranscriptComposerAction updateDraft={(update) => { draft = update(draft) }} />)
-    fireEvent.click(screen.getByRole("button", { name: "Stop short recording" }))
+    const view = render(<LiveTranscriptComposerAction updateDraft={(update) => { draft = update(draft) }} />)
+    const stopButton = screen.getByRole("button", { name: "Stop short recording" })
+    expect(stopButton).toHaveClass("w-8")
+    expect(view.container.querySelector('[data-boring-agent-part="short-recording-indicator"]')).toBeInTheDocument()
+    expect(screen.queryByText(/Short \d{2}:\d{2}/)).not.toBeInTheDocument()
+    fireEvent.click(stopButton)
 
     await waitFor(() => expect(stopShort).toHaveBeenCalledOnce())
     expect(draft).toBe("newer draft bonjour")
