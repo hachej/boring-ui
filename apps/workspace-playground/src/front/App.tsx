@@ -8,6 +8,7 @@ import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
+import { LoadingStatesShowcase, type LoadingStateMode } from "./LoadingStatesShowcase"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -61,6 +62,12 @@ function createInitialShowcaseSessions() {
     title: showcaseSessionTitles[index % showcaseSessionTitles.length] ?? `Session ${index + 1}`,
     updatedAt: now - index * 60_000,
   }))
+}
+
+function loadingStateMode(): LoadingStateMode | null {
+  if (typeof window === "undefined") return null
+  const mode = new URLSearchParams(window.location.search).get("loading-state")
+  return mode === "workspace" || mode === "sessions" || mode === "workbench" || mode === "error" ? mode : null
 }
 
 function isFullPageRoute(): boolean {
@@ -197,6 +204,7 @@ function WorkspaceFullPageShell() {
 export function WorkspaceShell() {
   resetPlaygroundStorageIfRequested()
   const showcase = useMemo(isShowcaseRoute, [])
+  const loadingShowcase = useMemo(loadingStateMode, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const multiFilesystem = useMemo(isMultiFilesystemPlaygroundRoute, [])
   const activeWorkspacePlugins = multiFilesystem ? multiFilesystemWorkspacePlugins : workspacePlugins
@@ -235,7 +243,7 @@ export function WorkspaceShell() {
   )
 
   useEffect(() => {
-    if (showcase || fullPage) return
+    if (showcase || loadingShowcase || fullPage) return
     let cancelled = false
     void fetch("/api/v1/workspace/meta")
       .then(async (res) => res.ok ? await res.json() as WorkspaceMeta : null)
@@ -255,9 +263,13 @@ export function WorkspaceShell() {
         if (!cancelled) setMetaLoaded(true)
       })
     return () => { cancelled = true }
-  }, [showcase, fullPage])
+  }, [showcase, loadingShowcase, fullPage])
 
   if (showcase) seedShowcase(SHOWCASE_SESSION_ID)
+
+  if (loadingShowcase) {
+    return <LoadingStatesShowcase mode={loadingShowcase} />
+  }
 
   if (fullPage) {
     return <WorkspaceFullPageShell />

@@ -1,3 +1,5 @@
+import { Button, ErrorState, Skeleton } from "@hachej/boring-ui-kit"
+import { WorkspaceTranscriptLoadingSurface } from "../../front/components/WorkspaceLoadingState"
 import type { WorkspaceWarmupStatus } from "./workspacePreload"
 
 export function WorkbenchWarmupOverlay({ status }: { status: WorkspaceWarmupStatus }) {
@@ -11,21 +13,58 @@ export function WorkbenchWarmupOverlay({ status }: { status: WorkspaceWarmupStat
         : requirement === "ui-bridge"
           ? "Connecting workspace…"
           : "Preparing workspace…"
-    : "Workspace workbench failed"
+    : "Workspace unavailable"
   const description = status.status === "failed"
-    ? status.message
+    ? "The workspace runtime could not finish preparing. Reload the workspace to try again."
     : "Chat is ready while files, tools, and workspace panels finish warming up."
+
+  if (!preparing) {
+    return (
+      <div className="flex h-full min-h-0 items-center justify-center bg-background p-6">
+        <ErrorState
+          className="w-full max-w-md"
+          title={title}
+          description={description}
+          details={status.message}
+          actions={(
+            <Button type="button" onClick={() => window.location.reload()}>
+              Reload workspace
+            </Button>
+          )}
+        />
+      </div>
+    )
+  }
+
   return (
-    <div className="flex h-full min-h-0 items-center justify-center bg-background px-6 text-center">
-      <div className="max-w-sm rounded-2xl border border-border bg-card p-5 shadow-sm">
-        {preparing ? (
-          <div className="mx-auto mb-3 h-7 w-7 rounded-full border-2 border-muted-foreground/20 border-t-foreground animate-spin" aria-hidden="true" />
-        ) : null}
-        <div className="text-sm font-semibold text-foreground">{title}</div>
-        <p className="mt-2 text-sm text-muted-foreground">{description}</p>
-        {status.status === "failed" ? (
-          <p className="mt-3 text-xs text-muted-foreground">Reload the workspace to retry.</p>
-        ) : null}
+    <div
+      className="flex h-full min-h-0 flex-col overflow-hidden bg-background"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      data-boring-workspace-part="workbench-loading-surface"
+    >
+      <div className="sr-only">
+        <span>{title}</span>
+        <span>{description}</span>
+      </div>
+      <div aria-hidden="true" className="flex h-11 shrink-0 items-center gap-3 border-b border-border/40 px-4">
+        <Skeleton className="size-5 rounded-md" />
+        <Skeleton className="h-3 w-28 rounded-sm" />
+      </div>
+      <div aria-hidden="true" className="grid min-h-64 flex-1 grid-cols-[minmax(0,1fr)_minmax(12rem,0.42fr)]">
+        <div className="flex min-h-64 flex-col gap-4 border-r border-border/40 p-4">
+          <Skeleton className="h-3 w-24 rounded-sm" />
+          <Skeleton className="h-8 w-full rounded-md" />
+          <Skeleton className="h-8 w-4/5 rounded-md" />
+          <Skeleton className="h-8 w-11/12 rounded-md" />
+          <Skeleton className="mt-auto h-8 w-2/3 rounded-md" />
+        </div>
+        <div className="flex min-h-64 flex-col gap-4 p-4">
+          <Skeleton className="h-3 w-20 rounded-sm" />
+          <Skeleton className="h-24 w-full rounded-lg" />
+          <Skeleton className="h-16 w-full rounded-lg" />
+        </div>
       </div>
     </div>
   )
@@ -33,12 +72,15 @@ export function WorkbenchWarmupOverlay({ status }: { status: WorkspaceWarmupStat
 
 export function ChatSessionTransitionState() {
   return (
-    <div className="flex h-full min-h-0 items-center justify-center bg-background px-6 text-center">
-      <div className="max-w-sm rounded-2xl border border-border bg-card p-5 shadow-sm">
-        <div className="mx-auto mb-3 h-7 w-7 rounded-full border-2 border-muted-foreground/20 border-t-foreground animate-spin" aria-hidden="true" />
-        <div className="text-sm font-semibold text-foreground">Loading sessions…</div>
-        <p className="mt-2 text-sm text-muted-foreground">Finding this workspace’s saved chats.</p>
-      </div>
+    <div
+      className="flex h-full min-h-0 flex-col overflow-hidden bg-background"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label="Loading saved chats"
+      data-boring-workspace-part="session-loading-surface"
+    >
+      <WorkspaceTranscriptLoadingSurface />
     </div>
   )
 }
