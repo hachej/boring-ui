@@ -1219,6 +1219,37 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
+  it("hydrates an inventoried restored pane without a global active preference", async () => {
+    localStorage.setItem(
+      "boring-workspace:chat-panes:restored-without-active",
+      JSON.stringify({ ids: ["s1"], activeId: "s1" }),
+    )
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => (
+      <div data-testid="restored-chat">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
+    )
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="restored-without-active"
+        chatPanel={CapturingChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "s1", title: "Restored session" }],
+          loading: false,
+          error: undefined,
+          activeSessionId: null,
+          activeSession: null,
+          switch: vi.fn(),
+          create: vi.fn(),
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("restored-chat")).toHaveTextContent("Chat s1 hydrate=true")
+    })
+  })
+
   it("keeps an async returned created pane while controlled sessions catch up", async () => {
     const user = userEvent.setup()
 
