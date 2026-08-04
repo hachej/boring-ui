@@ -238,6 +238,33 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getAllByText("Loading sessions…").length).toBeGreaterThan(0)
   })
 
+  it("polls authoritative session activity while a background session reports working", async () => {
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    render(
+      <WorkspaceAgentFront
+        workspaceId="working-session-refresh"
+        chatPanel={SessionIdChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "session-1", title: "Session one", status: "idle" }],
+          activeSession: { id: "session-1", title: "Session one", status: "idle" },
+          activeSessionId: "session-1",
+          loading: false,
+          error: undefined,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+          refresh,
+        })}
+      />,
+    )
+
+    act(() => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+      detail: { sessionId: "session-1", agentTypeId: "default", working: true },
+    })))
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledWith({ background: true }), { timeout: 2000 })
+  })
+
   it("renders a known active session while remote sessions are still loading", () => {
     const PendingChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
