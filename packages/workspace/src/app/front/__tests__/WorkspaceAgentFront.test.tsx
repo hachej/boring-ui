@@ -1469,6 +1469,9 @@ describe("WorkspaceAgentFront", () => {
       expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
       expect(activeStreams()).toHaveLength(1)
     })
+    expect(MockEventSource.instances.filter((instance) => (
+      instance.url.includes("/api/v1/ui/commands/next")
+    ))).toHaveLength(1)
   })
 
   it("does not stop still-visible sessions when changing visible chat panes", async () => {
