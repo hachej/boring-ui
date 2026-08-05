@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import type { FastifyInstance } from "fastify"
@@ -99,7 +99,14 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
     { title: "pre-MIG-CLI fixture" },
   )
   const sessionId = created.id
-  const transcriptPath = join(rollbackReader.getSessionDir(), `${sessionId}.jsonl`)
+  const transcriptName = (await readdir(rollbackReader.getSessionDir()))
+    .find((name) => name === `${sessionId}.jsonl` || name.endsWith(`_${sessionId}.jsonl`))
+  if (!transcriptName) throw new Error(`missing transcript for ${sessionId}`)
+  const transcriptPath = join(rollbackReader.getSessionDir(), transcriptName)
+  await appendFile(transcriptPath, `${JSON.stringify({
+    type: "message", id: "created-user", parentId: null, timestamp: "2026-07-20T00:00:01.000Z",
+    message: { role: "user", content: [{ type: "text", text: "hello" }], timestamp: 1 },
+  })}\n`)
   const transcript = await readFile(transcriptPath, "utf8")
   const legacySessions = [
     { id: "native-unscoped", context: undefined },
@@ -117,6 +124,9 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
         timestamp: "2026-07-30T00:00:00.000Z",
         cwd: workspaceRoot,
         ...(context ? { boringSessionCtx: context } : {}),
+      })}\n${JSON.stringify({
+        type: "message", id: `message-${id}`, parentId: null, timestamp: "2026-07-20T00:00:01.000Z",
+        message: { role: "user", content: [{ type: "text", text: "hello" }], timestamp: 1 },
       })}\n`,
       "utf8",
     )

@@ -22,15 +22,11 @@ test.describe('M3a: pi-chat session CRUD', () => {
     expect(r2.ok()).toBe(true)
     const sessionBRef = (await r2.json()) as { agentTypeId: string; sessionId: string }
 
-    // List - both present
+    // Ordinary history hides both turn-less sessions; exact state authority
+    // below remains able to resolve the canonical empty transcript.
     const listBefore = await browserPage.request.get(`${api}/api/v1/agents/default/sessions`)
-    const beforePayload = (await listBefore.json()) as { sessions: Array<{ ref: { sessionId: string }; title: string }> }
-    const idsBefore = beforePayload.sessions.map((session) => session.ref.sessionId)
-    expect(idsBefore).toContain(sessionARef.sessionId)
-    expect(idsBefore).toContain(sessionBRef.sessionId)
-    expect(beforePayload.sessions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ ref: expect.objectContaining({ sessionId: sessionARef.sessionId }), title: 'Session A' }),
-    ]))
+    const beforePayload = (await listBefore.json()) as { sessions: unknown[] }
+    expect(beforePayload.sessions).toEqual([])
 
     // State - canonical snapshot with an empty timeline
     const state = await browserPage.request.get(
@@ -50,12 +46,15 @@ test.describe('M3a: pi-chat session CRUD', () => {
     )
     expect(del.status()).toBe(204)
 
-    // List again - only B remains
+    // Deleted exact authority is gone; the still-empty B remains hidden.
+    const deletedState = await browserPage.request.get(
+      `${api}/api/v1/agents/default/sessions/${sessionARef.sessionId}/state`,
+      { failOnStatusCode: false },
+    )
+    expect(deletedState.status()).toBe(404)
     const listAfter = await browserPage.request.get(`${api}/api/v1/agents/default/sessions`)
-    const afterPayload = (await listAfter.json()) as { sessions: Array<{ ref: { sessionId: string } }> }
-    const idsAfter = afterPayload.sessions.map((session) => session.ref.sessionId)
-    expect(idsAfter).not.toContain(sessionARef.sessionId)
-    expect(idsAfter).toContain(sessionBRef.sessionId)
+    const afterPayload = (await listAfter.json()) as { sessions: unknown[] }
+    expect(afterPayload.sessions).toEqual([])
   })
 
   test('state of an unknown session returns stable not-found error', async ({
@@ -88,10 +87,13 @@ test.describe('M3a: pi-chat session CRUD', () => {
     )
     expect(r.ok()).toBe(true)
     const ref = (await r.json()) as { agentTypeId: string; sessionId: string }
-    const list = await browserPage.request.get(`${backend.apiUrl}/api/v1/agents/default/sessions`)
-    const payload = (await list.json()) as { sessions: Array<{ ref: { sessionId: string }; title: string }> }
-    expect(payload.sessions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ ref: expect.objectContaining({ sessionId: ref.sessionId }), title: 'New session' }),
-    ]))
+    const state = await browserPage.request.get(
+      `${backend.apiUrl}/api/v1/agents/default/sessions/${ref.sessionId}/state`,
+    )
+    expect(state.ok()).toBe(true)
+    expect(await state.json()).toMatchObject({
+      ref,
+      summary: { title: 'New session', turnCount: 0 },
+    })
   })
 })

@@ -253,6 +253,37 @@ describe('HarnessPiChatService', () => {
     await expect(closed).resolves.toBeUndefined()
   })
 
+  it('fences a cold open that finishes after its session was deleted', async () => {
+    const adapter = createAdapter()
+    const adapterGate = deferred<void>()
+    const deleteSession = vi.fn(async () => {})
+    const harness = {
+      ...createHarness(adapter),
+      getPiSessionAdapter: vi.fn(async () => {
+        await adapterGate.promise
+        return adapter
+      }),
+    }
+    const service = new HarnessPiChatService({
+      harness,
+      sessionStore: { ...sessionStore, delete: deleteSession },
+      workdir: '/workspace',
+    })
+
+    const opening = service.subscribe(ctx, 's1', 0, () => {})
+      .then(() => undefined, (error: unknown) => error)
+    const deletion = service.deleteSession(ctx, 's1')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    adapterGate.resolve()
+    await deletion
+
+    await expect(opening).resolves.toMatchObject({ code: ErrorCode.enum.SESSION_NOT_FOUND })
+    expect(adapter.subscribe).not.toHaveBeenCalled()
+    expect(adapter.listenerCount()).toBe(0)
+    expect(adapter.abort).toHaveBeenCalled()
+    expect(deleteSession).toHaveBeenCalledOnce()
+  })
+
   it('aborts an interrupt-triggered replacement run before draining the interrupt', async () => {
     const adapter = createAdapter(['queued follow-up'])
     const replacement = deferred<void>()
@@ -1187,6 +1218,40 @@ describe('HarnessPiChatService', () => {
         parts: [expect.objectContaining({ type: 'text', text: 'added from pi CLI' })],
       }),
     ])
+  })
+
+  it('fences in-memory event replay behind an idle persisted snapshot cursor', async () => {
+    const adapter = createAdapter()
+    adapter.readSnapshot().isStreaming = false
+    const persistedStore: PersistedSessionStore = {
+      ...sessionStore,
+      loadEntries: vi.fn(async () => ({
+        id: 's1',
+        messages: [{ id: 'u1', role: 'user', content: [{ type: 'text', text: 'persisted prompt' }] }],
+      })),
+    }
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore: persistedStore,
+      workdir: '/workspace',
+    })
+    const delivered: PiChatEvent[] = []
+    const first = await service.subscribe(ctx, 's1', 0, (event) => delivered.push(event))
+    expect(first.type).toBe('ok')
+
+    adapter.emit({ type: 'queue_update', followUp: ['already rendered'] } as unknown as AgentSessionEvent)
+    await vi.waitFor(() => expect(delivered.length).toBeGreaterThan(0))
+    if (first.type === 'ok') first.unsubscribe()
+
+    const state = await service.readState(ctx, 's1')
+    expect(state.seq).toBe(delivered.at(-1)?.seq)
+    expect(state.messages).toEqual([expect.objectContaining({ id: 'u1' })])
+
+    const replayed: PiChatEvent[] = []
+    const reopened = await service.subscribe(ctx, 's1', state.seq, (event) => replayed.push(event))
+    expect(reopened.type).toBe('ok')
+    expect(replayed).toEqual([])
+    if (reopened.type === 'ok') reopened.unsubscribe()
   })
 
   it('keeps live state when an idle session becomes active during persisted refresh', async () => {

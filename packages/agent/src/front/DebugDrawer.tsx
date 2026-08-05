@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UIMessage } from 'ai'
+import { agentResourceUrl, withStorageScope } from './agentHttp'
 import { copyTextToClipboard } from './clipboard'
 import { cn } from './lib'
 import { Button, IconButton, Tabs, TabsContent, TabsList, TabsTrigger } from '@hachej/boring-ui-kit'
@@ -109,7 +110,7 @@ function SystemPromptTab({
 
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
     nextFetch(agentResourceUrl(apiBaseUrl, `/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions/${encodeURIComponent(sessionId)}/system-prompt`), {
-      headers: scopedHeaders(requestHeaders, storageScope),
+      headers: withStorageScope(requestHeaders, storageScope),
     })
       .then(async (res) => {
         if (aborted) return
@@ -401,17 +402,4 @@ export function DebugDrawer({ agentTypeId, apiBaseUrl, fetch, sessionId, message
       </aside>
     </>
   )
-}
-
-function agentResourceUrl(apiBaseUrl: string | undefined, path: string): string {
-  const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-  return `${base}${path}`
-}
-
-function scopedHeaders(headers: Record<string, string> | undefined, storageScope: string | undefined): Record<string, string> | undefined {
-  if (!headers && !storageScope) return undefined
-  const result: Record<string, string> = { ...(headers ?? {}) }
-  const hasStorageScope = Object.keys(result).some((key) => key.toLowerCase() === 'x-boring-storage-scope')
-  if (storageScope && !hasStorageScope) result['x-boring-storage-scope'] = storageScope
-  return result
 }

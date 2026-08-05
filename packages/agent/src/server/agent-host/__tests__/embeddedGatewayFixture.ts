@@ -19,6 +19,7 @@ interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
     entered: Promise<void>
     release(): void
   }
+  rejectNextPrompt(error: Error): void
 }
 
 interface RecordValue {
@@ -38,6 +39,7 @@ let globalCreated = 0
 
 class FakeService implements PiChatSessionService {
   readonly records = new Map<string, RecordValue>()
+  nextPromptError: Error | undefined
 
   async listSessions(_ctx: PiSessionRequestContext, options?: { includeId?: string }) {
     const rows = [...this.records.values()].map(this.summary)
@@ -93,6 +95,11 @@ class FakeService implements PiChatSessionService {
   }
 
   async prompt(_ctx: PiSessionRequestContext, sessionId: string, payload: { clientNonce: string }) {
+    if (this.nextPromptError) {
+      const error = this.nextPromptError
+      this.nextPromptError = undefined
+      throw error
+    }
     const record = this.get(sessionId)
     if (record.status === 'running' || record.status === 'aborting') {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'prompt is invalid while active')
@@ -299,6 +306,9 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     },
     moveSession(ref, updatedAt) {
       for (const service of services.values()) if (service.records.has(ref.sessionId)) service.move(ref.sessionId, updatedAt)
+    },
+    rejectNextPrompt(error) {
+      for (const service of services.values()) service.nextPromptError = error
     },
     modelLoopStarts(ref) {
       for (const service of services.values()) {

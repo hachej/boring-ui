@@ -72,6 +72,7 @@ export const ErrorCode = z.enum([
   // Session / bridge
   'SESSION_NOT_FOUND',
   'SESSION_LOCKED',
+  'SESSION_TRANSCRIPT_UNREADABLE',
   'STREAM_BUFFER_EVICTED',
   'CURSOR_OUT_OF_RANGE',
   'BRIDGE_COMMAND_INVALID',
