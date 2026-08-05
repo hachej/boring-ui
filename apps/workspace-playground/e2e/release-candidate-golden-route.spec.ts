@@ -11,6 +11,14 @@ test("boots built dist and completes one addressed Alpha send", async ({ page })
   test.setTimeout(120_000)
   expect(process.env.BORING_PLAYGROUND_DIST_ONLY, "RC smoke requires explicit dist-only mode").toBe("1")
 
+  page.on("console", (message) => {
+    if (message.type() === "error") console.error(`[rc-browser-console] ${message.text()}`)
+  })
+  page.on("pageerror", (error) => console.error(`[rc-browser-pageerror] ${error.message}`))
+  page.on("requestfailed", (request) => {
+    console.error(`[rc-browser-requestfailed] ${request.failure()?.errorText ?? "unknown"} ${request.url()}`)
+  })
+
   const cssFault = process.env.BORING_RC_BREAK_CSS
   if (cssFault === "small" || cssFault === "mime") {
     await page.route(`**${agentDistCssPath}*`, async (route) => {

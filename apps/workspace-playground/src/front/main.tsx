@@ -2,14 +2,8 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { WorkspaceShell } from "./App"
 import "@hachej/boring-workspace/globals.css"
-import agentStylesheetUrl from "@hachej/boring-agent/front/styles.css?url"
+import "@hachej/boring-agent/front/styles.css"
 import "./app.css"
-
-const agentStylesheet = document.createElement("link")
-agentStylesheet.rel = "stylesheet"
-agentStylesheet.href = agentStylesheetUrl
-agentStylesheet.dataset.boringAgentStylesheet = "package-import"
-document.head.append(agentStylesheet)
 
 // The playground is the standalone dev surface for @hachej/boring-workspace.
 // Auth, DB, user management, config — all of that belongs to @hachej/boring-core

@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from "vite"
+import { defineConfig, normalizePath, type Plugin } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { dirname, resolve } from "node:path"
@@ -12,6 +12,24 @@ const releaseCandidateDistOnly = process.env.BORING_PLAYGROUND_DIST_ONLY === "1"
 
 if (releaseCandidateDistOnly) {
   console.log("[workspace-playground] release-candidate dist-only package resolution enabled")
+}
+
+function releaseCandidateAgentStylesheet(): Plugin {
+  const stylesheetPath = normalizePath(resolve(repoRoot, "packages/agent/dist/front/styles.css"))
+  return {
+    name: "boring-release-candidate-agent-stylesheet",
+    transformIndexHtml() {
+      return [{
+        tag: "link",
+        attrs: {
+          rel: "stylesheet",
+          href: `/@fs/${stylesheetPath}`,
+          "data-boring-agent-stylesheet": "package-import",
+        },
+        injectTo: "head",
+      }]
+    },
+  }
 }
 
 function releaseCandidateDistOnlyGuard(): Plugin {
@@ -118,7 +136,9 @@ const pollingInterval = Number(process.env.CHOKIDAR_INTERVAL ?? process.env.BORI
 
 export default defineConfig({
   plugins: [
-    ...(releaseCandidateDistOnly ? [releaseCandidateDistOnlyGuard()] : []),
+    ...(releaseCandidateDistOnly
+      ? [releaseCandidateAgentStylesheet(), releaseCandidateDistOnlyGuard()]
+      : []),
     react({
       exclude: dynamicPluginReactRefreshExclude,
     }),
@@ -149,6 +169,9 @@ export default defineConfig({
   },
   server: {
     port: VITE_PORT,
+    ...(releaseCandidateDistOnly
+      ? { warmup: { clientFiles: [resolve(__dirname, "src/front/main.tsx")] } }
+      : {}),
     host: true,
     hmr: {
       host: process.env.VITE_HMR_HOST ?? "100.68.199.114",
