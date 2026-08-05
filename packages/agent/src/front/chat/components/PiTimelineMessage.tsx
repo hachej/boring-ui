@@ -208,13 +208,8 @@ function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
       {isAssistant && (textParts.length > 0 || shouldReserveStreamingActions) ? (
         <MessageActionsBar
           text={textParts.map((part) => part.text).join('\n\n')}
-          createdAt={message.createdAt}
           visible={!messageIsStreaming}
         />
-      ) : isAssistant && message.createdAt ? (
-        <MessageTimestamp createdAt={message.createdAt} className="self-start pl-1" />
-      ) : role === 'user' && message.createdAt ? (
-        <MessageTimestamp createdAt={message.createdAt} className="self-end pr-1" />
       ) : null}
     </Message>
   )
@@ -396,11 +391,9 @@ function unescapeAttachmentAttr(value: string): string {
 
 function MessageActionsBar({
   text,
-  createdAt,
   visible = true,
 }: {
   text: string
-  createdAt?: string
   visible?: boolean
 }) {
   const [copied, setCopied] = useState(false)
@@ -448,7 +441,6 @@ function MessageActionsBar({
         visible ? 'opacity-100' : 'pointer-events-none opacity-0',
       )}
     >
-      {visible && createdAt ? <MessageTimestamp createdAt={createdAt} /> : null}
       <Button
         type="button"
         variant="ghost"
@@ -462,22 +454,6 @@ function MessageActionsBar({
         {copied ? <CheckIcon className="h-3.5 w-3.5 text-[color:var(--accent)]" /> : <CopyIcon className="h-3.5 w-3.5" />}
       </Button>
     </div>
-  )
-}
-
-function MessageTimestamp({ createdAt, className }: { createdAt: string; className?: string }) {
-  const date = new Date(createdAt)
-  if (!Number.isFinite(date.getTime())) return null
-
-  return (
-    <time
-      className={cn('tabular-nums text-xs text-muted-foreground/70', className)}
-      dateTime={createdAt}
-      title={date.toLocaleString()}
-      suppressHydrationWarning
-    >
-      {date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-    </time>
   )
 }
 
