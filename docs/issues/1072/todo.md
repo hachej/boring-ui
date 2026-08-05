@@ -119,5 +119,5 @@ Blocked by all lane gates.
 - [x] Run tier-2 cross-lane standards/spec/thermo review.
 - [x] Integrate accepted findings; re-prove/re-review non-trivial fixes.
 - [x] If one focused loop does not clear blockers/majors, split PRs.
-- [ ] Otherwise push the issue branch and open one PR linked to #1072.
-- [ ] Post current-head proof and owner-review handoff. Never merge.
+- [x] Otherwise push the issue branch and open one PR linked to #1072.
+- [x] Post current-head proof and owner-review handoff. Never merge.
