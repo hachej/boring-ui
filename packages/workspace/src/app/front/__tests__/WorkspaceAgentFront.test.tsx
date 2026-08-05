@@ -1375,7 +1375,11 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["alpha-one", "beta-one"]))
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "New chat with Alpha" })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "New chat with Beta" })).toBeInTheDocument()
+    })
+    expect(visibleChatSessionIds()).toEqual(["alpha-one", "beta-one"])
     expect(JSON.parse(localStorage.getItem("boring-workspace:chat-panes:async-fleet-restore") ?? "null")).toMatchObject({
       version: 2,
       refs: [
