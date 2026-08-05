@@ -10,7 +10,6 @@ import {
   SCRIPTED_TWO_AGENT_FLEET,
 } from "./testing/twoAgentFleet"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
-import { createTasksServerPlugin } from "@hachej/boring-tasks/server"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
 export const VITE_PORT = Number(process.env.PORT) || 5200
@@ -90,12 +89,11 @@ export async function startPlaygroundServer(): Promise<void> {
           }
         : {}),
       plugins: [
-        createTasksServerPlugin({
-          agentTypeId: process.env.BORING_AGENT_E2E_SCRIPTED_PI === "1" ? SCRIPTED_TWO_AGENT_DEFAULT : "default",
-          contentDigest: "workspace-playground:tasks-agent-bindings-v1",
-          workspaceRoot,
-          config: { providers: [{ provider: "github", repo: "auto" }] },
-        }),
+        {
+          dir: resolve(APP_ROOT, "../../plugins/tasks"),
+          options: { config: { providers: [{ provider: "github", repo: "auto" }] } },
+          trust: "internal",
+        },
         ...(process.env.BORING_AGENT_E2E_SCRIPTED_PI === "1"
           ? SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS
           : []),
