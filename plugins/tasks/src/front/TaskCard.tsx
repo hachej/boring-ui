@@ -6,7 +6,7 @@ import {
   type WorkspaceShellAnchorRect,
   type WorkspaceShellCapabilities,
 } from "@hachej/boring-workspace/plugin"
-import type { BoringTaskCard } from "../shared"
+import type { BoringTaskCard, BoringTaskSessionLink } from "../shared"
 import { TaskSessionDisclosure } from "./TaskSessionDisclosure"
 import { registerPendingTaskChatBinding } from "./pendingTaskChatBindings"
 import { TaskAttentionDisclosure } from "./TaskAttentionDisclosure"
@@ -19,7 +19,7 @@ interface TaskCardProps {
   deleteEnabled?: boolean
   compact?: boolean
   attention?: readonly TaskAttentionItem[]
-  sessionLinkCount?: number
+  sessionLinks?: readonly BoringTaskSessionLink[]
   onDelete?: (task: BoringTaskCard) => void
   onDragStart: (event: DragEvent<HTMLElement>, task: BoringTaskCard) => void
   onDragEnd: () => void
@@ -91,7 +91,7 @@ export async function createLinkedTaskChat(
   return opened
 }
 
-export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = false, compact = false, attention = [], sessionLinkCount, onDelete, onDragStart, onDragEnd }: TaskCardProps) {
+export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = false, compact = false, attention = [], sessionLinks, onDelete, onDragStart, onDragEnd }: TaskCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [openingChat, setOpeningChat] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -188,7 +188,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
         </div>
         <div className="w-full shrink-0 pt-0.5">
           <TaskAttentionDisclosure items={attention} shell={shell} />
-          <TaskSessionDisclosure task={task} shell={shell} pluginClient={pluginClient} sessionLinkCount={sessionLinkCount} />
+          <TaskSessionDisclosure task={task} shell={shell} pluginClient={pluginClient} sessionLinks={sessionLinks} />
         </div>
       </article>
     )
@@ -257,7 +257,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
       ) : null}
       <div className="mt-2 border-t border-border/60 pt-1">
         <TaskAttentionDisclosure items={attention} shell={shell} />
-        <TaskSessionDisclosure task={task} shell={shell} pluginClient={pluginClient} sessionLinkCount={sessionLinkCount} />
+        <TaskSessionDisclosure task={task} shell={shell} pluginClient={pluginClient} sessionLinks={sessionLinks} />
       </div>
     </article>
   )

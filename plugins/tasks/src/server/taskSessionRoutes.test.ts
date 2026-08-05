@@ -82,11 +82,9 @@ describe("task session link routes", () => {
       { agentTypeId: "alpha", sessionId: "native-exact" },
       expect.objectContaining({ request: expect.any(Object) }),
     )
-    const listed = await handlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "github", taskId: "776" } }, reply()) as { links: unknown[] }
-    expect(listed.links).toHaveLength(1)
   })
 
-  it("streams an initial redacted snapshot and workspace-scoped count changes", async () => {
+  it("streams an initial linked-session snapshot and workspace-scoped changes", async () => {
     const workspace = new MemoryWorkspace()
     const handlers = await routes({
       trusted: {
@@ -110,7 +108,7 @@ describe("task session link routes", () => {
     const streamReply = Object.assign(reply(), { raw: responseRaw, hijack: vi.fn() })
     await handlers.get("/api/boring-tasks/session-links/events")!({ id: "stream", headers: {}, query: { workspaceId: "workspace-a" }, raw: requestRaw }, streamReply)
     expect(responseRaw.writeHead).toHaveBeenCalledWith(200, expect.objectContaining({ "Content-Type": "text/event-stream" }))
-    expect(responseRaw.writes.join("")).not.toContain("sessionId")
+    expect(responseRaw.writes.join("")).toContain('"tasks":[]')
 
     await handlers.get("/api/boring-tasks/sessions/link")!({
       id: "link",
@@ -122,8 +120,8 @@ describe("task session link routes", () => {
     expect(frames).toContain("event: change")
     expect(frames).toContain('"adapterId":"github"')
     expect(frames).toContain('"taskId":"776"')
-    expect(frames).toContain('"count":1')
-    expect(frames).not.toContain("native-secret")
+    expect(frames).toContain('"sessionId":"native-secret"')
+    expect(frames).toContain('"agentTypeId":"alpha"')
     requestRaw.emit("close")
   })
 
@@ -199,32 +197,6 @@ describe("task session link routes", () => {
     expect(responseRaw.writeHead).not.toHaveBeenCalled()
     expect(responseRaw.writes).toEqual([])
     expect(streamReply.hijack).not.toHaveBeenCalled()
-  })
-
-  it("filters unauthorized exact session IDs from task-scoped lists", async () => {
-    const workspace = new MemoryWorkspace()
-    let denySession = false
-    const authorizeSession = vi.fn(async (_actor, ref: { sessionId: string }) => {
-      if (denySession && ref.sessionId === "native-denied") throw new Error("not found")
-    })
-    const handlers = await routes({
-      trusted: {
-        actorResolver: async () => ({ workspaceId: "workspace-a", userId: "user-a" }),
-        workspaceAgentDispatcherResolver: {
-          resolve: vi.fn() as never,
-          runWithWorkspaceAgent: runWithWorkspace(workspace) as never,
-          resolveWithWorkspace: async () => ({ dispatcher: {} as never, workspace: workspace as never }),
-          authorizeSession,
-        },
-      },
-    })
-    await handlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "native-allowed" } }, reply())
-    await handlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "native-denied" } }, reply())
-    denySession = true
-
-    const listed = await handlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "github", taskId: "776" } }, reply()) as { links: Array<{ sessionId?: string }> }
-    expect(listed.links.map((link) => link.sessionId)).toEqual(["native-allowed", undefined])
-    expect(JSON.stringify(listed)).not.toContain("native-denied")
   })
 
   it("reverse-resolves deduplicated authorized sessions without exposing denied, missing, or stale provenance", async () => {
@@ -357,11 +329,11 @@ describe("task session link routes", () => {
   it("returns stable validation and forbidden errors", async () => {
     const validationHandlers = await routes({ trusted: undefined })
     const invalidReply = reply()
-    await validationHandlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "github", taskId: "776", extra: true } }, invalidReply)
+    await validationHandlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "native", extra: true } }, invalidReply)
     expect(invalidReply).toMatchObject({ statusCode: 400, payload: { code: TASK_ERROR_CODES.SESSION_INVALID_BODY } })
 
     const oversizedReply = reply()
-    await validationHandlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "é".repeat(257), taskId: "776" } }, oversizedReply)
+    await validationHandlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "é".repeat(257), taskId: "776", agentTypeId: "alpha", sessionId: "native" } }, oversizedReply)
     expect(oversizedReply).toMatchObject({ statusCode: 400, payload: { code: TASK_ERROR_CODES.SESSION_INVALID_BODY } })
 
     const forbiddenReply = reply()
@@ -402,9 +374,7 @@ describe("task session link routes", () => {
       },
     })
     await handlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: " github ", taskId: " 776 ", agentTypeId: "alpha", sessionId: " native " } }, reply())
-    const listed = await handlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "github", taskId: "776" } }, reply()) as { links: unknown[] }
-    expect(listed.links).toHaveLength(1)
-    expect(firstWorkspace.files.has(".pi/tasks/session-links.json")).toBe(true)
+    expect(firstWorkspace.files.get(".pi/tasks/session-links.json")).toContain('"sessionId": "native"')
   })
 
   it("uses the trusted Workspace for task routes and disables unapproved delete", async () => {
@@ -463,8 +433,7 @@ describe("task session link routes", () => {
     const linked = await handlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "later-missing" } }, reply()) as { link: { id: string } }
     authorizeSession.mockClear()
     const unlinked = await handlers.get("/api/boring-tasks/sessions/unlink")!({ body: { linkId: linked.link.id } }, reply()) as { ok: true; link: Record<string, unknown> }
-    expect(unlinked).toMatchObject({ ok: true, link: { id: linked.link.id } })
-    expect(unlinked.link).not.toHaveProperty("sessionId")
+    expect(unlinked).toMatchObject({ ok: true, link: { id: linked.link.id, sessionId: "later-missing" } })
     expect(authorizeSession).not.toHaveBeenCalled()
   })
 })

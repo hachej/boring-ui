@@ -21,9 +21,9 @@ Create one new PR stacked on PR #1044 that preserves the product behavior while 
 - PR #1044 is the base and remains authoritative for session creation, boot resume, transcript identity, and deletion.
 - Human artifacts are typed, bounded structured records and open independently from chat.
 - Inbox chat openers retain the Agent owner.
-- Task links durably persist `agentTypeId` and `sessionId`; session IDs are never disclosed until exact authorization succeeds.
-- The durable task-link store projects one Workspace-scoped SSE: connection/reconnection sends an authoritative redacted `{ adapterId, taskId, count }` snapshot, and successful durable writes publish redacted count changes. Exact session IDs remain available only through the authorized expanded-task route.
-- Starting a task chat performs canonical server creation, durable task binding, then UI publication. A failed link triggers best-effort deletion of the newly-created empty session.
+- Task links durably persist `agentTypeId` and `sessionId`; the Workspace-authorized task-link stream projects those canonical link descriptors without transcript content.
+- The durable task-link store projects one Workspace-scoped SSE: connection/reconnection sends the authoritative task-to-session link snapshot, successful durable writes publish the complete changed task link set, and card counts derive from `links.length`.
+- Starting a task chat publishes canonical creation immediately but persists the task link only after the exact session's first prompt is accepted. Failed placement rolls back through shell-owned deletion.
 - Task HTTP routes and tools use `runWithWorkspaceAgent`; no Workspace escapes its Host lease.
 - Handover summaries expose only terminal run identity and explicitly allowlisted structured details.
 - `createAgentApp`, `registerAgentRoutes`, `/api/v1/agent/*`, legacy route mounts, and default-Agent inference remain absent.
@@ -46,15 +46,15 @@ Create one new PR stacked on PR #1044 that preserves the product behavior while 
 - Task cards create one canonical addressed session through the Workspace shell, publish it to Chats immediately, and keep the task link provisional until that exact addressed session's first prompt is accepted.
 - Provisional binding intent survives tab reload, retries transient link failures, and rolls back through shell-owned deletion if detached placement fails.
 - Task links survive restart and retain the Agent owner.
-- Persisted task-session counts appear without expanding each task, update across connected clients after route/tool mutations, and reconcile from a fresh snapshot after reconnect.
-- Task-link snapshots/events never disclose session IDs; unauthorized/missing sessions are indistinguishable and exact IDs are redacted.
+- Persisted task-session links and derived counts appear without expanding each task, update across connected clients after route/tool mutations, and reconcile from a fresh snapshot after reconnect.
+- Expanding a task renders streamed link descriptors immediately with no list request or loading label; activity and Handover enrichment remain addressed and lazy.
 - Task routes/tools never retain Workspace outside a Host lease.
 - Successful handovers are reconstructed only from allowlisted structured terminal-run details.
 - No forbidden compatibility architecture returns.
 
 ## Proof
 
-- Ask User: 114 passed, 1 skipped; Tasks: 80 passed.
+- Ask User: 114 passed, 1 skipped; Tasks: 77 passed.
 - Agent, Workspace, Core, Ask User, and Tasks typechecks passed.
 - AgentHost cutover matrix: 19 rows, 39 final routes, 23 deleted routes, zero forbidden compatibility references.
 - All seven AgentHost composition roots passed.
@@ -74,7 +74,7 @@ Create one new PR stacked on PR #1044 that preserves the product behavior while 
 **Proof:** Tasks, Agent, Core, and Workspace tests/typechecks.
 
 ### Slice 3: Composition and browser proof
-**Delivers:** full-stack lifecycle proof and PR handoff, including one redacted task-link SSE with reconnect snapshot and event-driven count updates.
+**Delivers:** full-stack lifecycle proof and PR handoff, including one authoritative task-link SSE with reconnect snapshot and event-driven link updates.
 **Blocked by:** Slices 1–2.
 **Proof:** store/route/frontend stream tests, composition gates, and Playwright create → link → hydrate → count/reload scenario.
 

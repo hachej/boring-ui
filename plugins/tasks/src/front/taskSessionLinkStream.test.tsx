@@ -1,35 +1,25 @@
-import { act, renderHook, waitFor } from "@testing-library/react"
+import { act, renderHook } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { WorkspacePluginClient } from "@hachej/boring-workspace"
-import {
-  TASK_SESSION_LINKS_CHANGED_EVENT,
-  taskSessionLinkKey,
-  useTaskSessionLinkCounts,
-} from "./taskSessionLinkStream"
+import { taskSessionLinkKey, useTaskSessionLinks } from "./taskSessionLinkStream"
 
 class MockEventSource {
   static instances: MockEventSource[] = []
   readonly listeners = new Map<string, Set<(event: MessageEvent) => void>>()
   closed = false
-
-  constructor(readonly url: string) {
-    MockEventSource.instances.push(this)
-  }
-
+  constructor(readonly url: string) { MockEventSource.instances.push(this) }
   addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
     const listeners = this.listeners.get(type) ?? new Set()
     listeners.add(listener as (event: MessageEvent) => void)
     this.listeners.set(type, listeners)
   }
-
   emit(type: string, data: unknown) {
     for (const listener of this.listeners.get(type) ?? []) listener(new MessageEvent(type, { data: JSON.stringify(data) }))
   }
-
   close() { this.closed = true }
 }
 
-function client(postJson: ReturnType<typeof vi.fn> = vi.fn(async () => ({ links: [] }))): WorkspacePluginClient {
+function client(): WorkspacePluginClient {
   return {
     agentTypeId: "default",
     apiBaseUrl: "/api",
@@ -37,74 +27,58 @@ function client(postJson: ReturnType<typeof vi.fn> = vi.fn(async () => ({ links:
     workspaceHeaders: () => ({}),
     getJson: vi.fn(),
     readJsonFile: vi.fn(),
-    postJson: postJson as unknown as WorkspacePluginClient["postJson"],
+    postJson: vi.fn(),
     deleteJson: vi.fn(),
     sendAgentPrompt: vi.fn(),
   }
 }
+
+const link = (id: string) => ({
+  id,
+  adapterId: "github",
+  taskId: "776",
+  agentTypeId: "default",
+  sessionId: `native-${id}`,
+  createdAt: "2026-08-05T00:00:00.000Z",
+})
 
 afterEach(() => {
   MockEventSource.instances = []
   vi.unstubAllGlobals()
 })
 
-describe("useTaskSessionLinkCounts", () => {
-  it("reconciles an initial snapshot and ordered redacted changes", () => {
+describe("useTaskSessionLinks", () => {
+  it("reconciles authoritative link descriptors from snapshots and ordered changes", () => {
     vi.stubGlobal("EventSource", MockEventSource)
-    const { result, unmount } = renderHook(() => useTaskSessionLinkCounts(client()))
+    const { result, unmount } = renderHook(() => useTaskSessionLinks(client()))
     const source = MockEventSource.instances[0]!
+    const key = taskSessionLinkKey("github", "776")
     expect(result.current).toBeNull()
     expect(source.url).toBe("/api/api/boring-tasks/session-links/events?workspaceId=workspace-a")
 
     act(() => source.emit("snapshot", {
       streamId: "stream-a",
       revision: 2,
-      tasks: [{ adapterId: "github", taskId: "776", count: 1 }],
+      tasks: [{ adapterId: "github", taskId: "776", links: [link("one")] }],
     }))
-    expect(result.current?.get(taskSessionLinkKey("github", "776"))).toBe(1)
+    expect(result.current?.get(key)?.map((item) => item.sessionId)).toEqual(["native-one"])
 
-    act(() => source.emit("change", { streamId: "stream-a", revision: 3, adapterId: "github", taskId: "776", count: 2 }))
-    act(() => source.emit("change", { streamId: "stream-a", revision: 2, adapterId: "github", taskId: "776", count: 9 }))
-    expect(result.current?.get(taskSessionLinkKey("github", "776"))).toBe(2)
+    act(() => source.emit("change", { streamId: "stream-a", revision: 3, adapterId: "github", taskId: "776", links: [link("one"), link("two")] }))
+    act(() => source.emit("change", { streamId: "stream-a", revision: 2, adapterId: "github", taskId: "776", links: [link("stale")] }))
+    expect(result.current?.get(key)?.map((item) => item.sessionId)).toEqual(["native-one", "native-two"])
 
-    act(() => source.emit("snapshot", { streamId: "stream-b", revision: 0, tasks: [] }))
-    expect(result.current?.has(taskSessionLinkKey("github", "776"))).toBe(false)
+    act(() => source.emit("change", { streamId: "stream-a", revision: 4, adapterId: "github", taskId: "776", links: [] }))
+    expect(result.current?.has(key)).toBe(false)
     unmount()
     expect(source.closed).toBe(true)
   })
 
-  it("does not let a slow same-window confirmation overwrite a newer stream snapshot", async () => {
+  it("replaces state from a reconnect snapshot", () => {
     vi.stubGlobal("EventSource", MockEventSource)
-    let resolveRequest!: (value: { links: unknown[] }) => void
-    const postJson = vi.fn(() => new Promise<{ links: unknown[] }>((resolve) => { resolveRequest = resolve }))
-    const { result } = renderHook(() => useTaskSessionLinkCounts(client(postJson)))
+    const { result } = renderHook(() => useTaskSessionLinks(client()))
     const source = MockEventSource.instances[0]!
-
-    act(() => source.emit("snapshot", {
-      streamId: "stream-a",
-      revision: 3,
-      tasks: [{ adapterId: "github", taskId: "776", count: 1 }],
-    }))
-    act(() => window.dispatchEvent(new CustomEvent(TASK_SESSION_LINKS_CHANGED_EVENT, {
-      detail: { adapterId: "github", taskId: "776" },
-    })))
-    act(() => source.emit("change", { streamId: "stream-a", revision: 4, adapterId: "github", taskId: "776", count: 5 }))
-    await act(async () => resolveRequest({ links: [{}, {}] }))
-
-    expect(result.current?.get(taskSessionLinkKey("github", "776"))).toBe(5)
-  })
-
-  it("immediately confirms same-window task mutations with one targeted request", async () => {
-    vi.stubGlobal("EventSource", MockEventSource)
-    const postJson = vi.fn(async () => ({ links: [{ id: "one" }, { id: "two" }] }))
-    const { result } = renderHook(() => useTaskSessionLinkCounts(client(postJson)))
-    act(() => MockEventSource.instances[0]!.emit("snapshot", { streamId: "stream-a", revision: 0, tasks: [] }))
-
-    act(() => window.dispatchEvent(new CustomEvent(TASK_SESSION_LINKS_CHANGED_EVENT, {
-      detail: { adapterId: "github", taskId: "776" },
-    })))
-
-    await waitFor(() => expect(result.current?.get(taskSessionLinkKey("github", "776"))).toBe(2))
-    expect(postJson).toHaveBeenCalledWith("/api/boring-tasks/sessions/list", { adapterId: "github", taskId: "776" })
+    act(() => source.emit("snapshot", { streamId: "old", revision: 9, tasks: [{ adapterId: "github", taskId: "776", links: [link("old")] }] }))
+    act(() => source.emit("snapshot", { streamId: "new", revision: 0, tasks: [] }))
+    expect(result.current?.size).toBe(0)
   })
 })
