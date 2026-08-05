@@ -114,6 +114,26 @@ describe("live transcript front surface", () => {
     expect(appendTranscriptToDraft("draft ", "bonjour")).toBe("draft bonjour")
   })
 
+  it("streams Kyutai words into the current draft and stops from the same control", async () => {
+    let onWord: ((word: string) => void) | undefined
+    const startComposer = vi.spyOn(liveTranscriptController, "startComposer").mockImplementation(async (handler) => { onWord = handler })
+    const stopComposer = vi.spyOn(liveTranscriptController, "stopComposer").mockResolvedValue()
+    let draft = "existing"
+    const updateDraft = (update: (current: string) => string) => { draft = update(draft) }
+    const view = render(<LiveTranscriptComposerAction updateDraft={updateDraft} streaming />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Start streaming dictation" }))
+    await waitFor(() => expect(startComposer).toHaveBeenCalledOnce())
+    act(() => onWord?.("Bonjour"))
+    act(() => onWord?.("le monde"))
+    expect(draft).toBe("existing Bonjour le monde")
+
+    act(() => liveTranscriptBrowserState.set({ recordingKind: "composer", phase: "recording" }))
+    fireEvent.click(screen.getByRole("button", { name: "Stop streaming dictation" }))
+    await waitFor(() => expect(stopComposer).toHaveBeenCalledOnce())
+    view.unmount()
+  })
+
   it("owns composer-top visibility and recording errors", () => {
     const view = render(<LiveTranscriptComposerTop />)
     expect(view.container).toBeEmptyDOMElement()

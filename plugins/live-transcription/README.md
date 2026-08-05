@@ -37,10 +37,10 @@ export BORING_KYUTAI_API_KEY=public_token # omit when the local server needs no 
 ```
 
 The adapter converts browser 16 kHz PCM16 frames to Kyutai's 24 kHz float32
-MessagePack `Audio` messages, projects `Word` events, and sends a `Marker` plus
-bounded silence on stop to wait for finalization. Kyutai does not expose the
-OpenAI-compatible REST endpoint used by the composer’s *short dictation*
-button; use `/live start` in the composer to begin a Kyutai live capture.
+MessagePack `Audio` messages and sends a `Marker` plus bounded silence on stop.
+With Kyutai selected, the composer microphone streams each `Word` event directly
+into the editable draft without creating a transcript file. `/live start` keeps
+the separate Markdown transcript and agent-review sink.
 
 ## Robustness gates
 

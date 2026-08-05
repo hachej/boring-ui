@@ -6,6 +6,7 @@ import { LIVE_TRANSCRIPT_BASE_PATH } from "../shared"
 import { assertExactOrigin, validateLocalAuthority, type LiveTranscriptAuthority } from "./authority"
 import { LiveTranscriptError, liveTranscriptErrorPayload } from "./errors"
 import { LiveTranscriptManager, type LiveTranscriptManagerOptions } from "./manager"
+import { KyutaiComposerManager } from "./kyutaiComposer"
 import { transcribeShortDictation } from "./dictation"
 
 export interface LiveTranscriptServerPluginOptions {
@@ -46,6 +47,15 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
     reviewRetryMs: options.reviewRetryMs,
     createUpstreamForTest: options.createUpstreamForTest,
   })
+  const composerManager = options.upstreamProvider === "kyutai"
+    ? new KyutaiComposerManager({
+        upstreamUrl: options.upstreamUrl,
+        apiKey: options.upstreamBearerToken,
+        setupTimeoutMs: options.setupTimeoutMs,
+        drainTimeoutMs: options.drainTimeoutMs,
+        maxDurationMs: options.maxDurationMs,
+      })
+    : undefined
 
   return defineServerPlugin({
     id: "live-transcription",
@@ -59,6 +69,7 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
         if (typeof body.sessionId !== "string" || (body.title !== undefined && typeof body.title !== "string")) {
           throw new LiveTranscriptError("live_transcript_session_not_found", "A valid originating Pi session is required.", 400)
         }
+        if (composerManager?.isActive) throw new LiveTranscriptError("live_transcript_already_active", "A composer microphone stream is already active.", 409)
         return await manager.start(request, { sessionId: body.sessionId, title: body.title as string | undefined })
       }))
 
@@ -78,6 +89,35 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
           fetch: options.dictationFetch,
         })
       }))
+
+      app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/composer`, async (request, reply) => withControl(request, reply, options.authority, async () => {
+        strictEmptyBody(request.body)
+        if (!composerManager) throw new LiveTranscriptError("live_transcript_disabled", "Streaming composer dictation requires Kyutai.", 409)
+        if (manager.getAgentReloadBlock()) throw new LiveTranscriptError("live_transcript_already_active", "A live transcript is already active.", 409)
+        return composerManager.start()
+      }))
+
+      app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/composer/:id/stop`, async (request, reply) => withControl(request, reply, options.authority, async () => {
+        strictEmptyBody(request.body)
+        if (!composerManager) throw new LiveTranscriptError("live_transcript_disabled", "Streaming composer dictation requires Kyutai.", 409)
+        return await composerManager.stop((request.params as { id: string }).id)
+      }))
+
+      app.get(`${LIVE_TRANSCRIPT_BASE_PATH}/composer/:id/audio`, {
+        websocket: true,
+        preValidation: async (request, reply) => {
+          try {
+            assertExactOrigin(request, options.authority)
+            if (request.url.includes("?")) throw new LiveTranscriptError("live_transcript_attachment_invalid", "Composer audio WebSocket query parameters are not allowed.", 400)
+          } catch (error) {
+            const normalized = liveTranscriptErrorPayload(error)
+            return reply.code(normalized.statusCode).send(normalized.payload)
+          }
+        },
+      }, (socket, request) => {
+        if (!composerManager) return socket.close(4403, "live_transcript_disabled")
+        composerManager.handleSocket((request.params as { id: string }).id, socket)
+      })
 
       app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/status`, async (request, reply) => withControl(request, reply, options.authority, async () => {
         const body = request.body === undefined ? {} : strictRecord(request.body, ["liveSessionId"])
@@ -123,6 +163,7 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
       })
 
       app.addHook("onClose", async () => {
+        composerManager?.close()
         await manager.close()
       })
     },
@@ -166,6 +207,7 @@ function strictEmptyBody(value: unknown): void {
 export { LiveTranscriptManager } from "./manager"
 export { LiveTranscriptProjector, renderTranscriptMarkdown } from "./projector"
 export { KyutaiConnection, resamplePcm16ToFloat32 } from "./kyutai"
+export { KyutaiComposerManager } from "./kyutaiComposer"
 export { parseWhisperLiveKitSnapshot, WhisperLiveKitConnection } from "./whisperLiveKit"
 export { LiveTranscriptError } from "./errors"
 export { LiveReviewBroker } from "./reviewBroker"
