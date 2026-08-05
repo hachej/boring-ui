@@ -6,6 +6,11 @@ beadle:
   tick_minutes: 10
   worker_cap: 2 # concurrent /exec workers, fleet-wide
   stale_lease_minutes: 90
+  bugfix_reserved_slots: 0 # worker slots held for the bugfix lane
+
+bounce:
+  worker_attempts_per_bead: 2 # then back to Steward as spec defect
+  review_rounds_max: 3 # then escalation intention to owner
 
 sessions:
   handoff_context_threshold: 0.75 # handoff ritual fires before compaction
@@ -20,11 +25,13 @@ bugfix_lane:
   merge: owner-flush # flip to auto-merge to graduate the lane
 
 trust_ladder:
-  # Always class B — self-protection; never add these to any allowlist.
+  # Precedence: class_b_always is evaluated first and overrides any class_a
+  # match. A path listed here is class B even when an allowlist glob covers it
+  # (e.g. docs/** covers docs/kanzen/MODEL-CARD.md — the card stays class B).
   class_b_always:
     - .agents/factory/policy.yaml
     - .github/workflows/**
-    - skill-library/boring-v2/MODEL-CARD.md
+    - docs/kanzen/MODEL-CARD.md
     - AGENTS.md
     - .agents/personas/**
     - .agents/factory/**
@@ -37,7 +44,7 @@ trust_ladder:
       - .agents/skills/**
 
 models:
-  # Tiers resolve via skill-library/boring-v2/MODEL-CARD.md (priority-ordered).
+  # Tiers resolve via docs/kanzen/MODEL-CARD.md (priority-ordered).
   seats:
     concierge: T1
     steward: T1
