@@ -98,16 +98,16 @@ Blocked by C.
 
 Blocked by C; may develop against mock detail adapter while D completes.
 
-- [ ] Add dedicated detail-open control to cards in list and Kanban.
-- [ ] Preserve drag and nested chat/external/menu behavior.
-- [ ] Add responsive plain-text dialog with accessible name, focus containment,
+- [x] Add dedicated detail-open control to cards in list and Kanban.
+- [x] Preserve drag and nested chat/external/menu behavior.
+- [x] Add responsive plain-text dialog with accessible name, focus containment,
   Escape close, focus return, and close/back.
-- [ ] Render identity/status/metadata, description, acceptance, notes, and
+- [x] Render identity/status/metadata, description, acceptance, notes, and
   relations with loading/error/retry states.
-- [ ] Test keyboard, focus, Escape, loading, failure/retry, nested actions, and
+- [x] Test keyboard, focus, Escape, loading, failure/retry, nested actions, and
   drag regression.
-- [ ] Run automated browser assertions and desktop/mobile visual proof.
-- [ ] Complete high-taste UI review gate.
+- [x] Run automated browser assertions and desktop/mobile visual proof.
+- [x] Complete high-taste UI review gate.
 
 ## F — Convergence and owner handoff
 
