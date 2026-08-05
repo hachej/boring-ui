@@ -6,7 +6,9 @@ Every plan belongs to a GitHub issue (one epic = one issue). Write the narrative
 plan below, then translate its slices into a Beads graph via `br` — one bead per
 slice, each meeting the Definition of Ready (`bead-ready.md`: WHAT, proof path,
 file scope, fits one session). The bead graph, not the markdown file, is what
-the Beadle dispatches from. Plan approval (human gate 1) covers both.
+the Beadle dispatches from. Plan approval (human gate 1) covers both, and the
+approval intention links a **plan review doc** — self-contained visual HTML
+per [`visual-review-doc.md`](visual-review-doc.md).
 
 ```text
 docs/issues/<issue-number>/plan.md
