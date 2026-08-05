@@ -2,7 +2,7 @@
 
 import { useMemo, type Dispatch, type SetStateAction } from "react"
 import { dispatchUiCommand, type DispatchContext } from "../../front/bridge"
-import type { WorkspaceShellCapabilities, WorkspaceShellArtifactTarget, WorkspaceShellSessionRef } from "../../front/shell/WorkspaceShellCapabilitiesContext"
+import type { WorkspaceShellCapabilities, WorkspaceShellArtifactTarget, WorkspaceShellCapabilityResult, WorkspaceShellCreatedSessionResult, WorkspaceShellSessionRef } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import { requestAppLeftOverlay } from "../../shared/plugins/appLeftOverlay"
 
 function panelInstanceId(prefix: string, id: string): string {
@@ -12,12 +12,16 @@ function panelInstanceId(prefix: string, id: string): string {
 
 export function useWorkspaceShellCapabilitiesController({
   setFloatingChatSession,
+  createChatSession,
+  deleteChatSession,
   openChatPane,
   refreshChatSessions,
   surfaceDispatch,
   isAppLeftOverlayAvailable,
 }: {
   setFloatingChatSession: Dispatch<SetStateAction<{ ref: WorkspaceShellSessionRef; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>>
+  createChatSession: (options?: { title?: string }) => Promise<WorkspaceShellCreatedSessionResult>
+  deleteChatSession: (ref: WorkspaceShellSessionRef) => Promise<WorkspaceShellCapabilityResult>
   openChatPane: (sessionId: string, agentTypeId?: string) => void
   refreshChatSessions: () => Promise<void>
   surfaceDispatch: DispatchContext
@@ -52,6 +56,8 @@ export function useWorkspaceShellCapabilitiesController({
       }, surfaceDispatch)
       return { success: true }
     },
+    createChatSession,
+    deleteChatSession,
     openDetachedChat: (ref, options) => {
       if (!ref.agentTypeId || !ref.sessionId) return { success: false, reason: "invalid-session", message: "Missing chat Agent or session id." }
       setFloatingChatSession({
@@ -78,5 +84,5 @@ export function useWorkspaceShellCapabilitiesController({
         : { success: false, reason: "open-failed", message: "Inbox is unavailable." }
     },
     refreshChatSessions,
-  }), [isAppLeftOverlayAvailable, openChatPane, refreshChatSessions, setFloatingChatSession, surfaceDispatch])
+  }), [createChatSession, deleteChatSession, isAppLeftOverlayAvailable, openChatPane, refreshChatSessions, setFloatingChatSession, surfaceDispatch])
 }

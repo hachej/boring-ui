@@ -40,6 +40,7 @@ import { ChatSessionTransitionState, WorkbenchWarmupOverlay } from "./WorkspaceA
 import { WorkspaceUiStateSync } from "./WorkspaceUiStateSync"
 import { PluginAppLeftOverlayHost, assertUniqueAppLeftActionIds, pluginAppLeftActionIds, usePluginAppLeftActions, type AppLeftOverlayId } from "./PluginAppLeftHost"
 import { WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, appLeftOverlayRequestFromEvent } from "../../shared/plugins/appLeftOverlay"
+import { WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT } from "../../shared/plugins/workspaceShellCapabilities"
 import { CloseLeftPaneOnAttention } from "./CloseLeftPaneOnAttention"
 import { workspaceRequestHeaders, type WorkspaceWarmupStatus } from "./workspacePreload"
 import {
@@ -1917,7 +1918,10 @@ export function WorkspaceAgentFront<
       workspaceWarmupStatus,
       hydrateMessages,
       allowPromptDuringInitialHydration: emptySessionIds.has(sessionKey),
-      onPromptSubmitStarted: ({ sessionId: submittedSessionId }: { sessionId: string; clientNonce: string }) => {
+      onPromptSubmitStarted: ({ sessionId: submittedSessionId, clientNonce }: { sessionId: string; clientNonce: string }) => {
+        window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
+          detail: { agentTypeId: sessionRef.agentTypeId ?? agentTypeId, sessionId: submittedSessionId, clientNonce },
+        }))
         setInitialHydrationPromptStarted((current) => {
           const currentIds = current.workspaceId === workspaceId ? current.ids : new Set<string>()
           const submittedKey = workspaceSessionKey(submittedSessionId, sessionRef.agentTypeId ?? agentTypeId)
@@ -2075,6 +2079,32 @@ export function WorkspaceAgentFront<
         }
       : undefined
   ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
+  const shellSessionCreateSequenceRef = useRef(0)
+  const createShellChatSession = useCallback(async (options?: { title?: string }) => {
+    const previousActiveId = effectiveActiveSessionId
+    const previousAgentTypeId = effectiveActiveSessionAgentTypeId ?? undefined
+    try {
+      shellSessionCreateSequenceRef.current += 1
+      const session = await coordinateRemoteCreate(`shell:${shellSessionCreateSequenceRef.current}`, options)
+      const sessionId = createdSessionId(session)
+      if (!sessionId) return { success: false as const, reason: "create-failed" as const, message: "Chat session creation did not return a canonical session." }
+      const createdAgentTypeId = typeof (session as { agentTypeId?: unknown }).agentTypeId === "string"
+        ? (session as { agentTypeId: string }).agentTypeId
+        : agentTypeId
+      if (previousActiveId && previousActiveId !== sessionId) rawSwitch(previousActiveId, previousAgentTypeId)
+      return { success: true as const, ref: { agentTypeId: createdAgentTypeId, sessionId } }
+    } catch (error) {
+      return { success: false as const, reason: "create-failed" as const, message: error instanceof Error ? error.message : "Chat session creation failed." }
+    }
+  }, [agentTypeId, coordinateRemoteCreate, effectiveActiveSessionAgentTypeId, effectiveActiveSessionId, rawSwitch])
+  const deleteShellChatSession = useCallback(async (ref: { agentTypeId: string; sessionId: string }) => {
+    try {
+      await resolvedDelete(ref.sessionId, ref.agentTypeId)
+      return { success: true as const }
+    } catch (error) {
+      return { success: false as const, reason: "open-failed" as const, message: error instanceof Error ? error.message : "Chat session deletion failed." }
+    }
+  }, [resolvedDelete])
   const shellCapabilitiesHost = useWorkspaceShellCapabilitiesHost({
     appLeftPaneCollapsed,
     workspaceId,
@@ -2082,6 +2112,8 @@ export function WorkspaceAgentFront<
     sessionTitleById,
     defaultSessionTitle,
     makeCenterParams,
+    createChatSession: createShellChatSession,
+    deleteChatSession: deleteShellChatSession,
     openChatPane,
     refreshChatSessions: async () => {
       await remoteSessionApi.refresh?.({ background: true, throwOnError: true })

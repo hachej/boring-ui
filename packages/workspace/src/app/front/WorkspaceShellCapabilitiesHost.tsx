@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react"
 import type { DispatchContext } from "../../front/bridge"
 import { DetachedChatPopover } from "../../front/chrome/chat/DetachedChatPopover"
 import type { ChatPanelHostProps } from "../../front/chrome/chat/ChatPanelHost"
-import type { WorkspaceShellCapabilities } from "../../front/shell/WorkspaceShellCapabilitiesContext"
+import type { WorkspaceShellCapabilities, WorkspaceShellCapabilityResult, WorkspaceShellCreatedSessionResult } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import type { WorkspaceShellSessionRef } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import { workspaceSessionKey } from "../../front/sessionIdentity"
 import { useWorkspaceShellCapabilitiesController } from "./useWorkspaceShellCapabilitiesController"
@@ -21,6 +21,8 @@ export function useWorkspaceShellCapabilitiesHost({
   sessionTitleById,
   defaultSessionTitle,
   makeCenterParams,
+  createChatSession,
+  deleteChatSession,
   openChatPane,
   refreshChatSessions,
   surfaceDispatch,
@@ -33,6 +35,8 @@ export function useWorkspaceShellCapabilitiesHost({
   sessionTitleById: Map<string, string | null | undefined>
   defaultSessionTitle: string
   makeCenterParams: (sessionKey: string, options?: { bridgeEnabled?: boolean }) => unknown
+  createChatSession: (options?: { title?: string }) => Promise<WorkspaceShellCreatedSessionResult>
+  deleteChatSession: (ref: WorkspaceShellSessionRef) => Promise<WorkspaceShellCapabilityResult>
   openChatPane: (sessionId: string, agentTypeId?: string) => void
   refreshChatSessions: () => Promise<void>
   surfaceDispatch: DispatchContext
@@ -45,6 +49,8 @@ export function useWorkspaceShellCapabilitiesHost({
   }, [workspaceId])
   const shellCapabilities = useWorkspaceShellCapabilitiesController({
     setFloatingChatSession,
+    createChatSession,
+    deleteChatSession,
     openChatPane,
     refreshChatSessions,
     surfaceDispatch,
