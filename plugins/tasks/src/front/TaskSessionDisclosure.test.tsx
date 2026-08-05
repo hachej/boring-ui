@@ -92,10 +92,12 @@ describe("TaskSessionDisclosure", () => {
       }}
     />)
 
-    expect(await screen.findByRole("button", { name: "1 session" })).toHaveAttribute("aria-expanded", "false")
+    const sessionsToggle = screen.getByRole("button", { name: "Sessions" })
+    expect(sessionsToggle).toHaveAttribute("aria-expanded", "false")
     expect(screen.queryByText("Exact work")).not.toBeInTheDocument()
-    expect(postJson.mock.calls.some(([path]) => String(path).endsWith("/sessions/handovers"))).toBe(false)
-    await user.click(screen.getByRole("button", { name: "1 session" }))
+    expect(postJson).not.toHaveBeenCalled()
+    await user.click(sessionsToggle)
+    expect(await screen.findByRole("button", { name: "1 session" })).toHaveAttribute("aria-expanded", "true")
     expect(await screen.findByText("Exact work")).toBeInTheDocument()
     expect(screen.getAllByRole("listitem")).toHaveLength(10)
     expect(screen.getByRole("button", { name: "Show 1 more" })).toBeInTheDocument()
@@ -136,8 +138,12 @@ describe("TaskSessionDisclosure", () => {
       postJson: postJson as unknown as WorkspacePluginClient["postJson"],
       getJson: vi.fn() as WorkspacePluginClient["getJson"],
     }
+    const user = userEvent.setup()
     const view = render(<TaskSessionDisclosure task={task} shell={shell()} pluginClient={client} />)
+    await user.click(screen.getByRole("button", { name: /^Sessions/ }))
     view.rerender(<TaskSessionDisclosure task={secondTask} shell={shell()} pluginClient={client} />)
+    await user.click(screen.getByRole("button", { name: /^Sessions/ }))
+    await user.click(screen.getByRole("button", { name: /^Sessions/ }))
 
     expect(await screen.findByRole("button", { name: "1 session" })).toBeInTheDocument()
     resolveFirst({ ok: true, links: [link("stale-a", "native-a", "2026-07-19T01:00:00.000Z"), link("stale-b", "native-b", "2026-07-19T02:00:00.000Z")] })
@@ -170,7 +176,7 @@ describe("TaskSessionDisclosure", () => {
       <TaskSessionDisclosure task={task} shell={shell()} pluginClient={client} />
       <TaskSessionDisclosure task={secondTask} shell={shell()} pluginClient={client} />
     </>)
-    const toggles = await screen.findAllByRole("button", { name: "1 session" })
+    const toggles = screen.getAllByRole("button", { name: "Sessions" })
     await user.click(toggles[0]!)
     await user.click(toggles[1]!)
     await screen.findByText("First work")
@@ -206,7 +212,8 @@ describe("TaskSessionDisclosure", () => {
         getJson: vi.fn(async () => ({ summary: { title: "Open work", updatedAt: "2026-07-19T02:00:00.000Z" }, state: { status: "idle", queuedMessages: [] } })) as WorkspacePluginClient["getJson"],
       }}
     />)
-    await user.click(await screen.findByRole("button", { name: "2 sessions" }))
+    await user.click(screen.getByRole("button", { name: "Sessions" }))
+    expect(await screen.findByRole("button", { name: "2 sessions" })).toHaveAttribute("aria-expanded", "true")
     expect(await screen.findByText("Unavailable session")).toBeInTheDocument()
     expect(screen.queryByText("Session native-denied")).not.toBeInTheDocument()
 
