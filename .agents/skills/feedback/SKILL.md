@@ -7,7 +7,7 @@ disable-model-invocation: true
 # Feedback
 
 Capture one canonical item, then stop. Follow
-`docs/kanzen/procedures/well-documented-issue.md`.
+`docs/procedures/well-documented-issue.md`.
 
 ## Steps
 

@@ -7,7 +7,7 @@ disable-model-invocation: true
 # Triage
 
 Classify; do not implement. Use the labels, blocker vocabulary, and transitions in
-`docs/kanzen/boring-loop.md`.
+`docs/procedures/boring-loop.md`.
 
 1. Read the item, comments, links, and relevant code/docs.
 2. Verify cheaply when safe; bugs need a red-capable repro or concrete manual path.
