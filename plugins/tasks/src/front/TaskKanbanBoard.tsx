@@ -3,6 +3,7 @@ import { Columns3, List } from "lucide-react"
 import type { BoringTaskAdapter, BoringTaskBoardConfig, BoringTaskCard, BoringTaskColumn, BoringTaskErrorCode, BoringTaskSourceError } from "../shared"
 import { groupTasksByColumn } from "./taskBoardModel"
 import { TaskCard } from "./TaskCard"
+import { TaskDetailDialog, type TaskDetailSelection } from "./TaskDetailDialog"
 import { TaskKanbanColumn } from "./TaskKanbanColumn"
 
 interface TaskKanbanBoardProps {
@@ -153,6 +154,9 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const [openMenu, setOpenMenu] = useState<"sources" | "columns" | null>(null)
   const [viewMode, setViewModeState] = useState<TaskBoardViewMode>(() => readViewMode(cacheKey))
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<ReadonlySet<string>>(new Set())
+  const [detailSelection, setDetailSelection] = useState<TaskDetailSelection | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const detailTriggerRef = useRef<HTMLButtonElement | null>(null)
   const requestSeq = useRef(0)
   const stateRef = useRef(state)
   stateRef.current = state
@@ -382,6 +386,19 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     })
   }
 
+  const openTaskDetail = (task: BoringTaskCard, trigger: HTMLButtonElement) => {
+    const adapter = adaptersById.get(task.adapterId)
+    if (!adapter?.capabilities.detail || !adapter.getTask) return
+    detailTriggerRef.current = trigger
+    setDetailSelection({ adapter, task })
+    setDetailOpen(true)
+  }
+
+  const canOpenTaskDetail = (task: BoringTaskCard) => {
+    const adapter = adaptersById.get(task.adapterId)
+    return Boolean(adapter?.capabilities.detail && adapter.getTask)
+  }
+
   const showAllColumns = () => {
     setVisibleColumnIds(new Set(allColumns.map((column) => column.id)))
   }
@@ -595,6 +612,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                           compact
                           deleteEnabled={Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
                           onDelete={(task) => void deleteTask(task)}
+                          onOpenDetail={canOpenTaskDetail(task) ? openTaskDetail : undefined}
                           onDragStart={handleTaskDragStart}
                           onDragEnd={() => setActiveTaskRef(null)}
                         />
@@ -617,13 +635,22 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                 onTaskDragEnd={() => setActiveTaskRef(null)}
                 onTaskDrop={(taskId, adapterId, statusId) => void moveTask(taskId, adapterId, statusId)}
                 onTaskDelete={(task) => void deleteTask(task)}
+                onTaskOpenDetail={openTaskDetail}
                 canDragTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.move && adaptersById.get(task.adapterId)?.moveTask)}
                 canDeleteTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
+                canOpenTaskDetail={canOpenTaskDetail}
               />
             ))}
           </div>
         )}
       </div>
+
+      <TaskDetailDialog
+        open={detailOpen}
+        selection={detailSelection}
+        returnFocusRef={detailTriggerRef}
+        onOpenChange={setDetailOpen}
+      />
     </div>
   )
 }
