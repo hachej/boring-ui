@@ -55,8 +55,8 @@ one lane blocks convergence but not proof/review of the other.
 Repository fixtures use:
 
 ```text
-agents/boring/<role>/agent.json
-agents/boring/<role>/instructions.md
+.agents/personas/<role>/agent.json
+.agents/personas/<role>/instructions.md
 ```
 
 `agent.json` contains only `schemaVersion`, `definitionId`, `version`, safe
@@ -89,7 +89,7 @@ only `.agents/skills/{feedback,triage,plan,exec,fresh-eyes,handoff}/SKILL.md`—
 similarly named copies under `skill-library`. Each content/digest must equal the
 canonical file used by the corresponding one-shot `/skill:<name>` invocation.
 
-This is a repository/playground dogfood fixture. Root `agents/boring/**` is not
+This is a repository/playground dogfood fixture. Root `.agents/personas/**` is not
 claimed to be distributed in an installed npm package. Seneca may later package
 the same definitions/skills behind pinned provenance; that is out of scope.
 

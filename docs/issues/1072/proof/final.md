@@ -46,7 +46,7 @@ boring-reviewer
 Browser assertions confirmed all five selector options, selected
 `boring-worker`, persisted that future-session selection across reload, and
 observed the Tasks "Open chat" future-session POST at
-`/api/v1/agents/boring-worker/sessions`. Existing addressed panes remained owned
+`/api/v1/.agents/personas-worker/sessions`. Existing addressed panes remained owned
 by their original Agent.
 
 ![Factory fleet selector with Boring Worker selected](../visual-proof/factory-fleet-worker.png)

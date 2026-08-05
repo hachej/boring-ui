@@ -14,7 +14,7 @@ loop, stop convergence and split rather than weakening acceptance.
 - [x] Port the independently reviewed handoff skill/procedure and pinned Matt
   Pocock source attribution.
 - [x] Add handoff discovery/routing without duplicating canonical policy.
-- [x] Add `agents/boring/{concierge,triage,steward,worker,reviewer}` authored
+- [x] Add `.agents/personas/{concierge,triage,steward,worker,reviewer}` authored
   manifests/instructions using identity-only schema.
 - [x] State role restrictions as behavioral policy, not enforced capabilities.
 - [x] Add the generic trusted authored-source → configured-AgentHost-spec mapper.
