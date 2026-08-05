@@ -98,9 +98,6 @@ function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
     [activateCurrentMention, effectiveMentionCatalog, mentionSignature, mentionsEnabled],
   )
   const shouldReserveStreamingActions = messageIsStreaming
-  const finalTextPartKey = [...finalParts].reverse().find(
-    (item) => item.kind === 'part' && item.part.type === 'text',
-  )?.key
 
   return (
     <Message
@@ -162,7 +159,7 @@ function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
             })}
           </Attachments>
         ) : null}
-        {finalParts.map((item) => {
+        {finalParts.map((item, index) => {
           if (item.kind === 'reasoning') {
             return (
               <TimelineReasoningPart
@@ -190,14 +187,11 @@ function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
             const text = textForMessageDisplay(item.part.text, role)
             if (!text) return null
             return (
-              <div
-                key={item.key}
-                data-boring-agent-part="message-text"
-                className={cn(messageIsStreaming && item.key === finalTextPartKey && 'boring-agent-streaming-caret')}
-              >
+              <div key={item.key} data-boring-agent-part="message-text">
                 <MessageResponse
                   key={`${mentionSignature || 'no-message-mentions'}:${mentionsEnabled ? 'enabled' : 'static'}`}
                   components={mentionMarkdownComponents}
+                  codeFilename={codeFilenameForPart(finalParts, index)}
                   className="boring-agent-markdown max-w-none"
                 >
                   {text}
@@ -214,8 +208,13 @@ function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
       {isAssistant && (textParts.length > 0 || shouldReserveStreamingActions) ? (
         <MessageActionsBar
           text={textParts.map((part) => part.text).join('\n\n')}
+          createdAt={message.createdAt}
           visible={!messageIsStreaming}
         />
+      ) : isAssistant && message.createdAt ? (
+        <MessageTimestamp createdAt={message.createdAt} className="self-start pl-1" />
+      ) : role === 'user' && message.createdAt ? (
+        <MessageTimestamp createdAt={message.createdAt} className="self-end pr-1" />
       ) : null}
     </Message>
   )
@@ -250,7 +249,7 @@ function TimelineReasoningPart({ item, showThoughts }: { item: Extract<Renderabl
     >
       <ReasoningTrigger
         className="mb-1 w-fit rounded-[var(--radius-sm)] px-0 py-0 !text-xs !font-normal !text-muted-foreground/75 hover:bg-transparent hover:!text-muted-foreground/75 [&_svg]:!text-muted-foreground/75"
-        getThinkingMessage={(streaming) => <span>{streaming ? 'thinking' : 'thoughts'}</span>}
+        getThinkingMessage={() => <span>Reasoning</span>}
         onClick={toggleManualOpen}
       />
       <ReasoningContent>{item.text}</ReasoningContent>
@@ -327,6 +326,16 @@ function groupRenderableParts(message: BoringChatMessage): RenderablePart[] {
   return grouped
 }
 
+function codeFilenameForPart(parts: RenderablePart[], index: number): string | undefined {
+  const precedingPart = parts[index - 1]
+  if (!precedingPart || precedingPart.kind !== 'tool-plain') return undefined
+  if (precedingPart.part.toolName !== 'write' && precedingPart.part.toolName !== 'edit') return undefined
+  const input = precedingPart.part.input
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return undefined
+  const path = (input as Record<string, unknown>).path
+  return typeof path === 'string' && path.trim() ? path : undefined
+}
+
 function NoticeBubble({ level, text }: { level: 'info' | 'warning' | 'error'; text: string }) {
   return (
     <div
@@ -387,9 +396,11 @@ function unescapeAttachmentAttr(value: string): string {
 
 function MessageActionsBar({
   text,
+  createdAt,
   visible = true,
 }: {
   text: string
+  createdAt?: string
   visible?: boolean
 }) {
   const [copied, setCopied] = useState(false)
@@ -423,20 +434,21 @@ function MessageActionsBar({
     }
   }
   const iconActionBtnClass = cn(
-    'boring-agent-message-action inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
-    'text-muted-foreground/35 transition-colors',
-    'hover:bg-foreground/[0.04] hover:text-muted-foreground/80',
-    'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--accent)]/40',
+    'boring-agent-message-action inline-flex size-8 items-center justify-center rounded-[var(--radius-sm)]',
+    'text-muted-foreground/70 transition-colors duration-150',
+    'hover:bg-foreground/[0.04] hover:text-muted-foreground',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/40',
   )
   const hiddenActionProps = visible ? {} : { tabIndex: -1 }
   return (
     <div
       aria-hidden={!visible}
       className={cn(
-        'flex min-h-6 items-center gap-0.5 -mt-1 transition-opacity duration-200',
+        'flex min-h-8 items-center gap-1 -mt-1 text-xs text-muted-foreground transition-opacity duration-200',
         visible ? 'opacity-100' : 'pointer-events-none opacity-0',
       )}
     >
+      {visible && createdAt ? <MessageTimestamp createdAt={createdAt} /> : null}
       <Button
         type="button"
         variant="ghost"
@@ -450,6 +462,22 @@ function MessageActionsBar({
         {copied ? <CheckIcon className="h-3.5 w-3.5 text-[color:var(--accent)]" /> : <CopyIcon className="h-3.5 w-3.5" />}
       </Button>
     </div>
+  )
+}
+
+function MessageTimestamp({ createdAt, className }: { createdAt: string; className?: string }) {
+  const date = new Date(createdAt)
+  if (!Number.isFinite(date.getTime())) return null
+
+  return (
+    <time
+      className={cn('tabular-nums text-xs text-muted-foreground/70', className)}
+      dateTime={createdAt}
+      title={date.toLocaleString()}
+      suppressHydrationWarning
+    >
+      {date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+    </time>
   )
 }
 

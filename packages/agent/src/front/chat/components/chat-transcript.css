@@ -133,34 +133,6 @@
   margin-bottom: 0;
 }
 
-[data-boring-agent] .boring-agent-streaming-caret .boring-agent-markdown > *:last-child:not(ol):not(ul)::after,
-[data-boring-agent] .boring-agent-streaming-caret .boring-agent-markdown > ol:last-child > li:last-child::after,
-[data-boring-agent] .boring-agent-streaming-caret .boring-agent-markdown > ul:last-child > li:last-child::after {
-  width: 0.42em;
-  height: 0.9em;
-  margin-left: 0.2em;
-  display: inline-block;
-  vertical-align: -0.08em;
-  border-radius: 999px;
-  background: var(--accent);
-  content: "";
-  animation: boring-agent-streaming-caret 1s ease-in-out infinite;
-}
-
-@keyframes boring-agent-streaming-caret {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 1; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-boring-agent] .boring-agent-streaming-caret .boring-agent-markdown > *:last-child:not(ol):not(ul)::after,
-  [data-boring-agent] .boring-agent-streaming-caret .boring-agent-markdown > ol:last-child > li:last-child::after,
-  [data-boring-agent] .boring-agent-streaming-caret .boring-agent-markdown > ul:last-child > li:last-child::after {
-    animation: none;
-    opacity: 1;
-  }
-}
-
 @media (pointer: coarse) {
   [data-boring-agent] .boring-agent-message-action,
   [data-boring-agent] .boring-agent-history-action,
