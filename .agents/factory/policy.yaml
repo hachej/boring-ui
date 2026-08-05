@@ -22,18 +22,19 @@ bugfix_lane:
 trust_ladder:
   # Always class B — self-protection; never add these to any allowlist.
   class_b_always:
-    - factory/policy.yaml
+    - .agents/factory/policy.yaml
     - .github/workflows/**
     - skill-library/boring-v2/MODEL-CARD.md
     - AGENTS.md
-    - agents/**
+    - .agents/personas/**
+    - .agents/factory/**
   class_a:
     max_changed_lines: 300
     require_reviewer_pass: true
     path_allowlist:
       - docs/**
       - "**/__tests__/**"
-      - .agents/**
+      - .agents/skills/**
 
 models:
   # Tiers resolve via skill-library/boring-v2/MODEL-CARD.md (priority-ordered).

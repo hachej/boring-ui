@@ -9,7 +9,7 @@ import { createConfiguredAgentHostAgentSpec, TrustedAgentCompositionError } from
 import { materializeAgentDirectory } from '../materializeAgentDirectory'
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../../../../..')
-const FACTORY_ROOT = resolve(REPO_ROOT, 'agents/boring')
+const FACTORY_ROOT = resolve(REPO_ROOT, '.agents/personas')
 const ROLES = [
   ['concierge', 'boring-concierge', 'Boring Concierge'],
   ['triage', 'boring-triage', 'Boring Triage'],

@@ -24,7 +24,7 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
 | --- | --- | --- |
 | L0 Chassis | AgentHost fleet spec, identity/authority split, plugin system, sandboxed tool admission | exists (#1075) |
 | L1 Work graph | Beads via plain `br` CLI; GH issues = human intake, 1 epic = 1 GH issue | br live; UI read-only provider in #1075 |
-| L2 Seats | concierge / triage / steward / worker / reviewer under `agents/boring/` | authored in #1075; no production loader |
+| L2 Seats | concierge / triage / steward / worker / reviewer under `.agents/personas/` | authored in #1075; no production loader |
 | L3 Loops | /triage /plan /exec skills + Beadle dispatcher automation | skills exist; Beadle missing |
 | L4 Human plane | Concierge front door, inbox intentions, (later) Swarm Console | intentions exist; edges landing (session↔task, artifact handover) |
 | L5 Comms | thread=bead convention only; Agent Mail/Buzz deferred | convention adoptable now |
@@ -42,7 +42,7 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
    while ready > active; sweeps epic-branch drift.
 4. **Trust ladder**: class A = path-allowlist AND reviewer-pass AND size-cap.
    Ladder/config/workflow/fleet-policy files are permanently class B (no agent
-   can widen its own permissions). Config: `factory/policy.yaml`,
+   can widen its own permissions). Config: `.agents/factory/policy.yaml`,
    workspace-editable, git-audited.
 5. **Sessions**: 1 bead = 1 durable session. Handoff ritual fires *before*
    compaction (notes onto the bead + commit WIP); post-compaction re-prime =
@@ -78,10 +78,10 @@ The factory adds no new runtime. Every moving part is an existing primitive:
 | --- | --- |
 | Beadle dispatcher | `plugins/boring-automation` scheduled automation |
 | Task board (GH + Beads) | `plugins/tasks` sources — `githubSource` (main) + Beads adapter (read-only, on PR #1075; merge + registry seam = TODO 3) |
-| Seats | AgentHost fleet spec + `agents/boring/*` identities |
+| Seats | AgentHost fleet spec + `.agents/personas/*` identities |
 | Worker execution | pi sessions (1 bead = 1 session) + pi-subagents for ephemeral roles |
 | Human gates | Human Intentions / inbox (`ask-user` surface) |
-| Policy | repo files: `factory/policy.yaml`, MODEL-CARD, AGENTS.md |
+| Policy | repo files: `.agents/factory/policy.yaml`, MODEL-CARD, AGENTS.md |
 
 Agents mutate beads via plain `br` in their worktrees (decision 2); the tasks
 plugin adapter is the *read/UI* path. If board-side mutations (drag to move,

@@ -29,7 +29,7 @@ const EXPECTED = [
 ] as const
 
 async function expectedInstructions(role: string, skills: readonly string[]): Promise<string> {
-  const base = await readFile(resolve(REPOSITORY_ROOT, 'agents', 'boring', role, 'instructions.md'), 'utf8')
+  const base = await readFile(resolve(REPOSITORY_ROOT, '.agents', 'personas', role, 'instructions.md'), 'utf8')
   const blocks: string[] = []
   for (const skill of skills) {
     const content = await readFile(resolve(REPOSITORY_ROOT, '.agents', 'skills', skill, 'SKILL.md'), 'utf8')

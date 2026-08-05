@@ -126,7 +126,7 @@ export async function loadBoringFactoryAgents(
   const agents: AgentHostAgentSpec[] = []
   for (const binding of ROLE_BINDINGS) {
     const source = await materializeAgentDirectory({
-      directory: resolve(repositoryRoot, 'agents', 'boring', binding.role),
+      directory: resolve(repositoryRoot, '.agents', 'personas', binding.role),
       expectedAgentTypeId: binding.agentTypeId,
     })
     agents.push(await createConfiguredAgentHostAgentSpec({
