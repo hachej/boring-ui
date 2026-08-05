@@ -9,9 +9,9 @@ import { PiTimelineMessage } from '../PiTimelineMessage'
 vi.mock('../../../primitives/message', () => ({
   Message: ({ children, from, ...props }: any) => <article data-from={from} {...props}>{children}</article>,
   MessageContent: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-  MessageResponse: ({ children, components }: any) => {
+  MessageResponse: ({ children, components, codeFilename }: any) => {
     const Paragraph = components?.p
-    return <div data-testid="message-response">{Paragraph ? <Paragraph>{children}</Paragraph> : children}</div>
+    return <div data-testid="message-response" data-code-filename={codeFilename}>{Paragraph ? <Paragraph>{children}</Paragraph> : children}</div>
   },
 }))
 
@@ -100,7 +100,7 @@ describe('PiTimelineMessage', () => {
     expect(reasoning.getAttribute('data-streaming')).toBe('true')
     expect(within(reasoning).getByTestId('reasoning-content').textContent).toBe('first thought\n\nsecond thought')
 
-    fireEvent.click(within(reasoning).getByRole('button', { name: 'thoughts' }))
+    fireEvent.click(within(reasoning).getByRole('button', { name: 'Reasoning' }))
     expect(within(row).getByTestId('reasoning').getAttribute('data-open')).toBe('true')
 
     const tools = within(row).getByTestId('tool-call-group').closest('[data-boring-agent-part="message-tools"]')
@@ -112,6 +112,60 @@ describe('PiTimelineMessage', () => {
     expect(reasoning.compareDocumentPosition(tools!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(tools!.compareDocumentPosition(notice!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(notice!.compareDocumentPosition(text!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(row).queryByRole('button', { name: 'Copy message' })).toBeNull()
+  })
+
+  test('keeps final assistant actions hidden from message streaming status alone', () => {
+    const message: BoringChatMessage = {
+      id: 'a-status-streaming',
+      role: 'assistant',
+      status: 'streaming',
+      parts: [{ type: 'text', id: 'a-status-streaming:text', text: 'Still working' }],
+    }
+
+    render(
+      <PiTimelineMessage
+        message={message}
+        isLast
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Copy message' })).toBeNull()
+  })
+
+  test('infers a code filename from the immediately preceding write tool', () => {
+    const message: BoringChatMessage = {
+      id: 'a-timestamp',
+      role: 'assistant',
+      status: 'done',
+      parts: [
+        { type: 'tool-call', id: 'write', toolName: 'write', input: { path: 'packages/agent/src/example.ts' }, state: 'output-available' },
+        { type: 'text', id: 'a-timestamp:text', text: 'Updated the file.' },
+      ],
+    }
+
+    render(<PiTimelineMessage message={message} isLast isStreaming={false} showThoughts={false} toolRenderers={{}} />)
+
+    expect(screen.getByText('Updated the file.').closest('[data-testid="message-response"]')?.getAttribute('data-code-filename')).toBe('packages/agent/src/example.ts')
+  })
+
+  test('does not infer a filename from a stale or non-writing tool', () => {
+    const message: BoringChatMessage = {
+      id: 'a-tool-only',
+      role: 'assistant',
+      status: 'done',
+      parts: [
+        { type: 'tool-call', id: 'write', toolName: 'write', input: { path: 'stale.ts' }, state: 'output-available' },
+        { type: 'notice', id: 'notice', level: 'info', text: 'Finished.' },
+        { type: 'text', id: 'a-tool-only:text', text: '```ts\nconst done = true\n```' },
+      ],
+    }
+
+    render(<PiTimelineMessage message={message} isLast isStreaming={false} showThoughts={false} toolRenderers={{}} />)
+    expect(screen.getByTestId('message-response').getAttribute('data-code-filename')).toBeNull()
   })
 
   test('renders action tools (bash) as plain cards and groups read-only tools', () => {

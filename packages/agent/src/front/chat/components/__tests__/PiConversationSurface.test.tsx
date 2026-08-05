@@ -182,7 +182,9 @@ describe('PiConversationSurface', () => {
     expect(ids).not.toContain('m0')
 
     // Revealing older expands the window upward.
-    fireEvent.click(screen.getByRole('button', { name: /Load 40 older messages/ }))
+    const loadOlder = screen.getByRole('button', { name: /Load 40 older messages/ })
+    expect(loadOlder.className).toContain('boring-agent-history-action')
+    fireEvent.click(loadOlder)
     ids = screen.getAllByTestId('timeline-message').map((el) => el.getAttribute('data-boring-agent-message-id'))
     expect(ids).toHaveLength(100)
     expect(ids[0]).toBe('m0')
