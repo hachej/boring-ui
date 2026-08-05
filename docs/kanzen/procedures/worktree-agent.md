@@ -11,8 +11,10 @@ Use this when `/exec` delegates implementation.
 - The orchestrator chooses the branch/worktree topology and PR granularity from
   the task or epic shape, dependencies, rollback, and review budget.
 - One epic may use one shared worktree or isolated worker worktrees. When writers
-  share a lane, coordinate ownership and conflicts explicitly. Agent Mail/file
-  reservations may be used when available; they are not required.
+  share a lane, coordinate ownership and conflicts through bead file scope
+  (`bead-ready.md`): concurrent beads in one epic must not overlap files. No
+  messaging or file-reservation system is used (see `.agents/factory/tools.md`,
+  "Not in the factory").
 - Read-only research/review can run independently. Writers must not silently
   race on the same files.
 - Stacked PRs use one branch per layer; each layer has its own proof and review.
