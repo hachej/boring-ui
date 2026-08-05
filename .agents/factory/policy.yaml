@@ -1,0 +1,60 @@
+# Boring Factory policy — workspace-editable, git-audited.
+# This file is permanently trust-class B: no agent may modify it via a
+# class-A merge. Parsed by the Beadle automation and merge gates.
+
+beadle:
+  tick_minutes: 10
+  worker_cap: 2 # concurrent /exec workers, fleet-wide
+  stale_lease_minutes: 90
+  bugfix_reserved_slots: 0 # worker slots held for the bugfix lane
+
+bounce:
+  worker_attempts_per_bead: 2 # then back to Steward as spec defect
+  review_rounds_max: 3 # then escalation intention to owner
+  plan_resubmissions_max: 1 # rejected plan gets one re-submission, then conversation
+
+review:
+  budget_added_lines: 1500 # review budget guideline, from rolling-small-fixes.md
+
+sessions:
+  handoff_context_threshold: 0.75 # handoff ritual fires before compaction
+
+epic_branches:
+  rebase_behind_commits: 10 # rebase epic branch when behind main by N
+  rebase_max_age_days: 2 # ...or older than this, whichever first
+  worktree_root: .worktrees/
+
+bugfix_lane:
+  branch: fix/rolling
+  # Graduating to auto-merge requires amending rolling-small-fixes.md first
+  # ("never auto-merge a rolling batch") — the procedure outranks this flag.
+  merge: owner-flush
+
+trust_ladder:
+  # Precedence: class_b_always is evaluated first and overrides any class_a
+  # match. A path listed here is class B even when an allowlist glob covers it
+  # (e.g. docs/** covers docs/procedures/MODEL-CARD.md — the card stays class B).
+  class_b_always:
+    - .agents/factory/policy.yaml
+    - .github/workflows/**
+    - docs/procedures/MODEL-CARD.md
+    - AGENTS.md
+    - .agents/personas/**
+    - .agents/factory/**
+  class_a:
+    max_changed_lines: 300
+    require_reviewer_pass: true
+    path_allowlist:
+      - docs/**
+      - "**/__tests__/**"
+      - .agents/skills/**
+
+models:
+  # Tiers resolve via docs/procedures/MODEL-CARD.md (priority-ordered).
+  seats:
+    concierge: T1
+    steward: T1
+    reviewer: T2
+    worker: T3
+    triage: T3
+    automation: T4

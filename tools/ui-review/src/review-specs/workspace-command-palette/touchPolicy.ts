@@ -23,6 +23,7 @@ const NAMED_APP_SHELL_CONTROLS = [
   "Skills",
   "Toggle theme",
   "Hide app navigation",
+  "Open workbench",
 ] as const
 
 export const COMMAND_PALETTE_TOUCH_EXEMPTIONS: readonly CommandPaletteTouchExemption[] = [

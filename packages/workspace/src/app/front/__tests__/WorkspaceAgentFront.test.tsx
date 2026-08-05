@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../../front/agentPlugins/reloadEvent"
 import { UI_COMMAND_EVENT, type UiCommand } from "../../../front/bridge"
+import { useWorkspacePluginClient } from "../../../front/plugin/useWorkspacePluginClient"
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
 import type { PanelConfig } from "../../../front/registry/types"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
@@ -524,6 +525,181 @@ describe("WorkspaceAgentFront", () => {
 
     await user.click(screen.getByLabelText("Delete Alpha shared"))
     expect(deleted).toEqual([["shared", "beta"], ["shared", "alpha"]])
+  })
+
+  it("selects the future-session Agent without replacing addressed panes and filters inventory", async () => {
+    const user = userEvent.setup()
+    const createOwners: string[] = []
+    const pluginClientOwners: string[] = []
+    const pluginProviderOwners: string[] = []
+    let removeBetaShared: (() => void) | undefined
+    function FleetClientProbe() {
+      pluginClientOwners.push(useWorkspacePluginClient().agentTypeId)
+      return null
+    }
+    function FleetProviderProbe({ agentTypeId, children }: PluginProviderProps) {
+      pluginProviderOwners.push(agentTypeId)
+      return <>{children}</>
+    }
+    const fleetProbePlugin = definePlugin({
+      id: "fleet-owner-probe",
+      setup(api) {
+        api.registerBinding({ id: "client", component: FleetClientProbe })
+        api.registerProvider({ id: "provider", component: FleetProviderProbe })
+      },
+    })
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://workspace.test").pathname
+      if (path === "/api/v1/agents") {
+        return new Response(JSON.stringify([
+          { agentTypeId: "default", label: "Concierge" },
+          { agentTypeId: "beta", label: "Worker" },
+        ]), { status: 200 })
+      }
+      if (path.endsWith("/ready-status")) return new Response(null, { status: 200 })
+      if (path.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (path.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+
+    function AddressedFleetChat(props: WorkspaceChatPanelProps) {
+      return <div data-testid="fleet-pane">{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    const useFleetSessions: UseWorkspaceAgentSessions = (options) => {
+      const [inventories, setInventories] = useState<Record<string, WorkspaceAgentSession[]>>({
+        default: [{ id: "shared", agentTypeId: "default", title: "Concierge shared" }],
+        beta: [
+          { id: "shared", agentTypeId: "beta", title: "Worker shared" },
+          { id: "keep", agentTypeId: "beta", title: "Worker keep" },
+        ],
+      })
+      removeBetaShared = () => setInventories((current) => ({
+        ...current,
+        beta: (current.beta ?? []).filter((session) => session.id !== "shared"),
+      }))
+      const inventory = inventories[options.agentTypeId] ?? []
+      return {
+        sourceIdentity: options.sourceIdentity,
+        sessions: inventory,
+        activeSessionId: inventory[0]?.id ?? null,
+        activeSessionAgentTypeId: inventory[0]?.agentTypeId ?? null,
+        activeSession: inventory[0] ?? null,
+        loading: false,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        delete: vi.fn(),
+        create: async () => {
+          createOwners.push(options.agentTypeId)
+          const session = { id: `new-${options.agentTypeId}`, agentTypeId: options.agentTypeId, title: "New chat" }
+          setInventories((current) => ({
+            ...current,
+            [options.agentTypeId]: [...(current[options.agentTypeId] ?? []), session],
+          }))
+          return session
+        },
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-selection"
+        chatPanel={AddressedFleetChat}
+        useSessions={useFleetSessions}
+        showAgentSelector
+        defaultNavOpen
+        plugins={[fleetProbePlugin]}
+        persistenceEnabled
+      />,
+    )
+
+    const selector = await screen.findByRole("combobox", { name: "Agent for new chats" })
+    await waitFor(() => expect(selector).toHaveValue("default"))
+    expect(screen.getByTestId("fleet-pane")).toHaveTextContent("default/shared")
+    expect(pluginClientOwners.at(-1)).toBe("default")
+    expect(pluginProviderOwners.at(-1)).toBe("default")
+
+    await user.selectOptions(selector, "beta")
+
+    await waitFor(() => expect(selector).toHaveValue("beta"))
+    expect(localStorage.getItem("boring-ui-v2:layout:fleet-selection:selectedAgentTypeId")).toBe("beta")
+    expect(createOwners).toEqual([])
+    expect(screen.getByTestId("fleet-pane")).toHaveTextContent("default/shared")
+    expect(pluginClientOwners.at(-1)).toBe("beta")
+    expect(pluginProviderOwners.at(-1)).toBe("default")
+    expandHistory()
+    const sessionBrowser = screen.getByLabelText("Session browser")
+    expect(within(sessionBrowser).getByText("Worker shared")).toBeInTheDocument()
+    expect(within(sessionBrowser).queryByText("Concierge shared")).not.toBeInTheDocument()
+
+    await user.click(screen.getByLabelText("Open Worker shared in chat pane"))
+    expect(screen.getAllByTestId("fleet-pane").map((pane) => pane.textContent)).toEqual([
+      "default/shared",
+      "beta/shared",
+    ])
+    expect(pluginProviderOwners.at(-1)).toBe("beta")
+
+    await user.click(screen.getByLabelText("Chat session Concierge shared"))
+    expect(pluginProviderOwners.at(-1)).toBe("default")
+    act(() => removeBetaShared?.())
+    await waitFor(() => expect(screen.getAllByTestId("fleet-pane").map((pane) => pane.textContent)).toEqual([
+      "default/shared",
+    ]))
+
+    await user.click(screen.getByRole("button", { name: "New session" }))
+    await waitFor(() => expect(createOwners).toEqual(["beta"]))
+  })
+
+  it("falls back to the host-default Agent when a stored fleet selection is stale", async () => {
+    localStorage.setItem("boring-ui-v2:layout:fleet-stale:selectedAgentTypeId", "retired")
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://workspace.test").pathname
+      if (path === "/api/v1/agents") {
+        return new Response(JSON.stringify([
+          { agentTypeId: "default", label: "Concierge" },
+          { agentTypeId: "worker", label: "Worker" },
+        ]), { status: 200 })
+      }
+      if (path.endsWith("/ready-status")) return new Response(null, { status: 200 })
+      if (path.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (path.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-stale"
+        chatPanel={ChatPanel}
+        showAgentSelector
+        provisionWorkspace={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Agent for new chats" })).toHaveValue("default"))
+  })
+
+  it("keeps the host-default path usable when fleet discovery fails", async () => {
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://workspace.test").pathname
+      if (path === "/api/v1/agents") return new Response(null, { status: 503 })
+      if (path.endsWith("/ready-status")) return new Response(null, { status: 200 })
+      if (path.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (path.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-error"
+        chatPanel={ChatPanel}
+        showAgentSelector
+        provisionWorkspace={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Agent for new chats" })).toBeDisabled())
+    expect(screen.getByLabelText("Agent list is unavailable; new chats will use the host-default Agent.")).toBeInTheDocument()
+    expect(screen.getByText("Chat panel")).toBeInTheDocument()
   })
 
   it("initializes a controlled colliding id to its explicit active owner", () => {
@@ -1836,6 +2012,75 @@ describe("WorkspaceAgentFront", () => {
     expect(getCapturedChatProps()?.initialDraft).toBe("restore and send")
     expect(getCapturedChatProps()?.autoSubmitInitialDraft).toBe(true)
     expect(seenSessionIds).not.toContain("sess-old")
+  })
+
+  it("keeps an in-flight auto-submit session bound to the Agent that admitted its creation", async () => {
+    const user = userEvent.setup()
+    const capturedByRef = new Map<string, CapturedChatPanelProps>()
+    let resolveDefaultCreate: ((session: WorkspaceAgentSession) => void) | undefined
+    const createOwners: string[] = []
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://workspace.test").pathname
+      if (path === "/api/v1/agents") {
+        return new Response(JSON.stringify([
+          { agentTypeId: "default", label: "Concierge" },
+          { agentTypeId: "beta", label: "Worker" },
+        ]), { status: 200 })
+      }
+      if (path.endsWith("/ready-status")) return new Response(null, { status: 200 })
+      if (path.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (path.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+    const useFleetSessions: UseWorkspaceAgentSessions = (options) => ({
+      sourceIdentity: options.sourceIdentity,
+      sessions: [{ id: `old-${options.agentTypeId}`, agentTypeId: options.agentTypeId, title: "Old" }],
+      activeSessionId: `old-${options.agentTypeId}`,
+      activeSessionAgentTypeId: options.agentTypeId,
+      activeSession: { id: `old-${options.agentTypeId}`, agentTypeId: options.agentTypeId, title: "Old" },
+      loading: false,
+      workspaceId: options.workspaceId,
+      switch: vi.fn(),
+      delete: vi.fn(),
+      create: () => {
+        createOwners.push(options.agentTypeId)
+        if (options.agentTypeId === "default") {
+          return new Promise((resolve) => { resolveDefaultCreate = resolve })
+        }
+        return Promise.resolve({ id: "unexpected-beta", agentTypeId: "beta", title: "Unexpected" })
+      },
+    })
+    const CapturingChat = (props: WorkspaceChatPanelProps) => {
+      capturedByRef.set(`${props.agentTypeId}/${props.sessionId}`, props as CapturedChatPanelProps)
+      return <div>{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-auto-submit"
+        chatPanel={CapturingChat}
+        useSessions={useFleetSessions}
+        showAgentSelector
+        chatParams={{ initialDraft: "resume", autoSubmitInitialDraft: true }}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(createOwners).toEqual(["default"]))
+    const selector = await screen.findByRole("combobox", { name: "Agent for new chats" })
+    await user.selectOptions(selector, "beta")
+    expect(createOwners).toEqual(["default"])
+
+    await act(async () => {
+      resolveDefaultCreate?.({ id: "created", agentTypeId: "default", title: "Created" })
+    })
+    await waitFor(() => expect([...capturedByRef.keys()]).toContain("default/created"))
+    expect(capturedByRef.get("default/created")).toMatchObject({
+      sessionId: "created",
+      agentTypeId: "default",
+      autoSubmitInitialDraft: true,
+    })
+    expect(createOwners).toEqual(["default"])
   })
 
   it("keeps hydration disabled after auth-return auto-submit props clear until the chat explicitly unlocks it", async () => {

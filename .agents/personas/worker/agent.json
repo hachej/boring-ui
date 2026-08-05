@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "definitionId": "boring-worker",
+  "version": "2026.08.04",
+  "label": "Boring Worker",
+  "description": "Executes one claimed Bead in one assigned worktree.",
+  "instructionsRef": "instructions.md"
+}
