@@ -13,7 +13,8 @@ Use at least one; use more when risk is higher.
 
 ## PR proof comment
 
-Before owner review or merge, post proof for the current PR head SHA.
+Before owner review or merge, post proof for the current PR head SHA, subject/
+title carrying the bead ID (`[br-###]`).
 
 ```md
 Proof of work

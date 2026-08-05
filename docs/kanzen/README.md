@@ -11,6 +11,8 @@ Active explicit-only skills live in `.agents/skills/`. Invoke with
 | --- | --- |
 | workflow, states, quality bars | [`boring-loop.md`](boring-loop.md) |
 | models and review tiers | [`MODEL-CARD.md`](MODEL-CARD.md) |
+| factory seats, stages, gates, tools (wraps this loop) | [`../../.agents/factory/README.md`](../../.agents/factory/README.md), [`../factory/VISION.md`](../factory/VISION.md) |
+| bead definition-of-ready | [`procedures/bead-ready.md`](procedures/bead-ready.md) |
 | nightly documentation refresh | [`procedures/documentation-refresh.md`](procedures/documentation-refresh.md), [`documentation-refresh-tasks.md`](documentation-refresh-tasks.md) |
 | coding/invariants/commands | [`procedures/`](procedures/) |
 | proof | [`procedures/proof-of-work.md`](procedures/proof-of-work.md) |

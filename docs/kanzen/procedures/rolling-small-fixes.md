@@ -1,11 +1,10 @@
 # Rolling Small-Fixes Batch
 
-A rolling small-fixes batch is an owner-approved exception to the default
-one-issue/one-PR execution loop. It trades repeated setup and review scheduling
-for one branch, one worktree, and one final owner review while preserving an
-independent review boundary for every fix.
-
-Use this workflow only when the owner explicitly asks for a batch.
+The bugfix lane: a standing rolling branch that is the factory's alternative to
+the default one-issue/one-PR loop for small fixes. It trades repeated setup and
+review scheduling for one branch and one worktree, while keeping every fix its
+own bead, its own commit, and its own reviewed decision — never a single batch
+approval standing in for individual review.
 
 ## Admission bar
 
@@ -27,8 +26,9 @@ Adopt or review the existing PR instead of duplicating it.
 1. Create one branch and one `.worktrees/` worktree from current `origin/main`.
 2. Open the rolling PR after its workflow document and initial candidate queue
    exist; do not wait for the whole batch.
-3. Keep one primary GitHub issue per commit and use the required issue-prefixed
-   commit subject.
+3. One fix = one bead = one commit. Commit subject is `[br-###] description`
+   (bead ID, per the factory's thread=bead correlation rule); reference the
+   originating GitHub issue in the commit body when one exists.
 4. Keep each commit independently reviewable and revertible. Do not hide shared
    refactors between fixes.
 5. Update from `main` before entering a package or conflict cluster touched by
@@ -36,20 +36,24 @@ Adopt or review the existing PR instead of duplicating it.
    assumptions.
 
 A rolling branch does not relax proof, review, or architectural invariants.
-Every production fix still follows the `exec` loop and receives focused tests,
-standards review, and spec review. Use thermo review when a change grows beyond
-its admitted scope.
+Every fix still follows the `exec` loop and receives focused tests, standards
+review, and spec review. Use thermo review when a change grows beyond its
+admitted scope.
 
-## PR review ledger
+## Per-fix intention and PR review ledger
+
+Each completed fix gets its own inbox Human Intention (`ask_user`), subject
+carrying the bead ID, per [`owner-review-card.md`](owner-review-card.md) — the
+owner reviews and decides fixes individually, not as one batch verdict.
 
 Maintain a table in the PR body with one row per candidate or included fix:
 
-| Item | Status | Commit | Scope | Proof | Review | Risk / rollback |
-| --- | --- | --- | --- | --- | --- | --- |
-| `#123` | queued / included / dropped | SHA | one sentence | exact command or manual path | result and reviewed SHA | one sentence |
+| Item (bead) | Status | Commit | Scope | Proof | Review | Intention | Risk / rollback |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `br-123` | queued / included / dropped | SHA | one sentence | exact command or manual path | result and reviewed SHA | decision | one sentence |
 
 Also list relevant open PRs as **adopt/review**, **wait**, or **exclude**. The
-ledger is the owner's final review list; issue closure alone is not evidence
+ledger is the owner's final review list; bead closure alone is not evidence
 that an item was reviewed.
 
 ## Stop conditions
@@ -65,16 +69,21 @@ Stop adding fixes and hand the batch to the owner when any of these is true:
 - the batch has stayed open long enough that rebasing creates material review
   churn.
 
-The PR remains `ready-for-human` until the owner reviews the ledger and approves
-the batch. Never auto-merge a rolling batch.
+The PR remains `ready-for-human` until the owner flushes the ledger: reviews
+each per-fix intention and approves. Never auto-merge a rolling batch — this
+holds until this procedure itself is amended to say otherwise.
 
-## Final handoff
+## Final handoff (owner flush)
 
-Before owner review:
+Before the flush:
 
 1. update the branch from `main` without force-pushing;
-2. run focused proof for each issue and the relevant changed-workspace gates;
+2. run focused proof for each fix and the relevant changed-workspace gates;
 3. run independent standards and spec review on the final SHA;
-4. ensure the ledger matches the commits and links all proof;
+4. ensure the ledger matches the commits, beads, and intentions, and links all
+   proof;
 5. summarize dropped candidates and active-PR dependencies; and
 6. provide per-commit rollback guidance plus the whole-PR rollback path.
+
+Merge on owner approval; cherry-pick when the batch is mixed (some fixes
+approved, others not).

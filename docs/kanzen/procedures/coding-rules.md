@@ -56,15 +56,22 @@
 - "Fix the bug" -> reproduce it with a test or documented manual step, then fix.
 - "Refactor X" -> verify tests pass before and after.
 
-## Commit Issue Prefix
+## Commit Prefix
+
+Working a bead (factory epic or bugfix lane): prefix with the bead ID.
+
+```text
+[br-123] fix(workspace): keep pending review visible
+```
+
+Non-bead work: prefix with the primary GitHub issue number.
 
 ```text
 #123 fix(workspace): keep pending review visible
 ```
 
-- Subject starts with primary GitHub issue number.
-- No issue: create or choose one before planning/coding.
-- One primary issue per commit; secondary issues in body.
+- No issue/bead: create or choose one before planning/coding.
+- One primary issue/bead per commit; secondary issues in body.
 
 ## Build Principles
 

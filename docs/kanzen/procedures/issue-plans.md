@@ -2,13 +2,17 @@
 
 Use when an issue needs a spec, design decision, proof path, or slices before implementation.
 
-Every plan belongs to a GitHub issue.
+Every plan belongs to a GitHub issue (one epic = one issue). Write the narrative
+plan below, then translate its slices into a Beads graph via `br` — one bead per
+slice, each meeting the Definition of Ready (`bead-ready.md`: WHAT, proof path,
+file scope, fits one session). The bead graph, not the markdown file, is what
+the Beadle dispatches from. Plan approval (human gate 1) covers both.
 
 ```text
 docs/issues/<issue-number>/plan.md
 ```
 
-Plan-only edits can happen without a feature branch when the workspace is otherwise safe. Code starts only after the issue, proof path, and next slice are clear.
+Plan-only edits can happen without a feature branch when the workspace is otherwise safe. Code starts only after the issue, proof path, next slice, and corresponding bead are clear.
 
 ## Frontmatter
 
@@ -58,6 +62,7 @@ track: owner | fast
 ## Slices
 
 ### Slice: <name>
+**Bead:** br-###
 **Delivers:**
 **Blocked by:** None / <slice or issue>
 **Proof:**
