@@ -23,8 +23,8 @@
     "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-diagram": "workspace:*",
     "@duckdb/node-api": "1.5.2-r.2",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "@hachej/boring-data-explorer": "workspace:*",
     "@hachej/boring-data-catalog": "workspace:*"
   },
@@ -36,7 +36,7 @@
     "@vitejs/plugin-react": "^4.0.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.1",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.9",
     "vite": "^8.1.5"
   }
