@@ -4,7 +4,9 @@ After proof/reviews, create an Inbox Human Intention tied to the exact bead,
 task, artifact, and revision — subject carries the bead ID
 (`[br-###]`, per the factory's thread=bead correlation rule). That durable
 record — not chat — is the decision source of truth. Use `ask_user` for the
-decision transport when available (GitHub comment fallback):
+decision transport when available (GitHub comment fallback). The intention
+links a **PR review doc** — self-contained visual HTML per
+[`visual-review-doc.md`](visual-review-doc.md):
 
 ```md
 ## Owner Review

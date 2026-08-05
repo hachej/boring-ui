@@ -13,6 +13,7 @@ Active explicit-only skills live in `.agents/skills/`. Invoke with
 | coding/invariants/commands | this directory |
 | proof | [`proof-of-work.md`](proof-of-work.md) |
 | human handoff | [`owner-review-card.md`](owner-review-card.md) |
+| visual review docs (gate deliverables) | [`visual-review-doc.md`](visual-review-doc.md) |
 | agent/session handoff | [`session-handoff.md`](session-handoff.md) |
 | issue intake | [`well-documented-issue.md`](well-documented-issue.md) |
 | plans | [`issue-plans.md`](issue-plans.md) |
