@@ -89,14 +89,18 @@ function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
   const hasMentions = effectiveMentionCatalog.files
     || effectiveMentionCatalog.commands.length > 0
     || effectiveMentionCatalog.skills.length > 0
-  const mentionsEnabled = Boolean(isAssistant && !(isStreaming && isLast) && hasMentions)
+  const messageIsStreaming = isAssistant && isLast && (isStreaming || message.status === 'streaming')
+  const mentionsEnabled = Boolean(isAssistant && !messageIsStreaming && hasMentions)
   const mentionMarkdownComponents = useMemo(
     () => mentionsEnabled
       ? createMessageMentionMarkdownComponents(effectiveMentionCatalog, activateCurrentMention)
       : undefined,
     [activateCurrentMention, effectiveMentionCatalog, mentionSignature, mentionsEnabled],
   )
-  const shouldReserveStreamingActions = isStreaming && isAssistant && isLast
+  const shouldReserveStreamingActions = messageIsStreaming
+  const finalTextPartKey = [...finalParts].reverse().find(
+    (item) => item.kind === 'part' && item.part.type === 'text',
+  )?.key
 
   return (
     <Message
@@ -186,7 +190,11 @@ function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
             const text = textForMessageDisplay(item.part.text, role)
             if (!text) return null
             return (
-              <div key={item.key} data-boring-agent-part="message-text">
+              <div
+                key={item.key}
+                data-boring-agent-part="message-text"
+                className={cn(messageIsStreaming && item.key === finalTextPartKey && 'boring-agent-streaming-caret')}
+              >
                 <MessageResponse
                   key={`${mentionSignature || 'no-message-mentions'}:${mentionsEnabled ? 'enabled' : 'static'}`}
                   components={mentionMarkdownComponents}
@@ -206,7 +214,7 @@ function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
       {isAssistant && (textParts.length > 0 || shouldReserveStreamingActions) ? (
         <MessageActionsBar
           text={textParts.map((part) => part.text).join('\n\n')}
-          visible={!isStreaming}
+          visible={!messageIsStreaming}
         />
       ) : null}
     </Message>
@@ -415,7 +423,7 @@ function MessageActionsBar({
     }
   }
   const iconActionBtnClass = cn(
-    'inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
+    'boring-agent-message-action inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
     'text-muted-foreground/35 transition-colors',
     'hover:bg-foreground/[0.04] hover:text-muted-foreground/80',
     'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--accent)]/40',

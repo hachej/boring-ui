@@ -112,6 +112,30 @@ describe('PiTimelineMessage', () => {
     expect(reasoning.compareDocumentPosition(tools!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(tools!.compareDocumentPosition(notice!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(notice!.compareDocumentPosition(text!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(text?.classList.contains('boring-agent-streaming-caret')).toBe(true)
+    expect(within(row).queryByRole('button', { name: 'Copy message' })).toBeNull()
+  })
+
+  test('keeps the final assistant message visibly streaming from message status alone', () => {
+    const message: BoringChatMessage = {
+      id: 'a-status-streaming',
+      role: 'assistant',
+      status: 'streaming',
+      parts: [{ type: 'text', id: 'a-status-streaming:text', text: 'Still working' }],
+    }
+
+    render(
+      <PiTimelineMessage
+        message={message}
+        isLast
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+      />,
+    )
+
+    expect(document.querySelector('.boring-agent-streaming-caret')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Copy message' })).toBeNull()
   })
 
   test('renders action tools (bash) as plain cards and groups read-only tools', () => {
