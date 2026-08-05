@@ -426,6 +426,20 @@
   .workspace-loading-sidebar {
     display: none;
   }
+
+  .command-palette-footer {
+    justify-content: center;
+    min-height: 40px;
+  }
+
+  .command-palette-footer-label,
+  .command-palette-footer-desktop-hints {
+    display: none;
+  }
+
+  .command-palette-footer-touch {
+    display: inline;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -436,9 +450,19 @@
 }
 
 @media (pointer: coarse) {
-  .workbench-open-button {
+  .workbench-open-button,
+  .command-palette-mode-button,
+  .command-palette-secondary-action {
     min-height: 44px;
     min-width: 44px;
+  }
+
+  .command-palette-result-row {
+    min-height: 44px;
+  }
+
+  .command-palette-secondary-action {
+    opacity: 1;
   }
 }
 
