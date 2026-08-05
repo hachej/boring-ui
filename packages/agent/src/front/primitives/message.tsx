@@ -369,14 +369,14 @@ function extractCodeBlockText(children: unknown): string {
   return walk(children);
 }
 
-const MarkdownPre = ({ children }: { children?: unknown }) => {
+const MarkdownPre = ({ children, filename }: ComponentProps<"pre"> & { filename?: string }) => {
   const code = extractCodeBlockText(children).replace(/\n$/, "");
   const language = extractCodeBlockLanguage(children);
   return (
     <CodeBlock code={code} language={language ?? "text"} className="my-3">
       <CodeBlockHeader>
         <CodeBlockTitle>
-          <CodeBlockFilename>{language ?? "text"}</CodeBlockFilename>
+          <CodeBlockFilename>{filename ?? language ?? "text"}</CodeBlockFilename>
         </CodeBlockTitle>
         <CodeBlockCopyButton />
       </CodeBlockHeader>
@@ -423,8 +423,13 @@ const markdownComponents = {
   code: MarkdownCode,
 } as unknown as ComponentProps<typeof Streamdown>["components"];
 
+export type BoringMessageResponseProps = MessageResponseProps & {
+  /** Source path inferred from the preceding write/edit tool call, when known. */
+  codeFilename?: string;
+};
+
 export const MessageResponse = memo(
-  ({ className, shikiTheme, components, ...props }: MessageResponseProps) => (
+  ({ className, shikiTheme, components, codeFilename, ...props }: BoringMessageResponseProps) => (
     <Streamdown
       className={cn(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
@@ -432,14 +437,19 @@ export const MessageResponse = memo(
       )}
       plugins={streamdownPlugins}
       shikiTheme={shikiTheme ?? DEFAULT_SHIKI_THEME}
-      components={{ ...markdownComponents, ...(components ?? {}) }}
+      components={{
+        ...markdownComponents,
+        ...(components ?? {}),
+        ...(codeFilename ? { pre: (props: ComponentProps<"pre">) => <MarkdownPre {...props} filename={codeFilename} /> } : {}),
+      } as ComponentProps<typeof Streamdown>["components"]}
       {...props}
     />
   ),
   (prevProps, nextProps) =>
     prevProps.children === nextProps.children &&
     nextProps.isAnimating === prevProps.isAnimating &&
-    nextProps.components === prevProps.components
+    nextProps.components === prevProps.components &&
+    prevProps.codeFilename === nextProps.codeFilename
 );
 
 MessageResponse.displayName = "MessageResponse";

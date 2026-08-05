@@ -19,6 +19,7 @@ function snapshot(overrides: Partial<UiHardGateSnapshot> = {}): UiHardGateSnapsh
       inputDividerCount: 1,
       dialogWidth: 630,
       keyboardHintsPresent: true,
+      touchHintPresent: true,
       commandModePressed: false,
     },
     documentWidth: { scrollWidth: 390, clientWidth: 390 },
@@ -122,6 +123,25 @@ describe("command palette hard gates", () => {
     expect(external.results.find((result) => result.id === "request-failures")?.passed).toBe(false)
   })
 
+  it("requires the mobile touch hint instead of desktop keyboard hints", () => {
+    const missingTouchHint = evaluateCommandPaletteHardGates(snapshot({
+      commandPalette: {
+        checkpoint: "open",
+        visible: true,
+        inputDividerCount: 1,
+        dialogWidth: 630,
+        keyboardHintsPresent: false,
+        touchHintPresent: false,
+        commandModePressed: false,
+      },
+    }))
+    expect(missingTouchHint.results.filter((result) => !result.passed).map((result) => result.id)).toEqual([
+      "command-palette-touch-hint",
+    ])
+    expect(missingTouchHint.results.some((result) => result.id === "command-palette-keyboard-hints")).toBe(false)
+    expect(missingTouchHint.results.some((result) => result.id === "command-palette-desktop-width")).toBe(false)
+  })
+
   it("enforces command-palette chrome invariants as machine-readable gates", () => {
     const report = evaluateCommandPaletteHardGates(snapshot({
       viewport: { width: 1440, height: 900, mobile: false },
@@ -131,6 +151,7 @@ describe("command palette hard gates", () => {
         inputDividerCount: 2,
         dialogWidth: 580,
         keyboardHintsPresent: false,
+        touchHintPresent: false,
         commandModePressed: false,
       },
     }))

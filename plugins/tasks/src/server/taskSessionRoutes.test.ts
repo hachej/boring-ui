@@ -208,7 +208,7 @@ describe("task session link routes", () => {
       summary: () => ({ id: "source-a", label: "Source A", capabilities: { move: true } }),
       getBoardConfig: async () => ({ adapterId: "source-a", columns: [{ id: "todo", title: "Todo" }] }),
       listTasks: async () => [],
-      getTask: async (_ctx, taskId) => taskId === "stale" ? undefined : {
+      getTaskCard: async (_ctx, taskId) => taskId === "stale" ? undefined : {
         id: taskId,
         number: `#${taskId}`,
         title: `Task ${taskId}`,

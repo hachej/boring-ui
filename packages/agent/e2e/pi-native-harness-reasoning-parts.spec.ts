@@ -159,7 +159,7 @@ test.describe('Pi-native harness-backed reasoning part ordering', () => {
         'message-text',
       ])
 
-      await reasoning.getByRole('button', { name: /thoughts/i }).click()
+      await reasoning.getByRole('button', { name: 'Reasoning' }).click()
       await expect(reasoning).toHaveAttribute('data-state', 'open')
       await expect(reasoning.getByText('Reasoning visible', { exact: true })).toBeVisible()
       await expect(reasoning.getByText('Second reasoning visible', { exact: true })).toBeVisible()
