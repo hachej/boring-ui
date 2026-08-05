@@ -45,6 +45,28 @@ vi.mock('../../../primitives/attachments', () => ({
 }))
 
 describe('PiTimelineMessage', () => {
+  test('uses an inline renderer only while an action tool is pending', () => {
+    const inlineRenderer = Object.assign(
+      vi.fn(() => <div data-testid="inline-tool">Pending question</div>),
+      { presentation: 'inline' as const },
+    )
+    const pending: BoringChatMessage = {
+      id: 'ask-user-pending', role: 'assistant',
+      parts: [{ type: 'tool-call', id: 'ask-call', toolName: 'ask_user', state: 'input-available' }],
+    }
+    const resolved: BoringChatMessage = {
+      ...pending,
+      id: 'ask-user-resolved',
+      parts: [{ type: 'tool-call', id: 'ask-call', toolName: 'ask_user', state: 'output-available', output: { content: [{ type: 'text', text: 'User answered: A' }] } }],
+    }
+    const { rerender } = render(<PiTimelineMessage message={pending} isLast={false} isStreaming={false} showThoughts={false} toolRenderers={{ ask_user: inlineRenderer }} />)
+    expect(screen.getByTestId('inline-tool').textContent).toBe('Pending question')
+
+    rerender(<PiTimelineMessage message={resolved} isLast={false} isStreaming={false} showThoughts={false} toolRenderers={{ ask_user: inlineRenderer }} />)
+    expect(screen.queryByTestId('inline-tool')).toBeNull()
+    expect(screen.getByTestId('tool-output').textContent).toContain('User answered: A')
+  })
+
   test('allows a provider to replace a message without feature logic in the timeline', () => {
     const message: BoringChatMessage = {
       id: 'custom-1',

@@ -247,11 +247,12 @@ export class AskUserRuntime {
     this.coordinator.resolveCancelled(questionId, "abandoned")
   }
 
-  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "ownerPrincipalId">): AskUserQuestion {
+  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "toolCallId" | "ownerPrincipalId">): AskUserQuestion {
     const at = this.isoNow()
     return {
       questionId: randomUUID(),
       sessionId: request.sessionId,
+      toolCallId: request.toolCallId,
       ownerPrincipalId: request.ownerPrincipalId ?? this.ownerPrincipalId,
       status: "ready",
       title: request.title,
