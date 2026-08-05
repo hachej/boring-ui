@@ -1,4 +1,5 @@
 import { createAgentAssetDigest, type Sha256Digest } from '../../shared/agent-definition'
+import { ErrorCode } from '../../shared/error-codes'
 import type { JsonValue } from '../../shared/gateway/types'
 import type { ConfiguredAgentHostAgentSpec } from '../agent-host/types'
 import type { AuthoredAgentSourceV1 } from './materializeAgentDirectory'
@@ -27,7 +28,7 @@ export interface CreateConfiguredAgentHostAgentSpecInput {
 }
 
 export class TrustedAgentCompositionError extends Error {
-  readonly code = 'CONFIG_INVALID' as const
+  readonly code = ErrorCode.enum.CONFIG_INVALID
   readonly field: string
 
   constructor(field: string, message: string) {

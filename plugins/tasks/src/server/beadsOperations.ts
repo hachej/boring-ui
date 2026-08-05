@@ -312,7 +312,9 @@ export function createWorkspaceBeadsOperations(workspace: BeadsWorkspaceAuthorit
   }
   const operations: BeadsOperations = {
     async runRead(args: readonly string[], limits: BeadsReadLimits): Promise<{ stdout: string }> {
-      if (disposed || !isAllowedBeadsReadArgs(args)) throw new BeadsOperationError("runtime-unavailable")
+      if (disposed || process.platform !== "linux" || !isAllowedBeadsReadArgs(args)) {
+        throw new BeadsOperationError("runtime-unavailable")
+      }
       if (!Number.isSafeInteger(limits.timeoutMs) || limits.timeoutMs < 1 || limits.timeoutMs > 120_000) {
         throw new BeadsOperationError("runtime-unavailable")
       }

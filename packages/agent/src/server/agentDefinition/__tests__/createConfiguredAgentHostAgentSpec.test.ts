@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { describe, expect, test } from 'vitest'
 
 import { createAgentAssetDigest } from '../../../shared/agent-definition'
+import { ErrorCode } from '../../../shared/error-codes'
 import { createConfiguredAgentHostAgentSpec, TrustedAgentCompositionError } from '../createConfiguredAgentHostAgentSpec'
 import { materializeAgentDirectory } from '../materializeAgentDirectory'
 
@@ -86,7 +87,7 @@ describe('createConfiguredAgentHostAgentSpec', () => {
       policy: { instructionAppendices: [{ name: 'triage', content, digest }] },
     })).rejects.toMatchObject({
       name: 'TrustedAgentCompositionError',
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       field: 'policy.instructionAppendices[0].digest',
     })
 

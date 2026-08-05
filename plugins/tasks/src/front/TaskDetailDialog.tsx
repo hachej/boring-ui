@@ -265,11 +265,6 @@ export function TaskDetailDialog({ open, selection, returnFocusRef, onOpenChange
           data-boring-task-detail
           className="inset-0 top-0 left-0 flex h-[100dvh] w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-background p-0 shadow-none"
           overlayClassName="bg-background/80"
-          onKeyDownCapture={(event) => {
-            if (event.key !== "Escape") return
-            event.stopPropagation()
-            onOpenChange(false)
-          }}
           onCloseAutoFocus={(event) => {
             event.preventDefault()
             queueMicrotask(() => returnFocusRef.current?.focus())
