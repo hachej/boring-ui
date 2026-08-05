@@ -531,6 +531,7 @@ describe("WorkspaceAgentFront", () => {
     const user = userEvent.setup()
     const createdBy = vi.fn()
     const selected = vi.fn()
+    const sessionScopes = new Map<string, string | undefined>()
     const agents = [
       { agentTypeId: "alpha", label: "Alpha" },
       { agentTypeId: "beta", label: "Beta" },
@@ -550,6 +551,7 @@ describe("WorkspaceAgentFront", () => {
     }
     const useFleetSessions: AttestedWorkspaceAgentFrontProps<WorkspaceAgentSession>["useSessions"] = (options) => {
       const owner = options.agentTypeId
+      if (options.enabled !== false) sessionScopes.set(owner, options.sessionStorageScope)
       const [owned, setOwned] = useState(() => [{
         id: `${owner}-one`,
         agentTypeId: owner,
@@ -592,6 +594,10 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getAllByText("Alpha one").length).toBeGreaterThan(0)
       expect(screen.getAllByText("Beta one").length).toBeGreaterThan(0)
     })
+    expect(sessionScopes).toEqual(new Map([
+      ["alpha", "fleet-ui:alpha"],
+      ["beta", "fleet-ui:beta"],
+    ]))
 
     const betaSessionButton = screen.getByText("Beta one").closest("button")
     expect(betaSessionButton).toBeInstanceOf(HTMLButtonElement)
@@ -1312,6 +1318,225 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
     })
+  })
+
+  it("preserves addressed panes while the Host catalog resolves asynchronously", async () => {
+    localStorage.setItem(
+      "boring-workspace:chat-panes:async-fleet-restore",
+      JSON.stringify({
+        version: 2,
+        refs: [
+          { kind: "addressed", sessionId: "alpha-one", agentTypeId: "alpha" },
+          { kind: "addressed", sessionId: "beta-one", agentTypeId: "beta" },
+        ],
+        activeRef: { kind: "addressed", sessionId: "beta-one", agentTypeId: "beta" },
+      }),
+    )
+    const useAsyncFleetSelection = () => {
+      const [agents, setAgents] = useState<Array<{ agentTypeId: string; label: string }>>([])
+      useEffect(() => {
+        const timer = setTimeout(() => setAgents([
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ]), 10)
+        return () => clearTimeout(timer)
+      }, [])
+      return {
+        agents,
+        selectedAgentTypeId: agents.length > 0 ? "alpha" : undefined,
+        loading: agents.length === 0,
+        error: undefined,
+        selectAgentTypeId: vi.fn(),
+      }
+    }
+    const useFleetSessions: UseWorkspaceAgentSessions = (options) => {
+      const session = { id: `${options.agentTypeId}-one`, agentTypeId: options.agentTypeId, title: options.agentTypeId }
+      return {
+        sourceIdentity: options.sourceIdentity,
+        sessions: [session],
+        loading: false,
+        activeSessionId: session.id,
+        activeSessionAgentTypeId: options.agentTypeId,
+        activeSession: session,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="async-fleet-restore"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAsyncFleetSelection}
+        useSessions={useFleetSessions}
+      />,
+    )
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["alpha-one", "beta-one"]))
+    expect(JSON.parse(localStorage.getItem("boring-workspace:chat-panes:async-fleet-restore") ?? "null")).toMatchObject({
+      version: 2,
+      refs: [
+        { kind: "addressed", sessionId: "alpha-one", agentTypeId: "alpha" },
+        { kind: "addressed", sessionId: "beta-one", agentTypeId: "beta" },
+      ],
+    })
+  })
+
+  it("keeps healthy Agent sessions available when another Agent inventory fails", async () => {
+    const useFleetSelection = () => ({
+      agents: [
+        { agentTypeId: "alpha", label: "Alpha" },
+        { agentTypeId: "beta", label: "Beta" },
+      ],
+      selectedAgentTypeId: "alpha",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const betaError = new Error("Beta unavailable")
+    const usePartiallyFailedSessions: UseWorkspaceAgentSessions = (options) => {
+      const failed = options.agentTypeId === "beta"
+      const session = { id: "alpha-one", agentTypeId: "alpha", title: "Alpha healthy" }
+      return {
+        sourceIdentity: options.sourceIdentity,
+        sessions: failed ? [] : [session],
+        loading: false,
+        error: failed ? betaError : undefined,
+        activeSessionId: failed ? null : session.id,
+        activeSessionAgentTypeId: failed ? null : "alpha",
+        activeSession: failed ? null : session,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="partial-fleet-failure"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useFleetSelection}
+        useSessions={usePartiallyFailedSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getAllByText("Alpha healthy").length).toBeGreaterThan(0))
+    expect(screen.getByRole("button", { name: "New chat with Alpha" })).toBeInTheDocument()
+  })
+
+  it("does not prune a non-selected Agent pane while that Agent has more inventory pages", async () => {
+    localStorage.setItem(
+      "boring-workspace:chat-panes:fleet-pagination",
+      JSON.stringify({
+        version: 2,
+        refs: [
+          { kind: "addressed", sessionId: "alpha-one", agentTypeId: "alpha" },
+          { kind: "addressed", sessionId: "beta-hidden", agentTypeId: "beta" },
+        ],
+        activeRef: { kind: "addressed", sessionId: "alpha-one", agentTypeId: "alpha" },
+      }),
+    )
+    const useFleetSelection = () => ({
+      agents: [
+        { agentTypeId: "alpha", label: "Alpha" },
+        { agentTypeId: "beta", label: "Beta" },
+      ],
+      selectedAgentTypeId: "alpha",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const usePaginatedFleetSessions: UseWorkspaceAgentSessions = (options) => {
+      const alpha = { id: "alpha-one", agentTypeId: "alpha", title: "Alpha one" }
+      return {
+        sourceIdentity: options.sourceIdentity,
+        sessions: options.agentTypeId === "alpha" ? [alpha] : [],
+        loading: false,
+        hasMore: options.agentTypeId === "beta",
+        activeSessionId: options.agentTypeId === "alpha" ? alpha.id : null,
+        activeSessionAgentTypeId: options.agentTypeId === "alpha" ? "alpha" : null,
+        activeSession: options.agentTypeId === "alpha" ? alpha : null,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+        loadMore: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-pagination"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useFleetSelection}
+        useSessions={usePaginatedFleetSessions}
+      />,
+    )
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["alpha-one", "beta-hidden"]))
+  })
+
+  it("prunes an inactive non-selected Agent pane after authoritative deletion", async () => {
+    localStorage.setItem(
+      "boring-workspace:chat-panes:fleet-owner-delete",
+      JSON.stringify({
+        version: 2,
+        refs: [
+          { kind: "addressed", sessionId: "alpha-one", agentTypeId: "alpha" },
+          { kind: "addressed", sessionId: "beta-one", agentTypeId: "beta" },
+        ],
+        activeRef: { kind: "addressed", sessionId: "alpha-one", agentTypeId: "alpha" },
+      }),
+    )
+    let removeBeta: (() => void) | undefined
+    const useFleetSelection = () => ({
+      agents: [
+        { agentTypeId: "alpha", label: "Alpha" },
+        { agentTypeId: "beta", label: "Beta" },
+      ],
+      selectedAgentTypeId: "alpha",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const useDeletingFleetSessions: UseWorkspaceAgentSessions = (options) => {
+      const initial = { id: `${options.agentTypeId}-one`, agentTypeId: options.agentTypeId, title: options.agentTypeId }
+      const [sessions, setSessions] = useState<WorkspaceAgentSession[]>([initial])
+      if (options.agentTypeId === "beta") removeBeta = () => setSessions([])
+      return {
+        sourceIdentity: options.sourceIdentity,
+        sessions,
+        loading: false,
+        activeSessionId: sessions[0]?.id ?? null,
+        activeSessionAgentTypeId: sessions[0]?.agentTypeId ?? null,
+        activeSession: sessions[0] ?? null,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-owner-delete"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useFleetSelection}
+        useSessions={useDeletingFleetSessions}
+      />,
+    )
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["alpha-one", "beta-one"]))
+    act(() => removeBeta?.())
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["alpha-one"]))
   })
 
   it("hydrates an inventoried restored pane without a global active preference", async () => {

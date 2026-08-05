@@ -1211,19 +1211,21 @@ describe('usePiSessions', () => {
     expect(remote.factory).not.toHaveBeenCalled()
   })
 
-  test('keeps a deleting session tombstoned while a stale list response races the delete', async () => {
+  test('keeps a deleting session tombstoned while a stale list response races the delete, then retires it after authoritative absence', async () => {
     const deletion = deferred<Response>()
     let listCalls = 0
+    let recreated = false
     fetchMock.mockImplementation(async (_input, init) => {
       if (init?.method === 'DELETE') return deletion.promise
       listCalls += 1
-      return jsonResponse(listCalls < 3 ? [session('pi-delete')] : [])
+      return jsonResponse(listCalls < 3 || recreated ? [session('pi-delete')] : [])
     })
 
+    const remote = remoteFactory()
     const { result } = renderHook(() => usePiSessions({
       storageScope: 'scope-a',
       fetch: fetchMock as unknown as typeof fetch,
-      createRemoteSession: remoteFactory().factory,
+      createRemoteSession: remote.factory,
     }))
     await waitFor(() => expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-delete']))
 
@@ -1237,6 +1239,57 @@ describe('usePiSessions', () => {
     await act(async () => { await deleting })
     await waitFor(() => expect(listCalls).toBe(3))
     expect(result.current.sessions).toEqual([])
+
+    recreated = true
+    await act(async () => { await result.current.refresh({ background: true }) })
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-delete'])
+  })
+
+  test('restores a retryable row when delete fails even if the recovery refresh also fails', async () => {
+    let listCalls = 0
+    fetchMock.mockImplementation(async (_input, init) => {
+      if (init?.method === 'DELETE') return jsonResponse({ error: { message: 'delete failed' } }, 500)
+      listCalls += 1
+      return listCalls === 1
+        ? jsonResponse([session('pi-delete')])
+        : jsonResponse({ error: { message: 'refresh failed' } }, 500)
+    })
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remoteFactory().factory,
+    }))
+    await waitFor(() => expect(result.current.activeSessionId).toBe('pi-delete'))
+
+    await expect(act(async () => {
+      await result.current.delete('pi-delete')
+    })).rejects.toThrow('Failed to delete session: 500')
+
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-delete'])
+    expect(result.current.activeSessionId).toBe('pi-delete')
+  })
+
+  test('separates the authorized request scope from browser active-session persistence', async () => {
+    const persisted = storage()
+    fetchMock.mockResolvedValue(jsonResponse([session('pi-alpha')]))
+
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      storageScope: 'workspace',
+      activeSessionStorageScope: 'workspace:alpha',
+      storage: persisted,
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remoteFactory().factory,
+    }))
+    await waitFor(() => expect(result.current.activeSessionId).toBe('pi-alpha'))
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ headers: { 'x-boring-storage-scope': 'workspace' } }),
+    )
+    expect(persisted.values.get(activeSessionStorageKey('workspace:alpha'))).toBe('pi-alpha')
+    expect(persisted.values.has(activeSessionStorageKey('workspace'))).toBe(false)
   })
 
   test('delete of active session clears storage when no fallback remains and disposes remote session', async () => {

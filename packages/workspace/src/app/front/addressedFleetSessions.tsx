@@ -40,26 +40,38 @@ interface AddressedFleetSessionsResult<TSession extends WorkspaceAgentSession> {
   statuses: ReadonlyMap<string, "loading" | "loaded" | "error">
 }
 
+function sessionStateEqual(
+  current: WorkspaceAgentSession | null | undefined,
+  next: WorkspaceAgentSession | null | undefined,
+): boolean {
+  if (current == null || next == null) return current === next
+  return current.id === next.id
+    && current.agentTypeId === next.agentTypeId
+    && current.title === next.title
+    && current.updatedAt === next.updatedAt
+    && current.turnCount === next.turnCount
+    && current.nativeSessionId === next.nativeSessionId
+    && current.hasAssistantReply === next.hasAssistantReply
+    && current.ephemeral === next.ephemeral
+    && current.status === next.status
+}
+
 function controllerStateEqual<TSession extends WorkspaceAgentSession>(
   current: WorkspaceAgentSessionsApi<TSession>,
   next: WorkspaceAgentSessionsApi<TSession>,
 ): boolean {
-  return current.loading === next.loading
+  return current.sourceIdentity === next.sourceIdentity
+    && current.loading === next.loading
     && current.loadingMore === next.loadingMore
     && current.hasMore === next.hasMore
     && current.error === next.error
     && current.activeSessionId === next.activeSessionId
+    && current.resumeSessionId === next.resumeSessionId
     && current.activeSessionAgentTypeId === next.activeSessionAgentTypeId
+    && sessionStateEqual(current.activeSession, next.activeSession)
     && current.workspaceId === next.workspaceId
     && current.sessions.length === next.sessions.length
-    && current.sessions.every((session, index) => {
-      const candidate = next.sessions[index]
-      return session.id === candidate?.id
-        && session.agentTypeId === candidate.agentTypeId
-        && session.title === candidate.title
-        && session.updatedAt === candidate.updatedAt
-        && session.turnCount === candidate.turnCount
-    })
+    && current.sessions.every((session, index) => sessionStateEqual(session, next.sessions[index]))
 }
 
 function sessionTime(session: WorkspaceAgentSession): number {
@@ -92,6 +104,7 @@ function FleetSessionSource<TSession extends WorkspaceAgentSession>({
   const controller = useSessions({
     requestHeaders,
     storageKey: `${storageKey}:${agentTypeId}`,
+    sessionStorageScope: `${workspaceId}:${agentTypeId}`,
     agentTypeId,
     workspaceId,
     apiBaseUrl,
@@ -201,16 +214,21 @@ export function useAddressedFleetSessions<TSession extends WorkspaceAgentSession
         ? "loading" as const
         : snapshot.controller.error ? "error" as const : "loaded" as const
     })
+    const controllers = agents.map((agent) => controllerFor(agent.agentTypeId)).filter((controller): controller is WorkspaceAgentSessionsApi<TSession> => Boolean(controller))
     const loading = discoveryLoading || agents.length === 0 || statuses.some((status) => status === "loading")
-    const error = discoveryError ?? agents.map((agent) => snapshots.get(agent.agentTypeId)?.controller.error).find(Boolean)
+    const allFailed = statuses.length > 0 && statuses.every((status) => status === "error")
+    const error = discoveryError ?? (allFailed ? controllers.map((controller) => controller.error).find(Boolean) : undefined)
+    const hasMore = controllers.some((controller) => controller.hasMore)
     return {
       sourceIdentity: fleetSourceIdentity,
       sessions: authoritative,
       loading,
-      loadingMore: selected?.loadingMore,
-      hasMore: selected?.hasMore,
+      loadingMore: controllers.some((controller) => controller.loadingMore),
+      hasMore,
+      inventoryAuthoritative: !loading && !hasMore && statuses.every((status) => status === "loaded"),
       error,
       activeSessionId: selected?.activeSessionId,
+      resumeSessionId: selected?.resumeSessionId,
       activeSessionAgentTypeId: selectedAgentTypeId,
       activeSession: selected?.activeSession
         ? { ...selected.activeSession, agentTypeId: selected.activeSession.agentTypeId ?? selectedAgentTypeId } as TSession
@@ -239,7 +257,9 @@ export function useAddressedFleetSessions<TSession extends WorkspaceAgentSession
         const owner = ownerFor(id, requestedOwner)
         return controllerFor(owner)?.delete(id, owner)
       },
-      loadMore: () => selected?.loadMore?.(),
+      loadMore: async () => {
+        await Promise.all(controllers.filter((controller) => controller.hasMore).map((controller) => controller.loadMore?.()))
+      },
       refresh: async (options) => {
         await Promise.all(agents.map((agent) => controllerFor(agent.agentTypeId)?.refresh?.(options)))
       },
