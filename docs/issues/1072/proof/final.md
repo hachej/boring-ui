@@ -7,7 +7,7 @@ Date: 2026-08-05
 | Surface | Tests | Typecheck | Build |
 | --- | ---: | --- | --- |
 | `@hachej/boring-agent` | 1,785 passed; 17 skipped | passed | passed; artifact assertion passed |
-| `@hachej/boring-workspace` | 1,818 passed; 10 skipped | front/server passed | passed; 19 artifact assertions passed |
+| `@hachej/boring-workspace` | 1,825 passed; 10 skipped | front/server passed | passed; 19 artifact assertions passed |
 | `@hachej/boring-tasks` | 68 passed | passed | passed |
 | `workspace-playground` | 8 passed | passed | passed |
 
@@ -23,6 +23,13 @@ The first convergence run exposed one raw `CONFIG_INVALID` invariant in the new
 trusted-composition test. The implementation and test now use
 `ErrorCode.enum.CONFIG_INVALID`; the Agent test suite and repository invariants
 passed after the fix.
+
+After the PR base advanced, the branch merged `origin/main` at `0aec55901`.
+The one conflict preserved upstream showcase workspace routing and this change's
+factory Agent selector. Post-merge suites, typechecks, builds, repository gates,
+and browser proof passed. One Agent suite run hit the existing 5-second
+insufficient-credit replay timeout under load; the focused canonical test and
+the complete current-head suite with a 15-second timeout both passed.
 
 ## Trusted factory agents
 
