@@ -5,14 +5,53 @@ taste, and cost. Cost is relative (`low`, `medium`, `high`, `scarce`), not prici
 
 | Level / role | Default | Transport / billing | Cost | Use |
 | --- | --- | --- | --- | --- |
-| L0 worker—easy | GPT-5.5 | Pi / API | low | bounded implementation |
-| L0 worker—medium | Tierra GT | Pi / API | medium | normal implementation |
+| L0 worker—easy | GPT-5.6 Luna | Pi / API | low | bounded implementation, tests, and objective checks |
+| L0 worker—medium | GPT-5.6 Terra | Pi / API | medium | normal implementation and local diagnosis |
 | L0 worker—hard | Sol medium | Pi / API | high | difficult implementation |
 | L0 visual-evidence operator | Qwen 3.6 on `mac` | Pi / local Mac provider | low | deterministic browser execution, asserted screenshots/video, logs, and HTML bundle packaging; never the visual critic or fix planner |
 | L1 orchestrator/integrator | Sol medium | Pi / API | high | readiness, delegation, synthesis, handoff |
 | L1 tier-1 reviewer | Gemini latest Pro, Grok latest, or Sol high | Pi / API | medium–high | fresh correctness, acceptance, proof, thermo |
 | L2 tier-2 reviewer | Sol xHigh | Pi / API | high | plans; medium/hard, structural, risky, uncertain work |
 | L3 tier-3 reviewer | Fable | Claude Code CLI / subscription | scarce | human-gated final falsification |
+
+## GPT-5.6 worker routing
+
+Route each stage separately:
+
+- **Sol** resolves uncertainty, plans, adjudicates tradeoffs, and handles hard or
+  consequential implementation.
+- **Terra** handles normal implementation that still needs diagnosis or local
+  design judgment.
+- **Luna** implements bounded, reversible work packets, writes/runs tests, and
+  checks objective acceptance criteria.
+
+A Luna packet names one outcome, relevant context, invariants, forbidden changes,
+proof commands, and stop conditions for unapproved product, API, architecture,
+security, or scope choices. Escalate when requirements are ambiguous, tests do
+not localize failure, cross-layer tradeoffs appear, or one focused retry fails.
+Worker self-check is not independent review; consequential work still follows the
+review ladder.
+
+### Price snapshot
+
+Verified 2026-08-04. Prices are base API rates per million text tokens.
+
+| Model | Input | Cached input | Output | Announced reduction |
+| --- | ---: | ---: | ---: | ---: |
+| GPT-5.6 Luna | $0.20 | $0.02 | $1.20 | 80% |
+| GPT-5.6 Terra | $2.00 | $0.20 | $12.00 | 20% |
+
+Prompts over 272K input tokens are billed at 2× input and 1.5× output for the
+full request; cache writes are billed at 1.25× uncached input. API pricing is not
+subscription quota accounting. Treat price as a routing input, not evidence of a
+capability change. Track first-pass success, review findings, retries, elapsed
+time, and total cost per accepted change before changing roles.
+
+Refresh this snapshot through the
+[documentation refresh task list](documentation-refresh-tasks.md). Official
+sources: [price-performance announcement](https://openai.com/index/advancing-the-price-performance-frontier-with-gpt-5-6/),
+[Luna model documentation](https://developers.openai.com/api/docs/models/gpt-5.6-luna),
+and [Terra model documentation](https://developers.openai.com/api/docs/models/gpt-5.6-terra).
 
 ## Visual evidence operator
 

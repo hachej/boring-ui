@@ -75,7 +75,9 @@ export function LiveTranscriptComposerAction({ updateDraft }: ComposerActionCont
       title={recording.error ?? `${label}${recording.phase === "idle" ? "" : ` ${formatClock(elapsedSeconds)}`}`}
       disabled={disabled}
       onClick={() => { void toggle().catch(() => undefined) }}
-      className={`flex h-8 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium transition-colors disabled:cursor-wait disabled:opacity-65 ${
+      className={`flex h-8 items-center rounded-full text-[11px] font-medium transition-colors disabled:cursor-wait disabled:opacity-65 ${
+        recording.phase === "recording" ? "w-8 justify-center" : "gap-1.5 px-2"
+      } ${
         recording.phase === "recording" || recording.phase === "starting"
           ? "bg-red-500/12 text-red-600 hover:bg-red-500/20 dark:text-red-400"
           : recording.phase === "error"
@@ -86,12 +88,12 @@ export function LiveTranscriptComposerAction({ updateDraft }: ComposerActionCont
       {recording.phase === "starting" || recording.phase === "transcribing" ? (
         <LoadingIcon />
       ) : recording.phase === "recording" ? (
-        <><span className="size-2 rounded-full bg-red-500 animate-pulse" /><StopIcon /></>
+        <RecordingIcon />
       ) : (
         <MicrophoneIcon />
       )}
-      {recording.phase !== "idle" ? (
-        <span>{recording.phase === "transcribing" ? "Transcribing" : recording.phase === "starting" ? "Starting" : "Short"} {formatClock(elapsedSeconds)}</span>
+      {recording.phase === "starting" || recording.phase === "transcribing" ? (
+        <span>{recording.phase === "transcribing" ? "Transcribing" : "Starting"} {formatClock(elapsedSeconds)}</span>
       ) : null}
     </button>
   )
@@ -273,8 +275,17 @@ function MicrophoneIcon() {
   return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current" strokeWidth="1.5" strokeLinecap="round"><rect x="5" y="1.5" width="6" height="9" rx="3"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2"/></svg>
 }
 
-function StopIcon() {
-  return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3 fill-current"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg>
+function RecordingIcon() {
+  return (
+    <span
+      aria-hidden="true"
+      data-boring-agent-part="short-recording-indicator"
+      className="relative flex size-4 items-center justify-center"
+    >
+      <span className="absolute size-3.5 rounded-full border border-current/35" />
+      <span className="size-2 rounded-full bg-current animate-pulse motion-reduce:animate-none" />
+    </span>
+  )
 }
 
 function DocumentIcon() {

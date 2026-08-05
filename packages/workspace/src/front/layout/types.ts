@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import type { ChatPaneDescriptor, ChatPanePendingPlacement, ChatPaneSplitDirection } from "./ChatPaneStage"
+import type { ChatPaneDescriptor, ChatPanePendingPlacement, ChatPaneSessionActions, ChatPaneSplitDirection } from "./ChatPaneStage"
 
 export interface IdeLayoutProps {
   sidebar?: string
@@ -16,6 +16,7 @@ export interface ChatLayoutProps {
   chatPanes?: ChatPaneDescriptor[]
   /** Optional host actions rendered in each chat pane header. */
   chatTopActions?: ReactNode
+  chatPaneSessionActions?: ChatPaneSessionActions
   activeChatPaneId?: string | null
   onActiveChatPaneChange?: (id: string) => void
   onCloseChatPane?: (id: string) => void
