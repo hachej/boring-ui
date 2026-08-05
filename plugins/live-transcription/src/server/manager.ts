@@ -14,6 +14,7 @@ import {
 } from "../shared"
 import { LiveTranscriptError } from "./errors"
 import { LiveTranscriptProjector, renderTranscriptMarkdown, type ProjectedTranscriptLine, type TranscriptDocument } from "./projector"
+import { KyutaiConnection } from "./kyutai"
 import { WhisperLiveKitConnection, type WhisperLiveKitSnapshot } from "./whisperLiveKit"
 import { LiveReviewBroker } from "./reviewBroker"
 
@@ -57,6 +58,7 @@ export interface LiveTranscriptManagerOptions {
   agentTypeId?: string
   actorResolver: (request: FastifyRequest) => Promise<{ workspaceId: string; userId: string }> | { workspaceId: string; userId: string }
   upstreamUrl: string
+  upstreamProvider?: "whisperlivekit" | "kyutai"
   upstreamBearerToken?: string
   setupTimeoutMs?: number
   drainTimeoutMs?: number
@@ -340,11 +342,7 @@ export class LiveTranscriptManager {
             onSnapshot: (snapshot: WhisperLiveKitSnapshot) => this.acceptSnapshot(session, snapshot),
             onFailure: (error: LiveTranscriptError) => { void this.interruptFromFailure(session, error) },
           }
-          session.upstream = this.options.createUpstreamForTest?.(callbacks) ?? new WhisperLiveKitConnection(
-            this.options.upstreamUrl,
-            callbacks,
-            { bearerToken: this.options.upstreamBearerToken, highWaterBytes: LIVE_SOCKET_HIGH_WATER_BYTES },
-          )
+          session.upstream = this.options.createUpstreamForTest?.(callbacks) ?? this.createUpstream(callbacks)
           try {
             await session.upstream.connect()
           } catch {
@@ -414,6 +412,22 @@ export class LiveTranscriptManager {
     if (this.closing) return
     this.closing = true
     await this.interruptForSessionReplacement()
+  }
+
+  private createUpstream(callbacks: {
+    onSnapshot: (snapshot: WhisperLiveKitSnapshot) => void
+    onFailure: (error: LiveTranscriptError) => void
+  }): UpstreamConnection {
+    if (this.options.upstreamProvider === "kyutai") {
+      return new KyutaiConnection(this.options.upstreamUrl, callbacks, {
+        apiKey: this.options.upstreamBearerToken,
+        highWaterBytes: LIVE_SOCKET_HIGH_WATER_BYTES,
+      })
+    }
+    return new WhisperLiveKitConnection(this.options.upstreamUrl, callbacks, {
+      bearerToken: this.options.upstreamBearerToken,
+      highWaterBytes: LIVE_SOCKET_HIGH_WATER_BYTES,
+    })
   }
 
   private acceptSnapshot(session: LiveSession, snapshot: WhisperLiveKitSnapshot): void {
