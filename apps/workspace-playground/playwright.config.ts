@@ -56,6 +56,8 @@ export default defineConfig({
       `BORING_AGENT_SESSION_ROOT=${shell(E2E_SESSION_ROOT)}`,
       `BORING_PLAYGROUND_DIST_ONLY=${shell(process.env.BORING_PLAYGROUND_DIST_ONLY || "")}`,
       "BORING_AGENT_E2E_SCRIPTED_PI=1",
+      // Scripted Pi is hermetic and does not need the local bwrap runtime.
+      "BORING_AGENT_MODE=direct",
       // Scripted Pi never calls a provider, but the real model endpoint still
       // needs one available model before the composer becomes interactive.
       "ANTHROPIC_API_KEY=scripted-e2e-not-a-real-key",
