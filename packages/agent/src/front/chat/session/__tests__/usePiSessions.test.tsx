@@ -3,7 +3,11 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { SessionSummary } from '../../../../shared/session'
 import type { RemotePiSession, RemotePiSessionOptions } from '../../pi/remotePiSession'
-import { activeSessionStorageKey, type ActiveSessionStorageLike } from '../activeSessionStorage'
+import {
+  activeSessionStorageKey,
+  bootResumeSessionStorageKey,
+  type ActiveSessionStorageLike,
+} from '../sessionSelectionStorage'
 import { usePiSessions as useAddressedPiSessions, type UsePiSessionsOptions } from '../usePiSessions'
 
 function usePiSessions(options: Omit<UsePiSessionsOptions, 'agentTypeId'> & { agentTypeId?: string }) {
@@ -12,6 +16,26 @@ function usePiSessions(options: Omit<UsePiSessionsOptions, 'agentTypeId'> & { ag
 
 function session(id: string, updatedAt = '2026-06-03T00:00:00.000Z'): SessionSummary {
   return { id, title: `Session ${id}`, createdAt: updatedAt, updatedAt, turnCount: 0 }
+}
+
+function addressedBootResumeKey({
+  agentTypeId = 'default',
+  apiBaseUrl = '',
+  workspaceId,
+  storageScope = 'scope-a',
+}: {
+  agentTypeId?: string
+  apiBaseUrl?: string
+  workspaceId?: string
+  storageScope?: string
+} = {}): string {
+  return bootResumeSessionStorageKey({
+    apiBaseUrl,
+    sessionsApiPath: `/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions`,
+    agentTypeId,
+    workspaceId,
+    storageScope,
+  })
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -71,7 +95,69 @@ describe('usePiSessions', () => {
 
   beforeEach(() => {
     window.localStorage.clear()
+    window.sessionStorage.clear()
     fetchMock = vi.fn()
+  })
+
+  test('exposes an exact tab-owned empty session only as boot resume intent', async () => {
+    const key = addressedBootResumeKey({ agentTypeId: 'alpha' })
+    const tab = storage({ [key]: 'empty-native' })
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return jsonResponse({ agentTypeId: 'alpha', sessionId: 'empty-native' }, 201)
+      }
+      return jsonResponse({ sessions: [] })
+    })
+
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      storageScope: 'scope-a',
+      bootResumeStorage: tab,
+      fetch: fetchMock as unknown as typeof fetch,
+      connectActiveSession: false,
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.resumeSessionId).toBe('empty-native')
+    expect(result.current.activeSessionId).toBeUndefined()
+
+    await act(async () => {
+      await result.current.create({ resumeSessionId: result.current.resumeSessionId })
+    })
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')
+    expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({ resumeSessionId: 'empty-native' })
+    expect(result.current.activeSessionId).toBe('empty-native')
+    expect(result.current.resumeSessionId).toBeUndefined()
+    expect(tab.values.get(key)).toBe('empty-native')
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ sessions: [{
+      ref: { agentTypeId: 'alpha', sessionId: 'empty-native' },
+      title: 'Now visible',
+      status: 'idle',
+      createdAt: 1,
+      updatedAt: 2,
+      turnCount: 1,
+    }] }))
+    await act(async () => { await result.current.refresh() })
+    expect(tab.values.get(key)).toBeUndefined()
+  })
+
+  test('does not expose another tab-owned empty session', async () => {
+    const firstTab = storage({ [addressedBootResumeKey({ agentTypeId: 'alpha' })]: 'empty-native' })
+    const secondTab = storage()
+    fetchMock.mockResolvedValue(jsonResponse({ sessions: [] }))
+
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      storageScope: 'scope-a',
+      bootResumeStorage: secondTab,
+      fetch: fetchMock as unknown as typeof fetch,
+      connectActiveSession: false,
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.resumeSessionId).toBeUndefined()
+    expect(firstTab.values.get(addressedBootResumeKey({ agentTypeId: 'alpha' }))).toBe('empty-native')
   })
 
   test('preserves a valid v2 persisted active session while streaming and opens one remote session', async () => {
@@ -98,6 +184,123 @@ describe('usePiSessions', () => {
       headers: { authorization: 'Bearer redacted', 'x-boring-storage-scope': 'scope-a' },
     })
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-running')
+  })
+
+  test('preserves addressed owner, turn count, and native rename metadata', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({
+      sessions: [{
+        ref: { agentTypeId: 'alpha', sessionId: 'native-1' },
+        title: 'Native',
+        status: 'idle',
+        createdAt: 1,
+        updatedAt: 2,
+        turnCount: 4,
+        nativeSessionId: 'native-1',
+        hasAssistantReply: true,
+      }],
+    }))
+
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      fetch: fetchMock as unknown as typeof fetch,
+      connectActiveSession: false,
+      storageScope: 'default',
+      retry: { maxRetries: 0 },
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions[0]).toMatchObject({
+      id: 'native-1',
+      agentTypeId: 'alpha',
+      turnCount: 4,
+      nativeSessionId: 'native-1',
+      hasAssistantReply: true,
+    })
+  })
+
+  test('attests rows only after the requested source has loaded', async () => {
+    const sourceB = deferred<Response>()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([session('source-a')]))
+      .mockReturnValueOnce(sourceB.promise)
+
+    const { result, rerender } = renderHook(
+      ({ sourceIdentity }) => usePiSessions({
+        sourceIdentity,
+        storageScope: 'scope-a',
+        fetch: fetchMock as unknown as typeof fetch,
+        connectActiveSession: false,
+      }),
+      { initialProps: { sourceIdentity: 'source-a' } },
+    )
+
+    await waitFor(() => expect(result.current.sourceIdentity).toBe('source-a'))
+    rerender({ sourceIdentity: 'source-b' })
+    expect(result.current.sourceIdentity).toBeUndefined()
+
+    await act(async () => {
+      sourceB.resolve(jsonResponse([session('source-b')]))
+      await sourceB.promise
+    })
+    await waitFor(() => expect(result.current.sourceIdentity).toBe('source-b'))
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['source-b'])
+  })
+
+  test('saved mutation callbacks fail closed after a new source commits', async () => {
+    const sourceB = deferred<Response>()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([session('source-a')]))
+      .mockReturnValueOnce(sourceB.promise)
+
+    const { result, rerender } = renderHook(
+      ({ sourceIdentity }) => usePiSessions({
+        sourceIdentity,
+        storageScope: 'scope-a',
+        fetch: fetchMock as unknown as typeof fetch,
+        connectActiveSession: false,
+      }),
+      { initialProps: { sourceIdentity: 'source-a' } },
+    )
+    await waitFor(() => expect(result.current.sourceIdentity).toBe('source-a'))
+    const saved = result.current
+
+    rerender({ sourceIdentity: 'source-b' })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+
+    await expect(saved.create()).rejects.toMatchObject({ name: 'StaleSessionsSourceError' })
+    await expect(saved.delete('source-a')).rejects.toMatchObject({ name: 'StaleSessionsSourceError' })
+    await expect(saved.rename('source-a', 'Renamed')).rejects.toMatchObject({ name: 'StaleSessionsSourceError' })
+    await expect(saved.refresh()).rejects.toMatchObject({ name: 'StaleSessionsSourceError' })
+    saved.switch('source-a')
+    saved.reset()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      sourceB.resolve(jsonResponse([session('source-b')]))
+      await sourceB.promise
+    })
+  })
+
+  test('renames through the addressed route and preserves canonical metadata', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ sessions: [{
+        ref: { agentTypeId: 'alpha', sessionId: 'native-1' }, title: 'Before', status: 'idle', createdAt: 1, updatedAt: 1, turnCount: 1,
+      }] }))
+      .mockResolvedValueOnce(jsonResponse({
+        ref: { agentTypeId: 'alpha', sessionId: 'native-1' }, title: 'After', status: 'idle', createdAt: 1, updatedAt: 2, turnCount: 1,
+        nativeSessionId: 'native-1', hasAssistantReply: true,
+      }))
+
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha', storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, connectActiveSession: false,
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => { await result.current.rename('native-1', 'After') })
+
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/v1/agents/alpha/sessions/native-1/rename')
+    expect(result.current.sessions[0]).toMatchObject({
+      title: 'After', nativeSessionId: 'native-1', hasAssistantReply: true, status: 'idle',
+    })
   })
 
   test('does not dispose the active remote session when equal remote options are re-created by the host', async () => {

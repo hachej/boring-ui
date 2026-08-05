@@ -163,6 +163,10 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
           workspaceId: claim.workspaceScopeId,
           requestId: request.id,
           userId: claim.authSubjectId,
+          sessionCtx: {
+            workspaceId: claim.workspaceScopeId,
+            runtimeScopeIdentity: binding.scope.identity,
+          },
           ...(typeof user?.email === 'string' && user.email.trim()
             ? { userEmail: user.email.trim() }
             : {}),
@@ -192,6 +196,10 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
             workspaceId: scope.workspaceScopeId,
             requestId,
             userId: scope.authSubjectId,
+            sessionCtx: {
+              workspaceId: scope.workspaceScopeId,
+              runtimeScopeIdentity: binding.scope.identity,
+            },
           })
           return { ok: true, sessionId, name }
         }),
@@ -481,10 +489,13 @@ export function createAgentHostRuntimeCapabilityRoutes(
         const sessionId = typeof query.sessionId === 'string' && query.sessionId.trim()
           ? query.sessionId.trim()
           : 'default'
-        // Catalog discovery targets the current Agent generation. A caller may
-        // provide the session ID used by harness resource loaders, but listing
-        // commands must not require that session to be persisted already.
-        const binding = await resolve(request, value.agentTypeId)
+        // Session-addressed discovery shares execution's pinned binding. The
+        // sessionless form remains current-generation Host tooling only.
+        const binding = await resolve(
+          request,
+          value.agentTypeId,
+          typeof query.sessionId === 'string' && query.sessionId.trim() ? sessionId : undefined,
+        )
         const commands = await binding.harness.getSlashCommands?.(sessionId, binding.runContext) ?? []
         return reply.code(200).send({ commands })
       } catch (error) {

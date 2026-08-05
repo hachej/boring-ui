@@ -42,6 +42,7 @@ const { createdCustomTools, promptGate } = vi.hoisted(() => {
 vi.mock('@mariozechner/pi-coding-agent', () => {
   let loaderSeq = 0
   return {
+  CURRENT_SESSION_VERSION: 3,
   createAgentSession: vi.fn(async (config: { customTools?: Array<{ execute: (...args: any[]) => Promise<unknown> }> }) => {
     createdCustomTools.splice(0, createdCustomTools.length, ...(config.customTools ?? []))
     const subscribers: Array<(event: any) => void> = []
@@ -292,14 +293,15 @@ describe('tool adapter telemetry', () => {
       },
     })
     const harness = createPiCodingAgentHarness({ tools: [tool], cwd: '/tmp/test-workspace' })
+    const created = await harness.sessions.create({ workspaceId: 'workspace-a' })
     const userA = makeRunContext('alpha')
     const userB = makeRunContext('beta')
 
-    const adapterA = await harness.getPiSessionAdapter({ sessionId: 'sess-tool', message: 'start' }, userA)
+    const adapterA = await harness.getPiSessionAdapter({ sessionId: created.id, message: 'start' }, userA)
     const promptPromiseA = adapterA.prompt('start')
     await Promise.resolve()
 
-    const adapterB = await harness.getPiSessionAdapter({ sessionId: 'sess-tool', message: '' }, userB)
+    const adapterB = await harness.getPiSessionAdapter({ sessionId: created.id, message: '' }, userB)
     adapterB.readSnapshot()
     await adapterB.followUp('follow beta')
 
@@ -328,14 +330,15 @@ describe('tool adapter telemetry', () => {
     ])
   })
 
-  it('scopes slash command sessions by run context', async () => {
+  it('shares slash command session identity across subjects in one workspace', async () => {
     const harness = createPiCodingAgentHarness({ tools: [createTool()], cwd: '/tmp/test-workspace' })
-    const commandsA = await harness.getSlashCommands?.('sess-command', makeRunContext('alpha'))
-    const commandsB = await harness.getSlashCommands?.('sess-command', makeRunContext('beta'))
+    const created = await harness.sessions.create({ workspaceId: 'workspace-a' })
+    const commandsA = await harness.getSlashCommands?.(created.id, makeRunContext('alpha'))
+    const commandsB = await harness.getSlashCommands?.(created.id, makeRunContext('beta'))
 
     expect(commandsA?.[0]?.name).toMatch(/^cmd-/)
     expect(commandsB?.[0]?.name).toMatch(/^cmd-/)
-    expect(commandsB?.[0]?.name).not.toBe(commandsA?.[0]?.name)
+    expect(commandsB?.[0]?.name).toBe(commandsA?.[0]?.name)
   })
 
   it('keeps duplicate follow-up contexts aligned after selective clear', async () => {
@@ -347,12 +350,13 @@ describe('tool adapter telemetry', () => {
       },
     })
     const harness = createPiCodingAgentHarness({ tools: [tool], cwd: '/tmp/test-workspace' })
-    const adapterA = await harness.getPiSessionAdapter({ sessionId: 'sess-tool', message: 'start' }, makeRunContext('alpha'))
+    const created = await harness.sessions.create({ workspaceId: 'workspace-a' })
+    const adapterA = await harness.getPiSessionAdapter({ sessionId: created.id, message: 'start' }, makeRunContext('alpha'))
     const promptPromiseA = adapterA.prompt('start')
     await Promise.resolve()
 
-    const adapterB = await harness.getPiSessionAdapter({ sessionId: 'sess-tool', message: '' }, makeRunContext('beta'))
-    const adapterC = await harness.getPiSessionAdapter({ sessionId: 'sess-tool', message: '' }, makeRunContext('gamma'))
+    const adapterB = await harness.getPiSessionAdapter({ sessionId: created.id, message: '' }, makeRunContext('beta'))
+    const adapterC = await harness.getPiSessionAdapter({ sessionId: created.id, message: '' }, makeRunContext('gamma'))
     await adapterB.followUp('same text', { clientNonce: 'nonce-beta' })
     await adapterC.followUp('same text', { clientNonce: 'nonce-gamma' })
     adapterB.clearFollowUp({ clientNonce: 'nonce-beta' })
