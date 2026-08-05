@@ -7,7 +7,8 @@ disable-model-invocation: true
 # Triage
 
 Classify; do not implement. Use the labels, blocker vocabulary, and transitions in
-`docs/procedures/boring-loop.md`.
+`docs/procedures/boring-loop.md`. Thread equals bead: include the bead ID in
+session titles, intention subjects, and artifact names.
 
 1. Read the item, comments, links, and relevant code/docs.
 2. Verify cheaply when safe; bugs need a red-capable repro or concrete manual path.
