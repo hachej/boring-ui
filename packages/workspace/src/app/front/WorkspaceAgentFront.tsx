@@ -887,7 +887,7 @@ export function WorkspaceAgentFront<
   const primaryRemoteSessionApi = useSessions({
     requestHeaders: resolvedRequestHeaders,
     storageKey: resolvedSessionStorageKey,
-    sessionStorageScope: fleetModeEnabled ? `${workspaceId}:${selectedAgentTypeId}` : workspaceId,
+    sessionStorageScope: workspaceId,
     agentTypeId: selectedAgentTypeId,
     workspaceId,
     apiBaseUrl,

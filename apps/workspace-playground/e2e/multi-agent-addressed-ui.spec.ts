@@ -6,6 +6,13 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
     "x-boring-workspace-id": "workspace",
     "x-boring-storage-scope-id": "workspace",
   }
+  page.on("console", (message) => {
+    if (message.type() === "error") console.error(`[multi-agent-browser-console] ${message.text()}`)
+  })
+  page.on("pageerror", (error) => console.error(`[multi-agent-browser-pageerror] ${error.message}`))
+  page.on("requestfailed", (failedRequest) => {
+    console.error(`[multi-agent-browser-requestfailed] ${failedRequest.failure()?.errorText ?? "unknown"} ${failedRequest.url()}`)
+  })
   const createSession = async (agentTypeId: "alpha" | "beta") => {
     const response = await request.post(`/api/v1/agents/${agentTypeId}/sessions`, {
       headers: {
