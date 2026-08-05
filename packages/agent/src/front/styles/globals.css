@@ -237,6 +237,20 @@
   background-color: color-mix(in oklab, var(--foreground) 90%, transparent);
 }
 
+@media (pointer: coarse) {
+  [data-boring-agent] .composer-attachment-button,
+  [data-boring-agent] .composer-attachment-remove,
+  [data-boring-agent] .composer-submit-control,
+  [data-boring-agent] .composer-settings-trigger {
+    min-height: 44px !important;
+    min-width: 44px !important;
+  }
+
+  [data-boring-agent] .composer-attachment-chip {
+    min-height: 44px !important;
+  }
+}
+
 /*
  * Streamdown's Shiki highlighting sets per-token CSS custom properties
  * (--sdm-c, --sdm-bg, --shiki-dark, --shiki-dark-bg) and relies on

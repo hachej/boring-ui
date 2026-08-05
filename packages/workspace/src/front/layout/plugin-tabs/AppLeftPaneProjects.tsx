@@ -183,6 +183,7 @@ function ProjectRow({
         <button
           type="button"
           aria-current={active ? "page" : undefined}
+          data-boring-mobile-dismiss="true"
           disabled={unavailable}
           onClick={() => { if (!unavailable) onActivate() }}
           className="min-w-0 flex-1 truncate rounded text-left text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-default"
@@ -217,6 +218,7 @@ function ProjectRow({
                   type="button"
                   aria-label={`New chat in ${name}`}
                   title="New chat"
+                  data-boring-mobile-dismiss="true"
                   onClick={(event) => { event.stopPropagation(); onCreateSession(project.id) }}
                   className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-foreground/[0.08] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                 >

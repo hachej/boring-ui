@@ -14,10 +14,7 @@ export interface StableServiceErrorProjection {
 export function stableServiceActionFailure(error: unknown): AgentRequestFailure | undefined {
   const projected = projectStableServiceError(error)
   if (!projected) return undefined
-  return {
-    kind: 'service',
-    error: { ...projected.error, statusCode: projected.statusCode },
-  }
+  return { kind: 'service', error: projected }
 }
 
 export function projectStableServiceError(error: unknown): StableServiceErrorProjection | undefined {
