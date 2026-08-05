@@ -22,6 +22,7 @@ Create one new PR stacked on PR #1044 that preserves the product behavior while 
 - Human artifacts are typed, bounded structured records and open independently from chat.
 - Inbox chat openers retain the Agent owner.
 - Task links durably persist `agentTypeId` and `sessionId`; session IDs are never disclosed until exact authorization succeeds.
+- The durable task-link store projects one Workspace-scoped SSE: connection/reconnection sends an authoritative redacted `{ adapterId, taskId, count }` snapshot, and successful durable writes publish redacted count changes. Exact session IDs remain available only through the authorized expanded-task route.
 - Starting a task chat performs canonical server creation, durable task binding, then UI publication. A failed link triggers best-effort deletion of the newly-created empty session.
 - Task HTTP routes and tools use `runWithWorkspaceAgent`; no Workspace escapes its Host lease.
 - Handover summaries expose only terminal run identity and explicitly allowlisted structured details.
@@ -44,7 +45,8 @@ Create one new PR stacked on PR #1044 that preserves the product behavior while 
 - Human Intention records show multiple artifacts, related tasks, exact chat ownership, and independent artifact/chat actions.
 - Task cards create one canonical addressed session, bind it before opening, and roll back a failed bind.
 - Task links survive restart and retain the Agent owner.
-- Unauthorized/missing sessions are indistinguishable and exact IDs are redacted.
+- Persisted task-session counts appear without expanding each task, update across connected clients after route/tool mutations, and reconcile from a fresh snapshot after reconnect.
+- Task-link snapshots/events never disclose session IDs; unauthorized/missing sessions are indistinguishable and exact IDs are redacted.
 - Task routes/tools never retain Workspace outside a Host lease.
 - Successful handovers are reconstructed only from allowlisted structured terminal-run details.
 - No forbidden compatibility architecture returns.
@@ -71,9 +73,9 @@ Create one new PR stacked on PR #1044 that preserves the product behavior while 
 **Proof:** Tasks, Agent, Core, and Workspace tests/typechecks.
 
 ### Slice 3: Composition and browser proof
-**Delivers:** full-stack lifecycle proof and PR handoff.
+**Delivers:** full-stack lifecycle proof and PR handoff, including one redacted task-link SSE with reconnect snapshot and event-driven count updates.
 **Blocked by:** Slices 1–2.
-**Proof:** composition gates and Playwright scenario.
+**Proof:** store/route/frontend stream tests, composition gates, and Playwright create → link → hydrate → count/reload scenario.
 
 ## Out of Scope
 

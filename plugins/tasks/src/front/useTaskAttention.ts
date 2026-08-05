@@ -44,7 +44,7 @@ export function useTaskAttention(tasks: readonly BoringTaskCard[]): ReadonlyMap<
     const current = ++generation.current
     const sessionIds = sessionKey ? sessionKey.split("\u0000") : []
     if (sessionIds.length === 0 || loadedTaskKeys.size === 0) {
-      setByTask(new Map())
+      setByTask((current) => current.size === 0 ? current : new Map())
       return
     }
     void pluginClient.postJson<{ ok?: boolean } & SessionTaskResolution>("/api/boring-tasks/sessions/tasks", { sessionIds })
@@ -74,7 +74,7 @@ export function useTaskAttention(tasks: readonly BoringTaskCard[]): ReadonlyMap<
         setByTask(next)
       })
       .catch(() => {
-        if (current === generation.current) setByTask(new Map())
+        if (current === generation.current) setByTask((previous) => previous.size === 0 ? previous : new Map())
       })
     return () => { generation.current += 1 }
   }, [loadedTaskKeys, pluginClient, provenanceRevision, relevant, sessionKey])

@@ -90,9 +90,10 @@ describe("TaskSessionDisclosure", () => {
         postJson: postJson as unknown as WorkspacePluginClient["postJson"],
         getJson: vi.fn(async () => ({ summary: { title: "Exact work", updatedAt: "2026-07-19T01:00:00.000Z" }, state: { status: "idle", queuedMessages: [] } })) as WorkspacePluginClient["getJson"],
       }}
+      sessionLinkCount={1}
     />)
 
-    const sessionsToggle = screen.getByRole("button", { name: "Sessions" })
+    const sessionsToggle = screen.getByRole("button", { name: "1 session" })
     expect(sessionsToggle).toHaveAttribute("aria-expanded", "false")
     expect(screen.queryByText("Exact work")).not.toBeInTheDocument()
     expect(postJson).not.toHaveBeenCalled()

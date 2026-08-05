@@ -7,6 +7,7 @@ import { createTaskSourceService, TaskSourceServiceError } from "./taskSourceSer
 import { createTrustedTaskToolBindingResolver } from "./taskToolBinding"
 import { createManageTasksTool } from "./manageTasksTool"
 import { registerTaskSessionLinkRoutes } from "./taskSessionRoutes"
+import { TaskSessionLinkEvents } from "./taskSessionLinkEvents"
 
 function workspaceIdFromRequest(request: { headers: Record<string, string | string[] | undefined>; query?: unknown }): string | undefined {
   const header = request.headers["x-boring-workspace-id"]
@@ -100,6 +101,7 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
     ? createTaskSourceRegistry(options.sources)
     : createTaskSourceRegistryFromConfig(options.config, { workspaceRoot: options.workspaceRoot })
   const service = createTaskSourceService(registry)
+  const sessionLinkEvents = new TaskSessionLinkEvents()
 
   const withServiceContext = async <T>(
     request: Parameters<NonNullable<WorkspaceAgentServerPluginContext["trusted"]>["actorResolver"]>[0],
@@ -126,7 +128,7 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
     label: TASKS_PLUGIN_LABEL,
     ...(options.contentDigest?.trim() ? { contentDigest: options.contentDigest.trim() } : {}),
     systemPrompt: "Use `manage_tasks` for explicit workspace task operations. Never infer task-session links from titles, prompts, branches, or generated IDs.",
-    agentTools: [createManageTasksTool(service, createTrustedTaskToolBindingResolver(options.trusted, agentTypeId))],
+    agentTools: [createManageTasksTool(service, createTrustedTaskToolBindingResolver(options.trusted, agentTypeId, sessionLinkEvents))],
     routes: async (app) => {
       app.get("/api/boring-tasks/sources", async () => ({ ok: true, sources: service.listSources() }))
 
@@ -166,7 +168,7 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
         })
       })
 
-      registerTaskSessionLinkRoutes(app, options.trusted, agentTypeId, service)
+      registerTaskSessionLinkRoutes(app, options.trusted, agentTypeId, service, sessionLinkEvents)
     },
   })
 }
