@@ -11,6 +11,10 @@ beadle:
 bounce:
   worker_attempts_per_bead: 2 # then back to Steward as spec defect
   review_rounds_max: 3 # then escalation intention to owner
+  plan_resubmissions_max: 1 # rejected plan gets one re-submission, then conversation
+
+review:
+  budget_added_lines: 1500 # review budget guideline, from rolling-small-fixes.md
 
 sessions:
   handoff_context_threshold: 0.75 # handoff ritual fires before compaction

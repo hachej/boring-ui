@@ -37,9 +37,9 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
 2. **Beads**: plain `br` for all agents. Git history of `.beads/issues.jsonl`
    is the audit trail. Beadle flags beads closed without linked proof/handoff.
    No verb ACLs.
-3. **Beadle**: a boring-ui automation. ~10 min tick; workers self-claim via
-   `br` lease; cap 2 concurrent workers; breaks stale leases; spawns workers
-   while ready > active; sweeps epic-branch drift.
+3. **Beadle**: a boring-ui automation. Tick cadence and worker cap live in
+   policy.yaml; workers self-claim via `br` lease; breaks stale leases; spawns
+   workers while ready > active; sweeps epic-branch drift.
 4. **Trust ladder**: class A = path-allowlist AND reviewer-pass AND size-cap.
    Ladder/config/workflow/fleet-policy files are permanently class B (no agent
    can widen its own permissions). Config: `.agents/factory/policy.yaml`,
@@ -50,11 +50,10 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
 6. **Intake (refine)**: raw ideas → Concierge conversation → Steward
    materializes beads → one plan-approval intention → autonomous until merge
    gates. Triage automation routes external intake into the same funnel.
-7. **Branching**: one worktree per epic (in `.worktrees/`), flywheel rules
-   inside it — direct commits to the epic branch, `[br-###] desc` messages,
-   push always, no per-bead sub-branches. Beadle auto-rebases epic branches on
-   main (thresholds in policy.yaml); conflicts become blocking beads.
-   1 epic = 1 GH issue = 1 worktree = 1 PR.
+7. **Branching**: one worktree per epic (in `.worktrees/`); commit/branch
+   mechanics owned by `docs/kanzen/procedures/worktree-agent.md`. Beadle
+   auto-rebases epic branches on main (thresholds in policy.yaml); conflicts
+   become blocking beads. 1 epic = 1 GH issue = 1 worktree = 1 PR.
 8. **Bugfix lane**: one standing rolling worktree (`fix/rolling`). 1 fix =
    1 bead = 1 inbox intention, reviewed individually (surface by surface).
    Fixes accumulate; owner review flushes approved fixes to main (cherry-pick
@@ -64,7 +63,8 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
    never model IDs. Quota is an availability gate: fall to next model in-tier
    on rate limit; defer (never silently downgrade) shippable work when a tier
    is exhausted. Seats need Anthropic runtimes; Sol runs via codex as
-   ephemeral adversarial passes only (cap 2 tracks).
+   ephemeral adversarial passes only, track cap per the T1 row in
+   `docs/kanzen/MODEL-CARD.md`.
 10. **Comms**: thread=bead everywhere — commit messages, session titles,
     intention subjects, artifact names. Agent Mail only if >5 concurrent
     workers collide in practice, and then as a provider behind the Agent
@@ -83,18 +83,15 @@ The factory adds no new runtime. Every moving part is an existing primitive:
 | Human gates | Human Intentions / inbox (`ask-user` surface) |
 | Policy | repo files: `.agents/factory/policy.yaml`, MODEL-CARD, AGENTS.md |
 
-Agents mutate beads via plain `br` in their worktrees (decision 2); the tasks
-plugin adapter is the *read/UI* path. If board-side mutations (drag to move,
-close from detail) are wanted later, extend the adapter's optional
-`moveTask`/`deleteTask` runtime methods — do not invent a second write path.
+Beads adapter contract and extension points: `.agents/factory/tools.md`.
 
 ## Dynamics decisions (grill session 2026-08-05, round 2)
 
 11. **Learning loop**: friction notes on every bead; Steward retro pass at
     epic close emits corrective beads (class A — merge without owner).
-12. **Failure paths**: bounce upstream with capped rounds — 2 worker attempts
-    then spec defect to Steward; 3 review rounds then owner intention; owner
-    attention only at gates and genuine dead ends. Detail:
+12. **Failure paths**: bounce upstream with capped rounds — round caps are
+    `bounce.worker_attempts_per_bead` and `bounce.review_rounds_max` in
+    policy.yaml; owner attention only at gates and genuine dead ends. Detail:
     `.agents/factory/README.md` (Dynamics).
 13. **Post-merge/release**: out of scope for now. Releases stay a manual owner
     action; revisit after graduation.
