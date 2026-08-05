@@ -9,7 +9,9 @@ disable-model-invocation: true
 
 Transfer one bounded task between sessions without making the handoff a new
 source of task truth. Read
-`docs/kanzen/procedures/session-handoff.md` and take exactly one branch:
+`docs/kanzen/procedures/session-handoff.md` (procedure) and
+`.agents/skills/handoff/CONTRACT.md` (full contract template and semantics),
+then take exactly one branch:
 
 - `create <receiver-or-purpose>` — probe current authority and execution state,
   persist the compact contract, then notify the receiver.

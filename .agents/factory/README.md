@@ -43,10 +43,10 @@ Escalations from any stage use the same surface.
 ## Lanes
 
 **Epic lane** — one epic = one GH issue = one `.worktrees/` worktree = one PR.
-Workers commit directly to the epic branch (no per-bead sub-branches), subject
-`[br-###] description`, push after every commit. The Beadle rebases the epic
-branch on `main` at the thresholds in policy.yaml; conflicts become blocking
-beads, never side quests inside a feature bead.
+Commit/branch mechanics are owned by
+`docs/kanzen/procedures/worktree-agent.md`. Factory specifics: the Beadle
+rebases the epic branch on `main` at the thresholds in policy.yaml; conflicts
+become blocking beads, never side quests inside a feature bead.
 
 **Bugfix lane** — the standing rolling branch, governed by
 `docs/kanzen/procedures/rolling-small-fixes.md` including its admission bar,
@@ -68,10 +68,10 @@ slot for the bugfix lane.
 
 | Failure | Rule | Owner sees it? |
 | --- | --- | --- |
-| worker fails a bead twice | back to Steward as a spec defect — never a third attempt | no |
-| review loops 3 rounds | escalation intention | yes — dead end |
+| worker fails a bead `worker_attempts_per_bead` times | back to Steward as a spec defect — never another attempt | no |
+| review loops `review_rounds_max` rounds | escalation intention | yes — dead end |
 | bead missing ready fields (`bead-ready.md`) | counts as plan defect, back to Steward | no |
-| plan rejected at gate 1 | Steward reworks, one re-submission; second rejection → conversation, not another intention | yes — gate |
+| plan rejected at gate 1 | Steward reworks, `plan_resubmissions_max` re-submission then conversation, not another intention | yes — gate |
 | stale lease | Beadle breaks it per session rules | no |
 
 **Learning loop (retro pass)** — every bead handoff/closure carries a one-line

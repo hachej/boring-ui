@@ -36,7 +36,7 @@ only (do not duplicate in VISION).
 
 - **Today**: no dispatcher; task→chat only on human click;
   `plugins/boring-automation` exists as the scheduling host.
-- **Delta**: a `boring-automation` scheduled automation on ~10 min tick reading
+- **Delta**: a `boring-automation` scheduled automation on the tick cadence in
   `.agents/factory/policy.yaml`: spawn workers while ready > active (cap), break
   stale leases (require handoff notes), flag beads closed without proof,
   rebase epic branches past thresholds, file conflict beads.
@@ -50,9 +50,7 @@ only (do not duplicate in VISION).
 
 ## 6. Model card tiering
 
-- **Today**: card has workflow→shape guidance, no concrete tiers; tier table
-  added 2026-08-05 (T1 Fable/Sol-xhigh, T2 Opus 4.8/Sol-medium,
-  T3 Terra/Sonnet 4.6, T4 Luna/Haiku).
+- **Today**: tier table: `docs/kanzen/MODEL-CARD.md`.
 - **Delta**: smoke-test bead for Terra and Luna runtimes (funded key, harness
   support) before Workers/automation default to them; dispatcher reads
   seat→tier from policy.yaml.
