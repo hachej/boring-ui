@@ -64,6 +64,7 @@ import {
   workspaceSessionRefFromPersisted,
   type WorkspaceSessionRef,
 } from "../../front/sessionIdentity"
+import { startSessionActivityStream } from "../../front/sessionActivity"
 
 interface PendingCreatePane {
   afterId: string
@@ -84,6 +85,7 @@ export interface WorkspaceAgentSession {
   nativeSessionId?: string
   hasAssistantReply?: boolean
   ephemeral?: boolean
+  status?: "idle" | "running" | "aborting" | "error"
 }
 
 export interface WorkspaceAgentSessionsApi<
@@ -905,6 +907,20 @@ export function WorkspaceAgentFront<
   const remoteSessionsPending = remoteSessionHookEnabled && !remoteSessionsAvailable
   useEffect(() => {
     if (!remoteSessionsAvailable) return
+    return startSessionActivityStream({
+      endpoint: apiBaseUrl,
+      workspaceId,
+      onActivity: ({ ref, status }) => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: {
+          sessionId: ref.sessionId,
+          agentTypeId: ref.agentTypeId,
+          working: status === "running" || status === "aborting",
+        },
+      })),
+    })
+  }, [apiBaseUrl, remoteSessionsAvailable, sessionSourceIdentity, workspaceId])
+  useEffect(() => {
+    if (!remoteSessionsAvailable) return
     setRemoteSessionSnapshot((previous) => {
       const sameSource = previous.sourceIdentity === sessionSourceIdentity
       const remoteActiveOwner = remoteSessionApi.activeSessionAgentTypeId
@@ -949,6 +965,8 @@ export function WorkspaceAgentFront<
       ? remoteSessionSnapshot.activeSessionAgentTypeId
       : null
   const sessionApi = shouldUseRemoteSessions && (remoteSessionsAvailable || remoteSessionsHaveStaleData) ? remoteSessionApi : undefined
+  const sessionRefreshRef = useRef(sessionApi?.refresh)
+  sessionRefreshRef.current = sessionApi?.refresh
   const committedSessionSourceRef = useRef(sessionSourceIdentity)
   useIsomorphicLayoutEffect(() => {
     committedSessionSourceRef.current = sessionSourceIdentity
@@ -1480,23 +1498,20 @@ export function WorkspaceAgentFront<
   const chatSessionId = shouldUseRemoteSessions && remoteSessionSnapshot.sourceIdentity !== sessionSourceIdentity
     ? effectiveActiveSessionId ?? "default"
     : effectiveActiveSessionId ?? (autoSubmitSessionId !== undefined ? "default" : resolvedSessions[0]?.id ?? "default")
-  const requestedChatSessionAgentTypeId = effectiveActiveSessionAgentTypeId
+  const chatSessionAgentTypeId = effectiveActiveSessionAgentTypeId
     ?? resolvedSessions.find((session) => session.id === chatSessionId)?.agentTypeId
     ?? agentTypeId
-  const chatSessionOwner = resolvedSessions.find((session) => (
-    session.id === chatSessionId
-    && (requestedChatSessionAgentTypeId === undefined || (
-      "agentTypeId" in session && session.agentTypeId === requestedChatSessionAgentTypeId
-    ))
-  ))
-  const chatSessionAgentTypeId = chatSessionOwner && "agentTypeId" in chatSessionOwner
-    ? chatSessionOwner.agentTypeId ?? requestedChatSessionAgentTypeId
-    : requestedChatSessionAgentTypeId
   const chatSessionKey = workspaceSessionKey(chatSessionId, chatSessionAgentTypeId)
   // While remote sessions load, resolvedSessions is a one-item placeholder
   // for the stored active session — never an authoritative list to prune
   // restored panes against.
   const sessionListAuthoritative = !sessionApi?.hasMore && !remoteSessionsPending
+  const resolvedSessionsByKey = useMemo(() => new Map(
+    resolvedSessions.map((session) => [workspaceSessionKeyFor(session), session]),
+  ), [resolvedSessions])
+  const sessionTitleById = useMemo(() => new Map(
+    [...resolvedSessionsByKey].map(([key, session]) => [key, session.title]),
+  ), [resolvedSessionsByKey])
   useEffect(() => {
     if (remoteSessionsTransitioning) return
     const ownedPendingCreatePane = pendingCreatePaneRef.current?.workspaceId === workspaceId
@@ -1513,20 +1528,19 @@ export function WorkspaceAgentFront<
       pendingCreatePaneRef.current = null
       if (ownedPendingCreatePane.placementDirection) setChatPaneSplitPending(false)
     }
-    const sessionKeys = new Set(resolvedSessions.map(workspaceSessionKeyFor))
     for (const key of optimisticCreatedPaneKeysRef.current) {
-      if (sessionKeys.has(key)) optimisticCreatedPaneKeysRef.current.delete(key)
+      if (resolvedSessionsByKey.has(key)) optimisticCreatedPaneKeysRef.current.delete(key)
     }
     const newlyObservedSession = pendingCreatePane
       ? resolvedSessions.find((session) => !pendingCreatePane.knownIds.has(workspaceSessionKeyFor(session)))
       : undefined
     const pendingCreatedId = pendingCreatePane
       ? pendingCreatePane.createdId
-        ?? (sessionKeys.has(chatSessionKey) && !pendingCreatePane.knownIds.has(chatSessionKey)
+        ?? (resolvedSessionsByKey.has(chatSessionKey) && !pendingCreatePane.knownIds.has(chatSessionKey)
           ? chatSessionKey
           : newlyObservedSession ? workspaceSessionKeyFor(newlyObservedSession) : null)
       : null
-    if (pendingCreatedId && sessionKeys.has(pendingCreatedId)) {
+    if (pendingCreatedId && resolvedSessionsByKey.has(pendingCreatedId)) {
       if (pendingCreatePane?.placementDirection) {
         setPendingChatPanePlacement({
           paneId: pendingCreatedId,
@@ -1538,9 +1552,9 @@ export function WorkspaceAgentFront<
       pendingCreatePaneRef.current = null
     }
     const preservingEphemeralDefault = chatSessionId === "default" && autoSubmitSessionId !== undefined
-    const canPruneMissingSessions = sessionListAuthoritative && sessionKeys.size > 0 && !preservingEphemeralDefault
+    const canPruneMissingSessions = sessionListAuthoritative && resolvedSessionsByKey.size > 0 && !preservingEphemeralDefault
     const desiredSessionId = pendingCreatedId
-      ?? (canPruneMissingSessions && !sessionKeys.has(chatSessionKey)
+      ?? (canPruneMissingSessions && !resolvedSessionsByKey.has(chatSessionKey)
         ? resolvedSessions[0] ? workspaceSessionKeyFor(resolvedSessions[0]) : chatSessionKey
         : chatSessionKey)
     setChatPaneState((previous) => {
@@ -1559,13 +1573,13 @@ export function WorkspaceAgentFront<
         : currentActiveRef?.sessionId === chatSessionId
       const resolvedDesiredSessionId = !pendingCreatedId
         && current.activeId
-        && (!canPruneMissingSessions || sessionKeys.has(current.activeId))
+        && (!canPruneMissingSessions || resolvedSessionsByKey.has(current.activeId))
         && currentMatchesControlledSession
         ? current.activeId
         : desiredSessionId
       const rawIds = current.ids.length > 0 ? current.ids : [resolvedDesiredSessionId]
       const prunedIds = canPruneMissingSessions
-        ? rawIds.filter((id) => sessionKeys.has(id) || optimisticCreatedPaneKeysRef.current.has(id) || id === pendingCreatedId)
+        ? rawIds.filter((id) => resolvedSessionsByKey.has(id) || optimisticCreatedPaneKeysRef.current.has(id) || id === pendingCreatedId)
         : rawIds
       const ids = prunedIds.length > 0 ? prunedIds : [resolvedDesiredSessionId]
       const activeId = current.activeId && ids.includes(current.activeId) ? current.activeId : ids[0] ?? resolvedDesiredSessionId
@@ -1589,13 +1603,7 @@ export function WorkspaceAgentFront<
       ) return previous
       return { workspaceId, ids: nextIds, activeId: nextActiveId }
     })
-  }, [agentTypeId, autoSubmitSessionId, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, sessionListAuthoritative, workspaceId])
-
-  const sessionTitleById = useMemo(() => {
-    const titles = new Map<string, string | null | undefined>()
-    for (const session of resolvedSessions) titles.set(workspaceSessionKeyFor(session), session.title)
-    return titles
-  }, [resolvedSessions])
+  }, [agentTypeId, autoSubmitSessionId, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, resolvedSessionsByKey, sessionListAuthoritative, workspaceId])
   const [initialHydrationPromptStarted, setInitialHydrationPromptStarted] = useState<{ workspaceId: string; ids: Set<string> }>(() => ({
     workspaceId,
     ids: new Set(),
@@ -1856,8 +1864,14 @@ export function WorkspaceAgentFront<
   }, [requestedAutoSubmitInitialDraft, workspaceId])
   const autoSubmittingInitialDraft = requestedAutoSubmitInitialDraft
   const delayAutoSubmitDraft = autoSubmittingInitialDraft && shouldUseRemoteSessions && !effectiveActiveSessionId
+  const activeChatPaneIsInventoried = resolvedSessionsByKey.has(activeChatPaneId)
+  // A restored/open active pane that survived authoritative inventory
+  // reconciliation owns enough addressed identity to hydrate even when the
+  // mutable global active preference is absent. An implicit placeholder does not.
   const hydrateMessages = !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
-    shouldUseRemoteSessions ? Boolean(effectiveActiveSessionId) : true
+    shouldUseRemoteSessions
+      ? Boolean(effectiveActiveSessionId || activeChatPaneIsInventoried)
+      : true
   )
   const handleWorkspaceWarmupStatusChange = useCallback((status: WorkspaceWarmupStatus) => {
     setWorkspaceWarmupState({ workspaceId, status })
@@ -1953,7 +1967,7 @@ export function WorkspaceAgentFront<
         })
       },
       onTurnComplete: () => {
-        if (sessionSourceIsCurrent()) void sessionApi?.refresh?.({ background: true })
+        if (sessionSourceIsCurrent()) void sessionRefreshRef.current?.({ background: true })
         const existing = chatParams?.onTurnComplete
         if (typeof existing === "function") existing()
       },
@@ -1970,40 +1984,21 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionKey),
     [chatSessionKey, makeCenterParams],
   )
-  // Stabilise each pane's params by session id. UI command streaming is owned
-  // once by the Workspace above, so active-pane changes do not alter pane props.
-  // The cache resets whenever makeCenterParams changes (i.e. a real input
-  // changed), so genuine updates still flow to every pane.
-  const paneParamsCacheRef = useRef<{
-    make: typeof makeCenterParams
-    cache: Map<string, ReturnType<typeof makeCenterParams>>
-  } | null>(null)
-  const chatPanes = useMemo(() => {
-    if (!paneParamsCacheRef.current || paneParamsCacheRef.current.make !== makeCenterParams) {
-      paneParamsCacheRef.current = { make: makeCenterParams, cache: new Map() }
+  const chatPanes = useMemo(() => chatPaneIds.map((id) => {
+    const sessionRef = workspaceSessionRefFromKey(id)
+    return {
+      id,
+      title: resolvedSessionsByKey.get(id)?.title ?? (sessionRef.sessionId === "default" ? defaultSessionTitle : sessionRef.sessionId),
+      panel: "chat",
+      params: makeCenterParams(id),
     }
-    const { cache } = paneParamsCacheRef.current
-    return chatPaneIds.map((id) => {
-      let params = cache.get(id)
-      if (!params) {
-        params = makeCenterParams(id)
-        cache.set(id, params)
-      }
-      const sessionRef = workspaceSessionRefFromKey(id)
-      return {
-        id,
-        title: sessionTitleById.get(id) ?? (sessionRef.sessionId === "default" ? defaultSessionTitle : sessionRef.sessionId),
-        panel: "chat",
-        params,
-      }
-    })
-  }, [chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
+  }), [chatPaneIds, defaultSessionTitle, makeCenterParams, resolvedSessionsByKey])
   const providerChatPaneSessionRefs = useMemo(
     () => chatPaneIds.map(workspaceSessionRefFromKey),
     [chatPaneIds],

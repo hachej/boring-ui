@@ -15,6 +15,7 @@ import {
 import type { PiChatSessionService } from '../../core/piChatSessionService'
 import { ErrorCode } from '../../shared/error-codes'
 import type { AgentHostDirectProjectionOptions, AgentHostHandle } from './types'
+import type { AgentSessionActivityIndex, AgentSessionActivityUpdate } from './sessionInventory'
 import {
   createAgentHostRuntimeCapabilityRoutes,
   type AgentHostRuntimeCapabilityProjection,
@@ -36,6 +37,8 @@ interface ProjectionInput {
     sessionId: string,
   ) => Promise<{ readonly scope: import('../../shared/index').AuthorizedAgentScope; readonly service: PiChatSessionService }>
   readonly runtimeCapabilities?: AgentHostRuntimeCapabilityProjection
+  readonly activity: AgentSessionActivityIndex
+  readonly resolveActivityWorkspaceScope: (request: FastifyRequest) => Promise<string>
 }
 
 const mountedHostsByServer = new WeakMap<object, WeakSet<object>>()
@@ -82,6 +85,7 @@ const ListSessionsQuerySchema = z.object({
     z.number().int().min(1).max(100).optional(),
   ),
 }).strict()
+const ActivityEventsQuerySchema = z.object({ workspaceId: NonEmptyString.max(256).optional() }).strict()
 const EventsQuerySchema = z.object({
   cursor: z.preprocess(
     (value) => typeof value === 'string' && value.length > 0 ? Number(value) : value,
@@ -220,6 +224,44 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     } catch (error) {
       return sendError(reply, error)
     }
+  })
+
+  app.get('/api/v1/agents/session-activity/events', async (request, reply) => {
+    const query = parseWithSchema(ActivityEventsQuerySchema, request.query, reply, 'query')
+    if (!query) return
+    let workspaceScopeId: string
+    try {
+      workspaceScopeId = await input.resolveActivityWorkspaceScope(request)
+    } catch (error) {
+      return sendError(reply, error)
+    }
+
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    })
+    const write = (event: 'snapshot' | 'activity', data: unknown) => {
+      if (reply.raw.destroyed || reply.raw.writableEnded) return
+      reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+    }
+    const unsubscribe = input.activity.subscribe(workspaceScopeId, (update: AgentSessionActivityUpdate) => {
+      write('activity', update)
+    })
+    write('snapshot', { sessions: input.activity.snapshot(workspaceScopeId) })
+    const heartbeat = setInterval(() => {
+      if (!reply.raw.writableEnded) reply.raw.write(': heartbeat\n\n')
+    }, ADDRESSED_HEARTBEAT_INTERVAL_MS)
+    let cleanedUp = false
+    const cleanup = () => {
+      if (cleanedUp) return
+      cleanedUp = true
+      clearInterval(heartbeat)
+      unsubscribe()
+    }
+    request.raw.once('close', cleanup)
+    reply.raw.once('close', cleanup)
+    reply.hijack()
   })
 
   app.get('/api/v1/agents/:agentTypeId/sessions', async (request, reply) => {

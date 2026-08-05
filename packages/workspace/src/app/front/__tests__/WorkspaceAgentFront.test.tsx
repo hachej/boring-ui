@@ -108,12 +108,24 @@ const globalCommandPanel: PanelConfig = {
 
 class MockEventSource {
   static instances: MockEventSource[] = []
+  private readonly listeners = new Map<string, Set<EventListener>>()
   close = vi.fn()
-  addEventListener = vi.fn()
-  removeEventListener = vi.fn()
+  addEventListener = vi.fn((type: string, listener: EventListener) => {
+    const listeners = this.listeners.get(type) ?? new Set<EventListener>()
+    listeners.add(listener)
+    this.listeners.set(type, listeners)
+  })
+  removeEventListener = vi.fn((type: string, listener: EventListener) => {
+    this.listeners.get(type)?.delete(listener)
+  })
 
   constructor(readonly url: string) {
     MockEventSource.instances.push(this)
+  }
+
+  emit(type: string, data: unknown) {
+    const event = new MessageEvent(type, { data: JSON.stringify(data) })
+    for (const listener of this.listeners.get(type) ?? []) listener(event)
   }
 }
 
@@ -236,6 +248,46 @@ describe("WorkspaceAgentFront", () => {
 
     expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument()
     expect(screen.getAllByText("Loading sessions…").length).toBeGreaterThan(0)
+  })
+
+  it("owns one addressed activity stream and publishes terminal transitions", () => {
+    MockEventSource.instances = []
+    vi.stubGlobal("EventSource", MockEventSource)
+    const statuses: unknown[] = []
+    const onStatus = (event: Event) => statuses.push((event as CustomEvent).detail)
+    window.addEventListener("boring:chat-session-status", onStatus)
+
+    const { unmount } = render(
+      <WorkspaceAgentFront
+        workspaceId="working-session-stream"
+        chatPanel={SessionIdChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "session-1", title: "Session one", status: "idle" }],
+          activeSession: { id: "session-1", title: "Session one", status: "idle" },
+          activeSessionId: "session-1",
+          loading: false,
+          error: undefined,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+      />,
+    )
+    const stream = MockEventSource.instances.find((instance) => instance.url.includes("/api/v1/agents/session-activity/events"))
+    expect(stream?.url).toContain("workspaceId=working-session-stream")
+
+    act(() => {
+      stream?.emit("snapshot", { sessions: [{ ref: { agentTypeId: "default", sessionId: "session-1" }, status: "running" }] })
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "session-1" }, status: "idle" })
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "session-1" }, status: "running" })
+      stream?.emit("snapshot", { sessions: [] })
+    })
+
+    expect(statuses).toContainEqual({ sessionId: "session-1", agentTypeId: "default", working: true })
+    expect(statuses.at(-1)).toEqual({ sessionId: "session-1", agentTypeId: "default", working: false })
+    unmount()
+    expect(stream?.close).toHaveBeenCalledTimes(1)
+    window.removeEventListener("boring:chat-session-status", onStatus)
   })
 
   it("renders a known active session while remote sessions are still loading", () => {
@@ -1243,6 +1295,37 @@ describe("WorkspaceAgentFront", () => {
 
     await waitFor(() => {
       expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
+    })
+  })
+
+  it("hydrates an inventoried restored pane without a global active preference", async () => {
+    localStorage.setItem(
+      "boring-workspace:chat-panes:restored-without-active",
+      JSON.stringify({ ids: ["s1"], activeId: "s1" }),
+    )
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => (
+      <div data-testid="restored-chat">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
+    )
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="restored-without-active"
+        chatPanel={CapturingChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "s1", title: "Restored session" }],
+          loading: false,
+          error: undefined,
+          activeSessionId: null,
+          activeSession: null,
+          switch: vi.fn(),
+          create: vi.fn(),
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("restored-chat")).toHaveTextContent("Chat s1 hydrate=true")
     })
   })
 

@@ -6,7 +6,7 @@ import type { SessionSummary } from '../../../shared/session'
 import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
 import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSession'
 import { activeSessionStorageKey, scopedComposerStorageKey, type ActiveSessionStorageLike } from '../session'
-import { bootResumeSessionStorageKey } from '../session/activeSessionStorage'
+import { bootResumeSessionStorageKey } from '../session/sessionSelectionStorage'
 import { ComposerContributionProvider } from '../composerContributions'
 import { PiChatPanel as AddressedPiChatPanel, type PiChatPanelProps } from '../PiChatPanel'
 import type { ComposerBlocker } from '../components/ChatNotices'
@@ -391,6 +391,26 @@ describe('PiChatPanel sandbox shell', () => {
 
     expect(statusEvents).toContainEqual({ sessionId: 'pi-1', agentTypeId: 'default', working: true })
     expect(statusEvents.at(-1)).toEqual({ sessionId: 'pi-1', agentTypeId: 'default', working: true })
+  })
+
+  test('replays current working state when shell chrome mounts after the panel', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    const statusEvents: Array<{ sessionId?: string; agentTypeId?: string; working?: boolean }> = []
+    const onStatus = (event: Event) => statusEvents.push((event as CustomEvent).detail ?? {})
+    window.addEventListener('boring:chat-session-status', onStatus)
+    const { unmount } = render(<PiChatPanel serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
+
+    await screen.findByText('committed from /state')
+    act(() => remote.setState({ ...remote.state, status: 'streaming' }))
+    await screen.findByTestId('chat-working')
+    statusEvents.length = 0
+
+    act(() => window.dispatchEvent(new Event('boring:chat-session-status-request')))
+
+    expect(statusEvents).toEqual([{ sessionId: 'pi-1', agentTypeId: 'default', working: true }])
+    unmount()
+    window.removeEventListener('boring:chat-session-status', onStatus)
   })
 
   test('includes the addressed Agent owner in session working badge signals', async () => {

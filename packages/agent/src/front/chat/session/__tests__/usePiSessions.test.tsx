@@ -7,7 +7,7 @@ import {
   activeSessionStorageKey,
   bootResumeSessionStorageKey,
   type ActiveSessionStorageLike,
-} from '../activeSessionStorage'
+} from '../sessionSelectionStorage'
 import { usePiSessions as useAddressedPiSessions, type UsePiSessionsOptions } from '../usePiSessions'
 
 function usePiSessions(options: Omit<UsePiSessionsOptions, 'agentTypeId'> & { agentTypeId?: string }) {
@@ -299,7 +299,7 @@ describe('usePiSessions', () => {
 
     expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/v1/agents/alpha/sessions/native-1/rename')
     expect(result.current.sessions[0]).toMatchObject({
-      title: 'After', nativeSessionId: 'native-1', hasAssistantReply: true,
+      title: 'After', nativeSessionId: 'native-1', hasAssistantReply: true, status: 'idle',
     })
   })
 

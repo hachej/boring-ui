@@ -172,4 +172,26 @@ describe('process-lifetime session activity index', () => {
     index.observe('workspace-a', ref, { type: 'agent-end', seq: 3, turnId: 'turn-b', status: 'ok' })
     expect(index.get('workspace-a', ref)).toBe('idle')
   })
+
+  it('publishes owner-addressed transitions only to the matching workspace', () => {
+    const index = new AgentSessionActivityIndex()
+    const ref = { agentTypeId: 'alpha', sessionId: 'session-a' }
+    const updates: unknown[] = []
+    index.subscribe('workspace-a', () => { throw new Error('observer failed') })
+    const unsubscribe = index.subscribe('workspace-a', (update) => updates.push(update))
+
+    index.set('workspace-b', ref, 'running')
+    index.set('workspace-a', ref, 'running')
+    index.set('workspace-a', ref, 'running')
+    index.set('workspace-a', ref, 'idle')
+    unsubscribe()
+    index.set('workspace-a', ref, 'error')
+
+    expect(updates).toEqual([
+      { ref, status: 'running' },
+      { ref, status: 'idle' },
+    ])
+    expect(index.snapshot('workspace-a')).toEqual([{ ref, status: 'error' }])
+    expect(index.snapshot('workspace-b')).toEqual([{ ref, status: 'running' }])
+  })
 })

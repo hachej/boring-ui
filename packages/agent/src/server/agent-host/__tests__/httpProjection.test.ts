@@ -16,6 +16,7 @@ import type { PiChatSessionService } from '../../../core/piChatSessionService'
 import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentHostHandle } from '../types'
 import { createAgentHostRoutes } from '../httpProjection'
+import { AgentSessionActivityIndex } from '../sessionInventory'
 
 const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' } as AuthorizedAgentScope
 const ref: AgentSessionRef = { agentTypeId: 'alpha', sessionId: 'session-1' }
@@ -192,19 +193,22 @@ async function buildApp(options: {
     close: vi.fn(async () => {}),
   }
   const app = Fastify({ logger: false })
+  const activity = new AgentSessionActivityIndex()
   await app.register(createAgentHostRoutes({
     host,
     gateway,
     options: {
       authorizeAgentRequest: options.authorizeAgentRequest ?? (async () => scope),
     },
+    activity,
+    resolveActivityWorkspaceScope: async () => scope.workspaceScopeId,
     resolveAddressedPiChatService: options.resolveAddressedPiChatService ?? (async () => ({
       scope,
       service: sessionService(),
     })),
   }))
   await app.ready()
-  return { app, gateway, host }
+  return { app, gateway, host, activity }
 }
 
 function expectValidation(response: { statusCode: number; json(): unknown }, field: string) {
@@ -218,6 +222,31 @@ function expectValidation(response: { statusCode: number; json(): unknown }, fie
 }
 
 describe('addressed Agent Host HTTP projection', () => {
+  it('streams an addressed activity snapshot and live terminal transitions', async () => {
+    const { app, activity } = await buildApp()
+    const ref = { agentTypeId: 'alpha', sessionId: 'session-1' }
+    activity.set('workspace-a', ref, 'running')
+    const address = await app.listen({ host: '127.0.0.1', port: 0 })
+    const controller = new AbortController()
+
+    try {
+      const response = await fetch(`${address}/api/v1/agents/session-activity/events?workspaceId=workspace-a`, { signal: controller.signal })
+      expect(response.headers.get('content-type')).toContain('text/event-stream')
+      const reader = response.body!.getReader()
+      const decoder = new TextDecoder()
+      let wire = decoder.decode((await reader.read()).value)
+      expect(wire).toContain('event: snapshot')
+      expect(wire).toContain(JSON.stringify({ ref, status: 'running' }))
+
+      activity.set('workspace-a', ref, 'idle')
+      while (!wire.includes('event: activity')) wire += decoder.decode((await reader.read()).value)
+      expect(wire).toContain(`event: activity\ndata: ${JSON.stringify({ ref, status: 'idle' })}`)
+    } finally {
+      controller.abort()
+      await app.close()
+    }
+  })
+
   it('projects catalog and every addressed session/command route onto typed Gateway inputs', async () => {
     const { app, gateway } = await buildApp()
 
