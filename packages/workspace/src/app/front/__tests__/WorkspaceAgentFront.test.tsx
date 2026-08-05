@@ -592,8 +592,8 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getAllByText("Beta one").length).toBeGreaterThan(0)
     })
 
-    const betaSessionButton = screen.getAllByText("Beta one").find((node) => node.tagName === "BUTTON")
-    expect(betaSessionButton).toBeDefined()
+    const betaSessionButton = screen.getByText("Beta one").closest("button")
+    expect(betaSessionButton).toBeInstanceOf(HTMLButtonElement)
     await user.click(betaSessionButton!)
     await waitFor(() => {
       expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-agent-type-id", "beta")
