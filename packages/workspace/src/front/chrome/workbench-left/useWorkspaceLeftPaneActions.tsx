@@ -96,7 +96,12 @@ export function useWorkbenchLeftPaneModel({
   )
   const entries = useMemo<WorkbenchLeftPaneEntry[]>(() => {
     const next: WorkbenchLeftPaneEntry[] = []
-    for (const source of workspaceSources) {
+    const orderedSources = [...workspaceSources].sort((left, right) => {
+      if (left.id === "files") return -1
+      if (right.id === "files") return 1
+      return 0
+    })
+    for (const source of orderedSources) {
       const Icon = source.icon
       next.push({
         id: source.id,

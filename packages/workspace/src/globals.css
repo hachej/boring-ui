@@ -382,3 +382,98 @@
 [data-boring-workspace] ::-webkit-scrollbar-thumb:hover {
   background-color: oklch(from var(--foreground) l c h / 0.3);
 }
+
+/* App-left chrome stays compact for fine pointers while meeting 44px touch
+   targets and keeping secondary actions discoverable on touch-only devices. */
+@media (pointer: coarse) {
+  [data-boring-workspace-part="app-left-rail"] {
+    padding-inline: 0;
+  }
+
+  .app-left-primary-action,
+  .app-left-new-chat-action,
+  .app-left-session-row {
+    height: 44px;
+  }
+
+  .app-left-secondary-action,
+  .app-left-session-secondary-action,
+  .app-left-rail-action,
+  .app-left-pane-toggle,
+  [data-boring-workspace-part="app-left-footer"] button,
+  [data-boring-workspace-part="app-left-rail-footer"] button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .app-left-session-trailing[data-action-count="1"][data-has-status="false"],
+  .app-left-session-actions[data-action-count="1"] {
+    width: 44px;
+  }
+
+  .app-left-session-trailing[data-action-count="2"][data-has-status="false"],
+  .app-left-session-actions[data-action-count="2"] {
+    width: 90px;
+  }
+
+  .app-left-session-trailing[data-action-count="3"][data-has-status="false"],
+  .app-left-session-actions[data-action-count="3"] {
+    width: 136px;
+  }
+}
+
+@media (max-width: 639px) {
+  .workspace-loading-sidebar {
+    display: none;
+  }
+
+  .command-palette-footer {
+    justify-content: center;
+    min-height: 40px;
+  }
+
+  .command-palette-footer-label,
+  .command-palette-footer-desktop-hints {
+    display: none;
+  }
+
+  .command-palette-footer-touch {
+    display: inline;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-boring-workspace-part$="loading-shell"] [data-slot="skeleton"],
+  [data-boring-workspace-part$="loading-surface"] [data-slot="skeleton"] {
+    animation: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .workbench-open-button,
+  .command-palette-mode-button,
+  .command-palette-secondary-action {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .command-palette-result-row {
+    min-height: 44px;
+  }
+
+  .command-palette-secondary-action {
+    opacity: 1;
+  }
+}
+
+@media (hover: none) {
+  .app-left-new-chat-secondary {
+    width: auto;
+    opacity: 1;
+  }
+
+  .app-left-session-actions {
+    pointer-events: auto;
+    opacity: 1;
+  }
+}
