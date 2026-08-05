@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url"
 const APP_DIR = dirname(fileURLToPath(import.meta.url))
 const E2E_WORKSPACE_ROOT = resolve(process.env.BORING_AGENT_WORKSPACE_ROOT || resolve(APP_DIR, "e2e/fixtures/workspace"))
 const E2E_SESSION_ROOT = resolve(process.env.BORING_AGENT_SESSION_ROOT || resolve(APP_DIR, "e2e/fixtures/sessions"))
-const VITE_PORT = 5380
-const AGENT_API_PORT = 5390
+const VITE_PORT = Number(process.env.PLAYWRIGHT_VITE_PORT) || 5380
+const AGENT_API_PORT = Number(process.env.PLAYWRIGHT_AGENT_API_PORT) || 5390
 const SERVER_HOME = resolve(process.env.HOME || resolve(APP_DIR, "e2e/fixtures/home"))
 const SERVER_CONFIG = resolve(process.env.XDG_CONFIG_HOME || resolve(SERVER_HOME, ".config"))
 const SERVER_CACHE = resolve(process.env.XDG_CACHE_HOME || resolve(SERVER_HOME, ".cache"))

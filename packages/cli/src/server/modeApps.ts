@@ -659,6 +659,7 @@ export async function createWorkspacesModeApp(opts: {
     core = (async (): Promise<WorkspaceBridgeCore> => {
       const pluginCollection = await workspaceAppServer.resolveWorkspaceAgentServerPluginCollection({
         workspaceRoot: workspace.path,
+        agentTypeId: "default",
         bridge: getBridge(workspace.id),
         defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
         installPluginAuthoring: false,
