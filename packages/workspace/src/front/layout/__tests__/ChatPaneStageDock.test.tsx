@@ -224,6 +224,35 @@ describe("ChatPaneStageDock", () => {
     expect(closePane).toHaveBeenNthCalledWith(2, "b")
   })
 
+  it("opens session actions for pin, rename, and delete", () => {
+    const onTogglePin = vi.fn()
+    const onRename = vi.fn()
+    const onDelete = vi.fn()
+    vi.spyOn(window, "confirm").mockReturnValue(true)
+
+    render(
+      <ChatPaneStageDock
+        panes={[{ id: "a", title: "Planning" }]}
+        sessionActions={{ isPinned: () => false, onTogglePin, onRename, onDelete }}
+        renderPane={(pane) => <div>{pane.id}</div>}
+      />,
+    )
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Chat actions for A" }), { button: 0, ctrlKey: false })
+    fireEvent.click(screen.getByRole("menuitem", { name: "Pin chat" }))
+    expect(onTogglePin).toHaveBeenCalledWith("a")
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Chat actions for A" }), { button: 0, ctrlKey: false })
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete chat" }))
+    expect(onDelete).toHaveBeenCalledWith("a")
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Chat actions for A" }), { button: 0, ctrlKey: false })
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename chat" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Chat name" }), { target: { value: "Renamed chat" } })
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }))
+    expect(onRename).toHaveBeenCalledWith("a", "Renamed chat")
+  })
+
   it("replaces machine session identifiers with a readable title", () => {
     const id = "agent::123e4567-e89b-12d3-a456-426614174000"
     expect(readablePaneTitle(id, id)).toBe("New chat")

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, appendFile, writeFile } from 'node:fs/promises'
+import { mkdir, appendFile, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -37,6 +37,9 @@ const SESSION_ROOT_ENV = 'BORING_AGENT_SESSION_ROOT'
 const DEFAULT_SESSION_ID = 'scripted-main'
 const DEFAULT_TIME = '2026-06-04T12:00:00.000Z'
 const DEFAULT_TICK_MS = 5
+const MAX_SESSION_ID_LENGTH = 128
+const SAFE_NATIVE_SESSION_ID = /^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$/
+interface SessionListOptions { includeId?: string; includeEmpty?: boolean }
 
 let persistedHarness: ScriptedPiHarness | undefined
 
@@ -81,10 +84,17 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): Script
   const toolDelayTicks = readToolDelayTicks()
   const reasoningPartCount = readReasoningPartCount()
 
-  const getAdapter = (sessionId: string): ScriptedPiSessionAdapter => {
+  const getAdapter = async (sessionId: string, sessionCtx: SessionCtx): Promise<ScriptedPiSessionAdapter> => {
     let adapter = adapters.get(sessionId)
     if (!adapter) {
-      adapter = new ScriptedPiSessionAdapter(sessionId, tickMs, toolDelayTicks, reasoningPartCount, (message) => sessions.appendMessage(sessionId, message))
+      adapter = new ScriptedPiSessionAdapter(
+        sessionId,
+        tickMs,
+        toolDelayTicks,
+        reasoningPartCount,
+        await sessions.loadMessages(sessionCtx, sessionId),
+        (messages) => sessions.persistMessages(sessionCtx, sessionId, messages),
+      )
       adapters.set(sessionId, adapter)
     }
     return adapter
@@ -94,10 +104,11 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): Script
     id: 'scripted-pi-e2e',
     placement: 'server',
     sessions,
-    async getPiSessionAdapter({ sessionId }: AgentSendInput) {
+    async getPiSessionAdapter({ sessionId, ctx: sessionCtx }: AgentSendInput) {
       if (!sessionId) throw new Error('sessionId is required')
-      await sessions.ensure(sessionId)
-      return getAdapter(sessionId)
+      const resolvedSessionCtx = sessionCtx ?? {}
+      await sessions.ensure(sessionId, resolvedSessionCtx)
+      return await getAdapter(sessionId, resolvedSessionCtx)
     },
     async reloadSession() {
       return true
@@ -112,6 +123,7 @@ class ScriptedSessionStore implements SessionStore {
   private readonly records = new Map<string, ScriptedSessionRecord>()
   private createCount = 0
   private readonly sessionDir: string
+  private hydration: Promise<void> | undefined
 
   constructor(input: AgentHarnessFactoryInput) {
     this.sessionDir = input.sessionDir ?? (input.sessionNamespace
@@ -119,26 +131,28 @@ class ScriptedSessionStore implements SessionStore {
       : defaultSessionDir(input.cwd, input.sessionRoot))
   }
 
-  async ensure(sessionId: string): Promise<SessionSummary> {
+  async ensure(sessionId: string, ctx: SessionCtx): Promise<SessionSummary> {
+    await this.ensureHydrated()
     const existing = this.records.get(sessionId)
-    if (existing) return toSummary(existing)
-    const record = this.createRecord(sessionId, 'Scripted baseline')
-    this.records.set(record.id, record)
-    await this.writeSessionFile(record, {})
-    return toSummary(record)
+    if (existing) {
+      this.assertVisible(existing, ctx, sessionId)
+      return toSummary(existing)
+    }
+    throw new Error(`Session not found: ${sessionId}`)
   }
 
-  async list(_ctx: SessionCtx): Promise<SessionSummary[]> {
+  async list(ctx: SessionCtx, options: SessionListOptions = {}): Promise<SessionSummary[]> {
+    await this.ensureHydrated()
     return [...this.records.values()]
+      .filter((record) => this.belongsTo(record, ctx))
+      .filter((record) => options.includeEmpty || record.turnCount > 0 || record.id === options.includeId)
       .map(toSummary)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   }
 
   async create(_ctx: SessionCtx, init?: { title?: string }): Promise<SessionSummary> {
-    const id = this.createCount === 0 ? DEFAULT_SESSION_ID : `scripted-${this.createCount}`
-    this.createCount += 1
-    const existing = this.records.get(id)
-    if (existing) return toSummary(existing)
+    await this.ensureHydrated()
+    const id = this.takeNextSessionId()
     const record = this.createRecord(id, init?.title ?? 'Scripted baseline', _ctx.workspaceId)
     this.records.set(record.id, record)
     await this.writeSessionFile(record, _ctx)
@@ -146,31 +160,73 @@ class ScriptedSessionStore implements SessionStore {
   }
 
   async load(_ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
+    await this.ensureHydrated()
     const record = this.records.get(sessionId)
     if (!record) throw new Error(`Session not found: ${sessionId}`)
+    this.assertVisible(record, _ctx, sessionId)
     return toSummary(record)
   }
 
   async delete(_ctx: SessionCtx, sessionId: string): Promise<void> {
+    await this.ensureHydrated()
+    const record = this.records.get(sessionId)
+    if (!record) return
+    this.assertVisible(record, _ctx, sessionId)
     this.records.delete(sessionId)
+    try {
+      await unlink(await this.sessionFilePath(sessionId))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
   }
 
   async rename(_ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
+    await this.ensureHydrated()
     const record = this.records.get(sessionId)
     if (!record) throw new Error(`Session not found: ${sessionId}`)
+    this.assertVisible(record, _ctx, sessionId)
     const renamed = { ...record, title, updatedAt: new Date().toISOString() }
     this.records.set(sessionId, renamed)
-    void this.appendSessionInfo(renamed)
+    await this.appendSessionInfo(renamed)
     return toSummary(renamed)
   }
 
-  appendMessage(sessionId: string, message: ScriptedMessage): void {
+  async loadMessages(ctx: SessionCtx, sessionId: string): Promise<ScriptedMessage[]> {
+    await this.ensureHydrated()
     const record = this.records.get(sessionId)
-    if (!record) return
-    const touched = { ...record, updatedAt: new Date().toISOString(), turnCount: message.role === 'user' ? record.turnCount + 1 : record.turnCount }
-    this.records.set(sessionId, touched)
-    const entry = { type: 'message', id: randomUUID(), parentId: null, timestamp: touched.updatedAt, message }
-    void appendFile(join(this.sessionDir, `${sessionId}.jsonl`), `${JSON.stringify(entry)}\n`, 'utf8')
+    if (!record) throw new Error(`Session not found: ${sessionId}`)
+    this.assertVisible(record, ctx, sessionId)
+    const file = await this.sessionFilePath(sessionId)
+    const entries = await readJsonl(file)
+    return entries
+      .filter((entry) => entry.type === 'message' && entry.message && typeof entry.message === 'object')
+      .map((entry) => entry.message as ScriptedMessage)
+  }
+
+  async persistMessages(ctx: SessionCtx, sessionId: string, messages: readonly ScriptedMessage[]): Promise<void> {
+    await this.ensureHydrated()
+    const record = this.records.get(sessionId)
+    if (!record) throw new Error(`Session not found: ${sessionId}`)
+    this.assertVisible(record, ctx, sessionId)
+    const file = await this.sessionFilePath(sessionId)
+    const entries = await readJsonl(file)
+    const metadata = entries.filter((entry) => entry.type !== 'message')
+    const updatedAt = new Date().toISOString()
+    const messageEntries = messages.map((message) => ({
+      type: 'message',
+      id: randomUUID(),
+      parentId: null,
+      timestamp: updatedAt,
+      message,
+    }))
+    await writeFile(file, `${[...metadata, ...messageEntries].map((entry) => JSON.stringify(entry)).join('\n')}\n`, 'utf8')
+    this.records.set(sessionId, {
+      ...record,
+      updatedAt,
+      turnCount: messages.filter((message) => message.role === 'user').length,
+      nativeSessionId: sessionId,
+      hasAssistantReply: messages.some((message) => message.role === 'assistant'),
+    })
   }
 
   private async writeSessionFile(record: ScriptedSessionRecord, ctx: SessionCtx): Promise<void> {
@@ -182,15 +238,86 @@ class ScriptedSessionStore implements SessionStore {
       id: record.id,
       timestamp: now,
       cwd: '',
-      boringSessionCtx: ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {},
+      boringSessionCtx: {
+        ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
+        ...((ctx as SessionCtx & { runtimeScopeIdentity?: string }).runtimeScopeIdentity
+          ? { runtimeScopeIdentity: (ctx as SessionCtx & { runtimeScopeIdentity: string }).runtimeScopeIdentity }
+          : {}),
+      },
     }
     const info = this.sessionInfo(record, now)
-    await writeFile(join(this.sessionDir, `${record.id}.jsonl`), `${JSON.stringify(header)}\n${JSON.stringify(info)}\n`, 'utf8')
+    const filename = `${now.replace(/[:.]/g, '-')}_${record.id}.jsonl`
+    await writeFile(join(this.sessionDir, filename), `${JSON.stringify(header)}\n${JSON.stringify(info)}\n`, 'utf8')
+  }
+
+  private ensureHydrated(): Promise<void> {
+    return this.hydration ??= this.hydrate()
+  }
+
+  private async hydrate(): Promise<void> {
+    await mkdir(this.sessionDir, { recursive: true })
+    const names = await readdir(this.sessionDir)
+    for (const name of names) {
+      if (!name.endsWith('.jsonl')) continue
+      const entries = await readJsonl(join(this.sessionDir, name))
+      const header = entries[0]
+      const id = typeof header?.id === 'string' ? header.id : undefined
+      const filenameMatchesId = id
+        ? name === `${id}.jsonl` || name.endsWith(`_${id}.jsonl`)
+        : false
+      if (header?.type !== 'session' || !id || id.length > MAX_SESSION_ID_LENGTH || !SAFE_NATIVE_SESSION_ID.test(id) || !filenameMatchesId || this.records.has(id)) continue
+      const infos = entries.filter((entry) => entry.type === 'session_info')
+      const latestInfo = infos.at(-1)
+      const timestamps = entries.map((entry) => entry.timestamp).filter((value): value is string => typeof value === 'string')
+      const createdAt = typeof header?.timestamp === 'string' ? header.timestamp : DEFAULT_TIME
+      const boringSessionCtx = header.boringSessionCtx && typeof header.boringSessionCtx === 'object'
+        ? header.boringSessionCtx as Record<string, unknown>
+        : undefined
+      if (!boringSessionCtx || typeof boringSessionCtx.workspaceId !== 'string' || !boringSessionCtx.workspaceId.trim()) continue
+      this.records.set(id, {
+        id,
+        title: typeof latestInfo?.name === 'string' ? latestInfo.name : 'Scripted baseline',
+        createdAt,
+        updatedAt: timestamps.sort().at(-1) ?? createdAt,
+        turnCount: entries.filter((entry) => entry.type === 'message' && (entry.message as { role?: unknown } | undefined)?.role === 'user').length,
+        nativeSessionId: id,
+        hasAssistantReply: entries.some((entry) => entry.type === 'message' && (entry.message as { role?: unknown } | undefined)?.role === 'assistant'),
+        workspaceId: boringSessionCtx.workspaceId,
+      })
+    }
+    this.createCount = 0
+  }
+
+  private takeNextSessionId(): string {
+    for (;;) {
+      if (!Number.isSafeInteger(this.createCount) || this.createCount < 0) {
+        throw new Error('scripted session id space exhausted')
+      }
+      const id = this.createCount === 0 ? DEFAULT_SESSION_ID : `scripted-${this.createCount}`
+      this.createCount += 1
+      if (id.length > MAX_SESSION_ID_LENGTH) throw new Error('scripted session id space exhausted')
+      if (!this.records.has(id)) return id
+    }
+  }
+
+  private belongsTo(record: ScriptedSessionRecord, ctx: SessionCtx): boolean {
+    return record.workspaceId === ctx.workspaceId
+  }
+
+  private assertVisible(record: ScriptedSessionRecord, ctx: SessionCtx, sessionId: string): void {
+    if (!this.belongsTo(record, ctx)) throw new Error(`Session not found: ${sessionId}`)
+  }
+
+  private async sessionFilePath(sessionId: string): Promise<string> {
+    const names = await readdir(this.sessionDir)
+    const match = names.find((name) => name === `${sessionId}.jsonl` || name.endsWith(`_${sessionId}.jsonl`))
+    if (!match) throw new Error(`Session not found: ${sessionId}`)
+    return join(this.sessionDir, match)
   }
 
   private async appendSessionInfo(record: ScriptedSessionRecord): Promise<void> {
     await mkdir(this.sessionDir, { recursive: true })
-    await appendFile(join(this.sessionDir, `${record.id}.jsonl`), `${JSON.stringify(this.sessionInfo(record, record.updatedAt))}\n`, 'utf8')
+    await appendFile(await this.sessionFilePath(record.id), `${JSON.stringify(this.sessionInfo(record, record.updatedAt))}\n`, 'utf8')
   }
 
   private sessionInfo(record: ScriptedSessionRecord, timestamp: string): Record<string, unknown> {
@@ -204,9 +331,33 @@ class ScriptedSessionStore implements SessionStore {
       createdAt: DEFAULT_TIME,
       updatedAt: DEFAULT_TIME,
       turnCount: 0,
+      nativeSessionId: id,
+      hasAssistantReply: false,
       workspaceId,
     }
   }
+}
+
+async function readJsonl(file: string): Promise<Array<Record<string, unknown>>> {
+  let text: string
+  try {
+    text = await readFile(file, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
+  }
+  const entries: Array<Record<string, unknown>> = []
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue
+    try {
+      const parsed = JSON.parse(line) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) entries.push(parsed as Record<string, unknown>)
+    } catch {
+      // Retain the valid prefix only; an incomplete final append is invisible.
+      break
+    }
+  }
+  return entries
 }
 
 function sessionBaseDir(explicitRoot?: string): string {
@@ -224,7 +375,7 @@ function defaultSessionDir(cwd: string, explicitRoot?: string): string {
 
 class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
   private readonly subscribers = new Set<(event: AgentSessionEvent) => void>()
-  private readonly messages: ScriptedMessage[] = []
+  private readonly messages: ScriptedMessage[]
   private readonly followUps: ScriptedFollowUp[] = []
   private streaming = false
   private turn = 0
@@ -235,8 +386,12 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     private readonly tickMs: number,
     private readonly toolDelayTicks: number,
     private readonly reasoningPartCount: number,
-    private readonly appendMessage: (message: ScriptedMessage) => void,
-  ) {}
+    initialMessages: ScriptedMessage[],
+    private readonly persistMessages: (messages: readonly ScriptedMessage[]) => Promise<void>,
+  ) {
+    this.messages = [...initialMessages]
+    this.turn = this.messages.filter((message) => message.role === 'user').length
+  }
 
   readSnapshot(): PiAgentSessionSnapshot {
     return {
@@ -362,7 +517,6 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     this.emit({ type: 'agent_start', turnId })
     if (!(await this.tick(run))) return
     this.messages.push(userMessage)
-    this.appendMessage(userMessage)
     this.emit({ type: 'message_start', message: userMessage })
     if (followUp) this.emit({ type: 'queue_update', followUp: this.followUpTexts() })
     if (!(await this.tick(run))) return
@@ -404,7 +558,6 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     toolPart.state = 'output-available'
     Object.assign(toolPart, { output: toolOutput })
     this.messages.push(toolResult)
-    this.appendMessage(toolResult)
     this.emit({ type: 'tool_execution_end', toolCallId, result: toolResult })
     if (!(await this.tick(run))) return
     const textPart = { type: 'text', text: finalText }
@@ -414,7 +567,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     if (!(await this.tick(run))) return
     this.emit({ type: 'message_update', assistantMessageEvent: { type: 'text_end', contentIndex: textContentIndex, content: finalText, partial: { id: assistantId } } })
     if (!(await this.tick(run))) return
-    this.appendMessage(assistantMessage)
+    await this.persistMessages(this.messages)
     this.emit({ type: 'message_end', message: assistantMessage })
     if (!(await this.tick(run))) return
     if (this.activeRun !== run || run.cancelled) return
@@ -478,5 +631,7 @@ function toSummary(record: ScriptedSessionRecord): SessionSummary {
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     turnCount: record.turnCount,
+    nativeSessionId: record.nativeSessionId ?? record.id,
+    hasAssistantReply: record.hasAssistantReply === true,
   }
 }

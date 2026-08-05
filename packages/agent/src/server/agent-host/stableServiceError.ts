@@ -1,4 +1,5 @@
 import { ErrorCode } from '../../shared/error-codes'
+import type { AgentRequestFailure } from './types'
 
 export interface StableServiceErrorProjection {
   readonly statusCode: number
@@ -10,6 +11,12 @@ export interface StableServiceErrorProjection {
 }
 
 /** Preserve only explicitly stable service errors at read/pre-mutation HTTP boundaries. */
+export function stableServiceActionFailure(error: unknown): AgentRequestFailure | undefined {
+  const projected = projectStableServiceError(error)
+  if (!projected) return undefined
+  return { kind: 'service', error: projected }
+}
+
 export function projectStableServiceError(error: unknown): StableServiceErrorProjection | undefined {
   if (!(error instanceof Error)) return undefined
   const candidate = error as Error & { code?: unknown; statusCode?: unknown; retryable?: unknown }

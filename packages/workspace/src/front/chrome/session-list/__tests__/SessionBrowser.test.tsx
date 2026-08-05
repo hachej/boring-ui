@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { act, render, fireEvent, screen } from "@testing-library/react"
+import { act, render, fireEvent, screen, waitFor } from "@testing-library/react"
 import { useEffect } from "react"
 import { SessionBrowser } from "../SessionBrowser"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
@@ -306,6 +306,22 @@ describe("SessionBrowser", () => {
       }))
     })
     expect(document.querySelector('[data-boring-badge="working"]')).toBeNull()
+  })
+
+  it("requests current working state when mounted after a chat panel", async () => {
+    const onRequest = () => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+      detail: { sessionId: "s2", working: true },
+    }))
+    window.addEventListener("boring:chat-session-status-request", onRequest)
+
+    try {
+      render(<SessionBrowser sessions={sample} activeId="s1" />)
+
+      await waitFor(() => expect(document.querySelector('[data-boring-badge="working"]')?.closest("li"))
+        .toHaveTextContent("Second session"))
+    } finally {
+      window.removeEventListener("boring:chat-session-status-request", onRequest)
+    }
   })
 
   it("shows a needs-input badge for older waiting-for-input blockers", () => {

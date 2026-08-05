@@ -214,14 +214,16 @@
         "plugins/tasks",
         "plugins/github-pr-tracker",
         "plugins/ccusage-dashboard",
-        "E2E/smoke fixtures"
+        "E2E/smoke fixtures",
+        "Workspace session activity stream"
       ],
       "proof": [
         "Gateway conformance",
         "addressed session HTTP tests",
         "front URL tests",
         "full-app/playground E2E",
-        "duplicate queue-clear alias absent after contraction"
+        "duplicate queue-clear alias absent after contraction",
+        "workspace-scoped activity SSE snapshot/transition tests"
       ],
       "contract": {
         "request": "Preserve current validated request contract for sessions except explicitly documented addressed agent/session parameters and required requestId fields.",
@@ -262,7 +264,8 @@
         "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/followup",
         "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/queue/clear",
         "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/interrupt",
-        "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/stop"
+        "POST /api/v1/agents/:agentTypeId/sessions/:sessionId/stop",
+        "GET /api/v1/agents/session-activity/events"
       ],
       "disposition": "replace",
       "slice": 2

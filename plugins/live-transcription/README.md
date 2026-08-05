@@ -7,8 +7,8 @@ WhisperLiveKit CPU `tiny` service documented in
 
 V0 provides a microphone button in the composer for short in-memory dictation;
 stopping inserts the returned French text into the editable draft. The same
-composer control shows `Short` or `Live` with a red recording dot and elapsed
-time, and can stop either recording. Live mode streams microphone PCM to the
+short-dictation control collapses to a recording icon while capturing and can
+stop the recording. Live mode streams microphone PCM to the
 loopback service and writes only a Markdown transcript. It intentionally does
 not retain audio. Anonymous `Speaker N`
 labels and French text may be inaccurate. While capture is active, the live

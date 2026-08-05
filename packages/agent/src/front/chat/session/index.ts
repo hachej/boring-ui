@@ -2,10 +2,9 @@ export {
   activeSessionStorageKey,
   readActiveSessionId,
   writeActiveSessionId,
-  clearActiveSessionId,
   type ActiveSessionStorageLike,
   type ActiveSessionStorageOptions,
-} from './activeSessionStorage'
+} from './sessionSelectionStorage'
 export { usePiSessions, type UsePiSessionsOptions, type UsePiSessionsResult, type PiSessionCreateInit, type PiSessionRefreshOptions } from './usePiSessions'
 export { SessionList, SessionBrowser, type SessionListProps } from './SessionList'
 export {

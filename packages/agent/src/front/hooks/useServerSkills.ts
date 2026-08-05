@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { agentResourceUrl, withStorageScope } from '../agentHttp'
 import type { CommandRegistry } from '../slashCommands/registry'
 
 export function useServerSkills({
@@ -33,7 +34,7 @@ export function useServerSkills({
     const resourcePath = `/api/v1/agents/${encodeURIComponent(agentTypeId)}/skills`
     const path = refreshKey ? `${resourcePath}?refresh=1` : resourcePath
     nextFetch(agentResourceUrl(apiBaseUrl, path), {
-      headers: scopedHeaders(requestHeaders, storageScope),
+      headers: withStorageScope(requestHeaders, storageScope),
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((payload: { skills?: Array<{ name: string; description: string }> } | null) => {
@@ -52,17 +53,4 @@ export function useServerSkills({
   }, [agentTypeId, apiBaseUrl, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
 
   return skillsStamp
-}
-
-function agentResourceUrl(apiBaseUrl: string | undefined, path: string): string {
-  const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-  return `${base}${path}`
-}
-
-function scopedHeaders(headers: Record<string, string> | undefined, storageScope: string | undefined): Record<string, string> | undefined {
-  if (!headers && !storageScope) return undefined
-  const result: Record<string, string> = { ...(headers ?? {}) }
-  const hasStorageScope = Object.keys(result).some((key) => key.toLowerCase() === 'x-boring-storage-scope')
-  if (storageScope && !hasStorageScope) result['x-boring-storage-scope'] = storageScope
-  return result
 }

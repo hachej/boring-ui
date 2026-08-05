@@ -6,6 +6,7 @@ import type { SessionSummary } from '../../../shared/session'
 import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
 import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSession'
 import { activeSessionStorageKey, scopedComposerStorageKey, type ActiveSessionStorageLike } from '../session'
+import { bootResumeSessionStorageKey } from '../session/sessionSelectionStorage'
 import { ComposerContributionProvider } from '../composerContributions'
 import { PiChatPanel as AddressedPiChatPanel, type PiChatPanelProps } from '../PiChatPanel'
 import type { ComposerBlocker } from '../components/ChatNotices'
@@ -392,6 +393,26 @@ describe('PiChatPanel sandbox shell', () => {
     expect(statusEvents.at(-1)).toEqual({ sessionId: 'pi-1', agentTypeId: 'default', working: true })
   })
 
+  test('replays current working state when shell chrome mounts after the panel', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    const statusEvents: Array<{ sessionId?: string; agentTypeId?: string; working?: boolean }> = []
+    const onStatus = (event: Event) => statusEvents.push((event as CustomEvent).detail ?? {})
+    window.addEventListener('boring:chat-session-status', onStatus)
+    const { unmount } = render(<PiChatPanel serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
+
+    await screen.findByText('committed from /state')
+    act(() => remote.setState({ ...remote.state, status: 'streaming' }))
+    await screen.findByTestId('chat-working')
+    statusEvents.length = 0
+
+    act(() => window.dispatchEvent(new Event('boring:chat-session-status-request')))
+
+    expect(statusEvents).toEqual([{ sessionId: 'pi-1', agentTypeId: 'default', working: true }])
+    unmount()
+    window.removeEventListener('boring:chat-session-status', onStatus)
+  })
+
   test('includes the addressed Agent owner in session working badge signals', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
@@ -552,10 +573,19 @@ describe('PiChatPanel sandbox shell', () => {
       throw new Error(`unexpected fetch ${url}`)
     })
 
+    window.sessionStorage.setItem(bootResumeSessionStorageKey({
+      apiBaseUrl: '',
+      sessionsApiPath: '/api/v1/agents/default/sessions',
+      agentTypeId: 'default',
+      storageScope: 'scope-a',
+    }), 'pi-empty-owned-by-this-tab')
     render(<PiChatPanel storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} />)
 
     const createCalls = () => fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agents/default/sessions') && call[1]?.method === 'POST')
     await waitFor(() => expect(createCalls()).toHaveLength(1))
+    expect(JSON.parse(String(createCalls()[0]?.[1]?.body))).toMatchObject({
+      resumeSessionId: 'pi-empty-owned-by-this-tab',
+    })
 
     await act(async () => {
       modelsResponse.resolve(jsonResponse({ models: [] }))
@@ -640,7 +670,9 @@ describe('PiChatPanel sandbox shell', () => {
       />,
     )
 
-    expect(screen.getByText(/Loading chat history/)).toBeTruthy()
+    expect(screen.getByRole('status', { name: 'Loading chat history' }).getAttribute('aria-busy')).toBe('true')
+    expect(document.querySelector('[data-boring-agent-part="chat-history-loading"]')).toBeTruthy()
+    expect(screen.queryByText(/Loading chat history/)).toBeNull()
     expect(screen.queryByText('What should we work on?')).toBeNull()
   })
 
@@ -705,7 +737,9 @@ describe('PiChatPanel sandbox shell', () => {
       />,
     )
 
-    expect(await screen.findByText(/Loading chat history/)).toBeTruthy()
+    expect((await screen.findByRole('status', { name: 'Loading chat history' })).getAttribute('aria-busy')).toBe('true')
+    expect(document.querySelector('[data-boring-agent-part="chat-history-loading"]')).toBeTruthy()
+    expect(screen.queryByText(/Loading chat history/)).toBeNull()
     expect(screen.queryByText('What should we work on?')).toBeNull()
   })
 
@@ -847,6 +881,8 @@ describe('PiChatPanel sandbox shell', () => {
     expect(attachmentRow).toBeTruthy()
     expect(inputRow).toBeTruthy()
     expect(inputRow?.contains(attachmentRow)).toBe(false)
+    expect(within(attachmentRow as HTMLElement).getByRole('button', { name: 'Remove' }).className)
+      .toContain('composer-attachment-remove')
   })
 
   test('renders server queued follow-ups only in the composer banner', async () => {
@@ -1088,10 +1124,16 @@ describe('PiChatPanel sandbox shell', () => {
     )
 
     const textarea = await screen.findByLabelText('Agent prompt')
-    expect(screen.getByRole('button', { name: /Current model:/ }).textContent).toContain('Model ·')
-    expect(screen.getByRole('button', { name: 'Thinking level: Med' }).textContent).toContain('Thinking ·')
-    expect(screen.getByRole('button', { name: 'Attach files' }).className).toContain('!h-10')
-    expect(document.querySelector('[data-boring-agent-part="composer-submit"]')?.className).toContain('h-8')
+    const modelControl = screen.getByRole('button', { name: /Current model:/ })
+    const thinkingControl = screen.getByRole('button', { name: 'Thinking level: Med' })
+    const attachControl = screen.getByRole('button', { name: 'Attach files' })
+    const submitControl = document.querySelector('[data-boring-agent-part="composer-submit"]')
+    expect(modelControl.textContent).toContain('Model ·')
+    expect(modelControl.className).toContain('composer-settings-trigger')
+    expect(thinkingControl.textContent).toContain('Thinking ·')
+    expect(thinkingControl.className).toContain('composer-settings-trigger')
+    expect(attachControl.className).toContain('composer-attachment-button')
+    expect(submitControl?.className).toContain('composer-submit-control')
 
     fireEvent.change(textarea, { target: { value: '/mod' } })
     let commands = await screen.findByRole('listbox', { name: 'Commands' })
@@ -1635,7 +1677,7 @@ describe('PiChatPanel sandbox shell', () => {
     await screen.findByText('answer')
     expect(document.querySelectorAll('[data-boring-agent-part="message-reasoning"]')).toHaveLength(1)
     const reasoning = document.querySelector('[data-boring-agent-part="message-reasoning"]')
-    expect(reasoning?.querySelector('button')?.textContent).toMatch(/thoughts/i)
+    expect(reasoning?.querySelector('button')?.textContent).toMatch(/reasoning/i)
     expect(reasoning?.getAttribute('data-state')).toBe('closed')
 
     fireEvent.click(reasoning!.querySelector('button')!)

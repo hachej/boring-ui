@@ -1,9 +1,11 @@
 import { useEffect } from "react"
-import { act, fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
 import { workspaceSessionKey } from "../../../sessionIdentity"
-import { AppLeftPane } from "../AppLeftPane"
+import { AppLeftPane, AppLeftRail } from "../AppLeftPane"
+import { PluginTabsWorkspaceShell } from "../PluginTabsWorkspaceShell"
 
 const sessions = [
   { id: "s1", title: "First session" },
@@ -30,6 +32,107 @@ function renderPane() {
 }
 
 describe("AppLeftPane", () => {
+  it("places New chat at the top of Chats before the scrolling session list", () => {
+    renderPane()
+
+    const appNav = screen.getByLabelText("App navigation")
+    const workspaceHeading = within(appNav).getByRole("heading", { name: "Workspace" })
+    const chatsHeading = within(appNav).getByRole("heading", { name: "Chats" })
+    const sessionScroll = appNav.querySelector('[data-boring-workspace-part="app-left-session-scroll"]')
+    const newChat = appNav.querySelector('[data-boring-workspace-part="app-left-new-chat"]')
+
+    expect(workspaceHeading.compareDocumentPosition(chatsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(chatsHeading.compareDocumentPosition(newChat as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect((newChat as Node).compareDocumentPosition(sessionScroll as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(sessionScroll).toContainElement(screen.getByText("First session"))
+    expect(sessionScroll).not.toContainElement(screen.getByRole("button", { name: "New chat" }))
+    expect(newChat).toContainElement(screen.getByRole("button", { name: "New chat" }))
+  })
+
+  it("renders icon-only collapsed shortcuts with accessible labels", () => {
+    const onCreateSession = vi.fn()
+    const onOpenCommandPalette = vi.fn()
+    const onOpenTasks = vi.fn()
+    render(
+      <AppLeftRail
+        actions={[
+          { id: "tasks", label: "Tasks", icon: <span>T</span>, onClick: onOpenTasks, active: true },
+          { id: "inbox", label: "Inbox", icon: null, trailing: "3", onClick: vi.fn() },
+        ]}
+        onCreateSession={onCreateSession}
+        onOpenCommandPalette={onOpenCommandPalette}
+      />,
+    )
+
+    const rail = screen.getByLabelText("Collapsed app navigation")
+    fireEvent.click(within(rail).getByRole("button", { name: "Search" }))
+    fireEvent.click(within(rail).getByRole("button", { name: "Tasks" }))
+    fireEvent.click(within(rail).getByRole("button", { name: "New chat" }))
+
+    expect(onOpenCommandPalette).toHaveBeenCalledOnce()
+    expect(onOpenTasks).toHaveBeenCalledOnce()
+    expect(onCreateSession).toHaveBeenCalledOnce()
+    expect(within(rail).getByRole("button", { name: "Tasks" })).toHaveAttribute("aria-current", "page")
+    expect(within(rail).getByRole("button", { name: "Inbox" }).querySelector("svg")).toBeInTheDocument()
+    expect(within(rail).getByText("3")).toBeInTheDocument()
+    expect(within(rail).queryByText("Search")).not.toBeInTheDocument()
+    expect(within(rail).queryByText("New chat")).not.toBeInTheDocument()
+  })
+
+  it("keeps mobile drawer controls open for multi-step interactions", () => {
+    const originalWidth = window.innerWidth
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 500 })
+    const onProjectExpand = vi.fn()
+    render(
+      <PluginTabsWorkspaceShell
+        collapsed={false}
+        mobileShellEnabled
+        leftPane={(
+          <aside data-boring-workspace-part="app-left-pane" style={{ width: 420, minWidth: 420, maxWidth: 420 }}>
+            <button type="button" onClick={onProjectExpand}>Expand project</button>
+            <button type="button" data-boring-mobile-dismiss="true">Open chat</button>
+          </aside>
+        )}
+        collapsedRail={<div>Rail</div>}
+        onExpand={vi.fn()}
+        onCollapse={vi.fn()}
+      >
+        <div>Content</div>
+      </PluginTabsWorkspaceShell>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Open app navigation" }))
+    const overlay = document.querySelector('[data-boring-workspace-part="app-left-mobile-overlay"]')
+    expect(overlay).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Expand project" }))
+    expect(onProjectExpand).toHaveBeenCalledOnce()
+    expect(overlay).toBeInTheDocument()
+    expect(overlay).toHaveClass("[&>[data-boring-workspace-part=app-left-pane]]:!w-full")
+    fireEvent.click(screen.getByRole("button", { name: "Open chat" }))
+    expect(document.querySelector('[data-boring-workspace-part="app-left-mobile-overlay"]')).not.toBeInTheDocument()
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth })
+  })
+
+  it("distinguishes a loading chat list from an empty one", () => {
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          sessions={[]}
+          sessionsLoading
+          onCreateSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.getByText("Loading chats…")).toBeInTheDocument()
+    expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+  })
+
   it("shows working state beside session names", () => {
     renderPane()
 
@@ -42,6 +145,53 @@ describe("AppLeftPane", () => {
     const badge = document.querySelector('[data-boring-badge="working"]')
     expect(badge).toBeInTheDocument()
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
+  })
+
+  it("requests current working state when the session list mounts after the chat panel", async () => {
+    const onRequest = () => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+      detail: { sessionId: "s2", working: true },
+    }))
+    window.addEventListener("boring:chat-session-status-request", onRequest)
+
+    try {
+      renderPane()
+
+      await waitFor(() => expect(document.querySelector('[data-boring-badge="working"]')
+        ?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session"))
+    } finally {
+      window.removeEventListener("boring:chat-session-status-request", onRequest)
+    }
+  })
+
+  it("clears optimistic working state from an authoritative idle session refresh", async () => {
+    const props = {
+      appTitle: "Test",
+      activeSessionId: "s1",
+      openSessionIds: ["s1"],
+      pinnedSessionIds: [],
+      onCreateSession: vi.fn(),
+      onOpenCommandPalette: vi.fn(),
+      onSwitchSession: vi.fn(),
+      onOpenSessionAsPane: vi.fn(),
+      onToggleSessionPinned: vi.fn(),
+    }
+    const { rerender } = render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...props} sessions={sessions} />
+      </WorkspaceAttentionProvider>,
+    )
+    act(() => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+      detail: { sessionId: "s2", working: true },
+    })))
+    expect(document.querySelector('[data-boring-badge="working"]')).toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...props} sessions={sessions.map((session) => ({ ...session, status: "idle" as const }))} />
+      </WorkspaceAttentionProvider>,
+    )
+
+    await waitFor(() => expect(document.querySelector('[data-boring-badge="working"]')).toBeNull())
   })
 
   it("shows a hover action for creating a quick popover chat", () => {
@@ -169,11 +319,12 @@ describe("AppLeftPane", () => {
 
     const badge = document.querySelector('[data-boring-badge="working"]')
     expect(badge).toBeInTheDocument()
-    fireEvent.click(badge?.closest('[data-boring-workspace-part="app-session-row"]') as Element)
+    fireEvent.click(badge as Element)
     expect(onSwitchSession).toHaveBeenCalledWith("s2")
   })
 
-  it("keeps structured addressed refs distinct from a colliding raw legacy id", () => {
+  it("keeps structured addressed refs distinct from a colliding raw legacy id", async () => {
+    const user = userEvent.setup()
     const addressedKey = workspaceSessionKey("shared", "alpha")
     const onSwitchSession = vi.fn()
     const onToggleSessionPinned = vi.fn()
@@ -201,7 +352,8 @@ describe("AppLeftPane", () => {
     expect(screen.getByText("Legacy collision").closest('[data-boring-workspace-part="app-session-row"]')).toHaveAttribute("data-boring-session-state", "open")
     fireEvent.click(screen.getByText("Addressed session"))
     fireEvent.click(screen.getByText("Legacy collision"))
-    fireEvent.click(screen.getByRole("button", { name: "Unpin Addressed session" }))
+    await user.click(screen.getByRole("button", { name: "Chat actions for Addressed session" }))
+    await user.click(screen.getByRole("menuitem", { name: "Unpin chat" }))
     expect(onSwitchSession).toHaveBeenNthCalledWith(1, "shared", "alpha")
     expect(onSwitchSession).toHaveBeenNthCalledWith(2, addressedKey)
     expect(onToggleSessionPinned).toHaveBeenCalledWith("shared", "alpha")
