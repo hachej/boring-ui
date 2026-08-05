@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { ErrorCode } from '../../../shared/error-codes'
 import { createEmbeddedGatewayFixture } from './embeddedGatewayFixture'
 
 describe('EmbeddedAgentGateway safe action failures', () => {
@@ -12,7 +13,7 @@ describe('EmbeddedAgentGateway safe action failures', () => {
     })
     const connection = await fixture.gateway.connectSession({ scope, ref })
     fixture.rejectNextPrompt(Object.assign(new Error('Top up credits to continue.'), {
-      code: 'PAYMENT_REQUIRED',
+      code: ErrorCode.enum.PAYMENT_REQUIRED,
       statusCode: 402,
     }))
     const command = {
@@ -23,12 +24,12 @@ describe('EmbeddedAgentGateway safe action failures', () => {
     }
 
     await expect(connection.send(command)).rejects.toMatchObject({
-      code: 'PAYMENT_REQUIRED',
+      code: ErrorCode.enum.PAYMENT_REQUIRED,
       statusCode: 402,
       message: 'Top up credits to continue.',
     })
     await expect(connection.send(command)).rejects.toMatchObject({
-      code: 'PAYMENT_REQUIRED',
+      code: ErrorCode.enum.PAYMENT_REQUIRED,
       statusCode: 402,
     })
     expect(fixture.modelLoopStarts(ref)).toBe(0)
