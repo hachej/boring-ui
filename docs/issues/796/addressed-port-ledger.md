@@ -104,8 +104,9 @@ Base: PR #1044 (`fix/775-post-agenthost-cutover`). Every source path has exactly
 - `packages/workspace/src/front/plugin/useWorkspacePluginClient.ts` — canonical delete rollback support for failed task binding.
 - `packages/agent/src/server/__tests__/sessionRunDetails.test.ts` — projection privacy proof.
 - `plugins/tasks/src/server/taskSessionRoutes.ts` — extracted addressed route boundary; keeps authorization, body validation, Handover projection, and workspace-scoped link-store access out of plugin composition.
-- `plugins/tasks/src/server/taskSessionLinkStore.ts` — one writer queue per live Workspace prevents concurrent route/tool instances from losing durable links.
-- `plugins/tasks/src/front/TaskSessionDisclosure.tsx` — source-version fencing drops stale task/session/activity/Handover responses after ownership changes; canonical UI-kit menus replace bespoke document listeners.
+- `plugins/tasks/src/server/taskSessionLinkStore.ts` — lease-local Workspace proxies share one capability-free writer queue by stable root identity, preventing concurrent route/tool instances from losing durable links.
+- `plugins/tasks/src/server/taskSessionLinkEvents.ts` and `plugins/tasks/src/front/taskSessionLinkStream.ts` — one Workspace-scoped SSE projects an authoritative redacted count snapshot plus durable link/unlink changes; exact session IDs remain behind the authorized expanded-task route.
+- `plugins/tasks/src/front/TaskSessionDisclosure.tsx` — stream-owned counts render without expansion; source-version fencing drops stale task/session/activity/Handover responses after ownership changes; canonical UI-kit menus replace bespoke document listeners.
 - `plugins/ask-user/src/front/inbox/RelatedTaskList.tsx` — one shared related-task renderer replaces duplicate Inbox/detail implementations.
 - Human Intention chat and task-attention joins fail closed unless both exact Agent owner and session ID are present; no runtime/default-Agent fallback remains.
 - Unused Handover snapshot/current-list APIs were removed; the port exposes only the operation reducer and terminal projection actually consumed by the addressed architecture.

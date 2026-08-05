@@ -4,12 +4,13 @@ import { FileTaskSessionLinkStore, TaskSessionLinkStoreError, taskSessionLinkSto
 
 class MemoryWorkspace implements TaskSessionLinkWorkspace {
   readonly root = "/workspace"
-  readonly files = new Map<string, string>()
   readonly writes: string[] = []
   readonly unlinks: string[] = []
   reads = 0
   readError?: Error
   failRename = false
+
+  constructor(readonly files = new Map<string, string>()) {}
 
   async readFile(path: string) {
     this.reads += 1
@@ -71,17 +72,36 @@ describe("FileTaskSessionLinkStore", () => {
     expect(grouped.get("missing")).toEqual([])
   })
 
-  it("reuses one workspace writer queue and serializes concurrent writes without losing links", async () => {
+  it("builds one deterministic redacted count snapshot with one store read", async () => {
     const workspace = new MemoryWorkspace()
-    const store = taskSessionLinkStoreForWorkspace(workspace)
-    expect(taskSessionLinkStoreForWorkspace(workspace)).toBe(store)
-    await Promise.all(Array.from({ length: 12 }, (_, index) => store.link({
+    const store = new FileTaskSessionLinkStore(workspace)
+    await store.link({ agentTypeId: "alpha", adapterId: "zeta", taskId: "2", sessionId: "native-a" })
+    await store.link({ agentTypeId: "alpha", adapterId: "alpha", taskId: "9", sessionId: "native-b" })
+    await store.link({ agentTypeId: "alpha", adapterId: "alpha", taskId: "9", sessionId: "native-c" })
+    workspace.reads = 0
+
+    const snapshot = await store.snapshotCounts()
+
+    expect(workspace.reads).toBe(1)
+    expect(snapshot).toEqual([
+      { adapterId: "alpha", taskId: "9", count: 2 },
+      { adapterId: "zeta", taskId: "2", count: 1 },
+    ])
+    expect(JSON.stringify(snapshot)).not.toContain("native-")
+  })
+
+  it("shares one writer queue across lease-local Workspace wrappers with the same stable root", async () => {
+    const firstWorkspace = new MemoryWorkspace()
+    const secondWorkspace = new MemoryWorkspace(firstWorkspace.files)
+    const stores = [taskSessionLinkStoreForWorkspace(firstWorkspace), taskSessionLinkStoreForWorkspace(secondWorkspace)]
+    expect(stores[0]).not.toBe(stores[1])
+    await Promise.all(Array.from({ length: 12 }, (_, index) => stores[index % stores.length]!.link({
       adapterId: "github",
       taskId: "776",
       agentTypeId: "alpha",
       sessionId: `native-${index}`,
     })))
-    expect(await store.list("github", "776")).toHaveLength(12)
+    expect(await stores[0]!.list("github", "776")).toHaveLength(12)
   })
 
   it("unlinks stale bindings without consulting a session", async () => {

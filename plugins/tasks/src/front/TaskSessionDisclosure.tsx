@@ -4,8 +4,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { HumanArtifactList, emitWorkspaceTaskProvenanceChanged, openHumanArtifact, type WorkspacePluginClient } from "@hachej/boring-workspace"
 import type { WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard, BoringTaskSessionLink, SessionHandoverResolution, SessionHandoverSummary } from "../shared"
-
-export const TASK_SESSION_LINKS_CHANGED_EVENT = "boring-tasks:session-links-changed"
+import { TASK_SESSION_LINKS_CHANGED_EVENT } from "./taskSessionLinkStream"
 
 export interface TaskSessionActivity {
   sessionId: string
@@ -77,10 +76,12 @@ export function TaskSessionDisclosure({
   task,
   shell,
   pluginClient,
+  sessionLinkCount,
 }: {
   task: BoringTaskCard
   shell: WorkspaceShellCapabilities
   pluginClient: Pick<WorkspacePluginClient, "getJson" | "postJson">
+  sessionLinkCount?: number
 }) {
   const [expanded, setExpanded] = useState(false)
   const [links, setLinks] = useState<TaskSessionLinkDisclosure[] | null>(null)
@@ -90,6 +91,7 @@ export function TaskSessionDisclosure({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const eventOrigin = useRef({})
+  const refreshedCount = useRef<number | undefined>(undefined)
   const sourceKey = JSON.stringify([task.adapterId, task.id])
   const requestScope = useRef({ sourceKey, version: 0 })
   if (requestScope.current.sourceKey !== sourceKey) requestScope.current = { sourceKey, version: requestScope.current.version + 1 }
@@ -177,8 +179,8 @@ export function TaskSessionDisclosure({
   useEffect(() => {
     const onLinksChanged = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail as { adapterId?: unknown; taskId?: unknown; origin?: unknown } | undefined
-      if (detail?.origin === eventOrigin.current || detail?.adapterId !== task.adapterId || detail.taskId !== task.id) return
-      void refresh(expanded)
+      if (!expanded || detail?.origin === eventOrigin.current || detail?.adapterId !== task.adapterId || detail.taskId !== task.id) return
+      void refresh(true)
     }
     window.addEventListener(TASK_SESSION_LINKS_CHANGED_EVENT, onLinksChanged)
     return () => window.removeEventListener(TASK_SESSION_LINKS_CHANGED_EVENT, onLinksChanged)
@@ -189,11 +191,28 @@ export function TaskSessionDisclosure({
     [activity, links],
   )
 
+  useEffect(() => {
+    if (!expanded || links === null || sessionLinkCount === undefined || links.length === sessionLinkCount) {
+      refreshedCount.current = undefined
+      return
+    }
+    if (refreshedCount.current === sessionLinkCount) return
+    refreshedCount.current = sessionLinkCount
+    void refresh(true)
+  }, [expanded, links, refresh, sessionLinkCount])
+
   const toggle = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation()
     const next = !expanded
     setExpanded(next)
-    if (next) void refresh(true)
+    if (next) {
+      void refresh(true)
+      return
+    }
+    refreshedCount.current = undefined
+    setLinks(null)
+    setActivity({ sessions: [], omittedSessionIds: [] })
+    setHandovers(new Map())
   }
 
   const openPopover = (event: MouseEvent<HTMLButtonElement>, row: TaskSessionRow) => {
@@ -236,7 +255,7 @@ export function TaskSessionDisclosure({
     }
   }
 
-  const count = links?.length
+  const count = links?.length ?? sessionLinkCount
   return (
     <div className="w-full" data-task-session-disclosure="true" onClick={(event) => event.stopPropagation()}>
       <button

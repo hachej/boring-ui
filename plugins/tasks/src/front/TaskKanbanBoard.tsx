@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react"
 import { Columns3, List } from "lucide-react"
+import { useWorkspacePluginClient } from "@hachej/boring-workspace"
 import type { BoringTaskAdapter, BoringTaskBoardConfig, BoringTaskCard, BoringTaskColumn } from "../shared"
 import { groupTasksByColumn } from "./taskBoardModel"
 import { TaskCard } from "./TaskCard"
 import { TaskKanbanColumn } from "./TaskKanbanColumn"
 import { taskAttentionKey, useTaskAttention } from "./useTaskAttention"
+import { taskSessionLinkKey, useTaskSessionLinkCounts } from "./taskSessionLinkStream"
 
 interface TaskKanbanBoardProps {
   adapters: readonly BoringTaskAdapter[]
@@ -25,6 +27,7 @@ interface EpicOption {
 }
 
 const TASK_BOARD_CACHE_TTL_MS = 2 * 60 * 1000
+const EMPTY_TASKS: readonly BoringTaskCard[] = []
 type TaskBoardViewMode = "kanban" | "list"
 
 function adapterSummary(adapters: readonly BoringTaskAdapter[], selectedCount: number): string {
@@ -130,7 +133,9 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const requestSeq = useRef(0)
   const toolbarRef = useRef<HTMLDivElement | null>(null)
   const adaptersById = useMemo(() => new Map(adapters.map((adapter) => [adapter.id, adapter])), [adapters])
-  const attentionByTask = useTaskAttention(state?.tasks ?? [])
+  const pluginClient = useWorkspacePluginClient()
+  const sessionLinkCounts = useTaskSessionLinkCounts(pluginClient)
+  const attentionByTask = useTaskAttention(state?.tasks ?? EMPTY_TASKS)
 
   const setViewMode = (mode: TaskBoardViewMode) => {
     setViewModeState(mode)
@@ -518,6 +523,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                           unmapped={column.unmapped}
                           compact
                           attention={attentionByTask.get(taskAttentionKey(task))}
+                          sessionLinkCount={sessionLinkCounts ? sessionLinkCounts.get(taskSessionLinkKey(task.adapterId, task.id)) ?? 0 : undefined}
                           deleteEnabled={Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
                           onDelete={(task) => void deleteTask(task)}
                           onDragStart={handleTaskDragStart}
@@ -542,7 +548,8 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                 onTaskDragEnd={() => setActiveTaskRef(null)}
                 onTaskDrop={(taskId, adapterId, statusId) => void moveTask(taskId, adapterId, statusId)}
                 onTaskDelete={(task) => void deleteTask(task)}
-              attentionByTask={attentionByTask}
+                attentionByTask={attentionByTask}
+                sessionLinkCounts={sessionLinkCounts}
                 canDragTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.move && adaptersById.get(task.adapterId)?.moveTask)}
                 canDeleteTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
               />
