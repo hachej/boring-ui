@@ -29,16 +29,16 @@
   "before": {
     "files": {
       "issues.jsonl": {
-        "size": 625259,
-        "sha256": "97e6f970a34e976c0c5ef859b7090f0f0d64d879afc5a2cc8ca8a0c5d3cdab23"
+        "size": 626446,
+        "sha256": "7e948c55980448de7b4e5bf9ad5404ef7423e8f165431eb823556594cae03b15"
       },
       "beads.db": {
-        "size": 3276800,
-        "sha256": "27eb5fd03585ddd23373b3dbd0348eeb35fae90130af0718c9b78b702a66bff8"
+        "size": 3284992,
+        "sha256": "149974f63600ce09230ca45c9b068a71391cea992010a30c0422f7267cc36976"
       },
       "beads.db-wal": {
         "size": 32,
-        "sha256": "b14e7d418d84563aced415d39a5a13498c441386c0f6aa5cf0596fc2f2f3d881"
+        "sha256": "c107e7addddc98044fa87b0bc056a47c61128ce3a85f01e441489966d68bc29d"
       },
       "beads.db-shm": {
         "size": 32768,
@@ -65,28 +65,28 @@
     },
     "semantic": {
       "count": 226,
-      "bytes": 1231908,
-      "sha256": "cc4221c82c50571584868af23412518c6885d4ee630a65dc5a0e4cfb2be72006"
+      "bytes": 1234315,
+      "sha256": "c0a93e82b6d92ae41177172b7656033965944a3361c5f4729b808fc38e74e594"
     }
   },
   "after": {
     "semantic": {
       "count": 226,
-      "bytes": 1231908,
-      "sha256": "cc4221c82c50571584868af23412518c6885d4ee630a65dc5a0e4cfb2be72006"
+      "bytes": 1234315,
+      "sha256": "c0a93e82b6d92ae41177172b7656033965944a3361c5f4729b808fc38e74e594"
     },
     "files": {
       "issues.jsonl": {
-        "size": 625259,
-        "sha256": "97e6f970a34e976c0c5ef859b7090f0f0d64d879afc5a2cc8ca8a0c5d3cdab23"
+        "size": 626446,
+        "sha256": "7e948c55980448de7b4e5bf9ad5404ef7423e8f165431eb823556594cae03b15"
       },
       "beads.db": {
-        "size": 3276800,
-        "sha256": "27eb5fd03585ddd23373b3dbd0348eeb35fae90130af0718c9b78b702a66bff8"
+        "size": 3284992,
+        "sha256": "149974f63600ce09230ca45c9b068a71391cea992010a30c0422f7267cc36976"
       },
       "beads.db-wal": {
         "size": 32,
-        "sha256": "b14e7d418d84563aced415d39a5a13498c441386c0f6aa5cf0596fc2f2f3d881"
+        "sha256": "c107e7addddc98044fa87b0bc056a47c61128ce3a85f01e441489966d68bc29d"
       },
       "beads.db-shm": {
         "size": 32768,
