@@ -796,6 +796,53 @@ describe('createAgentHost', () => {
     await duplicateApp.close()
   })
 
+  it('durably replays insufficient-credit rejection instead of reporting an unknown outcome', async () => {
+    const workspaceRoot = await root()
+    const reserveRun = vi.fn(async () => {
+      throw Object.assign(new Error('insufficient credits'), {
+        code: ErrorCode.enum.PAYMENT_REQUIRED,
+        statusCode: 402,
+      })
+    })
+    const created = await createAgentHost({
+      ...options(workspaceRoot),
+      metering: {
+        isEnabled: () => true,
+        reserveRun,
+        recordUsage: vi.fn(async () => ({ billedMicros: 0 })),
+        settleRun: vi.fn(async () => {}),
+        releaseRun: vi.fn(async () => {}),
+      },
+    })
+    const app = Fastify({ logger: false })
+    await app.register(created.registerDirectRoutes({ authorizeAgentRequest: async () => scope }))
+    const createdSession = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions',
+      payload: { requestId: 'create-credit-session' },
+    })
+    const sessionId = createdSession.json<{ sessionId: string }>().sessionId
+    const prompt = {
+      method: 'POST' as const,
+      url: `/api/v1/agents/alpha/sessions/${sessionId}/prompt`,
+      payload: {
+        requestId: 'insufficient-credit-prompt',
+        clientNonce: 'insufficient-credit-nonce',
+        content: 'hello',
+      },
+    }
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await app.inject(prompt)
+      expect(response.statusCode).toBe(402)
+      expect(response.json()).toEqual({
+        error: { code: ErrorCode.enum.PAYMENT_REQUIRED, message: 'insufficient credits' },
+      })
+    }
+    expect(reserveRun).toHaveBeenCalledOnce()
+    await app.close()
+  })
+
   it('preserves safe pre-mutation service errors and canonicalizes post-begin failures on first response and replay', async () => {
     const workspaceRoot = await root()
     const stable = Object.assign(new Error('session catalog is locked'), {

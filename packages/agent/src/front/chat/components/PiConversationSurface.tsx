@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react'
 import type { PromptInputFilePart } from '../../primitives/prompt-input'
-import { Loader2 } from 'lucide-react'
+import { Skeleton } from '@hachej/boring-ui-kit'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useStickToBottomContext } from 'use-stick-to-bottom'
 import type { BoringChatMessage } from '../../../shared/chat'
@@ -106,10 +106,7 @@ export function PiConversationSurface({
         emptyHero && 'py-4 text-center',
       )}>
         {messages.length === 0 && emptyStateHydrating ? (
-          <div className="flex items-center gap-2 rounded-xl border border-border bg-card/70 px-4 py-3 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading chat history…
-          </div>
+          <ConversationHistoryLoadingState />
         ) : null}
         {messages.length === 0 && !emptyStateHydrating ? (
           <ChatEmptyState
@@ -147,6 +144,39 @@ export function PiConversationSurface({
       </ConversationContent>
       <ConversationScrollButton />
     </Conversation>
+  )
+}
+
+function ConversationHistoryLoadingState() {
+  const skeletonClassName = 'motion-reduce:animate-none'
+  return (
+    <div
+      role="status"
+      aria-label="Loading chat history"
+      aria-busy="true"
+      data-boring-agent-part="chat-history-loading"
+      className="flex flex-col gap-7 py-4"
+    >
+      <div aria-hidden="true" className="flex items-start gap-3">
+        <Skeleton className={cn('mt-0.5 size-7 shrink-0 rounded-lg', skeletonClassName)} />
+        <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+          <Skeleton className={cn('h-3 w-24 rounded-sm', skeletonClassName)} />
+          <Skeleton className={cn('h-3 w-full rounded-sm', skeletonClassName)} />
+          <Skeleton className={cn('h-3 w-4/5 rounded-sm', skeletonClassName)} />
+        </div>
+      </div>
+      <div aria-hidden="true" className="flex justify-end">
+        <Skeleton className={cn('h-11 w-[min(72%,30rem)] rounded-xl', skeletonClassName)} />
+      </div>
+      <div aria-hidden="true" className="flex items-start gap-3">
+        <Skeleton className={cn('mt-0.5 size-7 shrink-0 rounded-lg', skeletonClassName)} />
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
+          <Skeleton className={cn('h-3 w-20 rounded-sm', skeletonClassName)} />
+          <Skeleton className={cn('h-20 w-full rounded-lg', skeletonClassName)} />
+          <Skeleton className={cn('h-3 w-3/5 rounded-sm', skeletonClassName)} />
+        </div>
+      </div>
+    </div>
   )
 }
 
