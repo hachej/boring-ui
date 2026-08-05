@@ -22,7 +22,9 @@ epic_branches:
 
 bugfix_lane:
   branch: fix/rolling
-  merge: owner-flush # flip to auto-merge to graduate the lane
+  # Graduating to auto-merge requires amending rolling-small-fixes.md first
+  # ("never auto-merge a rolling batch") — the procedure outranks this flag.
+  merge: owner-flush
 
 trust_ladder:
   # Precedence: class_b_always is evaluated first and overrides any class_a

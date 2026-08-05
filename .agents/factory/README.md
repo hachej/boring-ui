@@ -90,9 +90,14 @@ These rules apply to every seat including the Concierge — its durable state
 lives in beads/notes, never in accumulated session context.
 
 - One bead = one durable session. Identity lives in the seat, not the session.
-- The handoff ritual (`.agents/skills/handoff/`) runs **before** compaction at
-  the policy threshold: notes onto the bead, commit work in progress. After
-  compaction, re-prime by reading `AGENTS.md`, this file, and the bead.
+- The handoff ritual (`.agents/skills/handoff/`, procedure
+  `docs/kanzen/procedures/session-handoff.md`) runs **before** compaction at
+  the policy threshold. Convention: commit work in progress, persist the full
+  contract via the task/session **artifact transport** (reference + revision +
+  SHA-256 digest + read-back receipt), and link it to the current bead — the
+  bead carries the pointer, the artifact carries the contract. Repo files and
+  OS-temp files are drafts, never resumable handoffs. After compaction,
+  re-prime by reading `AGENTS.md`, this file, and the bead.
 - A worker never closes its own bead on its own authority: closure follows the
   review and merge gates. The Beadle flags beads closed without linked proof.
 - Stale leases are broken only by the Beadle, and only when handoff notes exist
