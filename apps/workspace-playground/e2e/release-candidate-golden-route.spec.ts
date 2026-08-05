@@ -18,6 +18,18 @@ test("boots built dist and completes one addressed Alpha send", async ({ page })
   page.on("requestfailed", (request) => {
     console.error(`[rc-browser-requestfailed] ${request.failure()?.errorText ?? "unknown"} ${request.url()}`)
   })
+  page.on("response", async (response) => {
+    if (response.status() < 400) return
+    let body = ""
+    try {
+      body = await response.text()
+    } catch {
+      // The response body may no longer be available after navigation.
+    }
+    console.error(
+      `[rc-browser-response] ${response.status()} ${response.request().method()} ${response.url()} ${body}`,
+    )
+  })
 
   const cssFault = process.env.BORING_RC_BREAK_CSS
   if (cssFault === "small" || cssFault === "mime") {
