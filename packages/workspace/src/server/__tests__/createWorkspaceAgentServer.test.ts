@@ -429,7 +429,10 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
       logger: false,
     })
     try {
-      const res = await app.inject({ method: "GET", url: "/api/v1/agents/default/commands" })
+      const created = await app.inject({ method: "POST", url: "/api/v1/agents/default/sessions", payload: {} })
+      expect(created.statusCode, created.body).toBe(201)
+      const sessionId = created.json().sessionId as string
+      const res = await app.inject({ method: "GET", url: `/api/v1/agents/default/commands?sessionId=${encodeURIComponent(sessionId)}` })
       expect(res.statusCode, res.body).toBe(200)
       const skillCommands = (res.json().commands as Array<{ name: string; source: string }>)
         .filter((command) => command.source === "skill")

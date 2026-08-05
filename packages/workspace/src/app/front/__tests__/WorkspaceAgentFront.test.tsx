@@ -9,15 +9,30 @@ import type { PanelConfig } from "../../../front/registry/types"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
 import {
-  WorkspaceAgentFront as WorkspaceAgentFrontImpl,
+  WorkspaceAgentFront as RawWorkspaceAgentFront,
+  type UseWorkspaceAgentSessions,
   type WorkspaceAgentFrontProps,
   type WorkspaceAgentSession,
+  type WorkspaceAgentSessionsApi,
 } from "../WorkspaceAgentFront"
 
+type AttestedWorkspaceAgentFrontProps<TSession extends WorkspaceAgentSession> =
+  Omit<WorkspaceAgentFrontProps<TSession>, "agentTypeId" | "useSessions"> & {
+    agentTypeId?: string
+    useSessions?: (
+      options: Parameters<UseWorkspaceAgentSessions<TSession>>[0],
+    ) => Omit<WorkspaceAgentSessionsApi<TSession>, "sourceIdentity"> & { sourceIdentity?: string }
+  }
+
+/** Existing custom-hook fixtures consciously attest the source they were invoked for. */
 function WorkspaceAgentFront<TSession extends WorkspaceAgentSession = WorkspaceAgentSession>(
-  props: Omit<WorkspaceAgentFrontProps<TSession>, "agentTypeId"> & { agentTypeId?: string },
+  props: AttestedWorkspaceAgentFrontProps<TSession>,
 ) {
-  return <WorkspaceAgentFrontImpl agentTypeId="default" {...props} />
+  const useSessions = props.useSessions
+  const attestedUseSessions: UseWorkspaceAgentSessions<TSession> | undefined = useSessions
+    ? (options) => ({ ...useSessions(options), sourceIdentity: options.sourceIdentity })
+    : undefined
+  return <RawWorkspaceAgentFront agentTypeId="default" {...props} useSessions={attestedUseSessions} />
 }
 
 type CapturedChatPanelProps = WorkspaceChatPanelProps & {
@@ -93,12 +108,24 @@ const globalCommandPanel: PanelConfig = {
 
 class MockEventSource {
   static instances: MockEventSource[] = []
+  private readonly listeners = new Map<string, Set<EventListener>>()
   close = vi.fn()
-  addEventListener = vi.fn()
-  removeEventListener = vi.fn()
+  addEventListener = vi.fn((type: string, listener: EventListener) => {
+    const listeners = this.listeners.get(type) ?? new Set<EventListener>()
+    listeners.add(listener)
+    this.listeners.set(type, listeners)
+  })
+  removeEventListener = vi.fn((type: string, listener: EventListener) => {
+    this.listeners.get(type)?.delete(listener)
+  })
 
   constructor(readonly url: string) {
     MockEventSource.instances.push(this)
+  }
+
+  emit(type: string, data: unknown) {
+    const event = new MessageEvent(type, { data: JSON.stringify(data) })
+    for (const listener of this.listeners.get(type) ?? []) listener(event)
   }
 }
 
@@ -221,6 +248,46 @@ describe("WorkspaceAgentFront", () => {
 
     expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument()
     expect(screen.getAllByText("Loading sessions…").length).toBeGreaterThan(0)
+  })
+
+  it("owns one addressed activity stream and publishes terminal transitions", () => {
+    MockEventSource.instances = []
+    vi.stubGlobal("EventSource", MockEventSource)
+    const statuses: unknown[] = []
+    const onStatus = (event: Event) => statuses.push((event as CustomEvent).detail)
+    window.addEventListener("boring:chat-session-status", onStatus)
+
+    const { unmount } = render(
+      <WorkspaceAgentFront
+        workspaceId="working-session-stream"
+        chatPanel={SessionIdChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "session-1", title: "Session one", status: "idle" }],
+          activeSession: { id: "session-1", title: "Session one", status: "idle" },
+          activeSessionId: "session-1",
+          loading: false,
+          error: undefined,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+      />,
+    )
+    const stream = MockEventSource.instances.find((instance) => instance.url.includes("/api/v1/agents/session-activity/events"))
+    expect(stream?.url).toContain("workspaceId=working-session-stream")
+
+    act(() => {
+      stream?.emit("snapshot", { sessions: [{ ref: { agentTypeId: "default", sessionId: "session-1" }, status: "running" }] })
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "session-1" }, status: "idle" })
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "session-1" }, status: "running" })
+      stream?.emit("snapshot", { sessions: [] })
+    })
+
+    expect(statuses).toContainEqual({ sessionId: "session-1", agentTypeId: "default", working: true })
+    expect(statuses.at(-1)).toEqual({ sessionId: "session-1", agentTypeId: "default", working: false })
+    unmount()
+    expect(stream?.close).toHaveBeenCalledTimes(1)
+    window.removeEventListener("boring:chat-session-status", onStatus)
   })
 
   it("renders a known active session while remote sessions are still loading", () => {
@@ -1167,6 +1234,37 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
+  it("hydrates an inventoried restored pane without a global active preference", async () => {
+    localStorage.setItem(
+      "boring-workspace:chat-panes:restored-without-active",
+      JSON.stringify({ ids: ["s1"], activeId: "s1" }),
+    )
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => (
+      <div data-testid="restored-chat">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
+    )
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="restored-without-active"
+        chatPanel={CapturingChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "s1", title: "Restored session" }],
+          loading: false,
+          error: undefined,
+          activeSessionId: null,
+          activeSession: null,
+          switch: vi.fn(),
+          create: vi.fn(),
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("restored-chat")).toHaveTextContent("Chat s1 hydrate=true")
+    })
+  })
+
   it("keeps an async returned created pane while controlled sessions catch up", async () => {
     const user = userEvent.setup()
 
@@ -1263,8 +1361,9 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByRole("button", { name: "Split created chat horizontally" })).toBeEnabled()
   })
 
-  it("creates a split pane when session creation returns void and sessions update later", async () => {
+  it("does not infer a split-pane identity when a custom creator returns void", async () => {
     const user = userEvent.setup()
+    const createCalled = vi.fn()
 
     function Harness() {
       const [sessions, setSessions] = useState([
@@ -1276,12 +1375,13 @@ describe("WorkspaceAgentFront", () => {
           chatPanel={SessionIdChatPanel}
           sessions={sessions}
           activeSessionId="s1"
-          onCreateSession={() => {
+          onCreateSession={(() => {
+            createCalled()
             setTimeout(() => setSessions((current) => [
               ...current,
               { id: "created", title: "Created later", updatedAt: Date.now() },
             ]), 0)
-          }}
+          }) as unknown as () => { id: string }}
           persistenceEnabled={false}
         />
       )
@@ -1289,8 +1389,9 @@ describe("WorkspaceAgentFront", () => {
 
     render(<Harness />)
     await user.click(screen.getByRole("button", { name: "Split First session chat horizontally" }))
-
-    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "created"]))
+    await waitFor(() => expect(createCalled).toHaveBeenCalledOnce())
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
+    expect(visibleChatSessionIds()).toEqual(["s1"])
   })
 
   it("removes an open chat pane when its session is deleted from history", async () => {
@@ -1466,6 +1567,9 @@ describe("WorkspaceAgentFront", () => {
       expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
       expect(activeStreams()).toHaveLength(1)
     })
+    expect(MockEventSource.instances.filter((instance) => (
+      instance.url.includes("/api/v1/ui/commands/next")
+    ))).toHaveLength(1)
   })
 
   it("does not stop still-visible sessions when changing visible chat panes", async () => {
@@ -1895,6 +1999,67 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByText("Loading sessions…")).not.toBeInTheDocument()
   })
 
+  it("keeps one-render-stale custom rows and saved actions inert until source attestation matches", async () => {
+    let alphaSourceIdentity = ""
+    let capturedPanel: WorkspaceChatPanelProps | undefined
+    const alphaRefresh = vi.fn()
+    const betaRefresh = vi.fn()
+    const CapturingSessionPanel = (props: WorkspaceChatPanelProps) => {
+      capturedPanel = props
+      return <SessionIdChatPanel {...props} />
+    }
+
+    function Harness() {
+      const [agentTypeId, setAgentTypeId] = useState("alpha")
+      const [betaReady, setBetaReady] = useState(false)
+      return (
+        <>
+          <button type="button" onClick={() => setAgentTypeId("beta")}>Switch source</button>
+          <button type="button" onClick={() => setBetaReady(true)}>Settle source</button>
+          <RawWorkspaceAgentFront
+            workspaceId="custom-source-boundary"
+            agentTypeId={agentTypeId}
+            chatPanel={CapturingSessionPanel}
+            persistenceEnabled={false}
+            useSessions={(options) => {
+              if (agentTypeId === "alpha") {
+                alphaSourceIdentity = options.sourceIdentity
+                const session = { id: "alpha-row", agentTypeId: "alpha", title: "Alpha row" }
+                return {
+                  sourceIdentity: options.sourceIdentity,
+                  sessions: [session], activeSession: session, activeSessionId: session.id,
+                  loading: false, create: vi.fn(), switch: vi.fn(), delete: vi.fn(), refresh: alphaRefresh,
+                }
+              }
+              const session = betaReady
+                ? { id: "beta-row", agentTypeId: "beta", title: "Beta row" }
+                : { id: "alpha-row", agentTypeId: "alpha", title: "Alpha row" }
+              return {
+                sourceIdentity: betaReady ? options.sourceIdentity : alphaSourceIdentity,
+                sessions: [session], activeSession: session, activeSessionId: session.id,
+                loading: !betaReady, create: vi.fn(), switch: vi.fn(), delete: vi.fn(), refresh: betaRefresh,
+              }
+            }}
+          />
+        </>
+      )
+    }
+
+    render(<Harness />)
+    expect(await screen.findByText("Chat pane alpha-row")).toBeInTheDocument()
+    const savedAlphaTurnComplete = capturedPanel?.onTurnComplete
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch source" }))
+    act(() => { savedAlphaTurnComplete?.() })
+    expect(alphaRefresh).not.toHaveBeenCalled()
+    expect(betaRefresh).not.toHaveBeenCalled()
+    expect(screen.queryByText("Chat pane alpha-row")).not.toBeInTheDocument()
+    expect(screen.queryByText("Alpha row")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Settle source" }))
+    expect(await screen.findByText("Chat pane beta-row")).toBeInTheDocument()
+  })
+
   it("uses the workspace's persisted active chat while session list refreshes", async () => {
     localStorage.setItem("boring-workspace:sessions:workspace-b", "persisted-workspace-b")
     let workspaceBLoading = true
@@ -2246,7 +2411,53 @@ describe("WorkspaceAgentFront", () => {
     expect(deleted).not.toHaveBeenCalled()
   })
 
-  it("does not pass the New chat click event into remote session creation", () => {
+  it("lets a manual create own an empty-list transition without a queued boot duplicate", async () => {
+    let releaseCreate!: () => void
+    let clearSessions!: () => void
+    const createGate = new Promise<void>((resolve) => { releaseCreate = resolve })
+    const create = vi.fn(async () => {
+      await createGate
+      return { id: "manual", title: "New session", updatedAt: Date.now(), turnCount: 0 }
+    })
+
+    function useSessionsThatBecomeEmpty() {
+      const [sessions, setSessions] = useState([
+        { id: "existing", title: "Existing", updatedAt: Date.now(), turnCount: 1 },
+      ])
+      clearSessions = () => setSessions([])
+      return {
+        sessions,
+        activeSessionId: sessions[0]?.id ?? null,
+        activeSession: sessions[0] ?? null,
+        loading: false,
+        create,
+        switch: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="manual-empty-transition"
+        chatPanel={ChatPanel}
+        useSessions={useSessionsThatBecomeEmpty}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }))
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    act(() => clearSessions())
+
+    // Let the empty-session grace period expire while the user-owned create is
+    // active. The initial boot effect must not enqueue a second create.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 2_100)))
+    expect(create).toHaveBeenCalledOnce()
+
+    await act(async () => { releaseCreate() })
+  })
+
+  it("does not pass the New chat click event into remote session creation", async () => {
     const create = vi.fn(async () => ({ id: "manual", title: "Manual", updatedAt: Date.now(), turnCount: 0 }))
 
     render(
@@ -2268,7 +2479,7 @@ describe("WorkspaceAgentFront", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "New chat" }))
 
-    expect(create).toHaveBeenCalledOnce()
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
     expect(create.mock.calls[0]).toEqual([])
   })
 
@@ -2678,6 +2889,59 @@ describe("WorkspaceAgentFront", () => {
 
     await waitFor(() => {
       expect(createSession).toHaveBeenCalledWith({ title: "Fresh session" })
+    }, { timeout: 3000 })
+  })
+
+  it("keeps the default New session label provisional for first-message titling", async () => {
+    const createSession = vi.fn(async () => ({ id: "empty-native", title: "New session" }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="remote-provisional-title"
+        chatPanel={ChatPanel}
+        useSessions={() => ({
+          sessions: [],
+          loading: false,
+          activeSessionId: null,
+          activeSession: null,
+          switch: vi.fn(),
+          create: createSession,
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledWith({})
+    }, { timeout: 3000 })
+  })
+
+  it("passes the exact hidden boot candidate only to initial auto-create", async () => {
+    const createSession = vi.fn(async () => ({ id: "empty-native", title: "Fresh session" }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="remote-sessions"
+        chatPanel={ChatPanel}
+        defaultSessionTitle="Fresh session"
+        useSessions={() => ({
+          sessions: [],
+          loading: false,
+          activeSessionId: null,
+          activeSession: null,
+          resumeSessionId: "empty-native",
+          switch: vi.fn(),
+          create: createSession,
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledWith({
+        title: "Fresh session",
+        resumeSessionId: "empty-native",
+      })
     }, { timeout: 3000 })
   })
 

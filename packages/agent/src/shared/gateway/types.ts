@@ -85,6 +85,11 @@ export interface AgentSessionSummary {
   readonly status: AgentSessionActivity
   readonly createdAt: number
   readonly updatedAt: number
+  readonly turnCount?: number
+  /** Present only for an explicitly allowed bare native Pi transcript. */
+  readonly nativeSessionId?: string
+  /** Native transcript metadata used to gate rename until a reply exists. */
+  readonly hasAssistantReply?: boolean
 }
 
 export interface AgentSessionPage {
@@ -97,6 +102,8 @@ export interface CreateAgentSessionInput {
   readonly agentTypeId: string
   readonly requestId: string
   readonly title?: string
+  /** Boot-only intent to resume this exact tab-owned empty session. */
+  readonly resumeSessionId?: string
 }
 
 export interface ConnectAgentSessionInput {

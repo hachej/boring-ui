@@ -118,10 +118,10 @@ describe("Plugin extension smoke test", () => {
       cwd: tempDir,
     });
 
-    // Session creation is what wires plugin tools into pi's customTools —
-    // same lazy path the pi-chat service uses.
+    // Canonical store creation precedes the first exact native open.
+    const created = await harness.sessions.create({});
     await harness.getPiSessionAdapter(
-      { sessionId: "session-smoke", content: "run hello tool" },
+      { sessionId: created.id, content: "run hello tool" },
       { workdir: tempDir, abortSignal: new AbortController().signal },
     );
 

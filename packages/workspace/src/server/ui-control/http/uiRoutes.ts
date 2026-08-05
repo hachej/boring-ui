@@ -172,10 +172,18 @@ export function uiRoutes(
       );
     }, HEARTBEAT_MS);
 
-    request.raw.on("close", () => {
+    let cleanedUp = false;
+    const cleanup = () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
       clearInterval(heartbeat);
       unsub();
-    });
+    };
+    // `reply.raw` is the authoritative lifetime of this long-lived response.
+    // Behind a dev/reverse proxy the request body can remain open even after
+    // the downstream EventSource closes, stranding upstream SSE connections.
+    request.raw.once("close", cleanup);
+    reply.raw.once("close", cleanup);
 
     reply.hijack();
   });
