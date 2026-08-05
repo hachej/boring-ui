@@ -2,7 +2,7 @@
 
 import type { CSSProperties, ChangeEvent, KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
 import { useCallback, useLayoutEffect } from 'react'
-import { motion } from 'motion/react'
+import { motion, useReducedMotion } from 'motion/react'
 import type { QueuedUserMessage } from '../../../shared/chat'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../../chatPanelSettings'
 import type { PluginUpdateState } from '../../composer/PluginUpdateStatus'
@@ -188,6 +188,7 @@ export function PiChatComposerSurface<
   onSubmitMessage,
   onStop,
 }: PiChatComposerSurfaceProps<TComposerBlocker>) {
+  const prefersReducedMotion = useReducedMotion()
   const workspaceRequestId = getHeaderValue(requestHeaders, 'x-boring-workspace-id')
   const composerContributions = useComposerContributions()
   const uploadAttachment = useCallback((file: File) => uploadFile(file, {
@@ -245,13 +246,13 @@ export function PiChatComposerSurface<
           data-testid={isStreaming ? 'chat-working' : undefined}
           role={isStreaming ? 'status' : undefined}
           aria-live={isStreaming ? 'polite' : undefined}
-          className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-muted-foreground/75 shadow-sm backdrop-blur"
+          className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-foreground shadow-sm backdrop-blur"
         >
           <motion.span
             aria-hidden="true"
             className="inline-block size-1.5 rounded-full bg-[color:var(--accent)]"
-            animate={{ opacity: [0.35, 1, 0.35] }}
-            transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+            animate={prefersReducedMotion ? { opacity: 1 } : { opacity: [0.35, 1, 0.35] }}
+            transition={prefersReducedMotion ? { duration: 0 } : { duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
           />
           <span>Working…</span>
         </div>
@@ -440,7 +441,7 @@ export function PiChatComposerSurface<
                   onStop={onStop}
                   disabled={submitDisabled}
                   className={cn(
-                    'h-8 w-8 shrink-0 rounded-full',
+                    'composer-submit-control h-8 w-8 shrink-0 rounded-full',
                     'bg-foreground text-background',
                     'transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]',
                     'hover:bg-foreground/90 hover:shadow-[0_0_0_3px_oklch(from_var(--foreground)_l_c_h/0.12)] hover:scale-[1.04]',
@@ -470,6 +471,7 @@ export function PiChatComposerSurface<
           disabled={isStreaming || modelControlled}
           trigger="slash"
           open={modelPickerOpen}
+          className="composer-settings-trigger"
           onClick={() => {
             if (modelPickerOpen) {
               onSetModelPickerOpen(false)
@@ -484,6 +486,7 @@ export function PiChatComposerSurface<
             disabled={isStreaming || thinkingControlled}
             trigger="slash"
             open={thinkingPickerOpen}
+            className="composer-settings-trigger"
             onClick={() => {
               if (thinkingPickerOpen) {
                 onSetThinkingPickerOpen(false)

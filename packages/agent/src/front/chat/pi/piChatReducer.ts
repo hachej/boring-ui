@@ -205,7 +205,20 @@ function hydrateFromSnapshot(
   snapshot: PiChatSnapshot,
   options: { allowSeqRewind?: boolean } = {},
 ): PiChatState {
-  if (snapshot.seq < state.lastSeq && !options.allowSeqRewind) return state
+  // Before the first canonical hydration, a receipt/recovered cursor alone is
+  // not authority. Accept /state so an ahead cursor cannot pin the pane in
+  // `hydrating` forever. Preserve genuinely newer live events; later rewinds
+  // remain explicit.
+  const hasUnhydratedLiveEvents = state.turnId !== undefined
+    || state.streamingMessage !== undefined
+    || state.committedMessages.length > 0
+    || state.status === 'streaming'
+    || state.status === 'aborting'
+  if (
+    snapshot.seq < state.lastSeq
+    && !options.allowSeqRewind
+    && (state.hydrated || hasUnhydratedLiveEvents)
+  ) return state
 
   const queue = { followUps: enrichQueueWithKnownMetadata(snapshot.queue.followUps, state.optimisticOutbox, state.queue.followUps) }
   const snapshotMessages = normalizeSnapshotMessages(snapshot.messages)

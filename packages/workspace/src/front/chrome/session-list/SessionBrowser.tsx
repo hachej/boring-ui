@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { ChevronLeft, ChevronRight, ExternalLink, Pin, Plus } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
@@ -9,38 +9,7 @@ import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type W
 import { CHAT_SESSION_DRAG_TYPE } from "../../layout/ChatPaneStage"
 import type { SessionItem } from "../../components/SessionList"
 import { encodeWorkspaceSessionDrag, workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
-
-const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
-
-/**
- * Session ids whose chat panel is currently streaming. Fed by the
- * "boring:chat-session-status" window event each mounted chat panel emits —
- * the browser stays decoupled from any particular chat implementation.
- */
-function useWorkingSessionIds(): ReadonlySet<string> {
-  const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set())
-  useEffect(() => {
-    const onStatus = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; working?: unknown } | undefined
-      if (typeof detail?.sessionId !== "string") return
-      const sessionId = workspaceSessionKey(
-        detail.sessionId,
-        typeof detail.agentTypeId === "string" ? detail.agentTypeId : undefined,
-      )
-      const isWorking = detail.working === true
-      setWorking((current) => {
-        if (current.has(sessionId) === isWorking) return current
-        const next = new Set(current)
-        if (isWorking) next.add(sessionId)
-        else next.delete(sessionId)
-        return next
-      })
-    }
-    window.addEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
-    return () => window.removeEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
-  }, [])
-  return working
-}
+import { useWorkingSessionIds } from "../../sessionActivity"
 
 export interface SessionBrowserProps {
   sessions: SessionItem[]
@@ -232,7 +201,7 @@ export function SessionBrowser({
   const [historyCollapsed, setHistoryCollapsed] = useState(
     () => normalizedOpenIds.length > 0 || normalizedPinnedIds.length > 0,
   )
-  const workingSessionIds = useWorkingSessionIds()
+  const workingSessionIds = useWorkingSessionIds(sessions)
   const { blockers } = useWorkspaceAttention()
   const sessionBadges = useMemo(() => {
     const badges = new Map<string, WorkspaceAttentionSessionBadge>()

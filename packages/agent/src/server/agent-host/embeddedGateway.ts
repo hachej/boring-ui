@@ -16,13 +16,14 @@ import {
   type VerifiedAgentScopeClaim,
 } from '../../shared/index'
 import type { PiChatEvent, PiChatSnapshot } from '../../shared/chat'
-import { ErrorCode } from '../../shared/error-codes'
 import {
   type PiChatSessionService,
   type PiSessionRequestContext,
 } from '../../core/piChatSessionService'
+import { AgentSessionEventQueue } from './agentSessionEventQueue'
+import { agentSessionKey } from './agentSessionKey'
 import { canonicalDigest } from './canonical'
-import { projectStableServiceError } from './stableServiceError'
+import { stableServiceActionFailure } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
 import type {
   AgentGatewayEffect,
@@ -39,6 +40,7 @@ type EffectClassification =
   | { readonly kind: 'execute' }
   | { readonly kind: 'reject'; readonly error: AgentGatewayErrorDTO }
 type EffectClassifier = () => Promise<EffectClassification>
+type SafeActionFailureClassifier = (error: unknown) => AgentRequestFailure | undefined
 
 interface EffectOptions {
   duplicateReceipt?: boolean
@@ -49,6 +51,8 @@ interface EffectOptions {
   serializedClassify?: EffectClassifier
   /** Host/Gateway-only work that must finish before provider mutation begins. */
   preflight?: () => Promise<void>
+  /** Opt-in only when a rejected action promise proves no provider mutation began. */
+  classifySafeActionFailure?: SafeActionFailureClassifier
 }
 interface SessionEffectOptions extends Omit<EffectOptions, 'serialize'> {
   bindingKey?: string
@@ -56,40 +60,6 @@ interface SessionEffectOptions extends Omit<EffectOptions, 'serialize'> {
 const MAX_PAGE_LIMIT = 100
 
 type ReceiptObject = Readonly<Record<string, JsonValue>>
-
-class EventQueue implements AsyncIterable<AgentSessionEvent> {
-  private readonly pending: AgentSessionEvent[] = []
-  private readonly waiters: Array<(result: IteratorResult<AgentSessionEvent>) => void> = []
-  private ended = false
-
-  push(event: AgentSessionEvent): void {
-    if (this.ended) return
-    const waiter = this.waiters.shift()
-    if (waiter) waiter({ done: false, value: event })
-    else this.pending.push(event)
-  }
-
-  close(): void {
-    if (this.ended) return
-    this.ended = true
-    for (const waiter of this.waiters.splice(0)) waiter({ done: true, value: undefined })
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<AgentSessionEvent> {
-    return {
-      next: async () => {
-        const event = this.pending.shift()
-        if (event) return { done: false, value: event }
-        if (this.ended) return { done: true, value: undefined }
-        return await new Promise<IteratorResult<AgentSessionEvent>>((resolve) => this.waiters.push(resolve))
-      },
-      return: async () => {
-        this.close()
-        return { done: true, value: undefined }
-      },
-    }
-  }
-}
 
 function gatewayError(dto: AgentGatewayErrorDTO): AgentGatewayError {
   return new AgentGatewayError(dto.code, dto.message, dto.details)
@@ -116,7 +86,14 @@ function context(
 
 function summaryFromLegacy(
   ref: AgentSessionRef,
-  summary: { title: string; createdAt: string; updatedAt: string },
+  summary: {
+    title: string
+    createdAt: string
+    updatedAt: string
+    turnCount?: number
+    nativeSessionId?: string
+    hasAssistantReply?: boolean
+  },
   status: AgentSessionActivity,
 ): AgentSessionSummary {
   return {
@@ -125,11 +102,10 @@ function summaryFromLegacy(
     status,
     createdAt: Date.parse(summary.createdAt),
     updatedAt: Date.parse(summary.updatedAt),
+    ...(typeof summary.turnCount === 'number' ? { turnCount: summary.turnCount } : {}),
+    ...(typeof summary.nativeSessionId === 'string' ? { nativeSessionId: summary.nativeSessionId } : {}),
+    ...(typeof summary.hasAssistantReply === 'boolean' ? { hasAssistantReply: summary.hasAssistantReply } : {}),
   }
-}
-
-function sessionKey(workspaceScopeId: string, ref: AgentSessionRef): string {
-  return JSON.stringify([workspaceScopeId, ref.agentTypeId, ref.sessionId])
 }
 
 function compareSessions(a: AgentSessionSummary, b: AgentSessionSummary): number {
@@ -221,7 +197,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       claim,
       ref.sessionId,
     )
-    const cached = this.pins.get(sessionKey(claim.workspaceScopeId, ref))
+    const cached = this.pins.get(agentSessionKey(claim.workspaceScopeId, ref))
     if (!authority && !cached) {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     }
@@ -323,17 +299,43 @@ export class EmbeddedAgentGateway implements AgentGateway {
       'session.create',
       target,
       input.requestId,
-      { agentTypeId: input.agentTypeId, title: input.title ?? null },
+      {
+        agentTypeId: input.agentTypeId,
+        title: input.title ?? null,
+        resumeSessionId: input.resumeSessionId ?? null,
+      },
       async () => {
         const preparedBinding = binding
         if (!preparedBinding) throw new TypeError('session creation executed before binding preflight')
         return await this.runtime.runBindingOperation(preparedBinding.key, async () => {
+          if (input.resumeSessionId) {
+            const candidateRef = { agentTypeId: input.agentTypeId, sessionId: input.resumeSessionId }
+            const authority = await this.runtime.resolveSessionRuntime(
+              input.agentTypeId,
+              input.scope,
+              claim,
+              input.resumeSessionId,
+            ).catch(() => undefined)
+            if (authority?.runtimeScopeIdentity === preparedBinding.scope.identity) {
+              const rows = await preparedBinding.composition.service.listSessions?.(
+                context(claim, input.requestId, preparedBinding.scope.identity),
+                { includeId: input.resumeSessionId, includeEmpty: true },
+              ) ?? []
+              const candidate = rows.find((row) => row.id === input.resumeSessionId)
+              if (candidate?.turnCount === 0) {
+                this.pins.set(agentSessionKey(claim.workspaceScopeId, candidateRef), preparedBinding.scope.identity)
+                this.runtime.activity.set(claim.workspaceScopeId, candidateRef, 'idle')
+                return candidateRef
+              }
+            }
+          }
+
           const created = await preparedBinding.composition.service.createSession!(
             context(claim, input.requestId, preparedBinding.scope.identity),
             { title: input.title },
           )
           const ref = { agentTypeId: input.agentTypeId, sessionId: created.id }
-          this.pins.set(sessionKey(claim.workspaceScopeId, ref), preparedBinding.scope.identity)
+          this.pins.set(agentSessionKey(claim.workspaceScopeId, ref), preparedBinding.scope.identity)
           this.runtime.activity.set(claim.workspaceScopeId, ref, 'idle')
           return ref
         })
@@ -351,11 +353,13 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const binding = await this.bindingForSession(input.scope, claim, input.ref)
     let state: PiChatSnapshot
     try {
-      state = await binding.composition.service.readState(context(claim, randomUUID()), input.ref.sessionId)
+      state = await binding.composition.service.readState(
+        context(claim, randomUUID(), binding.scope.identity), input.ref.sessionId,
+      )
     } catch {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     }
-    const loaded = await this.loadSummary(binding.composition.service, claim, input.ref)
+    const loaded = await this.loadSummary(binding.composition.service, claim, input.ref, binding.scope.identity)
     const status = this.runtime.activity.get(claim.workspaceScopeId, input.ref)
     return {
       ref: input.ref,
@@ -368,14 +372,14 @@ export class EmbeddedAgentGateway implements AgentGateway {
   async connectSession(input: Parameters<AgentGateway['connectSession']>[0]): Promise<AgentSessionConnection> {
     const claim = await this.verify(input.scope)
     const binding = await this.bindingForSession(input.scope, claim, input.ref)
-    await this.loadSummary(binding.composition.service, claim, input.ref)
-    const queue = new EventQueue()
+    await this.loadSummary(binding.composition.service, claim, input.ref, binding.scope.identity)
+    const queue = new AgentSessionEventQueue()
     const initialCursor = input.cursor ?? (await binding.composition.service.readState(
-      context(claim, randomUUID()),
+      context(claim, randomUUID(), binding.scope.identity),
       input.ref.sessionId,
     )).seq
     const subscribed = await binding.composition.service.subscribe(
-      context(claim, randomUUID()),
+      context(claim, randomUUID(), binding.scope.identity),
       input.ref.sessionId,
       initialCursor,
       (event) => {
@@ -423,7 +427,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
         const current = await reverify()
         const currentBinding = await this.bindingForSession(input.scope, current, input.ref)
         return await this.sessionEffect(input.ref, current, 'session.interrupt', requestId, {}, async () => {
-          const receipt = await currentBinding.composition.service.interrupt(context(current, requestId), input.ref.sessionId, {})
+          const receipt = await currentBinding.composition.service.interrupt(
+            context(current, requestId, currentBinding.scope.identity), input.ref.sessionId, {},
+          )
           if (this.runtime.activity.get(current.workspaceScopeId, input.ref) === 'running') {
             this.runtime.activity.set(current.workspaceScopeId, input.ref, 'aborting')
           }
@@ -434,7 +440,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
         const current = await reverify()
         const currentBinding = await this.bindingForSession(input.scope, current, input.ref)
         return await this.sessionEffect(input.ref, current, 'session.stop', requestId, {}, async () => {
-          const receipt = await currentBinding.composition.service.stop(context(current, requestId), input.ref.sessionId, {})
+          const receipt = await currentBinding.composition.service.stop(
+            context(current, requestId, currentBinding.scope.identity), input.ref.sessionId, {},
+          )
           this.runtime.activity.set(current.workspaceScopeId, input.ref, 'idle')
           return receipt
         }, { bindingKey: currentBinding.key }) as Awaited<ReturnType<AgentSessionConnection['stop']>>
@@ -446,7 +454,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
           clientNonce: clientNonce ?? null,
           clientSeq: clientSeq ?? null,
         }, () => currentBinding.composition.service.clearQueue(
-          context(current, requestId),
+          context(current, requestId, currentBinding.scope.identity),
           input.ref.sessionId,
           { ...(clientNonce ? { clientNonce } : {}), ...(clientSeq === undefined ? {} : { clientSeq }) },
         ), {
@@ -456,6 +464,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
               currentBinding.composition.service,
               current,
               input.ref,
+              currentBinding.scope.identity,
               requestId,
               clientNonce,
               clientSeq,
@@ -478,7 +487,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const service = binding.composition.service
     if (command.kind === 'prompt') {
       return await this.sessionEffect(ref, claim, 'session.prompt', command.requestId, command as unknown as JsonValue, async () => {
-        const receipt = await service.prompt(context(claim, command.requestId), ref.sessionId, {
+        const receipt = await service.prompt(context(claim, command.requestId, binding.scope.identity), ref.sessionId, {
           message: command.content,
           displayMessage: command.displayContent,
           clientNonce: command.clientNonce,
@@ -491,6 +500,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       }, {
         duplicateReceipt: true,
         bindingKey: binding.key,
+        classifySafeActionFailure: stableServiceActionFailure,
         guard: async () => await this.promptAdmission(
           scope,
           claim,
@@ -501,14 +511,18 @@ export class EmbeddedAgentGateway implements AgentGateway {
       })
     }
     return await this.sessionEffect(ref, claim, 'session.followup', command.requestId, command as unknown as JsonValue, async () => {
-      const receipt = await service.followUp(context(claim, command.requestId), ref.sessionId, {
+      const receipt = await service.followUp(context(claim, command.requestId, binding.scope.identity), ref.sessionId, {
         message: command.content,
         displayMessage: command.displayContent,
         clientNonce: command.clientNonce,
         clientSeq: command.clientSeq,
       })
       return { ...receipt, disposition: 'followup' as const }
-    }, { duplicateReceipt: true, bindingKey: binding.key })
+    }, {
+      duplicateReceipt: true,
+      bindingKey: binding.key,
+      classifySafeActionFailure: stableServiceActionFailure,
+    })
   }
 
   async renameSession(input: Parameters<AgentGateway['renameSession']>[0]) {
@@ -533,7 +547,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const binding = await this.bindingForSession(input.scope, claim, input.ref)
     await this.sessionEffect(input.ref, claim, 'session.delete', input.requestId, {}, async () => {
       await binding.composition.service.deleteSession!(
-        context(claim, input.requestId), input.ref.sessionId,
+        context(claim, input.requestId, binding.scope.identity), input.ref.sessionId,
       )
       // Keep the verified pin cached until Host shutdown so a same-process
       // idempotent delete retry can reach its completed ledger receipt.
@@ -557,7 +571,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     if (!this.runtime.compiledById.has(ref.agentTypeId)) {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     }
-    const key = sessionKey(claim.workspaceScopeId, ref)
+    const key = agentSessionKey(claim.workspaceScopeId, ref)
     const authority = await this.runtime.resolveSessionRuntime(
       ref.agentTypeId,
       scope,
@@ -622,8 +636,12 @@ export class EmbeddedAgentGateway implements AgentGateway {
     service: PiChatSessionService,
     claim: VerifiedAgentScopeClaim,
     ref: AgentSessionRef,
+    runtimeScopeIdentity: string,
   ) {
-    const list = await service.listSessions?.(context(claim, randomUUID()), { includeId: ref.sessionId }) ?? []
+    const list = await service.listSessions?.(
+      context(claim, randomUUID(), runtimeScopeIdentity),
+      { includeId: ref.sessionId, includeEmpty: true },
+    ) ?? []
     const summary = list.find((item) => item.id === ref.sessionId)
     if (!summary) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     return summary
@@ -674,6 +692,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       classify,
       serializedClassify,
       preflight,
+      classifySafeActionFailure,
     } = options
     const key: AgentRequestKey = {
       workspaceScopeId: claim.workspaceScopeId,
@@ -781,13 +800,10 @@ export class EmbeddedAgentGateway implements AgentGateway {
           try {
             receipt = await actionResult as JsonValue
           } catch (error) {
-            // Metering rejects PAYMENT_REQUIRED before model/session mutation. Keep
-            // that explicitly stable rejection durable and replayable instead of
-            // misclassifying it as an ambiguous post-effect failure.
-            const stable = projectStableServiceError(error)
-            if (stable?.error.code === ErrorCode.enum.PAYMENT_REQUIRED) {
-              await this.runtime.ledger.reject(key, { kind: 'service', error: stable }).catch(() => {})
-              throw error
+            const safeFailure = classifySafeActionFailure?.(error)
+            if (safeFailure) {
+              await this.runtime.ledger.reject(key, safeFailure)
+              throw this.failure(safeFailure)
             }
             const unknown = new AgentGatewayError(
               AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
@@ -893,12 +909,15 @@ export class EmbeddedAgentGateway implements AgentGateway {
     service: PiChatSessionService,
     claim: VerifiedAgentScopeClaim,
     ref: AgentSessionRef,
+    runtimeScopeIdentity: string,
     requestId: string,
     clientNonce?: string,
     clientSeq?: number,
   ): Promise<AgentGatewayErrorDTO | undefined> {
     if (clientNonce === undefined || clientSeq === undefined) return undefined
-    const snapshot = await service.readState(context(claim, requestId), ref.sessionId)
+    const snapshot = await service.readState(
+      context(claim, requestId, runtimeScopeIdentity), ref.sessionId,
+    )
     const byNonce = snapshot.queue.followUps.find((item) => item.clientNonce === clientNonce)
     const bySeq = snapshot.queue.followUps.find((item) => item.clientSeq === clientSeq)
     if (byNonce && byNonce === bySeq) return undefined
@@ -909,7 +928,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
   }
 
   private async withWriter<T>(workspaceScopeId: string, ref: AgentSessionRef, action: () => Promise<T>): Promise<T> {
-    const key = sessionKey(workspaceScopeId, ref)
+    const key = agentSessionKey(workspaceScopeId, ref)
     const previous = this.writerTails.get(key) ?? Promise.resolve()
     let release!: () => void
     const current = new Promise<void>((resolve) => { release = resolve })

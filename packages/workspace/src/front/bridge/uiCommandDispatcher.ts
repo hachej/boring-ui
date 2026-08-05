@@ -89,7 +89,7 @@ function surfaceRequestParam(params: Record<string, unknown>): SurfaceOpenReques
   }
 }
 
-const SURFACE_READY_RETRY_FRAMES = 60
+const SURFACE_READY_RETRY_FRAMES = 600
 
 function runWhenSurfaceReady(
   ctx: DispatchContext,
@@ -140,12 +140,14 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
           )
         }
       }
-      // If the workbench was just opened, dockview hasn't laid out yet.
-      // Then keep polling the getter for a few frames because opening the
-      // surface is React stateful: the handle does not exist until the
-      // SurfaceShell mounts and calls onReady.
-      if (wasClosed) requestAnimationFrame(() => requestAnimationFrame(() => runWhenSurfaceReady(ctx, run)))
-      else runWhenSurfaceReady(ctx, run)
+      // When opening the workbench, park the operation before React can mount
+      // SurfaceShell and retain a bounded readiness poll. Replaying openFile is
+      // idempotent, so the poll safely covers shell remounts that replace the
+      // queue owner during asynchronous workspace startup.
+      if (wasClosed) {
+        ctx.enqueue?.(run)
+        requestAnimationFrame(() => requestAnimationFrame(() => runWhenSurfaceReady(ctx, run)))
+      } else runWhenSurfaceReady(ctx, run)
       return
     }
     case "openSurface": {

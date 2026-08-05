@@ -1003,6 +1003,22 @@ describe("FileTreePane", () => {
     expect(screen.getByRole("menuitem", { name: "Copy Git URL" })).toBeInTheDocument()
   })
 
+  it("does not request primary-workspace Git metadata for a named filesystem", async () => {
+    mockGetGitUrlMetadata.mockImplementation((path: string | null) => ({
+      data: path
+        ? { enabled: true, url: "https://github.com/hachej/boring-ui/blob/main/index.ts" }
+        : { enabled: false },
+    }))
+
+    render(<FileTreePane filesystem="company_context" />, { wrapper })
+    await waitFor(() => expect(screen.getByText("index.ts")).toBeInTheDocument())
+
+    fireEvent.contextMenu(screen.getByText("index.ts"))
+
+    expect(mockGetGitUrlMetadata).not.toHaveBeenCalledWith("index.ts")
+    expect(screen.queryByRole("menuitem", { name: "Copy Git URL" })).not.toBeInTheDocument()
+  })
+
   it("shows a clear reason instead of Copy Git URL when unavailable", async () => {
     mockGetGitUrlMetadata.mockImplementation((path: string | null) => ({
       data: path === "index.ts"

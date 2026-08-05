@@ -957,7 +957,7 @@ export function SurfaceShell({
             type="button"
             variant="ghost"
             size="icon-xs"
-            className="pointer-events-auto"
+            className="workbench-open-button pointer-events-auto"
             onClick={toggleHostWorkbench}
             aria-label="Open workbench"
             title="Open workbench (⌘2)"

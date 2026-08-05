@@ -62,7 +62,9 @@ describe("DockviewShell", () => {
       </RegistryProvider>,
     )
 
-    expect(screen.getByText("Loading workspace...")).toBeInTheDocument()
+    expect(screen.getByRole("status", { name: "Loading workspace" })).toHaveAttribute("aria-busy", "true")
+    expect(document.querySelector('[data-boring-workspace-part="workbench-loading-geometry"]')).toBeInTheDocument()
+    expect(screen.queryByText("Loading workspace...")).not.toBeInTheDocument()
     spy.mockRestore()
   })
 

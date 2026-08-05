@@ -248,7 +248,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   const [treeHeight, setTreeHeight] = useState(400)
 
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
-  const gitUrlPath = ctxMenu && !ctxMenu.isBackground && ctxMenu.node.kind === "file"
+  const gitUrlPath = filesystem === "user" && ctxMenu && !ctxMenu.isBackground && ctxMenu.node.kind === "file"
     ? ctxMenu.node.path
     : null
   const { data: gitUrlMetadata } = useGitUrlMetadata(gitUrlPath)

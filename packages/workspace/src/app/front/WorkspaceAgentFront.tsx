@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
 import { Plug, Sparkles } from "lucide-react"
 import {
   PiChatPanel as DefaultPiChatPanel,
@@ -21,12 +21,12 @@ import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
-import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
+import { AppLeftPane, AppLeftRail } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { useViewportWidth } from "../../front/layout/useViewportWidth"
 import { captureWorkspaceFrontPlugins } from "./workspaceBuiltinPlugins"
 import type { FilesystemId } from "../../shared/types/filesystem"
-import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
+import { dispatchUiCommand, registerUiCommandConsumer, startUiCommandStream } from "../../front/bridge"
 import type { CommandPaletteSessionItem } from "../../front/components/CommandPalette"
 import type { CommandResult, DispatchContext, FileTreeBridge, Unsubscribe } from "../../front/bridge"
 import { readStoredBoolean, readStoredNumber, writeStoredBoolean, writeStoredNumber } from "../../front/store/localStorageValues"
@@ -48,6 +48,11 @@ import {
   type ChatPaneState,
 } from "./chatPaneState"
 import {
+  SESSION_CREATE_PROTOCOL_ERROR,
+  type SessionCreateProtocolError,
+} from "../../front/sessionCreateProtocol"
+import { useSessionCreationCoordinator } from "./useSessionCreationCoordinator"
+import {
   persistedWorkspaceSessionRef,
   workspaceSessionKey,
   workspaceSessionKeyFor,
@@ -56,6 +61,7 @@ import {
   workspaceSessionRefFromPersisted,
   type WorkspaceSessionRef,
 } from "../../front/sessionIdentity"
+import { startSessionActivityStream } from "../../front/sessionActivity"
 
 interface PendingCreatePane {
   afterId: string
@@ -73,23 +79,33 @@ export interface WorkspaceAgentSession {
   title?: string | null
   updatedAt?: string | number
   turnCount?: number
+  nativeSessionId?: string
+  hasAssistantReply?: boolean
+  ephemeral?: boolean
+  status?: "idle" | "running" | "aborting" | "error"
 }
 
 export interface WorkspaceAgentSessionsApi<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 > {
+  /** Echoes the requested source only when these rows and actions are authoritative. */
+  sourceIdentity: string | undefined
   sessions: TSession[]
   loading: boolean
   loadingMore?: boolean
   hasMore?: boolean
   error?: Error | null
   activeSessionId?: string | null
+  /** Hidden addressed boot candidate; not active until create confirms it. */
+  resumeSessionId?: string | null
   /** Explicit owner for controlled colliding ids; falls back to activeSession.agentTypeId. */
   activeSessionAgentTypeId?: string | null
   activeSession?: TSession | null
   workspaceId?: string | null
   switch: (id: string, agentTypeId?: string) => void
-  create: (input?: { title?: string }) => void | Promise<unknown>
+  /** Returns the canonical created row; void providers are a protocol violation. */
+  create: (input?: { title?: string; resumeSessionId?: string }) => TSession | Promise<TSession>
+  rename?: (id: string, title: string, agentTypeId?: string) => void | Promise<unknown>
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
   refresh?: (options?: { background?: boolean; throwOnError?: boolean }) => void | Promise<unknown>
@@ -105,6 +121,8 @@ export type UseWorkspaceAgentSessions<
   apiBaseUrl?: string
   enabled?: boolean
   refreshKey?: unknown
+  /** Stable expected source identity that custom results must attest. */
+  sourceIdentity: string
 }) => WorkspaceAgentSessionsApi<TSession>
 
 export type WorkspaceAgentLayout = "classic" | "plugin-tabs"
@@ -374,6 +392,68 @@ function useStoredNullableStringState(
 const EMPTY_HEADERS: Record<string, string> = {}
 const EMPTY_STRING_LIST: string[] = []
 const PREPARING_WARMUP_STATUS: WorkspaceWarmupStatus = { status: "preparing" }
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect
+
+function sessionCreateProtocolError(message: string): SessionCreateProtocolError {
+  return Object.assign(new Error(`Session provider protocol error: ${message}`), {
+    code: SESSION_CREATE_PROTOCOL_ERROR,
+  })
+}
+
+function validateCreatedSession<TSession extends WorkspaceAgentSession>(value: unknown): TSession {
+  if (!value || typeof value !== "object") {
+    throw sessionCreateProtocolError("create did not return a canonical session")
+  }
+  const candidate = value as { id?: unknown; agentTypeId?: unknown }
+  if (typeof candidate.id !== "string" || candidate.id.trim().length === 0) {
+    throw sessionCreateProtocolError("created session is missing a valid id")
+  }
+  if (candidate.agentTypeId !== undefined && (
+    typeof candidate.agentTypeId !== "string" || candidate.agentTypeId.trim().length === 0
+  )) {
+    throw sessionCreateProtocolError("created session has an invalid owner")
+  }
+  return value as TSession
+}
+
+function uiCommandStreamEndpoint(endpoint: string | null | undefined): string | undefined {
+  if (!endpoint) return undefined
+  const normalized = endpoint.replace(/\/$/, "")
+  const suffix = "/api/v1/ui"
+  if (normalized.endsWith(suffix)) return normalized.slice(0, -suffix.length) || undefined
+  return normalized
+}
+
+function automaticSessionCreateInput(
+  defaultSessionTitle: string,
+  resumeSessionId?: string,
+): { title?: string; resumeSessionId?: string } {
+  const title = defaultSessionTitle.trim()
+  return {
+    // "New session" is presentation fallback, not a durable user title. Omitting
+    // it lets the native transcript derive its title from the first user turn.
+    ...(title && title !== "New session" ? { title } : {}),
+    ...(resumeSessionId ? { resumeSessionId } : {}),
+  }
+}
+
+function sessionDataSourceIdentity(input: {
+  workspaceId: string
+  agentTypeId: string
+  apiBaseUrl?: string
+  storageKey: string
+  requestHeaders: Record<string, string>
+  enabled: boolean
+}): string {
+  return JSON.stringify({
+    workspaceId: input.workspaceId,
+    agentTypeId: input.agentTypeId,
+    apiBaseUrl: input.apiBaseUrl?.replace(/\/$/, "") ?? "",
+    storageKey: input.storageKey,
+    requestHeaders: Object.entries(input.requestHeaders).sort(([left], [right]) => left.localeCompare(right)),
+    enabled: input.enabled,
+  })
+}
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -391,6 +471,7 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
     agentTypeId: options.agentTypeId,
     workspaceId,
     storageScope: workspaceId,
+    sourceIdentity: options.sourceIdentity,
     requestHeaders: options.requestHeaders,
     enabled: options.enabled,
     connectActiveSession: false,
@@ -562,6 +643,7 @@ export function WorkspaceAgentFront<
   bridgeEndpoint,
   fullPageBasePath,
   onAuthError,
+  onOpenFile,
   sessions,
   activeSessionId,
   activeSessionAgentTypeId,
@@ -729,6 +811,20 @@ export function WorkspaceAgentFront<
   const useSessions = (useSessionsProp ?? useDefaultWorkspacePiSessions) as UseWorkspaceAgentSessions<TSession>
   const shouldUseRemoteSessions = !chatPanelProp || Boolean(useSessionsProp)
   const remoteSessionHookEnabled = shouldUseRemoteSessions && provisionWorkspace !== false
+  const sessionSourceIdentity = useMemo(() => sessionDataSourceIdentity({
+    workspaceId,
+    agentTypeId,
+    apiBaseUrl,
+    storageKey: resolvedSessionStorageKey,
+    requestHeaders: resolvedRequestHeaders,
+    enabled: remoteSessionHookEnabled,
+  }), [agentTypeId, apiBaseUrl, remoteSessionHookEnabled, resolvedRequestHeaders, resolvedSessionStorageKey, workspaceId])
+  const chatPaneSourceIdentityRef = useRef(sessionSourceIdentity)
+  useIsomorphicLayoutEffect(() => {
+    if (chatPaneSourceIdentityRef.current === sessionSourceIdentity) return
+    chatPaneSourceIdentityRef.current = sessionSourceIdentity
+    setChatPaneState({ workspaceId, ids: [], activeId: null })
+  }, [sessionSourceIdentity, workspaceId])
   const remoteSessionActionsUnavailable = () => undefined
   const remoteSessionApi = useSessions({
     requestHeaders: resolvedRequestHeaders,
@@ -737,22 +833,42 @@ export function WorkspaceAgentFront<
     workspaceId,
     apiBaseUrl,
     enabled: remoteSessionHookEnabled,
+    sourceIdentity: sessionSourceIdentity,
   })
   const [remoteSessionSnapshot, setRemoteSessionSnapshot] = useState<{
-    workspaceId: string
+    sourceIdentity: string
     sessions: TSession[]
     activeSessionId: string | null | undefined
     activeSessionAgentTypeId: string | null | undefined
-  }>(() => ({ workspaceId, sessions: [], activeSessionId: null, activeSessionAgentTypeId: null }))
+  }>(() => ({ sourceIdentity: sessionSourceIdentity, sessions: [], activeSessionId: null, activeSessionAgentTypeId: null }))
   const remoteSessionsArePreviousWorkspace = remoteSessionHookEnabled
     && remoteSessionApi.workspaceId != null
     && remoteSessionApi.workspaceId !== workspaceId
-  const remoteSessionsAvailable = remoteSessionHookEnabled && !remoteSessionApi.loading && !remoteSessionApi.error && !remoteSessionsArePreviousWorkspace
+  const remoteSessionsSourceAttested = remoteSessionApi.sourceIdentity === sessionSourceIdentity
+  const remoteSessionsAvailable = remoteSessionHookEnabled
+    && remoteSessionsSourceAttested
+    && !remoteSessionApi.loading
+    && !remoteSessionApi.error
+    && !remoteSessionsArePreviousWorkspace
   const remoteSessionsPending = remoteSessionHookEnabled && !remoteSessionsAvailable
   useEffect(() => {
     if (!remoteSessionsAvailable) return
+    return startSessionActivityStream({
+      endpoint: apiBaseUrl,
+      workspaceId,
+      onActivity: ({ ref, status }) => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: {
+          sessionId: ref.sessionId,
+          agentTypeId: ref.agentTypeId,
+          working: status === "running" || status === "aborting",
+        },
+      })),
+    })
+  }, [apiBaseUrl, remoteSessionsAvailable, sessionSourceIdentity, workspaceId])
+  useEffect(() => {
+    if (!remoteSessionsAvailable) return
     setRemoteSessionSnapshot((previous) => {
-      const sameWorkspace = previous.workspaceId === workspaceId
+      const sameSource = previous.sourceIdentity === sessionSourceIdentity
       const remoteActiveOwner = remoteSessionApi.activeSessionAgentTypeId
         ?? remoteSessionApi.activeSession?.agentTypeId
         ?? null
@@ -763,20 +879,20 @@ export function WorkspaceAgentFront<
           session.id === remoteSessionApi.sessions[index]?.id
           && session.agentTypeId === remoteSessionApi.sessions[index]?.agentTypeId
         ))
-      if (sameWorkspace && sameActive && sameSessions) return previous
+      if (sameSource && sameActive && sameSessions) return previous
       return {
-        workspaceId,
+        sourceIdentity: sessionSourceIdentity,
         sessions: remoteSessionApi.sessions,
         activeSessionId: remoteSessionApi.activeSessionId,
         activeSessionAgentTypeId: remoteActiveOwner,
       }
     })
-  }, [remoteSessionApi.activeSession, remoteSessionApi.activeSessionAgentTypeId, remoteSessionApi.activeSessionId, remoteSessionApi.sessions, remoteSessionsAvailable, workspaceId])
+  }, [remoteSessionApi.activeSession, remoteSessionApi.activeSessionAgentTypeId, remoteSessionApi.activeSessionId, remoteSessionApi.sessions, remoteSessionsAvailable, sessionSourceIdentity])
   const remoteSessionsHaveStaleData = remoteSessionsPending
-    && remoteSessionSnapshot.workspaceId === workspaceId
+    && remoteSessionSnapshot.sourceIdentity === sessionSourceIdentity
     && remoteSessionSnapshot.sessions.length > 0
   const pendingStoredActiveSessionId = remoteSessionsPending ? readStoredSessionId(resolvedSessionStorageKey) : null
-  const pendingRemoteActiveSessionId = remoteSessionsPending && !remoteSessionsArePreviousWorkspace
+  const pendingRemoteActiveSessionId = remoteSessionsPending && remoteSessionsSourceAttested && !remoteSessionsArePreviousWorkspace
     ? remoteSessionApi.activeSessionId ?? null
     : null
   const activeRemoteSessions = remoteSessionsAvailable
@@ -795,6 +911,33 @@ export function WorkspaceAgentFront<
       ? remoteSessionSnapshot.activeSessionAgentTypeId
       : null
   const sessionApi = shouldUseRemoteSessions && (remoteSessionsAvailable || remoteSessionsHaveStaleData) ? remoteSessionApi : undefined
+  const sessionRefreshRef = useRef(sessionApi?.refresh)
+  sessionRefreshRef.current = sessionApi?.refresh
+  const committedSessionSourceRef = useRef(sessionSourceIdentity)
+  useIsomorphicLayoutEffect(() => {
+    committedSessionSourceRef.current = sessionSourceIdentity
+  }, [sessionSourceIdentity])
+  const sessionSourceIsCurrent = useCallback(
+    () => committedSessionSourceRef.current === sessionSourceIdentity,
+    [sessionSourceIdentity],
+  )
+  const sessionCreation = useSessionCreationCoordinator<TSession>({
+    sourceKey: sessionSourceIdentity,
+    validateResult: validateCreatedSession<TSession>,
+    ownerIsCurrent: sessionSourceIsCurrent,
+    ownershipReady: remoteSessionsAvailable,
+  })
+  const coordinateRemoteCreate = useCallback((
+    dedupeKey: string,
+    input?: { title?: string; resumeSessionId?: string },
+  ): Promise<TSession | undefined> => {
+    if (!sessionSourceIsCurrent() || !remoteSessionsAvailable) return Promise.resolve(undefined)
+    const create = remoteSessionApi.create
+    return sessionCreation.coordinate({
+      dedupeKey,
+      create: () => input === undefined ? create() : create(input),
+    })
+  }, [remoteSessionApi.create, remoteSessionsAvailable, sessionCreation, sessionSourceIsCurrent])
   const hasExplicitSessionProps =
     sessions !== undefined ||
     activeSessionId !== undefined ||
@@ -911,42 +1054,63 @@ export function WorkspaceAgentFront<
     if (!sessionApi || autoSubmitSessionId !== null) return
     if (autoSubmitSessionCreateRef.current) return
     autoSubmitSessionCreateRef.current = true
-    void Promise.resolve(sessionApi.create({ title: defaultSessionTitle }))
+    void coordinateRemoteCreate("auto-submit", automaticSessionCreateInput(defaultSessionTitle))
       .then((session) => {
-        if (typeof (session as { id?: unknown } | null | undefined)?.id !== "string") {
-          throw new Error("auto_submit_session_create_failed")
-        }
-        setAutoSubmitSessionId((session as { id: string }).id)
+        if (!session || !sessionSourceIsCurrent()) return
+        setAutoSubmitSessionId(session.id)
       })
       .catch(() => {
+        if (!sessionSourceIsCurrent()) return
         autoSubmitSessionCreateRef.current = false
         setAutoSubmitSessionId(undefined)
       })
-  }, [autoSubmitSessionId, defaultSessionTitle, sessionApi])
+  }, [autoSubmitSessionId, coordinateRemoteCreate, defaultSessionTitle, sessionApi, sessionSourceIsCurrent])
   const effectiveActiveSessionId = autoSubmitSessionId !== undefined ? autoSubmitSessionId ?? null : resolvedActiveId
   const effectiveActiveSessionAgentTypeId = autoSubmitSessionId !== undefined ? agentTypeId ?? null : resolvedActiveAgentTypeId
   const rawSwitch: (id: string, agentTypeId?: string) => unknown = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi?.switch ?? onSwitchSession ?? localSessionStore.switchTo
   const resolvedSwitch = useCallback((nextSessionId: string, nextAgentTypeId?: string) => {
+    if (!sessionSourceIsCurrent()) return undefined
     if (effectiveActiveSessionId && nextSessionId !== effectiveActiveSessionId) {
       emitWorkspaceComposerStop({ sessionId: effectiveActiveSessionId, reason: WORKSPACE_COMPOSER_STOP_REASONS.sessionSwitch })
     }
     return nextAgentTypeId
       ? rawSwitch(nextSessionId, nextAgentTypeId)
       : rawSwitch(nextSessionId)
-  }, [effectiveActiveSessionId, rawSwitch])
-  const resolvedCreate = remoteSessionsPending
-    ? remoteSessionActionsUnavailable
-    : sessionApi
-      ? () => sessionApi.create()
-      : onCreateSession
-        ? () => onCreateSession()
-        : () => localSessionStore.create()
+  }, [effectiveActiveSessionId, rawSwitch, sessionSourceIsCurrent])
+  const resolvedCreate = useCallback((dedupeKey = "manual"): Promise<TSession | undefined> => {
+    if (remoteSessionsPending) return Promise.resolve(undefined)
+    if (sessionApi) {
+      // A user create owns the empty-list transition. Cancel only a queued boot
+      // create; an already-started boot create remains authoritative, while this
+      // explicit action still mints its own session.
+      suppressEmptyAutoCreateRef.current = true
+      sessionCreation.cancel((task) => task.phase === "queued" && task.dedupeKey === "initial-auto")
+      return coordinateRemoteCreate(dedupeKey)
+        .catch((error) => {
+          // A canceled queued boot create resolves without running its own error
+          // path. Re-arm boot creation if the user-owned request failed.
+          autoCreateSessionRef.current = false
+          setInitialRemoteSessionCreating({ workspaceId, creating: false })
+          throw error
+        })
+        .finally(() => {
+          suppressEmptyAutoCreateRef.current = false
+        })
+    }
+    const created = onCreateSession ? onCreateSession() : localSessionStore.create()
+    return Promise.resolve(created).then((session) => validateCreatedSession<TSession>(session))
+  }, [coordinateRemoteCreate, localSessionStore, onCreateSession, remoteSessionsPending, sessionApi, sessionCreation, workspaceId])
+  const resolvedRename = useCallback((id: string, title: string, sessionAgentTypeId?: string) => {
+    if (!sessionSourceIsCurrent() || remoteSessionsPending || !sessionApi?.rename) return undefined
+    return sessionApi.rename(id, title, sessionAgentTypeId)
+  }, [remoteSessionsPending, sessionApi, sessionSourceIsCurrent])
   const rawDelete: (id: string, agentTypeId?: string) => unknown = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove
   const resolvedDelete = useCallback((id: string, sessionAgentTypeId?: string) => {
+    if (!sessionSourceIsCurrent()) return undefined
     if (sessionApi && remoteSessionsPending && activeRemoteSessions.length <= 1) {
       suppressEmptyAutoCreateRef.current = true
       return sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
@@ -961,14 +1125,14 @@ export function WorkspaceAgentFront<
       pendingLastSessionDeleteRef.current.add(sessionKey)
       autoCreateSessionRef.current = true
       setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
-      const replacement = sessionApi.create({ title: defaultSessionTitle })
-      return Promise.resolve(
-        replacement && typeof (replacement as PromiseLike<unknown>).then === "function"
-          ? Promise.resolve(replacement).then(() => (
-              sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
-            ))
-          : sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id),
+      const replacement = coordinateRemoteCreate(
+        `replacement:${sessionKey}`,
+        automaticSessionCreateInput(defaultSessionTitle),
       )
+      return replacement.then((created) => {
+        if (!created) return undefined
+        return sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
+      })
         .catch((error) => {
           autoCreateSessionRef.current = false
           setInitialRemoteSessionCreateFailed({ workspaceId, failed: true })
@@ -979,7 +1143,7 @@ export function WorkspaceAgentFront<
         })
     }
     return sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
-  }, [activeRemoteSessions.length, defaultSessionTitle, rawDelete, remoteSessionsPending, sessionApi, workspaceId])
+  }, [activeRemoteSessions.length, coordinateRemoteCreate, defaultSessionTitle, rawDelete, remoteSessionsPending, sessionApi, sessionSourceIsCurrent, workspaceId])
 
   const resolvedSessionTitle = resolvedSessions.find((session) => (
     workspaceSessionKeyFor(session) === workspaceSessionKey(
@@ -1060,9 +1224,10 @@ export function WorkspaceAgentFront<
   const surfaceRef = useRef<{ key: string; api: SurfaceShellApi } | null>(null)
   // Ops issued (e.g. agent openFile/openPanel) while the SurfaceShell isn't
   // mounted yet — collapsed surface or warmup overlay still showing. The
-  // dispatcher parks them here instead of dropping after its retry budget;
+  // dispatcher parks them instead of dropping after its retry budget;
   // handleSurfaceReady drains them once the surface mounts.
   const pendingSurfaceOpsRef = useRef<Array<(api: SurfaceShellApi) => void>>([])
+  const pendingSurfaceOpsKeyRef = useRef(resolvedSurfaceStorageKey)
   // Keep the latest key available to stable command callbacks. We tag the
   // SurfaceShell handle instead of clearing it in an effect: clearing after
   // mount races with Dockview's onReady on the initial render.
@@ -1085,9 +1250,13 @@ export function WorkspaceAgentFront<
 
   useEffect(() => {
     setSurfaceReady(false)
-    // Drop any ops parked for the previous workspace's surface so we never
-    // replay them against a freshly-swapped workspace.
-    pendingSurfaceOpsRef.current = []
+    // Drop parked operations only when this mounted shell actually changes
+    // workspace. Clearing during the initial effect can erase a first-click
+    // command queued by child plugin effects before SurfaceShell is ready.
+    if (pendingSurfaceOpsKeyRef.current !== resolvedSurfaceStorageKey) {
+      pendingSurfaceOpsRef.current = []
+      pendingSurfaceOpsKeyRef.current = resolvedSurfaceStorageKey
+    }
   }, [resolvedSurfaceStorageKey])
 
   useEffect(() => {
@@ -1114,13 +1283,17 @@ export function WorkspaceAgentFront<
     autoCreateSessionRef.current = true
     setInitialRemoteSessionCreating({ workspaceId, creating: true })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
-    void Promise.resolve(sessionApi.create({ title: defaultSessionTitle }))
+    void coordinateRemoteCreate(
+      "initial-auto",
+      automaticSessionCreateInput(defaultSessionTitle, sessionApi.resumeSessionId ?? undefined),
+    )
       .catch(() => {
+        if (!sessionSourceIsCurrent()) return
         autoCreateSessionRef.current = false
         setInitialRemoteSessionCreating({ workspaceId, creating: false })
         setInitialRemoteSessionCreateFailed({ workspaceId, failed: true })
       })
-  }, [activeRemoteSessions.length, autoSubmitSessionId, defaultSessionTitle, remoteEmptySessionsSettling, sessionApi, workspaceId])
+  }, [activeRemoteSessions.length, autoSubmitSessionId, coordinateRemoteCreate, defaultSessionTitle, remoteEmptySessionsSettling, sessionApi, sessionSourceIsCurrent, workspaceId])
 
   useEffect(() => {
     surfaceOpenRef.current = surfaceOpen
@@ -1139,6 +1312,11 @@ export function WorkspaceAgentFront<
   }, [resolvedSurfaceStorageKey])
 
   const enqueueSurfaceOp = useCallback((run: (api: SurfaceShellApi) => void) => {
+    const ready = surfaceRef.current
+    if (ready?.key === surfaceKeyRef.current) {
+      run(ready.api)
+      return
+    }
     pendingSurfaceOpsRef.current.push(run)
   }, [])
 
@@ -1204,6 +1382,18 @@ export function WorkspaceAgentFront<
     shouldOpenSurface,
   }), [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, enqueueSurfaceOp, shouldOpenSurface])
 
+  // UI commands address the Workspace surface, not an individual chat pane.
+  // Keep exactly one stream across pane switches so inactive pane cleanup cannot
+  // strand proxy-side SSE requests and starve ordinary Agent HTTP requests.
+  useEffect(() => {
+    if (bridgeEndpoint === null) return
+    return startUiCommandStream({
+      endpoint: uiCommandStreamEndpoint(bridgeEndpoint),
+      query: { workspaceId },
+      ctx: surfaceDispatch,
+    })
+  }, [bridgeEndpoint, surfaceDispatch, workspaceId])
+
   const openWorkspacePanel = useCallback((panel?: OpenPanelConfig) => {
     surfaceOpenRef.current = true
     setSurfaceOpen(true)
@@ -1249,26 +1439,23 @@ export function WorkspaceAgentFront<
     () => [...(extraPanels ?? []), ...pluginPanelIds],
     [extraPanels, pluginPanelIds],
   )
-  const chatSessionId = shouldUseRemoteSessions && !useSessionsProp && remoteSessionSnapshot.workspaceId !== workspaceId
-    ? "default"
+  const chatSessionId = shouldUseRemoteSessions && remoteSessionSnapshot.sourceIdentity !== sessionSourceIdentity
+    ? effectiveActiveSessionId ?? "default"
     : effectiveActiveSessionId ?? (autoSubmitSessionId !== undefined ? "default" : resolvedSessions[0]?.id ?? "default")
-  const requestedChatSessionAgentTypeId = effectiveActiveSessionAgentTypeId
+  const chatSessionAgentTypeId = effectiveActiveSessionAgentTypeId
     ?? resolvedSessions.find((session) => session.id === chatSessionId)?.agentTypeId
     ?? agentTypeId
-  const chatSessionOwner = resolvedSessions.find((session) => (
-    session.id === chatSessionId
-    && (requestedChatSessionAgentTypeId === undefined || (
-      "agentTypeId" in session && session.agentTypeId === requestedChatSessionAgentTypeId
-    ))
-  ))
-  const chatSessionAgentTypeId = chatSessionOwner && "agentTypeId" in chatSessionOwner
-    ? chatSessionOwner.agentTypeId ?? requestedChatSessionAgentTypeId
-    : requestedChatSessionAgentTypeId
   const chatSessionKey = workspaceSessionKey(chatSessionId, chatSessionAgentTypeId)
   // While remote sessions load, resolvedSessions is a one-item placeholder
   // for the stored active session — never an authoritative list to prune
   // restored panes against.
   const sessionListAuthoritative = !sessionApi?.hasMore && !remoteSessionsPending
+  const resolvedSessionsByKey = useMemo(() => new Map(
+    resolvedSessions.map((session) => [workspaceSessionKeyFor(session), session]),
+  ), [resolvedSessions])
+  const sessionTitleById = useMemo(() => new Map(
+    [...resolvedSessionsByKey].map(([key, session]) => [key, session.title]),
+  ), [resolvedSessionsByKey])
   useEffect(() => {
     if (remoteSessionsTransitioning) return
     const ownedPendingCreatePane = pendingCreatePaneRef.current?.workspaceId === workspaceId
@@ -1285,20 +1472,19 @@ export function WorkspaceAgentFront<
       pendingCreatePaneRef.current = null
       if (ownedPendingCreatePane.placementDirection) setChatPaneSplitPending(false)
     }
-    const sessionKeys = new Set(resolvedSessions.map(workspaceSessionKeyFor))
     for (const key of optimisticCreatedPaneKeysRef.current) {
-      if (sessionKeys.has(key)) optimisticCreatedPaneKeysRef.current.delete(key)
+      if (resolvedSessionsByKey.has(key)) optimisticCreatedPaneKeysRef.current.delete(key)
     }
     const newlyObservedSession = pendingCreatePane
       ? resolvedSessions.find((session) => !pendingCreatePane.knownIds.has(workspaceSessionKeyFor(session)))
       : undefined
     const pendingCreatedId = pendingCreatePane
       ? pendingCreatePane.createdId
-        ?? (sessionKeys.has(chatSessionKey) && !pendingCreatePane.knownIds.has(chatSessionKey)
+        ?? (resolvedSessionsByKey.has(chatSessionKey) && !pendingCreatePane.knownIds.has(chatSessionKey)
           ? chatSessionKey
           : newlyObservedSession ? workspaceSessionKeyFor(newlyObservedSession) : null)
       : null
-    if (pendingCreatedId && sessionKeys.has(pendingCreatedId)) {
+    if (pendingCreatedId && resolvedSessionsByKey.has(pendingCreatedId)) {
       if (pendingCreatePane?.placementDirection) {
         setPendingChatPanePlacement({
           paneId: pendingCreatedId,
@@ -1310,9 +1496,9 @@ export function WorkspaceAgentFront<
       pendingCreatePaneRef.current = null
     }
     const preservingEphemeralDefault = chatSessionId === "default" && autoSubmitSessionId !== undefined
-    const canPruneMissingSessions = sessionListAuthoritative && sessionKeys.size > 0 && !preservingEphemeralDefault
+    const canPruneMissingSessions = sessionListAuthoritative && resolvedSessionsByKey.size > 0 && !preservingEphemeralDefault
     const desiredSessionId = pendingCreatedId
-      ?? (canPruneMissingSessions && !sessionKeys.has(chatSessionKey)
+      ?? (canPruneMissingSessions && !resolvedSessionsByKey.has(chatSessionKey)
         ? resolvedSessions[0] ? workspaceSessionKeyFor(resolvedSessions[0]) : chatSessionKey
         : chatSessionKey)
     setChatPaneState((previous) => {
@@ -1331,13 +1517,13 @@ export function WorkspaceAgentFront<
         : currentActiveRef?.sessionId === chatSessionId
       const resolvedDesiredSessionId = !pendingCreatedId
         && current.activeId
-        && (!canPruneMissingSessions || sessionKeys.has(current.activeId))
+        && (!canPruneMissingSessions || resolvedSessionsByKey.has(current.activeId))
         && currentMatchesControlledSession
         ? current.activeId
         : desiredSessionId
       const rawIds = current.ids.length > 0 ? current.ids : [resolvedDesiredSessionId]
       const prunedIds = canPruneMissingSessions
-        ? rawIds.filter((id) => sessionKeys.has(id) || optimisticCreatedPaneKeysRef.current.has(id) || id === pendingCreatedId)
+        ? rawIds.filter((id) => resolvedSessionsByKey.has(id) || optimisticCreatedPaneKeysRef.current.has(id) || id === pendingCreatedId)
         : rawIds
       const ids = prunedIds.length > 0 ? prunedIds : [resolvedDesiredSessionId]
       const activeId = current.activeId && ids.includes(current.activeId) ? current.activeId : ids[0] ?? resolvedDesiredSessionId
@@ -1361,13 +1547,7 @@ export function WorkspaceAgentFront<
       ) return previous
       return { workspaceId, ids: nextIds, activeId: nextActiveId }
     })
-  }, [agentTypeId, autoSubmitSessionId, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, sessionListAuthoritative, workspaceId])
-
-  const sessionTitleById = useMemo(() => {
-    const titles = new Map<string, string | null | undefined>()
-    for (const session of resolvedSessions) titles.set(workspaceSessionKeyFor(session), session.title)
-    return titles
-  }, [resolvedSessions])
+  }, [agentTypeId, autoSubmitSessionId, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, resolvedSessionsByKey, sessionListAuthoritative, workspaceId])
   const [initialHydrationPromptStarted, setInitialHydrationPromptStarted] = useState<{ workspaceId: string; ids: Set<string> }>(() => ({
     workspaceId,
     ids: new Set(),
@@ -1487,7 +1667,10 @@ export function WorkspaceAgentFront<
       return true
     }
 
-    const created = resolvedCreate()
+    const createReason = placementDirection
+      ? `split:${afterId}:${placementDirection}`
+      : "manual"
+    const created = resolvedCreate(createReason)
     void Promise.resolve(created).then((session) => {
       const id = createdSessionId(session)
       // Some session providers signal creation through a later sessions update.
@@ -1624,25 +1807,25 @@ export function WorkspaceAgentFront<
   }, [requestedAutoSubmitInitialDraft, workspaceId])
   const autoSubmittingInitialDraft = requestedAutoSubmitInitialDraft
   const delayAutoSubmitDraft = autoSubmittingInitialDraft && shouldUseRemoteSessions && !effectiveActiveSessionId
+  const activeChatPaneIsInventoried = resolvedSessionsByKey.has(activeChatPaneId)
+  // A restored/open active pane that survived authoritative inventory
+  // reconciliation owns enough addressed identity to hydrate even when the
+  // mutable global active preference is absent. An implicit placeholder does not.
   const hydrateMessages = !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
-    shouldUseRemoteSessions ? Boolean(effectiveActiveSessionId) : true
+    shouldUseRemoteSessions
+      ? Boolean(effectiveActiveSessionId || activeChatPaneIsInventoried)
+      : true
   )
   const handleWorkspaceWarmupStatusChange = useCallback((status: WorkspaceWarmupStatus) => {
     setWorkspaceWarmupState({ workspaceId, status })
     onWorkspaceWarmupStatusChange?.(status)
   }, [onWorkspaceWarmupStatusChange, workspaceId])
 
-  useEffect(() => {
-    // postUiCommand also emits a browser CustomEvent so app/plugin bundles
-    // loaded through different module graphs can still reach this shell.
-    const handler = (event: Event) => {
-      const command = (event as CustomEvent).detail
-      if (!command || typeof command !== "object") return
-      dispatchUiCommand(command, surfaceDispatch)
-    }
-    globalThis.addEventListener?.(UI_COMMAND_EVENT, handler)
-    return () => globalThis.removeEventListener?.(UI_COMMAND_EVENT, handler)
-  }, [surfaceDispatch])
+  const uiCommandSurfaceDispatchRef = useRef(surfaceDispatch)
+  uiCommandSurfaceDispatchRef.current = surfaceDispatch
+  useEffect(() => registerUiCommandConsumer((command) => {
+    dispatchUiCommand(command, uiCommandSurfaceDispatchRef.current)
+  }), [])
 
   useEffect(() => {
     if (remoteSessionsPending) return
@@ -1703,8 +1886,7 @@ export function WorkspaceAgentFront<
   }, [apiTimeout, chatParams?.remoteSessionOptions])
 
   const makeCenterParams = useCallback(
-    (sessionKey: string, options: { bridgeEnabled?: boolean } = {}) => {
-      const bridgeEnabled = options.bridgeEnabled ?? true
+    (sessionKey: string) => {
       const sessionRef = workspaceSessionRefFromKey(sessionKey)
       const sessionId = sessionRef.sessionId
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
@@ -1723,7 +1905,7 @@ export function WorkspaceAgentFront<
       showSessions: false,
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession({ agentTypeId: sessionRef.agentTypeId ?? agentTypeId, sessionId })),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
-      bridgeEndpoint: bridgeEnabled ? bridgeEndpoint : null,
+      bridgeEndpoint: null,
       surfaceDispatch,
       extraCommands,
       workspaceWarmupStatus,
@@ -1740,7 +1922,7 @@ export function WorkspaceAgentFront<
         })
       },
       onTurnComplete: () => {
-        void sessionApi?.refresh?.({ background: true })
+        if (sessionSourceIsCurrent()) void sessionRefreshRef.current?.({ background: true })
         const existing = chatParams?.onTurnComplete
         if (typeof existing === "function") existing()
       },
@@ -1757,45 +1939,21 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionKey),
     [chatSessionKey, makeCenterParams],
   )
-  // Stabilise each pane's params by (sessionId, bridgeEnabled). Switching the
-  // active pane only flips one pane's bridge flag, so every *other* open pane
-  // must keep its exact same params object — otherwise it re-renders with a
-  // fresh-identity-but-equal params and reloads its transcript, which read as
-  // "the other pane changed too" when opening a third session. The cache resets
-  // whenever makeCenterParams changes (i.e. a real input changed), so genuine
-  // updates still flow to every pane.
-  const paneParamsCacheRef = useRef<{
-    make: typeof makeCenterParams
-    cache: Map<string, ReturnType<typeof makeCenterParams>>
-  } | null>(null)
-  const chatPanes = useMemo(() => {
-    if (!paneParamsCacheRef.current || paneParamsCacheRef.current.make !== makeCenterParams) {
-      paneParamsCacheRef.current = { make: makeCenterParams, cache: new Map() }
+  const chatPanes = useMemo(() => chatPaneIds.map((id) => {
+    const sessionRef = workspaceSessionRefFromKey(id)
+    return {
+      id,
+      title: resolvedSessionsByKey.get(id)?.title ?? (sessionRef.sessionId === "default" ? defaultSessionTitle : sessionRef.sessionId),
+      panel: "chat",
+      params: makeCenterParams(id),
     }
-    const { cache } = paneParamsCacheRef.current
-    return chatPaneIds.map((id) => {
-      const bridgeEnabled = id === activeChatPaneId
-      const cacheKey = `${id}:${bridgeEnabled}`
-      let params = cache.get(cacheKey)
-      if (!params) {
-        params = makeCenterParams(id, { bridgeEnabled })
-        cache.set(cacheKey, params)
-      }
-      const sessionRef = workspaceSessionRefFromKey(id)
-      return {
-        id,
-        title: sessionTitleById.get(id) ?? (sessionRef.sessionId === "default" ? defaultSessionTitle : sessionRef.sessionId),
-        panel: "chat",
-        params,
-      }
-    })
-  }, [activeChatPaneId, chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
+  }), [chatPaneIds, defaultSessionTitle, makeCenterParams, resolvedSessionsByKey])
   const providerChatPaneSessionRefs = useMemo(
     () => chatPaneIds.map(workspaceSessionRefFromKey),
     [chatPaneIds],
@@ -1928,8 +2086,8 @@ export function WorkspaceAgentFront<
   const createChatSessionInPopover = useCallback(() => {
     setLeftOverlay(null)
     const previousActiveId = effectiveActiveSessionId ?? activeChatPaneId
-    const created = resolvedCreate()
-    void Promise.resolve(created).then((session) => {
+    const created = resolvedCreate("quick")
+    void created.then((session) => {
       const id = createdSessionId(session)
       if (!id) return
       shellCapabilitiesHost.shellCapabilities.openDetachedChat({ agentTypeId, sessionId: id }, {
@@ -2015,7 +2173,7 @@ export function WorkspaceAgentFront<
     plugins: capturedPlugins,
     activeOverlay: leftOverlay,
     onClose: () => setLeftOverlay(null),
-    headerInsetStart: appLeftPaneCollapsed,
+    headerInsetStart: mobileShellActive,
     headerInsetEnd: !surfaceOpen,
   })
   const customLeftOverlayNode = useMemo(() => {
@@ -2023,16 +2181,16 @@ export function WorkspaceAgentFront<
     if (!overlay) return null
     return overlay.render({
       onClose: () => setLeftOverlay(null),
-      headerInsetStart: appLeftPaneCollapsed,
+      headerInsetStart: mobileShellActive,
       headerInsetEnd: !surfaceOpen,
       workspaceId,
     })
-  }, [appLeftOverlayActions, appLeftPaneCollapsed, leftOverlay, surfaceOpen, workspaceId])
+  }, [appLeftOverlayActions, leftOverlay, mobileShellActive, surfaceOpen, workspaceId])
 
   const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
     <SkillsPage
       onClose={() => setLeftOverlay(null)}
-      headerInsetStart={appLeftPaneCollapsed}
+      headerInsetStart={mobileShellActive}
       headerInsetEnd={!surfaceOpen}
     />
   ) : leftOverlay === "plugins" && pluginsActionEnabled ? (
@@ -2042,7 +2200,7 @@ export function WorkspaceAgentFront<
         agentTypeId: effectiveActiveSessionAgentTypeId ?? agentTypeId,
         sessionId: effectiveActiveSessionId ?? chatSessionId,
       })}
-      headerInsetStart={appLeftPaneCollapsed}
+      headerInsetStart={mobileShellActive}
       headerInsetEnd={!surfaceOpen}
     />
   ) : null)
@@ -2116,6 +2274,17 @@ export function WorkspaceAgentFront<
       minLeftPaneWidth={220}
       maxLeftPaneWidth={420}
       mobileShellEnabled={mobileShellEnabled}
+      collapsedRail={(
+        <AppLeftRail
+          actions={managementActions}
+          footerSlot={showThemeToggle ? <ThemeToggle /> : undefined}
+          onOpenCommandPalette={openCommandPalette}
+          onCreateSession={() => {
+            setLeftOverlay(null)
+            void createChatSession()
+          }}
+        />
+      )}
       leftPane={(
         <AppLeftPane
           width={effectiveAppLeftPaneWidth}
@@ -2146,6 +2315,7 @@ export function WorkspaceAgentFront<
           topSlot={topBarLeft}
           bottomSlot={showThemeToggle || topBarRight != null ? <div className="flex w-full min-w-0 items-center gap-2">{topBarRightContent}</div> : undefined}
           sessions={resolvedSessions}
+          sessionsLoading={remoteSessionsTransitioning}
           activeSessionRef={activeChatPaneRef}
           muteActiveSession={Boolean(leftOverlay)}
           openSessionRefs={openChatPaneRefs}
@@ -2164,6 +2334,7 @@ export function WorkspaceAgentFront<
           onOpenSessionAsPane={openChatPane}
           onToggleSessionPinned={toggleSessionPinned}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
+          onRenameSession={sessionApi?.rename ? resolvedRename : undefined}
           actions={managementActions}
         />
       )}
@@ -2216,6 +2387,7 @@ export function WorkspaceAgentFront<
         debug={mobileShellActive ? false : debug}
         bridgeEndpoint={null}
         onAuthError={onAuthError}
+        onOpenFile={onOpenFile}
         frontPluginHotReload={resolvedFrontPluginHotReload}
         fullPageBasePath={fullPageBasePath}
         commandPaletteSessionSearch={commandPaletteSessionSearch}

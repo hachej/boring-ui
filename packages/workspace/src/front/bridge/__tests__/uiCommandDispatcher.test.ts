@@ -142,6 +142,37 @@ describe("dispatchUiCommand", () => {
     }
   })
 
+  it("parks openFile before a closed workbench surface mounts", () => {
+    const raf = vi.spyOn(global, "requestAnimationFrame").mockImplementation(() => 1)
+    let workbenchOpen = false
+    let parked: ((surface: SurfaceShellApi) => void) | undefined
+    const mountedSurface = fakeSurface()
+    const c: DispatchContext = {
+      surface: () => null,
+      isWorkbenchOpen: () => workbenchOpen,
+      openWorkbench: () => {
+        workbenchOpen = true
+      },
+      enqueue: (run) => {
+        parked = run
+      },
+    }
+
+    dispatchUiCommand({
+      kind: "openFile",
+      params: { path: "/policy.md", filesystem: "company_context" },
+    }, c)
+
+    expect(workbenchOpen).toBe(true)
+    expect(parked).toBeDefined()
+    parked?.(mountedSurface)
+    expect(mountedSurface.__openFileCalls).toEqual([{
+      path: "/policy.md",
+      filesystem: "company_context",
+    }])
+    raf.mockRestore()
+  })
+
   it("openPanel calls surface.openPanel with the full config", () => {
     const c = ctx()
     dispatchUiCommand(

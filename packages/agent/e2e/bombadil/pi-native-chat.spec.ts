@@ -238,7 +238,12 @@ export const surviving_message_order_is_stable = always(
 
 export const chatActions = actions((): Action[] => {
   const current = chat.current
-  const generated: Action[] = ['Wait', 'Reload']
+  // Reloading while boot is disconnected/connecting can indefinitely reset the
+  // very recovery window under test. Wait for a usable chat before generating
+  // disruptive actions; focused reload coverage is added below once state exists.
+  if (current.connection !== 'connected') return ['Wait']
+
+  const generated: Action[] = ['Wait']
 
   if (current.points.composer) {
     generated.push({ Click: { name: 'composer', point: current.points.composer } })

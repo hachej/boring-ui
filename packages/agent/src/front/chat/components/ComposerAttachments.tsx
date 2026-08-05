@@ -24,7 +24,7 @@ export function AttachmentButton({ disabled, className }: { disabled?: boolean; 
       onClick={() => {
         if (!disabled) attachments.openFileDialog()
       }}
-      className={cn(composerActionClass, '!h-10 !w-10', className)}
+      className={cn(composerActionClass, 'composer-attachment-button !h-10 !w-10', className)}
       aria-label="Attach files"
       title={disabled ? 'Attachments are available when the composer is ready.' : 'Attach files'}
     >
@@ -49,7 +49,7 @@ export function AttachmentsList() {
           data={file}
           onRemove={() => attachments.remove(file.id)}
           className={cn(
-            '!h-9 !gap-2 !rounded-full !border-input/80 !bg-muted/40 !pl-1 !pr-2',
+            'composer-attachment-chip !h-9 !gap-2 !rounded-full !border-input/80 !bg-muted/40 !pl-1 !pr-2',
             'transition-colors hover:!bg-muted/70 hover:!text-foreground',
             file.status === 'error' && '!border-destructive/50 !bg-destructive/10',
           )}
@@ -68,7 +68,7 @@ export function AttachmentsList() {
             ) : null}
           </div>
           <AttachmentInfo className="min-w-0 !max-w-[180px] truncate text-[13px] font-medium" />
-          <AttachmentRemove className="!size-5 !rounded-full !opacity-100 text-muted-foreground/80 hover:text-foreground" />
+          <AttachmentRemove className="composer-attachment-remove !size-5 !rounded-full !opacity-100 text-muted-foreground/80 hover:text-foreground" />
         </Attachment>
       ))}
     </Attachments>

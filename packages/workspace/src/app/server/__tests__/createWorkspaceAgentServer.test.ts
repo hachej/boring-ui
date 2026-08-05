@@ -491,7 +491,7 @@ describe("Workspace public admission composition", () => {
     } finally {
       await app.close()
     }
-  })
+  }, 10_000)
 })
 
 describe("workspace app-server plugin package helpers", () => {

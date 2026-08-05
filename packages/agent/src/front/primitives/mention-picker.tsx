@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { withStorageScope } from '../agentHttp'
 import { cn } from '../lib'
 import { toFileSearchGlob } from '../fileSearchGlob'
 import { usePickerKeyboard } from './use-picker-keyboard'
@@ -47,7 +48,7 @@ export function MentionPicker({
     setActiveIdx(0)
     const ctrl = new AbortController()
     const runFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
-    const headers = scopedHeaders(requestHeaders, storageScope)
+    const headers = withStorageScope(requestHeaders, storageScope)
     const base = apiBaseUrl.replace(/\/$/, '')
     const t = setTimeout(() => {
       runFetch(`${base}/api/v1/files/search?q=${encodeURIComponent(mentionSearchGlob(mention.query))}&limit=8`, {
@@ -115,17 +116,4 @@ export function detectMention(value: string, cursorPos: number): MentionState | 
   if (!match) return null
   const atIdx = before.lastIndexOf('@')
   return { query: match[2], anchorStart: atIdx, anchorEnd: cursorPos }
-}
-
-function scopedHeaders(
-  requestHeaders: Record<string, string | undefined> | undefined,
-  storageScope: string | undefined,
-): Record<string, string> | undefined {
-  const headers: Record<string, string> = {}
-  for (const [key, value] of Object.entries(requestHeaders ?? {})) {
-    if (value !== undefined) headers[key] = value
-  }
-  const hasStorageScope = Object.keys(headers).some((key) => key.toLowerCase() === 'x-boring-storage-scope')
-  if (storageScope && !hasStorageScope) headers['x-boring-storage-scope'] = storageScope
-  return Object.keys(headers).length > 0 ? headers : undefined
 }

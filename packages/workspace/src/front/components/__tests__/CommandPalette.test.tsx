@@ -294,9 +294,17 @@ describe("CommandPalette", () => {
 
       fireKeydown("k", { metaKey: true })
       await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
-      expect(screen.getByRole("button", { name: "Chats" })).toHaveAttribute("aria-pressed", "true")
+      const chatsMode = screen.getByRole("button", { name: "Chats" })
+      expect(chatsMode).toHaveAttribute("aria-pressed", "true")
+      expect(chatsMode).toHaveClass("command-palette-mode-button")
       expect(screen.getByRole("button", { name: "Sources" })).toBeInTheDocument()
       expect(screen.getByRole("button", { name: "Commands" })).toBeInTheDocument()
+      expect(document.querySelector(".command-palette-search-layout")).toBeInTheDocument()
+      expect(screen.getByRole("option", { name: /Alpha plan/ })).toHaveClass(
+        "command-palette-result-row",
+        "data-[selected=true]:ring-0",
+      )
+      expect(screen.getByRole("button", { name: "Open Alpha plan in new chat pane" })).toHaveClass("command-palette-secondary-action")
 
       await typePaletteQuery(user, "beta")
       await user.click(screen.getByRole("option", { name: /Beta build/ }))

@@ -1,4 +1,4 @@
-import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -12,20 +12,24 @@ describe('PiSessionStore rename capability', () => {
     const root = await mkdtemp(join(tmpdir(), 'rename-session-'))
     roots.push(root)
     const store = new PiSessionStore(root, root)
-    const created = await store.create({ workspaceId: 'workspace-a' }, { title: 'wrapper-old' })
-    const wrapper = join(root, `${created.id}.jsonl`)
-    const native = join(root, `2026-07-23T00-00-00_${created.id}.jsonl`)
-    const tie = created.createdAt
-    await appendFile(wrapper, `${JSON.stringify({ type: 'session_info', id: 'wrapper-tie', parentId: null, timestamp: tie, name: 'wrapper-tie' })}\n`)
+    const sessionId = 'legacy-wrapper'
+    const wrapper = join(root, `${sessionId}.jsonl`)
+    const native = join(root, `2026-07-23T00-00-00_${sessionId}.jsonl`)
+    const tie = '2026-07-23T00:00:00.000Z'
+    await writeFile(wrapper, [
+      JSON.stringify({ type: 'session', version: 3, id: sessionId, timestamp: tie, cwd: root, boringSessionCtx: { workspaceId: 'workspace-a' } }),
+      JSON.stringify({ type: 'session_info', id: 'wrapper-tie', parentId: null, timestamp: tie, name: 'wrapper-tie' }),
+      JSON.stringify({ type: 'pi_session_file', timestamp: tie, path: native }),
+      '',
+    ].join('\n'))
     await writeFile(native, [
-      JSON.stringify({ type: 'session', version: 3, id: created.id, timestamp: created.createdAt, cwd: root }),
+      JSON.stringify({ type: 'session', version: 3, id: sessionId, timestamp: tie, cwd: root }),
       JSON.stringify({ type: 'session_info', id: 'native-tie', parentId: null, timestamp: tie, name: 'native-tie' }),
       '',
     ].join('\n'))
-    await store.savePiSessionFile({ workspaceId: 'workspace-a' }, created.id, native)
 
-    expect((await store.load({ workspaceId: 'workspace-a' }, created.id)).title).toBe('native-tie')
-    const renamed = await store.rename({ workspaceId: 'workspace-a' }, created.id, 'renamed')
+    expect((await store.load({ workspaceId: 'workspace-a' }, sessionId)).title).toBe('native-tie')
+    const renamed = await store.rename({ workspaceId: 'workspace-a' }, sessionId, 'renamed')
     expect(renamed.title).toBe('renamed')
 
     for (const file of [wrapper, native]) {

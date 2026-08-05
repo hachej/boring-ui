@@ -13,7 +13,7 @@ test('SessionStore contract', () => {
   expectTypeOf<SessionStore>().toHaveProperty('create')
   expectTypeOf<SessionStore>().toHaveProperty('load')
   expectTypeOf<SessionStore>().toHaveProperty('delete')
-  expectTypeOf<SessionStore>().not.toHaveProperty('rename')
+  expectTypeOf<SessionStore>().toHaveProperty('rename')
 
   expectTypeOf<SessionStore['list']>().parameters.toEqualTypeOf<[ctx: SessionCtx, options?: SessionListOptions]>()
   expectTypeOf<SessionStore['list']>().returns.toEqualTypeOf<Promise<SessionSummary[]>>()
@@ -31,6 +31,7 @@ test('Session shapes', () => {
   expectTypeOf<SessionCtx>().toEqualTypeOf<{
     workspaceId?: string
     userId?: string
+    runtimeScopeIdentity?: string
   }>()
 
   expectTypeOf<SessionSummary>().toEqualTypeOf<{
@@ -39,6 +40,10 @@ test('Session shapes', () => {
     createdAt: string
     updatedAt: string
     turnCount: number
+    agentTypeId?: string
+    nativeSessionId?: string
+    hasAssistantReply?: boolean
+    status?: 'idle' | 'running' | 'aborting' | 'error'
   }>()
 
   expectTypeOf<SessionDetail>().toEqualTypeOf<SessionSummary>()
