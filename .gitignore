@@ -92,6 +92,10 @@ packages/workspace/src/plugins/eval-*/
 # Ignore machine-local skill-install artifacts while retaining the project-owned
 # active skills, non-discovered provider references, and archived skill library.
 /.agents/*
+!/.agents/factory/
+!/.agents/factory/**
+!/.agents/personas/
+!/.agents/personas/**
 !/.agents/skills/
 /.agents/skills/*
 !/.agents/skills/ask-boring/
