@@ -24,8 +24,20 @@ export interface WorkspaceShellSessionRef {
   sessionId: string
 }
 
+export const WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT = "boring-workspace:chat-prompt-accepted"
+
+export interface WorkspaceChatPromptAcceptedDetail extends WorkspaceShellSessionRef {
+  clientNonce: string
+}
+
+export type WorkspaceShellCreatedSessionResult =
+  | { success: true; ref: WorkspaceShellSessionRef }
+  | { success: false; reason: "create-failed"; message: string }
+
 export interface WorkspaceShellCapabilities {
   openArtifact(target: WorkspaceShellArtifactTarget | null, options?: { sessionId?: string | null; title?: string; instanceId?: string }): WorkspaceShellCapabilityResult
+  createChatSession?(options?: { title?: string }): Promise<WorkspaceShellCreatedSessionResult>
+  deleteChatSession?(ref: WorkspaceShellSessionRef): Promise<WorkspaceShellCapabilityResult>
   openDetachedChat(ref: WorkspaceShellSessionRef, options?: { anchor?: WorkspaceShellAnchorRect; title?: string; initialDraft?: string; composingEnabled?: boolean }): WorkspaceShellCapabilityResult
   openFullChat(ref: WorkspaceShellSessionRef): WorkspaceShellCapabilityResult
   openInboxItem(itemId: string): WorkspaceShellCapabilityResult

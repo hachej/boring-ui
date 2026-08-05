@@ -7,6 +7,7 @@ import { TaskCard } from "./TaskCard"
 import { TaskKanbanColumn } from "./TaskKanbanColumn"
 import { taskAttentionKey, useTaskAttention } from "./useTaskAttention"
 import { taskSessionLinkKey, useTaskSessionLinkCounts } from "./taskSessionLinkStream"
+import { resumePendingTaskChatBindings } from "./pendingTaskChatBindings"
 
 interface TaskKanbanBoardProps {
   adapters: readonly BoringTaskAdapter[]
@@ -135,6 +136,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const adaptersById = useMemo(() => new Map(adapters.map((adapter) => [adapter.id, adapter])), [adapters])
   const pluginClient = useWorkspacePluginClient()
   const sessionLinkCounts = useTaskSessionLinkCounts(pluginClient)
+  useEffect(() => { resumePendingTaskChatBindings(pluginClient) }, [pluginClient])
   const attentionByTask = useTaskAttention(state?.tasks ?? EMPTY_TASKS)
 
   const setViewMode = (mode: TaskBoardViewMode) => {

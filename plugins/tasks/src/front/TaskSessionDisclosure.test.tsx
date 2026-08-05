@@ -88,7 +88,7 @@ describe("TaskSessionDisclosure", () => {
       shell={shellCapabilities}
       pluginClient={{
         postJson: postJson as unknown as WorkspacePluginClient["postJson"],
-        getJson: vi.fn(async () => ({ summary: { title: "Exact work", updatedAt: "2026-07-19T01:00:00.000Z" }, state: { status: "idle", queuedMessages: [] } })) as WorkspacePluginClient["getJson"],
+        getJson: vi.fn(async () => ({ summary: { title: "Exact work", updatedAt: Date.parse("2026-07-19T01:00:00.000Z") }, state: { status: "idle", queue: { followUps: [{}] } } })) as WorkspacePluginClient["getJson"],
       }}
       sessionLinkCount={1}
     />)
@@ -100,6 +100,14 @@ describe("TaskSessionDisclosure", () => {
     await user.click(sessionsToggle)
     expect(await screen.findByRole("button", { name: "1 session" })).toHaveAttribute("aria-expanded", "true")
     expect(await screen.findByText("Exact work")).toBeInTheDocument()
+    expect(screen.getByText("Queued")).toBeInTheDocument()
+    expect(postJson.mock.calls.filter(([path]) => path.endsWith("/sessions/list"))).toHaveLength(1)
+    await user.click(sessionsToggle)
+    expect(screen.queryByText("Exact work")).not.toBeInTheDocument()
+    await user.click(sessionsToggle)
+    expect(screen.getByText("Exact work")).toBeInTheDocument()
+    expect(screen.queryByText("Refreshing…")).not.toBeInTheDocument()
+    expect(postJson.mock.calls.filter(([path]) => path.endsWith("/sessions/list"))).toHaveLength(1)
     expect(screen.getAllByRole("listitem")).toHaveLength(10)
     expect(screen.getByRole("button", { name: "Show 1 more" })).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Open Artifact 1" }))

@@ -108,12 +108,17 @@ export {
 } from "./front/registry"
 export { useAppLeftOverlayChrome } from "./shared/plugins/appLeftOverlayChrome"
 export type { AppLeftOverlayChromeValue } from "./shared/plugins/appLeftOverlayChrome"
-export { useWorkspaceShellCapabilities } from "./shared/plugins/workspaceShellCapabilities"
+export {
+  WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT,
+  useWorkspaceShellCapabilities,
+} from "./shared/plugins/workspaceShellCapabilities"
 export type {
+  WorkspaceChatPromptAcceptedDetail,
   WorkspaceShellAnchorRect,
   WorkspaceShellArtifactTarget,
   WorkspaceShellCapabilityResult,
   WorkspaceShellCapabilities,
+  WorkspaceShellCreatedSessionResult,
   WorkspaceShellSessionRef,
 } from "./shared/plugins/workspaceShellCapabilities"
 export { getFileIcon } from "./front/registry"

@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react"
 import { MessageSquarePlus, MoreHorizontal, Trash2 } from "lucide-react"
-import { emitWorkspaceTaskProvenanceChanged, useWorkspacePluginClient, type WorkspacePluginClient } from "@hachej/boring-workspace"
-import { useWorkspaceShellCapabilities, type WorkspaceShellAnchorRect, type WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
+import { useWorkspacePluginClient, type WorkspacePluginClient } from "@hachej/boring-workspace"
+import {
+  useWorkspaceShellCapabilities,
+  type WorkspaceShellAnchorRect,
+  type WorkspaceShellCapabilities,
+} from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard } from "../shared"
 import { TaskSessionDisclosure } from "./TaskSessionDisclosure"
-import { TASK_SESSION_LINKS_CHANGED_EVENT } from "./taskSessionLinkStream"
+import { registerPendingTaskChatBinding } from "./pendingTaskChatBindings"
 import { TaskAttentionDisclosure } from "./TaskAttentionDisclosure"
 import type { TaskAttentionItem } from "./useTaskAttention"
 
@@ -45,50 +49,46 @@ function taskChatDraft(task: BoringTaskCard): string {
   ].filter(Boolean).join("\n")
 }
 
-interface CreatedAgentSession { agentTypeId?: unknown; sessionId?: unknown }
-
 export async function createLinkedTaskChat(
   task: BoringTaskCard,
   anchor: WorkspaceShellAnchorRect,
   shell: WorkspaceShellCapabilities,
-  pluginClient: Pick<WorkspacePluginClient, "agentTypeId" | "postJson" | "deleteJson">,
+  pluginClient: Pick<WorkspacePluginClient, "workspaceId" | "agentTypeId" | "postJson" | "deleteJson">,
 ) {
   const title = `${task.number}: ${task.title}`
-  const sessionsPath = `/api/v1/agents/${encodeURIComponent(pluginClient.agentTypeId)}/sessions`
-  const session = await pluginClient.postJson<CreatedAgentSession>(sessionsPath, { title })
-  const createdSessionId = typeof session.sessionId === "string" ? session.sessionId.trim() : ""
-  if (
-    typeof session.agentTypeId !== "string"
-    || !session.agentTypeId
-    || session.agentTypeId !== pluginClient.agentTypeId
-    || !createdSessionId
-  ) {
-    if (createdSessionId) await pluginClient.deleteJson(`${sessionsPath}/${encodeURIComponent(createdSessionId)}`).catch(() => undefined)
+  if (!shell.createChatSession) throw new Error("Workspace chat session creation is unavailable.")
+  const created = await shell.createChatSession({ title })
+  if (!created.success) throw new Error(created.message)
+  const deleteCreatedSession = async () => {
+    if (shell.deleteChatSession) {
+      await shell.deleteChatSession(created.ref)
+      return
+    }
+    const sessionsPath = `/api/v1/agents/${encodeURIComponent(created.ref.agentTypeId)}/sessions`
+    await pluginClient.deleteJson(`${sessionsPath}/${encodeURIComponent(created.ref.sessionId)}`).catch(() => undefined)
+    await shell.refreshChatSessions?.().catch(() => undefined)
+  }
+  if (created.ref.agentTypeId !== pluginClient.agentTypeId) {
+    await deleteCreatedSession()
     throw new Error("Chat session creation returned an invalid addressed session.")
   }
-  const ref = { agentTypeId: session.agentTypeId, sessionId: createdSessionId }
-  try {
-    await pluginClient.postJson("/api/boring-tasks/sessions/link", {
-      adapterId: task.adapterId,
-      taskId: task.id,
-      ...ref,
-    })
-  } catch (error) {
-    await pluginClient.deleteJson(`${sessionsPath}/${encodeURIComponent(ref.sessionId)}`).catch(() => undefined)
-    throw error
-  }
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent(TASK_SESSION_LINKS_CHANGED_EVENT, {
-      detail: { adapterId: task.adapterId, taskId: task.id },
-    }))
-    emitWorkspaceTaskProvenanceChanged()
-  }
-  return shell.openDetachedChat(ref, {
+  const cancelPendingBinding = registerPendingTaskChatBinding({
+    workspaceId: pluginClient.workspaceId ?? "workspace",
+    adapterId: task.adapterId,
+    taskId: task.id,
+    ...created.ref,
+  }, pluginClient)
+  const opened = shell.openDetachedChat(created.ref, {
     anchor,
     title,
     initialDraft: taskChatDraft(task),
     composingEnabled: true,
   })
+  if (!opened.success) {
+    cancelPendingBinding()
+    await deleteCreatedSession()
+  }
+  return opened
 }
 
 export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = false, compact = false, attention = [], sessionLinkCount, onDelete, onDragStart, onDragEnd }: TaskCardProps) {

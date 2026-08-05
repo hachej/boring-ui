@@ -43,7 +43,8 @@ Create one new PR stacked on PR #1044 that preserves the product behavior while 
 ## Acceptance
 
 - Human Intention records show multiple artifacts, related tasks, exact chat ownership, and independent artifact/chat actions.
-- Task cards create one canonical addressed session, bind it before opening, and roll back a failed bind.
+- Task cards create one canonical addressed session through the Workspace shell, publish it to Chats immediately, and keep the task link provisional until that exact addressed session's first prompt is accepted.
+- Provisional binding intent survives tab reload, retries transient link failures, and rolls back through shell-owned deletion if detached placement fails.
 - Task links survive restart and retain the Agent owner.
 - Persisted task-session counts appear without expanding each task, update across connected clients after route/tool mutations, and reconcile from a fresh snapshot after reconnect.
 - Task-link snapshots/events never disclose session IDs; unauthorized/missing sessions are indistinguishable and exact IDs are redacted.
@@ -53,7 +54,7 @@ Create one new PR stacked on PR #1044 that preserves the product behavior while 
 
 ## Proof
 
-- Ask User: 114 passed, 1 skipped; Tasks: 66 passed.
+- Ask User: 114 passed, 1 skipped; Tasks: 80 passed.
 - Agent, Workspace, Core, Ask User, and Tasks typechecks passed.
 - AgentHost cutover matrix: 19 rows, 39 final routes, 23 deleted routes, zero forbidden compatibility references.
 - All seven AgentHost composition roots passed.

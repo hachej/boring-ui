@@ -10,6 +10,8 @@ function Probe({ openChatPane, openSurface, refreshChatSessions }: { openChatPan
   const [floatingChatSession, setFloatingChatSession] = useState<{ ref: WorkspaceShellSessionRef; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>(null)
   const shell = useWorkspaceShellCapabilitiesController({
     setFloatingChatSession,
+    createChatSession: async () => ({ success: true, ref: { agentTypeId: 'alpha', sessionId: 'created' } }),
+    deleteChatSession: async () => ({ success: true }),
     openChatPane,
     refreshChatSessions,
     isAppLeftOverlayAvailable: (id) => id === 'inbox',

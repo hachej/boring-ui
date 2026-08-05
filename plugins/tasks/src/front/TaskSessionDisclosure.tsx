@@ -30,7 +30,7 @@ interface LinkListResponse { ok: true; links: TaskSessionLinkDisclosure[] }
 interface ActivityResponse { sessions: TaskSessionActivity[]; omittedSessionIds: string[] }
 interface AddressedSessionState {
   summary?: { title?: unknown; updatedAt?: unknown }
-  state?: { status?: unknown; queuedMessages?: unknown[]; error?: unknown }
+  state?: { status?: unknown; queue?: { followUps?: unknown[] }; error?: unknown }
 }
 
 function statusFor(activity: TaskSessionActivity | undefined): TaskSessionDisplayStatus {
@@ -131,14 +131,19 @@ export function TaskSessionDisclosure({
           `/api/v1/agents/${encodeURIComponent(link.agentTypeId)}/sessions/${encodeURIComponent(link.sessionId)}/state`,
         )
         const status = typeof snapshot.state?.status === "string" ? snapshot.state.status : "idle"
+        const updatedAt = typeof snapshot.summary?.updatedAt === "number" && Number.isFinite(snapshot.summary.updatedAt)
+          ? new Date(snapshot.summary.updatedAt).toISOString()
+          : typeof snapshot.summary?.updatedAt === "string"
+            ? snapshot.summary.updatedAt
+            : new Date(0).toISOString()
         sessions.push({
           sessionId: link.sessionId,
           title: typeof snapshot.summary?.title === "string" ? snapshot.summary.title : link.sessionId,
-          updatedAt: typeof snapshot.summary?.updatedAt === "string" ? snapshot.summary.updatedAt : new Date(0).toISOString(),
+          updatedAt,
           status: ["idle", "hydrating", "submitted", "streaming", "aborting", "error"].includes(status)
             ? status as TaskSessionActivity["status"]
             : "idle",
-          queuedCount: Array.isArray(snapshot.state?.queuedMessages) ? snapshot.state.queuedMessages.length : 0,
+          queuedCount: Array.isArray(snapshot.state?.queue?.followUps) ? snapshot.state.queue.followUps.length : 0,
           hasError: snapshot.state?.error != null,
         })
       } catch {
@@ -205,14 +210,10 @@ export function TaskSessionDisclosure({
     event.stopPropagation()
     const next = !expanded
     setExpanded(next)
-    if (next) {
+    if (next && (links === null || (sessionLinkCount !== undefined && links.length !== sessionLinkCount))) {
       void refresh(true)
-      return
     }
-    refreshedCount.current = undefined
-    setLinks(null)
-    setActivity({ sessions: [], omittedSessionIds: [] })
-    setHandovers(new Map())
+    if (!next) refreshedCount.current = undefined
   }
 
   const openPopover = (event: MouseEvent<HTMLButtonElement>, row: TaskSessionRow) => {
