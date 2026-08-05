@@ -9,13 +9,13 @@ disable-model-invocation: true
 Drive one executable TODO, plan, Beads epic, or validated UI packet to
 `ready-for-human`; never merge.
 
-Read the artifact, `docs/kanzen/boring-loop.md`, and
-`docs/kanzen/MODEL-CARD.md`. Load only the needed procedure:
+Read the artifact, `docs/procedures/boring-loop.md`, and
+`docs/procedures/MODEL-CARD.md`. Load only the needed procedure:
 
-- worktrees/delegation: `docs/kanzen/procedures/worktree-agent.md`
-- proof: `docs/kanzen/procedures/proof-of-work.md`
-- UI packets: `docs/kanzen/procedures/visual-review.md`
-- handoff: `docs/kanzen/procedures/owner-review-card.md`
+- worktrees/delegation: `docs/procedures/worktree-agent.md`
+- proof: `docs/procedures/proof-of-work.md`
+- UI packets: `docs/procedures/visual-review.md`
+- handoff: `docs/procedures/owner-review-card.md`
 - provider method: `../../skill-references/exec/index.md`
 
 Require clear scope, acceptance, proof, dependencies, and risk; repair planning

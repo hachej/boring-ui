@@ -54,6 +54,22 @@ describe("createWorkspacePluginClient", () => {
     })).rejects.toThrow("No data yet. Ask the agent to refresh the dashboard.: file not found (404)")
   })
 
+  it("retains typed JSON error bodies for plugin-specific error handling", async () => {
+    const body = { code: "TASK_NOT_FOUND", message: "Task not found.", retryable: false }
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(body), {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    })))
+    const client = createWorkspacePluginClient("", "default", "workspace-1")
+
+    await expect(client.postJson("/api/boring-tasks/sources/tasks/get", { taskId: "missing" })).rejects.toMatchObject({
+      name: "WorkspacePluginClientRequestError",
+      status: 404,
+      body,
+      message: "Task not found. (404)",
+    })
+  })
+
   it("strips inherited content-type headers for body-less POSTs", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
       status: 200,

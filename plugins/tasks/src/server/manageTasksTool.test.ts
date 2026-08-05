@@ -17,7 +17,7 @@ function source(): BoringTaskSourceRuntime {
     summary: () => ({ id: "source-a", label: "Source A", capabilities: { move: true, delete: true, deleteEffect: "close" } }),
     getBoardConfig: async () => ({ adapterId: "source-a", columns: [{ id: "todo", title: "Todo" }, { id: "done", title: "Done" }] }),
     listTasks: async () => [task],
-    getTask: async (_ctx, taskId) => taskId === task.id ? task : undefined,
+    getTaskCard: async (_ctx, taskId) => taskId === task.id ? task : undefined,
     moveTask: async (_ctx, input) => ({ ...task, statusId: input.statusId }),
     deleteTask: async () => undefined,
   }

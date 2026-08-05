@@ -41,7 +41,7 @@ const manifest: UiReviewManifest = {
 }
 const hardGates: UiHardGateReport = {
   schemaVersion: 1,
-  contractVersion: "command-palette-v2",
+  contractVersion: "command-palette-v3",
   results: [
     "console-errors",
     "page-errors",
