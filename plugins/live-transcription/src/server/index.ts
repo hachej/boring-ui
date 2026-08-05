@@ -14,6 +14,8 @@ export interface LiveTranscriptServerPluginOptions {
   actorResolver: LiveTranscriptManagerOptions["actorResolver"]
   authority: LiveTranscriptAuthority
   upstreamUrl: string
+  /** Default is WhisperLiveKit; Kyutai uses the moshi-server MessagePack protocol. */
+  upstreamProvider?: "whisperlivekit" | "kyutai"
   upstreamBearerToken?: string
   setupTimeoutMs?: number
   drainTimeoutMs?: number
@@ -27,12 +29,13 @@ export interface LiveTranscriptServerPluginOptions {
 }
 
 export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPluginOptions): WorkspaceServerPlugin {
-  validateLocalAuthority(options.authority, options.upstreamUrl)
+  validateLocalAuthority(options.authority, options.upstreamUrl, options.upstreamProvider)
   const manager = new LiveTranscriptManager({
     dispatcherResolver: options.dispatcherResolver,
     agentTypeId: options.agentTypeId,
     actorResolver: options.actorResolver,
     upstreamUrl: options.upstreamUrl,
+    upstreamProvider: options.upstreamProvider,
     upstreamBearerToken: options.upstreamBearerToken,
     setupTimeoutMs: options.setupTimeoutMs,
     drainTimeoutMs: options.drainTimeoutMs,
@@ -63,6 +66,9 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
         const body = strictRecord(request.body, ["mimeType", "audioBase64"])
         if (typeof body.mimeType !== "string" || typeof body.audioBase64 !== "string") {
           throw new LiveTranscriptError("live_transcript_invalid_audio", "Short dictation request was invalid.", 400)
+        }
+        if (options.upstreamProvider === "kyutai") {
+          throw new LiveTranscriptError("live_transcript_disabled", "Short dictation is unavailable with Kyutai; start a live transcript instead.", 409)
         }
         return await transcribeShortDictation({
           upstreamWebSocketUrl: options.upstreamUrl,
@@ -159,6 +165,7 @@ function strictEmptyBody(value: unknown): void {
 
 export { LiveTranscriptManager } from "./manager"
 export { LiveTranscriptProjector, renderTranscriptMarkdown } from "./projector"
+export { KyutaiConnection, resamplePcm16ToFloat32 } from "./kyutai"
 export { parseWhisperLiveKitSnapshot, WhisperLiveKitConnection } from "./whisperLiveKit"
 export { LiveTranscriptError } from "./errors"
 export { LiveReviewBroker } from "./reviewBroker"

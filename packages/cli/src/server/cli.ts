@@ -435,6 +435,7 @@ async function startFolderMode(opts: {
   console.log(`\n  starting ${url} …`)
 
   const liveTranscriptsEnabled = process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1"
+  const liveTranscriptProvider = process.env.BORING_LIVE_TRANSCRIPTS_PROVIDER === "kyutai" ? "kyutai" : "whisperlivekit"
   const app = await createFolderModeApp({
     workspaceRoot,
     mode: opts.mode,
@@ -445,8 +446,13 @@ async function startFolderMode(opts: {
       listenerHost: opts.host,
       canonicalHost: `localhost:${opts.port}`,
       canonicalOrigin: url,
-      upstreamUrl: process.env.BORING_WHISPERLIVEKIT_URL ?? "ws://127.0.0.1:18772/asr",
-      upstreamBearerToken: process.env.BORING_WHISPERLIVEKIT_BEARER_TOKEN,
+      upstreamUrl: liveTranscriptProvider === "kyutai"
+        ? (process.env.BORING_KYUTAI_URL ?? "ws://127.0.0.1:18880/api/asr-streaming")
+        : (process.env.BORING_WHISPERLIVEKIT_URL ?? "ws://127.0.0.1:18772/asr"),
+      upstreamProvider: liveTranscriptProvider,
+      upstreamBearerToken: liveTranscriptProvider === "kyutai"
+        ? process.env.BORING_KYUTAI_API_KEY
+        : process.env.BORING_WHISPERLIVEKIT_BEARER_TOKEN,
     },
   })
 

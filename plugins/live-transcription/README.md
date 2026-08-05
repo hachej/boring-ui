@@ -23,6 +23,25 @@ bounded to 32 KiB, and cannot replace the fixed untrusted-transcript safety
 envelope. Missing, empty, oversized, or invalid UTF-8 files use the built-in
 review instructions. Production/shared deployment is unsupported.
 
+## Kyutai streaming backend
+
+The default backend remains WhisperLiveKit. To use a local Kyutai
+`moshi-server`, select its adapter and forward a remote server to loopback when
+necessary (the plugin deliberately never connects to a non-loopback upstream):
+
+```bash
+export BORING_LIVE_TRANSCRIPTS_ENABLED=1
+export BORING_LIVE_TRANSCRIPTS_PROVIDER=kyutai
+export BORING_KYUTAI_URL=ws://127.0.0.1:18880/api/asr-streaming
+export BORING_KYUTAI_API_KEY=public_token # omit when the local server needs no key
+```
+
+The adapter converts browser 16 kHz PCM16 frames to Kyutai's 24 kHz float32
+MessagePack `Audio` messages, projects `Word` events, and sends a `Marker` plus
+bounded silence on stop to wait for finalization. Kyutai does not expose the
+OpenAI-compatible REST endpoint used by the composer’s *short dictation*
+button; use `/live start` in the composer to begin a Kyutai live capture.
+
 ## Robustness gates
 
 The package-local systematic gate composes the real Fastify routes, a real

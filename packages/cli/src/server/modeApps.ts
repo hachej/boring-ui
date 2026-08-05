@@ -418,6 +418,7 @@ export async function createFolderModeApp(opts: {
     canonicalHost: string
     canonicalOrigin: string
     upstreamUrl: string
+    upstreamProvider?: "whisperlivekit" | "kyutai"
     upstreamBearerToken?: string
     reviewIntervalMs?: number
   }
@@ -455,6 +456,7 @@ export async function createFolderModeApp(opts: {
           canonicalOrigin: opts.liveTranscripts.canonicalOrigin,
         },
         upstreamUrl: opts.liveTranscripts.upstreamUrl,
+        upstreamProvider: opts.liveTranscripts.upstreamProvider,
         upstreamBearerToken: opts.liveTranscripts.upstreamBearerToken,
         reviewIntervalMs: opts.liveTranscripts.reviewIntervalMs,
       })
