@@ -881,6 +881,8 @@ describe('PiChatPanel sandbox shell', () => {
     expect(attachmentRow).toBeTruthy()
     expect(inputRow).toBeTruthy()
     expect(inputRow?.contains(attachmentRow)).toBe(false)
+    expect(within(attachmentRow as HTMLElement).getByRole('button', { name: 'Remove' }).className)
+      .toContain('composer-attachment-remove')
   })
 
   test('renders server queued follow-ups only in the composer banner', async () => {
@@ -1122,10 +1124,16 @@ describe('PiChatPanel sandbox shell', () => {
     )
 
     const textarea = await screen.findByLabelText('Agent prompt')
-    expect(screen.getByRole('button', { name: /Current model:/ }).textContent).toContain('Model ·')
-    expect(screen.getByRole('button', { name: 'Thinking level: Med' }).textContent).toContain('Thinking ·')
-    expect(screen.getByRole('button', { name: 'Attach files' }).className).toContain('!h-10')
-    expect(document.querySelector('[data-boring-agent-part="composer-submit"]')?.className).toContain('h-8')
+    const modelControl = screen.getByRole('button', { name: /Current model:/ })
+    const thinkingControl = screen.getByRole('button', { name: 'Thinking level: Med' })
+    const attachControl = screen.getByRole('button', { name: 'Attach files' })
+    const submitControl = document.querySelector('[data-boring-agent-part="composer-submit"]')
+    expect(modelControl.textContent).toContain('Model ·')
+    expect(modelControl.className).toContain('composer-settings-trigger')
+    expect(thinkingControl.textContent).toContain('Thinking ·')
+    expect(thinkingControl.className).toContain('composer-settings-trigger')
+    expect(attachControl.className).toContain('composer-attachment-button')
+    expect(submitControl?.className).toContain('composer-submit-control')
 
     fireEvent.change(textarea, { target: { value: '/mod' } })
     let commands = await screen.findByRole('listbox', { name: 'Commands' })
