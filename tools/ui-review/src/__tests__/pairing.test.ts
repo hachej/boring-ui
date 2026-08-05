@@ -64,8 +64,12 @@ function gates(states: UiReviewState[]): UiHardGateResult[] {
     if (state.source === "bombadil") return [{ id: "bombadil-properties", stateId: state.id, passed: true, evidence: "pass" }]
     const ids = [...alwaysGateIds]
     if (state.checkpoint !== "closed") {
-      ids.push("command-palette-input-divider", "command-palette-keyboard-hints", "command-palette-command-mode")
-      if (state.viewport.name === "desktop") ids.push("command-palette-desktop-width")
+      ids.push("command-palette-input-divider", "command-palette-command-mode")
+      if (state.viewport.name === "desktop") {
+        ids.push("command-palette-desktop-width", "command-palette-keyboard-hints")
+      } else {
+        ids.push("command-palette-touch-hint")
+      }
     }
     return ids.map((id) => ({ id, stateId: state.id, passed: true, evidence: "pass" }))
   })
@@ -107,7 +111,7 @@ describe("local UI review baseline pairing", () => {
       statePairs: [],
     }
     await writeFile(join(baselineRoot, "manifest.json"), JSON.stringify(baselineManifest), "utf8")
-    await writeFile(join(baselineRoot, "hard-gates.json"), JSON.stringify({ schemaVersion: 1, contractVersion: "command-palette-v2", results: gates(baselineManifest.states) }), "utf8")
+    await writeFile(join(baselineRoot, "hard-gates.json"), JSON.stringify({ schemaVersion: 1, contractVersion: "command-palette-v3", results: gates(baselineManifest.states) }), "utf8")
 
     const candidateStates = await statesFor(outputRoot, "after")
     candidateStates.push({ ...exploration, id: "unmatched-candidate-bombadil", role: "candidate" })

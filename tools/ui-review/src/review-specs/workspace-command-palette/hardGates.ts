@@ -9,7 +9,7 @@ import { COMMAND_PALETTE_TOUCH_EXEMPTIONS } from "./touchPolicy"
 
 export const COMMAND_PALETTE_HARD_GATE_CONTRACT = {
   schemaVersion: UI_REVIEW_SCHEMA_VERSION,
-  contractVersion: "command-palette-v2",
+  contractVersion: "command-palette-v3",
   minimumTouchWidth: 44,
   minimumTouchHeight: 44,
   allowedHttpErrors: [] as Array<{ urlIncludes: string; statuses: number[] }>,
@@ -28,6 +28,11 @@ export const COMMAND_PALETTE_HARD_GATE_CONTRACT = {
       path: "/api/v1/ui/state",
       errorText: "net::ERR_ABORTED",
       rationale: "The fixture shell supersedes in-flight UI-state refreshes during deterministic startup.",
+    },
+    {
+      path: "/api/v1/agents/session-activity/events?workspaceId=workspace",
+      errorText: "net::ERR_ABORTED",
+      rationale: "The fixture shell cancels the addressed-session activity stream when its fresh-state reset completes.",
     },
   ],
   axeExemptions: [
@@ -97,6 +102,7 @@ export type UiHardGateSnapshot = {
     inputDividerCount: number
     dialogWidth: number | null
     keyboardHintsPresent: boolean
+    touchHintPresent: boolean
     commandModePressed: boolean | null
   }
   documentWidth: { scrollWidth: number; clientWidth: number }
@@ -196,8 +202,10 @@ export function evaluateCommandPaletteHardGates(snapshot: UiHardGateSnapshot): U
     add("command-palette-input-divider", palette.inputDividerCount === 1, `count=${palette.inputDividerCount}`)
     if (!snapshot.viewport.mobile) {
       add("command-palette-desktop-width", palette.dialogWidth !== null && palette.dialogWidth > 600 && palette.dialogWidth <= 640, `width=${palette.dialogWidth ?? "missing"}`)
+      add("command-palette-keyboard-hints", palette.keyboardHintsPresent, `present=${palette.keyboardHintsPresent}`)
+    } else {
+      add("command-palette-touch-hint", palette.touchHintPresent, `present=${palette.touchHintPresent}`)
     }
-    add("command-palette-keyboard-hints", palette.keyboardHintsPresent, `present=${palette.keyboardHintsPresent}`)
     add("command-palette-command-mode", palette.commandModePressed === (palette.checkpoint === "commands"), `pressed=${palette.commandModePressed}`)
   }
 
@@ -221,8 +229,12 @@ function expectedGateIds(state: UiReviewState): string[] {
   if (state.source === "bombadil") return ["bombadil-properties"]
   const ids: string[] = [...ALWAYS_REQUIRED_GATES]
   if (state.checkpoint !== "closed") {
-    ids.push("command-palette-input-divider", "command-palette-keyboard-hints", "command-palette-command-mode")
-    if (state.viewport.name === "desktop") ids.push("command-palette-desktop-width")
+    ids.push("command-palette-input-divider", "command-palette-command-mode")
+    if (state.viewport.name === "desktop") {
+      ids.push("command-palette-desktop-width", "command-palette-keyboard-hints")
+    } else {
+      ids.push("command-palette-touch-hint")
+    }
   }
   return ids
 }
