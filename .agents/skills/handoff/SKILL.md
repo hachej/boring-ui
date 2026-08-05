@@ -26,7 +26,8 @@ An empty, incomplete, or unknown branch returns this usage and stops:
 ```
 
 If a human owes the next decision, use
-`docs/procedures/owner-review-card.md` instead.
+`docs/procedures/owner-review-card.md` instead. For bead work, put the handoff
+artifact pointer and a one-line `friction` note on the bead.
 
 Return branch-specific evidence:
 
