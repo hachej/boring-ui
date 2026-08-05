@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { Copy, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
+import { Copy, MessageSquarePlus, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +16,11 @@ export function AppSessionActionsMenu({
   title,
   canCopy,
   canRename,
+  canSplit = false,
+  canPin = false,
+  pinned = false,
+  onOpenAsPane,
+  onTogglePinned,
   onRename,
   onDelete,
   onOpenChange,
@@ -24,6 +29,11 @@ export function AppSessionActionsMenu({
   title: string
   canCopy: boolean
   canRename: boolean
+  canSplit?: boolean
+  canPin?: boolean
+  pinned?: boolean
+  onOpenAsPane?: (id: string) => void
+  onTogglePinned?: (id: string) => void
   onRename: () => void
   onDelete?: (id: string) => unknown
   onOpenChange: (open: boolean) => void
@@ -44,8 +54,8 @@ export function AppSessionActionsMenu({
         <button
           type="button"
           draggable={false}
-          aria-label={`More options for ${title}`}
-          title="More"
+          aria-label={`Chat actions for ${title}`}
+          title="Chat actions"
           onPointerDown={() => { suppressCloseAutoFocus.current = false }}
           onKeyDown={() => { suppressCloseAutoFocus.current = false }}
           onClick={(event) => event.stopPropagation()}
@@ -65,6 +75,20 @@ export function AppSessionActionsMenu({
         onClick={(event) => event.stopPropagation()}
         className="w-48 border-border/50"
       >
+        {canSplit && onOpenAsPane ? (
+          <DropdownMenuItem onSelect={() => onOpenAsPane(sessionId)} className="gap-2 text-[13px]">
+            <MessageSquarePlus className="h-3.5 w-3.5" /> Open in new chat pane
+          </DropdownMenuItem>
+        ) : null}
+        {canPin && onTogglePinned ? (
+          <DropdownMenuItem onSelect={() => onTogglePinned(sessionId)} className="gap-2 text-[13px]">
+            {pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+            {pinned ? "Unpin chat" : "Pin chat"}
+          </DropdownMenuItem>
+        ) : null}
+        {((canSplit && onOpenAsPane) || (canPin && onTogglePinned)) && (canCopy || canRename || onDelete)
+          ? <DropdownMenuSeparator />
+          : null}
         {canCopy ? (
           <DropdownMenuItem onSelect={() => void copy()} className="gap-2 text-[13px]">
             <Copy className="h-3.5 w-3.5" /> Copy session ID

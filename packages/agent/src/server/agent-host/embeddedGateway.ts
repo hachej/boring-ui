@@ -914,7 +914,13 @@ export class EmbeddedAgentGateway implements AgentGateway {
 
   private failure(failure: AgentRequestFailure): Error {
     if (failure.kind === 'gateway') return gatewayError(failure.error)
-    return Object.assign(new Error(failure.error.message), failure.error)
+    return Object.assign(new Error(failure.error.error.message), {
+      code: failure.error.error.code,
+      statusCode: failure.error.statusCode,
+      ...(failure.error.error.retryable === undefined
+        ? {}
+        : { retryable: failure.error.error.retryable }),
+    })
   }
 
   private async promptAdmission(

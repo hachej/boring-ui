@@ -9,7 +9,7 @@ vi.mock("../../../lib/utils", () => ({
 import { AppSessionRow } from "../AppLeftPaneSessionRow"
 
 function openMenu() {
-  fireEvent.pointerDown(screen.getByLabelText("More options for Native chat"), { button: 0, ctrlKey: false })
+  fireEvent.pointerDown(screen.getByLabelText("Chat actions for Native chat"), { button: 0, ctrlKey: false })
 }
 
 function row(overrides: Partial<Parameters<typeof AppSessionRow>[0]> = {}) {
@@ -27,12 +27,12 @@ function row(overrides: Partial<Parameters<typeof AppSessionRow>[0]> = {}) {
 }
 
 describe("AppSessionRow native actions", () => {
-  it("keeps pin/open direct and puts copy, rename, delete in the ellipsis menu", () => {
+  it("keeps session mutations in one actions menu", () => {
     const onDelete = vi.fn()
     row({ onDelete, onRename: vi.fn() })
-    expect(screen.getByLabelText("Pin Native chat")).toBeInTheDocument()
-    expect(screen.getByLabelText("Open Native chat in new chat pane")).toBeInTheDocument()
     openMenu()
+    expect(screen.getByText("Open in new chat pane")).toBeInTheDocument()
+    expect(screen.getByText("Pin chat")).toBeInTheDocument()
     expect(screen.getByText("Copy session ID")).toBeInTheDocument()
     expect(screen.getByText("Rename")).toBeInTheDocument()
     fireEvent.click(screen.getByText("Delete"))
@@ -76,7 +76,7 @@ describe("AppSessionRow native actions", () => {
 
   it("restores trigger focus when a pointer-opened menu closes with Escape", async () => {
     row()
-    const trigger = screen.getByLabelText("More options for Native chat")
+    const trigger = screen.getByLabelText("Chat actions for Native chat")
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
     await waitFor(() => expect(trigger).toHaveFocus())
@@ -87,7 +87,7 @@ describe("AppSessionRow native actions", () => {
       session: { id: "preview-1", title: "Project preview" },
       canSplit: false,
     })
-    fireEvent.pointerDown(screen.getByLabelText("More options for Project preview"), { button: 0, ctrlKey: false })
+    fireEvent.pointerDown(screen.getByLabelText("Chat actions for Project preview"), { button: 0, ctrlKey: false })
     expect(screen.getByText("Copy session ID")).toBeInTheDocument()
   })
 
@@ -104,8 +104,10 @@ describe("AppSessionRow native actions", () => {
     row({
       session: { id: "local-1", title: "Local draft", ephemeral: true },
       canSplit: false,
+      canPin: false,
+      onTogglePinned: undefined,
     })
-    expect(screen.queryByLabelText("More options for Local draft")).not.toBeInTheDocument()
+    expect(screen.queryByLabelText("Chat actions for Local draft")).not.toBeInTheDocument()
   })
 
   it("gates rename until the native transcript has an assistant reply", () => {

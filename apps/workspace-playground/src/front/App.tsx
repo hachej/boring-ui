@@ -8,10 +8,66 @@ import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
+import { LoadingStatesShowcase, type LoadingStateMode } from "./LoadingStatesShowcase"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
   return new URLSearchParams(window.location.search).get("showcase") === "1"
+}
+
+const showcaseSessionTitles = [
+  "Navigation polish review",
+  "Fix mobile drawer focus",
+  "Investigate session persistence",
+  "Prepare release checklist",
+  "Review workspace permissions",
+  "Refactor command routing",
+  "Debug background task status",
+  "Plan analytics dashboard",
+  "Improve empty states",
+  "Audit keyboard navigation",
+  "Update onboarding copy",
+  "Long-running migration follow-up and rollback planning",
+  "Trace file synchronization",
+  "Review pull request feedback",
+  "Prototype data explorer",
+  "Resolve flaky integration test",
+  "Document runtime architecture",
+  "Optimize initial workspace load",
+  "Design notification preferences",
+  "Test narrow viewport behavior",
+  "Review dependency updates",
+  "Investigate API timeout",
+  "Draft customer handoff",
+  "Polish dark mode contrast",
+  "Verify deployment health",
+  "Explore plugin permissions",
+  "Triage accessibility findings",
+  "Plan session search",
+  "Compare model responses",
+  "Archive completed experiments",
+]
+
+function showcaseSessionCount(): number {
+  if (typeof window === "undefined") return 1
+  const requested = Number(new URLSearchParams(window.location.search).get("sessions") ?? 1)
+  return Number.isFinite(requested) ? Math.min(100, Math.max(1, Math.floor(requested))) : 1
+}
+
+function createInitialShowcaseSessions() {
+  const count = showcaseSessionCount()
+  const now = Date.now()
+  return Array.from({ length: count }, (_, index) => ({
+    id: index === 0 ? SHOWCASE_SESSION_ID : `${SHOWCASE_SESSION_ID}-${index + 1}`,
+    title: showcaseSessionTitles[index % showcaseSessionTitles.length] ?? `Session ${index + 1}`,
+    updatedAt: now - index * 60_000,
+  }))
+}
+
+function loadingStateMode(): LoadingStateMode | null {
+  if (typeof window === "undefined") return null
+  const mode = new URLSearchParams(window.location.search).get("loading-state")
+  return mode === "workspace" || mode === "sessions" || mode === "workbench" || mode === "error" ? mode : null
 }
 
 function isFullPageRoute(): boolean {
@@ -148,6 +204,7 @@ function WorkspaceFullPageShell() {
 export function WorkspaceShell() {
   resetPlaygroundStorageIfRequested()
   const showcase = useMemo(isShowcaseRoute, [])
+  const loadingShowcase = useMemo(loadingStateMode, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const multiFilesystem = useMemo(isMultiFilesystemPlaygroundRoute, [])
   const activeWorkspacePlugins = multiFilesystem ? multiFilesystemWorkspacePlugins : workspacePlugins
@@ -155,31 +212,41 @@ export function WorkspaceShell() {
   const [workspaceId, setWorkspaceId] = useState("Workspace")
   const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
   const [showcaseActiveSessionId, setShowcaseActiveSessionId] = useState(SHOWCASE_SESSION_ID)
-  const [showcaseSessions, setShowcaseSessions] = useState(() => [
-    {
-      id: SHOWCASE_SESSION_ID,
-      title: "Showcase conversation",
-      updatedAt: Date.now(),
-    },
-  ])
+  const [showcaseSessions, setShowcaseSessions] = useState(createInitialShowcaseSessions)
   const sessions = showcase ? showcaseSessions : undefined
-  const showcaseSessionSequence = useRef(0)
-  const createShowcaseSession = useCallback(() => {
-    showcaseSessionSequence.current += 1
+  const liveShowcaseSessionIds = useRef(new Set<string>())
+  const createShowcaseSession = useCallback(async () => {
+    const response = await fetch("/api/v1/agents/default/sessions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-boring-workspace-id": "default",
+      },
+      body: JSON.stringify({ title: "New chat" }),
+    })
+    if (!response.ok) throw new Error(`showcase session create failed (${response.status})`)
+    const payload = await response.json() as { agentTypeId?: string; sessionId?: string }
+    if (!payload.sessionId) throw new Error("showcase session create returned no session id")
     const session = {
-      id: `showcase-${Date.now()}-${showcaseSessionSequence.current}`,
+      id: payload.sessionId,
+      agentTypeId: payload.agentTypeId ?? "default",
       title: "New chat",
       updatedAt: Date.now(),
     }
-    seedShowcase(session.id)
+    liveShowcaseSessionIds.current.add(session.id)
     setShowcaseSessions((current) => [...current, session])
     setShowcaseActiveSessionId(session.id)
     return session
   }, [])
+  const renameShowcaseSession = useCallback((sessionId: string, title: string) => {
+    setShowcaseSessions((current) => current.map((session) => (
+      session.id === sessionId ? { ...session, title, updatedAt: Date.now() } : session
+    )))
+  }, [])
   const handleActiveSessionIdChange = useCallback(
     (sessionId: string | null) => {
       if (showcase && sessionId) {
-        seedShowcase(sessionId)
+        if (!liveShowcaseSessionIds.current.has(sessionId)) seedShowcase(sessionId)
         setShowcaseActiveSessionId(sessionId)
       }
     },
@@ -187,7 +254,7 @@ export function WorkspaceShell() {
   )
 
   useEffect(() => {
-    if (showcase || fullPage) return
+    if (showcase || loadingShowcase || fullPage) return
     let cancelled = false
     void fetch("/api/v1/workspace/meta")
       .then(async (res) => res.ok ? await res.json() as WorkspaceMeta : null)
@@ -207,9 +274,13 @@ export function WorkspaceShell() {
         if (!cancelled) setMetaLoaded(true)
       })
     return () => { cancelled = true }
-  }, [showcase, fullPage])
+  }, [showcase, loadingShowcase, fullPage])
 
   if (showcase) seedShowcase(SHOWCASE_SESSION_ID)
+
+  if (loadingShowcase) {
+    return <LoadingStatesShowcase mode={loadingShowcase} />
+  }
 
   if (fullPage) {
     return <WorkspaceFullPageShell />
@@ -221,7 +292,7 @@ export function WorkspaceShell() {
 
   return (
     <WorkspaceAgentFront
-      workspaceId={showcase ? "playground" : workspaceId}
+      workspaceId={showcase ? "default" : workspaceId}
       agentTypeId="default"
       addressedAgentSelection={!showcase && !multiFilesystem}
       apiBaseUrl=""
@@ -240,6 +311,7 @@ export function WorkspaceShell() {
       onActiveSessionIdChange={handleActiveSessionIdChange}
       onSwitchSession={showcase ? handleActiveSessionIdChange : undefined}
       onCreateSession={showcase ? createShowcaseSession : undefined}
+      onRenameSession={showcase ? renameShowcaseSession : undefined}
       plugins={activeWorkspacePlugins}
       chatParams={{ thinkingControl: true }}
     />
