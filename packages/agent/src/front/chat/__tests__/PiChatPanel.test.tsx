@@ -640,7 +640,9 @@ describe('PiChatPanel sandbox shell', () => {
       />,
     )
 
-    expect(screen.getByText(/Loading chat history/)).toBeTruthy()
+    expect(screen.getByRole('status', { name: 'Loading chat history' }).getAttribute('aria-busy')).toBe('true')
+    expect(document.querySelector('[data-boring-agent-part="chat-history-loading"]')).toBeTruthy()
+    expect(screen.queryByText(/Loading chat history/)).toBeNull()
     expect(screen.queryByText('What should we work on?')).toBeNull()
   })
 
@@ -705,7 +707,9 @@ describe('PiChatPanel sandbox shell', () => {
       />,
     )
 
-    expect(await screen.findByText(/Loading chat history/)).toBeTruthy()
+    expect((await screen.findByRole('status', { name: 'Loading chat history' })).getAttribute('aria-busy')).toBe('true')
+    expect(document.querySelector('[data-boring-agent-part="chat-history-loading"]')).toBeTruthy()
+    expect(screen.queryByText(/Loading chat history/)).toBeNull()
     expect(screen.queryByText('What should we work on?')).toBeNull()
   })
 
