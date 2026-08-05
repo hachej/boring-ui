@@ -12,8 +12,10 @@ interface TaskKanbanColumnProps {
   onTaskDragEnd: () => void
   onTaskDrop: (taskId: string, adapterId: string, statusId: string) => void
   onTaskDelete?: (task: BoringTaskCard) => void
+  onTaskOpenDetail?: (task: BoringTaskCard, trigger: HTMLButtonElement) => void
   canDragTask?: (task: BoringTaskCard) => boolean
   canDeleteTask?: (task: BoringTaskCard) => boolean
+  canOpenTaskDetail?: (task: BoringTaskCard) => boolean
 }
 
 export function TaskKanbanColumn({
@@ -24,8 +26,10 @@ export function TaskKanbanColumn({
   onTaskDragEnd,
   onTaskDrop,
   onTaskDelete,
+  onTaskOpenDetail,
   canDragTask = () => moveEnabled,
   canDeleteTask = () => false,
+  canOpenTaskDetail = () => Boolean(onTaskOpenDetail),
 }: TaskKanbanColumnProps) {
   const acceptsDrop = moveEnabled && canDropInColumn(column)
 
@@ -95,6 +99,7 @@ export function TaskKanbanColumn({
             unmapped={column.unmapped}
             deleteEnabled={canDeleteTask(task)}
             onDelete={onTaskDelete}
+            onOpenDetail={canOpenTaskDetail(task) ? onTaskOpenDetail : undefined}
             onDragStart={onTaskDragStart}
             onDragEnd={onTaskDragEnd}
           />

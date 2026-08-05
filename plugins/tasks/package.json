@@ -43,6 +43,7 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
+    "proof:beads-readonly": "pnpm build && node scripts/prove-beads-readonly.mjs",
     "lint": "pnpm run typecheck",
     "clean": "rm -rf dist .tsbuildinfo"
   },
