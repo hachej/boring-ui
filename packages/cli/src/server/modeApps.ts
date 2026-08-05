@@ -555,6 +555,7 @@ export async function createFolderModeApp(opts: {
       liveTranscripts: {
         ready: true,
         commands: ["/live start", "/live stop", "/live status", "/review transcript"],
+        streamingComposer: opts.liveTranscripts?.upstreamProvider === "kyutai",
       },
     } : {}),
   }))

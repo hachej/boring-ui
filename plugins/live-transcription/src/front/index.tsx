@@ -39,7 +39,10 @@ export function LiveTranscriptComposerTop() {
   return <LiveTranscriptComposerDock />
 }
 
-export function LiveTranscriptComposerAction({ updateDraft }: ComposerActionContributionProps) {
+export function LiveTranscriptComposerAction({
+  updateDraft,
+  streaming = false,
+}: ComposerActionContributionProps & { streaming?: boolean }) {
   const recording = useSyncExternalStore(
     liveTranscriptBrowserState.subscribe,
     liveTranscriptBrowserState.getSnapshot,
@@ -48,18 +51,23 @@ export function LiveTranscriptComposerAction({ updateDraft }: ComposerActionCont
   const elapsedSeconds = useElapsedSeconds(recording.startedAt, recording.phase)
   if (recording.recordingKind === "live" && isActiveRecordingPhase(recording.phase)) return null
 
-  const disabled = recording.phase === "transcribing"
-    || (recording.recordingKind === "short" && recording.phase === "starting")
-  const label = recording.phase === "transcribing"
-    ? "Transcribing short dictation"
-    : recording.recordingKind === "short" && recording.phase === "starting"
-      ? "Starting short dictation"
-      : recording.phase === "recording"
-        ? "Stop short recording"
-        : "Start short dictation"
+  const recordingThisMode = recording.phase === "recording" && recording.recordingKind === (streaming ? "composer" : "short")
+  const otherModeRecording = recording.phase === "recording" && !recordingThisMode
+  const disabled = recording.phase === "transcribing" || recording.phase === "starting" || otherModeRecording
+  const label = disabled
+    ? streaming ? "Starting streaming dictation" : "Transcribing short dictation"
+    : recordingThisMode
+      ? streaming ? "Stop streaming dictation" : "Stop short recording"
+      : streaming ? "Start streaming dictation" : "Start short dictation"
+  const appendWord = (word: string) => updateDraft((current) => appendTranscriptToDraft(current, word), { focus: false })
   const toggle = async () => {
     if (disabled) return
-    if (recording.recordingKind === "short" && recording.phase === "recording") {
+    if (streaming) {
+      if (recordingThisMode) await liveTranscriptController.stopComposer()
+      else await liveTranscriptController.startComposer(appendWord)
+      return
+    }
+    if (recordingThisMode) {
       const text = await liveTranscriptController.stopShort()
       if (text) updateDraft((current) => appendTranscriptToDraft(current, text))
       return
@@ -76,9 +84,9 @@ export function LiveTranscriptComposerAction({ updateDraft }: ComposerActionCont
       disabled={disabled}
       onClick={() => { void toggle().catch(() => undefined) }}
       className={`flex h-8 items-center rounded-full text-[11px] font-medium transition-colors disabled:cursor-wait disabled:opacity-65 ${
-        recording.phase === "recording" ? "w-8 justify-center" : "gap-1.5 px-2"
+        recordingThisMode ? "w-8 justify-center" : "gap-1.5 px-2"
       } ${
-        recording.phase === "recording" || recording.phase === "starting"
+        recordingThisMode || recording.phase === "starting"
           ? "bg-red-500/12 text-red-600 hover:bg-red-500/20 dark:text-red-400"
           : recording.phase === "error"
             ? "bg-destructive/10 text-destructive hover:bg-destructive/15"
@@ -87,7 +95,7 @@ export function LiveTranscriptComposerAction({ updateDraft }: ComposerActionCont
     >
       {recording.phase === "starting" || recording.phase === "transcribing" ? (
         <LoadingIcon />
-      ) : recording.phase === "recording" ? (
+      ) : recordingThisMode ? (
         <RecordingIcon />
       ) : (
         <MicrophoneIcon />
@@ -316,11 +324,13 @@ function TranscriptReviewMessageContribution({ message }: ChatMessageContributio
     : null
 }
 
-const liveTranscriptComposerContribution: ComposerContribution = {
-  id: "live-transcription",
-  Top: LiveTranscriptComposerTop,
-  Action: LiveTranscriptComposerAction,
-  commands: liveTranscriptCommands,
+function createLiveTranscriptComposerContribution(streaming: boolean): ComposerContribution {
+  return {
+    id: "live-transcription",
+    Top: LiveTranscriptComposerTop,
+    Action: (props) => <LiveTranscriptComposerAction {...props} streaming={streaming} />,
+    commands: liveTranscriptCommands,
+  }
 }
 
 const disabledLiveTranscriptComposerContribution: ComposerContribution = {
@@ -334,22 +344,27 @@ const liveTranscriptMessageContribution: ChatMessageContribution = {
 }
 
 function LiveTranscriptComposerProvider({ children }: { children: ReactNode }) {
-  const [ready, setReady] = useState(false)
+  const [capabilities, setCapabilities] = useState({ ready: false, streamingComposer: false })
   useEffect(() => {
     let cancelled = false
     void fetch("/api/v1/workspace/meta")
-      .then(async (response) => response.ok ? await response.json() as { liveTranscripts?: { ready?: boolean } } : undefined)
+      .then(async (response) => response.ok ? await response.json() as { liveTranscripts?: { ready?: boolean; streamingComposer?: boolean } } : undefined)
       .then((meta) => {
-        if (!cancelled) setReady(meta?.liveTranscripts?.ready === true)
+        if (!cancelled) setCapabilities({
+          ready: meta?.liveTranscripts?.ready === true,
+          streamingComposer: meta?.liveTranscripts?.streamingComposer === true,
+        })
       })
       .catch(() => {
-        if (!cancelled) setReady(false)
+        if (!cancelled) setCapabilities({ ready: false, streamingComposer: false })
       })
     return () => { cancelled = true }
   }, [])
   const composerContribution = useMemo(
-    () => ready ? liveTranscriptComposerContribution : disabledLiveTranscriptComposerContribution,
-    [ready],
+    () => capabilities.ready
+      ? createLiveTranscriptComposerContribution(capabilities.streamingComposer)
+      : disabledLiveTranscriptComposerContribution,
+    [capabilities],
   )
   return (
     <ChatMessageContributionProvider contribution={liveTranscriptMessageContribution}>

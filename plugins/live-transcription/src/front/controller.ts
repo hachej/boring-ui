@@ -32,6 +32,7 @@ export class LiveTranscriptBrowserController {
   private shortChunks: Blob[] = []
   private shortBytes = 0
   private shortLimitReached = false
+  private composerStreamId: string | undefined
 
   commands(): SlashCommand[] {
     return [
@@ -73,7 +74,7 @@ export class LiveTranscriptBrowserController {
 
   async startShort(): Promise<void> {
     const phase = liveTranscriptBrowserState.getSnapshot().phase
-    if (this.active || this.shortRecorder || phase === "starting" || phase === "transcribing") {
+    if (this.active || this.composerStreamId || this.shortRecorder || phase === "starting" || phase === "transcribing") {
       throw new Error("Another microphone recording is already active.")
     }
     liveTranscriptBrowserState.set({ recordingKind: "short", phase: "starting" })
@@ -159,13 +160,57 @@ export class LiveTranscriptBrowserController {
     }
   }
 
+  async startComposer(onWord: (word: string) => void): Promise<void> {
+    if (this.active || this.composerStreamId || this.shortRecorder || this.capture) throw new Error("Another microphone recording is already active.")
+    liveTranscriptBrowserState.set({ recordingKind: "composer", phase: "starting" })
+    try {
+      const started = await postJson<{ composerStreamId: string; socketNonce: string }>(`${LIVE_TRANSCRIPT_BASE_PATH}/composer`, {})
+      this.composerStreamId = started.composerStreamId
+      const generation = ++this.attachGeneration
+      await this.attachStream({
+        socketNonce: started.socketNonce,
+        socketPath: `${LIVE_TRANSCRIPT_BASE_PATH}/composer/${encodeURIComponent(started.composerStreamId)}/audio`,
+        generation,
+        isCurrent: () => this.composerStreamId === started.composerStreamId,
+        onWord,
+      })
+      liveTranscriptBrowserState.set({ recordingKind: "composer", phase: "recording", startedAt: Date.now() })
+    } catch (error) {
+      const id = this.composerStreamId
+      if (id) {
+        try { await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/composer/${encodeURIComponent(id)}/stop`, {}) } catch {}
+      }
+      await this.cleanupComposer()
+      liveTranscriptBrowserState.set({ recordingKind: "composer", phase: "error", error: formatError(error, "Streaming dictation failed to start.") })
+      throw error
+    }
+  }
+
+  async stopComposer(): Promise<void> {
+    const id = this.composerStreamId
+    if (!id) return
+    this.stopping = true
+    this.attachGeneration += 1
+    await this.stopInput()
+    try {
+      await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/composer/${encodeURIComponent(id)}/stop`, {})
+      liveTranscriptBrowserState.set({ phase: "idle" })
+    } catch (error) {
+      liveTranscriptBrowserState.set({ recordingKind: "composer", phase: "error", error: formatError(error, "Streaming dictation did not finalize.") })
+      throw error
+    } finally {
+      await this.cleanupComposer()
+      this.stopping = false
+    }
+  }
+
   async stopLiveRecording(): Promise<void> {
     await this.stop()
   }
 
   async start(sessionId: string, title?: string): Promise<string> {
     const phase = liveTranscriptBrowserState.getSnapshot().phase
-    if (this.active || this.shortRecorder || phase === "starting" || phase === "transcribing") {
+    if (this.active || this.composerStreamId || this.shortRecorder || phase === "starting" || phase === "transcribing") {
       return "live_transcript_already_active: A microphone recording is already active."
     }
     let started: LiveTranscriptStartResponse
@@ -194,7 +239,7 @@ export class LiveTranscriptBrowserController {
 
     const attachGeneration = ++this.attachGeneration
     try {
-      await this.attach(started, attachGeneration)
+      await this.attachLive(started, attachGeneration)
       liveTranscriptBrowserState.set({
         liveSessionId: started.liveSessionId,
         transcriptPath: started.transcriptPath,
@@ -298,6 +343,7 @@ export class LiveTranscriptBrowserController {
     this.shortChunks = []
     this.shortBytes = 0
     this.shortLimitReached = false
+    this.composerStreamId = undefined
     this.attachGeneration += 1
     await this.stopInput()
     const socket = this.socket
@@ -326,19 +372,34 @@ export class LiveTranscriptBrowserController {
     return "Usage: /live start [optional title] | /live stop | /live status"
   }
 
-  private async attach(started: LiveTranscriptStartResponse, generation: number): Promise<void> {
+  private async attachLive(started: LiveTranscriptStartResponse, generation: number): Promise<void> {
+    await this.attachStream({
+      socketNonce: started.socketNonce,
+      socketPath: `${LIVE_TRANSCRIPT_BASE_PATH}/${encodeURIComponent(started.liveSessionId)}/audio`,
+      generation,
+      isCurrent: () => this.active?.liveSessionId === started.liveSessionId,
+    })
+  }
+
+  private async attachStream(input: {
+    socketNonce: string
+    socketPath: string
+    generation: number
+    isCurrent: () => boolean
+    onWord?: (word: string) => void
+  }): Promise<void> {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: { ideal: 1 }, echoCancellation: true, noiseSuppression: true },
       video: false,
     })
     try {
-      this.assertAttachCurrent(started, generation)
+      this.assertAttachCurrent(input)
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
-      const socket = new WebSocket(`${protocol}//${window.location.host}${LIVE_TRANSCRIPT_BASE_PATH}/${encodeURIComponent(started.liveSessionId)}/audio`)
+      const socket = new WebSocket(`${protocol}//${window.location.host}${input.socketPath}`)
     socket.binaryType = "arraybuffer"
     this.socket = socket
     await waitForSocketOpen(socket)
-    this.assertAttachCurrent(started, generation)
+    this.assertAttachCurrent(input)
 
     let resolveNonceAck: (() => void) | undefined
     let rejectNonceAck: ((error: Error) => void) | undefined
@@ -348,6 +409,14 @@ export class LiveTranscriptBrowserController {
     })
     let noncePending = true
     socket.onmessage = (event) => {
+      if (typeof event.data === "string" && input.onWord) {
+        try {
+          const message = JSON.parse(event.data) as { type?: unknown; text?: unknown; code?: unknown }
+          if (message.type === "word" && typeof message.text === "string") return input.onWord(message.text)
+          if (message.type === "error") return void this.failCapture(`Streaming dictation failed: ${String(message.code ?? "upstream")}.`)
+        } catch {}
+        return void this.failCapture("Streaming dictation socket returned an invalid event.")
+      }
       const bytes = event.data instanceof ArrayBuffer ? new Uint8Array(event.data) : undefined
       if (!bytes || bytes.byteLength !== 1 || bytes[0] !== 1) {
         void this.failCapture("Live transcript socket returned an invalid ACK.")
@@ -368,15 +437,15 @@ export class LiveTranscriptBrowserController {
       rejectNonceAck?.(new Error("Live transcript socket closed."))
       if (this.socket === socket && !this.stopping) void this.failCapture("Live transcript connection closed unexpectedly.")
     }
-    socket.send(new TextEncoder().encode(started.socketNonce))
+    socket.send(new TextEncoder().encode(input.socketNonce))
     await nonceAck
-    this.assertAttachCurrent(started, generation)
+    this.assertAttachCurrent(input)
 
     const Context = window.AudioContext
     const context = new Context()
     const workletUrl = createLiveTranscriptWorkletUrl()
     await context.audioWorklet.addModule(workletUrl)
-    this.assertAttachCurrent(started, generation)
+    this.assertAttachCurrent(input)
     const worklet = new AudioWorkletNode(context, LIVE_TRANSCRIPT_WORKLET_NAME, {
       numberOfInputs: 1,
       numberOfOutputs: 1,
@@ -402,7 +471,7 @@ export class LiveTranscriptBrowserController {
     source.connect(worklet)
       worklet.connect(context.destination)
       await context.resume()
-      this.assertAttachCurrent(started, generation)
+      this.assertAttachCurrent(input)
     } catch (error) {
       if (this.capture?.stream === stream) await this.stopInput()
       else for (const track of stream.getTracks()) track.stop()
@@ -410,12 +479,8 @@ export class LiveTranscriptBrowserController {
     }
   }
 
-  private assertAttachCurrent(started: LiveTranscriptStartResponse, generation: number): void {
-    if (
-      generation !== this.attachGeneration
-      || this.active?.liveSessionId !== started.liveSessionId
-      || this.stopping
-    ) throw new LiveAttachCancelledError()
+  private assertAttachCurrent(input: { generation: number; isCurrent: () => boolean }): void {
+    if (input.generation !== this.attachGeneration || !input.isCurrent() || this.stopping) throw new LiveAttachCancelledError()
   }
 
   private async failCapture(message: string): Promise<void> {
@@ -423,8 +488,10 @@ export class LiveTranscriptBrowserController {
     this.socket = undefined
     try { socket?.close() } catch {}
     await this.stopInput()
+    const recordingKind = this.composerStreamId ? "composer" : "live"
     this.active = undefined
-    liveTranscriptBrowserState.set({ recordingKind: "live", phase: "error", state: "interrupted", error: message })
+    this.composerStreamId = undefined
+    liveTranscriptBrowserState.set({ recordingKind, phase: "error", state: "interrupted", error: message })
   }
 
   private async stopInput(): Promise<void> {
@@ -436,6 +503,14 @@ export class LiveTranscriptBrowserController {
     for (const track of capture.stream.getTracks()) track.stop()
     try { await capture.context.close() } catch {}
     URL.revokeObjectURL(capture.workletUrl)
+  }
+
+  private async cleanupComposer(): Promise<void> {
+    await this.stopInput()
+    const socket = this.socket
+    this.socket = undefined
+    try { socket?.close() } catch {}
+    this.composerStreamId = undefined
   }
 
   private async cleanup(id?: string): Promise<void> {
