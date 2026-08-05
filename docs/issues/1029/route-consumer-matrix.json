@@ -111,12 +111,14 @@
           "CompiledAgentHostAgentSpec",
           "ConfiguredAgentHostAgentSpec",
           "CreateAgentHostOptions",
+          "CreateConfiguredAgentHostAgentSpecInput",
           "CreateStandaloneAgentHostAppOptions",
           "CreatedAgentHost",
           "InMemoryAgentRequestLedger",
           "LegacyDefaultAgentHostSpec",
           "SqliteAgentRequestLedger",
           "createAgentHost",
+          "createConfiguredAgentHostAgentSpec",
           "createStandaloneAgentHostApp",
           "registerAgentHostEnvironmentRoutes"
         ]

@@ -5,8 +5,6 @@ import { HumanArtifactList, emitWorkspaceTaskProvenanceChanged, openHumanArtifac
 import type { WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard, BoringTaskSessionLink, SessionHandoverResolution, SessionHandoverSummary } from "../shared"
 
-export const TASK_SESSION_LINKS_CHANGED_EVENT = "boring-tasks:session-links-changed"
-
 export interface TaskSessionActivity {
   sessionId: string
   title: string
@@ -18,7 +16,7 @@ export interface TaskSessionActivity {
 
 export type TaskSessionDisplayStatus = "Working" | "Queued" | "Error" | "Idle"
 
-export type TaskSessionLinkDisclosure = Omit<BoringTaskSessionLink, "sessionId"> & { sessionId?: string }
+export type TaskSessionLinkDisclosure = BoringTaskSessionLink
 
 export interface TaskSessionRow {
   link: TaskSessionLinkDisclosure
@@ -27,11 +25,10 @@ export interface TaskSessionRow {
   status: TaskSessionDisplayStatus
 }
 
-interface LinkListResponse { ok: true; links: TaskSessionLinkDisclosure[] }
 interface ActivityResponse { sessions: TaskSessionActivity[]; omittedSessionIds: string[] }
 interface AddressedSessionState {
   summary?: { title?: unknown; updatedAt?: unknown }
-  state?: { status?: unknown; queuedMessages?: unknown[]; error?: unknown }
+  state?: { status?: unknown; queue?: { followUps?: unknown[] }; error?: unknown }
 }
 
 function statusFor(activity: TaskSessionActivity | undefined): TaskSessionDisplayStatus {
@@ -52,7 +49,7 @@ export function buildTaskSessionRows(
   return links.map((link): TaskSessionRow => {
     const sessionId = link.sessionId
     const activity = sessionId ? activityById.get(sessionId) : undefined
-    const available = Boolean(sessionId && activity && !omitted.has(sessionId))
+    const available = Boolean(sessionId && !omitted.has(sessionId))
     return { link, activity: available ? activity : undefined, available, status: statusFor(available ? activity : undefined) }
   }).sort((left, right) => {
     if (left.available !== right.available) return left.available ? -1 : 1
@@ -77,42 +74,30 @@ export function TaskSessionDisclosure({
   task,
   shell,
   pluginClient,
+  sessionLinks,
 }: {
   task: BoringTaskCard
   shell: WorkspaceShellCapabilities
   pluginClient: Pick<WorkspacePluginClient, "getJson" | "postJson">
+  sessionLinks?: readonly BoringTaskSessionLink[]
 }) {
   const [expanded, setExpanded] = useState(false)
-  const [links, setLinks] = useState<TaskSessionLinkDisclosure[] | null>(null)
+  const [links, setLinks] = useState<TaskSessionLinkDisclosure[]>(() => [...(sessionLinks ?? [])])
   const [activity, setActivity] = useState<ActivityResponse>({ sessions: [], omittedSessionIds: [] })
   const [handovers, setHandovers] = useState<ReadonlyMap<string, SessionHandoverSummary>>(() => new Map())
   const [unavailableArtifacts, setUnavailableArtifacts] = useState<ReadonlyMap<string, ReadonlySet<string>>>(() => new Map())
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const eventOrigin = useRef({})
   const sourceKey = JSON.stringify([task.adapterId, task.id])
+  const enrichedLinksKey = useRef<string | null>(null)
   const requestScope = useRef({ sourceKey, version: 0 })
-  if (requestScope.current.sourceKey !== sourceKey) requestScope.current = { sourceKey, version: requestScope.current.version + 1 }
+  if (requestScope.current.sourceKey !== sourceKey) {
+    requestScope.current = { sourceKey, version: requestScope.current.version + 1 }
+    enrichedLinksKey.current = null
+  }
   const beginRequest = useCallback(() => {
     const version = ++requestScope.current.version
     return () => requestScope.current.sourceKey === sourceKey && requestScope.current.version === version
   }, [sourceKey])
-
-  const loadLinks = useCallback(async (isCurrent: () => boolean) => {
-    try {
-      const response = await pluginClient.postJson<LinkListResponse>("/api/boring-tasks/sessions/list", {
-        adapterId: task.adapterId,
-        taskId: task.id,
-      })
-      if (!isCurrent()) return null
-      setLinks(response.links)
-      setError(null)
-      return response.links
-    } catch (cause) {
-      if (isCurrent()) setError(cause instanceof Error ? cause.message : "Could not load linked sessions.")
-      return null
-    }
-  }, [pluginClient, task.adapterId, task.id])
 
   const loadActivity = useCallback(async (nextLinks: TaskSessionLinkDisclosure[], isCurrent: () => boolean) => {
     const sessionIds = nextLinks.flatMap((link) => link.sessionId ? [link.sessionId] : [])
@@ -129,14 +114,19 @@ export function TaskSessionDisclosure({
           `/api/v1/agents/${encodeURIComponent(link.agentTypeId)}/sessions/${encodeURIComponent(link.sessionId)}/state`,
         )
         const status = typeof snapshot.state?.status === "string" ? snapshot.state.status : "idle"
+        const updatedAt = typeof snapshot.summary?.updatedAt === "number" && Number.isFinite(snapshot.summary.updatedAt)
+          ? new Date(snapshot.summary.updatedAt).toISOString()
+          : typeof snapshot.summary?.updatedAt === "string"
+            ? snapshot.summary.updatedAt
+            : new Date(0).toISOString()
         sessions.push({
           sessionId: link.sessionId,
           title: typeof snapshot.summary?.title === "string" ? snapshot.summary.title : link.sessionId,
-          updatedAt: typeof snapshot.summary?.updatedAt === "string" ? snapshot.summary.updatedAt : new Date(0).toISOString(),
+          updatedAt,
           status: ["idle", "hydrating", "submitted", "streaming", "aborting", "error"].includes(status)
             ? status as TaskSessionActivity["status"]
             : "idle",
-          queuedCount: Array.isArray(snapshot.state?.queuedMessages) ? snapshot.state.queuedMessages.length : 0,
+          queuedCount: Array.isArray(snapshot.state?.queue?.followUps) ? snapshot.state.queue.followUps.length : 0,
           hasError: snapshot.state?.error != null,
         })
       } catch {
@@ -164,36 +154,58 @@ export function TaskSessionDisclosure({
     }
   }, [pluginClient])
 
-  const refresh = useCallback(async (includeActivity: boolean) => {
+  const refreshDetails = useCallback(async (nextLinks: TaskSessionLinkDisclosure[]) => {
     const isCurrent = beginRequest()
-    setLoading(true)
-    const nextLinks = await loadLinks(isCurrent)
-    if (includeActivity && nextLinks) await Promise.all([loadActivity(nextLinks, isCurrent), loadHandovers(nextLinks, isCurrent)])
-    if (isCurrent()) setLoading(false)
-  }, [beginRequest, loadActivity, loadHandovers, loadLinks])
+    await Promise.all([loadActivity(nextLinks, isCurrent), loadHandovers(nextLinks, isCurrent)])
+  }, [beginRequest, loadActivity, loadHandovers])
 
   useEffect(() => () => { requestScope.current.version += 1 }, [])
 
   useEffect(() => {
-    const onLinksChanged = (event: Event) => {
-      const detail = (event as CustomEvent<unknown>).detail as { adapterId?: unknown; taskId?: unknown; origin?: unknown } | undefined
-      if (detail?.origin === eventOrigin.current || detail?.adapterId !== task.adapterId || detail.taskId !== task.id) return
-      void refresh(expanded)
+    const nextLinks = [...(sessionLinks ?? [])]
+    const nextKey = JSON.stringify(nextLinks.map((link) => [link.id, link.agentTypeId, link.sessionId]))
+    setLinks(nextLinks)
+    if (!expanded || enrichedLinksKey.current === nextKey) return
+    enrichedLinksKey.current = nextKey
+    void refreshDetails(nextLinks)
+  }, [expanded, refreshDetails, sessionLinks])
+
+  useEffect(() => {
+    const onStatus = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId?: unknown; agentTypeId?: unknown; working?: unknown }>).detail
+      if (typeof detail?.sessionId !== "string") return
+      const linked = links.find((link) => link.sessionId === detail.sessionId
+        && (typeof detail.agentTypeId !== "string" || link.agentTypeId === detail.agentTypeId))
+      if (!linked) return
+      setActivity((current) => {
+        const existing = current.sessions.find((session) => session.sessionId === detail.sessionId)
+        const next: TaskSessionActivity = {
+          sessionId: detail.sessionId as string,
+          title: existing?.title ?? detail.sessionId as string,
+          updatedAt: existing?.updatedAt ?? linked.createdAt,
+          status: detail.working === true ? "streaming" : "idle",
+          queuedCount: existing?.queuedCount ?? 0,
+          hasError: existing?.hasError ?? false,
+        }
+        return {
+          ...current,
+          sessions: [...current.sessions.filter((session) => session.sessionId !== detail.sessionId), next],
+        }
+      })
     }
-    window.addEventListener(TASK_SESSION_LINKS_CHANGED_EVENT, onLinksChanged)
-    return () => window.removeEventListener(TASK_SESSION_LINKS_CHANGED_EVENT, onLinksChanged)
-  }, [expanded, refresh, task.adapterId, task.id])
+    window.addEventListener("boring:chat-session-status", onStatus)
+    if (expanded) window.dispatchEvent(new Event("boring:chat-session-status-request"))
+    return () => window.removeEventListener("boring:chat-session-status", onStatus)
+  }, [expanded, links])
 
   const rows = useMemo(
-    () => buildTaskSessionRows(links ?? [], activity.sessions, activity.omittedSessionIds),
+    () => buildTaskSessionRows(links, activity.sessions, activity.omittedSessionIds),
     [activity, links],
   )
 
   const toggle = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation()
-    const next = !expanded
-    setExpanded(next)
-    if (next) void refresh(true)
+    setExpanded((current) => !current)
   }
 
   const openPopover = (event: MouseEvent<HTMLButtonElement>, row: TaskSessionRow) => {
@@ -226,9 +238,6 @@ export function TaskSessionDisclosure({
         next.delete(row.link.sessionId)
         return next
       })
-      window.dispatchEvent(new CustomEvent(TASK_SESSION_LINKS_CHANGED_EVENT, {
-        detail: { adapterId: task.adapterId, taskId: task.id, origin: eventOrigin.current },
-      }))
       emitWorkspaceTaskProvenanceChanged()
       setError(null)
     } catch (cause) {
@@ -236,7 +245,7 @@ export function TaskSessionDisclosure({
     }
   }
 
-  const count = links?.length
+  const count = sessionLinks === undefined ? undefined : links.length
   return (
     <div className="w-full" data-task-session-disclosure="true" onClick={(event) => event.stopPropagation()}>
       <button
@@ -247,12 +256,11 @@ export function TaskSessionDisclosure({
       >
         <ChevronDown className={["size-3 transition-transform duration-150 motion-reduce:transition-none", expanded ? "rotate-0" : "-rotate-90"].join(" ")} aria-hidden="true" />
         <span>{count === undefined ? "Sessions" : `${count} ${count === 1 ? "session" : "sessions"}`}</span>
-        {loading ? <span className="ml-auto text-[10px] font-normal">Refreshing…</span> : null}
       </button>
 
       {expanded ? (
         <div className="mt-1 grid gap-1 border-t border-border/60 pt-1.5">
-          {rows.length === 0 && !loading ? (
+          {rows.length === 0 ? (
             <p className="px-1.5 py-1 text-[11px] text-muted-foreground">No linked sessions yet.</p>
           ) : rows.map((row) => {
             const timestamp = row.activity?.updatedAt ?? row.link.createdAt

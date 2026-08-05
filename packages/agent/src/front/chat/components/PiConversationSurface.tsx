@@ -225,7 +225,7 @@ function TranscriptHistoryLoader({ olderCount, onLoadOlder }: { olderCount: numb
       <button
         type="button"
         onClick={onLoadOlder}
-        className="rounded-full border border-border/60 px-3 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+        className="boring-agent-history-action min-h-8 rounded-full border border-border/60 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
         Load {olderCount} older message{olderCount === 1 ? '' : 's'}
       </button>

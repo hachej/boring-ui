@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { EventEmitter } from "node:events"
 import { TASK_ERROR_CODES } from "../shared"
 import { describe, expect, it, vi } from "vitest"
 import { createTasksServerPlugin } from "./index"
@@ -8,7 +9,9 @@ import type { TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
 class MemoryWorkspace implements TaskSessionLinkWorkspace {
   readonly root = "/workspace"
   readonly files = new Map<string, string>()
+  readGate?: Promise<void>
   async readFile(path: string) {
+    await this.readGate
     const value = this.files.get(path)
     if (value === undefined) throw Object.assign(new Error("not found"), { code: TASK_ERROR_CODES.WORKSPACE_FILE_MISSING })
     return value
@@ -28,7 +31,7 @@ interface TestReply {
   send(payload: unknown): unknown
 }
 
-type Handler = (request: { body?: unknown; headers?: Record<string, string>; query?: unknown }, reply: TestReply) => Promise<unknown>
+type Handler = (request: any, reply: any) => Promise<unknown>
 
 function reply(): TestReply {
   return {
@@ -42,7 +45,7 @@ function reply(): TestReply {
 async function routes(options: Parameters<typeof createTasksServerPlugin>[0]) {
   const handlers = new Map<string, Handler>()
   const app = {
-    get() {},
+    get(path: string, handler: Handler) { handlers.set(path, handler) },
     post(path: string, handler: Handler) { handlers.set(path, handler) },
   }
   const plugin = createTasksServerPlugin({ agentTypeId: "alpha", ...options })
@@ -79,16 +82,10 @@ describe("task session link routes", () => {
       { agentTypeId: "alpha", sessionId: "native-exact" },
       expect.objectContaining({ request: expect.any(Object) }),
     )
-    const listed = await handlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "github", taskId: "776" } }, reply()) as { links: unknown[] }
-    expect(listed.links).toHaveLength(1)
   })
 
-  it("filters unauthorized exact session IDs from task-scoped lists", async () => {
+  it("streams an initial linked-session snapshot and workspace-scoped changes", async () => {
     const workspace = new MemoryWorkspace()
-    let denySession = false
-    const authorizeSession = vi.fn(async (_actor, ref: { sessionId: string }) => {
-      if (denySession && ref.sessionId === "native-denied") throw new Error("not found")
-    })
     const handlers = await routes({
       trusted: {
         actorResolver: async () => ({ workspaceId: "workspace-a", userId: "user-a" }),
@@ -96,17 +93,110 @@ describe("task session link routes", () => {
           resolve: vi.fn() as never,
           runWithWorkspaceAgent: runWithWorkspace(workspace) as never,
           resolveWithWorkspace: async () => ({ dispatcher: {} as never, workspace: workspace as never }),
-          authorizeSession,
+          authorizeSession: async () => undefined,
         },
       },
     })
-    await handlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "native-allowed" } }, reply())
-    await handlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "native-denied" } }, reply())
-    denySession = true
+    const requestRaw = new EventEmitter()
+    const responseRaw = Object.assign(new EventEmitter(), {
+      destroyed: false,
+      writableEnded: false,
+      writes: [] as string[],
+      writeHead: vi.fn(),
+      write(value: string) { this.writes.push(value); return true },
+    })
+    const streamReply = Object.assign(reply(), { raw: responseRaw, hijack: vi.fn() })
+    await handlers.get("/api/boring-tasks/session-links/events")!({ id: "stream", headers: {}, query: { workspaceId: "workspace-a" }, raw: requestRaw }, streamReply)
+    expect(responseRaw.writeHead).toHaveBeenCalledWith(200, expect.objectContaining({ "Content-Type": "text/event-stream" }))
+    expect(responseRaw.writes.join("")).toContain('"tasks":[]')
 
-    const listed = await handlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "github", taskId: "776" } }, reply()) as { links: Array<{ sessionId?: string }> }
-    expect(listed.links.map((link) => link.sessionId)).toEqual(["native-allowed", undefined])
-    expect(JSON.stringify(listed)).not.toContain("native-denied")
+    await handlers.get("/api/boring-tasks/sessions/link")!({
+      id: "link",
+      headers: {},
+      body: { adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "native-secret" },
+    }, reply())
+    const frames = responseRaw.writes.join("")
+    expect(frames).toContain("event: snapshot")
+    expect(frames).toContain("event: change")
+    expect(frames).toContain('"adapterId":"github"')
+    expect(frames).toContain('"taskId":"776"')
+    expect(frames).toContain('"sessionId":"native-secret"')
+    expect(frames).toContain('"agentTypeId":"alpha"')
+    requestRaw.emit("close")
+  })
+
+  it("replays a durable change that lands while the initial snapshot is reading", async () => {
+    const workspace = new MemoryWorkspace()
+    workspace.files.set(".pi/tasks/session-links.json", JSON.stringify({ version: 1, links: [] }))
+    let releaseRead!: () => void
+    workspace.readGate = new Promise<void>((resolve) => { releaseRead = resolve })
+    const handlers = await routes({
+      trusted: {
+        actorResolver: async () => ({ workspaceId: "workspace-a", userId: "user-a" }),
+        workspaceAgentDispatcherResolver: {
+          resolve: vi.fn() as never,
+          runWithWorkspaceAgent: runWithWorkspace(workspace) as never,
+          resolveWithWorkspace: async () => ({ dispatcher: {} as never, workspace: workspace as never }),
+          authorizeSession: async () => undefined,
+        },
+      },
+    })
+    const requestRaw = Object.assign(new EventEmitter(), { destroyed: false })
+    const responseRaw = Object.assign(new EventEmitter(), {
+      destroyed: false,
+      writableEnded: false,
+      writes: [] as string[],
+      writeHead: vi.fn(),
+      write(value: string) { this.writes.push(value); return true },
+    })
+    const streamReply = Object.assign(reply(), { raw: responseRaw, hijack: vi.fn() })
+    const stream = handlers.get("/api/boring-tasks/session-links/events")!({ id: "stream", headers: {}, query: { workspaceId: "workspace-a" }, raw: requestRaw }, streamReply)
+    await Promise.resolve()
+    const link = handlers.get("/api/boring-tasks/sessions/link")!({ id: "link", headers: {}, body: { adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "native" } }, reply())
+    releaseRead()
+    await Promise.all([stream, link])
+
+    const frames = responseRaw.writes.join("")
+    expect(frames).toContain('event: snapshot')
+    expect(frames).toContain('"revision":0')
+    expect(frames).toContain('event: change')
+    expect(frames).toContain('"revision":1')
+    requestRaw.emit("close")
+  })
+
+  it("does not write or retain a stream that disconnects during its initial snapshot", async () => {
+    const workspace = new MemoryWorkspace()
+    workspace.files.set(".pi/tasks/session-links.json", JSON.stringify({ version: 1, links: [] }))
+    let releaseRead!: () => void
+    workspace.readGate = new Promise<void>((resolve) => { releaseRead = resolve })
+    const handlers = await routes({
+      trusted: {
+        actorResolver: async () => ({ workspaceId: "workspace-a", userId: "user-a" }),
+        workspaceAgentDispatcherResolver: {
+          resolve: vi.fn() as never,
+          runWithWorkspaceAgent: runWithWorkspace(workspace) as never,
+          resolveWithWorkspace: async () => ({ dispatcher: {} as never, workspace: workspace as never }),
+          authorizeSession: async () => undefined,
+        },
+      },
+    })
+    const requestRaw = Object.assign(new EventEmitter(), { destroyed: false })
+    const responseRaw = Object.assign(new EventEmitter(), {
+      destroyed: false,
+      writableEnded: false,
+      writes: [] as string[],
+      writeHead: vi.fn(),
+      write(value: string) { this.writes.push(value); return true },
+    })
+    const streamReply = Object.assign(reply(), { raw: responseRaw, hijack: vi.fn() })
+    const stream = handlers.get("/api/boring-tasks/session-links/events")!({ id: "stream", headers: {}, query: { workspaceId: "workspace-a" }, raw: requestRaw }, streamReply)
+    requestRaw.emit("close")
+    releaseRead()
+    await stream
+
+    expect(responseRaw.writeHead).not.toHaveBeenCalled()
+    expect(responseRaw.writes).toEqual([])
+    expect(streamReply.hijack).not.toHaveBeenCalled()
   })
 
   it("reverse-resolves deduplicated authorized sessions without exposing denied, missing, or stale provenance", async () => {
@@ -118,7 +208,7 @@ describe("task session link routes", () => {
       summary: () => ({ id: "source-a", label: "Source A", capabilities: { move: true } }),
       getBoardConfig: async () => ({ adapterId: "source-a", columns: [{ id: "todo", title: "Todo" }] }),
       listTasks: async () => [],
-      getTask: async (_ctx, taskId) => taskId === "stale" ? undefined : {
+      getTaskCard: async (_ctx, taskId) => taskId === "stale" ? undefined : {
         id: taskId,
         number: `#${taskId}`,
         title: `Task ${taskId}`,
@@ -239,11 +329,11 @@ describe("task session link routes", () => {
   it("returns stable validation and forbidden errors", async () => {
     const validationHandlers = await routes({ trusted: undefined })
     const invalidReply = reply()
-    await validationHandlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "github", taskId: "776", extra: true } }, invalidReply)
+    await validationHandlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "native", extra: true } }, invalidReply)
     expect(invalidReply).toMatchObject({ statusCode: 400, payload: { code: TASK_ERROR_CODES.SESSION_INVALID_BODY } })
 
     const oversizedReply = reply()
-    await validationHandlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "é".repeat(257), taskId: "776" } }, oversizedReply)
+    await validationHandlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "é".repeat(257), taskId: "776", agentTypeId: "alpha", sessionId: "native" } }, oversizedReply)
     expect(oversizedReply).toMatchObject({ statusCode: 400, payload: { code: TASK_ERROR_CODES.SESSION_INVALID_BODY } })
 
     const forbiddenReply = reply()
@@ -284,9 +374,7 @@ describe("task session link routes", () => {
       },
     })
     await handlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: " github ", taskId: " 776 ", agentTypeId: "alpha", sessionId: " native " } }, reply())
-    const listed = await handlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "github", taskId: "776" } }, reply()) as { links: unknown[] }
-    expect(listed.links).toHaveLength(1)
-    expect(firstWorkspace.files.has(".pi/tasks/session-links.json")).toBe(true)
+    expect(firstWorkspace.files.get(".pi/tasks/session-links.json")).toContain('"sessionId": "native"')
   })
 
   it("uses the trusted Workspace for task routes and disables unapproved delete", async () => {
@@ -345,8 +433,7 @@ describe("task session link routes", () => {
     const linked = await handlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "later-missing" } }, reply()) as { link: { id: string } }
     authorizeSession.mockClear()
     const unlinked = await handlers.get("/api/boring-tasks/sessions/unlink")!({ body: { linkId: linked.link.id } }, reply()) as { ok: true; link: Record<string, unknown> }
-    expect(unlinked).toMatchObject({ ok: true, link: { id: linked.link.id } })
-    expect(unlinked.link).not.toHaveProperty("sessionId")
+    expect(unlinked).toMatchObject({ ok: true, link: { id: linked.link.id, sessionId: "later-missing" } })
     expect(authorizeSession).not.toHaveBeenCalled()
   })
 })

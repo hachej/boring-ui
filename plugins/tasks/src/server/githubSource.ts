@@ -234,7 +234,7 @@ export function createGitHubTaskSource({ owner, repo, limit = 200, state = "open
       ])
       return issues.map((issue) => taskFromIssue(issue, sourceId, pullRequests))
     },
-    async getTask(_ctx, taskId): Promise<BoringTaskCard | undefined> {
+    async getTaskCard(_ctx, taskId): Promise<BoringTaskCard | undefined> {
       const issueNumber = Number(taskId)
       if (!Number.isInteger(issueNumber) || issueNumber <= 0) return undefined
       return taskFromIssue(await executor.viewIssue({ owner, repo, issueNumber }), sourceId)
@@ -308,7 +308,7 @@ export function createWorkspaceGitHubTaskSource({
       ])
       return issues.map((issue) => taskFromIssue(issue, sourceId, pullRequests))
     },
-    async getTask(ctx, taskId): Promise<BoringTaskCard | undefined> {
+    async getTaskCard(ctx, taskId): Promise<BoringTaskCard | undefined> {
       const issueNumber = Number(taskId)
       if (!Number.isInteger(issueNumber) || issueNumber <= 0) return undefined
       const repoInfo = await resolveRepo(ctx)

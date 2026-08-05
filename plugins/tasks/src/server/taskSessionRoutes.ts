@@ -11,8 +11,14 @@ import { type TaskManagementService, TaskSourceServiceError } from "./taskSource
 import {
   TaskSessionLinkStoreError,
   taskSessionLinkStoreForWorkspace,
+  type TaskSessionLinkStore,
   type TaskSessionLinkWorkspace,
 } from "./taskSessionLinkStore"
+import {
+  taskSessionLinkStoreWithEvents,
+  type TaskSessionLinkEvent,
+  type TaskSessionLinkEvents,
+} from "./taskSessionLinkEvents"
 
 export type TaskSessionLinkTrustedContext = NonNullable<WorkspaceAgentServerPluginContext["trusted"]>
 type TaskRoutesApp = Parameters<NonNullable<WorkspaceServerPlugin["routes"]>>[0]
@@ -92,13 +98,14 @@ export function registerTaskSessionLinkRoutes(
   trusted: TaskSessionLinkTrustedContext | undefined,
   agentTypeId: string,
   service: TaskManagementService,
+  events: TaskSessionLinkEvents,
 ): void {
   async function withTrustedStore<T>(
     request: Parameters<TaskSessionLinkTrustedContext["actorResolver"]>[0],
     run: (binding: {
       actor: Awaited<ReturnType<TaskSessionLinkTrustedContext["actorResolver"]>>
       workspace: TaskSessionLinkWorkspace
-      store: ReturnType<typeof taskSessionLinkStoreForWorkspace>
+      store: TaskSessionLinkStore
       resolver: TaskSessionLinkTrustedContext["workspaceAgentDispatcherResolver"]
     }) => Promise<T>,
   ): Promise<T> {
@@ -119,7 +126,7 @@ export function registerTaskSessionLinkRoutes(
         result = await run({
           actor,
           workspace,
-          store: taskSessionLinkStoreForWorkspace(workspace),
+          store: taskSessionLinkStoreWithEvents(taskSessionLinkStoreForWorkspace(workspace), actor.workspaceId, events),
           resolver: trusted.workspaceAgentDispatcherResolver,
         })
       })
@@ -131,25 +138,53 @@ export function registerTaskSessionLinkRoutes(
     }
   }
 
-  app.post("/api/boring-tasks/sessions/list", async (request, reply) => {
+  app.get("/api/boring-tasks/session-links/events", async (request, reply) => {
+    const queued: TaskSessionLinkEvent[] = []
+    let ready = false
+    let cleanedUp = false
+    let heartbeat: ReturnType<typeof setInterval> | undefined
+    let unsubscribe = () => {}
+    const cleanup = () => {
+      if (cleanedUp) return
+      cleanedUp = true
+      if (heartbeat) clearInterval(heartbeat)
+      unsubscribe()
+    }
+    request.raw.once("close", cleanup)
+    reply.raw.once("close", cleanup)
+    const write = (event: "snapshot" | "change", data: unknown) => {
+      if (reply.raw.destroyed || reply.raw.writableEnded) return
+      reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+    }
     try {
-      const body = exactSessionBody(request.body, ["adapterId", "taskId"])
-      return await withTrustedStore(request, async ({ actor, store, resolver }) => {
-        if (!resolver.authorizeSession) throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session listing is unavailable.")
-        const links = await store.list(body.adapterId, body.taskId)
-        const disclosedLinks: Array<Omit<(typeof links)[number], "sessionId"> & { sessionId?: string }> = []
-        for (const link of links) {
-          try {
-            await resolver.authorizeSession(actor, { agentTypeId: link.agentTypeId, sessionId: link.sessionId }, { request })
-            disclosedLinks.push(link)
-          } catch {
-            const { sessionId: _redacted, ...redactedLink } = link
-            disclosedLinks.push(redactedLink)
-          }
-        }
-        return { ok: true as const, links: disclosedLinks }
+      const snapshot = await withTrustedStore(request, async ({ actor, store }) => {
+        unsubscribe = events.subscribe(actor.workspaceId, (event) => {
+          if (ready) write("change", event)
+          else queued.push(event)
+        })
+        if (!store.snapshotLinks) throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_STORE_ERROR, "Task session link snapshot is unavailable.")
+        const cursor = events.cursor(actor.workspaceId)
+        return events.snapshot(await store.snapshotLinks(), cursor)
       })
+      if (cleanedUp || request.raw.destroyed || reply.raw.destroyed) {
+        unsubscribe()
+        return
+      }
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+      })
+      ready = true
+      write("snapshot", snapshot)
+      for (const event of queued.sort((left, right) => left.revision - right.revision)) write("change", event)
+      heartbeat = setInterval(() => {
+        if (reply.raw.destroyed || reply.raw.writableEnded) cleanup()
+        else reply.raw.write(": heartbeat\n\n")
+      }, 15_000)
+      reply.hijack()
     } catch (cause) {
+      cleanup()
+      if (request.raw.destroyed || reply.raw.destroyed) return
       return reply.status(statusFor(cause)).send(responseError(cause))
     }
   })
@@ -235,11 +270,10 @@ export function registerTaskSessionLinkRoutes(
   app.post("/api/boring-tasks/sessions/unlink", async (request, reply) => {
     try {
       const body = exactSessionBody(request.body, ["linkId"])
-      return await withTrustedStore(request, async ({ store }) => {
-        const link = await service.unlinkSession(body.linkId, { linkStore: store })
-        const { sessionId: _redacted, ...redactedLink } = link
-        return { ok: true as const, link: redactedLink }
-      })
+      return await withTrustedStore(request, async ({ store }) => ({
+        ok: true as const,
+        link: await service.unlinkSession(body.linkId, { linkStore: store }),
+      }))
     } catch (cause) {
       return reply.status(statusFor(cause)).send(responseError(cause))
     }

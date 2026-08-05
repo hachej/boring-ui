@@ -92,6 +92,7 @@ function FleetSessionSource<TSession extends WorkspaceAgentSession>({
   const controller = useSessions({
     requestHeaders,
     storageKey: `${storageKey}:${agentTypeId}`,
+    sessionStorageScope: `${workspaceId}:${agentTypeId}`,
     agentTypeId,
     workspaceId,
     apiBaseUrl,

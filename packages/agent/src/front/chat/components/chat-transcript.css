@@ -132,3 +132,12 @@
 [data-boring-agent] .boring-agent-markdown > *:last-child {
   margin-bottom: 0;
 }
+
+@media (pointer: coarse) {
+  [data-boring-agent] .boring-agent-message-action,
+  [data-boring-agent] .boring-agent-history-action,
+  [data-boring-agent] .boring-agent-scroll-latest {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

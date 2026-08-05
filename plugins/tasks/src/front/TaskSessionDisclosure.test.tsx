@@ -72,7 +72,6 @@ describe("TaskSessionDisclosure", () => {
     const storedLink = link("link-1", "native-exact", "2026-07-19T01:00:00.000Z")
     const outputArtifacts = Array.from({ length: 11 }, (_, index) => ({ id: `artifact-${index + 1}`, surfaceKind: "workspace.open.path", target: `docs/${index + 1}.md`, title: `Artifact ${index + 1}` }))
     const postJson = vi.fn(async (path: string) => {
-      if (path.endsWith("/sessions/list")) return { ok: true, links: [storedLink] }
       if (path.endsWith("/sessions/activity")) return { sessions: [activity("native-exact", { title: "Exact work" })], omittedSessionIds: [] }
       if (path.endsWith("/sessions/handovers")) return { ok: true, matches: [{ sessionId: "native-exact", handover: { id: "handover:latest", runId: "run", terminalEntryId: "latest", artifacts: outputArtifacts } }], omittedSessionIds: [] }
       if (path.endsWith("/sessions/unlink")) return { ok: true, link: storedLink }
@@ -88,17 +87,28 @@ describe("TaskSessionDisclosure", () => {
       shell={shellCapabilities}
       pluginClient={{
         postJson: postJson as unknown as WorkspacePluginClient["postJson"],
-        getJson: vi.fn(async () => ({ summary: { title: "Exact work", updatedAt: "2026-07-19T01:00:00.000Z" }, state: { status: "idle", queuedMessages: [] } })) as WorkspacePluginClient["getJson"],
+        getJson: vi.fn(async () => ({ summary: { title: "Exact work", updatedAt: Date.parse("2026-07-19T01:00:00.000Z") }, state: { status: "idle", queue: { followUps: [{}] } } })) as WorkspacePluginClient["getJson"],
       }}
+      sessionLinks={[storedLink]}
     />)
 
-    const sessionsToggle = screen.getByRole("button", { name: "Sessions" })
+    const sessionsToggle = screen.getByRole("button", { name: "1 session" })
     expect(sessionsToggle).toHaveAttribute("aria-expanded", "false")
     expect(screen.queryByText("Exact work")).not.toBeInTheDocument()
     expect(postJson).not.toHaveBeenCalled()
     await user.click(sessionsToggle)
     expect(await screen.findByRole("button", { name: "1 session" })).toHaveAttribute("aria-expanded", "true")
     expect(await screen.findByText("Exact work")).toBeInTheDocument()
+    expect(screen.getByText("Queued")).toBeInTheDocument()
+    expect(postJson.mock.calls.filter(([path]) => path.endsWith("/sessions/list"))).toHaveLength(0)
+    expect(postJson.mock.calls.filter(([path]) => path.endsWith("/sessions/handovers"))).toHaveLength(1)
+    await user.click(sessionsToggle)
+    expect(screen.queryByText("Exact work")).not.toBeInTheDocument()
+    await user.click(sessionsToggle)
+    expect(screen.getByText("Exact work")).toBeInTheDocument()
+    expect(screen.queryByText("Refreshing…")).not.toBeInTheDocument()
+    expect(postJson.mock.calls.filter(([path]) => path.endsWith("/sessions/list"))).toHaveLength(0)
+    expect(postJson.mock.calls.filter(([path]) => path.endsWith("/sessions/handovers"))).toHaveLength(1)
     expect(screen.getAllByRole("listitem")).toHaveLength(10)
     expect(screen.getByRole("button", { name: "Show 1 more" })).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Open Artifact 1" }))
@@ -126,32 +136,6 @@ describe("TaskSessionDisclosure", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "0 sessions" })).toBeInTheDocument())
   })
 
-  it("drops stale link responses after task ownership changes", async () => {
-    let resolveFirst!: (value: { ok: true; links: BoringTaskSessionLink[] }) => void
-    const firstResponse = new Promise<{ ok: true; links: BoringTaskSessionLink[] }>((resolve) => { resolveFirst = resolve })
-    const secondTask = { ...task, id: "777", number: "#777" }
-    const postJson = vi.fn(async (_path: string, body: unknown) => {
-      if ((body as { taskId?: string }).taskId === task.id) return await firstResponse
-      return { ok: true as const, links: [{ ...link("second", "native-second", "2026-07-19T01:00:00.000Z"), taskId: secondTask.id }] }
-    })
-    const client = {
-      postJson: postJson as unknown as WorkspacePluginClient["postJson"],
-      getJson: vi.fn() as WorkspacePluginClient["getJson"],
-    }
-    const user = userEvent.setup()
-    const view = render(<TaskSessionDisclosure task={task} shell={shell()} pluginClient={client} />)
-    await user.click(screen.getByRole("button", { name: /^Sessions/ }))
-    view.rerender(<TaskSessionDisclosure task={secondTask} shell={shell()} pluginClient={client} />)
-    await user.click(screen.getByRole("button", { name: /^Sessions/ }))
-    await user.click(screen.getByRole("button", { name: /^Sessions/ }))
-
-    expect(await screen.findByRole("button", { name: "1 session" })).toBeInTheDocument()
-    resolveFirst({ ok: true, links: [link("stale-a", "native-a", "2026-07-19T01:00:00.000Z"), link("stale-b", "native-b", "2026-07-19T02:00:00.000Z")] })
-    await firstResponse
-    await waitFor(() => expect(screen.getByRole("button", { name: "1 session" })).toBeInTheDocument())
-    expect(screen.queryByRole("button", { name: "2 sessions" })).not.toBeInTheDocument()
-  })
-
   it("keeps only the session menu opened in the exact task disclosure", async () => {
     const user = userEvent.setup()
     const secondTask = { ...task, id: "777", number: "#777", title: "Second task" }
@@ -159,7 +143,6 @@ describe("TaskSessionDisclosure", () => {
     const secondLink = { ...link("link-second", "native-second", "2026-07-19T02:00:00.000Z"), taskId: secondTask.id }
     const postJson = vi.fn(async (path: string, body: unknown) => {
       const taskId = (body as { taskId?: string }).taskId
-      if (path.endsWith("/sessions/list")) return { ok: true, links: taskId === secondTask.id ? [secondLink] : [firstLink] }
       if (path.endsWith("/sessions/handovers")) return { ok: true, matches: [], omittedSessionIds: [] }
       const sessionIds = (body as { sessionIds?: string[] }).sessionIds ?? []
       return { sessions: sessionIds.map((sessionId) => activity(sessionId, { title: sessionId === "native-second" ? "Second work" : "First work" })), omittedSessionIds: [] }
@@ -173,10 +156,10 @@ describe("TaskSessionDisclosure", () => {
     }
 
     render(<>
-      <TaskSessionDisclosure task={task} shell={shell()} pluginClient={client} />
-      <TaskSessionDisclosure task={secondTask} shell={shell()} pluginClient={client} />
+      <TaskSessionDisclosure task={task} shell={shell()} pluginClient={client} sessionLinks={[firstLink]} />
+      <TaskSessionDisclosure task={secondTask} shell={shell()} pluginClient={client} sessionLinks={[secondLink]} />
     </>)
-    const toggles = screen.getAllByRole("button", { name: "Sessions" })
+    const toggles = screen.getAllByRole("button", { name: "1 session" })
     await user.click(toggles[0]!)
     await user.click(toggles[1]!)
     await screen.findByText("First work")
@@ -192,13 +175,11 @@ describe("TaskSessionDisclosure", () => {
 
   it("renders denied activity as unavailable and fails closed through addressed shell capabilities", async () => {
     const user = userEvent.setup()
-    const { sessionId: _redactedSessionId, ...unavailable } = link("link-old", "native-denied", "2026-07-19T01:00:00.000Z")
+    const unavailable = link("link-old", "native-denied", "2026-07-19T01:00:00.000Z")
     const available = link("link-new", "native-open", "2026-07-19T02:00:00.000Z")
-    const postJson = vi.fn(async (path: string) => path.endsWith("/sessions/list")
-      ? { ok: true, links: [unavailable, available] }
-      : path.endsWith("/sessions/handovers")
-        ? { ok: true, matches: [], omittedSessionIds: ["native-open"] }
-        : { sessions: [activity("native-open", { title: "Open work" })], omittedSessionIds: [] })
+    const postJson = vi.fn(async (path: string) => path.endsWith("/sessions/handovers")
+      ? { ok: true, matches: [], omittedSessionIds: ["native-denied"] }
+      : { sessions: [activity("native-open", { title: "Open work" })], omittedSessionIds: ["native-denied"] })
     const shellCapabilities = shell({
       openDetachedChat: vi.fn(() => ({ success: false as const, reason: "open-failed" as const, message: "disconnected context" })),
       openFullChat: vi.fn(() => ({ success: false as const, reason: "open-failed" as const, message: "disconnected context" })),
@@ -209,11 +190,15 @@ describe("TaskSessionDisclosure", () => {
       shell={shellCapabilities}
       pluginClient={{
         postJson: postJson as unknown as WorkspacePluginClient["postJson"],
-        getJson: vi.fn(async () => ({ summary: { title: "Open work", updatedAt: "2026-07-19T02:00:00.000Z" }, state: { status: "idle", queuedMessages: [] } })) as WorkspacePluginClient["getJson"],
+        getJson: vi.fn(async (path: string) => {
+          if (path.includes("native-denied")) throw new Error("forbidden")
+          return { summary: { title: "Open work", updatedAt: Date.parse("2026-07-19T02:00:00.000Z") }, state: { status: "idle", queue: { followUps: [] } } }
+        }) as WorkspacePluginClient["getJson"],
       }}
+      sessionLinks={[unavailable, available]}
     />)
-    await user.click(screen.getByRole("button", { name: "Sessions" }))
-    expect(await screen.findByRole("button", { name: "2 sessions" })).toHaveAttribute("aria-expanded", "true")
+    await user.click(screen.getByRole("button", { name: "2 sessions" }))
+    expect(screen.getByRole("button", { name: "2 sessions" })).toHaveAttribute("aria-expanded", "true")
     expect(await screen.findByText("Unavailable session")).toBeInTheDocument()
     expect(screen.queryByText("Session native-denied")).not.toBeInTheDocument()
 

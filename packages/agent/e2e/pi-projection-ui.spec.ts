@@ -76,7 +76,7 @@ test.describe('pi projection UI regressions', () => {
     await expect(conversation.getByText('PI_NATIVE_ASSISTANT_DONE')).toBeVisible({ timeout: 10_000 })
     await expect(conversation.getByText(/Used search|Using search/)).toBeVisible({ timeout: 10_000 })
 
-    const thoughtsTrigger = conversation.getByText(/thoughts|thinking/).first()
+    const thoughtsTrigger = conversation.getByText('Reasoning', { exact: true }).first()
     await expect(thoughtsTrigger).toBeVisible({ timeout: 10_000 })
     const reasoningText = conversation.getByText('Reasoning visible')
     await expect(reasoningText).toBeVisible({ timeout: 10_000 })

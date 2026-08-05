@@ -1,9 +1,10 @@
 import type { DragEvent } from "react"
-import type { BoringTaskCard } from "../shared"
+import type { BoringTaskCard, BoringTaskSessionLink } from "../shared"
 import type { BoringTaskColumnView } from "./taskBoardModel"
 import { canDropInColumn } from "./taskBoardModel"
 import { TaskCard } from "./TaskCard"
 import { taskAttentionKey, type TaskAttentionItem } from "./useTaskAttention"
+import { taskSessionLinkKey } from "./taskSessionLinkStream"
 
 interface TaskKanbanColumnProps {
   column: BoringTaskColumnView
@@ -13,9 +14,12 @@ interface TaskKanbanColumnProps {
   onTaskDragEnd: () => void
   onTaskDrop: (taskId: string, adapterId: string, statusId: string) => void
   onTaskDelete?: (task: BoringTaskCard) => void
+  onTaskOpenDetail?: (task: BoringTaskCard, trigger: HTMLButtonElement) => void
   canDragTask?: (task: BoringTaskCard) => boolean
   canDeleteTask?: (task: BoringTaskCard) => boolean
   attentionByTask?: ReadonlyMap<string, readonly TaskAttentionItem[]>
+  sessionLinksByTask?: ReadonlyMap<string, readonly BoringTaskSessionLink[]> | null
+  canOpenTaskDetail?: (task: BoringTaskCard) => boolean
 }
 
 export function TaskKanbanColumn({
@@ -26,9 +30,12 @@ export function TaskKanbanColumn({
   onTaskDragEnd,
   onTaskDrop,
   onTaskDelete,
+  onTaskOpenDetail,
   canDragTask = () => moveEnabled,
   canDeleteTask = () => false,
   attentionByTask = new Map(),
+  sessionLinksByTask = new Map(),
+  canOpenTaskDetail = () => Boolean(onTaskOpenDetail),
 }: TaskKanbanColumnProps) {
   const acceptsDrop = moveEnabled && canDropInColumn(column)
 
@@ -98,7 +105,9 @@ export function TaskKanbanColumn({
             unmapped={column.unmapped}
             deleteEnabled={canDeleteTask(task)}
             attention={attentionByTask.get(taskAttentionKey(task))}
+            sessionLinks={sessionLinksByTask ? sessionLinksByTask.get(taskSessionLinkKey(task.adapterId, task.id)) ?? [] : undefined}
             onDelete={onTaskDelete}
+            onOpenDetail={canOpenTaskDetail(task) ? onTaskOpenDetail : undefined}
             onDragStart={onTaskDragStart}
             onDragEnd={onTaskDragEnd}
           />

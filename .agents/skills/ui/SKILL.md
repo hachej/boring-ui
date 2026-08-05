@@ -6,9 +6,9 @@ disable-model-invocation: true
 
 # UI
 
-Read `docs/kanzen/procedures/visual-review.md` before acting; it owns commands,
+Read `docs/procedures/visual-review.md` before acting; it owns commands,
 hard-gate authority, critic bounds, packet rules, providers, and owner handoff.
-Also follow `docs/kanzen/MODEL-CARD.md`. When the registered review needs a
+Also follow `docs/procedures/MODEL-CARD.md`. When the registered review needs a
 screenshot/video/HTML proof bundle or an iterative evidence handoff, read and
 follow [`visual-report-bundle.md`](visual-report-bundle.md); it is an internal
 reference of this skill, not a separately invocable skill.

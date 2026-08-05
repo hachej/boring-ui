@@ -2,6 +2,7 @@ import { TASK_ERROR_CODES } from "../shared"
 import type { ToolExecContext } from "@hachej/boring-workspace"
 import type { WorkspaceAgentServerPluginContext } from "@hachej/boring-workspace/app/server"
 import { taskSessionLinkStoreForWorkspace, type TaskSessionLinkStore, type TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
+import { taskSessionLinkStoreWithEvents, type TaskSessionLinkEvents } from "./taskSessionLinkEvents"
 
 type TaskSessionLinkTrustedContext = NonNullable<WorkspaceAgentServerPluginContext["trusted"]>
 
@@ -30,6 +31,7 @@ export interface TrustedTaskToolBindingResolver {
 export function createTrustedTaskToolBindingResolver(
   trusted: TaskSessionLinkTrustedContext | undefined,
   agentTypeId: string,
+  events?: TaskSessionLinkEvents,
 ): TrustedTaskToolBindingResolver {
   return {
     async run<T>(ctx: ToolExecContext, operation: (binding: TrustedTaskToolBinding) => Promise<T>): Promise<T> {
@@ -56,7 +58,9 @@ export function createTrustedTaskToolBindingResolver(
             actor,
             agentTypeId,
             workspace,
-            linkStore: taskSessionLinkStoreForWorkspace(workspace),
+            linkStore: events
+              ? taskSessionLinkStoreWithEvents(taskSessionLinkStoreForWorkspace(workspace), actor.workspaceId, events)
+              : taskSessionLinkStoreForWorkspace(workspace),
             authorizeSession: async (sessionId) => {
               if (!resolver.authorizeSession) throw new TaskToolBindingError(TASK_ERROR_CODES.TOOL_CONTEXT_UNAVAILABLE, "Trusted task session authorization is unavailable.")
               try {

@@ -24,7 +24,7 @@ export default tasksPlugin
 export { TaskKanbanBoard } from "./TaskKanbanBoard"
 export { TasksOverlay } from "./TasksOverlay"
 export { createGitHubIssuesAdapter } from "./githubIssuesAdapter"
-export { createHttpTaskAdapter, listHttpTaskSources } from "./httpTaskAdapter"
+export { createHttpTaskAdapter, listHttpTaskSources, TaskHttpError } from "./httpTaskAdapter"
 export { createMockTaskAdapter } from "./mockAdapter"
 export type {
   BoringTaskAdapter,
@@ -33,8 +33,13 @@ export type {
   BoringTaskBoardConfig,
   BoringTaskCard,
   BoringTaskColumn,
+  BoringTaskDetail,
   BoringTaskEpicRef,
+  BoringTaskErrorCode,
+  BoringTaskMetadataItem,
   BoringTaskMoveInput,
+  BoringTaskRelation,
+  BoringTaskSourceError,
   BoringTaskStatusId,
   BoringTaskSessionLink,
 } from "../shared"

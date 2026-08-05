@@ -12,11 +12,20 @@ export interface TaskSessionLinkWorkspace {
   unlink?(path: string): Promise<void>
 }
 
+export interface TaskSessionLinkSnapshot {
+  adapterId: string
+  taskId: string
+  links: BoringTaskSessionLink[]
+}
+
 export interface TaskSessionLinkStore {
   list(adapterId: string, taskId: string): Promise<BoringTaskSessionLink[]>
   listBySessionIds(sessionIds: readonly string[]): Promise<Map<string, BoringTaskSessionLink[]>>
+  snapshotLinks?(): Promise<TaskSessionLinkSnapshot[]>
   link(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<BoringTaskSessionLink>
+  linkWithSnapshot?(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[]; created: boolean }>
   unlink(linkId: string): Promise<BoringTaskSessionLink>
+  unlinkWithSnapshot?(linkId: string): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[] }>
 }
 
 const STORE_PATH = ".pi/tasks/session-links.json"
@@ -91,26 +100,33 @@ function compareLinks(left: BoringTaskSessionLink, right: BoringTaskSessionLink)
     || compareText(left.id, right.id)
 }
 
-const storesByWorkspace = new WeakMap<TaskSessionLinkWorkspace, FileTaskSessionLinkStore>()
+interface WorkspaceWriterQueue { pending: Promise<unknown> }
+const writerQueuesByWorkspaceRoot = new Map<string, WorkspaceWriterQueue>()
 
-/** One writer queue per live Workspace prevents request-local stores from losing concurrent updates. */
-export function taskSessionLinkStoreForWorkspace(workspace: TaskSessionLinkWorkspace): FileTaskSessionLinkStore {
-  const existing = storesByWorkspace.get(workspace)
+function writerQueueFor(workspaceRoot: string): WorkspaceWriterQueue {
+  const existing = writerQueuesByWorkspaceRoot.get(workspaceRoot)
   if (existing) return existing
-  const store = new FileTaskSessionLinkStore(workspace)
-  storesByWorkspace.set(workspace, store)
-  return store
+  const queue = { pending: Promise.resolve() }
+  writerQueuesByWorkspaceRoot.set(workspaceRoot, queue)
+  return queue
+}
+
+/** Lease-local Workspace proxies share one capability-free writer queue by stable root identity. */
+export function taskSessionLinkStoreForWorkspace(workspace: TaskSessionLinkWorkspace): FileTaskSessionLinkStore {
+  return new FileTaskSessionLinkStore(workspace)
 }
 
 export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
-  private pending: Promise<unknown> = Promise.resolve()
+  private readonly queue: WorkspaceWriterQueue
 
-  constructor(private readonly workspace: TaskSessionLinkWorkspace) {}
+  constructor(private readonly workspace: TaskSessionLinkWorkspace) {
+    this.queue = writerQueueFor(workspace.root)
+  }
 
   async list(adapterId: string, taskId: string): Promise<BoringTaskSessionLink[]> {
     const normalizedAdapterId = validateId(adapterId, "adapterId")
     const normalizedTaskId = validateId(taskId, "taskId")
-    await this.pending.catch(() => {})
+    await this.queue.pending.catch(() => {})
     const store = await this.read()
     return store.links
       .filter((link) => link.adapterId === normalizedAdapterId && link.taskId === normalizedTaskId)
@@ -119,7 +135,7 @@ export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
 
   async listBySessionIds(sessionIds: readonly string[]): Promise<Map<string, BoringTaskSessionLink[]>> {
     const normalizedIds = sessionIds.map((sessionId) => validateId(sessionId, "sessionId"))
-    await this.pending.catch(() => {})
+    await this.queue.pending.catch(() => {})
     const store = await this.read()
     const requested = new Set(normalizedIds)
     const grouped = new Map(normalizedIds.map((sessionId) => [sessionId, [] as BoringTaskSessionLink[]]))
@@ -129,7 +145,26 @@ export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
     return grouped
   }
 
+  async snapshotLinks(): Promise<TaskSessionLinkSnapshot[]> {
+    await this.queue.pending.catch(() => {})
+    const store = await this.read()
+    const snapshots = new Map<string, TaskSessionLinkSnapshot>()
+    for (const link of [...store.links].sort(compareLinks)) {
+      const key = JSON.stringify([link.adapterId, link.taskId])
+      const current = snapshots.get(key)
+      if (current) current.links.push(link)
+      else snapshots.set(key, { adapterId: link.adapterId, taskId: link.taskId, links: [link] })
+    }
+    return [...snapshots.values()].sort((left, right) => (
+      compareText(left.adapterId, right.adapterId) || compareText(left.taskId, right.taskId)
+    ))
+  }
+
   async link(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<BoringTaskSessionLink> {
+    return (await this.linkWithSnapshot(input)).link
+  }
+
+  async linkWithSnapshot(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[]; created: boolean }> {
     const normalized = {
       adapterId: validateId(input.adapterId, "adapterId"),
       taskId: validateId(input.taskId, "taskId"),
@@ -137,32 +172,40 @@ export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
       sessionId: validateId(input.sessionId, "sessionId"),
     }
     return await this.mutate(async (store) => {
-      const existing = store.links.find((link) => link.adapterId === normalized.adapterId && link.taskId === normalized.taskId && link.agentTypeId === normalized.agentTypeId && link.sessionId === normalized.sessionId)
-      if (existing) return existing
+      const taskLinks = () => store.links.filter((link) => link.adapterId === normalized.adapterId && link.taskId === normalized.taskId)
+      const existing = taskLinks().find((link) => link.agentTypeId === normalized.agentTypeId && link.sessionId === normalized.sessionId)
+      if (existing) return { link: existing, links: taskLinks().sort(compareLinks), created: false }
       if (store.links.length >= MAX_LINKS) {
         throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_STORE_ERROR, "Task session link store is at capacity.")
       }
       const link: BoringTaskSessionLink = { id: randomUUID(), ...normalized, createdAt: new Date().toISOString() }
       store.links.push(link)
       await this.write(store)
-      return link
+      return { link, links: taskLinks().sort(compareLinks), created: true }
     })
   }
 
   async unlink(linkId: string): Promise<BoringTaskSessionLink> {
+    return (await this.unlinkWithSnapshot(linkId)).link
+  }
+
+  async unlinkWithSnapshot(linkId: string): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[] }> {
     const normalizedLinkId = validateId(linkId, "linkId")
     return await this.mutate(async (store) => {
       const index = store.links.findIndex((link) => link.id === normalizedLinkId)
       if (index < 0) throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_MISSING, "Task session link was not found.")
-      const [removed] = store.links.splice(index, 1)
+      const [link] = store.links.splice(index, 1)
       await this.write(store)
-      return removed!
+      const links = store.links
+        .filter((candidate) => candidate.adapterId === link!.adapterId && candidate.taskId === link!.taskId)
+        .sort(compareLinks)
+      return { link: link!, links }
     })
   }
 
   private mutate<T>(operation: (store: StoredLinks) => Promise<T>): Promise<T> {
-    const result = this.pending.then(async () => operation(await this.read()))
-    this.pending = result.then(() => undefined, () => undefined)
+    const result = this.queue.pending.then(async () => operation(await this.read()))
+    this.queue.pending = result.then(() => undefined, () => undefined)
     return result
   }
 

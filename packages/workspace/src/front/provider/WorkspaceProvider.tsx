@@ -299,6 +299,7 @@ function WorkspacePluginProviders({
   onAuthError,
   apiTimeout,
   activeSessionId,
+  activeSessionAgentTypeId,
   openSessionIds,
   children,
 }: {
@@ -309,9 +310,12 @@ function WorkspacePluginProviders({
   onAuthError?: (statusCode: number) => void
   apiTimeout?: number
   activeSessionId?: string | null
+  /** Addressed owner for active-session work; defaults to the future-session Agent. */
+  activeSessionAgentTypeId?: string | null
   openSessionIds?: readonly string[]
   children: ReactNode
 }) {
+  const providerAgentTypeId = activeSessionAgentTypeId ?? agentTypeId
   const providers = plugins.flatMap((plugin) =>
     plugin.registrations.providers.map((provider) => ({ plugin, provider })),
   )
@@ -321,7 +325,7 @@ function WorkspacePluginProviders({
     return (
       <Provider
         key={`${plugin.id}:provider:${provider.id}`}
-        agentTypeId={agentTypeId}
+        agentTypeId={providerAgentTypeId}
         apiBaseUrl={apiBaseUrl}
         authHeaders={authHeaders}
         onAuthError={onAuthError}
@@ -374,6 +378,8 @@ export interface WorkspaceProviderProps {
   apiTimeout?: number
   /** Active chat/session scope shared with plugin providers that need session-scoped data. */
   activeSessionId?: string | null
+  /** Addressed owner for active-session plugin work. */
+  activeSessionAgentTypeId?: string | null
   /** Session ids that are currently open in chat panes, for plugins that must avoid opening closed-session UI. */
   openSessionIds?: readonly string[]
   /** Authoritative addressed chat sessions used to drop stale session-scoped Inbox/attention entries. */
@@ -438,6 +444,7 @@ export function WorkspaceProvider({
   authHeaders,
   apiTimeout,
   activeSessionId,
+  activeSessionAgentTypeId,
   openSessionIds,
   attentionSessions,
   attentionSessionIds,
@@ -671,6 +678,7 @@ export function WorkspaceProvider({
                     onAuthError={onAuthError}
                     apiTimeout={apiTimeout}
                     activeSessionId={activeSessionId}
+                    activeSessionAgentTypeId={activeSessionAgentTypeId}
                     openSessionIds={openSessionIds}
                   >
                     <WorkspacePluginBindings plugins={pluginsWithBindings} />

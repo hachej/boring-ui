@@ -26,6 +26,76 @@ describe("task source service", () => {
     })
   })
 
+  test("isolates a failing source and redacts its raw failure", async () => {
+    const healthy = source()
+    const failing = source({
+      summary: () => ({ id: "source-b", label: "Source B", capabilities: { move: false } }),
+      getBoardConfig: () => ({ adapterId: "source-b", columns: [{ id: "open", title: "Open" }] }),
+      listTasks: () => { throw new Error("secret stderr from /private/workspace") },
+    })
+    const service = createTaskSourceService(createTaskSourceRegistry([healthy, failing]))
+
+    await expect(service.listTasks({})).resolves.toEqual({
+      configs: { "source-a": { adapterId: "source-a", columns: [{ id: "todo", title: "Todo" }] } },
+      tasks: [{ id: "1", number: "1", title: "One", statusId: "todo", adapterId: "source-a" }],
+      errors: {
+        "source-b": {
+          sourceId: "source-b",
+          code: "TASK_SOURCE_LIST_FAILED",
+          message: "Task source failed to load.",
+          retryable: true,
+          stale: false,
+        },
+      },
+    })
+  })
+
+  test("rejects an explicitly requested unknown source before loading known sources", async () => {
+    const listTasks = vi.fn(source().listTasks)
+    const service = createTaskSourceService(createTaskSourceRegistry([source({ listTasks })]))
+    await expect(service.listTasks({}, { sourceIds: ["source-a", "missing"] })).rejects.toMatchObject({
+      status: 404,
+      code: "TASK_SOURCE_NOT_FOUND",
+    })
+    expect(listTasks).not.toHaveBeenCalled()
+  })
+
+  test("dispatches generic detail and returns stable unsupported/not-found errors", async () => {
+    const detailSource = source({
+      summary: () => ({ id: "source-a", label: "Source A", capabilities: { move: false, detail: true } }),
+      getTask: (_ctx, input) => input.taskId === "1" ? {
+        task: { id: "1", number: "1", title: "One", statusId: "todo", adapterId: "source-a" },
+        body: "Full body",
+        metadata: [],
+        relations: [],
+      } : undefined,
+    })
+    const service = createTaskSourceService(createTaskSourceRegistry([detailSource]))
+    await expect(service.getTaskDetail({}, { sourceId: "source-a", taskId: "1" })).resolves.toMatchObject({ body: "Full body" })
+    await expect(service.getTaskDetail({}, { sourceId: "source-a", taskId: "missing" })).rejects.toMatchObject({
+      status: 404,
+      code: "TASK_NOT_FOUND",
+      retryable: false,
+    })
+
+    const unsupported = createTaskSourceService(createTaskSourceRegistry([source()]))
+    await expect(unsupported.getTaskDetail({}, { sourceId: "source-a", taskId: "1" })).rejects.toMatchObject({
+      status: 409,
+      code: "TASK_SOURCE_DETAIL_UNSUPPORTED",
+    })
+  })
+
+  test("uses the closed error definition table as status/retry authority", () => {
+    expect(new TaskSourceServiceError(500, "TASK_GITHUB_COMMAND_FAILED", "redacted", false)).toMatchObject({
+      status: 502,
+      retryable: true,
+    })
+    expect(new TaskSourceServiceError(502, "TASK_SOURCE_ERROR", "redacted", true)).toMatchObject({
+      status: 500,
+      retryable: true,
+    })
+  })
+
   test("rejects unknown sources with stable error", async () => {
     const service = createTaskSourceService(createTaskSourceRegistry([]))
     await expect(service.moveTask({}, { sourceId: "missing", taskId: "1", statusId: "todo" })).rejects.toMatchObject({
@@ -48,7 +118,7 @@ describe("task source service", () => {
 
   test("uses exact adapter lookup with a bounded legacy fallback", async () => {
     const direct = vi.fn(async () => ({ id: "1", number: "1", title: "Direct", statusId: "todo", adapterId: "source-a" }))
-    const service = createTaskSourceService(createTaskSourceRegistry([source({ getTask: direct })]))
+    const service = createTaskSourceService(createTaskSourceRegistry([source({ getTaskCard: direct })]))
     await expect(service.getTask({}, { adapterId: "source-a", taskId: "1" })).resolves.toMatchObject({ title: "Direct" })
     expect(direct).toHaveBeenCalledWith({}, "1")
 
@@ -74,7 +144,7 @@ describe("task source service", () => {
       unlink: vi.fn(async () => link),
     }
     const service = createTaskSourceService(createTaskSourceRegistry([source({
-      getTask: async (_ctx, taskId) => {
+      getTaskCard: async (_ctx, taskId) => {
         events.push("task")
         return taskId === "1" ? { id: "1", number: "1", title: "One", statusId: "todo", adapterId: "source-a" } : undefined
       },
@@ -97,7 +167,7 @@ describe("task source service", () => {
     ]
     const listBySessionIds = vi.fn(async (sessionIds: readonly string[]) => new Map(sessionIds.map((sessionId) => [sessionId, sessionId === "native" ? links : []])))
     const service = createTaskSourceService(createTaskSourceRegistry([source({
-      getTask: async (_ctx, taskId) => taskId === "missing" ? undefined : {
+      getTaskCard: async (_ctx, taskId) => taskId === "missing" ? undefined : {
         id: taskId,
         number: `#${taskId}`,
         title: `Task ${taskId}`,
@@ -152,7 +222,7 @@ describe("task source service", () => {
     const deleteTask = vi.fn(async () => undefined)
     const service = createTaskSourceService(createTaskSourceRegistry([source({
       summary: () => ({ id: "source-a", label: "Source A", capabilities: { move: true, delete: true, deleteEffect: "close" } }),
-      getTask: async () => ({ id: "1", number: "1", title: "One", statusId: "todo", adapterId: "source-a" }),
+      getTaskCard: async () => ({ id: "1", number: "1", title: "One", statusId: "todo", adapterId: "source-a" }),
       deleteTask,
     })]))
 

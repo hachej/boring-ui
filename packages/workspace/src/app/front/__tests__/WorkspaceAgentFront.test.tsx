@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../../front/agentPlugins/reloadEvent"
 import { UI_COMMAND_EVENT, type UiCommand } from "../../../front/bridge"
+import { useWorkspacePluginClient } from "../../../front/plugin/useWorkspacePluginClient"
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
 import type { PanelConfig } from "../../../front/registry/types"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
@@ -1915,6 +1916,100 @@ describe("WorkspaceAgentFront", () => {
     expect(getCapturedChatProps()?.initialDraft).toBe("restore and send")
     expect(getCapturedChatProps()?.autoSubmitInitialDraft).toBe(true)
     expect(seenSessionIds).not.toContain("sess-old")
+  })
+
+  it("keeps an in-flight auto-submit session bound to the Agent that admitted its creation", async () => {
+    const capturedByRef = new Map<string, CapturedChatPanelProps>()
+    let resolveDefaultCreate: ((session: WorkspaceAgentSession) => void) | undefined
+    let selectAgentTypeId: ((agentTypeId: string) => void) | undefined
+    const createOwners: string[] = []
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://workspace.test").pathname
+      if (path === "/api/v1/agents") {
+        return new Response(JSON.stringify([
+          { agentTypeId: "default", label: "Concierge" },
+          { agentTypeId: "beta", label: "Worker" },
+        ]), { status: 200 })
+      }
+      if (path.endsWith("/ready-status")) return new Response(null, { status: 200 })
+      if (path.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (path.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+    const useFleetSelection = () => {
+      const [selectedAgentTypeId, setSelectedAgentTypeId] = useState("default")
+      selectAgentTypeId = setSelectedAgentTypeId
+      return {
+        agents: [
+          { agentTypeId: "default", label: "Concierge" },
+          { agentTypeId: "beta", label: "Worker" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: setSelectedAgentTypeId,
+      }
+    }
+    const useFleetSessions: UseWorkspaceAgentSessions = (options) => {
+      const initial = { id: `old-${options.agentTypeId}`, agentTypeId: options.agentTypeId, title: "Old" }
+      const [sessions, setSessions] = useState<WorkspaceAgentSession[]>([initial])
+      const [activeSessionId, setActiveSessionId] = useState(initial.id)
+      return {
+        sourceIdentity: options.sourceIdentity,
+        sessions,
+        activeSessionId,
+        activeSessionAgentTypeId: options.agentTypeId,
+        activeSession: sessions.find((session) => session.id === activeSessionId) ?? null,
+        loading: false,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        delete: vi.fn(),
+        create: () => {
+          createOwners.push(options.agentTypeId)
+          if (options.agentTypeId === "default") {
+            return new Promise<WorkspaceAgentSession>((resolve) => {
+              resolveDefaultCreate = (session) => {
+                setSessions((current) => [session, ...current])
+                setActiveSessionId(session.id)
+                resolve(session)
+              }
+            })
+          }
+          return Promise.resolve({ id: "unexpected-beta", agentTypeId: "beta", title: "Unexpected" })
+        },
+      }
+    }
+    const CapturingChat = (props: WorkspaceChatPanelProps) => {
+      capturedByRef.set(`${props.agentTypeId}/${props.sessionId}`, props as CapturedChatPanelProps)
+      return <div>{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-auto-submit"
+        chatPanel={CapturingChat}
+        useSessions={useFleetSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useFleetSelection}
+        chatParams={{ initialDraft: "resume", autoSubmitInitialDraft: true }}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(createOwners).toEqual(["default"]))
+    act(() => selectAgentTypeId?.("beta"))
+    expect(createOwners).toEqual(["default"])
+
+    await act(async () => {
+      resolveDefaultCreate?.({ id: "created", agentTypeId: "default", title: "Created" })
+    })
+    await waitFor(() => expect([...capturedByRef.keys()]).toContain("default/created"))
+    expect(capturedByRef.get("default/created")).toMatchObject({
+      sessionId: "created",
+      agentTypeId: "default",
+      autoSubmitInitialDraft: true,
+    })
+    expect(createOwners).toEqual(["default"])
   })
 
   it("keeps hydration disabled after auth-return auto-submit props clear until the chat explicitly unlocks it", async () => {
