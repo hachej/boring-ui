@@ -28,10 +28,13 @@ canonical contracts: `docs/procedures/{boring-loop.md,MODEL-CARD.md}` and
   artifacts, Inbox projections, and provenance only.
 - Keep one slice when possible. APR is advisory; accepted revisions enter the
   canonical plan.
+- Materialize slices as beads meeting `docs/procedures/bead-ready.md` (WHAT,
+  proof path, file scope, fits one session), and set bead priority at plan time.
 - Before Beads handoff run `br dep cycles` and `bv --robot-insights`; never bare
   `bv`.
 - Use `/skill:fresh-eyes` as tier 1, then continue the required Model Card ladder.
-  Use `ask_user` for unresolved intent, risk, or approval.
+  Use `ask_user` for unresolved intent, risk, or approval. A plan-approval
+  intention links the visual plan doc from `docs/procedures/visual-review-doc.md`.
 - Provider command names are advisory; translate legacy `/implement` to `/exec`.
 
 Return the canonical artifact/URL, method, slices/Beads, blockers, proof path, and
