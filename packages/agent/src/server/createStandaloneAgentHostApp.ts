@@ -145,12 +145,14 @@ export async function createStandaloneAgentHostApp(
   const modeAdapter = withStandaloneRuntimeContributions(baseModeAdapter, options, workspaceRoot)
   const runtimeHost = options.runtimeHost ?? modeAdapter.runtimeHost
   const getRuntimeProvisioning = options.getRuntimeProvisioning ?? (() => options.runtimeProvisioning)
-  // Preserve standalone/native Pi transcript coordinates: the HTTP storage
-  // scope remains the historical `default`; sessionId is only the command/
-  // dispatcher default and must not introduce a new transcript segment.
+  // Local standalone/native Pi keeps its historical `default` transcript
+  // coordinate. A remote worker, however, requires the host-selected UUID as
+  // its runtime workspace identity; forwarding `default` is invalid and would
+  // route filesystem operations to the wrong tenant.
   const authority = createStandaloneScopeAuthority()
-  const httpScope = authority.issue(DEFAULT_SESSION_ID)
-  const dispatcherScope = sessionId === DEFAULT_SESSION_ID ? httpScope : authority.issue(sessionId)
+  const httpWorkspaceScopeId = resolvedMode === 'remote-worker' ? sessionId : DEFAULT_SESSION_ID
+  const httpScope = authority.issue(httpWorkspaceScopeId)
+  const dispatcherScope = sessionId === httpWorkspaceScopeId ? httpScope : authority.issue(sessionId)
   const app = Fastify({ logger: options.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
   let created: Awaited<ReturnType<typeof createAgentHost>> | undefined
   let lastReloadDiagnostics: ReadonlyArray<{ source: string; message: string; pluginId?: string }> = []

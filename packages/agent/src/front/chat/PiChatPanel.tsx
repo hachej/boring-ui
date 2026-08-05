@@ -534,11 +534,11 @@ export function PiChatPanel<
     if (resetInProgressRef.current) return
     if (autoCreateInFlightRef.current) return
     autoCreateInFlightRef.current = true
-    void sessions.create().catch((error) => {
+    void sessions.create({ resumeSessionId: sessions.resumeSessionId }).catch((error) => {
       autoCreateInFlightRef.current = false
       addLocalNotice({ id: 'session-auto-create-error', level: 'error', text: errorMessage(error, 'Could not create a chat session.'), dismissible: true })
     })
-  }, [activeSessionId, addLocalNotice, externalSessionId, sessionList.length, sessions.create, sessionsError, sessionsLoading])
+  }, [activeSessionId, addLocalNotice, externalSessionId, sessionList.length, sessions.create, sessions.resumeSessionId, sessionsError, sessionsLoading])
 
   useEffect(() => {
     if (externalSessionId || sessionsError || activeSessionId || sessionList.length > 0) {
@@ -1066,14 +1066,20 @@ export function PiChatPanel<
   // browser) can show a "working" indicator without coupling to this panel.
   useEffect(() => {
     if (typeof window === 'undefined' || !activeChatSessionId) return
-    window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
+    const emitStatus = () => window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
       detail: {
         sessionId: activeChatSessionId,
         ...(agentTypeId ? { agentTypeId } : {}),
         working: isStreaming,
       },
     }))
-    // Do not clear on unmount/session switch. A background session can keep
+    emitStatus()
+    // Shell chrome can mount after the panel's initial status event. Replaying
+    // on request closes that ordering race without treating browser events as
+    // durable server-side activity authority.
+    window.addEventListener('boring:chat-session-status-request', emitStatus)
+    return () => window.removeEventListener('boring:chat-session-status-request', emitStatus)
+    // Do not emit an idle status on cleanup. A background session can keep
     // running after its panel is no longer selected; clearing here makes the
     // session-list "working" badge disappear while the run is still active.
     // The selected/running panel emits `working: false` when it observes the
