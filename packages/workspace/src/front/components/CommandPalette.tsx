@@ -360,7 +360,7 @@ function PaletteSearchHeader({
               ? "Run a command..."
               : isChatMode
                 ? "Search chats..."
-                : "Search sources or type > for commands"
+                : "Search sources..."
           }
           value={query}
           onValueChange={onQueryChange}
