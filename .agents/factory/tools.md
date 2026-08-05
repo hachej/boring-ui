@@ -32,12 +32,12 @@ committed, so git history is the audit trail.
 ## GitHub (`gh`)
 
 Human-facing intake and delivery, not the granular tracker. One epic = one issue
-= one PR. Labels follow the Boring Loop state model (`docs/kanzen/boring-loop.md`):
+= one PR. Labels follow the Boring Loop state model (`docs/procedures/boring-loop.md`):
 exactly one state, detail in comments, no revived gate taxonomies.
 
 ## Git and worktrees
 
-Follow `docs/kanzen/procedures/worktree-agent.md` in full. Factory specifics:
+Follow `docs/procedures/worktree-agent.md` in full. Factory specifics:
 
 - All worktrees under `.worktrees/`. Never push to remote `main`.
 - Inside an epic worktree, workers commit directly to the epic branch; no
@@ -57,7 +57,7 @@ expected target head. A seat may never approve its own request.
 ## Models
 
 Seats bind to tiers, never to model IDs; tiers resolve through the model card
-(`docs/kanzen/MODEL-CARD.md`). Quota is an availability gate: on a rate limit,
+(`docs/procedures/MODEL-CARD.md`). Quota is an availability gate: on a rate limit,
 fall to the next model in the same tier; if a whole tier is exhausted, defer
 shippable work rather than silently downgrading it.
 

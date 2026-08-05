@@ -1,7 +1,7 @@
 # Documentation Refresh
 
 Run this procedure nightly. It executes only due tasks from
-[`../documentation-refresh-tasks.md`](../documentation-refresh-tasks.md) and
+[`documentation-refresh-tasks.md`](documentation-refresh-tasks.md) and
 keeps source-backed operational documentation aligned with the capabilities it
 gates.
 
@@ -29,11 +29,31 @@ gates.
 6. Open a targeted PR containing only related documentation changes. If no files
    changed, report `checked—no change` and stop.
 
+## Consistency invariants (every run)
+
+Beyond due tasks, verify these structural invariants on every run. A violation
+becomes a class-A corrective bead (docs are in the trust-ladder allowlist) —
+never a silent edit when docs disagree, because disagreement may mean the
+procedure, not the pointer, is stale.
+
+1. **Numbers live only in `.agents/factory/policy.yaml`.** Prose cites key
+   names (`worker_cap`, `review_rounds_max`, …), never values. A literal
+   tunable in any doc is a violation.
+2. **Reachability**: every doc under `docs/procedures/`, `docs/factory/`, and
+   `.agents/factory/` is reachable within 2 hops from `AGENTS.md`; the skills
+   catalog in `docs/procedures/README.md` matches `ls .agents/skills/`.
+3. **No dead paths**: no reference to removed roots (e.g. `docs/kanzen/`)
+   outside archives (`.agents/skill-library/`, `docs/issues/`); all relative
+   links resolve.
+4. **Authority order holds**: where `.agents/factory/README.md` and a
+   procedure disagree, the procedure wins — file a corrective bead to fix the
+   factory contract, do not edit the procedure to match it.
+
 ## Nightly invocation
 
 ```text
-Run docs/kanzen/procedures/documentation-refresh.md. Execute only due tasks from
-docs/kanzen/documentation-refresh-tasks.md. Use primary sources, make no edit
+Run docs/procedures/documentation-refresh.md. Execute only due tasks from
+docs/procedures/documentation-refresh-tasks.md. Use primary sources, make no edit
 when facts are unchanged, and return policy-review-needed instead of silently
 changing policy.
 ```

@@ -27,7 +27,7 @@ contract, and the user's request take precedence.
    router may expose argument-selected branches without creating independently
    discovered nested skills.
 4. **Place ownership correctly.** Active project skills live in
-   `.agents/skills/<name>/SKILL.md`. Boring policy lives in `docs/kanzen/`. Raw
+   `.agents/skills/<name>/SKILL.md`. Boring policy lives in `docs/procedures/`. Raw
    third-party methods live under `.agents/skill-references/<owner>/` with pinned
    source, hashes, attribution, and license so recursive skill discovery cannot
    activate them. Keep active policy on canonical project paths.

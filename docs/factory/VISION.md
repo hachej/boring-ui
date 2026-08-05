@@ -51,7 +51,7 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
    materializes beads → one plan-approval intention → autonomous until merge
    gates. Triage automation routes external intake into the same funnel.
 7. **Branching**: one worktree per epic (in `.worktrees/`); commit/branch
-   mechanics owned by `docs/kanzen/procedures/worktree-agent.md`. Beadle
+   mechanics owned by `docs/procedures/worktree-agent.md`. Beadle
    auto-rebases epic branches on main (thresholds in policy.yaml); conflicts
    become blocking beads. 1 epic = 1 GH issue = 1 worktree = 1 PR.
 8. **Bugfix lane**: one standing rolling worktree (`fix/rolling`). 1 fix =
@@ -59,12 +59,12 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
    Fixes accumulate; owner review flushes approved fixes to main (cherry-pick
    mixed batches). Auto-merge graduation = policy flip, later.
 9. **Models**: priority-ordered tier table in
-   `docs/kanzen/MODEL-CARD.md`. Fleet policy references tiers,
+   `docs/procedures/MODEL-CARD.md`. Fleet policy references tiers,
    never model IDs. Quota is an availability gate: fall to next model in-tier
    on rate limit; defer (never silently downgrade) shippable work when a tier
    is exhausted. Seats need Anthropic runtimes; Sol runs via codex as
    ephemeral adversarial passes only, track cap per the T1 row in
-   `docs/kanzen/MODEL-CARD.md`.
+   `docs/procedures/MODEL-CARD.md`.
 10. **Comms**: thread=bead everywhere — commit messages, session titles,
     intention subjects, artifact names. Agent Mail only if >5 concurrent
     workers collide in practice, and then as a provider behind the Agent
@@ -98,7 +98,7 @@ Beads adapter contract and extension points: `.agents/factory/tools.md`.
 14. **Backlog order**: Steward sets bead priority at plan time; claim =
     priority then age; optional reserved bugfix slot in policy.yaml.
 15. **Bead definition-of-ready**: a procedure
-    (`docs/kanzen/procedures/bead-ready.md`), Steward-enforced; Beadle
+    (`docs/procedures/bead-ready.md`), Steward-enforced; Beadle
     enforcement only if sloppy beads show up in practice.
 16. **Bootstrap**: clean the decks manually first — land/kill the in-flight
     branches (1060, 786, 1075, worktree pruning) the old way; the factory
