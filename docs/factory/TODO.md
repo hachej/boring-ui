@@ -37,7 +37,7 @@ only (do not duplicate in VISION).
 - **Today**: no dispatcher; task→chat only on human click;
   `plugins/boring-automation` exists as the scheduling host.
 - **Delta**: a `boring-automation` scheduled automation on ~10 min tick reading
-  `factory/policy.yaml`: spawn workers while ready > active (cap), break
+  `.agents/factory/policy.yaml`: spawn workers while ready > active (cap), break
   stale leases (require handoff notes), flag beads closed without proof,
   rebase epic branches past thresholds, file conflict beads.
 
