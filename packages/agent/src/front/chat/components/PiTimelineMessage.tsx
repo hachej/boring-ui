@@ -260,14 +260,9 @@ function TimelineReasoningPart({ item, showThoughts }: { item: Extract<Renderabl
 function PlainToolCard({ part, renderers }: { part: Extract<BoringChatPart, { type: 'tool-call' }>; renderers: ToolRendererOverrides }) {
   const toolPart = toToolPart(part)
   if (!toolPart) return null
-  const registered = resolveToolRendererForPart(toolPart, renderers)
-  // Inline renderers own a tool only while it is pending. Once it completes,
-  // restore the canonical renderer so transcript replay retains the result.
-  const isPendingInline = registered.renderer.presentation === 'inline'
-    && (registered.part.state === 'input-streaming' || registered.part.state === 'input-available')
-  const { renderer, part: resolved, resolution } = isPendingInline
-    ? registered
-    : resolveToolRendererForPart(toolPart, {})
+  // Custom renderers own both pending and resolved presentation. Inline
+  // metadata changes placement, not whether the override remains authoritative.
+  const { renderer, part: resolved, resolution } = resolveToolRendererForPart(toolPart, renderers)
   return (
     <div
       data-tool-call-id={resolved.toolCallId}

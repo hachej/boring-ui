@@ -2,6 +2,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import type { BoringChatMessage } from '../../../../shared/chat'
+import type { ToolPart } from '../../../bareToolRenderers'
 import { ArtifactOpenProvider } from '../../../ArtifactOpenContext'
 import { ChatMessageContributionProvider } from '../../messageContributions'
 import { PiTimelineMessage } from '../PiTimelineMessage'
@@ -45,9 +46,9 @@ vi.mock('../../../primitives/attachments', () => ({
 }))
 
 describe('PiTimelineMessage', () => {
-  test('uses an inline renderer only while an action tool is pending', () => {
+  test('uses an inline renderer for pending and resolved action-tool presentation', () => {
     const inlineRenderer = Object.assign(
-      vi.fn(() => <div data-testid="inline-tool">Pending question</div>),
+      vi.fn((part: ToolPart) => <div data-testid="inline-tool">{part.state === 'output-available' ? 'Answer submitted' : 'Pending question'}</div>),
       { presentation: 'inline' as const },
     )
     const pending: BoringChatMessage = {
@@ -63,8 +64,21 @@ describe('PiTimelineMessage', () => {
     expect(screen.getByTestId('inline-tool').textContent).toBe('Pending question')
 
     rerender(<PiTimelineMessage message={resolved} isLast={false} isStreaming={false} showThoughts={false} toolRenderers={{ ask_user: inlineRenderer }} />)
-    expect(screen.queryByTestId('inline-tool')).toBeNull()
-    expect(screen.getByTestId('tool-output').textContent).toContain('User answered: A')
+    expect(screen.getByTestId('inline-tool').textContent).toBe('Answer submitted')
+    expect(screen.queryByTestId('tool-output')).toBeNull()
+  })
+
+  test('keeps non-inline action-tool overrides authoritative', () => {
+    const renderer = vi.fn((part: ToolPart) => <div data-testid="custom-action-tool">Custom {part.toolName}</div>)
+    const message: BoringChatMessage = {
+      id: 'custom-action', role: 'assistant',
+      parts: [{ type: 'tool-call', id: 'custom-call', toolName: 'reverse', state: 'output-available', output: 'done' }],
+    }
+
+    render(<PiTimelineMessage message={message} isLast={false} isStreaming={false} showThoughts={false} toolRenderers={{ reverse: renderer }} />)
+
+    expect(screen.getByTestId('custom-action-tool').textContent).toBe('Custom reverse')
+    expect(renderer).toHaveBeenCalledTimes(1)
   })
 
   test('allows a provider to replace a message without feature logic in the timeline', () => {

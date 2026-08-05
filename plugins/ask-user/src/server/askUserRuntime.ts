@@ -1,8 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
 import { AskUserFormSchemaSchema } from "../shared/schema"
-import { ASK_USER_SURFACE_KIND } from "../shared/constants"
-import type { UiBridge } from "@hachej/boring-workspace/server"
 import type {
   AskUserAnswer,
   AskUserCancelReason,
@@ -94,7 +92,6 @@ export type AskUserRuntimeOptions = {
     perSessionPerMinute?: number
     perPrincipalPerHour?: number
   }
-  uiBridge?: UiBridge
 }
 
 export class AskUserRuntime {
@@ -104,7 +101,6 @@ export class AskUserRuntime {
   private readonly now: () => Date
   private readonly perSessionPerMinute: number
   private readonly perPrincipalPerHour: number
-  private readonly uiBridge?: UiBridge
   private readonly sessionBuckets = new Map<string, RateLimitBucket>()
   private readonly principalBuckets = new Map<string, RateLimitBucket>()
 
@@ -115,7 +111,6 @@ export class AskUserRuntime {
     this.now = options.now ?? (() => new Date())
     this.perSessionPerMinute = options.limits?.perSessionPerMinute ?? 6
     this.perPrincipalPerHour = options.limits?.perPrincipalPerHour ?? 30
-    this.uiBridge = options.uiBridge
   }
 
   async abandonOrphanedPending(sessionIds: string[]): Promise<void> {
@@ -152,7 +147,6 @@ export class AskUserRuntime {
         await this.cancelQuestion(question.questionId, question.sessionId, "aborted")
         return await pendingAnswer
       }
-      void this.openQuestionSurface(question)
       return await this.waitForAnswer(question, pendingAnswer, request.timeoutMs, signal)
     } catch (error) {
       this.coordinator.resolveCancelled(question.questionId, "abandoned")
@@ -196,16 +190,6 @@ export class AskUserRuntime {
       throw error
     } finally {
       if (cancelPersisted) this.coordinator.resolveCancelled(questionId, reason)
-    }
-  }
-
-  private async openQuestionSurface(question: AskUserQuestion): Promise<void> {
-    if (!this.uiBridge) return
-    try {
-      await this.uiBridge.postCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { sessionId: question.sessionId, openOnlyWhenSessionOpen: true } } })
-    } catch {
-      // Opening the pane is best-effort. The pending question is already persisted
-      // and published via UI state, so a stale/disconnected browser can refresh and answer.
     }
   }
 

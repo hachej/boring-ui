@@ -10,13 +10,13 @@ import {
   type PluginProviderProps,
 } from "@hachej/boring-workspace"
 import { definePlugin, type BoringFrontAppLeftOverlayProps, type BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
-import { HelpCircle, Inbox, XCircle } from "lucide-react"
+import { CheckCircle2, HelpCircle, Inbox, XCircle } from "lucide-react"
 import { useEffect, useMemo, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import type { AskUserAnswerValue, AskUserQuestion } from "../shared/types"
 import { createQuestionsClient, QuestionsClientError } from "./client"
 import { pendingQuestionSnapshot, QuestionsRuntimeContext, isSessionOpen, sharedQuestionsStore, useQuestionsRuntime, type QuestionsRuntime } from "./runtime"
-import { useAskUserAttentionActions, useAskUserAttentionBlockers, useAskUserAutoOpen, useAskUserComposerStopCancel, useAskUserPendingRefresh } from "./providerHooks"
+import { useAskUserAttentionActions, useAskUserAttentionBlockers, useAskUserComposerStopCancel, useAskUserPendingRefresh } from "./providerHooks"
 import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton } from "./primitives"
 import { InboxOverlay } from "./inbox/InboxOverlay"
 import { isInboxAttentionBlocker } from "./inbox/attentionBlockerAdapter"
@@ -37,7 +37,6 @@ function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, activeSessionId
   }), [activeSessionId, agentTypeId, apiBaseUrl, authHeaders, openSessionIds])
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
   useAskUserAttentionBlockers(runtime, pendingSnapshot)
-  useAskUserAutoOpen(runtime, activeSessionId, pendingSnapshot)
   useAskUserAttentionActions(runtime)
   useAskUserComposerStopCancel(runtime)
   useAskUserPendingRefresh(runtime, { activeSessionId, apiBaseUrl, authHeaders })
@@ -111,7 +110,7 @@ function PendingQuestionBody({ question, onResolved, compact = false }: { questi
       </div>
       <div className={compact ? "flex justify-between gap-3 border-t pt-3" : "flex justify-between border-t bg-background px-4 py-3"}>
         <p className="min-w-0 text-xs text-muted-foreground">Sends answers and continues the agent.</p>
-        <div className="flex gap-2"><Button asChild variant="outline" size="sm"><QuestionCancelButton>Cancel</QuestionCancelButton></Button><Button asChild size="sm"><QuestionSubmitButton>{question.schema.submitLabel ?? "Send answers"}</QuestionSubmitButton></Button></div>
+        <div className="flex gap-2"><Button asChild variant="outline" size="sm"><QuestionCancelButton>Cancel</QuestionCancelButton></Button><Button asChild size="sm" className="bg-white !text-black hover:bg-white/90"><QuestionSubmitButton>{question.schema.submitLabel ?? "Send answers"}</QuestionSubmitButton></Button></div>
       </div>
     </QuestionForm>
   </QuestionFormProvider>
@@ -150,10 +149,18 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
 function InlineQuestion({ part }: { part: unknown }) {
   const runtime = useQuestionsRuntime()
   useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
-  const toolCallId = typeof (part as { toolCallId?: unknown })?.toolCallId === "string" ? (part as { toolCallId: string }).toolCallId : null
+  const toolPart = typeof part === "object" && part ? part as { toolCallId?: unknown; state?: unknown; input?: unknown } : null
+  const toolCallId = typeof toolPart?.toolCallId === "string" ? toolPart.toolCallId : null
   const question = toolCallId ? runtime.getPendingByToolCallId(toolCallId) : null
-  if (!question) return null
-  return <section data-boring-ask-user-inline-question="true" data-testid="ask-user-inline-question" className="my-3 rounded-lg border border-border/70 bg-card p-4 text-sm shadow-sm"><PendingQuestionBody question={question} compact /></section>
+  if (question) return <section data-boring-ask-user-inline-question="true" data-testid="ask-user-inline-question" className="my-3 rounded-lg border border-border/70 bg-card p-4 text-sm shadow-sm"><PendingQuestionBody question={question} compact /></section>
+  if (toolPart?.state !== "output-available" && toolPart?.state !== "output-error" && toolPart?.state !== "aborted") return null
+  const input = typeof toolPart.input === "object" && toolPart.input ? toolPart.input as { title?: unknown } : null
+  const title = typeof input?.title === "string" ? input.title : "Agent question"
+  const cancelled = toolPart.state !== "output-available"
+  return <section data-boring-ask-user-resolved-question="true" className="my-3 flex items-center gap-3 rounded-lg border border-border/60 bg-muted/25 px-4 py-3 text-sm">
+    {cancelled ? <XCircle className="h-4 w-4 text-muted-foreground" /> : <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+    <div className="min-w-0"><div className="truncate font-medium text-foreground">{title}</div><div className="text-xs text-muted-foreground">{cancelled ? "Question cancelled" : "Answer submitted"}</div></div>
+  </section>
 }
 
 function InboxCountBadge() {
