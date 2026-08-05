@@ -1,0 +1,46 @@
+# Boring Factory policy — workspace-editable, git-audited.
+# This file is permanently trust-class B: no agent may modify it via a
+# class-A merge. Parsed by the Beadle automation and merge gates.
+
+beadle:
+  tick_minutes: 10
+  worker_cap: 2 # concurrent /exec workers, fleet-wide
+  stale_lease_minutes: 90
+
+sessions:
+  handoff_context_threshold: 0.75 # handoff ritual fires before compaction
+
+epic_branches:
+  rebase_behind_commits: 10 # rebase epic branch when behind main by N
+  rebase_max_age_days: 2 # ...or older than this, whichever first
+  worktree_root: .worktrees/
+
+bugfix_lane:
+  branch: fix/rolling
+  merge: owner-flush # flip to auto-merge to graduate the lane
+
+trust_ladder:
+  # Always class B — self-protection; never add these to any allowlist.
+  class_b_always:
+    - factory/policy.yaml
+    - .github/workflows/**
+    - skill-library/boring-v2/MODEL-CARD.md
+    - AGENTS.md
+    - agents/**
+  class_a:
+    max_changed_lines: 300
+    require_reviewer_pass: true
+    path_allowlist:
+      - docs/**
+      - "**/__tests__/**"
+      - .agents/**
+
+models:
+  # Tiers resolve via skill-library/boring-v2/MODEL-CARD.md (priority-ordered).
+  seats:
+    concierge: T1
+    steward: T1
+    reviewer: T2
+    worker: T3
+    triage: T3
+    automation: T4
