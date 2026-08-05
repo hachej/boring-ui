@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 Transfer one bounded task between sessions without making the handoff a new
 source of task truth. Read
-`docs/kanzen/procedures/session-handoff.md` (procedure) and
+`docs/procedures/session-handoff.md` (procedure) and
 `.agents/skills/handoff/CONTRACT.md` (full contract template and semantics),
 then take exactly one branch:
 
@@ -26,7 +26,7 @@ An empty, incomplete, or unknown branch returns this usage and stops:
 ```
 
 If a human owes the next decision, use
-`docs/kanzen/procedures/owner-review-card.md` instead.
+`docs/procedures/owner-review-card.md` instead.
 
 Return branch-specific evidence:
 

@@ -2,8 +2,8 @@
 
 This file binds the factory together: which stage runs which skill, under which
 procedure, with which tools, and what gate lets work move on. It adds no new
-process — Boring Loop v2 (`docs/kanzen/boring-loop.md`) and the procedures under
-`docs/kanzen/procedures/` remain authoritative. When this file and a procedure
+process — Boring Loop v2 (`docs/procedures/boring-loop.md`) and the procedures under
+`docs/procedures/` remain authoritative. When this file and a procedure
 disagree, the procedure wins and this file is fixed.
 
 Why the factory exists and which decisions are ratified: `docs/factory/VISION.md`.
@@ -18,7 +18,7 @@ Build order: `docs/factory/TODO.md`.
 | `.agents/factory/policy.yaml` | tunables: thresholds, lanes, trust ladder, tiers | Beadle automation, merge gate |
 | `.agents/personas/<seat>/` | identity + instructions only, no authority | AgentHost fleet loader |
 | `.agents/skills/<name>/` | executable procedures | skill invocation |
-| `docs/kanzen/` | the loop and its procedures | all of the above |
+| `docs/procedures/` | the loop and its procedures | all of the above |
 | `docs/factory/` | vision, ratified decisions, build order | humans |
 
 ## Stages
@@ -44,12 +44,12 @@ Escalations from any stage use the same surface.
 
 **Epic lane** — one epic = one GH issue = one `.worktrees/` worktree = one PR.
 Commit/branch mechanics are owned by
-`docs/kanzen/procedures/worktree-agent.md`. Factory specifics: the Beadle
+`docs/procedures/worktree-agent.md`. Factory specifics: the Beadle
 rebases the epic branch on `main` at the thresholds in policy.yaml; conflicts
 become blocking beads, never side quests inside a feature bead.
 
 **Bugfix lane** — the standing rolling branch, governed by
-`docs/kanzen/procedures/rolling-small-fixes.md` including its admission bar,
+`docs/procedures/rolling-small-fixes.md` including its admission bar,
 ledger, and stop conditions. Factory specifics: one fix = one bead = one commit
 = one inbox intention reviewed individually; approved fixes flush to `main` on
 owner review (cherry-pick when the batch is mixed). Never auto-merge while
@@ -91,7 +91,7 @@ lives in beads/notes, never in accumulated session context.
 
 - One bead = one durable session. Identity lives in the seat, not the session.
 - The handoff ritual (`.agents/skills/handoff/`, procedure
-  `docs/kanzen/procedures/session-handoff.md`) runs **before** compaction at
+  `docs/procedures/session-handoff.md`) runs **before** compaction at
   the policy threshold. Convention: commit work in progress, persist the full
   contract via the task/session **artifact transport** (reference + revision +
   SHA-256 digest + read-back receipt), and link it to the current bead — the

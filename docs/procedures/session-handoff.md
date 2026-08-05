@@ -8,7 +8,7 @@ decision.
 
 Full field-by-field contract template and formal semantics (digest algorithm,
 atomic admission, required/optional field lists) live in
-[`.agents/skills/handoff/CONTRACT.md`](../../../.agents/skills/handoff/CONTRACT.md).
+[`.agents/skills/handoff/CONTRACT.md`](../../.agents/skills/handoff/CONTRACT.md).
 This file covers when to hand off and the operative checklists only.
 
 ## When to hand off

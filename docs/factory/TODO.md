@@ -50,7 +50,7 @@ only (do not duplicate in VISION).
 
 ## 6. Model card tiering
 
-- **Today**: tier table: `docs/kanzen/MODEL-CARD.md`.
+- **Today**: tier table: `docs/procedures/MODEL-CARD.md`.
 - **Delta**: smoke-test bead for Terra and Luna runtimes (funded key, harness
   support) before Workers/automation default to them; dispatcher reads
   seat→tier from policy.yaml.

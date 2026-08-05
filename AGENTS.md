@@ -45,23 +45,23 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 | Need | Read |
 | --- | --- |
 | Project/package map | [`docs/README.md`](docs/README.md) |
-| Coding rules | [`docs/kanzen/procedures/coding-rules.md`](docs/kanzen/procedures/coding-rules.md) |
-| Coding invariants | [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/coding-invariants.md) |
-| Repo commands | [`docs/kanzen/procedures/repo-commands.md`](docs/kanzen/procedures/repo-commands.md) |
-| Kanzen agent loop, review, commit, GitHub labels | [`docs/kanzen/boring-loop.md`](docs/kanzen/boring-loop.md) |
-| Model Card & delegation model | [`docs/kanzen/MODEL-CARD.md`](docs/kanzen/MODEL-CARD.md) |
-| Worktree agent coordination | [`docs/kanzen/procedures/worktree-agent.md`](docs/kanzen/procedures/worktree-agent.md) |
+| Coding rules | [`docs/procedures/coding-rules.md`](docs/procedures/coding-rules.md) |
+| Coding invariants | [`docs/procedures/coding-invariants.md`](docs/procedures/coding-invariants.md) |
+| Repo commands | [`docs/procedures/repo-commands.md`](docs/procedures/repo-commands.md) |
+| Kanzen agent loop, review, commit, GitHub labels | [`docs/procedures/boring-loop.md`](docs/procedures/boring-loop.md) |
+| Model Card & delegation model | [`docs/procedures/MODEL-CARD.md`](docs/procedures/MODEL-CARD.md) |
+| Worktree agent coordination | [`docs/procedures/worktree-agent.md`](docs/procedures/worktree-agent.md) |
 | Architecture decisions | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
 | Agent ↔ workspace contract | [`docs/WORKSPACE_CONTRACT.md`](docs/WORKSPACE_CONTRACT.md) |
-| Proof-of-work comments | [`docs/kanzen/procedures/proof-of-work.md`](docs/kanzen/procedures/proof-of-work.md) |
+| Proof-of-work comments | [`docs/procedures/proof-of-work.md`](docs/procedures/proof-of-work.md) |
 | Troubleshooting map | [`docs/web/reference/troubleshooting.md`](docs/web/reference/troubleshooting.md) |
 | Design FAQ | [`docs/web/reference/design-faq.md`](docs/web/reference/design-faq.md) |
 | Factory stage contract (seats, gates, lanes, dynamics) | `.agents/factory/README.md` |
-| Full kanzen doc + procedure index | `docs/kanzen/README.md` |
+| Full kanzen doc + procedure index | `docs/procedures/README.md` |
 
 ## The Delegation Model
 
-When executing, planning, or reviewing complex tasks, utilize the **Delegation Model** detailed in the [Model Card](docs/kanzen/MODEL-CARD.md). This establishes a clear hierarchy:
+When executing, planning, or reviewing complex tasks, utilize the **Delegation Model** detailed in the [Model Card](docs/procedures/MODEL-CARD.md). This establishes a clear hierarchy:
 - Align intelligence, taste, and cost bounds with task complexity.
 - Delegate to specialized background subagents using the `pi-subagents` skill (runtime plugin skill — provided by the plugin system, not `.agents/skills/`) for parallel pipelines, independent audits, or thermonuclear codebase reviews.
 - Close the loop by converting output questions and approvals into **Inbox Human Intention** items, keeping the workspace as the unified control plane.
@@ -84,7 +84,7 @@ When executing, planning, or reviewing complex tasks, utilize the **Delegation M
 
 ## Non-negotiable architectural invariants
 
-See [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/coding-invariants.md).
+See [`docs/procedures/coding-invariants.md`](docs/procedures/coding-invariants.md).
 
 ## When coding
 
@@ -92,4 +92,4 @@ See [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/codin
 2. Make surgical, minimal changes.
 3. Add/update tests for behavior changes.
 4. Run relevant checks.
-5. For Kanzen issue/PR work, follow [`docs/kanzen/boring-loop.md`](docs/kanzen/boring-loop.md).
+5. For Kanzen issue/PR work, follow [`docs/procedures/boring-loop.md`](docs/procedures/boring-loop.md).

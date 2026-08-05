@@ -1,7 +1,7 @@
 # Handoff contract
 
 Full field-by-field contract template and formal semantics for
-`docs/kanzen/procedures/session-handoff.md`.
+`docs/procedures/session-handoff.md`.
 
 A handoff ID deduplicates artifact creation and notification only — it never
 admits a session or makes execution exactly-once. Execution requires the

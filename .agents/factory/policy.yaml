@@ -33,11 +33,11 @@ bugfix_lane:
 trust_ladder:
   # Precedence: class_b_always is evaluated first and overrides any class_a
   # match. A path listed here is class B even when an allowlist glob covers it
-  # (e.g. docs/** covers docs/kanzen/MODEL-CARD.md — the card stays class B).
+  # (e.g. docs/** covers docs/procedures/MODEL-CARD.md — the card stays class B).
   class_b_always:
     - .agents/factory/policy.yaml
     - .github/workflows/**
-    - docs/kanzen/MODEL-CARD.md
+    - docs/procedures/MODEL-CARD.md
     - AGENTS.md
     - .agents/personas/**
     - .agents/factory/**
@@ -50,7 +50,7 @@ trust_ladder:
       - .agents/skills/**
 
 models:
-  # Tiers resolve via docs/kanzen/MODEL-CARD.md (priority-ordered).
+  # Tiers resolve via docs/procedures/MODEL-CARD.md (priority-ordered).
   seats:
     concierge: T1
     steward: T1

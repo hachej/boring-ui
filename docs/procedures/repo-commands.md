@@ -33,7 +33,7 @@ pnpm --filter @hachej/boring-workspace build && pnpm --filter workspace-playgrou
 
 ## Package Docs
 
-Start at [`docs/README.md`](../../README.md), then descend into the relevant
+Start at [`docs/README.md`](../README.md), then descend into the relevant
 package:
 
 - Core: `packages/core/docs/README.md`

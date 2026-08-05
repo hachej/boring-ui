@@ -1,4 +1,4 @@
-# Boring Workflow
+# Boring Workflow & Procedures
 
 Active explicit-only skills live in `.agents/skills/`. Invoke with
 `/skill:<name>`. Policy has one owner:
@@ -8,17 +8,17 @@ Active explicit-only skills live in `.agents/skills/`. Invoke with
 | workflow, states, quality bars | [`boring-loop.md`](boring-loop.md) |
 | models and review tiers | [`MODEL-CARD.md`](MODEL-CARD.md) |
 | factory seats, stages, gates, tools (wraps this loop) | [`../../.agents/factory/README.md`](../../.agents/factory/README.md), [`../factory/VISION.md`](../factory/VISION.md) |
-| bead definition-of-ready | [`procedures/bead-ready.md`](procedures/bead-ready.md) |
-| nightly documentation refresh | [`procedures/documentation-refresh.md`](procedures/documentation-refresh.md), [`documentation-refresh-tasks.md`](documentation-refresh-tasks.md) |
-| coding/invariants/commands | [`procedures/`](procedures/) |
-| proof | [`procedures/proof-of-work.md`](procedures/proof-of-work.md) |
-| human handoff | [`procedures/owner-review-card.md`](procedures/owner-review-card.md) |
-| agent/session handoff | [`procedures/session-handoff.md`](procedures/session-handoff.md) |
-| issue intake | [`procedures/well-documented-issue.md`](procedures/well-documented-issue.md) |
-| plans | [`procedures/issue-plans.md`](procedures/issue-plans.md) |
-| worktree agents | [`procedures/worktree-agent.md`](procedures/worktree-agent.md) |
-| owner-approved rolling small-fixes batches | [`procedures/rolling-small-fixes.md`](procedures/rolling-small-fixes.md) |
-| skill authoring and size reduction | [`procedures/skill-authoring.md`](procedures/skill-authoring.md), [`procedures/skill-size-reduction.md`](procedures/skill-size-reduction.md) |
+| bead definition-of-ready | [`bead-ready.md`](bead-ready.md) |
+| nightly documentation refresh | [`documentation-refresh.md`](documentation-refresh.md), [`documentation-refresh-tasks.md`](documentation-refresh-tasks.md) |
+| coding/invariants/commands | this directory |
+| proof | [`proof-of-work.md`](proof-of-work.md) |
+| human handoff | [`owner-review-card.md`](owner-review-card.md) |
+| agent/session handoff | [`session-handoff.md`](session-handoff.md) |
+| issue intake | [`well-documented-issue.md`](well-documented-issue.md) |
+| plans | [`issue-plans.md`](issue-plans.md) |
+| worktree agents | [`worktree-agent.md`](worktree-agent.md) |
+| owner-approved rolling small-fixes batches | [`rolling-small-fixes.md`](rolling-small-fixes.md) |
+| skill authoring and size reduction | [`skill-authoring.md`](skill-authoring.md), [`skill-size-reduction.md`](skill-size-reduction.md) |
 | decision reference/history | [`REVIEW_DECISIONS.md`](REVIEW_DECISIONS.md) (reference/history) |
 
 Use `ask_user` for human decisions; use a GitHub issue/PR comment when unavailable.
@@ -41,3 +41,15 @@ Use `ask_user` for human decisions; use a GitHub issue/PR comment when unavailab
 | `teach` | Teach the user a new skill or concept, within this workspace. |
 | `triage` | Classify existing issues or PRs with the Boring state model and record the next action. |
 | `ui` | Review the named UI scenario or emit one bounded improvement packet. |
+
+## Additional focused procedures
+
+- [`autoresearch.md`](autoresearch.md)
+- [`coding-rules.md`](coding-rules.md)
+- [`coding-invariants.md`](coding-invariants.md)
+- [`repo-commands.md`](repo-commands.md)
+- [`trunk-flags-review-budget.md`](trunk-flags-review-budget.md)
+
+Compatibility/reference only: `local-signoff.md` and `visual-review.md`. Do
+not copy their policy into active skills; follow the canonical files they
+reference.

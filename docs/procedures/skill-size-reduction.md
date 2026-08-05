@@ -16,7 +16,7 @@ cost of behavior.
 3. **Shape.** Keep `SKILL.md` as the smallest reliable router. Inline what every
    branch needs; move branch-only reference behind a precise pointer. Keep each
    meaning in one canonical owner:
-   - Boring policy in `docs/kanzen/`;
+   - Boring policy in `docs/procedures/`;
    - raw external methods in `.agents/skill-references/<owner>/`;
    - active discovery skills in `.agents/skills/`.
 4. **Prune.** Remove duplication, stale sediment, and sentence-level no-ops.
