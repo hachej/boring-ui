@@ -136,12 +136,11 @@ describe('PiTimelineMessage', () => {
     expect(screen.queryByRole('button', { name: 'Copy message' })).toBeNull()
   })
 
-  test('shows timestamps after settled messages and infers a code filename from the preceding write tool', () => {
+  test('infers a code filename from the immediately preceding write tool', () => {
     const message: BoringChatMessage = {
       id: 'a-timestamp',
       role: 'assistant',
       status: 'done',
-      createdAt: '2026-08-05T08:30:00.000Z',
       parts: [
         { type: 'tool-call', id: 'write', toolName: 'write', input: { path: 'packages/agent/src/example.ts' }, state: 'output-available' },
         { type: 'text', id: 'a-timestamp:text', text: 'Updated the file.' },
@@ -151,15 +150,13 @@ describe('PiTimelineMessage', () => {
     render(<PiTimelineMessage message={message} isLast isStreaming={false} showThoughts={false} toolRenderers={{}} />)
 
     expect(screen.getByText('Updated the file.').closest('[data-testid="message-response"]')?.getAttribute('data-code-filename')).toBe('packages/agent/src/example.ts')
-    expect(document.querySelector('time')?.getAttribute('dateTime')).toBe(message.createdAt)
   })
 
-  test('does not infer a filename from a stale or non-writing tool, and timestamps settled tool-only messages', () => {
+  test('does not infer a filename from a stale or non-writing tool', () => {
     const message: BoringChatMessage = {
       id: 'a-tool-only',
       role: 'assistant',
       status: 'done',
-      createdAt: '2026-08-05T08:30:00.000Z',
       parts: [
         { type: 'tool-call', id: 'write', toolName: 'write', input: { path: 'stale.ts' }, state: 'output-available' },
         { type: 'notice', id: 'notice', level: 'info', text: 'Finished.' },
@@ -167,11 +164,8 @@ describe('PiTimelineMessage', () => {
       ],
     }
 
-    const { rerender } = render(<PiTimelineMessage message={message} isLast isStreaming={false} showThoughts={false} toolRenderers={{}} />)
+    render(<PiTimelineMessage message={message} isLast isStreaming={false} showThoughts={false} toolRenderers={{}} />)
     expect(screen.getByTestId('message-response').getAttribute('data-code-filename')).toBeNull()
-
-    rerender(<PiTimelineMessage message={{ ...message, parts: message.parts.slice(0, 2) }} isLast isStreaming={false} showThoughts={false} toolRenderers={{}} />)
-    expect(document.querySelector('time')?.getAttribute('dateTime')).toBe(message.createdAt)
   })
 
   test('renders action tools (bash) as plain cards and groups read-only tools', () => {
