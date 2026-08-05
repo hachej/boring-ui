@@ -1,12 +1,14 @@
 # Owner review card
 
-After proof/reviews, create an Inbox review tied to the exact task, artifact, and
-revision; that durable record—not chat—is the decision source of truth. Use
-`ask_user` for the decision transport when available (PR comment fallback):
+After proof/reviews, create an Inbox Human Intention tied to the exact bead,
+task, artifact, and revision — subject carries the bead ID
+(`[br-###]`, per the factory's thread=bead correlation rule). That durable
+record — not chat — is the decision source of truth. Use `ask_user` for the
+decision transport when available (GitHub comment fallback):
 
 ```md
 ## Owner Review
-PR / issue:
+Bead / PR / issue:
 What changed / why:
 Risk / rollback:
 Proof / review links:

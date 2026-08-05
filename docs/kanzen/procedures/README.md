@@ -5,6 +5,7 @@ Canonical index: [`../README.md`](../README.md).
 Additional focused procedures:
 
 - [`autoresearch.md`](autoresearch.md)
+- [`bead-ready.md`](bead-ready.md) — factory bead definition-of-ready
 - [`coding-rules.md`](coding-rules.md)
 - [`coding-invariants.md`](coding-invariants.md)
 - [`repo-commands.md`](repo-commands.md)

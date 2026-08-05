@@ -4,7 +4,9 @@
 feedback → triage → plan → exec
 ```
 
-Use `/skill:ask-boring` when routing is unclear.
+Use `/skill:ask-boring` when routing is unclear. The Boring Factory
+(`.agents/factory/README.md`) wraps this sequence with seats, dispatch, and
+human gates; it adds no new ordering — this file stays authoritative for the loop.
 
 | Step | Output | Next |
 | --- | --- | --- |

@@ -8,13 +8,15 @@ Use this when `/exec` delegates implementation.
 - Never push directly to remote `main`.
 - Inspect branch, dirty state, and existing ownership before editing.
 - Do not overwrite another agent's work.
-- The orchestrator chooses the branch/worktree topology and PR granularity from
-  the task or epic shape, dependencies, rollback, and review budget.
-- One epic may use one shared worktree or isolated worker worktrees. When writers
-  share a lane, coordinate ownership and conflicts through bead file scope
-  (`bead-ready.md`): concurrent beads in one epic must not overlap files. No
-  messaging or file-reservation system is used (see `.agents/factory/tools.md`,
-  "Not in the factory").
+- One epic = one GH issue = one worktree = one PR. Workers claim beads and commit
+  directly to the epic branch — no per-bead sub-branches. Coordinate ownership
+  and conflicts through bead file scope (`bead-ready.md`): concurrent beads in
+  one epic must not overlap files. No messaging or file-reservation system is
+  used (see `.agents/factory/tools.md`, "Not in the factory").
+- The standing bugfix lane (`fix/rolling`) is the exception: see
+  `rolling-small-fixes.md`.
+- Outside the factory, the orchestrator chooses branch/worktree topology and PR
+  granularity from task shape, dependencies, rollback, and review budget.
 - Read-only research/review can run independently. Writers must not silently
   race on the same files.
 - Stacked PRs use one branch per layer; each layer has its own proof and review.
