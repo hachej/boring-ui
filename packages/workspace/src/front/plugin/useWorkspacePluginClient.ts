@@ -76,21 +76,41 @@ function deleteHeaderCaseInsensitive(headers: Record<string, string>, name: stri
   }
 }
 
-async function responseError(response: Response, fallback: string, options?: { prefixFallback?: boolean }): Promise<string> {
+export class WorkspacePluginClientRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly body?: unknown,
+  ) {
+    super(message)
+    this.name = "WorkspacePluginClientRequestError"
+  }
+}
+
+async function responseError(response: Response, fallback: string, options?: { prefixFallback?: boolean }): Promise<WorkspacePluginClientRequestError> {
   const text = await response.text().catch(() => "")
-  if (!text) return `${fallback} (${response.status})`
+  if (!text) return new WorkspacePluginClientRequestError(`${fallback} (${response.status})`, response.status)
   try {
-    const parsed = JSON.parse(text) as { error?: { message?: unknown }; message?: unknown }
-    const message = typeof parsed.error?.message === "string"
+    const parsed = JSON.parse(text) as { error?: { message?: unknown } | string; message?: unknown }
+    const message = typeof parsed.error === "object" && typeof parsed.error?.message === "string"
       ? parsed.error.message
       : typeof parsed.message === "string"
         ? parsed.message
-        : text
+        : typeof parsed.error === "string"
+          ? parsed.error
+          : text
     const rendered = `${message} (${response.status})`
-    return options?.prefixFallback ? `${fallback}: ${rendered}` : rendered
+    return new WorkspacePluginClientRequestError(
+      options?.prefixFallback ? `${fallback}: ${rendered}` : rendered,
+      response.status,
+      parsed,
+    )
   } catch {
     const rendered = `${text.slice(0, 200)} (${response.status})`
-    return options?.prefixFallback ? `${fallback}: ${rendered}` : rendered
+    return new WorkspacePluginClientRequestError(
+      options?.prefixFallback ? `${fallback}: ${rendered}` : rendered,
+      response.status,
+    )
   }
 }
 
@@ -123,9 +143,9 @@ function createWorkspacePluginClientWithOptions(
       headers,
     })
     if (!response.ok) {
-      throw new Error(await responseError(response, fallback, {
+      throw await responseError(response, fallback, {
         prefixFallback: options?.prefixFallbackStatuses?.includes(response.status) ?? false,
-      }))
+      })
     }
     return await response.json() as T
   }

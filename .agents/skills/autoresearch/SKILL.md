@@ -12,7 +12,7 @@ Invocation:
 /skill:autoresearch <issue-or-target> goal="<outcome>" [ui=<registered-spec>] [max=<1..5>]
 ```
 
-Read `../../../docs/kanzen/procedures/autoresearch.md`, then the regular
+Read `../../../docs/procedures/autoresearch.md`, then the regular
 `../plan/SKILL.md` and `../exec/SKILL.md`. Autoresearch controls their sequence;
 it does not replace their contracts.
 
