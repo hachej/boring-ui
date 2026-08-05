@@ -8,7 +8,7 @@ function memoryStore(): TaskSessionLinkStore {
   return {
     async list(adapterId, taskId) { return links.filter((link) => link.adapterId === adapterId && link.taskId === taskId) },
     async listBySessionIds(sessionIds) { return new Map(sessionIds.map((id) => [id, links.filter((link) => link.sessionId === id)])) },
-    async snapshotCounts() { return [] },
+    async snapshotLinks() { return [] },
     async link(input) {
       const existing = links.find((link) => link.adapterId === input.adapterId && link.taskId === input.taskId && link.agentTypeId === input.agentTypeId && link.sessionId === input.sessionId)
       if (existing) return existing
@@ -24,7 +24,7 @@ function memoryStore(): TaskSessionLinkStore {
 }
 
 describe("TaskSessionLinkEvents", () => {
-  it("publishes redacted workspace-scoped counts after durable mutations", async () => {
+  it("publishes workspace-scoped linked session descriptors after durable mutations", async () => {
     const events = new TaskSessionLinkEvents()
     const workspaceA = vi.fn()
     const workspaceB = vi.fn()
@@ -33,12 +33,16 @@ describe("TaskSessionLinkEvents", () => {
     const store = taskSessionLinkStoreWithEvents(memoryStore(), "workspace-a", events)
 
     const link = await store.link({ adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "native-secret" })
-    expect(workspaceA).toHaveBeenLastCalledWith(expect.objectContaining({ adapterId: "github", taskId: "776", count: 1, revision: 1 }))
-    expect(JSON.stringify(workspaceA.mock.calls)).not.toContain("native-secret")
+    expect(workspaceA).toHaveBeenLastCalledWith(expect.objectContaining({
+      adapterId: "github",
+      taskId: "776",
+      links: [expect.objectContaining({ sessionId: "native-secret", agentTypeId: "alpha" })],
+      revision: 1,
+    }))
     expect(workspaceB).not.toHaveBeenCalled()
 
     await store.unlink(link.id)
-    expect(workspaceA).toHaveBeenLastCalledWith(expect.objectContaining({ adapterId: "github", taskId: "776", count: 0, revision: 2 }))
+    expect(workspaceA).toHaveBeenLastCalledWith(expect.objectContaining({ adapterId: "github", taskId: "776", links: [], revision: 2 }))
   })
 
   it("isolates disconnected listeners from durable mutation publication", () => {
@@ -47,14 +51,14 @@ describe("TaskSessionLinkEvents", () => {
     events.subscribe("workspace-a", () => { throw new Error("socket closed") })
     events.subscribe("workspace-a", healthy)
 
-    expect(() => events.publish("workspace-a", { adapterId: "github", taskId: "776", count: 1 })).not.toThrow()
+    expect(() => events.publish("workspace-a", { adapterId: "github", taskId: "776", links: [] })).not.toThrow()
     expect(healthy).toHaveBeenCalledOnce()
   })
 
   it("keeps a pre-read snapshot cursor behind overlapping changes for replay", () => {
     const events = new TaskSessionLinkEvents()
     const cursor = events.cursor("workspace-a")
-    events.publish("workspace-a", { adapterId: "github", taskId: "776", count: 1 })
+    events.publish("workspace-a", { adapterId: "github", taskId: "776", links: [] })
 
     expect(events.snapshot([], cursor)).toMatchObject({ streamId: cursor.streamId, revision: 0, tasks: [] })
     expect(events.cursor("workspace-a").revision).toBe(1)

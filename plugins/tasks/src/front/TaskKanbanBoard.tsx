@@ -6,7 +6,7 @@ import { groupTasksByColumn } from "./taskBoardModel"
 import { TaskCard } from "./TaskCard"
 import { TaskKanbanColumn } from "./TaskKanbanColumn"
 import { taskAttentionKey, useTaskAttention } from "./useTaskAttention"
-import { taskSessionLinkKey, useTaskSessionLinkCounts } from "./taskSessionLinkStream"
+import { taskSessionLinkKey, useTaskSessionLinks } from "./taskSessionLinkStream"
 import { resumePendingTaskChatBindings } from "./pendingTaskChatBindings"
 
 interface TaskKanbanBoardProps {
@@ -135,7 +135,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const toolbarRef = useRef<HTMLDivElement | null>(null)
   const adaptersById = useMemo(() => new Map(adapters.map((adapter) => [adapter.id, adapter])), [adapters])
   const pluginClient = useWorkspacePluginClient()
-  const sessionLinkCounts = useTaskSessionLinkCounts(pluginClient)
+  const sessionLinksByTask = useTaskSessionLinks(pluginClient)
   useEffect(() => { resumePendingTaskChatBindings(pluginClient) }, [pluginClient])
   const attentionByTask = useTaskAttention(state?.tasks ?? EMPTY_TASKS)
 
@@ -525,7 +525,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                           unmapped={column.unmapped}
                           compact
                           attention={attentionByTask.get(taskAttentionKey(task))}
-                          sessionLinkCount={sessionLinkCounts ? sessionLinkCounts.get(taskSessionLinkKey(task.adapterId, task.id)) ?? 0 : undefined}
+                          sessionLinks={sessionLinksByTask ? sessionLinksByTask.get(taskSessionLinkKey(task.adapterId, task.id)) ?? [] : undefined}
                           deleteEnabled={Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
                           onDelete={(task) => void deleteTask(task)}
                           onDragStart={handleTaskDragStart}
@@ -551,7 +551,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                 onTaskDrop={(taskId, adapterId, statusId) => void moveTask(taskId, adapterId, statusId)}
                 onTaskDelete={(task) => void deleteTask(task)}
                 attentionByTask={attentionByTask}
-                sessionLinkCounts={sessionLinkCounts}
+                sessionLinksByTask={sessionLinksByTask}
                 canDragTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.move && adaptersById.get(task.adapterId)?.moveTask)}
                 canDeleteTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
               />

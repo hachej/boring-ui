@@ -12,20 +12,20 @@ export interface TaskSessionLinkWorkspace {
   unlink?(path: string): Promise<void>
 }
 
-export interface TaskSessionLinkCount {
+export interface TaskSessionLinkSnapshot {
   adapterId: string
   taskId: string
-  count: number
+  links: BoringTaskSessionLink[]
 }
 
 export interface TaskSessionLinkStore {
   list(adapterId: string, taskId: string): Promise<BoringTaskSessionLink[]>
   listBySessionIds(sessionIds: readonly string[]): Promise<Map<string, BoringTaskSessionLink[]>>
-  snapshotCounts?(): Promise<TaskSessionLinkCount[]>
+  snapshotLinks?(): Promise<TaskSessionLinkSnapshot[]>
   link(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<BoringTaskSessionLink>
-  linkWithCount?(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<{ link: BoringTaskSessionLink; count: number; created: boolean }>
+  linkWithSnapshot?(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[]; created: boolean }>
   unlink(linkId: string): Promise<BoringTaskSessionLink>
-  unlinkWithCount?(linkId: string): Promise<{ link: BoringTaskSessionLink; count: number }>
+  unlinkWithSnapshot?(linkId: string): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[] }>
 }
 
 const STORE_PATH = ".pi/tasks/session-links.json"
@@ -145,26 +145,26 @@ export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
     return grouped
   }
 
-  async snapshotCounts(): Promise<TaskSessionLinkCount[]> {
+  async snapshotLinks(): Promise<TaskSessionLinkSnapshot[]> {
     await this.queue.pending.catch(() => {})
     const store = await this.read()
-    const counts = new Map<string, TaskSessionLinkCount>()
-    for (const link of store.links) {
+    const snapshots = new Map<string, TaskSessionLinkSnapshot>()
+    for (const link of [...store.links].sort(compareLinks)) {
       const key = JSON.stringify([link.adapterId, link.taskId])
-      const current = counts.get(key)
-      if (current) current.count += 1
-      else counts.set(key, { adapterId: link.adapterId, taskId: link.taskId, count: 1 })
+      const current = snapshots.get(key)
+      if (current) current.links.push(link)
+      else snapshots.set(key, { adapterId: link.adapterId, taskId: link.taskId, links: [link] })
     }
-    return [...counts.values()].sort((left, right) => (
+    return [...snapshots.values()].sort((left, right) => (
       compareText(left.adapterId, right.adapterId) || compareText(left.taskId, right.taskId)
     ))
   }
 
   async link(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<BoringTaskSessionLink> {
-    return (await this.linkWithCount(input)).link
+    return (await this.linkWithSnapshot(input)).link
   }
 
-  async linkWithCount(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<{ link: BoringTaskSessionLink; count: number; created: boolean }> {
+  async linkWithSnapshot(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[]; created: boolean }> {
     const normalized = {
       adapterId: validateId(input.adapterId, "adapterId"),
       taskId: validateId(input.taskId, "taskId"),
@@ -174,30 +174,32 @@ export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
     return await this.mutate(async (store) => {
       const taskLinks = () => store.links.filter((link) => link.adapterId === normalized.adapterId && link.taskId === normalized.taskId)
       const existing = taskLinks().find((link) => link.agentTypeId === normalized.agentTypeId && link.sessionId === normalized.sessionId)
-      if (existing) return { link: existing, count: taskLinks().length, created: false }
+      if (existing) return { link: existing, links: taskLinks().sort(compareLinks), created: false }
       if (store.links.length >= MAX_LINKS) {
         throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_STORE_ERROR, "Task session link store is at capacity.")
       }
       const link: BoringTaskSessionLink = { id: randomUUID(), ...normalized, createdAt: new Date().toISOString() }
       store.links.push(link)
       await this.write(store)
-      return { link, count: taskLinks().length, created: true }
+      return { link, links: taskLinks().sort(compareLinks), created: true }
     })
   }
 
   async unlink(linkId: string): Promise<BoringTaskSessionLink> {
-    return (await this.unlinkWithCount(linkId)).link
+    return (await this.unlinkWithSnapshot(linkId)).link
   }
 
-  async unlinkWithCount(linkId: string): Promise<{ link: BoringTaskSessionLink; count: number }> {
+  async unlinkWithSnapshot(linkId: string): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[] }> {
     const normalizedLinkId = validateId(linkId, "linkId")
     return await this.mutate(async (store) => {
       const index = store.links.findIndex((link) => link.id === normalizedLinkId)
       if (index < 0) throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_MISSING, "Task session link was not found.")
       const [link] = store.links.splice(index, 1)
       await this.write(store)
-      const count = store.links.filter((candidate) => candidate.adapterId === link!.adapterId && candidate.taskId === link!.taskId).length
-      return { link: link!, count }
+      const links = store.links
+        .filter((candidate) => candidate.adapterId === link!.adapterId && candidate.taskId === link!.taskId)
+        .sort(compareLinks)
+      return { link: link!, links }
     })
   }
 

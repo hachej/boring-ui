@@ -1,5 +1,5 @@
 import type { DragEvent } from "react"
-import type { BoringTaskCard } from "../shared"
+import type { BoringTaskCard, BoringTaskSessionLink } from "../shared"
 import type { BoringTaskColumnView } from "./taskBoardModel"
 import { canDropInColumn } from "./taskBoardModel"
 import { TaskCard } from "./TaskCard"
@@ -17,7 +17,7 @@ interface TaskKanbanColumnProps {
   canDragTask?: (task: BoringTaskCard) => boolean
   canDeleteTask?: (task: BoringTaskCard) => boolean
   attentionByTask?: ReadonlyMap<string, readonly TaskAttentionItem[]>
-  sessionLinkCounts?: ReadonlyMap<string, number> | null
+  sessionLinksByTask?: ReadonlyMap<string, readonly BoringTaskSessionLink[]> | null
 }
 
 export function TaskKanbanColumn({
@@ -31,7 +31,7 @@ export function TaskKanbanColumn({
   canDragTask = () => moveEnabled,
   canDeleteTask = () => false,
   attentionByTask = new Map(),
-  sessionLinkCounts = new Map(),
+  sessionLinksByTask = new Map(),
 }: TaskKanbanColumnProps) {
   const acceptsDrop = moveEnabled && canDropInColumn(column)
 
@@ -101,7 +101,7 @@ export function TaskKanbanColumn({
             unmapped={column.unmapped}
             deleteEnabled={canDeleteTask(task)}
             attention={attentionByTask.get(taskAttentionKey(task))}
-            sessionLinkCount={sessionLinkCounts ? sessionLinkCounts.get(taskSessionLinkKey(task.adapterId, task.id)) ?? 0 : undefined}
+            sessionLinks={sessionLinksByTask ? sessionLinksByTask.get(taskSessionLinkKey(task.adapterId, task.id)) ?? [] : undefined}
             onDelete={onTaskDelete}
             onDragStart={onTaskDragStart}
             onDragEnd={onTaskDragEnd}

@@ -1,21 +1,20 @@
 import { useEffect, useRef, useState } from "react"
 import type { WorkspacePluginClient } from "@hachej/boring-workspace"
+import type { BoringTaskSessionLink } from "../shared"
 
-export const TASK_SESSION_LINKS_CHANGED_EVENT = "boring-tasks:session-links-changed"
-
-export interface TaskSessionLinkCount {
+export interface TaskSessionLinks {
   adapterId: string
   taskId: string
-  count: number
+  links: BoringTaskSessionLink[]
 }
 
 interface TaskSessionLinkSnapshot {
   streamId: string
   revision: number
-  tasks: TaskSessionLinkCount[]
+  tasks: TaskSessionLinks[]
 }
 
-interface TaskSessionLinkChange extends TaskSessionLinkCount {
+interface TaskSessionLinkChange extends TaskSessionLinks {
   streamId: string
   revision: number
 }
@@ -24,12 +23,20 @@ export function taskSessionLinkKey(adapterId: string, taskId: string): string {
   return JSON.stringify([adapterId, taskId])
 }
 
-function count(value: unknown): TaskSessionLinkCount | undefined {
+function link(value: unknown): BoringTaskSessionLink | undefined {
   if (!value || typeof value !== "object") return undefined
-  const item = value as Partial<TaskSessionLinkCount>
-  if (typeof item.adapterId !== "string" || typeof item.taskId !== "string") return undefined
-  if (!Number.isInteger(item.count) || (item.count ?? -1) < 0) return undefined
-  return { adapterId: item.adapterId, taskId: item.taskId, count: item.count! }
+  const item = value as Partial<BoringTaskSessionLink>
+  if ([item.id, item.adapterId, item.taskId, item.agentTypeId, item.sessionId, item.createdAt].some((part) => typeof part !== "string" || part.length === 0)) return undefined
+  return item as BoringTaskSessionLink
+}
+
+function taskLinks(value: unknown): TaskSessionLinks | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const item = value as Partial<TaskSessionLinks>
+  if (typeof item.adapterId !== "string" || typeof item.taskId !== "string" || !Array.isArray(item.links)) return undefined
+  const links = item.links.map(link)
+  if (links.some((item) => !item)) return undefined
+  return { adapterId: item.adapterId, taskId: item.taskId, links: links as BoringTaskSessionLink[] }
 }
 
 function envelope(value: unknown): { streamId: string; revision: number } | undefined {
@@ -39,41 +46,42 @@ function envelope(value: unknown): { streamId: string; revision: number } | unde
   return { streamId: item.streamId, revision: item.revision as number }
 }
 
-export function useTaskSessionLinkCounts(pluginClient: WorkspacePluginClient): ReadonlyMap<string, number> | null {
-  const [counts, setCounts] = useState<ReadonlyMap<string, number> | null>(null)
+export function useTaskSessionLinks(pluginClient: WorkspacePluginClient): ReadonlyMap<string, readonly BoringTaskSessionLink[]> | null {
+  const [linksByTask, setLinksByTask] = useState<ReadonlyMap<string, readonly BoringTaskSessionLink[]> | null>(null)
   const cursor = useRef<{ streamId: string; revision: number } | null>(null)
 
   useEffect(() => {
     if (typeof EventSource === "undefined") return
     const endpoint = pluginClient.apiBaseUrl.replace(/\/$/, "")
     const query = pluginClient.workspaceId ? `?workspaceId=${encodeURIComponent(pluginClient.workspaceId)}` : ""
-    const source = new EventSource(`${endpoint}/api/boring-tasks/session-links/events${query}`)
+    const source = new EventSource(`${endpoint}/api/boring-tasks/session-links/events${query}`, { withCredentials: true })
     source.addEventListener("snapshot", (event) => {
       try {
         const parsed = JSON.parse((event as MessageEvent).data) as Partial<TaskSessionLinkSnapshot>
         const nextCursor = envelope(parsed)
         if (!nextCursor || !Array.isArray(parsed.tasks)) return
-        const next = new Map<string, number>()
+        const next = new Map<string, readonly BoringTaskSessionLink[]>()
         for (const raw of parsed.tasks) {
-          const item = count(raw)
-          if (item) next.set(taskSessionLinkKey(item.adapterId, item.taskId), item.count)
+          const item = taskLinks(raw)
+          if (item?.links.length) next.set(taskSessionLinkKey(item.adapterId, item.taskId), item.links)
         }
         cursor.current = nextCursor
-        setCounts(next)
+        setLinksByTask(next)
       } catch { /* Ignore malformed stream frames. */ }
     })
     source.addEventListener("change", (event) => {
       try {
         const parsed = JSON.parse((event as MessageEvent).data) as Partial<TaskSessionLinkChange>
         const nextCursor = envelope(parsed)
-        const item = count(parsed)
+        const item = taskLinks(parsed)
         const current = cursor.current
         if (!nextCursor || !item || !current || current.streamId !== nextCursor.streamId || nextCursor.revision <= current.revision) return
         cursor.current = nextCursor
-        setCounts((previous) => {
+        setLinksByTask((previous) => {
           const next = new Map(previous ?? [])
-          if (item.count === 0) next.delete(taskSessionLinkKey(item.adapterId, item.taskId))
-          else next.set(taskSessionLinkKey(item.adapterId, item.taskId), item.count)
+          const key = taskSessionLinkKey(item.adapterId, item.taskId)
+          if (item.links.length === 0) next.delete(key)
+          else next.set(key, item.links)
           return next
         })
       } catch { /* Ignore malformed stream frames. */ }
@@ -81,31 +89,5 @@ export function useTaskSessionLinkCounts(pluginClient: WorkspacePluginClient): R
     return () => source.close()
   }, [pluginClient.apiBaseUrl, pluginClient.workspaceId])
 
-  useEffect(() => {
-    const onChanged = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { adapterId?: unknown; taskId?: unknown } | undefined
-      if (typeof detail?.adapterId !== "string" || typeof detail.taskId !== "string") return
-      const requestCursor = cursor.current
-      if (!requestCursor) return
-      void pluginClient.postJson<{ links?: unknown[] }>("/api/boring-tasks/sessions/list", {
-        adapterId: detail.adapterId,
-        taskId: detail.taskId,
-      }).then((response) => {
-        const currentCursor = cursor.current
-        if (currentCursor?.streamId !== requestCursor?.streamId || currentCursor?.revision !== requestCursor?.revision) return
-        const nextCount = Array.isArray(response.links) ? response.links.length : 0
-        setCounts((previous) => {
-          const next = new Map(previous ?? [])
-          const key = taskSessionLinkKey(detail.adapterId as string, detail.taskId as string)
-          if (nextCount === 0) next.delete(key)
-          else next.set(key, nextCount)
-          return next
-        })
-      }).catch(() => {})
-    }
-    window.addEventListener(TASK_SESSION_LINKS_CHANGED_EVENT, onChanged)
-    return () => window.removeEventListener(TASK_SESSION_LINKS_CHANGED_EVENT, onChanged)
-  }, [pluginClient])
-
-  return counts
+  return linksByTask
 }

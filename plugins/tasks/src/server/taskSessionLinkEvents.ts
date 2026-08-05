@@ -1,21 +1,21 @@
 import { randomUUID } from "node:crypto"
 import type { BoringTaskSessionLink } from "../shared"
-import type { TaskSessionLinkCount, TaskSessionLinkStore } from "./taskSessionLinkStore"
+import type { TaskSessionLinkSnapshot, TaskSessionLinkStore } from "./taskSessionLinkStore"
 
-export interface TaskSessionLinkCountEvent extends TaskSessionLinkCount {
+export interface TaskSessionLinkEvent extends TaskSessionLinkSnapshot {
   streamId: string
   revision: number
 }
 
-type TaskSessionLinkCountListener = (event: TaskSessionLinkCountEvent) => void
+type TaskSessionLinkListener = (event: TaskSessionLinkEvent) => void
 
 export class TaskSessionLinkEvents {
   readonly streamId = randomUUID()
   private readonly revisionsByWorkspace = new Map<string, number>()
-  private readonly listenersByWorkspace = new Map<string, Set<TaskSessionLinkCountListener>>()
+  private readonly listenersByWorkspace = new Map<string, Set<TaskSessionLinkListener>>()
 
-  subscribe(workspaceId: string, listener: TaskSessionLinkCountListener): () => void {
-    const listeners = this.listenersByWorkspace.get(workspaceId) ?? new Set<TaskSessionLinkCountListener>()
+  subscribe(workspaceId: string, listener: TaskSessionLinkListener): () => void {
+    const listeners = this.listenersByWorkspace.get(workspaceId) ?? new Set<TaskSessionLinkListener>()
     listeners.add(listener)
     this.listenersByWorkspace.set(workspaceId, listeners)
     return () => {
@@ -24,10 +24,10 @@ export class TaskSessionLinkEvents {
     }
   }
 
-  publish(workspaceId: string, count: TaskSessionLinkCount): void {
+  publish(workspaceId: string, snapshot: TaskSessionLinkSnapshot): void {
     const revision = (this.revisionsByWorkspace.get(workspaceId) ?? 0) + 1
     this.revisionsByWorkspace.set(workspaceId, revision)
-    const event = { streamId: this.streamId, revision, ...count }
+    const event = { streamId: this.streamId, revision, ...snapshot }
     for (const listener of this.listenersByWorkspace.get(workspaceId) ?? []) {
       try { listener(event) } catch { /* A disconnected client cannot fail a durable mutation. */ }
     }
@@ -37,8 +37,8 @@ export class TaskSessionLinkEvents {
     return { streamId: this.streamId, revision: this.revisionsByWorkspace.get(workspaceId) ?? 0 }
   }
 
-  snapshot(counts: TaskSessionLinkCount[], cursor: { streamId: string; revision: number }): { streamId: string; revision: number; tasks: TaskSessionLinkCount[] } {
-    return { ...cursor, tasks: counts }
+  snapshot(tasks: TaskSessionLinkSnapshot[], cursor: { streamId: string; revision: number }): { streamId: string; revision: number; tasks: TaskSessionLinkSnapshot[] } {
+    return { ...cursor, tasks }
   }
 }
 
@@ -47,32 +47,32 @@ export function taskSessionLinkStoreWithEvents(
   workspaceId: string,
   events: TaskSessionLinkEvents,
 ): TaskSessionLinkStore {
-  const publish = (link: BoringTaskSessionLink, count: number) => {
-    events.publish(workspaceId, { adapterId: link.adapterId, taskId: link.taskId, count })
+  const publish = (link: BoringTaskSessionLink, links: BoringTaskSessionLink[]) => {
+    events.publish(workspaceId, { adapterId: link.adapterId, taskId: link.taskId, links })
   }
   return {
     list: (adapterId, taskId) => store.list(adapterId, taskId),
     listBySessionIds: (sessionIds) => store.listBySessionIds(sessionIds),
-    ...(store.snapshotCounts ? { snapshotCounts: () => store.snapshotCounts!() } : {}),
+    ...(store.snapshotLinks ? { snapshotLinks: () => store.snapshotLinks!() } : {}),
     async link(input) {
-      if (store.linkWithCount) {
-        const result = await store.linkWithCount(input)
-        if (result.created) publish(result.link, result.count)
+      if (store.linkWithSnapshot) {
+        const result = await store.linkWithSnapshot(input)
+        if (result.created) publish(result.link, result.links)
         return result.link
       }
       const existing = await store.list(input.adapterId, input.taskId)
       const link = await store.link(input)
-      if (!existing.some((candidate) => candidate.id === link.id)) publish(link, (await store.list(link.adapterId, link.taskId)).length)
+      if (!existing.some((candidate) => candidate.id === link.id)) publish(link, await store.list(link.adapterId, link.taskId))
       return link
     },
     async unlink(linkId) {
-      if (store.unlinkWithCount) {
-        const result = await store.unlinkWithCount(linkId)
-        publish(result.link, result.count)
+      if (store.unlinkWithSnapshot) {
+        const result = await store.unlinkWithSnapshot(linkId)
+        publish(result.link, result.links)
         return result.link
       }
       const link = await store.unlink(linkId)
-      publish(link, (await store.list(link.adapterId, link.taskId)).length)
+      publish(link, await store.list(link.adapterId, link.taskId))
       return link
     },
   }

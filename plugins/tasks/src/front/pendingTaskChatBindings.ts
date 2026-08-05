@@ -5,7 +5,6 @@ import {
   type WorkspaceShellSessionRef,
 } from "@hachej/boring-workspace/plugin"
 import { emitWorkspaceTaskProvenanceChanged } from "@hachej/boring-workspace"
-import { TASK_SESSION_LINKS_CHANGED_EVENT } from "./taskSessionLinkStream"
 
 const STORAGE_KEY = "boring-tasks:pending-chat-bindings:v1"
 const retryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -66,9 +65,6 @@ async function bind(binding: PendingTaskChatBinding, client: Pick<WorkspacePlugi
       sessionId: binding.sessionId,
     })
     removePending(binding)
-    window.dispatchEvent(new CustomEvent(TASK_SESSION_LINKS_CHANGED_EVENT, {
-      detail: { adapterId: binding.adapterId, taskId: binding.taskId },
-    }))
     emitWorkspaceTaskProvenanceChanged()
   } catch (error) {
     bindingAttempts.delete(key)

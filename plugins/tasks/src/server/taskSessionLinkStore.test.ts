@@ -72,7 +72,7 @@ describe("FileTaskSessionLinkStore", () => {
     expect(grouped.get("missing")).toEqual([])
   })
 
-  it("builds one deterministic redacted count snapshot with one store read", async () => {
+  it("builds one deterministic linked-session snapshot with one store read", async () => {
     const workspace = new MemoryWorkspace()
     const store = new FileTaskSessionLinkStore(workspace)
     await store.link({ agentTypeId: "alpha", adapterId: "zeta", taskId: "2", sessionId: "native-a" })
@@ -80,14 +80,17 @@ describe("FileTaskSessionLinkStore", () => {
     await store.link({ agentTypeId: "alpha", adapterId: "alpha", taskId: "9", sessionId: "native-c" })
     workspace.reads = 0
 
-    const snapshot = await store.snapshotCounts()
+    const snapshot = await store.snapshotLinks()
 
     expect(workspace.reads).toBe(1)
-    expect(snapshot).toEqual([
-      { adapterId: "alpha", taskId: "9", count: 2 },
-      { adapterId: "zeta", taskId: "2", count: 1 },
+    expect(snapshot.map((task) => ({
+      adapterId: task.adapterId,
+      taskId: task.taskId,
+      sessionIds: task.links.map((link) => link.sessionId),
+    }))).toEqual([
+      { adapterId: "alpha", taskId: "9", sessionIds: ["native-b", "native-c"] },
+      { adapterId: "zeta", taskId: "2", sessionIds: ["native-a"] },
     ])
-    expect(JSON.stringify(snapshot)).not.toContain("native-")
   })
 
   it("shares one writer queue across lease-local Workspace wrappers with the same stable root", async () => {
