@@ -5,7 +5,6 @@ import { basename, dirname, isAbsolute, relative, resolve } from "node:path"
 import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
 import { createPersistedScriptedPiHarness } from "./testing/scriptedPiHarness"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
-import { createTasksServerPlugin } from "@hachej/boring-tasks/server"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
 export const VITE_PORT = Number(process.env.PORT) || 5200
@@ -80,12 +79,11 @@ export async function startPlaygroundServer(): Promise<void> {
       ...(process.env.BORING_AGENT_E2E_SCRIPTED_PI === "1"
         ? { harnessFactory: createPersistedScriptedPiHarness }
         : {}),
-      plugins: [createTasksServerPlugin({
-        agentTypeId: "default",
-        contentDigest: "workspace-playground:tasks-agent-bindings-v1",
-        workspaceRoot,
-        config: { providers: [{ provider: "github", repo: "auto" }] },
-      })],
+      plugins: [{
+        dir: resolve(APP_ROOT, "../../plugins/tasks"),
+        options: { config: { providers: [{ provider: "github", repo: "auto" }] } },
+        trust: "internal",
+      }],
       defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
       runtimeProvisioner: multiFilesystemPlayground
         ? async ({ runtimeBundle }) => {

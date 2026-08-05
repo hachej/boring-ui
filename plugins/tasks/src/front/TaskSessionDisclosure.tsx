@@ -172,11 +172,7 @@ export function TaskSessionDisclosure({
     if (isCurrent()) setLoading(false)
   }, [beginRequest, loadActivity, loadHandovers, loadLinks])
 
-  useEffect(() => {
-    const isCurrent = beginRequest()
-    void loadLinks(isCurrent)
-    return () => { requestScope.current.version += 1 }
-  }, [beginRequest, loadLinks])
+  useEffect(() => () => { requestScope.current.version += 1 }, [])
 
   useEffect(() => {
     const onLinksChanged = (event: Event) => {

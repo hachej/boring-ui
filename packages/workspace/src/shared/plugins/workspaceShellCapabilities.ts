@@ -1,4 +1,4 @@
-import { createContext, createElement, useContext, type ReactNode } from "react"
+import { createContext, createElement, useContext, type Context, type ReactNode } from "react"
 
 export type WorkspaceShellArtifactTarget =
   | { type: "surface"; surfaceKind: string; target?: string; params?: Record<string, unknown> }
@@ -41,7 +41,15 @@ const noopShellCapabilities: WorkspaceShellCapabilities = {
   openInboxItem: () => failed("Workspace shell capabilities are not available."),
 }
 
-const WorkspaceShellCapabilitiesContext = createContext<WorkspaceShellCapabilities>(noopShellCapabilities)
+// Front plugins load through separate package entry bundles. Keep one context
+// per browser realm so those bundles consume the host provider rather than a
+// private context copy that silently returns the no-op capabilities.
+const WORKSPACE_SHELL_CAPABILITIES_CONTEXT_KEY = "__BORING_WORKSPACE_SHELL_CAPABILITIES_CONTEXT_V1__"
+const contextHost = globalThis as Record<string, unknown>
+const WorkspaceShellCapabilitiesContext = (
+  contextHost[WORKSPACE_SHELL_CAPABILITIES_CONTEXT_KEY] as Context<WorkspaceShellCapabilities> | undefined
+) ?? createContext<WorkspaceShellCapabilities>(noopShellCapabilities)
+contextHost[WORKSPACE_SHELL_CAPABILITIES_CONTEXT_KEY] = WorkspaceShellCapabilitiesContext
 
 export function WorkspaceShellCapabilitiesProvider({
   value,
