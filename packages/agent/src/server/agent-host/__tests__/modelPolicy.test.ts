@@ -113,9 +113,13 @@ async function resolveModel(
   })
   const resolved = await (host.created.gateway as EmbeddedAgentGateway).resolveHostSessionBinding(scope, ref)
   const harness = resolved.binding.composition.harness as AgentCoreHarness
+  const sessionCtx = {
+    workspaceId: scope.workspaceScopeId,
+    runtimeScopeIdentity: resolved.binding.scope.identity,
+  }
   const adapter = await harness.getPiSessionAdapter(
-    { sessionId: ref.sessionId, message: 'hello', model },
-    { abortSignal: new AbortController().signal, workdir: host.workspaceRoot },
+    { sessionId: ref.sessionId, message: 'hello', model, ctx: sessionCtx },
+    { abortSignal: new AbortController().signal, workdir: host.workspaceRoot, sessionCtx },
   ) as PiAgentSessionAdapter
   return adapter.currentModel?.()
 }

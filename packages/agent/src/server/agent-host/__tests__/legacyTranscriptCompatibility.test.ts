@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -9,6 +9,7 @@ import {
   type CreateStandaloneAgentHostAppOptions,
 } from '../../createStandaloneAgentHostApp'
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../../config/env'
+import { sessionFilePath } from '../../harness/pi-coding-agent/__tests__/fixtures/sessionFiles'
 import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 
@@ -47,7 +48,11 @@ async function proveDirectHostCutover(
   // app-defined default workspace context; transcript layout is independent.
   const ctx = { workspaceId: 'default' }
   const created = await store.create(ctx, { title: 'pre-AH0 fixture' })
-  const path = join(store.getSessionDir(), `${created.id}.jsonl`)
+  const path = await sessionFilePath(store.getSessionDir(), created.id)
+  await appendFile(path, `${JSON.stringify({
+    type: 'message', id: 'legacy-user', parentId: null, timestamp: '2026-07-20T00:00:01.000Z',
+    message: { role: 'user', content: [{ type: 'text', text: 'hello' }], timestamp: 1 },
+  })}\n`)
   const before = await readFile(path)
 
   const app = await createStandaloneAgentHostApp({

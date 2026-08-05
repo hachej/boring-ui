@@ -7,6 +7,7 @@ const { mockSubscribers, promptCalls, mockSessions } = vi.hoisted(() => ({
 }));
 
 vi.mock("@mariozechner/pi-coding-agent", () => ({
+  CURRENT_SESSION_VERSION: 3,
   createAgentSession: vi.fn().mockImplementation(async () => {
     const followUpQueue = { messages: [] as any[] };
     const session: any = {
@@ -73,9 +74,10 @@ function makeCtx(ac = new AbortController()): RunContext {
 // Creates the session adapter the way the pi-chat service does: through
 // getPiSessionAdapter (sessions are created lazily). Queue ops live on the
 // adapter.
-async function makeSessionAdapter(sessionId: string) {
+async function makeSessionAdapter(_sessionId: string) {
   const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
-  return await harness.getPiSessionAdapter({ sessionId, content: "" }, makeCtx());
+  const created = await harness.sessions.create({});
+  return await harness.getPiSessionAdapter({ sessionId: created.id, content: "" }, makeCtx());
 }
 
 function simulatePiConsumes(session: any): void {

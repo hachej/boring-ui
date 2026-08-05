@@ -1,5 +1,5 @@
 import { useEffect } from "react"
-import { act, fireEvent, render, screen, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
@@ -145,6 +145,53 @@ describe("AppLeftPane", () => {
     const badge = document.querySelector('[data-boring-badge="working"]')
     expect(badge).toBeInTheDocument()
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
+  })
+
+  it("requests current working state when the session list mounts after the chat panel", async () => {
+    const onRequest = () => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+      detail: { sessionId: "s2", working: true },
+    }))
+    window.addEventListener("boring:chat-session-status-request", onRequest)
+
+    try {
+      renderPane()
+
+      await waitFor(() => expect(document.querySelector('[data-boring-badge="working"]')
+        ?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session"))
+    } finally {
+      window.removeEventListener("boring:chat-session-status-request", onRequest)
+    }
+  })
+
+  it("clears optimistic working state from an authoritative idle session refresh", async () => {
+    const props = {
+      appTitle: "Test",
+      activeSessionId: "s1",
+      openSessionIds: ["s1"],
+      pinnedSessionIds: [],
+      onCreateSession: vi.fn(),
+      onOpenCommandPalette: vi.fn(),
+      onSwitchSession: vi.fn(),
+      onOpenSessionAsPane: vi.fn(),
+      onToggleSessionPinned: vi.fn(),
+    }
+    const { rerender } = render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...props} sessions={sessions} />
+      </WorkspaceAttentionProvider>,
+    )
+    act(() => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+      detail: { sessionId: "s2", working: true },
+    })))
+    expect(document.querySelector('[data-boring-badge="working"]')).toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...props} sessions={sessions.map((session) => ({ ...session, status: "idle" as const }))} />
+      </WorkspaceAttentionProvider>,
+    )
+
+    await waitFor(() => expect(document.querySelector('[data-boring-badge="working"]')).toBeNull())
   })
 
   it("shows a hover action for creating a quick popover chat", () => {

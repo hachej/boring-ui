@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { PiChatState } from './pi/piChatReducer'
 import { createRemotePiSession, type RemotePiSession, type RemotePiSessionOptions } from './pi/remotePiSession'
+import { headersContentKey, normalizedHeadersFromContentKey } from './piChatPanelUtils'
 import type { UsePiSessionsOptions } from './session'
 
 export function useExternalRemotePiSession({
@@ -29,6 +30,11 @@ export function useExternalRemotePiSession({
   const [session, setSession] = useState<RemotePiSession | undefined>()
   const remoteSessionOptionsRef = useRef(remoteSessionOptions)
   remoteSessionOptionsRef.current = remoteSessionOptions
+  const requestHeadersKey = headersContentKey(requestHeaders)
+  const stableRequestHeaders = useMemo(
+    () => normalizedHeadersFromContentKey(requestHeadersKey),
+    [requestHeadersKey],
+  )
   const remoteSessionOptionsKey = useMemo(
     () => remoteSessionOptionsIdentity(remoteSessionOptions),
     [remoteSessionOptions],
@@ -45,12 +51,12 @@ export function useExternalRemotePiSession({
       workspaceId,
       storageScope,
       apiBaseUrl,
-      headers: requestHeaders,
+      headers: stableRequestHeaders,
       fetch,
     })
     setSession(next)
     return () => next.dispose()
-  }, [agentTypeId, apiBaseUrl, createRemoteSession, fetch, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
+  }, [agentTypeId, apiBaseUrl, createRemoteSession, fetch, remoteSessionOptionsKey, sessionId, stableRequestHeaders, storageScope, workspaceId])
   return session
 }
 
