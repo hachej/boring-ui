@@ -60,7 +60,7 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
    Fixes accumulate; owner review flushes approved fixes to main (cherry-pick
    mixed batches). Auto-merge graduation = policy flip, later.
 9. **Models**: priority-ordered tier table in
-   `skill-library/boring-v2/MODEL-CARD.md`. Fleet policy references tiers,
+   `docs/kanzen/MODEL-CARD.md`. Fleet policy references tiers,
    never model IDs. Quota is an availability gate: fall to next model in-tier
    on rate limit; defer (never silently downgrade) shippable work when a tier
    is exhausted. Seats need Anthropic runtimes; Sol runs via codex as
@@ -87,6 +87,29 @@ Agents mutate beads via plain `br` in their worktrees (decision 2); the tasks
 plugin adapter is the *read/UI* path. If board-side mutations (drag to move,
 close from detail) are wanted later, extend the adapter's optional
 `moveTask`/`deleteTask` runtime methods — do not invent a second write path.
+
+## Dynamics decisions (grill session 2026-08-05, round 2)
+
+11. **Learning loop**: friction notes on every bead; Steward retro pass at
+    epic close emits corrective beads (class A — merge without owner).
+12. **Failure paths**: bounce upstream with capped rounds — 2 worker attempts
+    then spec defect to Steward; 3 review rounds then owner intention; owner
+    attention only at gates and genuine dead ends. Detail:
+    `.agents/factory/README.md` (Dynamics).
+13. **Post-merge/release**: out of scope for now. Releases stay a manual owner
+    action; revisit after graduation.
+14. **Backlog order**: Steward sets bead priority at plan time; claim =
+    priority then age; optional reserved bugfix slot in policy.yaml.
+15. **Bead definition-of-ready**: a procedure
+    (`docs/kanzen/procedures/bead-ready.md`), Steward-enforced; Beadle
+    enforcement only if sloppy beads show up in practice.
+16. **Bootstrap**: clean the decks manually first — land/kill the in-flight
+    branches (1060, 786, 1075, worktree pruning) the old way; the factory
+    starts fresh on new issues afterward.
+17. **Concierge context**: same handoff-before-compaction ritual as every
+    seat; durable state in beads/notes, never in session context.
+18. **Spend bounds**: none yet; the worker cap bounds concurrency. Revisit
+    after the 10-issue run.
 
 ## Deliberate deviations from the inspirations
 
