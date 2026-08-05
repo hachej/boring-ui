@@ -47,7 +47,7 @@ describe("HTTP task adapter", () => {
           code: "TASK_BEADS_TIMEOUT",
           message: "Beads read timed out.",
           retryable: true,
-          stale: false,
+          stale: true,
         },
       },
     }))
@@ -57,6 +57,7 @@ describe("HTTP task adapter", () => {
       name: "TaskHttpError",
       code: "TASK_BEADS_TIMEOUT",
       retryable: true,
+      stale: true,
       message: "Beads read timed out.",
     })
   })

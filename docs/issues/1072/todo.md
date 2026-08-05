@@ -113,11 +113,11 @@ Blocked by C; may develop against mock detail adapter while D completes.
 
 Blocked by all lane gates.
 
-- [ ] Keep A/B and C/D/E in independently reviewable commits.
+- [x] Keep A/B and C/D/E in independently reviewable commits.
 - [ ] Run every command and browser proof from the canonical plan.
-- [ ] Run `pnpm audit:imports`, `pnpm lint:invariants`, and `git diff --check`.
-- [ ] Run tier-2 cross-lane standards/spec/thermo review.
-- [ ] Integrate accepted findings; re-prove/re-review non-trivial fixes.
-- [ ] If one focused loop does not clear blockers/majors, split PRs.
+- [x] Run `pnpm audit:imports`, `pnpm lint:invariants`, and `git diff --check`.
+- [x] Run tier-2 cross-lane standards/spec/thermo review.
+- [x] Integrate accepted findings; re-prove/re-review non-trivial fixes.
+- [x] If one focused loop does not clear blockers/majors, split PRs.
 - [ ] Otherwise push the issue branch and open one PR linked to #1072.
 - [ ] Post current-head proof and owner-review handoff. Never merge.

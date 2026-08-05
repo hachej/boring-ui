@@ -23,7 +23,7 @@ interface ListResponse {
 interface GetResponse { ok?: boolean; detail?: BoringTaskDetail; error?: string }
 interface MoveResponse { ok?: boolean; task?: BoringTaskCard; error?: string }
 interface DeleteResponse { ok?: boolean; error?: string }
-interface ErrorResponse { code?: unknown; error?: unknown; message?: unknown; retryable?: unknown }
+interface ErrorResponse { code?: unknown; error?: unknown; message?: unknown; retryable?: unknown; stale?: unknown }
 
 export class TaskHttpError extends Error {
   constructor(
@@ -31,6 +31,7 @@ export class TaskHttpError extends Error {
     message: string,
     readonly retryable: boolean,
     readonly status?: number,
+    readonly stale = false,
   ) {
     super(message)
     this.name = "TaskHttpError"
@@ -51,6 +52,7 @@ function errorFromPayload(payload: unknown, status?: number): TaskHttpError | nu
     message,
     value.retryable === true,
     status,
+    value.stale === true,
   )
 }
 
@@ -124,7 +126,7 @@ export function createHttpTaskAdapter(source: BoringTaskAdapterSummary, client?:
   }
   const sourceFailure = (body: ListResponse): TaskHttpError | null => {
     const failure = body.errors?.[source.id]
-    return failure ? new TaskHttpError(failure.code, failure.message, failure.retryable) : null
+    return failure ? new TaskHttpError(failure.code, failure.message, failure.retryable, undefined, failure.stale) : null
   }
 
   return {

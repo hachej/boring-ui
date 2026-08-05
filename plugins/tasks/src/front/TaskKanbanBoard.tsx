@@ -113,14 +113,14 @@ function readViewMode(cacheKey: string): TaskBoardViewMode {
 
 function sourceError(adapterId: string, cause: unknown, stale: boolean): BoringTaskSourceError {
   const typed = cause && typeof cause === "object"
-    ? cause as { code?: unknown; retryable?: unknown; message?: unknown }
+    ? cause as { code?: unknown; retryable?: unknown; message?: unknown; stale?: unknown }
     : undefined
   return {
     sourceId: adapterId,
     code: typeof typed?.code === "string" ? typed.code as BoringTaskErrorCode : "TASK_SOURCE_ERROR",
     message: typeof typed?.message === "string" ? typed.message : "Task source request failed.",
     retryable: typed?.retryable === true || !typed?.code,
-    stale,
+    stale: stale || typed?.stale === true,
   }
 }
 
@@ -157,11 +157,14 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const [detailSelection, setDetailSelection] = useState<TaskDetailSelection | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const detailTriggerRef = useRef<HTMLButtonElement | null>(null)
-  const requestSeq = useRef(0)
+  const sourceRequestVersions = useRef(new Map<string, number>())
+  const pendingSourceIds = useRef(new Set<string>())
   const stateRef = useRef(state)
   stateRef.current = state
   const toolbarRef = useRef<HTMLDivElement | null>(null)
   const adaptersById = useMemo(() => new Map(adapters.map((adapter) => [adapter.id, adapter])), [adapters])
+  const adapterIdsRef = useRef(new Set(allAdapterIds))
+  adapterIdsRef.current = new Set(allAdapterIds)
 
   const setViewMode = (mode: TaskBoardViewMode) => {
     setViewModeState(mode)
@@ -204,9 +207,13 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     const requested = options.sourceIds
       ? adapters.filter((adapter) => options.sourceIds?.includes(adapter.id))
       : adapters
-    const requestId = requestSeq.current + 1
-    requestSeq.current = requestId
-    setLoading(true)
+    const requestVersions = new Map(requested.map((adapter) => {
+      const version = (sourceRequestVersions.current.get(adapter.id) ?? 0) + 1
+      sourceRequestVersions.current.set(adapter.id, version)
+      pendingSourceIds.current.add(adapter.id)
+      return [adapter.id, version] as const
+    }))
+    setLoading(requested.length > 0 || pendingSourceIds.current.size > 0)
     setError(null)
     const entries = await Promise.all(requested.map(async (adapter) => {
       try {
@@ -216,13 +223,19 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
         return { ok: false as const, adapterId: adapter.id, cause }
       }
     }))
-    if (requestSeq.current !== requestId) return
+    const versionIsCurrent = (adapterId: string) => sourceRequestVersions.current.get(adapterId) === requestVersions.get(adapterId)
+    for (const entry of entries) {
+      if (versionIsCurrent(entry.adapterId)) pendingSourceIds.current.delete(entry.adapterId)
+    }
+    const currentEntries = entries.filter((entry) => adapterIdsRef.current.has(entry.adapterId) && versionIsCurrent(entry.adapterId))
+    setLoading(pendingSourceIds.current.size > 0)
+    if (currentEntries.length === 0) return
 
     const previous = stateRef.current ?? { configs: {}, tasks: [], errors: {} }
     const configs = { ...previous.configs }
     const errors = { ...previous.errors }
     let tasks = previous.tasks
-    for (const entry of entries) {
+    for (const entry of currentEntries) {
       if (entry.ok) {
         configs[entry.adapterId] = entry.config
         tasks = tasks.filter((task) => task.adapterId !== entry.adapterId).concat(entry.tasks)
@@ -242,7 +255,6 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
       setTagFilter("all")
       setEpicFilter("all")
     }
-    setLoading(false)
   }, [adapters, cacheKey])
 
   useEffect(() => {
