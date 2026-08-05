@@ -91,7 +91,8 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
   await expect(alphaRow).toBeVisible()
 
   await betaRow.hover()
-  await betaRow.locator('button[aria-label*="in new chat pane"]').click()
+  await betaRow.getByRole("button", { name: "Chat actions for Scripted baseline" }).click()
+  await page.getByRole("menuitem", { name: "Open in new chat pane" }).click()
   await expect(page.locator('[data-boring-agent-part="chat"]')).toHaveCount(2)
   await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="alpha"]')).toHaveAttribute("data-pi-chat-session-id", alphaSessionId!)
   await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="beta"]')).toHaveAttribute("data-pi-chat-session-id", betaSessionId!)
