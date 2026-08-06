@@ -8,6 +8,7 @@ import { createManageTasksTool, manageTasksParameters, parseManageTasksInput } f
 import type { BoringTaskSourceRuntime } from "./sourceRuntime"
 import { createTaskSourceRegistry } from "./sourceRuntime"
 import { createTaskSourceService } from "./taskSourceService"
+import { TaskSessionLinkStoreError } from "./taskSessionLinkStore"
 import { TaskToolBindingError, type TrustedTaskToolBindingResolver } from "./taskToolBinding"
 
 const task = { id: "1", number: "1", title: "One", statusId: "todo", adapterId: "source-a" }
@@ -35,9 +36,9 @@ function fixture(options: { authorizeError?: boolean } = {}) {
       links.push(link)
       return link
     }),
-    unlink: vi.fn(async (linkId: string) => {
-      const index = links.findIndex((link) => link.id === linkId)
-      if (index < 0) throw Object.assign(new Error("Task session link was not found."), { code: TASK_ERROR_CODES.SESSION_LINK_MISSING })
+    unlink: vi.fn(async (linkId: string, expectedAgentTypeId?: string) => {
+      const index = links.findIndex((link) => link.id === linkId && (expectedAgentTypeId === undefined || link.agentTypeId === expectedAgentTypeId))
+      if (index < 0) throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_MISSING, "Task session link was not found.")
       return links.splice(index, 1)[0]!
     }),
   }
@@ -160,6 +161,18 @@ describe("manage_tasks execution", () => {
     expect((unlinked.details as { link: Record<string, unknown> }).link).not.toHaveProperty("sessionId")
     expect((unlinked.content[0] as { text?: string }).text).not.toContain("native-old")
     expect(fixtureValue.authorizeSession).not.toHaveBeenCalled()
+    expect(fixtureValue.linkStore.unlink).toHaveBeenCalledWith(linkId, "alpha")
+  })
+
+  it("cannot unlink another Agent's task-session provenance", async () => {
+    const fixtureValue = fixture()
+    const foreign = await fixtureValue.linkStore.link({ adapterId: "source-a", taskId: "1", agentTypeId: "beta", sessionId: "foreign-session" })
+
+    await expect(fixtureValue.tool.execute({ action: "unlink_session", linkId: foreign.id }, context)).resolves.toMatchObject({
+      isError: true,
+      details: { code: TASK_ERROR_CODES.SESSION_LINK_MISSING },
+    })
+    expect(fixtureValue.links).toContainEqual(foreign)
   })
 
   it("registers exactly one manage_tasks tool in the Tasks server plugin", () => {

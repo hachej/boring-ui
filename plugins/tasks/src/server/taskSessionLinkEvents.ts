@@ -55,8 +55,8 @@ export function taskSessionLinkStoreWithEvents(
     if (result.created) publish(result.link, result.links)
     return result
   }
-  const unlinkWithSnapshot: AtomicTaskSessionLinkStore["unlinkWithSnapshot"] = async (linkId) => {
-    const result = await store.unlinkWithSnapshot(linkId)
+  const unlinkWithSnapshot: AtomicTaskSessionLinkStore["unlinkWithSnapshot"] = async (linkId, expectedAgentTypeId) => {
+    const result = await store.unlinkWithSnapshot(linkId, expectedAgentTypeId)
     publish(result.link, result.links)
     return result
   }
@@ -67,6 +67,6 @@ export function taskSessionLinkStoreWithEvents(
     linkWithSnapshot,
     link: async (input) => (await linkWithSnapshot(input)).link,
     unlinkWithSnapshot,
-    unlink: async (linkId) => (await unlinkWithSnapshot(linkId)).link,
+    unlink: async (linkId, expectedAgentTypeId) => (await unlinkWithSnapshot(linkId, expectedAgentTypeId)).link,
   }
 }
