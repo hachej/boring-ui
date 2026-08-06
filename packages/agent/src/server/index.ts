@@ -177,6 +177,7 @@ export { EmbeddedAgentGateway } from './agent-host/embeddedGateway'
 export { InMemoryAgentRequestLedger } from './agent-host/requestLedger'
 export {
   createEnvironmentProvisioningFingerprint,
+  createLegacyRuntimeScopeIdentityV1,
   createResolvedRuntimeScopeIdentity,
 } from './agent-host/runtimeScopeIdentity'
 export type {
@@ -202,6 +203,7 @@ export type {
   LegacyDefaultAgentHostSpec,
   ResolvedAgentRuntimeScope,
   ResolvedEnvironmentScope,
+  RuntimeScopeIdentityMigrationAuthorization,
 } from './agent-host/types'
 export type { LeaseBoundWorkspaceAgent } from '../shared/workspaceAgentDispatcher'
 export type {

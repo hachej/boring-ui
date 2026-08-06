@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -10,9 +10,15 @@ import type { RuntimeModeAdapter } from '../../runtime/mode'
 import { createAgentHost } from '../createAgentHost'
 import { EmbeddedAgentGateway } from '../embeddedGateway'
 import { sessionNamespaceForAgent } from '../sessionInventory'
-import type { AgentEffectAdmission, AgentHostAgentSpec, CreateAgentHostOptions } from '../types'
+import type {
+  AgentEffectAdmission,
+  AgentHostAgentSpec,
+  CreateAgentHostOptions,
+  RuntimeScopeIdentityMigrationAuthorization,
+} from '../types'
 import {
   createEnvironmentProvisioningFingerprint,
+  createLegacyRuntimeScopeIdentityV1,
   createResolvedRuntimeScopeIdentity,
   type RuntimeScopeIdentityInput,
 } from '../runtimeScopeIdentity'
@@ -39,6 +45,7 @@ function hostOptions(input: {
   environmentPlacementIdentity?: (scope: AuthorizedAgentScope) => string
   createRuntime?: RuntimeModeAdapter['create']
   effectAdmission?: AgentEffectAdmission
+  migration?: RuntimeScopeIdentityMigrationAuthorization
 }): CreateAgentHostOptions {
   const baseMode = createTestRuntimeModeAdapter('direct')
   return {
@@ -65,6 +72,7 @@ function hostOptions(input: {
       identity: input.runtimeIdentity(scope),
       physicalBindingIdentity: input.runtimePhysicalIdentity?.(scope) ?? input.runtimeIdentity(scope),
       resourceInputDigest: input.runtimeIdentity(scope),
+      ...(input.migration ? { sessionIdentityMigrations: [input.migration] } : {}),
       sessionNamespace: 'sessions',
     }),
   }
@@ -74,9 +82,11 @@ const base: RuntimeScopeIdentityInput = {
   artifacts: [{ pluginId: 'macro', digest: 'artifact-a' }],
   validatedConfig: { currency: 'USD' },
   grants: ['data.read'],
+  placementClassIdentity: 'direct',
   placementIdentity: 'direct:workspace',
   isolationMode: 'shared',
   toolContractDigests: ['tool-a'],
+  provisioningIdentity: 'provider-contract-a',
   provisioningGeneration: 'generation-a',
 }
 
@@ -85,13 +95,131 @@ describe('runtime scope identity', () => {
     ['artifact digest', { artifacts: [{ pluginId: 'macro', digest: 'artifact-b' }] }],
     ['validated config', { validatedConfig: { currency: 'EUR' } }],
     ['grant', { grants: ['data.read', 'data.write'] }],
-    ['placement', { placementIdentity: 'sandbox:workspace' }],
+    ['placement class', { placementClassIdentity: 'sandbox' }],
     ['isolation', { isolationMode: 'dedicated' }],
     ['tool contract', { toolContractDigests: ['tool-b'] }],
-    ['provisioning generation', { provisioningGeneration: 'generation-b' }],
+    ['provisioning contract', { provisioningIdentity: 'provider-contract-b' }],
   ] satisfies readonly [string, Partial<RuntimeScopeIdentityInput>][])('changes for %s', (_name, change) => {
     expect(createResolvedRuntimeScopeIdentity({ ...base, ...change }))
       .not.toBe(createResolvedRuntimeScopeIdentity(base))
+  })
+
+  it('keeps semantic identity stable when only physical placement and generation change', () => {
+    expect(createResolvedRuntimeScopeIdentity({
+      ...base,
+      placementIdentity: '/checkout/one',
+      provisioningGeneration: 'lease-one',
+    })).toBe(createResolvedRuntimeScopeIdentity({
+      ...base,
+      placementIdentity: '/checkout/two',
+      provisioningGeneration: 'lease-two',
+    }))
+    expect(createLegacyRuntimeScopeIdentityV1({
+      ...base,
+      placementIdentity: '/checkout/one',
+      provisioningGeneration: 'lease-one',
+    })).not.toBe(createLegacyRuntimeScopeIdentityV1({
+      ...base,
+      placementIdentity: '/checkout/two',
+      provisioningGeneration: 'lease-two',
+    }))
+  })
+
+  it('replaces only the header and preserves transcript tail bytes during a pin CAS', async () => {
+    const sessionRoot = await temporaryRoot()
+    const store = new PiSessionStore(sessionRoot, {
+      sessionRoot,
+      sessionNamespace: 'header-cas',
+      storageCwd: sessionRoot,
+    })
+    const oldIdentity = '4'.repeat(64)
+    const nextIdentity = '5'.repeat(64)
+    const created = await store.create({
+      workspaceId: 'workspace-a',
+      runtimeScopeIdentity: oldIdentity,
+    })
+    const transcriptPath = await sessionFilePath(join(sessionRoot, 'header-cas'), created.id)
+    await appendFile(transcriptPath, '{"type":"message","payload":"preserve spacing"}\r\n{malformed-tail\u0000bytes}\n', 'utf8')
+    await appendFile(transcriptPath, new Uint8Array([0xff, 0xfe, 0x00]))
+    const before = await readFile(transcriptPath)
+    const beforeTail = before.subarray(before.indexOf(0x0a))
+
+    await expect(store.migrateRuntimeScopeIdentity(
+      { workspaceId: 'workspace-a' },
+      created.id,
+      { expectedIdentity: oldIdentity, nextIdentity, evidenceDigest: '6'.repeat(64) },
+    )).resolves.toBe('migrated')
+
+    const after = await readFile(transcriptPath)
+    expect(after.subarray(after.indexOf(0x0a)).equals(beforeTail)).toBe(true)
+    const header = JSON.parse(new TextDecoder().decode(after.subarray(0, after.indexOf(0x0a)))) as {
+      boringSessionCtx: { runtimeScopeIdentity: string }
+    }
+    expect(header.boringSessionCtx.runtimeScopeIdentity).toBe(nextIdentity)
+  })
+
+  it('fails closed on malformed metadata and stale migration locks', async () => {
+    const sessionRoot = await temporaryRoot()
+    const malformedStore = new PiSessionStore(sessionRoot, {
+      sessionRoot,
+      sessionNamespace: 'malformed-cas',
+      storageCwd: sessionRoot,
+    })
+    const malformedSession = await malformedStore.create({
+      workspaceId: 'workspace-a',
+      runtimeScopeIdentity: 'a'.repeat(64),
+    })
+    const malformedPath = await sessionFilePath(join(sessionRoot, 'malformed-cas'), malformedSession.id)
+    const malformed = '{malformed-header}\n{"tail":"unchanged"}\n'
+    await writeFile(malformedPath, malformed, 'utf8')
+    await expect(malformedStore.migrateRuntimeScopeIdentity(
+      { workspaceId: 'workspace-a' },
+      malformedSession.id,
+      { expectedIdentity: 'a'.repeat(64), nextIdentity: 'b'.repeat(64), evidenceDigest: 'c'.repeat(64) },
+    )).rejects.toThrow(/Session (?:metadata is malformed|not found)/)
+    expect(await readFile(malformedPath, 'utf8')).toBe(malformed)
+
+    const lockedStore = new PiSessionStore(sessionRoot, {
+      sessionRoot,
+      sessionNamespace: 'locked-cas',
+      storageCwd: sessionRoot,
+    })
+    const lockedSession = await lockedStore.create({
+      workspaceId: 'workspace-a',
+      runtimeScopeIdentity: 'd'.repeat(64),
+    })
+    const lockedPath = await sessionFilePath(join(sessionRoot, 'locked-cas'), lockedSession.id)
+    await writeFile(`${lockedPath}.runtime-identity.lock`, 'stale', { flag: 'wx' })
+    const before = await readFile(lockedPath)
+    await expect(lockedStore.migrateRuntimeScopeIdentity(
+      { workspaceId: 'workspace-a' },
+      lockedSession.id,
+      { expectedIdentity: 'd'.repeat(64), nextIdentity: 'e'.repeat(64), evidenceDigest: 'f'.repeat(64) },
+    )).rejects.toThrow(/migration is locked/)
+    expect((await readFile(lockedPath)).equals(before)).toBe(true)
+  })
+
+  it('serializes conflicting migrations across independent stores', async () => {
+    const sessionRoot = await temporaryRoot()
+    const options = { sessionRoot, sessionNamespace: 'cross-store-cas', storageCwd: sessionRoot }
+    const firstStore = new PiSessionStore(sessionRoot, options)
+    const secondStore = new PiSessionStore(sessionRoot, options)
+    const oldIdentity = '7'.repeat(64)
+    const created = await firstStore.create({ workspaceId: 'workspace-a', runtimeScopeIdentity: oldIdentity })
+    const results = await Promise.all([
+      firstStore.migrateRuntimeScopeIdentity(
+        { workspaceId: 'workspace-a' },
+        created.id,
+        { expectedIdentity: oldIdentity, nextIdentity: '8'.repeat(64), evidenceDigest: 'a'.repeat(64) },
+      ),
+      secondStore.migrateRuntimeScopeIdentity(
+        { workspaceId: 'workspace-a' },
+        created.id,
+        { expectedIdentity: oldIdentity, nextIdentity: '9'.repeat(64), evidenceDigest: 'b'.repeat(64) },
+      ),
+    ])
+    expect(results.filter((result) => result === 'migrated')).toHaveLength(1)
+    expect(results.filter((result) => result === 'mismatch')).toHaveLength(1)
   })
 
   it('is stable across ordering-only changes', () => {
@@ -146,6 +274,131 @@ describe('runtime scope identity', () => {
       summary: { title: 'Reused safely' },
     })
     expect(createRuntime).toHaveBeenCalledOnce()
+    await restarted.host.close()
+  })
+
+  it('migrates one exact scoped pin after target preparation and remains writable after restart', async () => {
+    const sessionRoot = await temporaryRoot()
+    const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
+    const oldIdentity = 'a'.repeat(64)
+    const newIdentity = 'b'.repeat(64)
+    const evidenceDigest = 'c'.repeat(64)
+    const first = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => oldIdentity }))
+    const ref = await first.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'create-migration' })
+    await first.host.close()
+
+    const migration: RuntimeScopeIdentityMigrationAuthorization = {
+      schemaVersion: 1,
+      agentTypeId: 'alpha',
+      workspaceScopeId: 'workspace-a',
+      sessionNamespace: 'sessions',
+      fromIdentity: oldIdentity,
+      toIdentity: newIdentity,
+      evidenceDigest,
+    }
+    const createRuntime = vi.fn(createTestRuntimeModeAdapter('direct').create)
+    const restarted = await createAgentHost(hostOptions({
+      sessionRoot,
+      runtimeIdentity: () => newIdentity,
+      migration,
+      createRuntime,
+    }))
+    await Promise.all([
+      restarted.gateway.renameSession({ scope, ref, requestId: 'migration-a', title: 'Migrated A' }),
+      restarted.gateway.renameSession({ scope, ref, requestId: 'migration-b', title: 'Migrated B' }),
+    ])
+    expect(createRuntime).toHaveBeenCalledOnce()
+    await restarted.host.close()
+
+    const namespace = sessionNamespaceForAgent(agent, 'workspace-a', 'sessions')!
+    const migratedPath = await sessionFilePath(join(sessionRoot, namespace), ref.sessionId)
+    const header = JSON.parse((await readFile(migratedPath, 'utf8')).split('\n')[0]!) as {
+      boringSessionCtx?: {
+        runtimeScopeIdentity?: string
+        runtimeScopeIdentityMigration?: { fromIdentity?: string; evidenceDigest?: string }
+      }
+    }
+    expect(header.boringSessionCtx).toMatchObject({
+      runtimeScopeIdentity: newIdentity,
+      runtimeScopeIdentityMigration: { fromIdentity: oldIdentity, evidenceDigest },
+    })
+
+    const secondRestart = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => newIdentity }))
+    await expect(secondRestart.gateway.renameSession({
+      scope,
+      ref,
+      requestId: 'post-migration',
+      title: 'Still writable',
+    })).resolves.toMatchObject({ title: 'Still writable' })
+    await secondRestart.host.close()
+  })
+
+  it('fails closed without changing the pin when target preparation fails', async () => {
+    const sessionRoot = await temporaryRoot()
+    const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
+    const oldIdentity = '1'.repeat(64)
+    const newIdentity = '2'.repeat(64)
+    const first = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => oldIdentity }))
+    const ref = await first.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'create-prepare-failure' })
+    await first.host.close()
+    const namespace = sessionNamespaceForAgent(agent, 'workspace-a', 'sessions')!
+    const transcriptPath = await sessionFilePath(join(sessionRoot, namespace), ref.sessionId)
+    const before = await readFile(transcriptPath)
+
+    const restarted = await createAgentHost(hostOptions({
+      sessionRoot,
+      runtimeIdentity: () => newIdentity,
+      migration: {
+        schemaVersion: 1,
+        agentTypeId: 'alpha',
+        workspaceScopeId: 'workspace-a',
+        sessionNamespace: 'sessions',
+        fromIdentity: oldIdentity,
+        toIdentity: newIdentity,
+        evidenceDigest: '3'.repeat(64),
+      },
+      createRuntime: vi.fn(async () => { throw new Error('target unavailable') }),
+    }))
+    await expect(restarted.gateway.renameSession({
+      scope,
+      ref,
+      requestId: 'prepare-must-fail',
+      title: 'Must not change',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH })
+    expect((await readFile(transcriptPath)).equals(before)).toBe(true)
+    await restarted.host.close()
+  })
+
+  it('never authorizes the historical guessed identity, even if supplied as migration input', async () => {
+    const sessionRoot = await temporaryRoot()
+    const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
+    const observedIdentity = '33293674ddb7f24bcc036f4b5bedbf2457ac3a639e2969353ccb0175d385d7fe'
+    const newIdentity = 'e'.repeat(64)
+    const first = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => observedIdentity }))
+    const ref = await first.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'create-observed-pin' })
+    await first.host.close()
+    const createRuntime = vi.fn(createTestRuntimeModeAdapter('direct').create)
+    const restarted = await createAgentHost(hostOptions({
+      sessionRoot,
+      runtimeIdentity: () => newIdentity,
+      migration: {
+        schemaVersion: 1,
+        agentTypeId: 'alpha',
+        workspaceScopeId: 'workspace-a',
+        sessionNamespace: 'sessions',
+        fromIdentity: observedIdentity,
+        toIdentity: newIdentity,
+        evidenceDigest: 'f'.repeat(64),
+      },
+      createRuntime,
+    }))
+    await expect(restarted.gateway.renameSession({
+      scope,
+      ref,
+      requestId: 'observed-pin-denied',
+      title: 'Must stay closed',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH })
+    expect(createRuntime).not.toHaveBeenCalled()
     await restarted.host.close()
   })
 
