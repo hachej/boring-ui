@@ -26,6 +26,18 @@ describe('pathForWorkspaceEditor', () => {
     expect(editorPath.split('/')).not.toContain('..')
     expect(pathForWorkspaceEditor('/workspace', globalFilePath, additionalSkillPaths)).toBe(globalFilePath)
   })
+
+  test('tries the real provisioned root when a virtual root appears first', () => {
+    const realWorkspaceRoot = '/data/workspaces/example'
+    const localFilePath = `${realWorkspaceRoot}/.agents/skills/review/SKILL.md`
+    const additionalSkillPaths = [
+      '/workspace/.agents/skills',
+      `${realWorkspaceRoot}/.agents/skills`,
+    ]
+
+    expect(pathForWorkspaceEditor('/workspace', localFilePath, additionalSkillPaths))
+      .toBe('.agents/skills/review/SKILL.md')
+  })
 })
 
 describe('GET /api/v1/agents/default/skills', () => {

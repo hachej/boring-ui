@@ -35,14 +35,14 @@ interface SkillsQuery {
 
 const CACHE_TTL_MS = 30_000
 
-function provisionedWorkspaceRoot(additionalSkillPaths: readonly string[]): string | undefined {
-  // Provisioning contributes <real workspace root>/.agents/skills even when
-  // Workspace.root is the runtime-visible /workspace coordinate.
+function provisionedWorkspaceRoots(additionalSkillPaths: readonly string[]): string[] {
+  // Provisioning can contribute both runtime-visible and real-disk
+  // <workspace root>/.agents/skills paths, so preserve every coordinate.
   const userSkillsSuffix = `${sep}.agents${sep}skills`
-  const userSkillsPath = additionalSkillPaths
+  return additionalSkillPaths
     .map((skillPath) => resolve(skillPath))
-    .find((skillPath) => skillPath.endsWith(userSkillsSuffix))
-  return userSkillsPath ? dirname(dirname(userSkillsPath)) : undefined
+    .filter((skillPath) => skillPath.endsWith(userSkillsSuffix))
+    .map((skillPath) => dirname(dirname(skillPath)))
 }
 
 export function pathForWorkspaceEditor(
@@ -50,9 +50,8 @@ export function pathForWorkspaceEditor(
   filePath: string,
   additionalSkillPaths: readonly string[] = [],
 ): string {
-  const roots = [workspaceRoot, provisionedWorkspaceRoot(additionalSkillPaths)]
+  const roots = [workspaceRoot, ...provisionedWorkspaceRoots(additionalSkillPaths)]
   for (const root of roots) {
-    if (!root) continue
     const pathWithinWorkspace = relative(resolve(root), resolve(filePath))
     if (pathWithinWorkspace === '' || pathWithinWorkspace === '..' || pathWithinWorkspace.startsWith(`..${sep}`) || isAbsolute(pathWithinWorkspace)) {
       continue
