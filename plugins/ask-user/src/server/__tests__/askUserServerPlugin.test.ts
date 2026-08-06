@@ -97,7 +97,7 @@ describe("ask-user Pi tool", () => {
     const tool = createAskUserTool({ runtime, sessionId: "fallback" })
 
     await expect(tool.execute("call", { title: "Need input", schema, timeoutMs: 60_000 }, undefined, "chat-session")).resolves.toMatchObject({ details: { status: "answered" } })
-    expect(runtime.ask).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "chat-session" }), undefined)
+    expect(runtime.ask).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "chat-session", toolCallId: "call" }), undefined)
   })
 
   it("valid input creates pending question and waits for runtime answer", async () => {
@@ -105,7 +105,7 @@ describe("ask-user Pi tool", () => {
     const tool = createAskUserTool({ runtime, sessionId: "s1" })
     const pendingResult = tool.execute("call", { title: "Need input", schema, timeoutMs: 60_000 }, undefined)
     const pending = await waitForPendingQuestion(store, "s1")
-    expect(pending).toMatchObject({ status: "ready", title: "Need input" })
+    expect(pending).toMatchObject({ status: "ready", title: "Need input", toolCallId: "call" })
     await waitForRuntimeWaiter(runtime, pending.questionId)
     await runtime.submitAnswer(pending.questionId, "s1", { answer: "ok" })
     await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })

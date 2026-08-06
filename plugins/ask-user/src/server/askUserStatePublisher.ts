@@ -6,6 +6,7 @@ import type { AskUserStore, AskUserStoreChange } from "./askUserStore"
 export type AskUserPendingHint = {
   questionId: string
   sessionId: string
+  toolCallId?: string
   status: AskUserQuestion["status"]
 }
 
@@ -102,6 +103,7 @@ function toPendingHint(question: AskUserQuestion | null): AskUserPendingHint | n
   return {
     questionId: question.questionId,
     sessionId: question.sessionId,
+    ...(question.toolCallId ? { toolCallId: question.toolCallId } : {}),
     status: question.status,
   }
 }
