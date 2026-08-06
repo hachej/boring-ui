@@ -16,7 +16,7 @@ type BridgeResponse<T> =
   | { ok: true; output: T }
   | { ok: false; error?: { code?: string; message?: string } }
 
-export type PendingQuestionHint = { questionId: string; sessionId: string; status?: AskUserQuestion["status"] }
+export type PendingQuestionHint = { questionId: string; sessionId: string; toolCallId?: string; status?: AskUserQuestion["status"] }
 
 export function readPendingQuestionHintsFromState(state: Record<string, unknown> | null | undefined): PendingQuestionHint[] {
   const slot = state?.[ASK_USER_UI_STATE_SLOTS.PENDING]
@@ -40,10 +40,15 @@ export function readPendingQuestionHintFromState(state: Record<string, unknown> 
 
 function readHint(value: unknown): PendingQuestionHint | null {
   if (!value || typeof value !== "object") return null
-  const raw = value as { questionId?: unknown; sessionId?: unknown; status?: unknown }
+  const raw = value as { questionId?: unknown; sessionId?: unknown; toolCallId?: unknown; status?: unknown }
   if (typeof raw.questionId !== "string" || typeof raw.sessionId !== "string") return null
   const status = normalizeQuestionStatus(raw.status)
-  return { questionId: raw.questionId, sessionId: raw.sessionId, ...(status === "abandoned" && raw.status === undefined ? {} : { status }) }
+  return {
+    questionId: raw.questionId,
+    sessionId: raw.sessionId,
+    ...(typeof raw.toolCallId === "string" ? { toolCallId: raw.toolCallId } : {}),
+    ...(status === "abandoned" && raw.status === undefined ? {} : { status }),
+  }
 }
 
 export function createQuestionsClient(options: QuestionsClientOptions = {}) {
@@ -141,6 +146,7 @@ export function normalizeQuestion(value: unknown): AskUserQuestion | null {
   return {
     questionId: raw.questionId,
     sessionId: raw.sessionId,
+    toolCallId: typeof raw.toolCallId === "string" ? raw.toolCallId : undefined,
     ownerPrincipalId: typeof raw.ownerPrincipalId === "string" ? raw.ownerPrincipalId : "anonymous",
     status: normalizeQuestionStatus(raw.status),
     title: typeof raw.title === "string" ? raw.title : undefined,

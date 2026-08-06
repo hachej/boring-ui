@@ -1523,7 +1523,7 @@ export function WorkspaceAgentFront<
     const renderers: ToolRendererOverrides = {}
     for (const plugin of capturedPlugins) {
       for (const renderer of plugin.registrations.toolRenderers) {
-        renderers[renderer.id] = renderer.render as ToolRendererOverrides[string]
+        renderers[renderer.id] = Object.assign(renderer.render, { presentation: renderer.presentation }) as ToolRendererOverrides[string]
       }
     }
     return renderers

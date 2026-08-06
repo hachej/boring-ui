@@ -82,7 +82,7 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
       required: ["title", "schema"],
       additionalProperties: false,
     },
-    async execute(_toolCallId, params, signal, sessionId, ownerPrincipalId) {
+    async execute(toolCallId, params, signal, sessionId, ownerPrincipalId) {
       const parsed = validateAskUserToolInput(params)
       if (!parsed.success) {
         return {
@@ -92,7 +92,12 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
       }
       const input = parsed.data as AskUserToolInput
       try {
-        const result = await options.runtime.ask({ ...input, sessionId: sessionId ?? resolveSessionId(options.sessionId), ownerPrincipalId }, signal)
+        const result = await options.runtime.ask({
+          ...input,
+          toolCallId,
+          sessionId: sessionId ?? resolveSessionId(options.sessionId),
+          ownerPrincipalId,
+        }, signal)
         return formatAskUserResult(result, input)
       } catch (error) {
         return {
