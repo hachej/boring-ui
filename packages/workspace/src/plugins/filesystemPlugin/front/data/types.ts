@@ -1,3 +1,9 @@
+import type { UiFileResource } from "../../../../shared/types/filesystem"
+export type {
+  FilesystemCatalogCapabilities,
+  FilesystemCatalogEntry,
+} from "@hachej/boring-bash/shared"
+
 export interface FileEntry {
   name: string
   kind: "file" | "dir"
@@ -17,6 +23,8 @@ export interface FileContent {
    */
   mtimeMs?: number
 }
+
+export type FileSearchResource = UiFileResource
 
 export interface FileStat {
   size: number

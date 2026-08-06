@@ -47,6 +47,8 @@ describe("UI filesystem identity primitives", () => {
       .toBe("user:/same.md")
     expect(uiFileResourceKey({ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, path: "/same.md" }))
       .toBe("company_context:/same.md")
+    expect(uiFileResourceKey({ filesystem: "a:b", path: "c" }))
+      .not.toBe(uiFileResourceKey({ filesystem: "a", path: "b:c" }))
   })
 
   test("withUiFileResource preserves payload while filling legacy user default", () => {

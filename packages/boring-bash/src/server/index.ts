@@ -71,11 +71,18 @@ export {
   fileRoutes,
 } from './routes/file'
 export { fsEventsRoutes } from './routes/fsEvents'
+export { filesystemsRoutes } from './routes/filesystems'
 export { gitRoutes } from './routes/git'
 export { searchRoutes } from './routes/search'
 export { treeRoutes } from './routes/tree'
 
 export type { GitRouteOptions } from './routes/git'
+export type {
+  FilesystemCatalogCapabilities,
+  FilesystemCatalogEntry,
+  FilesystemCatalogResponse,
+  FilesystemsRouteOptions,
+} from './routes/filesystems'
 export type { SearchRouteOptions } from './routes/search'
 
 export {

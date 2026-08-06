@@ -34,6 +34,7 @@ export type {
   CatalogRow,
   CatalogSearchArgs,
   CatalogSearchResult,
+  FileTreeRevealRequest,
   LeftTabParams,
   LeftTabComponent,
   PluginProvider,
@@ -207,16 +208,8 @@ export { EmptyPane } from "./front/chrome/empty-pane/EmptyPane"
 export type { EmptyPaneProps } from "./front/chrome/empty-pane/EmptyPane"
 export { CodeEditorPane } from "./plugins/filesystemPlugin/front/code-editor/CodeEditorPane"
 export type { CodeEditorPaneProps } from "./plugins/filesystemPlugin/front/code-editor/CodeEditorPane"
-export {
-  FileTreePane,
-  FileTreeView,
-} from "./plugins/filesystemPlugin/front/file-tree/FileTreeView"
-export type {
-  FileTreePaneProps,
-  FileTreePaneParams,
-  FileTreeRootConfig,
-  FileTreeViewProps,
-} from "./plugins/filesystemPlugin/front/file-tree/FileTreeView"
+export { FileTreeView } from "./plugins/filesystemPlugin/front/file-tree/FileTreeView"
+export type { FileTreeViewProps } from "./plugins/filesystemPlugin/front/file-tree/FileTreeView"
 export { MarkdownEditorPane } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditorPane"
 export type { MarkdownEditorPaneProps } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditorPane"
 export { definePanel } from "./front/registry/types"
@@ -364,6 +357,7 @@ export {
 } from "./front/provider"
 export type {
   WorkspaceProviderProps,
+  WorkspaceOpenFileHandler,
   FrontPluginHotReloadMode,
   ThemeProviderProps,
   WorkspaceBridgeContextValue,
