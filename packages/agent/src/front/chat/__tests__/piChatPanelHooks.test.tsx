@@ -14,7 +14,7 @@ describe('useExternalRemotePiSession', () => {
     const first = remoteSession()
     const second = remoteSession()
     const createRemoteSession = vi.fn(() => createRemoteSession.mock.calls.length === 1 ? first : second)
-    const { rerender } = renderHook(
+    const { result, rerender } = renderHook(
       ({ enabled }) => useExternalRemotePiSession({
         sessionId: 'session-1',
         agentTypeId: 'default',
@@ -29,6 +29,7 @@ describe('useExternalRemotePiSession', () => {
     expect(createRemoteSession).toHaveBeenCalledTimes(1)
     rerender({ enabled: false })
     expect(first.dispose).toHaveBeenCalledTimes(1)
+    expect(result.current).toBe(first)
     rerender({ enabled: true })
     expect(createRemoteSession).toHaveBeenCalledTimes(2)
   })

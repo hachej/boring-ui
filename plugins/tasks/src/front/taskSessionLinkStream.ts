@@ -19,12 +19,6 @@ interface TaskSessionLinkChange extends TaskSessionLinks {
   revision: number
 }
 
-export const TASK_SESSION_LINK_REFRESH_EVENT = "boring-tasks:session-links-refresh"
-
-export function requestTaskSessionLinkRefresh(workspaceId: string): void {
-  if (workspaceId) window.dispatchEvent(new CustomEvent(TASK_SESSION_LINK_REFRESH_EVENT, { detail: { workspaceId } }))
-}
-
 export function taskSessionLinkKey(adapterId: string, taskId: string): string {
   return JSON.stringify([adapterId, taskId])
 }
@@ -54,17 +48,7 @@ function envelope(value: unknown): { streamId: string; revision: number } | unde
 
 export function useTaskSessionLinks(pluginClient: WorkspacePluginClient): ReadonlyMap<string, readonly BoringTaskSessionLink[]> | null {
   const [linksByTask, setLinksByTask] = useState<ReadonlyMap<string, readonly BoringTaskSessionLink[]> | null>(null)
-  const [connectionVersion, setConnectionVersion] = useState(0)
   const cursor = useRef<{ streamId: string; revision: number } | null>(null)
-
-  useEffect(() => {
-    const onRefresh = (event: Event) => {
-      const detail = (event as CustomEvent<{ workspaceId?: unknown }>).detail
-      if (detail?.workspaceId === (pluginClient.workspaceId ?? "workspace")) setConnectionVersion((version) => version + 1)
-    }
-    window.addEventListener(TASK_SESSION_LINK_REFRESH_EVENT, onRefresh)
-    return () => window.removeEventListener(TASK_SESSION_LINK_REFRESH_EVENT, onRefresh)
-  }, [pluginClient.workspaceId])
 
   useEffect(() => {
     if (typeof EventSource === "undefined") return
@@ -106,7 +90,7 @@ export function useTaskSessionLinks(pluginClient: WorkspacePluginClient): Readon
       } catch { /* Ignore malformed stream frames. */ }
     })
     return () => source.close()
-  }, [connectionVersion, pluginClient.apiBaseUrl, pluginClient.workspaceId])
+  }, [pluginClient.apiBaseUrl, pluginClient.workspaceId])
 
   return linksByTask
 }

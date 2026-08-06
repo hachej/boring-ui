@@ -1259,17 +1259,24 @@ export function WorkspaceAgentFront<
     shellPersistenceEnabled,
   ) as [AppLeftOverlayId, (next: AppLeftOverlayId | ((previous: AppLeftOverlayId) => AppLeftOverlayId)) => void]
   const [leftOverlayParams, setLeftOverlayParams] = useState<Readonly<Record<string, string>> | undefined>()
+  const leftOverlayParamsOwnerRef = useRef<AppLeftOverlayId>(null)
   const pluginOverlayActionIds = useMemo(() => pluginAppLeftActionIds(capturedPlugins), [capturedPlugins])
   useEffect(() => {
     const onOpenOverlay = (event: Event) => {
       const request = appLeftOverlayRequestFromEvent(event)
       if (!request || !pluginOverlayActionIds.has(request.id)) return
+      leftOverlayParamsOwnerRef.current = request.id
       setLeftOverlayParams(request.params)
       setLeftOverlay(request.id)
     }
     window.addEventListener(WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, onOpenOverlay)
     return () => window.removeEventListener(WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, onOpenOverlay)
   }, [pluginOverlayActionIds, setLeftOverlay])
+  useEffect(() => {
+    if (leftOverlayParamsOwnerRef.current === leftOverlay) return
+    leftOverlayParamsOwnerRef.current = null
+    setLeftOverlayParams(undefined)
+  }, [leftOverlay])
   useEffect(() => {
     const customOverlayActive = Boolean(leftOverlay && appLeftOverlayActions?.some((action) => action.id === leftOverlay))
     if (
@@ -2045,7 +2052,7 @@ export function WorkspaceAgentFront<
       allowPromptDuringInitialHydration: emptySessionIds.has(sessionKey),
       onPromptSubmitStarted: ({ sessionId: submittedSessionId, clientNonce }: { sessionId: string; clientNonce: string }) => {
         window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
-          detail: { agentTypeId: sessionRef.agentTypeId ?? agentTypeId, sessionId: submittedSessionId, clientNonce },
+          detail: { agentTypeId: sessionRef.agentTypeId ?? selectedAgentTypeId, sessionId: submittedSessionId, clientNonce },
         }))
         setInitialHydrationPromptStarted((current) => {
           const currentIds = current.workspaceId === workspaceId ? current.ids : new Set<string>()
@@ -2222,13 +2229,13 @@ export function WorkspaceAgentFront<
       if (!sessionId) return { success: false as const, reason: "create-failed" as const, message: "Chat session creation did not return a canonical session." }
       const createdAgentTypeId = typeof (session as { agentTypeId?: unknown }).agentTypeId === "string"
         ? (session as { agentTypeId: string }).agentTypeId
-        : agentTypeId
+        : selectedAgentTypeId
       if (previousActiveId && previousActiveId !== sessionId) rawSwitch(previousActiveId, previousAgentTypeId)
       return { success: true as const, ref: { agentTypeId: createdAgentTypeId, sessionId } }
     } catch (error) {
       return { success: false as const, reason: "create-failed" as const, message: error instanceof Error ? error.message : "Chat session creation failed." }
     }
-  }, [agentTypeId, coordinateRemoteCreate, effectiveActiveSessionAgentTypeId, effectiveActiveSessionId, rawSwitch])
+  }, [coordinateRemoteCreate, effectiveActiveSessionAgentTypeId, effectiveActiveSessionId, rawSwitch, selectedAgentTypeId])
   const deleteShellChatSession = useCallback(async (ref: { agentTypeId: string; sessionId: string }) => {
     try {
       await resolvedDelete(ref.sessionId, ref.agentTypeId)
@@ -2378,11 +2385,14 @@ export function WorkspaceAgentFront<
       headerInsetEnd={!surfaceOpen}
     />
   ) : null)
-  const renderedCenterParams = shellCapabilitiesHost.floatingChatOpen
+  const streamDonorPaneId = activeChatPaneId ?? chatPanes[0]?.id
+  const renderedCenterParams = shellCapabilitiesHost.floatingChatOpen && chatPanes.length === 0
     ? { ...centerParams, sessionStreamingEnabled: false }
     : centerParams
   const renderedChatPanes = shellCapabilitiesHost.floatingChatOpen
-    ? chatPanes.map((pane) => ({ ...pane, params: { ...(pane.params ?? centerParams), sessionStreamingEnabled: false } }))
+    ? chatPanes.map((pane) => pane.id === streamDonorPaneId
+      ? { ...pane, params: { ...(pane.params ?? centerParams), sessionStreamingEnabled: false } }
+      : pane)
     : chatPanes
   const mainContent = remoteSessionsTransitioning ? (
     <ChatSessionTransitionState />

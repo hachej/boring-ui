@@ -54,12 +54,14 @@ Create one new PR stacked on PR #1044 that preserves the product behavior while 
 
 ## Proof
 
-- Ask User: 114 passed, 1 skipped; Tasks: 77 passed.
-- Agent, Workspace, Core, Ask User, and Tasks typechecks passed.
+- Ask User: 114 passed, 1 skipped; Tasks: 143 passed.
+- Agent, Workspace, Core, Ask User, Tasks, CLI, and playground typechecks passed.
 - AgentHost cutover matrix: 19 rows, 39 final routes, 23 deleted routes, zero forbidden compatibility references.
 - All seven AgentHost composition roots passed.
 - Focused Ask User browser proofs passed individually, including exact-session reload/cancel and explicit Questions opening.
-- Workspace playground production dependency builds passed; the full shared-state browser batch had three order-dependent failures, while 22 scenarios passed and the affected Ask User scenarios passed in isolation.
+- Combined GitHub + Beads browser proof passed with no `/sessions/list` request or `Refreshing…` state.
+- Real HTTP/1.1 browser proof passed without request interception: the task count and expanded session row auto-hydrated while detached chat remained open, and the underlying composer draft survived its temporary remote-stream suspension.
+- Stable review playground was verified in Chromium and Firefox with HMR disabled and zero application errors.
 
 ## Slices
 

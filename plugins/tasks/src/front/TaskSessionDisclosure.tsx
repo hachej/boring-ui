@@ -4,7 +4,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { HumanArtifactList, emitWorkspaceTaskProvenanceChanged, openHumanArtifact, type WorkspacePluginClient } from "@hachej/boring-workspace"
 import type { WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard, BoringTaskSessionLink, SessionHandoverResolution, SessionHandoverSummary } from "../shared"
-import { requestTaskSessionLinkRefresh } from "./taskSessionLinkStream"
 
 export interface TaskSessionActivity {
   sessionId: string
@@ -79,7 +78,7 @@ export function TaskSessionDisclosure({
 }: {
   task: BoringTaskCard
   shell: WorkspaceShellCapabilities
-  pluginClient: Pick<WorkspacePluginClient, "workspaceId" | "getJson" | "postJson">
+  pluginClient: Pick<WorkspacePluginClient, "getJson" | "postJson">
   sessionLinks?: readonly BoringTaskSessionLink[]
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -226,7 +225,6 @@ export function TaskSessionDisclosure({
     if (!window.confirm(`Unlink this chat from ${task.number}? The transcript will be kept.`)) return
     try {
       await pluginClient.postJson("/api/boring-tasks/sessions/unlink", { linkId: row.link.id })
-      requestTaskSessionLinkRefresh(pluginClient.workspaceId ?? "workspace")
       setActivity((current) => ({
         sessions: current.sessions.filter((session) => session.sessionId !== row.link.sessionId),
         omittedSessionIds: current.omittedSessionIds.filter((sessionId) => sessionId !== row.link.sessionId),

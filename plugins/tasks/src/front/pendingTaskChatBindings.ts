@@ -5,7 +5,6 @@ import {
   type WorkspaceShellSessionRef,
 } from "@hachej/boring-workspace/plugin"
 import { emitWorkspaceTaskProvenanceChanged } from "@hachej/boring-workspace"
-import { requestTaskSessionLinkRefresh } from "./taskSessionLinkStream"
 
 const STORAGE_KEY = "boring-tasks:pending-chat-bindings:v1"
 interface BindingAttemptState {
@@ -88,13 +87,17 @@ async function bind(binding: PendingTaskChatBinding, client: Pick<WorkspacePlugi
       sessionId: binding.sessionId,
     })
     removePending(binding)
-    requestTaskSessionLinkRefresh(binding.workspaceId)
     emitWorkspaceTaskProvenanceChanged()
   } catch (error) {
     state.inFlight = false
-    if (!retryableBindingError(error) || state.attempt + 1 >= MAX_BIND_ATTEMPTS) {
+    if (!retryableBindingError(error)) {
       removePending(binding)
       console.error("Failed to bind submitted task chat", error)
+      return
+    }
+    if (state.attempt + 1 >= MAX_BIND_ATTEMPTS) {
+      attemptStates.delete(key)
+      console.error("Task chat binding is still pending after transient failures", error)
       return
     }
     const delay = Math.min(1_000 * 2 ** state.attempt, 30_000)
@@ -145,7 +148,9 @@ export function resumePendingTaskChatBindings(client: Pick<WorkspacePluginClient
     void client.getJson<{ summary?: { turnCount?: number } }>(
       `/api/v1/agents/${encodeURIComponent(binding.agentTypeId)}/sessions/${encodeURIComponent(binding.sessionId)}/state`,
     ).then((snapshot) => {
-      if ((snapshot.summary?.turnCount ?? 0) > 0) void bind(binding, client)
+      if ((snapshot.summary?.turnCount ?? 0) <= 0) return
+      stopWatching(bindingKey(binding))
+      void bind(binding, client)
     }).catch(() => undefined)
   }
 }
