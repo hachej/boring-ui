@@ -107,6 +107,39 @@ describe('resolveWorkspacePackageResources', () => {
     expect(registry.readonlyMounts[0].logicalRoot).toBe('packages/@example/plugin/skills/authoring')
   })
 
+  // Sol round-2: the hand-rolled frontmatter scanner this used to have
+  // (packageResources.ts's own `key: value` line-splitter) silently dropped
+  // metadata under CRLF line endings and quoted YAML scalars. It now
+  // delegates to the agent-owned parseSkillMetadataFrontmatter (backed by
+  // Pi's real YAML frontmatter parser) — this pins that a CRLF SKILL.md
+  // with a quoted, colon-containing description still resolves name and
+  // description correctly.
+  test('resolves name/description from a CRLF SKILL.md with quoted YAML scalars', async () => {
+    const root = await tempRoot()
+    const packageRoot = join(root, 'crlf-package')
+    await mkdir(packageRoot, { recursive: true })
+    await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+      name: '@example/crlf-plugin',
+      pi: { skills: ['skills/authoring'] },
+    }), 'utf8')
+    await mkdir(join(packageRoot, 'skills', 'authoring'), { recursive: true })
+    await writeFile(join(packageRoot, 'skills', 'authoring', 'SKILL.md'), [
+      '---',
+      'name: "crlf-authoring"',
+      "description: 'Handles CRLF: quoted scalars.'",
+      '---',
+      '# Skill',
+    ].join('\r\n'), 'utf8')
+
+    const registry = await resolveOne(packageRoot, { packageName: '@example/crlf-plugin' })
+
+    expect(registry.skills).toHaveLength(1)
+    expect(registry.skills[0]).toMatchObject({
+      name: 'crlf-authoring',
+      description: 'Handles CRLF: quoted scalars.',
+    })
+  })
+
   test('accepts a real pnpm-linked package without widening its admitted skill root', async () => {
     const linkedRoot = resolve(process.cwd(), '../../node_modules/@hachej/boring-bi-dashboard')
     expect((await lstat(linkedRoot)).isSymbolicLink()).toBe(true)

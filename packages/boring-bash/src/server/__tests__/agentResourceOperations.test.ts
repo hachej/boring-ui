@@ -112,4 +112,45 @@ describe('createAgentResourceFilesystemBinding', () => {
     })
     expect(result).toEqual({ passed: true, failures: [] })
   })
+
+  // Sol round-2 probe: the round-1 union fix only covered list("/"). A
+  // multi-root binding also needs stat/find/grep to route the root and
+  // every intermediate virtual-ancestor segment (here "packages", the
+  // first path component synthesized by root list) as a directory rather
+  // than throwing READONLY_PROJECTION_INVALID_PATH, since routes/tree.ts
+  // stats immediately after listing and routes/search.ts calls find at
+  // root on every named filesystem.
+  test('stat/find/grep route the root and virtual ancestor segments of a multi-root binding', async () => {
+    const { skillRoot } = await fixture()
+    const binding = await createAgentResourceFilesystemBinding(filesystem, [{ logicalRoot, sourceRoot: skillRoot }])
+    const virtualAncestor = logicalRoot.split('/')[0]
+
+    await expect(binding.operations.stat({ filesystem, path: '/' }))
+      .resolves.toMatchObject({ isDirectory: true })
+    await expect(binding.operations.stat({ filesystem, path: virtualAncestor }))
+      .resolves.toMatchObject({ isDirectory: true })
+    await expect(binding.operations.stat({ filesystem, path: `${logicalRoot}/SKILL.md` }))
+      .resolves.toMatchObject({ isDirectory: false })
+
+    const expectedPaths = [`/${logicalRoot}/SKILL.md`, `/${logicalRoot}/references/guide.md`]
+    await expect(binding.operations.find({ filesystem, path: '/' }, '**/*.md'))
+      .resolves.toMatchObject({ paths: expectedPaths })
+    await expect(binding.operations.find({ filesystem, path: virtualAncestor }, '**/*.md'))
+      .resolves.toMatchObject({ paths: expectedPaths })
+
+    await expect(binding.operations.grep({ filesystem, path: '/' }, 'SAFE_SENTINEL'))
+      .resolves.toMatchObject({
+        matches: expect.arrayContaining([
+          expect.objectContaining({ path: `/${logicalRoot}/SKILL.md` }),
+          expect.objectContaining({ path: `/${logicalRoot}/references/guide.md` }),
+        ]),
+      })
+    await expect(binding.operations.grep({ filesystem, path: virtualAncestor }, 'SAFE_SENTINEL'))
+      .resolves.toMatchObject({
+        matches: expect.arrayContaining([
+          expect.objectContaining({ path: `/${logicalRoot}/SKILL.md` }),
+          expect.objectContaining({ path: `/${logicalRoot}/references/guide.md` }),
+        ]),
+      })
+  })
 })

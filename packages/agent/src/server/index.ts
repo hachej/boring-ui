@@ -194,6 +194,8 @@ export type {
   PiPackageSource,
 } from './harness/pi-coding-agent/createHarness'
 export { createResourceSettingsManager } from './harness/pi-coding-agent/createHarness'
+export { parseSkillMetadataFrontmatter } from './skillFrontmatter'
+export type { SkillMetadataFrontmatter } from './skillFrontmatter'
 export {
   compactPiPackages,
   mergePiPackageSources,
