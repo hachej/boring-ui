@@ -30,32 +30,32 @@ const ROLE_BINDING_DEFINITIONS = [
     agentTypeId: 'boring-concierge',
     skills: [
       { name: 'feedback', digest: 'sha256:707ae8fd12ace225be7d6de8c345c7d73cf9aa07763f138419f6d6b26b92a9af' },
-      { name: 'triage', digest: 'sha256:7a4144b2d177ec17735e26cb5fa1f03121acd819bb074bc1217fe96302416018' },
-      { name: 'handoff', digest: 'sha256:8f46bb26b3f84a3c9c7fb63799869a8571a88d8ebe7754b3466956fd4d6afb3c' },
+      { name: 'triage', digest: 'sha256:c9931f981b0d2d55415026c25bc27dec3e24fd310bee405360eba57d6cf58766' },
+      { name: 'handoff', digest: 'sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17' },
     ],
   },
   {
     role: 'triage',
     agentTypeId: 'boring-triage',
     skills: [
-      { name: 'triage', digest: 'sha256:7a4144b2d177ec17735e26cb5fa1f03121acd819bb074bc1217fe96302416018' },
-      { name: 'handoff', digest: 'sha256:8f46bb26b3f84a3c9c7fb63799869a8571a88d8ebe7754b3466956fd4d6afb3c' },
+      { name: 'triage', digest: 'sha256:c9931f981b0d2d55415026c25bc27dec3e24fd310bee405360eba57d6cf58766' },
+      { name: 'handoff', digest: 'sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17' },
     ],
   },
   {
     role: 'steward',
     agentTypeId: 'boring-steward',
     skills: [
-      { name: 'plan', digest: 'sha256:f3b9a341761fcc7fc38e3e8379a1c9180842dc0ef7807da940835a37c8e5eaeb' },
-      { name: 'handoff', digest: 'sha256:8f46bb26b3f84a3c9c7fb63799869a8571a88d8ebe7754b3466956fd4d6afb3c' },
+      { name: 'plan', digest: 'sha256:ba6e76d7cdd8ce2966ca38e66942f62bf882e56fca4cadd9ca360ee175f384ac' },
+      { name: 'handoff', digest: 'sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17' },
     ],
   },
   {
     role: 'worker',
     agentTypeId: 'boring-worker',
     skills: [
-      { name: 'exec', digest: 'sha256:1a9b11dfe257c1335910a14f65ee657f4748531ddc16496843ccbf607fc717fc' },
-      { name: 'handoff', digest: 'sha256:8f46bb26b3f84a3c9c7fb63799869a8571a88d8ebe7754b3466956fd4d6afb3c' },
+      { name: 'exec', digest: 'sha256:cc0ab4c7e94dc8b2e65873681ccea281e19dd9850f726e978c8ba764643e8359' },
+      { name: 'handoff', digest: 'sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17' },
     ],
   },
   {
@@ -63,7 +63,7 @@ const ROLE_BINDING_DEFINITIONS = [
     agentTypeId: 'boring-reviewer',
     skills: [
       { name: 'fresh-eyes', digest: 'sha256:58f6cfb66cc2a31238e5c033f42b69b7fbd6089d06c9f6d5108caa7035e5f565' },
-      { name: 'handoff', digest: 'sha256:8f46bb26b3f84a3c9c7fb63799869a8571a88d8ebe7754b3466956fd4d6afb3c' },
+      { name: 'handoff', digest: 'sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17' },
     ],
   },
 ] as const satisfies readonly RoleBinding[]
