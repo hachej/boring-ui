@@ -29,7 +29,10 @@ export function normalizeUiFileResource(input: UiFileResourceInput): UiFileResou
 
 export function uiFileResourceKey(resource: UiFileResourceInput): string {
   const normalized = normalizeUiFileResource(resource)
-  return `${normalized.filesystem}:${normalized.path}`
+  const filesystemKey = /^[A-Za-z0-9._-]+$/.test(normalized.filesystem)
+    ? normalized.filesystem
+    : JSON.stringify(normalized.filesystem)
+  return `${filesystemKey}:${normalized.path}`
 }
 
 export function withUiFileResource<T extends Record<string, unknown>>(

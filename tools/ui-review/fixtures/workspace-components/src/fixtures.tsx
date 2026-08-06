@@ -9,9 +9,7 @@ import {
   CodeEditor,
   DockviewShell,
   FileTree,
-  FileTreePane,
   MarkdownEditor,
-  WorkspaceFilesProvider,
   WorkspaceProvider,
   type FileTreeNode,
   type PanelConfig,
@@ -125,30 +123,20 @@ function renderFixture(name: string): ReactNode {
       return <MarkdownEditor className="h-[560px]" content={RICH_MARKDOWN} onChange={() => {}} />
     case "dock-group":
       return (
-        <WorkspaceProvider agentTypeId="default" panels={panels} persistenceEnabled={false}>
-          <div className="h-[640px] w-full overflow-hidden rounded border border-border">
-            <DockviewShell
-              layout={{
-                version: "2.0",
-                groups: [
-                  { id: "sidebar", position: "left", panel: "filetree", locked: true, constraints: { minWidth: 200, maxWidthViewportRatio: 0.5 } },
-                  { id: "center", position: "center", panel: "editor", dynamic: true, placeholder: "editor", constraints: { minWidth: 300 } },
-                  { id: "right", position: "right", panel: "agent", collapsible: true, collapsedWidth: 40, constraints: { minWidth: 250 } },
-                ],
-              }}
-            />
-          </div>
-        </WorkspaceProvider>
-      )
-    case "file-tree-pane":
-      return (
         <MockWorkspaceApiProvider>
-          <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
-            <WorkspaceFilesProvider apiBaseUrl="">
-              <div className="h-[640px] w-full max-w-[1200px] overflow-hidden rounded-md border border-border">
-                <FileTreePane rootDir="." />
-              </div>
-            </WorkspaceFilesProvider>
+          <WorkspaceProvider agentTypeId="default" panels={panels} persistenceEnabled={false}>
+            <div className="h-[640px] w-full overflow-hidden rounded border border-border">
+              <DockviewShell
+                layout={{
+                  version: "2.0",
+                  groups: [
+                    { id: "sidebar", position: "left", panel: "filetree", locked: true, constraints: { minWidth: 200, maxWidthViewportRatio: 0.5 } },
+                    { id: "center", position: "center", panel: "editor", dynamic: true, placeholder: "editor", constraints: { minWidth: 300 } },
+                    { id: "right", position: "right", panel: "agent", collapsible: true, collapsedWidth: 40, constraints: { minWidth: 250 } },
+                  ],
+                }}
+              />
+            </div>
           </WorkspaceProvider>
         </MockWorkspaceApiProvider>
       )
@@ -345,6 +333,17 @@ function makeMockFetch(originalFetch: typeof fetch): typeof fetch {
     if (url.pathname === "/api/v1/agents/default/models" && method === "GET") {
       return jsonResponse({ models: [{ provider: "openai", id: "gpt-5.5", label: "GPT-5.5", available: true }] })
     }
+    if (url.pathname === "/api/v1/filesystems" && method === "GET") {
+      return jsonResponse({
+        filesystems: [{
+          filesystem: "user",
+          label: "Workspace",
+          rootDir: ".",
+          access: "readwrite",
+          capabilities: { read: true, list: true, search: true, write: true, delete: true, move: true, mkdir: true },
+        }],
+      })
+    }
     if (url.pathname === "/api/v1/tree" && method === "GET") {
       const path = url.searchParams.get("path") ?? "."
       return jsonResponse({ entries: ROOT_TREE[path as keyof typeof ROOT_TREE] ?? [] })
@@ -356,7 +355,12 @@ function makeMockFetch(originalFetch: typeof fetch): typeof fetch {
     if (url.pathname === "/api/v1/files/search" && method === "GET") {
       const query = (url.searchParams.get("q") ?? "").toLowerCase()
       const limit = Number(url.searchParams.get("limit") ?? "50")
-      return jsonResponse({ results: Object.keys(FILE_CONTENTS).filter((path) => path.toLowerCase().includes(query)).slice(0, limit) })
+      return jsonResponse({
+        resources: Object.keys(FILE_CONTENTS)
+          .filter((path) => path.toLowerCase().includes(query))
+          .slice(0, limit)
+          .map((path) => ({ filesystem: "user", path })),
+      })
     }
     if (url.pathname === "/api/v1/stat" && method === "GET") {
       const content = FILE_CONTENTS[url.searchParams.get("path") ?? ""]

@@ -89,7 +89,10 @@ const targets: ParityTarget[] = [
         workspace: deps.workspace,
         filesystemBindings: deps.filesystemBindings,
       })
-      await app.register(searchRoutes, { fileSearch: deps.fileSearch })
+      await app.register(searchRoutes, {
+        fileSearch: deps.fileSearch,
+        filesystemBindings: deps.filesystemBindings,
+      })
       await app.register(fsEventsRoutes, { workspace: deps.fsEventsWorkspace })
       await app.register(gitRoutes, {
         workspace: deps.workspace,
@@ -366,15 +369,17 @@ async function observeRoutes(target: ParityTarget) {
 }
 
 async function observeGitHelper(target: ParityTarget) {
+  const root = await createTempRoot()
+  await mkdir(join(root, 'src'), { recursive: true })
   const original = target.gitTestUtils.runGit
   target.gitTestUtils.runGit = vi.fn(async (args) => {
-    if (args[0] === 'rev-parse' && args[1] === '--show-toplevel') return '/repo'
+    if (args[0] === 'rev-parse' && args[1] === '--show-toplevel') return root
     if (args[0] === 'remote') return 'git@github.com:example/parity.git'
     if (args[0] === 'symbolic-ref') return 'main'
     throw new Error(`unexpected git args: ${args.join(' ')}`)
   })
   try {
-    return await target.resolveGitFileUrl('/repo', 'src/a b.ts')
+    return await target.resolveGitFileUrl(root, 'src/a b.ts')
   } finally {
     target.gitTestUtils.runGit = original
   }

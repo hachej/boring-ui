@@ -13,6 +13,7 @@ export {
 } from "./WorkspaceProvider"
 export type {
   WorkspaceProviderProps,
+  WorkspaceOpenFileHandler,
   FrontPluginHotReloadMode,
   ThemeProviderProps,
   WorkspaceBridgeContextValue,
