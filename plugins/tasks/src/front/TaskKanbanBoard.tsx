@@ -167,7 +167,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const [detailOpen, setDetailOpen] = useState(false)
   const detailTriggerRef = useRef<HTMLButtonElement | null>(null)
   const sourceRequestVersions = useRef(new Map<string, number>())
-  const pendingSourceIds = useRef(new Map<string, Set<string>>())
+  const pendingSourceIds = useRef(new Map<string, Map<string, number>>())
   const activeTaskMutationCounts = useRef(new Map<string, number>())
   const taskMutationVersions = useRef(new Map<string, number>())
   const stateRef = useRef(state)
@@ -240,13 +240,13 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     const requested = options.sourceIds
       ? adapters.filter((adapter) => options.sourceIds?.includes(adapter.id))
       : adapters
-    const pendingForWorkspace = pendingSourceIds.current.get(cacheKey) ?? new Set<string>()
+    const pendingForWorkspace = pendingSourceIds.current.get(cacheKey) ?? new Map<string, number>()
     pendingSourceIds.current.set(cacheKey, pendingForWorkspace)
     const requestVersions = new Map(requested.map((adapter) => {
       const sourceKey = JSON.stringify([cacheKey, adapter.id])
       const version = (sourceRequestVersions.current.get(sourceKey) ?? 0) + 1
       sourceRequestVersions.current.set(sourceKey, version)
-      pendingForWorkspace.add(adapter.id)
+      pendingForWorkspace.set(adapter.id, (pendingForWorkspace.get(adapter.id) ?? 0) + 1)
       return [adapter.id, version] as const
     }))
     setLoading(requested.length > 0 || pendingForWorkspace.size > 0)
@@ -259,10 +259,15 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
         return { ok: false as const, adapterId: adapter.id, cause }
       }
     }))
-    const versionIsCurrent = (adapterId: string) => sourceRequestVersions.current.get(JSON.stringify([cacheKey, adapterId])) === requestVersions.get(adapterId)
-    for (const entry of entries) {
-      if (versionIsCurrent(entry.adapterId)) pendingForWorkspace.delete(entry.adapterId)
+    for (const adapter of requested) {
+      const remaining = (pendingForWorkspace.get(adapter.id) ?? 1) - 1
+      if (remaining > 0) pendingForWorkspace.set(adapter.id, remaining)
+      else pendingForWorkspace.delete(adapter.id)
     }
+    if (pendingForWorkspace.size === 0) pendingSourceIds.current.delete(cacheKey)
+    if (activeCacheKeyRef.current !== cacheKey) return
+
+    const versionIsCurrent = (adapterId: string) => sourceRequestVersions.current.get(JSON.stringify([cacheKey, adapterId])) === requestVersions.get(adapterId)
     const currentEntries = entries.filter((entry) => (
       adapterIdsRef.current.has(entry.adapterId)
       && versionIsCurrent(entry.adapterId)

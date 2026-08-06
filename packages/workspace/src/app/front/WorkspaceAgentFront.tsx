@@ -1305,6 +1305,7 @@ export function WorkspaceAgentFront<
     leftOverlayParamsOwnerRef.current = null
     setLeftOverlayParams(undefined)
   }, [leftOverlay])
+  const activeLeftOverlayParams = leftOverlayParamsOwnerRef.current === leftOverlay ? leftOverlayParams : undefined
   useEffect(() => {
     const customOverlayActive = Boolean(leftOverlay && appLeftOverlayActions?.some((action) => action.id === leftOverlay))
     if (
@@ -2280,12 +2281,15 @@ export function WorkspaceAgentFront<
   }, [coordinateRemoteCreate, effectiveActiveSessionAgentTypeId, effectiveActiveSessionId, rawSwitch, selectedAgentTypeId])
   const deleteShellChatSession = useCallback(async (ref: { agentTypeId: string; sessionId: string }) => {
     try {
+      if (!sessionSourceIsCurrent()) {
+        return { success: false as const, reason: "open-failed" as const, message: "Chat session source changed before deletion." }
+      }
       await resolvedDelete(ref.sessionId, ref.agentTypeId)
       return { success: true as const }
     } catch (error) {
       return { success: false as const, reason: "open-failed" as const, message: error instanceof Error ? error.message : "Chat session deletion failed." }
     }
-  }, [resolvedDelete])
+  }, [resolvedDelete, sessionSourceIsCurrent])
   const shellCapabilitiesHost = useWorkspaceShellCapabilitiesHost({
     appLeftPaneCollapsed,
     workspaceId,
@@ -2395,7 +2399,7 @@ export function WorkspaceAgentFront<
     plugins: capturedPlugins,
     activeOverlay: leftOverlay,
     onClose: () => setLeftOverlay(null),
-    params: leftOverlayParams,
+    params: activeLeftOverlayParams,
     headerInsetStart: mobileShellActive,
     headerInsetEnd: !surfaceOpen,
   })

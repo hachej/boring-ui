@@ -34,14 +34,17 @@ export function isInboxAttentionBlocker(blocker: WorkspaceAttentionBlocker): boo
 
 export function attentionBlockerToInboxItem(blocker: WorkspaceAttentionBlocker): WorkspaceInboxItem {
   const updatedAt = blockerTimestamp(blocker)
-  const artifacts = blocker.inbox?.artifacts ?? (blocker.surfaceKind && blocker.target
+  const explicitArtifacts = blocker.inbox?.artifacts ?? []
+  const surfaceArtifact = blocker.surfaceKind && blocker.target
+    && !explicitArtifacts.some((artifact) => artifact.surfaceKind === blocker.surfaceKind && artifact.target === blocker.target)
     ? [{
         id: `${blocker.id}:surface`,
         surfaceKind: blocker.surfaceKind,
         target: blocker.target,
         title: blockerTitle(blocker),
       }]
-    : [])
+    : []
+  const artifacts = [...surfaceArtifact, ...explicitArtifacts]
 
   return {
     id: blocker.id,

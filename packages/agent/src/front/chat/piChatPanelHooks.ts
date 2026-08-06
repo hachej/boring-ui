@@ -42,11 +42,11 @@ export function useExternalRemotePiSession({
     [remoteSessionOptions],
   )
   useEffect(() => {
-    if (!enabled) return
     if (!sessionId) {
       setSession(undefined)
       return
     }
+    if (!enabled) return
     const next = (createRemoteSession ?? createRemotePiSession)({
       ...remoteSessionOptionsRef.current,
       sessionId,

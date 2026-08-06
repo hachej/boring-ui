@@ -14,6 +14,7 @@ interface BindingAttemptState {
 }
 
 const pendingByKey = new Map<string, PendingTaskChatBinding>()
+const clientsByKey = new Map<string, Pick<WorkspacePluginClient, "postJson">>()
 const attemptStates = new Map<string, BindingAttemptState>()
 const listeners = new Map<string, { prompt: EventListener; status: EventListener }>()
 const recoveryListeners = new Map<string, EventListener>()
@@ -84,6 +85,7 @@ function removePending(binding: PendingTaskChatBinding): void {
   writePending(readPending().filter((candidate) => bindingKey(candidate) !== key))
   stopWatching(key)
   stopRecovery(key)
+  clientsByKey.delete(key)
   const attemptState = attemptStates.get(key)
   if (attemptState?.timer) clearTimeout(attemptState.timer)
   attemptStates.delete(key)
@@ -97,7 +99,8 @@ async function bind(binding: PendingTaskChatBinding, client: Pick<WorkspacePlugi
   state.inFlight = true
   attemptStates.set(key, state)
   try {
-    await client.postJson("/api/boring-tasks/sessions/link", {
+    const activeClient = clientsByKey.get(key) ?? client
+    await activeClient.postJson("/api/boring-tasks/sessions/link", {
       adapterId: binding.adapterId,
       taskId: binding.taskId,
       agentTypeId: binding.agentTypeId,
@@ -130,10 +133,11 @@ async function bind(binding: PendingTaskChatBinding, client: Pick<WorkspacePlugi
 
 function armRecovery(binding: PendingTaskChatBinding, client: Pick<WorkspacePluginClient, "postJson">): void {
   const key = bindingKey(binding)
+  if (!clientsByKey.has(key)) clientsByKey.set(key, client)
   if (recoveryListeners.has(key) || typeof window === "undefined") return
   const recover: EventListener = () => {
     stopRecovery(key)
-    void bind(binding, client)
+    void bind(binding, clientsByKey.get(key) ?? client)
   }
   recoveryListeners.set(key, recover)
   window.addEventListener("online", recover)
@@ -142,11 +146,12 @@ function armRecovery(binding: PendingTaskChatBinding, client: Pick<WorkspacePlug
 
 function watch(binding: PendingTaskChatBinding, client: Pick<WorkspacePluginClient, "postJson">): void {
   const key = bindingKey(binding)
+  clientsByKey.set(key, client)
   stopRecovery(key)
   if (listeners.has(key)) return
   const accept = () => {
     stopWatching(key)
-    void bind(binding, client)
+    void bind(binding, clientsByKey.get(key) ?? client)
   }
   const prompt: EventListener = (event) => {
     const detail = (event as CustomEvent<WorkspaceChatPromptAcceptedDetail>).detail
@@ -168,6 +173,7 @@ export function resetPendingTaskChatBindingsForTests(): void {
   for (const key of [...recoveryListeners.keys()]) stopRecovery(key)
   for (const state of attemptStates.values()) if (state.timer) clearTimeout(state.timer)
   attemptStates.clear()
+  clientsByKey.clear()
   pendingByKey.clear()
 }
 

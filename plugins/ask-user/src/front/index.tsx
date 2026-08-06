@@ -44,7 +44,7 @@ function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, activeSessionId
   return <QuestionsRuntimeContext.Provider value={runtime}>{children}</QuestionsRuntimeContext.Provider>
 }
 
-type QuestionsPaneParams = { questionId?: string; sessionId?: string; exactQuestion?: boolean; __closeWorkbenchOnDone?: () => void }
+type QuestionsPaneParams = { questionId?: string; sessionId?: string; __closeWorkbenchOnDone?: () => void }
 type QuestionTarget = { sessionId: string; questionId: string }
 function hasExplicitTarget(params: QuestionsPaneParams | undefined): params is QuestionTarget {
   return typeof params?.sessionId === "string" && typeof params.questionId === "string"
@@ -193,7 +193,7 @@ export function createAskUserPlugin(options: CreateAskUserPluginOptions = {}): B
       id: `${ASK_USER_PLUGIN_ID}.surface`, kind: ASK_USER_SURFACE_KIND, source: "builtin",
       resolve(request) {
         const sessionId = typeof request.meta === "object" && request.meta && typeof (request.meta as { sessionId?: unknown }).sessionId === "string" ? (request.meta as { sessionId: string }).sessionId : undefined
-        return { component: ASK_USER_PANEL_ID, id: ASK_USER_PANEL_ID, title: ASK_USER_PANEL_TITLE, params: { questionId: request.target, sessionId, exactQuestion: true } }
+        return { component: ASK_USER_PANEL_ID, id: ASK_USER_PANEL_ID, title: ASK_USER_PANEL_TITLE, params: { questionId: request.target, sessionId } }
       },
     }],
   })
