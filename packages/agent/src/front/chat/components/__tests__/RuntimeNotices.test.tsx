@@ -49,13 +49,18 @@ describe('RuntimeNotices', () => {
     expect(onDismiss).toHaveBeenCalledWith('protocol-error')
   })
 
-  test.each(['chat-error', 'protocol-error', 'session-navigation-error'])(
-    'gives terminal chat error %s plain-language framing, collapsible details, and a reload action',
+  test.each(['chat-error', 'session-navigation-error'])(
+    'gives terminal chat error %s plain-language framing, collapsible details, and a reload action when history is empty',
     (id) => {
       const reload = vi.fn()
       vi.stubGlobal('location', { ...window.location, reload })
 
-      render(<RuntimeNotices notices={[{ id, level: 'error', text: 'ECONNRESET: socket hang up at fetchSession (remotePiSession.ts:42)' }]} />)
+      render(
+        <RuntimeNotices
+          notices={[{ id, level: 'error', text: 'ECONNRESET: socket hang up at fetchSession (remotePiSession.ts:42)' }]}
+          historyEmpty
+        />,
+      )
 
       const row = screen.getByText('Chat history unavailable').closest('[data-boring-agent-part="runtime-notice"]') as HTMLElement
       expect(row).toBeTruthy()
@@ -75,10 +80,55 @@ describe('RuntimeNotices', () => {
     },
   )
 
+  test('protocol-error never gets terminal treatment: it self-clears on reconnect and is routine noise', () => {
+    render(<RuntimeNotices notices={[{ id: 'protocol-error', level: 'error', text: 'Unsupported protocol version', dismissible: true }]} historyEmpty />)
+    expect(screen.queryByText('Chat history unavailable')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reload workspace' })).toBeNull()
+    expect(screen.getByText('Unsupported protocol version')).toBeTruthy()
+  })
+
+  test.each(['chat-error', 'session-navigation-error'])(
+    '%s keeps its raw headline (no terminal framing) when the transcript already has messages',
+    (id) => {
+      render(<RuntimeNotices notices={[{ id, level: 'error', text: 'model overloaded, please retry' }]} historyEmpty={false} />)
+      expect(screen.queryByText('Chat history unavailable')).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Reload workspace' })).toBeNull()
+      expect(screen.getByText('model overloaded, please retry')).toBeTruthy()
+    },
+  )
+
   test('non-terminal notices keep the raw text as the headline with no reload action', () => {
-    render(<RuntimeNotices notices={[{ id: 'connection-reconnecting', level: 'warning', text: 'Reconnecting to the agent session…' }]} />)
+    render(<RuntimeNotices notices={[{ id: 'connection-reconnecting', level: 'warning', text: 'Reconnecting to the agent session…' }]} historyEmpty />)
     expect(screen.queryByText('Chat history unavailable')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Reload workspace' })).toBeNull()
     expect(screen.getByText('Reconnecting to the agent session…')).toBeTruthy()
+  })
+
+  test('preserves an existing actionLabel/onAction instead of double-rendering a reload button', () => {
+    const onAction = vi.fn()
+    render(
+      <RuntimeNotices
+        notices={[{ id: 'chat-error', level: 'error', text: 'boom', actionLabel: 'Try again', dismissible: true }]}
+        onAction={onAction}
+        historyEmpty
+      />,
+    )
+    const row = screen.getByText('Chat history unavailable').closest('[data-boring-agent-part="runtime-notice"]') as HTMLElement
+    expect(within(row).queryByRole('button', { name: 'Reload workspace' })).toBeNull()
+    fireEvent.click(within(row).getByRole('button', { name: 'Try again' }))
+    expect(onAction).toHaveBeenCalledWith('chat-error')
+  })
+
+  test('preserves a host renderAction instead of double-rendering a reload button', () => {
+    render(
+      <RuntimeNotices
+        notices={[{ id: 'session-navigation-error', level: 'error', text: 'boom' }]}
+        renderAction={() => <button type="button">Host action</button>}
+        historyEmpty
+      />,
+    )
+    const row = screen.getByText('Chat history unavailable').closest('[data-boring-agent-part="runtime-notice"]') as HTMLElement
+    expect(within(row).queryByRole('button', { name: 'Reload workspace' })).toBeNull()
+    expect(within(row).getByRole('button', { name: 'Host action' })).toBeTruthy()
   })
 })

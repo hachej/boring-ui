@@ -7,7 +7,7 @@ import { Button } from '@hachej/boring-ui-kit'
 import { cn } from '../../lib'
 import type { PiChatRuntimeNotice } from '../pi/piChatReducer'
 import { noticeIconClass, noticeSurfaceClass, noticeTextClass } from './noticeStyles'
-import { isTerminalChatErrorId } from './terminalChatErrors'
+import { isTerminalChatErrorNotice } from './terminalChatErrors'
 
 export type RuntimeNoticeKind = 'reconnect' | 'protocol' | 'warmup' | 'plugin' | 'retry' | 'generic'
 
@@ -24,9 +24,15 @@ export interface RuntimeNoticesProps extends Omit<HTMLAttributes<HTMLDivElement>
    * onAction button. Lets a host attach a recovery action for a specific error
    * code without this component knowing the code. */
   renderAction?: (notice: RuntimeNotice) => ReactNode
+  /** True when the transcript has no messages. Gates the terminal-error
+   * presentation (plain-language title, collapsible details, reload action):
+   * a terminal-error id like 'chat-error' can also carry a mid-conversation
+   * turn failure that survived a snapshot resync, and that case must keep its
+   * raw headline instead of claiming "history unavailable". */
+  historyEmpty?: boolean
 }
 
-export const RuntimeNotices = memo(({ notices, onDismiss, onAction, renderAction, className, ...props }: RuntimeNoticesProps) => {
+export const RuntimeNotices = memo(({ notices, onDismiss, onAction, renderAction, historyEmpty, className, ...props }: RuntimeNoticesProps) => {
   if (notices.length === 0) return null
 
   return (
@@ -36,7 +42,14 @@ export const RuntimeNotices = memo(({ notices, onDismiss, onAction, renderAction
       {...props}
     >
       {notices.map((notice) => (
-        <RuntimeNoticeRow key={notice.id} notice={notice} onDismiss={onDismiss} onAction={onAction} renderAction={renderAction} />
+        <RuntimeNoticeRow
+          key={notice.id}
+          notice={notice}
+          onDismiss={onDismiss}
+          onAction={onAction}
+          renderAction={renderAction}
+          historyEmpty={historyEmpty ?? false}
+        />
       ))}
     </div>
   )
@@ -49,18 +62,31 @@ interface RuntimeNoticeRowProps {
   onDismiss?: (id: string) => void
   onAction?: (id: string) => void
   renderAction?: (notice: RuntimeNotice) => ReactNode
+  historyEmpty: boolean
 }
 
-function RuntimeNoticeRow({ notice, onDismiss, onAction, renderAction }: RuntimeNoticeRowProps) {
+function RuntimeNoticeRow({ notice, onDismiss, onAction, renderAction, historyEmpty }: RuntimeNoticeRowProps) {
   const kind = inferNoticeKind(notice)
   const Icon = iconForNotice(kind, notice.level)
   const actionLabel = notice.actionLabel ?? defaultActionLabel(kind)
   const hostAction = renderAction?.(notice)
-  // A terminal chat error means the transcript itself failed to load (session
-  // lookup, history hydrate, protocol desync) rather than transient noise.
-  // These get plain-language framing, collapsible technical details, and an
-  // explicit recovery action instead of the raw server error string.
-  const isTerminalError = isTerminalChatErrorId(notice.id)
+  // A terminal chat error means the transcript itself failed to load, with no
+  // message history to show. See terminalChatErrors.ts for why this needs
+  // both the id check and the empty-history gate.
+  const isTerminalError = isTerminalChatErrorNotice(notice.id, historyEmpty)
+  // Never stack a second action next to a host- or notice-supplied one: prefer
+  // whichever the host/notice already set, and only fall back to the built-in
+  // reload action when neither exists.
+  const explicitAction = actionLabel && onAction
+    ? <Button type="button" variant="ghost" size="sm" onClick={() => onAction(notice.id)}>{actionLabel}</Button>
+    : null
+  const primaryAction = hostAction
+    ?? explicitAction
+    ?? (isTerminalError ? (
+      <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => window.location.reload()}>
+        Reload workspace
+      </Button>
+    ) : null)
 
   return (
     <div
@@ -92,17 +118,7 @@ function RuntimeNoticeRow({ notice, onDismiss, onAction, renderAction }: Runtime
           <p className={noticeTextClass()}>{notice.text}</p>
         )}
       </div>
-      {hostAction ?? null}
-      {isTerminalError ? (
-        <Button type="button" variant="outline" size="sm" onClick={() => window.location.reload()}>
-          Reload workspace
-        </Button>
-      ) : null}
-      {!isTerminalError && actionLabel && onAction ? (
-        <Button type="button" variant="ghost" size="sm" onClick={() => onAction(notice.id)}>
-          {actionLabel}
-        </Button>
-      ) : null}
+      {primaryAction}
       {notice.dismissible && onDismiss ? (
         <Button
           type="button"

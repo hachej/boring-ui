@@ -77,11 +77,12 @@ export function PiConversationSurface({
 }: PiConversationSurfaceProps) {
   const messageItems = buildMessageRenderItems(messages)
   const total = messageItems.length
-  // A terminal error (history failed to load) already explains the empty
-  // transcript below via RuntimeNoticeMessages. Rendering the "What should we
-  // work on?" hero or a loading skeleton next to it reads as contradictory,
-  // so let the error notice stand alone.
-  const terminalError = hasTerminalChatError(runtimeNotices)
+  const historyEmpty = messages.length === 0
+  // A terminal error (history failed to load, no messages present) already
+  // explains the empty transcript below via RuntimeNoticeMessages. Rendering
+  // the "What should we work on?" hero or a loading skeleton next to it reads
+  // as contradictory, so let the error notice stand alone.
+  const terminalError = hasTerminalChatError(runtimeNotices, historyEmpty)
 
   const [visibleCount, setVisibleCount] = useState(TRANSCRIPT_WINDOW)
   // Start each session at the latest window rather than inheriting a large
@@ -146,7 +147,7 @@ export function PiConversationSurface({
             onMentionActivate={onMentionActivate}
           />
         ))}
-        <RuntimeNoticeMessages notices={runtimeNotices} onDismiss={onDismissNotice} renderAction={renderNoticeAction} />
+        <RuntimeNoticeMessages notices={runtimeNotices} onDismiss={onDismissNotice} renderAction={renderNoticeAction} historyEmpty={historyEmpty} />
       </ConversationContent>
       <ConversationScrollButton />
     </Conversation>
