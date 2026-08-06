@@ -18,7 +18,7 @@ export interface LiveTranscriptServerPluginOptions {
   /** Default is WhisperLiveKit; Kyutai uses the moshi-server MessagePack protocol. */
   upstreamProvider?: "whisperlivekit" | "kyutai"
   upstreamBearerToken?: string
-  /** Optional WhisperLiveKit `/asr` endpoint used only to label `/live` Kyutai words. */
+  /** Optional raw Sortformer `/v1/diarize` endpoint used only to label `/live` Kyutai words. */
   diarizerUrl?: string
   diarizerBearerToken?: string
   setupTimeoutMs?: number
@@ -34,7 +34,7 @@ export interface LiveTranscriptServerPluginOptions {
 
 export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPluginOptions): WorkspaceServerPlugin {
   validateLocalAuthority(options.authority, options.upstreamUrl, options.upstreamProvider)
-  if (options.diarizerUrl) validateLocalAuthority(options.authority, options.diarizerUrl, "whisperlivekit")
+  if (options.diarizerUrl) validateLocalAuthority(options.authority, options.diarizerUrl, "sortformer")
   const manager = new LiveTranscriptManager({
     dispatcherResolver: options.dispatcherResolver,
     agentTypeId: options.agentTypeId,
@@ -213,6 +213,7 @@ function strictEmptyBody(value: unknown): void {
 export { LiveTranscriptManager } from "./manager"
 export { LiveTranscriptProjector, renderTranscriptMarkdown } from "./projector"
 export { KyutaiConnection, resamplePcm16ToFloat32 } from "./kyutai"
+export { parseSortformerMessage, SortformerConnection } from "./sortformer"
 export { KyutaiComposerManager } from "./kyutaiComposer"
 export { parseWhisperLiveKitSnapshot, WhisperLiveKitConnection } from "./whisperLiveKit"
 export { LiveTranscriptError } from "./errors"

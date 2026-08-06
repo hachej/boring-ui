@@ -15,7 +15,7 @@ export function isLoopbackHost(host: string): boolean {
 export function validateLocalAuthority(
   authority: LiveTranscriptAuthority,
   upstreamUrl: string,
-  provider: "whisperlivekit" | "kyutai" = "whisperlivekit",
+  provider: "whisperlivekit" | "kyutai" | "sortformer" = "whisperlivekit",
 ): void {
   let origin: URL
   let upstream: URL
@@ -32,7 +32,7 @@ export function validateLocalAuthority(
     || !["http:", "https:"].includes(origin.protocol)
     || !isLoopbackHost(upstream.hostname)
     || !["ws:", "wss:"].includes(upstream.protocol)
-    || upstream.pathname !== (provider === "kyutai" ? "/api/asr-streaming" : "/asr")
+    || upstream.pathname !== (provider === "kyutai" ? "/api/asr-streaming" : provider === "sortformer" ? "/v1/diarize" : "/asr")
     || upstream.username
     || upstream.password
   ) {
