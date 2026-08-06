@@ -53,6 +53,8 @@ export function useTaskSessionLinks(pluginClient: WorkspacePluginClient): Readon
   useEffect(() => {
     if (typeof EventSource === "undefined") return
     const endpoint = pluginClient.apiBaseUrl.replace(/\/$/, "")
+    // Streaming contract: hosts authenticate this same-origin native EventSource with
+    // cookies. workspaceId is only a routing selector and is re-authorized server-side.
     const query = pluginClient.workspaceId ? `?workspaceId=${encodeURIComponent(pluginClient.workspaceId)}` : ""
     const source = new EventSource(`${endpoint}/api/boring-tasks/session-links/events${query}`, { withCredentials: true })
     source.addEventListener("snapshot", (event) => {

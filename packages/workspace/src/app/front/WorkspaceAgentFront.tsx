@@ -205,6 +205,8 @@ export interface WorkspaceAgentFrontProps<
   agentTypeId: string
   /** Advertise and persist a separate Agent target for future session creation. */
   showAgentSelector?: boolean
+  /** Dev-only HTTP/1.1 connection budgeting for the standalone playground. */
+  donateActiveChatTransportToDetached?: boolean
   chatPanel?: ComponentType<WorkspaceChatPanelProps>
   useSessions?: UseWorkspaceAgentSessions<TSession>
   requestHeaders?: Record<string, string>
@@ -640,6 +642,7 @@ export function WorkspaceAgentFront<
   workspaceId,
   agentTypeId,
   showAgentSelector = false,
+  donateActiveChatTransportToDetached = false,
   chatPanel: chatPanelProp,
   useSessions: useSessionsProp,
   requestHeaders,
@@ -2230,7 +2233,9 @@ export function WorkspaceAgentFront<
       const createdAgentTypeId = typeof (session as { agentTypeId?: unknown }).agentTypeId === "string"
         ? (session as { agentTypeId: string }).agentTypeId
         : selectedAgentTypeId
-      if (previousActiveId && previousActiveId !== sessionId) rawSwitch(previousActiveId, previousAgentTypeId)
+      if (previousActiveId && (previousActiveId !== sessionId || previousAgentTypeId !== createdAgentTypeId)) {
+        rawSwitch(previousActiveId, previousAgentTypeId)
+      }
       return { success: true as const, ref: { agentTypeId: createdAgentTypeId, sessionId } }
     } catch (error) {
       return { success: false as const, reason: "create-failed" as const, message: error instanceof Error ? error.message : "Chat session creation failed." }
@@ -2385,11 +2390,12 @@ export function WorkspaceAgentFront<
       headerInsetEnd={!surfaceOpen}
     />
   ) : null)
+  const detachedTransportDonationActive = donateActiveChatTransportToDetached && shellCapabilitiesHost.floatingChatOpen
   const streamDonorPaneId = activeChatPaneId ?? chatPanes[0]?.id
-  const renderedCenterParams = shellCapabilitiesHost.floatingChatOpen && chatPanes.length === 0
+  const renderedCenterParams = detachedTransportDonationActive && chatPanes.length === 0
     ? { ...centerParams, sessionStreamingEnabled: false }
     : centerParams
-  const renderedChatPanes = shellCapabilitiesHost.floatingChatOpen
+  const renderedChatPanes = detachedTransportDonationActive
     ? chatPanes.map((pane) => pane.id === streamDonorPaneId
       ? { ...pane, params: { ...(pane.params ?? centerParams), sessionStreamingEnabled: false } }
       : pane)

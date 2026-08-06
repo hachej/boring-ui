@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { waitFor } from "@testing-library/react"
 import { WorkspacePluginClientRequestError, type WorkspacePluginClient } from "@hachej/boring-workspace"
 import { WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT } from "@hachej/boring-workspace/plugin"
-import { resumePendingTaskChatBindings } from "./pendingTaskChatBindings"
+import { registerPendingTaskChatBinding, resetPendingTaskChatBindingsForTests, resumePendingTaskChatBindings } from "./pendingTaskChatBindings"
 
 const storageKey = "boring-tasks:pending-chat-bindings:v1"
 const pending = {
@@ -28,10 +28,24 @@ function client(turnCount: number) {
 
 beforeEach(() => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
+  resetPendingTaskChatBindingsForTests()
   window.sessionStorage.clear()
 })
 
 describe("pending task chat binding recovery", () => {
+  it("binds accepted in-memory intent when sessionStorage is unavailable", async () => {
+    const api = client(0)
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("storage unavailable") })
+    registerPendingTaskChatBinding(pending, api.value)
+
+    window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
+      detail: { agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "accepted" },
+    }))
+
+    await waitFor(() => expect(api.postJson).toHaveBeenCalledOnce())
+  })
+
   it("binds a persisted intent after reload when the exact session already has a turn", async () => {
     window.sessionStorage.setItem(storageKey, JSON.stringify([pending]))
     const api = client(1)

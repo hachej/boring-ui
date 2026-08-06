@@ -301,6 +301,7 @@ export function WorkspaceShell() {
       workspaceId={showcase ? "default" : workspaceId}
       agentTypeId={defaultAgentTypeId}
       showAgentSelector={factoryAgents && !showcase}
+      donateActiveChatTransportToDetached
       apiBaseUrl=""
       persistenceEnabled
       providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${multiFilesystem ? "multi-fs:" : ""}${workspaceId}`}

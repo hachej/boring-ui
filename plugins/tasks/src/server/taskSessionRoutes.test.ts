@@ -301,22 +301,29 @@ describe("task session link routes", () => {
         },
       },
     })
-    const response = await handlers.get("/api/boring-tasks/sessions/handovers")!({ body: { sessionIds: ["s1", "cleared", "denied"] } }, reply())
+    const response = await handlers.get("/api/boring-tasks/sessions/handovers")!({ body: { sessions: [
+      { agentTypeId: "beta", sessionId: "s1" },
+      { agentTypeId: "alpha", sessionId: "cleared" },
+      { agentTypeId: "alpha", sessionId: "denied" },
+    ] } }, reply())
     expect(response).toEqual({
       ok: true,
-      matches: [{ sessionId: "s1", handover: {
+      matches: [{ agentTypeId: "beta", sessionId: "s1", handover: {
         id: "handover:latest-terminal",
         runId: "latest",
         terminalEntryId: "latest-terminal",
         createdAt: "2026-01-02T00:00:00.000Z",
         artifacts: [artifact("latest")],
       } }],
-      omittedSessionIds: ["cleared", "denied"],
+      omittedSessions: [
+        { agentTypeId: "alpha", sessionId: "cleared" },
+        { agentTypeId: "alpha", sessionId: "denied" },
+      ],
     })
     expect(JSON.stringify(response)).not.toContain("failed\"")
     expect(readSessionRunDetails).toHaveBeenCalledWith(
       { workspaceId: "workspace-a", userId: "user-a" },
-      { agentTypeId: "alpha", sessionId: "s1" },
+      { agentTypeId: "beta", sessionId: "s1" },
       ["boring.handover.operation", "boring.handover.operations"],
       expect.objectContaining({ request: expect.any(Object) }),
     )
@@ -325,7 +332,7 @@ describe("task session link routes", () => {
   it("bounds and strictly validates reverse session resolution", async () => {
     const handlers = await routes({ trusted: undefined })
     const handoverResponse = reply()
-    await handlers.get("/api/boring-tasks/sessions/handovers")!({ body: { sessionIds: Array.from({ length: 21 }, (_, index) => `s-${index}`) } }, handoverResponse)
+    await handlers.get("/api/boring-tasks/sessions/handovers")!({ body: { sessions: Array.from({ length: 21 }, (_, index) => ({ agentTypeId: "alpha", sessionId: `s-${index}` })) } }, handoverResponse)
     expect(handoverResponse).toMatchObject({ statusCode: 400, payload: { code: TASK_ERROR_CODES.SESSION_INVALID_BODY } })
     for (const body of [
       { sessionIds: [], extra: true },

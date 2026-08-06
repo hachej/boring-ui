@@ -6,6 +6,7 @@ import type { WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin
 import type { BoringTaskCard, BoringTaskSessionLink, SessionHandoverResolution, SessionHandoverSummary } from "../shared"
 
 export interface TaskSessionActivity {
+  agentTypeId: string
   sessionId: string
   title: string
   updatedAt: string
@@ -25,10 +26,14 @@ export interface TaskSessionRow {
   status: TaskSessionDisplayStatus
 }
 
-interface ActivityResponse { sessions: TaskSessionActivity[]; omittedSessionIds: string[] }
+interface ActivityResponse { sessions: TaskSessionActivity[]; omittedSessionKeys: string[] }
 interface AddressedSessionState {
   summary?: { title?: unknown; updatedAt?: unknown }
   state?: { status?: unknown; queue?: { followUps?: unknown[] }; error?: unknown }
+}
+
+function addressedSessionKey(agentTypeId: string, sessionId: string): string {
+  return JSON.stringify([agentTypeId, sessionId])
 }
 
 function statusFor(activity: TaskSessionActivity | undefined): TaskSessionDisplayStatus {
@@ -42,14 +47,15 @@ function statusFor(activity: TaskSessionActivity | undefined): TaskSessionDispla
 export function buildTaskSessionRows(
   links: TaskSessionLinkDisclosure[],
   sessions: TaskSessionActivity[],
-  omittedSessionIds: string[],
+  omittedSessionKeys: string[],
 ): TaskSessionRow[] {
-  const activityById = new Map(sessions.map((activity) => [activity.sessionId, activity]))
-  const omitted = new Set(omittedSessionIds)
+  const activityById = new Map(sessions.map((activity) => [addressedSessionKey(activity.agentTypeId, activity.sessionId), activity]))
+  const omitted = new Set(omittedSessionKeys)
   return links.map((link): TaskSessionRow => {
     const sessionId = link.sessionId
-    const activity = sessionId ? activityById.get(sessionId) : undefined
-    const available = Boolean(sessionId && !omitted.has(sessionId))
+    const key = addressedSessionKey(link.agentTypeId, sessionId)
+    const activity = activityById.get(key)
+    const available = Boolean(sessionId && !omitted.has(key))
     return { link, activity: available ? activity : undefined, available, status: statusFor(available ? activity : undefined) }
   }).sort((left, right) => {
     if (left.available !== right.available) return left.available ? -1 : 1
@@ -83,7 +89,7 @@ export function TaskSessionDisclosure({
 }) {
   const [expanded, setExpanded] = useState(false)
   const links = useMemo<TaskSessionLinkDisclosure[]>(() => [...(sessionLinks ?? [])], [sessionLinks])
-  const [activity, setActivity] = useState<ActivityResponse>({ sessions: [], omittedSessionIds: [] })
+  const [activity, setActivity] = useState<ActivityResponse>({ sessions: [], omittedSessionKeys: [] })
   const [handovers, setHandovers] = useState<ReadonlyMap<string, SessionHandoverSummary>>(() => new Map())
   const [unavailableArtifacts, setUnavailableArtifacts] = useState<ReadonlyMap<string, ReadonlySet<string>>>(() => new Map())
   const [error, setError] = useState<string | null>(null)
@@ -102,11 +108,11 @@ export function TaskSessionDisclosure({
   const loadActivity = useCallback(async (nextLinks: TaskSessionLinkDisclosure[], isCurrent: () => boolean) => {
     const sessionIds = nextLinks.flatMap((link) => link.sessionId ? [link.sessionId] : [])
     if (sessionIds.length === 0) {
-      if (isCurrent()) setActivity({ sessions: [], omittedSessionIds: [] })
+      if (isCurrent()) setActivity({ sessions: [], omittedSessionKeys: [] })
       return
     }
     const sessions: TaskSessionActivity[] = []
-    const omittedSessionIds: string[] = []
+    const omittedSessionKeys: string[] = []
     await Promise.all(nextLinks.slice(0, 50).map(async (link) => {
       if (!link.sessionId) return
       try {
@@ -120,6 +126,7 @@ export function TaskSessionDisclosure({
             ? snapshot.summary.updatedAt
             : new Date(0).toISOString()
         sessions.push({
+          agentTypeId: link.agentTypeId,
           sessionId: link.sessionId,
           title: typeof snapshot.summary?.title === "string" ? snapshot.summary.title : link.sessionId,
           updatedAt,
@@ -130,11 +137,11 @@ export function TaskSessionDisclosure({
           hasError: snapshot.state?.error != null,
         })
       } catch {
-        omittedSessionIds.push(link.sessionId)
+        omittedSessionKeys.push(addressedSessionKey(link.agentTypeId, link.sessionId))
       }
     }))
     if (!isCurrent()) return
-    setActivity({ sessions, omittedSessionIds })
+    setActivity({ sessions, omittedSessionKeys })
     setError(null)
   }, [pluginClient])
 
@@ -145,10 +152,9 @@ export function TaskSessionDisclosure({
       return
     }
     try {
-      const response = await pluginClient.postJson<{ ok: true } & SessionHandoverResolution>("/api/boring-tasks/sessions/handovers", {
-        sessionIds: Array.from(new Set(sessionIds.slice(0, 20))),
-      })
-      if (isCurrent()) setHandovers(new Map(response.matches.map((match) => [match.sessionId, match.handover] as const)))
+      const sessions = nextLinks.slice(0, 20).map((link) => ({ agentTypeId: link.agentTypeId, sessionId: link.sessionId }))
+      const response = await pluginClient.postJson<{ ok: true } & SessionHandoverResolution>("/api/boring-tasks/sessions/handovers", { sessions })
+      if (isCurrent()) setHandovers(new Map(response.matches.map((match) => [addressedSessionKey(match.agentTypeId, match.sessionId), match.handover] as const)))
     } catch {
       if (isCurrent()) setHandovers(new Map())
     }
@@ -176,8 +182,9 @@ export function TaskSessionDisclosure({
         && (typeof detail.agentTypeId !== "string" || link.agentTypeId === detail.agentTypeId))
       if (!linked) return
       setActivity((current) => {
-        const existing = current.sessions.find((session) => session.sessionId === detail.sessionId)
+        const existing = current.sessions.find((session) => session.sessionId === detail.sessionId && session.agentTypeId === linked.agentTypeId)
         const next: TaskSessionActivity = {
+          agentTypeId: linked.agentTypeId,
           sessionId: detail.sessionId as string,
           title: existing?.title ?? detail.sessionId as string,
           updatedAt: existing?.updatedAt ?? linked.createdAt,
@@ -187,7 +194,7 @@ export function TaskSessionDisclosure({
         }
         return {
           ...current,
-          sessions: [...current.sessions.filter((session) => session.sessionId !== detail.sessionId), next],
+          sessions: [...current.sessions.filter((session) => session.sessionId !== detail.sessionId || session.agentTypeId !== linked.agentTypeId), next],
         }
       })
     }
@@ -197,7 +204,7 @@ export function TaskSessionDisclosure({
   }, [expanded, links])
 
   const rows = useMemo(
-    () => buildTaskSessionRows(links, activity.sessions, activity.omittedSessionIds),
+    () => buildTaskSessionRows(links, activity.sessions, activity.omittedSessionKeys),
     [activity, links],
   )
 
@@ -227,12 +234,12 @@ export function TaskSessionDisclosure({
       await pluginClient.postJson("/api/boring-tasks/sessions/unlink", { linkId: row.link.id })
       setActivity((current) => ({
         sessions: current.sessions.filter((session) => session.sessionId !== row.link.sessionId),
-        omittedSessionIds: current.omittedSessionIds.filter((sessionId) => sessionId !== row.link.sessionId),
+        omittedSessionKeys: current.omittedSessionKeys.filter((key) => key !== addressedSessionKey(row.link.agentTypeId, row.link.sessionId)),
       }))
       setHandovers((current) => {
         if (!row.link.sessionId) return current
         const next = new Map(current)
-        next.delete(row.link.sessionId)
+        next.delete(addressedSessionKey(row.link.agentTypeId, row.link.sessionId))
         return next
       })
       emitWorkspaceTaskProvenanceChanged()
@@ -263,7 +270,7 @@ export function TaskSessionDisclosure({
             const timestamp = row.activity?.updatedAt ?? row.link.createdAt
             const fullTimestamp = Number.isFinite(Date.parse(timestamp)) ? new Date(timestamp).toLocaleString() : timestamp
             const sessionId = row.link.sessionId
-            const handover = sessionId ? handovers.get(sessionId) : undefined
+            const handover = sessionId ? handovers.get(addressedSessionKey(row.link.agentTypeId, sessionId)) : undefined
             return (
               <div key={row.link.id} className="rounded-lg">
               <div className="group/session relative flex min-w-0 items-center gap-1 rounded-lg px-1.5 py-1.5 hover:bg-muted/50 focus-within:bg-muted/50">
