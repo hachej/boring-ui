@@ -94,11 +94,9 @@ export function TaskSessionDisclosure({
   const [unavailableArtifacts, setUnavailableArtifacts] = useState<ReadonlyMap<string, ReadonlySet<string>>>(() => new Map())
   const [error, setError] = useState<string | null>(null)
   const sourceKey = JSON.stringify([task.adapterId, task.id])
-  const enrichedLinksKey = useRef<string | null>(null)
   const requestScope = useRef({ sourceKey, version: 0 })
   if (requestScope.current.sourceKey !== sourceKey) {
     requestScope.current = { sourceKey, version: requestScope.current.version + 1 }
-    enrichedLinksKey.current = null
   }
   const beginRequest = useCallback(() => {
     const version = ++requestScope.current.version
@@ -168,10 +166,7 @@ export function TaskSessionDisclosure({
   useEffect(() => () => { requestScope.current.version += 1 }, [])
 
   useEffect(() => {
-    const nextKey = JSON.stringify(links.map((link) => [link.id, link.agentTypeId, link.sessionId]))
-    if (!expanded || enrichedLinksKey.current === nextKey) return
-    enrichedLinksKey.current = nextKey
-    void refreshDetails(links)
+    if (expanded) void refreshDetails(links)
   }, [expanded, links, refreshDetails])
 
   useEffect(() => {
@@ -233,7 +228,9 @@ export function TaskSessionDisclosure({
     try {
       await pluginClient.postJson("/api/boring-tasks/sessions/unlink", { linkId: row.link.id })
       setActivity((current) => ({
-        sessions: current.sessions.filter((session) => session.sessionId !== row.link.sessionId),
+        sessions: current.sessions.filter((session) => (
+          session.sessionId !== row.link.sessionId || session.agentTypeId !== row.link.agentTypeId
+        )),
         omittedSessionKeys: current.omittedSessionKeys.filter((key) => key !== addressedSessionKey(row.link.agentTypeId, row.link.sessionId)),
       }))
       setHandovers((current) => {
@@ -314,14 +311,15 @@ export function TaskSessionDisclosure({
               {handover ? (
                 <HumanArtifactList
                   artifacts={handover.artifacts}
-                  unavailableArtifactIds={unavailableArtifacts.get(sessionId!)}
+                  unavailableArtifactIds={unavailableArtifacts.get(addressedSessionKey(row.link.agentTypeId, sessionId!))}
                   className="border-t border-border/50 px-1 pb-1 pt-1"
                   onOpen={(artifact) => {
                     const result = openHumanArtifact(shell, artifact, { sessionId: sessionId! })
                     if (result.success) return
                     setUnavailableArtifacts((current) => {
                       const next = new Map(current)
-                      next.set(sessionId!, new Set([...(current.get(sessionId!) ?? []), artifact.id]))
+                      const sessionKey = addressedSessionKey(row.link.agentTypeId, sessionId!)
+                      next.set(sessionKey, new Set([...(current.get(sessionKey) ?? []), artifact.id]))
                       return next
                     })
                   }}

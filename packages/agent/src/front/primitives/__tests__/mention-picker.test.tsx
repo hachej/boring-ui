@@ -8,7 +8,7 @@ describe('MentionPicker', () => {
     vi.useRealTimers()
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: true,
-      json: async () => ({ results: ['README.md'] }),
+      json: async () => ({ resources: [{ filesystem: 'user', path: 'README.md' }] }),
     })))
   })
 
@@ -45,7 +45,7 @@ describe('MentionPicker', () => {
   it('uses injected request plumbing for remote scoped file search', async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ results: ['src/app.tsx'] }),
+      json: async () => ({ resources: [{ filesystem: 'user', path: 'src/app.tsx' }] }),
     })) as unknown as typeof globalThis.fetch
 
     render(
@@ -79,7 +79,7 @@ describe('MentionPicker', () => {
   it('does not duplicate an explicit storage-scope header with different casing', async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ results: ['src/scoped.ts'] }),
+      json: async () => ({ resources: [{ filesystem: 'user', path: 'src/scoped.ts' }] }),
     })) as unknown as typeof globalThis.fetch
 
     render(

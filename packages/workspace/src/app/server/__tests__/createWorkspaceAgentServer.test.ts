@@ -212,6 +212,53 @@ describe("createWorkspaceAgentServer local Pi session principal", () => {
 })
 
 describe("Workspace direct Environment projection", () => {
+  test("projects host filesystem bindings into Environment routes and Agent tools", async () => {
+    const getFilesystemBindings = vi.fn(async () => [])
+    mockResolvedRuntimeScopeOnce(async (resolved) => {
+      const scope = resolved as {
+        environment: {
+          resolveFilesystemBindings(input: {
+            verifiedClaim: { workspaceScopeId: string; authSubjectId: string }
+            requestId: string
+          }): Promise<unknown>
+        }
+        getFilesystemBindings(input: {
+          scope: { workspaceScopeId: string; authSubjectId: string }
+          sessionId?: string
+          requestId: string
+        }): Promise<unknown>
+      }
+      const claim = { workspaceScopeId: "default", authSubjectId: "local" }
+      await scope.environment.resolveFilesystemBindings({ verifiedClaim: claim, requestId: "route-request" })
+      await scope.getFilesystemBindings({ scope: claim, sessionId: "session-a", requestId: "tool-request" })
+    })
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("boring-workspace-filesystem-bindings-"),
+      logger: false,
+      provisionWorkspace: false,
+      externalPlugins: false,
+      getFilesystemBindings,
+    })
+    try {
+      expect(getFilesystemBindings).toHaveBeenNthCalledWith(1, {
+        workspaceId: "default",
+        workspaceRoot: expect.any(String),
+        userId: "local",
+        requestId: "route-request",
+      })
+      expect(getFilesystemBindings).toHaveBeenNthCalledWith(2, {
+        workspaceId: "default",
+        workspaceRoot: expect.any(String),
+        sessionId: "session-a",
+        userId: "local",
+        requestId: "tool-request",
+      })
+    } finally {
+      await app.close()
+    }
+  })
+
   test("ignores lazy Agent chat state when the Host-owned Environment is ready and releases its lease", async () => {
     const release = vi.fn()
     agentServerMock.acquireEnvironment.mockResolvedValueOnce({

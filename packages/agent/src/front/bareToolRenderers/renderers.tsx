@@ -32,7 +32,7 @@ export interface ToolPart {
 }
 
 export type ToolRenderablePart = ToolPart | BoringToolCallPart | unknown
-export type ToolRenderer = (part: ToolPart) => ReactNode
+export type ToolRenderer = ((part: ToolPart) => ReactNode) & { presentation?: "inline" }
 export type ToolRendererOverrides = Partial<Record<string, ToolRenderer>>
 
 function asRecord(v: unknown): Record<string, unknown> {

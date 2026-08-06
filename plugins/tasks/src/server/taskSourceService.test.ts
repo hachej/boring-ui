@@ -140,8 +140,9 @@ describe("task source service", () => {
     const linkStore = {
       list: vi.fn(async () => [link]),
       listBySessionIds: vi.fn(async (sessionIds: readonly string[]) => new Map(sessionIds.map((sessionId) => [sessionId, sessionId === "native" ? [link] : []]))),
-      link: vi.fn(async () => { events.push("link"); return link }),
-      unlink: vi.fn(async () => link),
+      snapshotLinks: vi.fn(async () => []),
+      link: vi.fn(async () => { events.push("link"); return { link, snapshot: { adapterId: link.adapterId, taskId: link.taskId, links: [link] }, changed: true } }),
+      unlink: vi.fn(async () => ({ link, snapshot: { adapterId: link.adapterId, taskId: link.taskId, links: [] }, changed: true })),
     }
     const service = createTaskSourceService(createTaskSourceRegistry([source({
       getTaskCard: async (_ctx, taskId) => {
@@ -181,6 +182,7 @@ describe("task source service", () => {
       linkStore: {
         list: vi.fn(async () => []),
         listBySessionIds,
+        snapshotLinks: vi.fn(async () => []),
         link: vi.fn(),
         unlink: vi.fn(),
       },

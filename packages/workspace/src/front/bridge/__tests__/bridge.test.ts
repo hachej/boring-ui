@@ -145,6 +145,24 @@ describe("createBridge", () => {
       expect(handler).toHaveBeenCalledWith({ path: "/company/hr/policy.md", mode: "view", filesystem: "company_context" })
     })
 
+    it("emits identity when reactivating an existing file panel", async () => {
+      store.state.panels = [{
+        id: "file:company_context:/company/hr/policy.md",
+        component: "editor",
+      }]
+      const bridge = createBridge(store)
+      const handler = vi.fn()
+      bridge.subscribe("file:opened", handler)
+
+      await bridge.openFile("/company/hr/policy.md", { filesystem: "company_context" })
+
+      expect(handler).toHaveBeenCalledWith({
+        path: "/company/hr/policy.md",
+        mode: "edit",
+        filesystem: "company_context",
+      })
+    })
+
     it("opens same path in user and company_context as distinct panels", async () => {
       const bridge = createBridge(store)
       await bridge.openFile("/same.md")
@@ -273,6 +291,19 @@ describe("createBridge", () => {
       const result = await bridge.expandToFile("/src/foo.ts")
       expect(result.status).toBe("ok")
       expect(handler).toHaveBeenCalledWith({ path: "/src/foo.ts" })
+    })
+
+    it("preserves explicit filesystem identity in tree reveal events", async () => {
+      const bridge = createBridge(store)
+      const handler = vi.fn()
+      bridge.subscribe("tree:expand", handler)
+
+      await bridge.expandToFile("/company/hr/policy.md", { filesystem: "company_context" })
+
+      expect(handler).toHaveBeenCalledWith({
+        path: "/company/hr/policy.md",
+        filesystem: "company_context",
+      })
     })
 
     it("uncollapses sidebar when collapsed", async () => {

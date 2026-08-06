@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import { captureFrontPlugin } from "../../../../shared/plugins/frontFactory"
-import filesystemFront, { filesystemPlugin } from "../index"
+import filesystemFront, { FilesystemFileTreeSource, filesystemPlugin } from "../index"
 import { createFilesCatalog } from "../catalogs"
 
 const capturedPlugin = captureFrontPlugin(filesystemPlugin)
@@ -24,11 +24,13 @@ describe("filesystemPlugin", () => {
       "filesystem-file-panel",
       "filesystem-agent-file-bridge",
     ])
+    expect(registrations.workspaceSources).toHaveLength(1)
     expect(registrations.workspaceSources[0]).toEqual(
       expect.objectContaining({
         id: "files",
         label: "Files",
         source: "builtin",
+        component: FilesystemFileTreeSource,
       }),
     )
     expect(resolver).toEqual(expect.objectContaining({ id: "filesystem-path" }))
@@ -102,7 +104,7 @@ describe("filesystemPlugin", () => {
 
   it("creates a case-insensitive files catalog adapter", async () => {
     const client = {
-      search: vi.fn(async () => ["src/App.tsx"]),
+      searchResources: vi.fn(async () => [{ filesystem: "user", path: "src/App.tsx" }]),
     }
     const onOpenFile = vi.fn()
     const catalog = createFilesCatalog({ client, onSelect: onOpenFile })
@@ -115,11 +117,20 @@ describe("filesystemPlugin", () => {
     })
 
     expect(result.items).toEqual([
-      { id: "src/App.tsx", title: "App.tsx", subtitle: "src/" },
+      {
+        id: "user:src/App.tsx",
+        title: "App.tsx",
+        subtitle: "src/",
+        meta: "Workspace",
+        resource: { filesystem: "user", path: "src/App.tsx" },
+      },
     ])
-    expect(client.search).toHaveBeenCalledWith("*[Aa][Pp][Pp]*", 10, undefined)
+    expect(client.searchResources).toHaveBeenCalledWith("*[Aa][Pp][Pp]*", 10, undefined)
     catalog.onSelect(result.items[0]!)
-    expect(onOpenFile).toHaveBeenCalledWith("src/App.tsx", result.items[0])
+    expect(onOpenFile).toHaveBeenCalledWith(
+      { filesystem: "user", path: "src/App.tsx" },
+      result.items[0],
+    )
   })
 
   it("exports a branded front factory", () => {

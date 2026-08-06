@@ -1,4 +1,4 @@
-import { TASK_ERROR_CODES } from "../shared"
+import { TASK_ERROR_CODES, type BoringTaskSessionLink } from "../shared"
 import { describe, expect, it } from "vitest"
 import { FileTaskSessionLinkStore, TaskSessionLinkStoreError, taskSessionLinkStoreForWorkspace, type TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
 
@@ -46,12 +46,14 @@ describe("FileTaskSessionLinkStore", () => {
     const workspace = new MemoryWorkspace()
     const store = new FileTaskSessionLinkStore(workspace)
 
-    const first = await store.link({ agentTypeId: "alpha", adapterId: "github", taskId: "776", sessionId: "native-a" })
+    const firstReceipt = await store.link({ agentTypeId: "alpha", adapterId: "github", taskId: "776", sessionId: "native-a" })
     const duplicate = await store.link({ agentTypeId: "alpha", adapterId: "github", taskId: "776", sessionId: "native-a" })
+    const first = firstReceipt.link
     await store.link({ agentTypeId: "alpha", adapterId: "github", taskId: "other", sessionId: "native-b" })
     await store.link({ agentTypeId: "alpha", adapterId: "beads", taskId: "776", sessionId: "native-c" })
 
-    expect(duplicate).toEqual(first)
+    expect(firstReceipt).toMatchObject({ changed: true, snapshot: { adapterId: "github", taskId: "776", links: [first] } })
+    expect(duplicate).toEqual({ ...firstReceipt, changed: false })
     expect(await store.list("github", "776")).toEqual([first])
     expect(first.id).not.toContain("776")
     expect(workspace.files.has(".pi/tasks/session-links.json")).toBe(true)
@@ -109,9 +111,50 @@ describe("FileTaskSessionLinkStore", () => {
 
   it("unlinks stale bindings without consulting a session", async () => {
     const store = new FileTaskSessionLinkStore(new MemoryWorkspace())
-    const link = await store.link({ agentTypeId: "alpha", adapterId: "github", taskId: "776", sessionId: "now-missing" })
-    await expect(store.unlink(link.id)).resolves.toEqual(link)
+    const link = (await store.link({ agentTypeId: "alpha", adapterId: "github", taskId: "776", sessionId: "now-missing" })).link
+    await expect(store.unlink(link.id)).resolves.toEqual({ link, changed: true, snapshot: { adapterId: "github", taskId: "776", links: [] } })
     await expect(store.unlink(link.id)).rejects.toMatchObject({ code: TASK_ERROR_CODES.SESSION_LINK_MISSING } satisfies Partial<TaskSessionLinkStoreError>)
+  })
+
+  it("atomically rejects unlinking a link owned by another Agent", async () => {
+    const store = new FileTaskSessionLinkStore(new MemoryWorkspace())
+    const link = (await store.link({ agentTypeId: "beta", adapterId: "github", taskId: "776", sessionId: "foreign" })).link
+
+    await expect(store.unlink(link.id, "alpha")).rejects.toMatchObject({ code: TASK_ERROR_CODES.SESSION_LINK_MISSING })
+    await expect(store.list("github", "776")).resolves.toEqual([link])
+  })
+
+  it("rejects a mutation before it can persist an unreadable oversized store", async () => {
+    const workspace = new MemoryWorkspace()
+    const maxBytes = 4 * 1024 * 1024
+    const encoder = new TextEncoder()
+    const linksOfLength = (length: number): BoringTaskSessionLink[] => Array.from({ length }, (_, index) => ({
+      id: String(index).padEnd(512, "i"),
+      adapterId: "a".repeat(512),
+      taskId: "t".repeat(512),
+      agentTypeId: "g".repeat(512),
+      sessionId: String(index).padEnd(512, "s"),
+      createdAt: "2026-08-06T00:00:00.000Z",
+    }))
+    const serializedSize = (length: number) => encoder.encode(`${JSON.stringify({ version: 1, links: linksOfLength(length) }, null, 2)}\n`).byteLength
+    let low = 0
+    let high = 10_000
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2)
+      if (serializedSize(middle) <= maxBytes) low = middle
+      else high = middle - 1
+    }
+    const links = linksOfLength(low)
+    workspace.files.set(".pi/tasks/session-links.json", `${JSON.stringify({ version: 1, links }, null, 2)}\n`)
+    const store = new FileTaskSessionLinkStore(workspace)
+
+    await expect(store.link({
+      adapterId: "z".repeat(512),
+      taskId: "z".repeat(512),
+      agentTypeId: "z".repeat(512),
+      sessionId: "z".repeat(512),
+    })).rejects.toMatchObject({ code: TASK_ERROR_CODES.SESSION_LINK_STORE_ERROR })
+    await expect(store.list("a".repeat(512), "t".repeat(512))).resolves.toHaveLength(links.length)
   })
 
   it("persists deterministic link ordering", async () => {

@@ -214,7 +214,7 @@ export function createManageTasksTool(
             return success(input.action, `Bound native session ${sessionId} to task ${input.taskId}.`, { link })
           }
           case "unlink_session": {
-            const link = await service.unlinkSession(input.linkId, binding)
+            const link = await service.unlinkSession(input.linkId, binding, binding.agentTypeId)
             const { sessionId: _redacted, ...redactedLink } = link
             return success(input.action, `Unlinked task-session binding ${link.id} from task ${link.taskId}.`, { link: redactedLink })
           }

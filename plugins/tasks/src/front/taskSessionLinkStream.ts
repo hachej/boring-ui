@@ -47,8 +47,10 @@ function envelope(value: unknown): { streamId: string; revision: number } | unde
 }
 
 export function useTaskSessionLinks(pluginClient: WorkspacePluginClient): ReadonlyMap<string, readonly BoringTaskSessionLink[]> | null {
-  const [linksByTask, setLinksByTask] = useState<ReadonlyMap<string, readonly BoringTaskSessionLink[]> | null>(null)
-  const cursor = useRef<{ streamId: string; revision: number } | null>(null)
+  const streamIdentity = `${pluginClient.apiBaseUrl}\u0000${pluginClient.workspaceId ?? ""}`
+  const [streamState, setStreamState] = useState<{ identity: string; links: ReadonlyMap<string, readonly BoringTaskSessionLink[]> } | null>(null)
+  const [generation, setGeneration] = useState(0)
+  const cursor = useRef<{ identity: string; streamId: string; revision: number } | null>(null)
 
   useEffect(() => {
     if (typeof EventSource === "undefined") return
@@ -57,6 +59,15 @@ export function useTaskSessionLinks(pluginClient: WorkspacePluginClient): Readon
     // cookies. workspaceId is only a routing selector and is re-authorized server-side.
     const query = pluginClient.workspaceId ? `?workspaceId=${encodeURIComponent(pluginClient.workspaceId)}` : ""
     const source = new EventSource(`${endpoint}/api/boring-tasks/session-links/events${query}`, { withCredentials: true })
+    let reconnecting = false
+    const reconnect = () => {
+      if (reconnecting) return
+      reconnecting = true
+      source.close()
+      cursor.current = null
+      setStreamState(null)
+      setGeneration((current) => current + 1)
+    }
     source.addEventListener("snapshot", (event) => {
       try {
         const parsed = JSON.parse((event as MessageEvent).data) as Partial<TaskSessionLinkSnapshot>
@@ -67,17 +78,17 @@ export function useTaskSessionLinks(pluginClient: WorkspacePluginClient): Readon
           const item = taskLinks(raw)
           if (item?.links.length) next.set(taskSessionLinkKey(item.adapterId, item.taskId), item.links)
         }
-        cursor.current = nextCursor
-        setLinksByTask(next)
+        cursor.current = { identity: streamIdentity, ...nextCursor }
+        setStreamState({ identity: streamIdentity, links: next })
       } catch { /* Ignore malformed stream frames. */ }
     })
     const applyTaskLinks = (item: TaskSessionLinks) => {
-      setLinksByTask((previous) => {
-        const next = new Map(previous ?? [])
+      setStreamState((previous) => {
+        const next = new Map(previous?.identity === streamIdentity ? previous.links : [])
         const key = taskSessionLinkKey(item.adapterId, item.taskId)
         if (item.links.length === 0) next.delete(key)
         else next.set(key, item.links)
-        return next
+        return { identity: streamIdentity, links: next }
       })
     }
     source.addEventListener("change", (event) => {
@@ -86,13 +97,17 @@ export function useTaskSessionLinks(pluginClient: WorkspacePluginClient): Readon
         const nextCursor = envelope(parsed)
         const item = taskLinks(parsed)
         const current = cursor.current
-        if (!nextCursor || !item || !current || current.streamId !== nextCursor.streamId || nextCursor.revision <= current.revision) return
-        cursor.current = nextCursor
+        if (!nextCursor || !item || !current || current.identity !== streamIdentity || current.streamId !== nextCursor.streamId || nextCursor.revision <= current.revision) return
+        if (nextCursor.revision !== current.revision + 1) {
+          reconnect()
+          return
+        }
+        cursor.current = { identity: streamIdentity, ...nextCursor }
         applyTaskLinks(item)
       } catch { /* Ignore malformed stream frames. */ }
     })
     return () => source.close()
-  }, [pluginClient.apiBaseUrl, pluginClient.workspaceId])
+  }, [generation, pluginClient.apiBaseUrl, pluginClient.workspaceId, streamIdentity])
 
-  return linksByTask
+  return streamState?.identity === streamIdentity ? streamState.links : null
 }

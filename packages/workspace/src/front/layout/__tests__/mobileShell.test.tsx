@@ -18,12 +18,26 @@ describe("mobile chat chrome", () => {
     expect(screen.queryByText("One active thread on mobile")).toBeNull()
   })
 
-  it("uses an accessible touch target for the close action even for the sole pane", () => {
+  it("hides the close action when this is the sole remaining pane", () => {
     const onClosePane = vi.fn()
     render(
       <MobileSingleChatPane
         pane={{ id: "pane-a", title: "Planning" }}
         totalPanes={1}
+        onClosePane={onClosePane}
+        renderPane={() => <div>Transcript</div>}
+      />,
+    )
+
+    expect(screen.queryByRole("button", { name: "Close Planning pane" })).toBeNull()
+  })
+
+  it("uses an accessible touch target for the close action when more than one pane exists", () => {
+    const onClosePane = vi.fn()
+    render(
+      <MobileSingleChatPane
+        pane={{ id: "pane-a", title: "Planning" }}
+        totalPanes={2}
         onClosePane={onClosePane}
         renderPane={() => <div>Transcript</div>}
       />,
@@ -40,7 +54,7 @@ describe("mobile chat chrome", () => {
     render(
       <MobileSingleChatPane
         pane={{ id, title: id }}
-        totalPanes={1}
+        totalPanes={2}
         onClosePane={() => {}}
         renderPane={() => <div>Transcript</div>}
       />,

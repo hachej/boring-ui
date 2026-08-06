@@ -78,6 +78,9 @@ const AttachmentParamsSchema = SessionParamsSchema.extend({
     z.number().int().nonnegative(),
   ),
 }).strict()
+const BatchSessionSummariesBodySchema = z.object({
+  sessionIds: z.array(SessionIdSchema).min(1).max(50),
+}).strict()
 const ListSessionsQuerySchema = z.object({
   cursor: NonEmptyString.max(8_192).optional(),
   limit: z.preprocess(
@@ -276,6 +279,36 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
         cursor: query.cursor,
         limit: query.limit,
       })
+    } catch (error) {
+      return sendError(reply, error)
+    }
+  })
+
+  app.post('/api/v1/agents/:agentTypeId/sessions/summaries', async (request, reply) => {
+    const params = parseWithSchema(AgentParamsSchema, request.params, reply, 'params')
+    if (!params) return
+    const body = parseWithSchema(BatchSessionSummariesBodySchema, request.body, reply, 'body')
+    if (!body) return
+    try {
+      const scope = await input.options.authorizeAgentRequest(request)
+      const requested = [...new Set(body.sessionIds)]
+      const requestedSet = new Set(requested)
+      const summariesById = new Map<string, Awaited<ReturnType<AgentGateway['listSessions']>>['sessions'][number]>()
+      let cursor: string | undefined
+      do {
+        const page = await input.gateway.listSessions({ scope, agentTypeId: params.agentTypeId, cursor, limit: 100 })
+        for (const summary of page.sessions) {
+          if (requestedSet.has(summary.ref.sessionId)) summariesById.set(summary.ref.sessionId, summary)
+        }
+        cursor = page.nextCursor
+      } while (cursor && summariesById.size < requested.length)
+      return {
+        summaries: requested.flatMap((sessionId) => {
+          const summary = summariesById.get(sessionId)
+          return summary ? [summary] : []
+        }),
+        omittedSessionIds: requested.filter((sessionId) => !summariesById.has(sessionId)),
+      }
     } catch (error) {
       return sendError(reply, error)
     }
