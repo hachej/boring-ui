@@ -54,6 +54,7 @@ export {
   PluginErrorProvider,
   usePluginErrors,
   WorkspacePluginClientProvider,
+  WorkspacePluginClientRequestError,
   createWorkspacePluginClient,
   useWorkspacePluginClient,
 } from "./front/plugin"

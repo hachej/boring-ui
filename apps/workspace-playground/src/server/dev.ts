@@ -3,9 +3,11 @@ import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node
 import { basename, dirname, resolve } from "node:path"
 import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
 import { createReadonlyProjectionOperations } from "@hachej/boring-bash/server"
+import { createNodeWorkspace } from "@hachej/boring-sandbox/providers/node-workspace"
 import { createPersistedScriptedPiHarness } from "./testing/scriptedPiHarness"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
-import { createTasksServerPlugin } from "@hachej/boring-tasks/server"
+import { createTasksServerPlugin, createWorkspaceBeadsOperations } from "@hachej/boring-tasks/server"
+import { loadBoringFactoryAgents } from "./factoryAgents"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
 export const VITE_PORT = Number(process.env.PORT) || 5200
@@ -53,7 +55,12 @@ export async function startPlaygroundServer(): Promise<void> {
     const remoteWorkerWorkspaceId = remoteWorkerModeAdapter
       ? (process.env.BORING_WORKSPACE_PLAYGROUND_WORKSPACE_ID?.trim() || randomUUID())
       : undefined
+    const beadsOperations = remoteWorkerModeAdapter
+      ? undefined
+      : createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
     const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
+    const factoryAgentsEnabled = process.env.VITE_BORING_FACTORY_AGENTS === "1"
+    const factoryAgents = factoryAgentsEnabled ? await loadBoringFactoryAgents() : undefined
     const multiFilesystemPlayground = process.env.BORING_WORKSPACE_PLAYGROUND_MULTI_FS === "1" || process.env.VITE_PLAYGROUND_MULTI_FS === "1"
     const companyContextRoot = resolve(process.env.BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT || workspaceRoot)
     if (multiFilesystemPlayground) mkdirSync(companyContextRoot, { recursive: true })
@@ -69,13 +76,15 @@ export async function startPlaygroundServer(): Promise<void> {
       mode: remoteWorkerModeAdapter ? undefined : localRuntimeMode,
       runtimeModeAdapter: remoteWorkerModeAdapter,
       logger: true,
+      ...(factoryAgents ? { agents: factoryAgents, defaultAgentTypeId: "boring-concierge" } : {}),
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
       ...(process.env.BORING_AGENT_E2E_SCRIPTED_PI === "1"
         ? { harnessFactory: createPersistedScriptedPiHarness }
         : {}),
       plugins: [createTasksServerPlugin({
         workspaceRoot,
-        config: { providers: [{ provider: "github", repo: "auto" }] },
+        beadsOperations,
+        config: { providers: [{ provider: "github", repo: "auto" }, { provider: "beads" }] },
       })],
       defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
       getFilesystemBindings: multiFilesystemPlayground

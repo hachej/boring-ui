@@ -43,6 +43,7 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
+    "proof:beads-readonly": "pnpm build && node scripts/prove-beads-readonly.mjs",
     "lint": "pnpm run typecheck",
     "clean": "rm -rf dist .tsbuildinfo"
   },
@@ -57,7 +58,7 @@
   },
   "devDependencies": {
     "@hachej/boring-workspace": "workspace:*",
-    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
