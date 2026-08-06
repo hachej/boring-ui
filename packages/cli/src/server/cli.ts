@@ -88,7 +88,7 @@ export async function registerStatic(app: FastifyInstance, publicDir: string) {
       // (or re-downloaded) on every workspace open. Everything else (notably
       // index.html) keeps max-age=0 + etag so deploys are picked up
       // immediately.
-      res.setHeader(
+      res.header(
         "cache-control",
         /[\\/]assets[\\/]/.test(filePath)
           ? "public, max-age=31536000, immutable"
