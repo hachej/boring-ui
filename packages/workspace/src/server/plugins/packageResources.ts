@@ -7,13 +7,14 @@ import { posix } from 'node:path'
 
 import {
   AGENT_RESOURCES_FILESYSTEM_ID,
+  ErrorCode,
   type AgentSkillResource,
 } from '@hachej/boring-agent/shared'
 
 import type { WorkspacePackageResourceRecord } from './bootstrapServer'
 
-export const PACKAGE_RESOURCE_INVALID_CODE = 'PACKAGE_RESOURCE_INVALID'
-export const PACKAGE_RESOURCE_CONFLICT_CODE = 'PACKAGE_RESOURCE_CONFLICT'
+export const PACKAGE_RESOURCE_INVALID_CODE = ErrorCode.enum.PACKAGE_RESOURCE_INVALID
+export const PACKAGE_RESOURCE_CONFLICT_CODE = ErrorCode.enum.PACKAGE_RESOURCE_CONFLICT
 
 export class WorkspacePackageResourceRegistryError extends Error {
   readonly code: typeof PACKAGE_RESOURCE_INVALID_CODE | typeof PACKAGE_RESOURCE_CONFLICT_CODE

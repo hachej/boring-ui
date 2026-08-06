@@ -1,6 +1,7 @@
 import type { RuntimeFilesystemBinding } from './mode'
+import { ErrorCode } from '../../shared/error-codes'
 
-export const RUNTIME_FILESYSTEM_BINDING_DUPLICATE_CODE = 'RUNTIME_FILESYSTEM_BINDING_DUPLICATE'
+export const RUNTIME_FILESYSTEM_BINDING_DUPLICATE_CODE = ErrorCode.enum.RUNTIME_FILESYSTEM_BINDING_DUPLICATE
 
 export class RuntimeFilesystemBindingConfigurationError extends Error {
   readonly code = RUNTIME_FILESYSTEM_BINDING_DUPLICATE_CODE

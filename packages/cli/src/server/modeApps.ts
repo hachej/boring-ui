@@ -997,7 +997,7 @@ export async function createWorkspacesModeApp(opts: {
             const runtime = await getLoadedPluginRuntime(workspace)
             runtime.manager.setPluginDirs(pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, { includeFolderModeAutomation: true }))
             const scan = await runtime.manager.load()
-            syncLoadedPluginPiSnapshot(workspace, runtime.manager)
+            await syncLoadedPluginPiSnapshot(workspace, runtime.manager)
             syncRuntimeHostFromPluginEvents(runtimeHost, workspace.id, scan.events)
             const backendReload = await runtime.backendRegistry.reloadFromLoadedPlugins(runtime.manager.inspectLoaded())
             const diagnostics = [

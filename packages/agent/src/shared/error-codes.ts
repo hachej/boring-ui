@@ -114,6 +114,9 @@ export const ErrorCode = z.enum([
 
   // Skill resources
   'SKILL_DISCOVERY_FAILED',
+  'PACKAGE_RESOURCE_INVALID',
+  'PACKAGE_RESOURCE_CONFLICT',
+  'RUNTIME_FILESYSTEM_BINDING_DUPLICATE',
 
   // Lane W same-workspace share deep-link (AR1-003)
   'AR1_SHARE_NOT_FOUND',
