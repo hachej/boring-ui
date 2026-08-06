@@ -42,15 +42,24 @@ The smoke boots a local ephemeral `127.0.0.1` Fastify listener, registers `regis
 
 ## Run (local dev)
 
+From a clean checkout after `pnpm install`, the deterministic loopback proof is:
+
 ```bash
-# from repo root, after `pnpm install`
-cp apps/full-app/.env.example apps/full-app/.env   # then fill in values
-# bring up Postgres, then apply migrations:
+pnpm --filter full-app smoke:dev-console
+```
+
+It allocates isolated ports and storage, starts Postgres, migrates, creates a verified local user without mail delivery, opens a workspace, reloads it, and cleans up its owned processes, volume, and temporary roots.
+
+For an interactive session:
+
+```bash
+cp apps/full-app/.env.example apps/full-app/.env
+docker compose -f apps/full-app/docker-compose.dev.yml up -d --wait
 pnpm --filter full-app migrate
 pnpm --filter full-app dev
 ```
 
-Open `http://localhost:5173`.
+Open `http://localhost:5173/dev-login`.
 
 ### Hosted automation scheduler
 
@@ -77,6 +86,7 @@ available as an operational fallback when the internal scheduler is enabled.
 
 | Script | What it does |
 |--------|--------------|
+| `build:deps` | Topologically build the full-app dependency selector with bounded concurrency |
 | `dev` | Build agent/workspace/core, then `tsx src/server/dev.ts` (Vite :5173 + Fastify) |
 | `build` | Build packages, then `build-app.mts` (frontend → `dist/front`, server → `dist/server`) |
 | `start` | `node dist/server/main.js` (prod, listens on `PORT`) |
@@ -84,6 +94,7 @@ available as an operational fallback when the internal scheduler is enabled.
 | `migrate` | `tsx src/server/migrate.ts` — apply DB migrations |
 | `typecheck` / `lint` | `tsc --noEmit` (`lint` is an alias of `typecheck`) |
 | `e2e` / `e2e:smoke` | Playwright against `e2e/playwright.config.ts` (the two scripts are identical) |
+| `smoke:dev-console` | Hermetic verified-login and workspace reopen proof against isolated loopback Postgres |
 | `smoke:mcp-managed-agent` | `node --import tsx scripts/managed-agent-mcp-smoke.ts` — local stock MCP client smoke for `/mcp/managed-agent` |
 | `smoke:remote-worker` | `node scripts/remote-worker-smoke.mjs` — local remote-worker contract/isolation smoke |
 
@@ -117,7 +128,6 @@ From `.env.example` and code. Required for a working server:
 | `DATABASE_URL` | Postgres connection string |
 | `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` | Auth secret + base URL |
 | `WORKSPACE_SETTINGS_ENCRYPTION_KEY` | 32-byte hex; encrypts per-workspace settings |
-| `MAIL_FROM`, `MAIL_TRANSPORT_URL` | Mail transport (`console://` for dev) |
 
 Common optional:
 
@@ -127,7 +137,7 @@ Common optional:
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Allowed origins |
 | `BORING_PLUGIN_AUTHORING` | `0` | `1` installs the plugin-authoring surface |
 | `BORING_AUTOMATION_INTERNAL_SCHEDULER` | `true` | Set to `false` only when an external scheduler owns hosted Automation wake-ups |
-| `ENABLE_DEV_LOGIN` | `0` | Dev server only. Set `1` to enable `GET /dev-login`, which creates/signs in a local dev user and redirects to `/`. Ignored in `NODE_ENV=production`. |
+| `ENABLE_DEV_LOGIN` | `0` | Dev server only. Set `1` to enable loopback-only `GET /dev-login`, which provisions a verified credential user without mail and redirects to `/`. Ignored in `NODE_ENV=production`. |
 | `DEV_LOGIN_EMAIL`, `DEV_LOGIN_PASSWORD`, `DEV_LOGIN_NAME` | `dev@example.test`, strong local password, `Dev` | Optional credentials for `ENABLE_DEV_LOGIN=1`. |
 | `RESEND_API_KEY` | — | Resend mail transport |
 | `BORING_AGENT_WORKSPACE_ROOT` | — | Host/control-plane workspace root. In `vercel-sandbox` prod this is `/data/workspaces`; it is not the sandbox cwd. Agent files live in sandbox `/workspace`. |
@@ -153,10 +163,10 @@ ENABLE_DEV_LOGIN=1 pnpm --filter full-app dev
 Then open:
 
 ```txt
-http://localhost:3000/dev-login
+http://localhost:5173/dev-login
 ```
 
-The route signs in `DEV_LOGIN_EMAIL` (default `dev@example.test`) or creates it if missing, sets the normal Better Auth session cookie, and redirects to `/`. The core dev server proxies `/dev-login` from the frontend port to the API server. The route is unavailable unless `ENABLE_DEV_LOGIN=1` and is ignored in `NODE_ENV=production`.
+The route verifies or creates `DEV_LOGIN_EMAIL` (default `dev@example.test`) through Better Auth's server adapter, without signup email rendering or delivery, sets the normal session cookie, and redirects to `/`. The core dev server proxies `/dev-login` while preserving the observed client address. The route rejects direct and forwarded non-loopback clients, is unavailable unless `ENABLE_DEV_LOGIN=1`, and is ignored in `NODE_ENV=production`.
 
 ## Container reference
 

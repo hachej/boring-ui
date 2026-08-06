@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:deps": "pnpm --filter 'full-app^...' --workspace-concurrency=4 run --if-present build",
     "dev": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-automation build && pnpm --filter @hachej/boring-mcp build && pnpm --filter @hachej/boring-governance build && NODE_ENV=development tsx src/server/migrate.ts && NODE_ENV=development tsx src/server/dev.ts",
     "build": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-automation build && pnpm --filter @hachej/boring-mcp build && pnpm --filter @hachej/boring-governance build && tsx ../../packages/workspace/scripts/build-app.mts",
     "start": "NODE_ENV=production node dist/server/main.js",
@@ -14,6 +15,7 @@
     "lint": "pnpm run typecheck",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "e2e:smoke": "playwright test --config e2e/playwright.config.ts",
+    "smoke:dev-console": "node --import tsx scripts/dev-console-smoke.mjs",
     "smoke:mcp-managed-agent": "node --import tsx scripts/managed-agent-mcp-smoke.ts",
     "smoke:remote-worker": "node scripts/remote-worker-smoke.mjs",
     "backup:fly-worker-volume": "node scripts/fly-worker-volume-backup.mjs"
