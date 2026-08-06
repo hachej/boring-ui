@@ -167,7 +167,8 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const [detailOpen, setDetailOpen] = useState(false)
   const detailTriggerRef = useRef<HTMLButtonElement | null>(null)
   const sourceRequestVersions = useRef(new Map<string, number>())
-  const pendingSourceIds = useRef(new Set<string>())
+  const pendingSourceIds = useRef(new Map<string, Set<string>>())
+  const activeTaskMutationCounts = useRef(new Map<string, number>())
   const taskMutationVersions = useRef(new Map<string, number>())
   const stateRef = useRef(state)
   stateRef.current = state
@@ -182,9 +183,8 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
 
   useLayoutEffect(() => {
     if (activeCacheKeyRef.current === cacheKey) return
+    pendingSourceIds.current.delete(activeCacheKeyRef.current)
     activeCacheKeyRef.current = cacheKey
-    for (const [adapterId, version] of sourceRequestVersions.current) sourceRequestVersions.current.set(adapterId, version + 1)
-    pendingSourceIds.current.clear()
     const nextState = cachedState ? { configs: cachedState.configs, tasks: cachedState.tasks, errors: cachedState.errors } : null
     stateRef.current = nextState
     setState(nextState)
@@ -240,13 +240,16 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     const requested = options.sourceIds
       ? adapters.filter((adapter) => options.sourceIds?.includes(adapter.id))
       : adapters
+    const pendingForWorkspace = pendingSourceIds.current.get(cacheKey) ?? new Set<string>()
+    pendingSourceIds.current.set(cacheKey, pendingForWorkspace)
     const requestVersions = new Map(requested.map((adapter) => {
-      const version = (sourceRequestVersions.current.get(adapter.id) ?? 0) + 1
-      sourceRequestVersions.current.set(adapter.id, version)
-      pendingSourceIds.current.add(adapter.id)
+      const sourceKey = JSON.stringify([cacheKey, adapter.id])
+      const version = (sourceRequestVersions.current.get(sourceKey) ?? 0) + 1
+      sourceRequestVersions.current.set(sourceKey, version)
+      pendingForWorkspace.add(adapter.id)
       return [adapter.id, version] as const
     }))
-    setLoading(requested.length > 0 || pendingSourceIds.current.size > 0)
+    setLoading(requested.length > 0 || pendingForWorkspace.size > 0)
     setError(null)
     const entries = await Promise.all(requested.map(async (adapter) => {
       try {
@@ -256,12 +259,16 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
         return { ok: false as const, adapterId: adapter.id, cause }
       }
     }))
-    const versionIsCurrent = (adapterId: string) => sourceRequestVersions.current.get(adapterId) === requestVersions.get(adapterId)
+    const versionIsCurrent = (adapterId: string) => sourceRequestVersions.current.get(JSON.stringify([cacheKey, adapterId])) === requestVersions.get(adapterId)
     for (const entry of entries) {
-      if (versionIsCurrent(entry.adapterId)) pendingSourceIds.current.delete(entry.adapterId)
+      if (versionIsCurrent(entry.adapterId)) pendingForWorkspace.delete(entry.adapterId)
     }
-    const currentEntries = entries.filter((entry) => adapterIdsRef.current.has(entry.adapterId) && versionIsCurrent(entry.adapterId))
-    setLoading(pendingSourceIds.current.size > 0)
+    const currentEntries = entries.filter((entry) => (
+      adapterIdsRef.current.has(entry.adapterId)
+      && versionIsCurrent(entry.adapterId)
+      && (activeTaskMutationCounts.current.get(JSON.stringify([cacheKey, entry.adapterId])) ?? 0) === 0
+    ))
+    setLoading(pendingForWorkspace.size > 0)
     if (currentEntries.length === 0) return
 
     const previous = stateRef.current ?? { configs: {}, tasks: [], errors: {} }
@@ -353,10 +360,26 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
 
   const beginTaskMutation = (adapterId: string, taskId: string) => {
     const workspaceKey = cacheKey
+    const adapterMutationKey = JSON.stringify([workspaceKey, adapterId])
     const mutationKey = JSON.stringify([workspaceKey, adapterId, taskId])
     const version = (taskMutationVersions.current.get(mutationKey) ?? 0) + 1
     taskMutationVersions.current.set(mutationKey, version)
-    return () => activeCacheKeyRef.current === workspaceKey && taskMutationVersions.current.get(mutationKey) === version
+    activeTaskMutationCounts.current.set(adapterMutationKey, (activeTaskMutationCounts.current.get(adapterMutationKey) ?? 0) + 1)
+    const sourceKey = JSON.stringify([workspaceKey, adapterId])
+    sourceRequestVersions.current.set(sourceKey, (sourceRequestVersions.current.get(sourceKey) ?? 0) + 1)
+    let finished = false
+    const isCurrent = () => activeCacheKeyRef.current === workspaceKey && taskMutationVersions.current.get(mutationKey) === version
+    return {
+      isCurrent,
+      finish() {
+        if (finished) return
+        finished = true
+        const remaining = (activeTaskMutationCounts.current.get(adapterMutationKey) ?? 1) - 1
+        if (remaining > 0) activeTaskMutationCounts.current.set(adapterMutationKey, remaining)
+        else activeTaskMutationCounts.current.delete(adapterMutationKey)
+        sourceRequestVersions.current.set(sourceKey, (sourceRequestVersions.current.get(sourceKey) ?? 0) + 1)
+      },
+    }
   }
 
   const moveTask = async (taskId: string, adapterId: string, statusId: string) => {
@@ -372,7 +395,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
       return
     }
 
-    const mutationIsCurrent = beginTaskMutation(adapterId, taskId)
+    const mutation = beginTaskMutation(adapterId, taskId)
     const movingAdapterId = task.adapterId
     setMovingTaskId(taskId)
     setError(null)
@@ -383,22 +406,36 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
 
     try {
       const moved = await adapter.moveTask({ taskId, statusId })
-      if (mutationIsCurrent()) {
-        setState((current) => current ? {
-          ...current,
-          tasks: current.tasks.map((candidate) => candidate.id === taskId && candidate.adapterId === adapterId ? moved : candidate),
-        } : current)
+      if (mutation.isCurrent()) {
+        setState((current) => {
+          if (!current) return current
+          const next = {
+            ...current,
+            tasks: current.tasks.map((candidate) => candidate.id === taskId && candidate.adapterId === adapterId ? moved : candidate),
+          }
+          stateRef.current = next
+          writeCachedBoardState(cacheKey, next)
+          return next
+        })
       }
     } catch (cause) {
-      if (mutationIsCurrent()) {
-        setState((current) => current ? {
-          ...current,
-          tasks: current.tasks.map((candidate) => candidate.id === taskId && candidate.adapterId === adapterId ? task : candidate),
-        } : current)
+      if (mutation.isCurrent()) {
+        setState((current) => {
+          if (!current) return current
+          const next = {
+            ...current,
+            tasks: current.tasks.map((candidate) => candidate.id === taskId && candidate.adapterId === adapterId ? task : candidate),
+          }
+          stateRef.current = next
+          writeCachedBoardState(cacheKey, next)
+          return next
+        })
         if (selectedAdapterIds.has(movingAdapterId)) setError(cause instanceof Error ? cause.message : String(cause))
       }
     } finally {
-      if (mutationIsCurrent()) {
+      const clearBusyState = mutation.isCurrent()
+      mutation.finish()
+      if (clearBusyState) {
         setMovingTaskId(null)
         setActiveTaskRef(null)
       }
@@ -411,7 +448,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
       setError(`Task source does not support issue deletion: ${task.adapterId}`)
       return
     }
-    const mutationIsCurrent = beginTaskMutation(task.adapterId, task.id)
+    const mutation = beginTaskMutation(task.adapterId, task.id)
     setDeletingTaskId(task.id)
     setError(null)
     setState((current) => current ? {
@@ -420,15 +457,27 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     } : current)
     try {
       await adapter.deleteTask({ taskId: task.id })
+      if (mutation.isCurrent()) {
+        setState((current) => {
+          if (current) writeCachedBoardState(cacheKey, current)
+          return current
+        })
+      }
     } catch (cause) {
-      if (mutationIsCurrent()) {
-        setState((current) => current && !current.tasks.some((candidate) => candidate.id === task.id && candidate.adapterId === task.adapterId)
-          ? { ...current, tasks: [...current.tasks, task] }
-          : current)
+      if (mutation.isCurrent()) {
+        setState((current) => {
+          if (!current || current.tasks.some((candidate) => candidate.id === task.id && candidate.adapterId === task.adapterId)) return current
+          const next = { ...current, tasks: [...current.tasks, task] }
+          stateRef.current = next
+          writeCachedBoardState(cacheKey, next)
+          return next
+        })
         if (selectedAdapterIds.has(task.adapterId)) setError(cause instanceof Error ? cause.message : String(cause))
       }
     } finally {
-      if (mutationIsCurrent()) setDeletingTaskId(null)
+      const clearBusyState = mutation.isCurrent()
+      mutation.finish()
+      if (clearBusyState) setDeletingTaskId(null)
     }
   }
 

@@ -132,6 +132,12 @@ describe("pending task chat binding recovery", () => {
 
     expect(api.postJson).toHaveBeenCalledTimes(6)
     expect(window.sessionStorage.getItem(storageKey)).toBe(JSON.stringify([pending]))
+
+    api.postJson.mockResolvedValue({ ok: true })
+    window.dispatchEvent(new Event("focus"))
+    await vi.runAllTimersAsync()
+    expect(api.postJson).toHaveBeenCalledTimes(7)
+    expect(window.sessionStorage.getItem(storageKey)).toBe("[]")
   })
 
   it("keeps one capped retry chain when recovery races prompt acceptance", async () => {

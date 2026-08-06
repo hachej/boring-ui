@@ -89,6 +89,32 @@ describe("TaskKanbanBoard source isolation", () => {
     expect(screen.queryByText("late Workspace A failure")).not.toBeInTheDocument()
   })
 
+  test("does not let a stale refresh resurrect a successfully deleted task", async () => {
+    const user = userEvent.setup()
+    let resolveRefresh!: (tasks: ReturnType<typeof task>[]) => void
+    let resolveDelete!: () => void
+    const listTasks = vi.fn()
+      .mockResolvedValueOnce([task("shared", "a1", "Delete me")])
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
+    const source: BoringTaskAdapter = {
+      ...adapter("shared", "Shared", listTasks),
+      capabilities: { move: false, delete: true },
+      deleteTask: vi.fn(() => new Promise<void>((resolve) => { resolveDelete = resolve })),
+    }
+    renderBoard([source])
+    expect(await screen.findByText("Delete me")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Open actions for a1" }))
+    await user.click(screen.getByRole("button", { name: "Delete issue" }))
+    await user.click(screen.getByRole("button", { name: "Refresh" }))
+
+    resolveRefresh([task("shared", "a1", "Delete me")])
+    await waitFor(() => expect(listTasks).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText("Delete me")).not.toBeInTheDocument()
+    resolveDelete()
+    await waitFor(() => expect(source.deleteTask).toHaveBeenCalledOnce())
+    expect(screen.queryByText("Delete me")).not.toBeInTheDocument()
+  })
+
   test("keeps healthy source tasks visible and retries only the failing source", async () => {
     const user = userEvent.setup()
     let failing = true

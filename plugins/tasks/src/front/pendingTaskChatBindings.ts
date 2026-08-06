@@ -16,6 +16,7 @@ interface BindingAttemptState {
 const pendingByKey = new Map<string, PendingTaskChatBinding>()
 const attemptStates = new Map<string, BindingAttemptState>()
 const listeners = new Map<string, { prompt: EventListener; status: EventListener }>()
+const recoveryListeners = new Map<string, EventListener>()
 const MAX_BIND_ATTEMPTS = 6
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
 
@@ -62,6 +63,14 @@ function writePending(bindings: readonly PendingTaskChatBinding[]): void {
   try { window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(bindings)) } catch { /* Best-effort tab recovery. */ }
 }
 
+function stopRecovery(key: string): void {
+  const listener = recoveryListeners.get(key)
+  if (!listener || typeof window === "undefined") return
+  window.removeEventListener("online", listener)
+  window.removeEventListener("focus", listener)
+  recoveryListeners.delete(key)
+}
+
 function stopWatching(key: string): void {
   const listener = listeners.get(key)
   if (!listener) return
@@ -74,6 +83,7 @@ function removePending(binding: PendingTaskChatBinding): void {
   const key = bindingKey(binding)
   writePending(readPending().filter((candidate) => bindingKey(candidate) !== key))
   stopWatching(key)
+  stopRecovery(key)
   const attemptState = attemptStates.get(key)
   if (attemptState?.timer) clearTimeout(attemptState.timer)
   attemptStates.delete(key)
@@ -104,6 +114,7 @@ async function bind(binding: PendingTaskChatBinding, client: Pick<WorkspacePlugi
     }
     if (state.attempt + 1 >= MAX_BIND_ATTEMPTS) {
       attemptStates.delete(key)
+      armRecovery(binding, client)
       console.error("Task chat binding is still pending after transient failures", error)
       return
     }
@@ -117,8 +128,21 @@ async function bind(binding: PendingTaskChatBinding, client: Pick<WorkspacePlugi
   }
 }
 
+function armRecovery(binding: PendingTaskChatBinding, client: Pick<WorkspacePluginClient, "postJson">): void {
+  const key = bindingKey(binding)
+  if (recoveryListeners.has(key) || typeof window === "undefined") return
+  const recover: EventListener = () => {
+    stopRecovery(key)
+    void bind(binding, client)
+  }
+  recoveryListeners.set(key, recover)
+  window.addEventListener("online", recover)
+  window.addEventListener("focus", recover)
+}
+
 function watch(binding: PendingTaskChatBinding, client: Pick<WorkspacePluginClient, "postJson">): void {
   const key = bindingKey(binding)
+  stopRecovery(key)
   if (listeners.has(key)) return
   const accept = () => {
     stopWatching(key)
@@ -141,6 +165,7 @@ function watch(binding: PendingTaskChatBinding, client: Pick<WorkspacePluginClie
 
 export function resetPendingTaskChatBindingsForTests(): void {
   for (const key of [...listeners.keys()]) stopWatching(key)
+  for (const key of [...recoveryListeners.keys()]) stopRecovery(key)
   for (const state of attemptStates.values()) if (state.timer) clearTimeout(state.timer)
   attemptStates.clear()
   pendingByKey.clear()
