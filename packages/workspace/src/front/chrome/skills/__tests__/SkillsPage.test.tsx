@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => {
   const getJson = vi.fn()
   return {
     getJson,
-    client: { getJson },
+    client: { getJson, agentTypeId: "default" },
     postUiCommand: vi.fn(),
   }
 })
@@ -124,7 +124,7 @@ describe("SkillsPage resource rows", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh skills" }))
     await waitFor(() => expect(mocks.getJson).toHaveBeenCalledWith(
-      "/api/v1/agent/skills?refresh=1",
+      "/api/v1/agents/default/skills?refresh=1",
       expect.objectContaining({ missingMessage: expect.any(String) }),
     ))
   })

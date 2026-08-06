@@ -10,11 +10,11 @@ function buildApp(opts: Parameters<typeof skillsRoutes>[1]) {
   return app.ready().then(() => app)
 }
 
-describe('GET /api/v1/agent/skills', () => {
+describe('GET /api/v1/agents/default/skills', () => {
   test('returns skills array (possibly empty) for a workspace root', async () => {
     const app = await buildApp({ workspace: createNodeWorkspace(process.cwd()), noSkills: true })
 
-    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agents/default/skills' })
 
     expect(res.statusCode).toBe(200)
     expect(Array.isArray(res.json().skills)).toBe(true)
@@ -23,7 +23,7 @@ describe('GET /api/v1/agent/skills', () => {
   })
 
   // Ambient-skill discovery (noSkills: false) is covered end-to-end in
-  // ../../../__tests__/registerAgentRoutes.test.ts — fs fixtures are not
+  // ../../../__tests__/registerDirectAgentHostRoutes.test.ts — fs fixtures are not
   // allowed under routes/ (see scripts/check-invariants.sh).
 
   test('surfaces an error field instead of silently swallowing failures', async () => {
@@ -34,7 +34,7 @@ describe('GET /api/v1/agent/skills', () => {
       },
     })
 
-    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agents/default/skills' })
 
     expect(res.statusCode).toBe(200)
     const body = res.json()
@@ -44,6 +44,23 @@ describe('GET /api/v1/agent/skills', () => {
       message: 'skill discovery failed',
     })
     expect(JSON.stringify(body)).not.toContain('boom resolving workspace root')
+
+    await app.close()
+  })
+
+  test('propagates authorization denial instead of returning an empty successful result', async () => {
+    const app = await buildApp({
+      workspace: createNodeWorkspace(process.cwd()),
+      noSkills: true,
+      authorizeRequest: () => {
+        throw Object.assign(new Error('skills access denied'), { statusCode: 403 })
+      },
+    })
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agents/default/skills' })
+
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toMatchObject({ message: 'skills access denied' })
 
     await app.close()
   })

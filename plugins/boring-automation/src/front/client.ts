@@ -1,4 +1,4 @@
-import { BORING_AUTOMATION_ROUTE_PREFIX, type Automation, type AutomationCreate, type AutomationPatch, type AutomationRun } from "../shared"
+import { BORING_AUTOMATION_ROUTE_PREFIX, type Automation, type AutomationCreate, type AutomationPatch, type AutomationRun, type AutomationRunChangedEvent } from "../shared"
 
 export class AutomationClientError extends Error {
   constructor(
@@ -20,7 +20,12 @@ export interface AutomationClientOptions {
 
 export interface AutomationClientRequestOptions {
   signal?: AbortSignal
+  limit?: number
 }
+
+export type AutomationRunStreamEvent =
+  | { type: "ready" }
+  | { type: "run.changed"; event: AutomationRunChangedEvent }
 
 type ApiOk<T> = T & { ok: true }
 type ApiError = { ok?: false; code?: string; error?: string }
@@ -111,6 +116,38 @@ export function createAutomationClient(options: AutomationClientOptions = {}) {
   }
 
   return {
+    async subscribeRunEvents(onEvent: (event: AutomationRunStreamEvent) => void, requestOptions: AutomationClientRequestOptions = {}): Promise<void> {
+      const response = await fetch(joinUrl(options.apiBaseUrl, `${BORING_AUTOMATION_ROUTE_PREFIX}/events`), {
+        headers: { Accept: "text/event-stream", ...(options.headers ?? {}) },
+        signal: requestOptions.signal,
+      })
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) options.onAuthError?.(response.status)
+        throw new AutomationClientError("BORING_AUTOMATION_EVENT_STREAM_ERROR", "Automation event stream failed", response.status)
+      }
+      if (!response.body) throw new AutomationClientError("BORING_AUTOMATION_EVENT_STREAM_ERROR", "Automation event stream is unavailable", response.status)
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ""
+      try {
+        while (true) {
+          const next = await reader.read()
+          if (next.done) break
+          buffer += decoder.decode(next.value, { stream: true })
+          buffer = buffer.replace(/\r\n/g, "\n")
+          const frames = buffer.split("\n\n")
+          buffer = frames.pop() ?? ""
+          for (const frame of frames) {
+            const parsed = parseRunStreamFrame(frame)
+            if (parsed) onEvent(parsed)
+          }
+        }
+      } finally {
+        reader.releaseLock()
+      }
+    },
+
     async listAutomations(requestOptions: AutomationClientRequestOptions = {}): Promise<Automation[]> {
       const payload = await request<{ automations: Automation[] }>("/automations", { signal: requestOptions.signal })
       return payload.automations
@@ -159,9 +196,26 @@ export function createAutomationClient(options: AutomationClientOptions = {}) {
     },
 
     async listRuns(id: string, requestOptions: AutomationClientRequestOptions = {}): Promise<AutomationRun[]> {
-      const payload = await request<{ runs: AutomationRun[] }>(`/automations/${encodeURIComponent(id)}/runs`, { signal: requestOptions.signal })
+      const query = requestOptions.limit === undefined ? "" : `?limit=${encodeURIComponent(String(requestOptions.limit))}`
+      const payload = await request<{ runs: AutomationRun[] }>(`/automations/${encodeURIComponent(id)}/runs${query}`, { signal: requestOptions.signal })
       return payload.runs
     },
+  }
+}
+
+function parseRunStreamFrame(frame: string): AutomationRunStreamEvent | null {
+  let eventType = "message"
+  const data: string[] = []
+  for (const line of frame.split("\n")) {
+    if (line.startsWith("event:")) eventType = line.slice(6).trim()
+    if (line.startsWith("data:")) data.push(line.slice(5).trimStart())
+  }
+  if (eventType === "ready") return { type: "ready" }
+  if (eventType !== "run.changed" || data.length === 0) return null
+  try {
+    return { type: "run.changed", event: JSON.parse(data.join("\n")) as AutomationRunChangedEvent }
+  } catch {
+    return null
   }
 }
 

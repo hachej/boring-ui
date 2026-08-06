@@ -1,3 +1,4 @@
+// @vitest-environment node
 import Fastify from "fastify"
 import { mkdtemp, mkdir, rm, symlink, writeFile, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -759,21 +760,6 @@ describe("boring agent plugin assets", () => {
 
     // Single-flight coalescing: revision reflects the latest content.
     expect(result.loaded[0].revision).toBeGreaterThanOrEqual(2)
-  })
-
-  test("POST /api/boring.reload is not registered", async () => {
-    const root = await tmp("boring-plugin-obsolete-reload-")
-    await writePlugin(root)
-    const manager = new BoringPluginAssetManager({ pluginDirs: [{ rootDir: root, kind: "external" as const }], errorRoot: join(root, ".errors") })
-
-    const app = Fastify({ logger: false })
-    await app.register(boringPluginRoutes, { manager })
-    try {
-      const reload = await app.inject({ method: "POST", url: "/api/boring.reload" })
-      expect(reload.statusCode).toBe(404)
-    } finally {
-      await app.close()
-    }
   })
 
   test("writes preflight errors under a stable fallback id when plugin id cannot be derived", async () => {

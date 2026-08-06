@@ -3,9 +3,21 @@
 import { lazy, Suspense } from "react"
 import type { ReactNode } from "react"
 import { EmptyState, ErrorState, Spinner } from "@hachej/boring-ui-kit"
+import { ChevronRight } from "lucide-react"
 import { ConflictBanner } from "./ConflictBanner"
 import { FetchError, type FileConflictError } from "./data/fetchClient"
 import { redactedFilesystemErrorMessage } from "./data/filesystemErrorRedaction"
+
+function governedPathSegments(path: string): string[] {
+  const normalized = path.replaceAll("\\", "/").replace(/^\.\//, "")
+  const segments = normalized.split("/").filter((segment) => segment && segment !== "." && segment !== "..")
+  // Governed workspace paths are relative. If a host accidentally supplies an
+  // absolute path, disclose only the filename instead of leaking host roots.
+  if (normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized)) {
+    return segments.slice(-1)
+  }
+  return segments.length > 0 ? segments : [path]
+}
 
 export interface FilePaneShellProps {
   /** The file path being edited (for "no file selected" check). */
@@ -123,12 +135,35 @@ export function FilePaneShell({
     </div>
   )
 
+  const relativeSegments = governedPathSegments(path)
+  const displayPath = relativeSegments.join("/")
+
   return (
     <div className={`flex h-full min-h-0 flex-col ${className ?? ""}`}>
+      <nav
+        aria-label={`File path: ${displayPath}`}
+        title={displayPath}
+        data-boring-workspace-part="file-path-header"
+        className="flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-border/60 bg-background px-3 text-[12px] leading-none"
+      >
+        <span className="shrink-0 text-muted-foreground/70">Workspace</span>
+        {relativeSegments.map((segment, index) => (
+          <span key={`${segment}-${index}`} className="contents">
+            <ChevronRight aria-hidden="true" className="size-3 shrink-0 text-muted-foreground/45" strokeWidth={1.75} />
+            <span
+              className={index === relativeSegments.length - 1
+                ? "min-w-0 truncate font-medium text-foreground"
+                : "shrink-0 text-muted-foreground"}
+            >
+              {segment}
+            </span>
+          </span>
+        ))}
+      </nav>
       {readOnly && (
         <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground" role="status">
           <span className="rounded-sm border border-border bg-background px-1.5 py-0.5 font-medium text-foreground">Readonly</span>
-          <span>{filesystem === "company_context" ? "Company context is policy-filtered and cannot be edited here." : "This file is readonly."}</span>
+          <span>This file is readonly.</span>
         </div>
       )}
       {!readOnly && conflict && (

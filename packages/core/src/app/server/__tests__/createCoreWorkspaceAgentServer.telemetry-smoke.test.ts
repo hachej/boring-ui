@@ -27,8 +27,9 @@ const smokeLogs = vi.hoisted(() => ({
   entries: [] as Array<Record<string, unknown>>,
 }))
 
-vi.mock('@hachej/boring-agent/server', () => {
-  const mountLegacyRoutes = async (app: { post: (path: string, handler: () => Promise<unknown>) => void }, opts: { telemetry?: { capture: (event: { name: string; distinctId?: string; properties?: Record<string, unknown> }) => void | Promise<void> } }) => {
+vi.mock('@hachej/boring-agent/server', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@hachej/boring-agent/server')>()
+  const mountTelemetryRoutes = async (app: { post: (path: string, handler: () => Promise<unknown>) => void }, opts: { telemetry?: { capture: (event: { name: string; distinctId?: string; properties?: Record<string, unknown> }) => void | Promise<void> } }) => {
     app.post('/__telemetry-smoke/agent-turn', async () => {
       opts.telemetry?.capture({
         name: 'agent.chat.started',
@@ -108,17 +109,20 @@ vi.mock('@hachej/boring-agent/server', () => {
     })
   }
   return {
+    ...actual,
     autoDetectMode: () => 'direct',
     compactPiPackages: (packages: unknown[]) => packages,
     createValidatingAgentFleetCompiler: ({ compiler }: { compiler?: unknown }) => compiler ?? {
       async compile({ agents }: { agents: readonly unknown[] }) { return agents },
     },
-    createAgentHostLegacyRoutePolicy: (options: unknown) => ({ options }),
-    createAgentHost: async () => ({
+    createAgentHost: async (options: Parameters<typeof mountTelemetryRoutes>[1]) => ({
       marker: 'prebuilt-agent-host',
-      registerRoutes: (projection: { legacyRoutePolicy: { options: Parameters<typeof mountLegacyRoutes>[1] } }) => async (app: Parameters<typeof mountLegacyRoutes>[0]) => {
-        await mountLegacyRoutes(app, projection.legacyRoutePolicy.options)
+      host: { close: async () => {}, drain: async () => {} },
+      registerDirectRoutes: () => async (app: Parameters<typeof mountTelemetryRoutes>[0]) => {
+        await mountTelemetryRoutes(app, options)
       },
+      acquireEnvironment: vi.fn(),
+      runWithWorkspaceAgent: vi.fn(),
     }),
   }
 })
@@ -132,6 +136,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     },
     preservedUiStateKeys: [],
     provisioningContributions: [],
+    runtimePlugins: [],
     routeContributions: [],
   }),
   createSandboxRuntimeModeAdapter: () => ({ id: 'direct' }),
@@ -184,6 +189,7 @@ vi.mock('../../../server/app/index.js', () => ({
     return app
   },
   registerRoutes: async () => {},
+  registerDirectRoutes: () => async () => {},
 }))
 
 vi.mock('../../../server/routes/index.js', () => ({

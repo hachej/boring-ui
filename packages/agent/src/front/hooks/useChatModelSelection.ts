@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { agentResourceUrl, withStorageScope } from '../agentHttp'
 import {
   parseModelSelection,
   type AvailableModel,
   type ModelSelection,
 } from '../chatPanelSettings'
-import type { ActiveSessionStorageLike } from '../chat/session/activeSessionStorage'
+import type { ActiveSessionStorageLike } from '../chat/session/sessionSelectionStorage'
 import {
   readPiComposerSettings,
   writePiComposerModelSelection,
 } from '../chat/session/composerPolicy'
 
 export function useChatModelSelection({
+  agentTypeId,
   apiBaseUrl,
   defaultModel,
   fetch: fetchImpl,
@@ -19,6 +21,7 @@ export function useChatModelSelection({
   storageScope,
   enabled = true,
 }: {
+  agentTypeId: string
   apiBaseUrl?: string
   defaultModel?: ModelSelection
   fetch?: typeof globalThis.fetch
@@ -41,15 +44,17 @@ export function useChatModelSelection({
   }, [userSelectedModel])
 
   const setModel = useCallback((next: ModelSelection | null) => {
-    userSelectedModelRef.current = next !== null
-    setUserSelectedModel(next !== null)
-    setModelState(next)
-    writePiComposerModelSelection(next, { storageScope, storage })
+    const normalized = next === null ? null : parseModelSelection(next)
+    userSelectedModelRef.current = normalized !== null
+    setUserSelectedModel(normalized !== null)
+    setModelState(normalized)
+    writePiComposerModelSelection(normalized, { storageScope, storage })
   }, [storage, storageScope])
 
   const discoveryKey = useMemo(
     () => JSON.stringify({
       apiBaseUrl: apiBaseUrl ?? '',
+      agentTypeId,
       headers: Object.entries(requestHeaders ?? {}).sort(([a], [b]) => a.localeCompare(b)),
       storageScope: storageScope ?? '',
     }),
@@ -89,8 +94,8 @@ export function useChatModelSelection({
     let aborted = false
     setLoaded(false)
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
-    nextFetch(agentResourceUrl(apiBaseUrl, '/api/v1/agent/models'), {
-      headers: scopedHeaders(requestHeaders, storageScope),
+    nextFetch(agentResourceUrl(apiBaseUrl, `/api/v1/agents/${encodeURIComponent(agentTypeId)}/models`), {
+      headers: withStorageScope(requestHeaders, storageScope),
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((payload: { models?: AvailableModel[]; defaultModel?: ModelSelection } | null) => {
@@ -135,7 +140,7 @@ export function useChatModelSelection({
         setLoaded(true)
       })
     return () => { aborted = true }
-  }, [apiBaseUrl, discoveryKey, enabled, fetchImpl, requestHeaders, storage, storageScope])
+  }, [agentTypeId, apiBaseUrl, discoveryKey, enabled, fetchImpl, requestHeaders, storage, storageScope])
 
   // Optional integration hook for host slash commands. Accepts explicit
   // provider-qualified selections only ({ provider, id } or "provider:id");
@@ -155,17 +160,4 @@ export function useChatModelSelection({
   const currentModel = currentDiscoveryLoaded ? model : null
 
   return { availableModels: currentAvailableModels, loaded: currentDiscoveryLoaded, model: currentModel, setModel }
-}
-
-function agentResourceUrl(apiBaseUrl: string | undefined, path: string): string {
-  const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-  return `${base}${path}`
-}
-
-function scopedHeaders(headers: Record<string, string> | undefined, storageScope: string | undefined): Record<string, string> | undefined {
-  if (!headers && !storageScope) return undefined
-  const result: Record<string, string> = { ...(headers ?? {}) }
-  const hasStorageScope = Object.keys(result).some((key) => key.toLowerCase() === 'x-boring-storage-scope')
-  if (storageScope && !hasStorageScope) result['x-boring-storage-scope'] = storageScope
-  return result
 }

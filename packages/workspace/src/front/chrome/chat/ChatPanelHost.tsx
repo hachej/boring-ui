@@ -47,6 +47,9 @@ function workspaceAgentDataPart(part: unknown): unknown {
       op: typeof event.changeType === "string" ? event.changeType : "edit",
       path: event.path,
       toolCallId: typeof event.seq === "number" ? `pi:${event.seq}` : "pi:file-changed",
+      ...(typeof event.filesystem === "string" && event.filesystem.length > 0
+        ? { filesystem: event.filesystem }
+        : {}),
     },
   }
 }
@@ -96,7 +99,10 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
   // A missing host session id means a single/sessionless chat host. In that
   // mode, keep scoped blockers visible instead of hiding the only attention UI.
   // Multi-session hosts should pass `sessionId` so unrelated blockers filter out.
-  const attentionComposerBlockers = blockers.filter((blocker) => !blocker.sessionId || !chatPanelProps.sessionId || blocker.sessionId === chatPanelProps.sessionId)
+  const attentionComposerBlockers = blockers.filter((blocker) => (
+    blocker.composer?.visible !== false
+    && (!blocker.sessionId || !chatPanelProps.sessionId || blocker.sessionId === chatPanelProps.sessionId)
+  ))
   const composerBlockers = [...(chatPanelProps.composerBlockers ?? []), ...attentionComposerBlockers]
 
   useEffect(() => {

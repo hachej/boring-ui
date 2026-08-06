@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 
 import { evalAgentPrompt } from '../src/eval/evalPrompt'
 import { EvalRegex } from '../src/eval/types'
-import { createAgentApp } from '../src/server/createAgentApp'
+import { createStandaloneAgentHostApp } from '../src/server/createStandaloneAgentHostApp'
 import { provisionRuntimeWorkspace } from '../src/server/workspace/provisionRuntime'
 import {
   agentSandboxRuntimeHostOperations,
@@ -43,7 +43,7 @@ async function main(): Promise<number> {
       : undefined
 
   const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'boring-agent-provisioning-agent-eval-'))
-  let app: Awaited<ReturnType<typeof createAgentApp>> | null = null
+  let app: Awaited<ReturnType<typeof createStandaloneAgentHostApp>> | null = null
   try {
     await provisionRuntimeWorkspace({
       workspaceRoot,
@@ -64,7 +64,7 @@ async function main(): Promise<number> {
       ],
     })
 
-    app = await createAgentApp({
+    app = await createStandaloneAgentHostApp({
       workspaceRoot,
       mode: 'direct',
       runtimeModeAdapter: createAgentSandboxRuntimeModeAdapter('direct'),
@@ -77,6 +77,7 @@ The command installed by provisioning is .boring-agent/bin/boring-provision-test
     })
 
     const result = await evalAgentPrompt({
+        agentTypeId: "default",
       app,
       retries: 1,
       timeoutMs: 90_000,

@@ -29,7 +29,7 @@ let mockClient: {
   getFile: ReturnType<typeof vi.fn>
   getTree: ReturnType<typeof vi.fn>
   stat: ReturnType<typeof vi.fn>
-  search: ReturnType<typeof vi.fn>
+  searchResources: ReturnType<typeof vi.fn>
   writeFile: ReturnType<typeof vi.fn>
   createDir: ReturnType<typeof vi.fn>
   moveFile: ReturnType<typeof vi.fn>
@@ -51,7 +51,7 @@ beforeEach(() => {
     getFile: vi.fn(),
     getTree: vi.fn(),
     stat: vi.fn(),
-    search: vi.fn(),
+    searchResources: vi.fn(),
     writeFile: vi.fn(),
     createDir: vi.fn(),
     moveFile: vi.fn(),
@@ -170,11 +170,15 @@ describe("useStat", () => {
 
 describe("useFileSearch", () => {
   it("fetches search results for non-empty query", async () => {
-    mockClient.search.mockResolvedValue(["/a.ts", "/b.ts"])
+    mockClient.searchResources.mockResolvedValue([
+      { filesystem: "user", path: "/a.ts" },
+      { filesystem: "user", path: "/b.ts" },
+      { filesystem: "company_context", path: "/company.ts" },
+    ])
     const { result } = renderHook(() => useFileSearch("*.ts", 10), { wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toEqual(["/a.ts", "/b.ts"])
-    expect(mockClient.search).toHaveBeenCalledWith("*.ts", 10, expect.any(AbortSignal))
+    expect(mockClient.searchResources).toHaveBeenCalledWith("*.ts", 10, expect.any(AbortSignal))
   })
 
   it("is disabled for empty query", () => {

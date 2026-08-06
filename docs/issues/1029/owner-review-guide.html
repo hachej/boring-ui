@@ -1,0 +1,1164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="description" content="Production architecture review guide for PR #1038 — the full AgentHost authority cutover." />
+  <title>AgentHost Cutover — Owner Review Guide</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Commissioner:wght@400;500;600;700&family=Literata:opsz,wght@7..72,400;7..72,500;7..72,600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: oklch(0.155 0.008 72);
+      --surface: oklch(0.19 0.009 72);
+      --surface-raised: oklch(0.225 0.01 72);
+      --ink: oklch(0.93 0.014 82);
+      --muted: oklch(0.7 0.018 78);
+      --faint: oklch(0.66 0.018 78);
+      --line: oklch(0.47 0.014 74);
+      --accent: oklch(0.78 0.13 74);
+      --accent-soft: oklch(0.27 0.045 74);
+      --good: oklch(0.76 0.105 150);
+      --warn: oklch(0.79 0.13 82);
+      --risk: oklch(0.69 0.17 28);
+      --code: oklch(0.175 0.013 250);
+      --max: 78rem;
+      --reading: 72ch;
+      --s1: 0.25rem;
+      --s2: 0.5rem;
+      --s3: 0.75rem;
+      --s4: 1rem;
+      --s5: 1.5rem;
+      --s6: 2rem;
+      --s7: 3rem;
+      --s8: 4rem;
+      --s9: 6rem;
+      --r1: 0.375rem;
+      --r2: 0.625rem;
+      --r3: 1rem;
+      --shadow: 0 1.4rem 4rem oklch(0.06 0.01 72 / 0.32);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: "Literata", Georgia, serif;
+      line-height: 1.72;
+      text-rendering: optimizeLegibility;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.18;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.11'/%3E%3C/svg%3E");
+      mix-blend-mode: soft-light;
+      z-index: 20;
+    }
+    a { color: var(--accent); text-underline-offset: 0.18em; }
+    a:hover { color: var(--ink); }
+    a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+    button, input { font: inherit; }
+    code, pre, .mono {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-variant-ligatures: none;
+    }
+    code {
+      padding: 0.08em 0.32em;
+      border-radius: var(--r1);
+      background: var(--code);
+      color: oklch(0.88 0.045 76);
+      font-size: 0.9em;
+    }
+    pre {
+      margin: 0;
+      overflow: auto;
+      padding: var(--s5);
+      border: 1px solid var(--line);
+      border-radius: var(--r2);
+      background: var(--code);
+      color: oklch(0.86 0.028 220);
+      line-height: 1.55;
+      font-size: 0.83rem;
+    }
+    h1, h2, h3, h4, nav, .eyebrow, .metric, .label, table, .button {
+      font-family: "Commissioner", sans-serif;
+    }
+    h1, h2, h3, h4 { text-wrap: balance; }
+    h1 {
+      max-width: 14ch;
+      margin: 0;
+      font-size: clamp(3.2rem, 8vw, 7rem);
+      line-height: 0.93;
+      letter-spacing: -0.055em;
+      font-weight: 650;
+    }
+    h2 {
+      margin: 0 0 var(--s5);
+      font-size: clamp(2rem, 4vw, 3.5rem);
+      line-height: 1.02;
+      letter-spacing: -0.038em;
+      font-weight: 620;
+    }
+    h3 {
+      margin: var(--s7) 0 var(--s3);
+      font-size: 1.42rem;
+      line-height: 1.2;
+      letter-spacing: -0.018em;
+      font-weight: 600;
+    }
+    h4 { margin: var(--s5) 0 var(--s2); font-size: 1rem; letter-spacing: 0.01em; }
+    p, li { max-width: var(--reading); }
+    p { margin: 0 0 var(--s4); }
+    ul, ol { padding-inline-start: 1.35rem; }
+    li { margin-block: var(--s2); }
+
+    .progress {
+      position: fixed;
+      inset: 0 0 auto 0;
+      z-index: 50;
+      height: 3px;
+      background: var(--line);
+    }
+    .progress > span {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: var(--accent);
+    }
+    .shell {
+      display: grid;
+      grid-template-columns: 18rem minmax(0, 1fr);
+      max-width: 110rem;
+      margin: 0 auto;
+    }
+    .side {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: var(--s6) var(--s5);
+      border-inline-end: 1px solid var(--line);
+      background: color-mix(in oklch, var(--bg), transparent 4%);
+      overflow: auto;
+      z-index: 10;
+    }
+    .side-brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--s3);
+      margin-bottom: var(--s6);
+      color: var(--ink);
+      font-family: "Commissioner", sans-serif;
+      font-size: 0.82rem;
+      font-weight: 620;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .pr-chip {
+      padding: 0.18rem 0.48rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--accent);
+      font-size: 0.7rem;
+    }
+    .search {
+      width: 100%;
+      margin-bottom: var(--s5);
+      padding: 0.7rem 0.8rem;
+      border: 1px solid var(--line);
+      border-radius: var(--r2);
+      outline: none;
+      background: var(--surface);
+      color: var(--ink);
+      font-family: "Commissioner", sans-serif;
+      font-size: 0.78rem;
+    }
+    .search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent), transparent 75%); }
+    .search-status { min-height: 1.2rem; margin: calc(-1 * var(--s3)) 0 var(--s4); color: var(--faint); font-family: "Commissioner", sans-serif; font-size: 0.68rem; }
+    .nav-group { margin: var(--s5) 0 var(--s2); color: var(--faint); font-size: 0.66rem; letter-spacing: 0.11em; text-transform: uppercase; }
+    .side nav a {
+      display: block;
+      padding: 0.38rem 0;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.78rem;
+      line-height: 1.35;
+    }
+    .side nav a:hover, .side nav a.active { color: var(--ink); }
+    .side nav a.active::before { content: "•"; margin-inline-end: var(--s2); color: var(--accent); }
+    main { min-width: 0; }
+
+    .hero {
+      min-height: 94vh;
+      display: grid;
+      align-content: center;
+      padding: var(--s9) clamp(var(--s5), 6vw, var(--s9));
+      border-bottom: 1px solid var(--line);
+      overflow: hidden;
+    }
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: var(--s3);
+      margin-bottom: var(--s5);
+      color: var(--accent);
+      font-size: 0.73rem;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before { content: ""; width: 2.5rem; height: 1px; background: var(--accent); }
+    .dek {
+      max-width: 52ch;
+      margin: var(--s6) 0 0 clamp(0rem, 7vw, 8rem);
+      color: var(--muted);
+      font-size: clamp(1.08rem, 2vw, 1.38rem);
+      line-height: 1.55;
+    }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: var(--s3); margin: var(--s6) 0 0 clamp(0rem, 7vw, 8rem); }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--s2);
+      padding: 0.62rem 0.9rem;
+      border: 1px solid var(--line);
+      border-radius: var(--r2);
+      color: var(--ink);
+      background: var(--surface);
+      text-decoration: none;
+      font-size: 0.77rem;
+      font-weight: 550;
+    }
+    .button.primary { border-color: var(--accent); background: var(--accent); color: oklch(0.19 0.02 72); }
+    .button:hover { background: var(--surface-raised); color: var(--ink); }
+    .button.primary:hover { background: color-mix(in oklch, var(--accent), var(--ink) 12%); color: var(--bg); }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(8rem, 1fr));
+      gap: 1px;
+      margin-top: var(--s8);
+      border: 1px solid var(--line);
+      background: var(--line);
+    }
+    .metric { padding: var(--s5); background: var(--bg); }
+    .metric strong { display: block; color: var(--ink); font-size: 1.75rem; line-height: 1; letter-spacing: -0.04em; }
+    .metric span { display: block; margin-top: var(--s2); color: var(--faint); font-size: 0.68rem; letter-spacing: 0.07em; text-transform: uppercase; }
+
+    section {
+      padding: var(--s9) clamp(var(--s5), 6vw, var(--s9));
+      border-bottom: 1px solid var(--line);
+      scroll-margin-top: var(--s4);
+    }
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.74fr) minmax(18rem, 1.26fr);
+      gap: var(--s7);
+      align-items: start;
+      margin-bottom: var(--s7);
+    }
+    .section-no { color: var(--accent); font-family: "Commissioner", sans-serif; font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; }
+    .section-intro { color: var(--muted); font-size: 1.08rem; }
+    .thesis {
+      max-width: 28ch;
+      font-family: "Commissioner", sans-serif;
+      font-size: clamp(1.55rem, 3vw, 2.5rem);
+      line-height: 1.28;
+      letter-spacing: -0.025em;
+    }
+    .thesis em { color: var(--accent); font-style: normal; }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 4rem 1fr;
+      gap: var(--s4);
+      align-items: stretch;
+    }
+    .comparison article {
+      padding: var(--s6);
+      border: 1px solid var(--line);
+      border-radius: var(--r3);
+      background: var(--surface);
+    }
+    .comparison .arrow { display: grid; place-items: center; color: var(--accent); font-family: "Commissioner", sans-serif; font-size: 2rem; }
+    .comparison h3 { margin-top: 0; }
+    .comparison .old { color: var(--faint); }
+    .comparison .new { border-color: color-mix(in oklch, var(--accent), var(--line) 45%); }
+
+    .architecture {
+      position: relative;
+      display: grid;
+      gap: var(--s5);
+      max-width: 62rem;
+      padding: var(--s6);
+      border: 1px solid var(--line);
+      border-radius: var(--r3);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .arch-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s3); }
+    .arch-node {
+      min-height: 7.5rem;
+      padding: var(--s4);
+      border: 1px solid var(--line);
+      border-radius: var(--r2);
+      background: var(--bg);
+    }
+    .arch-node.host { grid-column: span 3; background: var(--accent-soft); border-color: color-mix(in oklch, var(--accent), var(--line) 55%); }
+    .arch-node h4 { margin-top: 0; color: var(--ink); }
+    .arch-node p { margin: 0; color: var(--muted); font-size: 0.86rem; line-height: 1.5; }
+    .flow-label { color: var(--faint); font-family: "Commissioner", sans-serif; font-size: 0.68rem; letter-spacing: 0.08em; text-align: center; text-transform: uppercase; }
+
+    .ownership-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--s5);
+    }
+    .ownership-grid article { padding: var(--s6); border-top: 1px solid var(--accent); background: var(--surface); }
+    .ownership-grid article:nth-child(2) { border-top-color: var(--good); }
+    .ownership-grid h3 { margin-top: 0; }
+
+    .term-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+      gap: 1px;
+      border: 1px solid var(--line);
+      background: var(--line);
+    }
+    .term { padding: var(--s5); background: var(--bg); }
+    .term dt { margin-bottom: var(--s2); color: var(--accent); font-family: "Commissioner", sans-serif; font-weight: 620; }
+    .term dd { margin: 0; color: var(--muted); font-size: 0.9rem; }
+
+    .sequence { display: grid; gap: var(--s2); max-width: 58rem; counter-reset: seq; }
+    .sequence .step {
+      display: grid;
+      grid-template-columns: 2.5rem minmax(10rem, 0.55fr) minmax(18rem, 1fr);
+      gap: var(--s4);
+      align-items: baseline;
+      padding: var(--s4) 0;
+      border-bottom: 1px solid var(--line);
+      counter-increment: seq;
+    }
+    .sequence .step::before { content: counter(seq, decimal-leading-zero); color: var(--accent); font-family: "Commissioner", sans-serif; font-size: 0.72rem; }
+    .sequence strong { font-family: "Commissioner", sans-serif; font-size: 0.93rem; }
+    .sequence span { color: var(--muted); font-size: 0.92rem; }
+
+    .state-machine {
+      display: flex;
+      align-items: center;
+      gap: var(--s2);
+      overflow: auto;
+      padding: var(--s5);
+      border: 1px solid var(--line);
+      border-radius: var(--r2);
+      background: var(--code);
+    }
+    .state {
+      flex: 0 0 auto;
+      padding: 0.55rem 0.7rem;
+      border: 1px solid var(--line);
+      border-radius: var(--r1);
+      background: var(--surface);
+      font-family: "Commissioner", sans-serif;
+      font-size: 0.76rem;
+    }
+    .state.final { border-color: var(--good); }
+    .state.uncertain { border-color: var(--risk); color: oklch(0.84 0.09 28); }
+    .join { color: var(--faint); }
+
+    .callout {
+      margin: var(--s6) 0;
+      padding: var(--s5);
+      border: 1px solid var(--line);
+      border-radius: var(--r2);
+      background: var(--surface);
+    }
+    .callout strong { display: block; margin-bottom: var(--s2); font-family: "Commissioner", sans-serif; }
+    .callout p:last-child { margin-bottom: 0; }
+    .callout.warn { border-color: color-mix(in oklch, var(--warn), var(--line) 55%); background: color-mix(in oklch, var(--surface), var(--warn) 7%); }
+    .callout.risk { border-color: color-mix(in oklch, var(--risk), var(--line) 45%); background: color-mix(in oklch, var(--surface), var(--risk) 7%); }
+    .callout.good { border-color: color-mix(in oklch, var(--good), var(--line) 55%); background: color-mix(in oklch, var(--surface), var(--good) 5%); }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r2); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+    th, td { padding: 0.85rem 1rem; border-bottom: 1px solid var(--line); text-align: start; vertical-align: top; }
+    th { background: var(--surface-raised); color: var(--ink); font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    td { color: var(--muted); background: var(--surface); }
+    tr:last-child td { border-bottom: 0; }
+    td strong { color: var(--ink); font-weight: 560; }
+
+    .decision-list { display: grid; gap: var(--s5); }
+    .decision {
+      display: grid;
+      grid-template-columns: 3rem minmax(0, 1fr);
+      gap: var(--s4);
+      padding-top: var(--s5);
+      border-top: 1px solid var(--line);
+    }
+    .decision .num { color: var(--accent); font-family: "Commissioner", sans-serif; font-size: 0.8rem; }
+    .decision h3 { margin: 0 0 var(--s2); }
+    .decision p { color: var(--muted); }
+
+    .owner-brief {
+      display: grid;
+      grid-template-columns: minmax(0, 0.7fr) minmax(20rem, 1.3fr);
+      gap: var(--s6);
+      padding: var(--s6);
+      border: 1px solid color-mix(in oklch, var(--risk), var(--line) 45%);
+      border-radius: var(--r3);
+      background: color-mix(in oklch, var(--surface), var(--risk) 5%);
+    }
+    .owner-brief h2 { font-size: clamp(1.8rem, 3vw, 2.7rem); }
+    .owner-brief ul { margin: 0; }
+    .status-chip { display: inline-block; padding: 0.16rem 0.46rem; border: 1px solid currentColor; border-radius: 999px; font-family: "Commissioner", sans-serif; font-size: 0.64rem; letter-spacing: 0.06em; text-transform: uppercase; }
+    .status-chip.confirmed { color: var(--risk); }
+    .status-chip.conditional { color: var(--warn); }
+    .status-chip.decision { color: var(--accent); }
+    .status-chip.accepted { color: var(--good); }
+    .risk-group { margin-top: var(--s7); }
+    .risk-group > h3 { display: flex; align-items: center; gap: var(--s3); }
+    .risk-register { display: grid; gap: var(--s3); }
+    .risk-item {
+      display: grid;
+      grid-template-columns: 5rem minmax(12rem, 0.55fr) minmax(20rem, 1fr);
+      gap: var(--s4);
+      padding: var(--s4);
+      border: 1px solid var(--line);
+      border-radius: var(--r2);
+      background: var(--surface);
+    }
+    .severity { color: var(--risk); font-family: "Commissioner", sans-serif; font-size: 0.7rem; font-weight: 650; letter-spacing: 0.07em; text-transform: uppercase; }
+    .severity.p2 { color: var(--warn); }
+    .risk-item strong { font-family: "Commissioner", sans-serif; font-size: 0.9rem; }
+    .risk-item div:last-child { color: var(--muted); font-size: 0.87rem; }
+    .risk-item a { overflow-wrap: anywhere; }
+    .merge-criterion { display: block; margin-top: var(--s2); color: var(--ink); font-family: "Commissioner", sans-serif; font-size: 0.76rem; }
+
+    details {
+      margin: var(--s3) 0;
+      border: 1px solid var(--line);
+      border-radius: var(--r2);
+      background: var(--surface);
+    }
+    summary {
+      cursor: pointer;
+      padding: var(--s4) var(--s5);
+      color: var(--ink);
+      font-family: "Commissioner", sans-serif;
+      font-size: 0.9rem;
+      font-weight: 560;
+    }
+    details > div { padding: 0 var(--s5) var(--s5); color: var(--muted); }
+
+    .file-map { display: grid; gap: var(--s2); }
+    .file-row {
+      display: grid;
+      grid-template-columns: minmax(16rem, 0.8fr) minmax(18rem, 1.2fr);
+      gap: var(--s4);
+      padding: var(--s3) 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 0.82rem;
+    }
+    .file-row a { overflow-wrap: anywhere; font-family: "SFMono-Regular", Consolas, monospace; text-decoration: none; }
+    .file-row span { color: var(--muted); }
+    .hidden-by-search { display: none !important; }
+
+    .reading-path { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s3); }
+    .reading-path a {
+      display: flex;
+      gap: var(--s3);
+      padding: var(--s4);
+      border: 1px solid var(--line);
+      border-radius: var(--r2);
+      background: var(--surface);
+      color: var(--ink);
+      text-decoration: none;
+      font-family: "Commissioner", sans-serif;
+      font-size: 0.8rem;
+    }
+    .reading-path a span { color: var(--accent); }
+
+    footer { padding: var(--s7) clamp(var(--s5), 6vw, var(--s9)); color: var(--faint); font-size: 0.78rem; }
+    .mobile-menu { display: none; }
+
+    @media (max-width: 68rem) {
+      .shell { grid-template-columns: 1fr; }
+      .side { display: none; }
+      .mobile-menu {
+        position: fixed;
+        inset: var(--s4) var(--s4) auto auto;
+        display: block;
+        z-index: 40;
+        padding: 0.55rem 0.7rem;
+        border: 1px solid var(--line);
+        border-radius: var(--r2);
+        background: var(--surface);
+        color: var(--ink);
+        font-family: "Commissioner", sans-serif;
+      }
+      .side.open { display: block; position: fixed; inset: 0 auto 0 0; width: min(20rem, 88vw); height: 100dvh; box-shadow: var(--shadow); }
+    }
+    @media (max-width: 48rem) {
+      .hero { min-height: auto; padding-top: var(--s9); }
+      .metrics { grid-template-columns: 1fr 1fr; }
+      .section-head, .comparison, .owner-brief, .ownership-grid, .risk-item { grid-template-columns: 1fr; }
+      .comparison .arrow { transform: rotate(90deg); }
+      .arch-row { grid-template-columns: 1fr; }
+      .arch-node.host { grid-column: auto; }
+      .sequence .step { grid-template-columns: 2rem 1fr; }
+      .sequence .step span { grid-column: 2; }
+      .file-row, .reading-path { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    @media print {
+      :root { --bg: white; --surface: #f6f4ef; --surface-raised: #ece8df; --ink: #191713; --muted: #514b43; --faint: #71695f; --line: #cbc3b7; --accent: #8b4a00; --code: #eeeae2; }
+      .side, .mobile-menu, .progress, .hero-actions { display: none !important; }
+      .shell { display: block; }
+      .hero { min-height: auto; }
+      @page { margin: 16mm; }
+      section, .hero { padding: 2.5rem 1rem; }
+      h2, h3, h4, .callout, .decision, .risk-item, .arch-node, tr { break-inside: avoid; }
+      thead { display: table-header-group; }
+      details, details > div { display: block !important; }
+      details > summary { display: none; }
+      a { color: inherit; text-decoration: none; }
+      a[href^="http"]::after { content: " (" attr(href) ")"; color: var(--faint); font-size: 0.72em; overflow-wrap: anywhere; }
+      body::before { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="progress" aria-hidden="true"><span id="progressBar"></span></div>
+  <button class="mobile-menu" id="menuButton" aria-controls="sideNav" aria-expanded="false">Contents</button>
+  <div class="shell">
+    <aside class="side" id="sideNav">
+      <div class="side-brand"><span>AgentHost cutover</span><span class="pr-chip">PR 1038</span></div>
+      <input class="search" id="searchInput" type="search" placeholder="Filter sections and file map…" aria-label="Filter guide" aria-describedby="searchStatus" />
+      <div class="search-status" id="searchStatus" role="status" aria-live="polite"></div>
+      <nav aria-label="Document contents">
+        <div class="nav-group">Orientation</div>
+        <a href="#thesis">The thesis</a>
+        <a href="#owner-brief">Owner decision brief</a>
+        <a href="#before-after">Before → after</a>
+        <a href="#ownership">Ownership boundary</a>
+        <a href="#identity">Identity obligations</a>
+        <a href="#vocabulary">Vocabulary</a>
+        <div class="nav-group">Runtime mechanics</div>
+        <a href="#composition">Composition</a>
+        <a href="#sessions">Sessions & pins</a>
+        <a href="#effects">Effects & ledger</a>
+        <a href="#reload">Reload</a>
+        <a href="#leases">Leases & shutdown</a>
+        <div class="nav-group">Across the stack</div>
+        <a href="#http">HTTP surfaces</a>
+        <a href="#clients">Clients & identity</a>
+        <a href="#roots">Composition roots</a>
+        <a href="#integrations">Integrations</a>
+        <a href="#deletions">Removed architecture</a>
+        <div class="nav-group">Owner review</div>
+        <a href="#operations">Operations</a>
+        <a href="#risks">Adversarial findings</a>
+        <a href="#files">Production file map</a>
+        <a href="#reading">Reading order</a>
+      </nav>
+    </aside>
+
+    <main>
+      <header class="hero" id="top">
+        <div class="eyebrow">Owner review guide · production code only</div>
+        <h1>One host. One authority.</h1>
+        <p class="dek">PR #1038 is not a route rename. It replaces a split runtime architecture with a single <code>CreatedAgentHost</code> that owns Agent lifetimes, sessions, Agent effects, leases, and shutdown—while applications keep policy, product authorization, and app-level filesystem mutations.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="https://github.com/hachej/boring-ui/pull/1038">Open PR #1038 ↗</a>
+          <a class="button" href="#owner-brief">Owner decision brief</a>
+          <button class="button" id="printButton" type="button">Print / save PDF</button>
+        </div>
+        <div class="metrics" aria-label="Production diff summary">
+          <div class="metric"><strong>+6,032</strong><span>review-scope additions</span></div>
+          <div class="metric"><strong>−5,318</strong><span>review-scope deletions</span></div>
+          <div class="metric"><strong>151</strong><span>review-scope files touched</span></div>
+          <div class="metric"><strong>−3,289</strong><span>legacy production lines removed</span></div>
+        </div>
+        <p class="dek" style="font-size:.76rem; margin-top:1rem">Measured at base <code>1f1cb8264</code> → head <code>3c82c9960</code>. Review scope includes production source, eval/runtime helpers, manifests, lockfile, and package/build config; excludes any path under <code>docs</code>, <code>__tests__</code>, <code>e2e</code>, <code>test-fixtures</code>, <code>fixtures</code>, <code>scripts</code>, or <code>tools</code>, plus <code>*.test.*</code>/<code>*.spec.*</code>. The legacy metric covers 12 deleted production compatibility/route modules named in §14.</p>
+      </header>
+
+      <section id="thesis" data-search="thesis one host authority architecture">
+        <div class="section-head">
+          <div><div class="section-no">01 · Thesis</div><h2>The change in one sentence</h2></div>
+          <div class="section-intro">The application decides <em>who</em> may run <em>what</em> and <em>where</em>; AgentHost becomes the only component allowed to turn that policy into a live Agent runtime.</div>
+        </div>
+        <p class="thesis">The old system had an AgentHost <em>and</em> compatibility layers that could still assemble routes, resolve runtimes, retain workspaces, and close resources. The new system has one authority exposed through three bounded paths: addressed Agent API/Gateway, app HTTP over Environment leases, and in-process callback leases.</p>
+        <div class="callout good">
+          <strong>What this buys us</strong>
+          <p>Agent mutations converge on the Gateway, binding/pin rules, durable Agent-effect ledger, and Host lifecycle. Agent reads use addressed binding/pin rules. App filesystem/Git routes and direct Workspace operations instead run through Host-issued Environment leases.</p>
+        </div>
+        <div class="callout warn">
+          <strong>What this document is</strong>
+          <p>An architectural review map, not a line-by-line diff and not a merge sign-off. It explains production behavior and records adversarial findings that still deserve explicit owner disposition.</p>
+        </div>
+      </section>
+
+      <section id="owner-brief" data-search="owner decision merge blockers brief">
+        <div class="owner-brief">
+          <div>
+            <div class="section-no">Owner brief</div>
+            <h2>What must be true before merge</h2>
+            <p class="dek">The architecture has converged. The remaining decision is whether its semantics and operational boundaries are acceptable—not whether to preserve a compatibility path.</p>
+          </div>
+          <div>
+            <ol>
+              <li><strong>Close the confirmed defects:</strong> malformed attachment bodies must not escape as 500, and unknown Agents must not open dispatcher or app-runtime work before rejection.</li>
+              <li><strong>Accept or change the persistence contract:</strong> production deployments must supply a durable admission ledger; in-memory mode is explicitly test/development-only.</li>
+              <li><strong>Session-sharing policy accepted:</strong> sessions are collaborative within a verified workspace/storage scope, not private to their creator. Fine-grained session roles or private chats would be a separate product feature.</li>
+              <li><strong>Confirm the access boundary:</strong> app filesystem/Git routes stay app-owned but can only obtain Workspace capability through short Host-issued Environment leases.</li>
+              <li><strong>Confirm the breaking cutover:</strong> legacy composition exports and <code>/api/v1/agent/*</code> compatibility routes are intentionally gone.</li>
+              <li><strong>Verify shutdown under real load:</strong> abort, bounded grace, late-publication fences, ledger closure, and lease drain must behave as one lifecycle.</li>
+            </ol>
+            <p><a href="#risks">See evidence, status, and merge criteria in the adversarial register →</a></p>
+          </div>
+        </div>
+      </section>
+
+      <section id="before-after" data-search="before after legacy compatibility createAgentApp registerAgentRoutes">
+        <div class="section-head">
+          <div><div class="section-no">02 · Shape</div><h2>Before → after</h2></div>
+          <div class="section-intro">The large deletion count is the removal of a second composition authority. The large addition count is the complete direct contract required before that second authority could safely disappear.</div>
+        </div>
+        <div class="comparison">
+          <article class="old">
+            <h3>Before: split authority</h3>
+            <ul>
+              <li><code>createAgentHost()</code> existed, but did not own every route and lifecycle edge.</li>
+              <li><code>createAgentApp()</code>, <code>registerAgentRoutes()</code>, and <code>agentHostLegacyRoute*</code> could independently assemble behavior.</li>
+              <li>Legacy <code>/api/v1/agent/*</code> and addressed routes coexisted.</li>
+              <li>Internal consumers could retain raw Workspace/dispatcher objects.</li>
+              <li>Session operations could lose the Agent owner and rely on “default”.</li>
+            </ul>
+          </article>
+          <div class="arrow" aria-hidden="true">→</div>
+          <article class="new">
+            <h3>After: direct authority</h3>
+            <ul>
+              <li><code>CreatedAgentHost</code> owns fleet, bindings, sessions, effects, leases, and lifecycle.</li>
+              <li>Apps compose direct routes through <code>registerDirectRoutes()</code>.</li>
+              <li>Agent routes are exclusively addressed under <code>/api/v1/agents/:agentTypeId/*</code>.</li>
+              <li>Internal access is callback-scoped and revocable.</li>
+              <li>The wire reference is <code>{agentTypeId, sessionId}</code>; authoritative lookup also includes the verified workspace/storage scope.</li>
+            </ul>
+          </article>
+        </div>
+        <h3>The migration is deliberately breaking</h3>
+        <p>There is no fallback flag, compatibility alias, or parallel runtime owner. Removed TypeScript exports fail at compile time. Removed <code>/api/v1/agent/*</code> paths return <code>404</code>; malformed or stale calls to surviving routes receive stable validation/domain errors. Client migration, server contraction, and legacy deletion therefore ship atomically.</p>
+      </section>
+
+      <section id="ownership" data-search="ownership application policy AgentHost environment routes">
+        <div class="section-head">
+          <div><div class="section-no">03 · Boundary</div><h2>Who owns what</h2></div>
+          <div class="section-intro">“AgentHost owns everything” would be misleading. It owns Agent/runtime mechanics. The embedding app still owns product policy and application HTTP surfaces.</div>
+        </div>
+        <p class="flow-label">Architecture map: policy and app routes sit above Host authority; Host creates and fences Environment, Agent binding, and durable state below.</p>
+        <div class="architecture">
+          <div class="arch-row">
+            <div class="arch-node"><h4>Frontend & plugins</h4><p>Always send <code>agentTypeId</code> and <code>sessionId</code>. No legacy route selection.</p></div>
+            <div class="arch-node"><h4>Application policy</h4><p>Auth, membership, fleet, plugin grants, roots, placement, and storage choices.</p></div>
+            <div class="arch-node"><h4>App HTTP surfaces</h4><p>Files, tree, search, Git, share links, health, workspace metadata.</p></div>
+          </div>
+          <div class="flow-label">verified capability + resolvers ↓ &nbsp;&nbsp; leased environment access ↑</div>
+          <div class="arch-row">
+            <div class="arch-node host"><h4>CreatedAgentHost — sole runtime authority</h4><p>Environment generations · Agent binding generations · Gateway · session pins · request ledger · direct HTTP projection · callback leases · drain and close.</p></div>
+          </div>
+          <div class="flow-label">creates and fences ↓</div>
+          <div class="arch-row">
+            <div class="arch-node"><h4>Environment</h4><p>Workspace, sandbox/provider, provisioning, file search, Git adapter, readiness.</p></div>
+            <div class="arch-node"><h4>Agent binding</h4><p>Tools, prompt, Pi resources, harness, session store, semantic identity.</p></div>
+            <div class="arch-node"><h4>Durable state</h4><p>Transcript JSONL + runtime pin, SQLite request/effect receipts, Host identity.</p></div>
+          </div>
+        </div>
+        <div class="ownership-grid">
+          <article>
+            <h3>AgentHost-owned</h3>
+            <ul>
+              <li>Fleet validation and binding publication.</li>
+              <li>Environment acquisition and generation compatibility.</li>
+              <li>Harness/session-service construction.</li>
+              <li>Session pin resolution and existing-session mutations.</li>
+              <li>Effect admission, serialization, durable outcomes.</li>
+              <li>Subscription, dispatcher, drain, and close lifecycle.</li>
+            </ul>
+          </article>
+          <article>
+            <h3>Application-owned</h3>
+            <ul>
+              <li>Authentication, membership, and capability issuance.</li>
+              <li>Workspace roots and provider placement.</li>
+              <li>Fleet/plugin/model/tool policy.</li>
+              <li>Provisioning inputs and reload callbacks.</li>
+              <li>Files/tree/search/Git/share HTTP routes.</li>
+              <li>Deployment topology and durable-volume choices.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section id="identity" data-search="identity workspace actor environment binding namespace digest obligations">
+        <div class="section-head">
+          <div><div class="section-no">Boundary companion</div><h2>The identity obligations</h2></div>
+          <div class="section-intro">These values are not interchangeable. A reviewer should trace each from app policy to every cache key, pin, ledger key, and diagnostic field that depends on it.</div>
+        </div>
+        <table>
+          <thead><tr><th>Identity</th><th>Who supplies it</th><th>What it gates</th><th>Must never substitute for</th></tr></thead>
+          <tbody>
+            <tr><td><code>workspaceId</code> + actor claim</td><td>Verified authorization scope</td><td>Tenant/actor isolation and ledger ownership</td><td>Physical placement or Agent definition</td></tr>
+            <tr><td>Environment placement identity</td><td><code>resolveAuthorizedEnvironmentScope</code></td><td>Workspace/provider generation reuse</td><td>Semantic Agent compatibility</td></tr>
+            <tr><td><code>bindingSlot</code></td><td><code>resolveAuthorizedAgentRuntimeScope</code></td><td>Which physical slot publishes a binding generation</td><td>Persisted runtime pin</td></tr>
+            <tr><td><code>runtimeScopeIdentity</code></td><td>Agent policy, validated by Host</td><td>Existing-session compatibility and pinning</td><td>Process identity or workspace root</td></tr>
+            <tr><td><code>sessionNamespace</code></td><td>Agent policy / explicit session options</td><td>Transcript storage partition</td><td>Authorization by itself</td></tr>
+            <tr><td>Resource/content digest</td><td>Canonicalized Agent resources</td><td>Same-identity reload classification</td><td>A new semantic identity</td></tr>
+          </tbody>
+        </table>
+        <div class="callout warn"><strong>Fail-closed rule</strong><p>A missing, malformed, or conflicting identity must reject or require restart. It must not collapse to a convenient “default” owner.</p></div>
+      </section>
+
+      <section id="vocabulary" data-search="vocabulary environment binding scope pin lease ledger">
+        <div class="section-head">
+          <div><div class="section-no">04 · Vocabulary</div><h2>Eight concepts to keep separate</h2></div>
+          <div class="section-intro">Most review confusion comes from treating “runtime”, “workspace”, “Agent”, and “session” as the same lifetime. They are intentionally different.</div>
+        </div>
+        <dl class="term-grid">
+          <div class="term"><dt>Authorized scope</dt><dd>An opaque app-issued capability. AgentHost verifies it and obtains a trusted workspace/actor claim.</dd></div>
+          <div class="term"><dt>Environment</dt><dd>The physical execution placement: Workspace, sandbox/provider, provisioning generation, search/Git/filesystem adapters.</dd></div>
+          <div class="term"><dt>Agent runtime scope</dt><dd>The semantic Agent definition: tools, prompt, Pi resources, session namespace, model/plugin identity, reload digest.</dd></div>
+          <div class="term"><dt>Runtime binding</dt><dd>A published generation combining one Agent type, verified workspace, Environment, semantic identity, harness, and session service.</dd></div>
+          <div class="term"><dt>Session pin</dt><dd>The persisted or inferred runtime-scope identity that prevents an existing transcript from silently moving to an incompatible binding.</dd></div>
+          <div class="term"><dt>Lease</dt><dd>A finite right to use an Environment or binding. It ends at response close, callback completion, abort, drain, or Host close.</dd></div>
+          <div class="term"><dt>Request ledger</dt><dd>A transactional effect record keyed by actor, operation, target, and request ID, with a digest of the intended payload.</dd></div>
+          <div class="term"><dt>Projection</dt><dd>A safe interface over Host authority: addressed HTTP routes, Environment HTTP routes, or callback-scoped in-process dispatch.</dd></div>
+        </dl>
+      </section>
+
+      <section id="composition" data-search="composition resolvers environment runtime build harness tools">
+        <div class="section-head">
+          <div><div class="section-no">05 · Composition</div><h2>How a live Agent is built</h2></div>
+          <div class="section-intro">The key interface decision is splitting physical Environment resolution from semantic Agent resolution.</div>
+        </div>
+        <h3>Resolver 1 — Environment policy</h3>
+        <p><code>resolveAuthorizedEnvironmentScope</code> returns placement identity, workspace root, provisioning fingerprint, optional provisioning, and per-operation filesystem binding resolution. It answers: <em>where can this work run?</em></p>
+        <h3>Resolver 2 — Agent policy</h3>
+        <p><code>resolveAuthorizedAgentRuntimeScope</code> returns semantic identity, physical binding slot, session namespace, Pi inputs, tools, prompts, content digest, reload fence, and mutation callback. It answers: <em>what Agent is allowed to run there?</em></p>
+        <div class="sequence">
+          <div class="step"><strong>Verify</strong><span>The app-issued scope becomes a trusted workspace/actor claim.</span></div>
+          <div class="step"><strong>Resolve Environment</strong><span>AgentHost checks placement and provisioning compatibility before reuse.</span></div>
+          <div class="step"><strong>Acquire generation</strong><span>The Environment manager creates or leases the canonical provider/workspace bundle.</span></div>
+          <div class="step"><strong>Resolve Agent scope</strong><span>App policy supplies tools, prompts, resources, identity, namespace, and reload contract.</span></div>
+          <div class="step"><strong>Build binding</strong><span><code>buildAgentComposition</code> creates tools → readiness → harness → store → <code>HarnessPiChatService</code>.</span></div>
+          <div class="step"><strong>Publish current</strong><span>One generation becomes canonical for new sessions; pinned older sessions may retain a historical generation.</span></div>
+        </div>
+        <div class="callout">
+          <strong>Why two layers?</strong>
+          <p>Multiple Agent definitions can safely share one expensive sandbox/Workspace generation, while incompatible provisioning never shares by accident. Semantic Agent changes and physical placement changes are no longer conflated. See the concrete identity obligations above before reviewing reuse keys.</p>
+        </div>
+      </section>
+
+      <section id="sessions" data-search="sessions transcript pin storage legacyDefault namespace bytes">
+        <div class="section-head">
+          <div><div class="section-no">06 · Persistence</div><h2>Sessions are addressed and pinned</h2></div>
+          <div class="section-intro">A transcript’s wire reference is <code>{agentTypeId, sessionId}</code>. Its authority key is <code>{verifiedWorkspaceStorageScope, agentTypeId, sessionId}</code>, plus a runtime pin. The authenticated subject is verified and attributed on every request, but is not session ownership in the current workspace-shared model.</div>
+        </div>
+        <div class="decision-list">
+          <div class="decision"><div class="num">01</div><div><h3>Listing stays storage-first</h3><p>Once app authorization resolves the permitted session namespace, inventory reads transcript metadata without building an Agent binding or booting a harness. Browsing history should not cold-start Agent compute; authorization may still resolve policy.</p></div></div>
+          <div class="decision"><div class="num">02</div><div><h3>New session creation resolves current</h3><p>Creation resolves the current binding for the addressed Agent, persists its runtime-scope identity, and records the addressed reference. This does not imply that an unrelated current generation is silently substituted for an existing pinned session.</p></div></div>
+          <div class="decision"><div class="num">03</div><div><h3>Existing mutations resolve through the pin</h3><p>Prompt, follow-up, interrupt, stop, queue clear, rename, delete, attachment, and runtime-capability routes all resolve the exact existing-session binding.</p></div></div>
+          <div class="decision"><div class="num">04</div><div><h3>Historical bytes are not rewritten</h3><p>Explicit <code>sessionDir</code>, <code>sessionRoot/sessionNamespace</code>, <code>legacyDefault</code>, CLI defaults, and Core’s sibling <code>/data/pi-sessions</code> inference remain byte/path compatible.</p></div></div>
+        </div>
+        <div class="callout warn"><strong>Isolation contract</strong><p>The addressed Gateway intentionally makes sessions workspace/storage-scope owned, not creator-user owned. Two authorized members of the same workspace scope can address the same session; a different workspace scope receives not-found. If product policy requires private per-user chats, the current default is insufficient: issue a server-derived per-user storage scope/session namespace or add explicit session ACL/owner enforcement. Never trust a client-supplied user or storage key.</p></div>
+        <div class="callout warn"><strong>Runtime-pin principle</strong><p>If current configuration no longer matches a pinned session, the system fails closed. It does not guess a migration and does not silently repin the transcript.</p></div>
+      </section>
+
+      <section id="effects" data-search="effects ledger idempotency admission sqlite outcome unknown replay">
+        <div class="section-head">
+          <div><div class="section-no">07 · Effects</div><h2>Agent effects use a durable state machine</h2></div>
+          <div class="section-intro">The SQLite ledger is not chat storage. It owns execution rights and replay semantics for Agent-side mutating operations routed through the Gateway.</div>
+        </div>
+        <div class="sequence">
+          <div class="step"><strong>Key</strong><span>Workspace + actor + operation + target + <code>requestId</code>.</span></div>
+          <div class="step"><strong>Digest</strong><span>Canonical payload digest detects request-ID reuse with different intent.</span></div>
+          <div class="step"><strong>Prepare</strong><span>Transactional compare-and-swap determines who owns execution.</span></div>
+          <div class="step"><strong>Classify</strong><span>Deterministic state checks can reject before provider mutation.</span></div>
+          <div class="step"><strong>Admit</strong><span>App billing/policy may accept, reject, or ask for retry.</span></div>
+          <div class="step"><strong>Execute</strong><span>The effect runs under session/binding serialization and Host lifecycle fencing.</span></div>
+          <div class="step"><strong>Terminalize</strong><span>Complete, reject, or record <code>outcome-unknown</code> if safe replay cannot be proven.</span></div>
+        </div>
+        <h3>Ledger states</h3>
+        <div class="state-machine" aria-label="Effect ledger state machine">
+          <span class="state">pending-admission</span><span class="join">→</span>
+          <span class="state">admission-accepted</span><span class="join">→</span>
+          <span class="state">in-flight</span><span class="join">→</span>
+          <span class="state final">completed</span><span class="join">or</span>
+          <span class="state final">rejected</span><span class="join">or</span>
+          <span class="state uncertain">outcome-unknown</span>
+        </div>
+        <div class="callout risk">
+          <strong>Boundary and deployment contract</strong>
+          <p>The ledger covers Agent-side effects such as prompt, interrupt, stop, queue mutation, reload, delete, and other Gateway mutations. App-owned file/Git HTTP mutations are outside this ledger. Transactional ownership applies only to processes sharing the same SQLite file; unrelated volumes are not a cluster-wide authority. Production must configure durable ledger storage. In-memory fallback is test/development compatibility, not a safe production topology.</p>
+        </div>
+      </section>
+
+      <section id="reload" data-search="reload digest resource fence restart required mutation rollback">
+        <div class="section-head">
+          <div><div class="section-no">08 · Reload</div><h2>Reload is compatible mutation, not replacement</h2></div>
+          <div class="section-intro">The reload path is strict because a mutable plugin tree and a durable request ledger must agree on exactly what was authorized.</div>
+        </div>
+        <div class="sequence">
+          <div class="step"><strong>Snapshot identity</strong><span>Resolve semantic identity, physical binding identity, provisioning fingerprint, and content digest without mutating.</span></div>
+          <div class="step"><strong>Claim request</strong><span>The ledger owns the reload before effects begin.</span></div>
+          <div class="step"><strong>Compare current</strong><span>Identity/fingerprint/physical-slot changes return <code>AGENT_RUNTIME_RESTART_REQUIRED</code>.</span></div>
+          <div class="step"><strong>Check pin</strong><span>A session pinned to a retired generation cannot reload the current generation through a side door.</span></div>
+          <div class="step"><strong>Revalidate bytes</strong><span>Pi settings, prompts, skills, packages, and extension artifacts are bounded, contained, content-hashed inputs.</span></div>
+          <div class="step"><strong>Apply mutation</strong><span>Plugin/backend resources update under a binding fence, followed by harness reload.</span></div>
+          <div class="step"><strong>Revalidate again</strong><span>Drift after admission cannot publish a clean success receipt.</span></div>
+        </div>
+        <div class="callout warn"><strong>Important tradeoff</strong><p>Reload is not a transactional hot-swap with rollback. Compatible resources mutate in place. Identity, placement, binding-slot, or provisioning changes are immutable through reload and return <code>AGENT_RUNTIME_RESTART_REQUIRED</code>; the app must replace/restart the binding through lifecycle policy. If failure occurs after mutation begins, the request may become <code>outcome-unknown</code> and requires operator judgment rather than blind replay.</p></div>
+      </section>
+
+      <section id="leases" data-search="leases callback workspace dispatcher shutdown drain close abort">
+        <div class="section-head">
+          <div><div class="section-no">09 · Lifetime</div><h2>Capabilities are finite</h2></div>
+          <div class="section-intro">The cutover replaces retained raw Workspace/dispatcher objects with leases whose end can be enforced.</div>
+        </div>
+        <h3>Environment HTTP lease</h3>
+        <p>Files, tree, search, Git, share, and FS-event routes borrow an Environment after app authorization. Normal requests release on response/error. Streaming routes keep the lease until request abort, socket close, or response transport close.</p>
+        <h3>Callback-scoped Agent lease</h3>
+        <p><code>runWithWorkspaceAgent(input, callback)</code> supplies guarded Workspace access, <code>AbortSignal</code>, dispatch, interrupt, and stop. Outstanding work is tracked. On callback completion or shutdown, the projection is revoked and late operations/results are fenced.</p>
+        <h3>Drain then close</h3>
+        <p>Fastify <code>preClose</code> drains; <code>onClose</code> closes. The Host stops acquisition, aborts cooperative operations, waits a bounded grace period, fences late publication, closes connections/bindings/Environments, and tears down ledger/provider resources through idempotent close guards.</p>
+        <div class="callout"><strong>Bounded does not mean magical cancellation</strong><p>A provider promise that ignores <code>AbortSignal</code> cannot be physically rolled back. The Host guarantees that its late result cannot republish into a retired generation.</p></div>
+      </section>
+
+      <section id="http" data-search="HTTP routes addressed projections files tree search git attachments commands readiness">
+        <div class="section-head">
+          <div><div class="section-no">10 · Projections</div><h2>Two HTTP surfaces, one Host</h2></div>
+          <div class="section-intro">Agent operations are Host-owned and addressed. Application/environment routes remain app-owned but borrow Host-issued leases.</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Surface</th><th>Owner</th><th>Shape</th><th>Why</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Agent discovery</strong></td><td>AgentHost</td><td><code>GET /api/v1/agents</code></td><td>Exposes the compiled fleet behind app authorization.</td></tr>
+              <tr><td><strong>Sessions</strong></td><td>AgentHost</td><td><code>/api/v1/agents/:agentTypeId/sessions/*</code></td><td>Makes Agent ownership explicit and routes through pin checks.</td></tr>
+              <tr><td><strong>Runtime capabilities</strong></td><td>AgentHost</td><td>models, skills, tools, prompt, commands, readiness, reload</td><td>Uses the same binding and authorization funnel as chat.</td></tr>
+              <tr><td><strong>Files / tree / search / Git</strong></td><td>Application</td><td><code>/api/v1/files*</code>, tree, search, Git, FS events</td><td>These are workspace surfaces, not Agent-session surfaces.</td></tr>
+              <tr><td><strong>Health / ready / meta / share</strong></td><td>Application</td><td>Host-specific routes</td><td>Product and deployment policy stays outside AgentHost.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Why attachments changed</h3>
+        <p>Attachment reads now resolve the exact existing-session binding first. They no longer reconstruct a “current” runtime after authorization, which could read bytes through a different generation than the transcript that referenced them. Upload paths are bounded by count and byte limits, and malformed payloads should produce stable 4xx errors—one reviewed branch currently needs correction; see §17.</p>
+        <h3>Readiness and errors are contracts</h3>
+        <p>Readiness is an Agent-addressed lease whose SSE lifetime ends on request abort, socket close, or response close. Validation, unknown-Agent, session-pin, restart-required, and shutdown failures use stable error codes so clients do not infer semantics from message text.</p>
+      </section>
+
+      <section id="clients" data-search="frontend client agentTypeId Workspace panes plugin addressed identity">
+        <div class="section-head">
+          <div><div class="section-no">11 · Clients</div><h2>Identity travels end-to-end</h2></div>
+          <div class="section-intro">Most of the broad file churn is propagation of one invariant: every Agent interaction carries its owner.</div>
+        </div>
+        <div class="decision-list">
+          <div class="decision"><div class="num">01</div><div><h3><code>PiChatPanel</code> requires <code>agentTypeId</code></h3><p>The panel, session hooks, streams, model/skill/command hooks, and debug controls no longer infer a legacy default route.</p></div></div>
+          <div class="decision"><div class="num">02</div><div><h3>Workspace pane state is compound-addressed</h3><p>Persisted tabs, detached chats, reload/readiness, and shell capabilities distinguish Agents that happen to use the same session ID.</p></div></div>
+          <div class="decision"><div class="num">03</div><div><h3>Plugin clients receive the selected Agent</h3><p><code>WorkspacePluginClientProvider</code> builds addressed session/prompt URLs and forwards workspace headers. Dashboard refresh actions now create addressed sessions explicitly.</p></div></div>
+          <div class="decision"><div class="num">04</div><div><h3>Automation and external callers persist addressed receipts</h3><p>Session creation, dispatch, event consumption, and recovery retain <code>agentTypeId</code> so background work cannot reconnect to the wrong Agent.</p></div></div>
+        </div>
+        <div class="callout"><strong>Why the client diff is broad</strong><p>The strict production-source filter for this guide finds 46 changed files under front-end directories. This is contract propagation, not 46 new subsystems: types were made strict so a missing owner fails at build time instead of falling back at runtime.</p></div>
+      </section>
+
+      <section id="roots" data-search="Core Workspace CLI playground standalone composition roots">
+        <div class="section-head">
+          <div><div class="section-no">12 · Hosts</div><h2>Seven reviewed host configurations</h2></div>
+          <div class="section-intro">Some rows are independent constructors and some delegate to another composition. Each expresses different product policy while converging on the direct Agent route table and Host lifecycle.</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Root</th><th>Policy it owns</th><th>Direct cutover</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Core / full app</strong></td><td>User membership, workspace store, hosted persistence, remote-worker placement, shares.</td><td>Creates one Host, issues opaque scopes, mounts Core Environment routes, preserves audited route order.</td></tr>
+              <tr><td><strong>Workspace</strong></td><td>Local workspace auth, plugin collection, UI bridge, runtime contributions.</td><td>Creates one Host and publishes callback-scoped dispatcher access; folder CLI delegates here.</td></tr>
+              <tr><td><strong>CLI folder</strong></td><td>Local folder trust, bundled plugins, local bridge.</td><td>Inherits Workspace’s direct composition.</td></tr>
+              <tr><td><strong>CLI workspaces</strong></td><td>Workspace registry, workspace headers, one local multi-workspace process.</td><td>Uses one Host whose resolvers select the trusted registry workspace.</td></tr>
+              <tr><td><strong>Agent playground</strong></td><td>Reference local scope and development runtime.</td><td>Small direct composition; proves canonical route table and lifecycle.</td></tr>
+              <tr><td><strong>Standalone profile</strong></td><td>Single trusted local workspace, auth token, local Pi defaults.</td><td><code>createStandaloneAgentHostApp</code> is a thin shell over one Host and is reused by the Agent playground; it is not an alternate authority.</td></tr>
+              <tr><td><strong>Direct Host</strong></td><td>Library contract only.</td><td>Exact route/auth projection used as the conformance baseline.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="integrations" data-search="automation MCP live transcription plugins integration leases">
+        <div class="section-head">
+          <div><div class="section-no">13 · Integrations</div><h2>Downstream behavior changes</h2></div>
+          <div class="section-intro">Integrations were migrated because direct Host ownership is only real if background and plugin paths cannot bypass it.</div>
+        </div>
+        <details open><summary>Boring Automation</summary><div><p>Manual and due runs require a host-selected Agent, persist addressed session/dispatch state, and perform workspace-backed store operations inside a Host callback lease. This removes direct retention of raw dispatchers and aligns recovery with the durable Agent effect model.</p></div></details>
+        <details><summary>Managed Agent MCP</summary><div><p>The full app rechecks configured workspace membership and performs dispatch, stop, and artifact reads inside <code>runWithWorkspaceAgent</code>. Adversarial review notes that the current implementation buffers events until dispatch completes rather than yielding progress incrementally; see the risk register.</p></div></details>
+        <details><summary>Live transcription</summary><div><p>Recording owns an Environment/Agent lease for the transcript lifetime and releases on terminal state. Adversarial review flags that the direct CLI path may not wire the prior Agent review broker; this needs explicit product disposition.</p></div></details>
+        <details><summary>Ask User, Tasks, CCUsage, GitHub PR Tracker</summary><div><p>Frontends and helper actions now carry <code>agentTypeId</code>, create addressed sessions, and send addressed prompts. Their visual/product behavior is mostly unchanged; the important change is identity propagation.</p></div></details>
+      </section>
+
+      <section id="deletions" data-search="deleted removed replacement API compatibility routes">
+        <div class="section-head">
+          <div><div class="section-no">14 · Contraction</div><h2>What was deleted—and its replacement</h2></div>
+          <div class="section-intro">The removal is the proof that there is no middle ground. These are not deprecated aliases; they are gone.</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Removed production abstraction</th><th>Replacement</th><th>Reason</th></tr></thead>
+            <tbody>
+              <tr><td><code>createAgentApp</code></td><td><code>createStandaloneAgentHostApp</code> or direct <code>createAgentHost</code></td><td>Eliminates a second app assembly order and lifecycle owner.</td></tr>
+              <tr><td><code>registerAgentRoutes</code></td><td><code>created.registerDirectRoutes()</code></td><td>All Agent routes derive from the canonical Host projection.</td></tr>
+              <tr><td><code>agentHostLegacyRouteRuntime</code></td><td>Host binding registry + composition builder</td><td>Runtime creation and caching belong to AgentHost.</td></tr>
+              <tr><td><code>agentHostLegacyRoutePolicy/Mount/Options</code></td><td>App authorization + direct projection options</td><td>Removes compatibility union and hidden route policy.</td></tr>
+              <tr><td><code>legacyPiChatCompatibility</code></td><td><code>EmbeddedAgentGateway</code></td><td>Session operations share pinning, admission, and durable effects.</td></tr>
+              <tr><td>Legacy <code>piChat</code>, <code>commands</code>, <code>reload</code> route modules</td><td>Host HTTP and runtime-capability projections</td><td>No duplicate route implementations or error semantics.</td></tr>
+              <tr><td><code>/api/v1/agent/pi-chat/*</code></td><td><code>/api/v1/agents/:agentTypeId/sessions/*</code></td><td>Agent ownership is mandatory and visible.</td></tr>
+              <tr><td>Retainable raw dispatcher/workspace resolution</td><td><code>runWithWorkspaceAgent(callback)</code></td><td>Capabilities become revocable and bounded by Host lifetime.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="operations" data-search="operations deployment sqlite session root readiness replicas volume">
+        <div class="section-head">
+          <div><div class="section-no">15 · Operations</div><h2>Deployment consequences</h2></div>
+          <div class="section-intro">The architectural contract reaches storage and process topology. A correct code review must include these deployment assumptions.</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Host</th><th>Transcript root</th><th>Ledger</th><th>Cold-start trigger</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Core hosted</strong></td><td>Explicit root, env root, or sibling <code>/data/pi-sessions</code> inference</td><td><code>.agent-request-ledger.sqlite</code></td><td>Environment acquisition / readiness</td></tr>
+              <tr><td><strong>Workspace</strong></td><td>Configured Workspace/Agent session root</td><td><code>&lt;workspace&gt;/.boring/agent-request-ledger.sqlite</code></td><td>First binding or <code>/ready</code></td></tr>
+              <tr><td><strong>Standalone</strong></td><td>Historical local Pi defaults unless overridden</td><td><code>&lt;workspace&gt;/.boring/agent-request-ledger.sqlite</code></td><td>Startup initialization unless disabled</td></tr>
+              <tr><td><strong>CLI workspaces</strong></td><td>Configured root or native Pi default</td><td>Beside workspace registry</td><td>First addressed workspace operation</td></tr>
+              <tr><td><strong>Playground</strong></td><td>Development root</td><td>Explicit in-memory development mode when configured</td><td>Reference composition start</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <ul>
+          <li>SQLite WAL creates <code>-wal</code> and <code>-shm</code> files; backups must capture a consistent database state.</li>
+          <li>Replica-local SQLite files do not provide fleet-wide ownership. Use one writer/sticky placement or a shared transactional ledger implementation.</li>
+          <li>One Host writer per session namespace remains a hard operational invariant.</li>
+          <li>Runtime provisioning can sit behind readiness. Probe timeouts must account for a cold sandbox/package installation.</li>
+          <li>Rollback must stop and drain the cutover writer before old code starts against the same transcript namespace.</li>
+        </ul>
+      </section>
+
+      <section id="risks" data-search="risk blockers adversarial review confirmed conditional decision merge">
+        <div class="section-head">
+          <div><div class="section-no">16 · Adversarial review</div><h2>Merge findings, classified</h2></div>
+          <div class="section-intro">This register separates defects confirmed in the reviewed head from conditional hazards and owner decisions. Architecture claims are not substitutes for disposition.</div>
+        </div>
+
+        <div class="risk-group">
+          <h3><span class="status-chip confirmed">Confirmed defect</span> Fix before merge</h3>
+          <div class="risk-register">
+            <div class="risk-item"><div class="severity">P1</div><strong>Malformed attachment bodies can become 500</strong><div><code>resolveAttachments</code> throws before the prompt route enters its <code>try/catch</code>; the global error handler then emits an internal error instead of a stable 4xx validation response. <a href="https://github.com/hachej/boring-ui/blob/3c82c9960a542949e2fef648353ab7a2c45abc9f/packages/agent/src/server/agent-host/httpProjection.ts#L264-L273">Evidence: httpProjection.ts L264–273</a>, <a href="https://github.com/hachej/boring-ui/blob/3c82c9960a542949e2fef648353ab7a2c45abc9f/packages/agent/src/server/agent-host/httpProjection.ts#L492-L497">L492–497</a>, <a href="https://github.com/hachej/boring-ui/blob/3c82c9960a542949e2fef648353ab7a2c45abc9f/packages/agent/src/server/agent-host/httpProjection.ts#L1089-L1099">L1089–1099</a>.<span class="merge-criterion">Merge criterion: malformed attachment arrays and entries return the documented stable 4xx code, with regression coverage.</span></div></div>
+            <div class="risk-item"><div class="severity">P1</div><strong>Unknown Agents can open runtime resources before rejection</strong><div>Dispatcher and Environment setup can occur before the fleet-membership check rejects an unknown <code>agentTypeId</code>. This violates the intended “authorize before expensive work” boundary even if the request ultimately fails. <a href="https://github.com/hachej/boring-ui/blob/3c82c9960a542949e2fef648353ab7a2c45abc9f/packages/agent/src/server/agent-host/createAgentHost.ts#L802-L819">Evidence: createAgentHost.ts L802–819</a>, <a href="https://github.com/hachej/boring-ui/blob/3c82c9960a542949e2fef648353ab7a2c45abc9f/packages/agent/src/server/agent-host/createAgentHost.ts#L1005-L1019">L1005–1019</a>.<span class="merge-criterion">Merge criterion: fleet membership is checked before dispatcher, Environment, or Agent-runtime acquisition.</span></div></div>
+          </div>
+        </div>
+
+        <div class="risk-group">
+          <h3><span class="status-chip conditional">Conditional hazard</span> Prove the deployment invariant or change code</h3>
+          <div class="risk-register">
+            <div class="risk-item"><div class="severity">P1</div><strong>SQLite and session serialization are not distributed locks</strong><div>Ledger ownership is transactional only for processes sharing one SQLite file; per-session serialization is process-local. Correctness therefore depends on one Host writer per namespace and sticky/shared storage placement.<span class="merge-criterion">Merge criterion: production topology and rollback runbook explicitly enforce one writer and a durable shared ledger boundary.</span></div></div>
+            <div class="risk-item"><div class="severity p2">P2</div><strong>Long-lived caches need bounded operational assumptions</strong><div>Published bindings and compatible Environment generations can live until Host close. High-cardinality multi-workspace processes should prove bounded identity churn or define retirement/eviction.<span class="merge-criterion">Merge criterion: accept a bounded deployment assumption or add observability and retirement policy.</span></div></div>
+            <div class="risk-item"><div class="severity p2">P2</div><strong>Shared reload resources need a concurrency proof</strong><div>Binding-local reload fences are safe only if mutable resources are binding-local. If multiple Agent types share a mutable workspace/plugin registry, concurrency requires an Environment-level fence or an explicit immutability argument.<span class="merge-criterion">Merge criterion: trace ownership of every mutated reload resource and document or enforce the correct lock scope.</span></div></div>
+          </div>
+        </div>
+
+        <div class="risk-group">
+          <h3><span class="status-chip decision">Owner decision</span> Accept the product/operations tradeoff explicitly</h3>
+          <div class="risk-register">
+            <div class="risk-item"><div class="severity p2">D1</div><strong>Durable ledger is mandatory in production</strong><div>In-memory mode cannot survive crash or coordinate writers. It remains useful for hermetic tests and local development only.<span class="merge-criterion">Decision: require durable configuration in production startup and monitoring, or reject the current deployment contract.</span></div></div>
+            <div class="risk-item"><div class="severity p2">D2</div><strong>No compatibility window</strong><div>Old imports and <code>/api/v1/agent/*</code> callers fail immediately. Atomic migration is simpler and safer internally, but demands coordinated rollout of every client.<span class="merge-criterion">Decision: approve the breaking cutover and verified consumer inventory; do not add a dual-authority fallback.</span></div></div>
+            <div class="risk-item"><div class="severity p2">D3</div><strong>Ambiguous provider completion is operator work</strong><div>A reload/effect that mutates externally and loses confirmation becomes <code>outcome-unknown</code>. The system intentionally refuses blind replay rather than promising impossible exactly-once semantics.<span class="merge-criterion">Decision: accept the operator reconciliation path and define its runbook/telemetry.</span></div></div>
+          </div>
+        </div>
+
+        <div class="risk-group">
+          <h3><span class="status-chip accepted">Accepted</span> Collaborative session ownership</h3>
+          <div class="risk-register">
+            <div class="risk-item"><div class="severity p2">OK</div><strong>Sessions are workspace-shared, not user-private</strong><div>The Gateway uses <code>authSubjectId</code> for authorization, attribution, runtime inputs, and ledger ownership, but deliberately omits it from addressed session ownership. A second authorized subject in the same workspace scope can connect to the same session; a different workspace scope receives not-found. <a href="https://github.com/hachej/boring-ui/blob/3c82c9960a542949e2fef648353ab7a2c45abc9f/packages/agent/src/server/pi-chat/harnessPiChatService.ts#L1127-L1138">Evidence: harnessPiChatService.ts L1127–1138</a>, <a href="https://github.com/hachej/boring-ui/blob/3c82c9960a542949e2fef648353ab7a2c45abc9f/packages/agent/src/server/agent-host/__tests__/sessionIsolation.test.ts#L23-L44">sessionIsolation.test.ts L23–44</a>.<span class="merge-criterion">Owner disposition: accepted for collaborative workspaces. Per-session roles, private chats, or restricted delete/rename rights belong in a separate product story if desired.</span></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="files" data-search="production file map source paths">
+        <div class="section-head">
+          <div><div class="section-no">17 · File map</div><h2>Where the production architecture lives</h2></div>
+          <div class="section-intro">This map covers the meaningful production change families. Use the filter in the sidebar to find a concept or path.</div>
+        </div>
+        <details open><summary>AgentHost core — authority, binding, effects, and leases</summary><div class="file-map">
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/types.ts">agent-host/types.ts</a><span>Public contracts: scopes, Environment, runtime binding policy, direct projections, ledger, and <code>CreatedAgentHost</code>.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/createAgentHost.ts">agent-host/createAgentHost.ts</a><span>Central registry, Environment/binding generations, publication, lifecycle, persistent Host identity.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/buildAgentComposition.ts">agent-host/buildAgentComposition.ts</a><span>Single construction funnel for tools, readiness, harness, store, and Pi session service.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/embeddedGateway.ts">agent-host/embeddedGateway.ts</a><span>Addressed sessions, pin checks, writer serialization, durable effect protocol.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/environmentLease.ts">agent-host/environmentLease.ts</a><span>Compatible Environment generation creation, reference counting, drain, and dispose.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/workspaceAgentLease.ts">agent-host/workspaceAgentLease.ts</a><span>Callback-scoped Workspace/dispatcher capability, abort, operation tracking, revocation.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/sessionInventory.ts">agent-host/sessionInventory.ts</a><span>Storage-only addressed session discovery and historical transcript compatibility.</span></div>
+        </div></details>
+
+        <details><summary>HTTP, runtime capabilities, reload, and persistence</summary><div class="file-map">
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/httpProjection.ts">agent-host/httpProjection.ts</a><span>Canonical addressed sessions/events/attachments/mutation routes and Host lifecycle hooks.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/runtimeCapabilityProjection.ts">agent-host/runtimeCapabilityProjection.ts</a><span>Models, skills, tools, prompt, commands, readiness, reload classification and fencing.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/environmentHttpProjection.ts">agent-host/environmentHttpProjection.ts</a><span>Leased files/tree/search/Git/FS-event projection for generic hosts.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/sqliteRequestLedger.ts">agent-host/sqliteRequestLedger.ts</a><span>Durable SQLite CAS transitions and replay ownership.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/piResourceDigest.ts">server/piResourceDigest.ts</a><span>Bounded, contained Pi settings/resource content identity and reload revalidation.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/createStandaloneAgentHostApp.ts">server/createStandaloneAgentHostApp.ts</a><span>Thin standalone HTTP shell over the canonical direct Host.</span></div>
+        </div></details>
+
+        <details><summary>Application composition roots</summary><div class="file-map">
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/core/src/app/server/createCoreWorkspaceAgentServer.ts">core/createCoreWorkspaceAgentServer.ts</a><span>Hosted auth/membership scope issuance, runtime policy, provisioning, direct Host assembly.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/core/src/app/server/coreAgentHostEnvironmentRoutes.ts">core/coreAgentHostEnvironmentRoutes.ts</a><span>Core-owned files/search/Git/share routes over Host Environment leases.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/workspace/src/app/server/createWorkspaceAgentServer.ts">workspace/createWorkspaceAgentServer.ts</a><span>Local Workspace plugins, identity, provisioning, reload, bridge, and one direct Host.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/cli/src/server/modeApps.ts">cli/modeApps.ts</a><span>Folder delegation and multi-workspace direct Host authority.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/apps/agent-playground/src/server/agentHost.ts">agent-playground/agentHost.ts</a><span>Reference direct composition with trusted local scope.</span></div>
+        </div></details>
+
+        <details><summary>Frontend and shell identity propagation</summary><div class="file-map">
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/front/chat/PiChatPanel.tsx">front/chat/PiChatPanel.tsx</a><span>Makes <code>agentTypeId</code> a required panel contract.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/front/chat/pi/remotePiSession.ts">front/chat/pi/remotePiSession.ts</a><span>Addressed state, event, prompt, follow-up, and control transport.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/front/chat/session/usePiSessions.ts">front/chat/session/usePiSessions.ts</a><span>Addressed session inventory/create/delete and selected-Agent ownership.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/workspace/src/app/front/WorkspaceAgentFront.tsx">workspace/WorkspaceAgentFront.tsx</a><span>Selected Agent propagation into panes, persistence, readiness, and plugin clients.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/workspace/src/front/plugin/useWorkspacePluginClient.ts">workspace/useWorkspacePluginClient.ts</a><span>Addressed plugin-side session and prompt helper.</span></div>
+        </div></details>
+
+        <details><summary>Background and plugin integrations</summary><div class="file-map">
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/plugins/boring-automation/src/server/manualRunExecutor.ts">automation/manualRunExecutor.ts</a><span>Addressed automation dispatch, persisted receipts, and lease-bound execution.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/plugins/boring-automation/src/server/hostedStore.ts">automation/hostedStore.ts</a><span>Workspace-backed store access inside Host leases.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/apps/full-app/src/server/managedAgentMcp.ts">full-app/managedAgentMcp.ts</a><span>Membership-checked, callback-scoped managed Agent dispatch and artifacts.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/plugins/live-transcription/src/server/manager.ts">live-transcription/manager.ts</a><span>Recording lifecycle tied to Host lease and addressed Agent selection.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/plugins/ccusage-dashboard/front/agentChat.ts">ccusage-dashboard/agentChat.ts</a><span>Creates and prompts an explicitly addressed Agent session.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/plugins/github-pr-tracker/front/data.ts">github-pr-tracker/data.ts</a><span>Same addressed refresh flow with workspace headers.</span></div>
+        </div></details>
+
+        <details><summary>Build and package boundaries</summary><div class="file-map">
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/index.ts">agent/server/index.ts</a><span>Removes legacy exports; publishes direct Host, ledger, lease, and resource-digest contracts.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/package.json">agent/package.json</a><span>Publishes composition proof/testing subpath and direct package surface.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/workspace/tsconfig.server.source.json">workspace/tsconfig.server.source.json</a><span>Source-aware cross-package type checking for the direct composition.</span></div>
+          <div class="file-row"><a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/package.json">root package.json</a><span>Adds matrix/composition proof gates to repository validation.</span></div>
+        </div></details>
+      </section>
+
+      <section id="reading" data-search="reading order code review path">
+        <div class="section-head">
+          <div><div class="section-no">18 · Reading path</div><h2>A practical review order</h2></div>
+          <div class="section-intro">Do not review alphabetically. Follow authority from contract → lifecycle → effects → projections → app policy → clients.</div>
+        </div>
+        <div class="reading-path">
+          <a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/types.ts"><span>01</span> Ownership contracts</a>
+          <a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/createAgentHost.ts"><span>02</span> Registry and lifecycle</a>
+          <a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/environmentLease.ts"><span>03</span> Environment generations</a>
+          <a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/buildAgentComposition.ts"><span>04</span> Binding construction</a>
+          <a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/embeddedGateway.ts"><span>05</span> Sessions and effects</a>
+          <a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/sqliteRequestLedger.ts"><span>06</span> Durable ownership</a>
+          <a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/httpProjection.ts"><span>07</span> Addressed HTTP</a>
+          <a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/runtimeCapabilityProjection.ts"><span>08</span> Reload and capabilities</a>
+          <a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/server/agent-host/workspaceAgentLease.ts"><span>09</span> In-process leases</a>
+          <a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/workspace/src/app/server/createWorkspaceAgentServer.ts"><span>10</span> Richest app composition</a>
+          <a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/core/src/app/server/createCoreWorkspaceAgentServer.ts"><span>11</span> Hosted authorization</a>
+          <a href="https://github.com/hachej/boring-ui/blob/refactor/full-agenthost-cutover/packages/agent/src/front/chat/pi/remotePiSession.ts"><span>12</span> Client contract</a>
+        </div>
+        <h3>Stop points by concern</h3>
+        <ul>
+          <li><strong>Identity:</strong> after steps 01–05, prove workspace, actor, Environment placement, binding slot, semantic identity, and session namespace cannot collapse into one another.</li>
+          <li><strong>Effects:</strong> after steps 05–06, trace duplicate request IDs, digest conflicts, retryable admission, crash/nonterminal state, and <code>outcome-unknown</code>.</li>
+          <li><strong>HTTP:</strong> after steps 07–08, trace malformed input, unknown Agent, attachment limits, readiness disconnect, pin mismatch, and restart-required errors.</li>
+          <li><strong>Lifecycle:</strong> after steps 02–03 and 09, simulate request close, callback return, abort-ignoring providers, drain, and repeated close.</li>
+          <li><strong>App boundaries:</strong> at steps 10–11, verify authorization precedes Host acquisition and app filesystem/Git mutations do not masquerade as ledger-owned Agent effects.</li>
+        </ul>
+        <div class="callout good"><strong>Review outcome to seek</strong><p>You should be able to answer four questions: Who authorizes? Who creates? Who may retain? Who closes? If any production path has two answers, the cutover is incomplete.</p></div>
+      </section>
+
+      <footer>
+        Prepared for PR #1038 · issue #1029 · production architecture only · reviewed at <code>1f1cb8264...3c82c9960</code>. Tests and documentation changes were intentionally excluded from the architectural walkthrough.
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    const progressBar = document.getElementById('progressBar');
+    const sideNav = document.getElementById('sideNav');
+    const menuButton = document.getElementById('menuButton');
+    const searchInput = document.getElementById('searchInput');
+    const searchStatus = document.getElementById('searchStatus');
+    const printButton = document.getElementById('printButton');
+    const links = [...document.querySelectorAll('.side nav a')];
+    const sections = [...document.querySelectorAll('main section')];
+
+    function updateProgress() {
+      const max = document.documentElement.scrollHeight - innerHeight;
+      progressBar.style.width = `${max > 0 ? Math.min(100, (scrollY / max) * 100) : 0}%`;
+    }
+    addEventListener('scroll', updateProgress, { passive: true });
+    updateProgress();
+
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (!visible) return;
+      links.forEach((link) => link.classList.toggle('active', link.getAttribute('href') === `#${visible.target.id}`));
+    }, { rootMargin: '-20% 0px -68% 0px', threshold: [0, 0.2, 0.6] });
+    sections.forEach((section) => observer.observe(section));
+
+    menuButton.addEventListener('click', () => {
+      const open = sideNav.classList.toggle('open');
+      menuButton.setAttribute('aria-expanded', String(open));
+    });
+    function closeMenu() {
+      sideNav.classList.remove('open');
+      menuButton.setAttribute('aria-expanded', 'false');
+    }
+    links.forEach((link) => link.addEventListener('click', closeMenu));
+    document.querySelector('main').addEventListener('click', () => {
+      if (sideNav.classList.contains('open')) closeMenu();
+    });
+    addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeMenu();
+        menuButton.focus();
+      }
+    });
+    printButton.addEventListener('click', () => window.print());
+
+    searchInput.addEventListener('input', () => {
+      const query = searchInput.value.trim().toLowerCase();
+      let visibleSections = 0;
+      sections.forEach((section) => {
+        const text = `${section.getAttribute('data-search') || ''} ${section.textContent || ''}`.toLowerCase();
+        const matches = !query || text.includes(query);
+        section.classList.toggle('hidden-by-search', !matches);
+        if (matches) visibleSections += 1;
+      });
+      document.querySelectorAll('#files details').forEach((group) => {
+        const rows = [...group.querySelectorAll('.file-row')];
+        let visibleRows = 0;
+        rows.forEach((row) => {
+          const matches = !query || row.textContent.toLowerCase().includes(query);
+          row.classList.toggle('hidden-by-search', !matches);
+          if (matches) visibleRows += 1;
+        });
+        group.classList.toggle('hidden-by-search', Boolean(query) && visibleRows === 0);
+        if (query && visibleRows > 0) group.open = true;
+      });
+      searchStatus.textContent = query ? `${visibleSections} sections match “${searchInput.value.trim()}”` : '';
+    });
+  </script>
+</body>
+</html>

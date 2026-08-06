@@ -85,6 +85,7 @@ export function createBridge(store: StoreApi): WorkspaceBridge {
         if (!state.visibleFiles.includes(path)) {
           state.openFile(path, panelId)
         }
+        emit("file:opened", { path, mode, filesystem })
         emit("panel:activated", { panelId, previousPanelId: prev })
         return ok()
       }
@@ -167,8 +168,8 @@ export function createBridge(store: StoreApi): WorkspaceBridge {
       return ok()
     },
 
-    async expandToFile(path) {
-      const parsed = expandToFileSchema.safeParse({ path })
+    async expandToFile(path, opts) {
+      const parsed = expandToFileSchema.safeParse({ path, filesystem: opts?.filesystem })
       if (!parsed.success) return err("VALIDATION", parsed.error.issues[0].message)
 
       const state = store.getState()
@@ -176,7 +177,10 @@ export function createBridge(store: StoreApi): WorkspaceBridge {
         state.setSidebar({ collapsed: false })
         emit("sidebar:toggled", { collapsed: false })
       }
-      emit("tree:expand", { path: parsed.data.path })
+      emit("tree:expand", {
+        path: parsed.data.path,
+        ...(parsed.data.filesystem ? { filesystem: parsed.data.filesystem } : {}),
+      })
       return ok()
     },
 

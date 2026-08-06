@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-ask-user",
-  "version": "0.1.91",
+  "version": "0.1.95",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -57,12 +57,12 @@
   },
   "dependencies": {
     "@hachej/boring-ui-kit": "workspace:*",
-    "lucide-react": "^1.21.0",
+    "lucide-react": "^1.25.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@hachej/boring-workspace": "workspace:*",
-    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.20.0",
     "@types/react": "^19.2.17",

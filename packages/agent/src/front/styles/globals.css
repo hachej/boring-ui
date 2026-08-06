@@ -19,6 +19,7 @@
 
 /* @hachej/boring-ui-kit styles imported as a regular package. */
 @import "@hachej/boring-ui-kit/styles.css";
+@import "../chat/components/chat-transcript.css";
 
 @source "../**/*.{ts,tsx}";
 
@@ -221,12 +222,16 @@
   font-family: var(--font-mono);
   font-feature-settings: "ss02", "ss03", "zero";
 }
-[data-boring-agent] input,
-[data-boring-agent] textarea,
-[data-boring-agent] select,
-[data-boring-agent] button {
-  color: var(--foreground);
-  font: inherit;
+@layer components {
+  :where(
+    [data-boring-agent] input,
+    [data-boring-agent] textarea,
+    [data-boring-agent] select,
+    [data-boring-agent] button
+  ) {
+    color: var(--foreground);
+    font: inherit;
+  }
 }
 [data-boring-agent] [data-boring-agent-part="composer-submit"] {
   background-color: var(--foreground);
@@ -234,6 +239,20 @@
 }
 [data-boring-agent] [data-boring-agent-part="composer-submit"]:hover {
   background-color: color-mix(in oklab, var(--foreground) 90%, transparent);
+}
+
+@media (pointer: coarse) {
+  [data-boring-agent] .composer-attachment-button,
+  [data-boring-agent] .composer-attachment-remove,
+  [data-boring-agent] .composer-submit-control,
+  [data-boring-agent] .composer-settings-trigger {
+    min-height: 44px !important;
+    min-width: 44px !important;
+  }
+
+  [data-boring-agent] .composer-attachment-chip {
+    min-height: 44px !important;
+  }
 }
 
 /*

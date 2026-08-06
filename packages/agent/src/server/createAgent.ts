@@ -34,6 +34,7 @@ export interface CreateAgentRuntimeBridgeOptions {
     workspace?: Workspace
     eventStore?: EventStreamStore
     onEvent?: (sessionId: string, event: import('../shared/chat').PiChatEvent) => void
+    attachmentUrl?: import('./pi-chat/harnessPiChatService').HarnessPiChatServiceOptions['attachmentUrl']
   }
 }
 
@@ -90,6 +91,7 @@ async function createRuntime(
       workspace: options.service?.workspace,
       eventStore: options.service?.eventStore,
       onEvent: options.service?.onEvent,
+      attachmentUrl: options.service?.attachmentUrl,
       metering: config.metering as AgentMeteringSink | undefined,
     }),
   }

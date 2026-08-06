@@ -5,7 +5,7 @@
  * slashCommands/builtins.ts and slashCommands/registry.ts).
  *
  * Surfaces:
- *  - "running"  — yellow-ish accent, while the /api/v1/agent/reload call
+ *  - "running"  — yellow-ish accent, while the addressed reload call
  *    is in flight.
  *  - "success"  — green-ish accent, with the reloaded plugin count, an
  *    optional amber "restart needed" sub-banner (when the response

@@ -204,11 +204,11 @@ modes, the adapter maps that host path into the public runtime namespace
 
 ### Production storage roots in `vercel-sandbox` mode
 
-In a Fly-hosted app using `BORING_AGENT_MODE=vercel-sandbox`, there are two
+In a hosted app using `BORING_AGENT_MODE=vercel-sandbox`, there are two
 filesystems with different jobs:
 
 ```txt
-Fly app container / mounted volume:
+App container / mounted volume:
   /data/workspaces/<workspaceId>   host/control-plane workspace anchor
   /data/pi-sessions/<workspaceId>  durable chat transcript storage
 
@@ -225,7 +225,7 @@ Those belong to the sandbox runtime root, `/workspace`.
 
 Production chat history also must not use the container root filesystem. Set
 `BORING_AGENT_SESSION_ROOT` to a mounted-volume path such as `/data/pi-sessions`
-so Pi wrapper/native transcripts survive Fly deploys and restarts. Core-hosted
+so Pi wrapper/native transcripts survive host deploys and restarts. Core-hosted
 apps that run `vercel-sandbox` with `BORING_AGENT_WORKSPACE_ROOT=/data/workspaces`
 default this to the sibling `/data/pi-sessions` path when the env var is absent.
 

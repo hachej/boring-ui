@@ -1,12 +1,17 @@
-import type { FastifyInstance, FastifyReply } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import {
   InMemorySessionChangesTracker,
   type SessionChangesTracker,
+  type SessionChangesScope,
 } from '../sessionChangesTracker'
 import { ERROR_CODE_VALIDATION_ERROR } from '../middleware'
 
 export interface SessionChangesRouteOptions {
   tracker?: SessionChangesTracker
+  path?: string
+  sessionIdParam?: string
+  authorizeRequest?: (request: FastifyRequest) => void | Promise<void>
+  resolveScope?: (request: FastifyRequest, sessionId: string) => SessionChangesScope | Promise<SessionChangesScope>
 }
 
 function requireSessionId(value: unknown, reply: FastifyReply): string | null {
@@ -31,13 +36,14 @@ export function sessionChangesRoutes(
 ): void {
   const tracker = opts.tracker ?? new InMemorySessionChangesTracker()
 
-  app.get('/api/v1/agent/sessions/:id/changes', async (request, reply) => {
+  app.get(opts.path ?? '/api/v1/agents/:agentTypeId/sessions/:sessionId/changes', async (request, reply) => {
+    await opts.authorizeRequest?.(request)
     const params = request.params as Record<string, unknown>
-    const sessionId = requireSessionId(params.id, reply)
+    const sessionId = requireSessionId(params[opts.sessionIdParam ?? 'sessionId'], reply)
     if (sessionId === null) return
 
     return {
-      files: tracker.list(sessionId),
+      files: tracker.list(opts.resolveScope ? await opts.resolveScope(request, sessionId) : sessionId),
     }
   })
 

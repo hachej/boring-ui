@@ -3,7 +3,7 @@ import { existsSync } from "node:fs"
 import { setTimeout } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 
-import { type DataBridgeBslQuery, type DataBridgeTableResult } from "../../shared"
+import { type DataBridgeBslError, type DataBridgeBslQuery, type DataBridgeTableResult } from "../../shared"
 
 const MAX_STDERR_BYTES = 4_096
 const MAX_QUEUED_OPERATIONS = 100
@@ -21,6 +21,7 @@ type WorkerMessageError = {
   id: string
   ok: false
   error: {
+    code: string
     message: string
   }
 }
@@ -33,7 +34,7 @@ export type PythonBslQuery = DataBridgeBslQuery & {
 
 export type PythonBslRuntimeRequestResult =
   | { ok: true; output: DataBridgeTableResult }
-  | { ok: false; error: { message: string } }
+  | { ok: false; error: DataBridgeBslError }
 
 export interface PythonBslRuntimeOptions {
   pythonExecutable?: string
@@ -129,15 +130,16 @@ export class PythonBslRuntime {
     }
 
     const onStderr = (chunk: Buffer | string) => {
-      this.stderrBuffer = `${this.stderrBuffer}${String(chunk)}`.slice(-MAX_STDERR_BYTES)
+      const diagnostics = String(chunk)
+      this.stderrBuffer = `${this.stderrBuffer}${diagnostics}`.slice(-MAX_STDERR_BYTES)
+      process.stderr.write(diagnostics)
     }
 
     const onExit = (code: number | null, codeSignal: NodeJS.Signals | null) => {
       child.stdout.off("data", onStdout)
       child.stderr.off("data", onStderr)
       const details = code === null ? `signal ${String(codeSignal)}` : `code ${code}`
-      const stderr = this.stderrBuffer.trim()
-      this.handleWorkerFailure(bslRuntimeError(`BSL worker exited (${details})${stderr ? `: ${stderr}` : ""}`, "BSL_WORKER_EXITED"))
+      this.handleWorkerFailure(bslRuntimeError(`BSL worker exited (${details})`, "BSL_WORKER_EXITED"))
     }
 
     child.stdout.on("data", onStdout)

@@ -31,7 +31,6 @@ import {
 } from "@hachej/boring-ui-kit"
 import { useCatalogs } from "../plugin/useCatalogs"
 import { useCommands } from "../plugin/useCommands"
-import { postUiCommand } from "../bridge"
 import {
   CATALOG_MODE_LABEL,
   searchCommands,
@@ -43,7 +42,7 @@ import { useWorkspaceContextOptional } from "../provider/WorkspaceProvider"
 import { useCommandPaletteSelection } from "./useCommandPaletteSelection"
 import { useCommandPaletteChrome } from "./useCommandPaletteChrome"
 import { useCommandPaletteCatalogSearch } from "./useCommandPaletteCatalogSearch"
-import type { CatalogConfig, CatalogRow, CatalogSearchResult } from "../../shared/plugins/types"
+import type { CatalogConfig, CatalogRow } from "../../shared/plugins/types"
 import type { CommandConfig } from "../registry/types"
 import type { RecentEntry } from "./recent"
 import { workspaceSessionKeyFor } from "../sessionIdentity"
@@ -67,34 +66,6 @@ export interface CommandPaletteSessionSearchConfig {
 
 export interface CommandPaletteProps {
   sessionSearch?: CommandPaletteSessionSearchConfig
-  apiBaseUrl?: string
-  authHeaders?: Record<string, string>
-}
-
-const FILES_CATALOG_ID = "files"
-
-function fileRowFromPath(path: string): CatalogRow {
-  const lastSlash = path.lastIndexOf("/")
-  return {
-    id: path,
-    title: lastSlash >= 0 ? path.slice(lastSlash + 1) : path,
-    subtitle: lastSlash >= 0 ? path.slice(0, lastSlash + 1) : undefined,
-  }
-}
-
-function toFileSearchGlob(query: string): string {
-  const trimmed = query.trim()
-  if (!trimmed) return trimmed
-  const glob = /[*?\[\]{}]/.test(trimmed) ? trimmed : `*${trimmed}*`
-  return glob.replace(/[a-z]/gi, (char) => {
-    const lower = char.toLowerCase()
-    const upper = char.toUpperCase()
-    return lower === upper ? char : `[${upper}${lower}]`
-  })
-}
-
-function emptySearchResult(): CatalogSearchResult {
-  return { items: [], total: 0, hasMore: false }
 }
 
 function defaultSessionSearch(
@@ -109,57 +80,14 @@ function defaultSessionSearch(
   })
 }
 
-function joinApiUrl(base: string | undefined, path: string): string {
-  if (!base) return path
-  return `${base.replace(/\/$/, "")}${path}`
-}
-
-function createFallbackFilesCatalog(options?: { apiBaseUrl?: string; authHeaders?: Record<string, string> }): CatalogConfig {
-  return {
-    id: FILES_CATALOG_ID,
-    label: "Files",
-    adapter: {
-      async search({ query, limit, signal }) {
-        const trimmed = query.trim()
-        if (!trimmed || signal?.aborted) return emptySearchResult()
-        const params = new URLSearchParams({ q: toFileSearchGlob(trimmed) })
-        if (limit != null) params.set("limit", String(limit))
-        const response = await fetch(joinApiUrl(options?.apiBaseUrl, `/api/v1/files/search?${params.toString()}`), {
-          credentials: "include",
-          headers: options?.authHeaders,
-          signal,
-        })
-        if (!response.ok) throw new Error(`File search failed (${response.status})`)
-        const payload = await response.json() as { results?: unknown }
-        const paths = Array.isArray(payload.results)
-          ? payload.results.filter((path): path is string => typeof path === "string")
-          : []
-        if (signal?.aborted) return emptySearchResult()
-        return { items: paths.map(fileRowFromPath), total: paths.length, hasMore: false }
-      },
-    },
-    onSelect(row) {
-      postUiCommand({ kind: "openFile", params: { path: row.id } })
-    },
-  }
-}
-
-export function CommandPalette({ sessionSearch, apiBaseUrl, authHeaders }: CommandPaletteProps = {}) {
+export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [mode, setMode] = useState<PaletteMode>(() => sessionSearch ? "chats" : "catalogs")
   const registeredCatalogs = useCatalogs()
   const commands = useCommands()
   const workspaceCtx = useWorkspaceContextOptional()
-  const fallbackFilesCatalog = useMemo(
-    () => createFallbackFilesCatalog({ apiBaseUrl, authHeaders }),
-    [apiBaseUrl, authHeaders],
-  )
-  const catalogs = useMemo(() => (
-    registeredCatalogs.some((catalog) => catalog.id === FILES_CATALOG_ID)
-      ? registeredCatalogs
-      : [fallbackFilesCatalog, ...registeredCatalogs]
-  ), [fallbackFilesCatalog, registeredCatalogs])
+  const catalogs = registeredCatalogs
   const pluginLabelMap = useMemo(() => {
     const map: Record<string, string> = {}
     for (const plugin of workspaceCtx?.registeredPlugins ?? []) {
@@ -227,7 +155,7 @@ export function CommandPalette({ sessionSearch, apiBaseUrl, authHeaders }: Comma
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
         className="cmdk-shell flex flex-col gap-0 overflow-hidden border-border/60 bg-background p-0 shadow-none backdrop-blur-0 [&>button.dialog-close]:hidden"
-        style={{ height: 520, width: "min(640px, calc(100vw - 2rem))", maxWidth: 640 }}
+        style={{ height: "min(520px, calc(100dvh - 2rem))", width: "min(640px, calc(100vw - 2rem))", maxWidth: 640 }}
         showCloseButton={false}
         onPointerDownOutside={() => setOpen(false)}
         onEscapeKeyDown={() => setOpen(false)}
@@ -323,10 +251,10 @@ function PaletteSearchHeader({
        * caused the double-line under the input the user
        * reported as a "strange border".
        *
-       * Mode switcher sits inline AHEAD of the input wrapper, both
-       * share the cmdk-emitted single 1px divider underneath.
+       * Mode switcher sits inline ahead of the input on wide viewports.
+       * The input wraps to its own full-width row when space is narrow.
        */}
-      <div className="relative flex items-stretch [&>[data-slot=command-input-wrapper]]:flex-1 [&>[data-slot=command-input-wrapper]]:h-auto">
+      <div className="command-palette-search-layout relative flex flex-wrap items-stretch [&>[data-slot=command-input-wrapper]]:h-auto [&>[data-slot=command-input-wrapper]]:min-w-[15rem] [&>[data-slot=command-input-wrapper]]:flex-1">
         <div
           role="group"
           aria-label="Palette mode"
@@ -335,20 +263,20 @@ function PaletteSearchHeader({
           {hasChatMode ? (
             <ModeButton
               active={isChatMode}
-              icon={<MessageSquare className="size-3" />}
+              icon={<MessageSquare className="size-4" strokeWidth={1.75} />}
               label="Chats"
               onClick={() => onSwitchMode("chats")}
             />
           ) : null}
           <ModeButton
             active={isCatalogMode}
-            icon={<FileIcon className="size-3" />}
+            icon={<FileIcon className="size-4" strokeWidth={1.75} />}
             label={CATALOG_MODE_LABEL}
             onClick={() => onSwitchMode("catalogs")}
           />
           <ModeButton
             active={isCommandMode}
-            icon={<TerminalIcon className="size-3" />}
+            icon={<TerminalIcon className="size-4" strokeWidth={1.75} />}
             label="Commands"
             onClick={() => onSwitchMode("commands")}
           />
@@ -360,7 +288,7 @@ function PaletteSearchHeader({
               ? "Run a command..."
               : isChatMode
                 ? "Search chats..."
-                : "Search sources or type > for commands"
+                : "Search sources..."
           }
           value={query}
           onValueChange={onQueryChange}
@@ -407,7 +335,7 @@ function RecentResultsSection({
             key={key}
             value={key}
             onSelect={() => onRecentSelect(entry)}
-            className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
+            className="command-palette-result-row group flex items-center gap-3 rounded-md px-3 py-2 text-sm data-[selected=true]:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] data-[selected=true]:text-foreground data-[selected=true]:ring-0"
           >
             {entry.type === "catalog" ? (
               <>
@@ -418,7 +346,7 @@ function RecentResultsSection({
               <>
                 <TerminalIcon className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
                 <span className="flex-1 truncate">{entry.titleSnapshot}</span>
-                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
                   command
                 </span>
               </>
@@ -456,6 +384,7 @@ function SessionSearchResultsSection({
           <CommandItem
             key={`chat-session:${sessionKey}`}
             value={`chat-session:${sessionKey}:${title}`}
+            className="command-palette-result-row group flex items-center gap-3 rounded-md px-3 py-2 text-sm data-[selected=true]:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] data-[selected=true]:text-foreground data-[selected=true]:ring-0"
             onSelect={() => {
               if (!active) {
                 if (session.agentTypeId) sessionSearch.onSwitch(session.id, session.agentTypeId)
@@ -463,15 +392,14 @@ function SessionSearchResultsSection({
               }
               close()
             }}
-            className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
           >
             <MessageSquare className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
             <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
               <span className="truncate font-medium text-foreground">{title}</span>
               {active ? (
-                <span className="shrink-0 rounded bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] px-1.5 py-0.5 text-[10px] font-medium text-[color:var(--accent)]">active</span>
+                <span className="shrink-0 rounded bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] px-1.5 py-0.5 text-xs font-medium text-[color:var(--accent)]">active</span>
               ) : open ? (
-                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">open</span>
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">open</span>
               ) : null}
             </span>
             <button
@@ -493,9 +421,9 @@ function SessionSearchResultsSection({
                 else sessionSearch.onOpenAsTab(session.id)
                 close()
               }}
-              className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 group-hover:opacity-100 group-aria-selected:opacity-100"
+              className="command-palette-secondary-action grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 group-hover:opacity-100 group-aria-selected:opacity-100"
             >
-              <MessageSquarePlus className="h-3.5 w-3.5" strokeWidth={1.75} />
+              <MessageSquarePlus className="size-4" strokeWidth={1.75} />
             </button>
           </CommandItem>
         )
@@ -529,7 +457,7 @@ function CatalogResultsSections({
                 key={`${group.catalog.id}:${row.id}`}
                 value={`${group.catalog.id}:${row.id}`}
                 onSelect={() => onCatalogSelect(group.catalog, row)}
-                className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
+                className="command-palette-result-row group flex items-center gap-3 rounded-md px-3 py-2 text-sm data-[selected=true]:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] data-[selected=true]:text-foreground data-[selected=true]:ring-0"
               >
                 <PluginErrorBoundary
                   pluginId={group.catalog.pluginId ?? group.catalog.id}
@@ -552,7 +480,7 @@ function CatalogErrorRow({ catalogId, error }: { catalogId: string; error: strin
     <CommandItem
       value={`${catalogId}:error`}
       disabled
-      className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm"
+      className="command-palette-result-row group flex items-center gap-3 rounded-md px-3 py-2 text-sm"
     >
       <FileIcon className="size-4 shrink-0 text-destructive/70" />
       <span className="text-destructive">{error}</span>
@@ -580,12 +508,12 @@ function CommandResultsSection({
           key={cmd.id}
           value={cmd.title}
           onSelect={() => onCommandSelect(cmd)}
-          className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
+          className="command-palette-result-row group flex items-center gap-3 rounded-md px-3 py-2 text-sm data-[selected=true]:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] data-[selected=true]:text-foreground data-[selected=true]:ring-0"
         >
           <TerminalIcon className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
           <span className="flex-1 truncate">{cmd.title}</span>
           {pluginLabelMap[cmd.pluginId ?? ""] && (
-            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
               {pluginLabelMap[cmd.pluginId ?? ""]}
             </span>
           )}
@@ -599,11 +527,11 @@ function CommandResultsSection({
 function PaletteFooter({ mode }: { mode: PaletteMode }) {
   const label = mode === "commands" ? "Commands" : mode === "chats" ? "Chats" : CATALOG_MODE_LABEL
   return (
-    <div className="flex items-center justify-between border-t border-border/50 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
-      <span className="font-medium tracking-wide uppercase">
+    <div className="command-palette-footer flex items-center justify-between border-t border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+      <span className="command-palette-footer-label font-medium tracking-wide uppercase">
         {label}
       </span>
-      <div className="flex items-center gap-3">
+      <div className="command-palette-footer-desktop-hints flex items-center gap-3">
         <span className="flex items-center gap-1">
           <Kbd>tab</Kbd>
           <span>switch</span>
@@ -628,6 +556,7 @@ function PaletteFooter({ mode }: { mode: PaletteMode }) {
           <span>close</span>
         </span>
       </div>
+      <span className="command-palette-footer-touch hidden font-medium">Tap a result to open</span>
     </div>
   )
 }
@@ -651,7 +580,7 @@ function ModeButton({
       aria-pressed={active}
       onClick={onClick}
       className={[
-        "h-7 gap-1.5 px-2 text-xs font-medium",
+        "command-palette-mode-button h-7 gap-1.5 px-2 text-xs font-medium",
         active
           ? "bg-background text-foreground shadow-sm"
           : "text-muted-foreground hover:text-foreground",

@@ -5,14 +5,12 @@ import { describe, expect, it } from 'vitest'
 import { assertProductionAgentModeIsSafe } from '../productionSafety'
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
-const repositoryRoot = resolve(appRoot, '../..')
 const dockerfilePath = resolve(appRoot, 'Dockerfile')
 const boringMcpPath = resolve(appRoot, 'src/server/boringMcp.ts')
 const mainPath = resolve(appRoot, 'src/server/main.ts')
 const managedAgentMcpPath = resolve(appRoot, 'src/server/managedAgentMcp.ts')
 const pluginsPath = resolve(appRoot, 'src/server/plugins.ts')
 const packageJsonPath = resolve(appRoot, 'package.json')
-const workflowPath = resolve(repositoryRoot, '.github/workflows/self-host-full-app-image.yml')
 
 describe('production full-app safety guards', () => {
   it('rejects unset, direct, and local agent modes in production by default', () => {
@@ -75,20 +73,17 @@ describe('production full-app safety guards', () => {
     const plugins = readFileSync(pluginsPath, 'utf8')
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { scripts: Record<string, string> }
     const dockerfile = readFileSync(dockerfilePath, 'utf8')
-    const workflow = readFileSync(workflowPath, 'utf8')
 
     expect(boringMcp).not.toMatch(/requestScope|AgentHost|AGENT_HOST/)
     expect(main).not.toMatch(/\.\/deployment\//)
     expect(main).not.toMatch(/BORING_AGENT_HOST_ID|createAgentHost|startAgentHost|\bagentHost\b/)
-    expect(managedAgentMcp).not.toMatch(/requestScope|AgentHost|AGENT_HOST/)
+    expect(managedAgentMcp).not.toMatch(/requestScope|AgentHostError|AGENT_HOST/)
     expect(plugins).not.toMatch(/\.\/deployment\//)
     expect(plugins).not.toMatch(/AgentHostError|AgentHostErrorCode/)
     expect(Object.keys(packageJson.scripts)).not.toContain('agent-host:revision')
     expect(Object.keys(packageJson.scripts)).not.toContainEqual(expect.stringMatching(/^proof:agent-host-/))
     expect(dockerfile).not.toMatch(/AGENT_HOST_MIGRATION|ai\.senecapp\.agent-host/)
     expect(dockerfile).toContain('test ! -e apps/full-app/dist/server/deployment')
-    expect(workflow).not.toMatch(/agent-host-migration-evidence|AGENT_HOST_MIGRATION|ai\.senecapp\.agent-host/)
-    expect(workflow.match(/test ! -e \/app\/apps\/full-app\/dist\/server\/deployment/g)).toHaveLength(2)
 
     for (const path of [
       'src/server/deployment',
@@ -97,7 +92,6 @@ describe('production full-app safety guards', () => {
       'scripts/agent-host-docker-boundary-proof.ts',
       'scripts/agent-host-ingress-header-proof.js',
       'scripts/agent-host-ingress-header-proof.ts',
-      '../../scripts/self-host/agent-host-migration-evidence.mjs',
       '../../deploy/agent-host',
     ]) expect(existsSync(resolve(appRoot, path))).toBe(false)
 

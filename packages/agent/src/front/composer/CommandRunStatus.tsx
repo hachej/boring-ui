@@ -6,7 +6,7 @@
  * transcript.
  *
  * Surfaces:
- *  - "running"  — accent pulse, while /api/v1/agent/commands/execute is in flight.
+ *  - "running"  — accent pulse, while addressed command execution is in flight.
  *  - "success"  — green accent with an optional detail line (e.g. "ran in 12ms");
  *    auto-dismisses like the reload success banner.
  *  - "error"    — red accent with the failure reason and a dismiss button.

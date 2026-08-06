@@ -2,7 +2,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { createServer as createViteServer } from 'vite'
-import { createAgentApp } from './createAgentApp'
+import { createStandaloneAgentHostApp } from './createStandaloneAgentHostApp'
 import { resolveWorkspaceRoot } from './config/workspaceRoot'
 import { autoDetectMode } from './runtime/resolveMode'
 import {
@@ -14,7 +14,7 @@ const DEFAULT_FRONTEND_PORT = 5180
 
 export async function startDevServer(port = 0) {
   const mode = autoDetectMode()
-  const app = await createAgentApp({
+  const app = await createStandaloneAgentHostApp({
     workspaceRoot: resolveWorkspaceRoot(),
     sessionId: 'default',
     logger: true,

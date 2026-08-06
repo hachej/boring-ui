@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createTestAgentApp as createAgentApp } from '@agent-test-host'
+import { createTestStandaloneAgentHostApp as createStandaloneAgentHostApp } from '@agent-test-host'
 import type { FastifyInstance } from 'fastify'
 
 const HAS_BWRAP = (() => {
@@ -35,7 +35,7 @@ beforeAll(async () => {
   await writeFile(join(workspaceRoot, 'src', 'b.ts'), 'export const b = 2\n')
   await writeFile(join(workspaceRoot, 'src', 'c.tsx'), 'export const c = 3\n')
 
-  app = await createAgentApp({
+  app = await createStandaloneAgentHostApp({
     workspaceRoot,
     mode: 'local',
     logger: false,
@@ -54,8 +54,11 @@ describe.skipIf(!HAS_BWRAP)('GET /api/v1/files/search', () => {
       url: '/api/v1/files/search?q=*.ts',
     })
     expect(res.statusCode).toBe(200)
-    const { results } = res.json() as { results: string[] }
-    expect(results.sort()).toEqual(['a.ts', 'src/b.ts'])
+    const { resources } = res.json() as {
+      resources: Array<{ filesystem: string; path: string }>
+    }
+    expect(resources.map((result) => result.path).sort()).toEqual(['a.ts', 'src/b.ts'])
+    expect(resources.every((result) => result.filesystem === 'user')).toBe(true)
   })
 
   test('path glob (-ipath with globstar) finds nested files', async () => {
@@ -64,8 +67,10 @@ describe.skipIf(!HAS_BWRAP)('GET /api/v1/files/search', () => {
       url: '/api/v1/files/search?q=**%2F*.tsx',
     })
     expect(res.statusCode).toBe(200)
-    const { results } = res.json() as { results: string[] }
-    expect(results).toContain('src/c.tsx')
+    const { resources } = res.json() as {
+      resources: Array<{ filesystem: string; path: string }>
+    }
+    expect(resources).toContainEqual({ filesystem: 'user', path: 'src/c.tsx' })
   })
 
   test('exact basename', async () => {
@@ -73,8 +78,10 @@ describe.skipIf(!HAS_BWRAP)('GET /api/v1/files/search', () => {
       method: 'GET',
       url: '/api/v1/files/search?q=readme.md',
     })
-    const { results } = res.json() as { results: string[] }
-    expect(results).toEqual(['README.md'])
+    const { resources } = res.json() as {
+      resources: Array<{ filesystem: string; path: string }>
+    }
+    expect(resources).toEqual([{ filesystem: 'user', path: 'README.md' }])
   })
 
   test('rejects missing q', async () => {

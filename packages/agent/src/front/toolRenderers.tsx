@@ -9,6 +9,7 @@
  */
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import {
+  DiffView,
   langFromPath,
   resolveToolRendererForPart,
   type ToolPart,
@@ -17,20 +18,11 @@ import {
 } from './bareToolRenderers'
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput, getStatusBadge } from './primitives/tool'
 import { CollapsibleTrigger } from '@hachej/boring-ui-kit'
-import { ChevronDownIcon, ExternalLinkIcon, FileDiffIcon, FilePlus2Icon, FileTextIcon, SearchIcon, SquareTerminalIcon, ZapIcon } from 'lucide-react'
+import { ChevronDownIcon, CopyIcon, DownloadIcon, ExternalLinkIcon, FileDiffIcon, FilePlus2Icon, FileTextIcon, SearchIcon, SquareTerminalIcon, ZapIcon } from 'lucide-react'
 import { CodeBlock } from './primitives/code-block'
-import { useOpenArtifact } from './ArtifactOpenContext'
-import {
-  Artifact,
-  ArtifactAction,
-  ArtifactActions,
-  ArtifactContent,
-  ArtifactDescription,
-  ArtifactHeader,
-  ArtifactTitle,
-} from './primitives/artifact'
-import { CopyIcon, DownloadIcon } from 'lucide-react'
+import { ArtifactAction } from './primitives/artifact'
 import { copyTextToClipboard } from './clipboard'
+import { useOpenArtifact } from './ArtifactOpenContext'
 import { cn } from './lib'
 import { ErrorCode } from '../shared/error-codes'
 import { getRuntimeReadinessStatus } from './runtimeReadinessStatus'
@@ -243,10 +235,6 @@ function renderRead(part: ToolPart): ReactNode {
 }
 
 // ---- write ----
-//
-// Uses the canonical <Artifact> primitive to present the written file as a
-// workspace artifact. Saved content is shown in a titled card with download
-// + copy actions, matching the Vercel artifact pattern.
 
 function renderWrite(part: ToolPart): ReactNode {
   const readiness = renderReadinessBlock(part)
@@ -255,60 +243,47 @@ function renderWrite(part: ToolPart): ReactNode {
   const path = typeof input.path === 'string' ? input.path : ''
   const filesystem = typeof input.filesystem === 'string' ? input.filesystem : undefined
   const content = typeof input.content === 'string' ? input.content : ''
-  const bytes = content.length
-  const lang = langFromPath(path)
 
   return (
-    <Tool>
-      <ToolHeader icon={<FilePlus2Icon className="size-4 text-muted-foreground" />} title={pathTitle('write', path, filesystem)} {...toHeaderProps(part)} />
-      <ToolContent>
-        {/* Flat surface: the outer <Tool> already owns a bordered card, so
-         * the nested <Artifact> drops its own border/shadow to keep stacked
-         * depth at 1 — no "box-in-a-box" feel. */}
-        <Artifact className="rounded-none border-0 bg-transparent shadow-none">
-          <ArtifactHeader className="border-0 px-0 pt-0 pb-2">
-            <div>
-              <ArtifactTitle>{path || 'untitled'}</ArtifactTitle>
-              <ArtifactDescription>
-                {bytes.toLocaleString()} {bytes === 1 ? 'byte' : 'bytes'}
-                {lang ? ` · ${lang}` : ''}
-              </ArtifactDescription>
-            </div>
-            <ArtifactActions>
-              <ArtifactAction
-                icon={CopyIcon}
-                tooltip="Copy contents"
-                label="Copy"
-                onClick={() => {
-                  void copyTextToClipboard(content)
-                }}
-              />
-              <ArtifactAction
-                icon={DownloadIcon}
-                tooltip="Download file"
-                label="Download"
-                onClick={() => {
-                  try {
-                    const blob = new Blob([content], { type: 'text/plain' })
-                    const url = URL.createObjectURL(blob)
-                    const a = document.createElement('a')
-                    a.href = url
-                    a.download = path.split('/').pop() || 'artifact.txt'
-                    document.body.appendChild(a)
-                    a.click()
-                    a.remove()
-                    URL.revokeObjectURL(url)
-                  } catch { /* noop */ }
-                }}
-              />
-            </ArtifactActions>
-          </ArtifactHeader>
-          {content && (
-            <ArtifactContent className="p-0">
-              <CodeBlock code={content} language={lang ?? 'text'} showLineNumbers />
-            </ArtifactContent>
+    <Tool defaultOpen={part.state === 'output-available'}>
+      <ToolHeader className="p-2" icon={<FilePlus2Icon className="size-4 shrink-0 text-muted-foreground" />} title={pathTitle('write', path, filesystem)} {...toHeaderProps(part)} />
+      <ToolContent className="p-1.5">
+        <div className="max-h-80 overflow-auto overscroll-contain rounded-sm">
+          {content ? (
+            <DiffView
+              oldString=""
+              newString={content}
+              path={path}
+              actions={(
+                <>
+                  <ArtifactAction className="size-6" icon={CopyIcon} tooltip="Copy contents" label="Copy" onClick={() => { void copyTextToClipboard(content) }} />
+                  <ArtifactAction
+                    className="size-6"
+                    icon={DownloadIcon}
+                    tooltip="Download file"
+                    label="Download"
+                    onClick={() => {
+                      const blob = new Blob([content], { type: 'text/plain' })
+                      const url = URL.createObjectURL(blob)
+                      const anchor = document.createElement('a')
+                      anchor.href = url
+                      anchor.download = path.split('/').pop() || 'artifact.txt'
+                      document.body.appendChild(anchor)
+                      anchor.click()
+                      anchor.remove()
+                      URL.revokeObjectURL(url)
+                    }}
+                  />
+                </>
+              )}
+            />
+          ) : (
+            <p className="px-2 py-1 text-[12px] text-muted-foreground">No file content was included with this tool call.</p>
           )}
-        </Artifact>
+        </div>
+        {part.errorText || part.state === 'output-error' || part.state === 'output-denied' ? (
+          <ToolOutput output={part.output} errorText={part.errorText} />
+        ) : null}
       </ToolContent>
     </Tool>
   )
@@ -322,33 +297,47 @@ function renderEdit(part: ToolPart): ReactNode {
   const input = asRecord(part.input)
   const path = typeof input.path === 'string' ? input.path : ''
   const filesystem = typeof input.filesystem === 'string' ? input.filesystem : undefined
-  const oldString = typeof input.oldString === 'string' ? input.oldString : ''
-  const newString = typeof input.newString === 'string' ? input.newString : ''
+  const edits = Array.isArray(input.edits)
+    ? input.edits.flatMap((value) => {
+        const edit = asRecord(value)
+        const oldText = typeof edit.oldText === 'string' ? edit.oldText : ''
+        const newText = typeof edit.newText === 'string' ? edit.newText : ''
+        return oldText || newText ? [{ oldText, newText }] : []
+      })
+    : []
+  const legacyOldText = typeof input.oldString === 'string'
+    ? input.oldString
+    : typeof input.oldText === 'string' ? input.oldText : ''
+  const legacyNewText = typeof input.newString === 'string'
+    ? input.newString
+    : typeof input.newText === 'string' ? input.newText : ''
+  const visibleEdits = edits.length > 0
+    ? edits
+    : legacyOldText || legacyNewText
+      ? [{ oldText: legacyOldText, newText: legacyNewText }]
+      : []
 
   return (
-    <Tool>
-      <ToolHeader icon={<FileDiffIcon className="size-4 text-muted-foreground" />} title={pathTitle('edit', path, filesystem)} {...toHeaderProps(part)} />
-      <ToolContent>
-        <section className="space-y-2">
-          <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-            Diff
-          </h4>
-          <div className="overflow-hidden rounded-sm border border-input/60 bg-muted/30 font-mono text-[13px] leading-relaxed">
-            {oldString && (
-              <div className="grid grid-cols-[auto_1fr] gap-2 border-b border-input/40 bg-destructive/5 px-3 py-2">
-                <span className="select-none text-destructive/70">-</span>
-                <span className={cn('whitespace-pre-wrap break-all text-destructive/90')}>{oldString}</span>
-              </div>
-            )}
-            {newString && (
-              <div className="grid grid-cols-[auto_1fr] gap-2 bg-accent/5 px-3 py-2">
-                <span className="select-none text-accent/80">+</span>
-                <span className="whitespace-pre-wrap break-all text-accent">{newString}</span>
-              </div>
-            )}
-          </div>
-        </section>
-        <ToolOutput output={part.output} errorText={part.errorText} />
+    <Tool defaultOpen={part.state === 'output-available'}>
+      <ToolHeader className="p-2" icon={<FileDiffIcon className="size-4 shrink-0 text-muted-foreground" />} title={pathTitle('edit', path, filesystem)} {...toHeaderProps(part)} />
+      <ToolContent className="space-y-2 p-2">
+        <div className="max-h-80 space-y-2 overflow-auto overscroll-contain rounded-sm">
+          {visibleEdits.length > 0 ? visibleEdits.map((edit, index) => (
+            <div key={`${index}:${edit.oldText.length}:${edit.newText.length}`}>
+              {visibleEdits.length > 1 ? (
+                <div className="mb-1 px-1 text-[11px] text-muted-foreground">Change {index + 1}</div>
+              ) : null}
+              <DiffView oldString={edit.oldText} newString={edit.newText} path={path} />
+            </div>
+          )) : (
+            <p className="px-2 py-1 text-[12px] text-muted-foreground">
+              Diff details were not included with this tool call.
+            </p>
+          )}
+        </div>
+        {part.errorText || part.state === 'output-error' || part.state === 'output-denied' ? (
+          <ToolOutput output={part.output} errorText={part.errorText} />
+        ) : null}
       </ToolContent>
     </Tool>
   )

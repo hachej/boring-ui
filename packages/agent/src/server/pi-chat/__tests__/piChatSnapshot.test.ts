@@ -158,4 +158,27 @@ describe('buildPiChatSnapshot', () => {
     expect(snapshot.status).toBe('aborting')
     expect(snapshot.error).toEqual({ code: ErrorCode.enum.ABORTED, message: 'stopping', retryable: false })
   })
+
+  it('projects live snapshot image parts through the addressed attachment URL builder', () => {
+    const snapshot = buildPiChatSnapshot(
+      createAdapter({
+        messages: [{
+          id: 'user-image',
+          message: {
+            role: 'user',
+            content: [{ type: 'image', mimeType: 'image/png', data: 'raw-base64' }],
+          },
+        }],
+      }),
+      {
+        seq: 1,
+        attachmentUrl: ({ messageId, index }) => `/addressed/${messageId}/${index}`,
+      },
+    )
+
+    expect(snapshot.messages[0]?.parts).toContainEqual(expect.objectContaining({
+      type: 'file',
+      url: '/addressed/user-image/0',
+    }))
+  })
 })

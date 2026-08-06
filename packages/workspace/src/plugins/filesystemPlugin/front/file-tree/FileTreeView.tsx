@@ -13,7 +13,6 @@ import {
   useState,
 } from "react"
 import { createPortal } from "react-dom"
-import type { DockviewPanelApi } from "dockview-react"
 import {
   useFileList,
   useFileWrite,
@@ -24,7 +23,7 @@ import {
   useDataClient,
   useGitUrlMetadata,
 } from "../data"
-import type { FileEntry } from "../data/types"
+import type { FileEntry, FilesystemCatalogCapabilities } from "../data/types"
 import type { FileTreeNode, FileTreeEditState } from "./FileTree"
 import {
   buildTree,
@@ -36,7 +35,6 @@ import {
   type DraftEditing,
 } from "./treeModel"
 import type { FileTreeBridge } from "../../../../front/bridge/types"
-import { PanelChrome } from "../../../../front/dock"
 import {
   DEFAULT_TREE_IGNORE,
   filterIgnoredEntries,
@@ -57,7 +55,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   IconButton,
-  Input,
   Select,
   SelectContent,
   SelectItem,
@@ -71,7 +68,7 @@ import { events, userMeta } from "../../../../front/events"
 import { filesystemEvents } from "../../shared/events"
 import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
 import type { PaneProps } from "../../../../shared/types/panel"
-import type { LeftTabParams } from "../../../../shared/plugins/types"
+import type { FileTreeRevealRequest, LeftTabParams } from "../../../../shared/plugins/types"
 import { copyToClipboard } from "./clipboard"
 
 export { copyToClipboard } from "./clipboard"
@@ -119,9 +116,12 @@ export interface FileTreeViewProps {
   /** Already-debounced query. Empty/undefined means no filter. */
   searchQuery?: string
   bridge?: FileTreeBridge
-  revealFileTreeRequest?: { path: string; seq: number } | null
+  revealFileTreeRequest?: FileTreeRevealRequest | null
+  /** @internal Pane wrappers disable direct events and translate them into one-shot reveal props. */
+  subscribeToTreeExpand?: boolean
   filesystem?: FilesystemId
   access?: "readonly" | "readwrite"
+  capabilities?: FilesystemCatalogCapabilities
   /**
    * Names (or regex patterns) to hide from the tree. Defaults to
    * `DEFAULT_TREE_IGNORE` (node_modules, .git, dist, …). Pass `[]` to
@@ -176,23 +176,28 @@ function hideEntries(
  * context menu (new file/folder, rename, delete, copy path) plus a
  * delete-confirmation dialog.
  *
- * The chrome (PanelChrome, search input) is the consumer's responsibility.
- * `FileTreePane` (below) is the default chromed wrapper for hosts that just
- * want a "Files" panel; `WorkbenchLeftPane` uses this primitive directly to
- * share its search input with the Data tab.
+ * Shell chrome is the consumer's responsibility. `FileTreePane` (below)
+ * supplies the canonical Files-source controls.
  */
 export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(function FileTreeView({
   rootDir = ".",
   searchQuery,
   bridge,
   revealFileTreeRequest,
+  subscribeToTreeExpand = true,
   filesystem = "user",
   access = "readwrite",
+  capabilities,
   ignoreNames = DEFAULT_TREE_IGNORE,
   className,
 }, ref) {
   const dataClient = useDataClient()
-  const canMutate = access !== "readonly"
+  const canMutateByAccess = access !== "readonly"
+  const canWrite = capabilities?.write ?? canMutateByAccess
+  const canCreateDir = capabilities?.mkdir ?? canMutateByAccess
+  const canMove = capabilities?.move ?? canMutateByAccess
+  const canDelete = capabilities?.delete ?? canMutateByAccess
+  const canCreate = canWrite || canCreateDir
   const activeFilesystem = normalizeUiFilesystem(filesystem)
   const requestFilesystem = activeFilesystem === "user" ? undefined : activeFilesystem
   const getTreeEntries = useCallback(
@@ -243,7 +248,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   const [treeHeight, setTreeHeight] = useState(400)
 
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
-  const gitUrlPath = ctxMenu && !ctxMenu.isBackground && ctxMenu.node.kind === "file"
+  const gitUrlPath = filesystem === "user" && ctxMenu && !ctxMenu.isBackground && ctxMenu.node.kind === "file"
     ? ctxMenu.node.path
     : null
   const { data: gitUrlMetadata } = useGitUrlMetadata(gitUrlPath)
@@ -483,37 +488,43 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     [revealTreePath],
   )
 
+  const handledRevealRequestKeyRef = useRef<string | null>(null)
   useEffect(() => {
     if (!revealFileTreeRequest) return
+    const requestKey = `${revealFileTreeRequest.seq}:${revealFileTreeRequest.filesystem ?? ""}:${revealFileTreeRequest.path}`
+    if (handledRevealRequestKeyRef.current === requestKey) return
+    handledRevealRequestKeyRef.current = requestKey
     void revealExplicitTreePath(revealFileTreeRequest.path)
   }, [revealFileTreeRequest, revealExplicitTreePath])
 
   useEffect(() => {
-    const activeFile = bridge?.getActiveFile?.() ?? null
+    const activeFile = revealFileTreeRequest ? null : bridge?.getActiveFile?.() ?? null
     if (activeFile && explicitRevealSeqRef.current === 0) void revealTreePath(activeFile)
     const unsubscribers: Array<() => void> = []
     if (bridge?.select) {
       unsubscribers.push(
         bridge.select((state) => state.activeFile, (path) => {
           if (path) {
-            if (explicitRevealSeqRef.current === 0) void revealTreePath(path)
+            if (!revealFileTreeRequest && explicitRevealSeqRef.current === 0) void revealTreePath(path)
           } else {
             setSelectedPath(null)
           }
         }),
       )
     }
-    if (bridge?.subscribe) {
+    if (subscribeToTreeExpand && bridge?.subscribe) {
       unsubscribers.push(
-        bridge.subscribe("tree:expand", ({ path }) => {
-          void revealExplicitTreePath(path)
+        bridge.subscribe("tree:expand", ({ path, filesystem: requestFilesystem }) => {
+          if (!requestFilesystem || requestFilesystem === activeFilesystem) {
+            void revealExplicitTreePath(path)
+          }
         }),
       )
     }
     return () => {
       for (const unsubscribe of unsubscribers) unsubscribe()
     }
-  }, [bridge, revealExplicitTreePath, revealTreePath])
+  }, [activeFilesystem, bridge, revealExplicitTreePath, revealFileTreeRequest, revealTreePath, subscribeToTreeExpand])
 
   const addOptimisticEntry = useCallback((dir: string, entry: FileEntry) => {
     setOptimisticEntries((prev) => {
@@ -622,10 +633,8 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
         return
       event.preventDefault()
       // The background menu only ever offers New file / New folder, both
-      // mutating actions gated by canMutate. On a read-only root there is
-      // nothing to show — opening it would render an empty menu shell.
-      // Suppress the trigger entirely rather than pop an empty box.
-      if (!canMutate) return
+      // The server advertises create-file and mkdir independently.
+      if (!canCreate) return
       setCtxMenu({
         node: { name: rootDir, kind: "dir", path: rootDir },
         x: event.clientX,
@@ -633,7 +642,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
         isBackground: true,
       })
     },
-    [rootDir, canMutate],
+    [rootDir, canCreate],
   )
 
   const handleDragDrop = useCallback(
@@ -645,7 +654,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
       if (newPath === sourcePath) return
       markPending(sourcePath)
       try {
-        if (!canMutate) return
+        if (!canMove) return
         await moveFile({ from: sourcePath, to: newPath, ...(requestFilesystem ? { filesystem: requestFilesystem } : {}) })
         await refreshDirs([parentDir(sourcePath), parentDir(newPath)])
         toast.success({ title: "Moved", description: `${sourcePath} → ${newPath}` })
@@ -658,7 +667,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
         clearPending(sourcePath)
       }
     },
-    [canMutate, requestFilesystem, moveFile, refreshDirs, rootDir, markPending, clearPending],
+    [canMove, requestFilesystem, moveFile, refreshDirs, rootDir, markPending, clearPending],
   )
 
   function ctxAction(fn: () => void | Promise<void>) {
@@ -702,7 +711,10 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
       setEditing(null)
       if (!current) return
       const trimmed = value.trim()
-      if (!trimmed || !canMutate) return
+      if (!trimmed) return
+      if (current.kind === "rename" && !canMove) return
+      if (current.kind === "create-file" && !canWrite) return
+      if (current.kind === "create-folder" && !canCreateDir) return
       const dir = current.kind === "rename" ? parentDir(current.path) : current.parentDir
       const newPath = current.kind === "rename" ? current.path : joinPath(dir, trimmed)
       const trackPath = current.kind === "rename" ? current.path : newPath
@@ -764,7 +776,9 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     },
     [
       editing,
-      canMutate,
+      canMove,
+      canWrite,
+      canCreateDir,
       requestFilesystem,
       moveFile,
       writeFile,
@@ -802,7 +816,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     setDeleteTarget(null)
     markPending(target.path)
     try {
-      if (!canMutate) return
+      if (!canDelete) return
       await deleteFile({ path: target.path, ...(requestFilesystem ? { filesystem: requestFilesystem } : {}) })
       removeOptimisticEntry(parentDir(target.path), target.path)
       if (target.kind === "dir") {
@@ -833,7 +847,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     markPending,
     clearPending,
     removeOptimisticEntry,
-    canMutate,
+    canDelete,
     requestFilesystem,
   ])
 
@@ -845,7 +859,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   // has at least "Copy path". Used as a belt-and-suspenders guard so an
   // empty item set never renders as a blank menu shell, even if a future
   // change to the rules above misses a trigger-side check.
-  const ctxMenuHasItems = ctxMenu ? canMutate || !ctxMenu.isBackground : false
+  const ctxMenuHasItems = ctxMenu ? canCreate || !ctxMenu.isBackground : false
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -905,7 +919,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
               onContextMenu={handleContextMenu}
               onSubmitEdit={handleSubmitEdit}
               onCancelEdit={handleCancelEdit}
-              onDragDrop={canMutate ? handleDragDrop : undefined}
+              onDragDrop={canMove ? handleDragDrop : undefined}
               height={treeHeight}
               className={cn(className)}
             />
@@ -920,37 +934,37 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
           className="fixed z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
-          {canMutate && (
-            <>
-              <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFile}>
-                New file
-              </Button>
-              <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFolder}>
-                New folder
-              </Button>
-            </>
+          {canWrite && (
+            <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFile}>
+              New file
+            </Button>
+          )}
+          {canCreateDir && (
+            <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFolder}>
+              New folder
+            </Button>
           )}
           {!ctxMenu.isBackground && (
             <>
-              {canMutate && (
-                <>
-                  <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleRename}>
-                    Rename
-                  </Button>
-                  <Button
-                    type="button"
-                    role="menuitem"
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => {
-                      setDeleteTarget(ctxMenu.node)
-                      setCtxMenu(null)
-                    }}
-                  >
-                    Delete
-                  </Button>
-                </>
+              {canMove && (
+                <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleRename}>
+                  Rename
+                </Button>
+              )}
+              {canDelete && (
+                <Button
+                  type="button"
+                  role="menuitem"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => {
+                    setDeleteTarget(ctxMenu.node)
+                    setCtxMenu(null)
+                  }}
+                >
+                  Delete
+                </Button>
               )}
               <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleCopyPath}>
                 Copy path
@@ -968,8 +982,8 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
           )}
         </div>,
         // Portal to <body>: the menu is position:fixed, but the dockview panel
-        // ancestor is transformed (its own containing block) and PanelChrome is
-        // overflow-hidden, which clipped the menu at the panel's bottom edge.
+        // ancestor is transformed (its own containing block) and the panel shell
+        // clips overflow at the bottom edge.
         // Rendering at the body root makes "fixed" truly viewport-relative.
         document.body,
       )}
@@ -1007,7 +1021,7 @@ export interface FileTreeRootConfig {
   label: string
   rootDir?: string
   access?: "readonly" | "readwrite"
-  searchPlaceholder?: string
+  capabilities?: FilesystemCatalogCapabilities
 }
 
 export interface FileTreePaneParams extends LeftTabParams {
@@ -1015,19 +1029,16 @@ export interface FileTreePaneParams extends LeftTabParams {
   searchQuery?: string
   query?: string
   bridge?: unknown
-  chromeless?: boolean
   filesystem?: FilesystemId
   access?: "readonly" | "readwrite"
   roots?: FileTreeRootConfig[]
-  revealFileTreeRequest?: { path: string; seq: number } | null
+  revealFileTreeRequest?: FileTreeRevealRequest | null
 }
 
 export interface FileTreePaneProps extends Partial<PaneProps<FileTreePaneParams>> {
   rootDir?: string
   searchQuery?: string
-  panelApi?: DockviewPanelApi
   bridge?: FileTreeBridge
-  chromeless?: boolean
   filesystem?: FilesystemId
   access?: "readonly" | "readwrite"
   roots?: FileTreeRootConfig[]
@@ -1035,18 +1046,14 @@ export interface FileTreePaneProps extends Partial<PaneProps<FileTreePaneParams>
 }
 
 /**
- * Default "Files" panel: `PanelChrome` + always-visible search input wired to
- * `<FileTreeView>`. Drop into a dockview registry as-is, or compose
- * `FileTreeView` directly when you want different chrome/search UX.
+ * Default Files panel. Search is owned by the shell's unified catalog;
+ * `searchQuery` remains available for controlled embedding and tests.
  */
 export function FileTreePane({
   params,
   rootDir = ".",
   searchQuery: controlledSearchQuery,
-  panelApi,
   bridge,
-  api,
-  chromeless = false,
   filesystem = "user",
   access = "readwrite",
   roots,
@@ -1054,16 +1061,18 @@ export function FileTreePane({
 }: FileTreePaneProps) {
   const effectiveRootDir = params?.rootDir ?? rootDir
   const effectiveBridge = (params?.bridge as FileTreeBridge | undefined) ?? bridge
-  const effectiveChromeless = params?.chromeless ?? chromeless
   const effectiveFilesystem = params?.filesystem ?? filesystem
   const effectiveAccess = params?.access ?? access
   const effectiveRoots = params?.roots ?? roots
-  const effectiveRevealRequest = params?.revealFileTreeRequest ?? null
+  const authoritativeRevealRequest = params?.revealFileTreeRequest ?? null
+  const [bridgeRevealRequest, setBridgeRevealRequest] = useState<FileTreeRevealRequest | null>(null)
+  const bridgeRevealSeqRef = useRef(0)
+  useEffect(() => {
+    if (authoritativeRevealRequest) setBridgeRevealRequest(null)
+  }, [authoritativeRevealRequest])
+  const effectiveRevealRequest = authoritativeRevealRequest ?? bridgeRevealRequest
   const externalSearchQuery =
     params?.searchQuery ?? params?.query ?? controlledSearchQuery
-  const effectivePanelApi = panelApi ?? api
-  const [searchQuery, setSearchQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
   const rootOptions = useMemo<FileTreeRootConfig[]>(() => {
     if (effectiveRoots?.length) return effectiveRoots
     return [{
@@ -1073,18 +1082,80 @@ export function FileTreePane({
       access: effectiveAccess,
     }]
   }, [effectiveAccess, effectiveFilesystem, effectiveRootDir, effectiveRoots])
-  const [selectedFilesystem, setSelectedFilesystem] = useState<FilesystemId>(rootOptions[0]?.filesystem ?? "user")
-  useEffect(() => {
-    const next = rootOptions.some((root) => root.filesystem === effectiveFilesystem)
+  const [selectedFilesystem, setSelectedFilesystem] = useState<FilesystemId>(() => (
+    rootOptions.some((root) => root.filesystem === effectiveFilesystem)
       ? effectiveFilesystem
       : rootOptions[0]?.filesystem ?? "user"
-    setSelectedFilesystem(next)
+  ))
+  useEffect(() => {
+    setSelectedFilesystem((current) => {
+      if (rootOptions.some((root) => root.filesystem === current)) return current
+      return rootOptions.some((root) => root.filesystem === effectiveFilesystem)
+        ? effectiveFilesystem
+        : rootOptions[0]?.filesystem ?? "user"
+    })
   }, [effectiveFilesystem, rootOptions])
+  const handledRevealRequestRef = useRef<string | null>(null)
+  useEffect(() => {
+    const requestedFilesystem = effectiveRevealRequest?.filesystem
+    if (!requestedFilesystem) return
+    const requestKey = `${effectiveRevealRequest.seq}:${requestedFilesystem}:${effectiveRevealRequest.path}`
+    if (handledRevealRequestRef.current === requestKey) return
+    if (!rootOptions.some((root) => root.filesystem === requestedFilesystem)) return
+    handledRevealRequestRef.current = requestKey
+    setSelectedFilesystem(requestedFilesystem)
+  }, [effectiveRevealRequest, rootOptions])
+  const handledActiveResourceRef = useRef<string | null>(null)
+  useEffect(() => {
+    const activeResource = effectiveBridge?.getActiveFileResource?.()
+    if (!activeResource) return
+    const resourceKey = `${activeResource.filesystem}:${activeResource.path}`
+    if (handledActiveResourceRef.current === resourceKey) return
+    if (!rootOptions.some((root) => root.filesystem === activeResource.filesystem)) return
+    handledActiveResourceRef.current = resourceKey
+    setSelectedFilesystem(activeResource.filesystem)
+  }, [effectiveBridge, rootOptions])
+  useEffect(() => {
+    if (!effectiveBridge?.subscribe) return
+    const selectConfiguredFilesystem = (nextFilesystem: FilesystemId | undefined) => {
+      if (nextFilesystem && rootOptions.some((root) => root.filesystem === nextFilesystem)) {
+        setSelectedFilesystem(nextFilesystem)
+      }
+    }
+    const unsubscribeOpened = effectiveBridge.subscribe("file:opened", ({ filesystem: openedFilesystem }) => {
+      selectConfiguredFilesystem(openedFilesystem)
+    })
+    const unsubscribeExpanded = effectiveBridge.subscribe("tree:expand", ({ path, filesystem: revealedFilesystem }) => {
+      selectConfiguredFilesystem(revealedFilesystem)
+      // SurfaceShell sends an authoritative prop request alongside its bridge
+      // event. The pane owns root synchronization, but must not retain a second
+      // reveal. Bridge-only callers get a temporary one-shot prop instead.
+      if (authoritativeRevealRequest) return
+      setBridgeRevealRequest({
+        path,
+        ...(revealedFilesystem ? { filesystem: revealedFilesystem } : {}),
+        seq: ++bridgeRevealSeqRef.current,
+      })
+    })
+    return () => {
+      unsubscribeOpened()
+      unsubscribeExpanded()
+    }
+  }, [authoritativeRevealRequest, effectiveBridge, rootOptions])
   const activeRoot = rootOptions.find((root) => root.filesystem === selectedFilesystem) ?? rootOptions[0]
   const activeFilesystem = activeRoot?.filesystem ?? "user"
   const activeRootDir = activeRoot?.rootDir ?? (activeFilesystem === "user" ? effectiveRootDir : "/")
   const activeAccess = activeRoot?.access ?? effectiveAccess
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const activeCapabilities = activeRoot?.capabilities
+  const activeRevealRequest = !effectiveRevealRequest?.filesystem || effectiveRevealRequest.filesystem === activeFilesystem
+    ? effectiveRevealRequest
+    : null
+  useEffect(() => {
+    if (!bridgeRevealRequest || activeRevealRequest !== bridgeRevealRequest) return
+    // Consume bridge-only requests after the matching tree has rendered them.
+    // Requests for catalog roots that have not arrived yet remain pending.
+    setBridgeRevealRequest((current) => current?.seq === bridgeRevealRequest.seq ? null : current)
+  }, [activeRevealRequest, bridgeRevealRequest])
 
   // `FileTreeView` remounts (via the `key` below) whenever the active root
   // changes, so this ref always targets whichever root is currently
@@ -1114,19 +1185,9 @@ export function FileTreePane({
     </IconButton>
   )
 
-  useEffect(() => {
-    clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => setDebouncedQuery(searchQuery), 200)
-    return () => clearTimeout(debounceRef.current)
-  }, [searchQuery])
+  const effectiveSearchQuery = externalSearchQuery || undefined
 
-  const effectiveSearchQuery =
-    externalSearchQuery !== undefined
-      ? externalSearchQuery || undefined
-      : debouncedQuery || undefined
-
-  if (effectiveChromeless) {
-    // Single-root chromeless hosts put refresh in the shell's existing header
+  // Single-root hosts put refresh in the shell's existing header
     // action slot when one is available, avoiding a toolbar row whose only
     // content is one icon. Standalone hosts without that slot retain the local
     // fallback. Multi-root hosts keep refresh beside the root selector so the
@@ -1150,9 +1211,11 @@ export function FileTreePane({
               rootDir={activeRootDir}
               searchQuery={effectiveSearchQuery}
               bridge={effectiveBridge}
+              subscribeToTreeExpand={false}
               filesystem={activeFilesystem}
               access={activeAccess}
-              revealFileTreeRequest={effectiveRevealRequest}
+              capabilities={activeCapabilities}
+              revealFileTreeRequest={activeRevealRequest}
               className={cn("px-1 [&_[role=treeitem]]:!indent-0", className)}
             />
           </div>
@@ -1190,66 +1253,14 @@ export function FileTreePane({
             rootDir={activeRootDir}
             searchQuery={effectiveSearchQuery}
             bridge={effectiveBridge}
+            subscribeToTreeExpand={false}
             filesystem={activeFilesystem}
             access={activeAccess}
-            revealFileTreeRequest={effectiveRevealRequest}
+            capabilities={activeCapabilities}
+            revealFileTreeRequest={activeRevealRequest}
             className={cn("px-1 pt-1 [&_[role=treeitem]]:!indent-0", className)}
           />
         </div>
       </div>
     )
-  }
-
-  return (
-    <PanelChrome title="Files" panelApi={effectivePanelApi}>
-      <div className="flex h-full flex-col">
-        <div className="space-y-1.5 border-b border-border px-2 py-1.5">
-          {rootOptions.length > 1 && (
-            <Select
-              value={activeFilesystem}
-              onValueChange={(value) => setSelectedFilesystem(value as FilesystemId)}
-            >
-              <SelectTrigger
-                size="sm"
-                className="h-7 w-full text-xs"
-                aria-label="File root"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {rootOptions.map((root) => (
-                  <SelectItem key={root.filesystem} value={root.filesystem} className="text-xs">
-                    {root.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <div className="flex items-center gap-1">
-            <Input
-              placeholder={activeRoot?.searchPlaceholder ?? "Search files..."}
-              value={externalSearchQuery ?? searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-7 text-xs"
-              aria-label="Search files"
-            />
-            {refreshButton}
-          </div>
-        </div>
-        <div className="min-h-0 flex-1">
-          <FileTreeView
-            ref={treeRef}
-            key={`${activeFilesystem}:${activeRootDir}`}
-            rootDir={activeRootDir}
-            searchQuery={effectiveSearchQuery}
-            bridge={effectiveBridge}
-            filesystem={activeFilesystem}
-            access={activeAccess}
-            revealFileTreeRequest={effectiveRevealRequest}
-            className={className}
-          />
-        </div>
-      </div>
-    </PanelChrome>
-  )
 }

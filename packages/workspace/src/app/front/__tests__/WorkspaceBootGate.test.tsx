@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { WorkspaceBootGate } from "../WorkspaceBootGate"
 
-const SESSION_PRELOAD_PATHS = ["/api/v1/tree?path=.", "/api/v1/agent/pi-chat/sessions"]
+const SESSION_PRELOAD_PATHS = ["/api/v1/tree?path=.", "/api/v1/agents/default/sessions"]
 
 describe("WorkspaceBootGate", () => {
   afterEach(() => {
@@ -14,7 +14,7 @@ describe("WorkspaceBootGate", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     render(
-      <WorkspaceBootGate workspaceId="w1" apiBaseUrl="/base">
+      <WorkspaceBootGate agentTypeId="default" workspaceId="w1" apiBaseUrl="/base">
         <div>Workspace ready</div>
       </WorkspaceBootGate>,
     )
@@ -31,7 +31,7 @@ describe("WorkspaceBootGate", () => {
         headers: { "x-boring-workspace-id": "w1" },
       }),
     )
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/sessions"))).toBe(false)
   })
 
   it("skips agent runtime warmup when provisioning is disabled", async () => {
@@ -39,7 +39,7 @@ describe("WorkspaceBootGate", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     render(
-      <WorkspaceBootGate workspaceId="w1" provisionWorkspace={false}>
+      <WorkspaceBootGate agentTypeId="default" workspaceId="w1" provisionWorkspace={false}>
         <div>Workspace ready</div>
       </WorkspaceBootGate>,
     )
@@ -48,21 +48,21 @@ describe("WorkspaceBootGate", () => {
       expect(screen.getByText("Workspace ready")).toBeInTheDocument()
     })
 
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(false)
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/ready-status"))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/sessions"))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/ready-status"))).toBe(false)
   })
 
   it("keeps refetching retryable preparing paths after ready status completes", async () => {
     let sessionCalls = 0
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
+      if (url.includes("/api/v1/agents/default/sessions")) {
         sessionCalls += 1
         if (sessionCalls <= 2) {
           return new Response(JSON.stringify({ error: { code: "AGENT_RUNTIME_NOT_READY", retryable: true } }), { status: 503 })
         }
       }
-      if (url.includes("/api/v1/ready-status")) {
+      if (url.includes("/api/v1/agents/default/ready-status")) {
         return new Response('data: {"state":"ready"}\n\n', { status: 200 })
       }
       return new Response(null, { status: 204 })
@@ -70,7 +70,7 @@ describe("WorkspaceBootGate", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     render(
-      <WorkspaceBootGate workspaceId="w1" preloadPaths={SESSION_PRELOAD_PATHS}>
+      <WorkspaceBootGate agentTypeId="default" workspaceId="w1" preloadPaths={SESSION_PRELOAD_PATHS}>
         <div>Workspace ready</div>
       </WorkspaceBootGate>,
     )
@@ -89,7 +89,7 @@ describe("WorkspaceBootGate", () => {
     )
 
     render(
-      <WorkspaceBootGate
+      <WorkspaceBootGate agentTypeId="default"
         workspaceId="w1"
         errorFallback={(message) => <div>Failed: {message}</div>}
       >

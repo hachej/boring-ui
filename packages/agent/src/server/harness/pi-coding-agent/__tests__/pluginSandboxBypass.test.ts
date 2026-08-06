@@ -132,7 +132,7 @@ describe('Plugin sandbox bypass invariant', () => {
   it('vercel-sandbox mode: plugin discovery is skipped entirely', async () => {
     await seedPlugin()
 
-    // Simulate the gate from createAgentApp.ts:
+    // Simulate the gate from createStandaloneAgentHostApp.ts:
     //   if (resolvedMode !== 'vercel-sandbox') { loadPlugins(...) }
     const resolvedMode = 'vercel-sandbox'
     const pluginTools: PluginToolRegistration[] = []

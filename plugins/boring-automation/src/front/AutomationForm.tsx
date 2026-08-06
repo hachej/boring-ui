@@ -92,12 +92,12 @@ function parseModel(model: string): ModelSelection | null {
 }
 
 function useAutomationModels(): AvailableModel[] | null | false {
-  const { apiBaseUrl, authHeaders } = useAutomationRuntime()
+  const { agentTypeId, apiBaseUrl, authHeaders } = useAutomationRuntime()
   const [models, setModels] = useState<AvailableModel[] | null | false>(null)
   useEffect(() => {
     let cancelled = false
     setModels(null)
-    void fetch(`${apiBaseUrl.replace(/\/$/, "")}/api/v1/agent/models`, { headers: authHeaders })
+    void fetch(`${apiBaseUrl.replace(/\/$/, "")}/api/v1/agents/${encodeURIComponent(agentTypeId)}/models`, { headers: authHeaders })
       .then(async (response) => {
         if (!response.ok) throw new Error()
         const payload = await response.json() as { models?: AvailableModel[] }
@@ -105,7 +105,7 @@ function useAutomationModels(): AvailableModel[] | null | false {
       })
       .catch(() => { if (!cancelled) setModels(false) })
     return () => { cancelled = true }
-  }, [apiBaseUrl, authHeaders])
+  }, [agentTypeId, apiBaseUrl, authHeaders])
   return models
 }
 

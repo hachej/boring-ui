@@ -1,5 +1,7 @@
 // @hachej/boring-agent/front — Tailwind + shadcn styled PiChatPanel, primitives, hooks, and slash commands.
 
+export type { BoringChatMessage } from '../shared/chat'
+
 export { uploadFile } from './upload/uploadFile'
 export type { UploadFileOptions, UploadFileResult } from './upload/uploadFile'
 
@@ -23,6 +25,17 @@ export { ModelSelect, ModelPickerMenu, ModelSelectTrigger, ThinkingSelect } from
 export type { AvailableModel, ModelSelection, ThinkingLevel } from './chatPanelSettings'
 export { getAgentCommands } from './commands'
 export type { AgentCommandContribution, AgentCommandOptions } from './commands'
+export { ComposerContributionProvider } from './chat/composerContributions'
+export type {
+  ComposerActionContributionProps,
+  ComposerContribution,
+  ComposerDraftUpdate,
+} from './chat/composerContributions'
+export { ChatMessageContributionProvider } from './chat/messageContributions'
+export type {
+  ChatMessageContribution,
+  ChatMessageContributionProps,
+} from './chat/messageContributions'
 
 // Hooks + slash commands
 export {
@@ -30,7 +43,6 @@ export {
   activeSessionStorageKey,
   readActiveSessionId,
   writeActiveSessionId,
-  clearActiveSessionId,
   SessionList as PiSessionList,
   SessionBrowser as PiSessionBrowser,
   searchPiSessions,
@@ -85,6 +97,9 @@ export {
   PromptInputTextarea,
   PromptInputFooter,
   PromptInputSubmit,
+  Tool,
+  ToolContent,
+  ToolHeader,
 } from './primitives'
 
 // cn utility for consumers doing custom composition

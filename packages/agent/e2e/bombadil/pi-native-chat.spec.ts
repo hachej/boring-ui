@@ -1,19 +1,21 @@
 import {
-  actions,
   always,
   eventually,
-  extract,
   next,
   now,
+} from '@antithesishq/bombadil'
+import {
+  actions,
+  extract,
   type Action,
   type Point,
-} from '@antithesishq/bombadil'
+} from '@antithesishq/bombadil/browser'
 import {
   noConsoleErrors,
   noHttpErrorCodes,
   noUncaughtExceptions,
   noUnhandledPromiseRejections,
-} from '@antithesishq/bombadil/defaults/properties'
+} from '@antithesishq/bombadil/browser/defaults/properties'
 import { RUNNING_TOOL_GROUP_VISUAL_STATE, TOOL_GROUP_VISUAL_STATES } from '../../src/front/primitives/tool-call-group-state.ts'
 
 const MODEL_LABEL_ORDER = ['Claude Sonnet', 'Claude Opus', 'GPT Main', 'GPT Fast'] as const
@@ -236,7 +238,12 @@ export const surviving_message_order_is_stable = always(
 
 export const chatActions = actions((): Action[] => {
   const current = chat.current
-  const generated: Action[] = ['Wait', 'Reload']
+  // Reloading while boot is disconnected/connecting can indefinitely reset the
+  // very recovery window under test. Wait for a usable chat before generating
+  // disruptive actions; focused reload coverage is added below once state exists.
+  if (current.connection !== 'connected') return ['Wait']
+
+  const generated: Action[] = ['Wait']
 
   if (current.points.composer) {
     generated.push({ Click: { name: 'composer', point: current.points.composer } })

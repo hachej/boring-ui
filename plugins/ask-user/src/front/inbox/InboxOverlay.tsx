@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Inbox, MailOpen, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
-import { emitWorkspaceAttentionAction, useWorkspaceAttention, useAppLeftOverlayChrome, cn } from "@hachej/boring-workspace"
+import { emitWorkspaceAttentionAction, useWorkspaceAttention, useAppLeftOverlayChrome, useWorkspacePluginClient, cn } from "@hachej/boring-workspace"
 import { attentionBlockerToInboxItem, isInboxAttentionBlocker } from "./attentionBlockerAdapter"
 import { InboxFilterBar } from "./InboxFilterBar"
 import { InboxSection } from "./InboxSection"
@@ -47,6 +47,7 @@ export function InboxOverlay({ onClose, pinStorageKey }: InboxOverlayProps) {
   const { headerInsetStart, headerInsetEnd } = useAppLeftOverlayChrome()
   const { blockers } = useWorkspaceAttention()
   const shell = useWorkspaceInboxShell()
+  const pluginClient = useWorkspacePluginClient()
   const [filter, setFilter] = useState<InboxFilter>("all")
   const [shellError, setShellError] = useState<string | null>(null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
@@ -91,8 +92,8 @@ export function InboxOverlay({ onClose, pinStorageKey }: InboxOverlayProps) {
   }, [handleShellResult, shell])
   const openChat = useCallback((item: WorkspaceInboxItemViewModel) => {
     if (!item.sessionId) return
-    handleShellResult(shell.openDetachedChat(item.sessionId, { title: item.title }))
-  }, [handleShellResult, shell])
+    handleShellResult(shell.openDetachedChat({ agentTypeId: item.agentTypeId ?? pluginClient.agentTypeId, sessionId: item.sessionId }, { title: item.title }))
+  }, [handleShellResult, pluginClient.agentTypeId, shell])
   const handleDetailAction = useCallback((actionId: string) => {
     if (!selectedItem || !selectedBlocker) return
     emitWorkspaceAttentionAction({ blockerId: selectedBlocker.id, actionId, blocker: selectedBlocker, sessionId: selectedItem.sessionId ?? undefined })

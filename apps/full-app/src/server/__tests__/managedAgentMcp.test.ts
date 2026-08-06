@@ -9,9 +9,10 @@ import { ErrorCode } from '@hachej/boring-agent/shared'
 import type {
   WorkspaceAgentDispatcher,
   WorkspaceAgentDispatcherContext,
+  WorkspaceAgentDirectRunCallback,
+  WorkspaceAgentDirectRunInput,
 } from '@hachej/boring-agent/shared'
 import type {
-  WorkspaceAgentDispatcherBinding,
   WorkspaceAgentDispatcherResolver,
 } from '@hachej/boring-agent/server'
 import type { CoreWorkspaceAgentServer } from '@hachej/boring-core/app/server'
@@ -45,7 +46,7 @@ describe('full-app managed-agent MCP route', () => {
     const response = await app.inject({ method: 'GET', url: FULL_APP_MANAGED_AGENT_MCP_PATH })
 
     expect(response.statusCode).toBe(404)
-    expect(resolver.resolveWithWorkspace).not.toHaveBeenCalled()
+    expect(resolver.runWithWorkspaceAgent).not.toHaveBeenCalled()
   })
 
   it('requires all configured values when enabled', () => {
@@ -75,7 +76,7 @@ describe('full-app managed-agent MCP route', () => {
     })
     expect(app.workspaceStore.get).not.toHaveBeenCalled()
     expect(app.workspaceStore.isMember).not.toHaveBeenCalled()
-    expect(resolver.resolveWithWorkspace).not.toHaveBeenCalled()
+    expect(resolver.runWithWorkspaceAgent).not.toHaveBeenCalled()
   })
 
   it('rejects non-member and app-mismatched config before dispatch', async () => {
@@ -86,7 +87,7 @@ describe('full-app managed-agent MCP route', () => {
     expect(nonMemberResult.structuredContent).toMatchObject({
       error: { code: ErrorCode.enum.UNAUTHORIZED },
     })
-    expect(nonMemberResolver.resolveWithWorkspace).not.toHaveBeenCalled()
+    expect(nonMemberResolver.runWithWorkspaceAgent).not.toHaveBeenCalled()
 
     const mismatchResolver = fakeResolver()
     const mismatch = await makeApp(enabledEnv(), mismatchResolver, { workspaceAppId: 'other-app' })
@@ -95,7 +96,7 @@ describe('full-app managed-agent MCP route', () => {
     expect(mismatchResult.structuredContent).toMatchObject({
       error: { code: ErrorCode.enum.UNAUTHORIZED },
     })
-    expect(mismatchResolver.resolveWithWorkspace).not.toHaveBeenCalled()
+    expect(mismatchResolver.runWithWorkspaceAgent).not.toHaveBeenCalled()
   })
 
   it('ignores caller workspace spoofing and returns bytes from the exact bound Workspace', async () => {
@@ -111,12 +112,14 @@ describe('full-app managed-agent MCP route', () => {
     })
 
     expect(result.isError).not.toBe(true)
-    expect(resolver.resolveWithWorkspace).toHaveBeenCalledOnce()
-    expect(((resolver.resolveWithWorkspace.mock.calls[0] ?? []) as unknown[])[1]).toMatchObject({
+    expect(resolver.runWithWorkspaceAgent).toHaveBeenCalledTimes(4)
+    expect(((resolver.runWithWorkspaceAgent.mock.calls[0] ?? []) as unknown[])[0]).toMatchObject({
+      agentTypeId: 'default',
+      context: { workspaceId: WORKSPACE_ID, userId: USER_ID },
       request: expect.any(Object),
     })
     expect(resolver.resolve).not.toHaveBeenCalled()
-    expect(resolver.contexts).toEqual([{ workspaceId: WORKSPACE_ID, userId: USER_ID }])
+    expect(resolver.contexts).toEqual(Array.from({ length: 4 }, () => ({ workspaceId: WORKSPACE_ID, userId: USER_ID })))
     expect(resolver.dispatcherSends).toHaveLength(1)
     expect(resolver.dispatcherSends[0]).toMatchObject({
       content: 'make a report',
@@ -136,7 +139,7 @@ describe('full-app managed-agent MCP route', () => {
     expect(JSON.stringify(result.structuredContent)).not.toMatch(/"path"|"truncated"|\/srv\/private|managed-agent-token/)
   })
 
-  it('serves a stock SDK client a self-contained artifact without a second runtime composition', async () => {
+  it('serves a stock SDK client a self-contained artifact with every operation lease-bound', async () => {
     const artifact = '# SDK report'
     const resolver = fakeResolver({ workspace: fakeWorkspace({ 'reports/final.md': artifact }) })
     const app = await makeApp(enabledEnv({
@@ -155,7 +158,7 @@ describe('full-app managed-agent MCP route', () => {
       },
     })
     expect(JSON.stringify(result.structuredContent)).not.toMatch(/"path"|"truncated"|\/srv\/private|managed-agent-token/)
-    expect(resolver.resolveWithWorkspace).toHaveBeenCalledTimes(1)
+    expect(resolver.runWithWorkspaceAgent).toHaveBeenCalledTimes(4)
     expect(resolver.resolve).not.toHaveBeenCalled()
   })
 })
@@ -297,11 +300,33 @@ function fakeResolver(options: {
   const resolve = vi.fn(async (): Promise<WorkspaceAgentDispatcher> => {
     throw new Error('resolve should not be used by managed-agent MCP')
   })
-  const resolveWithWorkspace = vi.fn(async (ctx: WorkspaceAgentDispatcherContext): Promise<WorkspaceAgentDispatcherBinding> => {
-    contexts.push(ctx)
-    return { dispatcher, workspace }
+  const runWithWorkspaceAgent = vi.fn(async (
+    input: WorkspaceAgentDirectRunInput,
+    run: WorkspaceAgentDirectRunCallback,
+  ) => {
+    contexts.push(input.context)
+    await run({
+      workspace,
+      signal: new AbortController().signal,
+      async dispatch(dispatchInput, onEvent) {
+        let sessionId = dispatchInput.sessionId ?? 'managed-agent-session'
+        for await (const agentEvent of dispatcher.send(dispatchInput)) {
+          sessionId = agentEvent.sessionId
+          await onEvent(agentEvent)
+        }
+        return {
+          ref: { agentTypeId: input.agentTypeId, sessionId },
+          receipt: { accepted: true, cursor: 0, disposition: 'prompt', clientNonce: dispatchInput.requestId },
+        }
+      },
+      interrupt: (sessionId) => dispatcher.interrupt(sessionId),
+      stop: (sessionId) => dispatcher.stop(sessionId),
+    })
   })
-  return { resolve, resolveWithWorkspace, contexts, dispatcherSends }
+  return { resolve, runWithWorkspaceAgent, contexts, dispatcherSends } satisfies WorkspaceAgentDispatcherResolver & {
+    contexts: WorkspaceAgentDispatcherContext[]
+    dispatcherSends: AgentSendInput[]
+  }
 }
 
 async function* fakeAgentEvents(): AsyncIterable<AgentEvent> {

@@ -53,7 +53,7 @@ describe('modelsRoutes', () => {
     await app.ready()
 
     try {
-      const res = await app.inject({ method: 'GET', url: '/api/v1/agent/models' })
+      const res = await app.inject({ method: 'GET', url: '/api/v1/agents/default/models' })
       expect(res.statusCode).toBe(200)
       const body = res.json()
       expect(body.defaultModel).toEqual({
@@ -101,8 +101,8 @@ describe('modelsRoutes', () => {
     await app.ready()
 
     try {
-      const first = await app.inject({ method: 'GET', url: '/api/v1/agent/models' })
-      const second = await app.inject({ method: 'GET', url: '/api/v1/agent/models' })
+      const first = await app.inject({ method: 'GET', url: '/api/v1/agents/default/models' })
+      const second = await app.inject({ method: 'GET', url: '/api/v1/agents/default/models' })
 
       expect(first.statusCode).toBe(200)
       expect(second.statusCode).toBe(200)
@@ -126,7 +126,7 @@ describe('modelsRoutes', () => {
     await app.ready()
 
     try {
-      const res = await app.inject({ method: 'GET', url: '/api/v1/agent/models' })
+      const res = await app.inject({ method: 'GET', url: '/api/v1/agents/default/models' })
       expect(res.statusCode).toBe(200)
       expect(res.json().defaultModel).toEqual({ provider: 'infomaniak', id: 'moonshotai/Kimi-K2.6' })
       expect(res.json().models.some((model: { id: string }) => model.id === 'Qwen/Qwen3.5-122B-A10B-FP8')).toBe(false)

@@ -4,11 +4,37 @@ import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../../front/agentPlugins/reloadEvent"
 import { UI_COMMAND_EVENT, type UiCommand } from "../../../front/bridge"
+import { useWorkspacePluginClient } from "../../../front/plugin/useWorkspacePluginClient"
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
 import type { PanelConfig } from "../../../front/registry/types"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
-import { WorkspaceAgentFront } from "../WorkspaceAgentFront"
+import {
+  WorkspaceAgentFront as RawWorkspaceAgentFront,
+  type UseWorkspaceAgentSessions,
+  type WorkspaceAgentFrontProps,
+  type WorkspaceAgentSession,
+  type WorkspaceAgentSessionsApi,
+} from "../WorkspaceAgentFront"
+
+type AttestedWorkspaceAgentFrontProps<TSession extends WorkspaceAgentSession> =
+  Omit<WorkspaceAgentFrontProps<TSession>, "agentTypeId" | "useSessions"> & {
+    agentTypeId?: string
+    useSessions?: (
+      options: Parameters<UseWorkspaceAgentSessions<TSession>>[0],
+    ) => Omit<WorkspaceAgentSessionsApi<TSession>, "sourceIdentity"> & { sourceIdentity?: string }
+  }
+
+/** Existing custom-hook fixtures consciously attest the source they were invoked for. */
+function WorkspaceAgentFront<TSession extends WorkspaceAgentSession = WorkspaceAgentSession>(
+  props: AttestedWorkspaceAgentFrontProps<TSession>,
+) {
+  const useSessions = props.useSessions
+  const attestedUseSessions: UseWorkspaceAgentSessions<TSession> | undefined = useSessions
+    ? (options) => ({ ...useSessions(options), sourceIdentity: options.sourceIdentity })
+    : undefined
+  return <RawWorkspaceAgentFront agentTypeId="default" {...props} useSessions={attestedUseSessions} />
+}
 
 type CapturedChatPanelProps = WorkspaceChatPanelProps & {
   initialDraft?: string
@@ -45,6 +71,20 @@ function visibleChatSessionIds(): string[] {
   return screen.getAllByTestId("chat-pane").map((node) => node.getAttribute("data-session-id") ?? "")
 }
 
+function addressedSession(sessionId: string, title: string) {
+  return {
+    ref: { agentTypeId: "default", sessionId },
+    title,
+    status: "idle",
+    createdAt: 0,
+    updatedAt: 0,
+  }
+}
+
+function isDefaultSessionsCollectionUrl(url: string): boolean {
+  return new URL(url, "http://workspace.test").pathname === "/api/v1/agents/default/sessions"
+}
+
 // History starts collapsed when chat panes are open; expand it so tests can
 // reach history rows. No-op when there is no collapsed History toggle.
 function expandHistory(): void {
@@ -69,12 +109,24 @@ const globalCommandPanel: PanelConfig = {
 
 class MockEventSource {
   static instances: MockEventSource[] = []
+  private readonly listeners = new Map<string, Set<EventListener>>()
   close = vi.fn()
-  addEventListener = vi.fn()
-  removeEventListener = vi.fn()
+  addEventListener = vi.fn((type: string, listener: EventListener) => {
+    const listeners = this.listeners.get(type) ?? new Set<EventListener>()
+    listeners.add(listener)
+    this.listeners.set(type, listeners)
+  })
+  removeEventListener = vi.fn((type: string, listener: EventListener) => {
+    this.listeners.get(type)?.delete(listener)
+  })
 
   constructor(readonly url: string) {
     MockEventSource.instances.push(this)
+  }
+
+  emit(type: string, data: unknown) {
+    const event = new MessageEvent(type, { data: JSON.stringify(data) })
+    for (const listener of this.listeners.get(type) ?? []) listener(event)
   }
 }
 
@@ -91,18 +143,18 @@ describe("WorkspaceAgentFront", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
+      if (isDefaultSessionsCollectionUrl(url)) {
         // Only the cold-start GET race is simulated; POST/DELETE pass through.
         const method = init?.method ?? "GET"
         if (method === "GET" && sessionsFailuresRemaining > 0) {
           sessionsFailuresRemaining -= 1
           return new Response(null, { status: 503 })
         }
-        return new Response(JSON.stringify([]), { status: 200 })
+        return new Response(JSON.stringify({ sessions: [] }), { status: 200 })
       }
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
       if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
-      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     }))
@@ -197,6 +249,46 @@ describe("WorkspaceAgentFront", () => {
 
     expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument()
     expect(screen.getAllByText("Loading sessions…").length).toBeGreaterThan(0)
+  })
+
+  it("owns one addressed activity stream and publishes terminal transitions", () => {
+    MockEventSource.instances = []
+    vi.stubGlobal("EventSource", MockEventSource)
+    const statuses: unknown[] = []
+    const onStatus = (event: Event) => statuses.push((event as CustomEvent).detail)
+    window.addEventListener("boring:chat-session-status", onStatus)
+
+    const { unmount } = render(
+      <WorkspaceAgentFront
+        workspaceId="working-session-stream"
+        chatPanel={SessionIdChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "session-1", title: "Session one", status: "idle" }],
+          activeSession: { id: "session-1", title: "Session one", status: "idle" },
+          activeSessionId: "session-1",
+          loading: false,
+          error: undefined,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+      />,
+    )
+    const stream = MockEventSource.instances.find((instance) => instance.url.includes("/api/v1/agents/session-activity/events"))
+    expect(stream?.url).toContain("workspaceId=working-session-stream")
+
+    act(() => {
+      stream?.emit("snapshot", { sessions: [{ ref: { agentTypeId: "default", sessionId: "session-1" }, status: "running" }] })
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "session-1" }, status: "idle" })
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "session-1" }, status: "running" })
+      stream?.emit("snapshot", { sessions: [] })
+    })
+
+    expect(statuses).toContainEqual({ sessionId: "session-1", agentTypeId: "default", working: true })
+    expect(statuses.at(-1)).toEqual({ sessionId: "session-1", agentTypeId: "default", working: false })
+    unmount()
+    expect(stream?.close).toHaveBeenCalledTimes(1)
+    window.removeEventListener("boring:chat-session-status", onStatus)
   })
 
   it("renders a known active session while remote sessions are still loading", () => {
@@ -325,6 +417,33 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByText("First session")).toBeInTheDocument()
   })
 
+  it("hides the close action on the sole chat pane (#1051: the center always needs one chat)", () => {
+    function Harness() {
+      const [sessions] = useState([
+        { id: "s1", title: "First session", updatedAt: Date.now() },
+      ])
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="singleton-close"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSwitchSession={setActiveSessionId}
+          onCreateSession={() => {
+            const session = { id: "fresh", title: "New chat", updatedAt: Date.now() }
+            return session
+          }}
+          persistenceEnabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    expect(visibleChatSessionIds()).toEqual(["s1"])
+    expect(screen.queryByLabelText("Close First session pane")).not.toBeInTheDocument()
+  })
+
   it("keeps colliding addressed sessions distinct through pane activation and deletion", async () => {
     const user = userEvent.setup()
     const switched: Array<[string, string | undefined]> = []
@@ -397,6 +516,181 @@ describe("WorkspaceAgentFront", () => {
     expect(deleted).toEqual([["shared", "beta"], ["shared", "alpha"]])
   })
 
+  it("selects the future-session Agent without replacing addressed panes and filters inventory", async () => {
+    const user = userEvent.setup()
+    const createOwners: string[] = []
+    const pluginClientOwners: string[] = []
+    const pluginProviderOwners: string[] = []
+    let removeBetaShared: (() => void) | undefined
+    function FleetClientProbe() {
+      pluginClientOwners.push(useWorkspacePluginClient().agentTypeId)
+      return null
+    }
+    function FleetProviderProbe({ agentTypeId, children }: PluginProviderProps) {
+      pluginProviderOwners.push(agentTypeId)
+      return <>{children}</>
+    }
+    const fleetProbePlugin = definePlugin({
+      id: "fleet-owner-probe",
+      setup(api) {
+        api.registerBinding({ id: "client", component: FleetClientProbe })
+        api.registerProvider({ id: "provider", component: FleetProviderProbe })
+      },
+    })
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://workspace.test").pathname
+      if (path === "/api/v1/agents") {
+        return new Response(JSON.stringify([
+          { agentTypeId: "default", label: "Concierge" },
+          { agentTypeId: "beta", label: "Worker" },
+        ]), { status: 200 })
+      }
+      if (path.endsWith("/ready-status")) return new Response(null, { status: 200 })
+      if (path.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (path.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+
+    function AddressedFleetChat(props: WorkspaceChatPanelProps) {
+      return <div data-testid="fleet-pane">{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    const useFleetSessions: UseWorkspaceAgentSessions = (options) => {
+      const [inventories, setInventories] = useState<Record<string, WorkspaceAgentSession[]>>({
+        default: [{ id: "shared", agentTypeId: "default", title: "Concierge shared" }],
+        beta: [
+          { id: "shared", agentTypeId: "beta", title: "Worker shared" },
+          { id: "keep", agentTypeId: "beta", title: "Worker keep" },
+        ],
+      })
+      removeBetaShared = () => setInventories((current) => ({
+        ...current,
+        beta: (current.beta ?? []).filter((session) => session.id !== "shared"),
+      }))
+      const inventory = inventories[options.agentTypeId] ?? []
+      return {
+        sourceIdentity: options.sourceIdentity,
+        sessions: inventory,
+        activeSessionId: inventory[0]?.id ?? null,
+        activeSessionAgentTypeId: inventory[0]?.agentTypeId ?? null,
+        activeSession: inventory[0] ?? null,
+        loading: false,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        delete: vi.fn(),
+        create: async () => {
+          createOwners.push(options.agentTypeId)
+          const session = { id: `new-${options.agentTypeId}`, agentTypeId: options.agentTypeId, title: "New chat" }
+          setInventories((current) => ({
+            ...current,
+            [options.agentTypeId]: [...(current[options.agentTypeId] ?? []), session],
+          }))
+          return session
+        },
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-selection"
+        chatPanel={AddressedFleetChat}
+        useSessions={useFleetSessions}
+        showAgentSelector
+        defaultNavOpen
+        plugins={[fleetProbePlugin]}
+        persistenceEnabled
+      />,
+    )
+
+    const selector = await screen.findByRole("combobox", { name: "Agent for new chats" })
+    await waitFor(() => expect(selector).toHaveValue("default"))
+    expect(screen.getByTestId("fleet-pane")).toHaveTextContent("default/shared")
+    expect(pluginClientOwners.at(-1)).toBe("default")
+    expect(pluginProviderOwners.at(-1)).toBe("default")
+
+    await user.selectOptions(selector, "beta")
+
+    await waitFor(() => expect(selector).toHaveValue("beta"))
+    expect(localStorage.getItem("boring-ui-v2:layout:fleet-selection:selectedAgentTypeId")).toBe("beta")
+    expect(createOwners).toEqual([])
+    expect(screen.getByTestId("fleet-pane")).toHaveTextContent("default/shared")
+    expect(pluginClientOwners.at(-1)).toBe("beta")
+    expect(pluginProviderOwners.at(-1)).toBe("default")
+    expandHistory()
+    const sessionBrowser = screen.getByLabelText("Session browser")
+    expect(within(sessionBrowser).getByText("Worker shared")).toBeInTheDocument()
+    expect(within(sessionBrowser).queryByText("Concierge shared")).not.toBeInTheDocument()
+
+    await user.click(screen.getByLabelText("Open Worker shared in chat pane"))
+    expect(screen.getAllByTestId("fleet-pane").map((pane) => pane.textContent)).toEqual([
+      "default/shared",
+      "beta/shared",
+    ])
+    expect(pluginProviderOwners.at(-1)).toBe("beta")
+
+    await user.click(screen.getByLabelText("Chat session Concierge shared"))
+    expect(pluginProviderOwners.at(-1)).toBe("default")
+    act(() => removeBetaShared?.())
+    await waitFor(() => expect(screen.getAllByTestId("fleet-pane").map((pane) => pane.textContent)).toEqual([
+      "default/shared",
+    ]))
+
+    await user.click(screen.getByRole("button", { name: "New session" }))
+    await waitFor(() => expect(createOwners).toEqual(["beta"]))
+  })
+
+  it("falls back to the host-default Agent when a stored fleet selection is stale", async () => {
+    localStorage.setItem("boring-ui-v2:layout:fleet-stale:selectedAgentTypeId", "retired")
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://workspace.test").pathname
+      if (path === "/api/v1/agents") {
+        return new Response(JSON.stringify([
+          { agentTypeId: "default", label: "Concierge" },
+          { agentTypeId: "worker", label: "Worker" },
+        ]), { status: 200 })
+      }
+      if (path.endsWith("/ready-status")) return new Response(null, { status: 200 })
+      if (path.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (path.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-stale"
+        chatPanel={ChatPanel}
+        showAgentSelector
+        provisionWorkspace={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Agent for new chats" })).toHaveValue("default"))
+  })
+
+  it("keeps the host-default path usable when fleet discovery fails", async () => {
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://workspace.test").pathname
+      if (path === "/api/v1/agents") return new Response(null, { status: 503 })
+      if (path.endsWith("/ready-status")) return new Response(null, { status: 200 })
+      if (path.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (path.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-error"
+        chatPanel={ChatPanel}
+        showAgentSelector
+        provisionWorkspace={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Agent for new chats" })).toBeDisabled())
+    expect(screen.getByLabelText("Agent list is unavailable; new chats will use the host-default Agent.")).toBeInTheDocument()
+    expect(screen.getByText("Chat panel")).toBeInTheDocument()
+  })
+
   it("initializes a controlled colliding id to its explicit active owner", () => {
     localStorage.setItem("boring-workspace:chat-panes:explicit-active-owner", JSON.stringify({
       version: 2,
@@ -450,9 +744,9 @@ describe("WorkspaceAgentFront", () => {
     await user.click(screen.getByLabelText("Delete Literal legacy"))
 
     expect(onSwitchSession.mock.calls).toContainEqual(["shared", "alpha"])
-    expect(onSwitchSession.mock.calls).toContainEqual([legacyId])
-    expect(onDeleteSession).toHaveBeenCalledWith(legacyId)
-    expect(onDeleteSession.mock.calls.at(-1)).toHaveLength(1)
+    expect(onSwitchSession.mock.calls).toContainEqual([legacyId, "default"])
+    expect(onDeleteSession).toHaveBeenCalledWith(legacyId, "default")
+    expect(onDeleteSession.mock.calls.at(-1)).toHaveLength(2)
   })
 
   it("renders plugin-tabs app navigation without classic session edge controls", async () => {
@@ -509,21 +803,68 @@ describe("WorkspaceAgentFront", () => {
     expect(secondRow).toHaveAttribute("data-boring-session-state", "normal")
 
     await user.click(within(secondRow!).getByText("Second session"))
-    expect(onSwitchSession).toHaveBeenCalledWith("s2")
+    expect(onSwitchSession).toHaveBeenCalledWith("s2", "default")
 
     const switchCallsAfterRowClick = onSwitchSession.mock.calls.length
-    await user.click(within(appNav).getByRole("button", { name: "Pin Second session" }))
+    await user.click(within(appNav).getByRole("button", { name: "Chat actions for Second session" }))
+    await user.click(screen.getByRole("menuitem", { name: "Pin chat" }))
     expect(onSwitchSession).toHaveBeenCalledTimes(switchCallsAfterRowClick)
     expect(within(appNav).getByText("Pinned")).toBeInTheDocument()
     expect(within(appNav).getByText("Chats")).toBeInTheDocument()
 
-    await user.click(within(appNav).getByRole("button", { name: "Open Third session in new chat pane" }))
-    expect(onSwitchSession).toHaveBeenCalledWith("s3")
+    await user.click(within(appNav).getByRole("button", { name: "Chat actions for Third session" }))
+    await user.click(screen.getByRole("menuitem", { name: "Open in new chat pane" }))
+    expect(onSwitchSession).toHaveBeenCalledWith("s3", "default")
 
     await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
     expect(screen.queryByLabelText("App navigation")).not.toBeInTheDocument()
     expect(document.querySelector('[data-boring-workspace-part="app-left-pane"]')).toBeNull()
+    const collapsedRail = screen.getByLabelText("Collapsed app navigation")
+    expect(collapsedRail).toHaveClass("w-11")
+    expect(within(collapsedRail).getByRole("button", { name: "Search" })).toBeInTheDocument()
+    expect(within(collapsedRail).getByRole("button", { name: "Plugins" })).toBeInTheDocument()
+    expect(within(collapsedRail).getByRole("button", { name: "Skills" })).toBeInTheDocument()
+    expect(within(collapsedRail).getByRole("button", { name: "New chat" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
+  })
+
+  it("keeps only the current app-left overlay action selected", async () => {
+    const user = userEvent.setup()
+    const automationPlugin = definePlugin({
+      id: "automation-action",
+      appLeftActions: [{ id: "automations", label: "Automations", overlay: () => <div>Automation overlay</div> }],
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-active-overlay"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        plugins={[automationPlugin]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    const automations = within(appNav).getByRole("button", { name: "Automations" })
+    const plugins = within(appNav).getByRole("button", { name: "Plugins" })
+
+    await user.click(automations)
+    expect(automations).toHaveAttribute("data-active", "true")
+    expect(automations).toHaveAttribute("aria-current", "page")
+    expect(plugins).not.toHaveAttribute("data-active")
+
+    await user.click(plugins)
+    expect(automations).not.toHaveAttribute("data-active")
+    expect(plugins).toHaveAttribute("data-active", "true")
+
+    await user.click(automations)
+    expect(automations).toHaveAttribute("data-active", "true")
+    expect(plugins).not.toHaveAttribute("data-active")
+
+    await user.click(automations)
+    expect(automations).not.toHaveAttribute("data-active")
+    expect(plugins).not.toHaveAttribute("data-active")
   })
 
   it("rejects plugin app-left actions that collide with built-in overlays", () => {
@@ -619,7 +960,8 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).getByText("Chats")).toBeInTheDocument()
   })
 
-  it("renders multi-project app navigation with pinned sessions above the inline projects tree", () => {
+  it("renders multi-project app navigation with pinned sessions above the inline projects tree", async () => {
+    const user = userEvent.setup()
     const sessions = [
       { id: "s1", title: "Active project session", updatedAt: Date.now() - 1_000 },
       { id: "s2", title: "Pinned session", updatedAt: Date.now() - 2_000 },
@@ -662,18 +1004,23 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).getByText("Beta kickoff")).toBeInTheDocument()
     expect(within(appNav).queryByRole("button", { name: "Pin Beta kickoff" })).not.toBeInTheDocument()
     expect(within(appNav).getByText("Active project session")).toBeInTheDocument()
-    // The active session is already open, so it offers no "open in a new pane".
-    expect(within(appNav).queryByRole("button", { name: "Open Active project session in new chat pane" })).not.toBeInTheDocument()
-    // A session that isn't open still does.
-    expect(within(appNav).getByRole("button", { name: "Open Pinned session in new chat pane" })).toBeInTheDocument()
-    expect(within(appNav).getByRole("button", { name: "Pin Active project session" })).toBeInTheDocument()
+    // The active session is already open, so its menu offers pinning but no split action.
+    await user.click(within(appNav).getByRole("button", { name: "Chat actions for Active project session" }))
+    expect(screen.queryByRole("menuitem", { name: "Open in new chat pane" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("menuitem", { name: "Pin chat" }))
+    // A session that isn't open still offers the split action.
+    await user.click(within(appNav).getByRole("button", { name: "Chat actions for Pinned session" }))
+    await user.click(screen.getByRole("menuitem", { name: "Open in new chat pane" }))
+    // Restore the active project session to its project tree before collapsing it.
+    await user.click(within(appNav).getByRole("button", { name: "Chat actions for Active project session" }))
+    await user.click(screen.getByRole("menuitem", { name: "Unpin chat" }))
     expect(within(appNav).getByText("Pinned session")).toBeInTheDocument()
-    expect(within(appNav).queryByText("Chats")).not.toBeInTheDocument()
+    expect(within(appNav).getByText("Chats")).toBeInTheDocument()
     // Per-project action: start a new chat inside a specific project.
     expect(within(appNav).getByRole("button", { name: "New chat in Project Alpha" })).toBeInTheDocument()
 
     // The chevron (not the row) toggles expansion.
-    fireEvent.click(collapseAlpha)
+    fireEvent.click(within(appNav).getByRole("button", { name: "Collapse Project Alpha" }))
     expect(within(appNav).getByRole("button", { name: "Expand Project Alpha" })).toHaveAttribute("aria-expanded", "false")
     expect(within(appNav).queryByText("Active project session")).not.toBeInTheDocument()
   })
@@ -710,11 +1057,11 @@ describe("WorkspaceAgentFront", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
       if (url.includes("/api/v1/agent-plugins")) {
         return new Response(JSON.stringify([{ id: "external-plugin", boring: { label: "External Plugin" }, version: "1.2.3", revision: 4, frontTarget: { kind: "module-url", revision: 4 } }]), { status: 200 })
       }
-      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     }))
@@ -757,8 +1104,8 @@ describe("WorkspaceAgentFront", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
-      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
       if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
@@ -792,28 +1139,35 @@ describe("WorkspaceAgentFront", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
-      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
       if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
-      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     }))
 
-    render(
-      <WorkspaceAgentFront
-        workspaceId={`plugin-tabs-${part}-session-switch`}
-        workspaceLayout="plugin-tabs"
-        chatPanel={SessionIdChatPanel}
-        sessions={[
-          { id: "s1", title: "First session" },
-          { id: "s2", title: "Second session" },
-        ]}
-        activeSessionId="s1"
-        onSwitchSession={onSwitchSession}
-        persistenceEnabled={false}
-      />,
-    )
+    function Harness() {
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId={`plugin-tabs-${part}-session-switch`}
+          workspaceLayout="plugin-tabs"
+          chatPanel={SessionIdChatPanel}
+          sessions={[
+            { id: "s1", title: "First session" },
+            { id: "s2", title: "Second session" },
+          ]}
+          activeSessionId={activeSessionId}
+          onSwitchSession={(id, owner) => {
+            onSwitchSession(id, owner)
+            setActiveSessionId(id)
+          }}
+          persistenceEnabled={false}
+        />
+      )
+    }
+    render(<Harness />)
 
     const appNav = screen.getByLabelText("App navigation")
     await user.click(within(appNav).getByRole("button", { name: action }))
@@ -821,7 +1175,7 @@ describe("WorkspaceAgentFront", () => {
 
     await user.click(within(appNav).getByText("Second session"))
 
-    expect(onSwitchSession).toHaveBeenCalledWith("s2")
+    expect(onSwitchSession).toHaveBeenCalledWith("s2", "default")
     expect(document.querySelector(`[data-boring-workspace-part="${part}"]`)).toBeNull()
     expect(visibleChatSessionIds()).toEqual(["s2"])
   })
@@ -832,7 +1186,7 @@ describe("WorkspaceAgentFront", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
       if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
@@ -856,7 +1210,7 @@ describe("WorkspaceAgentFront", () => {
 
     await user.click(within(appNav).getByText("First session"))
 
-    expect(onSwitchSession).toHaveBeenCalledWith("s1")
+    expect(onSwitchSession).toHaveBeenCalledWith("s1", "default")
     expect(document.querySelector('[data-boring-workspace-part="plugins-overlay"]')).toBeNull()
   })
 
@@ -865,8 +1219,8 @@ describe("WorkspaceAgentFront", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
-      if (url.includes("/api/v1/agent/skills")) {
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/skills")) {
         return new Response(JSON.stringify({
           skills: [{
             name: "review",
@@ -882,7 +1236,7 @@ describe("WorkspaceAgentFront", () => {
       if (url.includes("/api/v1/agent-plugins")) {
         return new Response(JSON.stringify([{ id: "external-overlay-plugin", boring: { label: "External Overlay" }, revision: 2 }]), { status: 200 })
       }
-      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     }))
@@ -924,7 +1278,7 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByText("/review")).toBeInTheDocument()
 
       await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
-      expect(screen.getByText("Skills").closest("header")?.className).toContain("pl-12")
+      expect(screen.getByText("Skills").closest("header")?.className).not.toContain("pl-12")
 
       await user.click(screen.getByRole("button", { name: "Close skills" }))
       expect(screen.queryByText("/review")).not.toBeInTheDocument()
@@ -1045,6 +1399,37 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
+  it("hydrates an inventoried restored pane without a global active preference", async () => {
+    localStorage.setItem(
+      "boring-workspace:chat-panes:restored-without-active",
+      JSON.stringify({ ids: ["s1"], activeId: "s1" }),
+    )
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => (
+      <div data-testid="restored-chat">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
+    )
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="restored-without-active"
+        chatPanel={CapturingChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "s1", title: "Restored session" }],
+          loading: false,
+          error: undefined,
+          activeSessionId: null,
+          activeSession: null,
+          switch: vi.fn(),
+          create: vi.fn(),
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("restored-chat")).toHaveTextContent("Chat s1 hydrate=true")
+    })
+  })
+
   it("keeps an async returned created pane while controlled sessions catch up", async () => {
     const user = userEvent.setup()
 
@@ -1087,6 +1472,93 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
+  it("creates a split pane from an asynchronously returned addressed session", async () => {
+    const user = userEvent.setup()
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="returned-split-pane"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", agentTypeId: "alpha", title: "First session", updatedAt: Date.now() }]}
+        activeSessionId="s1"
+        agentTypeId="alpha"
+        onCreateSession={() => Promise.resolve({
+          id: "created",
+          agentTypeId: "beta",
+          title: "Created session",
+          updatedAt: Date.now(),
+        })}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Split First session chat vertically" }))
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "created"]))
+    expect(screen.getByRole("button", { name: "Split created chat horizontally" })).toBeEnabled()
+  })
+
+  it("ignores another split request while asynchronous pane creation is pending", async () => {
+    const user = userEvent.setup()
+    let resolveCreate!: (session: { id: string; title: string; updatedAt: number }) => void
+    const onCreateSession = vi.fn(() => new Promise<{ id: string; title: string; updatedAt: number }>((resolve) => {
+      resolveCreate = resolve
+    }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="concurrent-split-pane"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session", updatedAt: Date.now() }]}
+        activeSessionId="s1"
+        onCreateSession={onCreateSession}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Split First session chat vertically" }))
+    expect(screen.getByRole("button", { name: "Split First session chat horizontally" })).toBeDisabled()
+    await user.click(screen.getByRole("button", { name: "Split First session chat horizontally" }))
+    expect(onCreateSession).toHaveBeenCalledOnce()
+
+    resolveCreate({ id: "created", title: "Created session", updatedAt: Date.now() })
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "created"]))
+    expect(screen.getByRole("button", { name: "Split created chat horizontally" })).toBeEnabled()
+  })
+
+  it("does not infer a split-pane identity when a custom creator returns void", async () => {
+    const user = userEvent.setup()
+    const createCalled = vi.fn()
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "s1", title: "First session", updatedAt: Date.now() },
+      ])
+      return (
+        <WorkspaceAgentFront
+          workspaceId="void-split-pane"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId="s1"
+          onCreateSession={(() => {
+            createCalled()
+            setTimeout(() => setSessions((current) => [
+              ...current,
+              { id: "created", title: "Created later", updatedAt: Date.now() },
+            ]), 0)
+          }) as unknown as () => { id: string }}
+          persistenceEnabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    await user.click(screen.getByRole("button", { name: "Split First session chat horizontally" }))
+    await waitFor(() => expect(createCalled).toHaveBeenCalledOnce())
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
+    expect(visibleChatSessionIds()).toEqual(["s1"])
+  })
+
   it("removes an open chat pane when its session is deleted from history", async () => {
     const user = userEvent.setup()
     const deleted = vi.fn()
@@ -1104,8 +1576,8 @@ describe("WorkspaceAgentFront", () => {
           sessions={sessions}
           activeSessionId={activeSessionId}
           onSwitchSession={setActiveSessionId}
-          onDeleteSession={(id) => {
-            deleted(id)
+          onDeleteSession={(id, owner) => {
+            deleted(id, owner)
             setSessions((previous) => previous.filter((session) => session.id !== id))
           }}
           defaultNavOpen
@@ -1123,7 +1595,7 @@ describe("WorkspaceAgentFront", () => {
     await user.click(screen.getByLabelText("Delete Second session"))
 
     await waitFor(() => {
-      expect(deleted).toHaveBeenCalledWith("s2")
+      expect(deleted).toHaveBeenCalledWith("s2", "default")
       expect(visibleChatSessionIds()).toEqual(["s1"])
       expect(screen.queryByText("Second session")).not.toBeInTheDocument()
     })
@@ -1260,6 +1732,9 @@ describe("WorkspaceAgentFront", () => {
       expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
       expect(activeStreams()).toHaveLength(1)
     })
+    expect(MockEventSource.instances.filter((instance) => (
+      instance.url.includes("/api/v1/ui/commands/next")
+    ))).toHaveLength(1)
   })
 
   it("does not stop still-visible sessions when changing visible chat panes", async () => {
@@ -1366,7 +1841,7 @@ describe("WorkspaceAgentFront", () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText("Session browser")).toHaveAttribute("aria-hidden", "true")
-      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+      expect(screen.getByRole("complementary", { name: "Workbench" })).toHaveAttribute("aria-hidden", "false")
     })
 
     rerender(
@@ -1444,8 +1919,8 @@ describe("WorkspaceAgentFront", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
       return new Response(null, { status: 204 })
     })
     vi.stubGlobal("fetch", fetchMock)
@@ -1467,9 +1942,8 @@ describe("WorkspaceAgentFront", () => {
       expect(call[1]?.headers).toMatchObject({ "x-boring-workspace-id": "no-provision" })
       expect(call[1]?.headers).not.toHaveProperty("X-BORING-WORKSPACE-ID")
     }
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(false)
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/" + "chat"))).toBe(false)
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/ready-status"))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => isDefaultSessionsCollectionUrl(String(input)))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/ready-status"))).toBe(false)
   })
 
   it("creates a fresh remote session for auth-return auto-submit instead of reusing the old active session", async () => {
@@ -1527,6 +2001,75 @@ describe("WorkspaceAgentFront", () => {
     expect(getCapturedChatProps()?.initialDraft).toBe("restore and send")
     expect(getCapturedChatProps()?.autoSubmitInitialDraft).toBe(true)
     expect(seenSessionIds).not.toContain("sess-old")
+  })
+
+  it("keeps an in-flight auto-submit session bound to the Agent that admitted its creation", async () => {
+    const user = userEvent.setup()
+    const capturedByRef = new Map<string, CapturedChatPanelProps>()
+    let resolveDefaultCreate: ((session: WorkspaceAgentSession) => void) | undefined
+    const createOwners: string[] = []
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://workspace.test").pathname
+      if (path === "/api/v1/agents") {
+        return new Response(JSON.stringify([
+          { agentTypeId: "default", label: "Concierge" },
+          { agentTypeId: "beta", label: "Worker" },
+        ]), { status: 200 })
+      }
+      if (path.endsWith("/ready-status")) return new Response(null, { status: 200 })
+      if (path.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (path.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+    const useFleetSessions: UseWorkspaceAgentSessions = (options) => ({
+      sourceIdentity: options.sourceIdentity,
+      sessions: [{ id: `old-${options.agentTypeId}`, agentTypeId: options.agentTypeId, title: "Old" }],
+      activeSessionId: `old-${options.agentTypeId}`,
+      activeSessionAgentTypeId: options.agentTypeId,
+      activeSession: { id: `old-${options.agentTypeId}`, agentTypeId: options.agentTypeId, title: "Old" },
+      loading: false,
+      workspaceId: options.workspaceId,
+      switch: vi.fn(),
+      delete: vi.fn(),
+      create: () => {
+        createOwners.push(options.agentTypeId)
+        if (options.agentTypeId === "default") {
+          return new Promise((resolve) => { resolveDefaultCreate = resolve })
+        }
+        return Promise.resolve({ id: "unexpected-beta", agentTypeId: "beta", title: "Unexpected" })
+      },
+    })
+    const CapturingChat = (props: WorkspaceChatPanelProps) => {
+      capturedByRef.set(`${props.agentTypeId}/${props.sessionId}`, props as CapturedChatPanelProps)
+      return <div>{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-auto-submit"
+        chatPanel={CapturingChat}
+        useSessions={useFleetSessions}
+        showAgentSelector
+        chatParams={{ initialDraft: "resume", autoSubmitInitialDraft: true }}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(createOwners).toEqual(["default"]))
+    const selector = await screen.findByRole("combobox", { name: "Agent for new chats" })
+    await user.selectOptions(selector, "beta")
+    expect(createOwners).toEqual(["default"])
+
+    await act(async () => {
+      resolveDefaultCreate?.({ id: "created", agentTypeId: "default", title: "Created" })
+    })
+    await waitFor(() => expect([...capturedByRef.keys()]).toContain("default/created"))
+    expect(capturedByRef.get("default/created")).toMatchObject({
+      sessionId: "created",
+      agentTypeId: "default",
+      autoSubmitInitialDraft: true,
+    })
+    expect(createOwners).toEqual(["default"])
   })
 
   it("keeps hydration disabled after auth-return auto-submit props clear until the chat explicitly unlocks it", async () => {
@@ -1591,10 +2134,10 @@ describe("WorkspaceAgentFront", () => {
         return new Promise<Response>((resolve) => { resolveWorkspaceBTree = resolve })
       }
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) return new Response(JSON.stringify([{ id: `session-${workspaceId ?? "unknown"}`, title: "Session" }]), { status: 200 })
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
-      if (url.includes("/api/v1/agent/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (isDefaultSessionsCollectionUrl(url)) return new Response(JSON.stringify({ sessions: [addressedSession(`session-${workspaceId ?? "unknown"}`, "Session")] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
       return new Response(null, { status: 204 })
     })
     vi.stubGlobal("fetch", fetchMock)
@@ -1608,10 +2151,10 @@ describe("WorkspaceAgentFront", () => {
     )
 
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/sessions"))).toBe(true)
     })
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/session-workspace-a/state"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/sessions/session-workspace-a/state"))).toBe(true)
     })
     fetchMock.mockClear()
 
@@ -1629,14 +2172,14 @@ describe("WorkspaceAgentFront", () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
 
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/sessions"))).toBe(true)
     })
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/session-workspace-b/state"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/sessions/session-workspace-b/state"))).toBe(true)
     })
     expect(fetchMock.mock.calls.some(([input, init]) => {
       const headers = init?.headers as Record<string, string> | undefined
-      return String(input).includes("/api/v1/agent/pi-chat/session-workspace-a/state") && headers?.["x-boring-workspace-id"] === "workspace-b"
+      return String(input).includes("/api/v1/agents/default/sessions/session-workspace-a/state") && headers?.["x-boring-workspace-id"] === "workspace-b"
     })).toBe(false)
     resolveWorkspaceBTree?.(new Response(JSON.stringify({ entries: [] }), { status: 200 }))
   })
@@ -1647,12 +2190,12 @@ describe("WorkspaceAgentFront", () => {
       const headers = init?.headers as Record<string, string> | undefined
       const workspaceId = headers?.["x-boring-workspace-id"]
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
-        return new Response(JSON.stringify([{ id: "default", title: `Session ${workspaceId}` }]), { status: 200 })
+      if (isDefaultSessionsCollectionUrl(url)) {
+        return new Response(JSON.stringify({ sessions: [addressedSession("default", `Session ${workspaceId}`)] }), { status: 200 })
       }
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
-      if (url.includes("/api/v1/agent/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
       return new Response(null, { status: 204 })
     })
     vi.stubGlobal("fetch", fetchMock)
@@ -1668,7 +2211,7 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([input, init]) => {
         const headers = init?.headers as Record<string, string> | undefined
-        return String(input).includes("/api/v1/agent/pi-chat/default/state") && headers?.["x-boring-workspace-id"] === "workspace-a"
+        return String(input).includes("/api/v1/agents/default/sessions/default/state") && headers?.["x-boring-workspace-id"] === "workspace-a"
       })).toBe(true)
     })
     fetchMock.mockClear()
@@ -1684,10 +2227,71 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([input, init]) => {
         const headers = init?.headers as Record<string, string> | undefined
-        return String(input).includes("/api/v1/agent/pi-chat/default/state") && headers?.["x-boring-workspace-id"] === "workspace-b"
+        return String(input).includes("/api/v1/agents/default/sessions/default/state") && headers?.["x-boring-workspace-id"] === "workspace-b"
       })).toBe(true)
     })
     expect(screen.queryByText("Loading sessions…")).not.toBeInTheDocument()
+  })
+
+  it("keeps one-render-stale custom rows and saved actions inert until source attestation matches", async () => {
+    let alphaSourceIdentity = ""
+    let capturedPanel: WorkspaceChatPanelProps | undefined
+    const alphaRefresh = vi.fn()
+    const betaRefresh = vi.fn()
+    const CapturingSessionPanel = (props: WorkspaceChatPanelProps) => {
+      capturedPanel = props
+      return <SessionIdChatPanel {...props} />
+    }
+
+    function Harness() {
+      const [agentTypeId, setAgentTypeId] = useState("alpha")
+      const [betaReady, setBetaReady] = useState(false)
+      return (
+        <>
+          <button type="button" onClick={() => setAgentTypeId("beta")}>Switch source</button>
+          <button type="button" onClick={() => setBetaReady(true)}>Settle source</button>
+          <RawWorkspaceAgentFront
+            workspaceId="custom-source-boundary"
+            agentTypeId={agentTypeId}
+            chatPanel={CapturingSessionPanel}
+            persistenceEnabled={false}
+            useSessions={(options) => {
+              if (agentTypeId === "alpha") {
+                alphaSourceIdentity = options.sourceIdentity
+                const session = { id: "alpha-row", agentTypeId: "alpha", title: "Alpha row" }
+                return {
+                  sourceIdentity: options.sourceIdentity,
+                  sessions: [session], activeSession: session, activeSessionId: session.id,
+                  loading: false, create: vi.fn(), switch: vi.fn(), delete: vi.fn(), refresh: alphaRefresh,
+                }
+              }
+              const session = betaReady
+                ? { id: "beta-row", agentTypeId: "beta", title: "Beta row" }
+                : { id: "alpha-row", agentTypeId: "alpha", title: "Alpha row" }
+              return {
+                sourceIdentity: betaReady ? options.sourceIdentity : alphaSourceIdentity,
+                sessions: [session], activeSession: session, activeSessionId: session.id,
+                loading: !betaReady, create: vi.fn(), switch: vi.fn(), delete: vi.fn(), refresh: betaRefresh,
+              }
+            }}
+          />
+        </>
+      )
+    }
+
+    render(<Harness />)
+    expect(await screen.findByText("Chat pane alpha-row")).toBeInTheDocument()
+    const savedAlphaTurnComplete = capturedPanel?.onTurnComplete
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch source" }))
+    act(() => { savedAlphaTurnComplete?.() })
+    expect(alphaRefresh).not.toHaveBeenCalled()
+    expect(betaRefresh).not.toHaveBeenCalled()
+    expect(screen.queryByText("Chat pane alpha-row")).not.toBeInTheDocument()
+    expect(screen.queryByText("Alpha row")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Settle source" }))
+    expect(await screen.findByText("Chat pane beta-row")).toBeInTheDocument()
   })
 
   it("uses the workspace's persisted active chat while session list refreshes", async () => {
@@ -1772,8 +2376,8 @@ describe("WorkspaceAgentFront", () => {
         return new Promise<Response>((resolve) => { resolveWorkspaceBTree = resolve })
       }
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/pi-chat/sessions") && workspaceId === "workspace-b") return new Response(JSON.stringify({ message: "nope" }), { status: 500 })
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) return new Response(JSON.stringify([{ id: "session-workspace-a", title: "A" }]), { status: 200 })
+      if (isDefaultSessionsCollectionUrl(url) && workspaceId === "workspace-b") return new Response(JSON.stringify({ message: "nope" }), { status: 500 })
+      if (isDefaultSessionsCollectionUrl(url)) return new Response(JSON.stringify({ sessions: [addressedSession("session-workspace-a", "A")] }), { status: 200 })
       return new Response(JSON.stringify([]), { status: 200 })
     })
     vi.stubGlobal("fetch", fetchMock)
@@ -1782,18 +2386,18 @@ describe("WorkspaceAgentFront", () => {
       <WorkspaceAgentFront workspaceId="workspace-a" persistenceEnabled={false} />,
     )
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/session-workspace-a/state"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/sessions/session-workspace-a/state"))).toBe(true)
     })
     fetchMock.mockClear()
 
     rerender(<WorkspaceAgentFront workspaceId="workspace-b" persistenceEnabled={false} />)
     resolveWorkspaceBTree?.(new Response(JSON.stringify({ entries: [] }), { status: 200 }))
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/sessions"))).toBe(true)
     })
     expect(fetchMock.mock.calls.some(([input, init]) => {
       const headers = init?.headers as Record<string, string> | undefined
-      return String(input).includes("/api/v1/agent/pi-chat/session-workspace-a/state") && headers?.["x-boring-workspace-id"] === "workspace-b"
+      return String(input).includes("/api/v1/agents/default/sessions/session-workspace-a/state") && headers?.["x-boring-workspace-id"] === "workspace-b"
     })).toBe(false)
   })
 
@@ -1842,25 +2446,32 @@ describe("WorkspaceAgentFront", () => {
     await user.click(await screen.findByRole("button", { name: "Open artifact" }))
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+      expect(screen.getByRole("complementary", { name: "Workbench" })).toHaveAttribute("aria-hidden", "false")
     })
   })
 
   it("loads the target chat session before opening a session-bound surface", async () => {
     const onSwitchSession = vi.fn()
-    render(
-      <WorkspaceAgentFront
-        workspaceId="session-gated-surface"
-        chatPanel={SessionIdChatPanel}
-        sessions={[
-          { id: "s1", title: "Open", updatedAt: new Date(0).toISOString(), turnCount: 0 },
-          { id: "s2", title: "Closed", updatedAt: new Date(0).toISOString(), turnCount: 0 },
-        ]}
-        activeSessionId="s1"
-        onSwitchSession={onSwitchSession}
-        persistenceEnabled={false}
-      />,
-    )
+    function Harness() {
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="session-gated-surface"
+          chatPanel={SessionIdChatPanel}
+          sessions={[
+            { id: "s1", title: "Open", updatedAt: new Date(0).toISOString(), turnCount: 0 },
+            { id: "s2", title: "Closed", updatedAt: new Date(0).toISOString(), turnCount: 0 },
+          ]}
+          activeSessionId={activeSessionId}
+          onSwitchSession={(id, owner) => {
+            onSwitchSession(id, owner)
+            setActiveSessionId(id)
+          }}
+          persistenceEnabled={false}
+        />
+      )
+    }
+    render(<Harness />)
 
     await screen.findByText("Chat pane s1")
     expect(screen.queryByLabelText("Surface")).not.toBeInTheDocument()
@@ -1874,8 +2485,8 @@ describe("WorkspaceAgentFront", () => {
 
     await waitFor(() => {
       expect(visibleChatSessionIds()).toEqual(["s2"])
-      expect(onSwitchSession).toHaveBeenCalledWith("s2")
-      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+      expect(onSwitchSession).toHaveBeenCalledWith("s2", "default")
+      expect(screen.getByRole("complementary", { name: "Workbench" })).toHaveAttribute("aria-hidden", "false")
     })
   })
 
@@ -1903,7 +2514,7 @@ describe("WorkspaceAgentFront", () => {
     window.dispatchEvent(new CustomEvent(UI_COMMAND_EVENT, { detail: command }))
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+      expect(screen.getByRole("complementary", { name: "Workbench" })).toHaveAttribute("aria-hidden", "false")
     })
     await waitFor(() => {
       expect(screen.getByText("Global command panel body")).toBeInTheDocument()
@@ -1955,7 +2566,7 @@ describe("WorkspaceAgentFront", () => {
     }))
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+      expect(screen.getByRole("complementary", { name: "Workbench" })).toHaveAttribute("aria-hidden", "false")
     })
     await waitFor(() => {
       expect(screen.getByText("Global command panel body")).toBeInTheDocument()
@@ -2034,7 +2645,53 @@ describe("WorkspaceAgentFront", () => {
     expect(deleted).not.toHaveBeenCalled()
   })
 
-  it("does not pass the New chat click event into remote session creation", () => {
+  it("lets a manual create own an empty-list transition without a queued boot duplicate", async () => {
+    let releaseCreate!: () => void
+    let clearSessions!: () => void
+    const createGate = new Promise<void>((resolve) => { releaseCreate = resolve })
+    const create = vi.fn(async () => {
+      await createGate
+      return { id: "manual", title: "New session", updatedAt: Date.now(), turnCount: 0 }
+    })
+
+    function useSessionsThatBecomeEmpty() {
+      const [sessions, setSessions] = useState([
+        { id: "existing", title: "Existing", updatedAt: Date.now(), turnCount: 1 },
+      ])
+      clearSessions = () => setSessions([])
+      return {
+        sessions,
+        activeSessionId: sessions[0]?.id ?? null,
+        activeSession: sessions[0] ?? null,
+        loading: false,
+        create,
+        switch: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="manual-empty-transition"
+        chatPanel={ChatPanel}
+        useSessions={useSessionsThatBecomeEmpty}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }))
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    act(() => clearSessions())
+
+    // Let the empty-session grace period expire while the user-owned create is
+    // active. The initial boot effect must not enqueue a second create.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 2_100)))
+    expect(create).toHaveBeenCalledOnce()
+
+    await act(async () => { releaseCreate() })
+  })
+
+  it("does not pass the New chat click event into remote session creation", async () => {
     const create = vi.fn(async () => ({ id: "manual", title: "Manual", updatedAt: Date.now(), turnCount: 0 }))
 
     render(
@@ -2056,7 +2713,7 @@ describe("WorkspaceAgentFront", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "New chat" }))
 
-    expect(create).toHaveBeenCalledOnce()
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
     expect(create.mock.calls[0]).toEqual([])
   })
 
@@ -2161,11 +2818,11 @@ describe("WorkspaceAgentFront", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
-      if (url.endsWith("/api/v1/agent/reload")) {
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
+      if (url.endsWith("/api/v1/agents/default/reload")) {
         expect(init?.method).toBe("POST")
         expect(init?.headers).toMatchObject({ "x-boring-workspace-id": "reload-workspace", "content-type": "application/json" })
-        expect(JSON.parse(String(init?.body))).toEqual({ sessionId: "pi-reload" })
+        expect(JSON.parse(String(init?.body))).toEqual(expect.objectContaining({ sessionId: "pi-reload", requestId: expect.any(String) }))
         return new Response(JSON.stringify({ reloaded: false, diagnostics: [{ message: "rebuilt plugin front" }] }), { status: 200 })
       }
       return new Response(JSON.stringify([]), { status: 200 })
@@ -2203,11 +2860,58 @@ describe("WorkspaceAgentFront", () => {
         message: "Extensions will reload on the next message.\n\nWarnings:\nrebuilt plugin front",
         reloaded: false,
       })
-      expect(fetchMock).toHaveBeenCalledWith("/agent/api/v1/agent/reload", expect.objectContaining({ method: "POST" }))
+      expect(fetchMock).toHaveBeenCalledWith("/agent/api/v1/agents/default/reload", expect.objectContaining({ method: "POST" }))
       expect(reloadEvents).toContainEqual({ reloaded: false, diagnostics: [{ message: "rebuilt plugin front" }] })
     } finally {
       window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
     }
+  })
+
+  it("reloads colliding panes through each pane's full Agent owner ref", async () => {
+    const user = userEvent.setup()
+    const captured = new Map<string, WorkspaceChatPanelProps>()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.endsWith("/api/v1/agents/beta/reload")) return new Response(JSON.stringify({ reloaded: true, diagnostics: [] }), { status: 200 })
+      return new Response(JSON.stringify([]), { status: 200 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    function ReloadOwnerProbe(props: WorkspaceChatPanelProps) {
+      captured.set(`${props.agentTypeId}/${props.sessionId}`, props)
+      return <div>{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        agentTypeId="alpha"
+        workspaceId="reload-colliding-owner"
+        chatPanel={ReloadOwnerProbe}
+        sessions={[
+          { id: "shared", agentTypeId: "alpha", title: "Alpha shared", updatedAt: Date.now() },
+          { id: "shared", agentTypeId: "beta", title: "Beta shared", updatedAt: Date.now() - 1 },
+        ]}
+        activeSessionId="shared"
+        activeSessionAgentTypeId="alpha"
+        onSwitchSession={vi.fn()}
+        apiBaseUrl="/agent"
+        defaultNavOpen
+        persistenceEnabled={false}
+      />,
+    )
+
+    expandHistory()
+    await user.click(screen.getByLabelText("Open Beta shared in chat pane"))
+    await waitFor(() => expect(captured.has("beta/shared")).toBe(true))
+    await captured.get("beta/shared")!.onReloadAgentPlugins!()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/agent/api/v1/agents/beta/reload",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining('"sessionId":"shared"'),
+      }),
+    )
   })
 
   it("adds workspace id to request headers when host omits them", async () => {
@@ -2329,7 +3033,7 @@ describe("WorkspaceAgentFront", () => {
 
     expandHistory()
     await user.click(screen.getByText("Session two"))
-    expect(onSwitchSession).toHaveBeenCalledWith("s2")
+    expect(onSwitchSession).toHaveBeenCalledWith("s2", "default")
     expect(observed).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.objectContaining({ sessionId: "s1", reason: "session-switch" }) }))
 
     window.removeEventListener("boring:workspace-composer-stop", observed)
@@ -2349,16 +3053,16 @@ describe("WorkspaceAgentFront", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
+      if (isDefaultSessionsCollectionUrl(url)) {
         const method = init?.method ?? "GET"
         if (method === "GET" && sessionsFailuresRemaining > 0) {
           sessionsFailuresRemaining -= 1
           return new Response(null, { status: 503 })
         }
-        if (method === "GET") return new Response(JSON.stringify([{ id: "s1", title: "Existing" }]), { status: 200 })
+        if (method === "GET") return new Response(JSON.stringify({ sessions: [addressedSession("s1", "Existing")] }), { status: 200 })
       }
-      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
-      if (url.includes("/api/v1/agent/pi-chat/") && url.includes("/state")) return new Response(JSON.stringify({ protocolVersion: 1, sessionId: "existing", seq: 0, status: "idle", messages: [], queue: { followUps: [] }, followUpMode: "one-at-a-time" }), { status: 200 })
+      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agents/default/sessions/") && url.includes("/state")) return new Response(JSON.stringify({ protocolVersion: 1, sessionId: "existing", seq: 0, status: "idle", messages: [], queue: { followUps: [] }, followUpMode: "one-at-a-time" }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     })
@@ -2391,7 +3095,7 @@ describe("WorkspaceAgentFront", () => {
     // And the chat must NOT have given up by auto-creating a brand-new empty
     // session as if none existed (no POST to the sessions endpoint).
     expect(fetchMock.mock.calls.some(([input, init]) =>
-      String(input).includes("/api/v1/agent/pi-chat/sessions") && (init?.method ?? "GET") === "POST",
+      String(input).includes("/api/v1/agents/default/sessions") && (init?.method ?? "GET") === "POST",
     )).toBe(false)
   })
 
@@ -2419,6 +3123,59 @@ describe("WorkspaceAgentFront", () => {
 
     await waitFor(() => {
       expect(createSession).toHaveBeenCalledWith({ title: "Fresh session" })
+    }, { timeout: 3000 })
+  })
+
+  it("keeps the default New session label provisional for first-message titling", async () => {
+    const createSession = vi.fn(async () => ({ id: "empty-native", title: "New session" }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="remote-provisional-title"
+        chatPanel={ChatPanel}
+        useSessions={() => ({
+          sessions: [],
+          loading: false,
+          activeSessionId: null,
+          activeSession: null,
+          switch: vi.fn(),
+          create: createSession,
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledWith({})
+    }, { timeout: 3000 })
+  })
+
+  it("passes the exact hidden boot candidate only to initial auto-create", async () => {
+    const createSession = vi.fn(async () => ({ id: "empty-native", title: "Fresh session" }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="remote-sessions"
+        chatPanel={ChatPanel}
+        defaultSessionTitle="Fresh session"
+        useSessions={() => ({
+          sessions: [],
+          loading: false,
+          activeSessionId: null,
+          activeSession: null,
+          resumeSessionId: "empty-native",
+          switch: vi.fn(),
+          create: createSession,
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledWith({
+        title: "Fresh session",
+        resumeSessionId: "empty-native",
+      })
     }, { timeout: 3000 })
   })
 

@@ -1,4 +1,4 @@
-import type { SessionStore } from './session'
+import type { SessionCtx, SessionStore } from './session'
 import type { TelemetrySink } from './telemetry'
 import type { AgentTool } from './tool'
 import type { AgentSendInput, MessageAttachment } from './events'
@@ -130,6 +130,8 @@ export interface RunContext {
   userId?: string
   userEmail?: string
   userEmailVerified?: boolean
+  /** Canonical storage/live identity for commands and prompts sharing one Pi handle. */
+  sessionCtx?: SessionCtx
   /** When false, slash-command fallback through native model prompt must fail closed. */
   allowPromptDispatch?: boolean
 }

@@ -92,6 +92,8 @@ export type AskUserRequest = {
   context?: string
   schema?: AskUserFormSchema
   timeoutMs?: number
+  /** Pi tool-call correlation for the inline transcript renderer. */
+  toolCallId?: string
   /** Trusted server/runtime attribution. Not accepted from browser bridge inputs. */
   ownerPrincipalId?: string
 }
@@ -108,6 +110,8 @@ export type AskUserQuestionStatus = "ready" | "answered" | "cancelled" | "abando
 export type AskUserQuestion = {
   questionId: string
   sessionId: string
+  /** Optional so persisted questions created before #1086 remain readable. */
+  toolCallId?: string
   ownerPrincipalId: string
   status: AskUserQuestionStatus
   title?: string

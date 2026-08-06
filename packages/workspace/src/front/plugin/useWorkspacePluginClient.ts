@@ -1,6 +1,7 @@
 import { createContext, createElement, useContext, useMemo, type ReactNode } from "react"
 
 export interface WorkspacePluginClient {
+  agentTypeId: string
   apiBaseUrl: string
   workspaceId?: string
   workspaceHeaders(): Record<string, string>
@@ -11,6 +12,7 @@ export interface WorkspacePluginClient {
 }
 
 interface WorkspacePluginClientProviderProps {
+  agentTypeId: string
   apiBaseUrl: string
   workspaceId?: string
   authHeaders?: Record<string, string>
@@ -61,6 +63,8 @@ function assertSameOriginApiPath(path: string): string {
 
 function withWorkspaceQuery(path: string, workspaceId: string | undefined): string {
   if (!workspaceId) return path
+  const pathname = path.split("?", 1)[0]
+  if (pathname === "/api/v1/agents" || pathname.startsWith("/api/v1/agents/")) return path
   const separator = path.includes("?") ? "&" : "?"
   return `${path}${separator}workspaceId=${encodeURIComponent(workspaceId)}`
 }
@@ -72,26 +76,47 @@ function deleteHeaderCaseInsensitive(headers: Record<string, string>, name: stri
   }
 }
 
-async function responseError(response: Response, fallback: string, options?: { prefixFallback?: boolean }): Promise<string> {
+export class WorkspacePluginClientRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly body?: unknown,
+  ) {
+    super(message)
+    this.name = "WorkspacePluginClientRequestError"
+  }
+}
+
+async function responseError(response: Response, fallback: string, options?: { prefixFallback?: boolean }): Promise<WorkspacePluginClientRequestError> {
   const text = await response.text().catch(() => "")
-  if (!text) return `${fallback} (${response.status})`
+  if (!text) return new WorkspacePluginClientRequestError(`${fallback} (${response.status})`, response.status)
   try {
-    const parsed = JSON.parse(text) as { error?: { message?: unknown }; message?: unknown }
-    const message = typeof parsed.error?.message === "string"
+    const parsed = JSON.parse(text) as { error?: { message?: unknown } | string; message?: unknown }
+    const message = typeof parsed.error === "object" && typeof parsed.error?.message === "string"
       ? parsed.error.message
       : typeof parsed.message === "string"
         ? parsed.message
-        : text
+        : typeof parsed.error === "string"
+          ? parsed.error
+          : text
     const rendered = `${message} (${response.status})`
-    return options?.prefixFallback ? `${fallback}: ${rendered}` : rendered
+    return new WorkspacePluginClientRequestError(
+      options?.prefixFallback ? `${fallback}: ${rendered}` : rendered,
+      response.status,
+      parsed,
+    )
   } catch {
     const rendered = `${text.slice(0, 200)} (${response.status})`
-    return options?.prefixFallback ? `${fallback}: ${rendered}` : rendered
+    return new WorkspacePluginClientRequestError(
+      options?.prefixFallback ? `${fallback}: ${rendered}` : rendered,
+      response.status,
+    )
   }
 }
 
 function createWorkspacePluginClientWithOptions(
   apiBaseUrl: string,
+  agentTypeId: string,
   workspaceId: string | undefined,
   authHeaders: Record<string, string> | undefined,
   options: { allowCrossOriginBase: boolean },
@@ -118,9 +143,9 @@ function createWorkspacePluginClientWithOptions(
       headers,
     })
     if (!response.ok) {
-      throw new Error(await responseError(response, fallback, {
+      throw await responseError(response, fallback, {
         prefixFallback: options?.prefixFallbackStatuses?.includes(response.status) ?? false,
-      }))
+      })
     }
     return await response.json() as T
   }
@@ -145,14 +170,17 @@ function createWorkspacePluginClientWithOptions(
     message: string,
     options?: { title?: string; noncePrefix?: string },
   ): Promise<void> => {
-    const session = await postJson<{ id?: unknown }>("/api/v1/agent/pi-chat/sessions", {
+    const sessionsPath = `/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions`
+    const session = await postJson<{ sessionId?: unknown }>(sessionsPath, {
       title: options?.title ?? "Plugin action",
     })
-    if (typeof session.id !== "string") throw new Error("agent session creation did not return a session id")
+    if (typeof session.sessionId !== "string") throw new Error("agent session creation did not return a session id")
     const noncePrefix = options?.noncePrefix ?? "workspace-plugin"
-    await postJson(`/api/v1/agent/pi-chat/${encodeURIComponent(session.id)}/prompt`, {
-      message,
-      clientNonce: `${noncePrefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+    const clientNonce = `${noncePrefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+    await postJson(`${sessionsPath}/${encodeURIComponent(session.sessionId)}/prompt`, {
+      requestId: clientNonce,
+      content: message,
+      clientNonce,
     })
   }
   const readJsonFile = async <T,>(
@@ -166,6 +194,7 @@ function createWorkspacePluginClientWithOptions(
     })
   }
   return {
+    agentTypeId,
     apiBaseUrl: base,
     ...(workspaceId ? { workspaceId } : {}),
     workspaceHeaders,
@@ -178,21 +207,23 @@ function createWorkspacePluginClientWithOptions(
 
 export function createWorkspacePluginClient(
   apiBaseUrl: string,
+  agentTypeId: string,
   workspaceId?: string,
   authHeaders?: Record<string, string>,
 ): WorkspacePluginClient {
-  return createWorkspacePluginClientWithOptions(apiBaseUrl, workspaceId, authHeaders, { allowCrossOriginBase: false })
+  return createWorkspacePluginClientWithOptions(apiBaseUrl, agentTypeId, workspaceId, authHeaders, { allowCrossOriginBase: false })
 }
 
 export function WorkspacePluginClientProvider({
   apiBaseUrl,
+  agentTypeId,
   workspaceId,
   authHeaders,
   children,
 }: WorkspacePluginClientProviderProps) {
   const client = useMemo(
-    () => createWorkspacePluginClientWithOptions(apiBaseUrl, workspaceId, authHeaders, { allowCrossOriginBase: true }),
-    [apiBaseUrl, authHeaders, workspaceId],
+    () => createWorkspacePluginClientWithOptions(apiBaseUrl, agentTypeId, workspaceId, authHeaders, { allowCrossOriginBase: true }),
+    [agentTypeId, apiBaseUrl, authHeaders, workspaceId],
   )
   return createElement(WorkspacePluginClientContext.Provider, { value: client }, children)
 }

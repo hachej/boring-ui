@@ -1,0 +1,143 @@
+[data-boring-agent] .boring-agent-markdown {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+[data-boring-agent] .boring-agent-markdown p,
+[data-boring-agent] .boring-agent-markdown ol,
+[data-boring-agent] .boring-agent-markdown ul {
+  margin-block: 0.75rem;
+}
+
+[data-boring-agent] .boring-agent-markdown h1,
+[data-boring-agent] .boring-agent-markdown h2,
+[data-boring-agent] .boring-agent-markdown h3 {
+  color: var(--foreground);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+[data-boring-agent] .boring-agent-markdown h1 {
+  margin-block: 1.5rem 0.5rem;
+  font-size: 1.25rem;
+  line-height: 1.5rem;
+}
+
+[data-boring-agent] .boring-agent-markdown h2 {
+  margin-block: 1.5rem 0.5rem;
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+[data-boring-agent] .boring-agent-markdown h3 {
+  margin-block: 1rem 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+[data-boring-agent] .boring-agent-markdown ol,
+[data-boring-agent] .boring-agent-markdown ul {
+  padding-inline-start: 1.5rem;
+  list-style-position: outside;
+}
+
+[data-boring-agent] .boring-agent-markdown ol {
+  list-style-type: decimal;
+}
+
+[data-boring-agent] .boring-agent-markdown ul {
+  list-style-type: disc;
+}
+
+[data-boring-agent] .boring-agent-markdown li {
+  padding-inline-start: 0.25rem;
+  font: inherit;
+}
+
+[data-boring-agent] .boring-agent-markdown li + li {
+  margin-top: 0.25rem;
+}
+
+[data-boring-agent] .boring-agent-markdown li::marker {
+  color: var(--muted-foreground);
+}
+
+[data-boring-agent] .boring-agent-markdown strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+[data-boring-agent] .boring-agent-markdown a {
+  color: var(--accent);
+  text-underline-offset: 0.25rem;
+}
+
+[data-boring-agent] .boring-agent-markdown a:hover {
+  text-decoration-line: underline;
+}
+
+[data-boring-agent] .boring-agent-markdown blockquote {
+  margin-block: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--muted) 45%, transparent);
+  color: var(--muted-foreground);
+  font-style: normal;
+}
+
+[data-boring-agent] .boring-agent-markdown blockquote p {
+  margin-block: 0;
+}
+
+[data-boring-agent] .boring-agent-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+[data-boring-agent] .boring-agent-markdown thead {
+  background: color-mix(in oklab, var(--muted) 45%, transparent);
+}
+
+[data-boring-agent] .boring-agent-markdown th,
+[data-boring-agent] .boring-agent-markdown td {
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+[data-boring-agent] .boring-agent-markdown th {
+  font-weight: 600;
+}
+
+[data-boring-agent] .boring-agent-markdown tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+[data-boring-agent] .boring-agent-markdown pre {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+[data-boring-agent] .boring-agent-markdown > *:first-child {
+  margin-top: 0;
+}
+
+[data-boring-agent] .boring-agent-markdown > *:last-child {
+  margin-bottom: 0;
+}
+
+@media (pointer: coarse) {
+  [data-boring-agent] .boring-agent-message-action,
+  [data-boring-agent] .boring-agent-history-action,
+  [data-boring-agent] .boring-agent-scroll-latest {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

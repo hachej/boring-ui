@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
+import { agentResourceUrl, withStorageScope } from '../agentHttp'
 import type { CommandRegistry } from '../slashCommands/registry'
 
 export function useServerSkills({
+  agentTypeId,
   apiBaseUrl,
   fetch: fetchImpl,
   registry,
@@ -10,6 +12,7 @@ export function useServerSkills({
   refreshKey,
   enabled = true,
 }: {
+  agentTypeId: string
   apiBaseUrl?: string
   fetch?: typeof globalThis.fetch
   registry: CommandRegistry
@@ -28,9 +31,10 @@ export function useServerSkills({
     if (!enabled) return
     let aborted = false
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
-    const path = refreshKey ? '/api/v1/agent/skills?refresh=1' : '/api/v1/agent/skills'
+    const resourcePath = `/api/v1/agents/${encodeURIComponent(agentTypeId)}/skills`
+    const path = refreshKey ? `${resourcePath}?refresh=1` : resourcePath
     nextFetch(agentResourceUrl(apiBaseUrl, path), {
-      headers: scopedHeaders(requestHeaders, storageScope),
+      headers: withStorageScope(requestHeaders, storageScope),
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((payload: { skills?: Array<{ name: string; description: string; invocable?: boolean }> } | null) => {
@@ -47,20 +51,7 @@ export function useServerSkills({
       })
       .catch(() => {})
     return () => { aborted = true }
-  }, [apiBaseUrl, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
+  }, [agentTypeId, apiBaseUrl, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
 
   return skillsStamp
-}
-
-function agentResourceUrl(apiBaseUrl: string | undefined, path: string): string {
-  const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-  return `${base}${path}`
-}
-
-function scopedHeaders(headers: Record<string, string> | undefined, storageScope: string | undefined): Record<string, string> | undefined {
-  if (!headers && !storageScope) return undefined
-  const result: Record<string, string> = { ...(headers ?? {}) }
-  const hasStorageScope = Object.keys(result).some((key) => key.toLowerCase() === 'x-boring-storage-scope')
-  if (storageScope && !hasStorageScope) result['x-boring-storage-scope'] = storageScope
-  return result
 }

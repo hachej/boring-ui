@@ -14,6 +14,10 @@ export {
   WorkspaceBackgroundBoot,
   type WorkspaceBackgroundBootProps,
 } from "./WorkspaceBackgroundBoot"
+export {
+  ChatSessionTransitionState,
+  WorkbenchWarmupOverlay,
+} from "./WorkspaceAgentStatusStates"
 export type { WorkspaceWarmupStatus } from "./workspacePreload"
 export {
   createLocalStorageSessions,

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 
 const APP_DIR = dirname(fileURLToPath(import.meta.url))
 const E2E_WORKSPACE_ROOT = resolve(process.env.BORING_AGENT_WORKSPACE_ROOT || resolve(APP_DIR, "e2e/fixtures/workspace"))
+const E2E_COMPANY_CONTEXT_ROOT = resolve(process.env.BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT || resolve(APP_DIR, "e2e/fixtures/company-context"))
 const E2E_SESSION_ROOT = resolve(process.env.BORING_AGENT_SESSION_ROOT || resolve(APP_DIR, "e2e/fixtures/sessions"))
 const VITE_PORT = 5380
 const AGENT_API_PORT = 5390
@@ -41,7 +42,7 @@ export default defineConfig({
     // localStorage keys would diverge from the playground's defaults).
     // AGENT_API_PORT is shifted off its default (5210) too because
     // boring-macro-v2 also binds 5210. The vite proxy reads that env
-    // var and forwards /api/v1/agent + /api/v1/ui to the right
+    // var and forwards /api/v1/agents + /api/v1/ui to the right
     // backend.
     command: `cd ${shell(APP_DIR)} && env -i ${[
       `PATH=${shell(process.env.PATH || "")}`,
@@ -53,7 +54,9 @@ export default defineConfig({
       `PORT=${VITE_PORT}`,
       `AGENT_API_PORT=${AGENT_API_PORT}`,
       `BORING_AGENT_WORKSPACE_ROOT=${shell(E2E_WORKSPACE_ROOT)}`,
+      `BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT=${shell(E2E_COMPANY_CONTEXT_ROOT)}`,
       `BORING_AGENT_SESSION_ROOT=${shell(E2E_SESSION_ROOT)}`,
+      "BORING_WORKSPACE_PLAYGROUND_MULTI_FS=1",
       "BORING_AGENT_E2E_SCRIPTED_PI=1",
       "BORING_AGENT_E2E_SCRIPTED_PI_TICK_MS=300",
       "BORING_AGENT_E2E_SCRIPTED_PI_TOOL_DELAY_TICKS=20",

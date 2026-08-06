@@ -4,6 +4,8 @@ export {
   buildWorkspaceContextPrompt,
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
+  createWorkspacePiResourceDigestInput,
+  digestWorkspacePiResourceInputs,
   omitPluginAuthoringProvisioning,
   projectAgentSpecPluginArtifacts,
   provisionWorkspaceAgentServer,

@@ -1,5 +1,5 @@
 import type { WorkspaceState, PanelState } from "../store/types"
-import type { FilesystemId } from "../../shared/types/filesystem"
+import type { FilesystemId, UiFileResource } from "../../shared/types/filesystem"
 
 export interface CommandResult {
   seq: number
@@ -22,7 +22,7 @@ export interface BridgeEventMap {
   "file:saved": { path: string }
   "file:dirty": { path: string; dirty: boolean }
   "sidebar:toggled": { collapsed: boolean }
-  "tree:expand": { path: string }
+  "tree:expand": { path: string; filesystem?: FilesystemId }
   "notification:shown": { message: string; level: "info" | "warn" | "error" }
   "pane:error": { panelId: string; error: string; stack?: string }
 }
@@ -39,6 +39,7 @@ export interface DynamicPaneConfig {
 export interface WorkspaceBridge {
   getOpenPanels(): PanelState[]
   getActiveFile(): string | null
+  getActiveFileResource?(): UiFileResource | null
   getDirtyFiles(): string[]
   getVisibleFiles(): string[]
 
@@ -54,7 +55,7 @@ export interface WorkspaceBridge {
     level?: "info" | "warn" | "error",
   ): Promise<CommandResult>
   navigateToLine(file: string, line: number): Promise<CommandResult>
-  expandToFile(path: string): Promise<CommandResult>
+  expandToFile(path: string, opts?: { filesystem?: FilesystemId }): Promise<CommandResult>
   markDirty(path: string): void
   markClean(path: string): void
 
@@ -77,6 +78,8 @@ export interface WorkspaceBridge {
  * surface-backed adapter without importing a plugin module.
  */
 export type FileTreeBridge = Pick<WorkspaceBridge, "openFile" | "getActiveFile" | "select"> &
-  Partial<Pick<WorkspaceBridge, "subscribe">>
+  Partial<Pick<WorkspaceBridge, "subscribe">> & {
+    getActiveFileResource?: () => UiFileResource | null
+  }
 
 export type CausedBy = "user" | "agent" | "restore"

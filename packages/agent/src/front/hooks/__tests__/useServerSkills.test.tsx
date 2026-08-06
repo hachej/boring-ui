@@ -14,7 +14,7 @@ describe('useServerSkills', () => {
       ],
     }), { status: 200 })) as unknown as typeof fetch
 
-    renderHook(() => useServerSkills({ registry, fetch: fetchImpl }))
+    renderHook(() => useServerSkills({ agentTypeId: 'default', registry, fetch: fetchImpl }))
     await waitFor(() => expect(registry.get('winner')).toBeTruthy())
     expect(registry.get('duplicate')).toBeUndefined()
   })

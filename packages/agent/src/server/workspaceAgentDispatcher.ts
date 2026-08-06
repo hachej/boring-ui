@@ -6,6 +6,9 @@ import type { AgentEvent, AgentMessageContent } from '../shared/events'
 import { ErrorCode } from '../shared/error-codes'
 import type { Workspace } from '../shared/workspace'
 import type {
+  LeaseBoundWorkspaceAgent,
+  WorkspaceAgentDirectRunCallback,
+  WorkspaceAgentDirectRunInput,
   WorkspaceAgentDispatch,
   WorkspaceAgentDispatcher,
   WorkspaceAgentDispatcherContext,
@@ -17,12 +20,45 @@ export interface WorkspaceAgentDispatcherResolveOptions {
   request?: FastifyRequest
 }
 
+export interface PiSessionVisibleUserTurnTarget {
+  /** Advisory snapshot; sendIfIdle is the authoritative atomic admission. */
+  isIdle(): Promise<boolean>
+  sendIfIdle(input: {
+    /** Stable across busy/transient retries; also used as the Pi client nonce. */
+    requestId: string
+    message: string
+    displayMessage?: string
+  }): Promise<
+    | { status: 'accepted'; cursor: number; duplicate?: boolean }
+    | { status: 'busy' }
+    | { status: 'gone' }
+  >
+}
+
+export interface BoundPiSession {
+  /** Trusted target closed over one exact logical Pi session. */
+  visibleUserMessageTarget: PiSessionVisibleUserTurnTarget
+}
+
 export interface WorkspaceAgentDispatcherBinding {
   dispatcher: WorkspaceAgentDispatcher
   workspace: Workspace
+  /**
+   * Trusted host seam used by local integrations that must bind durable work
+   * to the exact logical Pi session before accepting it.
+   */
+  bindPiSession?(
+    sessionId: string,
+    sessionCtx?: { workspaceId?: string; userId?: string },
+  ): Promise<BoundPiSession>
 }
 
 export interface WorkspaceAgentDispatcherResolver {
+  /** Callback-scoped canonical Host operation; no dispatcher or Workspace escapes. */
+  runWithWorkspaceAgent(
+    input: WorkspaceAgentDirectRunInput & { request?: FastifyRequest },
+    run: WorkspaceAgentDirectRunCallback,
+  ): Promise<void>
   resolve(
     ctx: WorkspaceAgentDispatcherContext,
     options?: WorkspaceAgentDispatcherResolveOptions,
@@ -100,7 +136,7 @@ async function dispatchGatewayInput(
         scope: binding.scope,
         agentTypeId: binding.agentTypeId,
         requestId,
-        title: contentToText(input.content ?? input.message).slice(0, 80) || undefined,
+        title: input.title?.trim() || contentToText(input.content ?? input.message).slice(0, 80) || undefined,
       })
   const connection = await binding.gateway.connectSession({
     scope: binding.scope,

@@ -32,6 +32,13 @@ export interface WorkspacePackageResourceContribution {
   packageRoot: string | URL
 }
 
+export interface WorkspaceAgentReloadBlock {
+  /** Stable plugin-owned reason code. */
+  code: string
+  /** Human-readable action required before Agent reload can proceed. */
+  message: string
+}
+
 export interface WorkspaceServerPlugin {
   id: string
   label?: string
@@ -71,6 +78,11 @@ export interface WorkspaceServerPlugin {
   /** Static filesystem assets this plugin needs in production/serverless bundles. */
   assets?: WorkspaceServerPluginAsset[]
   routes?: FastifyPluginAsync
+  /**
+   * Reports why Agent reload is currently unavailable. Undefined allows reload.
+   * This check must not mutate plugin state.
+   */
+  getAgentReloadBlock?: () => WorkspaceAgentReloadBlock | undefined | Promise<WorkspaceAgentReloadBlock | undefined>
   /** UI state keys owned by this plugin that browser state PUTs must not overwrite. */
   preservedUiStateKeys?: string[]
 }
@@ -370,6 +382,9 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
   }
   if (plugin.routes !== undefined && typeof plugin.routes !== "function") {
     fail(plugin.id, "routes must be a Fastify plugin function when provided")
+  }
+  if (plugin.getAgentReloadBlock !== undefined && typeof plugin.getAgentReloadBlock !== "function") {
+    fail(plugin.id, "getAgentReloadBlock must be a function when provided")
   }
   if (plugin.preservedUiStateKeys !== undefined) {
     if (!Array.isArray(plugin.preservedUiStateKeys) || plugin.preservedUiStateKeys.some((key) => typeof key !== "string" || key.length === 0)) {

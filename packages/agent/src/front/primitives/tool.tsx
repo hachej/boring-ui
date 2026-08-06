@@ -67,6 +67,7 @@ export type ToolHeaderProps = {
   type: ToolPart["type"];
   state: ToolState;
   toolName?: string;
+  statusLabel?: string;
 };
 
 const statusLabels: Record<ToolState, string> = {
@@ -91,10 +92,10 @@ const statusIcons: Record<ToolState, ReactNode> = {
   aborted: <XCircleIcon className="size-4 text-muted-foreground" />,
 };
 
-export const getStatusBadge = (status: ToolState) => (
+export const getStatusBadge = (status: ToolState, label = statusLabels[status]) => (
   <Badge className="shrink-0 gap-1.5 rounded-full text-xs" variant="secondary">
     {statusIcons[status]}
-    {statusLabels[status]}
+    {label}
   </Badge>
 );
 
@@ -105,6 +106,7 @@ export const ToolHeader = ({
   state,
   icon,
   toolName,
+  statusLabel,
   ...props
 }: ToolHeaderProps) => {
   const derivedName =
@@ -124,7 +126,7 @@ export const ToolHeader = ({
         <span data-boring-agent-part="tool-title" className="min-w-0 flex-1 truncate text-sm font-medium">
           {title ?? derivedName}
         </span>
-        {getStatusBadge(state)}
+        {getStatusBadge(state, statusLabel)}
       </div>
       <ChevronDownIcon
         data-boring-agent-part="tool-chevron"

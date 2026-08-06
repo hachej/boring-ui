@@ -11,6 +11,12 @@
       "name": "@mariozechner/pi-coding-agent",
       "version": "0.80.7",
       "reason": "Issue #805 mechanical copy must use the same owner-approved Pi factory version as packages/agent"
+    },
+    {
+      "file": "packages/cli/package.json",
+      "name": "@fastify/static",
+      "version": "10.1.2",
+      "reason": "PR #930 owner-approved security update for GHSA-83w8-p2f5-377r and GHSA-8pvw-jcv7-9cmj"
     }
   ]
 }

@@ -4,17 +4,24 @@ import type { Workspace } from "@hachej/boring-agent/shared"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import { AUTOMATION_PROMPT_DIRECTORY, automationPromptPath } from "../shared/prompt"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../shared/types"
-import { AutomationStoreError, automationNotFound, runAlreadyActive, runAlreadyRecorded, runNotFound, type AutomationStore } from "./store"
+import { AutomationStoreError, automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound, type AutomationStore } from "./store"
 
 export interface HostedAutomationActor {
   workspaceId: string
   userId: string
 }
 
+export type HostedAutomationRunEvidence = Pick<AutomationRun, "automationId" | "status" | "trigger" | "scheduledFor">
+
 export interface HostedAutomationCandidate {
   automation: Automation
   actor: HostedAutomationActor
-  runs: AutomationRun[]
+  runs: HostedAutomationRunEvidence[]
+}
+
+export interface ReconciledHostedAutomationRun {
+  actor: HostedAutomationActor
+  run: AutomationRun
 }
 
 type Sql = postgres.Sql
@@ -25,6 +32,7 @@ type AutomationRow = {
 type RunRow = {
   id: string; automation_id: string; invocation_id: string; dispatch_request_id: string; dispatch_receipt: AutomationRun["dispatchReceipt"]; session_id: string | null; status: AutomationRun["status"]; trigger: AutomationRun["trigger"]; scheduled_for: Date | string | null; started_at: Date | string | null; completed_at: Date | string | null; duration_ms: number | null; input_tokens: number | null; output_tokens: number | null; total_tokens: number | null; prompt_snapshot: string; model_snapshot: string; error: string | null; created_at: Date | string; updated_at: Date | string
 }
+type ScheduleRunRow = Pick<RunRow, "automation_id" | "status" | "trigger" | "scheduled_for">
 
 /** Hosted metadata store bound to one verified actor; prompt bodies live in the actor's Workspace. */
 export class PostgresAutomationStore implements AutomationStore {
@@ -169,25 +177,52 @@ export class PostgresAutomationStore implements AutomationStore {
     }
   }
 
+  async claimRunForDispatch(runId: string): Promise<AutomationRun | null> {
+    const rows = await this.sql<RunRow[]>`
+      UPDATE boring_automation_runs
+      SET status = 'dispatching', updated_at = NOW()
+      WHERE id = ${runId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND status = 'queued'
+      RETURNING *
+    `
+    return rows[0] ? toRun(rows[0]) : null
+  }
+
+  async heartbeatRun(runId: string): Promise<boolean> {
+    const result = await this.sql`
+      UPDATE boring_automation_runs
+      SET updated_at = NOW()
+      WHERE id = ${runId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+        AND status IN ('queued', 'dispatching', 'running')
+    `
+    return result.count > 0
+  }
+
   async updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun> {
     const current = await this.findRun(runId)
     if (!current) throw runNotFound(runId)
-    const next = { ...current, ...patch, updatedAt: this.clock().toISOString() }
+    if (current.status !== "queued" && current.status !== "dispatching" && current.status !== "running") throw runLeaseLost(runId)
+    const next = { ...current, ...patch }
+    const dispatchReceipt = next.dispatchReceipt === null ? null : JSON.stringify(next.dispatchReceipt)
     const rows = await this.sql<RunRow[]>`
       UPDATE boring_automation_runs
-      SET session_id = ${next.sessionId}, dispatch_receipt = ${next.dispatchReceipt === null ? null : this.sql.json(next.dispatchReceipt as never)}, status = ${next.status}, started_at = ${next.startedAt}, completed_at = ${next.completedAt}, duration_ms = ${next.durationMs}, input_tokens = ${next.inputTokens}, output_tokens = ${next.outputTokens}, total_tokens = ${next.totalTokens}, error = ${next.error}, updated_at = ${next.updatedAt}
+      SET session_id = ${next.sessionId}, dispatch_receipt = ${dispatchReceipt}::text::jsonb, status = ${next.status}, started_at = ${next.startedAt}, completed_at = ${next.completedAt}, duration_ms = ${next.durationMs}, input_tokens = ${next.inputTokens}, output_tokens = ${next.outputTokens}, total_tokens = ${next.totalTokens}, error = ${next.error}, updated_at = NOW()
       WHERE id = ${runId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+        AND status = ${current.status}
       RETURNING *
     `
-    if (!rows[0]) throw runNotFound(runId)
+    if (!rows[0]) {
+      if (await this.findRun(runId)) throw runLeaseLost(runId)
+      throw runNotFound(runId)
+    }
     return toRun(rows[0])
   }
 
-  async listRuns(automationId: string): Promise<AutomationRun[]> {
+  async listRuns(automationId: string, limit?: number): Promise<AutomationRun[]> {
     const rows = await this.sql<RunRow[]>`
       SELECT * FROM boring_automation_runs
       WHERE automation_id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
       ORDER BY created_at DESC, id DESC
+      LIMIT ${limit ?? 2_147_483_647}
     `
     return rows.map(toRun)
   }
@@ -212,20 +247,58 @@ export class PostgresAutomationStore implements AutomationStore {
   }
 }
 
-export async function listHostedAutomationCandidates(sql: Sql): Promise<HostedAutomationCandidate[]> {
+export async function reconcileStaleHostedAutomationRuns(
+  sql: Sql,
+  staleAfterMs: number,
+): Promise<ReconciledHostedAutomationRun[]> {
+  const rows = await sql<(RunRow & { workspace_id: string; owner_user_id: string })[]>`
+    UPDATE boring_automation_runs
+    SET status = CASE WHEN status = 'dispatching' AND dispatch_receipt IS NULL THEN 'outcome-unknown' ELSE 'failed' END,
+        completed_at = NOW(),
+        error = CASE WHEN status = 'dispatching' AND dispatch_receipt IS NULL
+          THEN 'Automation dispatch outcome is unknown after its worker lease expired; it was not retried'
+          ELSE 'Automation worker lease expired before the run completed' END,
+        updated_at = NOW()
+    WHERE status IN ('queued', 'dispatching', 'running')
+      AND updated_at < NOW() - (${staleAfterMs} * INTERVAL '1 millisecond')
+    RETURNING *
+  `
+  return rows.map((row) => ({
+    actor: { workspaceId: row.workspace_id, userId: row.owner_user_id },
+    run: toRun(row),
+  }))
+}
+
+export async function listHostedAutomationCandidates(sql: Sql, scheduledFor: string): Promise<HostedAutomationCandidate[]> {
   const automationRows = await sql<(AutomationRow & { workspace_id: string; owner_user_id: string })[]>`
     SELECT id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, created_at, updated_at
     FROM boring_automation_automations
     WHERE deleted_at IS NULL
     ORDER BY id
   `
-  const runRows = await sql<(RunRow & { workspace_id: string; owner_user_id: string })[]>`
-    SELECT * FROM boring_automation_runs ORDER BY automation_id, created_at DESC, id DESC
+  const runRows = await sql<ScheduleRunRow[]>`
+    SELECT runs.automation_id, runs.status, runs.trigger, runs.scheduled_for
+    FROM boring_automation_runs AS runs
+    INNER JOIN boring_automation_automations AS automations
+      ON automations.id = runs.automation_id
+      AND automations.workspace_id = runs.workspace_id
+      AND automations.owner_user_id = runs.owner_user_id
+    WHERE automations.deleted_at IS NULL
+      AND (
+        runs.status IN ('queued', 'dispatching', 'running')
+        OR (runs.trigger = 'scheduled' AND runs.scheduled_for = ${scheduledFor})
+      )
+    ORDER BY runs.automation_id
   `
-  const runsByAutomation = new Map<string, AutomationRun[]>()
+  const runsByAutomation = new Map<string, HostedAutomationRunEvidence[]>()
   for (const row of runRows) {
     const list = runsByAutomation.get(row.automation_id) ?? []
-    list.push(toRun(row))
+    list.push({
+      automationId: row.automation_id,
+      status: row.status,
+      trigger: row.trigger,
+      scheduledFor: nullableIso(row.scheduled_for),
+    })
     runsByAutomation.set(row.automation_id, list)
   }
   return automationRows.map((row) => ({

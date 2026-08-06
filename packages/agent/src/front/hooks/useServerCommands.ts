@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { WORKSPACE_COMMAND_NOTIFY_EVENT } from '../../shared/agentPluginEvents'
+import { createRequestId, withStorageScope } from '../agentHttp'
 import type { CommandRegistry, SlashCommand } from '../slashCommands/registry'
 
 interface ServerCommandSummary {
@@ -21,7 +22,8 @@ function serverCommandErrorMessage(body: ServerCommandErrorBody, fallback: strin
 
 function toSlashCommand(
   command: ServerCommandSummary,
-  getSessionId: () => string,
+  identity: { key: string; sessionId: string; agentTypeId: string },
+  isCurrentIdentity: (key: string) => boolean,
   apiBaseUrl: string | undefined,
   requestHeaders: Record<string, string> | undefined,
   fetchImpl: typeof globalThis.fetch,
@@ -32,14 +34,14 @@ function toSlashCommand(
     source: command.source,
     ...(command.sourcePlugin ? { sourcePlugin: command.sourcePlugin } : {}),
     handler: async (args) => {
+      if (!isCurrentIdentity(identity.key)) return
       const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-      const params = new URLSearchParams({ sessionId: getSessionId() })
-      const url = `${base}/api/v1/agent/commands/execute?${params.toString()}`
+      const url = `${base}/api/v1/agents/${encodeURIComponent(identity.agentTypeId)}/commands/execute`
       try {
         const res = await fetchImpl(url, {
           method: 'POST',
           headers: { ...(requestHeaders ?? {}), 'content-type': 'application/json' },
-          body: JSON.stringify({ name: command.name, args }),
+          body: JSON.stringify({ requestId: createRequestId('command'), sessionId: identity.sessionId, name: command.name, args }),
         })
         if (!res.ok) {
           const body = await res.json().catch(() => ({})) as ServerCommandErrorBody
@@ -61,6 +63,7 @@ function toSlashCommand(
 }
 
 export function useServerCommands({
+  agentTypeId,
   registry,
   requestHeaders,
   sessionId,
@@ -70,6 +73,7 @@ export function useServerCommands({
   enabled = true,
   refreshKey = 0,
 }: {
+  agentTypeId: string
   registry: CommandRegistry
   requestHeaders?: Record<string, string>
   sessionId: string
@@ -80,30 +84,49 @@ export function useServerCommands({
   refreshKey?: number
 }): number {
   const [stamp, setStamp] = useState(0)
-  const registeredNamesRef = useRef<Set<string>>(new Set())
-  // Keep sessionId in a ref so discovery doesn't re-run when only the session
-  // ID changes — sessionId is only needed at execute time (passed via closure).
-  const sessionIdRef = useRef(sessionId)
-  useEffect(() => { sessionIdRef.current = sessionId }, [sessionId])
+  const registrationsRef = useRef<{
+    registry: CommandRegistry
+    identity: string | undefined
+    names: Set<string>
+  }>({ registry, identity: undefined, names: new Set() })
+  const canonicalSessionId = sessionId.trim() || undefined
+  const identityKey = canonicalSessionId ? `${agentTypeId}\u0000${canonicalSessionId}` : undefined
+  // Render-time update makes handlers captured from a prior pane fail closed
+  // before effect cleanup and replacement discovery run.
+  const identityKeyRef = useRef<string | undefined>(identityKey)
+  identityKeyRef.current = identityKey
+
+  useEffect(() => () => {
+    const registrations = registrationsRef.current
+    for (const name of registrations.names) registrations.registry.unregister(name)
+    registrationsRef.current = { registry: registrations.registry, identity: undefined, names: new Set() }
+  }, [])
 
   useEffect(() => {
     const clearRegistered = () => {
-      if (registeredNamesRef.current.size === 0) return false
-      for (const name of registeredNamesRef.current) registry.unregister(name)
-      registeredNamesRef.current = new Set()
-      return true
+      const registrations = registrationsRef.current
+      for (const name of registrations.names) registrations.registry.unregister(name)
+      const changed = registrations.names.size > 0
+      registrationsRef.current = { registry, identity: undefined, names: new Set() }
+      return changed
     }
 
-    if (!enabled) {
+    if (registrationsRef.current.registry !== registry) {
+      if (clearRegistered()) setStamp((n) => n + 1)
+    }
+    if (!enabled || !canonicalSessionId || !identityKey) {
       if (clearRegistered()) setStamp((n) => n + 1)
       return
+    }
+    if (registrationsRef.current.identity !== identityKey) {
+      if (clearRegistered()) setStamp((n) => n + 1)
     }
 
     let aborted = false
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
     const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-    const url = `${base}/api/v1/agent/commands?sessionId=${encodeURIComponent(sessionIdRef.current)}`
-    const headers = scopedHeaders(requestHeaders, storageScope)
+    const url = `${base}/api/v1/agents/${encodeURIComponent(agentTypeId)}/commands?sessionId=${encodeURIComponent(canonicalSessionId)}`
+    const headers = withStorageScope(requestHeaders, storageScope)
 
     nextFetch(url, { headers })
       .then(async (res) => {
@@ -112,16 +135,24 @@ export function useServerCommands({
       })
       .then((payload) => {
         if (aborted) return
-
         const removed = clearRegistered()
+        const registeredNames = new Set<string>()
         let added = false
         for (const serverCommand of payload.commands ?? []) {
-          const command = toSlashCommand(serverCommand, () => sessionIdRef.current, apiBaseUrl, headers, nextFetch)
+          const command = toSlashCommand(
+            serverCommand,
+            { key: identityKey, sessionId: canonicalSessionId, agentTypeId },
+            (key) => identityKeyRef.current === key,
+            apiBaseUrl,
+            headers,
+            nextFetch,
+          )
           if (registry.get(command.name)) continue
           registry.register(command)
-          registeredNamesRef.current.add(command.name)
+          registeredNames.add(command.name)
           added = true
         }
+        registrationsRef.current = { registry, identity: identityKey, names: registeredNames }
         if (removed || added) setStamp((n) => n + 1)
       })
       .catch(() => {
@@ -130,18 +161,7 @@ export function useServerCommands({
       })
 
     return () => { aborted = true }
-  }, [apiBaseUrl, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
+  }, [agentTypeId, apiBaseUrl, canonicalSessionId, enabled, fetchImpl, identityKey, refreshKey, requestHeaders, registry, storageScope])
 
   return stamp
-}
-
-function scopedHeaders(
-  headers: Record<string, string> | undefined,
-  storageScope: string | undefined,
-): Record<string, string> | undefined {
-  if (!headers && !storageScope) return undefined
-  const result: Record<string, string> = { ...(headers ?? {}) }
-  const hasScope = Object.keys(result).some((k) => k.toLowerCase() === 'x-boring-storage-scope')
-  if (storageScope && !hasScope) result['x-boring-storage-scope'] = storageScope
-  return result
 }

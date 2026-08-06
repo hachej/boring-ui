@@ -1,6 +1,0 @@
----
-- name: restart cloudflared
-  ansible.builtin.systemd:
-    name: cloudflared
-    state: restarted
-  when: cloudflared_tunnel_token | default('') | length > 0

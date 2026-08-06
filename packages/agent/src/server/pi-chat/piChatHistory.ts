@@ -10,7 +10,13 @@ export interface BuildPiChatHistoryOptions {
   sessionId: string
   turnId?: string
   messageTurnIds?: ReadonlyMap<string, string>
-  attachmentUrl?: (attachment: { messageId: string; index: number }) => string | undefined
+  attachmentUrl?: (attachment: {
+    messageId: string
+    index: number
+    data?: string
+    mediaType?: string
+    filename?: string
+  }) => string | undefined
 }
 
 type RecordLike = Record<string, unknown>
@@ -65,7 +71,13 @@ function filePartsFromContent(content: unknown, messageId: string, options?: Pic
   return content.flatMap((part, index): BoringChatPart[] => {
     if (!isRecord(part) || part.type !== 'image') return []
     const mediaType = optionalString(part.mimeType)
-    const url = options?.attachmentUrl?.({ messageId, index }) ?? imagePartUrl(part, mediaType)
+    const url = options?.attachmentUrl?.({
+      messageId,
+      index,
+      ...(optionalString(part.data) ? { data: optionalString(part.data) } : {}),
+      ...(mediaType ? { mediaType } : {}),
+      ...(optionalString(part.filename) ? { filename: optionalString(part.filename) } : {}),
+    }) ?? imagePartUrl(part, mediaType)
     return [
       {
         type: 'file',

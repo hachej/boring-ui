@@ -11,7 +11,17 @@ track: owner
 
 ## Authority
 
-This is the product roadmap, product-gate, correction, and release authority
+> **Amended 2026-07-31.** This file no longer holds sequencing authority.
+> [`docs/DIRECTION.md`](../../DIRECTION.md) (owner-ratified 2026-07-27) decides
+> what happens next and in what order; where this file and DIRECTION disagree,
+> DIRECTION wins. In particular the F-graph ordering below places a visible
+> second agent downstream of F3b-ii/F7, and names a public agent selector as a
+> failure condition — the owner reversed both when ratifying Wave 1, which
+> shipped the multi-agent console first. Treat those passages as superseded.
+> This file remains authoritative for **F-graph node definitions and
+> dependency edges** once Wave 2 opens.
+
+This is the technical roadmap, product-gate, correction, and release detail
 for #391. Decision 28 owns durable invariants. The #805 fleet plan is the sole
 source for implementation node definitions, dependency edges, and replacement
 Bead acceptance; diagrams here are non-normative mirrors.

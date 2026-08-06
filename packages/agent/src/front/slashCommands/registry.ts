@@ -1,5 +1,6 @@
 export type SlashCommandHandlerResult = string | void | { message?: string; preserveDraft?: boolean }
 export type SlashCommandHandler = (args: string, ctx: SlashCommandContext) => SlashCommandHandlerResult | Promise<SlashCommandHandlerResult>
+export type SlashCommandClickBehavior = 'execute' | 'insert' | 'disabled'
 
 export interface SlashCommand {
   name: string
@@ -12,6 +13,8 @@ export interface SlashCommand {
    * is needed.
    */
   kind?: 'local' | 'skill'
+  /** Explicit opt-in for assistant-message command links. Unset commands remain plain text. */
+  clickBehavior?: SlashCommandClickBehavior
   /**
    * Origin of the command, surfaced as a tag in the slash-command picker.
    * Mirrors Pi's command sources for server commands; `local` for built-in
@@ -20,6 +23,11 @@ export interface SlashCommand {
   source?: 'local' | 'extension' | 'prompt' | 'skill'
   /** Originating plugin/package name (when known), shown as a tag. */
   sourcePlugin?: string
+  /**
+   * Narrow browser-local escape hatch for independent controls that must remain
+   * usable while Pi is running. The predicate must admit only exact safe subcommands.
+   */
+  allowWhileBusy?: (args: string) => boolean
   handler: SlashCommandHandler
 }
 
@@ -37,7 +45,7 @@ export interface SlashCommandContext {
    * Drives the PluginUpdateStatus banner above the composer. The `/reload`
    * builtin prefers this over the inline-text path: it calls
    * `pluginUpdate.run()` which (1) sets the banner to "running", (2)
-   * hits /api/v1/agent/reload, (3) transitions to "success" or "error"
+   * hits the addressed Agent reload route, (3) transitions to "success" or "error"
    * with diagnostics. Returns a short string ack for the assistant
    * message bubble.
    */

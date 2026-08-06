@@ -188,22 +188,24 @@ export function replayRangeErrorToRecovery(error: PiChatReplayRangeError): PiCha
 
 export function buildPiChatEventsUrl({
   apiBaseUrl = '',
+  agentTypeId,
   sessionId,
   cursor,
 }: {
   apiBaseUrl?: string
+  agentTypeId: string
   sessionId: string
   cursor: number
 }): string {
   const base = apiBaseUrl.replace(/\/$/, '')
-  return `${base}/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/events?cursor=${encodeURIComponent(String(cursor))}`
+  return `${base}/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions/${encodeURIComponent(sessionId)}/events?cursor=${encodeURIComponent(String(cursor))}`
 }
 
-export function buildReloadReconnectPlan(snapshot: PiChatSnapshot, apiBaseUrl?: string) {
+export function buildReloadReconnectPlan(snapshot: PiChatSnapshot, agentTypeId: string, apiBaseUrl?: string) {
   return {
     sessionId: snapshot.sessionId,
     cursor: snapshot.seq,
-    eventsUrl: buildPiChatEventsUrl({ apiBaseUrl, sessionId: snapshot.sessionId, cursor: snapshot.seq }),
+    eventsUrl: buildPiChatEventsUrl({ apiBaseUrl, agentTypeId, sessionId: snapshot.sessionId, cursor: snapshot.seq }),
   }
 }
 

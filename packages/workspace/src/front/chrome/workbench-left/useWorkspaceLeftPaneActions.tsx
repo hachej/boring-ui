@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type R
 import { useRegistry, useWorkspaceSourceRegistry } from "../../registry"
 import type { PanelConfig, WorkspaceSourceConfig } from "../../registry/types"
 import { isWorkspacePagePlacement } from "../../../shared/types/panel"
+import type { FileTreeRevealRequest } from "../../../shared/plugins/types"
 
 export type WorkbenchLeftTabId = string
 
@@ -21,7 +22,7 @@ export interface UseWorkspaceLeftPaneActionsOptions {
   activeTab?: WorkbenchLeftTabId
   activePanelId?: string | null
   onActiveTabChange?: (tab: WorkbenchLeftTabId) => void
-  revealFileTreeRequest?: { path: string; seq: number } | null
+  revealFileTreeRequest?: FileTreeRevealRequest | null
   onOpenPanel?: (config: WorkspaceLeftPaneOpenPanelConfig) => void
   onReloadAgentPlugins?: () => void | Promise<unknown>
   onExpand?: (tab?: WorkbenchLeftTabId) => void
@@ -96,7 +97,12 @@ export function useWorkbenchLeftPaneModel({
   )
   const entries = useMemo<WorkbenchLeftPaneEntry[]>(() => {
     const next: WorkbenchLeftPaneEntry[] = []
-    for (const source of workspaceSources) {
+    const orderedSources = [...workspaceSources].sort((left, right) => {
+      if (left.id === "files") return -1
+      if (right.id === "files") return 1
+      return 0
+    })
+    for (const source of orderedSources) {
       const Icon = source.icon
       next.push({
         id: source.id,

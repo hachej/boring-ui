@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react"
 import { definePlugin, type PaneProps, type WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
-import { useApiBaseUrl, useWorkspaceRequestId } from "@hachej/boring-workspace"
+import { useApiBaseUrl, useWorkspacePluginClient, useWorkspaceRequestId } from "@hachej/boring-workspace"
+import { sendCcusageAgentChat } from "./agentChat"
 
 const DATA_PATH = ".pi/extensions/ccusage-dashboard/usage.json"
 const REPORTS = ["daily", "weekly", "monthly", "session", "blocks"] as const
@@ -58,37 +59,6 @@ async function fetchUsage(apiBaseUrl: string, workspaceId?: string): Promise<Usa
   return await response.json() as Usage
 }
 
-async function readResponseError(response: Response): Promise<string> {
-  const text = await response.text().catch(() => "")
-  if (!text) return `agent request failed (${response.status})`
-  try {
-    const parsed = JSON.parse(text) as { error?: { message?: unknown }; message?: unknown }
-    return String(typeof parsed.error?.message === "string" ? parsed.error.message : typeof parsed.message === "string" ? parsed.message : text)
-  } catch {
-    return text.slice(0, 200)
-  }
-}
-
-async function sendAgentChat(message: string): Promise<void> {
-  const workspaceId = workspaceIdFromLocation()
-  const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""
-  const headers: Record<string, string> = { "content-type": "application/json" }
-  if (workspaceId) headers["x-boring-workspace-id"] = workspaceId
-  const sessionResponse = await fetch(`/api/v1/agent/pi-chat/sessions${query}`, { method: "POST", credentials: "include", headers, body: JSON.stringify({ title: "ccusage dashboard refresh" }) })
-  if (!sessionResponse.ok) throw new Error(await readResponseError(sessionResponse))
-  const session = await sessionResponse.json().catch(() => null) as { id?: unknown } | null
-  const sessionId = typeof session?.id === "string" ? session.id : undefined
-  if (!sessionId) throw new Error("agent session creation did not return a session id")
-  const promptResponse = await fetch(`/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/prompt${query}`, {
-    method: "POST",
-    credentials: "include",
-    headers,
-    body: JSON.stringify({ message, clientNonce: `ccusage-dashboard-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}` }),
-  })
-  if (!promptResponse.ok) throw new Error(await readResponseError(promptResponse))
-  await promptResponse.text().catch(() => undefined)
-}
-
 function refreshPrompt(report: Report, source: Source, since: string, until: string, timezone: string): string {
   const bits = [`report: ${report}`, `source: ${source}`]
   if (since) bits.push(`since: ${since}`)
@@ -118,6 +88,7 @@ function Chart({ rows }: { rows: Row[] }) {
 
 function CcusageDashboard({ params }: PaneProps<Params>) {
   const apiBaseUrl = useApiBaseUrl()
+  const { agentTypeId } = useWorkspacePluginClient()
   const workspaceRequestId = useWorkspaceRequestId() || workspaceIdFromLocation()
   const [report, setReport] = useState<Report>(params.report ?? "daily")
   const [source, setSource] = useState<Source>(params.source ?? "all")
@@ -145,7 +116,7 @@ function CcusageDashboard({ params }: PaneProps<Params>) {
     setRefreshing(true)
     setError(undefined)
     try {
-      await sendAgentChat(refreshPrompt(report, source, since, until, timezone))
+      await sendCcusageAgentChat(agentTypeId, refreshPrompt(report, source, since, until, timezone), workspaceIdFromLocation())
       window.setTimeout(() => setLoadKey((key) => key + 1), 1500)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))

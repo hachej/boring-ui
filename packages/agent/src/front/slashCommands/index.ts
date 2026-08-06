@@ -4,6 +4,7 @@ export {
   type CommandRegistry,
   type SlashCommand,
   type SlashCommandContext,
+  type SlashCommandClickBehavior,
   type SlashCommandHandler,
 } from './registry'
 export { builtinCommands } from './builtins'

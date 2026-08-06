@@ -3,13 +3,8 @@ import type { PiChatEvent } from '../../shared/chat'
 import type { AgentSessionActivity, AgentSessionRef, AuthorizedAgentScope, VerifiedAgentScopeClaim } from '../../shared/index'
 import type { SessionSummary } from '../../shared/session'
 import { PiSessionStore } from '../harness/pi-coding-agent/sessions'
-import type { CompiledAgentHostAgentSpec, CreateAgentHostOptions, ResolvedAgentRuntimeScope } from './types'
-
-interface InventoryRuntimeScope extends ResolvedAgentRuntimeScope {
-  readonly compatibility?: {
-    readonly sessionDir?: string
-  }
-}
+import { agentSessionKey } from './agentSessionKey'
+import type { CompiledAgentHostAgentSpec, ResolvedAgentRuntimeScope } from './types'
 
 export interface AgentSessionRuntimeAuthority {
   readonly runtimeScope: ResolvedAgentRuntimeScope
@@ -41,8 +36,13 @@ export class AgentSessionInventory {
   private readonly stores = new Map<string, PiSessionStore>()
 
   constructor(
-    private readonly options: Pick<CreateAgentHostOptions, 'resolveRuntimeScope' | 'sessionRoot'>,
+    private readonly sessionRoot: string | undefined,
     private readonly compiledById: ReadonlyMap<string, CompiledAgentHostAgentSpec>,
+    private readonly resolveAgentRuntimeScope: (
+      agentTypeId: string,
+      scope: AuthorizedAgentScope,
+      claim: VerifiedAgentScopeClaim,
+    ) => Promise<ResolvedAgentRuntimeScope>,
   ) {}
 
   async list(
@@ -81,15 +81,15 @@ export class AgentSessionInventory {
     agentTypeId: string,
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
-  ): Promise<{ runtimeScope: InventoryRuntimeScope; store: PiSessionStore } | undefined> {
+  ): Promise<{ runtimeScope: ResolvedAgentRuntimeScope; store: PiSessionStore } | undefined> {
     const agent = this.compiledById.get(agentTypeId)
     if (!agent) return undefined
-    const runtimeScope = await this.options.resolveRuntimeScope({ agentTypeId, scope }) as InventoryRuntimeScope
+    const runtimeScope = await this.resolveAgentRuntimeScope(agentTypeId, scope, claim)
     const sessionNamespace = sessionNamespaceForAgent(agent, claim.workspaceScopeId, runtimeScope.sessionNamespace)
     const candidate = new PiSessionStore(runtimeScope.environment.workspaceRoot, {
-      sessionDir: runtimeScope.compatibility?.sessionDir,
+      sessionDir: runtimeScope.sessionDir,
       sessionNamespace,
-      sessionRoot: this.options.sessionRoot,
+      sessionRoot: this.sessionRoot,
       storageCwd: runtimeScope.environment.workspaceRoot,
     })
     const key = JSON.stringify([agentTypeId, claim.workspaceScopeId, candidate.getSessionDir()])
@@ -102,20 +102,52 @@ export class AgentSessionInventory {
   }
 }
 
+export interface AgentSessionActivityUpdate {
+  readonly ref: AgentSessionRef
+  readonly status: AgentSessionActivity
+}
+
+interface StoredAgentSessionActivity extends AgentSessionActivityUpdate {
+  readonly workspaceScopeId: string
+}
+
 /** Process-lifetime live-turn projection. Reads never create activity rows. */
 export class AgentSessionActivityIndex {
-  private readonly activity = new Map<string, AgentSessionActivity>()
+  private readonly activity = new Map<string, StoredAgentSessionActivity>()
+  private readonly subscribers = new Map<string, Set<(update: AgentSessionActivityUpdate) => void>>()
 
   get(workspaceScopeId: string, ref: AgentSessionRef): AgentSessionActivity {
-    return this.activity.get(activityKey(workspaceScopeId, ref)) ?? 'idle'
+    return this.activity.get(agentSessionKey(workspaceScopeId, ref))?.status ?? 'idle'
   }
 
-  set(workspaceScopeId: string, ref: AgentSessionRef, activity: AgentSessionActivity): void {
-    this.activity.set(activityKey(workspaceScopeId, ref), activity)
+  set(workspaceScopeId: string, ref: AgentSessionRef, status: AgentSessionActivity): void {
+    const key = agentSessionKey(workspaceScopeId, ref)
+    if (this.activity.get(key)?.status === status) return
+    const update = { ref, status }
+    this.activity.set(key, { workspaceScopeId, ...update })
+    for (const subscriber of this.subscribers.get(workspaceScopeId) ?? []) {
+      try { subscriber(update) } catch { /* Activity observers cannot fail an Agent run. */ }
+    }
+  }
+
+  snapshot(workspaceScopeId: string): AgentSessionActivityUpdate[] {
+    return [...this.activity.values()]
+      .filter((item) => item.workspaceScopeId === workspaceScopeId)
+      .map(({ ref, status }) => ({ ref, status }))
+  }
+
+  subscribe(workspaceScopeId: string, subscriber: (update: AgentSessionActivityUpdate) => void): () => void {
+    const subscribers = this.subscribers.get(workspaceScopeId) ?? new Set()
+    subscribers.add(subscriber)
+    this.subscribers.set(workspaceScopeId, subscribers)
+    return () => {
+      subscribers.delete(subscriber)
+      if (subscribers.size === 0) this.subscribers.delete(workspaceScopeId)
+    }
   }
 
   delete(workspaceScopeId: string, ref: AgentSessionRef): void {
-    this.activity.delete(activityKey(workspaceScopeId, ref))
+    this.activity.delete(agentSessionKey(workspaceScopeId, ref))
   }
 
   observe(workspaceScopeId: string, ref: AgentSessionRef, event: PiChatEvent): void {
@@ -123,8 +155,4 @@ export class AgentSessionActivityIndex {
     if (event.type === 'agent-end') this.set(workspaceScopeId, ref, event.status === 'error' ? 'error' : 'idle')
     if (event.type === 'error') this.set(workspaceScopeId, ref, 'error')
   }
-}
-
-function activityKey(workspaceScopeId: string, ref: AgentSessionRef): string {
-  return JSON.stringify([workspaceScopeId, ref.agentTypeId, ref.sessionId])
 }

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -5,15 +6,24 @@ import Fastify from "fastify"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const agentServerMock = vi.hoisted(() => {
-  const createAgentApp = vi.fn(async (_options?: unknown) => Fastify())
+  const captureResolvedEnvironment = vi.fn(async (_options?: unknown) => undefined)
   return {
-    createAgentApp,
-    createAgentHost: vi.fn(async () => ({
+    captureResolvedEnvironment,
+    createAgentHost: vi.fn(async (options: any) => ({
       host: { hostId: "test", describe: vi.fn(), drain: vi.fn(async () => {}), close: vi.fn(async () => {}) },
       gateway: {},
-      registerRoutes: vi.fn(),
+      registerDirectRoutes: vi.fn((projection: { authorizeAgentRequest(request: any): Promise<any> }) => async () => {
+        const request = { id: "workspace-bridge-test", url: "/api/v1/agents/default/sessions", headers: {}, query: {} }
+        const authorizedScope = await projection.authorizeAgentRequest(request)
+        const verifiedClaim = await options.scopeVerifier.verify(authorizedScope)
+        const environment = await options.resolveAuthorizedEnvironmentScope({
+          authorizedScope,
+          verifiedClaim,
+          intent: { kind: "agent-binding", requestId: request.id },
+        })
+        await captureResolvedEnvironment(environment)
+      }),
     })),
-    registerAgentRoutes: vi.fn(async (_app: unknown, options: unknown) => { await createAgentApp(options) }),
     provisionRuntimeWorkspace: vi.fn(async () => {}),
     provisionWorkspaceRuntime: vi.fn(async () => undefined),
   }
@@ -23,9 +33,7 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@hachej/boring-agent/server")>()
   return {
     ...actual,
-    createAgentApp: agentServerMock.createAgentApp,
     createAgentHost: agentServerMock.createAgentHost,
-    registerAgentRoutes: agentServerMock.registerAgentRoutes,
     provisionRuntimeWorkspace: agentServerMock.provisionRuntimeWorkspace,
     provisionWorkspaceRuntime: agentServerMock.provisionWorkspaceRuntime,
   }
@@ -36,9 +44,8 @@ import { createWorkspaceAgentServer } from "../createWorkspaceAgentServer"
 const tempDirs: string[] = []
 
 beforeEach(() => {
-  agentServerMock.createAgentApp.mockClear()
+  agentServerMock.captureResolvedEnvironment.mockClear()
   agentServerMock.createAgentHost.mockClear()
-  agentServerMock.registerAgentRoutes.mockClear()
   agentServerMock.provisionRuntimeWorkspace.mockClear()
   agentServerMock.provisionWorkspaceRuntime.mockClear()
 })
@@ -48,8 +55,19 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-function mockCreateAgentAppOnce(factory: (opts?: unknown) => Promise<unknown>): void {
-  agentServerMock.createAgentApp.mockImplementationOnce(factory as never)
+function mockResolvedEnvironmentOnce(factory: (opts?: unknown) => Promise<unknown>): void {
+  agentServerMock.captureResolvedEnvironment.mockImplementationOnce(factory as never)
+}
+
+async function capturedRuntimeEnv(): Promise<Record<string, string> | undefined> {
+  const [environment] = agentServerMock.captureResolvedEnvironment.mock.calls.at(-1) as unknown as [{
+    transformRuntimeBundle?: (bundle: any) => Promise<any> | any
+  }]
+  const bundle = await environment.transformRuntimeBundle?.({
+    workspace: {},
+    sandbox: { async exec() { return { stdout: "", stderr: "", exitCode: 0 } } },
+  })
+  return await bundle?.getRuntimeEnv?.()
 }
 
 async function makeTempDir(prefix: string): Promise<string> {
@@ -68,13 +86,13 @@ describe("createWorkspaceAgentServer — WorkspaceBridge RPC composition", () =>
       callerClassesAllowed: ["browser"],
       requiredCapabilities: ["test:composed"],
     })
-    mockCreateAgentAppOnce(async () => Fastify())
+    mockResolvedEnvironmentOnce(async () => Fastify())
     const appA = await createWorkspaceAgentServer({
       workspaceRoot: workspaceA.root,
       provisionWorkspace: false,
       workspaceBridge: { allowInsecureLocalCliBrowserAuth: true, handlers: [{ definition, handler: ({ input }) => ({ value: `a:${(input as { value: string }).value}` }) }] },
     })
-    mockCreateAgentAppOnce(async () => Fastify())
+    mockResolvedEnvironmentOnce(async () => Fastify())
     const appB = await createWorkspaceAgentServer({
       workspaceRoot: workspaceB.root,
       provisionWorkspace: false,
@@ -112,7 +130,7 @@ describe("createWorkspaceAgentServer — WorkspaceBridge RPC composition", () =>
       callerClassesAllowed: ["browser"],
       requiredCapabilities: ["plugin:echo"],
     })
-    mockCreateAgentAppOnce(async () => Fastify())
+    mockResolvedEnvironmentOnce(async () => Fastify())
     const app = await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("bridge-plugin-handler-"),
       provisionWorkspace: false,
@@ -165,7 +183,7 @@ export default {
 }
 `, "utf8")
 
-    mockCreateAgentAppOnce(async () => Fastify())
+    mockResolvedEnvironmentOnce(async () => Fastify())
     await expect(createWorkspaceAgentServer({
       workspaceRoot,
       provisionWorkspace: false,
@@ -180,7 +198,7 @@ export default {
       callerClassesAllowed: ["runtime"],
       requiredCapabilities: ["test:runtime-env"],
     })
-    mockCreateAgentAppOnce(async () => Fastify())
+    mockResolvedEnvironmentOnce(async () => Fastify())
     const app = await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir(`bridge-runtime-env-${mode}-`),
       mode,
@@ -198,10 +216,7 @@ export default {
       },
     })
 
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [{
-      runtimeEnvContributions?: Array<{ id: string; getEnv: () => Promise<Record<string, string>> | Record<string, string> }>
-    }]
-    const env = await agentOptions.runtimeEnvContributions?.find((entry) => entry.id === "workspace-bridge-runtime-env")?.getEnv()
+    const env = await capturedRuntimeEnv()
 
     expect(env).toMatchObject({
       BORING_WORKSPACE_BRIDGE_URL: "http://localhost:7777/api/v1/workspace-bridge/call",
@@ -222,7 +237,7 @@ export default {
       callerClassesAllowed: ["runtime"],
       requiredCapabilities: ["test:runtime-env"],
     })
-    mockCreateAgentAppOnce(async () => Fastify())
+    mockResolvedEnvironmentOnce(async () => Fastify())
     const app = await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("bridge-runtime-env-refresh-"),
       mode: "direct",
@@ -240,10 +255,7 @@ export default {
       },
     })
 
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [{
-      runtimeEnvContributions?: Array<{ id: string; getEnv: () => Promise<Record<string, string>> | Record<string, string> }>
-    }]
-    const env = await agentOptions.runtimeEnvContributions?.find((entry) => entry.id === "workspace-bridge-runtime-env")?.getEnv()
+    const env = await capturedRuntimeEnv()
 
     expect(env).toMatchObject({
       BORING_WORKSPACE_BRIDGE_URL: "http://localhost:7777/api/v1/workspace-bridge/call",
@@ -262,7 +274,7 @@ export default {
       callerClassesAllowed: ["browser"],
       requiredCapabilities: [],
     })
-    mockCreateAgentAppOnce(async () => Fastify())
+    mockResolvedEnvironmentOnce(async () => Fastify())
     const app = await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("bridge-explicit-auth-"),
       provisionWorkspace: false,
@@ -287,7 +299,7 @@ export default {
       callerClassesAllowed: ["runtime"],
       requiredCapabilities: ["test:runtime-env"],
     })
-    mockCreateAgentAppOnce(async () => Fastify())
+    mockResolvedEnvironmentOnce(async () => Fastify())
     const app = await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("bridge-runtime-env-refresh-http-"),
       mode: "direct",
@@ -305,10 +317,7 @@ export default {
       },
     })
 
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [{
-      runtimeEnvContributions?: Array<{ id: string; getEnv: () => Promise<Record<string, string>> | Record<string, string> }>
-    }]
-    const env = await agentOptions.runtimeEnvContributions?.find((entry) => entry.id === "workspace-bridge-runtime-env")?.getEnv()
+    const env = await capturedRuntimeEnv()
 
     expect(env).toMatchObject({
       BORING_WORKSPACE_BRIDGE_URL: "http://example.test/api/v1/workspace-bridge/call",
@@ -320,7 +329,7 @@ export default {
   })
 
   test("disables WorkspaceBridge runtime env when capabilities are omitted", async () => {
-    mockCreateAgentAppOnce(async () => Fastify())
+    mockResolvedEnvironmentOnce(async () => Fastify())
     const app = await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("bridge-runtime-env-missing-caps-"),
       mode: "direct",
@@ -335,17 +344,14 @@ export default {
       },
     })
 
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [{
-      runtimeEnvContributions?: Array<{ id: string; getEnv: () => Promise<Record<string, string>> | Record<string, string> }>
-    }]
-    const env = await agentOptions.runtimeEnvContributions?.find((entry) => entry.id === "workspace-bridge-runtime-env")?.getEnv()
+    const env = await capturedRuntimeEnv()
 
     expect(env).toEqual({ BORING_WORKSPACE_BRIDGE_DISABLED: "runtime-capabilities-missing" })
     await app.close()
   })
 
   test("disables WorkspaceBridge runtime env for remote-placement runtimes without public HTTPS URL", async () => {
-    mockCreateAgentAppOnce(async () => Fastify())
+    mockResolvedEnvironmentOnce(async () => Fastify())
     const app = await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("bridge-runtime-env-remote-"),
       runtimeModeAdapter: {
@@ -361,10 +367,7 @@ export default {
       },
     })
 
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [{
-      runtimeEnvContributions?: Array<{ id: string; getEnv: () => Promise<Record<string, string>> | Record<string, string> }>
-    }]
-    const env = await agentOptions.runtimeEnvContributions?.find((entry) => entry.id === "workspace-bridge-runtime-env")?.getEnv()
+    const env = await capturedRuntimeEnv()
 
     expect(env).toEqual({ BORING_WORKSPACE_BRIDGE_DISABLED: "remote-bridge-url-must-be-https" })
     expect(JSON.stringify(env)).not.toContain("12345678901234567890123456789012")
