@@ -72,6 +72,14 @@ describe('Tailwind v4 style contract', () => {
     expect(extractCssVarNames(agentCss, ':root')).toHaveLength(0)
   })
 
+  test('agent form reset stays in the components layer at zero specificity so utilities win', () => {
+    expect(agentCss).toMatch(/@layer components\s*{\s*:where\(/)
+    expect(agentCss).toMatch(
+      /:where\(\s*\[data-boring-agent\] input,[\s\S]*\[data-boring-agent\] button\s*\)\s*{\s*color:\s*var\(--foreground\)/,
+    )
+    expect(agentCss).not.toMatch(/\[data-boring-agent\] button\s*{\s*color:/)
+  })
+
   test('agent source CSS omits Tailwind preflight/base reset', () => {
     const uncommented = agentCss.replace(/\/\*[\s\S]*?\*\//g, '')
     expect(uncommented).not.toMatch(/@import\s+["']tailwindcss["']/)
