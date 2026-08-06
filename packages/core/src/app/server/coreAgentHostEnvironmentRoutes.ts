@@ -1,5 +1,6 @@
 import {
   fileRoutes,
+  filesystemsRoutes,
   fsEventsRoutes,
   gitRoutes,
   searchRoutes,
@@ -79,26 +80,27 @@ export async function registerCoreAgentHostEnvironmentRoutes(
     if (!deferred.has(request)) await release(request)
   })
 
+  const getFilesystemBindings = async (request: FastifyRequest) => {
+    const bindings = (await acquire(request)).filesystemBindings
+    return bindings ? [...bindings] : undefined
+  }
+
   await app.register(fileRoutes, {
     getWorkspace: async (request: FastifyRequest) => (await acquire(request)).workspace,
-    getFilesystemBindings: async (request: FastifyRequest) => {
-      const bindings = (await acquire(request)).filesystemBindings
-      return bindings ? [...bindings] : undefined
-    },
+    getFilesystemBindings,
   })
+  await app.register(filesystemsRoutes, { getFilesystemBindings })
   await app.register(fsEventsRoutes, {
     getWorkspace: async (request: FastifyRequest) => (await acquire(request)).workspace,
     deferLeaseRelease,
   })
   await app.register(treeRoutes, {
     getWorkspace: async (request: FastifyRequest) => (await acquire(request)).workspace,
-    getFilesystemBindings: async (request: FastifyRequest) => {
-      const bindings = (await acquire(request)).filesystemBindings
-      return bindings ? [...bindings] : undefined
-    },
+    getFilesystemBindings,
   })
   await app.register(searchRoutes, {
     getFileSearch: async (request: FastifyRequest) => (await acquire(request)).fileSearch,
+    getFilesystemBindings,
   })
   if (options.shareEntryStore) {
     await app.register(deepLinkRoutes, {

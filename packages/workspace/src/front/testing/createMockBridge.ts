@@ -1,5 +1,6 @@
 import type { BridgeEventMap, CommandResult, WorkspaceBridge } from "../bridge/types"
 import type { WorkspaceState, PanelState } from "../store/types"
+import { normalizeUiFilesystem, uiFileResourceKey, type FilesystemId } from "../../shared/types/filesystem"
 
 type SpyFactory = <T extends (...args: any[]) => any>(implementation?: T) => any
 
@@ -76,6 +77,7 @@ export function createMockBridge(options: CreateMockBridgeOptions = {}): MockWor
     dirtyFiles: options.state?.dirtyFiles ? [...options.state.dirtyFiles] : [],
     visibleFiles: options.state?.visibleFiles ? [...options.state.visibleFiles] : [],
   }
+  let activeFilesystem: FilesystemId | undefined
 
   const listeners = new Map<keyof BridgeEventMap, Set<(payload: any) => void>>()
   const selectors = new Set<SelectorEntry<any>>()
@@ -106,7 +108,10 @@ export function createMockBridge(options: CreateMockBridgeOptions = {}): MockWor
 
   function mergeState(next: Partial<MockBridgeState>): void {
     if (next.openPanels) state.openPanels = [...next.openPanels]
-    if (next.activeFile !== undefined) state.activeFile = next.activeFile
+    if (next.activeFile !== undefined) {
+      state.activeFile = next.activeFile
+      activeFilesystem = undefined
+    }
     if (next.dirtyFiles) state.dirtyFiles = [...next.dirtyFiles]
     if (next.visibleFiles) state.visibleFiles = [...next.visibleFiles]
     notifySelectors()
@@ -115,19 +120,28 @@ export function createMockBridge(options: CreateMockBridgeOptions = {}): MockWor
   const bridge: MockWorkspaceBridge = {
     getOpenPanels: spy(() => [...state.openPanels]),
     getActiveFile: spy(() => state.activeFile),
+    getActiveFileResource: spy(() => state.activeFile
+      ? { path: state.activeFile, filesystem: normalizeUiFilesystem(activeFilesystem) }
+      : null),
     getDirtyFiles: spy(() => [...state.dirtyFiles]),
     getVisibleFiles: spy(() => [...state.visibleFiles]),
 
     openFile: spy(async (path, opts) => {
       if (!state.visibleFiles.includes(path)) state.visibleFiles.push(path)
       state.activeFile = path
-      const panelId = `file:${path}`
+      const filesystem = normalizeUiFilesystem(opts?.filesystem)
+      activeFilesystem = filesystem
+      const panelId = `file:${uiFileResourceKey({ filesystem, path })}`
       const mode = opts?.mode ?? "edit"
       if (!state.openPanels.some((panel) => panel.id === panelId)) {
-        state.openPanels.push({ id: panelId, component: "editor", params: { path, mode } })
+        state.openPanels.push({
+          id: panelId,
+          component: "editor",
+          params: { path, mode, filesystem },
+        })
       }
       notifySelectors()
-      emit("file:opened", { path, mode })
+      emit("file:opened", { path, mode, filesystem })
       return nextResult()
     }),
 
@@ -169,8 +183,8 @@ export function createMockBridge(options: CreateMockBridgeOptions = {}): MockWor
       return nextResult()
     }),
 
-    expandToFile: spy(async (path) => {
-      emit("tree:expand", { path })
+    expandToFile: spy(async (path, opts) => {
+      emit("tree:expand", { path, ...(opts?.filesystem ? { filesystem: opts.filesystem } : {}) })
       return nextResult()
     }),
 

@@ -21,7 +21,7 @@ interface PaneSearchState {
 }
 
 interface PaneSearchResponse {
-  results?: string[]
+  resources?: Array<{ filesystem: string; path: string }>
 }
 
 const DEFAULT_PATTERNS = ["**/*.pane.json"]
@@ -70,7 +70,9 @@ export function GeneratedPaneExplorerPane({ params, containerApi, config = {} }:
       })
       if (!response.ok) throw new Error(`Pane search failed for ${pattern} with HTTP ${response.status}`)
       const body = await response.json() as PaneSearchResponse
-      return body.results ?? []
+      return (body.resources ?? [])
+        .filter((resource) => resource.filesystem === "user")
+        .map((resource) => resource.path)
     }))
       .then((groups) => {
         setState({ loading: false, paths: dedupeAndSort(groups.flat()) })
