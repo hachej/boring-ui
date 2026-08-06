@@ -291,6 +291,12 @@ export type {
   FileTreeProps,
   FileTreeNode,
 } from "./plugins/filesystemPlugin/front/file-tree/FileTree"
+export { FileTreePane } from "./plugins/filesystemPlugin/front/file-tree/FileTreeView"
+export type {
+  FileTreePaneProps,
+  FileTreePaneParams,
+  FileTreeRootConfig,
+} from "./plugins/filesystemPlugin/front/file-tree/FileTreeView"
 export { MarkdownEditor } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditor"
 export type { MarkdownEditorProps } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditor"
 export { SessionList } from "./front/components/SessionList"

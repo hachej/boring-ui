@@ -1168,6 +1168,8 @@ export interface FileTreeRootConfig {
   rootDir?: string
   access?: "readonly" | "readwrite"
   capabilities?: FilesystemCatalogCapabilities
+  /** Placeholder text for this root's search input in a chromed (non-chromeless) host. */
+  searchPlaceholder?: string
 }
 
 export interface FileTreePaneParams extends LeftTabParams {
