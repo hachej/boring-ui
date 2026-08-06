@@ -214,9 +214,9 @@ describe("createExecUiTool — path validation", () => {
     }
     const kind = parameters.properties?.kind
     expect(kind?.enum).toContain("openSurface")
-    expect(tool.description).toContain("openSurface  params: { kind: string, target: string, filesystem?: 'user'|'company_context', meta?: object }")
+    expect(tool.description).toContain("openSurface  params: { kind: string, target: string, filesystem?: string (a filesystem id from the advertised bindings; defaults to 'user'), meta?: object }")
     expect(tool.description).toContain("For kind:'workspace.open.path', filesystem follows")
-    expect(tool.description).toContain("expandToFile params: { path: string, filesystem?: 'user'|'company_context' }")
+    expect(tool.description).toContain("expandToFile params: { path: string, filesystem?: string (a filesystem id from the advertised bindings; defaults to 'user') }")
   })
 
   test("non-path kinds (openPanel, openSurface, showNotification, closeWorkbenchLeftPane) do not get path-validated", async () => {
