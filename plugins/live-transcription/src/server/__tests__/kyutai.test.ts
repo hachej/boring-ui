@@ -35,7 +35,10 @@ describe("Kyutai moshi-server adapter", () => {
         const message = decodeMessage(new Uint8Array(raw as Buffer))
         if (message.type === "Audio") {
           audioFrames += 1
-          if (audioFrames === 1) socket.send(encodeMap({ type: "Word", text: "Bonjour", start_time: 1.25 }))
+          if (audioFrames === 1) {
+            socket.send(encodeMap({ type: "Word", text: "Bonjour", start_time: 1.25 }))
+            socket.send(encodeMap({ type: "EndWord", stop_time: 1.75 }))
+          }
           return
         }
         if (message.type === "Marker" && typeof message.id === "number") socket.send(encodeMap({ type: "Marker", id: message.id }))
@@ -50,8 +53,8 @@ describe("Kyutai moshi-server adapter", () => {
     try {
       await connection.connect()
       await connection.sendPcm(new Uint8Array([0, 0, 0xff, 0x7f]))
-      await vi.waitFor(() => expect(onSnapshot).toHaveBeenCalledWith({
-        lines: [{ text: "Bonjour", startSeconds: 1.25, speaker: 0 }],
+      await vi.waitFor(() => expect(onSnapshot).toHaveBeenLastCalledWith({
+        lines: [{ text: "Bonjour", startSeconds: 1.25, endSeconds: 1.75, speaker: 0 }],
         remainingDiarizationSeconds: 0,
       }))
       await expect(connection.drain(1_000)).resolves.toBeUndefined()

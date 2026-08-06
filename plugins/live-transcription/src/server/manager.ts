@@ -16,6 +16,7 @@ import {
 import { LiveTranscriptError } from "./errors"
 import { LiveTranscriptProjector, renderTranscriptMarkdown, type ProjectedTranscriptLine, type TranscriptDocument } from "./projector"
 import { KyutaiConnection } from "./kyutai"
+import { groupKyutaiTranscriptSnapshot } from "./kyutaiTranscript"
 import { WhisperLiveKitConnection, type WhisperLiveKitSnapshot } from "./whisperLiveKit"
 import { LiveReviewBroker } from "./reviewBroker"
 
@@ -440,7 +441,10 @@ export class LiveTranscriptManager {
       void this.terminate(session, "interrupted", "live_transcript_limit_exceeded")
       return
     }
-    const lines = snapshot.lines.map((line) => {
+    const sinkSnapshot = this.options.upstreamProvider === "kyutai"
+      ? groupKyutaiTranscriptSnapshot(snapshot)
+      : snapshot
+    const lines = sinkSnapshot.lines.map((line) => {
       let speaker = session.speakerLabels.get(line.speaker)
       if (!speaker) {
         speaker = session.speakerLabels.size + 1

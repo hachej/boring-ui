@@ -3,6 +3,7 @@ import { LiveTranscriptError } from "./errors"
 
 export interface WhisperLiveKitLine {
   startSeconds: number
+  endSeconds?: number
   speaker: number
   text: string
 }
