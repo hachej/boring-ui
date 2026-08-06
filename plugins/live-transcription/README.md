@@ -36,7 +36,7 @@ export BORING_LIVE_TRANSCRIPTS_PROVIDER=kyutai
 export BORING_KYUTAI_URL=ws://127.0.0.1:18880/api/asr-streaming
 export BORING_KYUTAI_API_KEY=public_token # omit when the local server needs no key
 # Optional: enrich only /live transcripts with best-effort speaker labels.
-export BORING_LIVE_TRANSCRIPTS_DIARIZER_URL=ws://127.0.0.1:18881/asr
+export BORING_LIVE_TRANSCRIPTS_DIARIZER_URL=ws://127.0.0.1:18881/v1/diarize
 ```
 
 The adapter captures native 24 kHz PCM16 for Kyutai, converts it to float32
@@ -44,9 +44,11 @@ MessagePack `Audio` messages, and sends a `Marker` plus bounded silence on stop.
 Without an optional diarizer, Kyutai `/live` Markdown is intentionally
 speaker-neutral: timestamped paragraphs are rendered without invented
 `Speaker 1` labels. When the optional loopback diarizer is configured, `/live`
-also sends a 16 kHz copy to WhisperLiveKit and assigns Kyutai words by overlap with its speaker
-intervals. Kyutai remains the text authority; diarizer setup/runtime failures
-fall back to `Speaker 1` instead of interrupting capture.
+also sends a 16 kHz copy to the raw Streaming Sortformer sidecar and assigns
+Kyutai words by overlap with its anonymous speaker intervals. Kyutai remains the
+text authority; uncovered words render as `Speaker unknown`, and sidecar
+setup/runtime failures do not interrupt capture. See
+`services/sortformer/README.md` for the PoC service contract.
 With Kyutai selected, the composer microphone streams each `Word` event directly
 into the editable draft without creating a transcript file. `/live start` keeps
 the separate Markdown transcript and agent-review sink.

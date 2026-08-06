@@ -212,7 +212,7 @@ export class LiveTranscriptManager {
       title,
       startedAt,
       state: "active",
-      showSpeakerLabels: this.options.upstreamProvider !== "kyutai",
+      showSpeakerLabels: this.options.upstreamProvider !== "kyutai" || Boolean(this.options.diarizerUrl),
       lines: [],
     }
     const markdown = renderTranscriptMarkdown(initialDocument)
@@ -466,6 +466,7 @@ export class LiveTranscriptManager {
       ? groupKyutaiTranscriptSnapshot(snapshot)
       : snapshot
     const lines = sinkSnapshot.lines.map((line) => {
+      if (line.speaker < 0) return { startSeconds: line.startSeconds, speaker: 0, text: line.text }
       let speaker = session.speakerLabels.get(line.speaker)
       if (!speaker) {
         speaker = session.speakerLabels.size + 1
@@ -536,7 +537,7 @@ export class LiveTranscriptManager {
       title: session.title,
       startedAt: session.startedAt,
       state,
-      showSpeakerLabels: this.options.upstreamProvider !== "kyutai",
+      showSpeakerLabels: this.options.upstreamProvider !== "kyutai" || Boolean(this.options.diarizerUrl),
       lines,
     }
   }

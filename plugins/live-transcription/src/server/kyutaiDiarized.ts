@@ -1,6 +1,7 @@
 import type { LiveTranscriptError } from "./errors"
 import { KyutaiConnection } from "./kyutai"
-import { WhisperLiveKitConnection, type WhisperLiveKitLine, type WhisperLiveKitSnapshot } from "./whisperLiveKit"
+import { SortformerConnection } from "./sortformer"
+import type { WhisperLiveKitLine, WhisperLiveKitSnapshot } from "./whisperLiveKit"
 
 interface StreamingUpstream {
   connect(): Promise<void>
@@ -17,7 +18,7 @@ interface UpstreamCallbacks {
   onFailure: (error: LiveTranscriptError) => void
 }
 
-/** Kyutai text authority enriched by best-effort WhisperLiveKit speaker intervals. */
+/** Kyutai text authority enriched by best-effort raw Sortformer speaker intervals. */
 export class KyutaiDiarizedConnection implements StreamingUpstream {
   private readonly kyutai: StreamingUpstream
   private diarizer: StreamingUpstream | undefined
@@ -56,7 +57,7 @@ export class KyutaiDiarizedConnection implements StreamingUpstream {
       kyutaiCallbacks,
       { apiKey: options.kyutaiApiKey, highWaterBytes: options.highWaterBytes },
     )
-    this.diarizer = options.createDiarizerForTest?.(diarizerCallbacks) ?? new WhisperLiveKitConnection(
+    this.diarizer = options.createDiarizerForTest?.(diarizerCallbacks) ?? new SortformerConnection(
       diarizerUrl,
       diarizerCallbacks,
       {
@@ -110,7 +111,8 @@ export class KyutaiDiarizedConnection implements StreamingUpstream {
     const diarizer = this.diarizer
     if (!diarizer) return
     this.diarizer = undefined
-    this.diarizerSnapshot = undefined
+    // Preserve the last trustworthy covered intervals. Future words outside
+    // that coverage remain unknown while Kyutai continues fail-open.
     diarizer.close()
     this.publishMergedSnapshot()
   }
@@ -144,12 +146,12 @@ export function mergeKyutaiWordsWithSpeakers(
   diarization: WhisperLiveKitSnapshot | undefined,
 ): WhisperLiveKitSnapshot {
   const intervals = speakerIntervals(diarization?.lines ?? [])
-  const fallbackSpeaker = intervals[0]?.speaker ?? 0
   return {
     ...kyutai,
     lines: kyutai.lines.map((word, index, words) => ({
       ...word,
-      speaker: bestSpeaker(word, words[index + 1], intervals) ?? fallbackSpeaker,
+      // Keep uncovered words explicitly unknown until Sortformer has evidence.
+      speaker: bestSpeaker(word, words[index + 1], intervals) ?? -1,
     })),
   }
 }
@@ -168,19 +170,12 @@ async function settleWithin(promise: Promise<void>, timeoutMs: number): Promise<
 
 function speakerIntervals(lines: readonly WhisperLiveKitLine[]): Array<WhisperLiveKitLine & { endSeconds: number }> {
   const sorted = [...lines].sort((left, right) => left.startSeconds - right.startSeconds || left.speaker - right.speaker)
-  // WLK full snapshots may revise or permute raw Sortformer IDs. Canonicalize
-  // from the complete current timeline so stale provisional IDs cannot leave a
-  // lone human displayed as Speaker 3.
-  const canonicalSpeakers = new Map<number, number>()
+  // Streaming Sortformer speaker slots are arrival-ordered and stable for one
+  // socket session. Preserve them rather than renumbering each revised snapshot.
   return sorted.flatMap((line, index) => {
     const endSeconds = line.endSeconds ?? sorted[index + 1]?.startSeconds
     if (endSeconds === undefined || endSeconds < line.startSeconds) return []
-    let speaker = canonicalSpeakers.get(line.speaker)
-    if (speaker === undefined) {
-      speaker = canonicalSpeakers.size
-      canonicalSpeakers.set(line.speaker, speaker)
-    }
-    return [{ ...line, speaker, endSeconds }]
+    return [{ ...line, endSeconds }]
   })
 }
 

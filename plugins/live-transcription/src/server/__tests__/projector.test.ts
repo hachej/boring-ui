@@ -23,6 +23,15 @@ describe("LiveTranscriptProjector", () => {
     expect(markdown).not.toContain("Speaker")
   })
 
+  it("renders uncovered diarizer words honestly", () => {
+    const markdown = renderTranscriptMarkdown({
+      ...initial,
+      showSpeakerLabels: true,
+      lines: [{ startSeconds: 3.9, speaker: 0, text: "Bonjour" }],
+    })
+    expect(markdown).toContain("[00:00:03] **Speaker unknown:** Bonjour")
+  })
+
   it("serializes throttled whole-document writes and terminal-flushes once", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000)
