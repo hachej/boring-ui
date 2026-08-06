@@ -219,12 +219,33 @@ export function createMockApiFetch(
       return jsonResponse({ error: "not found" }, 404)
     }
 
+    if (method === "GET" && pathname.endsWith("/api/v1/filesystems")) {
+      return jsonResponse({
+        filesystems: [{
+          filesystem: "user",
+          label: "Workspace",
+          rootDir: ".",
+          access: "readwrite",
+          capabilities: {
+            read: true,
+            list: true,
+            search: true,
+            write: true,
+            delete: true,
+            move: true,
+            mkdir: true,
+          },
+        }],
+      })
+    }
+
     if (method === "GET" && pathname.endsWith("/api/v1/files/search")) {
       const { query, limit } = parseSearchParams(url)
-      const results = [...files.keys()]
+      const resources = [...files.keys()]
         .filter((path) => path.toLowerCase().includes(query))
         .slice(0, limit)
-      return jsonResponse({ results })
+        .map((path) => ({ filesystem: "user", path }))
+      return jsonResponse({ resources })
     }
 
     if (method === "POST" && pathname.endsWith("/api/v1/dirs")) {

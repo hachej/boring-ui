@@ -33,11 +33,13 @@ function spec(id: string, targetRoot: UiReviewSpec["target"]["root"]): UiReviewS
 }
 
 describe("UI review spec registry", () => {
-  it("registers the command-palette, component-baseline, and automation review specs", () => {
-    expect(uiReviewSpecs.ids()).toEqual(["automation-pane-popover", "workspace-command-palette", "workspace-component-baselines"])
+  it("registers the ask-user, command-palette, component-baseline, and automation review specs", () => {
+    expect(uiReviewSpecs.ids()).toEqual(["ask-user-inline", "automation-pane-popover", "workspace-command-palette", "workspace-component-baselines"])
     const componentSpec = uiReviewSpecs.get("workspace-component-baselines")
     expect(componentSpec.target.root).toBe("tools/ui-review/fixtures/workspace-components")
     expect(componentSpec.checkpoints.every((checkpoint) => checkpoint.visualBaseline)).toBe(true)
+    const askUserSpec = uiReviewSpecs.get("ask-user-inline")
+    expect(askUserSpec.checkpoints.map((checkpoint) => checkpoint.id)).toEqual(["pending-light", "pending", "selected", "resolved"])
     const automationSpec = uiReviewSpecs.get("automation-pane-popover")
     expect(automationSpec.target.root).toBe("tools/ui-review/fixtures/workspace-components")
     expect(automationSpec.checkpoints).toHaveLength(4)

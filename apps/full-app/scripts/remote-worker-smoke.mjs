@@ -226,7 +226,10 @@ async function main() {
     }
 
     const search = await jsonFetch(`${publicBaseUrl}/api/v1/files/search?q=from-*.txt&limit=10`, { headers: publicHeaders })
-    if (!search.results.includes('from-public.txt') || !search.results.includes('from-worker.txt')) {
+    const searchPaths = search.resources
+      .filter((resource) => resource.filesystem === 'user')
+      .map((resource) => resource.path)
+    if (!searchPaths.includes('from-public.txt') || !searchPaths.includes('from-worker.txt')) {
       fail(`search missing files: ${JSON.stringify(search)}`)
     }
 

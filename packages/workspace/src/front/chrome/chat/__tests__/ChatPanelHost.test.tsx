@@ -52,12 +52,12 @@ function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerSto
   )
 }
 
-function Blocker({ sessionId = "s1" }: { sessionId?: string }) {
+function Blocker({ sessionId = "s1", composerVisible }: { sessionId?: string; composerVisible?: boolean }) {
   const { addBlocker, removeBlocker } = useWorkspaceAttention()
   useEffect(() => {
-    addBlocker({ id: `test:${sessionId}`, reason: "test", sessionId, label: "Blocked", surfaceKind: "questions", target: "q1", actions: [{ id: "open", label: "Open Questions" }, { id: "approve", label: "Approve" }] })
+    addBlocker({ id: `test:${sessionId}`, reason: "test", sessionId, label: "Blocked", surfaceKind: "questions", target: "q1", ...(composerVisible === undefined ? {} : { composer: { visible: composerVisible } }), actions: [{ id: "open", label: "Open Questions" }, { id: "approve", label: "Approve" }] })
     return () => removeBlocker(`test:${sessionId}`)
-  }, [addBlocker, removeBlocker, sessionId])
+  }, [addBlocker, composerVisible, removeBlocker, sessionId])
   return null
 }
 
@@ -127,6 +127,17 @@ describe("ChatPanelHost", () => {
     )
 
     expect(await screen.findByTestId("blocker-count")).toHaveTextContent("1")
+  })
+
+  it("keeps hidden composer projections out of the above-composer blocker surface", async () => {
+    render(
+      <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
+        <Blocker sessionId="s1" composerVisible={false} />
+        <ChatPanelHost agentTypeId="default" sessionId="s1" />
+      </WorkspaceProvider>,
+    )
+
+    expect(await screen.findByTestId("blocker-count")).toHaveTextContent("0")
   })
 
   it("emits a generic composer stop event", () => {

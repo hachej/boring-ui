@@ -546,7 +546,7 @@ test('createStandaloneAgentHostApp exposes static filesystem bindings on files a
   const operations: RuntimeFilesystemBindingOperations = {
     read: vi.fn(async ({ path }) => ({ content: `company:${path}` })),
     list: vi.fn(async ({ path }) => ({ entries: path === '/' ? ['company'] : ['policy.md'], metadata: {} })),
-    find: vi.fn(),
+    find: vi.fn(async () => ({ paths: ['/policy.md'], metadata: {} })),
     grep: vi.fn(),
     stat: vi.fn(async ({ path }) => ({ isDirectory: path === 'company', metadata: {} })),
     rejectMutation: vi.fn((operation) => { throw new Error(`readonly ${operation}`) }),
@@ -567,7 +567,11 @@ test('createStandaloneAgentHostApp exposes static filesystem bindings on files a
         storageRoot: ctx.workspaceRoot,
         sandbox,
         fileSearch: createServerFileSearch(workspace, sandbox),
-        filesystemBindings: [{ filesystem: 'company_context', access: 'readonly' as const, operations }],
+        filesystemBindings: [{
+          filesystem: 'company_context',
+          access: 'readonly' as const,
+          operations,
+        }],
       }
     },
   }
@@ -607,6 +611,38 @@ test('createStandaloneAgentHostApp exposes static filesystem bindings on files a
     expect(tree.json().entries).toEqual([{ name: 'company', kind: 'dir', path: 'company' }])
     expect(operations.list).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/' })
     expect(operations.stat).toHaveBeenCalledWith({ filesystem: 'company_context', path: 'company' })
+
+    const catalog = await app.inject({ method: 'GET', url: '/api/v1/filesystems' })
+    expect(catalog.statusCode).toBe(200)
+    expect(catalog.json().filesystems).toEqual([
+      expect.objectContaining({ filesystem: 'user', access: 'readwrite' }),
+      {
+        filesystem: 'company_context',
+        label: 'company_context',
+        rootDir: '/',
+        access: 'readonly',
+        capabilities: {
+          read: true,
+          list: true,
+          search: true,
+          write: false,
+          delete: false,
+          move: false,
+          mkdir: false,
+        },
+      },
+    ])
+
+    const search = await app.inject({ method: 'GET', url: '/api/v1/files/search?q=*.md' })
+    expect(search.statusCode).toBe(200)
+    expect(search.json()).toEqual({
+      resources: [{ filesystem: 'company_context', path: '/policy.md' }],
+    })
+    expect(operations.find).toHaveBeenCalledWith(
+      { filesystem: 'company_context', path: '/' },
+      '*.md',
+      { limit: 500 },
+    )
   } finally {
     await app.close()
   }

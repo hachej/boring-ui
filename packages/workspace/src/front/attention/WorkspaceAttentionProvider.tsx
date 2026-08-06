@@ -62,6 +62,8 @@ export type WorkspaceAttentionBlocker = {
   inbox?: WorkspaceAttentionInboxMetadata
   /** Optional shell focus behavior requested by the plugin that owns this blocker. */
   focus?: WorkspaceAttentionFocusMetadata
+  /** Composer projection policy. Set `visible: false` when the interaction is already rendered inline. */
+  composer?: { visible?: boolean }
   actions?: WorkspaceAttentionBlockerAction[]
 }
 

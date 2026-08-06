@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Workspace } from '@hachej/boring-agent/shared'
-import { resolveGitFileUrl } from '../git/gitFileUrl'
+import { isWorkspaceRelativeGitPath, resolveGitFileUrl } from '../git/gitFileUrl'
 import {
   ERROR_CODE_INTERNAL,
   ERROR_CODE_INVALID_PATH,
@@ -15,6 +15,8 @@ export interface GitRouteOptions {
   getWorkspaceHostRoot?: (workspace: Workspace) => string | undefined
 }
 
+const USER_FILESYSTEM_ID = 'user'
+
 function requirePath(value: unknown, reply: FastifyReply): string | null {
   if (typeof value !== 'string' || value.length === 0) {
     reply.code(400).send({
@@ -28,7 +30,25 @@ function requirePath(value: unknown, reply: FastifyReply): string | null {
     })
     return null
   }
+  if (!isWorkspaceRelativeGitPath(value)) {
+    reply.code(400).send({
+      error: { code: ERROR_CODE_INVALID_PATH, message: 'path must stay within the workspace', field: 'path' },
+    })
+    return null
+  }
   return value
+}
+
+function requirePrimaryFilesystem(value: unknown, reply: FastifyReply): boolean {
+  if (value === undefined || value === null || value === '' || value === USER_FILESYSTEM_ID) return true
+  reply.code(400).send({
+    error: {
+      code: ERROR_CODE_VALIDATION_ERROR,
+      message: 'Git file URLs are only available for the primary user filesystem',
+      field: 'filesystem',
+    },
+  })
+  return false
 }
 
 export function gitRoutes(
@@ -45,6 +65,7 @@ export function gitRoutes(
 
   app.get('/api/v1/git/file-url', async (request, reply) => {
     const query = request.query as Record<string, unknown>
+    if (!requirePrimaryFilesystem(query.filesystem, reply)) return
     const path = requirePath(query.path, reply)
     if (path === null) return
 

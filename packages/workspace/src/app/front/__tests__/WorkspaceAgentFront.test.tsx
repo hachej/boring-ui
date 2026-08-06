@@ -7,6 +7,7 @@ import { UI_COMMAND_EVENT, type UiCommand } from "../../../front/bridge"
 import { useWorkspacePluginClient } from "../../../front/plugin/useWorkspacePluginClient"
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
 import type { PanelConfig } from "../../../front/registry/types"
+import { requestAppLeftOverlay } from "../../../shared/plugins/appLeftOverlay"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
 import {
@@ -291,6 +292,54 @@ describe("WorkspaceAgentFront", () => {
     window.removeEventListener("boring:chat-session-status", onStatus)
   })
 
+  it("reconciles the session list when activity reports a session created out-of-band (gh-778)", () => {
+    MockEventSource.instances = []
+    vi.stubGlobal("EventSource", MockEventSource)
+    const refresh = vi.fn()
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="external-session-stream"
+        chatPanel={SessionIdChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "session-1", title: "Session one", status: "idle" }],
+          activeSession: { id: "session-1", title: "Session one", status: "idle" },
+          activeSessionId: "session-1",
+          loading: false,
+          error: undefined,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+          refresh,
+        })}
+      />,
+    )
+    const stream = MockEventSource.instances.find((instance) => instance.url.includes("/api/v1/agents/session-activity/events"))
+
+    // Activity for a session already known to the list must not trigger an
+    // extra refresh.
+    act(() => {
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "session-1" }, status: "running" })
+    })
+    expect(refresh).not.toHaveBeenCalled()
+
+    // Activity for a session the list has never fetched (created via an
+    // external entrypoint) must trigger a background refresh so it appears
+    // without a manual refresh or remount.
+    act(() => {
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "external-session" }, status: "running" })
+    })
+    expect(refresh).toHaveBeenCalledWith({ background: true })
+
+    refresh.mockClear()
+    // Activity for a different agent type's session must not leak into this
+    // agent-scoped session list's refresh.
+    act(() => {
+      stream?.emit("activity", { ref: { agentTypeId: "other-agent", sessionId: "other-agent-session" }, status: "running" })
+    })
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
   it("renders a known active session while remote sessions are still loading", () => {
     const PendingChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
@@ -417,12 +466,9 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByText("First session")).toBeInTheDocument()
   })
 
-  it("replaces the sole closed chat pane with a fresh New chat pane", async () => {
-    const user = userEvent.setup()
-    const createSession = vi.fn()
-
+  it("hides the close action on the sole chat pane (#1051: the center always needs one chat)", () => {
     function Harness() {
-      const [sessions, setSessions] = useState([
+      const [sessions] = useState([
         { id: "s1", title: "First session", updatedAt: Date.now() },
       ])
       const [activeSessionId, setActiveSessionId] = useState("s1")
@@ -434,10 +480,7 @@ describe("WorkspaceAgentFront", () => {
           activeSessionId={activeSessionId}
           onSwitchSession={setActiveSessionId}
           onCreateSession={() => {
-            createSession()
             const session = { id: "fresh", title: "New chat", updatedAt: Date.now() }
-            setSessions((current) => [...current, session])
-            setActiveSessionId(session.id)
             return session
           }}
           persistenceEnabled={false}
@@ -447,12 +490,7 @@ describe("WorkspaceAgentFront", () => {
 
     render(<Harness />)
     expect(visibleChatSessionIds()).toEqual(["s1"])
-
-    await user.click(screen.getByLabelText("Close First session pane"))
-
-    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["fresh"]))
-    expect(createSession).toHaveBeenCalledOnce()
-    expect(screen.getByLabelText("Close New chat pane")).toBeInTheDocument()
+    expect(screen.queryByLabelText("Close First session pane")).not.toBeInTheDocument()
   })
 
   it("keeps colliding addressed sessions distinct through pane activation and deletion", async () => {
@@ -786,6 +824,37 @@ describe("WorkspaceAgentFront", () => {
     await user.click(automations)
     expect(automations).not.toHaveAttribute("data-active")
     expect(plugins).not.toHaveAttribute("data-active")
+  })
+
+  it("never mounts a different plugin overlay with stale request params", async () => {
+    const user = userEvent.setup()
+    const mountedParams: Array<string | undefined> = []
+    function SecondOverlay({ params }: { params?: Readonly<Record<string, string>> }) {
+      useEffect(() => { mountedParams.push(params?.itemId) }, [params])
+      return <div data-testid="second-overlay-body">Second overlay</div>
+    }
+    const plugin = definePlugin({
+      id: "parameterized-overlays",
+      appLeftActions: [
+        { id: "first-overlay", label: "First overlay", overlay: () => <div>First overlay</div> },
+        { id: "second-overlay", label: "Second overlay", overlay: SecondOverlay },
+      ],
+    })
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-overlay-params"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        plugins={[plugin]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    act(() => { requestAppLeftOverlay("first-overlay", { itemId: "inbox-item" }) })
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Second overlay" }))
+
+    expect(await screen.findByTestId("second-overlay-body")).toBeInTheDocument()
+    expect(mountedParams).toEqual([undefined])
   })
 
   it("rejects plugin app-left actions that collide with built-in overlays", () => {

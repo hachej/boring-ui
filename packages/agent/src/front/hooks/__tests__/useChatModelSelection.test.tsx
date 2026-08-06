@@ -39,6 +39,27 @@ describe('useChatModelSelection', () => {
     expect(readPiComposerSettings({ storageScope: 'scope-b', storage: store }).model).toBeNull()
   })
 
+  it('normalizes discovered model metadata before storing a prompt selection', async () => {
+    const store = storage()
+    const { result } = renderHook(() => useChatModelSelection({
+      storageScope: 'scope-a',
+      storage: store,
+      enabled: false,
+    }))
+
+    const discovered = {
+      provider: 'openai-codex',
+      id: 'gpt-5.6-sol',
+      label: 'GPT 5.6 sol',
+      available: true,
+    }
+    act(() => result.current.setModel(discovered))
+
+    const expected = { provider: 'openai-codex', id: 'gpt-5.6-sol' }
+    expect(result.current.model).toEqual(expected)
+    expect(readPiComposerSettings({ storageScope: 'scope-a', storage: store }).model).toEqual(expected)
+  })
+
   it('selects the first available model when the server omits a denied default', async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
       models: [

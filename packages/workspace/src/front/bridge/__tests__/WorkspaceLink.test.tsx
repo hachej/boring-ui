@@ -39,6 +39,14 @@ describe("workspaceLinkCommand", () => {
       kind: "expandToFile",
       params: { path: "src/app.ts" },
     })
+    expect(workspaceLinkCommand({
+      kind: "expandToFile",
+      path: "/company/policy.md",
+      filesystem: "company_context",
+    })).toEqual({
+      kind: "expandToFile",
+      params: { path: "/company/policy.md", filesystem: "company_context" },
+    })
   })
 })
 

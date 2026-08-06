@@ -44,10 +44,11 @@ export function useChatModelSelection({
   }, [userSelectedModel])
 
   const setModel = useCallback((next: ModelSelection | null) => {
-    userSelectedModelRef.current = next !== null
-    setUserSelectedModel(next !== null)
-    setModelState(next)
-    writePiComposerModelSelection(next, { storageScope, storage })
+    const normalized = next === null ? null : parseModelSelection(next)
+    userSelectedModelRef.current = normalized !== null
+    setUserSelectedModel(normalized !== null)
+    setModelState(normalized)
+    writePiComposerModelSelection(normalized, { storageScope, storage })
   }, [storage, storageScope])
 
   const discoveryKey = useMemo(
