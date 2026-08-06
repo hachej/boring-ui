@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UIMessage } from 'ai'
+import { agentResourceUrl, withStorageScope } from './agentHttp'
 import { copyTextToClipboard } from './clipboard'
 import { cn } from './lib'
 import { Button, IconButton, Tabs, TabsContent, TabsList, TabsTrigger } from '@hachej/boring-ui-kit'
@@ -74,12 +75,14 @@ const RETRY_DELAY_MS = 2500
 const MAX_RETRIES = 20
 
 function SystemPromptTab({
+  agentTypeId,
   apiBaseUrl,
   fetch: fetchImpl,
   sessionId,
   requestHeaders,
   storageScope,
 }: {
+  agentTypeId: string
   apiBaseUrl?: string
   fetch?: typeof globalThis.fetch
   sessionId: string
@@ -106,8 +109,8 @@ function SystemPromptTab({
     setState({ kind: 'loading' })
 
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
-    nextFetch(agentResourceUrl(apiBaseUrl, `/api/v1/agent/sessions/${encodeURIComponent(sessionId)}/system-prompt`), {
-      headers: scopedHeaders(requestHeaders, storageScope),
+    nextFetch(agentResourceUrl(apiBaseUrl, `/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions/${encodeURIComponent(sessionId)}/system-prompt`), {
+      headers: withStorageScope(requestHeaders, storageScope),
     })
       .then(async (res) => {
         if (aborted) return
@@ -141,7 +144,7 @@ function SystemPromptTab({
       aborted = true
       if (retryTimer) clearTimeout(retryTimer)
     }
-  }, [apiBaseUrl, fetchImpl, sessionId, requestHeaders, retryKey, storageScope])
+  }, [agentTypeId, apiBaseUrl, fetchImpl, sessionId, requestHeaders, retryKey, storageScope])
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -324,6 +327,7 @@ const MAX_WIDTH = 800
 const DEFAULT_WIDTH = 440
 
 interface DebugDrawerProps {
+  agentTypeId: string
   apiBaseUrl?: string
   fetch?: typeof globalThis.fetch
   sessionId: string
@@ -334,7 +338,7 @@ interface DebugDrawerProps {
   onWidthChange: (w: number) => void
 }
 
-export function DebugDrawer({ apiBaseUrl, fetch, sessionId, messages, requestHeaders, storageScope, width, onWidthChange }: DebugDrawerProps) {
+export function DebugDrawer({ agentTypeId, apiBaseUrl, fetch, sessionId, messages, requestHeaders, storageScope, width, onWidthChange }: DebugDrawerProps) {
   const [tab, setTab] = useState<Tab>('session')
 
   const onDragStart = useCallback((e: React.MouseEvent) => {
@@ -389,7 +393,7 @@ export function DebugDrawer({ apiBaseUrl, fetch, sessionId, messages, requestHea
             <SessionTab sessionId={sessionId} />
           </TabsContent>
           <TabsContent value="prompt" forceMount className="flex flex-col flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden">
-            <SystemPromptTab apiBaseUrl={apiBaseUrl} fetch={fetch} sessionId={sessionId} requestHeaders={requestHeaders} storageScope={storageScope} />
+            <SystemPromptTab agentTypeId={agentTypeId} apiBaseUrl={apiBaseUrl} fetch={fetch} sessionId={sessionId} requestHeaders={requestHeaders} storageScope={storageScope} />
           </TabsContent>
           <TabsContent value="messages" forceMount className="flex flex-col flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden">
             <MessagesTab messages={messages} />
@@ -398,17 +402,4 @@ export function DebugDrawer({ apiBaseUrl, fetch, sessionId, messages, requestHea
       </aside>
     </>
   )
-}
-
-function agentResourceUrl(apiBaseUrl: string | undefined, path: string): string {
-  const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-  return `${base}${path}`
-}
-
-function scopedHeaders(headers: Record<string, string> | undefined, storageScope: string | undefined): Record<string, string> | undefined {
-  if (!headers && !storageScope) return undefined
-  const result: Record<string, string> = { ...(headers ?? {}) }
-  const hasStorageScope = Object.keys(result).some((key) => key.toLowerCase() === 'x-boring-storage-scope')
-  if (storageScope && !hasStorageScope) result['x-boring-storage-scope'] = storageScope
-  return result
 }

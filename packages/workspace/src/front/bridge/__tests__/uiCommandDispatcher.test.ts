@@ -7,6 +7,7 @@ function fakeSurface(): SurfaceShellApi & {
   __surfaces: unknown[]
   __panels: unknown[]
   __expanded: string[]
+  __expandCalls: Array<{ path: string; filesystem?: string }>
   __leftClosed: number
   __openFileCalls: Array<{ path: string; filesystem?: string }>
 } {
@@ -15,11 +16,13 @@ function fakeSurface(): SurfaceShellApi & {
   const surfaces: unknown[] = []
   const panels: unknown[] = []
   const expanded: string[] = []
+  const expandCalls: Array<{ path: string; filesystem?: string }> = []
   const surface: SurfaceShellApi & {
     __opened: string[]
     __surfaces: unknown[]
     __panels: unknown[]
     __expanded: string[]
+    __expandCalls: Array<{ path: string; filesystem?: string }>
     __leftClosed: number
     __openFileCalls: Array<{ path: string; filesystem?: string }>
   } = {
@@ -29,7 +32,10 @@ function fakeSurface(): SurfaceShellApi & {
     },
     openSurface: (request: unknown) => surfaces.push(request),
     openPanel: (cfg: unknown) => panels.push(cfg),
-    expandToFile: (path: string) => expanded.push(path),
+    expandToFile: (path: string, options?: { filesystem?: string }) => {
+      expanded.push(path)
+      expandCalls.push({ path, filesystem: options?.filesystem })
+    },
     closeWorkbenchLeftPane: () => {
       surface.__leftClosed += 1
     },
@@ -39,6 +45,7 @@ function fakeSurface(): SurfaceShellApi & {
     __surfaces: surfaces,
     __panels: panels,
     __expanded: expanded,
+    __expandCalls: expandCalls,
     __leftClosed: 0,
   }
   return surface
@@ -133,6 +140,37 @@ describe("dispatchUiCommand", () => {
     } finally {
       global.requestAnimationFrame = originalRaf
     }
+  })
+
+  it("parks openFile before a closed workbench surface mounts", () => {
+    const raf = vi.spyOn(global, "requestAnimationFrame").mockImplementation(() => 1)
+    let workbenchOpen = false
+    let parked: ((surface: SurfaceShellApi) => void) | undefined
+    const mountedSurface = fakeSurface()
+    const c: DispatchContext = {
+      surface: () => null,
+      isWorkbenchOpen: () => workbenchOpen,
+      openWorkbench: () => {
+        workbenchOpen = true
+      },
+      enqueue: (run) => {
+        parked = run
+      },
+    }
+
+    dispatchUiCommand({
+      kind: "openFile",
+      params: { path: "/policy.md", filesystem: "company_context" },
+    }, c)
+
+    expect(workbenchOpen).toBe(true)
+    expect(parked).toBeDefined()
+    parked?.(mountedSurface)
+    expect(mountedSurface.__openFileCalls).toEqual([{
+      path: "/policy.md",
+      filesystem: "company_context",
+    }])
+    raf.mockRestore()
   })
 
   it("openPanel calls surface.openPanel with the full config", () => {
@@ -261,6 +299,18 @@ describe("dispatchUiCommand", () => {
     expect(openWorkbenchSources).toHaveBeenCalledOnce()
     expect(c.__surface.__expanded).toEqual(["src"])
     expect(c.__surface.__opened).toEqual([])
+  })
+
+  it("expandToFile preserves explicit filesystem identity", () => {
+    const c = ctx()
+    dispatchUiCommand({
+      kind: "expandToFile",
+      params: { path: "/company/policy.md", filesystem: "company_context" },
+    }, c)
+    expect(c.__surface.__expandCalls).toEqual([{
+      path: "/company/policy.md",
+      filesystem: "company_context",
+    }])
   })
 
   it("expandToFile opens the workbench and sources when closed", () => {

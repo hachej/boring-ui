@@ -293,6 +293,16 @@ function sendValidationError(reply: FastifyReply, message: string, field?: strin
   })
 }
 
+function requirePrimaryFilesystem(value: unknown, reply: FastifyReply): boolean {
+  if (value === undefined || value === null || value === '' || value === USER_FILESYSTEM_ID) return true
+  sendValidationError(
+    reply,
+    'this endpoint is only available for the primary user filesystem',
+    'filesystem',
+  )
+  return false
+}
+
 export function fileRoutes(
   app: FastifyInstance,
   opts: {
@@ -380,7 +390,9 @@ export function fileRoutes(
 
   app.get('/api/v1/files/records', async (request, reply) => {
     try {
-      const parsed = parseFileRecordsRequest(request.query as Record<string, unknown>)
+      const query = request.query as Record<string, unknown>
+      if (!requirePrimaryFilesystem(query.filesystem, reply)) return
+      const parsed = parseFileRecordsRequest(query)
       const workspace = await resolveWorkspace(request)
       const binding = await resolvePrimaryBinding(request)
       const stat = await workspace.stat(parsed.path)
@@ -559,6 +571,7 @@ const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
 
   app.post('/api/v1/files/upload', async (request, reply) => {
     const body = request.body as Record<string, unknown>
+    if (!requirePrimaryFilesystem(body.filesystem, reply)) return
     const filename = requireStringParam(body?.filename, 'filename', reply)
     if (filename === null) return
     const contentBase64 = requireStringParam(body?.contentBase64, 'contentBase64', reply)

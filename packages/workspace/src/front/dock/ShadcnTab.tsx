@@ -5,6 +5,7 @@ import { X } from "lucide-react"
 import { getFileIcon } from "../registry/getFileIcon"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../lib/utils"
+import { isWorkbenchPreviewParams, pinnedWorkbenchParams } from "./workbenchPreview"
 import { useEvent, workspaceEvents } from "../events"
 import { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "../../shared/types/surface"
 
@@ -135,6 +136,7 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
   const displayTitle = isDirty ? title.slice(0, -2) : title
   const Icon = getFileIcon(displayTitle)
   const filePath = readStringParam(props.params, "path") ?? readPathFromPanelId(api.id)
+  const isPreview = isWorkbenchPreviewParams(props.params)
   const groupTabs = siblingPanels(props)
     .map(panelSnapshot)
     .filter((panel) => panel.close)
@@ -150,6 +152,15 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
   useEvent(workspaceEvents.editorSaveEnd, (p) => {
     if (p.panelId === api.id) setIsSaving(false)
   })
+
+  const pinPreview = () => {
+    if (!isPreview) return
+    api.updateParameters(pinnedWorkbenchParams(props.params))
+  }
+
+  useEffect(() => {
+    if (isDirty && isPreview) pinPreview()
+  }, [isDirty, isPreview])
 
   const handleClose = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -264,6 +275,11 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
           if (e.button === 2) openContextMenu(e)
         }}
         onContextMenu={openContextMenu}
+        onDoubleClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          pinPreview()
+        }}
       >
         <Icon
           className={cn(
@@ -272,7 +288,10 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
           )}
           strokeWidth={1.5}
         />
-        <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{displayTitle}</span>
+        <span className={cn(
+          "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap",
+          isPreview && "italic",
+        )}>{displayTitle}</span>
         <div className="flex shrink-0 items-center gap-1">
           {isDirty || isSaving ? (
             <span

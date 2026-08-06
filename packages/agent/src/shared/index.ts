@@ -32,6 +32,9 @@ export {
   sessionStreamPath,
 } from './events'
 export type {
+  LeaseBoundWorkspaceAgent,
+  WorkspaceAgentDirectRunCallback,
+  WorkspaceAgentDirectRunInput,
   WorkspaceAgentDispatch,
   WorkspaceAgentDispatcher,
   WorkspaceAgentDispatcherContext,
@@ -69,9 +72,11 @@ export type { AgentTool, ToolExecContext, ToolResult, JSONSchema } from './tool'
 export type { ToolUiMetadata } from './tool-ui'
 export { isToolUiMetadata, extractToolUiMetadata } from './tool-ui'
 export type { CatalogDeps, ToolCatalog } from './catalog'
+export { SAFE_NATIVE_SESSION_ID } from './session'
 export type {
   SessionStore,
   SessionCtx,
+  SessionListOptions,
   SessionSummary,
   SessionDetail,
 } from './session'

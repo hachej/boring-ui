@@ -64,18 +64,6 @@
   padding-left: 44px !important;
 }
 
-/* Plugin-tabs shell: when the app-navigation left pane is collapsed, the
-   fixed top-left "Open app navigation" corner control (24px at left-3,
-   right edge x=36) overlays the chat stage. Reserve header-only space on the
-   chat stage's flat pane header so the session title clears that control
-   instead of sitting underneath it. Only applies in the collapsed state; when
-   the left pane is open the control sits over the app-nav header, not the
-   chat. 48px = control right edge (36) + 12px gap. */
-[data-boring-workspace-part="plugin-tabs-shell"][data-boring-state="collapsed"] .dv-chat-stage .dv-tabs-and-actions-container,
-[data-boring-workspace-part="plugin-tabs-shell"][data-boring-state="collapsed"] .dv-chat-stage .tabs-and-actions-container {
-  padding-left: 48px !important;
-}
-
 /* The app shell renders fixed top-right workbench/full-workspace controls
    over this 44px tab strip. Reserve enough room so dockview's built-in open-tabs
    overflow trigger sits left of that chrome instead of underneath it.
@@ -150,6 +138,68 @@
 .dv-shell .dv-tab.dv-active-tab:hover::before,
 .dv-shell .tab.active-tab:hover::before {
   opacity: 0.7;
+}
+
+/* Chat headers are a single, calm session strip rather than workbench tabs. */
+.dv-chat-stage {
+  --dv-tabs-and-actions-container-height: 44px;
+}
+
+.dv-chat-stage .dv-tabs-and-actions-container,
+.dv-chat-stage .tabs-and-actions-container {
+  height: 44px !important;
+  padding: 0 8px 0 0;
+  align-items: center;
+  gap: 8px;
+  background: oklch(from var(--muted) l c h / 0.22) !important;
+  border-bottom: 1px solid oklch(from var(--border) l c h / 0.55);
+}
+
+.dv-chat-stage .dv-tabs-container,
+.dv-chat-stage .tab-container {
+  flex: 0 1 auto !important;
+  width: fit-content !important;
+  min-width: 0;
+  max-width: min(420px, 55vw);
+  align-items: stretch;
+}
+
+/* Dockview's scroll wrapper otherwise consumes the whole header and pushes
+   the session menu away from its title. */
+.dv-chat-stage .dv-scrollable {
+  flex: 0 1 auto !important;
+  width: fit-content !important;
+  min-width: 0;
+}
+
+/* Keep session actions adjacent to the readable title while preserving the
+   split/close cluster at the far edge of each pane header. */
+.dv-chat-stage .right-actions-container,
+.dv-chat-stage .dv-right-actions-container {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dv-chat-stage .dv-tab,
+.dv-chat-stage .tab,
+.dv-chat-stage .dv-tab.dv-active-tab,
+.dv-chat-stage .tab.active-tab {
+  flex: 0 1 auto !important;
+  width: fit-content !important;
+  height: 44px;
+  min-width: 0;
+  max-width: min(420px, 55vw);
+  margin: 0;
+  align-self: stretch;
+  color: var(--foreground) !important;
+  background: transparent !important;
+  border: 0;
+  border-radius: 0;
+}
+
+.dv-chat-stage .dv-tab::before,
+.dv-chat-stage .tab::before {
+  display: none;
 }
 
 /* Sash (resize handle)
@@ -241,6 +291,12 @@
 .dv-shell .dv-right-actions-container:hover,
 .dv-shell .dv-left-actions-container:hover {
   color: var(--foreground);
+}
+
+/* SurfaceShell owns a stable, Workbench-wide open-tabs menu beside the
+   fullscreen/collapse controls. Hide Dockview's editor-width overflow trigger. */
+.workbench-dockview .dv-tabs-overflow-dropdown-root {
+  display: none;
 }
 
 /* Drag ghost */

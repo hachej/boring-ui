@@ -1,4 +1,14 @@
-import type { FetchClientOptions, FileContent, FileEntry, FileStat, FileTreeListing, GitUrlMetadata } from "./types"
+import { parseFilesystemCatalog } from "@hachej/boring-bash/shared"
+import type {
+  FetchClientOptions,
+  FileContent,
+  FileEntry,
+  FileSearchResource,
+  FileStat,
+  FilesystemCatalogEntry,
+  FileTreeListing,
+  GitUrlMetadata,
+} from "./types"
 
 const DEFAULT_TIMEOUT = 10_000
 const DEFAULT_MAX_RETRIES = 3
@@ -10,6 +20,13 @@ function isRetryable(status: number): boolean {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isFileSearchResource(value: unknown): value is FileSearchResource {
+  if (!value || typeof value !== "object") return false
+  const resource = value as { filesystem?: unknown; path?: unknown }
+  return typeof resource.filesystem === "string" && resource.filesystem.length > 0
+    && typeof resource.path === "string" && resource.path.length > 0
 }
 
 export class FetchClient {
@@ -50,11 +67,14 @@ export class FetchClient {
     body?: unknown,
     requestTimeout?: number,
     signal?: AbortSignal,
+    parseResponse: (response: Response) => Promise<T> = async (response) => await response.json() as T,
+    credentials?: RequestCredentials,
+    maxRetries = this.maxRetries,
   ): Promise<T> {
     const effectiveTimeout = requestTimeout ?? this.timeout
     let lastError: Error | null = null
 
-    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
       if (attempt > 0) {
         await delay(this.retryBaseMs * 2 ** (attempt - 1))
       }
@@ -73,6 +93,7 @@ export class FetchClient {
             : this.headers,
           body: hasBody ? JSON.stringify(body) : undefined,
           signal: controller.signal,
+          ...(credentials ? { credentials } : {}),
         })
 
         clearTimeout(timer)
@@ -99,7 +120,7 @@ export class FetchClient {
           )
         }
 
-        return (await res.json()) as T
+        return await parseResponse(res)
       } catch (err) {
         clearTimeout(timer)
         signal?.removeEventListener("abort", abortFromCaller)
@@ -129,6 +150,19 @@ export class FetchClient {
     throw lastError ?? new FetchError(0, "Request failed after retries")
   }
 
+  async getFilesystems(signal?: AbortSignal): Promise<FilesystemCatalogEntry[]> {
+    return this.request<FilesystemCatalogEntry[]>(
+      "GET",
+      "/api/v1/filesystems",
+      undefined,
+      undefined,
+      signal,
+      async (response) => parseFilesystemCatalog(await response.json()),
+      "include",
+      0,
+    )
+  }
+
   async getTreeListing(path: string, signal?: AbortSignal, filesystem?: string): Promise<FileTreeListing> {
     const params = new URLSearchParams({ path })
     if (filesystem) params.set("filesystem", filesystem)
@@ -154,6 +188,20 @@ export class FetchClient {
       undefined,
       undefined,
       signal,
+    )
+  }
+
+  async getRawFile(path: string, signal?: AbortSignal, filesystem?: string): Promise<Blob> {
+    const params = new URLSearchParams({ path })
+    if (filesystem && filesystem !== "user") params.set("filesystem", filesystem)
+    return this.request<Blob>(
+      "GET",
+      `/api/v1/files/raw?${params.toString()}`,
+      undefined,
+      undefined,
+      signal,
+      async (response) => await response.blob(),
+      "include",
     )
   }
 
@@ -224,17 +272,28 @@ export class FetchClient {
     )
   }
 
-  async search(query: string, limit?: number, signal?: AbortSignal): Promise<string[]> {
+  private async searchResponse(
+    query: string,
+    limit?: number,
+    signal?: AbortSignal,
+  ): Promise<{ resources?: unknown }> {
     const params = new URLSearchParams({ q: query })
     if (limit != null) params.set("limit", String(limit))
-    const res = await this.request<{ results: string[] }>(
+    return this.request<{ resources?: unknown }>(
       "GET",
       `/api/v1/files/search?${params}`,
       undefined,
       undefined,
       signal,
     )
-    return res.results
+  }
+
+  /** Structured search across every request-readable filesystem root. */
+  async searchResources(query: string, limit?: number, signal?: AbortSignal): Promise<FileSearchResource[]> {
+    const response = await this.searchResponse(query, limit, signal)
+    return Array.isArray(response.resources)
+      ? response.resources.filter(isFileSearchResource)
+      : []
   }
 
   async createDir(path: string, options?: { filesystem?: string }): Promise<void> {

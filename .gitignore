@@ -47,6 +47,8 @@ apps/boring-macro-v2/src/plugins/macro/sdk/build/
 apps/boring-macro-v2/src/plugins/macro/transforms/**/__pycache__/
 apps/boring-macro-v2/src/plugins/macro/transforms/**/*.py[cod]
 packages/agent/fixtures/provisioning/test-sdk/**/__pycache__/
+plugins/data-bridge/python/__pycache__/
+plugins/data-bridge/src/server/bsl/fixtures/__pycache__/
 packages/agent/fixtures/provisioning/test-sdk/**/*.py[cod]
 packages/agent/fixtures/provisioning/test-sdk/*.egg-info/
 packages/agent/fixtures/provisioning/test-sdk/build/
@@ -90,6 +92,10 @@ packages/workspace/src/plugins/eval-*/
 # Ignore machine-local skill-install artifacts while retaining the project-owned
 # active skills, non-discovered provider references, and archived skill library.
 /.agents/*
+!/.agents/factory/
+!/.agents/factory/**
+!/.agents/personas/
+!/.agents/personas/**
 !/.agents/skills/
 /.agents/skills/*
 !/.agents/skills/ask-boring/
@@ -108,6 +114,8 @@ packages/workspace/src/plugins/eval-*/
 !/.agents/skills/fresh-eyes/**
 !/.agents/skills/grill-for-unknowns/
 !/.agents/skills/grill-for-unknowns/**
+!/.agents/skills/handoff/
+!/.agents/skills/handoff/**
 !/.agents/skills/plan/
 !/.agents/skills/plan/**
 !/.agents/skills/skill-management/
@@ -170,3 +178,6 @@ packages/workspace/src/plugins/eval-*/
 
 # Dev-server workspace runtime dirs (UUID-named) created under the app cwd during local runs
 /apps/full-app/*-*-*-*-*/
+
+# Local live-transcript artifacts (meeting content must never be committed)
+/live-transcripts/

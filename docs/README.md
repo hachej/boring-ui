@@ -53,7 +53,7 @@ standalone (`createAgentApp`) with zero core dependency.
 | --- | --- | --- |
 | `agent-playground` | Minimal chat-only playground for the agent package: in-process Fastify agent (`createAgentApp`, mode `direct`) behind Vite with agent-front source HMR. | [README](../apps/agent-playground/README.md) |
 | `workspace-playground` | Full IDE workbench playground for plugin development: Vite front proxying to an in-process `createWorkspaceAgentServer`, fixture-seeded workspace, demo plugins, Playwright e2e + agent evals. | [README](../apps/workspace-playground/README.md) |
-| `full-app` | Production reference composing core + agent + workspace: better-auth, Postgres workspaces with roles/invites, Fly.io/Docker deployment with smoke tests. | [README](../apps/full-app/README.md) |
+| `full-app` | Production-shaped local reference composing core + agent + workspace: better-auth and Postgres workspaces with roles/invites. | [README](../apps/full-app/README.md) |
 
 ## Repository tools
 
@@ -65,6 +65,7 @@ standalone (`createAgentApp`) with zero core dependency.
 
 - [`DECISIONS.md`](DECISIONS.md) — locked architectural decisions registry for the agent runtime (what/why/rationale/re-evaluate-when). Changing a locked decision requires updating this doc.
 - [`WORKSPACE_CONTRACT.md`](WORKSPACE_CONTRACT.md) — the agent ↔ workspace integration contract: HTTP routes, component exports, UiBridge/UiCommand semantics, import boundaries.
+- [`PROJECT_ENVIRONMENT_MODEL.md`](PROJECT_ENVIRONMENT_MODEL.md) — proposed vocabulary and authority boundaries for Product Workspaces, Projects, Environments, Sessions, filesystem grants, and execution mounts; does not supersede locked decisions until ratified.
 - [`TAILWIND-V4-STYLE-ISOLATION.md`](TAILWIND-V4-STYLE-ISOLATION.md) — how packages share Tailwind v4 tokens: workspace owns `--boring-*` `:root` tokens; agent inherits them scoped to `[data-boring-agent]` (test-enforced).
 - [`PERFORMANCE.md`](PERFORMANCE.md) — historical Vercel-sandbox vs local FS latency benchmarks (harness removed; kept for reference).
 - [`FIXES.md`](FIXES.md) — production/runtime fix ledger for recurring incidents and deploy bugs.
@@ -73,8 +74,34 @@ standalone (`createAgentApp`) with zero core dependency.
   autonomy.
 - [`web/`](web/README.md) — human-oriented guide: architecture overview, full package map, getting started, composition guide, design FAQ, troubleshooting map, per-package explainers, glossary. Orientation, not normative spec — canonical specs live in `packages/*/docs/`.
 
+## Which document answers which question
+
+Five kinds of planning document, **one owner per kind**. A doc that answers two
+of these questions is a doc that will silently go stale in one of them — that
+is how a "frozen" contract drifted from its own types for a full release.
+
+| Question | Owner | Notes |
+|---|---|---|
+| **Why** are we building this | issue [#391](https://github.com/hachej/boring-ui/issues/391) | The long-form vision |
+| **What** did we rule, and what did it kill | [`DECISIONS.md`](DECISIONS.md) | Ratified, append-only, supersession stated explicitly |
+| **When** — order and triggers | [`DIRECTION.md`](DIRECTION.md) | Owner-ratified waves. Wins over any issue plan on sequencing |
+| **How** it works — contracts | package `docs/` beside the code | e.g. [`AGENT_GATEWAY_V0.md`](../packages/agent/docs/AGENT_GATEWAY_V0.md), `PLUGIN_SYSTEM.md` |
+| **What now** — dispatchable work | beads + GitHub issues | Must be reachable from a DIRECTION wave |
+
+Rules that follow from this:
+
+1. **Contracts live next to their types, never in `docs/issues/`.** Issue
+   folders are historical the moment their issue closes; contracts are living.
+2. **`docs/issues/<n>/` is a historical record.** It may describe what was
+   planned and what shipped. It does not govern what happens next.
+3. **State what a document does *not* govern**, in its header. Most confusion
+   here came from documents claiming broad authority and being read literally.
+4. **Supersession is written down where the old text lives** — a banner on the
+   superseded section, not only a line in the newer file.
+
 ## Normative specs (code cites these)
 
+- [`packages/agent/docs/AGENT_GATEWAY_V0.md`](../packages/agent/docs/AGENT_GATEWAY_V0.md) — the AgentGateway v0 session contract (7 methods, branded scope, 13 error codes, conformance levels). Supersedes `docs/issues/909/plan.md` §6.
 - [`packages/workspace/docs/PLUGIN_SYSTEM.md`](../packages/workspace/docs/PLUGIN_SYSTEM.md) — the plugin/agent-layer spec; source cites it as `Per PLUGIN_SYSTEM.md §X`. Keep section numbering stable.
 - [`packages/workspace/docs/PLUGIN_STRUCTURE.md`](../packages/workspace/docs/PLUGIN_STRUCTURE.md) — canonical layout + code patterns for new plugins.
 

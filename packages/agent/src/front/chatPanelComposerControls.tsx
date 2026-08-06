@@ -27,9 +27,9 @@ import {
 // wraps this so we never drift.
 export const composerActionClass = cn(
   "inline-flex h-8 items-center justify-center gap-1.5 rounded-[var(--radius-md)] border-0 bg-transparent",
-  "text-muted-foreground shadow-none transition",
+  "text-muted-foreground shadow-none transition-colors motion-reduce:transition-none",
   "hover:bg-muted/60 hover:text-foreground",
-  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover",
   "disabled:pointer-events-none disabled:opacity-50",
 )
 
@@ -41,10 +41,10 @@ const THINKING_LEVEL_LABELS: Record<ThinkingLevel, string> = {
 }
 
 const THINKING_LEVEL_STATUS_LABELS: Record<ThinkingLevel, string> = {
-  off: 'off',
-  low: 'low',
-  medium: 'medium',
-  high: 'high',
+  off: 'Off',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
 }
 
 const THINKING_LEVEL_DETAILS: Record<ThinkingLevel, string> = {
@@ -56,7 +56,7 @@ const THINKING_LEVEL_DETAILS: Record<ThinkingLevel, string> = {
 
 const selectorTriggerClass = cn(
   composerActionClass,
-  'h-7 rounded-lg border border-border/60 bg-transparent px-2 text-[12px] font-medium text-muted-foreground',
+  'h-8 rounded-lg border border-border/60 bg-transparent px-2 text-xs font-medium text-muted-foreground',
   'hover:border-border/80 hover:bg-muted/55 hover:text-foreground',
 )
 
@@ -66,13 +66,13 @@ const selectorContentClass = cn(
 )
 
 const composerPickerMenuClass = cn(
-  'mb-1 w-full overflow-hidden rounded-lg border border-border/60',
-  'bg-[color:var(--popover)] text-[color:var(--popover-foreground)] shadow-lg',
+  'w-full overflow-hidden rounded-xl border border-border',
+  'bg-[color:var(--popover)] text-[color:var(--popover-foreground)] shadow-xl',
 )
 
 function selectorItemClass(selected: boolean) {
   return cn(
-    'flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px]',
+    'flex min-h-10 items-center gap-2 rounded-md px-2.5 py-2 text-sm text-muted-foreground',
     'data-[selected=true]:bg-[color:oklch(from_var(--accent)_l_c_h/0.15)] data-[selected=true]:text-foreground',
     selected && 'bg-foreground/[0.06] text-foreground',
   )
@@ -139,11 +139,12 @@ function modelTriggerLabel(value: ModelSelection | null, options: AvailableModel
     ? options.find((m) => m.provider === value.provider && m.id === value.id)
     : undefined
   const rawTriggerLabel = current?.label ?? value?.id
-  return value
+  const label = value
     ? rawTriggerLabel && current?.label && current.label !== value.id && /[A-Z]/.test(current.label)
       ? current.label
       : displayModelLabel(rawTriggerLabel ?? value.id)
     : emptyLabel
+  return value ? label.replace(/\s+\([^)]*\)\s*$/, '') : label
 }
 
 function modelMenuOptions(_value: ModelSelection | null, options: AvailableModel[]): AvailableModel[] {
@@ -197,7 +198,7 @@ export const ModelSelectTrigger = forwardRef<HTMLButtonElement, ModelSelectTrigg
       onClick={onClick}
       className={cn(
         trigger === 'slash'
-          ? 'max-w-[min(52vw,260px)] cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap rounded-[var(--radius-md)] px-1.5 py-0.5 transition-colors hover:bg-foreground/[0.045] hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/20 disabled:pointer-events-none disabled:opacity-50'
+          ? 'h-8 max-w-[min(68vw,420px)] cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap rounded-[var(--radius-md)] px-2 text-xs transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none'
           : selectorTriggerClass,
         trigger === 'slash' ? 'w-auto' : 'w-auto max-w-[min(52vw,260px)] gap-1',
         open && (trigger === 'slash' ? 'bg-muted/45' : 'border-border/80 bg-muted/55 text-foreground'),
@@ -207,8 +208,9 @@ export const ModelSelectTrigger = forwardRef<HTMLButtonElement, ModelSelectTrigg
     >
       {trigger === 'slash' ? (
         <>
-          <span className="text-muted-foreground">/model: </span>
-          <span className="text-foreground">{triggerDisplay}</span>
+          <span className="text-muted-foreground">Model · </span>
+          <span className="min-w-0 truncate text-foreground">{triggerLabel}</span>
+          {value ? <span className="shrink-0 text-muted-foreground"> · {displayProviderLabel(value.provider)}</span> : null}
         </>
       ) : (
         <>
@@ -290,12 +292,12 @@ export function ModelPickerMenu({
             <CommandInput
               placeholder="Search models…"
               autoFocus
-              className="h-8 w-full border-0 bg-transparent text-[13px] outline-none focus:ring-0"
+              className="h-8 w-full border-0 bg-transparent text-sm outline-none focus:ring-0"
             />
           </div>
         )}
         <CommandList className="max-h-[300px] p-0.5">
-          <CommandEmpty className="py-4 text-center text-[13px] text-muted-foreground">
+          <CommandEmpty className="py-4 text-center text-sm text-muted-foreground">
             No models found
           </CommandEmpty>
           {!hideDefaultOption ? (
@@ -316,7 +318,7 @@ export function ModelPickerMenu({
                   )}
                 />
                 <span className="truncate">Default model</span>
-                <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60">auto</span>
+                <span className="ml-auto shrink-0 text-xs text-muted-foreground">Auto</span>
               </CommandItem>
             </CommandGroup>
           ) : null}
@@ -324,7 +326,7 @@ export function ModelPickerMenu({
             <CommandGroup
               key={provider}
               heading={displayProviderLabel(provider)}
-              className="[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.08em] [&_[cmdk-group-heading]]:text-muted-foreground/60"
+              className="[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.08em] [&_[cmdk-group-heading]]:text-muted-foreground"
             >
               {list.map((m) => {
                 const key = encodeModelKey(m)
@@ -348,7 +350,7 @@ export function ModelPickerMenu({
                       )}
                     />
                     <span className="min-w-0 flex-1 truncate whitespace-nowrap">{label}</span>
-                    <span className="ml-auto max-w-[45%] shrink-0 truncate whitespace-nowrap text-right text-[10px] text-muted-foreground/60">{m.id}</span>
+                    <span className="ml-auto max-w-[45%] shrink-0 truncate whitespace-nowrap text-right text-xs text-muted-foreground">{m.id}</span>
                   </CommandItem>
                 )
               })}
@@ -362,7 +364,7 @@ export function ModelPickerMenu({
 
 /**
  * Model picker whose options are pi-coding-agent's actual available
- * models (fetched from /api/v1/agent/models). Groups by provider and
+ * models (fetched from the addressed Agent models route). Groups by provider and
  * shows a concise human-friendly label with the raw pi id as the
  * option's stored value, encoded as "{provider}:{id}" to keep
  * ids stable across providers.
@@ -527,7 +529,7 @@ export const ThinkingSelectTrigger = forwardRef<HTMLButtonElement, ThinkingSelec
       disabled={disabled}
       className={cn(
         trigger === 'slash'
-          ? 'cursor-pointer rounded-[var(--radius-md)] px-1.5 py-0.5 transition-colors hover:bg-foreground/[0.045] hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/20 disabled:pointer-events-none disabled:opacity-50'
+          ? 'h-8 cursor-pointer rounded-[var(--radius-md)] px-2 text-xs transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none'
           : selectorTriggerClass,
         trigger === 'button' && 'gap-1.5',
         trigger === 'button' && value !== 'off' && !open && 'border-[color:oklch(from_var(--accent)_l_c_h/0.35)] bg-[color:oklch(from_var(--accent)_l_c_h/0.08)] text-foreground',
@@ -543,7 +545,7 @@ export const ThinkingSelectTrigger = forwardRef<HTMLButtonElement, ThinkingSelec
       {trigger === 'button' ? <ThinkingLevelGlyph level={value} /> : null}
       {trigger === 'slash' ? (
         <>
-          <span className="text-muted-foreground">/thinking: </span>
+          <span className="text-muted-foreground">Thinking · </span>
           <span className="text-foreground">{THINKING_LEVEL_STATUS_LABELS[value]}</span>
         </>
       ) : (
@@ -628,7 +630,7 @@ export function ThinkingPickerMenu({
               />
               <ThinkingLevelGlyph level={level} />
               <span className="font-medium">{THINKING_LEVEL_LABELS[level]}</span>
-              <span className="ml-auto text-[11px] text-muted-foreground/65">
+              <span className="ml-auto text-xs text-muted-foreground">
                 {THINKING_LEVEL_DETAILS[level]}
               </span>
             </CommandItem>

@@ -19,6 +19,36 @@ describe('embedded session isolation', () => {
     })
   })
 
+  it('resumes only an exact empty session under the same scope, agent, runtime, and request digest', async () => {
+    const fixture = await createEmbeddedGatewayFixture()
+    const scope = fixture.issueScope({ workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' })
+    const foreign = fixture.issueScope({ workspaceScopeId: 'workspace-b', authSubjectId: 'subject-b' })
+    const candidate = await fixture.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'candidate',
+    })
+
+    const input = {
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'resume-candidate',
+      resumeSessionId: candidate.sessionId,
+    }
+    await expect(fixture.gateway.createSession(input)).resolves.toEqual(candidate)
+    await expect(fixture.gateway.createSession(input)).resolves.toEqual(candidate)
+    await expect(fixture.gateway.createSession({ ...input, resumeSessionId: 'different' }))
+      .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT })
+
+    const foreignResult = await fixture.gateway.createSession({
+      scope: foreign,
+      agentTypeId: 'alpha',
+      requestId: 'foreign-resume',
+      resumeSessionId: candidate.sessionId,
+    })
+    expect(foreignResult).not.toEqual(candidate)
+  })
+
   it('serializes concurrent same-session commands from two subjects through one model loop', async () => {
     const fixture = await createEmbeddedGatewayFixture()
     const firstScope = fixture.issueScope({ workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' })
@@ -44,14 +74,17 @@ describe('embedded session isolation', () => {
     await second.close()
   })
 
-  it('coalesces concurrent retries into one session and one receipt', async () => {
+  it('allows only the created ledger owner to execute a concurrent retry', async () => {
     const fixture = await createEmbeddedGatewayFixture()
     const scope = fixture.issueScope()
-    const [first, retry] = await Promise.all([
+    const results = await Promise.allSettled([
       fixture.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'same-request' }),
       fixture.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'same-request' }),
     ])
-    expect(retry).toEqual(first)
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter((result) => result.status === 'rejected')).toEqual([
+      expect.objectContaining({ reason: expect.objectContaining({ code: AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS }) }),
+    ])
     expect((await fixture.gateway.listSessions({ scope, agentTypeId: 'alpha' })).sessions).toHaveLength(1)
   })
 })

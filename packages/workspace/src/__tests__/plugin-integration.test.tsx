@@ -70,7 +70,7 @@ describe("WorkspaceProvider — plugin integration", () => {
     }
 
     render(
-      <WorkspaceProvider plugins={[testPlugin]} persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" plugins={[testPlugin]} persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
@@ -84,7 +84,7 @@ describe("WorkspaceProvider — plugin integration", () => {
     const run = vi.fn()
 
     render(
-      <WorkspaceProvider
+      <WorkspaceProvider agentTypeId="default"
         commands={[
           {
             id: "user:settings",
@@ -130,7 +130,7 @@ describe("WorkspaceProvider — plugin integration", () => {
     })
 
     render(
-      <WorkspaceProvider plugins={[plugin]} persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" plugins={[plugin]} persistenceEnabled={false}>
         <div />
       </WorkspaceProvider>,
     )
@@ -158,7 +158,7 @@ describe("WorkspaceProvider — plugin integration", () => {
     }
 
     render(
-      <WorkspaceProvider persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
@@ -187,7 +187,7 @@ describe("WorkspaceProvider — plugin integration", () => {
     }
 
     render(
-      <WorkspaceProvider excludeDefaults={["filesystem"]} persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" excludeDefaults={["filesystem"]} persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
@@ -213,7 +213,7 @@ describe("WorkspaceProvider — plugin integration", () => {
     }
 
     render(
-      <WorkspaceProvider
+      <WorkspaceProvider agentTypeId="default"
         capabilities={{ "agent.chat": true }}
         defaultTheme="dark"
         persistenceEnabled={false}
@@ -238,7 +238,7 @@ describe("WorkspaceProvider — plugin integration", () => {
     }
 
     render(
-      <WorkspaceProvider plugins={[customPlugin]} persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" plugins={[customPlugin]} persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
@@ -258,7 +258,7 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
     }
 
     render(
-      <WorkspaceProvider excludeDefaults={["filesystem"]} persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" excludeDefaults={["filesystem"]} persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
@@ -280,7 +280,7 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
     }
 
     render(
-      <WorkspaceProvider excludeDefaults={["filesystem"]} persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" excludeDefaults={["filesystem"]} persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
@@ -303,7 +303,7 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
     }
 
     render(
-      <WorkspaceProvider plugins={[testPlugin]} persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" plugins={[testPlugin]} persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
@@ -326,7 +326,7 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
     }
 
     render(
-      <WorkspaceProvider plugins={[testPlugin]} persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" plugins={[testPlugin]} persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )

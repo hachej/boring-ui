@@ -29,7 +29,7 @@ function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerSto
       </button>
       <button
         type="button"
-        onClick={() => onData?.({ type: "file-changed", seq: 7, changeType: "write", path: "src/pi.ts" })}
+        onClick={() => onData?.({ type: "file-changed", seq: 7, changeType: "write", path: "/company/pi.ts", filesystem: "company_context" })}
       >
         emit pi file event
       </button>
@@ -52,12 +52,12 @@ function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerSto
   )
 }
 
-function Blocker({ sessionId = "s1" }: { sessionId?: string }) {
+function Blocker({ sessionId = "s1", composerVisible }: { sessionId?: string; composerVisible?: boolean }) {
   const { addBlocker, removeBlocker } = useWorkspaceAttention()
   useEffect(() => {
-    addBlocker({ id: `test:${sessionId}`, reason: "test", sessionId, label: "Blocked", surfaceKind: "questions", target: "q1", actions: [{ id: "open", label: "Open Questions" }, { id: "approve", label: "Approve" }] })
+    addBlocker({ id: `test:${sessionId}`, reason: "test", sessionId, label: "Blocked", surfaceKind: "questions", target: "q1", ...(composerVisible === undefined ? {} : { composer: { visible: composerVisible } }), actions: [{ id: "open", label: "Open Questions" }, { id: "approve", label: "Approve" }] })
     return () => removeBlocker(`test:${sessionId}`)
-  }, [addBlocker, removeBlocker, sessionId])
+  }, [addBlocker, composerVisible, removeBlocker, sessionId])
   return null
 }
 
@@ -76,8 +76,8 @@ describe("ChatPanelHost", () => {
     events.on(filesystemEvents.changed, changed)
 
     render(
-      <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
-        <ChatPanelHost sessionId="s1" onData={onData} />
+      <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
+        <ChatPanelHost agentTypeId="default" sessionId="s1" onData={onData} />
       </WorkspaceProvider>,
     )
 
@@ -100,28 +100,44 @@ describe("ChatPanelHost", () => {
     events.on(filesystemEvents.changed, changed)
 
     render(
-      <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
-        <ChatPanelHost sessionId="s1" />
+      <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
+        <ChatPanelHost agentTypeId="default" sessionId="s1" />
       </WorkspaceProvider>,
     )
 
     fireEvent.click(screen.getByRole("button", { name: "emit pi file event" }))
 
     expect(changed).toHaveBeenCalledWith(
-      expect.objectContaining({ path: "src/pi.ts", cause: "agent", toolCallId: "pi:7" }),
+      expect.objectContaining({
+        path: "/company/pi.ts",
+        filesystem: "company_context",
+        cause: "agent",
+        toolCallId: "pi:7",
+      }),
     )
   })
 
   it("passes generic session-scoped composer blockers to the chat implementation", async () => {
     render(
-      <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
         <Blocker sessionId="s1" />
         <Blocker sessionId="other" />
-        <ChatPanelHost sessionId="s1" />
+        <ChatPanelHost agentTypeId="default" sessionId="s1" />
       </WorkspaceProvider>,
     )
 
     expect(await screen.findByTestId("blocker-count")).toHaveTextContent("1")
+  })
+
+  it("keeps hidden composer projections out of the above-composer blocker surface", async () => {
+    render(
+      <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
+        <Blocker sessionId="s1" composerVisible={false} />
+        <ChatPanelHost agentTypeId="default" sessionId="s1" />
+      </WorkspaceProvider>,
+    )
+
+    expect(await screen.findByTestId("blocker-count")).toHaveTextContent("0")
   })
 
   it("emits a generic composer stop event", () => {
@@ -130,8 +146,8 @@ describe("ChatPanelHost", () => {
     window.addEventListener("boring:workspace-composer-stop", observed)
     try {
       render(
-        <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
-          <ChatPanelHost sessionId="s1" onComposerStop={onStop} />
+        <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
+          <ChatPanelHost agentTypeId="default" sessionId="s1" onComposerStop={onStop} />
         </WorkspaceProvider>,
       )
       fireEvent.click(screen.getByRole("button", { name: "stop composer" }))
@@ -147,9 +163,9 @@ describe("ChatPanelHost", () => {
     window.addEventListener(WORKSPACE_ATTENTION_ACTION_EVENT, observed)
     try {
       render(
-        <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
+        <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
           <Blocker sessionId="s1" />
-          <ChatPanelHost sessionId="s1" />
+          <ChatPanelHost agentTypeId="default" sessionId="s1" />
         </WorkspaceProvider>,
       )
 
@@ -179,9 +195,9 @@ describe("ChatPanelHost", () => {
       getSnapshot: () => ({ openTabs: [], activeTab: null }),
     }
     render(
-      <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
         <Blocker sessionId="s1" />
-        <ChatPanelHost sessionId="s1" surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => true, openWorkbench: vi.fn(), shouldOpenSurface: () => true }} />
+        <ChatPanelHost agentTypeId="default" sessionId="s1" surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => true, openWorkbench: vi.fn(), shouldOpenSurface: () => true }} />
       </WorkspaceProvider>,
     )
     expect(await screen.findByTestId("blocker-count")).toHaveTextContent("1")
@@ -201,8 +217,9 @@ describe("ChatPanelHost", () => {
       getSnapshot: () => ({ openTabs: [], activeTab: null }),
     }
     render(
-      <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
         <ChatPanelHost
+          agentTypeId="default"
           sessionId="s1"
           onOpenArtifact={onOpenArtifact}
           surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => true, openWorkbench: vi.fn() }}
@@ -236,8 +253,9 @@ describe("ChatPanelHost", () => {
 
     try {
       render(
-        <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
+        <WorkspaceProvider agentTypeId="default" chatPanel={FakeChatPanel} persistenceEnabled={false}>
           <ChatPanelHost
+            agentTypeId="default"
             sessionId="s1"
             onOpenArtifact={onOpenArtifact}
             surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => false, openWorkbench: () => setSurfaceOpen(true) }}

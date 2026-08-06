@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { AgentSkillResource } from '../../shared/skill-resource'
+import { agentResourceUrl, withStorageScope } from '../agentHttp'
 import type { CommandRegistry, SlashCommand } from '../slashCommands/registry'
 
 export function useServerSkills({
+  agentTypeId,
   apiBaseUrl,
   fetch: fetchImpl,
   registry,
@@ -11,6 +13,7 @@ export function useServerSkills({
   refreshKey,
   enabled = true,
 }: {
+  agentTypeId: string
   apiBaseUrl?: string
   fetch?: typeof globalThis.fetch
   registry: CommandRegistry
@@ -34,9 +37,10 @@ export function useServerSkills({
     const ownedCommands: SlashCommand[] = []
     const currentHeaders = JSON.parse(requestHeadersJson) as Record<string, string>
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
-    const path = refreshKey ? '/api/v1/agent/skills?refresh=1' : '/api/v1/agent/skills'
+    const resourcePath = `/api/v1/agents/${encodeURIComponent(agentTypeId)}/skills`
+    const path = refreshKey ? `${resourcePath}?refresh=1` : resourcePath
     nextFetch(agentResourceUrl(apiBaseUrl, path), {
-      headers: scopedHeaders(currentHeaders, storageScope),
+      headers: withStorageScope(currentHeaders, storageScope),
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((payload: { skills?: Array<{
@@ -65,7 +69,7 @@ export function useServerSkills({
                     })
                     const response = await nextFetch(
                       agentResourceUrl(apiBaseUrl, `/api/v1/files?${query.toString()}`),
-                      { headers: scopedHeaders(currentHeaders, storageScope) },
+                      { headers: withStorageScope(currentHeaders, storageScope) },
                     )
                     if (!response.ok) throw new Error('Skill is no longer available.')
                     const result = await response.json() as { content?: unknown }
@@ -94,7 +98,7 @@ export function useServerSkills({
       }
       if (removed) setSkillsStamp((n) => n + 1)
     }
-  }, [apiBaseUrl, enabled, fetchImpl, refreshKey, registry, requestHeadersJson, storageScope])
+  }, [agentTypeId, apiBaseUrl, enabled, fetchImpl, refreshKey, registry, requestHeadersJson, storageScope])
 
   return skillsStamp
 }
@@ -117,17 +121,4 @@ function filesystemSkillText(
     '--- END SKILL INSTRUCTIONS ---',
     ...(request ? ['User request:', request] : []),
   ].join('\n')
-}
-
-function agentResourceUrl(apiBaseUrl: string | undefined, path: string): string {
-  const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-  return `${base}${path}`
-}
-
-function scopedHeaders(headers: Record<string, string> | undefined, storageScope: string | undefined): Record<string, string> | undefined {
-  if (!headers && !storageScope) return undefined
-  const result: Record<string, string> = { ...(headers ?? {}) }
-  const hasStorageScope = Object.keys(result).some((key) => key.toLowerCase() === 'x-boring-storage-scope')
-  if (storageScope && !hasStorageScope) result['x-boring-storage-scope'] = storageScope
-  return result
 }

@@ -13,7 +13,7 @@ import type { PiChatEvent, PiChatStatus } from '../../shared/chat'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../chatPanelSettings'
 import { DEFAULT_THINKING } from '../chatPanelSettings'
 import { cn } from '../lib'
-import { defaultChatSuggestions, type ChatSuggestion } from '../ChatEmptyState'
+import { ChatSuggestionGrid, defaultChatSuggestions, type ChatSuggestion } from '../ChatEmptyState'
 import type { SlashCommand } from '../slashCommands'
 import { builtinCommands, createCommandRegistry } from '../slashCommands'
 import type { ToolRendererOverrides } from '../bareToolRenderers'
@@ -32,6 +32,7 @@ import {
   type ChatPanelRuntimeDependenciesWarmupStatus,
   type ChatPanelWorkspaceWarmupStatus,
 } from './chatPanelWorkspaceWarmup'
+import { useComposerContributions, type ComposerDraftUpdate } from './composerContributions'
 import { selectMessagesForRender, selectQueuePreview, selectRuntimeNotices } from './pi/selectors'
 import { piChatErrorCode, type RemotePiSession, type RemotePiSessionOptions } from './pi/remotePiSession'
 import type { PiChatRuntimeNotice } from './pi/piChatReducer'
@@ -52,6 +53,11 @@ import {
   type PanelNotice,
 } from './components/ChatNotices'
 import { PiConversationSurface } from './components/PiConversationSurface'
+import type {
+  ActionableSlashCommand,
+  MessageMention,
+  MessageMentionCatalog,
+} from './components/MessageMentions'
 import { PiChatComposerSurface } from './components/PiChatComposerSurface'
 import { useExternalRemotePiSession, useRemotePiSessionState } from './piChatPanelHooks'
 import {
@@ -95,6 +101,7 @@ interface ComposerSendPayload {
   text: string
   files: PromptInputFilePart[]
   source?: ChatSubmitSource
+  preserveExistingDraft?: boolean
 }
 
 export interface ChatPanelEmptyState {
@@ -125,8 +132,8 @@ export interface PiChatPanelProps<
 > {
   /** Optional externally selected Pi session id. When provided, session navigation is owned by the host. */
   sessionId?: string
-  /** Selects the additive addressed AgentGateway transport. Omit for legacy wire. */
-  agentTypeId?: string
+  /** Addressed AgentGateway owner for every chat/session request. */
+  agentTypeId: string
   /** Alias kept for consumers that still pass the pre-cutover prop name. */
   extraCommands?: SlashCommand[]
   apiBaseUrl?: string
@@ -209,7 +216,7 @@ export function PiChatPanel<
   hotReloadEnabled = true,
   suggestions = defaultChatSuggestions,
   emptyState,
-  emptyPlacement = 'default',
+  emptyPlacement = 'hero',
   composerPlaceholder,
   initialDraft,
   autoSubmitInitialDraft = false,
@@ -323,6 +330,7 @@ export function PiChatPanel<
   const selectedSessionPending = Boolean(activeSessionId && !selectedChatState)
   const modelDiscoveryEnabled = serverResourcesEnabled && availableModels === undefined
   const modelDiscovery = useChatModelSelection({
+    agentTypeId,
     apiBaseUrl,
     defaultModel,
     fetch,
@@ -398,6 +406,11 @@ export function PiChatPanel<
   const [localSubmittedSessionId, setLocalSubmittedSessionId] = useState<string | undefined>()
   const localSubmittedSessionRef = useRef<string | undefined>(undefined)
   const { attachmentNotice, setAttachmentNotice } = useAttachmentNotice()
+  const composerContributions = useComposerContributions()
+  const contributedCommands = useMemo(
+    () => composerContributions.flatMap((contribution) => contribution.commands ?? []),
+    [composerContributions],
+  )
 
   const markLocalSubmitted = useCallback((sessionId: string) => {
     localSubmittedSessionRef.current = sessionId
@@ -417,10 +430,12 @@ export function PiChatPanel<
     })
     const next = createCommandRegistry(effectiveBuiltins)
     for (const command of extraCommands ?? []) next.register(command)
+    for (const command of contributedCommands) next.register(command)
     for (const command of commands) next.register(command)
     return next
-  }, [apiBaseUrl, commands, excludeBuiltinCommands, extraCommands, hotReloadEnabled, normalizedRequestHeaders, serverResourcesEnabled, serverSkillsRefreshKey, storageScope])
+  }, [apiBaseUrl, commands, contributedCommands, excludeBuiltinCommands, extraCommands, hotReloadEnabled, normalizedRequestHeaders, serverResourcesEnabled, serverSkillsRefreshKey, storageScope])
   const commandsStamp = useServerCommands({
+    agentTypeId,
     registry,
     requestHeaders: normalizedRequestHeaders,
     sessionId: activeSessionId ?? 'default',
@@ -431,6 +446,7 @@ export function PiChatPanel<
     enabled: serverResourcesEnabled,
   })
   const skillsStamp = useServerSkills({
+    agentTypeId,
     registry,
     requestHeaders: normalizedRequestHeaders,
     apiBaseUrl,
@@ -440,6 +456,13 @@ export function PiChatPanel<
     enabled: serverResourcesEnabled,
   })
   const allCommands = useMemo(() => registry.list(), [registry, commandsStamp, skillsStamp])
+  const actionableSlashCommands = useMemo<ActionableSlashCommand[]>(
+    () => allCommands.flatMap((command) =>
+      command.clickBehavior === 'execute' || command.clickBehavior === 'insert'
+        ? [{ name: command.name, clickBehavior: command.clickBehavior }]
+        : []),
+    [allCommands],
+  )
 
   const activeChatSessionId = selectedChatState?.sessionId
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
@@ -522,11 +545,11 @@ export function PiChatPanel<
     if (resetInProgressRef.current) return
     if (autoCreateInFlightRef.current) return
     autoCreateInFlightRef.current = true
-    void sessions.create().catch((error) => {
+    void sessions.create({ resumeSessionId: sessions.resumeSessionId }).catch((error) => {
       autoCreateInFlightRef.current = false
       addLocalNotice({ id: 'session-auto-create-error', level: 'error', text: errorMessage(error, 'Could not create a chat session.'), dismissible: true })
     })
-  }, [activeSessionId, addLocalNotice, externalSessionId, sessionList.length, sessions.create, sessionsError, sessionsLoading])
+  }, [activeSessionId, addLocalNotice, externalSessionId, sessionList.length, sessions.create, sessions.resumeSessionId, sessionsError, sessionsLoading])
 
   useEffect(() => {
     if (externalSessionId || sessionsError || activeSessionId || sessionList.length > 0) {
@@ -804,16 +827,16 @@ export function PiChatPanel<
     })
   }, [addLocalNotice, dropLocalNotice])
 
-  const sendComposerMessage = useCallback(async ({ text, files, source = 'composer' }: ComposerSendPayload) => {
+  const sendComposerMessage = useCallback(async ({ text, files, source = 'composer', preserveExistingDraft = false }: ComposerSendPayload) => {
     if (!policy) {
       addLocalNotice({ id: 'composer-no-session', level: 'warning', text: 'Create or select a chat session before sending.', dismissible: true })
       return false
     }
     const submittedDraft = text
     const restoreSubmittedDraft = () => {
-      if (draftRef.current === '') setComposerDraft(submittedDraft)
+      if (!preserveExistingDraft && draftRef.current === '') setComposerDraft(submittedDraft)
     }
-    setComposerDraft('', false)
+    if (!preserveExistingDraft) setComposerDraft('', false)
     scrollToBottomRef.current()
     try {
       const result = await policy.submit({ text, files, source })
@@ -847,6 +870,60 @@ export function PiChatPanel<
       return false
     }
   }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
+
+  const availableAssistantSlashCommands = useMemo(
+    () => policy ? actionableSlashCommands : actionableSlashCommands.filter((command) => command.clickBehavior === 'insert'),
+    [actionableSlashCommands, policy],
+  )
+
+  const assistantMentionCatalog = useMemo<MessageMentionCatalog>(() => {
+    const skills = new Map<string, { name: string; commandName: string; priority: number }>()
+    for (const command of allCommands) {
+      if (command.source !== 'skill' && command.kind !== 'skill') continue
+      const name = command.name.replace(/^skill:/, '')
+      if (!name) continue
+      const priority = command.kind === 'skill' ? 2 : 1
+      const existing = skills.get(name)
+      if (!existing || priority > existing.priority) skills.set(name, { name, commandName: command.name, priority })
+    }
+    return {
+      commands: availableAssistantSlashCommands,
+      skills: [...skills.values()].map(({ name, commandName }) => ({ name, commandName })),
+      files: true,
+    }
+  }, [allCommands, availableAssistantSlashCommands])
+
+  const insertMentionDraft = useCallback((invocation: string) => {
+    const currentDraft = draftRef.current
+    const separator = currentDraft && !/\s$/.test(invocation) ? '\n' : ''
+    // Slash commands are only recognized at the start of the composer text.
+    // Keep an existing draft as command arguments or skill context instead of
+    // appending an inert invocation after it.
+    setComposerDraft(`${invocation}${separator}${currentDraft}`, true)
+  }, [setComposerDraft])
+
+  const activateAssistantMention = useCallback((mention: Exclude<MessageMention, { kind: 'file' }>) => {
+    const command = registry.get(mention.kind === 'skill' ? mention.commandName : mention.name)
+    if (mention.kind === 'skill') {
+      if (command?.source !== 'skill' && command?.kind !== 'skill') return
+      const invocation = command.kind === 'skill' && !mention.commandName.includes(':')
+        ? `/${mention.commandName} `
+        : `skill: ${mention.name}\n\n`
+      insertMentionDraft(invocation)
+      return
+    }
+    if (command?.clickBehavior === 'insert') {
+      insertMentionDraft(`/${mention.name} `)
+      return
+    }
+    if (command?.clickBehavior !== 'execute' || !policy) return
+    void sendComposerMessage({
+      text: `/${mention.name}`,
+      files: [],
+      source: 'composer',
+      preserveExistingDraft: true,
+    })
+  }, [insertMentionDraft, policy, registry, sendComposerMessage])
 
   const editQueued = useCallback(() => {
     if (!policy) return
@@ -1000,14 +1077,20 @@ export function PiChatPanel<
   // browser) can show a "working" indicator without coupling to this panel.
   useEffect(() => {
     if (typeof window === 'undefined' || !activeChatSessionId) return
-    window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
+    const emitStatus = () => window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
       detail: {
         sessionId: activeChatSessionId,
         ...(agentTypeId ? { agentTypeId } : {}),
         working: isStreaming,
       },
     }))
-    // Do not clear on unmount/session switch. A background session can keep
+    emitStatus()
+    // Shell chrome can mount after the panel's initial status event. Replaying
+    // on request closes that ordering race without treating browser events as
+    // durable server-side activity authority.
+    window.addEventListener('boring:chat-session-status-request', emitStatus)
+    return () => window.removeEventListener('boring:chat-session-status-request', emitStatus)
+    // Do not emit an idle status on cleanup. A background session can keep
     // running after its panel is no longer selected; clearing here makes the
     // session-list "working" badge disappear while the run is still active.
     // The selected/running panel emits `working: false` when it observes the
@@ -1027,70 +1110,18 @@ export function PiChatPanel<
     handleComposerKeyDown(event)
   }, [handleComposerKeyDown, interrupt, isStreaming, mentionState, slashQuery])
 
-  return (
-    <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
-      <div
-        data-boring-agent=""
-        data-boring-agent-part="chat"
-        data-pi-chat-session-id={activeSessionId}
-        data-pi-chat-connection={debugState?.connection ?? 'disconnected'}
-        data-pi-chat-last-seq={debugState?.lastSeq ?? 0}
-        className={cn(
-          'flex h-full min-h-0 overflow-hidden text-foreground antialiased',
-          debug ? 'flex-row' : showSessionSidebar ? 'flex-row' : 'flex-col',
-          chrome ? 'bg-[color:var(--canvas)] text-[13px]' : 'bg-transparent text-[13px]',
-          className,
-        )}
-        role="region"
-        aria-label="Agent assistant"
-      >
-        {showSessionSidebar ? (
-          <aside data-boring-agent-part="pi-chat-session-sidebar" className="min-h-0 w-64 shrink-0 border-r border-border/60">
-            <SessionList
-              sessions={sessionList}
-              activeId={activeSessionId}
-              loading={sessionsLoading}
-              onCreate={createSession}
-              onSwitch={sessions.switch}
-              onDelete={deleteSession}
-              onLoadMore={sessions.loadMore}
-              hasMore={sessions.hasMore}
-              loadingMore={sessions.loadingMore}
-            />
-          </aside>
-        ) : null}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div
-            className={cn(
-              'flex h-full min-h-0 flex-col overflow-hidden',
-              emptyHero && 'justify-center',
-              chrome &&
-                'mx-3 my-3 rounded-xl bg-[color:var(--surface-chat)] shadow-[0_1px_0_oklch(0_0_0/0.02),0_1px_2px_-1px_oklch(0_0_0/0.04),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.6)]',
-            )}
-          >
-            <PiConversationSurface
-              chrome={chrome}
-              emptyHero={emptyHero}
-              messages={messages}
-              emptyStateHydrating={emptyStateHydrating}
-              emptyState={emptyState}
-              suggestions={suggestions}
-              isStreaming={isStreaming}
-              showThoughts={showThoughts}
-              toolRenderers={mergedToolRenderers}
-              runtimeNotices={runtimeNotices}
-              onDismissNotice={clearLocalNotice}
-              renderNoticeAction={renderNoticeAction}
-              onScrollToBottomReady={(scrollToBottom) => {
-                scrollToBottomRef.current = scrollToBottom
-              }}
-              onSuggestionSubmit={({ text, files, source }) => sendComposerMessage({ text, files, source })}
-              onRestoreDraft={setComposerDraft}
-              windowResetKey={activeSessionId}
-            />
+  const selectEmptySuggestion = useCallback((suggestion: ChatSuggestion) => {
+    const text = suggestion.prompt ?? suggestion.label
+    if (!text.trim()) return
+    void sendComposerMessage({ text, files: [], source: 'suggestion' }).then((result) => {
+      if (result === false) setComposerDraft(text)
+    })
+  }, [sendComposerMessage, setComposerDraft])
 
-            <PiChatComposerSurface
+  const composerSurface = (
+    <PiChatComposerSurface
               chrome={chrome}
+              pickerPlacement={emptyHero ? 'above-compact' : 'above'}
               isStreaming={isStreaming}
               status={status}
               disabled={disabled}
@@ -1144,15 +1175,95 @@ export function PiChatPanel<
               textareaRef={textareaRef}
               onTextareaChange={onTextareaChange}
               onTextareaKeyDown={onTextareaKeyDown}
+              updateDraft={(update: ComposerDraftUpdate, options) => {
+                setComposerDraft(update(draftRef.current), options?.focus ?? true)
+              }}
               onSubmitMessage={({ text, files }) => sendComposerMessage({ text, files })}
               onStop={stop}
+    />
+  )
+
+  return (
+    <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
+      <div
+        data-boring-agent=""
+        data-boring-agent-part="chat"
+        data-pi-chat-session-id={activeSessionId}
+        data-pi-chat-connection={debugState?.connection ?? 'disconnected'}
+        data-pi-chat-last-seq={debugState?.lastSeq ?? 0}
+        className={cn(
+          'flex h-full min-h-0 overflow-hidden text-foreground antialiased',
+          debug ? 'flex-row' : showSessionSidebar ? 'flex-row' : 'flex-col',
+          chrome ? 'bg-[color:var(--canvas)] text-[13px]' : 'bg-transparent text-[13px]',
+          className,
+        )}
+        role="region"
+        aria-label="Agent assistant"
+      >
+        {showSessionSidebar ? (
+          <aside data-boring-agent-part="pi-chat-session-sidebar" className="min-h-0 w-64 shrink-0 border-r border-border/60">
+            <SessionList
+              sessions={sessionList}
+              activeId={activeSessionId}
+              loading={sessionsLoading}
+              onCreate={createSession}
+              onSwitch={sessions.switch}
+              onDelete={deleteSession}
+              onLoadMore={sessions.loadMore}
+              hasMore={sessions.hasMore}
+              loadingMore={sessions.loadingMore}
             />
+          </aside>
+        ) : null}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div
+            className={cn(
+              'flex h-full min-h-0 flex-col',
+              emptyHero ? 'justify-center overflow-y-auto py-6' : 'overflow-hidden',
+              chrome &&
+                'mx-3 my-3 rounded-xl bg-[color:var(--surface-chat)] shadow-[0_1px_0_oklch(0_0_0/0.02),0_1px_2px_-1px_oklch(0_0_0/0.04),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.6)]',
+            )}
+          >
+            <PiConversationSurface
+              chrome={chrome}
+              emptyHero={emptyHero}
+              messages={messages}
+              emptyStateHydrating={emptyStateHydrating}
+              emptyState={emptyState}
+              suggestions={suggestions}
+              isStreaming={isStreaming}
+              showThoughts={showThoughts}
+              toolRenderers={mergedToolRenderers}
+              mentionCatalog={assistantMentionCatalog}
+              onMentionActivate={activateAssistantMention}
+              runtimeNotices={runtimeNotices}
+              onDismissNotice={clearLocalNotice}
+              renderNoticeAction={renderNoticeAction}
+              onScrollToBottomReady={(scrollToBottom) => {
+                scrollToBottomRef.current = scrollToBottom
+              }}
+              onSuggestionSubmit={({ text, files, source }) => sendComposerMessage({ text, files, source })}
+              onRestoreDraft={setComposerDraft}
+              windowResetKey={activeSessionId}
+            />
+
+            {composerSurface}
+            {emptyHero ? (
+              <div
+                data-boring-agent-part="empty-hero-suggestions"
+                className="@container mx-auto w-full max-w-[640px] px-2 pb-4"
+              >
+                <ChatSuggestionGrid suggestions={suggestions} onSelect={selectEmptySuggestion} className="mt-4" />
+                {emptyState?.footer}
+              </div>
+            ) : null}
           </div>
         </div>
         {debug ? (
           <Suspense fallback={null}>
             <div aria-label="Chat debug metadata" className="contents" role="region">
               <DebugDrawer
+                agentTypeId={agentTypeId}
                 apiBaseUrl={apiBaseUrl}
                 fetch={fetch}
                 sessionId={activeSessionId ?? activeChatSessionId ?? 'unknown'}

@@ -14,7 +14,10 @@ function bslQuery(overrides: Partial<PythonBslQuery> = {}): PythonBslQuery {
   }
 }
 
-function createFakeWorker(options: { hangQuery?: boolean } = {}) {
+function createFakeWorker(options: {
+  hangQuery?: boolean
+  queryError?: { code: string; message: string }
+} = {}) {
   const writes: unknown[] = []
   const stdout = new PassThrough()
   const stderr = new PassThrough()
@@ -44,17 +47,19 @@ function createFakeWorker(options: { hangQuery?: boolean } = {}) {
           emitMessage({
             id: message.id,
             ok: true,
-            payload: (message.payload?.queries ?? []).map((query) => ({
-              ok: true,
-              output: {
-                kind: "data-bridge.table",
-                version: 1,
-                columns: [{ name: "query", type: "string" }],
-                rows: [{ query: query.query }],
-                rowCount: 1,
-                source: "bsl",
-              },
-            })),
+            payload: (message.payload?.queries ?? []).map((query) => options.queryError
+              ? { ok: false, error: options.queryError }
+              : {
+                  ok: true,
+                  output: {
+                    kind: "data-bridge.table",
+                    version: 1,
+                    columns: [{ name: "query", type: "string" }],
+                    rows: [{ query: query.query }],
+                    rowCount: 1,
+                    source: "bsl",
+                  },
+                }),
           })
         }
       })
@@ -99,6 +104,43 @@ describe("PythonBslRuntime", () => {
 
     await runtime.close()
     expect(worker.child.kill).not.toHaveBeenCalled()
+  })
+
+  it("preserves stable per-query worker error codes", async () => {
+    const worker = createFakeWorker({
+      queryError: {
+        code: "DATA_BRIDGE_BSL_DEFERRED_RESULT",
+        message: "BSL expression must return a concrete executable table",
+      },
+    })
+    const runtime = new PythonBslRuntime({ spawn: vi.fn(() => worker.child as never), workerPath: "/worker.py" })
+
+    await expect(runtime.queryBatch([bslQuery({ query: "_" })])).resolves.toEqual([{
+      ok: false,
+      error: {
+        code: "DATA_BRIDGE_BSL_DEFERRED_RESULT",
+        message: "BSL expression must return a concrete executable table",
+      },
+    }])
+    await runtime.close()
+  })
+
+  it("keeps worker tracebacks in server diagnostics without returning them to callers", async () => {
+    const worker = createFakeWorker({ hangQuery: true })
+    const runtime = new PythonBslRuntime({ spawn: vi.fn(() => worker.child as never), workerPath: "/worker.py" })
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true)
+    const pending = runtime.queryBatch([bslQuery()])
+    await vi.waitFor(() => expect(worker.writes).toHaveLength(2))
+
+    worker.child.stderr.write("Traceback: /private/model.yml\n")
+    worker.child.emit("exit", 1, null)
+
+    await expect(pending).rejects.toMatchObject({
+      code: "BSL_WORKER_EXITED",
+      message: "BSL worker exited (code 1)",
+    })
+    expect(stderr).toHaveBeenCalledWith("Traceback: /private/model.yml\n")
+    stderr.mockRestore()
   })
 
   it("rejects aborted requests without killing the warm worker", async () => {

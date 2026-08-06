@@ -1,5 +1,5 @@
 /**
- * GET /api/v1/agent/skills
+ * GET /api/v1/agents/:agentTypeId/skills
  *
  * Returns the list of PI skills discovered for the current workspace —
  * global skills (~/.pi/agent/skills) plus any project-local SKILL.md files.
@@ -157,6 +157,8 @@ function resourceKey(resource: AgentSkillResource): string {
 }
 
 export interface SkillsRoutesOptions {
+  path?: string
+  authorizeRequest?: (request: FastifyRequest) => void | Promise<void>
   workspace?: Workspace
   additionalSkillPaths?: string[]
   piPackages?: PiPackageSource[]
@@ -275,7 +277,8 @@ export function skillsRoutes(
     return entry
   }
 
-  app.get<{ Querystring: SkillsQuery }>('/api/v1/agent/skills', async (request, reply) => {
+  app.get<{ Querystring: SkillsQuery }>(opts.path ?? '/api/v1/agents/:agentTypeId/skills', async (request, reply) => {
+    await opts.authorizeRequest?.(request)
     try {
       const entry = await resolveSkillsForRequest(request, request.query.refresh === '1')
       return reply.code(200).send({ skills: entry.skills })

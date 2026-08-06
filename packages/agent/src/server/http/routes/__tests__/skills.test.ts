@@ -57,11 +57,11 @@ function buildApp(opts: Parameters<typeof skillsRoutes>[1]) {
   return app.ready().then(() => app)
 }
 
-describe('GET /api/v1/agent/skills', () => {
+describe('GET /api/v1/agents/default/skills', () => {
   test('returns skills array (possibly empty) for a workspace root', async () => {
     const app = await buildApp({ workspace: createNodeWorkspace(process.cwd()), noSkills: true })
 
-    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agents/default/skills' })
 
     expect(res.statusCode).toBe(200)
     expect(Array.isArray(res.json().skills)).toBe(true)
@@ -77,7 +77,7 @@ describe('GET /api/v1/agent/skills', () => {
       getFilesystemBindings: () => [sharedSkillBinding(() => allowed)],
     })
 
-    const catalog = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    const catalog = await app.inject({ method: 'GET', url: '/api/v1/agents/default/skills' })
     expect(catalog.statusCode).toBe(200)
     expect(catalog.json().skills).toContainEqual(expect.objectContaining({
       name: 'shared-review',
@@ -90,7 +90,7 @@ describe('GET /api/v1/agent/skills', () => {
     }))
 
     allowed = false
-    const deniedCatalog = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
+    const deniedCatalog = await app.inject({ method: 'GET', url: '/api/v1/agents/default/skills?refresh=1' })
     expect(deniedCatalog.json().skills).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'shared-review' }),
     ]))
@@ -107,7 +107,7 @@ describe('GET /api/v1/agent/skills', () => {
       noSkills: true,
       getFilesystemBindings: () => [sharedSkillBinding(() => true, 'company_context', deniedPath)],
     })
-    const catalog = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    const catalog = await app.inject({ method: 'GET', url: '/api/v1/agents/default/skills' })
     expect(catalog.json().skills).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'shared-review' }),
     ]))
@@ -122,13 +122,13 @@ describe('GET /api/v1/agent/skills', () => {
       getFilesystemBindings: () => bindings,
     })
 
-    const visible = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    const visible = await app.inject({ method: 'GET', url: '/api/v1/agents/default/skills' })
     expect(visible.json().skills).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'shared-review' }),
     ]))
 
     bindings = []
-    const hidden = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    const hidden = await app.inject({ method: 'GET', url: '/api/v1/agents/default/skills' })
     expect(hidden.json().skills).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'shared-review' }),
     ]))
@@ -146,7 +146,7 @@ describe('GET /api/v1/agent/skills', () => {
       ],
     })
 
-    const catalog = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    const catalog = await app.inject({ method: 'GET', url: '/api/v1/agents/default/skills' })
     const duplicates = catalog.json().skills.filter((skill: { name: string }) => skill.name === 'shared-review')
     expect(duplicates).toHaveLength(2)
     expect(duplicates.map((skill: { invocable: boolean }) => skill.invocable)).toEqual([true, false])
@@ -155,7 +155,7 @@ describe('GET /api/v1/agent/skills', () => {
   })
 
   // Ambient-skill discovery (noSkills: false) is covered end-to-end in
-  // ../../../__tests__/registerAgentRoutes.test.ts — fs fixtures are not
+  // ../../../__tests__/registerDirectAgentHostRoutes.test.ts — fs fixtures are not
   // allowed under routes/ (see scripts/check-invariants.sh).
 
   test('surfaces an error field instead of silently swallowing failures', async () => {
@@ -166,7 +166,7 @@ describe('GET /api/v1/agent/skills', () => {
       },
     })
 
-    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agents/default/skills' })
 
     expect(res.statusCode).toBe(200)
     const body = res.json()
@@ -176,6 +176,23 @@ describe('GET /api/v1/agent/skills', () => {
       message: 'skill discovery failed',
     })
     expect(JSON.stringify(body)).not.toContain('boom resolving workspace root')
+
+    await app.close()
+  })
+
+  test('propagates authorization denial instead of returning an empty successful result', async () => {
+    const app = await buildApp({
+      workspace: createNodeWorkspace(process.cwd()),
+      noSkills: true,
+      authorizeRequest: () => {
+        throw Object.assign(new Error('skills access denied'), { statusCode: 403 })
+      },
+    })
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agents/default/skills' })
+
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toMatchObject({ message: 'skills access denied' })
 
     await app.close()
   })

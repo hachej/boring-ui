@@ -1,3 +1,9 @@
+import type { UiFileResource } from "../../../../shared/types/filesystem"
+export type {
+  FilesystemCatalogCapabilities,
+  FilesystemCatalogEntry,
+} from "@hachej/boring-bash/shared"
+
 export type FilesystemCapability = "read" | "write" | "create-child" | "delete" | "move-from"
 
 export type FilesystemCapabilities = Readonly<Record<FilesystemCapability, boolean>>
@@ -39,6 +45,8 @@ export interface FileContent extends FilesystemAccessProjection {
    */
   mtimeMs?: number
 }
+
+export type FileSearchResource = UiFileResource
 
 export interface FileStat extends FilesystemAccessProjection {
   size: number

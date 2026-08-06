@@ -29,6 +29,7 @@ const {
 }));
 
 vi.mock("@mariozechner/pi-coding-agent", () => ({
+  CURRENT_SESSION_VERSION: 3,
   createAgentSession: vi.fn().mockImplementation(async (config: any) => {
     mockCreateAgentSessionConfigs.push(config);
     mockCurrentModel.value = config.model;
@@ -137,13 +138,15 @@ describe("runtime cwd separation", () => {
       abortSignal: new AbortController().signal,
       workdir: "/workspace",
     };
-    await harness.getPiSessionAdapter({ sessionId: "sess-runtime-cwd", content: "" }, ctx);
+    const created = await harness.sessions.create({});
+    await harness.getPiSessionAdapter({ sessionId: created.id, content: "" }, ctx);
 
     expect(mockResourceLoaderOptions[0]?.cwd).toBe("/tmp/host-storage-root");
-    expect(mockSessionManagerCreate).toHaveBeenCalledWith("/workspace", "/tmp/pi-session-storage");
+    expect(mockSessionManagerCreate).not.toHaveBeenCalled();
+    expect(mockSessionManagerOpen).toHaveBeenCalledWith(expect.stringContaining(created.id), undefined, "/workspace");
     expect(mockCreateAgentSessionConfigs[0]?.cwd).toBe("/workspace");
 
-    const systemPrompt = harness.getSystemPrompt?.("sess-runtime-cwd") ?? "";
+    const systemPrompt = harness.getSystemPrompt?.(created.id) ?? "";
     expect(systemPrompt).toContain('The "Current working directory" line in this prompt is the workspace root.');
     expect(systemPrompt.split("\n").filter((line) => line.startsWith("Current working directory: "))).toEqual([
       "Current working directory: /workspace",

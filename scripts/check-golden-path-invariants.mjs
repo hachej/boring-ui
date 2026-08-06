@@ -144,7 +144,6 @@ runRg(
     "**/src/server/routes/**",
     "**/src/server/**/routes.ts",
     "**/src/server/**/*Routes.ts",
-    "!**/registerAgentRoutes.ts",
     "!**/__tests__/**",
     "!**/node_modules/**",
     "!**/dist/**",

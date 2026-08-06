@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { ErrorCode } from "@hachej/boring-agent/shared"
 import type { FastifyInstance } from "fastify"
 import { existsSync } from "node:fs"
@@ -38,21 +39,9 @@ async function writePiOnlyPackage(workspaceRoot: string): Promise<string> {
   await writeFile(join(pluginDir, "package.json"), JSON.stringify({
     name: "pi-smoke",
     version: "0.0.0",
-    pi: {
-      extensions: ["index.ts"],
-      skills: ["skills"],
-    },
+    pi: { extensions: ["index.ts"], skills: ["skills"] },
   }), "utf8")
-  await writeFile(join(pluginDir, "index.ts"), `
-    export default function piSmoke(pi) {
-      pi.registerTool({
-        name: "pi_smoke_echo",
-        description: "Pi package smoke test tool",
-        parameters: { type: "object", properties: {} },
-        execute: async () => ({ content: [{ type: "text", text: "PI_SMOKE_OK" }] }),
-      })
-    }
-  `, "utf8")
+  await writeFile(join(pluginDir, "index.ts"), "export default function piSmoke() {}\n", "utf8")
   await writeFile(join(pluginDir, "skills", "pi-smoke", "SKILL.md"), [
     "---",
     "name: pi-smoke",
@@ -125,10 +114,11 @@ describe("Pi settings plugin-source discovery", () => {
 })
 
 describe("runtime backend integration with canonical reload", () => {
-  test("reload discovers workspace-local Pi package sources for Pi resources and Boring runtime plugins", async () => {
+  test("reload discovers workspace-local Pi resources and Boring runtime plugins", async () => {
     const workspaceRoot = await tempRoot("runtime-backend-pi-sources-")
     const app = await createWorkspaceAgentServer({ workspaceRoot, mode: "direct", logger: false, provisionWorkspace: false })
     try {
+      expect((await app.inject({ method: "GET", url: "/api/v1/agents/default/ready-status" })).statusCode).toBe(200)
       await writePiOnlyPackage(workspaceRoot)
       await writeBoringOnlyPackage(workspaceRoot)
       await writeProjectPiSettings(workspaceRoot, [
@@ -136,8 +126,8 @@ describe("runtime backend integration with canonical reload", () => {
         "../plugins/boring-smoke",
       ])
 
-      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
-      expect(reload.statusCode).toBe(200)
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agents/default/reload", payload: { requestId: "runtime-backend-initial" } })
+      expect(reload.statusCode, reload.body).toBe(200)
 
       const plugins = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       expect(plugins.statusCode).toBe(200)
@@ -145,14 +135,13 @@ describe("runtime backend integration with canonical reload", () => {
       expect(pluginIds).toContain("boring-smoke")
       expect(pluginIds).not.toContain("pi-smoke")
 
+      const skills = await app.inject({ method: "GET", url: "/api/v1/agents/default/skills" })
+      expect(skills.statusCode).toBe(200)
+      expect(skills.json().skills.map((skill: { name: string }) => skill.name)).toContain("pi-smoke")
+
       const ping = await app.inject({ method: "GET", url: "/api/v1/plugins/boring-smoke/ping" })
       expect(ping.statusCode).toBe(200)
       expect(ping.json()).toEqual({ ok: true, plugin: "boring-smoke" })
-
-      const skills = await app.inject({ method: "GET", url: "/api/v1/agent/skills" })
-      expect(skills.statusCode).toBe(200)
-      const skillNames = skills.json().skills.map((skill: { name: string }) => skill.name)
-      expect(skillNames).toContain("pi-smoke")
 
       expect(existsSync(join(workspaceRoot, ".pi", "boring-plugin-sources.json"))).toBe(false)
     } finally {
@@ -160,7 +149,7 @@ describe("runtime backend integration with canonical reload", () => {
     }
   }, 20_000)
 
-  test("serves external boring.server handlers through the gateway and hot-reloads via /api/v1/agent/reload", async () => {
+  test("serves external boring.server handlers through the gateway and hot-reloads via /api/v1/agents/default/reload", async () => {
     const workspaceRoot = await tempRoot("runtime-backend-app-")
     const pluginDir = await writeExternalPlugin(workspaceRoot, "runtime-plugin", `
       export default {
@@ -169,6 +158,7 @@ describe("runtime backend integration with canonical reload", () => {
     `)
     const app = await createWorkspaceAgentServer({ workspaceRoot, mode: "direct", logger: false, provisionWorkspace: false })
     try {
+      expect((await app.inject({ method: "GET", url: "/api/v1/agents/default/ready-status" })).statusCode).toBe(200)
       const first = await app.inject({ method: "GET", url: "/api/v1/plugins/runtime-plugin/value" })
       expect(first.statusCode).toBe(200)
       expect(first.json()).toEqual({ value: "one" })
@@ -178,7 +168,7 @@ describe("runtime backend integration with canonical reload", () => {
           routes(router) { router.get("/value", () => ({ value: "two" })) },
         }
       `, "utf8")
-      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agents/default/reload", payload: { requestId: "runtime-backend-v2" } })
       expect(reload.statusCode).toBe(200)
       expect(reload.json().restart_warnings).toBeUndefined()
 
@@ -187,7 +177,7 @@ describe("runtime backend integration with canonical reload", () => {
       expect(second.json()).toEqual({ value: "two" })
 
       await writeFile(join(pluginDir, "server.ts"), `export default { routes(router) { router.get("/value", () => ({ value: `, "utf8")
-      const failedReload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const failedReload = await app.inject({ method: "POST", url: "/api/v1/agents/default/reload", payload: { requestId: "runtime-backend-invalid" } })
       expect(failedReload.statusCode).toBe(200)
       expect(failedReload.json().diagnostics).toEqual(expect.arrayContaining([
         expect.objectContaining({ pluginId: "runtime-plugin", code: ErrorCode.enum.RUNTIME_PLUGIN_LOAD_FAILED }),
@@ -197,8 +187,6 @@ describe("runtime backend integration with canonical reload", () => {
       expect(afterFailure.statusCode).toBe(200)
       expect(afterFailure.json()).toEqual({ value: "two" })
 
-      const oldReload = await app.inject({ method: "POST", url: "/api/boring.reload", payload: {} })
-      expect(oldReload.statusCode).toBe(404)
     } finally {
       await app.close()
     }
@@ -211,9 +199,10 @@ describe("runtime backend integration with canonical reload", () => {
     `)
     let app: FastifyInstance | null = await createWorkspaceAgentServer({ workspaceRoot, mode: "direct", logger: false, provisionWorkspace: false })
     try {
+      expect((await app.inject({ method: "GET", url: "/api/v1/agents/default/ready-status" })).statusCode).toBe(200)
       expect((await app.inject({ method: "GET", url: "/api/v1/plugins/removable-plugin/value" })).statusCode).toBe(200)
       await rm(pluginDir, { recursive: true, force: true })
-      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agents/default/reload", payload: { requestId: "runtime-backend-removed" } })
       expect(reload.statusCode).toBe(200)
       const after = await app.inject({ method: "GET", url: "/api/v1/plugins/removable-plugin/value" })
       expect(after.statusCode).toBe(404)
@@ -229,6 +218,7 @@ describe("runtime backend integration with canonical reload", () => {
     const state = globalThis as typeof globalThis & { __runtimeBackendCloseHookDisposeCount?: number }
     state.__runtimeBackendCloseHookDisposeCount = 0
     const app = await createWorkspaceAgentServer({ workspaceRoot, mode: "direct", logger: false, provisionWorkspace: false })
+    expect((await app.inject({ method: "GET", url: "/api/v1/agents/default/ready-status" })).statusCode).toBe(200)
     await writeExternalPlugin(workspaceRoot, "close-plugin", `
       export default {
         routes(router) { router.get("/value", () => ({ ok: true })) },
@@ -236,7 +226,7 @@ describe("runtime backend integration with canonical reload", () => {
       }
     `)
     try {
-      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agents/default/reload", payload: { requestId: "runtime-backend-close" } })
       expect(reload.statusCode).toBe(200)
       expect((await app.inject({ method: "GET", url: "/api/v1/plugins/close-plugin/value" })).statusCode).toBe(200)
     } finally {

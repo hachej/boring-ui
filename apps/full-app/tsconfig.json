@@ -18,6 +18,35 @@
     "types": [
       "node"
     ],
+    "paths": {
+      "@hachej/boring-agent/shared": ["../../packages/agent/src/shared/index.ts"],
+      "@hachej/boring-agent/server": ["../../packages/agent/src/server/index.ts"],
+      "@hachej/boring-bash/agent": ["../../packages/boring-bash/src/agent/index.ts"],
+      "@hachej/boring-bash/server": ["../../packages/boring-bash/src/server/index.ts"],
+      "@hachej/boring-sandbox/shared": ["../../packages/boring-sandbox/src/shared/index.ts"],
+      "@hachej/boring-sandbox/providers/direct": ["../../packages/boring-sandbox/src/providers/direct/index.ts"],
+      "@hachej/boring-sandbox/providers/bwrap": ["../../packages/boring-sandbox/src/providers/bwrap/index.ts"],
+      "@hachej/boring-sandbox/providers/node-workspace": ["../../packages/boring-sandbox/src/providers/node-workspace/index.ts"],
+      "@hachej/boring-sandbox/providers/vercel-sandbox": ["../../packages/boring-sandbox/src/providers/vercel-sandbox/index.ts"],
+      "@hachej/boring-core/app/front": ["../../packages/core/src/app/front/index.ts"],
+      "@hachej/boring-core/app/server": ["../../packages/core/src/app/server/index.ts"],
+      "@hachej/boring-core/app/vite": ["../../packages/core/src/app/vite/index.ts"],
+      "@hachej/boring-core/front": ["../../packages/core/src/front/index.ts"],
+      "@hachej/boring-core/server": ["../../packages/core/src/server/index.ts"],
+      "@hachej/boring-core/shared": ["../../packages/core/src/shared/index.ts"],
+      "@hachej/boring-workspace": ["../../packages/workspace/src/index.ts"],
+      "@hachej/boring-workspace/app/front": ["../../packages/workspace/src/app/front/index.ts"],
+      "@hachej/boring-workspace/app/server": ["../../packages/workspace/src/app/server/index.ts"],
+      "@hachej/boring-workspace/plugin": ["../../packages/workspace/src/plugin.ts"],
+      "@hachej/boring-workspace/server": ["../../packages/workspace/src/server/index.ts"],
+      "@hachej/boring-automation/front": ["../../plugins/boring-automation/src/front/index.tsx"],
+      "@hachej/boring-automation/server": ["../../plugins/boring-automation/src/server/index.ts"],
+      "@hachej/boring-governance/front": ["../../plugins/boring-governance/src/front/index.tsx"],
+      "@hachej/boring-governance/server": ["../../plugins/boring-governance/src/server/index.ts"],
+      "@hachej/boring-mcp/front": ["../../plugins/boring-mcp/src/front/index.tsx"],
+      "@hachej/boring-mcp/server": ["../../plugins/boring-mcp/src/server/index.ts"],
+      "@hachej/boring-mcp/shared": ["../../plugins/boring-mcp/src/shared/index.ts"]
+    },
     "ignoreDeprecations": "6.0"
   },
   "include": [

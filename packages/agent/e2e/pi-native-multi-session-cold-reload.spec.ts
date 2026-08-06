@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test'
+import { appendFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from './fixtures'
@@ -121,16 +122,19 @@ test.describe('Pi-native multi-session cold reload', () => {
   })
 
   test('real runtime retries reload-time session-list 503s without switching or auto-creating the selected session', async ({ page, workspace }, testInfo) => {
+    test.setTimeout(90_000)
+    const sessionRoot = path.join(workspace.root, '.pi-sessions')
     const backend = await spawnBackend({
       workspaceRoot: workspace.root,
       repoRoot,
       env: {
         BORING_AGENT_E2E_SCRIPTED_PI: '1',
+        BORING_AGENT_SESSION_ROOT: sessionRoot,
       },
     })
     const sessionListStatuses: number[] = []
     page.on('response', (response) => {
-      if (new URL(response.url()).pathname === '/api/v1/agent/pi-chat/sessions') {
+      if (new URL(response.url()).pathname === '/api/v1/agents/default/sessions') {
         sessionListStatuses.push(response.status())
       }
     })
@@ -140,7 +144,11 @@ test.describe('Pi-native multi-session cold reload', () => {
       const older = await createPiSession(backend.apiUrl, 'Older runtime session')
       const selected = await createPiSession(backend.apiUrl, 'Selected runtime session')
       const newer = await createPiSession(backend.apiUrl, 'Newer runtime session')
-      await seedSelectedSession(backend.apiUrl, selected.id)
+      await Promise.all([
+        seedVisibleNativeTranscript(sessionRoot, older.id),
+        seedVisibleNativeTranscript(sessionRoot, selected.id),
+        seedVisibleNativeTranscript(sessionRoot, newer.id),
+      ])
       await page.addInitScript(([activeSessionKey, activeSessionId]) => {
         localStorage.setItem(activeSessionKey, activeSessionId)
       }, [ACTIVE_SESSION_KEY, selected.id])
@@ -158,7 +166,7 @@ test.describe('Pi-native multi-session cold reload', () => {
       let transientFailuresRemaining = 2
       // Match the list endpoint with or without its ?activeSessionId=… query
       // (but not /sessions/<id>/… subpaths), so the 503 injection still fires.
-      await page.route(/\/api\/v1\/agent\/pi-chat\/sessions(\?|$)/, async (route) => {
+      await page.route(/\/api\/v1\/agents\/default\/sessions(\?|$)/, async (route) => {
         if (transientFailuresRemaining > 0) {
           transientFailuresRemaining -= 1
           await route.fulfill({
@@ -246,12 +254,18 @@ interface RuntimeSessionSummary {
   title: string
 }
 
+interface AddressedRuntimeSessionSummary {
+  ref: { agentTypeId: string; sessionId: string }
+  title: string
+}
+
 async function clearSessions(apiUrl: string): Promise<void> {
-  const response = await fetch(`${apiUrl}/api/v1/agent/pi-chat/sessions`)
+  const response = await fetch(`${apiUrl}/api/v1/agents/default/sessions`)
   expect(response.status).toBe(200)
-  const sessions = await response.json() as RuntimeSessionSummary[]
+  const payload = await response.json() as { sessions: AddressedRuntimeSessionSummary[] }
+  const sessions = payload.sessions.map((session) => ({ id: session.ref.sessionId, title: session.title }))
   for (const session of sessions) {
-    const deleted = await fetch(`${apiUrl}/api/v1/agent/pi-chat/sessions/${encodeURIComponent(session.id)}`, {
+    const deleted = await fetch(`${apiUrl}/api/v1/agents/default/sessions/${encodeURIComponent(session.id)}`, {
       method: 'DELETE',
     })
     expect([204, 404]).toContain(deleted.status)
@@ -259,54 +273,49 @@ async function clearSessions(apiUrl: string): Promise<void> {
 }
 
 async function createPiSession(apiUrl: string, title: string): Promise<RuntimeSessionSummary> {
-  const response = await fetch(`${apiUrl}/api/v1/agent/pi-chat/sessions`, {
+  const response = await fetch(`${apiUrl}/api/v1/agents/default/sessions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-boring-storage-scope': STORAGE_SCOPE,
     },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ requestId: `create-${title.replace(/[^A-Za-z0-9._:-]+/g, '-')}`, title }),
   })
   expect(response.status).toBe(201)
-  return await response.json() as RuntimeSessionSummary
+  const ref = await response.json() as { agentTypeId: string; sessionId: string }
+  return { id: ref.sessionId, title }
 }
 
 async function listPiSessions(apiUrl: string): Promise<RuntimeSessionSummary[]> {
-  const response = await fetch(`${apiUrl}/api/v1/agent/pi-chat/sessions`, {
+  const response = await fetch(`${apiUrl}/api/v1/agents/default/sessions`, {
     headers: { 'x-boring-storage-scope': STORAGE_SCOPE },
   })
   expect(response.status).toBe(200)
-  return await response.json() as RuntimeSessionSummary[]
+  const payload = await response.json() as { sessions: AddressedRuntimeSessionSummary[] }
+  return payload.sessions.map((session) => ({ id: session.ref.sessionId, title: session.title }))
 }
 
-async function seedSelectedSession(apiUrl: string, sessionId: string): Promise<void> {
-  const prompt = await fetch(`${apiUrl}/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/prompt`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-boring-storage-scope': STORAGE_SCOPE,
-    },
-    body: JSON.stringify({
-      message: 'seed selected runtime transcript',
-      clientNonce: 'seed-selected-runtime-transcript',
-    }),
-  })
-  expect(prompt.status).toBe(202)
+async function seedVisibleNativeTranscript(sessionRoot: string, sessionId: string): Promise<void> {
+  const filepath = await findSessionTranscript(sessionRoot, sessionId)
+  const timestamp = new Date().toISOString()
+  const entries = [
+    { type: 'message', id: `user-${sessionId}`, parentId: null, timestamp, message: { role: 'user', content: `seed ${sessionId}` } },
+    { type: 'message', id: `assistant-${sessionId}`, parentId: `user-${sessionId}`, timestamp, message: { role: 'assistant', content: [{ type: 'text', text: 'seeded' }] } },
+  ]
+  await appendFile(filepath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`, 'utf8')
+}
 
-  await expect.poll(async () => {
-    const state = await fetch(`${apiUrl}/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/state`, {
-      headers: { 'x-boring-storage-scope': STORAGE_SCOPE },
-    })
-    if (state.status !== 200) return false
-    const body = await state.json() as { status?: string; messages?: Array<{ role?: string; parts?: Array<{ text?: string }> }> }
-    return body.status === 'idle' && body.messages?.some((message) => (
-      message.role === 'assistant' &&
-      message.parts?.some((part) => part.text?.includes('PI_NATIVE_ASSISTANT_DONE'))
-    )) === true
-  }, {
-    message: `expected seeded Pi session ${sessionId} to complete before browser hydration`,
-    timeout: 15_000,
-  }).toBe(true)
+async function findSessionTranscript(directory: string, sessionId: string): Promise<string> {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name)
+    if (entry.isDirectory()) {
+      const match = await findSessionTranscript(entryPath, sessionId).catch(() => undefined)
+      if (match) return match
+    } else if (entry.name.endsWith(`_${sessionId}.jsonl`) || entry.name === `${sessionId}.jsonl`) {
+      return entryPath
+    }
+  }
+  throw new Error(`No native transcript found for ${sessionId} under ${directory}`)
 }
 
 async function assertSelectedRuntimeSession(page: Page, selectedId: string, expectedTitles: string[]): Promise<void> {

@@ -133,4 +133,18 @@ describe('ToolCallGroup renderer metadata', () => {
     }))
     expect(html).toContain('fallback:custom_tool')
   })
+
+  test('renders opt-in inline renderers outside the collapsed details disclosure', () => {
+    const inlineRenderer = Object.assign(
+      vi.fn((part: ToolPart) => <div>inline:{part.toolCallId}</div>),
+      { presentation: 'inline' as const },
+    )
+    const html = renderToStaticMarkup(
+      <ToolCallGroup tools={[{ part: toolPart() as any, key: 'call-1' }]} mergedToolRenderers={{ custom_tool: inlineRenderer }} />,
+    )
+
+    expect(html).toContain('data-boring-agent-part="inline-tool-renderer"')
+    expect(html).toContain('inline:call-1')
+    expect(inlineRenderer).toHaveBeenCalledTimes(1)
+  })
 })

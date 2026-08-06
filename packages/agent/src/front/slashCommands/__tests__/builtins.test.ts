@@ -126,6 +126,11 @@ describe('/thinking', () => {
 })
 
 describe('all builtins registered', () => {
+  test('only /reload opts into direct assistant-message execution', () => {
+    expect(builtinCommands.filter((command) => command.clickBehavior === 'execute').map((command) => command.name)).toEqual(['reload'])
+    expect(getBuiltin('reset').clickBehavior).toBeUndefined()
+  })
+
   test.each(['reset', 'clear', 'reload', 'model', 'thinking', 'help'])('includes /%s', (name) => {
     expect(builtinCommands.find((c) => c.name === name)).toBeDefined()
   })

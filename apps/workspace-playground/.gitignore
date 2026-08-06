@@ -4,5 +4,7 @@
 workspace/
 skill-review-workspace/
 skill-review-sessions/
+# Separate read-only binding used by multi-filesystem playground tests.
+e2e/fixtures/company-context/
 # Playwright/dev Pi session transcripts are mutable host/runtime data.
 sessions/

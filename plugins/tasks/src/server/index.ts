@@ -1,7 +1,8 @@
 import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import { TASKS_PLUGIN_ID, TASKS_PLUGIN_LABEL } from "../shared"
-import { createGitHubTaskSource, createGhCliGitHubIssueExecutor, createWorkspaceGitHubTaskSource } from "./githubSource"
-import { createTaskSourceRegistry, type BoringTaskSourceRegistry, type BoringTaskSourceRuntime } from "./sourceRuntime"
+import type { BeadsOperations } from "./beadsOperations"
+import { createTaskSourceRegistryFromConfig } from "./sourceConfig"
+import { createTaskSourceRegistry, type BoringTaskSourceRuntime } from "./sourceRuntime"
 import { createTaskSourceService, TaskSourceServiceError } from "./taskSourceService"
 
 function workspaceIdFromRequest(request: { headers: Record<string, string | string[] | undefined>; query?: unknown }): string | undefined {
@@ -13,9 +14,9 @@ function workspaceIdFromRequest(request: { headers: Record<string, string | stri
 
 function responseError(cause: unknown) {
   if (cause instanceof TaskSourceServiceError) {
-    return { ok: false, code: cause.code, error: cause.message }
+    return { ok: false, code: cause.code, error: cause.message, message: cause.message, retryable: cause.retryable }
   }
-  return { ok: false, code: "TASK_SOURCE_ERROR", error: "Task source request failed." }
+  return { ok: false, code: "TASK_SOURCE_ERROR", error: "Task source request failed.", message: "Task source request failed.", retryable: true }
 }
 
 function statusFor(cause: unknown): number {
@@ -49,58 +50,45 @@ export interface TasksServerPluginOptions {
   config?: unknown
   sources?: BoringTaskSourceRuntime[]
   workspaceRoot?: string
-}
-
-interface TaskProviderConfig {
-  provider?: unknown
-  repo?: unknown
-}
-
-function taskProvidersFromConfig(config: unknown): TaskProviderConfig[] {
-  if (!config || typeof config !== "object" || Array.isArray(config)) return []
-  const providers = (config as { providers?: unknown }).providers
-  return Array.isArray(providers)
-    ? providers.filter((provider): provider is TaskProviderConfig => Boolean(provider) && typeof provider === "object" && !Array.isArray(provider))
-    : []
-}
-
-export function createTaskSourceRegistryFromConfig(config: unknown, options: { workspaceRoot?: string } = {}): BoringTaskSourceRegistry {
-  const sources = taskProvidersFromConfig(config).flatMap((provider, index): BoringTaskSourceRuntime[] => {
-    if (provider.provider !== "github") return []
-    const repo = typeof provider.repo === "string" ? provider.repo.trim() : ""
-    if (repo && repo !== "auto") {
-      const [owner, name] = repo.split("/")
-      if (!owner || !name) return []
-      return [createGitHubTaskSource({
-        owner,
-        repo: name,
-        executor: createGhCliGitHubIssueExecutor({ workspaceRoot: options.workspaceRoot }),
-      })]
-    }
-    return [createWorkspaceGitHubTaskSource({
-      workspaceRoot: options.workspaceRoot,
-      sourceId: index === 0 ? "github:workspace" : `github:workspace:${index + 1}`,
-    })]
-  })
-  return createTaskSourceRegistry(sources)
+  /** Trusted Workspace-bound read capability. Request/config data cannot supply it. */
+  beadsOperations?: BeadsOperations
 }
 
 export function createTasksServerPlugin(options: TasksServerPluginOptions = {}): WorkspaceServerPlugin {
   const registry = options.sources
     ? createTaskSourceRegistry(options.sources)
-    : createTaskSourceRegistryFromConfig(options.config, { workspaceRoot: options.workspaceRoot })
+    : createTaskSourceRegistryFromConfig(options.config, {
+        workspaceRoot: options.workspaceRoot,
+        beadsOperations: options.beadsOperations,
+      })
   const service = createTaskSourceService(registry)
 
   return defineServerPlugin({
     id: TASKS_PLUGIN_ID,
     label: TASKS_PLUGIN_LABEL,
     routes: async (app) => {
+      if (options.beadsOperations?.dispose) {
+        app.addHook("onClose", async () => options.beadsOperations?.dispose?.())
+      }
       app.get("/api/boring-tasks/sources", async () => ({ ok: true, sources: service.listSources() }))
 
       app.post("/api/boring-tasks/sources/tasks/list", async (request, reply) => {
         try {
           const body = request.body === undefined ? {} : bodyObject(request.body)
           return { ok: true, ...(await service.listTasks({ workspaceId: workspaceIdFromRequest(request), workspaceRoot: options.workspaceRoot }, { sourceIds: stringArray(body.sourceIds) })) }
+        } catch (cause) {
+          return reply.status(statusFor(cause)).send(responseError(cause))
+        }
+      })
+
+      app.post("/api/boring-tasks/sources/tasks/get", async (request, reply) => {
+        try {
+          const body = bodyObject(request.body)
+          const detail = await service.getTask({ workspaceId: workspaceIdFromRequest(request), workspaceRoot: options.workspaceRoot }, {
+            sourceId: requiredString(body, "sourceId"),
+            taskId: requiredString(body, "taskId"),
+          })
+          return { ok: true, detail }
         } catch (cause) {
           return reply.status(statusFor(cause)).send(responseError(cause))
         }
@@ -142,4 +130,16 @@ export default function defaultTasksServerPlugin(options?: TasksServerPluginOpti
 
 export { createGitHubTaskSource, createWorkspaceGitHubTaskSource, createGhCliGitHubIssueExecutor, createGhCliGitHubRepositoryDetector } from "./githubSource"
 export { createTaskSourceRegistry } from "./sourceRuntime"
+export { createTaskSourceRegistryFromConfig } from "./sourceConfig"
 export { createTaskSourceService, TaskSourceServiceError } from "./taskSourceService"
+export { TASK_DETAIL_LIMITS, TaskDetailValidationError, validateTaskDetail } from "./taskDtoValidation"
+export { BEADS_SOURCE_ID, SUPPORTED_BEADS_VERSION, createBeadsTaskSource } from "./beadsSource"
+export {
+  BeadsOperationError,
+  createWorkspaceBeadsOperations,
+  isAllowedBeadsReadArgs,
+  isValidBeadId,
+  type BeadsOperations,
+  type BeadsReadLimits,
+  type BeadsWorkspaceAuthority,
+} from "./beadsOperations"

@@ -29,7 +29,10 @@ function snapshot(overrides: Partial<PiChatSnapshot> = {}): PiChatSnapshot {
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+  const addressed = typeof body === 'object' && body !== null && 'protocolVersion' in body
+    ? { ref: { agentTypeId: 'default', sessionId: (body as PiChatSnapshot).sessionId }, state: body }
+    : body
+  return new Response(JSON.stringify(addressed), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
 function openNdjsonStream() {
@@ -67,6 +70,7 @@ type MockFetch = typeof globalThis.fetch & { mock: { calls: Array<[string, Reque
 
 function createSession(fetchMock: typeof globalThis.fetch, extra: Partial<ConstructorParameters<typeof RemotePiSession>[0]> = {}) {
   return new RemotePiSession({
+    agentTypeId: 'default',
     sessionId: 's1',
     workspaceId: 'workspace-a',
     storageScope: 'scope-a',
@@ -141,8 +145,8 @@ describe('RemotePiSession', () => {
 
     await waitUntil(() => fetchMock.mock.calls.length >= 2)
 
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://agent.test/api/v1/agent/pi-chat/s1/state')
-    expect(fetchMock.mock.calls[1]?.[0]).toBe('https://agent.test/api/v1/agent/pi-chat/s1/events?cursor=42')
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://agent.test/api/v1/agents/default/sessions/s1/state')
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('https://agent.test/api/v1/agents/default/sessions/s1/events?cursor=42')
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ headers: { 'x-boring-storage-scope': 'scope-a' } })
     expect(session.getState()).toMatchObject({ hydrated: true, lastSeq: 42, status: 'streaming', turnId: 'turn-1' })
     expect(session.getState().committedMessages).toHaveLength(1)
@@ -238,10 +242,10 @@ describe('RemotePiSession', () => {
     await waitUntil(() => fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/events?cursor=20')))
 
     expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
-      'https://agent.test/api/v1/agent/pi-chat/s1/state',
-      'https://agent.test/api/v1/agent/pi-chat/s1/events?cursor=10',
-      'https://agent.test/api/v1/agent/pi-chat/s1/state',
-      'https://agent.test/api/v1/agent/pi-chat/s1/events?cursor=20',
+      'https://agent.test/api/v1/agents/default/sessions/s1/state',
+      'https://agent.test/api/v1/agents/default/sessions/s1/events?cursor=10',
+      'https://agent.test/api/v1/agents/default/sessions/s1/state',
+      'https://agent.test/api/v1/agents/default/sessions/s1/events?cursor=20',
     ])
     expect(session.getState()).toMatchObject({ hydrated: true, lastSeq: 20, status: 'idle' })
     expect(session.getState().committedMessages).toHaveLength(1)
@@ -413,14 +417,14 @@ describe('RemotePiSession', () => {
     expect(session.getState()).toMatchObject({ status: 'idle', streamingMessage: undefined, needsResync: undefined })
     expect(session.getState().committedMessages.map((message) => message.id)).toEqual(['u1', 'a1'])
     expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
-      'https://agent.test/api/v1/agent/pi-chat/s1/state',
-      'https://agent.test/api/v1/agent/pi-chat/s1/events?cursor=10',
-      'https://agent.test/api/v1/agent/pi-chat/s1/state',
-      'https://agent.test/api/v1/agent/pi-chat/s1/events?cursor=14',
-      'https://agent.test/api/v1/agent/pi-chat/s1/state',
-      'https://agent.test/api/v1/agent/pi-chat/s1/events?cursor=20',
-      'https://agent.test/api/v1/agent/pi-chat/s1/state',
-      'https://agent.test/api/v1/agent/pi-chat/s1/events?cursor=22',
+      'https://agent.test/api/v1/agents/default/sessions/s1/state',
+      'https://agent.test/api/v1/agents/default/sessions/s1/events?cursor=10',
+      'https://agent.test/api/v1/agents/default/sessions/s1/state',
+      'https://agent.test/api/v1/agents/default/sessions/s1/events?cursor=14',
+      'https://agent.test/api/v1/agents/default/sessions/s1/state',
+      'https://agent.test/api/v1/agents/default/sessions/s1/events?cursor=20',
+      'https://agent.test/api/v1/agents/default/sessions/s1/state',
+      'https://agent.test/api/v1/agents/default/sessions/s1/events?cursor=22',
     ])
 
     session.dispose()
@@ -658,7 +662,7 @@ describe('RemotePiSession', () => {
     await waitUntil(() => fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/events?cursor=0')))
     await waitUntil(() => session.getState().connection.state === 'connected')
 
-    expect(fetchMock.mock.calls.map((call) => String(call[0]))).not.toContain('https://agent.test/api/v1/agent/pi-chat/s1/state')
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).not.toContain('https://agent.test/api/v1/agents/default/sessions/s1/state')
     const eventCallIndex = fetchMock.mock.calls.findIndex((call) => String(call[0]).endsWith('/events?cursor=0'))
     await waitUntil(() => fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/prompt')))
     const promptCallIndex = fetchMock.mock.calls.findIndex((call) => String(call[0]).endsWith('/prompt'))
@@ -795,11 +799,11 @@ describe('RemotePiSession', () => {
 
     const postCalls = fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method === 'POST')
     expect(postCalls.map((call) => [String(call[0]), (call[1] as RequestInit | undefined)?.method])).toEqual([
-      ['https://agent.test/api/v1/agent/pi-chat/s1/prompt', 'POST'],
-      ['https://agent.test/api/v1/agent/pi-chat/s1/followup', 'POST'],
-      ['https://agent.test/api/v1/agent/pi-chat/s1/queue/clear', 'POST'],
-      ['https://agent.test/api/v1/agent/pi-chat/s1/interrupt', 'POST'],
-      ['https://agent.test/api/v1/agent/pi-chat/s1/stop', 'POST'],
+      ['https://agent.test/api/v1/agents/default/sessions/s1/prompt', 'POST'],
+      ['https://agent.test/api/v1/agents/default/sessions/s1/followup', 'POST'],
+      ['https://agent.test/api/v1/agents/default/sessions/s1/queue/clear', 'POST'],
+      ['https://agent.test/api/v1/agents/default/sessions/s1/interrupt', 'POST'],
+      ['https://agent.test/api/v1/agents/default/sessions/s1/stop', 'POST'],
     ])
     expect(JSON.parse(String(postCalls[2]?.[1]?.body))).toEqual({ clientNonce: 'nonce-q', clientSeq: 1 })
     expect(session.getState().committedMessages).toEqual([])

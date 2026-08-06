@@ -19,6 +19,7 @@ function snapshot(overrides: Partial<UiHardGateSnapshot> = {}): UiHardGateSnapsh
       inputDividerCount: 1,
       dialogWidth: 630,
       keyboardHintsPresent: true,
+      touchHintPresent: true,
       commandModePressed: false,
     },
     documentWidth: { scrollWidth: 390, clientWidth: 390 },
@@ -112,14 +113,33 @@ describe("command palette hard gates", () => {
 
   it("allows only origin-bound exact startup aborts", () => {
     const allowed = evaluateCommandPaletteHardGates(snapshot({
-      requestFailures: [{ url: "http://127.0.0.1:5380/api/v1/ready-status", errorText: "net::ERR_ABORTED" }],
+      requestFailures: [{ url: "http://127.0.0.1:5380/api/v1/agents/default/ready-status", errorText: "net::ERR_ABORTED" }],
     }))
     expect(allowed.results.find((result) => result.id === "request-failures")?.passed).toBe(true)
 
     const external = evaluateCommandPaletteHardGates(snapshot({
-      requestFailures: [{ url: "https://example.com/api/v1/ready-status", errorText: "net::ERR_ABORTED" }],
+      requestFailures: [{ url: "https://example.com/api/v1/agents/default/ready-status", errorText: "net::ERR_ABORTED" }],
     }))
     expect(external.results.find((result) => result.id === "request-failures")?.passed).toBe(false)
+  })
+
+  it("requires the mobile touch hint instead of desktop keyboard hints", () => {
+    const missingTouchHint = evaluateCommandPaletteHardGates(snapshot({
+      commandPalette: {
+        checkpoint: "open",
+        visible: true,
+        inputDividerCount: 1,
+        dialogWidth: 630,
+        keyboardHintsPresent: false,
+        touchHintPresent: false,
+        commandModePressed: false,
+      },
+    }))
+    expect(missingTouchHint.results.filter((result) => !result.passed).map((result) => result.id)).toEqual([
+      "command-palette-touch-hint",
+    ])
+    expect(missingTouchHint.results.some((result) => result.id === "command-palette-keyboard-hints")).toBe(false)
+    expect(missingTouchHint.results.some((result) => result.id === "command-palette-desktop-width")).toBe(false)
   })
 
   it("enforces command-palette chrome invariants as machine-readable gates", () => {
@@ -131,6 +151,7 @@ describe("command palette hard gates", () => {
         inputDividerCount: 2,
         dialogWidth: 580,
         keyboardHintsPresent: false,
+        touchHintPresent: false,
         commandModePressed: false,
       },
     }))

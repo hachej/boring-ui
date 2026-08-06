@@ -12,4 +12,4 @@ Pinned external reference used by `/skill:skill-management create`.
 
 The files are preserved verbatim. They are reference material, not a discovered
 project skill. Boring policy and Pi compatibility live in
-`docs/kanzen/procedures/skill-authoring.md`.
+`docs/procedures/skill-authoring.md`.

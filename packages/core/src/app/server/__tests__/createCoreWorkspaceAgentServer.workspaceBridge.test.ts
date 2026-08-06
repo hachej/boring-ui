@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionFactory, ToolDefinition } from '@mariozechner/pi-coding-agent'
 import Fastify from 'fastify'
+import { assertComposedAgentHostRouteTable } from '@hachej/boring-agent/server/agent-host/testing/compositionRouteProof'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const agentServerMock = vi.hoisted(() => ({
@@ -17,59 +18,79 @@ const workspaceServerMock = vi.hoisted(() => ({
   pluginContexts: [] as any[],
 }))
 
-vi.mock('@hachej/boring-agent/server', () => {
-  const mountLegacyRoutes = async (app: any, opts: Record<string, unknown>) => {
-    agentServerMock.registerOpts.push(opts)
-    app.post('/api/v1/agent/chat', async () => ({ ok: true }))
-    app.get('/api/v1/agent/chat/:sessionId/messages', async () => ({ ok: true }))
-    app.get('/api/v1/agent/pi-chat/sessions', async (request: any, reply: any) => {
-      try {
-        const workspaceId = await (opts.getWorkspaceId as Function)(request)
-        const storageScope = await (opts.getSessionNamespace as Function)({
-          workspaceId,
-          workspaceRoot: '/tmp/workspace',
-          request,
-        })
-        return { storageScope, header: request.headers['x-boring-storage-scope'] }
-      } catch (error) {
-        const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
-          ? (error as { statusCode: number }).statusCode
-          : 500
-        const code = typeof (error as { code?: unknown })?.code === 'string'
-          ? (error as { code: string }).code
-          : 'INTERNAL_ERROR'
-        const message = error instanceof Error ? error.message : 'list pi chat sessions failed'
-        return reply.code(statusCode).send({ error: { code, message } })
-      }
-    })
-    app.get('/__bridge-owner/:sessionId', async (request: any) => {
-      const tools = await (opts.getExtraTools as Function)?.({
-        workspaceId: String(request.headers['x-boring-workspace-id'] ?? 'default'),
-        workspaceRoot: '/tmp/workspace',
-        runtimeMode: 'direct',
-        workspaceFsCapability: 'strong',
-      })
-      const tool = tools?.[0]
-      if (!tool) return { ownerId: null }
-      return await tool.execute({}, {
-        abortSignal: new AbortController().signal,
-        toolCallId: 'tool-call-1',
-        sessionId: (request.params as { sessionId: string }).sessionId,
-      })
-    })
-  }
+vi.mock('@hachej/boring-agent/server', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@hachej/boring-agent/server')>()
   return {
+    ...actual,
     autoDetectMode: () => 'direct',
     compactPiPackages: (packages: unknown[]) => packages,
     createValidatingAgentFleetCompiler: ({ compiler }: { compiler?: unknown }) => compiler ?? {
       async compile({ agents }: { agents: readonly unknown[] }) { return agents },
     },
-    createAgentHostLegacyRoutePolicy: (options: Record<string, unknown>) => ({ options }),
-    createAgentHost: async () => ({
-      marker: 'prebuilt-agent-host',
-      registerRoutes: (projection: { legacyRoutePolicy: { options: Record<string, unknown> } }) => async (app: any) => {
-        await mountLegacyRoutes(app, projection.legacyRoutePolicy.options)
-      },
+    createAgentHost: vi.fn(async (options: Parameters<typeof actual.createAgentHost>[0]) => {
+      const created = await actual.createAgentHost({
+        ...options,
+        requestLedgerPath: undefined,
+        inMemoryRequestLedgerMode: 'test',
+      })
+      return {
+        ...created,
+        registerDirectRoutes(projection: Parameters<typeof created.registerDirectRoutes>[0]) {
+          const resolveRuntime = async (request: any) => {
+            const scope = await projection.authorizeAgentRequest(request)
+            return {
+              scope,
+              environment: await options.resolveAuthorizedEnvironmentScope!({
+                authorizedScope: scope,
+                verifiedClaim: scope,
+                intent: { kind: 'http-route', requestId: request.id ?? 'test-request' },
+              }),
+              agentRuntime: await options.resolveAuthorizedAgentRuntimeScope!({
+                authorizedScope: scope,
+                verifiedClaim: scope,
+                agentTypeId: 'default',
+                intent: { kind: 'agent-binding', operation: 'new-binding', requestId: request.id ?? 'test-request' },
+                environment: await options.resolveAuthorizedEnvironmentScope!({
+                  authorizedScope: scope,
+                  verifiedClaim: scope,
+                  intent: { kind: 'http-route', requestId: request.id ?? 'test-request' },
+                }),
+              }),
+            }
+          }
+          const testRequest = (ctx: { workspaceId: string; request?: any }) => ctx.request ?? ({
+            id: 'direct-test-request',
+            url: '/api/v1/agents',
+            method: 'GET',
+            headers: { 'x-boring-workspace-id': ctx.workspaceId },
+            raw: { rawHeaders: ['x-boring-workspace-id', ctx.workspaceId] },
+            query: {},
+            user: { id: 'user-1' },
+          })
+          agentServerMock.registerOpts.push({
+            projection,
+            runtimeModeAdapter: options.runtimeModeAdapter,
+            getWorkspaceId: async (request: any) => JSON.parse((await resolveRuntime(request)).scope.workspaceScopeId)[0],
+            getSessionNamespace: async (ctx: any) => (await resolveRuntime(testRequest(ctx))).agentRuntime.sessionNamespace,
+            getPi: async (ctx: any) => (await resolveRuntime(testRequest(ctx))).agentRuntime.pi,
+            getExtraTools: async (ctx: any) => (await resolveRuntime(testRequest(ctx))).agentRuntime.extraTools,
+          })
+          const direct = created.registerDirectRoutes(projection)
+          return async (app: any) => {
+            await app.register(direct)
+            app.get('/__bridge-owner/:sessionId', async (request: any) => {
+              const runtime = await resolveRuntime(request)
+              const tool = runtime.agentRuntime.extraTools?.[0]
+              if (!tool) return { ownerId: null }
+              return await tool.execute({}, {
+                abortSignal: new AbortController().signal,
+                toolCallId: 'tool-call-1',
+                sessionId: (request.params as { sessionId: string }).sessionId,
+              })
+            })
+          }
+        },
+      }
     }),
   }
 })
@@ -84,9 +105,18 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     },
     preservedUiStateKeys: [],
     provisioningContributions: [],
+    runtimePlugins: [],
     routeContributions: [],
   }),
-  createSandboxRuntimeModeAdapter: () => ({ id: 'direct' }),
+  createSandboxRuntimeModeAdapter: () => ({
+    id: 'direct',
+    workspaceFsCapability: 'strong',
+    create: async (ctx: { workspaceRoot: string }) => ({
+      workspace: { root: ctx.workspaceRoot, fsCapability: 'strong' },
+      sandbox: { provider: 'direct', exec: vi.fn() },
+      fileSearch: { async search() { return [] } },
+    }),
+  }),
   hasDirServerPlugin: () => false,
   provisionWorkspaceAgentServer: vi.fn(),
   readWorkspacePluginPackagePiSnapshot: () => ({
@@ -212,7 +242,16 @@ vi.mock('../../../server/auth/index.js', () => ({
 vi.mock('../../../server/app/index.js', () => ({
   createCoreApp: async (config: Record<string, unknown>, options?: { requestScopeResolver?: (request: unknown) => Promise<unknown> | unknown }) => {
     const app = Fastify({ logger: false })
+    app.get('/health', async () => ({ status: 'ok' }))
     app.decorate('config', config as any)
+    app.setErrorHandler((error, request, reply) => {
+      const status = (error as { status?: unknown }).status
+      const code = (error as { code?: unknown }).code
+      if (typeof status === 'number' && typeof code === 'string') {
+        return reply.code(status).send({ error: { code, message: (error as Error).message }, requestId: request.id })
+      }
+      return reply.send(error)
+    })
     if (options?.requestScopeResolver) {
       app.addHook('onRequest', async (request) => {
         request.requestScope = await options.requestScopeResolver!(request) as never
@@ -232,6 +271,7 @@ vi.mock('../../../server/app/index.js', () => ({
     return app
   },
   registerRoutes: async () => {},
+  registerDirectRoutes: () => async () => {},
 }))
 
 vi.mock('../../../server/routes/index.js', () => ({
@@ -246,8 +286,11 @@ vi.mock('../../../server/db/index.js', () => ({
     db: {},
     sql: { end: vi.fn() },
   }),
-  PostgresUserStore: class PostgresUserStore {},
+  PostgresUserStore: class PostgresUserStore {
+    async getById(id: string) { return { id } }
+  },
   PostgresWorkspaceStore: class PostgresWorkspaceStore {
+    async get(id: string) { return { id, appId: undefined } }
     async isMember(workspaceId: string, userId: string) {
       workspaceServerMock.memberChecks.push([workspaceId, userId])
       return true
@@ -283,7 +326,7 @@ afterEach(() => {
 })
 
 describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
-  it('authorizes browser storage claims and canonicalizes them on the composed HTTP path', async () => {
+  it('Final composed route/auth proof: Core mounts one direct Host table and enforces browser scope policy', async () => {
     const workspaceId = 'workspace-1'
     const canonicalNamespace = `${workspaceId}_33982c6908977596_user_cf1025156133f4d4`
     const app = await createCoreWorkspaceAgentServer({
@@ -297,9 +340,11 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
       }),
       getSessionNamespace: async () => canonicalNamespace,
     })
+    assertComposedAgentHostRouteTable(app)
+    expect(agentServerMock.registerOpts).toHaveLength(1)
     const inject = (storageScope?: string) => app.inject({
       method: 'GET',
-      url: '/api/v1/agent/pi-chat/sessions',
+      url: '/api/v1/agents/default/sessions',
       headers: {
         'x-test-user-id': 'user-1',
         ...(storageScope === undefined ? {} : { 'x-boring-storage-scope': storageScope }),
@@ -308,19 +353,36 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
 
     const browserClaim = await inject(workspaceId)
     expect(browserClaim.statusCode).toBe(200)
-    expect(browserClaim.json()).toMatchObject({ storageScope: canonicalNamespace, header: canonicalNamespace })
+    const environmentRouteHeaders = {
+      'x-test-user-id': 'user-1',
+      'x-boring-storage-scope': workspaceId,
+    }
+    const environmentRoute = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/search?q=proof',
+      headers: environmentRouteHeaders,
+    })
+    expect(environmentRoute.statusCode).toBe(200)
+    expect(environmentRoute.json()).toEqual({ resources: [] })
+
+    const filesystemCatalog = await app.inject({
+      method: 'GET',
+      url: '/api/v1/filesystems',
+      headers: environmentRouteHeaders,
+    })
+    expect(filesystemCatalog.statusCode).toBe(200)
+    expect(filesystemCatalog.json().filesystems).toEqual([
+      expect.objectContaining({ filesystem: 'user', rootDir: '.', access: 'readwrite' }),
+    ])
 
     const omitted = await inject()
     expect(omitted.statusCode).toBe(200)
-    expect(omitted.json()).toMatchObject({ storageScope: canonicalNamespace, header: canonicalNamespace })
 
     const canonical = await inject(canonicalNamespace)
     expect(canonical.statusCode).toBe(200)
-    expect(canonical.json()).toMatchObject({ storageScope: canonicalNamespace, header: canonicalNamespace })
 
     const repeatedValidClaims = await inject(`${workspaceId}, ${canonicalNamespace}`)
     expect(repeatedValidClaims.statusCode).toBe(200)
-    expect(repeatedValidClaims.json()).toMatchObject({ storageScope: canonicalNamespace, header: canonicalNamespace })
 
     const forged = await inject('workspace-2')
     expect(forged.statusCode).toBe(421)
@@ -368,6 +430,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
 
     const defaultApp = await createCoreWorkspaceAgentServer({ serveFrontend: false })
     const defaultResolver = agentServerMock.registerOpts.at(-1)?.getWorkspaceId as (request: any) => Promise<string>
+    delete (generic.headers as Record<string, string>)['x-boring-storage-scope']
     await expect(defaultResolver(generic)).resolves.toBe('header-workspace')
     expect(workspaceServerMock.memberChecks).toEqual([['header-workspace', 'user-1']])
     workspaceServerMock.memberChecks.length = 0
@@ -388,7 +451,10 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
       },
     }
     await expect(resolveWorkspaceId!(scoped)).resolves.toBe('workspace-1')
-    expect(scoped.headers).toEqual({ 'x-boring-workspace-id': 'workspace-1' })
+    expect(scoped.headers).toEqual({
+      'x-boring-workspace-id': 'workspace-1',
+      'x-boring-storage-scope': 'workspace-1',
+    })
     expect(customResolver).not.toHaveBeenCalled()
     expect(workspaceServerMock.memberChecks).toEqual([['workspace-1', 'user-1']])
 
@@ -402,10 +468,6 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
         code: 'AGENT_HOST_SCOPE_VIOLATION',
       })
     }
-    await expect(resolveWorkspaceId!({ ...scoped, id: 'foreign-body', headers: {}, query: {} }, 'workspace-2')).rejects.toMatchObject({
-      status: 421,
-      code: 'AGENT_HOST_SCOPE_VIOLATION',
-    })
     actorResolver.mockClear()
     await expect(resolveActor({ ...scoped, headers: { 'x-boring-workspace-id': 'workspace-2' } })).rejects.toMatchObject({ status: 421 })
     expect(actorResolver).not.toHaveBeenCalled()
@@ -439,7 +501,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
 
     const meta = await app.inject({ method: 'GET', url: '/api/v1/workspace/meta?workspaceId=workspace-2', headers: { 'x-test-user-id': 'user-1' } })
     expect(meta.statusCode).toBe(421)
-    expect(meta.json()).toMatchObject({ code: 'AGENT_HOST_SCOPE_VIOLATION' })
+    expect(meta.json()).toMatchObject({ error: { code: 'AGENT_HOST_SCOPE_VIOLATION' } })
     expect(getWorkspaceRoot).not.toHaveBeenCalled()
 
     for (const input of [
@@ -449,7 +511,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     ]) {
       const rejected = await app.inject({ method: 'POST', ...input, payload: {} })
       expect(rejected.statusCode).toBe(421)
-      expect(rejected.json()).toMatchObject({ code: 'AGENT_HOST_SCOPE_VIOLATION' })
+      expect(rejected.json()).toMatchObject({ error: { code: 'AGENT_HOST_SCOPE_VIOLATION' } })
     }
     expect(workspaceServerMock.memberChecks).toEqual([])
     expect(workspaceServerMock.registryCreations).toBe(0)
@@ -491,7 +553,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
       payload: {},
     })
     expect(foreignRuntime.statusCode).toBe(421)
-    expect(foreignRuntime.json()).toMatchObject({ code: 'AGENT_HOST_SCOPE_VIOLATION' })
+    expect(foreignRuntime.json()).toMatchObject({ error: { code: 'AGENT_HOST_SCOPE_VIOLATION' } })
     expect(workspaceServerMock.runtimeTokenVerifications).toEqual(['foreign-runtime-token'])
     expect(workspaceServerMock.registryCreations).toBe(0)
     expect(admitEffect).toHaveBeenCalledTimes(1)
@@ -505,8 +567,10 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     })
     expect(blocked.statusCode).toBe(500)
     expect(blocked.json()).toMatchObject({
-      code: 'AGENT_HOST_ADMISSION_RECORD_FAILED',
-      message: 'AGENT_HOST_ADMISSION_RECORD_FAILED',
+      error: {
+        code: 'AGENT_HOST_ADMISSION_RECORD_FAILED',
+        message: 'AGENT_HOST_ADMISSION_RECORD_FAILED',
+      },
     })
     admissionError = 'AGENT_HOST_ADMISSION_IDENTITY_MISMATCH'
     const mismatched = await app.inject({
@@ -517,8 +581,10 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     })
     expect(mismatched.statusCode).toBe(500)
     expect(mismatched.json()).toMatchObject({
-      code: 'AGENT_HOST_ADMISSION_IDENTITY_MISMATCH',
-      message: 'AGENT_HOST_ADMISSION_IDENTITY_MISMATCH',
+      error: {
+        code: 'AGENT_HOST_ADMISSION_IDENTITY_MISMATCH',
+        message: 'AGENT_HOST_ADMISSION_IDENTITY_MISMATCH',
+      },
     })
     await app.close()
   })
@@ -535,17 +601,15 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
       },
     })
 
-    const registerOpts = agentServerMock.registerOpts.at(-1)
-    const contribution = (registerOpts?.runtimeEnvContributions as Array<{ id: string; getEnv: (ctx: Record<string, unknown>) => Promise<Record<string, unknown>> | Record<string, unknown> }> | undefined)
-      ?.find((entry) => entry.id === 'workspace-bridge-runtime-env')
-    expect(contribution).toBeTruthy()
-
-    const env = await contribution!.getEnv({
+    const adapter = agentServerMock.registerOpts.at(-1)?.runtimeModeAdapter as {
+      create(ctx: Record<string, unknown>): Promise<{ getRuntimeEnv?: () => Promise<Record<string, unknown>> }>
+    }
+    const runtime = await adapter.create({
       workspaceId: 'workspace-1',
       workspaceRoot: '/tmp/workspace-1',
-      runtimeMode: 'direct',
-      runtimeBundle: {},
+      sessionId: 'workspace-1',
     })
+    const env = await runtime.getRuntimeEnv?.()
 
     expect(env).toMatchObject({
       BORING_WORKSPACE_BRIDGE_URL: 'https://bridge.test/api/v1/workspace-bridge/call',
@@ -652,15 +716,15 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
 
     await app.inject({
       method: 'POST',
-      url: '/api/v1/agent/chat',
+      url: '/api/v1/agents/default/sessions/session-1/prompt',
       headers: { 'content-type': 'application/json', 'x-boring-workspace-id': 'workspace-1', 'x-test-user-id': 'user-1' },
-      payload: { sessionId: 'session-1', message: 'hi' },
+      payload: { requestId: 'owner-1', clientNonce: 'owner-1', content: 'hi' },
     })
     await app.inject({
       method: 'POST',
-      url: '/api/v1/agent/chat',
+      url: '/api/v1/agents/default/sessions/session-1/prompt',
       headers: { 'content-type': 'application/json', 'x-boring-workspace-id': 'workspace-1', 'x-test-user-id': 'user-2' },
-      payload: { sessionId: 'session-1', message: 'hi again' },
+      payload: { requestId: 'owner-2', clientNonce: 'owner-2', content: 'hi again' },
     })
 
     const registerOpts = agentServerMock.registerOpts.at(-1)
@@ -774,26 +838,26 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
 
     await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/chat/session-1/messages',
+      url: '/api/v1/agents/default/sessions/session-1/state',
       headers: { 'x-boring-workspace-id': 'workspace-1', 'x-test-user-id': 'user-2' },
     })
     await app.inject({
       method: 'POST',
-      url: '/api/v1/agent/chat',
+      url: '/api/v1/agents/default/sessions/session-1/prompt',
       headers: { 'content-type': 'application/json', 'x-boring-workspace-id': 'workspace-1', 'x-test-user-id': 'user-1' },
-      payload: { sessionId: 'session-1', message: 'hi' },
+      payload: { requestId: 'owner-1', clientNonce: 'owner-1', content: 'hi' },
     })
     await app.inject({
       method: 'POST',
-      url: '/api/v1/agent/chat',
+      url: '/api/v1/agents/default/sessions/session-1/prompt',
       headers: { 'content-type': 'application/json', 'x-boring-workspace-id': 'workspace-1', 'x-test-user-id': 'user-2' },
-      payload: { sessionId: 'session-1', message: 'hi again' },
+      payload: { requestId: 'owner-2', clientNonce: 'owner-2', content: 'hi again' },
     })
 
     const owner = await app.inject({
       method: 'GET',
       url: '/__bridge-owner/session-1',
-      headers: { 'x-boring-workspace-id': 'workspace-1' },
+      headers: { 'x-boring-workspace-id': 'workspace-1', 'x-test-user-id': 'user-2' },
     })
 
     expect(owner.json()).toMatchObject({

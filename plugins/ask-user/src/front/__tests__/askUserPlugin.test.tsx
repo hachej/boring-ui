@@ -19,6 +19,7 @@ const question: AskUserQuestion = {
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
   schema: { wireVersion: 1, fields: [{ type: "radio", name: "choice", label: "Choose one", required: true, options: [{ value: "A", label: "A" }, { value: "B", label: "B" }] }] },
+  toolCallId: "call-q1",
 }
 
 const nextQuestion: AskUserQuestion = {
@@ -46,14 +47,11 @@ function pendingStateForMany(questions: AskUserQuestion[]) {
   }
 }
 
-function isOpenQuestionCommand(value: unknown, questionId: string): boolean {
-  if (!value || typeof value !== "object") return false
-  const command = value as { kind?: unknown; params?: { kind?: unknown; target?: unknown } }
-  return command.kind === "openSurface" && command.params?.kind === "questions" && command.params?.target === questionId
-}
-
 function getProvider() {
-  return capturedPlugin.registrations.providers[0]!.component as any
+  const Provider = capturedPlugin.registrations.providers[0]!.component as any
+  return function TestProvider(props: any) {
+    return <Provider {...props} agentTypeId="alpha" />
+  }
 }
 
 function getPanel() {
@@ -89,7 +87,7 @@ describe("askUserPlugin front shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send answers" }))
 
     await waitFor(() => expect(close).toHaveBeenCalled())
-    expect(closeWorkbench).toHaveBeenCalled()
+    expect(closeWorkbench).toHaveBeenCalledTimes(1)
     const submitCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.answer"))
     expect(JSON.parse(String(submitCall![1]!.body))).toMatchObject({
       op: "ask-user.v1.answer",
@@ -170,7 +168,7 @@ describe("askUserPlugin front shell", () => {
     expect(api.close).not.toHaveBeenCalled()
   })
 
-  it("drops a hidden session question and retargets to the visible active session in multi-session mode", async () => {
+  it("keeps an explicit hidden-session target instead of retargeting to the active session", async () => {
     const hiddenQuestion = { ...question, questionId: "multi-hide-q1", sessionId: "multi-hide-s1", title: "Hidden session question", answerToken: "multi-hide-token-1" }
     const visibleQuestion = { ...nextQuestion, questionId: "multi-hide-q2", sessionId: "multi-hide-s2", title: "Visible session question", answerToken: "multi-hide-token-2" }
     const pendingBySession = new Map<string, AskUserQuestion>([[hiddenQuestion.sessionId, hiddenQuestion], [visibleQuestion.sessionId, visibleQuestion]])
@@ -192,8 +190,8 @@ describe("askUserPlugin front shell", () => {
 
     view.rerender(<Provider apiBaseUrl="" activeSessionId={visibleQuestion.sessionId} openSessionIds={[visibleQuestion.sessionId]}><Panel params={{ sessionId: hiddenQuestion.sessionId, questionId: hiddenQuestion.questionId }} api={api} className="h-full" /></Provider>)
 
-    expect(await screen.findByText("Visible session question")).toBeInTheDocument()
-    expect(screen.queryByText("Hidden session question")).not.toBeInTheDocument()
+    expect(await screen.findByText("Hidden session question")).toBeInTheDocument()
+    expect(screen.queryByText("Visible session question")).not.toBeInTheDocument()
     expect(api.close).not.toHaveBeenCalled()
   })
 
@@ -218,8 +216,8 @@ describe("askUserPlugin front shell", () => {
     expect(await screen.findByText("Question for session one")).toBeInTheDocument()
 
     view.rerender(<Provider apiBaseUrl="" activeSessionId={s2Question.sessionId} openSessionIds={[s1Question.sessionId, s2Question.sessionId]}><Panel params={{ sessionId: s1Question.sessionId, questionId: s1Question.questionId }} api={api} className="h-full" /></Provider>)
-    expect(await screen.findByText("Question for session two")).toBeInTheDocument()
-    expect(screen.queryByText("Question for session one")).not.toBeInTheDocument()
+    expect(await screen.findByText("Question for session one")).toBeInTheDocument()
+    expect(screen.queryByText("Question for session two")).not.toBeInTheDocument()
 
     view.rerender(<Provider apiBaseUrl="" activeSessionId={s1Question.sessionId} openSessionIds={[s1Question.sessionId, s2Question.sessionId]}><Panel params={{ sessionId: s1Question.sessionId, questionId: s1Question.questionId }} api={api} className="h-full" /></Provider>)
     expect(await screen.findByText("Question for session one")).toBeInTheDocument()
@@ -248,7 +246,7 @@ describe("askUserPlugin front shell", () => {
     const Panel = getPanel()
     const api = { close: vi.fn() }
 
-    const view = render(<Provider apiBaseUrl="" activeSessionId={s2Question.sessionId} openSessionIds={[s1Question.sessionId, s2Question.sessionId]}><Panel params={{ sessionId: s1Question.sessionId, questionId: s1Question.questionId }} api={api} className="h-full" /></Provider>)
+    const view = render(<Provider apiBaseUrl="" activeSessionId={s2Question.sessionId} openSessionIds={[s1Question.sessionId, s2Question.sessionId]}><Panel params={{ sessionId: s2Question.sessionId, questionId: s2Question.questionId }} api={api} className="h-full" /></Provider>)
     expect(await screen.findByText("Question to answer")).toBeInTheDocument()
     const choice = screen.getByRole("radio", { name: "A" })
     fireEvent.click(choice)
@@ -390,57 +388,6 @@ describe("askUserPlugin front shell", () => {
     expect(pendingBySession.has(s2Question.sessionId)).toBe(false)
   })
 
-  it("re-opens Questions when a hidden pending session becomes visible again", async () => {
-    const reopenQuestion = { ...question, questionId: "reopen-q1", sessionId: "reopen-s1", title: "Reopen me", answerToken: "reopen-token-1" }
-    const commands: unknown[] = []
-    const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
-    window.addEventListener(UI_COMMAND_EVENT, onCommand)
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: reopenQuestion } })
-      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(reopenQuestion))
-      return Response.json({})
-    })
-    vi.stubGlobal("fetch", fetchMock)
-    const Provider = getProvider()
-
-    try {
-      const view = render(<Provider apiBaseUrl="" activeSessionId={reopenQuestion.sessionId} openSessionIds={[reopenQuestion.sessionId]}><div>child</div></Provider>)
-      await waitFor(() => expect(commands.filter((cmd) => isOpenQuestionCommand(cmd, reopenQuestion.questionId))).toHaveLength(1))
-
-      view.rerender(<Provider apiBaseUrl="" activeSessionId="other-visible-session" openSessionIds={["other-visible-session"]}><div>child</div></Provider>)
-      await new Promise((resolve) => setTimeout(resolve, 20))
-      expect(commands.filter((cmd) => isOpenQuestionCommand(cmd, reopenQuestion.questionId))).toHaveLength(1)
-
-      view.rerender(<Provider apiBaseUrl="" activeSessionId={reopenQuestion.sessionId} openSessionIds={[reopenQuestion.sessionId]}><div>child</div></Provider>)
-      await waitFor(() => expect(commands.filter((cmd) => isOpenQuestionCommand(cmd, reopenQuestion.questionId))).toHaveLength(2))
-    } finally {
-      window.removeEventListener(UI_COMMAND_EVENT, onCommand)
-    }
-  })
-
-  it("does not auto-open Questions for a pending session that is not open in the app", async () => {
-    const closedQuestion = { ...question, questionId: "closed-q1", sessionId: "closed-session", title: "Closed session question" }
-    const commands: unknown[] = []
-    const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
-    window.addEventListener(UI_COMMAND_EVENT, onCommand)
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: closedQuestion } })
-      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(closedQuestion))
-      return Response.json({})
-    })
-    vi.stubGlobal("fetch", fetchMock)
-    const Provider = getProvider()
-
-    try {
-      render(<Provider apiBaseUrl="" activeSessionId="closed-session" openSessionIds={["other-session"]}><div>child</div></Provider>)
-      await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending"))).toBe(true))
-      await new Promise((resolve) => setTimeout(resolve, 20))
-      expect(commands).not.toContainEqual(expect.objectContaining({ kind: "openSurface" }))
-    } finally {
-      window.removeEventListener(UI_COMMAND_EVENT, onCommand)
-    }
-  })
-
   it("contributes pending questions as explicit inbox attention blockers", async () => {
     const seen: unknown[] = []
     function AttentionProbe() {
@@ -457,7 +404,7 @@ describe("askUserPlugin front shell", () => {
     const Provider = getProvider()
 
     render(
-      <WorkspaceProvider apiBaseUrl="" plugins={[]} workspaceId="test-workspace">
+      <WorkspaceProvider agentTypeId="alpha" apiBaseUrl="" plugins={[]} workspaceId="test-workspace">
         <Provider apiBaseUrl="" activeSessionId="default" openSessionIds={["default"]}>
           <AttentionProbe />
         </Provider>
@@ -469,6 +416,8 @@ describe("askUserPlugin front shell", () => {
       label: "Choose A or B",
       inbox: expect.objectContaining({ kind: "question", sourceLabel: "question", priority: 10 }),
       sessionBadge: expect.objectContaining({ kind: "question" }),
+      composer: { visible: false },
+      agentTypeId: "alpha",
     })))
   })
 
@@ -517,6 +466,36 @@ describe("askUserPlugin front shell", () => {
     expect(panel.id).toBe("ask-user.questions")
     expect(panel.chromeless).toBe(true)
     expect(resolver.resolve({ kind: "questions", target: "q1", meta: { sessionId: "default" } })).toMatchObject({ component: "ask-user.questions", id: "ask-user.questions", params: { questionId: "q1", sessionId: "default" } })
+  })
+
+  it("renders only the pending question that matches an inline tool call", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(question))
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const renderer = capturedPlugin.registrations.toolRenderers.find((registration) => registration.id === "ask_user")!
+    const { rerender } = render(<Provider apiBaseUrl="" activeSessionId="other"><>{renderer.render({ toolCallId: question.toolCallId })}</></Provider>)
+
+    expect(await screen.findByText("Choose A or B")).toBeInTheDocument()
+    expect(screen.getByTestId("ask-user-inline-question")).toBeInTheDocument()
+    const onCommand = vi.fn()
+    window.addEventListener(UI_COMMAND_EVENT, onCommand)
+    fireEvent.click(screen.getByRole("button", { name: "Open Questions" }))
+    expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.objectContaining({
+      kind: "openSurface",
+      params: { kind: "questions", target: question.questionId, meta: { sessionId: question.sessionId } },
+    }) }))
+    window.removeEventListener(UI_COMMAND_EVENT, onCommand)
+
+    rerender(<Provider apiBaseUrl="" activeSessionId="other"><>{renderer.render({ toolCallId: "another-call" })}</></Provider>)
+    expect(screen.queryByTestId("ask-user-inline-question")).not.toBeInTheDocument()
+  })
+
+  it("registers ask_user as an inline tool renderer", () => {
+    expect(capturedPlugin.registrations.toolRenderers).toContainEqual(expect.objectContaining({ id: "ask_user", presentation: "inline" }))
   })
 
   it("carries pluginId + pluginLabel metadata (definePlugin contract)", () => {

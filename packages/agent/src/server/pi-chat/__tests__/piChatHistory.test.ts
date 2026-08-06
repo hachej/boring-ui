@@ -82,7 +82,7 @@ describe('buildPiChatHistory', () => {
       ],
       {
         sessionId: 'session-1',
-        attachmentUrl: ({ messageId, index }) => `/api/v1/agent/pi-chat/session-1/attachments/${messageId}/${index}`,
+        attachmentUrl: ({ messageId, index }) => `/api/v1/agents/default/sessions/session-1/attachments/${messageId}/${index}`,
       },
     )
 
@@ -93,7 +93,7 @@ describe('buildPiChatHistory', () => {
         id: 'entry-user:file:1',
         filename: 'image.png',
         mediaType: 'image/png',
-        url: '/api/v1/agent/pi-chat/session-1/attachments/entry-user/1',
+        url: '/api/v1/agents/default/sessions/session-1/attachments/entry-user/1',
       },
     ])
   })

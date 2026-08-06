@@ -56,8 +56,8 @@ export interface RemotePiSessionHeaders {
 
 export interface RemotePiSessionOptions {
   sessionId: string
-  /** Selects the additive addressed AgentGateway transport. Omit for legacy wire. */
-  agentTypeId?: string
+  /** Addressed AgentGateway owner for this session. */
+  agentTypeId: string
   workspaceId?: string
   storageScope?: string
   apiBaseUrl?: string
@@ -288,7 +288,7 @@ export class RemotePiSession {
       if (!this.isGenerationActive(generation)) return
       const responseBody = await this.fetchJson(this.stateUrl(), { method: 'GET', headers })
       if (!this.isGenerationActive(generation)) return
-      const raw = this.options.agentTypeId ? addressedSnapshot(responseBody) : responseBody
+      const raw = addressedSnapshot(responseBody)
 
       this.recordLargeStateWarning(raw)
 
@@ -500,7 +500,7 @@ export class RemotePiSession {
   }
 
   private addressedCommandReceipt(path: string, receipt: unknown): unknown {
-    if (!this.options.agentTypeId || path !== '/followup' || typeof receipt !== 'object' || receipt === null) {
+    if (path !== '/followup' || typeof receipt !== 'object' || receipt === null) {
       return receipt
     }
     const record = receipt as Record<string, unknown>
@@ -558,21 +558,20 @@ export class RemotePiSession {
   }
 
   private eventsUrl(cursor: number): string {
-    if (!this.options.agentTypeId) {
-      return buildPiChatEventsUrl({ apiBaseUrl: this.apiBaseUrl, sessionId: this.options.sessionId, cursor })
-    }
-    return `${this.sessionUrl('/events')}?cursor=${encodeURIComponent(String(cursor))}`
+    return buildPiChatEventsUrl({
+      apiBaseUrl: this.apiBaseUrl,
+      agentTypeId: this.options.agentTypeId,
+      sessionId: this.options.sessionId,
+      cursor,
+    })
   }
 
   private sessionUrl(path: string): string {
-    if (this.options.agentTypeId) {
-      return `${this.apiBaseUrl}/api/v1/agents/${encodeURIComponent(this.options.agentTypeId)}/sessions/${encodeURIComponent(this.options.sessionId)}${path}`
-    }
-    return `${this.apiBaseUrl}/api/v1/agent/pi-chat/${encodeURIComponent(this.options.sessionId)}${path}`
+    return `${this.apiBaseUrl}/api/v1/agents/${encodeURIComponent(this.options.agentTypeId)}/sessions/${encodeURIComponent(this.options.sessionId)}${path}`
   }
 
   private addressedCommandPayload(path: string, payload: unknown): unknown {
-    if (!this.options.agentTypeId || typeof payload !== 'object' || payload === null) return payload
+    if (typeof payload !== 'object' || payload === null) return payload
     const record = payload as Record<string, unknown>
     if (typeof record.requestId === 'string' && record.requestId.length > 0) return payload
     if (path === '/prompt' && typeof record.clientNonce === 'string' && typeof record.message === 'string') {

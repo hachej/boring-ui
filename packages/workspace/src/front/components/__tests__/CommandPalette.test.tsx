@@ -2,8 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { act, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { CommandPalette } from "../CommandPalette"
-import { WorkspaceProvider } from "../../provider/WorkspaceProvider"
-import { UI_COMMAND_EVENT, type UiCommand } from "../../bridge"
 import { RegistryProvider } from "../../registry/RegistryProvider"
 import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
@@ -296,9 +294,17 @@ describe("CommandPalette", () => {
 
       fireKeydown("k", { metaKey: true })
       await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
-      expect(screen.getByRole("button", { name: "Chats" })).toHaveAttribute("aria-pressed", "true")
+      const chatsMode = screen.getByRole("button", { name: "Chats" })
+      expect(chatsMode).toHaveAttribute("aria-pressed", "true")
+      expect(chatsMode).toHaveClass("command-palette-mode-button")
       expect(screen.getByRole("button", { name: "Sources" })).toBeInTheDocument()
       expect(screen.getByRole("button", { name: "Commands" })).toBeInTheDocument()
+      expect(document.querySelector(".command-palette-search-layout")).toBeInTheDocument()
+      expect(screen.getByRole("option", { name: /Alpha plan/ })).toHaveClass(
+        "command-palette-result-row",
+        "data-[selected=true]:ring-0",
+      )
+      expect(screen.getByRole("button", { name: "Open Alpha plan in new chat pane" })).toHaveClass("command-palette-secondary-action")
 
       await typePaletteQuery(user, "beta")
       await user.click(screen.getByRole("option", { name: /Beta build/ }))
@@ -333,61 +339,6 @@ describe("CommandPalette", () => {
         expect(getFileOption("/src/App.tsx")).toBeInTheDocument()
         expect(getFileOption("/src/index.ts")).toBeInTheDocument()
       })
-    })
-
-    it("falls back to workspace file search when no files catalog is registered", async () => {
-      const user = userEvent.setup()
-      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input)
-        if (url.includes("/api/v1/files/search")) {
-          return new Response(JSON.stringify({ results: ["README.md", "src/readme-helper.ts"] }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          })
-        }
-        return new Response(null, { status: 404 })
-      })
-      vi.stubGlobal("fetch", fetchMock)
-      const commands: UiCommand[] = []
-      const onUiCommand = (event: Event) => commands.push((event as CustomEvent<UiCommand>).detail)
-      window.addEventListener(UI_COMMAND_EVENT, onUiCommand)
-      try {
-        render(
-          <WorkspaceProvider
-            apiBaseUrl="/api-base"
-            authHeaders={{ Authorization: "Bearer test-token" }}
-            workspaceId="workspace-a"
-            excludeDefaults={["filesystem"]}
-            persistenceEnabled={false}
-            bridgeEndpoint={null}
-          >
-            <div />
-          </WorkspaceProvider>,
-        )
-        fireKeydown("p", { metaKey: true })
-        await waitFor(() => {
-          expect(screen.getByRole("dialog")).toBeInTheDocument()
-        })
-        await typePaletteQuery(user, "readme")
-        await waitFor(() => {
-          expect(getFileOption("README.md")).toBeInTheDocument()
-          expect(getFileOption("src/readme-helper.ts")).toBeInTheDocument()
-        })
-        expect(fetchMock).toHaveBeenCalledWith(
-          expect.stringContaining("/api-base/api/v1/files/search"),
-          expect.objectContaining({
-            credentials: "include",
-            headers: expect.objectContaining({
-              Authorization: "Bearer test-token",
-              "x-boring-workspace-id": "workspace-a",
-            }),
-          }),
-        )
-        await user.click(getFileOption("README.md"))
-        expect(commands).toContainEqual({ kind: "openFile", params: { path: "README.md" } })
-      } finally {
-        window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
-      }
     })
 
     it("calls catalog onSelect when row is selected", async () => {

@@ -13,7 +13,7 @@ describe('useServerSkills', () => {
     }
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/api/v1/agent/skills')) {
+      if (url.endsWith('/api/v1/agents/default/skills')) {
         return new Response(JSON.stringify({
           skills: [{
             name: 'shared-review',
@@ -32,7 +32,7 @@ describe('useServerSkills', () => {
       throw new Error(`unexpected url ${url}`)
     }) as unknown as typeof fetch
 
-    renderHook(() => useServerSkills({ registry, fetch: fetchImpl }))
+    renderHook(() => useServerSkills({ agentTypeId: 'default', registry, fetch: fetchImpl }))
     await waitFor(() => expect(registry.get('shared-review')).toBeTruthy())
 
     let expanded: unknown
@@ -50,7 +50,7 @@ describe('useServerSkills', () => {
       skills: [{ name: 'review', description: 'Review skill.' }],
     }), { status: 200 })) as unknown as typeof fetch
     const { rerender } = renderHook(
-      ({ requestHeaders }) => useServerSkills({ registry, fetch: fetchImpl, requestHeaders }),
+      ({ requestHeaders }) => useServerSkills({ agentTypeId: 'default', registry, fetch: fetchImpl, requestHeaders }),
       { initialProps: { requestHeaders: { authorization: 'Bearer example' } } },
     )
     await waitFor(() => expect(registry.get('review')).toBeTruthy())
@@ -66,7 +66,7 @@ describe('useServerSkills', () => {
     let skills: unknown[] = [{ name: 'shared-review', description: 'Review shared context.', invocable: true }]
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ skills }), { status: 200 })) as unknown as typeof fetch
     const { rerender, result } = renderHook(
-      ({ refreshKey }) => useServerSkills({ registry, fetch: fetchImpl, refreshKey }),
+      ({ refreshKey }) => useServerSkills({ agentTypeId: 'default', registry, fetch: fetchImpl, refreshKey }),
       { initialProps: { refreshKey: 0 } },
     )
     await waitFor(() => expect(registry.get('shared-review')).toBeTruthy())
@@ -94,7 +94,7 @@ describe('useServerSkills', () => {
       }],
     }), { status: 200 })) as unknown as typeof fetch
 
-    renderHook(() => useServerSkills({ registry, fetch: fetchImpl }))
+    renderHook(() => useServerSkills({ agentTypeId: 'default', registry, fetch: fetchImpl }))
     await waitFor(() => expect(fetchImpl).toHaveBeenCalled())
     expect(registry.get('duplicate')).toBeUndefined()
   })

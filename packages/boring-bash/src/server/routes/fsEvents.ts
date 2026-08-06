@@ -38,7 +38,7 @@ import {
 interface FsEventsRouteOptions {
   workspace?: Workspace
   getWorkspace?: (request: FastifyRequest) => Workspace | Promise<Workspace>
-  deferLeaseRelease?: (request: FastifyRequest) => void
+  deferLeaseRelease?: (request: FastifyRequest, reply: import('fastify').FastifyReply) => void
 }
 
 interface BroadcasterEntry {
@@ -181,7 +181,7 @@ export function fsEventsRoutes(
       return
     }
 
-    opts.deferLeaseRelease?.(request)
+    opts.deferLeaseRelease?.(request, reply)
 
     if (sub.resyncRequired) {
       writeSse(reply.raw, 'resync-required', {})

@@ -1,12 +1,24 @@
 import type { FastifyRequest } from "fastify"
-import type { AgentEvent } from "@hachej/boring-agent/shared"
-import type { WorkspaceAgentDispatcher } from "@hachej/boring-agent/shared"
+import type { AgentEvent, WorkspaceAgentDispatcher, WorkspaceAgentDispatcherDispatchInput } from "@hachej/boring-agent/shared"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { BORING_AUTOMATION_ERROR_CODES } from "../../shared/error-codes"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../../shared/types"
-import { ManualRunExecutor, parseAutomationModel, type VerifiedAutomationActor } from "../manualRunExecutor"
-import { AutomationStoreError, type AutomationStore, automationNotFound, runNotFound } from "../store"
+import { automationSessionTitle, ManualRunExecutor, parseAutomationModel, type VerifiedAutomationActor } from "../manualRunExecutor"
+import type { AutomationRunEventPublisher } from "../runEventBus"
+import { AutomationStoreError, type AutomationStore, automationNotFound, runLeaseLost, runNotFound } from "../store"
+
+afterEach(() => vi.useRealTimers())
+
+describe("automationSessionTitle", () => {
+  it("prefixes the prompt-derived session name with its automation title", () => {
+    expect(automationSessionTitle("Daily summary", "  Summarize sales\nInclude a chart  ")).toBe(
+      "Automation Daily summary: Summarize sales",
+    )
+    expect(automationSessionTitle("Daily summary", "  ")).toBe("Automation Daily summary: Run")
+    expect(automationSessionTitle("Daily summary", "x".repeat(100))).toHaveLength(80)
+  })
+})
 
 describe("parseAutomationModel", () => {
   it("parses explicit provider:model-id syntax and splits on the first colon", () => {
@@ -34,7 +46,11 @@ describe("ManualRunExecutor", () => {
     await harness.executor.run({ automationId: harness.automation.id, request })
 
     expect(harness.actorResolver).toHaveBeenCalledWith(request)
-    expect(harness.resolver.resolve).toHaveBeenCalledWith(harness.actor, { request })
+    expect(harness.resolver.runWithWorkspaceAgent).toHaveBeenCalledWith(expect.objectContaining({
+      agentTypeId: "default",
+      context: harness.actor,
+      request,
+    }), expect.any(Function))
     expect(harness.dispatcher.dispatch).toHaveBeenCalledWith(expect.objectContaining({
       actor: { id: harness.actor.userId },
       originSurface: "boring-automation",
@@ -47,7 +63,10 @@ describe("ManualRunExecutor", () => {
     await harness.executor.run({ automationId: harness.automation.id, actor: harness.actor })
 
     expect(harness.actorResolver).not.toHaveBeenCalled()
-    expect(harness.resolver.resolve).toHaveBeenCalledWith(harness.actor, undefined)
+    expect(harness.resolver.runWithWorkspaceAgent).toHaveBeenCalledWith(expect.objectContaining({
+      agentTypeId: "default",
+      context: harness.actor,
+    }), expect.any(Function))
     expect(harness.dispatcher.dispatch).toHaveBeenCalledWith(expect.objectContaining({
       actor: { id: harness.actor.userId },
       originSurface: "boring-automation",
@@ -68,9 +87,58 @@ describe("ManualRunExecutor", () => {
     })
     expect(harness.dispatcher.dispatch).toHaveBeenCalledWith(expect.objectContaining({
       requestId: run.id,
+      title: "Automation Daily summary: canonical prompt",
       content: "canonical prompt",
       model: { provider: "anthropic", id: "claude-sonnet" },
     }))
+  })
+
+  it("publishes durable lifecycle invalidations without making delivery part of run success", async () => {
+    const publish = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("notification unavailable"))
+      .mockResolvedValue(undefined)
+    const harness = createHarness({ eventPublisher: { publish } })
+
+    const run = await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+
+    expect(run.status).toBe("succeeded")
+    expect(publish.mock.calls.map(([item]) => item.status)).toEqual(expect.arrayContaining(["queued", "dispatching", "running", "succeeded"]))
+    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({
+      workspaceId: harness.actor.workspaceId,
+      userId: harness.actor.userId,
+      automationId: harness.automation.id,
+      runId: run.id,
+      status: "succeeded",
+    }))
+  })
+
+  it("heartbeats an active run until its event stream completes", async () => {
+    vi.useFakeTimers()
+    const release = deferred<void>()
+    const dispatch = vi.fn(async (input: { requestId: string }) => ({
+      ref: { agentTypeId: "default", sessionId: "session-1" },
+      receipt: { accepted: true as const, cursor: 0, disposition: "prompt" as const, clientNonce: input.requestId },
+      events: (async function* () {
+        await release.promise
+        yield event(0, { type: "agent-end", seq: 1, turnId: "turn-1", status: "ok" })
+      })(),
+    }))
+    const dispatcher = {
+      dispatch,
+      send: vi.fn(),
+      interrupt: vi.fn(),
+      stop: vi.fn(),
+    }
+    const harness = createHarness({ resolver: createDirectResolver(dispatcher) })
+
+    const execution = harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce())
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(harness.store.heartbeatCount).toBe(1)
+    release.resolve()
+    await execution
   })
 
   it("records an executor-owned scheduled occurrence without changing snapshots", async () => {
@@ -176,6 +244,7 @@ describe("ManualRunExecutor", () => {
     expect(run).toMatchObject({
       status: "failed",
       sessionId: "session-1",
+      dispatchReceipt: expect.objectContaining({ ref: { agentTypeId: "default", sessionId: "session-1" } }),
       inputTokens: null,
       outputTokens: null,
       totalTokens: null,
@@ -196,12 +265,34 @@ describe("ManualRunExecutor", () => {
 
     expect(run).toMatchObject({
       status: "failed",
-      sessionId: "session-1",
+      sessionId: "session-partial",
       inputTokens: 8,
       outputTokens: null,
       totalTokens: 8,
       error: "stream crashed",
     })
+  })
+
+  it("returns the durable reconciled run when catch-path finalization loses its lease", async () => {
+    const harness = createHarness({ streamError: new Error("stream crashed") })
+    const updateRunLifecycle = harness.store.updateRunLifecycle.bind(harness.store)
+    vi.spyOn(harness.store, "updateRunLifecycle").mockImplementation(async (runId, patch) => {
+      if (patch.status === "failed") {
+        const current = harness.store.runs.get(runId)!
+        harness.store.runs.set(runId, {
+          ...current,
+          status: "outcome-unknown",
+          completedAt: "2026-07-10T00:05:00.000Z",
+          error: "Automation worker lease expired",
+        })
+        throw runLeaseLost(runId)
+      }
+      return await updateRunLifecycle(runId, patch)
+    })
+
+    const run = await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+
+    expect(run).toMatchObject({ status: "outcome-unknown", error: "Automation worker lease expired" })
   })
 
   it("maps aborted terminal events to cancelled runs", async () => {
@@ -265,13 +356,15 @@ describe("ManualRunExecutor", () => {
   })
 
   it("finalizes the queued run when dispatcher resolution fails", async () => {
-    const resolver = { resolve: vi.fn(async () => { throw new Error("no dispatcher") }) }
+    const resolver = createDirectResolver(createDispatcher([], undefined), new Error("no dispatcher"))
     const harness = createHarness({ resolver })
 
     const run = await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
 
-    expect(run).toMatchObject({ status: "failed", startedAt: null, sessionId: null, error: "no dispatcher" })
+    expect(run).toMatchObject({ status: "failed", startedAt: "2026-07-10T00:00:02.000Z", sessionId: null, error: "no dispatcher" })
     expect(harness.store.lifecyclePatches).toEqual([
+      expect.objectContaining({ status: "dispatching" }),
+      expect.objectContaining({ status: "dispatching", startedAt: "2026-07-10T00:00:02.000Z" }),
       expect.objectContaining({ status: "failed", sessionId: null }),
     ])
   })
@@ -283,8 +376,15 @@ interface HarnessOptions {
   events?: AgentEvent[]
   streamError?: unknown
   resolver?: WorkspaceAgentDispatcherResolver
+  eventPublisher?: AutomationRunEventPublisher
   request?: FastifyRequest
   clockDates?: string[]
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((promiseResolve) => { resolve = promiseResolve })
+  return { promise, resolve }
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -297,15 +397,16 @@ function createHarness(options: HarnessOptions = {}) {
     ? []
     : [event(0, { type: "agent-end", seq: 1, turnId: "turn-1", status: "ok" })]
   const dispatcher = createDispatcher(options.events ?? defaultEvents, options.streamError)
-  const resolver = options.resolver ?? { resolve: vi.fn(async () => dispatcher) }
+  const resolver = options.resolver ?? createDirectResolver(dispatcher)
   const clock = clockFrom(options.clockDates)
-  const executor = new ManualRunExecutor({ store, dispatcherResolver: resolver, actorResolver, clock })
+  const executor = new ManualRunExecutor({ agentTypeId: "default", store, dispatcherResolver: resolver, actorResolver, eventPublisher: options.eventPublisher, clock })
   return { store, automation, actor, actorResolver, request, dispatcher, resolver, executor }
 }
 
 function createDispatcher(events: AgentEvent[], streamError: unknown): WorkspaceAgentDispatcher & { dispatch: ReturnType<typeof vi.fn> } {
+  const sessionId = events[0]?.sessionId ?? "session-1"
   const dispatch = vi.fn(async (input: { requestId: string }) => ({
-    ref: { agentTypeId: "default", sessionId: "session-1" },
+    ref: { agentTypeId: "default", sessionId },
     receipt: { accepted: true as const, cursor: 0, disposition: "prompt" as const, clientNonce: input.requestId },
     events: (async function* () {
       for (const item of events) yield item
@@ -319,6 +420,30 @@ function createDispatcher(events: AgentEvent[], streamError: unknown): Workspace
     stop: vi.fn(async () => ({ accepted: true as const, cursor: 0, stopped: true, clearedQueue: [] })),
   }
   return dispatcher
+}
+
+function createDirectResolver(
+  dispatcher: WorkspaceAgentDispatcher & { dispatch: ReturnType<typeof vi.fn> },
+  runError?: Error,
+): WorkspaceAgentDispatcherResolver & { runWithWorkspaceAgent: ReturnType<typeof vi.fn> } {
+  return {
+    runWithWorkspaceAgent: vi.fn(async (_input, run) => {
+      if (runError) throw runError
+      await run({
+        workspace: {} as never,
+        signal: new AbortController().signal,
+        async dispatch(input: WorkspaceAgentDispatcherDispatchInput, onEvent: (event: AgentEvent) => void | Promise<void>, onAccepted?: Parameters<import("@hachej/boring-agent/shared").LeaseBoundWorkspaceAgent["dispatch"]>[2]) {
+          const dispatched = await dispatcher.dispatch!(input)
+          await onAccepted?.({ ref: dispatched.ref, receipt: dispatched.receipt })
+          for await (const item of dispatched.events) await onEvent(item)
+          return { ref: dispatched.ref, receipt: dispatched.receipt }
+        },
+        async interrupt(sessionId: string, _requestId: string) { return await dispatcher.interrupt(sessionId) },
+        async stop(sessionId: string, _requestId: string) { return await dispatcher.stop(sessionId) },
+      })
+    }),
+    async resolve() { throw new Error("legacy resolver must not be used") },
+  }
 }
 
 function event(eventIndex: number, chunk: AgentEvent["chunk"], sessionId = "session-1"): AgentEvent {
@@ -345,6 +470,7 @@ class MemoryAutomationStore implements AutomationStore {
   readonly prompts = new Map<string, string>()
   readonly runs = new Map<string, AutomationRun>()
   readonly lifecyclePatches: AutomationRunLifecyclePatch[] = []
+  heartbeatCount = 0
   private nextAutomationId = 1
   private nextRunId = 1
 
@@ -432,6 +558,20 @@ class MemoryAutomationStore implements AutomationStore {
     }
     this.runs.set(run.id, clone(run))
     return clone(run)
+  }
+
+  async claimRunForDispatch(runId: string): Promise<AutomationRun | null> {
+    const run = this.runs.get(runId)
+    if (!run) throw runNotFound(runId)
+    if (run.status !== "queued") return null
+    return await this.updateRunLifecycle(runId, { status: "dispatching" })
+  }
+
+  async heartbeatRun(runId: string): Promise<boolean> {
+    const run = this.runs.get(runId)
+    if (!run) throw runNotFound(runId)
+    this.heartbeatCount += 1
+    return true
   }
 
   async updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun> {

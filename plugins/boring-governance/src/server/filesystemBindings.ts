@@ -5,6 +5,7 @@ import path from 'node:path'
 import type { FastifyRequest } from 'fastify'
 import type { RuntimeFilesystemBinding, RuntimeFilesystemBindingOperations } from '@hachej/boring-agent/server'
 import { ErrorCode } from '@hachej/boring-agent/shared'
+import type { CreateCoreWorkspaceAgentServerOptions } from '@hachej/boring-core/app/server'
 import {
   COMPANY_CONTEXT_FILESYSTEM_ID,
   ScopedFilesystemRuntimeBindingManager,
@@ -271,7 +272,7 @@ async function resolveCompanyContextSourceRoot(
 export function createGovernanceFilesystemBindings(
   service: GovernanceService,
   options: CreateGovernanceFilesystemBindingsOptions = {},
-): NonNullable<import('@hachej/boring-agent/server').RegisterAgentRoutesOptions['getFilesystemBindings']> {
+): NonNullable<CreateCoreWorkspaceAgentServerOptions['getFilesystemBindings']> {
   return async (ctx) => {
     if (!service.isEnabled()) return undefined
     const user = userFromContext(ctx)
@@ -304,7 +305,11 @@ export function createGovernanceFilesystemBindings(
           throw new Error(`company_context ${operation} operation is unavailable`)
         },
       }
-      return [{ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, access: 'readwrite', operations } satisfies RuntimeFilesystemBinding]
+      return [{
+        filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,
+        access: 'readwrite',
+        operations,
+      } satisfies RuntimeFilesystemBinding]
     }
 
     const rules = service.companyContextRules(user)
@@ -352,6 +357,10 @@ export function createGovernanceFilesystemBindings(
       },
     }
 
-    return [{ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, access: 'readonly', operations } satisfies RuntimeFilesystemBinding]
+    return [{
+      filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,
+      access: 'readonly',
+      operations,
+    } satisfies RuntimeFilesystemBinding]
   }
 }

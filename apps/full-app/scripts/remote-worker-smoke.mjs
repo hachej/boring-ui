@@ -126,7 +126,7 @@ async function main() {
   await rm(join(workspaceRoot, workspaceId), { recursive: true, force: true })
 
   const { agent, worker } = await importBuiltModules()
-  const { createAgentApp, createRemoteWorkerModeAdapter } = agent
+  const { createStandaloneAgentHostApp, createRemoteWorkerModeAdapter } = agent
   const { createAgentWorkerApp } = worker
 
   const { app: workerApp } = await createAgentWorkerApp()
@@ -134,7 +134,7 @@ async function main() {
   const workerAddress = workerApp.server.address()
   const workerBaseUrl = `http://127.0.0.1:${workerAddress.port}`
 
-  const publicApp = await createAgentApp({
+  const publicApp = await createStandaloneAgentHostApp({
     logger: false,
     sessionId: workspaceId,
     workspaceRoot: join(tmpdir(), 'remote-worker-smoke-public-host-unused'),
@@ -145,6 +145,7 @@ async function main() {
   const publicAddress = publicApp.server.address()
   const publicBaseUrl = `http://127.0.0.1:${publicAddress.port}`
   const workerHeaders = { 'x-boring-internal-token': token }
+  const publicHeaders = { 'x-boring-workspace-id': workspaceId }
 
   try {
     await expectStatus(`${workerBaseUrl}/health`, { method: 'GET' }, 200)
@@ -158,6 +159,7 @@ async function main() {
 
     await jsonFetch(`${publicBaseUrl}/api/v1/files`, {
       method: 'POST',
+      headers: publicHeaders,
       body: JSON.stringify({ path: 'from-public.txt', content: 'public->worker' }),
     })
 
@@ -214,21 +216,24 @@ async function main() {
       body: JSON.stringify({ cmd: "printf 'worker->public' > from-worker.txt", timeoutMs: 10000 }),
     })
 
-    const readBack = await jsonFetch(`${publicBaseUrl}/api/v1/files?path=from-worker.txt`)
+    const readBack = await jsonFetch(`${publicBaseUrl}/api/v1/files?path=from-worker.txt`, { headers: publicHeaders })
     if (readBack.content !== 'worker->public') fail(`public did not see worker write: ${JSON.stringify(readBack)}`)
 
-    const tree = await jsonFetch(`${publicBaseUrl}/api/v1/tree?path=.&recursive=true`)
+    const tree = await jsonFetch(`${publicBaseUrl}/api/v1/tree?path=.&recursive=true`, { headers: publicHeaders })
     const treePaths = tree.entries.map((entry) => entry.path)
     if (!treePaths.includes('from-public.txt') || !treePaths.includes('from-worker.txt')) {
       fail(`tree missing files: ${JSON.stringify(treePaths)}`)
     }
 
-    const search = await jsonFetch(`${publicBaseUrl}/api/v1/files/search?q=from-*.txt&limit=10`)
-    if (!search.results.includes('from-public.txt') || !search.results.includes('from-worker.txt')) {
+    const search = await jsonFetch(`${publicBaseUrl}/api/v1/files/search?q=from-*.txt&limit=10`, { headers: publicHeaders })
+    const searchPaths = search.resources
+      .filter((resource) => resource.filesystem === 'user')
+      .map((resource) => resource.path)
+    if (!searchPaths.includes('from-public.txt') || !searchPaths.includes('from-worker.txt')) {
       fail(`search missing files: ${JSON.stringify(search)}`)
     }
 
-    const git = await jsonFetch(`${publicBaseUrl}/api/v1/git/file-url?path=from-public.txt`)
+    const git = await jsonFetch(`${publicBaseUrl}/api/v1/git/file-url?path=from-public.txt`, { headers: publicHeaders })
     if (git.enabled !== false) fail(`git file-url should be disabled in remote-worker mode: ${JSON.stringify(git)}`)
 
     await runFsEventsSmoke(workerBaseUrl, workerHeaders)

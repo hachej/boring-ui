@@ -17,6 +17,52 @@ function assistantMessage(overrides: Record<string, unknown> = {}) {
 }
 
 describe('PiChatEventMapper', () => {
+  it('projects live start and terminal image parts through addressed attachment URLs', () => {
+    const mapper = new PiChatEventMapper({
+      sessionId: 'sess-1',
+      attachmentUrl: ({ messageId, index }) => `/addressed/${messageId}/${index}`,
+    })
+    const message = {
+      id: 'user-image',
+      role: 'user',
+      content: [{ type: 'image', mimeType: 'image/png', data: 'raw-base64' }],
+    }
+
+    const start = mapper.map({ type: 'message_start', message } as unknown as AgentSessionEvent)
+    const end = mapper.map({ type: 'message_end', message } as unknown as AgentSessionEvent)
+
+    expect(start[0]).toMatchObject({
+      type: 'message-start',
+      files: [expect.objectContaining({ url: '/addressed/user-image/0' })],
+    })
+    expect(end[0]).toMatchObject({
+      type: 'message-end',
+      final: { parts: [expect.objectContaining({ url: '/addressed/user-image/0' })] },
+    })
+  })
+
+  it('keeps id-less live image URLs on the canonical start/end message address', () => {
+    const mapper = new PiChatEventMapper({
+      sessionId: 'sess-1',
+      attachmentUrl: ({ messageId, index }) => `/addressed/${messageId}/${index}`,
+    })
+    const message = {
+      role: 'user',
+      content: [{ type: 'image', mimeType: 'image/png', data: 'cmF3LWJ5dGVz' }],
+    }
+
+    const start = mapper.map({ type: 'message_start', message } as unknown as AgentSessionEvent)
+    const end = mapper.map({ type: 'message_end', message } as unknown as AgentSessionEvent)
+    const messageId = start[0]?.type === 'message-start' ? start[0].messageId : undefined
+
+    expect(start[0]).toMatchObject({ files: [{ url: `/addressed/${messageId}/0` }] })
+    expect(end[0]).toMatchObject({
+      type: 'message-end',
+      messageId,
+      final: { id: messageId, parts: [{ url: `/addressed/${messageId}/0` }] },
+    })
+  })
+
   it('maps agent start/end with monotonic session-scoped seq, stable turn id, and final assistant from agent_end', () => {
     const mapper = new PiChatEventMapper({ sessionId: 'sess-1' })
 
@@ -255,7 +301,7 @@ describe('PiChatEventMapper', () => {
       assistantMessageEvent: {
         type: 'toolcall_end',
         contentIndex: 2,
-        toolCall: { id: 'tool-1', name: 'write', arguments: { path: 'a.ts' }, ui: { rendererId: 'fs.write', extra: 'ignored' } },
+        toolCall: { id: 'tool-1', name: 'write', arguments: { path: 'a.ts', filesystem: 'company_context' }, ui: { rendererId: 'fs.write', extra: 'ignored' } },
       },
     } as unknown as AgentSessionEvent)
     const toolResult = mapper.map({
@@ -276,12 +322,12 @@ describe('PiChatEventMapper', () => {
         messageId: 'assistant-1',
         toolCallId: 'tool-1',
         toolName: 'write',
-        input: { path: 'a.ts' },
+        input: { path: 'a.ts', filesystem: 'company_context' },
         ui: { rendererId: 'fs.write' },
       },
     ])
     expect(toolResult).toMatchObject([
-      { type: 'file-changed', seq: 3, path: 'a.ts', changeType: 'write' },
+      { type: 'file-changed', seq: 3, path: 'a.ts', changeType: 'write', filesystem: 'company_context' },
       { type: 'tool-result', seq: 4, messageId: 'assistant-1', toolCallId: 'tool-1', isError: false, ui: { rendererId: 'fs.write.result' } },
     ])
   })

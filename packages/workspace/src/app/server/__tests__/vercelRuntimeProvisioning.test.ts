@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
@@ -203,19 +204,19 @@ test("startup uses one scoped pair, reload reuses the live pair, and custom host
     externalPlugins: false,
   })
 
-  // Startup provisioning uses one short-lived scoped pair. The canonical Host
-  // remains lazy until the first route needs a live runtime binding.
-  expect(state.acquisitions).toBe(1)
-  expect(state.disposals).toBe(1)
+  // The direct Host remains lazy until the first route needs a live binding.
+  expect(state.acquisitions).toBe(0)
+  expect(state.disposals).toBe(0)
   expect(getRuntimePaths).toHaveBeenCalledWith("/workspace")
 
-  const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+  expect((await app.inject({ method: "GET", url: "/api/v1/agents/default/ready-status" })).statusCode).toBe(200)
+  const reload = await app.inject({ method: "POST", url: "/api/v1/agents/default/reload", payload: { requestId: "vercel-runtime-provisioning" } })
   expect(reload.statusCode).toBe(200)
-  expect(state.acquisitions).toBe(2)
-  expect(state.disposals).toBe(1)
+  expect(state.acquisitions).toBe(1)
+  expect(state.disposals).toBe(0)
 
   await app.close()
-  expect(state.disposals).toBe(2)
+  expect(state.disposals).toBe(1)
 })
 
 test("createWorkspaceAgentServer provisions Vercel-like new sandboxes with mirrored skills and artifact-backed SDK CLIs", async () => {
@@ -243,6 +244,7 @@ test("createWorkspaceAgentServer provisions Vercel-like new sandboxes with mirro
   })
 
   try {
+    expect((await app.inject({ method: "GET", url: "/api/v1/agents/default/ready-status" })).statusCode).toBe(200)
     expect(state.files.get(".boring-agent/skills/dummy-vercel-plugin/vercel-dummy-skill/SKILL.md"))
       .toContain("Vercel dummy skill")
     expect([...state.files.keys()].some((key) => key.startsWith(".boring-agent/tmp/dummy-vercel-sdk-") && key.endsWith(".tgz"))).toBe(true)
@@ -250,7 +252,7 @@ test("createWorkspaceAgentServer provisions Vercel-like new sandboxes with mirro
     expect(state.installs).toBe(1)
     expect(state.artifacts).toContain(`node:dummy-vercel-sdk:${packageRoot}`)
 
-    const catalog = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
+    const catalog = await app.inject({ method: "GET", url: "/api/v1/agents/default/tools" })
     expect(catalog.statusCode).toBe(200)
   } finally {
     await app.close()

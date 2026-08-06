@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { createAgent, type AgentCoreSessionService, type PiChatEventSubscriber, type PiSessionCreateInit, type PiSessionRequestContext } from "@hachej/boring-agent/core"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import "../../../../../packages/agent/src/server/http/middleware"
-import type { Agent, AgentEvent, AgentTool, SessionCtx, SessionDetail, SessionStore, SessionSummary, WorkspaceAgentDispatcher } from "@hachej/boring-agent/shared"
+import type { Agent, AgentEvent, AgentTool, SessionCtx, SessionDetail, SessionStore, SessionSummary, WorkspaceAgentDispatcher, WorkspaceAgentDispatcherDispatchInput } from "@hachej/boring-agent/shared"
 import type { FollowUpPayload, PiChatEvent, PromptPayload } from "@hachej/boring-agent/shared"
 import { createBoringAutomationTool } from "../automationTool"
 import { ManualRunExecutor, type VerifiedAutomationActor } from "../manualRunExecutor"
@@ -31,12 +31,28 @@ describe("boring_automation nested dispatch", () => {
       }),
     })
     const resolver: WorkspaceAgentDispatcherResolver = {
+      async runWithWorkspaceAgent(input, run) {
+        const dispatcher = createLegacyNestedDispatcher(agent, input.context)
+        await run({
+          workspace: {} as never,
+          signal: new AbortController().signal,
+          async dispatch(dispatchInput: WorkspaceAgentDispatcherDispatchInput, onEvent: (event: AgentEvent) => void | Promise<void>, onAccepted) {
+            const dispatched = await dispatcher.dispatch!(dispatchInput)
+            await onAccepted?.({ ref: dispatched.ref, receipt: dispatched.receipt })
+            for await (const event of dispatched.events) await onEvent(event)
+            return { ref: dispatched.ref, receipt: dispatched.receipt }
+          },
+          async interrupt(sessionId) { return await dispatcher.interrupt(sessionId) },
+          async stop(sessionId) { return await dispatcher.stop(sessionId) },
+        })
+      },
       async resolve(ctx) {
         return createLegacyNestedDispatcher(agent, ctx)
       },
     }
     const automationStore = new NestedAutomationStore()
     const executor = new ManualRunExecutor({
+      agentTypeId: "default",
       store: automationStore,
       dispatcherResolver: resolver,
       actorResolver: () => { throw new Error("request actor resolver must not be used") },
@@ -304,6 +320,12 @@ class NestedAutomationStore implements AutomationStore {
     }
     return this.run
   }
+  async claimRunForDispatch(_runId: string) {
+    if (!this.run) throw new Error("run missing")
+    if (this.run.status !== "queued") return null
+    return await this.updateRunLifecycle(this.run.id, { status: "dispatching" })
+  }
+  async heartbeatRun(_runId: string) { return true }
   async updateRunLifecycle(_runId: string, patch: AutomationRunLifecyclePatch) {
     if (!this.run) throw new Error("run missing")
     this.run = { ...this.run, ...patch, updatedAt: patch.completedAt ?? this.run.updatedAt }

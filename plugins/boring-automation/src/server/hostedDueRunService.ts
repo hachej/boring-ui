@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import type postgres from "postgres"
 import type { FastifyRequest } from "fastify"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
@@ -5,13 +6,20 @@ import { evaluateAutomationSchedule } from "../shared/schedule"
 import type { AutomationRun } from "../shared/types"
 import { type DueRunOutcome, type DueRunSummary } from "./dueRunService"
 import { ManualRunExecutor } from "./manualRunExecutor"
-import { listHostedAutomationCandidates, PostgresAutomationStore, type HostedAutomationActor } from "./postgresStore"
+import { createLeaseBoundHostedAutomationStore } from "./hostedStore"
+import { listHostedAutomationCandidates, PostgresAutomationStore, reconcileStaleHostedAutomationRuns, type HostedAutomationActor } from "./postgresStore"
+import type { AutomationRunEventPublisher } from "./runEventBus"
+import { AutomationStoreError } from "./store"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 
+const HOSTED_RUN_STALE_AFTER_MS = 5 * 60_000
+
 export interface HostedDueRunServiceOptions {
+  agentTypeId: string
   sql: postgres.Sql
   dispatcherResolver: WorkspaceAgentDispatcherResolver
   verifyActor: (actor: HostedAutomationActor) => Promise<boolean> | boolean
+  eventPublisher?: AutomationRunEventPublisher
   clock?: () => Date
 }
 
@@ -28,9 +36,26 @@ export class HostedDueRunService {
     this.clock = options.clock ?? (() => new Date())
   }
 
-  async runDue(request: FastifyRequest): Promise<HostedDueRunResult> {
+  async runDue(request?: FastifyRequest): Promise<HostedDueRunResult> {
     const now = this.clock()
-    const candidates = await listHostedAutomationCandidates(this.options.sql)
+    const reconciled = await reconcileStaleHostedAutomationRuns(this.options.sql, HOSTED_RUN_STALE_AFTER_MS)
+    for (const item of reconciled) {
+      try {
+        await this.options.eventPublisher?.publish({
+          v: 1,
+          eventId: randomUUID(),
+          workspaceId: item.actor.workspaceId,
+          userId: item.actor.userId,
+          automationId: item.run.automationId,
+          runId: item.run.id,
+          status: item.run.status,
+          updatedAt: item.run.updatedAt,
+        })
+      } catch {
+        // Reconciliation is durable; UI invalidation remains best effort.
+      }
+    }
+    const candidates = await listHostedAutomationCandidates(this.options.sql, floorToMinute(now).toISOString())
     const outcomes: DueRunOutcome[] = []
 
     for (const candidate of candidates) {
@@ -63,17 +88,23 @@ export class HostedDueRunService {
       }
 
       try {
-        if (!this.options.dispatcherResolver.resolveWithWorkspace) throw new Error("workspace-bound automation storage is unavailable")
-        const binding = await this.options.dispatcherResolver.resolveWithWorkspace(candidate.actor, { request })
-        const store = new PostgresAutomationStore(this.options.sql, candidate.actor, this.clock, binding.workspace)
+        const store = createLeaseBoundHostedAutomationStore(
+          this.options.sql,
+          candidate.actor,
+          this.options.dispatcherResolver,
+          this.options.agentTypeId,
+          request,
+        )
         const executor = new ManualRunExecutor({
+          agentTypeId: this.options.agentTypeId,
           store,
           dispatcherResolver: this.options.dispatcherResolver,
           actorResolver: () => candidate.actor,
+          eventPublisher: this.options.eventPublisher,
         })
         const run = await executor.run({
           automationId: candidate.automation.id,
-          request,
+          ...(request ? { request } : {}),
           trigger: "scheduled",
           scheduledFor: decision.scheduledFor,
           actor: candidate.actor,
@@ -85,6 +116,19 @@ export class HostedDueRunService {
           run: toSummary(run),
         })
       } catch (error) {
+        if (error instanceof AutomationStoreError && (
+          error.code === BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE
+          || error.code === BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_RECORDED
+        )) {
+          outcomes.push({
+            kind: "skipped",
+            automationId: candidate.automation.id,
+            scheduledFor: decision.scheduledFor,
+            reason: error.code === BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE ? "active-run" : "duplicate-scheduled-run",
+            message: error.message,
+          })
+          continue
+        }
         outcomes.push({
           kind: "failed",
           automationId: candidate.automation.id,
@@ -98,6 +142,12 @@ export class HostedDueRunService {
     outcomes.sort((a, b) => a.automationId.localeCompare(b.automationId))
     return { now: now.toISOString(), outcomes }
   }
+}
+
+function floorToMinute(value: Date): Date {
+  const minute = new Date(value)
+  minute.setUTCSeconds(0, 0)
+  return minute
 }
 
 function toSummary(run: AutomationRun): DueRunSummary {

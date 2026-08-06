@@ -69,7 +69,6 @@ export {
 } from './runtime/sandboxRuntimeHost'
 export type { SandboxRuntimeModeOptions } from './runtime/sandboxRuntimeHost'
 export type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
-export { createAgent } from './createAgent'
 export {
   AgentDirectoryCompilerError,
   compileAgentDirectory,
@@ -87,6 +86,15 @@ export type {
   AuthoredAgentSourceV1,
   MaterializeAgentDirectoryInput,
 } from './agentDefinition/materializeAgentDirectory'
+export {
+  createConfiguredAgentHostAgentSpec,
+  TrustedAgentCompositionError,
+} from './agentDefinition/createConfiguredAgentHostAgentSpec'
+export type {
+  CreateConfiguredAgentHostAgentSpecInput,
+  TrustedAgentInstructionAppendix,
+  TrustedAuthoredAgentPolicy,
+} from './agentDefinition/createConfiguredAgentHostAgentSpec'
 export {
   createResolvedAgentDigest,
   resolveAgentDeployment,
@@ -126,10 +134,13 @@ export type {
   ManagedAgentWorkspaceResolutionInput,
   ShareEntryMcpResourceOptions,
 } from './mcp'
-export { createAgentApp } from './createAgentApp'
-export type { CreateAgentAppOptions } from './createAgentApp'
+export { createStandaloneAgentHostApp } from './createStandaloneAgentHostApp'
+export type { CreateStandaloneAgentHostAppOptions } from './createStandaloneAgentHostApp'
+export { registerAgentHostEnvironmentRoutes } from './agent-host/environmentHttpProjection'
+export type { AgentHostEnvironmentHttpProjectionOptions } from './agent-host/environmentHttpProjection'
 export { createAuthMiddleware as createAgentAuthMiddleware } from './http/middleware'
 export { createAgentHost } from './agent-host/createAgentHost'
+export { SqliteAgentRequestLedger } from './agent-host/sqliteRequestLedger'
 export {
   AgentFleetCompilationError,
   AgentFleetCompilationErrorCode,
@@ -149,34 +160,34 @@ export type {
   AgentEffectAdmission,
   AgentFleetCompiler,
   AgentGatewayEffect,
-  AgentHostAddressedHttpProjectionOptions,
   AgentHostAgentSpec,
+  AgentHostDirectProjectionOptions,
   AgentHostDescription,
+  AgentHostDispatcherRunInput,
+  AgentHostEnvironmentLease,
+  AgentHostEnvironmentScope,
   AgentHostHandle,
-  AgentHostHttpProjectionOptions,
-  AgentHostLegacyHttpProjectionOptions,
-  AgentHostLegacyProjectionComposition,
-  AgentHostLegacyProjectionLifecycle,
-  AgentHostLegacyProjectionRuntime,
-  AgentHostLegacyRoutePolicy,
-  AgentHostLegacyRoutePolicyMountInput,
   AgentRequestKey,
   AgentRequestLedger,
+  AgentRequestLedgerPrepareResult,
   AgentRequestLedgerRecord,
   CompiledAgentHostAgentSpec,
   ConfiguredAgentHostAgentSpec,
   CreateAgentHostOptions,
   CreatedAgentHost,
+  AuthorizedEnvironmentIntent,
   LegacyDefaultAgentHostSpec,
   ResolvedAgentRuntimeScope,
   ResolvedEnvironmentScope,
 } from './agent-host/types'
+export type { LeaseBoundWorkspaceAgent } from '../shared/workspaceAgentDispatcher'
 export type {
   AuthorizedAgentScope,
   VerifiedAgentScopeClaim,
 } from '../shared/gateway/types'
 export type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../shared/harness'
 export { applyCspHeaders } from './http/csp'
+export { deepLinkRoutes } from './http/routes/deepLink'
 export type {
   PiExtensionFactory,
   PiHarnessOptions,
@@ -189,22 +200,29 @@ export {
   piPackageSourceKey,
   PI_PACKAGE_RESOURCE_FILTERS,
 } from './piPackages'
-export { registerAgentRoutes } from './registerAgentRoutes'
 export {
-  createAgentHostLegacyRoutePolicy,
-} from './agentHostLegacyRoutePolicy'
+  DEFAULT_PI_RESOURCE_DIGEST_LIMITS,
+  createPiResourceDigestFence,
+  createPiResourceDigestInput,
+  digestPiResourceInputs,
+} from './piResourceDigest'
 export type {
-  AgentHostLegacyRoutePolicyOptions,
-  AgentHostLegacyRouteScopePolicy,
-  PrebuiltAgentHostRoutePolicy,
-  RegisterAgentRoutesOptions,
-} from './registerAgentRoutes'
+  PiResourceDigestInput,
+  PiResourceDigestLimits,
+  PiResourceSet,
+} from './piResourceDigest'
 export type {
   WorkspaceAgentDispatcherBinding,
   WorkspaceAgentDispatcherResolver,
   WorkspaceAgentDispatcherResolveOptions,
 } from './workspaceAgentDispatcher'
-export type { RuntimeEnvContribution, RuntimeEnvContributionContext } from './runtimeEnvContributions'
+export {
+  withRuntimeEnvContributions,
+  type RuntimeEnvContribution,
+  type RuntimeEnvContributionContext,
+} from './runtimeEnvContributions'
+export { createBoundWorkspaceAgentDispatcher } from './workspaceAgentDispatcher'
+export { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 export type {
   AgentMeteringSink,
   MeteringErrorLogger,

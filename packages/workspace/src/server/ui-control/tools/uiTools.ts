@@ -8,7 +8,7 @@
  * harness with no UI knowledge. Hosts that want UI-aware agent tools
  * use `createWorkspaceAgentServer` (which closes over a bridge instance and
  * registers these factories), or pass the result of `createWorkspaceUiTools`
- * via `createAgentApp({ extraTools })` if they prefer hand-wiring.
+ * via `createStandaloneAgentHostApp({ extraTools })` if they prefer hand-wiring.
  */
 import { stat } from "node:fs/promises"
 import { resolve, isAbsolute, relative, win32 } from "node:path"
@@ -226,7 +226,7 @@ export function createExecUiTool(
       "",
       "Supported `kind` values:",
       "",
-      "  openFile     params: { path: string, mode?: 'view'|'edit'|'diff', filesystem?: 'user'|'company_context' }",
+      "  openFile     params: { path: string, mode?: 'view'|'edit'|'diff', filesystem?: string (a filesystem id from the advertised bindings; defaults to 'user') }",
       "               — Open a file in the workbench. The workbench pane",
       "                 auto-opens if collapsed. Path must be relative to the",
       "                 workspace root (e.g. `src/foo.ts`, not `foo.ts` if it",
@@ -241,8 +241,8 @@ export function createExecUiTool(
       "                 is found.",
       "                 If the path is a folder, openFile reveals/selects it in",
       "                 the file tree instead of opening an editor tab.",
-      "                 Omit filesystem for normal workspace files (defaults to user). Use filesystem:'company_context' only when a company_context binding is advertised.",
-      "                 Path prefixes such as company_context:/x do not switch filesystem identity.",
+      "                 Omit filesystem for normal workspace files (defaults to user). Pass a non-user filesystem id only when that binding is advertised.",
+      "                 Path prefixes such as somefs:/x do not switch filesystem identity.",
       "                 Example: {kind:'openFile', params:{path:'README.md'}}",
       "",
       "  openPanel    params: { id: string, component: string,",
@@ -257,15 +257,15 @@ export function createExecUiTool(
       "                          component:'chart-canvas',",
       "                          params:{seriesId:'GDPC1'}}}",
       "",
-      "  openSurface  params: { kind: string, target: string, filesystem?: 'user'|'company_context', meta?: object }",
+      "  openSurface  params: { kind: string, target: string, filesystem?: string (a filesystem id from the advertised bindings; defaults to 'user'), meta?: object }",
       "               — Open an app-owned target through the workspace",
       "                 surface resolver registry. Use this when the app",
       "                 defines the mapping from domain target to panel",
       "                 component, for example a catalog row.",
       "                 For kind:'workspace.open.path', filesystem follows the",
-      "                 same rules as openFile: omit for user files; pass",
-      "                 filesystem:'company_context' only for advertised company",
-      "                 context bindings; path prefixes do not switch identity.",
+      "                 same rules as openFile: omit for user files; pass a",
+      "                 non-user filesystem id only for advertised bindings;",
+      "                 path prefixes do not switch identity.",
       "                 Example: {kind:'openSurface', params:{",
       "                          kind:'catalog.open-row',",
       "                          target:'orders_daily',",
@@ -276,7 +276,7 @@ export function createExecUiTool(
       "               — Hide the workbench's left sources/files pane while",
       "                 keeping the workbench itself open.",
       "  navigateToLine params: { file: string, line: number }",
-      "  expandToFile params: { path: string }",
+      "  expandToFile params: { path: string, filesystem?: string (a filesystem id from the advertised bindings; defaults to 'user') }",
       "  showNotification params: { msg: string, level?: 'info'|'warn'|'error' }",
       "",
       "Returns { seq, status, uiState? }. For openFile / openPanel / openSurface /",
@@ -358,7 +358,7 @@ export function createExecUiTool(
             `${kind}: ${kind === "navigateToLine" ? "file" : "path"} param is required`,
           )
         }
-        const filesystem = kind === "openFile"
+        const filesystem = kind === "openFile" || kind === "expandToFile"
           ? normalizeUiFilesystem(typeof cmdParams.filesystem === "string" ? cmdParams.filesystem : undefined)
           : USER_FILESYSTEM_ID
         const syntax = validatePathSyntax(relPath, workspaceRoot, { allowAbsolute: filesystem !== USER_FILESYSTEM_ID })
@@ -433,7 +433,7 @@ export function createExecUiTool(
  * want manual control can use it directly:
  *
  *   const bridge = createInMemoryBridge()
- *   const app = await createAgentApp({
+ *   const app = await createStandaloneAgentHostApp({
  *     extraTools: createWorkspaceUiTools(bridge),
  *   })
  *   await app.register(uiRoutes, { bridge })

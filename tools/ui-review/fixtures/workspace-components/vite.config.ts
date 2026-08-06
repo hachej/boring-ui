@@ -1,7 +1,9 @@
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { defineConfig } from "vite"
+import { resolve } from "node:path"
 
+const repoRoot = resolve(import.meta.dirname, "../../../..")
 const port = Number(process.env.PORT ?? "5480")
 
 export default defineConfig({
@@ -24,5 +26,10 @@ export default defineConfig({
       },
     },
   ],
-  server: { host: "127.0.0.1", port, strictPort: true },
+  server: {
+    host: "127.0.0.1",
+    port,
+    strictPort: true,
+    fs: { allow: [repoRoot, resolve(repoRoot, "../../node_modules/.pnpm")] },
+  },
 })

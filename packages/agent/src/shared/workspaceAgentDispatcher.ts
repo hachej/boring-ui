@@ -1,5 +1,6 @@
 import type { InterruptReceipt, StopReceipt } from './chat'
 import type { AgentEvent, AgentSendInput } from './events'
+import type { Workspace } from './workspace'
 import type {
   AgentGateway,
   AgentSendReceipt,
@@ -15,6 +16,8 @@ export interface WorkspaceAgentDispatcherContext {
 export type WorkspaceAgentDispatcherSendInput = Omit<AgentSendInput, 'ctx'>
 
 export interface WorkspaceAgentDispatcherDispatchInput extends WorkspaceAgentDispatcherSendInput {
+  /** Optional title for a newly created addressed session. */
+  title?: string
   /** Durable caller-owned idempotency key. */
   requestId: string
   /** Defaults to requestId. */
@@ -29,6 +32,35 @@ export interface WorkspaceAgentDispatch {
   receipt: AgentSendReceipt
   events: AsyncIterable<AgentEvent>
 }
+
+/**
+ * Callback-scoped direct Agent capability. The Workspace and operations are
+ * lease guarded by the Host and must not be retained after the callback.
+ */
+export interface LeaseBoundWorkspaceAgent {
+  readonly workspace: Workspace
+  readonly signal: AbortSignal
+  dispatch(
+    input: WorkspaceAgentDispatcherDispatchInput,
+    onEvent: (event: AgentEvent) => void | Promise<void>,
+    onAccepted?: (accepted: { readonly ref: AgentSessionRef; readonly receipt: AgentSendReceipt }) => void | Promise<void>,
+  ): Promise<{
+    readonly ref: AgentSessionRef
+    readonly receipt: AgentSendReceipt
+  }>
+  interrupt(sessionId: string, requestId: string): Promise<InterruptReceipt>
+  stop(sessionId: string, requestId: string): Promise<StopReceipt>
+}
+
+export interface WorkspaceAgentDirectRunInput {
+  readonly agentTypeId: string
+  readonly context: WorkspaceAgentDispatcherContext
+  readonly requestId: string
+}
+
+export type WorkspaceAgentDirectRunCallback = (
+  binding: LeaseBoundWorkspaceAgent,
+) => Promise<void>
 
 /** Addressed gateway binding minted by the trusted composition root. */
 export interface WorkspaceAgentGatewayBinding {

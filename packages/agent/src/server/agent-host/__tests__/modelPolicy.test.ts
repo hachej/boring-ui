@@ -3,14 +3,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
-import { ErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
+import { ErrorCode } from '../../../shared/index'
 import type { AgentCoreHarness } from '../../../shared/harness'
+import type { AuthorizedAgentScope } from '../../../shared/index'
 import type { PiAgentSessionAdapter } from '../../pi-chat/PiAgentSessionAdapter'
-import {
-  createAgentHost,
-  resolveAgentHostCompatibilityComposition,
-} from '../createAgentHost'
-import type { AgentHostAgentSpec, CreatedAgentHost } from '../types'
+import { createAgentHost } from '../createAgentHost'
+import type { EmbeddedAgentGateway } from '../embeddedGateway'
+import type { CompiledAgentHostAgentSpec } from '../types'
 
 const ENV_KEYS = [
   'BORING_AGENT_DEFAULT_MODEL',
@@ -23,7 +22,7 @@ const ENV_KEYS = [
   'BORING_AGENT_INFOMANIAK_API_KEY',
 ] as const
 const roots: string[] = []
-const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' } as AuthorizedAgentScope
+const disposals: Array<() => Promise<void>> = []
 let previousEnv: Partial<Record<(typeof ENV_KEYS)[number], string>>
 
 beforeEach(() => {
@@ -42,6 +41,7 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  await Promise.all(disposals.splice(0).map((dispose) => dispose()))
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
   for (const key of ENV_KEYS) {
     const previous = previousEnv[key]
@@ -50,7 +50,7 @@ afterEach(async () => {
   }
 })
 
-function agent(agentTypeId: string, preferred?: string): AgentHostAgentSpec {
+function agent(agentTypeId: string, preferred?: string): CompiledAgentHostAgentSpec {
   return {
     agentTypeId,
     definition: { instructions: agentTypeId, label: agentTypeId },
@@ -58,114 +58,118 @@ function agent(agentTypeId: string, preferred?: string): AgentHostAgentSpec {
   }
 }
 
-async function createHost(agents: readonly AgentHostAgentSpec[]) {
+const scope = Object.freeze({
+  workspaceScopeId: 'workspace-a',
+  authSubjectId: 'subject-a',
+}) as AuthorizedAgentScope
+
+async function buildHost(agentSpecs: readonly CompiledAgentHostAgentSpec[]) {
   const sessionRoot = await mkdtemp(join(tmpdir(), 'agent-model-policy-session-'))
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'agent-model-policy-workspace-'))
   roots.push(sessionRoot, workspaceRoot)
+  const runtimeModeAdapter = createTestRuntimeModeAdapter('direct')
   const created = await createAgentHost({
-    agents,
-    fleetCompiler: { compile: async ({ agents: input }) => input },
-    hostId: 'model-policy-host',
-    scopeVerifier: { verify: async (claim) => claim },
-    runtimeModeAdapter: createTestRuntimeModeAdapter('direct'),
+    agents: agentSpecs,
+    fleetCompiler: { async compile({ agents }) { return agents as readonly CompiledAgentHostAgentSpec[] } },
+    hostId: `model-policy-${roots.length}`,
+    scopeVerifier: {
+      async verify() { return { workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' } },
+    },
+    runtimeModeAdapter,
     sessionRoot,
-    resolveRuntimeScope: async ({ agentTypeId }) => ({
-      identity: `runtime-${agentTypeId}`,
-      environment: {
-        placementIdentity: `direct-${agentTypeId}`,
+    inMemoryRequestLedgerMode: 'test',
+    async resolveAuthorizedEnvironmentScope() {
+      return {
+        placementIdentity: 'direct',
         workspaceRoot,
-        provisioningFingerprint: `provision-${agentTypeId}`,
-      },
-      sessionNamespace: agentTypeId,
-    }),
+        provisioningFingerprint: 'model-policy-v1',
+      }
+    },
+    async resolveAuthorizedAgentRuntimeScope({ agentTypeId }) {
+      return {
+        identity: `runtime-${agentTypeId}`,
+        physicalBindingIdentity: `binding-${agentTypeId}`,
+        resourceInputDigest: `resources-${agentTypeId}`,
+        sessionNamespace: agentTypeId,
+      }
+    },
+  })
+  disposals.push(async () => {
+    await created.host.close()
   })
   return { created, workspaceRoot }
 }
 
 async function resolveModel(
-  created: CreatedAgentHost,
-  workspaceRoot: string,
+  host: Awaited<ReturnType<typeof buildHost>>,
   agentTypeId: string,
   sessionId: string,
   model?: { provider: string; id: string },
 ) {
-  const composition = await resolveAgentHostCompatibilityComposition(created, agentTypeId, scope)
-  const harness = composition.harness as AgentCoreHarness
+  const ref = await host.created.gateway.createSession({
+    scope,
+    agentTypeId,
+    requestId: `create-${sessionId}`,
+  })
+  const resolved = await (host.created.gateway as EmbeddedAgentGateway).resolveHostSessionBinding(scope, ref)
+  const harness = resolved.binding.composition.harness as AgentCoreHarness
+  const sessionCtx = {
+    workspaceId: scope.workspaceScopeId,
+    runtimeScopeIdentity: resolved.binding.scope.identity,
+  }
   const adapter = await harness.getPiSessionAdapter(
-    { sessionId, message: 'hello', model },
-    { abortSignal: new AbortController().signal, workdir: workspaceRoot },
+    { sessionId: ref.sessionId, message: 'hello', model, ctx: sessionCtx },
+    { abortSignal: new AbortController().signal, workdir: host.workspaceRoot, sessionCtx },
   ) as PiAgentSessionAdapter
   return adapter.currentModel?.()
 }
 
-describe('per-agent model policy', { timeout: 15_000 }, () => {
-  it('uses an agent preferred model when the prompt specifies none', async () => {
+describe.sequential('direct Host composition per-Agent model policy', { timeout: 15_000 }, () => {
+  it('uses an Agent preferred model when the prompt specifies none', async () => {
     process.env.BORING_AGENT_DEFAULT_MODEL = 'custom:custom-model'
-    const { created, workspaceRoot } = await createHost([agent('alpha', 'infomaniak:inf-model')])
-    try {
-      await expect(resolveModel(created, workspaceRoot, 'alpha', 'preferred')).resolves.toEqual({
-        provider: 'infomaniak',
-        id: 'inf-model',
-      })
-    } finally {
-      await created.host.close()
-    }
+    const host = await buildHost([agent('alpha', 'infomaniak:inf-model'), agent('beta')])
+    await expect(resolveModel(host, 'alpha', 'preferred')).resolves.toEqual({
+      provider: 'infomaniak', id: 'inf-model',
+    })
   })
 
-  it('keeps a per-prompt model ahead of the agent preferred model', async () => {
-    const { created, workspaceRoot } = await createHost([agent('alpha', 'infomaniak:inf-model')])
-    try {
-      await expect(resolveModel(created, workspaceRoot, 'alpha', 'prompt', {
-        provider: 'custom',
-        id: 'custom-model',
-      })).resolves.toEqual({ provider: 'custom', id: 'custom-model' })
-    } finally {
-      await created.host.close()
-    }
+  it('keeps a per-prompt model ahead of the Agent preferred model', async () => {
+    const host = await buildHost([agent('alpha', 'infomaniak:inf-model'), agent('beta')])
+    await expect(resolveModel(host, 'alpha', 'prompt', {
+      provider: 'custom', id: 'custom-model',
+    })).resolves.toEqual({ provider: 'custom', id: 'custom-model' })
   })
 
-  it('keeps the global env default for an agent without a declared model', async () => {
+  it('keeps the global default for an Agent without a declared model', async () => {
     process.env.BORING_AGENT_DEFAULT_MODEL = 'custom:custom-model'
-    const { created, workspaceRoot } = await createHost([agent('alpha')])
-    try {
-      await expect(resolveModel(created, workspaceRoot, 'alpha', 'global')).resolves.toEqual({
-        provider: 'custom',
-        id: 'custom-model',
-      })
-    } finally {
-      await created.host.close()
-    }
+    const host = await buildHost([agent('alpha'), agent('beta', 'infomaniak:inf-model')])
+    await expect(resolveModel(host, 'alpha', 'global')).resolves.toEqual({
+      provider: 'custom', id: 'custom-model',
+    })
   })
 
-  it('isolates different preferred models across two agents in one fleet', async () => {
-    const { created, workspaceRoot } = await createHost([
+  it('isolates preferred models across two Agents in one process', async () => {
+    const host = await buildHost([
       agent('alpha', 'custom:custom-model'),
       agent('beta', 'infomaniak:inf-model'),
     ])
-    try {
-      await expect(Promise.all([
-        resolveModel(created, workspaceRoot, 'alpha', 'alpha-session'),
-        resolveModel(created, workspaceRoot, 'beta', 'beta-session'),
-      ])).resolves.toEqual([
-        { provider: 'custom', id: 'custom-model' },
-        { provider: 'infomaniak', id: 'inf-model' },
-      ])
-    } finally {
-      await created.host.close()
-    }
+    const models = await Promise.all([
+      resolveModel(host, 'alpha', 'alpha-session'),
+      resolveModel(host, 'beta', 'beta-session'),
+    ])
+    expect(models).toEqual([
+      { provider: 'custom', id: 'custom-model' },
+      { provider: 'infomaniak', id: 'inf-model' },
+    ])
   })
 
-  it('fails loudly when an agent preferred model cannot be resolved', async () => {
+  it('fails strictly when an Agent preferred model cannot be resolved', async () => {
     process.env.BORING_AGENT_DEFAULT_MODEL = 'custom:custom-model'
-    const { created, workspaceRoot } = await createHost([agent('alpha', 'missing:missing-model')])
-    try {
-      await expect(resolveModel(created, workspaceRoot, 'alpha', 'missing')).rejects.toMatchObject({
-        statusCode: 400,
-        code: ErrorCode.enum.TOOL_INVALID_INPUT,
-        details: { provider: 'missing', model: 'missing-model' },
-      })
-    } finally {
-      await created.host.close()
-    }
+    const host = await buildHost([agent('alpha', 'missing:missing-model'), agent('beta')])
+    await expect(resolveModel(host, 'alpha', 'missing')).rejects.toMatchObject({
+      statusCode: 400,
+      code: ErrorCode.enum.TOOL_INVALID_INPUT,
+      details: { provider: 'missing', model: 'missing-model' },
+    })
   })
 })

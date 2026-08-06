@@ -38,7 +38,7 @@ function Probe() {
   const shell = useWorkspaceInboxShell()
   return <>
     <button type="button" onClick={() => shell.openInboxArtifact(item)}>Open artifact</button>
-    <button type="button" onClick={() => shell.openDetachedChat('s1', { title: item.title })}>Open chat</button>
+    <button type="button" onClick={() => shell.openDetachedChat({ agentTypeId: 'alpha', sessionId: 's1' }, { title: item.title })}>Open chat</button>
   </>
 }
 
@@ -67,7 +67,7 @@ describe('useWorkspaceInboxShell', () => {
     render(<Probe />)
     await user.click(screen.getByRole('button', { name: 'Open chat' }))
 
-    expect(shellMock.openDetachedChat).toHaveBeenCalledWith('s1', { title: item.title })
+    expect(shellMock.openDetachedChat).toHaveBeenCalledWith({ agentTypeId: 'alpha', sessionId: 's1' }, { title: item.title })
     expect(shellMock.openArtifact).not.toHaveBeenCalled()
   })
 })

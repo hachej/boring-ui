@@ -2,7 +2,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { readPiComposerSettings, type ActiveSessionStorageLike } from '../../chat/session'
-import { useChatModelSelection } from '../useChatModelSelection'
+import { useChatModelSelection as useAddressedChatModelSelection } from '../useChatModelSelection'
+
+function useChatModelSelection(options: Omit<Parameters<typeof useAddressedChatModelSelection>[0], 'agentTypeId'> & { agentTypeId?: string }) {
+  return useAddressedChatModelSelection({ agentTypeId: 'default', ...options })
+}
 
 function storage(initial: Record<string, string> = {}): ActiveSessionStorageLike & { values: Map<string, string> } {
   const values = new Map(Object.entries(initial))
@@ -33,6 +37,27 @@ describe('useChatModelSelection', () => {
 
     await waitFor(() => expect(result.current.model).toBeNull())
     expect(readPiComposerSettings({ storageScope: 'scope-b', storage: store }).model).toBeNull()
+  })
+
+  it('normalizes discovered model metadata before storing a prompt selection', async () => {
+    const store = storage()
+    const { result } = renderHook(() => useChatModelSelection({
+      storageScope: 'scope-a',
+      storage: store,
+      enabled: false,
+    }))
+
+    const discovered = {
+      provider: 'openai-codex',
+      id: 'gpt-5.6-sol',
+      label: 'GPT 5.6 sol',
+      available: true,
+    }
+    act(() => result.current.setModel(discovered))
+
+    const expected = { provider: 'openai-codex', id: 'gpt-5.6-sol' }
+    expect(result.current.model).toEqual(expected)
+    expect(readPiComposerSettings({ storageScope: 'scope-a', storage: store }).model).toEqual(expected)
   })
 
   it('selects the first available model when the server omits a denied default', async () => {

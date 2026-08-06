@@ -124,7 +124,7 @@ export interface ManagedAgentCollectArtifactsInput {
 
 export interface ManagedAgentMcpDelegateOptions {
   gateway?: AgentGateway
-  agentTypeId?: string
+  agentTypeId: string
   resolveGatewayScope?(input: { brief: string; ctx: SessionCtx; request: ManagedAgentDelegateRequestContext }): AuthorizedAgentScope | Promise<AuthorizedAgentScope>
   resolveSessionCtx(input: { brief: string; request: ManagedAgentDelegateRequestContext }): SessionCtx | Promise<SessionCtx>
   resolveWorkspace?(input: ManagedAgentWorkspaceResolutionInput): Workspace | Promise<Workspace>
@@ -438,7 +438,7 @@ export class ManagedAgentMcpDelegateController {
     if (!gateway || !resolveScope) {
       throw new ManagedAgentMcpError(ErrorCode.enum.CONFIG_INVALID, 'MCP delegate requires a host-resolved runner')
     }
-    const agentTypeId = this.options.agentTypeId ?? 'default'
+    const agentTypeId = this.options.agentTypeId
     let active: { scope: AuthorizedAgentScope; connection: Awaited<ReturnType<AgentGateway['connectSession']>> } | undefined
     return {
       async *run(input) {

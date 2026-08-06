@@ -3,7 +3,7 @@
  *
  * Distinct from `rebuildServerPlugins.test.ts` (which tests the rebuild
  * primitive in isolation) — these tests exercise the FULL reload chain
- * through `createWorkspaceAgentServer.beforeReload` against a real
+ * through `createWorkspaceAgentServer.applyReload` against a real
  * filesystem and Fastify app instance.
  *
  * Focus: edge cases that have bitten plugin reload systems before:
@@ -16,21 +16,46 @@
  *   - syntax error → diagnostic + previous state intact
  *   - reload idempotency (no changes → no spurious side effects)
  */
+// @vitest-environment node
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, test, vi } from "vitest"
 
 const agentServerMock = vi.hoisted(() => {
-  const createAgentApp = vi.fn(async (_options?: unknown) => ({ register: vi.fn(async () => {}) }))
+  const captureResolvedRuntimeScope = vi.fn(async (_options?: unknown) => undefined)
   return {
-    createAgentApp,
-    createAgentHost: vi.fn(async () => ({
+    captureResolvedRuntimeScope,
+    createAgentHost: vi.fn(async (options: any) => ({
       host: { hostId: "test", describe: vi.fn(), drain: vi.fn(async () => {}), close: vi.fn(async () => {}) },
       gateway: {},
-      registerRoutes: vi.fn(),
+      registerDirectRoutes: vi.fn((projection: { authorizeAgentRequest(request: any): Promise<any> }) => async () => {
+        await options.fleetCompiler.compile({ agents: options.agents })
+        const request = { id: "reload-edge-test", url: "/api/v1/agents/default/reload", headers: {}, query: {} }
+        const authorizedScope = await projection.authorizeAgentRequest(request)
+        const verifiedClaim = await options.scopeVerifier.verify(authorizedScope)
+        const environment = await options.resolveAuthorizedEnvironmentScope({
+          authorizedScope,
+          verifiedClaim,
+          intent: { kind: "agent-binding", requestId: request.id },
+        })
+        const runtime = await options.resolveAuthorizedAgentRuntimeScope({
+          authorizedScope,
+          verifiedClaim,
+          agentTypeId: options.agents[0].agentTypeId,
+          intent: { kind: "agent-binding", operation: "new-binding", requestId: request.id },
+          environment,
+        })
+        const reload = await options.resolveAuthorizedAgentRuntimeScope({
+          authorizedScope,
+          verifiedClaim,
+          agentTypeId: options.agents[0].agentTypeId,
+          intent: { kind: "agent-binding", operation: "reload", requestId: "reload-edge-candidate" },
+          environment,
+        })
+        await captureResolvedRuntimeScope({ ...runtime, environment, applyReload: reload.applyReload })
+      }),
     })),
-    registerAgentRoutes: vi.fn(async (_app: unknown, options: unknown) => { await createAgentApp(options) }),
     provisionRuntimeWorkspace: vi.fn(async () => {}),
   }
 })
@@ -39,9 +64,7 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@hachej/boring-agent/server")>()
   return {
     ...actual,
-    createAgentApp: agentServerMock.createAgentApp,
     createAgentHost: agentServerMock.createAgentHost,
-    registerAgentRoutes: agentServerMock.registerAgentRoutes,
     provisionRuntimeWorkspace: agentServerMock.provisionRuntimeWorkspace,
   }
 })
@@ -51,7 +74,7 @@ import { createWorkspaceAgentServer } from "../createWorkspaceAgentServer"
 const tempDirs: string[] = []
 
 afterEach(async () => {
-  agentServerMock.createAgentApp.mockClear()
+  agentServerMock.captureResolvedRuntimeScope.mockClear()
   agentServerMock.provisionRuntimeWorkspace.mockClear()
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
@@ -107,14 +130,14 @@ describe("Reload edge cases — directory-source { spec: { dir } }", () => {
       plugins: [{ dir, hotReload: true }],
     })
 
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { beforeReload?: () => Promise<void> },
+    const [agentOptions] = agentServerMock.captureResolvedRuntimeScope.mock.calls[0] as unknown as [
+      { applyReload?: () => Promise<void> },
     ]
 
     // Fire five reloads back-to-back. None should throw, and the
     // rebuild closure should be safe under serialization.
     const results = await Promise.allSettled(
-      Array.from({ length: 5 }, () => agentOptions.beforeReload?.()),
+      Array.from({ length: 5 }, () => agentOptions.applyReload?.()),
     )
     for (const r of results) {
       expect(r.status).toBe("fulfilled")
@@ -136,18 +159,18 @@ describe("Reload edge cases — directory-source { spec: { dir } }", () => {
       plugins: [{ dir, hotReload: true }],
     })
 
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { beforeReload?: () => Promise<{ diagnostics?: { source: string; message: string }[] } | undefined> },
+    const [agentOptions] = agentServerMock.captureResolvedRuntimeScope.mock.calls[0] as unknown as [
+      { applyReload?: () => Promise<{ diagnostics?: { source: string; message: string }[] } | undefined> },
     ]
 
     // First reload: clean.
-    await expect(agentOptions.beforeReload?.()).resolves.toBeUndefined()
+    await expect(agentOptions.applyReload?.()).resolves.toBeUndefined()
 
     // Delete the plugin dir entirely.
     await rm(dir, { recursive: true, force: true })
 
     // Second reload tolerates the missing dir — no throw, diagnostics only.
-    const result = await agentOptions.beforeReload?.()
+    const result = await agentOptions.applyReload?.()
     expect(result?.diagnostics?.[0]?.message).toContain("no package.json found")
   })
 
@@ -186,13 +209,13 @@ describe("Reload edge cases — directory-source { spec: { dir } }", () => {
       plugins: [{ dir, hotReload: true }],
     })
 
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { beforeReload?: () => Promise<{ diagnostics?: { source: string; message: string }[] } | undefined> },
+    const [agentOptions] = agentServerMock.captureResolvedRuntimeScope.mock.calls[0] as unknown as [
+      { applyReload?: () => Promise<{ diagnostics?: { source: string; message: string }[] } | undefined> },
     ]
 
     // Plant a syntax error.
     await writeFile(join(dir, "src", "server", "index.ts"), "this is not !!! valid {{ typescript", "utf8")
-    const beforeReloadResult = await agentOptions.beforeReload?.()
+    const beforeReloadResult = await agentOptions.applyReload?.()
     expect(beforeReloadResult?.diagnostics?.length).toBeGreaterThan(0)
 
     // Diagnostic is observable via the exposed rebuild closure (also via
@@ -241,26 +264,26 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
       provisionWorkspace: false,
     })
 
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+    const [agentOptions] = agentServerMock.captureResolvedRuntimeScope.mock.calls[0] as unknown as [
       {
-        beforeReload?: () => Promise<void>
-        systemPromptDynamic?: () => string | undefined
+        applyReload?: () => Promise<void>
+        loadSystemPromptAppend?: () => string | undefined
       },
     ]
 
     // First call sees v1.
-    const first = await agentOptions.systemPromptDynamic?.()
+    const first = await agentOptions.loadSystemPromptAppend?.()
     expect(first).toContain("VERSION_ONE")
 
     // Edit the manifest in place.
     await writeDiscoveredPlugin(host, "freshprompt", { systemPrompt: "VERSION_TWO" })
 
     // Reload causes the asset manager to re-read package.json.
-    await expect(agentOptions.beforeReload?.()).resolves.toBeUndefined()
+    await expect(agentOptions.applyReload?.()).resolves.toBeUndefined()
 
     // Next read of the getter (Pi calls it on every before_agent_start)
     // sees the fresh value.
-    const second = await agentOptions.systemPromptDynamic?.()
+    const second = await agentOptions.loadSystemPromptAppend?.()
     expect(second).toContain("VERSION_TWO")
     expect(second).not.toContain("VERSION_ONE")
   })
@@ -275,9 +298,9 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
       provisionWorkspace: false,
     })
 
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+    const [agentOptions] = agentServerMock.captureResolvedRuntimeScope.mock.calls[0] as unknown as [
       {
-        beforeReload?: () => Promise<void>
+        applyReload?: () => Promise<void>
         pi?: { getHotReloadableResources?: () => { extensionPaths?: string[] } }
       },
     ]
@@ -288,7 +311,7 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
 
     // Add a second extension entry.
     await writeDiscoveredPlugin(host, "edge-ext", { extensions: ["one.ts", "two.ts"] })
-    await agentOptions.beforeReload?.()
+    await agentOptions.applyReload?.()
 
     const after = agentOptions.pi?.getHotReloadableResources?.().extensionPaths ?? []
     expect(after).toContain(join(host, ".pi", "extensions", "edge-ext", "agent", "one.ts"))
@@ -305,20 +328,20 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
       provisionWorkspace: false,
     })
 
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+    const [agentOptions] = agentServerMock.captureResolvedRuntimeScope.mock.calls[0] as unknown as [
       {
-        beforeReload?: () => Promise<void>
-        systemPromptDynamic?: () => string | undefined
+        applyReload?: () => Promise<void>
+        loadSystemPromptAppend?: () => string | undefined
       },
     ]
-    expect(await agentOptions.systemPromptDynamic?.()).toContain("ALIVE")
+    expect(await agentOptions.loadSystemPromptAppend?.()).toContain("ALIVE")
 
     // Delete the plugin dir between reloads.
     await rm(pluginDir, { recursive: true, force: true })
-    await expect(agentOptions.beforeReload?.()).resolves.toBeUndefined()
+    await expect(agentOptions.applyReload?.()).resolves.toBeUndefined()
 
     // The getter now returns undefined — no plugins contribute prompts.
-    const after = await agentOptions.systemPromptDynamic?.()
+    const after = await agentOptions.loadSystemPromptAppend?.()
     expect(after).toBeUndefined()
   })
 
@@ -338,12 +361,12 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
         provisionWorkspace: false,
       }),
     ).resolves.toBeTruthy()
-    expect(agentServerMock.createAgentApp).toHaveBeenCalledTimes(1)
+    expect(agentServerMock.captureResolvedRuntimeScope).toHaveBeenCalledTimes(1)
 
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { beforeReload?: () => Promise<{ diagnostics?: Array<{ message: string }> } | undefined> },
+    const [agentOptions] = agentServerMock.captureResolvedRuntimeScope.mock.calls[0] as unknown as [
+      { applyReload?: () => Promise<{ diagnostics?: Array<{ message: string }> } | undefined> },
     ]
-    await expect(agentOptions.beforeReload?.()).resolves.toEqual({
+    await expect(agentOptions.applyReload?.()).resolves.toEqual({
       diagnostics: [expect.objectContaining({ message: expect.stringContaining("INVALID_PACKAGE_JSON") })],
     })
   })
@@ -370,10 +393,10 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
       }),
     ).resolves.toBeTruthy()
 
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { beforeReload?: () => Promise<{ diagnostics?: Array<{ message: string }> } | undefined> },
+    const [agentOptions] = agentServerMock.captureResolvedRuntimeScope.mock.calls[0] as unknown as [
+      { applyReload?: () => Promise<{ diagnostics?: Array<{ message: string }> } | undefined> },
     ]
-    await expect(agentOptions.beforeReload?.()).resolves.toEqual({
+    await expect(agentOptions.applyReload?.()).resolves.toEqual({
       diagnostics: [expect.objectContaining({ message: expect.stringContaining("duplicate plugin id") })],
     })
   })

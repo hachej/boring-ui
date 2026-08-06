@@ -13,23 +13,57 @@ import {
   type IdempotentQueueClear,
 } from '../../shared/index'
 import type { PiChatSessionService } from '../../core/piChatSessionService'
-import { piChatRoutes } from '../http/routes/piChat'
-import type { AgentHostAddressedHttpProjectionOptions, AgentHostHandle } from './types'
+import { ErrorCode } from '../../shared/error-codes'
+import type { AgentHostDirectProjectionOptions, AgentHostHandle } from './types'
+import type { AgentSessionActivityIndex, AgentSessionActivityUpdate } from './sessionInventory'
+import {
+  createAgentHostRuntimeCapabilityRoutes,
+  type AgentHostRuntimeCapabilityProjection,
+} from './runtimeCapabilityProjection'
+import { projectStableServiceError } from './stableServiceError'
 
 const ADDRESSED_HEARTBEAT_INTERVAL_MS = 25_000
 const SAFE_AGENT_TYPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 
+type ProjectionOptions = AgentHostDirectProjectionOptions
+
 interface ProjectionInput {
   readonly host: AgentHostHandle
   readonly gateway: AgentGateway
-  readonly options: AgentHostAddressedHttpProjectionOptions
-  /** Compatibility wrappers already own parent Fastify lifecycle hooks. */
-  readonly manageLifecycle?: boolean
-  readonly resolveLegacyPiChatService: (request: FastifyRequest) => Promise<PiChatSessionService>
+  readonly options: ProjectionOptions
+  readonly resolveAddressedPiChatService: (
+    request: FastifyRequest,
+    agentTypeId: string,
+    sessionId: string,
+  ) => Promise<{ readonly scope: import('../../shared/index').AuthorizedAgentScope; readonly service: PiChatSessionService }>
+  readonly runtimeCapabilities?: AgentHostRuntimeCapabilityProjection
+  readonly activity: AgentSessionActivityIndex
+  readonly resolveActivityWorkspaceScope: (request: FastifyRequest) => Promise<string>
+}
+
+const mountedHostsByServer = new WeakMap<object, WeakSet<object>>()
+
+export function claimAgentHostProjection(
+  app: Parameters<FastifyPluginAsync>[0],
+  host: AgentHostHandle,
+): void {
+  const server = app.server as object
+  let mounted = mountedHostsByServer.get(server)
+  if (!mounted) {
+    mounted = new WeakSet<object>()
+    mountedHostsByServer.set(server, mounted)
+  }
+  if (mounted.has(host)) {
+    throw Object.assign(
+      new TypeError('Agent Host projection is already registered on this Fastify app'),
+      { code: ErrorCode.enum.CONFIG_INVALID },
+    )
+  }
+  mounted.add(host)
 }
 
 const NonEmptyString = z.string().min(1)
-const RequestIdSchema = NonEmptyString.max(256)
+const RequestIdSchema = z.string().trim().min(1).max(128).regex(/^[A-Za-z0-9._:-]+$/)
 const AgentTypeIdSchema = z.string().regex(SAFE_AGENT_TYPE_ID)
 const SessionIdSchema = NonEmptyString.max(128)
 const EmptyObjectSchema = z.object({}).strict()
@@ -37,6 +71,13 @@ const OptionalEmptyBodySchema = z.preprocess((value) => value === undefined ? {}
 const EmptyQuerySchema = z.object({}).strict()
 const AgentParamsSchema = z.object({ agentTypeId: AgentTypeIdSchema }).strict()
 const SessionParamsSchema = AgentParamsSchema.extend({ sessionId: SessionIdSchema }).strict()
+const AttachmentParamsSchema = SessionParamsSchema.extend({
+  messageId: NonEmptyString.max(256),
+  index: z.preprocess(
+    (value) => typeof value === 'string' ? Number(value) : value,
+    z.number().int().nonnegative(),
+  ),
+}).strict()
 const ListSessionsQuerySchema = z.object({
   cursor: NonEmptyString.max(8_192).optional(),
   limit: z.preprocess(
@@ -44,6 +85,7 @@ const ListSessionsQuerySchema = z.object({
     z.number().int().min(1).max(100).optional(),
   ),
 }).strict()
+const ActivityEventsQuerySchema = z.object({ workspaceId: NonEmptyString.max(256).optional() }).strict()
 const EventsQuerySchema = z.object({
   cursor: z.preprocess(
     (value) => typeof value === 'string' && value.length > 0 ? Number(value) : value,
@@ -53,6 +95,7 @@ const EventsQuerySchema = z.object({
 const CreateSessionBodySchema = z.preprocess((value) => value === undefined ? {} : value, z.object({
   requestId: RequestIdSchema.optional(),
   title: NonEmptyString.max(200).optional(),
+  resumeSessionId: SessionIdSchema.optional(),
 }).strict())
 const RenameSessionBodySchema = z.object({
   requestId: RequestIdSchema,
@@ -74,6 +117,7 @@ const PromptBodySchema = z.object({
   clientNonce: NonEmptyString.max(128),
   content: NonEmptyString.max(1_000_000),
   displayContent: NonEmptyString.max(1_000_000).optional(),
+  requireIdle: z.literal(true).optional(),
   model: ChatModelSelectionSchema.optional(),
   thinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
   attachments: z.array(ChatAttachmentPayloadSchema).max(20).optional(),
@@ -130,7 +174,9 @@ function statusForGatewayError(code: string): number {
   if (code === AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND || code === AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN) return 404
   if (
     code === AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT
+    || code === AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS
     || code === AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN
+    || code === AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED
     || code === AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE
     || code === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
     || code.includes('CURSOR')
@@ -147,6 +193,10 @@ function sendError(reply: FastifyReply, error: unknown): FastifyReply {
   if (error instanceof AgentGatewayError) {
     return reply.code(statusForGatewayError(error.code)).send({ error: error.toJSON() })
   }
+  const stable = projectStableServiceError(error)
+  if (stable) {
+    return reply.code(stable.statusCode).send({ error: stable.error })
+  }
   throw error
 }
 
@@ -156,7 +206,7 @@ async function withConnection<T>(
   ref: AgentSessionRef,
   action: (connection: AgentSessionConnection) => Promise<T>,
 ): Promise<T> {
-  const scope = await input.options.authorizeRequest(request)
+  const scope = await input.options.authorizeAgentRequest(request)
   const connection = await input.gateway.connectSession({ scope, ref })
   try {
     return await action(connection)
@@ -170,10 +220,48 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     const query = parseWithSchema(EmptyQuerySchema, request.query, reply, 'query')
     if (!query) return
     try {
-      return await input.gateway.listAgents({ scope: await input.options.authorizeRequest(request) })
+      return await input.gateway.listAgents({ scope: await input.options.authorizeAgentRequest(request) })
     } catch (error) {
       return sendError(reply, error)
     }
+  })
+
+  app.get('/api/v1/agents/session-activity/events', async (request, reply) => {
+    const query = parseWithSchema(ActivityEventsQuerySchema, request.query, reply, 'query')
+    if (!query) return
+    let workspaceScopeId: string
+    try {
+      workspaceScopeId = await input.resolveActivityWorkspaceScope(request)
+    } catch (error) {
+      return sendError(reply, error)
+    }
+
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    })
+    const write = (event: 'snapshot' | 'activity', data: unknown) => {
+      if (reply.raw.destroyed || reply.raw.writableEnded) return
+      reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+    }
+    const unsubscribe = input.activity.subscribe(workspaceScopeId, (update: AgentSessionActivityUpdate) => {
+      write('activity', update)
+    })
+    write('snapshot', { sessions: input.activity.snapshot(workspaceScopeId) })
+    const heartbeat = setInterval(() => {
+      if (!reply.raw.writableEnded) reply.raw.write(': heartbeat\n\n')
+    }, ADDRESSED_HEARTBEAT_INTERVAL_MS)
+    let cleanedUp = false
+    const cleanup = () => {
+      if (cleanedUp) return
+      cleanedUp = true
+      clearInterval(heartbeat)
+      unsubscribe()
+    }
+    request.raw.once('close', cleanup)
+    reply.raw.once('close', cleanup)
+    reply.hijack()
   })
 
   app.get('/api/v1/agents/:agentTypeId/sessions', async (request, reply) => {
@@ -183,7 +271,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!query) return
     try {
       return await input.gateway.listSessions({
-        scope: await input.options.authorizeRequest(request),
+        scope: await input.options.authorizeAgentRequest(request),
         agentTypeId: params.agentTypeId,
         cursor: query.cursor,
         limit: query.limit,
@@ -200,10 +288,11 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!body) return
     try {
       const ref = await input.gateway.createSession({
-        scope: await input.options.authorizeRequest(request),
+        scope: await input.options.authorizeAgentRequest(request),
         agentTypeId: params.agentTypeId,
         requestId: body.requestId ?? randomUUID(),
         title: body.title,
+        ...(body.resumeSessionId ? { resumeSessionId: body.resumeSessionId } : {}),
       })
       return reply.code(201).send(ref)
     } catch (error) {
@@ -218,10 +307,58 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!query) return
     try {
       return await input.gateway.readSessionState({
-        scope: await input.options.authorizeRequest(request),
+        scope: await input.options.authorizeAgentRequest(request),
         ref: params,
       })
     } catch (error) {
+      return sendError(reply, error)
+    }
+  })
+
+  app.get('/api/v1/agents/:agentTypeId/sessions/:sessionId/attachments/:messageId/:index', async (request, reply) => {
+    const params = parseWithSchema(AttachmentParamsSchema, request.params, reply, 'params')
+    if (!params) return
+    const query = parseWithSchema(EmptyQuerySchema, request.query, reply, 'query')
+    if (!query) return
+    try {
+      // The service comes from the exact pin-checked existing-session binding;
+      // never re-resolve a candidate/current binding after authorization.
+      const { scope, service } = await input.resolveAddressedPiChatService(
+        request,
+        params.agentTypeId,
+        params.sessionId,
+      )
+      if (!service.readAttachment) {
+        throw new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND,
+          'attachment not found',
+        )
+      }
+      const attachment = await service.readAttachment({
+        workspaceId: scope.workspaceScopeId,
+        storageScope: scope.workspaceScopeId,
+        authSubject: scope.authSubjectId,
+        sessionAuthority: 'workspace-scope',
+        requestId: request.id,
+      }, params.sessionId, params.messageId, params.index)
+      if (!attachment.mediaType.startsWith('image/')) {
+        throw new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND,
+          'attachment not found',
+        )
+      }
+      return reply
+        .header('Content-Type', attachment.mediaType)
+        .header('Cache-Control', 'private, max-age=300')
+        .header('X-Content-Type-Options', 'nosniff')
+        .send(Buffer.from(attachment.data))
+    } catch (error) {
+      if ((error as { code?: unknown })?.code === 'SESSION_NOT_FOUND') {
+        return sendError(reply, new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND,
+          'attachment not found',
+        ))
+      }
       return sendError(reply, error)
     }
   })
@@ -233,32 +370,46 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!query) return
 
     let connection: AgentSessionConnection | undefined
+    let connectionClose: Promise<void> | undefined
+    let heartbeat: ReturnType<typeof setInterval> | undefined
+    let clientClosed = request.raw.aborted
+    let listenersRemoved = false
+    const closeConnection = () => {
+      if (!connection) return Promise.resolve()
+      connectionClose ??= connection.close().catch(() => {})
+      return connectionClose
+    }
+    const close = () => {
+      clientClosed = true
+      if (!listenersRemoved) {
+        listenersRemoved = true
+        request.raw.off('aborted', close)
+        reply.raw.off('close', close)
+      }
+      if (heartbeat) {
+        clearInterval(heartbeat)
+        heartbeat = undefined
+      }
+      void closeConnection()
+    }
+    request.raw.once('aborted', close)
+    reply.raw.once('close', close)
+    if (request.raw.aborted) close()
     try {
       connection = await input.gateway.connectSession({
-        scope: await input.options.authorizeRequest(request),
+        scope: await input.options.authorizeAgentRequest(request),
         ref: params,
         cursor: query.cursor,
       })
+      if (clientClosed) {
+        await closeConnection()
+        return reply
+      }
       const activeConnection = connection
       const stream = new PassThrough()
-      let heartbeat: ReturnType<typeof setInterval> | undefined
-      let closed = request.raw.aborted
       const writeFrame = (frame: unknown) => {
-        if (!closed) stream.write(`${JSON.stringify(frame)}\n`)
+        if (!clientClosed) stream.write(`${JSON.stringify(frame)}\n`)
       }
-      const close = () => {
-        if (closed) return
-        closed = true
-        request.raw.off('aborted', close)
-        reply.raw.off('close', close)
-        if (heartbeat) {
-          clearInterval(heartbeat)
-          heartbeat = undefined
-        }
-        void activeConnection.close().catch(() => {})
-      }
-      request.raw.once('aborted', close)
-      reply.raw.once('close', close)
       const writeHeartbeat = () => writeFrame({ type: 'heartbeat', now: new Date().toISOString() })
       heartbeat = setInterval(writeHeartbeat, ADDRESSED_HEARTBEAT_INTERVAL_MS)
       heartbeat.unref()
@@ -267,11 +418,11 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
         try {
           for await (const event of activeConnection.events) writeFrame(event)
         } finally {
-          if (!closed) stream.end()
+          if (!clientClosed) stream.end()
           close()
         }
       })().catch((error) => {
-        if (!closed) stream.destroy(error instanceof Error ? error : new Error(String(error)))
+        if (!clientClosed) stream.destroy(error instanceof Error ? error : new Error(String(error)))
         close()
       })
       return reply
@@ -280,7 +431,10 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
         .header('X-Accel-Buffering', 'no')
         .send(stream)
     } catch (error) {
-      await connection?.close().catch(() => {})
+      const wasClientClosed = clientClosed
+      close()
+      await closeConnection()
+      if (wasClientClosed) return reply
       return sendError(reply, error)
     }
   })
@@ -292,7 +446,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!body) return
     try {
       return await input.gateway.renameSession({
-        scope: await input.options.authorizeRequest(request),
+        scope: await input.options.authorizeAgentRequest(request),
         ref: params,
         requestId: body.requestId,
         title: body.title,
@@ -311,7 +465,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!body) return
     try {
       await input.gateway.deleteSession({
-        scope: await input.options.authorizeRequest(request),
+        scope: await input.options.authorizeAgentRequest(request),
         ref: params,
         requestId: query.requestId ?? randomUUID(),
       })
@@ -390,35 +544,30 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     }
   }
   app.post('/api/v1/agents/:agentTypeId/sessions/:sessionId/queue/clear', clearQueue)
-  // Preserve the addressed command spelling previously handled by the generic
-  // command route while keeping its body on the same closed parser.
-  app.post('/api/v1/agents/:agentTypeId/sessions/:sessionId/queue-clear', clearQueue)
 }
 
 /** Awaited Fastify projection for the addressed Gateway surface. */
 export function createAgentHostRoutes(input: ProjectionInput): FastifyPluginAsync {
   return async (app) => {
-    if (input.manageLifecycle !== false) {
-      app.addHook('preClose', async () => {
-        await input.host.drain()
-      })
-      app.addHook('onClose', async () => {
-        await input.host.close()
-      })
-    }
+    claimAgentHostProjection(app, input.host)
+    app.addHook('preClose', async () => {
+      await input.host.drain()
+    })
+    app.addHook('onClose', async () => {
+      await input.host.close()
+    })
     app.setErrorHandler((error, _request, reply) => {
       if ((error as { code?: unknown }).code === 'FST_ERR_CTP_INVALID_JSON_BODY') {
         sendValidationError(reply, 'body')
         return
       }
-      reply.send(error)
+      // Preserve the embedding app's canonical error envelope and telemetry.
+      throw error
     })
 
     registerAddressedRoutes(app, input)
-    if (input.options.legacyPiChatAliases) {
-      await app.register(piChatRoutes, {
-        getService: input.resolveLegacyPiChatService,
-      })
+    if (input.runtimeCapabilities) {
+      await app.register(createAgentHostRuntimeCapabilityRoutes(input.runtimeCapabilities))
     }
   }
 }

@@ -6,7 +6,14 @@ import type { SessionSummary } from '../../../shared/session'
 import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
 import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSession'
 import { activeSessionStorageKey, scopedComposerStorageKey, type ActiveSessionStorageLike } from '../session'
-import { PiChatPanel } from '../PiChatPanel'
+import { bootResumeSessionStorageKey } from '../session/sessionSelectionStorage'
+import { ComposerContributionProvider } from '../composerContributions'
+import { PiChatPanel as AddressedPiChatPanel, type PiChatPanelProps } from '../PiChatPanel'
+import type { ComposerBlocker } from '../components/ChatNotices'
+
+function PiChatPanel<TBlocker extends ComposerBlocker = ComposerBlocker>(props: Omit<PiChatPanelProps<TBlocker>, 'agentTypeId'> & { agentTypeId?: string }) {
+  return <AddressedPiChatPanel agentTypeId="default" {...props} />
+}
 
 vi.stubGlobal('ResizeObserver', class {
   observe() {}
@@ -22,7 +29,22 @@ function session(id: string, title = `Session ${id}`): SessionSummary {
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+  const addressed = Array.isArray(body)
+    ? {
+        sessions: body.map((item: SessionSummary) => ({
+          ref: { agentTypeId: 'default', sessionId: item.id },
+          title: item.title,
+          status: 'idle',
+          createdAt: Date.parse(item.createdAt),
+          updatedAt: Date.parse(item.updatedAt),
+        })),
+      }
+    : typeof body === 'object' && body !== null && 'protocolVersion' in body
+      ? { ref: { agentTypeId: 'default', sessionId: (body as { sessionId?: unknown }).sessionId }, state: body }
+      : typeof body === 'object' && body !== null && 'id' in body
+        ? { agentTypeId: 'default', sessionId: (body as SessionSummary).id }
+        : body
+  return new Response(JSON.stringify(addressed), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
 function deferred<T>() {
@@ -193,7 +215,7 @@ describe('PiChatPanel sandbox shell', () => {
     await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: 'first prompt' })))
 
     fireEvent.click(screen.getByRole('button', { name: 'New session' }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/pi-chat/sessions', expect.objectContaining({ method: 'POST' })))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agents/default/sessions', expect.objectContaining({ method: 'POST' })))
   })
 
   test('clears the composer immediately after local prompt acceptance', async () => {
@@ -352,7 +374,7 @@ describe('PiChatPanel sandbox shell', () => {
   test('keeps session working badge signal when a streaming panel unmounts', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
-    const statusEvents: Array<{ sessionId?: string; working?: boolean }> = []
+    const statusEvents: Array<{ sessionId?: string; agentTypeId?: string; working?: boolean }> = []
     const onStatus = (event: Event) => {
       statusEvents.push((event as CustomEvent).detail ?? {})
     }
@@ -367,8 +389,28 @@ describe('PiChatPanel sandbox shell', () => {
     unmount()
     window.removeEventListener('boring:chat-session-status', onStatus)
 
-    expect(statusEvents).toContainEqual({ sessionId: 'pi-1', working: true })
-    expect(statusEvents.at(-1)).toEqual({ sessionId: 'pi-1', working: true })
+    expect(statusEvents).toContainEqual({ sessionId: 'pi-1', agentTypeId: 'default', working: true })
+    expect(statusEvents.at(-1)).toEqual({ sessionId: 'pi-1', agentTypeId: 'default', working: true })
+  })
+
+  test('replays current working state when shell chrome mounts after the panel', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    const statusEvents: Array<{ sessionId?: string; agentTypeId?: string; working?: boolean }> = []
+    const onStatus = (event: Event) => statusEvents.push((event as CustomEvent).detail ?? {})
+    window.addEventListener('boring:chat-session-status', onStatus)
+    const { unmount } = render(<PiChatPanel serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
+
+    await screen.findByText('committed from /state')
+    act(() => remote.setState({ ...remote.state, status: 'streaming' }))
+    await screen.findByTestId('chat-working')
+    statusEvents.length = 0
+
+    act(() => window.dispatchEvent(new Event('boring:chat-session-status-request')))
+
+    expect(statusEvents).toEqual([{ sessionId: 'pi-1', agentTypeId: 'default', working: true }])
+    unmount()
+    window.removeEventListener('boring:chat-session-status', onStatus)
   })
 
   test('includes the addressed Agent owner in session working badge signals', async () => {
@@ -524,17 +566,26 @@ describe('PiChatPanel sandbox shell', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const method = init?.method ?? 'GET'
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'GET') return jsonResponse([])
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'POST') return createSessionResponse.promise
-      if (url.endsWith('/api/v1/agent/models')) return modelsResponse.promise
-      if (url.includes('/api/v1/agent/commands')) return skillsResponse.promise
+      if (url.includes('/api/v1/agents/default/sessions?') && method === 'GET') return jsonResponse([])
+      if (url.endsWith('/api/v1/agents/default/sessions') && method === 'POST') return createSessionResponse.promise
+      if (url.endsWith('/api/v1/agents/default/models')) return modelsResponse.promise
+      if (url.includes('/api/v1/agents/default/commands')) return skillsResponse.promise
       throw new Error(`unexpected fetch ${url}`)
     })
 
+    window.sessionStorage.setItem(bootResumeSessionStorageKey({
+      apiBaseUrl: '',
+      sessionsApiPath: '/api/v1/agents/default/sessions',
+      agentTypeId: 'default',
+      storageScope: 'scope-a',
+    }), 'pi-empty-owned-by-this-tab')
     render(<PiChatPanel storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} />)
 
-    const createCalls = () => fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST')
+    const createCalls = () => fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agents/default/sessions') && call[1]?.method === 'POST')
     await waitFor(() => expect(createCalls()).toHaveLength(1))
+    expect(JSON.parse(String(createCalls()[0]?.[1]?.body))).toMatchObject({
+      resumeSessionId: 'pi-empty-owned-by-this-tab',
+    })
 
     await act(async () => {
       modelsResponse.resolve(jsonResponse({ models: [] }))
@@ -542,7 +593,7 @@ describe('PiChatPanel sandbox shell', () => {
       await Promise.resolve()
     })
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/models', expect.anything()))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agents/default/models', expect.anything()))
     expect(createCalls()).toHaveLength(1)
 
     await act(async () => {
@@ -554,10 +605,10 @@ describe('PiChatPanel sandbox shell', () => {
   test('routes model and skill discovery through apiBaseUrl with scoped headers', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input)
-      if (url === 'https://agent.test/api/v1/agent/pi-chat/sessions') return jsonResponse([])
-      if (url === 'https://agent.test/api/v1/agent/models') return jsonResponse({ models: [] })
-      if (url.startsWith('https://agent.test/api/v1/agent/commands')) return jsonResponse({ commands: [] })
-      if (url === 'https://agent.test/api/v1/agent/skills') return jsonResponse({ skills: [] })
+      if (url.startsWith('https://agent.test/api/v1/agents/default/sessions?')) return jsonResponse([])
+      if (url === 'https://agent.test/api/v1/agents/default/models') return jsonResponse({ models: [] })
+      if (url.startsWith('https://agent.test/api/v1/agents/default/commands')) return jsonResponse({ commands: [] })
+      if (url === 'https://agent.test/api/v1/agents/default/skills') return jsonResponse({ skills: [] })
       throw new Error(`unexpected fetch ${url}`)
     })
 
@@ -572,10 +623,10 @@ describe('PiChatPanel sandbox shell', () => {
 
     await waitFor(() => {
       expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual(expect.arrayContaining([
-        'https://agent.test/api/v1/agent/pi-chat/sessions',
-        'https://agent.test/api/v1/agent/models',
-        expect.stringContaining('https://agent.test/api/v1/agent/commands'),
-        'https://agent.test/api/v1/agent/skills',
+        'https://agent.test/api/v1/agents/default/sessions?limit=50',
+        'https://agent.test/api/v1/agents/default/models',
+        expect.stringContaining('https://agent.test/api/v1/agents/default/commands'),
+        'https://agent.test/api/v1/agents/default/skills',
       ]))
     })
     for (const [, init] of fetchMock.mock.calls) {
@@ -593,9 +644,9 @@ describe('PiChatPanel sandbox shell', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       const parsed = new URL(url, 'https://agent.test')
-      if (parsed.pathname === '/api/v1/agent/pi-chat/sessions') return jsonResponse([session('pi-1')])
-      if (parsed.pathname === '/api/v1/agent/commands') return jsonResponse({ commands: [] })
-      if (parsed.pathname === '/api/v1/agent/skills') {
+      if (parsed.pathname === '/api/v1/agents/default/sessions') return jsonResponse([session('pi-1')])
+      if (parsed.pathname === '/api/v1/agents/default/commands') return jsonResponse({ commands: [] })
+      if (parsed.pathname === '/api/v1/agents/default/skills') {
         return jsonResponse({
           skills: [
             { name: 'workspace-review', description: 'Workspace skill', resource: { filesystem: 'user', path: '.agents/skills/workspace-review/SKILL.md' } },
@@ -658,7 +709,7 @@ describe('PiChatPanel sandbox shell', () => {
       />,
     )
 
-    await screen.findByText('What are we building?')
+    await screen.findByText('What should we work on?')
 
     rerender(
       <PiChatPanel
@@ -669,8 +720,54 @@ describe('PiChatPanel sandbox shell', () => {
       />,
     )
 
-    expect(screen.getByText(/Loading chat history/)).toBeTruthy()
-    expect(screen.queryByText('What are we building?')).toBeNull()
+    expect(screen.getByRole('status', { name: 'Loading chat history' }).getAttribute('aria-busy')).toBe('true')
+    expect(document.querySelector('[data-boring-agent-part="chat-history-loading"]')).toBeTruthy()
+    expect(screen.queryByText(/Loading chat history/)).toBeNull()
+    expect(screen.queryByText('What should we work on?')).toBeNull()
+  })
+
+  test('orders the empty hero as title, composer, then quick actions', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ committedMessages: [], sessionId: 'pi-empty' }))
+
+    render(
+      <PiChatPanel
+        sessionId="pi-empty"
+        emptyPlacement="hero"
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    const title = await screen.findByText('What should we work on?')
+    const composer = document.querySelector('[data-boring-agent-part="composer-rail"]')
+    const suggestions = document.querySelector('[data-boring-agent-part="suggestion-grid"]')
+    const textarea = screen.getByLabelText('Agent prompt') as HTMLTextAreaElement
+
+    expect(composer).toBeTruthy()
+    expect(suggestions).toBeTruthy()
+    expect(title.compareDocumentPosition(composer!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(composer!.compareDocumentPosition(suggestions!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByText('Ask a question, open a file from the workbench, or start from a template.')).toBeNull()
+    expect(document.querySelectorAll('[data-boring-agent-part="composer-rail"]')).toHaveLength(1)
+
+    fireEvent.change(textarea, { target: { value: 'preserve this draft' } })
+    textarea.focus()
+    remote.setState(remoteState({
+      sessionId: 'pi-empty',
+      committedMessages: [{
+        id: 'user-1',
+        role: 'user',
+        status: 'done',
+        parts: [{ type: 'text', id: 'user-1:text', text: 'First message' }],
+      }],
+    }))
+
+    await screen.findByText('First message')
+    expect(document.querySelector('[data-boring-agent-part="composer-rail"]')).toBe(composer)
+    expect(screen.getByLabelText('Agent prompt')).toBe(textarea)
+    expect(textarea.value).toBe('preserve this draft')
+    expect(document.activeElement).toBe(textarea)
   })
 
   test('shows loading instead of empty suggestions before selected session state is available', async () => {
@@ -690,8 +787,10 @@ describe('PiChatPanel sandbox shell', () => {
       />,
     )
 
-    expect(await screen.findByText(/Loading chat history/)).toBeTruthy()
-    expect(screen.queryByText('What are we building?')).toBeNull()
+    expect((await screen.findByRole('status', { name: 'Loading chat history' })).getAttribute('aria-busy')).toBe('true')
+    expect(document.querySelector('[data-boring-agent-part="chat-history-loading"]')).toBeTruthy()
+    expect(screen.queryByText(/Loading chat history/)).toBeNull()
+    expect(screen.queryByText('What should we work on?')).toBeNull()
   })
 
   test('keeps an external Pi session stable when equal request headers are recreated', async () => {
@@ -832,6 +931,8 @@ describe('PiChatPanel sandbox shell', () => {
     expect(attachmentRow).toBeTruthy()
     expect(inputRow).toBeTruthy()
     expect(inputRow?.contains(attachmentRow)).toBe(false)
+    expect(within(attachmentRow as HTMLElement).getByRole('button', { name: 'Remove' }).className)
+      .toContain('composer-attachment-remove')
   })
 
   test('renders server queued follow-ups only in the composer banner', async () => {
@@ -1073,8 +1174,16 @@ describe('PiChatPanel sandbox shell', () => {
     )
 
     const textarea = await screen.findByLabelText('Agent prompt')
-    expect(screen.getByRole('button', { name: /Current model:/ }).textContent).toContain('/model:')
-    expect(screen.getByRole('button', { name: 'Thinking level: Med' }).textContent).toContain('/thinking:')
+    const modelControl = screen.getByRole('button', { name: /Current model:/ })
+    const thinkingControl = screen.getByRole('button', { name: 'Thinking level: Med' })
+    const attachControl = screen.getByRole('button', { name: 'Attach files' })
+    const submitControl = document.querySelector('[data-boring-agent-part="composer-submit"]')
+    expect(modelControl.textContent).toContain('Model ·')
+    expect(modelControl.className).toContain('composer-settings-trigger')
+    expect(thinkingControl.textContent).toContain('Thinking ·')
+    expect(thinkingControl.className).toContain('composer-settings-trigger')
+    expect(attachControl.className).toContain('composer-attachment-button')
+    expect(submitControl?.className).toContain('composer-submit-control')
 
     fireEvent.change(textarea, { target: { value: '/mod' } })
     let commands = await screen.findByRole('listbox', { name: 'Commands' })
@@ -1570,13 +1679,13 @@ describe('PiChatPanel sandbox shell', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const method = init?.method ?? 'GET'
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'GET') return jsonResponse(serverSessions)
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions/pi-1') && method === 'DELETE') {
+      if (url.includes('/api/v1/agents/default/sessions?') && method === 'GET') return jsonResponse(serverSessions)
+      if (url.endsWith('/api/v1/agents/default/sessions/pi-1') && method === 'DELETE') {
         serverSessions = []
         return new Response(null, { status: 204 })
       }
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'POST') {
-        const created = session(`pi-new-${fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST').length}`, 'Reset session')
+      if (url.endsWith('/api/v1/agents/default/sessions') && method === 'POST') {
+        const created = session(`pi-new-${fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agents/default/sessions') && call[1]?.method === 'POST').length}`, 'Reset session')
         serverSessions = [created]
         return jsonResponse(created, 201)
       }
@@ -1590,11 +1699,11 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
 
     await waitFor(() => {
-      const createCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST')
+      const createCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agents/default/sessions') && call[1]?.method === 'POST')
       expect(createCalls).toHaveLength(1)
     })
     await act(async () => {})
-    const createCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST')
+    const createCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agents/default/sessions') && call[1]?.method === 'POST')
     expect(createCalls).toHaveLength(1)
   })
 
@@ -1618,7 +1727,7 @@ describe('PiChatPanel sandbox shell', () => {
     await screen.findByText('answer')
     expect(document.querySelectorAll('[data-boring-agent-part="message-reasoning"]')).toHaveLength(1)
     const reasoning = document.querySelector('[data-boring-agent-part="message-reasoning"]')
-    expect(reasoning?.querySelector('button')?.textContent).toMatch(/thoughts/i)
+    expect(reasoning?.querySelector('button')?.textContent).toMatch(/reasoning/i)
     expect(reasoning?.getAttribute('data-state')).toBe('closed')
 
     fireEvent.click(reasoning!.querySelector('button')!)
@@ -1706,7 +1815,7 @@ describe('PiChatPanel sandbox shell', () => {
     const remote = new FakeRemotePiSession(remoteState())
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
       throw new Error(`unexpected fetch ${url}`)
     })
     const onReloadAgentPlugins = vi.fn(async () => ({
@@ -1736,15 +1845,216 @@ describe('PiChatPanel sandbox shell', () => {
     expect(remote.prompt).not.toHaveBeenCalled()
   })
 
+  test('runs a safe assistant /reload link through composer policy without clearing the draft', async () => {
+    const remote = new FakeRemotePiSession(remoteState({
+      committedMessages: [{
+        id: 'a-reload',
+        role: 'assistant',
+        status: 'done',
+        parts: [{ type: 'text', id: 'a-reload:text', text: 'Please run /reload. Do not run /reset or /reload/config.' }],
+      }],
+    }))
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const onReloadAgentPlugins = vi.fn(async () => ({ message: 'Extensions reloaded.', reloaded: true }))
+    const onBeforeSubmit = vi.fn(async () => true)
+
+    render(
+      <PiChatPanel
+        storageScope="workspace-a"
+        serverResourcesEnabled={false}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+        onReloadAgentPlugins={onReloadAgentPlugins}
+        onBeforeSubmit={onBeforeSubmit}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: 'keep this draft' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Run /reload command' }))
+
+    await waitFor(() => expect(onReloadAgentPlugins).toHaveBeenCalledTimes(1))
+    expect(onBeforeSubmit).toHaveBeenCalledWith('/reload', expect.objectContaining({ source: 'composer' }))
+    expect((textarea as HTMLTextAreaElement).value).toBe('keep this draft')
+    expect(remote.prompt).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Run /reset command' })).toBeNull()
+  })
+
+  test('keeps full send bookkeeping when an executable mention admits a skill run', async () => {
+    const remote = new FakeRemotePiSession(remoteState({
+      committedMessages: [{
+        id: 'a-launch-skill',
+        role: 'assistant',
+        status: 'done',
+        parts: [{ type: 'text', id: 'a-launch-skill:text', text: 'Run /launch.' }],
+      }],
+    }))
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const onPromptSubmitStarted = vi.fn()
+
+    render(
+      <PiChatPanel
+        storageScope="workspace-a"
+        serverResourcesEnabled={false}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+        onPromptSubmitStarted={onPromptSubmitStarted}
+        extraCommands={[{
+          name: 'launch',
+          description: 'Launch a skill',
+          kind: 'skill',
+          clickBehavior: 'execute',
+          handler: vi.fn(),
+        }]}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: 'preserve this draft' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Run /launch command' }))
+
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: 'skill: launch' })))
+    expect(onPromptSubmitStarted).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'pi-1' }))
+    expect((textarea as HTMLTextAreaElement).value).toBe('preserve this draft')
+  })
+
+  test('registers slash commands contributed by a composer plugin', async () => {
+    const remote = new FakeRemotePiSession(remoteState())
+    const handler = vi.fn(() => 'Contributed command ran.')
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    render(
+      <ComposerContributionProvider contribution={{
+        id: 'test-contribution',
+        commands: [{ name: 'contributed', description: 'Contributed command', kind: 'local', handler }],
+      }}>
+        <PiChatPanel
+          storageScope="workspace-a"
+          serverResourcesEnabled={false}
+          fetch={fetchMock as unknown as typeof fetch}
+          createRemoteSession={remoteFactory(remote)}
+        />
+      </ComposerContributionProvider>,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: '/contributed' } })
+    const commands = await screen.findByRole('listbox', { name: 'Commands' })
+    expect(within(commands).getByText('/contributed')).toBeTruthy()
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  test('inserts opted-in assistant commands and registered skills without executing them', async () => {
+    const remote = new FakeRemotePiSession(remoteState({
+      committedMessages: [{
+        id: 'a-insert-command',
+        role: 'assistant',
+        status: 'done',
+        parts: [{ type: 'text', id: 'a-insert-command:text', text: 'Prepare /compose, !review-code, !server-review, or !local-skill.' }],
+      }],
+    }))
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const handler = vi.fn()
+    const skillHandler = vi.fn()
+    const preferredSkillHandler = vi.fn()
+    const serverSkillHandler = vi.fn()
+    const localSkillHandler = vi.fn()
+
+    render(
+      <PiChatPanel
+        storageScope="workspace-a"
+        serverResourcesEnabled={false}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+        extraCommands={[
+          {
+            name: 'compose',
+            description: 'Prepare a command',
+            clickBehavior: 'insert',
+            handler,
+          },
+          {
+            name: 'skill:review-code',
+            description: 'Server review code',
+            source: 'skill',
+            handler: skillHandler,
+          },
+          {
+            name: 'review-code',
+            description: 'Preferred native review skill',
+            kind: 'skill',
+            handler: preferredSkillHandler,
+          },
+          {
+            name: 'skill:server-review',
+            description: 'Server review skill',
+            source: 'skill',
+            handler: serverSkillHandler,
+          },
+          {
+            name: 'local-skill',
+            description: 'Local skill',
+            kind: 'skill',
+            handler: localSkillHandler,
+          },
+        ]}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: 'existing draft' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Insert /compose command' }))
+
+    expect((textarea as HTMLTextAreaElement).value).toBe('/compose existing draft')
+    expect(document.activeElement).toBe(textarea)
+    expect(handler).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(handler).toHaveBeenCalledWith('existing draft', expect.any(Object)))
+
+    fireEvent.change(textarea, { target: { value: 'skill draft' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Insert !review-code skill' }))
+    expect((textarea as HTMLTextAreaElement).value).toBe('/review-code skill draft')
+    expect(preferredSkillHandler).not.toHaveBeenCalled()
+    expect(skillHandler).not.toHaveBeenCalled()
+
+    fireEvent.change(textarea, { target: { value: 'server skill draft' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Insert !server-review skill' }))
+    expect((textarea as HTMLTextAreaElement).value).toBe('skill: server-review\n\nserver skill draft')
+    expect(serverSkillHandler).not.toHaveBeenCalled()
+
+    fireEvent.change(textarea, { target: { value: 'local draft' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Insert !local-skill skill' }))
+    expect((textarea as HTMLTextAreaElement).value).toBe('/local-skill local draft')
+    expect(localSkillHandler).not.toHaveBeenCalled()
+    expect(remote.prompt).not.toHaveBeenCalled()
+  })
+
   test('refreshes server skill slash commands after plugin reload', async () => {
     const remote = new FakeRemotePiSession(remoteState())
     let reloadTriggered = false
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       const parsed = new URL(url, 'https://agent.test')
-      if (parsed.pathname === '/api/v1/agent/pi-chat/sessions') return jsonResponse([session('pi-1')])
-      if (parsed.pathname === '/api/v1/agent/commands') return jsonResponse({ commands: [] })
-      if (parsed.pathname === '/api/v1/agent/skills') {
+      if (parsed.pathname === '/api/v1/agents/default/sessions') return jsonResponse([session('pi-1')])
+      if (parsed.pathname === '/api/v1/agents/default/commands') return jsonResponse({ commands: [] })
+      if (parsed.pathname === '/api/v1/agents/default/skills') {
         return jsonResponse({
           skills: reloadTriggered
             ? [{ name: 'fresh-skill', description: 'Fresh plugin skill' }]
@@ -1792,8 +2102,8 @@ describe('PiChatPanel sandbox shell', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       const parsed = new URL(url, 'https://agent.test')
-      if (parsed.pathname === '/api/v1/agent/pi-chat/sessions') return jsonResponse([session('pi-1')])
-      if (parsed.pathname === '/api/v1/agent/commands') {
+      if (parsed.pathname === '/api/v1/agents/default/sessions') return jsonResponse([session('pi-1')])
+      if (parsed.pathname === '/api/v1/agents/default/commands') {
         commandsRequestCount += 1
         return jsonResponse({ commands: [] })
       }
@@ -1829,7 +2139,7 @@ describe('PiChatPanel sandbox shell', () => {
     const remote = new FakeRemotePiSession(remoteState())
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
       throw new Error(`unexpected fetch ${url}`)
     })
     const onReloadAgentPlugins = vi.fn(async () => 'Agent harness does not support reload')
@@ -1860,8 +2170,8 @@ describe('PiChatPanel sandbox shell', () => {
     const remote = new FakeRemotePiSession(remoteState())
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
-      if (url.endsWith('/api/v1/agent/reload')) throw new Error('reload route should not be called')
+      if (url.includes('/api/v1/agents/default/sessions?')) return jsonResponse([session('pi-1')])
+      if (url.endsWith('/api/v1/agents/default/reload')) throw new Error('reload route should not be called')
       throw new Error(`unexpected fetch ${url}`)
     })
 
@@ -1880,7 +2190,7 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.keyDown(textarea, { key: 'Enter' })
 
     await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: '/reload' })))
-    expect(fetchMock).not.toHaveBeenCalledWith('/api/v1/agent/reload', expect.anything())
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/v1/agents/default/reload', expect.anything())
   })
 
   test('reload-ish hydration uses persisted active id and renders state notices/queue from server snapshot', async () => {

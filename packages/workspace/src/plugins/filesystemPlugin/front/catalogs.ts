@@ -1,22 +1,32 @@
 import type { CatalogConfig, CatalogRow, CatalogSearchResult } from "../../../shared/plugins/types"
+import {
+  uiFileResourceKey,
+  type UiFileResource,
+} from "../../../shared/types/filesystem"
 import { toFileSearchGlob } from "./search"
 import { FILES_CATALOG_ID } from "../shared/constants"
 
 export interface FilesCatalogClient {
-  search(query: string, limit?: number, signal?: AbortSignal): Promise<string[]>
+  searchResources(query: string, limit?: number, signal?: AbortSignal): Promise<UiFileResource[]>
 }
 
 export interface CreateFilesCatalogOptions {
   client: FilesCatalogClient
-  onSelect?: (path: string, row: CatalogRow) => void
+  onSelect?: (resource: UiFileResource, row: CatalogRow) => void
 }
 
-function rowFromPath(path: string): CatalogRow {
-  const lastSlash = path.lastIndexOf("/")
+function rootLabel(filesystem: string): string {
+  return filesystem === "user" ? "Workspace" : filesystem
+}
+
+function rowFromResource(resource: UiFileResource): CatalogRow {
+  const lastSlash = resource.path.lastIndexOf("/")
   return {
-    id: path,
-    title: lastSlash >= 0 ? path.slice(lastSlash + 1) : path,
-    subtitle: lastSlash >= 0 ? path.slice(0, lastSlash + 1) : undefined,
+    id: uiFileResourceKey(resource),
+    title: lastSlash >= 0 ? resource.path.slice(lastSlash + 1) : resource.path,
+    subtitle: lastSlash >= 0 ? resource.path.slice(0, lastSlash + 1) : undefined,
+    meta: rootLabel(resource.filesystem),
+    resource,
   }
 }
 
@@ -35,15 +45,17 @@ export function createFilesCatalog({
       async search({ query, limit, signal }) {
         const trimmed = query.trim()
         if (!trimmed || signal?.aborted) return emptyCatalogSearchResult()
-        const paths = await client.search(toFileSearchGlob(trimmed), limit, signal)
+        const resources = await client.searchResources(toFileSearchGlob(trimmed), limit, signal)
         if (signal?.aborted) return emptyCatalogSearchResult()
         return {
-          items: paths.map(rowFromPath),
-          total: paths.length,
+          items: resources.map(rowFromResource),
+          total: resources.length,
           hasMore: false,
         }
       },
     },
-    onSelect: (row) => onSelect?.(row.id, row),
+    onSelect: (row) => {
+      if (row.resource) onSelect?.(row.resource, row)
+    },
   }
 }

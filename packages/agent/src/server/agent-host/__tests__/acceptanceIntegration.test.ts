@@ -100,21 +100,27 @@ describe('createAgentHost AH0 acceptance integration', () => {
       runtimeModeAdapter: { ...baseAdapter, create },
       sessionRoot,
       harnessFactory: persistedScriptedHarness(captures),
-      async resolveRuntimeScope({ agentTypeId, scope }) {
-        const root = workspaceRoots.get(scope.workspaceScopeId)
+      async resolveAuthorizedEnvironmentScope({ authorizedScope }) {
+        const root = workspaceRoots.get(authorizedScope.workspaceScopeId)
         if (!root) throw new Error('unknown workspace/storage scope')
         return {
-          identity: `${agentTypeId}:${scope.workspaceScopeId}:${scope.authSubjectId}`,
-          environment: {
-            placementIdentity: `direct:${scope.workspaceScopeId}`,
-            workspaceRoot: root,
-            provisioningFingerprint: `generation-1:${scope.workspaceScopeId}`,
-            provisionRuntime: provision,
-          },
+          placementIdentity: `direct:${authorizedScope.workspaceScopeId}`,
+          workspaceRoot: root,
+          provisioningFingerprint: `generation-1:${authorizedScope.workspaceScopeId}`,
+          provisionRuntime: provision,
+        }
+      },
+      async resolveAuthorizedAgentRuntimeScope({ agentTypeId, authorizedScope }) {
+        const root = workspaceRoots.get(authorizedScope.workspaceScopeId)
+        if (!root) throw new Error('unknown workspace/storage scope')
+        return {
+          identity: `${agentTypeId}:${authorizedScope.workspaceScopeId}:${authorizedScope.authSubjectId}`,
+          physicalBindingIdentity: `${agentTypeId}:${authorizedScope.workspaceScopeId}:${authorizedScope.authSubjectId}`,
+          resourceInputDigest: `${agentTypeId}:${authorizedScope.workspaceScopeId}:${authorizedScope.authSubjectId}`,
           sessionNamespace: 'acceptance',
-          extraTools: [actorTool(scope.authSubjectId, root)],
-          systemPromptAppend: `HOST_STATIC:${scope.workspaceScopeId}`,
-          loadSystemPromptAppend: async () => `DYNAMIC:${scope.authSubjectId}`,
+          extraTools: [actorTool(authorizedScope.authSubjectId, root)],
+          systemPromptAppend: `HOST_STATIC:${authorizedScope.workspaceScopeId}`,
+          loadSystemPromptAppend: async () => `DYNAMIC:${authorizedScope.authSubjectId}`,
         }
       },
     })
@@ -162,10 +168,10 @@ describe('createAgentHost AH0 acceptance integration', () => {
     for (const workspace of ['workspace-a', 'workspace-b']) {
       for (const storage of ['storage-a', 'storage-b']) {
         const observer = issueScope(workspace, storage, 'subject-a')
-        const expected = created.filter((row) => row.scope.workspaceScopeId === observer.workspaceScopeId)
+        // The scripted harness captures prompts but intentionally does not append
+        // native message entries; durable turn-less sessions stay hidden.
         const listed = (await host.gateway.listSessions({ scope: observer })).sessions
-        expect(listed.map((row) => row.title).sort()).toEqual(expected.map((row) => row.title).sort())
-        expect(listed).toHaveLength(4)
+        expect(listed).toEqual([])
       }
     }
 
@@ -179,8 +185,9 @@ describe('createAgentHost AH0 acceptance integration', () => {
   it('rejects an incompatible shared identity before provider/provisioning/transcript mutation', async () => {
     const sessionRoot = await temporaryRoot('agent-host-incompatible-sessions-')
     const workspaceRoot = await temporaryRoot('agent-host-incompatible-workspace-')
-    const scope = { workspaceScopeId: 'workspace:storage', authSubjectId: 'subject' } as AuthorizedAgentScope
-    const issued = new WeakSet<object>([scope as object])
+    const scope = { workspaceScopeId: 'workspace:storage', authSubjectId: 'subject-a' } as AuthorizedAgentScope
+    const incompatibleScope = { workspaceScopeId: 'workspace:storage', authSubjectId: 'subject-b' } as AuthorizedAgentScope
+    const issued = new WeakSet<object>([scope as object, incompatibleScope as object])
     const baseAdapter = createTestRuntimeModeAdapter('direct')
     const create = vi.fn(baseAdapter.create.bind(baseAdapter))
     const provision = vi.fn(async () => ({ changed: false, env: {}, pathEntries: [], skillPaths: [] }))
@@ -198,25 +205,31 @@ describe('createAgentHost AH0 acceptance integration', () => {
       runtimeModeAdapter: { ...baseAdapter, create },
       sessionRoot,
       harnessFactory: persistedScriptedHarness([]),
-      async resolveRuntimeScope({ agentTypeId }) {
+      async resolveAuthorizedEnvironmentScope({ authorizedScope }) {
+        return {
+          placementIdentity: 'one-placement',
+          workspaceRoot,
+          provisioningFingerprint: authorizedScope.authSubjectId === 'subject-a' ? 'generation-a' : 'generation-b',
+          provisionRuntime: provision,
+        }
+      },
+      async resolveAuthorizedAgentRuntimeScope({ agentTypeId }) {
         return {
           identity: agentTypeId,
-          environment: {
-            placementIdentity: 'one-placement',
-            workspaceRoot,
-            provisioningFingerprint: agentTypeId === 'alpha' ? 'generation-a' : 'generation-b',
-            provisionRuntime: provision,
-          },
+          physicalBindingIdentity: agentTypeId,
+          resourceInputDigest: agentTypeId,
           sessionNamespace: 'acceptance',
         }
       },
     })
     await host.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'alpha' })
-    await expect(host.gateway.createSession({ scope, agentTypeId: 'beta', requestId: 'beta' }))
-      .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE })
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await expect(host.gateway.createSession({ scope: incompatibleScope, agentTypeId: 'beta', requestId: 'beta' }))
+        .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE })
+    }
     expect(create).toHaveBeenCalledOnce()
     expect(provision).toHaveBeenCalledOnce()
-    expect((await host.gateway.listSessions({ scope, agentTypeId: 'beta' })).sessions).toEqual([])
+    expect((await host.gateway.listSessions({ scope: incompatibleScope, agentTypeId: 'beta' })).sessions).toEqual([])
     await host.host.close()
   })
 
@@ -233,10 +246,16 @@ describe('createAgentHost AH0 acceptance integration', () => {
       runtimeModeAdapter: createTestRuntimeModeAdapter('direct'),
       sessionRoot,
       harnessFactory: persistedScriptedHarness(captures),
-      async resolveRuntimeScope() {
+      async resolveAuthorizedEnvironmentScope() {
+        return {
+          placementIdentity: 'direct', workspaceRoot, provisioningFingerprint: 'one',
+        }
+      },
+      async resolveAuthorizedAgentRuntimeScope() {
         return {
           identity: 'legacy',
-          environment: { placementIdentity: 'direct', workspaceRoot, provisioningFingerprint: 'one' },
+          physicalBindingIdentity: 'legacy',
+          resourceInputDigest: 'legacy',
           sessionNamespace: 'legacy',
           systemPromptAppend: 'HOST_STATIC',
           loadSystemPromptAppend: async () => 'DYNAMIC',

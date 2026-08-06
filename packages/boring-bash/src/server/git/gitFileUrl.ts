@@ -1,4 +1,5 @@
-import { dirname, relative } from 'node:path'
+import { realpath } from 'node:fs/promises'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { buildGitFileUrl } from './buildGitFileUrl'
@@ -23,6 +24,17 @@ function disabled(reason: string): GitFileUrlResult {
   return { enabled: false, reason }
 }
 
+export function isWorkspaceRelativeGitPath(path: string): boolean {
+  if (!path || path.includes('\\') || path.startsWith('/')) return false
+  return !path.split('/').some((segment) => segment === '..')
+}
+
+function isInsideRoot(root: string, candidate: string): boolean {
+  const fromRoot = relative(root, candidate)
+  return fromRoot === ''
+    || (!isAbsolute(fromRoot) && fromRoot !== '..' && !fromRoot.startsWith(`..${sep}`))
+}
+
 /**
  * Resolve a host git provider URL for a workspace-relative file path.
  *
@@ -35,7 +47,20 @@ export async function resolveGitFileUrl(
   workspaceRoot: string,
   path: string,
 ): Promise<GitFileUrlResult> {
-  const absolutePath = `${workspaceRoot}/${path}`
+  if (!isWorkspaceRelativeGitPath(path)) {
+    return disabled('File path must stay within the workspace.')
+  }
+
+  const absolutePath = resolve(workspaceRoot, path)
+  try {
+    const canonicalWorkspaceRoot = await realpath(workspaceRoot)
+    const canonicalParent = await realpath(dirname(absolutePath))
+    if (!isInsideRoot(canonicalWorkspaceRoot, canonicalParent)) {
+      return disabled('File path must stay within the workspace.')
+    }
+  } catch {
+    return disabled('Workspace file path is unavailable.')
+  }
 
   let repoRoot: string
   try {

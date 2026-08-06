@@ -16,6 +16,7 @@ const expectedSkills = [
   "feedback",
   "fresh-eyes",
   "grill-for-unknowns",
+  "handoff",
   "plan",
   "skill-management",
   "teach",

@@ -127,7 +127,9 @@ export function useFileSearch(
 
   return useQuery({
     queryKey: [base, workspaceId, "search", debounced, limit],
-    queryFn: ({ signal }) => client.search(debounced, limit, signal),
+    queryFn: async ({ signal }) => (await client.searchResources(debounced, limit, signal))
+      .filter((resource) => resource.filesystem === "user")
+      .map((resource) => resource.path),
     enabled: debounced.length > 0,
     retry: noRetryOn404,
   })

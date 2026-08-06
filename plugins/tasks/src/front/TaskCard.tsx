@@ -1,5 +1,5 @@
 import { useState, type DragEvent, type MouseEvent } from "react"
-import { MessageSquare, MoreHorizontal, Trash2 } from "lucide-react"
+import { FileText, MessageSquare, MoreHorizontal, Trash2 } from "lucide-react"
 import { useWorkspacePluginClient } from "@hachej/boring-workspace"
 import { useWorkspaceShellCapabilities, type WorkspaceShellAnchorRect } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard } from "../shared"
@@ -11,6 +11,7 @@ interface TaskCardProps {
   deleteEnabled?: boolean
   compact?: boolean
   onDelete?: (task: BoringTaskCard) => void
+  onOpenDetail?: (task: BoringTaskCard, trigger: HTMLButtonElement) => void
   onDragStart: (event: DragEvent<HTMLElement>, task: BoringTaskCard) => void
   onDragEnd: () => void
 }
@@ -29,7 +30,7 @@ function rectFromElement(element: HTMLElement): WorkspaceShellAnchorRect {
   return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left }
 }
 
-interface CreatedPiChatSession { id?: unknown }
+interface CreatedAgentSession { sessionId?: unknown }
 
 function taskChatDraft(task: BoringTaskCard): string {
   return [
@@ -41,7 +42,7 @@ function taskChatDraft(task: BoringTaskCard): string {
   ].filter(Boolean).join("\n")
 }
 
-export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = false, compact = false, onDelete, onDragStart, onDragEnd }: TaskCardProps) {
+export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = false, compact = false, onDelete, onOpenDetail, onDragStart, onDragEnd }: TaskCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [openingChat, setOpeningChat] = useState(false)
   const shell = useWorkspaceShellCapabilities()
@@ -58,12 +59,12 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     const anchor = rectFromElement(event.currentTarget)
     const title = `${task.number}: ${task.title}`
     setOpeningChat(true)
-    void pluginClient.postJson<CreatedPiChatSession>("/api/v1/agent/pi-chat/sessions", { title })
+    void pluginClient.postJson<CreatedAgentSession>(`/api/v1/agents/${encodeURIComponent(pluginClient.agentTypeId)}/sessions`, { title })
       .then((session) => {
-        if (typeof session.id !== "string" || session.id.length === 0) throw new Error("Chat session was not created.")
+        if (typeof session.sessionId !== "string" || session.sessionId.length === 0) throw new Error("Chat session was not created.")
         const initialDraft = taskChatDraft(task)
-        shell.openDetachedChat(session.id, { anchor, title, initialDraft, composingEnabled: true })
-        window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", { detail: { sessionId: session.id, title, initialDraft, composingEnabled: true } }))
+        shell.openDetachedChat({ agentTypeId: pluginClient.agentTypeId, sessionId: session.sessionId }, { anchor, title, initialDraft, composingEnabled: true })
+        window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", { detail: { sessionId: session.sessionId, agentTypeId: pluginClient.agentTypeId, title, initialDraft, composingEnabled: true } }))
       })
       .catch((error) => console.error("Failed to open task chat", error))
       .finally(() => setOpeningChat(false))
@@ -73,6 +74,11 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     stopCardAction(event)
     setMenuOpen(false)
     onDelete?.(task)
+  }
+
+  const openTaskDetail = (event: MouseEvent<HTMLButtonElement>) => {
+    stopCardAction(event)
+    onOpenDetail?.(task, event.currentTarget)
   }
 
   if (compact) {
@@ -100,6 +106,11 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
           <span key={pr.id} className="hidden max-w-64 shrink-0 truncate rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 lg:inline-block" title={pr.title}>PR {pr.number} <span className="font-medium">{pr.title}</span></span>
         ))}
         <div className="flex shrink-0 items-center gap-0.5">
+          {onOpenDetail ? (
+            <button type="button" draggable={false} onPointerDown={(event) => event.stopPropagation()} onDragStart={(event) => event.stopPropagation()} onClick={openTaskDetail} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover:opacity-100" aria-label={`View details for ${task.number}`} title="View task details">
+              <FileText className="size-3.5" strokeWidth={1.75} />
+            </button>
+          ) : null}
           <button type="button" draggable={false} onClick={openTaskChat} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open chat for ${task.number}`} title="Open task chat" disabled={openingChat}>
             <MessageSquare className={["size-3.5", openingChat ? "animate-pulse" : ""].join(" ")} strokeWidth={1.75} />
           </button>
@@ -142,6 +153,11 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
         <span className="mt-0.5 shrink-0 rounded-full border border-border bg-muted/50 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{task.number}</span>
         <h3 className="min-w-0 flex-1 truncate text-sm font-semibold leading-snug text-foreground" title={task.title}>{task.title}</h3>
         <div className="flex shrink-0 items-center gap-0.5">
+          {onOpenDetail ? (
+            <button type="button" draggable={false} onPointerDown={(event) => event.stopPropagation()} onDragStart={(event) => event.stopPropagation()} onClick={openTaskDetail} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover:opacity-100" aria-label={`View details for ${task.number}`} title="View task details">
+              <FileText className="size-3.5" strokeWidth={1.75} />
+            </button>
+          ) : null}
           <button type="button" draggable={false} onClick={openTaskChat} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open chat for ${task.number}`} title="Open task chat" disabled={openingChat}>
             <MessageSquare className={["size-3.5", openingChat ? "animate-pulse" : ""].join(" ")} strokeWidth={1.75} />
           </button>

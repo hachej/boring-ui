@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, vi } from "vitest"
 import {
   bootstrapServer,
@@ -26,6 +27,7 @@ describe("bootstrapServer", () => {
       provisioningContributions: [],
       packageResources: [],
       routeContributions: [],
+      agentReloadBlockers: [],
       workspaceBridgeHandlers: [],
       preservedUiStateKeys: [],
     })
@@ -184,6 +186,20 @@ describe("bootstrapServer", () => {
     })
 
     expect(result.routeContributions).toEqual([{ id: "routes", routes }])
+  })
+
+  it("collects Agent reload blockers in plugin order", () => {
+    const first = vi.fn()
+    const second = vi.fn()
+    const result = bootstrapServer({
+      defaults: [{ id: "first", getAgentReloadBlock: first }],
+      plugins: [{ id: "second", getAgentReloadBlock: second }],
+    })
+
+    expect(result.agentReloadBlockers).toEqual([
+      { id: "first", getBlock: first },
+      { id: "second", getBlock: second },
+    ])
   })
 
   it("collects trusted server plugin WorkspaceBridge handlers", () => {

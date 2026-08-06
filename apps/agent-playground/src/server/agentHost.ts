@@ -3,7 +3,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import {
   createAgentHost,
   createSandboxRuntimeModeAdapter,
-  registerAgentRoutes,
+  registerAgentHostEnvironmentRoutes,
   type AgentHarnessFactory,
   type CreatedAgentHost,
   type RuntimeModeAdapter,
@@ -60,10 +60,8 @@ function createTrustedLocalScope(): {
 async function closeRuntime(created: CreatedAgentHost, app: FastifyInstance): Promise<void> {
   let firstError: unknown
   for (const operation of [
-    () => created.gateway.close(),
-    () => created.host.drain(),
-    () => created.host.close(),
     () => app.close(),
+    () => created.host.close(),
   ]) {
     try {
       await operation()
@@ -82,6 +80,7 @@ export async function createAgentPlaygroundRuntime(
   const modeAdapter = options.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter('direct')
   const { scope, verifier } = createTrustedLocalScope()
   const app = Fastify({ logger: options.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
+  const startedAt = Date.now()
   const created = await createAgentHost({
     agents: [{ agentTypeId: PLAYGROUND_AGENT_TYPE_ID, legacyDefault: true }],
     fleetCompiler: { async compile({ agents }) { return agents } },
@@ -90,34 +89,44 @@ export async function createAgentPlaygroundRuntime(
     runtimeModeAdapter: modeAdapter,
     runtimeHost: modeAdapter.runtimeHost,
     sessionRoot: options.sessionRoot,
+    ...(!options.sessionRoot ? { inMemoryRequestLedgerMode: 'development' as const } : {}),
     harnessFactory: options.harnessFactory,
-    async resolveRuntimeScope() {
+    async resolveAuthorizedEnvironmentScope() {
+      return {
+        placementIdentity: JSON.stringify([modeAdapter.id, workspaceRoot]),
+        workspaceRoot,
+        provisioningFingerprint: JSON.stringify([modeAdapter.id, workspaceRoot]),
+      }
+    },
+    async resolveAuthorizedAgentRuntimeScope() {
       return {
         identity: JSON.stringify(['agent-playground', modeAdapter.id, workspaceRoot]),
-        environment: {
-          placementIdentity: JSON.stringify([modeAdapter.id, workspaceRoot]),
-          workspaceRoot,
-          provisioningFingerprint: JSON.stringify([modeAdapter.id, workspaceRoot]),
-        },
+        physicalBindingIdentity: JSON.stringify([modeAdapter.id, workspaceRoot]),
+        resourceInputDigest: JSON.stringify(['agent-playground', modeAdapter.id, workspaceRoot]),
         sessionNamespace: 'agent-playground',
       }
     },
   })
 
   try {
-    await app.register(registerAgentRoutes, {
-      agentHost: {
-        created,
-        defaultAgentTypeId: PLAYGROUND_AGENT_TYPE_ID,
-        issueScope: () => scope,
-      },
-      workspaceRoot,
-      sessionRoot: options.sessionRoot,
-      sessionId: PLAYGROUND_WORKSPACE_SCOPE_ID,
-      runtimeModeAdapter: modeAdapter,
+    app.get('/health', async () => ({
+      status: 'ok',
+      version: '0.1.0-dev',
+      uptime: Math.floor((Date.now() - startedAt) / 1000),
+    }))
+    app.get('/ready', async () => ({ status: 'ready' }))
+    await registerAgentHostEnvironmentRoutes(app, {
+      created,
+      authorizeAgentRequest: async () => scope,
       runtimeHost: modeAdapter.runtimeHost,
-      getSessionNamespace: () => 'agent-playground',
+      getWorkspaceHostRoot: modeAdapter.workspaceFsCapability === 'strong'
+        ? async () => workspaceRoot
+        : undefined,
     })
+    await app.register(created.registerDirectRoutes({
+      authorizeAgentRequest: async () => scope,
+      defaultSessionId: PLAYGROUND_WORKSPACE_SCOPE_ID,
+    }))
   } catch (error) {
     await closeRuntime(created, app).catch(() => {})
     throw error

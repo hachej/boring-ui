@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import userEvent from "@testing-library/user-event"
 import { buildIdeLayout } from "../IdeLayout"
 import { buildChatLayout } from "../ChatLayout"
@@ -28,6 +28,19 @@ import {
 
 function DummyPanel() {
   return <div data-testid="dummy-panel">panel</div>
+}
+
+function WorkbenchHostControlProbe({ params }: { params?: Record<string, unknown> }) {
+  const expand = params?.onHostExpand as (() => void) | undefined
+  const collapse = params?.onClose as (() => void) | undefined
+  const toggleFullscreen = params?.onHostToggleFullscreen as (() => void) | undefined
+  return (
+    <div data-testid="workbench-host-probe" data-fullscreen={String(params?.hostFullscreen)} data-rail-only={String(params?.hostRailOnly)}>
+      <button type="button" onClick={expand}>Probe open workbench</button>
+      <button type="button" onClick={collapse}>Probe collapse workbench</button>
+      <button type="button" onClick={toggleFullscreen}>Probe toggle fullscreen</button>
+    </div>
+  )
 }
 
 function StreamingChatPanel() {
@@ -64,7 +77,7 @@ function renderWithRegistry(
 ) {
   const { panelRegistry, commandRegistry } = setup(panels)
   return render(
-    <WorkspaceProvider persistenceEnabled={false}>
+    <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
       <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
         {ui}
       </RegistryProvider>
@@ -78,7 +91,7 @@ function renderWithPanelRegistry(
 ) {
   const { panelRegistry, commandRegistry } = setup(panels)
   const result = render(
-    <WorkspaceProvider persistenceEnabled={false}>
+    <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
       <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
         {ui}
       </RegistryProvider>
@@ -550,7 +563,7 @@ describe("ChatLayout component", () => {
     panelRegistry.register("chat", { title: "chat", lazy: false, component: StreamingChatPanel })
 
     render(
-      <WorkspaceProvider persistenceEnabled={false}>
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
         <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
           <ChatLayout
             nav="session-list"
@@ -748,7 +761,7 @@ describe("ChatLayout component", () => {
     expect(chatButton.closest(".right-3")).not.toBeNull()
   })
 
-  it("keeps workbench close and expand controls visible over chat overlays", () => {
+  it("keeps Workbench controls out of chat-global chrome above overlays", () => {
     renderWithRegistry(
       <ChatLayout
         center="chat"
@@ -759,8 +772,66 @@ describe("ChatLayout component", () => {
       ["chat", "artifact-surface"],
     )
 
-    expect(screen.getByRole("button", { name: "Close workbench" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Expand workbench" })).toBeInTheDocument()
+    expect(screen.getByRole("complementary", { name: "Workbench" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Expand workbench" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Close workbench" })).not.toBeInTheDocument()
+  })
+
+  it("owns collapsed, split, fullscreen, restore, and collapse transitions at the ChatLayout host", async () => {
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("chat", { title: "Chat", lazy: false, component: DummyPanel })
+    panelRegistry.register("artifact-surface", { title: "Workbench", lazy: false, component: WorkbenchHostControlProbe })
+    const commandRegistry = new CommandRegistry()
+
+    function Host() {
+      const [open, setOpen] = useState(false)
+      return (
+        <ChatLayout
+          center="chat"
+          surface={open ? "artifact-surface" : null}
+          onOpenSurface={() => setOpen(true)}
+          surfaceParams={{ onClose: () => setOpen(false) }}
+        />
+      )
+    }
+
+    const user = userEvent.setup()
+    render(
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+          <Host />
+        </RegistryProvider>
+      </WorkspaceProvider>,
+    )
+
+    const workbench = () => screen.getByRole("complementary", { name: /Workbench/ })
+    const probe = () => screen.getByTestId("workbench-host-probe")
+    expect(workbench()).toHaveAttribute("data-boring-state", "collapsed")
+    expect(probe()).toHaveAttribute("data-rail-only", "true")
+    expect(screen.queryByRole("button", { name: "Expand workbench" })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "Probe open workbench" }))
+    expect(workbench()).toHaveAttribute("data-boring-state", "expanded")
+    expect(probe()).toHaveAttribute("data-fullscreen", "false")
+    expect(screen.getByRole("main", { name: "Chat" })).toHaveAttribute("data-boring-state", "expanded")
+
+    await user.click(screen.getByRole("button", { name: "Probe toggle fullscreen" }))
+    expect(probe()).toHaveAttribute("data-fullscreen", "true")
+    expect(screen.getByLabelText("Collapsed chat")).toHaveAttribute("data-boring-state", "collapsed")
+    expect(workbench().getAttribute("style")).toContain("flex: 1 1 0%")
+
+    await user.click(screen.getByRole("button", { name: "Probe toggle fullscreen" }))
+    expect(probe()).toHaveAttribute("data-fullscreen", "false")
+    expect(screen.getByRole("main", { name: "Chat" })).toHaveAttribute("data-boring-state", "expanded")
+
+    await user.click(screen.getByRole("button", { name: "Probe toggle fullscreen" }))
+    await user.click(screen.getByRole("button", { name: "Probe collapse workbench" }))
+    expect(workbench()).toHaveAttribute("data-boring-state", "collapsed")
+    expect(screen.getByRole("main", { name: "Chat" })).toHaveAttribute("data-boring-state", "expanded")
+
+    await user.click(screen.getByRole("button", { name: "Probe open workbench" }))
+    expect(probe()).toHaveAttribute("data-fullscreen", "false")
+    expect(screen.getByRole("main", { name: "Chat" })).toHaveAttribute("data-boring-state", "expanded")
   })
 
   it("auto-expands the chat panel when a blocker appears while collapsed", async () => {

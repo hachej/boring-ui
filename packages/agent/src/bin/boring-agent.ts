@@ -18,10 +18,10 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { createServer as createViteServer } from 'vite'
 import react from '@vitejs/plugin-react'
-import { createAgentApp } from '../server/createAgentApp'
+import { createStandaloneAgentHostApp } from '../server/createStandaloneAgentHostApp'
 import type { RuntimeModeId } from '../server/runtime/mode'
 import { projectNameFromWorkspaceRoot } from './projectName'
-import { createScriptedPiHarness } from '../server/testing/scriptedPiHarness'
+import { createPersistedScriptedPiHarness } from '../server/testing/scriptedPiHarness'
 import {
   agentSandboxRuntimeHostOperations,
   createAgentSandboxRuntimeModeAdapter,
@@ -126,7 +126,7 @@ const { port, mode, workspaceRoot } = parseArgs(process.argv.slice(2))
 const version = await readVersion()
 const projectName = projectNameFromWorkspaceRoot(workspaceRoot)
 
-const app = await createAgentApp({
+const app = await createStandaloneAgentHostApp({
   mode,
   runtimeModeAdapter: createAgentSandboxRuntimeModeAdapter(mode),
   runtimeHost: agentSandboxRuntimeHostOperations,
@@ -135,7 +135,7 @@ const app = await createAgentApp({
   version,
   logger: false,
   ...(process.env.BORING_AGENT_E2E_SCRIPTED_PI === '1'
-    ? { harnessFactory: createScriptedPiHarness }
+    ? { harnessFactory: createPersistedScriptedPiHarness }
     : {}),
 })
 
@@ -161,7 +161,7 @@ const apiPort = Number(new URL(apiAddress).port)
 // on first load and renders the ChatPanel without requiring the user to click
 // "Create session". The E2E tests were written against a single-session app.
 try {
-  await fetch(`http://127.0.0.1:${apiPort}/api/v1/agent/pi-chat/sessions`, {
+  await fetch(`http://127.0.0.1:${apiPort}/api/v1/agents/default/sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title: projectName }),

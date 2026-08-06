@@ -204,6 +204,7 @@ function publicErrorMessage(code: BoringAutomationErrorCode): string {
     case BORING_AUTOMATION_ERROR_CODES.RUN_NOT_FOUND: return "Automation run not found in the active workspace."
     case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE: return "This automation already has an active run."
     case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_RECORDED: return "This scheduled automation occurrence was already recorded."
+    case BORING_AUTOMATION_ERROR_CODES.RUN_LEASE_LOST: return "This automation run was recovered by another worker."
     case BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE: return "Automation execution is unavailable."
     case BORING_AUTOMATION_ERROR_CODES.TOOL_CONTEXT_UNAVAILABLE: return "Automation tool context is unavailable."
     case BORING_AUTOMATION_ERROR_CODES.TOOL_ABORTED: return "Automation tool call was aborted."

@@ -2,26 +2,17 @@ import {
   buildFilesystemAgentTools,
   buildHarnessAgentTools,
   buildUploadAgentTools,
-  type HarnessRuntimeProvisioningOptions,
-  type ToolReadinessCheck,
 } from '@hachej/boring-bash/agent'
-import type { Agent, AgentConfig } from '../../shared/events'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../../shared/harness'
 import type { AgentTool } from '../../shared/tool'
 import type { SessionStore } from '../../shared/session'
-import { collectToolReadinessRequirements, createAgentReadinessFromTracker } from '../agentReadiness'
-import {
-  createAgentRuntimeBridge,
-  type CreateAgentRuntimeBridgeOptions,
-} from '../createAgent'
 import { withPiHarnessDefaults } from '../harness/pi-coding-agent/createHarness'
 import { parseEncodedModelSelection } from '../models/modelConfig'
-import type { HarnessPiChatService } from '../pi-chat/harnessPiChatService'
+import { HarnessPiChatService } from '../pi-chat/harnessPiChatService'
 import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from '../runtime/modeReadiness'
 import { getOptionalRuntimeBundleStorageRoot, type RuntimeBundle } from '../runtime/mode'
 import { composeRuntimeAndGovernanceFilesystemBindings } from '../runtime/filesystemBindings'
-import type { AgentEffectAdmission } from '../../core/piChatSessionService'
 import type {
   CompiledAgentHostAgentSpec,
   CreateAgentHostOptions,
@@ -30,53 +21,20 @@ import type {
 import type { EnvironmentProvisioningSnapshot } from './environmentLease'
 import { sessionNamespaceForAgent } from './sessionInventory'
 
-export interface AgentCompositionToolGroups {
-  readonly standardTools: AgentTool[]
-  readonly extraTools: AgentTool[]
-  readonly pluginTools: readonly { readonly pluginName: string; readonly tools: AgentTool[] }[]
-}
-
 /**
- * Internal-only inputs used by the legacy wrappers to project their frozen
- * route/app policies onto the canonical Host construction sequence. They are
- * contributions to the sequence below, never an alternate composition path.
+ * Internal-only escape hatch for legacy/compat callers that need to bypass a
+ * piece of the canonical composition sequence (for example, tests that don't
+ * wire a full `runtimeModeAdapter` and must supply their own `readyTracker`).
+ * Never populated by the Host's own resolution path.
  */
 export interface AgentCompositionCompatibility {
-  readonly transformRuntimeBundle?: (runtimeBundle: RuntimeBundle) => RuntimeBundle | Promise<RuntimeBundle>
-  readonly harnessRuntime?: HarnessRuntimeProvisioningOptions
-  readonly includeFilesystemTools?: boolean
-  readonly includeUploadTools?: boolean
-  readonly additionalStandardTools?: readonly AgentTool[]
-  readonly resolveExtraTools?: (runtimeBundle: RuntimeBundle) => readonly AgentTool[] | Promise<readonly AgentTool[]>
-  readonly pluginTools?: readonly { readonly pluginName: string; readonly tools: AgentTool[] }[]
-  readonly finalizeTools?: (groups: AgentCompositionToolGroups) => AgentTool[]
-  readonly getFilesystemBindings?: (ctx: {
-    readonly sessionId?: string
-    readonly workspaceId?: string
-    readonly userId?: string
-    readonly userEmail?: string
-    readonly userEmailVerified?: boolean
-    readonly requestId?: string
-  }) => import('../runtime/mode').RuntimeFilesystemBinding[] | undefined | Promise<import('../runtime/mode').RuntimeFilesystemBinding[] | undefined>
   readonly readyTracker?: ReadyStatusTracker
-  readonly checkReadiness?: ToolReadinessCheck
-  readonly harnessFactory?: AgentHarnessFactory
-  readonly sessionDir?: string
-  readonly admitEffect?: AgentEffectAdmission
-}
-
-export type CompatibilityResolvedAgentRuntimeScope = Omit<ResolvedAgentRuntimeScope, 'environment'> & {
-  readonly environment: ResolvedAgentRuntimeScope['environment'] & {
-    /** Frozen legacy adapter-create context not present in the canonical DTO. */
-    readonly compatibilityModeContext?: Partial<Parameters<CreateAgentHostOptions['runtimeModeAdapter']['create']>[0]>
-  }
-  readonly compatibility?: AgentCompositionCompatibility
 }
 
 export interface BuildAgentCompositionInput {
   readonly agent: CompiledAgentHostAgentSpec
   readonly workspaceScopeId: string
-  readonly runtimeScope: CompatibilityResolvedAgentRuntimeScope
+  readonly runtimeScope: ResolvedAgentRuntimeScope & { readonly compatibility?: AgentCompositionCompatibility }
   readonly runtimeBundle: RuntimeBundle
   readonly environmentProvisioning?: EnvironmentProvisioningSnapshot
   readonly options: Pick<
@@ -87,7 +45,6 @@ export interface BuildAgentCompositionInput {
 }
 
 export interface BuiltAgentComposition {
-  readonly agent: Agent
   readonly harness: AgentHarness
   readonly sessionStore: SessionStore
   readonly service: HarnessPiChatService
@@ -107,77 +64,59 @@ export async function buildAgentComposition(
   input: BuildAgentCompositionInput,
 ): Promise<BuiltAgentComposition> {
   const { runtimeScope, options } = input
-  const compatibility = runtimeScope.compatibility
-  const transformedRuntimeBundle = compatibility?.transformRuntimeBundle
-    ? await compatibility.transformRuntimeBundle(input.runtimeBundle)
-    : input.runtimeBundle
-  const runtimeBundle = transformedRuntimeBundle.filesystemBindings
+  // Reject a runtime-declared duplicate binding before any tool/harness
+  // startup work — a misconfigured runtime bundle must fail closed rather
+  // than let a later binding silently shadow an earlier one.
+  const runtimeBundle = input.runtimeBundle.filesystemBindings
     ? {
-        ...transformedRuntimeBundle,
+        ...input.runtimeBundle,
         filesystemBindings: [...composeRuntimeAndGovernanceFilesystemBindings(
-          transformedRuntimeBundle.filesystemBindings,
+          input.runtimeBundle.filesystemBindings,
           undefined,
         ).bindings],
       }
-    : transformedRuntimeBundle
+    : input.runtimeBundle
   const bashRuntimeBundle = {
     ...runtimeBundle,
     storageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
   }
-  const resolveGovernanceBindings = compatibility?.getFilesystemBindings
-    ?? (runtimeScope.getFilesystemBindings
-      ? async (ctx: {
-          readonly sessionId?: string
-          readonly workspaceId?: string
-          readonly userId?: string
-          readonly requestId?: string
-        }) => [...await runtimeScope.getFilesystemBindings!({
+  const resolveGovernanceBindings = runtimeScope.getFilesystemBindings
+    ? async (ctx: { readonly sessionId?: string; readonly userId?: string; readonly requestId?: string }) => [
+        ...await runtimeScope.getFilesystemBindings!({
           scope: {
             workspaceScopeId: input.workspaceScopeId,
             authSubjectId: ctx.userId ?? '',
           },
           sessionId: ctx.sessionId,
           requestId: ctx.requestId ?? '',
-        }) ?? []]
-      : undefined)
+        }) ?? [],
+      ]
+    : undefined
   const getFilesystemBindings = resolveGovernanceBindings
-    ? async (ctx: Parameters<NonNullable<typeof resolveGovernanceBindings>>[0]) => ([
+    ? async (ctx: Parameters<NonNullable<typeof resolveGovernanceBindings>>[0]) => [
         ...composeRuntimeAndGovernanceFilesystemBindings(
           runtimeBundle.filesystemBindings,
           await resolveGovernanceBindings(ctx),
         ).bindings,
-      ])
+      ]
     : undefined
   const standardTools: AgentTool[] = [
-    ...buildHarnessAgentTools(bashRuntimeBundle, compatibility?.harnessRuntime ?? (
-      input.environmentProvisioning
-        ? {
-            getCurrent: () => ({
-              env: { ...input.environmentProvisioning!.env },
-              pathEntries: [...input.environmentProvisioning!.pathEntries],
-            }),
-          }
-        : undefined
-    )),
-    ...(compatibility?.includeFilesystemTools === false ? [] : buildFilesystemAgentTools(bashRuntimeBundle, {
+    ...buildHarnessAgentTools(bashRuntimeBundle, input.environmentProvisioning
+      ? {
+          getCurrent: () => ({
+            env: { ...input.environmentProvisioning!.env },
+            pathEntries: [...input.environmentProvisioning!.pathEntries],
+          }),
+        }
+      : undefined),
+    ...(runtimeScope.includeFilesystemTools === false ? [] : buildFilesystemAgentTools(bashRuntimeBundle, {
       getFilesystemBindings,
     })),
-    ...(compatibility?.includeUploadTools ? buildUploadAgentTools(bashRuntimeBundle) : []),
-    ...(compatibility?.additionalStandardTools ?? []),
+    ...(runtimeScope.includeUploadTools ? buildUploadAgentTools(bashRuntimeBundle) : []),
   ]
-  const groups: AgentCompositionToolGroups = {
-    standardTools,
-    extraTools: [
-      ...(runtimeScope.extraTools ?? []),
-      ...(await compatibility?.resolveExtraTools?.(runtimeBundle) ?? []),
-    ],
-    pluginTools: compatibility?.pluginTools ?? [],
-  }
-  const tools = compatibility?.finalizeTools
-    ? compatibility.finalizeTools(groups)
-    : [...groups.standardTools, ...groups.extraTools, ...groups.pluginTools.flatMap((plugin) => plugin.tools)]
+  const tools = [...standardTools, ...(runtimeScope.extraTools ?? [])]
 
-  const readyTracker = compatibility?.readyTracker
+  const readyTracker = runtimeScope.compatibility?.readyTracker
     ?? createRuntimeReadyStatusTracker(options.runtimeModeAdapter, { harnessReady: true })
   const encodedPreferredModel = 'legacyDefault' in input.agent
     ? undefined
@@ -193,7 +132,7 @@ export async function buildAgentComposition(
       ...(runtimeScope.pi?.additionalSkillPaths ?? []),
     ],
   })
-  const baseHarnessFactory = compatibility?.harnessFactory ?? options.harnessFactory
+  const baseHarnessFactory = options.harnessFactory
   const configured = !('legacyDefault' in input.agent)
   const configuredNamespace = sessionNamespaceForAgent(
     input.agent,
@@ -207,20 +146,12 @@ export async function buildAgentComposition(
     .filter((part): part is string => Boolean(part))
     .join('\n\n') || undefined
 
-  const config: AgentConfig = {
-    runtime: options.runtimeModeAdapter,
-    tools,
-    readiness: createAgentReadinessFromTracker({
-      requirements: collectToolReadinessRequirements(tools),
-      tracker: readyTracker,
-      checkReadiness: compatibility?.checkReadiness,
-    }),
-    harnessFactory: (baseHarnessFactory
+  const harnessFactory = (baseHarnessFactory
       ? async (factoryInput) => baseHarnessFactory({
           ...factoryInput,
           sessionRoot: options.sessionRoot,
           sessionNamespace: configuredNamespace,
-          sessionDir: compatibility?.sessionDir ?? factoryInput.sessionDir,
+          sessionDir: runtimeScope.sessionDir ?? factoryInput.sessionDir,
         })
       : async (factoryInput) => {
           const { createPiCodingAgentHarness } = await import('../harness/pi-coding-agent/createHarness')
@@ -229,39 +160,41 @@ export async function buildAgentComposition(
             pi,
             sessionRoot: options.sessionRoot,
             sessionNamespace: configuredNamespace,
-            sessionDir: compatibility?.sessionDir ?? factoryInput.sessionDir,
+            sessionDir: runtimeScope.sessionDir ?? factoryInput.sessionDir,
           })
-        }) as AgentCoreHarnessFactory,
+        }) as AgentCoreHarnessFactory
+  const harness = await harnessFactory({
+    tools,
+    cwd: runtimeScope.environment.workspaceRoot,
+    runtimeCwd: runtimeBundle.workspace.root,
     systemPromptAppend: staticPromptAppend,
     systemPromptDynamic: runtimeScope.loadSystemPromptAppend,
+    sessionRoot: options.sessionRoot,
     telemetry: options.telemetry,
+  })
+  const sessionStore = harness.sessions
+  const service = new HarnessPiChatService({
+    harness,
+    sessionStore,
+    workdir: runtimeBundle.workspace.root,
+    workspace: runtimeBundle.workspace,
+    onEvent: input.observeSessionEvent,
+    attachmentUrl: ({ sessionId, messageId, index }) =>
+      `/api/v1/agents/${encodeURIComponent(input.agent.agentTypeId)}/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(messageId)}/${index}`,
     metering: options.metering,
-    sessionStorageRoot: options.sessionRoot,
-    workdir: runtimeScope.environment.workspaceRoot,
-  }
-  const bridgeOptions: CreateAgentRuntimeBridgeOptions = {
-    service: {
-      admitEffect: compatibility?.admitEffect,
-      workdir: runtimeBundle.workspace.root,
-      workspace: runtimeBundle.workspace,
-      onEvent: input.observeSessionEvent,
-    },
-  }
-  const bridge = createAgentRuntimeBridge(config, bridgeOptions)
-  const runtime = await bridge.getRuntime()
+  })
   let disposed: Promise<void> | undefined
 
   return {
-    agent: bridge.agent,
-    harness: runtime.harness,
-    sessionStore: runtime.sessionStore,
-    service: runtime.service as HarnessPiChatService,
+    harness,
+    sessionStore,
+    service,
     tools,
     runtimeBundle,
     readyTracker,
     runtimeScopeIdentity: runtimeScope.identity,
     dispose() {
-      disposed ??= bridge.agent.dispose()
+      disposed ??= service.dispose()
       return disposed
     },
   }

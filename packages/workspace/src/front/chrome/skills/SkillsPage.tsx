@@ -72,7 +72,7 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
   const loadSkills = useCallback(async (refresh = false) => {
     setState((current) => ({ status: "loading", skills: current.skills }))
     try {
-      const payload = await client.getJson<SkillsResponse>(`/api/v1/agent/skills${refresh ? "?refresh=1" : ""}`, {
+      const payload = await client.getJson<SkillsResponse>(`/api/v1/agents/${encodeURIComponent(client.agentTypeId)}/skills${refresh ? "?refresh=1" : ""}`, {
         missingMessage: "Failed to load workspace skills.",
       })
       const skills = Array.isArray(payload.skills)

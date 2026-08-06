@@ -15,6 +15,11 @@ import type { GatewayConformanceFixture } from '../testing/gatewayConformance'
 
 interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
   modelLoopStarts(ref: AgentSessionRef): number
+  blockAdmission(operation: AgentGatewayEffect): {
+    entered: Promise<void>
+    release(): void
+  }
+  rejectNextPrompt(error: Error): void
 }
 
 interface RecordValue {
@@ -34,6 +39,7 @@ let globalCreated = 0
 
 class FakeService implements PiChatSessionService {
   readonly records = new Map<string, RecordValue>()
+  nextPromptError: Error | undefined
 
   async listSessions(_ctx: PiSessionRequestContext, options?: { includeId?: string }) {
     const rows = [...this.records.values()].map(this.summary)
@@ -89,6 +95,11 @@ class FakeService implements PiChatSessionService {
   }
 
   async prompt(_ctx: PiSessionRequestContext, sessionId: string, payload: { clientNonce: string }) {
+    if (this.nextPromptError) {
+      const error = this.nextPromptError
+      this.nextPromptError = undefined
+      throw error
+    }
     const record = this.get(sessionId)
     if (record.status === 'running' || record.status === 'aborting') {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'prompt is invalid while active')
@@ -185,7 +196,11 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
   const issued = new WeakSet<object>()
   const revoked = new WeakSet<object>()
   const services = new Map<string, FakeService>()
-  const admission = new Map<AgentGatewayEffect, Array<'strong-reject' | 'retryable'>>()
+  type AdmissionDisposition = 'strong-reject' | 'retryable' | {
+    entered(): void
+    wait: Promise<void>
+  }
+  const admission = new Map<AgentGatewayEffect, AdmissionDisposition[]>()
   const agents: readonly AgentHostAgentSpec[] = [
     { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
     { agentTypeId: 'beta', definition: { instructions: 'beta', label: 'Beta' } },
@@ -201,9 +216,7 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
   }
   const activity = new AgentSessionActivityIndex()
   const runtime = {
-    options: {
-      resolveRuntimeScope: async () => ({ identity: 'shared-runtime' }),
-    },
+    options: {},
     compiledAgents: agents,
     compiledById: new Map(agents.map((agent) => [agent.agentTypeId, agent])),
     ledger: new InMemoryAgentRequestLedger(),
@@ -217,6 +230,10 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     effectAdmission: {
       async admit({ operation }: { operation: AgentGatewayEffect }) {
         const disposition = admission.get(operation)?.shift()
+        if (typeof disposition === 'object') {
+          disposition.entered()
+          await disposition.wait
+        }
         if (disposition === 'strong-reject') return {
           type: 'rejected' as const,
           error: new AgentGatewayError(AgentGatewayErrorCode.AGENT_SCOPE_DENIED, 'denied').toJSON(),
@@ -241,6 +258,9 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
       if (!runtimeScopeIdentity) return undefined
       return { runtimeScope: { identity: 'shared-runtime' }, runtimeScopeIdentity }
     },
+    async resolveAgentRuntimeScope() {
+      return { identity: 'shared-runtime' }
+    },
     async resolveBinding(agentTypeId: string, _scope: AuthorizedAgentScope, claim: { workspaceScopeId: string }) {
       const service = serviceFor(claim.workspaceScopeId, agentTypeId)
       return {
@@ -257,7 +277,8 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     },
     startDrain() {},
     registerSubscription() { return () => {} },
-    trackEffect<T>(effect: Promise<T>) { return effect },
+    startPreparedEffect<T>(_key: import('../types').AgentRequestKey, effect: () => Promise<T>) { return effect() },
+    runBindingOperation<T>(_bindingKey: string, operation: () => Promise<T>) { return operation() },
     async closeRuntime() {},
   }
   const embedded = new EmbeddedAgentGateway(runtime as never)
@@ -286,6 +307,9 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
     moveSession(ref, updatedAt) {
       for (const service of services.values()) if (service.records.has(ref.sessionId)) service.move(ref.sessionId, updatedAt)
     },
+    rejectNextPrompt(error) {
+      for (const service of services.values()) service.nextPromptError = error
+    },
     modelLoopStarts(ref) {
       for (const service of services.values()) {
         const record = service.records.get(ref.sessionId)
@@ -297,6 +321,16 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
       const queue = admission.get(operation) ?? []
       queue.push(disposition)
       admission.set(operation, queue)
+    },
+    blockAdmission(operation) {
+      let release!: () => void
+      let markEntered!: () => void
+      const wait = new Promise<void>((resolve) => { release = resolve })
+      const entered = new Promise<void>((resolve) => { markEntered = resolve })
+      const queue = admission.get(operation) ?? []
+      queue.push({ entered: markEntered, wait })
+      admission.set(operation, queue)
+      return { entered, release }
     },
   }
 }
