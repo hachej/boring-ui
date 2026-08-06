@@ -2,7 +2,11 @@ import { createHash } from 'node:crypto'
 import type { PiChatEvent } from '../../shared/chat'
 import type { AgentSessionActivity, AgentSessionRef, AuthorizedAgentScope, VerifiedAgentScopeClaim } from '../../shared/index'
 import type { SessionSummary } from '../../shared/session'
-import { PiSessionStore } from '../harness/pi-coding-agent/sessions'
+import {
+  PiSessionStore,
+  type RuntimeScopeIdentityMigrationInput,
+  type RuntimeScopeIdentityMigrationResult,
+} from '../harness/pi-coding-agent/sessions'
 import { agentSessionKey } from './agentSessionKey'
 import type { CompiledAgentHostAgentSpec, ResolvedAgentRuntimeScope } from './types'
 
@@ -10,6 +14,9 @@ export interface AgentSessionRuntimeAuthority {
   readonly runtimeScope: ResolvedAgentRuntimeScope
   /** Absent only for a pre-AH0 transcript created before runtime pins existed. */
   readonly runtimeScopeIdentity?: string
+  migrateRuntimeScopeIdentity(
+    input: RuntimeScopeIdentityMigrationInput,
+  ): Promise<RuntimeScopeIdentityMigrationResult>
 }
 
 function safeScopeSegment(scope: string): string {
@@ -69,6 +76,11 @@ export class AgentSessionInventory {
         runtimeScopeIdentity: await resolved.store.readRuntimeScopeIdentity(
           { workspaceId: claim.workspaceScopeId },
           sessionId,
+        ),
+        migrateRuntimeScopeIdentity: async (input) => await resolved.store.migrateRuntimeScopeIdentity(
+          { workspaceId: claim.workspaceScopeId },
+          sessionId,
+          input,
         ),
       }
     } catch (error) {

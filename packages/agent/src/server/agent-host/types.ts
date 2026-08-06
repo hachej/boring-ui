@@ -187,11 +187,23 @@ export interface ResolvedEnvironmentScope {
   }) => Promise<WorkspaceProvisioningResult | undefined>
 }
 
+export interface RuntimeScopeIdentityMigrationAuthorization {
+  readonly schemaVersion: 1
+  readonly agentTypeId: string
+  readonly workspaceScopeId: string
+  readonly sessionNamespace: string
+  readonly fromIdentity: string
+  readonly toIdentity: string
+  readonly evidenceDigest: string
+}
+
 export interface ResolvedAgentRuntimeScope {
-  /** Complete app-canonicalized PL1 composition identity. */
+  /** Persisted semantic compatibility identity. */
   readonly identity: string
   /** Stable physical binding slot, independent of semantic resource revisions. */
   readonly physicalBindingIdentity?: string
+  /** Exact server-generated predecessor authorizations; never accepted from browser input. */
+  readonly sessionIdentityMigrations?: readonly RuntimeScopeIdentityMigrationAuthorization[]
   /** Canonical digest of the immutable plugin/resource inputs used by reload. */
   readonly resourceInputDigest?: string
   /**
