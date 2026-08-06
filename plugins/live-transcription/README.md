@@ -12,7 +12,7 @@ capturing. Live mode streams microphone PCM to the
 loopback service and writes only a Markdown transcript. It intentionally does
 not retain audio. Anonymous `Speaker N`
 labels and French text may be inaccurate. Kyutai word events are grouped into
-readable sentence- and pause-bounded transcript rows. While capture is active, the live
+readable pause-bounded transcript paragraphs. While capture is active, the live
 process is the only supported transcript writer: byte/mtime conflict checks are
 best effort and are not atomic. Every 60 seconds, a changed projected revision
 creates one visible review turn in the originating Pi chat when it is idle;

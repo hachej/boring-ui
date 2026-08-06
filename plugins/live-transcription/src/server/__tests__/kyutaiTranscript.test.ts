@@ -8,7 +8,7 @@ const snapshot = (lines: Array<{ text: string; startSeconds: number; endSeconds?
 })
 
 describe("Kyutai durable transcript grouping", () => {
-  it("joins word events into sentences instead of one transcript row per event", () => {
+  it("keeps consecutive sentences in one readable paragraph", () => {
     expect(groupKyutaiTranscriptSnapshot(snapshot([
       { text: "Pourquoi", startSeconds: 0, endSeconds: 0.4 },
       { text: "est-ce que", startSeconds: 0.45, endSeconds: 0.9 },
@@ -17,8 +17,7 @@ describe("Kyutai durable transcript grouping", () => {
       { text: "passe ?", startSeconds: 1.85, endSeconds: 2.2 },
     ]))).toEqual({
       lines: [
-        { text: "Pourquoi est-ce que ça ?", startSeconds: 0, endSeconds: 1.2, speaker: 0 },
-        { text: "Qu'est-ce qui se passe ?", startSeconds: 1.25, endSeconds: 2.2, speaker: 0 },
+        { text: "Pourquoi est-ce que ça ? Qu'est-ce qui se passe ?", startSeconds: 0, endSeconds: 2.2, speaker: 0 },
       ],
       remainingDiarizationSeconds: 0,
     })
@@ -28,12 +27,12 @@ describe("Kyutai durable transcript grouping", () => {
     expect(groupKyutaiTranscriptSnapshot(snapshot([
       { text: "première idée", startSeconds: 0, endSeconds: 0.5 },
       { text: "suite", startSeconds: 0.6, endSeconds: 0.9 },
-      { text: "nouvelle idée", startSeconds: 1.7, endSeconds: 2.1 },
+      { text: "nouvelle idée", startSeconds: 2.5, endSeconds: 2.9 },
     ])).lines.map((line) => line.text)).toEqual(["première idée suite", "nouvelle idée"])
   })
 
   it("starts a new row before separate events exceed the readable word target", () => {
-    const first = Array.from({ length: 23 }, (_, index) => `mot${index}`).join(" ")
+    const first = Array.from({ length: 49 }, (_, index) => `mot${index}`).join(" ")
     const result = groupKyutaiTranscriptSnapshot(snapshot([
       { text: first, startSeconds: 0, endSeconds: 1 },
       { text: "deux mots", startSeconds: 1.1, endSeconds: 1.3 },

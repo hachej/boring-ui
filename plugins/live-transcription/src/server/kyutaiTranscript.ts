@@ -1,12 +1,11 @@
 import type { WhisperLiveKitLine, WhisperLiveKitSnapshot } from "./whisperLiveKit"
 
-const UTTERANCE_PAUSE_SECONDS = 0.75
-const TARGET_UTTERANCE_WORDS = 24
-const TARGET_UTTERANCE_CHARACTERS = 240
-const TERMINAL_PUNCTUATION = /[.!?…][”’"')\]]*$/u
+const PARAGRAPH_PAUSE_SECONDS = 1.5
+const TARGET_PARAGRAPH_WORDS = 50
+const TARGET_PARAGRAPH_CHARACTERS = 400
 const LEADING_PUNCTUATION = /^[,.;:!?…%)}\]]/u
 
-/** Groups Kyutai's word-level protocol events for the durable transcript sink. */
+/** Groups Kyutai's word-level protocol events into pause-bounded paragraphs. */
 export function groupKyutaiTranscriptSnapshot(snapshot: WhisperLiveKitSnapshot): WhisperLiveKitSnapshot {
   const grouped: WhisperLiveKitLine[] = []
   let previousWord: WhisperLiveKitLine | undefined
@@ -20,14 +19,13 @@ export function groupKyutaiTranscriptSnapshot(snapshot: WhisperLiveKitSnapshot):
     const pauseSeconds = previousWord?.endSeconds === undefined
       ? 0
       : Math.max(0, source.startSeconds - previousWord.endSeconds)
-    const startsNewUtterance = !current
+    const startsNewParagraph = !current
       || current.speaker !== source.speaker
-      || TERMINAL_PUNCTUATION.test(current.text)
-      || pauseSeconds >= UTTERANCE_PAUSE_SECONDS
-      || wordCount + sourceWordCount > TARGET_UTTERANCE_WORDS
-      || current.text.length + text.length + 1 > TARGET_UTTERANCE_CHARACTERS
+      || pauseSeconds >= PARAGRAPH_PAUSE_SECONDS
+      || wordCount + sourceWordCount > TARGET_PARAGRAPH_WORDS
+      || current.text.length + text.length + 1 > TARGET_PARAGRAPH_CHARACTERS
 
-    if (startsNewUtterance) {
+    if (startsNewParagraph) {
       grouped.push({ ...source, text })
       // Preserve an oversized protocol event intact; the target bounds only
       // decide whether separate events belong to the same readable row.
