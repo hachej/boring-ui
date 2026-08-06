@@ -54,7 +54,7 @@ const ROLE_BINDING_DEFINITIONS = [
     role: 'worker',
     agentTypeId: 'boring-worker',
     skills: [
-      { name: 'exec', digest: 'sha256:8ea7731c7c9206fd106397bacd3f3eb6e6c786c605ab8123a070577794526bb4' },
+      { name: 'exec', digest: 'sha256:cc0ab4c7e94dc8b2e65873681ccea281e19dd9850f726e978c8ba764643e8359' },
       { name: 'handoff', digest: 'sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17' },
     ],
   },
