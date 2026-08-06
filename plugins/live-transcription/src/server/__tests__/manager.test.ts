@@ -61,6 +61,14 @@ describe("LiveTranscriptManager", () => {
     const workspace = new MemoryWorkspace()
     const abort = new AbortController()
     let callbackCompleted = false
+    const dispatchReview = vi.fn(async (input, _onEvent, onAccepted) => {
+      const accepted = {
+        ref: { agentTypeId: "default", sessionId: input.sessionId },
+        receipt: { accepted: true as const, cursor: 1, disposition: "prompt" as const, clientNonce: input.clientNonce },
+      }
+      await onAccepted?.(accepted)
+      return accepted
+    })
     const runWithWorkspaceAgent = vi.fn(async (input, run) => {
       expect(input).toMatchObject({
         agentTypeId: "default",
@@ -70,13 +78,12 @@ describe("LiveTranscriptManager", () => {
       await run({
         workspace,
         signal: abort.signal,
-        dispatch: vi.fn(),
+        dispatch: dispatchReview,
         interrupt: vi.fn(),
         stop: vi.fn(),
       })
       callbackCompleted = true
     })
-    const sendReview = vi.fn(async () => ({ status: "accepted" as const, cursor: 1 }))
     const upstream = {
       connect: vi.fn(async () => undefined),
       sendPcm: vi.fn(async () => undefined),
@@ -87,15 +94,6 @@ describe("LiveTranscriptManager", () => {
       dispatcherResolver: {
         runWithWorkspaceAgent,
         async resolve() { throw new Error("compatibility dispatcher must not be used") },
-        async resolveWithWorkspace() {
-          return {
-            dispatcher: {} as never,
-            workspace,
-            bindPiSession: async () => ({
-              visibleUserMessageTarget: { isIdle: async () => true, sendIfIdle: sendReview },
-            }),
-          }
-        },
       } as WorkspaceAgentDispatcherResolver,
       agentTypeId: "default",
       actorResolver: () => ({ workspaceId: "default", userId: "local" }),
@@ -111,7 +109,12 @@ describe("LiveTranscriptManager", () => {
     socket.emit("message", Buffer.from(started.socketNonce), true)
     await vi.waitFor(() => expect(manager.status(started.liveSessionId).state).toBe("active"))
     await expect(manager.review(started.liveSessionId)).resolves.toEqual({ status: "dispatched" })
-    expect(sendReview).toHaveBeenCalledOnce()
+    expect(dispatchReview).toHaveBeenCalledOnce()
+    expect(dispatchReview.mock.calls[0]?.[0]).toMatchObject({
+      sessionId: "chat-1",
+      content: expect.stringContaining("Review the live transcript"),
+      displayMessage: expect.any(String),
+    })
 
     await manager.stop(started.liveSessionId)
     await vi.waitFor(() => expect(callbackCompleted).toBe(true))
