@@ -10,6 +10,7 @@ import {
   ErrorCode,
   type AgentSkillResource,
 } from '@hachej/boring-agent/shared'
+import { parseSkillMetadataFrontmatter } from '@hachej/boring-agent/server'
 
 import type { WorkspacePackageResourceRecord } from './bootstrapServer'
 
@@ -129,15 +130,6 @@ function normalizeDeclaration(packageName: string, declaration: unknown): string
   return declaration
 }
 
-function frontmatterValue(content: string, key: string): string | undefined {
-  if (!content.startsWith('---\n')) return undefined
-  const end = content.indexOf('\n---', 4)
-  if (end < 0) return undefined
-  const line = content.slice(4, end).split('\n').find((entry) => entry.startsWith(`${key}:`))
-  const value = line?.slice(key.length + 1).trim()
-  return value || undefined
-}
-
 async function resolveSkillRecord(input: {
   packageName: string
   pluginIds: readonly string[]
@@ -160,14 +152,15 @@ async function resolveSkillRecord(input: {
   }
   if (!isInside(mountRoot, skillFile)) throw invalid(input.packageName, 'SKILL.md resolves outside declared skill root')
   const content = await readFile(skillFile, 'utf8')
+  const { name, description } = parseSkillMetadataFrontmatter(content)
   return {
     packageName: input.packageName,
     pluginIds: input.pluginIds,
     skillFile,
     mountRoot,
     resource: { filesystem: AGENT_RESOURCES_FILESYSTEM_ID, path: input.logicalFile },
-    ...(frontmatterValue(content, 'name') ? { name: frontmatterValue(content, 'name') } : {}),
-    ...(frontmatterValue(content, 'description') ? { description: frontmatterValue(content, 'description') } : {}),
+    ...(name ? { name } : {}),
+    ...(description ? { description } : {}),
   }
 }
 

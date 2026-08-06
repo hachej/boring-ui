@@ -771,9 +771,18 @@ export async function createWorkspacesModeApp(opts: {
     const diagnostics: Array<{ source: string; message: string; pluginId?: string }> = []
     try {
       const core = await getWorkspaceBridgeCore(workspace)
+      // CLI workspaces mode default is ambient-skills-ON (opposite of the
+      // Workspace-server library default, see createFolderModeApp's `pi:
+      // { noSkills: opts.loadAmbientSkills === false }` comment above) —
+      // but it must still respect an explicit `loadAmbientSkills: false`
+      // the way createWorkspaceAgentServer.ts's own
+      // rebuildPackageResourceRegistry gates ~/.pi/agent/skills. This
+      // enumeration used to run unconditionally, silently re-enabling
+      // ambient global skills after the caller opted out via noSkills.
+      const ambientSkillsEnabled = opts.loadAmbientSkills !== false
       const sharedSkillPaths = await workspaceServer.enumerateExternalSkillFiles([
         ...workspaceAppServer.resolveBoringPiSkillPaths(workspace.path),
-        join(homedir(), ".pi", "agent", "skills"),
+        ...(ambientSkillsEnabled ? [join(homedir(), ".pi", "agent", "skills")] : []),
       ], workspace.path)
       const snapshot = await workspaceServer.resolveWorkspacePackageResourceSnapshot({
         declared: core.packageResources ?? [],

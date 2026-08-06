@@ -185,15 +185,41 @@ function routePath(handle: ReadonlyMultiRootProjectionHandle, logicalPath: strin
   throw new Error("path has no readonly mount");
 }
 
+function isAncestorOf(prefix: string, path: string): boolean {
+  return prefix === "" || path === prefix || path.startsWith(`${prefix}/`);
+}
+
 /**
- * Named filesystems are always addressable from their absolute root ("/") —
- * main's catalog/search/tree routes call every binding at path "/"
- * unconditionally. A multi-root binding has no single directory backing that
- * root, so route it as the union of every admitted mount instead of failing.
+ * Mounts reachable at-or-below `logicalPath`, each returned with its own
+ * full `logicalRoot` preserved as `RoutedPath.logicalPath` (not the
+ * ancestor prefix) so recursive child-path construction in `walkFiles`
+ * never drops a mount's prefix. Covers two cases uniformly:
+ *  - the absolute root ("") of a multi-root binding, which main's
+ *    catalog/search/tree routes call unconditionally on every filesystem;
+ *  - any virtual ancestor directory strictly above one or more mount roots
+ *    (e.g. "packages" above "packages/@example/plugin/skills/authoring"),
+ *    which has no single backing directory of its own.
  */
-function routeAllMounts(handle: ReadonlyMultiRootProjectionHandle, logicalPath: string): RoutedPath[] {
-  if (logicalPath !== "") return [routePath(handle, logicalPath)];
-  return handle.mounts.map((mount) => ({ mount, logicalPath, remainder: "" }));
+function routeUnion(handle: ReadonlyMultiRootProjectionHandle, logicalPath: string): RoutedPath[] {
+  return handle.mounts
+    .filter((mount) => isAncestorOf(logicalPath, mount.logicalRoot))
+    .map((mount) => ({ mount, logicalPath: mount.logicalRoot, remainder: "" }));
+}
+
+/**
+ * Traversal targets (find/grep) for a logical path: the exact mount it
+ * routes into when one exists, otherwise the union of every mount below it
+ * when `logicalPath` is a virtual ancestor directory. Throws the original
+ * routing error only when neither resolves.
+ */
+function routeTraversalTargets(handle: ReadonlyMultiRootProjectionHandle, logicalPath: string): RoutedPath[] {
+  try {
+    return [routePath(handle, logicalPath)];
+  } catch (error) {
+    const union = routeUnion(handle, logicalPath);
+    if (union.length > 0) return union;
+    throw error;
+  }
 }
 
 async function rejectSymlinks(root: string, candidate: string): Promise<void> {
@@ -288,18 +314,21 @@ export function createReadonlyMultiRootProjectionOperations(
     async list(descriptor) {
       const { metadata, logicalPath } = assertDescriptor(descriptor, "list", handle);
       return protectedOperation(metadata, async () => {
-        if (
-          logicalPath === "" &&
-          handle.mounts.length > 0 &&
-          !handle.mounts.some((mount) => mount.logicalRoot === "")
-        ) {
-          // No single mount owns the root of a multi-root binding — surface
-          // each mount's top-level logical segment as a synthetic directory
-          // entry so root listing never hard-fails.
-          const topSegments = new Set(handle.mounts.map((mount) => mount.logicalRoot.split("/")[0]));
-          return { entries: [...topSegments].sort(), metadata };
+        let routed: RoutedPath;
+        try {
+          routed = routePath(handle, logicalPath);
+        } catch (error) {
+          // No mount owns `logicalPath` directly — if it is a virtual
+          // ancestor directory above one or more mount roots (root ""
+          // included), synthesize its entries from the next logical
+          // segment of every mount below it instead of touching disk.
+          const union = routeUnion(handle, logicalPath);
+          if (union.length === 0) throw error;
+          const prefixLen = logicalPath === "" ? 0 : logicalPath.length + 1;
+          const segments = new Set(union.map((entry) => entry.mount.logicalRoot.slice(prefixLen).split("/")[0]));
+          return { entries: [...segments].sort(), metadata };
         }
-        const target = await confinedTarget(handle, routePath(handle, logicalPath));
+        const target = await confinedTarget(handle, routed);
         if (!(await stat(target)).isDirectory()) throw new Error("not a directory");
         const entries = await readdir(target, { withFileTypes: true });
         if (handle.symlinks === "reject" && entries.some((entry) => entry.isSymbolicLink())) {
@@ -315,7 +344,7 @@ export function createReadonlyMultiRootProjectionOperations(
       const { metadata, logicalPath } = assertDescriptor(descriptor, "find", handle);
       return protectedOperation(metadata, async () => {
         const matcher = glob(pattern);
-        const routed = routeAllMounts(handle, logicalPath);
+        const routed = routeTraversalTargets(handle, logicalPath);
         const found: Array<{ logicalPath: string; target: string }> = [];
         for (const entry of routed) found.push(...await walkFiles(handle, entry));
         const paths = found
@@ -329,7 +358,7 @@ export function createReadonlyMultiRootProjectionOperations(
       const { metadata, logicalPath } = assertDescriptor(descriptor, "grep", handle);
       return protectedOperation(metadata, async () => {
         const matches: Array<{ path: string; line: number; text: string }> = [];
-        const routed = routeAllMounts(handle, logicalPath);
+        const routed = routeTraversalTargets(handle, logicalPath);
         const found: Array<{ logicalPath: string; target: string }> = [];
         for (const entry of routed) found.push(...await walkFiles(handle, entry));
         for (const entry of found) {
@@ -347,10 +376,18 @@ export function createReadonlyMultiRootProjectionOperations(
     },
     async stat(descriptor) {
       const { metadata, logicalPath } = assertDescriptor(descriptor, "stat", handle);
-      return protectedOperation(metadata, async () => ({
-        isDirectory: (await stat(await confinedTarget(handle, routePath(handle, logicalPath)))).isDirectory(),
-        metadata,
-      }));
+      return protectedOperation(metadata, async () => {
+        try {
+          const routed = routePath(handle, logicalPath);
+          return { isDirectory: (await stat(await confinedTarget(handle, routed))).isDirectory(), metadata };
+        } catch (error) {
+          // Virtual ancestor directories (root "" included) have no real
+          // backing path but must still report as directories so callers
+          // like routes/tree.ts can stat-then-list them.
+          if (routeUnion(handle, logicalPath).length > 0) return { isDirectory: true, metadata };
+          throw error;
+        }
+      });
     },
     rejectMutation(operation, descriptor): never {
       const { metadata, logicalPath } = assertDescriptor(descriptor, operation, handle);
