@@ -9,7 +9,7 @@ fact has exactly one authority, and no stage invents a second path to it.
 | human intake, epics, PRs, labels | GitHub | `gh` CLI | triage, steward, reviewer |
 | code and history | git worktrees | `git` | worker (write), reviewer (read) |
 | human decisions | inbox Human Intentions | `ask_user` | every seat |
-| dispatch and sweeps | `plugins/boring-automation` | scheduled automation | beadle only |
+| supervisor spawns and sweeps | `plugins/boring-automation` | scheduled automation | beadle only |
 | task board rendering | `plugins/tasks` sources | GitHub + Beads adapters | UI, read-only |
 | seat runtime | AgentHost fleet | authored persona + trusted policy | host |
 | parallel fan-out | `pi-subagents` (runtime plugin skill) | ephemeral subagents | steward, reviewer, worker |
