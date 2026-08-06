@@ -25,6 +25,8 @@
     "check:generated-artifacts": "pnpm tsx scripts/check-generated-artifacts.ts",
     "check:agent-isolation": "pnpm --filter @hachej/boring-agent run check:isolation",
     "check:action-pins": "bash scripts/check-action-pins.sh",
+"digests:check": "node scripts/refresh-skill-digests.mjs --check",
+"digests:write": "node scripts/refresh-skill-digests.mjs --write",
     "check:dependency-age": "node scripts/check-dependency-age.mjs",
     "check:bundle-size": "pnpm --filter @hachej/boring-workspace run check:bundle-size",
     "check:core-bundle-size": "pnpm --filter @hachej/boring-core run check:bundle-size",
