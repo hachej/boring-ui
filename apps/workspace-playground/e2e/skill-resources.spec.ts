@@ -17,7 +17,7 @@ test.afterEach(async ({ request }) => {
 })
 
 test("exposes safe skill resources and enforces readonly mutations", async ({ request }) => {
-  const catalogResponse = await request.get("/api/v1/agent/skills?refresh=1")
+  const catalogResponse = await request.get("/api/v1/agents/default/skills?refresh=1")
   expect(catalogResponse.ok()).toBe(true)
   const catalogText = await catalogResponse.text()
   const catalog = JSON.parse(catalogText) as { skills: Array<{
