@@ -2378,6 +2378,12 @@ export function WorkspaceAgentFront<
       headerInsetEnd={!surfaceOpen}
     />
   ) : null)
+  const renderedCenterParams = shellCapabilitiesHost.floatingChatOpen
+    ? { ...centerParams, sessionStreamingEnabled: false }
+    : centerParams
+  const renderedChatPanes = shellCapabilitiesHost.floatingChatOpen
+    ? chatPanes.map((pane) => ({ ...pane, params: { ...(pane.params ?? centerParams), sessionStreamingEnabled: false } }))
+    : chatPanes
   const mainContent = remoteSessionsTransitioning ? (
     <ChatSessionTransitionState />
   ) : (
@@ -2386,8 +2392,8 @@ export function WorkspaceAgentFront<
       nav={isPluginTabsLayout ? null : effectiveNavOpen ? "session-list" : null}
       navParams={navParams}
       center="chat"
-      centerParams={centerParams}
-      chatPanes={chatPanes}
+      centerParams={renderedCenterParams}
+      chatPanes={renderedChatPanes}
       chatTopActions={chatTopOverlayActions}
       chatPaneSessionActions={chatPaneSessionActions}
       activeChatPaneId={activeChatPaneId}
