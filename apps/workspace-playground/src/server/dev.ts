@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
-import { readFile, readdir, stat } from "node:fs/promises"
-import { basename, dirname, isAbsolute, relative, resolve } from "node:path"
+import { basename, dirname, resolve } from "node:path"
 import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
+import { createReadonlyProjectionOperations } from "@hachej/boring-bash/server"
 import { createNodeWorkspace } from "@hachej/boring-sandbox/providers/node-workspace"
 import { createPersistedScriptedPiHarness } from "./testing/scriptedPiHarness"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
@@ -39,15 +39,6 @@ export function seedWorkspaceFromFixtures(workspaceRoot = WORKSPACE_DIR): void {
   seedFixtureEntry(FIXTURES_DIR, workspaceRoot)
 }
 
-function resolvePlaygroundBindingPath(root: string, rawPath: string): string {
-  const normalized = rawPath.trim() || "/"
-  const withoutLeadingSlash = normalized.replace(/^\/+/, "")
-  const resolved = resolve(root, withoutLeadingSlash || ".")
-  const rel = relative(root, resolved)
-  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return resolved
-  throw new Error("path escapes playground binding root")
-}
-
 let agentBoot: Promise<void> | null = null
 
 export async function startPlaygroundServer(): Promise<void> {
@@ -71,6 +62,8 @@ export async function startPlaygroundServer(): Promise<void> {
     const factoryAgentsEnabled = process.env.VITE_BORING_FACTORY_AGENTS === "1"
     const factoryAgents = factoryAgentsEnabled ? await loadBoringFactoryAgents() : undefined
     const multiFilesystemPlayground = process.env.BORING_WORKSPACE_PLAYGROUND_MULTI_FS === "1" || process.env.VITE_PLAYGROUND_MULTI_FS === "1"
+    const companyContextRoot = resolve(process.env.BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT || workspaceRoot)
+    if (multiFilesystemPlayground) mkdirSync(companyContextRoot, { recursive: true })
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
     console.log(`[workspace-playground] runtime mode: ${remoteWorkerModeAdapter ? "remote-worker" : localRuntimeMode}`)
     if (remoteWorkerWorkspaceId) {
@@ -94,40 +87,15 @@ export async function startPlaygroundServer(): Promise<void> {
         config: { providers: [{ provider: "github", repo: "auto" }, { provider: "beads" }] },
       })],
       defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
-      runtimeProvisioner: multiFilesystemPlayground
-        ? async ({ runtimeBundle }) => {
-            const bundle = runtimeBundle as typeof runtimeBundle & { filesystemBindings?: unknown[] }
-            bundle.filesystemBindings = [
-              ...(bundle.filesystemBindings ?? []),
-              {
-                filesystem: "company_context",
-                access: "readonly",
-                operations: {
-                  async read({ path }: { path: string }) {
-                    const target = resolvePlaygroundBindingPath(workspaceRoot, path)
-                    return { content: await readFile(target, "utf8") }
-                  },
-                  async list({ path }: { path: string }) {
-                    const target = resolvePlaygroundBindingPath(workspaceRoot, path)
-                    return { entries: await readdir(target) }
-                  },
-                  async find() {
-                    return { paths: [] }
-                  },
-                  async grep() {
-                    return { matches: [] }
-                  },
-                  async stat({ path }: { path: string }) {
-                    const target = resolvePlaygroundBindingPath(workspaceRoot, path)
-                    return { isDirectory: (await stat(target)).isDirectory() }
-                  },
-                  rejectMutation(operation: string) {
-                    throw new Error(`company_context binding is readonly: ${operation}`)
-                  },
-                },
-              },
-            ]
-          }
+      getFilesystemBindings: multiFilesystemPlayground
+        ? async () => [{
+            filesystem: "company_context",
+            access: "readonly",
+            operations: createReadonlyProjectionOperations({
+              filesystem: "company_context",
+              projectionRoot: companyContextRoot,
+            }),
+          }]
         : undefined,
       workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
     })

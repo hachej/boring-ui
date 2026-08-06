@@ -26,7 +26,7 @@ import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginT
 import { useViewportWidth } from "../../front/layout/useViewportWidth"
 import { captureWorkspaceFrontPlugins } from "./workspaceBuiltinPlugins"
 import type { FilesystemId } from "../../shared/types/filesystem"
-import { UI_COMMAND_EVENT, dispatchUiCommand, startUiCommandStream } from "../../front/bridge"
+import { dispatchUiCommand, registerUiCommandConsumer, startUiCommandStream } from "../../front/bridge"
 import type { CommandPaletteSessionItem } from "../../front/components/CommandPalette"
 import type { CommandResult, DispatchContext, FileTreeBridge, Unsubscribe } from "../../front/bridge"
 import { readStoredBoolean, readStoredNumber, writeStoredBoolean, writeStoredNumber } from "../../front/store/localStorageValues"
@@ -654,6 +654,7 @@ export function WorkspaceAgentFront<
   capabilities,
   apiBaseUrl,
   authHeaders,
+  authScopeKey,
   apiTimeout,
   defaultTheme,
   onThemeChange,
@@ -662,6 +663,7 @@ export function WorkspaceAgentFront<
   bridgeEndpoint,
   fullPageBasePath,
   onAuthError,
+  onOpenFile,
   sessions,
   activeSessionId,
   activeSessionAgentTypeId,
@@ -1303,9 +1305,10 @@ export function WorkspaceAgentFront<
   const surfaceRef = useRef<{ key: string; api: SurfaceShellApi } | null>(null)
   // Ops issued (e.g. agent openFile/openPanel) while the SurfaceShell isn't
   // mounted yet — collapsed surface or warmup overlay still showing. The
-  // dispatcher parks them here instead of dropping after its retry budget;
+  // dispatcher parks them instead of dropping after its retry budget;
   // handleSurfaceReady drains them once the surface mounts.
   const pendingSurfaceOpsRef = useRef<Array<(api: SurfaceShellApi) => void>>([])
+  const pendingSurfaceOpsKeyRef = useRef(resolvedSurfaceStorageKey)
   // Keep the latest key available to stable command callbacks. We tag the
   // SurfaceShell handle instead of clearing it in an effect: clearing after
   // mount races with Dockview's onReady on the initial render.
@@ -1328,9 +1331,13 @@ export function WorkspaceAgentFront<
 
   useEffect(() => {
     setSurfaceReady(false)
-    // Drop any ops parked for the previous workspace's surface so we never
-    // replay them against a freshly-swapped workspace.
-    pendingSurfaceOpsRef.current = []
+    // Drop parked operations only when this mounted shell actually changes
+    // workspace. Clearing during the initial effect can erase a first-click
+    // command queued by child plugin effects before SurfaceShell is ready.
+    if (pendingSurfaceOpsKeyRef.current !== resolvedSurfaceStorageKey) {
+      pendingSurfaceOpsRef.current = []
+      pendingSurfaceOpsKeyRef.current = resolvedSurfaceStorageKey
+    }
   }, [resolvedSurfaceStorageKey])
 
   useEffect(() => {
@@ -1387,6 +1394,11 @@ export function WorkspaceAgentFront<
   }, [resolvedSurfaceStorageKey])
 
   const enqueueSurfaceOp = useCallback((run: (api: SurfaceShellApi) => void) => {
+    const ready = surfaceRef.current
+    if (ready?.key === surfaceKeyRef.current) {
+      run(ready.api)
+      return
+    }
     pendingSurfaceOpsRef.current.push(run)
   }, [])
 
@@ -1934,17 +1946,11 @@ export function WorkspaceAgentFront<
     onWorkspaceWarmupStatusChange?.(status)
   }, [onWorkspaceWarmupStatusChange, workspaceId])
 
-  useEffect(() => {
-    // postUiCommand also emits a browser CustomEvent so app/plugin bundles
-    // loaded through different module graphs can still reach this shell.
-    const handler = (event: Event) => {
-      const command = (event as CustomEvent).detail
-      if (!command || typeof command !== "object") return
-      dispatchUiCommand(command, surfaceDispatch)
-    }
-    globalThis.addEventListener?.(UI_COMMAND_EVENT, handler)
-    return () => globalThis.removeEventListener?.(UI_COMMAND_EVENT, handler)
-  }, [surfaceDispatch])
+  const uiCommandSurfaceDispatchRef = useRef(surfaceDispatch)
+  uiCommandSurfaceDispatchRef.current = surfaceDispatch
+  useEffect(() => registerUiCommandConsumer((command) => {
+    dispatchUiCommand(command, uiCommandSurfaceDispatchRef.current)
+  }), [])
 
   useEffect(() => {
     if (remoteSessionsPending) return
@@ -2499,6 +2505,7 @@ export function WorkspaceAgentFront<
         capabilities={capabilities}
         apiBaseUrl={apiBaseUrl}
         authHeaders={resolvedAuthHeaders}
+        authScopeKey={authScopeKey}
         apiTimeout={apiTimeout}
         activeSessionId={providerActiveSessionId}
         activeSessionAgentTypeId={providerActiveSessionRef.agentTypeId ?? selectedAgentTypeId}
@@ -2515,6 +2522,7 @@ export function WorkspaceAgentFront<
         debug={mobileShellActive ? false : debug}
         bridgeEndpoint={null}
         onAuthError={onAuthError}
+        onOpenFile={onOpenFile}
         frontPluginHotReload={resolvedFrontPluginHotReload}
         fullPageBasePath={fullPageBasePath}
         commandPaletteSessionSearch={commandPaletteSessionSearch}

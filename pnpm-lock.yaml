@@ -162,6 +162,9 @@ importers:
       '@hachej/boring-ask-user':
         specifier: workspace:*
         version: link:../../plugins/ask-user
+      '@hachej/boring-bash':
+        specifier: workspace:*
+        version: link:../../packages/boring-bash
       '@hachej/boring-data-catalog':
         specifier: workspace:*
         version: link:../../plugins/data-catalog

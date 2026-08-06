@@ -11,9 +11,15 @@ import type { WorkspaceBridge, CommandResult, BridgeEventMap } from "../../bridg
 import type { WorkspaceState, PanelState } from "../../store/types"
 import { WorkbenchLeftPane } from "../workbench-left/WorkbenchLeftPane"
 import { useRegistry, useSurfaceResolverRegistry } from "../../registry"
-import { normalizeUiFilesystem, type FilesystemId } from "../../../shared/types/filesystem"
-import { closeWorkbenchPreview, workbenchPreviewParams } from "../../dock/workbenchPreview"
+import { normalizeUiFilesystem, type FilesystemId, type UiFileResource } from "../../../shared/types/filesystem"
+import {
+  closeWorkbenchPreview,
+  isWorkbenchPreviewParams,
+  pinnedWorkbenchParams,
+  workbenchPreviewParams,
+} from "../../dock/workbenchPreview"
 import type { SurfaceOpenRequest } from "../../../shared/types/surface"
+import type { FileTreeRevealRequest } from "../../../shared/plugins/types"
 import { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "../../../shared/types/surface"
 import { isSharedDockviewPlacement, isWorkspacePagePlacement } from "../../../shared/types/panel"
 import {
@@ -53,6 +59,13 @@ export interface SurfaceShellOpenFileOptions {
   mode?: "view" | "edit" | "diff"
 }
 
+/** Result of openFileCore — the shared resolve/activate logic behind openFile
+ * (sync + async) and openSurface's file-kind branch. Failure carries a stable
+ * `code` so each caller can translate it into its own idiom (warn/err/throw). */
+type OpenFileCoreResult =
+  | { ok: true; path: string; filesystem: FilesystemId }
+  | { ok: false; code: string; message: string; component?: string }
+
 export interface SurfaceShellApi {
   /** Open a file in the workbench. Idempotent — re-activates an existing pane for the same filesystem/path. */
   openFile: (path: string, options?: SurfaceShellOpenFileOptions) => void
@@ -67,8 +80,8 @@ export interface SurfaceShellApi {
   openPanel: (config: OpenPanelConfig) => void
   /** Hide the workbench's left sources/files pane while leaving the workbench open. */
   closeWorkbenchLeftPane: () => void
-  /** Reveal/select a file-tree path without opening an editor pane. */
-  expandToFile: (path: string) => void
+  /** Reveal/select a file-tree resource without opening an editor pane. */
+  expandToFile: (path: string, options?: { filesystem?: FilesystemId }) => void
   /** Current snapshot of open tabs + active tab. */
   getSnapshot: () => SurfaceShellSnapshot
 }
@@ -182,7 +195,7 @@ function dockviewPanelComponent(panel: DockviewApi["panels"][number] | null | un
 }
 
 function fileBackedPath(
-  panel: PanelState | null | undefined,
+  panel: Pick<PanelState, "id" | "params"> | null | undefined,
   fileBackedPanelIds: ReadonlySet<string>,
 ): string | null {
   if (!panel) return null
@@ -194,6 +207,19 @@ function fileBackedPath(
   ) return null
   const path = panel.params?.path
   return typeof path === "string" ? path : null
+}
+
+function fileBackedResource(
+  panel: Pick<PanelState, "id" | "params"> | null | undefined,
+  fileBackedPanelIds: ReadonlySet<string>,
+): UiFileResource | null {
+  const path = fileBackedPath(panel, fileBackedPanelIds)
+  if (!path) return null
+  const rawFilesystem = panel?.params?.filesystem
+  return {
+    path,
+    filesystem: normalizeUiFilesystem(typeof rawFilesystem === "string" ? rawFilesystem : undefined),
+  }
 }
 
 let seqCounter = 0
@@ -209,6 +235,26 @@ function fileBackedParams(
     ...(options?.filesystem ? { filesystem: options.filesystem } : {}),
     [FILE_BACKED_PARAM]: true,
   }
+}
+
+function prepareFilePreview(
+  api: DockviewApi,
+  path: string,
+  filesystem: FilesystemId,
+  fileBackedPanelIds: ReadonlySet<string>,
+): void {
+  const preview = api.panels.find((panel) => isWorkbenchPreviewParams(panel.params))
+  if (!preview) return
+  const resource = fileBackedResource(
+    { id: preview.id, params: preview.params as Record<string, unknown> | undefined },
+    fileBackedPanelIds,
+  )
+  const sameLogicalPath = resource?.path.replace(/^\/+/, "") === path.replace(/^\/+/, "")
+  if (sameLogicalPath && resource?.filesystem !== filesystem) {
+    preview.api.updateParameters(pinnedWorkbenchParams(preview.params as Record<string, unknown> | undefined))
+    return
+  }
+  preview.api.close()
 }
 
 function ok(): CommandResult {
@@ -273,7 +319,12 @@ export function SurfaceShell({
   // own activeTab is set on icon-click and goes stale when you switch surface tabs).
   const [activeSurfacePanelId, setActiveSurfacePanelId] = useState<string | null>(null)
   const [openSurfacePanels, setOpenSurfacePanels] = useState<Array<{ id: string; title: string }>>([])
-  const [fileTreeRevealRequest, setFileTreeRevealRequest] = useState<{ path: string; seq: number } | null>(null)
+  const [fileTreeRevealRequest, setFileTreeRevealRequest] = useState<FileTreeRevealRequest | null>(null)
+  const fileTreeRevealSeqRef = useRef(0)
+  useEffect(() => {
+    if (!fileTreeRevealRequest) return
+    setFileTreeRevealRequest((current) => current?.seq === fileTreeRevealRequest.seq ? null : current)
+  }, [fileTreeRevealRequest])
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
   const onChangeRef = useRef(onChange)
@@ -282,7 +333,7 @@ export function SurfaceShell({
   onCloseRef.current = onClose
   const bridgeSelectorsRef = useRef(new Set<(state: WorkspaceState) => void>())
   const fileBackedPanelIdsRef = useRef(new Set<string>())
-  const pendingTreeExpandRef = useRef<string | null>(null)
+  const pendingTreeExpandRef = useRef<{ path: string; filesystem?: FilesystemId } | null>(null)
   const bridgeEventHandlersRef = useRef(
     new Map<keyof BridgeEventMap, Set<(data: BridgeEventMap[keyof BridgeEventMap]) => void>>(),
   )
@@ -388,48 +439,139 @@ export function SurfaceShell({
     return true
   }, [applyPanelPlacementTransition])
 
+  const emitFileOpened = useCallback((path: string, options?: SurfaceShellOpenFileOptions) => {
+    const handlers = bridgeEventHandlersRef.current.get("file:opened")
+    if (!handlers || handlers.size === 0) return
+    const payload: BridgeEventMap["file:opened"] = {
+      path,
+      mode: options?.mode ?? "edit",
+      filesystem: normalizeUiFilesystem(options?.filesystem),
+    }
+    for (const handler of [...handlers]) handler(payload)
+  }, [])
+
+  const emitActiveFileOpened = useCallback((dockview: DockviewApi) => {
+    const panel = dockview.activePanel
+    const resource = fileBackedResource(
+      panel ? { id: panel.id, params: panel.params as Record<string, unknown> | undefined } : null,
+      fileBackedPanelIdsRef.current,
+    )
+    if (!resource) return
+    const mode = panel?.params?.mode
+    emitFileOpened(resource.path, {
+      filesystem: resource.filesystem,
+      ...(mode === "view" || mode === "edit" || mode === "diff" ? { mode } : {}),
+    })
+  }, [emitFileOpened])
+
+  // Shared core for every "open a file-backed surface" path (sync openFile,
+  // openSurface's file-kind branch, and the async openFile command). Resolves
+  // the request, reuses/activates the matching panel, and is the single call
+  // site for emitFileOpened — callers only decide how to surface a failure
+  // (warn, return an err(), or throw).
+  const openFileCore = useCallback((
+    api: DockviewApi,
+    path: string,
+    options?: SurfaceShellOpenFileOptions & { extraParams?: Record<string, unknown> },
+  ): OpenFileCoreResult => {
+    const normalizedPath = normalizeWorkbenchPath(path)
+    const filesystem = normalizeUiFilesystem(options?.filesystem)
+    const request: SurfaceOpenRequest = {
+      kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
+      target: normalizedPath,
+      filesystem,
+    }
+    const resolved = surfaceResolverRegistryRef.current.resolve(request)
+
+    const finish = (): OpenFileCoreResult => {
+      emitFileOpened(normalizedPath, { ...options, filesystem })
+      return { ok: true, path: normalizedPath, filesystem }
+    }
+
+    if (resolved) {
+      if (!panelRegistryRef.current.has(resolved.component)) {
+        return {
+          ok: false,
+          code: "NO_SURFACE_PANEL",
+          message: `surface resolver "${request.kind}" returned unknown panel "${resolved.component}" for "${normalizedPath}"`,
+          component: resolved.component,
+        }
+      }
+      const panelId = surfacePanelId(request, resolved)
+      const params = {
+        ...fileBackedParams(resolved.params, normalizedPath, { filesystem, mode: options?.mode }),
+        ...options?.extraParams,
+      }
+      fileBackedPanelIdsRef.current.add(panelId)
+      if (activateExistingFilePanel(api, normalizedPath, filesystem, resolved.component, params)) {
+        return finish()
+      }
+      prepareFilePreview(api, normalizedPath, filesystem, fileBackedPanelIdsRef.current)
+      if (!activateDockviewPanel({
+        id: panelId,
+        component: resolved.component,
+        title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
+        params: workbenchPreviewParams(params),
+      })) {
+        return { ok: false, code: "not-ready", message: "surface not ready" }
+      }
+      return finish()
+    }
+
+    const existing = findOpenFilePanel(api, normalizedPath, filesystem)
+    if (existing) {
+      existing.api.setActive()
+      return finish()
+    }
+    return {
+      ok: false,
+      code: "NO_SURFACE_RESOLVER",
+      message: `no registered surface resolver handles ${normalizedPath}`,
+    }
+  }, [activateDockviewPanel, activateExistingFilePanel, emitFileOpened])
+
   const openFileSync = useCallback((path: string, options?: SurfaceShellOpenFileOptions) => {
     const api = apiRef.current
     if (!api) {
       console.warn("[SurfaceShell] openFile: surface not ready (dockview not initialized)")
       return
     }
-    const normalizedPath = normalizeWorkbenchPath(path)
-    const request: SurfaceOpenRequest = {
-      kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
-      target: normalizedPath,
-      filesystem: normalizeUiFilesystem(options?.filesystem),
+    const result = openFileCore(api, path, options)
+    if (!result.ok) {
+      console.warn(`[SurfaceShell] openFile: ${result.message}`)
     }
-    const resolved = surfaceResolverRegistryRef.current.resolve(request)
-    if (resolved) {
-      if (!panelRegistryRef.current.has(resolved.component)) {
-        console.warn(`[SurfaceShell] openFile: resolver returned unknown panel "${resolved.component}" for "${normalizedPath}"`)
-        return
-      }
-      const panelId = surfacePanelId(request, resolved)
-      const params = fileBackedParams(resolved.params, normalizedPath, { filesystem: request.filesystem, mode: options?.mode })
-      fileBackedPanelIdsRef.current.add(panelId)
-      if (activateExistingFilePanel(api, normalizedPath, normalizeUiFilesystem(request.filesystem), resolved.component, params)) return
-      closeWorkbenchPreview(api)
-      activateDockviewPanel({
-        id: panelId,
-        component: resolved.component,
-        title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-        params: workbenchPreviewParams(params),
-      })
-      return
-    }
-
-    const existing = findOpenFilePanel(api, normalizedPath, request.filesystem)
-    if (existing) {
-      existing.api.setActive()
-      return
-    }
-    console.warn(`[SurfaceShell] openFile: no surface resolver matched "${normalizedPath}"`)
-  }, [activateDockviewPanel, activateExistingFilePanel])
+  }, [openFileCore])
 
   const openSurfaceSync = useCallback((request: SurfaceOpenRequest) => {
     const normalizedRequest = normalizeSurfaceOpenRequest(request)
+
+    if (normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND) {
+      const api = apiRef.current
+      if (!api) {
+        console.warn("[SurfaceShell] openSurface: surface not ready (dockview not initialized)")
+        return
+      }
+      const surfaceMode = normalizedRequest.meta?.mode
+      const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
+      const result = openFileCore(api, normalizedRequest.target, {
+        filesystem: normalizedRequest.filesystem,
+        ...(surfaceMode === "view" || surfaceMode === "edit" || surfaceMode === "diff" ? { mode: surfaceMode } : {}),
+        ...(closeWorkbenchOnDone && onCloseRef.current
+          ? { extraParams: { __closeWorkbenchOnDone: onCloseRef.current } }
+          : {}),
+      })
+      if (result.ok) return
+      if (result.code === "NO_SURFACE_PANEL") {
+        const known = panelRegistryRef.current.list().map((p) => p.id).join(", ")
+        throw new Error(
+          `openSurface: unknown component "${result.component}". Registered panels: [${known}]. ` +
+            `Register the component through a panel output before resolving to it.`,
+        )
+      }
+      console.warn(`[SurfaceShell] openSurface: ${result.message}`)
+      return
+    }
+
     const resolved = surfaceResolverRegistryRef.current.resolve(normalizedRequest)
     if (!resolved) {
       console.warn(`[SurfaceShell] openSurface: no resolver matched kind="${normalizedRequest.kind}" target="${normalizedRequest.target}"`)
@@ -444,43 +586,19 @@ export function SurfaceShell({
       )
     }
     const panelId = surfacePanelId(normalizedRequest, resolved)
-    if (normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND) {
-      fileBackedPanelIdsRef.current.add(panelId)
-    }
     const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
-    const surfaceMode = normalizedRequest.meta?.mode
-    const baseParams = normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
-      ? fileBackedParams(
-          resolved.params,
-          normalizedRequest.target,
-          {
-            filesystem: normalizedRequest.filesystem,
-            ...(surfaceMode === "view" || surfaceMode === "edit" || surfaceMode === "diff" ? { mode: surfaceMode } : {}),
-          },
-        )
+    const params = closeWorkbenchOnDone && onCloseRef.current
+      ? { ...(resolved.params ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
       : resolved.params
-    const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
-      ? { ...(baseParams ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
-      : baseParams
-    if (
-      normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND &&
-      apiRef.current &&
-      activateExistingFilePanel(apiRef.current, normalizedRequest.target, normalizeUiFilesystem(normalizedRequest.filesystem), resolved.component, resolvedParams ?? {})
-    ) return
-    if (normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND && apiRef.current) {
-      closeWorkbenchPreview(apiRef.current)
-    }
     if (!activateDockviewPanel({
       id: panelId,
       component: resolved.component,
       title: resolved.title ?? normalizedRequest.target,
-      params: normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
-        ? workbenchPreviewParams(resolvedParams)
-        : resolvedParams,
+      params,
     })) {
       console.warn("[SurfaceShell] openSurface: surface not ready (dockview not initialized)")
     }
-  }, [activateDockviewPanel, activateExistingFilePanel])
+  }, [activateDockviewPanel, openFileCore])
 
   const openPanelSync = useCallback((config: OpenPanelConfig) => {
     const api = apiRef.current
@@ -550,12 +668,14 @@ export function SurfaceShell({
     return true
   }, [])
 
-  const expandToFileSync = useCallback((path: string) => {
+  const expandToFileSync = useCallback((path: string, options?: { filesystem?: FilesystemId }) => {
     const normalizedPath = normalizeWorkbenchPath(path)
-    pendingTreeExpandRef.current = normalizedPath
-    setFileTreeRevealRequest((prev) => ({ path: normalizedPath, seq: (prev?.seq ?? 0) + 1 }))
+    const filesystem = options?.filesystem
+    const request = { path: normalizedPath, ...(filesystem ? { filesystem } : {}) }
+    pendingTreeExpandRef.current = request
+    setFileTreeRevealRequest({ ...request, seq: ++fileTreeRevealSeqRef.current })
     openSourcePane(FILES_WORKSPACE_SOURCE_ID)
-    if (emitBridgeEvent("tree:expand", { path: normalizedPath })) {
+    if (emitBridgeEvent("tree:expand", request)) {
       pendingTreeExpandRef.current = null
     }
   }, [emitBridgeEvent, openSourcePane])
@@ -633,12 +753,13 @@ export function SurfaceShell({
     ready.onDidRemovePanel(emit)
     ready.onDidActivePanelChange(() => {
       collapseForActiveWorkspacePage(ready)
+      emitActiveFileOpened(ready)
       emit()
     })
     // Initial snapshot once everyone's wired up.
     collapseForActiveWorkspacePage(ready)
     emit()
-  }, [collapseForActiveWorkspacePage, localSurfaceApi, getSnapshot, emitBridgeState])
+  }, [collapseForActiveWorkspacePage, emitActiveFileOpened, localSurfaceApi, getSnapshot, emitBridgeState])
 
 
   const openFile = useCallback(
@@ -646,40 +767,8 @@ export function SurfaceShell({
       try {
         const api = apiRef.current
         if (!api) return err("not-ready", "surface not ready")
-        const normalizedPath = normalizeWorkbenchPath(path)
-        const request: SurfaceOpenRequest = {
-          kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
-          target: normalizedPath,
-          filesystem: normalizeUiFilesystem(options?.filesystem),
-        }
-        const resolved = surfaceResolverRegistryRef.current.resolve(request)
-        if (resolved) {
-          if (!panelRegistryRef.current.has(resolved.component)) {
-            return err(
-              "NO_SURFACE_PANEL",
-              `surface resolver "${request.kind}" returned unknown panel "${resolved.component}"`,
-            )
-          }
-          const panelId = surfacePanelId(request, resolved)
-          const params = fileBackedParams(resolved.params, normalizedPath, { filesystem: request.filesystem, mode: options?.mode })
-          fileBackedPanelIdsRef.current.add(panelId)
-          if (activateExistingFilePanel(api, normalizedPath, normalizeUiFilesystem(request.filesystem), resolved.component, params)) return ok()
-          closeWorkbenchPreview(api)
-          activateDockviewPanel({
-            id: panelId,
-            component: resolved.component,
-            title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-            params: workbenchPreviewParams(params),
-          })
-          return ok()
-        }
-
-        const existing = findOpenFilePanel(api, normalizedPath, request.filesystem)
-        if (existing) {
-          existing.api.setActive()
-          return ok()
-        }
-        return err("NO_SURFACE_RESOLVER", `no registered surface resolver handles ${normalizedPath}`)
+        const result = openFileCore(api, path, options)
+        return result.ok ? ok() : err(result.code, result.message)
       } catch (error) {
         return err(
           "INVALID_SURFACE_PATH",
@@ -687,13 +776,21 @@ export function SurfaceShell({
         )
       }
     },
-    [activateDockviewPanel, activateExistingFilePanel],
+    [openFileCore],
   )
 
   const bridge = useMemo<WorkspaceBridge>(() => {
     return {
       getOpenPanels: () => getBridgeState().panels,
       getActiveFile: () => getBridgeState().activeFile,
+      getActiveFileResource: () => {
+        const api = apiRef.current
+        const panel = api?.activePanel
+        return fileBackedResource(
+          panel ? { id: panel.id, params: panel.params as Record<string, unknown> | undefined } : null,
+          fileBackedPanelIdsRef.current,
+        )
+      },
       getDirtyFiles: () => [],
       getVisibleFiles: () => getBridgeState().visibleFiles,
       openFile,
@@ -723,8 +820,8 @@ export function SurfaceShell({
         return ok()
       },
       navigateToLine: async () => err("UNSUPPORTED_BRIDGE_OPERATION", "navigateToLine is not supported by the surface-backed file tree bridge"),
-      expandToFile: async (path) => {
-        expandToFileSync(path)
+      expandToFile: async (path, options) => {
+        expandToFileSync(path, options)
         return ok()
       },
       markDirty: () => { throw new Error("markDirty is not supported by the surface-backed file tree bridge") },
@@ -737,7 +834,7 @@ export function SurfaceShell({
         }
         handlers.add(handler as (data: BridgeEventMap[keyof BridgeEventMap]) => void)
         if (event === "tree:expand" && pendingTreeExpandRef.current) {
-          handler({ path: pendingTreeExpandRef.current } as BridgeEventMap[K])
+          handler(pendingTreeExpandRef.current as BridgeEventMap[K])
           pendingTreeExpandRef.current = null
         }
         return () => {
