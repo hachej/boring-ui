@@ -260,7 +260,8 @@ export function registerTaskSessionLinkRoutes(
         } catch {
           throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session link access is forbidden.")
         }
-        return { ok: true as const, link: await store.link({ adapterId: body.adapterId, taskId: body.taskId, agentTypeId, sessionId: body.sessionId }) }
+        const link = await store.link({ adapterId: body.adapterId, taskId: body.taskId, agentTypeId, sessionId: body.sessionId })
+        return { ok: true as const, link, links: await store.list(link.adapterId, link.taskId) }
       })
     } catch (cause) {
       return reply.status(statusFor(cause)).send(responseError(cause))

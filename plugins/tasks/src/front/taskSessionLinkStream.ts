@@ -19,6 +19,17 @@ interface TaskSessionLinkChange extends TaskSessionLinks {
   revision: number
 }
 
+export const TASK_SESSION_LINK_RECEIPT_EVENT = "boring-tasks:session-link-receipt"
+
+export function emitTaskSessionLinkReceipt(value: unknown): void {
+  if (!value || typeof value !== "object") return
+  const workspaceId = (value as { workspaceId?: unknown }).workspaceId
+  const item = taskLinks(value)
+  if (typeof workspaceId === "string" && workspaceId.length > 0 && item) {
+    window.dispatchEvent(new CustomEvent(TASK_SESSION_LINK_RECEIPT_EVENT, { detail: { workspaceId, ...item } }))
+  }
+}
+
 export function taskSessionLinkKey(adapterId: string, taskId: string): string {
   return JSON.stringify([adapterId, taskId])
 }
@@ -69,6 +80,15 @@ export function useTaskSessionLinks(pluginClient: WorkspacePluginClient): Readon
         setLinksByTask(next)
       } catch { /* Ignore malformed stream frames. */ }
     })
+    const applyTaskLinks = (item: TaskSessionLinks) => {
+      setLinksByTask((previous) => {
+        const next = new Map(previous ?? [])
+        const key = taskSessionLinkKey(item.adapterId, item.taskId)
+        if (item.links.length === 0) next.delete(key)
+        else next.set(key, item.links)
+        return next
+      })
+    }
     source.addEventListener("change", (event) => {
       try {
         const parsed = JSON.parse((event as MessageEvent).data) as Partial<TaskSessionLinkChange>
@@ -77,16 +97,22 @@ export function useTaskSessionLinks(pluginClient: WorkspacePluginClient): Readon
         const current = cursor.current
         if (!nextCursor || !item || !current || current.streamId !== nextCursor.streamId || nextCursor.revision <= current.revision) return
         cursor.current = nextCursor
-        setLinksByTask((previous) => {
-          const next = new Map(previous ?? [])
-          const key = taskSessionLinkKey(item.adapterId, item.taskId)
-          if (item.links.length === 0) next.delete(key)
-          else next.set(key, item.links)
-          return next
-        })
+        applyTaskLinks(item)
       } catch { /* Ignore malformed stream frames. */ }
     })
-    return () => source.close()
+    const onReceipt = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail
+      const receiptWorkspaceId = detail && typeof detail === "object"
+        ? (detail as { workspaceId?: unknown }).workspaceId
+        : undefined
+      const item = taskLinks(detail)
+      if (receiptWorkspaceId === (pluginClient.workspaceId ?? "workspace") && item) applyTaskLinks(item)
+    }
+    window.addEventListener(TASK_SESSION_LINK_RECEIPT_EVENT, onReceipt)
+    return () => {
+      window.removeEventListener(TASK_SESSION_LINK_RECEIPT_EVENT, onReceipt)
+      source.close()
+    }
   }, [pluginClient.apiBaseUrl, pluginClient.workspaceId])
 
   return linksByTask
