@@ -46,7 +46,7 @@ const ROLE_BINDING_DEFINITIONS = [
     role: 'steward',
     agentTypeId: 'boring-steward',
     skills: [
-      { name: 'plan', digest: 'sha256:ba6e76d7cdd8ce2966ca38e66942f62bf882e56fca4cadd9ca360ee175f384ac' },
+      { name: 'plan', digest: 'sha256:c348aabea4210bba37068e20cffc0a0cb600dcde8e21f3826ee3ee36cf1c0108' },
       { name: 'handoff', digest: 'sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17' },
     ],
   },
@@ -54,7 +54,7 @@ const ROLE_BINDING_DEFINITIONS = [
     role: 'worker',
     agentTypeId: 'boring-worker',
     skills: [
-      { name: 'exec', digest: 'sha256:cc0ab4c7e94dc8b2e65873681ccea281e19dd9850f726e978c8ba764643e8359' },
+      { name: 'exec', digest: 'sha256:fa0ae00565db0d1b41465459e50a03cda6bb271330b1a271282ca6a68ebaad35' },
       { name: 'handoff', digest: 'sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17' },
     ],
   },
