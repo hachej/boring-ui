@@ -453,6 +453,12 @@ async function startFolderMode(opts: {
       upstreamBearerToken: liveTranscriptProvider === "kyutai"
         ? process.env.BORING_KYUTAI_API_KEY
         : process.env.BORING_WHISPERLIVEKIT_BEARER_TOKEN,
+      diarizerUrl: liveTranscriptProvider === "kyutai"
+        ? process.env.BORING_LIVE_TRANSCRIPTS_DIARIZER_URL
+        : undefined,
+      diarizerBearerToken: liveTranscriptProvider === "kyutai"
+        ? process.env.BORING_LIVE_TRANSCRIPTS_DIARIZER_BEARER_TOKEN
+        : undefined,
     },
   })
 

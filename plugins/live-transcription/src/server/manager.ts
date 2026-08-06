@@ -16,6 +16,7 @@ import {
 import { LiveTranscriptError } from "./errors"
 import { LiveTranscriptProjector, renderTranscriptMarkdown, type ProjectedTranscriptLine, type TranscriptDocument } from "./projector"
 import { KyutaiConnection } from "./kyutai"
+import { KyutaiDiarizedConnection } from "./kyutaiDiarized"
 import { groupKyutaiTranscriptSnapshot } from "./kyutaiTranscript"
 import { WhisperLiveKitConnection, type WhisperLiveKitSnapshot } from "./whisperLiveKit"
 import { LiveReviewBroker } from "./reviewBroker"
@@ -62,6 +63,8 @@ export interface LiveTranscriptManagerOptions {
   upstreamUrl: string
   upstreamProvider?: "whisperlivekit" | "kyutai"
   upstreamBearerToken?: string
+  diarizerUrl?: string
+  diarizerBearerToken?: string
   setupTimeoutMs?: number
   drainTimeoutMs?: number
   maxDurationMs?: number
@@ -423,6 +426,13 @@ export class LiveTranscriptManager {
     onFailure: (error: LiveTranscriptError) => void
   }): UpstreamConnection {
     if (this.options.upstreamProvider === "kyutai") {
+      if (this.options.diarizerUrl) {
+        return new KyutaiDiarizedConnection(this.options.upstreamUrl, this.options.diarizerUrl, callbacks, {
+          kyutaiApiKey: this.options.upstreamBearerToken,
+          diarizerBearerToken: this.options.diarizerBearerToken,
+          highWaterBytes: LIVE_SOCKET_HIGH_WATER_BYTES,
+        })
+      }
       return new KyutaiConnection(this.options.upstreamUrl, callbacks, {
         apiKey: this.options.upstreamBearerToken,
         highWaterBytes: LIVE_SOCKET_HIGH_WATER_BYTES,

@@ -18,6 +18,9 @@ export interface LiveTranscriptServerPluginOptions {
   /** Default is WhisperLiveKit; Kyutai uses the moshi-server MessagePack protocol. */
   upstreamProvider?: "whisperlivekit" | "kyutai"
   upstreamBearerToken?: string
+  /** Optional WhisperLiveKit `/asr` endpoint used only to label `/live` Kyutai words. */
+  diarizerUrl?: string
+  diarizerBearerToken?: string
   setupTimeoutMs?: number
   drainTimeoutMs?: number
   maxDurationMs?: number
@@ -31,6 +34,7 @@ export interface LiveTranscriptServerPluginOptions {
 
 export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPluginOptions): WorkspaceServerPlugin {
   validateLocalAuthority(options.authority, options.upstreamUrl, options.upstreamProvider)
+  if (options.diarizerUrl) validateLocalAuthority(options.authority, options.diarizerUrl, "whisperlivekit")
   const manager = new LiveTranscriptManager({
     dispatcherResolver: options.dispatcherResolver,
     agentTypeId: options.agentTypeId,
@@ -38,6 +42,8 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
     upstreamUrl: options.upstreamUrl,
     upstreamProvider: options.upstreamProvider,
     upstreamBearerToken: options.upstreamBearerToken,
+    diarizerUrl: options.diarizerUrl,
+    diarizerBearerToken: options.diarizerBearerToken,
     setupTimeoutMs: options.setupTimeoutMs,
     drainTimeoutMs: options.drainTimeoutMs,
     maxDurationMs: options.maxDurationMs,

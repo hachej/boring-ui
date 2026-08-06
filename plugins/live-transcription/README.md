@@ -35,10 +35,16 @@ export BORING_LIVE_TRANSCRIPTS_ENABLED=1
 export BORING_LIVE_TRANSCRIPTS_PROVIDER=kyutai
 export BORING_KYUTAI_URL=ws://127.0.0.1:18880/api/asr-streaming
 export BORING_KYUTAI_API_KEY=public_token # omit when the local server needs no key
+# Optional: enrich only /live transcripts with best-effort speaker labels.
+export BORING_LIVE_TRANSCRIPTS_DIARIZER_URL=ws://127.0.0.1:18881/asr
 ```
 
-The adapter converts browser 16 kHz PCM16 frames to Kyutai's 24 kHz float32
-MessagePack `Audio` messages and sends a `Marker` plus bounded silence on stop.
+The adapter captures native 24 kHz PCM16 for Kyutai, converts it to float32
+MessagePack `Audio` messages, and sends a `Marker` plus bounded silence on stop.
+When the optional loopback diarizer is configured, `/live` also sends a 16 kHz
+copy to WhisperLiveKit and assigns Kyutai words by overlap with its speaker
+intervals. Kyutai remains the text authority; diarizer setup/runtime failures
+fall back to `Speaker 1` instead of interrupting capture.
 With Kyutai selected, the composer microphone streams each `Word` event directly
 into the editable draft without creating a transcript file. `/live start` keeps
 the separate Markdown transcript and agent-review sink.

@@ -420,6 +420,8 @@ export async function createFolderModeApp(opts: {
     upstreamUrl: string
     upstreamProvider?: "whisperlivekit" | "kyutai"
     upstreamBearerToken?: string
+    diarizerUrl?: string
+    diarizerBearerToken?: string
     reviewIntervalMs?: number
   }
 }): Promise<FastifyInstance> {
@@ -458,6 +460,8 @@ export async function createFolderModeApp(opts: {
         upstreamUrl: opts.liveTranscripts.upstreamUrl,
         upstreamProvider: opts.liveTranscripts.upstreamProvider,
         upstreamBearerToken: opts.liveTranscripts.upstreamBearerToken,
+        diarizerUrl: opts.liveTranscripts.diarizerUrl,
+        diarizerBearerToken: opts.liveTranscripts.diarizerBearerToken,
         reviewIntervalMs: opts.liveTranscripts.reviewIntervalMs,
       })
     : undefined
