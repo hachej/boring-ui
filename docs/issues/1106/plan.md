@@ -23,9 +23,17 @@ Lift the playground's composition into a reusable, config-driven loader that
 the production server (`createWorkspaceAgentServer` / CLI hub) invokes behind
 a flag.
 
-- **Source of truth**: `.agents/personas/<seat>/` for identity + instructions;
-  `.agents/factory/policy.yaml` `models.seats` for tier assignment, resolved
-  through `docs/procedures/MODEL-CARD.md` tiers to concrete model IDs at boot.
+- **Source of truth** (ratified 2026-08-06, owner gate-1 round): personas are
+  **plugin-shaped packages** — `.agents/personas/<seat>/package.json` with a
+  `boring.agent` block (`definitionId`, `version`, `label`, `instructionsRef`)
+  plus `instructions.md`. Same manifest grammar as every plugin (`boring.*` /
+  `pi.*` namespaces); gh-1107 later adds `knowledge/` + packaging/registry with
+  no format migration. Existing `agent.json` files migrate in this slice.
+  Skill→seat digest bindings (authority) move OUT of playground code into
+  `.agents/factory/fleet.yaml` (class B, workspace-editable), read by the
+  loader alongside `policy.yaml` `models.seats` tiers (resolved via
+  `docs/procedures/MODEL-CARD.md` at boot). An existing plugin (e.g.
+  boring-macro if present) serves as manifest exemplar.
 - **Authority**: per-seat `TrustedAuthoredAgentPolicy` — tools, filesystem
   bindings, skill allowlist with pinned digests (refreshed via #1109's
   `digests:write`). No authority in persona files (identity/authority split
