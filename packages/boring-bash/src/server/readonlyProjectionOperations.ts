@@ -104,13 +104,35 @@ function page<T>(items: readonly T[], options: ReadonlyProjectionSearchOptions |
 }
 
 function glob(pattern: string): RegExp {
-  const doubleStar = "__BORING_DOUBLE_STAR__";
-  const escaped = pattern
-    .replace(/\*\*/g, doubleStar)
-    .replace(/[|\\{}()[\]^$+?.]/g, "\\$&")
-    .replace(/\*/g, "[^/]*")
-    .replaceAll(doubleStar, ".*");
-  return new RegExp(`^${escaped}$`);
+  let source = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === "*") {
+      if (pattern[index + 1] === "*") {
+        source += ".*";
+        index += 1;
+      } else {
+        source += "[^/]*";
+      }
+      continue;
+    }
+    if (char === "?") {
+      source += "[^/]";
+      continue;
+    }
+    if (char === "[") {
+      const closing = pattern.indexOf("]", index + 1);
+      if (closing > index + 1) {
+        const content = pattern.slice(index + 1, closing);
+        const negated = content.startsWith("!") ? `^${content.slice(1)}` : content;
+        source += `[${negated.replace(/\\/g, "\\\\")}]`;
+        index = closing;
+        continue;
+      }
+    }
+    source += char.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+  }
+  return new RegExp(`^${source}$`);
 }
 
 function invalidPath(metadata: ReadonlyProjectionOperationMetadata): ReadonlyProjectionOperationError {
@@ -161,6 +183,17 @@ function routePath(handle: ReadonlyMultiRootProjectionHandle, logicalPath: strin
     }
   }
   throw new Error("path has no readonly mount");
+}
+
+/**
+ * Named filesystems are always addressable from their absolute root ("/") —
+ * main's catalog/search/tree routes call every binding at path "/"
+ * unconditionally. A multi-root binding has no single directory backing that
+ * root, so route it as the union of every admitted mount instead of failing.
+ */
+function routeAllMounts(handle: ReadonlyMultiRootProjectionHandle, logicalPath: string): RoutedPath[] {
+  if (logicalPath !== "") return [routePath(handle, logicalPath)];
+  return handle.mounts.map((mount) => ({ mount, logicalPath, remainder: "" }));
 }
 
 async function rejectSymlinks(root: string, candidate: string): Promise<void> {
@@ -255,6 +288,17 @@ export function createReadonlyMultiRootProjectionOperations(
     async list(descriptor) {
       const { metadata, logicalPath } = assertDescriptor(descriptor, "list", handle);
       return protectedOperation(metadata, async () => {
+        if (
+          logicalPath === "" &&
+          handle.mounts.length > 0 &&
+          !handle.mounts.some((mount) => mount.logicalRoot === "")
+        ) {
+          // No single mount owns the root of a multi-root binding — surface
+          // each mount's top-level logical segment as a synthetic directory
+          // entry so root listing never hard-fails.
+          const topSegments = new Set(handle.mounts.map((mount) => mount.logicalRoot.split("/")[0]));
+          return { entries: [...topSegments].sort(), metadata };
+        }
         const target = await confinedTarget(handle, routePath(handle, logicalPath));
         if (!(await stat(target)).isDirectory()) throw new Error("not a directory");
         const entries = await readdir(target, { withFileTypes: true });
@@ -271,7 +315,10 @@ export function createReadonlyMultiRootProjectionOperations(
       const { metadata, logicalPath } = assertDescriptor(descriptor, "find", handle);
       return protectedOperation(metadata, async () => {
         const matcher = glob(pattern);
-        const paths = (await walkFiles(handle, routePath(handle, logicalPath)))
+        const routed = routeAllMounts(handle, logicalPath);
+        const found: Array<{ logicalPath: string; target: string }> = [];
+        for (const entry of routed) found.push(...await walkFiles(handle, entry));
+        const paths = found
           .map((entry) => displayPath(entry.logicalPath, handle.pathStyle))
           .filter((path) => matcher.test(path.replace(/^\//, "")) || matcher.test(posix.basename(path)))
           .sort();
@@ -282,7 +329,10 @@ export function createReadonlyMultiRootProjectionOperations(
       const { metadata, logicalPath } = assertDescriptor(descriptor, "grep", handle);
       return protectedOperation(metadata, async () => {
         const matches: Array<{ path: string; line: number; text: string }> = [];
-        for (const entry of await walkFiles(handle, routePath(handle, logicalPath))) {
+        const routed = routeAllMounts(handle, logicalPath);
+        const found: Array<{ logicalPath: string; target: string }> = [];
+        for (const entry of routed) found.push(...await walkFiles(handle, entry));
+        for (const entry of found) {
           const content = await readFile(entry.target, "utf8");
           content.split("\n").forEach((text, index) => {
             if (text.includes(pattern)) matches.push({

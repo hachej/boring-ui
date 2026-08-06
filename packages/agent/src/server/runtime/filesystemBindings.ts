@@ -1,5 +1,6 @@
 import type { JsonValue } from '../../shared/index'
 import { digestRuntimeIdentityValue } from '../agent-host/runtimeScopeIdentity'
+import { ErrorCode } from '../../shared/error-codes'
 import {
   RUNTIME_FILESYSTEM_CAPABILITIES,
   type RuntimeFilesystemAccessDecision,
@@ -7,7 +8,7 @@ import {
   type RuntimeFilesystemCapability,
 } from './mode'
 
-export const RUNTIME_FILESYSTEM_BINDING_DUPLICATE_CODE = 'RUNTIME_FILESYSTEM_BINDING_DUPLICATE'
+export const RUNTIME_FILESYSTEM_BINDING_DUPLICATE_CODE = ErrorCode.enum.RUNTIME_FILESYSTEM_BINDING_DUPLICATE
 export const RUNTIME_FILESYSTEM_BINDING_SOURCE_INVALID_CODE = 'RUNTIME_FILESYSTEM_BINDING_SOURCE_INVALID'
 
 export class RuntimeFilesystemBindingConfigurationError extends Error {

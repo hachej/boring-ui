@@ -39,7 +39,7 @@ export async function createAgentResourceFilesystemBinding(
     const operations: RuntimeFilesystemBinding['operations'] = createReadonlyMultiRootProjectionOperations({
       filesystem,
       mounts,
-      pathStyle: 'relative',
+      pathStyle: 'absolute',
       symlinks: 'confined',
     })
     return { filesystem, access: 'readonly', operations }

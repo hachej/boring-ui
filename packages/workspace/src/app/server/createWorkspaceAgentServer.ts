@@ -623,6 +623,7 @@ function pluginHasAgentRuntimeContribution(plugin: WorkspaceServerPlugin): boole
     || plugin.piPackages?.length
     || plugin.extensionPaths?.length
     || plugin.skills?.length
+    || plugin.packageResources?.length
     || plugin.provisioning,
   )
 }
@@ -1874,10 +1875,17 @@ export async function createWorkspaceAgentServer(
         getSkillResourceSnapshot: async () => {
           const skillRegistry = currentPackageResourceSnapshot?.registry
           if (!skillRegistry) return undefined
+          // Package skill locators point at paths served through the
+          // `agent_resources` filesystem binding. That binding is only
+          // granted when `legacyGlobalPluginAgentContributions` is true
+          // (see `packageBinding` gating in getFilesystemBindings above) —
+          // an explicit fleet (`opts.agents` set) never receives it. Advertise
+          // locateSkill only when the binding it points at actually exists,
+          // otherwise callers resolve a locator whose `/files` fetch 404s.
           return {
             generation: skillRegistry.generation,
             managedSkills: legacyGlobalPluginAgentContributions ? skillRegistry.managedSkills : [],
-            locateSkill: skillRegistry.locateSkill,
+            locateSkill: legacyGlobalPluginAgentContributions ? skillRegistry.locateSkill : () => undefined,
           }
         },
         ...(intent.operation === "reload"

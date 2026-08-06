@@ -40,12 +40,22 @@ describe('createAgentResourceFilesystemBinding', () => {
 
     await expect(binding.operations.read({ filesystem, path: `${logicalRoot}/guide-link.md` }))
       .resolves.toMatchObject({ content: 'guide SAFE_SENTINEL' })
+    // Absolute-style paths (leading '/') are the named-filesystem root
+    // contract main's catalog/search/tree callers rely on — they must
+    // resolve identically to the unprefixed form, not be rejected.
+    await expect(binding.operations.read({ filesystem, path: `/${logicalRoot}/SKILL.md` }))
+      .resolves.toMatchObject({ content: '# Skill\nSAFE_SENTINEL\n' })
+    await expect(binding.operations.list({ filesystem, path: '/' }))
+      .resolves.toMatchObject({ entries: [logicalRoot.split('/')[0]] })
+    // Backslashes are separator-normalized (not rejected) under the
+    // absolute-style contract, matching main's original single-root
+    // normalizeProjectionPath — it is not a traversal once normalized.
+    await expect(binding.operations.read({ filesystem, path: `${logicalRoot}\\SKILL.md` }))
+      .resolves.toMatchObject({ content: '# Skill\nSAFE_SENTINEL\n' })
     for (const path of [
       'packages/@example/plugin/settings.json',
       `${logicalRoot}/../outside.md`,
       `${logicalRoot}/%2e%2e/outside.md`,
-      `${logicalRoot}\\SKILL.md`,
-      `/${logicalRoot}/SKILL.md`,
       `${logicalRoot}/escape.md`,
     ]) {
       await expect(binding.operations.read({ filesystem, path }))
@@ -84,7 +94,7 @@ describe('createAgentResourceFilesystemBinding', () => {
       deniedSentinel: 'OUTSIDE_SECRET',
       allowedFindPattern: '**/*.md',
       expectedAllowedFindCount: 2,
-      expectedVisiblePaths: [`${logicalRoot}/SKILL.md`, `${logicalRoot}/references/guide.md`],
+      expectedVisiblePaths: [`/${logicalRoot}/SKILL.md`, `/${logicalRoot}/references/guide.md`],
       projection: {
         async listVisiblePaths() {
           return (await operations.find({ filesystem, path: logicalRoot }, '**')).paths

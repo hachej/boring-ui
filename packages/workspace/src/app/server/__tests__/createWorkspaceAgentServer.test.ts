@@ -116,6 +116,7 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
 })
 
 import {
+  AgentRuntimeIdentityError,
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
   digestWorkspacePiResourceInputs,
@@ -2155,5 +2156,43 @@ describe("beforeReload triggers directory-source re-resolve", () => {
     } finally {
       await app.close()
     }
+  })
+
+  test("a package-resource-only prebuilt plugin is not misclassified as contribution:none (identity fence)", async () => {
+    const workspaceRoot = await makeTempDir("workspace-package-resource-identity-")
+    const packageRoot = await makeTempDir("identity-package-resource-")
+    await mkdir(join(packageRoot, "skills", "authoring"), { recursive: true })
+    await writeFile(join(packageRoot, "skills", "authoring", "SKILL.md"), [
+      "---",
+      "name: identity-authoring",
+      "description: Identity-fence package skill.",
+      "---",
+      "# Identity",
+    ].join("\n"))
+    await writeFile(join(packageRoot, "package.json"), JSON.stringify({
+      name: "@example/identity-resource",
+    }))
+
+    // Only packageResources is set — no systemPrompt/agentTools/piPackages/
+    // extensionPaths/skills/provisioning and no contentDigest. Before the
+    // fix, pluginHasAgentRuntimeContribution ignored packageResources and
+    // this plugin was classified as contribution:none, so it silently
+    // skipped the "prebuilt plugin contributes Agent/runtime bindings
+    // without contentDigest" identity fence instead of throwing.
+    await expect(createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      provisionWorkspace: false,
+      externalPlugins: false,
+      defaults: [],
+      plugins: [{
+        id: "package-resource-only-plugin",
+        packageResources: [{
+          packageName: "@example/identity-resource",
+          packageRoot,
+        }],
+      }],
+    })).rejects.toThrow(AgentRuntimeIdentityError)
   })
 })
