@@ -1,0 +1,553 @@
+
+> workspace-playground@0.0.1 dev /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/apps/workspace-playground
+> pnpm run build:deps && vite
+
+
+> workspace-playground@0.0.1 build:deps /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/apps/workspace-playground
+> pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-ui-plugin-cli build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-tasks build && pnpm --filter @hachej/boring-diagram build && pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-data-catalog build
+
+
+> @hachej/boring-ui-kit@0.1.95 build /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/ui
+> tsup && node scripts/build-styles.mjs
+
+CLI Building entry: {"index":"src/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/ui/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js 93.86 KB
+ESM ⚡️ Build success in 88ms
+DTS Build start
+DTS ⚡️ Build success in 5048ms
+DTS dist/index.d.ts 34.51 KB
+
+> @hachej/boring-ui-plugin-cli@0.1.95 build /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/plugin-cli
+> tsup
+
+CLI Building entry: {"index":"src/index.ts","bin":"src/bin.ts","plugin-sources":"src/server/pluginSources.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/plugin-cli/tsup.config.ts
+CLI Target: node20
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js          901.00 B
+ESM dist/bin.js            265.00 B
+ESM dist/chunk-KTILPA2U.js 26.73 KB
+ESM dist/plugin-sources.js 497.00 B
+ESM dist/chunk-YUAML3DZ.js 43.52 KB
+ESM ⚡️ Build success in 39ms
+DTS Build start
+DTS ⚡️ Build success in 4395ms
+DTS dist/bin.d.ts            20.00 B
+DTS dist/plugin-sources.d.ts 3.60 KB
+DTS dist/index.d.ts          4.45 KB
+
+> @hachej/boring-sandbox@0.1.95 build /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/boring-sandbox
+> tsup
+
+CLI Building entry: {"index":"src/index.ts","shared/index":"src/shared/index.ts","providers/index":"src/providers/index.ts","providers/direct/index":"src/providers/direct/index.ts","providers/bwrap/index":"src/providers/bwrap/index.ts","providers/node-workspace/index":"src/providers/node-workspace/index.ts","providers/vercel-sandbox/index":"src/providers/vercel-sandbox/index.ts","providers/runsc/index":"src/providers/runsc/index.ts","providers/remote-worker/index":"src/providers/remote-worker/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/boring-sandbox/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js                          15.87 KB
+ESM dist/shared/index.js                   15.87 KB
+ESM dist/providers/direct/index.js         24.67 KB
+ESM dist/providers/bwrap/index.js          33.46 KB
+ESM dist/providers/index.js                149.36 KB
+ESM dist/providers/node-workspace/index.js 17.65 KB
+ESM dist/providers/vercel-sandbox/index.js 78.43 KB
+ESM dist/providers/runsc/index.js          44.75 KB
+ESM dist/providers/remote-worker/index.js  58.35 KB
+ESM ⚡️ Build success in 104ms
+DTS Build start
+DTS ⚡️ Build success in 52040ms
+DTS dist/shared/index.d.ts                         3.76 KB
+DTS dist/providers/bwrap/index.d.ts                642.00 B
+DTS dist/providers/index.d.ts                      2.25 KB
+DTS dist/providers/remote-worker/index.d.ts        4.51 KB
+DTS dist/providers/node-workspace/index.d.ts       4.19 KB
+DTS dist/providers/runsc/index.d.ts                11.96 KB
+DTS dist/providers/vercel-sandbox/index.d.ts       7.83 KB
+DTS dist/providers/direct/index.d.ts               666.00 B
+DTS dist/index.d.ts                                3.76 KB
+DTS dist/remoteWorkerProtocolV1-CwGtf71B.d.ts      23.48 KB
+DTS dist/createBwrapProvider-Cw7Z1yJu.d.ts         1.14 KB
+DTS dist/qualificationBundle-CzoMhzbM.d.ts         16.09 KB
+DTS dist/providerV1-XkxUdPdJ.d.ts                  9.57 KB
+DTS dist/createRemoteWorkerProvider-BWewQ-Vh.d.ts  4.67 KB
+DTS dist/createVercelSandboxProvider-BgI7cziN.d.ts 2.99 KB
+
+> @hachej/boring-bash@0.1.95 build /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/boring-bash
+> tsup
+
+CLI Building entry: {"index":"src/index.ts","agent/index":"src/agent/index.ts","shared/index":"src/shared/index.ts","server/index":"src/server/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/boring-bash/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js        2.08 KB
+ESM dist/agent/index.js  62.06 KB
+ESM dist/server/index.js 95.69 KB
+ESM dist/shared/index.js 2.08 KB
+ESM ⚡️ Build success in 78ms
+DTS Build start
+DTS ⚡️ Build success in 18001ms
+DTS dist/agent/index.d.ts    7.53 KB
+DTS dist/server/index.d.ts   24.45 KB
+DTS dist/shared/index.d.ts   4.02 KB
+DTS dist/index.d.ts          539.00 B
+DTS dist/types--TTA1Jyr.d.ts 4.99 KB
+
+> @hachej/boring-agent@0.1.95 build /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/agent
+> tsup && node ./scripts/build-front-css.mjs && pnpm run build:assert
+
+CLI Building entry: {"shared/index":"src/shared/index.ts","core/index":"src/core/index.ts","server/index":"src/server/index.ts","server/pi-session-readability":"src/server/harness/pi-coding-agent/sessionReadability.ts","server/agent-host/testing/gatewayConformance":"src/server/agent-host/testing/gatewayConformance.ts","server/agent-host/testing/compositionRouteProof":"src/server/agent-host/testing/compositionRouteProof.ts","server/worker/index":"src/server/worker/index.ts","front/index":"src/front/index.ts","eval/index":"src/eval/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/agent/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/DebugDrawer-XDA2LXRC.js                            79.00 B
+ESM dist/eval/index.js                                      16.12 KB
+ESM dist/shared/index.js                                    5.45 KB
+ESM dist/server/index.js                                    4.70 KB
+ESM dist/core/index.js                                      21.44 KB
+ESM dist/createHarness-SSNJA6WI.js                          379.00 B
+ESM dist/server/pi-session-readability.js                   940.00 B
+ESM dist/server/agent-host/testing/gatewayConformance.js    30.57 KB
+ESM dist/server/agent-host/testing/compositionRouteProof.js 3.55 KB
+ESM dist/server/worker/index.js                             12.66 KB
+ESM dist/chunk-4IQ4HHBG.js                                  376.00 B
+ESM dist/chunk-ELFQBVJL.js                                  89.10 KB
+ESM dist/chunk-WSQ5QNIY.js                                  509.00 B
+ESM dist/chunk-N3BAVV4I.js                                  46.70 KB
+ESM dist/chunk-6HIZ3ATN.js                                  14.42 KB
+ESM dist/chunk-W6DJKANJ.js                                  10.05 KB
+ESM dist/chunk-A4YFCHSS.js                                  4.37 KB
+ESM dist/chunk-QC555JJT.js                                  453.23 KB
+ESM dist/front/index.js                                     448.74 KB
+ESM ⚡️ Build success in 308ms
+DTS Build start
+"createNodeWorkspace", "getBoringAgentPathEntries", "getBoringAgentRuntimeEnv" and "getBoringAgentRuntimePaths" are imported from external module "@hachej/boring-sandbox/providers/node-workspace" but never used in "host/sandbox.ts".
+"buildBwrapArgs" and "createBwrapSandboxProvider" are imported from external module "@hachej/boring-sandbox/providers/bwrap" but never used in "host/sandbox.ts".
+"createDirectSandboxProvider" is imported from external module "@hachej/boring-sandbox/providers/direct" but never used in "host/sandbox.ts".
+DTS ⚡️ Build success in 74751ms
+DTS dist/core/index.d.ts                                      1.86 KB
+DTS dist/eval/index.d.ts                                      8.97 KB
+DTS dist/front/index.d.ts                                     37.58 KB
+DTS dist/server/agent-host/testing/compositionRouteProof.d.ts 312.00 B
+DTS dist/server/agent-host/testing/gatewayConformance.d.ts    1.89 KB
+DTS dist/server/pi-session-readability.d.ts                   501.00 B
+DTS dist/server/index.d.ts                                    60.05 KB
+DTS dist/server/worker/index.d.ts                             2.99 KB
+DTS dist/shared/index.d.ts                                    123.60 KB
+DTS dist/piChatSessionService-CnawCczf.d.ts                   4.46 KB
+DTS dist/types-D_tFuyi4.d.ts                                  34.11 KB
+DTS dist/middleware-CzW8n7B7.d.ts                             2.78 KB
+DTS dist/lease-BIRdQciO.d.ts                                  18.36 KB
+DTS dist/errors-DkfFulFb.d.ts                                 12.58 KB
+DTS dist/harness-OiWlQsnf.d.ts                                10.52 KB
+DTS dist/piChatEvent-XNKqBqiS.d.ts                            48.08 KB
+DTS dist/sandbox-DAD8cWQR.d.ts                                12.15 KB
+
+> @hachej/boring-agent@0.1.95 build:assert /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/agent
+> node ./scripts/assert-build-artifacts.mjs
+
+build-artifacts: OK
+
+> @hachej/boring-workspace@0.1.95 build /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/workspace
+> tsup && vite build && node ./scripts/build-workspace-css.mjs && node ./scripts/assert-build-artifacts.mjs
+
+CLI Building entry: {"app-server":"src/app/server/index.ts","server":"src/server/index.ts","runtime-server":"src/server/runtimeBackend/defineRuntimeServerPlugin.ts","shared":"src/shared/index.ts","bridge-client":"src/bridge-client/index.ts","events":"src/front/events/index.ts","plugin":"src/plugin.ts"}
+CLI Using tsconfig: tsconfig.tsup.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/workspace/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/bridge-client.js  14.60 KB
+ESM dist/server.js         178.56 KB
+ESM dist/events.js         2.41 KB
+ESM dist/plugin.js         14.99 KB
+ESM dist/app-server.js     234.43 KB
+ESM dist/shared.js         3.46 KB
+ESM dist/runtime-server.js 1.12 KB
+ESM ⚡️ Build success in 96ms
+DTS Build start
+DTS ⚡️ Build success in 16978ms
+DTS dist/app-server.d.ts                    18.80 KB
+DTS dist/bridge-client.d.ts                 3.20 KB
+DTS dist/events.d.ts                        6.73 KB
+DTS dist/plugin.d.ts                        13.77 KB
+DTS dist/server.d.ts                        31.89 KB
+DTS dist/runtime-server.d.ts                2.12 KB
+DTS dist/shared.d.ts                        1.79 KB
+DTS dist/runtimeEnv-Cger8qiE.d.ts           18.56 KB
+DTS dist/manifest-C2vVgH_e.d.ts             2.58 KB
+DTS dist/surface-CQIsDgcF.d.ts              5.29 KB
+DTS dist/agent-tool-CB0RQyx9.d.ts           1.06 KB
+DTS dist/workspace-bridge-rpc-BHsOJMlW.d.ts 5.41 KB
+DTS dist/ui-bridge-DyEMCadU.d.ts            1.92 KB
+DTS dist/filesystem-C4biuFiN.d.ts           1.02 KB
+10:44:16 AM [vite] warning: `esbuild` option was specified by "vite:react-babel" plugin. This option is deprecated, please use `oxc` instead.
+`optimizeDeps.rollupOptions` / `ssr.optimizeDeps.rollupOptions` is deprecated. Use `optimizeDeps.rolldownOptions` instead. Note that this option may be set by a plugin. Set VITE_DEPRECATION_TRACE=1 to see where it is called.
+[vite:react-babel] We recommend switching to `@vitejs/plugin-react-oxc` for improved performance. More information at https://vite.dev/rolldown
+vite v8.1.5 building client environment for production...
+[2Ktransforming...✓ 382 modules transformed.
+rendering chunks...
+
+[unplugin:dts] Start generate declaration files...
+[unplugin:dts] Start bundling declaration files...
+
+[unplugin:dts] Failed to load '@microsoft/api-extractor', have you installed it?
+
+
+[unplugin:dts] Error occurred, skip bundle declaration files.
+
+[unplugin:dts] Declaration files built in 29912ms.
+
+computing gzip size...
+dist/boring-workspace.css             8.75 kB │ gzip:  1.87 kB
+dist/utils-BRcxFdrz.js                0.18 kB │ gzip:  0.15 kB
+dist/rolldown-runtime-Dqa2HsxW.js     0.92 kB │ gzip:  0.52 kB
+dist/testing-e2e.js                   1.43 kB │ gzip:  0.79 kB
+dist/charts.js                        4.47 kB │ gzip:  1.71 kB
+dist/FileTree-BYB67uE2.js             8.09 kB │ gzip:  3.19 kB
+dist/workspace.js                    23.71 kB │ gzip:  7.99 kB
+dist/MarkdownEditor-BE5_W_14.js      25.15 kB │ gzip:  8.24 kB
+dist/TopBar-BRdQ9Pcu.js              33.16 kB │ gzip:  8.77 kB
+dist/app-front.js                   135.77 kB │ gzip: 35.61 kB
+dist/testing.js                     254.30 kB │ gzip: 44.23 kB
+dist/WorkspaceProvider-hOwdHGXP.js  290.69 kB │ gzip: 76.89 kB
+
+[33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugin `unplugin-dts`. See https://rolldown.rs/reference/InputOptions.checks#plugintimings for more details.
+
+✓ built in 30.39s
+assert-build-artifacts: all 19 artifacts present
+
+> @hachej/boring-core@0.1.95 build /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/core
+> tsup && pnpm run build:assert
+
+CLI Building entry: {"server/index":"src/server/index.ts","server/db/index":"src/server/db/index.ts","app/server/index":"src/app/server/index.ts","app/front/index":"src/app/front/index.ts","app/vite/index":"src/app/vite/index.ts","front/index":"src/front/index.ts","front/top-bar-slot":"src/front/components/TopBarSlot.tsx","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/core/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/chunk-OMBRXUJ6.js     109.92 KB
+ESM dist/front/top-bar-slot.js 159.00 B
+ESM dist/shared/index.js       752.00 B
+ESM dist/chunk-HYNKZSTF.js     437.00 B
+ESM dist/chunk-YMWFQN6F.js     338.00 B
+ESM dist/chunk-I4PGL4ZD.js     488.00 B
+ESM dist/chunk-AQBXNPMD.js     254.00 B
+ESM dist/chunk-R2GZHJGD.js     2.44 KB
+ESM dist/chunk-MLKGABMK.js     191.00 B
+ESM dist/chunk-ZM6M25YM.js     132.47 KB
+ESM dist/server/db/index.js    739.00 B
+ESM dist/app/server/index.js   62.46 KB
+ESM dist/chunk-OO2NWVKM.js     178.71 KB
+ESM dist/app/vite/index.js     786.00 B
+ESM dist/app/front/index.js    64.97 KB
+ESM dist/server/index.js       77.18 KB
+ESM dist/front/index.js        2.47 KB
+ESM ⚡️ Build success in 185ms
+DTS Build start
+"magicLinkClient" is imported from external module "better-auth/client/plugins" but never used in "src/front/auth/authClient.ts".
+DTS ⚡️ Build success in 83977ms
+DTS dist/app/front/index.d.ts                   14.41 KB
+DTS dist/app/server/index.d.ts                  11.04 KB
+DTS dist/app/vite/index.d.ts                    1.35 KB
+DTS dist/front/index.d.ts                       21.33 KB
+DTS dist/front/top-bar-slot.d.ts                295.00 B
+DTS dist/server/db/index.d.ts                   12.00 KB
+DTS dist/server/index.d.ts                      46.37 KB
+DTS dist/shared/index.d.ts                      1.31 KB
+DTS dist/CoreFront-DB1OfNJU.d.ts                2.42 KB
+DTS dist/loadConfig-CVryJJVv.d.ts               2.46 KB
+DTS dist/PostgresModelBudgetStore-B8g0UZPr.d.ts 16.58 KB
+DTS dist/types-Bv38eRn_.d.ts                    7.88 KB
+DTS dist/telemetry-DR18MeI0.d.ts                466.00 B
+DTS dist/types-BGq0Wlbn.d.ts                    8.74 KB
+
+> @hachej/boring-core@0.1.95 build:assert /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/core
+> node ./scripts/assert-build-artifacts.mjs
+
+assert-build-artifacts: all 10 exported artifact(s) present, 4 stylesheet(s) with resolvable @imports
+
+> @hachej/boring-deck@0.1.95 build /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/plugins/deck
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.tsx","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/plugins/deck/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/front/index.js  38.25 KB
+ESM dist/shared/index.js 8.25 KB
+ESM ⚡️ Build success in 56ms
+DTS Build start
+DTS ⚡️ Build success in 18710ms
+DTS dist/front/index.d.ts    1.76 KB
+DTS dist/shared/index.d.ts   961.00 B
+DTS dist/types-Dt_A9RNg.d.ts 1.57 KB
+
+> @hachej/boring-ask-user@0.1.95 build /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/plugins/ask-user
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.tsx","server/index":"src/server/index.ts","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/plugins/ask-user/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/front/index.js  67.25 KB
+ESM dist/shared/index.js 12.76 KB
+ESM dist/server/index.js 54.40 KB
+ESM ⚡️ Build success in 61ms
+DTS Build start
+DTS ⚡️ Build success in 27750ms
+DTS dist/front/index.d.ts    1.50 KB
+DTS dist/server/index.d.ts   9.81 KB
+DTS dist/shared/index.d.ts   115.23 KB
+DTS dist/types-4g8PL2Y_.d.ts 5.48 KB
+
+> @hachej/boring-tasks@0.1.95 build /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/plugins/tasks
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.tsx","server/index":"src/server/index.ts","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/plugins/tasks/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/server/index.js 57.49 KB
+ESM dist/front/index.js  83.94 KB
+ESM dist/shared/index.js 2.59 KB
+ESM ⚡️ Build success in 62ms
+DTS Build start
+DTS ⚡️ Build success in 24015ms
+DTS dist/front/index.d.ts  2.57 KB
+DTS dist/server/index.d.ts 8.71 KB
+DTS dist/shared/index.d.ts 4.53 KB
+
+> @hachej/boring-diagram@0.1.95 build /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/plugins/diagram
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.tsx","server/index":"src/server/index.ts","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/plugins/diagram/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/front/index.js  47.42 KB
+ESM dist/shared/index.js 845.00 B
+ESM dist/server/index.js 11.99 KB
+ESM ⚡️ Build success in 48ms
+DTS Build start
+DTS ⚡️ Build success in 36105ms
+DTS dist/front/index.d.ts  185.00 B
+DTS dist/server/index.d.ts 384.00 B
+DTS dist/shared/index.d.ts 424.00 B
+
+> @hachej/boring-data-explorer@0.1.95 build /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/plugins/data-explorer
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.ts","shared/index":"src/shared/index.ts","testing/index":"src/testing/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/plugins/data-explorer/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/shared/index.js  0 B
+ESM dist/front/index.js   25.36 KB
+ESM dist/testing/index.js 4.81 KB
+ESM ⚡️ Build success in 44ms
+DTS Build start
+DTS ⚡️ Build success in 5163ms
+DTS dist/testing/index.d.ts 248.00 B
+DTS dist/front/index.d.ts   3.88 KB
+DTS dist/shared/index.d.ts  2.19 KB
+
+> @hachej/boring-data-catalog@0.1.95 build /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/plugins/data-catalog
+> tsup
+
+CLI Building entry: {"front/index":"src/front/index.tsx","server/index":"src/server/index.ts","shared/index":"src/shared/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/plugins/data-catalog/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/front/index.js  10.63 KB
+ESM dist/shared/index.js 296.00 B
+ESM dist/server/index.js 4.67 KB
+ESM ⚡️ Build success in 34ms
+DTS Build start
+DTS ⚡️ Build success in 35548ms
+DTS dist/server/index.d.ts 1.29 KB
+DTS dist/front/index.d.ts  5.59 KB
+DTS dist/shared/index.d.ts 294.00 B
+10:49:02 AM [vite] warning: `esbuild` option was specified by "vite:react-babel" plugin. This option is deprecated, please use `oxc` instead.
+`optimizeDeps.rollupOptions` / `ssr.optimizeDeps.rollupOptions` is deprecated. Use `optimizeDeps.rolldownOptions` instead. Note that this option may be set by a plugin. Set VITE_DEPRECATION_TRACE=1 to see where it is called.
+[vite:react-babel] We recommend switching to `@vitejs/plugin-react-oxc` for improved performance. More information at https://vite.dev/rolldown
+[workspace-playground] workspace root: /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/apps/workspace-playground/workspace
+[workspace-playground] runtime mode: local
+(node:807528) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:807528) [BORING_WORKSPACE_BRIDGE_INSECURE_AUTH] Warning: createWorkspaceAgentServer is using createLocalCliBridgeAuthPolicy for WorkspaceBridge browser calls. This policy is unauthenticated, grants registered bridge capabilities to a fixed local-cli principal, and is intended only for local/dev CLI usage. Provide workspaceBridge.browserAuthPolicy before exposing this server.
+{"level":30,"time":1786013342978,"pid":807528,"hostname":"vps-15cf2c41","msg":"Server listening at http://127.0.0.1:5221"}
+
+  VITE v8.1.5  ready in 4390 ms
+
+  ➜  Local:   http://localhost:5220/
+  ➜  Network: http://213.32.19.186:5220/
+  ➜  Network: http://172.24.0.1:5220/
+  ➜  Network: http://172.17.0.1:5220/
+  ➜  Network: http://172.18.0.1:5220/
+  ➜  Network: http://172.25.0.1:5220/
+  ➜  Network: http://100.68.199.114:5220/
+[33mWarning: Invalid input options (1 issue found)
+- For the "jsx". Invalid key: Expected never but received "jsx". [0m
+[33mWarning: Invalid input options (1 issue found)
+- For the "jsx". Invalid key: Expected never but received "jsx". [0m
+{"level":30,"time":1786013346097,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1","req":{"method":"GET","url":"/api/v1/workspace/meta","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":41162},"msg":"incoming request"}
+{"level":40,"time":1786013346098,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1","msg":"No auth token set — running in dev mode"}
+{"level":30,"time":1786013346101,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1","res":{"statusCode":200},"responseTime":3.5497169999998732,"msg":"request completed"}
+[33mWarning: Invalid input options (1 issue found)
+- For the "jsx". Invalid key: Expected never but received "jsx". [0m
+10:49:07 AM [vite] (client) [optimizer] bundling dependencies...
+[33mWarning: Invalid input options (1 issue found)
+- For the "jsx". Invalid key: Expected never but received "jsx". [0m
+10:49:08 AM [vite] (client) [optimizer] bundling dependencies...
+[33mWarning: Invalid input options (1 issue found)
+- For the "jsx". Invalid key: Expected never but received "jsx". [0m
+10:49:09 AM [vite] (client) [optimizer] bundling dependencies...
+{"level":30,"time":1786013350316,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-2","req":{"method":"GET","url":"/api/v1/workspace/meta","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":44774},"msg":"incoming request"}
+{"level":30,"time":1786013350321,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-2","res":{"statusCode":200},"responseTime":4.30204699999922,"msg":"request completed"}
+10:49:11 AM [vite] (client) dependencies optimized: react-dom/client, @codemirror/commands, @codemirror/lang-javascript, @codemirror/lang-json, @codemirror/lang-markdown, @codemirror/lang-python, @codemirror/lang-sql, @codemirror/lang-yaml, @codemirror/language, @codemirror/search, @codemirror/state, @codemirror/view, @excalidraw/excalidraw, @lezer/highlight, @radix-ui/react-alert-dialog, @radix-ui/react-checkbox, @radix-ui/react-collapsible, @radix-ui/react-dialog, @radix-ui/react-dropdown-menu, @radix-ui/react-hover-card, @radix-ui/react-label, @radix-ui/react-popover, @radix-ui/react-scroll-area, @radix-ui/react-select, @radix-ui/react-separator, @radix-ui/react-slot, @radix-ui/react-tabs, @radix-ui/react-tooltip, @radix-ui/react-use-controllable-state, @streamdown/cjk, @streamdown/code, @streamdown/math, @streamdown/mermaid, @tanstack/react-query, @tiptap/extension-code-block-lowlight, @tiptap/extension-highlight, @tiptap/extension-image, @tiptap/extension-link, @tiptap/extension-placeholder, @tiptap/extension-table-cell, @tiptap/extension-table-header, @tiptap/extension-table-row, @tiptap/extension-table, @tiptap/extension-task-item, @tiptap/extension-task-list, @tiptap/extension-text-align, @tiptap/extension-underline, @tiptap/markdown, @tiptap/react, @tiptap/starter-kit, class-variance-authority, clsx, cmdk, diff, dnd-core, dockview-react, lowlight, lucide-react, motion/react, nanoid, react-arborist, react-dnd-html5-backend, react-markdown, remark-gfm, shiki, streamdown, tailwind-merge, use-stick-to-bottom, zod, zustand, zustand/middleware
+10:49:11 AM [vite] (client) optimized dependencies changed. reloading
+{"level":30,"time":1786013360842,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-3","req":{"method":"GET","url":"/api/v1/workspace/meta","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":39518},"msg":"incoming request"}
+{"level":30,"time":1786013360844,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-3","res":{"statusCode":200},"responseTime":1.1787030000014056,"msg":"request completed"}
+{"level":30,"time":1786017251237,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-4","req":{"method":"GET","url":"/api/v1/workspace/meta","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42776},"msg":"incoming request"}
+{"level":30,"time":1786017251241,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-4","res":{"statusCode":200},"responseTime":2.8361179996281862,"msg":"request completed"}
+{"level":30,"time":1786017251275,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-5","req":{"method":"GET","url":"/api/v1/workspace/meta","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42790},"msg":"incoming request"}
+{"level":30,"time":1786017251276,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-5","res":{"statusCode":200},"responseTime":0.4775270000100136,"msg":"request completed"}
+{"level":30,"time":1786017251332,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-6","req":{"method":"GET","url":"/api/v1/fs/events?workspaceId=workspace","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42802},"msg":"incoming request"}
+{"level":30,"time":1786017251342,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-7","req":{"method":"GET","url":"/api/v1/tree?path=.","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42810},"msg":"incoming request"}
+{"level":30,"time":1786017251347,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-8","req":{"method":"GET","url":"/api/v1/agents/default/ready-status","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42820},"msg":"incoming request"}
+11:54:11 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+{"level":30,"time":1786017251612,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-9","req":{"method":"PUT","url":"/api/v1/ui/state","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42822},"msg":"incoming request"}
+{"level":30,"time":1786017251619,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-9","res":{"statusCode":204},"responseTime":7.116586999967694,"msg":"request completed"}
+{"level":30,"time":1786017251870,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-a","req":{"method":"GET","url":"/api/v1/ui/state","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42826},"msg":"incoming request"}
+{"level":30,"time":1786017251871,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-a","res":{"statusCode":200},"responseTime":0.580515000037849,"msg":"request completed"}
+{"level":30,"time":1786017251876,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-b","req":{"method":"GET","url":"/api/v1/agents/default/sessions?limit=50","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42838},"msg":"incoming request"}
+{"level":30,"time":1786017251955,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-c","req":{"method":"GET","url":"/api/v1/tree?path=.","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42840},"msg":"incoming request"}
+{"level":30,"time":1786017251959,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-d","req":{"method":"GET","url":"/api/v1/fs/events?workspaceId=workspace","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42842},"msg":"incoming request"}
+{"level":30,"time":1786017251965,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-e","req":{"method":"GET","url":"/api/v1/agents/default/ready-status","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42846},"msg":"incoming request"}
+{"level":30,"time":1786017252107,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-f","req":{"method":"PUT","url":"/api/v1/ui/state","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42860},"msg":"incoming request"}
+{"level":30,"time":1786017252114,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-f","res":{"statusCode":204},"responseTime":7.107122000306845,"msg":"request completed"}
+{"level":30,"time":1786017252118,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-g","req":{"method":"GET","url":"/api/v1/filesystems","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42870},"msg":"incoming request"}
+{"level":30,"time":1786017252179,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-h","req":{"method":"GET","url":"/api/v1/ui/commands/next?workspaceId=workspace","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42886},"msg":"incoming request"}
+{"level":30,"time":1786017252245,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-g","res":{"statusCode":200},"responseTime":125.20509000029415,"msg":"request completed"}
+{"level":30,"time":1786017252256,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-c","res":{"statusCode":200},"responseTime":300.2384669999592,"msg":"request completed"}
+{"level":30,"time":1786017252307,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-i","req":{"method":"GET","url":"/api/v1/agents/default/models","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42888},"msg":"incoming request"}
+{"level":30,"time":1786017252369,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-j","req":{"method":"GET","url":"/api/v1/agents/default/commands?sessionId=9325922d-b679-4c66-9432-cb1434fc953c","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42902},"msg":"incoming request"}
+{"level":30,"time":1786017252679,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-e","res":{"statusCode":200},"responseTime":714.2179300002754,"msg":"request completed"}
+{"level":30,"time":1786017252681,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-b","res":{"statusCode":200},"responseTime":804.8595010000281,"msg":"request completed"}
+{"level":30,"time":1786017252771,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-i","res":{"statusCode":200},"responseTime":463.96633700001985,"msg":"request completed"}
+{"level":30,"time":1786017252784,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-k","req":{"method":"GET","url":"/api/v1/workspace/meta","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42908},"msg":"incoming request"}
+{"level":30,"time":1786017252785,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-k","res":{"statusCode":200},"responseTime":0.5274469996802509,"msg":"request completed"}
+{"level":30,"time":1786017252787,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-l","req":{"method":"GET","url":"/api/v1/ui/state","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42920},"msg":"incoming request"}
+{"level":30,"time":1786017252787,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-l","res":{"statusCode":200},"responseTime":0.3444500002078712,"msg":"request completed"}
+{"level":30,"time":1786017252793,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-j","res":{"statusCode":404},"responseTime":423.568934999872,"msg":"request completed"}
+{"level":30,"time":1786017252841,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-m","req":{"method":"POST","url":"/api/v1/workspace-bridge/call","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42934},"msg":"incoming request"}
+{"level":30,"time":1786017252846,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-m","res":{"statusCode":200},"responseTime":4.658007999882102,"msg":"request completed"}
+{"level":30,"time":1786017252849,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-n","req":{"method":"GET","url":"/api/v1/tree?path=.","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42948},"msg":"incoming request"}
+{"level":30,"time":1786017252852,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-o","req":{"method":"GET","url":"/api/v1/agents/default/sessions?limit=50","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42954},"msg":"incoming request"}
+{"level":30,"time":1786017252922,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-n","res":{"statusCode":200},"responseTime":72.80857300013304,"msg":"request completed"}
+{"level":30,"time":1786017252927,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-p","req":{"method":"GET","url":"/api/v1/workspace/meta","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42970},"msg":"incoming request"}
+{"level":30,"time":1786017252927,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-p","res":{"statusCode":200},"responseTime":0.28977599972859025,"msg":"request completed"}
+{"level":30,"time":1786017252930,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-q","req":{"method":"POST","url":"/api/v1/workspace-bridge/call","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42980},"msg":"incoming request"}
+{"level":30,"time":1786017252931,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-q","res":{"statusCode":200},"responseTime":1.0220039999112487,"msg":"request completed"}
+{"level":30,"time":1786017252958,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-o","res":{"statusCode":200},"responseTime":105.38166100019589,"msg":"request completed"}
+{"level":30,"time":1786017252985,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-r","req":{"method":"GET","url":"/api/v1/agents/default/commands?sessionId=9325922d-b679-4c66-9432-cb1434fc953c","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42996},"msg":"incoming request"}
+{"level":30,"time":1786017253068,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-s","req":{"method":"GET","url":"/api/v1/agents/default/models","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":42998},"msg":"incoming request"}
+{"level":30,"time":1786017253131,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-t","req":{"method":"PUT","url":"/api/v1/ui/state","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43008},"msg":"incoming request"}
+{"level":30,"time":1786017253132,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-t","res":{"statusCode":204},"responseTime":0.770566999912262,"msg":"request completed"}
+{"level":30,"time":1786017253134,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-u","req":{"method":"GET","url":"/api/v1/agents/session-activity/events?workspaceId=workspace","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43012},"msg":"incoming request"}
+{"level":30,"time":1786017253170,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-r","res":{"statusCode":404},"responseTime":185.30843000020832,"msg":"request completed"}
+{"level":30,"time":1786017253245,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-s","res":{"statusCode":200},"responseTime":176.38939699996263,"msg":"request completed"}
+{"level":30,"time":1786017253252,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-v","req":{"method":"GET","url":"/api/v1/ui/state","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43026},"msg":"incoming request"}
+{"level":30,"time":1786017253253,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-v","res":{"statusCode":200},"responseTime":0.4288900000974536,"msg":"request completed"}
+{"level":30,"time":1786017253307,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-w","req":{"method":"POST","url":"/api/v1/workspace-bridge/call","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43030},"msg":"incoming request"}
+{"level":30,"time":1786017253309,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-w","res":{"statusCode":200},"responseTime":1.091699999757111,"msg":"request completed"}
+{"level":30,"time":1786017255072,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-x","req":{"method":"POST","url":"/api/v1/agents/default/sessions","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43034},"msg":"incoming request"}
+{"level":30,"time":1786017255268,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-x","res":{"statusCode":201},"responseTime":196.06697800010443,"msg":"request completed"}
+{"level":30,"time":1786017255327,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-y","req":{"method":"GET","url":"/api/v1/agents/default/sessions?limit=50","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43038},"msg":"incoming request"}
+{"level":30,"time":1786017255489,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-y","res":{"statusCode":200},"responseTime":161.92619400005788,"msg":"request completed"}
+{"level":30,"time":1786017255581,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-z","req":{"method":"GET","url":"/api/v1/agents/session-activity/events?workspaceId=workspace","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43044},"msg":"incoming request"}
+{"level":30,"time":1786017255614,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-10","req":{"method":"PUT","url":"/api/v1/ui/state","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43058},"msg":"incoming request"}
+{"level":30,"time":1786017255615,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-10","res":{"statusCode":204},"responseTime":1.2732060002163053,"msg":"request completed"}
+{"level":30,"time":1786017255619,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-11","req":{"method":"GET","url":"/api/v1/ui/state","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43064},"msg":"incoming request"}
+{"level":30,"time":1786017255619,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-11","res":{"statusCode":200},"responseTime":0.45920300018042326,"msg":"request completed"}
+{"level":30,"time":1786017255626,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-12","req":{"method":"GET","url":"/api/v1/agents/default/models","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43078},"msg":"incoming request"}
+{"level":30,"time":1786017255707,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-13","req":{"method":"GET","url":"/api/v1/agents/default/commands?sessionId=b7445bee-dbd6-48e0-befc-403f61eaa420","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43090},"msg":"incoming request"}
+{"level":30,"time":1786017255768,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-14","req":{"method":"GET","url":"/api/v1/workspace/meta","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43106},"msg":"incoming request"}
+{"level":30,"time":1786017255769,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-14","res":{"statusCode":200},"responseTime":0.41159299993887544,"msg":"request completed"}
+{"level":30,"time":1786017255880,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-12","res":{"statusCode":200},"responseTime":253.18823800003156,"msg":"request completed"}
+{"level":30,"time":1786017255885,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-15","req":{"method":"GET","url":"/api/v1/agents/default/sessions/b7445bee-dbd6-48e0-befc-403f61eaa420/state","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43112},"msg":"incoming request"}
+{"level":30,"time":1786017256051,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-16","req":{"method":"POST","url":"/api/v1/workspace-bridge/call","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43124},"msg":"incoming request"}
+{"level":30,"time":1786017256053,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-16","res":{"statusCode":200},"responseTime":1.9073410001583397,"msg":"request completed"}
+{"level":30,"time":1786017256995,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-17","req":{"method":"GET","url":"/api/v1/workspace/meta","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43128},"msg":"incoming request"}
+{"level":30,"time":1786017256995,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-17","res":{"statusCode":200},"responseTime":0.5644390000961721,"msg":"request completed"}
+{"level":30,"time":1786017257051,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-15","res":{"statusCode":200},"responseTime":1165.6395789999515,"msg":"request completed"}
+{"level":30,"time":1786017257058,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-18","req":{"method":"GET","url":"/api/v1/agents/default/models","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":43134},"msg":"incoming request"}
+{"level":30,"time":1786017257135,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-19","req":{"method":"GET","url":"/api/v1/agents/default/sessions/b7445bee-dbd6-48e0-befc-403f61eaa420/events?cursor=0","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":45212},"msg":"incoming request"}
+Successfully registered Ollama provider with 18 models
+{"level":30,"time":1786017260219,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-13","res":{"statusCode":200},"responseTime":4511.68407399999,"msg":"request completed"}
+{"level":30,"time":1786017260235,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1a","req":{"method":"PUT","url":"/api/v1/ui/state","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":45224},"msg":"incoming request"}
+{"level":30,"time":1786017260236,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1a","res":{"statusCode":204},"responseTime":1.0780670000240207,"msg":"request completed"}
+{"level":30,"time":1786017260238,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1b","req":{"method":"GET","url":"/api/v1/tree?path=.","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":45230},"msg":"incoming request"}
+{"level":30,"time":1786017260240,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1c","req":{"method":"GET","url":"/api/v1/tree?path=%2F&filesystem=company_context","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":45246},"msg":"incoming request"}
+{"level":30,"time":1786017260245,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1b","res":{"statusCode":200},"responseTime":7.027957999613136,"msg":"request completed"}
+{"level":30,"time":1786017260253,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1c","res":{"statusCode":200},"responseTime":12.658829000312835,"msg":"request completed"}
+{"level":30,"time":1786017260358,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-18","res":{"statusCode":200},"responseTime":3300.3434799998067,"msg":"request completed"}
+{"level":30,"time":1786017260379,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1d","req":{"method":"GET","url":"/api/v1/agents/default/commands?sessionId=b7445bee-dbd6-48e0-befc-403f61eaa420","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":45256},"msg":"incoming request"}
+{"level":30,"time":1786017260584,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1d","res":{"statusCode":200},"responseTime":203.9469650001265,"msg":"request completed"}
+{"level":30,"time":1786017261737,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1e","req":{"method":"PUT","url":"/api/v1/ui/state","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":45268},"msg":"incoming request"}
+{"level":30,"time":1786017261738,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1e","res":{"statusCode":204},"responseTime":0.7436120002530515,"msg":"request completed"}
+{"level":30,"time":1786017261740,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1f","req":{"method":"GET","url":"/api/v1/files?path=handbook.md&filesystem=company_context","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":45282},"msg":"incoming request"}
+{"level":30,"time":1786017261745,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1f","res":{"statusCode":200},"responseTime":4.86180799966678,"msg":"request completed"}
+11:54:21 AM [vite] (client) [console.error] Cannot update a component (`xs`) while rendering a different component (`so`). To locate the bad setState() call inside `so`, follow the stack trace as described in https://react.dev/link/setstate-in-render
+{"level":30,"time":1786017263871,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1g","req":{"method":"PUT","url":"/api/v1/ui/state","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":45294},"msg":"incoming request"}
+{"level":30,"time":1786017263872,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1g","res":{"statusCode":204},"responseTime":1.2878519999794662,"msg":"request completed"}
+{"level":30,"time":1786017263875,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1h","req":{"method":"GET","url":"/api/v1/files?path=README.md&filesystem=company_context","host":"127.0.0.1:5221","remoteAddress":"127.0.0.1","remotePort":45310},"msg":"incoming request"}
+{"level":30,"time":1786017263884,"pid":807528,"hostname":"vps-15cf2c41","reqId":"req-1h","res":{"statusCode":200},"responseTime":8.622985999565572,"msg":"request completed"}
+12:00:34 PM [vite] src/server/factoryAgents.ts changed, restarting server...
+12:00:34 PM [vite] warning: `esbuild` option was specified by "vite:react-babel" plugin. This option is deprecated, please use `oxc` instead.
+`optimizeDeps.rollupOptions` / `ssr.optimizeDeps.rollupOptions` is deprecated. Use `optimizeDeps.rolldownOptions` instead. Note that this option may be set by a plugin. Set VITE_DEPRECATION_TRACE=1 to see where it is called.
+[vite:react-babel] We recommend switching to `@vitejs/plugin-react-oxc` for improved performance. More information at https://vite.dev/rolldown
+[workspace-playground] workspace root: /home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/apps/workspace-playground/workspace
+[workspace-playground] runtime mode: local
+(node:807528) [BORING_WORKSPACE_BRIDGE_INSECURE_AUTH] Warning: createWorkspaceAgentServer is using createLocalCliBridgeAuthPolicy for WorkspaceBridge browser calls. This policy is unauthenticated, grants registered bridge capabilities to a fixed local-cli principal, and is intended only for local/dev CLI usage. Provide workspaceBridge.browserAuthPolicy before exposing this server.
+12:00:35 PM [vite] listen EADDRINUSE: address already in use 127.0.0.1:5221
+12:00:35 PM [vite] server restart failed
+12:00:45 PM [vite] (client) hmr update /@fs/home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/workspace/src/globals.css
+12:01:20 PM [vite] (client) hmr update /@fs/home/ubuntu/projects/boring-ui-v2/.worktrees/1000-simplify/packages/workspace/src/globals.css
