@@ -12,8 +12,8 @@ function memoryStore(): AtomicTaskSessionLinkStore {
     links.push(link)
     return { link, links: [...links], created: true }
   }
-  const unlinkWithSnapshot: AtomicTaskSessionLinkStore["unlinkWithSnapshot"] = async (linkId) => {
-    const index = links.findIndex((link) => link.id === linkId)
+  const unlinkWithSnapshot: AtomicTaskSessionLinkStore["unlinkWithSnapshot"] = async (linkId, expectedAgentTypeId) => {
+    const index = links.findIndex((link) => link.id === linkId && (expectedAgentTypeId === undefined || link.agentTypeId === expectedAgentTypeId))
     const link = links.splice(index, 1)[0]!
     return { link, links: [...links] }
   }
@@ -24,7 +24,7 @@ function memoryStore(): AtomicTaskSessionLinkStore {
     linkWithSnapshot,
     async link(input) { return (await linkWithSnapshot(input)).link },
     unlinkWithSnapshot,
-    async unlink(linkId) { return (await unlinkWithSnapshot(linkId)).link },
+    async unlink(linkId, expectedAgentTypeId) { return (await unlinkWithSnapshot(linkId, expectedAgentTypeId)).link },
   }
 }
 

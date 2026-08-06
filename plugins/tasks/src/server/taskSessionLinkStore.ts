@@ -22,13 +22,13 @@ export interface TaskSessionLinkStore {
   list(adapterId: string, taskId: string): Promise<BoringTaskSessionLink[]>
   listBySessionIds(sessionIds: readonly string[]): Promise<Map<string, BoringTaskSessionLink[]>>
   link(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<BoringTaskSessionLink>
-  unlink(linkId: string): Promise<BoringTaskSessionLink>
+  unlink(linkId: string, expectedAgentTypeId?: string): Promise<BoringTaskSessionLink>
 }
 
 export interface AtomicTaskSessionLinkStore extends TaskSessionLinkStore {
   snapshotLinks(): Promise<TaskSessionLinkSnapshot[]>
   linkWithSnapshot(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[]; created: boolean }>
-  unlinkWithSnapshot(linkId: string): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[] }>
+  unlinkWithSnapshot(linkId: string, expectedAgentTypeId?: string): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[] }>
 }
 
 const STORE_PATH = ".pi/tasks/session-links.json"
@@ -193,14 +193,15 @@ export class FileTaskSessionLinkStore implements AtomicTaskSessionLinkStore {
     })
   }
 
-  async unlink(linkId: string): Promise<BoringTaskSessionLink> {
-    return (await this.unlinkWithSnapshot(linkId)).link
+  async unlink(linkId: string, expectedAgentTypeId?: string): Promise<BoringTaskSessionLink> {
+    return (await this.unlinkWithSnapshot(linkId, expectedAgentTypeId)).link
   }
 
-  async unlinkWithSnapshot(linkId: string): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[] }> {
+  async unlinkWithSnapshot(linkId: string, expectedAgentTypeId?: string): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[] }> {
     const normalizedLinkId = validateId(linkId, "linkId")
+    const normalizedExpectedAgentTypeId = expectedAgentTypeId === undefined ? undefined : validateId(expectedAgentTypeId, "agentTypeId")
     return await this.mutate(async (store) => {
-      const index = store.links.findIndex((link) => link.id === normalizedLinkId)
+      const index = store.links.findIndex((link) => link.id === normalizedLinkId && (normalizedExpectedAgentTypeId === undefined || link.agentTypeId === normalizedExpectedAgentTypeId))
       if (index < 0) throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_MISSING, "Task session link was not found.")
       const [link] = store.links.splice(index, 1)
       await this.write(store)

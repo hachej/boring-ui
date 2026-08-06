@@ -67,7 +67,7 @@ export interface TaskManagementService {
   deleteTask(ctx: BoringTaskSourceContext, input: TaskDeleteInput): Promise<void>
   listSessionLinks(input: TaskKeyInput, binding: Pick<TaskSessionBindingContext, "linkStore">): Promise<BoringTaskSessionLink[]>
   bindSession(ctx: BoringTaskSourceContext, input: TaskKeyInput & { sessionId: string }, binding: TaskSessionBindingContext): Promise<BoringTaskSessionLink>
-  unlinkSession(linkId: string, binding: Pick<TaskSessionBindingContext, "linkStore">): Promise<BoringTaskSessionLink>
+  unlinkSession(linkId: string, binding: Pick<TaskSessionBindingContext, "linkStore">, expectedAgentTypeId?: string): Promise<BoringTaskSessionLink>
   resolveSessionTasks(ctx: BoringTaskSourceContext, sessionIds: readonly string[], binding: TaskSessionBindingContext): Promise<SessionTaskResolution>
 }
 
@@ -213,7 +213,9 @@ export function createTaskSourceService(registry: BoringTaskSourceRegistry): Tas
       return await binding.linkStore.link({ adapterId, taskId: input.taskId, sessionId: input.sessionId, agentTypeId: binding.agentTypeId })
     },
 
-    async unlinkSession(linkId, binding) { return await binding.linkStore.unlink(linkId) },
+    async unlinkSession(linkId, binding, expectedAgentTypeId) {
+      return await binding.linkStore.unlink(linkId, expectedAgentTypeId)
+    },
 
     async resolveSessionTasks(ctx, sessionIds, binding) {
       const authorized: string[] = []

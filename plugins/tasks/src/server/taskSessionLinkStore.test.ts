@@ -114,6 +114,14 @@ describe("FileTaskSessionLinkStore", () => {
     await expect(store.unlink(link.id)).rejects.toMatchObject({ code: TASK_ERROR_CODES.SESSION_LINK_MISSING } satisfies Partial<TaskSessionLinkStoreError>)
   })
 
+  it("atomically rejects unlinking a link owned by another Agent", async () => {
+    const store = new FileTaskSessionLinkStore(new MemoryWorkspace())
+    const link = await store.link({ agentTypeId: "beta", adapterId: "github", taskId: "776", sessionId: "foreign" })
+
+    await expect(store.unlink(link.id, "alpha")).rejects.toMatchObject({ code: TASK_ERROR_CODES.SESSION_LINK_MISSING })
+    await expect(store.list("github", "776")).resolves.toEqual([link])
+  })
+
   it("persists deterministic link ordering", async () => {
     const workspace = new MemoryWorkspace()
     const store = new FileTaskSessionLinkStore(workspace)
