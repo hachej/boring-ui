@@ -586,11 +586,15 @@ export function SurfaceShell({
       )
     }
     const panelId = surfacePanelId(normalizedRequest, resolved)
+    const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
+    const params = closeWorkbenchOnDone && onCloseRef.current
+      ? { ...(resolved.params ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
+      : resolved.params
     if (!activateDockviewPanel({
       id: panelId,
       component: resolved.component,
       title: resolved.title ?? normalizedRequest.target,
-      params: resolved.params,
+      params,
     })) {
       console.warn("[SurfaceShell] openSurface: surface not ready (dockview not initialized)")
     }

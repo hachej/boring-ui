@@ -372,6 +372,44 @@ describe("SurfaceShell", () => {
     })
   })
 
+  it("injects __closeWorkbenchOnDone into non-file openSurface params when meta.closeWorkbenchOnDone is set", async () => {
+    // Regression: openSurfaceSync's non-file branch (e.g. the agent's
+    // "questions" surface) must still auto-close the workbench on
+    // submit/cancel when uiCommandDispatcher issues it with
+    // meta.closeWorkbenchOnDone (set whenever openSurface is dispatched
+    // while the workbench is closed). Collapsing the open-file paths into
+    // openFileCore must not silently drop this for non-file surfaces.
+    let surface: SurfaceShellApi | undefined
+    const onClose = vi.fn()
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("questions", { title: "Questions", placement: "center", component: () => null })
+    const surfaceResolverRegistry = new SurfaceResolverRegistry()
+    surfaceResolverRegistry.register("questions", {
+      source: "builtin",
+      resolve: (request) => request.kind === "questions"
+        ? { id: "questions", component: "questions", params: {}, score: 0 }
+        : undefined,
+    })
+
+    renderSurface(
+      "workspace-a",
+      { onReady: (api) => { surface = api }, onClose },
+      panelRegistry,
+      surfaceResolverRegistry,
+    )
+    await waitFor(() => expect(surface).toBeDefined())
+
+    act(() => {
+      surface?.openSurface({ kind: "questions", target: "questions", meta: { closeWorkbenchOnDone: true } })
+    })
+
+    expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({
+      id: "questions",
+      component: "questions",
+      params: expect.objectContaining({ __closeWorkbenchOnDone: onClose }),
+    }))
+  })
+
   it("synchronizes filesystem identity when an existing file-backed tab becomes active", async () => {
     const panelRegistry = new PanelRegistry()
     panelRegistry.register("editor", { title: "Editor", placement: "center", component: () => null })
