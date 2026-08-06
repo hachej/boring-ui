@@ -62,7 +62,7 @@ export interface BoringFrontAppLeftActionRegistration {
   id: string
   label: string
   icon?: ComponentType<{ className?: string }>
-  trailing?: ComponentType<{ active: boolean }>,
+  trailing?: ComponentType
   overlay: ComponentType<BoringFrontAppLeftOverlayProps>
   order?: number
   emphasis?: boolean

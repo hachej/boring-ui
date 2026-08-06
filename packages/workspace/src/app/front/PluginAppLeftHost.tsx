@@ -39,8 +39,8 @@ export function usePluginAppLeftActions({
       || a.action.label.localeCompare(b.action.label)
       || a.action.id.localeCompare(b.action.id))
     .map(({ plugin, action }) => {
+      const Icon = action.icon
       const Trailing = action.trailing
-      const isActive = activeOverlay === action.id
       return {
         id: action.id,
         label: action.label,
@@ -52,10 +52,10 @@ export function usePluginAppLeftActions({
         trailing: Trailing ? createElement(
           PluginErrorBoundary,
           { pluginId: plugin.id, contributionKind: "app-left-action", contributionId: `${action.id}:trailing` },
-          createElement(Trailing, { active: isActive }),
+          createElement(Trailing),
         ) : undefined,
         emphasis: action.emphasis,
-        active: isActive,
+        active: activeOverlay === action.id,
         onClick: () => {
           setActiveOverlay((current) => current === action.id ? null : action.id)
         },
