@@ -38,11 +38,15 @@ export function RuntimeNoticeMessages({
   notices,
   onDismiss,
   renderAction,
+  historyEmpty,
 }: {
   notices: PanelNotice[]
   onDismiss: (id: string) => void
   /** Host-supplied recovery action for a notice, keyed off its error code. */
   renderAction?: (notice: PanelNotice) => ReactNode
+  /** True when the transcript has no messages; gates terminal-error framing
+   * in RuntimeNotices (see terminalChatErrors.ts). */
+  historyEmpty?: boolean
 }) {
   const visible = notices.filter((notice) =>
     notice.level === 'error' ||
@@ -59,6 +63,7 @@ export function RuntimeNoticeMessages({
       notices={visible}
       onDismiss={onDismiss}
       renderAction={renderAction}
+      historyEmpty={historyEmpty}
       className="mx-auto w-full max-w-3xl px-0 py-0"
     />
   )
