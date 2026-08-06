@@ -41,6 +41,7 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
         sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
         pruneWhenSessionMissing: true,
         focus: { closeWorkbenchLeftPane: true },
+        composer: { visible: false },
         inbox: {
           kind: "question",
           sourceLabel: "question",
@@ -65,8 +66,11 @@ export function useAskUserAttentionActions(runtime: QuestionsRuntime): void {
       if (!sessionId) return
       const pending = runtime.getPending(sessionId)
       if (!pending || (detail.blocker.target && pending.questionId !== detail.blocker.target)) return
+      if (!runtime.beginQuestionAction(pending)) return
       runtime.setPending(null, pending.sessionId)
-      void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending).catch(() => undefined)
+      void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending)
+        .catch(() => undefined)
+        .finally(() => runtime.finishQuestionAction(pending))
     }
     window.addEventListener(WORKSPACE_ATTENTION_ACTION_EVENT, onAction)
     return () => window.removeEventListener(WORKSPACE_ATTENTION_ACTION_EVENT, onAction)
@@ -82,8 +86,11 @@ export function useAskUserComposerStopCancel(runtime: QuestionsRuntime): void {
       if (!pending || !workspaceComposerStopAppliesToSession(detail, pending.sessionId, {
         fallbackSessionId: runtime.activeSessionId,
       })) return
+      if (!runtime.beginQuestionAction(pending)) return
       runtime.setPending(null, pending.sessionId)
-      void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending).catch(() => undefined)
+      void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending)
+        .catch(() => undefined)
+        .finally(() => runtime.finishQuestionAction(pending))
     }
     window.addEventListener(WORKSPACE_COMPOSER_STOP_EVENT, onStop)
     return () => window.removeEventListener(WORKSPACE_COMPOSER_STOP_EVENT, onStop)

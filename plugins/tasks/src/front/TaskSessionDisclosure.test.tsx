@@ -124,7 +124,7 @@ describe("TaskSessionDisclosure", () => {
     expect(screen.getByText("Exact work")).toBeInTheDocument()
     expect(screen.queryByText("Refreshing…")).not.toBeInTheDocument()
     expect(postJson.mock.calls.filter(([path]) => path.endsWith("/sessions/list"))).toHaveLength(0)
-    expect(postJson.mock.calls.filter(([path]) => path.endsWith("/sessions/handovers"))).toHaveLength(1)
+    expect(postJson.mock.calls.filter(([path]) => path.endsWith("/sessions/handovers"))).toHaveLength(2)
     expect(screen.getAllByRole("listitem")).toHaveLength(10)
     expect(screen.getByRole("button", { name: "Show 1 more" })).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Open Artifact 1" }))

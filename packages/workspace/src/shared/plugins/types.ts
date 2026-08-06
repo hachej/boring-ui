@@ -6,6 +6,7 @@ import type {
   ToolResult,
 } from "../types/agent-tool"
 import type { PaneProps, PanelConfig, WorkspaceSourceProps } from "../types/panel"
+import type { FilesystemId, UiFileResource } from "../types/filesystem"
 
 export type {
   AgentTool,
@@ -29,6 +30,8 @@ export type CatalogRow = {
   leading?: CatalogBadge
   trailing?: CatalogBadge[]
   meta?: string
+  /** Browser-safe resource identity for filesystem catalog rows. */
+  resource?: UiFileResource
 }
 
 export type CatalogFacetValue = { value: string; count: number }
@@ -72,6 +75,8 @@ export interface PluginProviderProps {
   agentTypeId: string
   apiBaseUrl: string
   authHeaders?: Record<string, string>
+  /** Host-controlled request identity signal, including cookie-auth transitions. */
+  authScopeKey?: string
   onAuthError?: (statusCode: number) => void
   apiTimeout?: number
   activeSessionId?: string | null
@@ -89,6 +94,12 @@ export interface CatalogConfig {
   pluginId?: string
 }
 
+export interface FileTreeRevealRequest {
+  path: string
+  seq: number
+  filesystem?: FilesystemId
+}
+
 export interface LeftTabParams {
   rootDir?: string
   query?: string
@@ -97,7 +108,7 @@ export interface LeftTabParams {
   chromeless?: boolean
   /** Optional DOM target for left-tab toolbar actions owned by the pane. */
   chromeActionsElement?: Element | null
-  revealFileTreeRequest?: { path: string; seq: number } | null
+  revealFileTreeRequest?: FileTreeRevealRequest | null
 }
 
 export type LeftTabComponent = ComponentType<WorkspaceSourceProps<LeftTabParams>>

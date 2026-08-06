@@ -114,6 +114,7 @@ export interface RemotePiSessionDebugState {
     streamingMessageCount: 0 | 1
   }
   disposed: boolean
+  suspended: boolean
   generation: number
   streamRunId: number
   reconnectAttempt: number
@@ -136,6 +137,7 @@ export class RemotePiSession {
   private streamRunId = 0
   private reconnectAttempt = 0
   private started = false
+  private suspended = false
   private disposed = false
   private streamAbortController?: AbortController
   private reconnectTimer?: ReconnectTimer
@@ -189,6 +191,7 @@ export class RemotePiSession {
         streamingMessageCount: state.streamingMessage ? 1 : 0,
       },
       disposed: this.disposed,
+      suspended: this.suspended,
       generation: this.generation,
       streamRunId: this.streamRunId,
       reconnectAttempt: this.reconnectAttempt,
@@ -202,7 +205,7 @@ export class RemotePiSession {
   }
 
   start(cursor?: number): Promise<void> {
-    if (this.disposed || this.started) return Promise.resolve()
+    if (this.disposed || this.suspended || this.started) return Promise.resolve()
     this.started = true
     const generation = this.generation
     if (cursor === undefined) {
@@ -218,8 +221,8 @@ export class RemotePiSession {
     if (!this.disposed) {
       this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     }
-    if (!this.started) await this.start(this.store.getState().lastSeq)
-    else this.ensureReconnectScheduled()
+    if (!this.started && !this.suspended) await this.start(this.store.getState().lastSeq)
+    else if (!this.suspended) this.ensureReconnectScheduled()
     try {
       const receipt = await this.postCommand('/prompt', payload, PromptReceiptSchema)
       return receipt
@@ -233,8 +236,8 @@ export class RemotePiSession {
     if (!this.disposed) {
       this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     }
-    if (!this.started) await this.start(this.store.getState().lastSeq)
-    else this.ensureReconnectScheduled()
+    if (!this.started && !this.suspended) await this.start(this.store.getState().lastSeq)
+    else if (!this.suspended) this.ensureReconnectScheduled()
     try {
       const receipt = await this.postCommand('/followup', payload, FollowUpReceiptSchema)
       return receipt
@@ -264,6 +267,30 @@ export class RemotePiSession {
     return receipt
   }
 
+  suspendStream(): void {
+    if (this.disposed || this.suspended) return
+    this.suspended = true
+    this.started = false
+    this.streamRunId += 1
+    this.clearReconnectTimer()
+    this.abortEventStream()
+    this.store.dispatch({ type: 'connection-state', state: 'suspended' }, { flush: true })
+  }
+
+  resumeStream(): void {
+    if (this.disposed || (!this.suspended && this.started)) return
+    this.suspended = false
+    this.started = true
+    const generation = this.generation
+    const state = this.store.getState()
+    if (!state.hydrated) {
+      void this.hydrateAndConnect(generation)
+      return
+    }
+    this.store.dispatch({ type: 'connection-state', state: 'connecting' }, { flush: true })
+    void this.connectEvents(state.lastSeq, generation)
+  }
+
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
@@ -278,16 +305,17 @@ export class RemotePiSession {
   }
 
   private async hydrateAndConnect(generation: number, options: { allowSeqRewind?: boolean } = {}): Promise<void> {
-    if (!this.isGenerationActive(generation)) return
+    const hydrationRunId = this.streamRunId
+    if (!this.isHydrationActive(generation, hydrationRunId)) return
     this.clearReconnectTimer()
     this.abortEventStream()
     this.store.dispatch({ type: 'connection-state', state: this.store.getState().hydrated ? 'reconnecting' : 'connecting' }, { flush: true })
 
     try {
       const headers = await this.requestHeaders()
-      if (!this.isGenerationActive(generation)) return
+      if (!this.isHydrationActive(generation, hydrationRunId)) return
       const responseBody = await this.fetchJson(this.stateUrl(), { method: 'GET', headers })
-      if (!this.isGenerationActive(generation)) return
+      if (!this.isHydrationActive(generation, hydrationRunId)) return
       const raw = addressedSnapshot(responseBody)
 
       this.recordLargeStateWarning(raw)
@@ -298,18 +326,18 @@ export class RemotePiSession {
       }
 
       const snapshot = PiChatSnapshotSchema.parse(raw)
-      if (!this.isGenerationActive(generation)) return
+      if (!this.isHydrationActive(generation, hydrationRunId)) return
       this.store.dispatch({ type: 'hydrate', snapshot, allowSeqRewind: options?.allowSeqRewind }, { flush: true })
       this.connectEvents(snapshot.seq, generation)
     } catch (error) {
-      if (!this.isGenerationActive(generation) || isAbortError(error)) return
+      if (!this.isHydrationActive(generation, hydrationRunId) || isAbortError(error)) return
       this.dispatchProtocolError(errorMessage(error, 'Failed to hydrate Pi chat session state.'))
       this.scheduleReconnect(generation)
     }
   }
 
   private connectEvents(cursor: number, generation: number): Promise<void> {
-    if (!this.isGenerationActive(generation)) return Promise.resolve()
+    if (!this.isStreamLifecycleActive(generation)) return Promise.resolve()
     this.clearReconnectTimer()
     this.abortEventStream()
     const runId = ++this.streamRunId
@@ -446,14 +474,14 @@ export class RemotePiSession {
   }
 
   private rehydrateAfterStreamReset(generation: number, options: { allowSeqRewind?: boolean } = {}): void {
-    if (!this.isGenerationActive(generation)) return
+    if (!this.isStreamLifecycleActive(generation)) return
     this.streamRunId += 1
     this.abortEventStream()
     void this.hydrateAndConnect(generation, options)
   }
 
   private ensureReconnectScheduled(): void {
-    if (!this.isGenerationActive(this.generation)) return
+    if (!this.isStreamLifecycleActive(this.generation)) return
     const state = this.store.getState()
     if (state.connection.state === 'connected' || state.connection.state === 'connecting') return
     if (this.reconnectTimer !== undefined) return
@@ -461,7 +489,7 @@ export class RemotePiSession {
   }
 
   private scheduleReconnect(generation: number): void {
-    if (!this.isGenerationActive(generation)) return
+    if (!this.isStreamLifecycleActive(generation)) return
     this.clearReconnectTimer()
     this.store.dispatch({ type: 'connection-state', state: 'reconnecting' }, { flush: true })
     const attempt = this.reconnectAttempt++
@@ -475,7 +503,7 @@ export class RemotePiSession {
       clearTimeoutFn: this.clearTimeoutFn,
       reconnect: () => {
         this.reconnectTimer = undefined
-        if (!this.isGenerationActive(generation)) return
+        if (!this.isStreamLifecycleActive(generation)) return
         const state = this.store.getState()
         if (state.hydrated) this.connectEvents(state.lastSeq, generation)
         else void this.hydrateAndConnect(generation)
@@ -647,8 +675,16 @@ export class RemotePiSession {
     return !this.disposed && generation === this.generation
   }
 
+  private isStreamLifecycleActive(generation: number): boolean {
+    return !this.suspended && this.isGenerationActive(generation)
+  }
+
+  private isHydrationActive(generation: number, runId: number): boolean {
+    return this.isStreamLifecycleActive(generation) && runId === this.streamRunId
+  }
+
   private isStreamActive(generation: number, runId: number): boolean {
-    return this.isGenerationActive(generation) && runId === this.streamRunId
+    return this.isStreamLifecycleActive(generation) && runId === this.streamRunId
   }
 }
 

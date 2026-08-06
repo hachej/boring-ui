@@ -27,7 +27,7 @@ import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginT
 import { useViewportWidth } from "../../front/layout/useViewportWidth"
 import { captureWorkspaceFrontPlugins } from "./workspaceBuiltinPlugins"
 import type { FilesystemId } from "../../shared/types/filesystem"
-import { UI_COMMAND_EVENT, dispatchUiCommand, startUiCommandStream } from "../../front/bridge"
+import { dispatchUiCommand, registerUiCommandConsumer, startUiCommandStream } from "../../front/bridge"
 import type { CommandPaletteSessionItem } from "../../front/components/CommandPalette"
 import type { CommandResult, DispatchContext, FileTreeBridge, Unsubscribe } from "../../front/bridge"
 import { readStoredBoolean, readStoredNumber, writeStoredBoolean, writeStoredNumber } from "../../front/store/localStorageValues"
@@ -678,6 +678,7 @@ export function WorkspaceAgentFront<
   capabilities,
   apiBaseUrl,
   authHeaders,
+  authScopeKey,
   apiTimeout,
   defaultTheme,
   onThemeChange,
@@ -686,6 +687,7 @@ export function WorkspaceAgentFront<
   bridgeEndpoint,
   fullPageBasePath,
   onAuthError,
+  onOpenFile,
   sessions,
   activeSessionId,
   activeSessionAgentTypeId,
@@ -937,18 +939,41 @@ export function WorkspaceAgentFront<
     && !remoteSessionApi.error
     && !remoteSessionsArePreviousWorkspace
   const remoteSessionsPending = remoteSessionHookEnabled && !remoteSessionsAvailable
+  // Latest sessions/refresh read inside the activity stream's onActivity
+  // closure without resubscribing the SSE connection on every list change.
+  const remoteSessionsActivityRef = useRef({
+    sessions: remoteSessionApi.sessions,
+    refresh: remoteSessionApi.refresh,
+    selectedAgentTypeId,
+  })
+  remoteSessionsActivityRef.current = {
+    sessions: remoteSessionApi.sessions,
+    refresh: remoteSessionApi.refresh,
+    selectedAgentTypeId,
+  }
   useEffect(() => {
     if (!remoteSessionsAvailable) return
     return startSessionActivityStream({
       endpoint: apiBaseUrl,
       workspaceId,
-      onActivity: ({ ref, status }) => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
-        detail: {
-          sessionId: ref.sessionId,
-          agentTypeId: ref.agentTypeId,
-          working: status === "running" || status === "aborting",
-        },
-      })),
+      onActivity: ({ ref, status }) => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: {
+            sessionId: ref.sessionId,
+            agentTypeId: ref.agentTypeId,
+            working: status === "running" || status === "aborting",
+          },
+        }))
+        // A session created out-of-band (e.g. an external chat entrypoint)
+        // surfaces here as activity before this hook's own list has ever
+        // fetched it. Reconcile the list immediately instead of waiting on
+        // a manual refresh or remount (gh-778).
+        if (status !== "running" && status !== "aborting") return
+        const current = remoteSessionsActivityRef.current
+        if (ref.agentTypeId !== current.selectedAgentTypeId) return
+        const known = current.sessions.some((session) => session.id === ref.sessionId)
+        if (!known) void current.refresh?.({ background: true })
+      },
     })
   }, [apiBaseUrl, remoteSessionsAvailable, sessionSourceIdentity, workspaceId])
   useEffect(() => {
@@ -1293,17 +1318,25 @@ export function WorkspaceAgentFront<
     shellPersistenceEnabled,
   ) as [AppLeftOverlayId, (next: AppLeftOverlayId | ((previous: AppLeftOverlayId) => AppLeftOverlayId)) => void]
   const [leftOverlayParams, setLeftOverlayParams] = useState<Readonly<Record<string, string>> | undefined>()
+  const leftOverlayParamsOwnerRef = useRef<AppLeftOverlayId>(null)
   const pluginOverlayActionIds = useMemo(() => pluginAppLeftActionIds(capturedPlugins), [capturedPlugins])
   useEffect(() => {
     const onOpenOverlay = (event: Event) => {
       const request = appLeftOverlayRequestFromEvent(event)
       if (!request || !pluginOverlayActionIds.has(request.id)) return
+      leftOverlayParamsOwnerRef.current = request.id
       setLeftOverlayParams(request.params)
       setLeftOverlay(request.id)
     }
     window.addEventListener(WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, onOpenOverlay)
     return () => window.removeEventListener(WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, onOpenOverlay)
   }, [pluginOverlayActionIds, setLeftOverlay])
+  useEffect(() => {
+    if (leftOverlayParamsOwnerRef.current === leftOverlay) return
+    leftOverlayParamsOwnerRef.current = null
+    setLeftOverlayParams(undefined)
+  }, [leftOverlay])
+  const activeLeftOverlayParams = leftOverlayParamsOwnerRef.current === leftOverlay ? leftOverlayParams : undefined
   useEffect(() => {
     const customOverlayActive = Boolean(leftOverlay && appLeftOverlayActions?.some((action) => action.id === leftOverlay))
     if (
@@ -1350,9 +1383,10 @@ export function WorkspaceAgentFront<
   const surfaceRef = useRef<{ key: string; api: SurfaceShellApi } | null>(null)
   // Ops issued (e.g. agent openFile/openPanel) while the SurfaceShell isn't
   // mounted yet — collapsed surface or warmup overlay still showing. The
-  // dispatcher parks them here instead of dropping after its retry budget;
+  // dispatcher parks them instead of dropping after its retry budget;
   // handleSurfaceReady drains them once the surface mounts.
   const pendingSurfaceOpsRef = useRef<Array<(api: SurfaceShellApi) => void>>([])
+  const pendingSurfaceOpsKeyRef = useRef(resolvedSurfaceStorageKey)
   // Keep the latest key available to stable command callbacks. We tag the
   // SurfaceShell handle instead of clearing it in an effect: clearing after
   // mount races with Dockview's onReady on the initial render.
@@ -1375,9 +1409,13 @@ export function WorkspaceAgentFront<
 
   useEffect(() => {
     setSurfaceReady(false)
-    // Drop any ops parked for the previous workspace's surface so we never
-    // replay them against a freshly-swapped workspace.
-    pendingSurfaceOpsRef.current = []
+    // Drop parked operations only when this mounted shell actually changes
+    // workspace. Clearing during the initial effect can erase a first-click
+    // command queued by child plugin effects before SurfaceShell is ready.
+    if (pendingSurfaceOpsKeyRef.current !== resolvedSurfaceStorageKey) {
+      pendingSurfaceOpsRef.current = []
+      pendingSurfaceOpsKeyRef.current = resolvedSurfaceStorageKey
+    }
   }, [resolvedSurfaceStorageKey])
 
   useEffect(() => {
@@ -1436,6 +1474,11 @@ export function WorkspaceAgentFront<
   }, [resolvedSurfaceStorageKey])
 
   const enqueueSurfaceOp = useCallback((run: (api: SurfaceShellApi) => void) => {
+    const ready = surfaceRef.current
+    if (ready?.key === surfaceKeyRef.current) {
+      run(ready.api)
+      return
+    }
     pendingSurfaceOpsRef.current.push(run)
   }, [])
 
@@ -1549,7 +1592,7 @@ export function WorkspaceAgentFront<
     const renderers: ToolRendererOverrides = {}
     for (const plugin of capturedPlugins) {
       for (const renderer of plugin.registrations.toolRenderers) {
-        renderers[renderer.id] = renderer.render as ToolRendererOverrides[string]
+        renderers[renderer.id] = Object.assign(renderer.render, { presentation: renderer.presentation }) as ToolRendererOverrides[string]
       }
     }
     return renderers
@@ -1970,17 +2013,11 @@ export function WorkspaceAgentFront<
     onWorkspaceWarmupStatusChange?.(status)
   }, [onWorkspaceWarmupStatusChange, workspaceId])
 
-  useEffect(() => {
-    // postUiCommand also emits a browser CustomEvent so app/plugin bundles
-    // loaded through different module graphs can still reach this shell.
-    const handler = (event: Event) => {
-      const command = (event as CustomEvent).detail
-      if (!command || typeof command !== "object") return
-      dispatchUiCommand(command, surfaceDispatch)
-    }
-    globalThis.addEventListener?.(UI_COMMAND_EVENT, handler)
-    return () => globalThis.removeEventListener?.(UI_COMMAND_EVENT, handler)
-  }, [surfaceDispatch])
+  const uiCommandSurfaceDispatchRef = useRef(surfaceDispatch)
+  uiCommandSurfaceDispatchRef.current = surfaceDispatch
+  useEffect(() => registerUiCommandConsumer((command) => {
+    dispatchUiCommand(command, uiCommandSurfaceDispatchRef.current)
+  }), [])
 
   useEffect(() => {
     if (remoteSessionsPending) return
@@ -2231,34 +2268,55 @@ export function WorkspaceAgentFront<
       : undefined
   ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
   const shellSessionCreateSequenceRef = useRef(0)
-  const createShellChatSession = useCallback(async (options?: { title?: string }) => {
-    const previousActiveId = effectiveActiveSessionId
-    const previousAgentTypeId = effectiveActiveSessionAgentTypeId ?? undefined
+  const quickSessionCreateSequenceRef = useRef(0)
+  const effectiveActiveSessionRef = useRef({ sessionId: effectiveActiveSessionId, agentTypeId: effectiveActiveSessionAgentTypeId ?? undefined })
+  effectiveActiveSessionRef.current = { sessionId: effectiveActiveSessionId, agentTypeId: effectiveActiveSessionAgentTypeId ?? undefined }
+  const createAddressedSessionWithoutActivating = useCallback(async (
+    dedupeKey: string,
+    options?: { title?: string; agentTypeId?: string },
+  ) => {
+    const previous = effectiveActiveSessionRef.current
     try {
-      shellSessionCreateSequenceRef.current += 1
-      const session = await coordinateRemoteCreate(`shell:${shellSessionCreateSequenceRef.current}`, {
-        ...options,
-        agentTypeId: effectiveAgentTypeId,
-      })
+      const session = await coordinateRemoteCreate(dedupeKey, options)
       const sessionId = createdSessionId(session)
       if (!sessionId) return { success: false as const, reason: "create-failed" as const, message: "Chat session creation did not return a canonical session." }
-      const createdAgentTypeId = typeof (session as { agentTypeId?: unknown }).agentTypeId === "string"
-        ? (session as { agentTypeId: string }).agentTypeId
-        : effectiveAgentTypeId
-      if (previousActiveId && previousActiveId !== sessionId) rawSwitch(previousActiveId, previousAgentTypeId)
+      const createdAgentTypeId = (session as { agentTypeId?: unknown }).agentTypeId
+      if (typeof createdAgentTypeId !== "string") {
+        if (previous.sessionId) rawSwitch(previous.sessionId, previous.agentTypeId)
+        return { success: false as const, reason: "create-failed" as const, message: "Chat session creation did not return an addressed Agent owner." }
+      }
+      const activeAfterCreate = effectiveActiveSessionRef.current
+      const selectionStillAtCreationBoundary = (
+        activeAfterCreate.sessionId === sessionId && activeAfterCreate.agentTypeId === createdAgentTypeId
+      ) || (
+        activeAfterCreate.sessionId === previous.sessionId && activeAfterCreate.agentTypeId === previous.agentTypeId
+      )
+      if (selectionStillAtCreationBoundary && previous.sessionId && (previous.sessionId !== sessionId || previous.agentTypeId !== createdAgentTypeId)) {
+        rawSwitch(previous.sessionId, previous.agentTypeId)
+      }
       return { success: true as const, ref: { agentTypeId: createdAgentTypeId, sessionId } }
     } catch (error) {
       return { success: false as const, reason: "create-failed" as const, message: error instanceof Error ? error.message : "Chat session creation failed." }
     }
-  }, [effectiveAgentTypeId, coordinateRemoteCreate, effectiveActiveSessionAgentTypeId, effectiveActiveSessionId, rawSwitch])
+  }, [coordinateRemoteCreate, rawSwitch])
+  const createShellChatSession = useCallback(async (options?: { title?: string }) => {
+    shellSessionCreateSequenceRef.current += 1
+    return await createAddressedSessionWithoutActivating(`shell:${shellSessionCreateSequenceRef.current}`, {
+      ...options,
+      agentTypeId: effectiveAgentTypeId,
+    })
+  }, [createAddressedSessionWithoutActivating, effectiveAgentTypeId])
   const deleteShellChatSession = useCallback(async (ref: { agentTypeId: string; sessionId: string }) => {
     try {
+      if (!sessionSourceIsCurrent()) {
+        return { success: false as const, reason: "open-failed" as const, message: "Chat session source changed before deletion." }
+      }
       await resolvedDelete(ref.sessionId, ref.agentTypeId)
       return { success: true as const }
     } catch (error) {
       return { success: false as const, reason: "open-failed" as const, message: error instanceof Error ? error.message : "Chat session deletion failed." }
     }
-  }, [resolvedDelete])
+  }, [resolvedDelete, sessionSourceIsCurrent])
   const shellCapabilitiesHost = useWorkspaceShellCapabilitiesHost({
     appLeftPaneCollapsed,
     workspaceId,
@@ -2278,26 +2336,18 @@ export function WorkspaceAgentFront<
   })
   const createChatSessionInPopover = useCallback((ownerAgentTypeId = fleetModeEnabled ? effectiveAgentTypeId : undefined) => {
     setLeftOverlay(null)
-    const previousActiveRef = providerActiveSessionRef
-    const created = resolvedCreate("quick", ownerAgentTypeId)
-    void created.then((session) => {
-      const id = createdSessionId(session)
-      if (!id) return
-      shellCapabilitiesHost.shellCapabilities.openDetachedChat({ agentTypeId: ownerAgentTypeId ?? effectiveAgentTypeId, sessionId: id }, {
+    quickSessionCreateSequenceRef.current += 1
+    void createAddressedSessionWithoutActivating(`quick:${quickSessionCreateSequenceRef.current}`, {
+      title: defaultSessionTitle,
+      agentTypeId: ownerAgentTypeId ?? effectiveAgentTypeId,
+    }).then((result) => {
+      if (!result.success) return
+      shellCapabilitiesHost.shellCapabilities.openDetachedChat(result.ref, {
         title: defaultSessionTitle,
         composingEnabled: true,
       })
-      // Quick chat is an auxiliary popover: creating it must not steal the
-      // selected/full chat from the main stage or left session list.
-      if (previousActiveRef.sessionId !== id || previousActiveRef.agentTypeId !== (ownerAgentTypeId ?? effectiveAgentTypeId)) {
-        rawSwitch(previousActiveRef.sessionId, previousActiveRef.agentTypeId)
-      }
-    }).catch(() => {
-      // Creation errors are surfaced by the session API/chat layer; the menu
-      // should not leave a stale detached chat behind.
     })
-    return created
-  }, [effectiveAgentTypeId, defaultSessionTitle, fleetModeEnabled, providerActiveSessionRef, rawSwitch, resolvedCreate, shellCapabilitiesHost.shellCapabilities])
+  }, [createAddressedSessionWithoutActivating, defaultSessionTitle, effectiveAgentTypeId, fleetModeEnabled, shellCapabilitiesHost.shellCapabilities])
   const providerPanels = baseProviderPanels
   const pluginAppLeftActions = usePluginAppLeftActions({ plugins: capturedPlugins, activeOverlay: leftOverlay, setActiveOverlay: setLeftOverlay })
   const chatTopOverlayActions = useMemo(() => {
@@ -2368,7 +2418,7 @@ export function WorkspaceAgentFront<
     plugins: capturedPlugins,
     activeOverlay: leftOverlay,
     onClose: () => setLeftOverlay(null),
-    params: leftOverlayParams,
+    params: activeLeftOverlayParams,
     headerInsetStart: mobileShellActive,
     headerInsetEnd: !surfaceOpen,
   })
@@ -2573,6 +2623,7 @@ export function WorkspaceAgentFront<
         capabilities={capabilities}
         apiBaseUrl={apiBaseUrl}
         authHeaders={resolvedAuthHeaders}
+        authScopeKey={authScopeKey}
         apiTimeout={apiTimeout}
         activeSessionId={providerActiveSessionId}
         activeSessionAgentTypeId={providerActiveSessionRef.agentTypeId ?? selectedAgentTypeId}
@@ -2589,6 +2640,7 @@ export function WorkspaceAgentFront<
         debug={mobileShellActive ? false : debug}
         bridgeEndpoint={null}
         onAuthError={onAuthError}
+        onOpenFile={onOpenFile}
         frontPluginHotReload={resolvedFrontPluginHotReload}
         fullPageBasePath={fullPageBasePath}
         commandPaletteSessionSearch={commandPaletteSessionSearch}

@@ -2,5 +2,7 @@
 # Agent edits land here so they don't dirty committed fixture content.
 # Delete the directory to reset; vite.config.ts will re-seed on next boot.
 workspace/
+# Separate read-only binding used by multi-filesystem playground tests.
+e2e/fixtures/company-context/
 # Playwright/dev Pi session transcripts are mutable host/runtime data.
 sessions/

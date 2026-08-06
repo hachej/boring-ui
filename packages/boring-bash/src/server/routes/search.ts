@@ -1,14 +1,38 @@
 import type { FastifyInstance } from 'fastify'
 import type { FileSearch } from '@hachej/boring-agent/shared'
+import type { RuntimeFilesystemBinding } from '../../agent/runtime/types'
 import { ERROR_CODE_VALIDATION_ERROR, ERROR_CODE_INTERNAL } from './errorCodes'
 
 const MAX_GLOB_LENGTH = 256
 const DEFAULT_LIMIT = 500
 const MAX_LIMIT = 5_000
 
+export interface FileSearchResource {
+  filesystem: string
+  path: string
+}
+
 export interface SearchRouteOptions {
   fileSearch?: FileSearch
   getFileSearch?: (request: import('fastify').FastifyRequest) => FileSearch | Promise<FileSearch>
+  filesystemBindings?: RuntimeFilesystemBinding[]
+  getFilesystemBindings?: (request: import('fastify').FastifyRequest) => RuntimeFilesystemBinding[] | undefined | Promise<RuntimeFilesystemBinding[] | undefined>
+}
+
+function interleaveResults(groups: readonly FileSearchResource[][], limit: number): FileSearchResource[] {
+  const results: FileSearchResource[] = []
+  for (let index = 0; results.length < limit; index += 1) {
+    let found = false
+    for (const group of groups) {
+      const result = group[index]
+      if (!result) continue
+      results.push(result)
+      found = true
+      if (results.length === limit) break
+    }
+    if (!found) break
+  }
+  return results
 }
 
 export function searchRoutes(
@@ -20,6 +44,24 @@ export function searchRoutes(
     if (opts.getFileSearch) return await opts.getFileSearch(request)
     if (opts.fileSearch) return opts.fileSearch
     throw new Error('search route requires fileSearch or getFileSearch')
+  }
+
+  async function resolveFilesystemBindings(request: import('fastify').FastifyRequest): Promise<RuntimeFilesystemBinding[]> {
+    if (opts.getFilesystemBindings) return await opts.getFilesystemBindings(request) ?? []
+    return opts.filesystemBindings ?? []
+  }
+
+  // fileSearch must resolve (and lease its request-scoped runtime) before
+  // filesystem bindings are requested — a second resolver competing for the
+  // same runtime before the lease is held would race it. Bundling both
+  // resolutions behind one function makes that order structural: there is no
+  // call site left where a caller could request bindings first.
+  async function resolveSearchContext(
+    request: import('fastify').FastifyRequest,
+  ): Promise<{ fileSearch: FileSearch; bindings: RuntimeFilesystemBinding[] }> {
+    const fileSearch = await resolveFileSearch(request)
+    const bindings = await resolveFilesystemBindings(request)
+    return { fileSearch, bindings }
   }
 
   app.get('/api/v1/files/search', async (request, reply) => {
@@ -56,9 +98,35 @@ export function searchRoutes(
     }
 
     try {
-      const fileSearch = await resolveFileSearch(request)
-      const results = await fileSearch.search(q, limit)
-      return reply.send({ results })
+      const { fileSearch, bindings } = await resolveSearchContext(request)
+      const userResults = (await fileSearch.search(q, limit)).map((path) => ({
+        filesystem: 'user',
+        path,
+      }))
+      const seenFilesystems = new Set<string>(['user'])
+      const effectiveBindings = bindings.filter((binding) => {
+        if (seenFilesystems.has(binding.filesystem)) return false
+        seenFilesystems.add(binding.filesystem)
+        return true
+      })
+      const bindingResults = await Promise.all(effectiveBindings
+        .map(async (binding): Promise<FileSearchResource[]> => {
+          try {
+            const found = await binding.operations.find(
+              { filesystem: binding.filesystem, path: '/' },
+              q,
+              { limit },
+            )
+            return found.paths.map((path) => ({ filesystem: binding.filesystem, path }))
+          } catch {
+            // A request-scoped binding may deny all or part of its projection.
+            // Treat it as invisible instead of exposing authorization details.
+            return []
+          }
+        }))
+      return reply.send({
+        resources: interleaveResults([userResults, ...bindingResults], limit),
+      })
     } catch (err) {
       const statusCode = (err as { statusCode?: unknown })?.statusCode
       const stableCode = (err as { code?: unknown })?.code

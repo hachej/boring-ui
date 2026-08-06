@@ -60,9 +60,29 @@ describe("@hachej/boring-workspace/testing", () => {
     expect(selected).toHaveBeenCalledWith("/selected.ts")
     stop()
 
+    const identityOpened = vi.fn()
+    bridge.subscribe("file:opened", identityOpened)
     await bridge.openFile("/mode.ts", { mode: "view" })
-    const modePanel = bridge.getOpenPanels().find((panel) => panel.id === "file:/mode.ts")
-    expect(modePanel?.params?.mode).toBe("view")
+    const modePanel = bridge.getOpenPanels().find((panel) => panel.id === "file:user:/mode.ts")
+    expect(modePanel?.params).toEqual({ path: "/mode.ts", mode: "view", filesystem: "user" })
+    expect(identityOpened).toHaveBeenCalledWith({
+      path: "/mode.ts",
+      mode: "view",
+      filesystem: "user",
+    })
+    expect(bridge.getActiveFileResource?.()).toEqual({ path: "/mode.ts", filesystem: "user" })
+
+    identityOpened.mockClear()
+    await bridge.openFile("/policy.md", { filesystem: "company_context" })
+    expect(identityOpened).toHaveBeenCalledWith({
+      path: "/policy.md",
+      mode: "edit",
+      filesystem: "company_context",
+    })
+    expect(bridge.getActiveFileResource?.()).toEqual({
+      path: "/policy.md",
+      filesystem: "company_context",
+    })
   })
 
   it("renderPane wires provider tree + fixture-backed data without a real server", async () => {

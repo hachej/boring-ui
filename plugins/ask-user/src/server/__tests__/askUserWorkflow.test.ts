@@ -67,9 +67,11 @@ describe("ask-user full workflow", () => {
     })
     const pending = (await store.getPending("s1"))!
 
-    // A question is published to the Inbox/session attention state. The user
-    // explicitly opens the legacy Questions pane only when they choose to.
-    expect(bridge.commands).toEqual([])
+    // A question is published to Inbox/session attention state. The user
+    // explicitly opens Questions only when they choose to.
+    await vi.waitFor(() => {
+      expect(bridge.commands).toEqual([])
+    })
     await vi.waitFor(async () => {
       const slot = (await bridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]
       expect(slot).toMatchObject({ hint: { questionId: pending.questionId, sessionId: "s1", status: "ready" } })

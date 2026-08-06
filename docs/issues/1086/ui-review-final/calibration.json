@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "ask-user-inline",
+  "candidateRevision": "43bb9fe0671100268ca26d548d42d0da005b740f",
+  "candidateTreeHash": "91f52d3ea01327c85569d7d3df51d0051858dc2bcdedba0d1bd8e4cbd4d7fce1",
+  "score": {
+    "candidate": {
+      "overall": 8,
+      "dimensions": {
+        "hierarchy": 8,
+        "spacingAlignment": 8,
+        "typographyColor": 8,
+        "consistency": 8,
+        "interactionStates": 8,
+        "responsiveAccessibility": 8
+      }
+    }
+  },
+  "confidence": 1,
+  "promptHash": "550b070b117860e3f828268208c9628a16c6d6af7dc5b1ee4fd521df1e644ed0",
+  "rubricHash": "f3d176733eb814330ea99bcef5507c89ed8de4dae800c289135da9266897448e",
+  "manifestHash": "1f03056e50480d1a0499e12c663902f19906aa32f68f64668c56ca737196ea02",
+  "screenshotDigests": [
+    "48fbbce4db16203d2337b172316290f382a02f48bba0699576cd01a8125419dc",
+    "4c6da0d17f598f4b7d4b45cd5e1cdd0d275f908d0ae0631b69e8a2bed31786b3",
+    "571a5a92bef6b25b372e8b424144a012b36da12f7c381e915cec71eb160c6c78",
+    "61d40d1adff6a6ff1e3456000fc4b84673112f44a788f7d976a8e2717d73af76",
+    "c0869b79b29ba791bf00f5848c69df88cee6c5a1fe47dc2e449952381cb40295",
+    "cdd7f906624726682fd9813a052cff664b3ade95cb6a5781fcab635e554616c4"
+  ],
+  "resolvedModel": "fixture",
+  "ownerDisposition": "pending"
+}

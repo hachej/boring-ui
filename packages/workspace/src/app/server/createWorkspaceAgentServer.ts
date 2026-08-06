@@ -34,6 +34,7 @@ import {
   type ProvisionWorkspaceRuntimeOptions,
   type RuntimeBundle,
   type RuntimeEnvContribution,
+  type RuntimeFilesystemBinding,
   type RuntimeModeAdapter,
   type RuntimeModeId,
   type VerifiedAgentScopeClaim,
@@ -149,6 +150,16 @@ export interface WorkspaceAgentCreateOptions {
   runtimeProvisioning?: WorkspaceProvisioningResult
   telemetry?: TelemetrySink
   metering?: AgentMeteringSink
+  getFilesystemBindings?: (ctx: {
+    request?: FastifyRequest
+    workspaceId: string
+    workspaceRoot: string
+    sessionId?: string
+    userId?: string
+    userEmail?: string
+    userEmailVerified?: boolean
+    requestId?: string
+  }) => RuntimeFilesystemBinding[] | undefined | Promise<RuntimeFilesystemBinding[] | undefined>
   resolvePiSessionRequestContext?: WorkspacePiSessionRequestContextResolver
   runtimeEnvContributions?: RuntimeEnvContribution[]
   runtimeProvisioner?: (ctx: {
@@ -1607,7 +1618,14 @@ export async function createWorkspaceAgentServer(
             }, runtimeEnvContributions, opts.telemetry)
           : undefined,
         provisionRuntime: async ({ runtimeBundle }) => await runRuntimeProvisioning(runtimeBundle),
-        resolveFilesystemBindings: async () => undefined,
+        resolveFilesystemBindings: opts.getFilesystemBindings
+          ? async ({ requestId }) => await opts.getFilesystemBindings?.({
+              workspaceId: verifiedClaim.workspaceScopeId,
+              workspaceRoot,
+              userId: verifiedClaim.authSubjectId,
+              requestId,
+            })
+          : undefined,
       }
     },
     async resolveAuthorizedAgentRuntimeScope({
@@ -1807,6 +1825,15 @@ export async function createWorkspaceAgentServer(
         ],
         includeFilesystemTools: opts.disableDefaultFileTools !== true,
         includeUploadTools: true,
+        getFilesystemBindings: opts.getFilesystemBindings
+          ? async ({ scope, sessionId, requestId }) => await opts.getFilesystemBindings?.({
+              workspaceId: scope.workspaceScopeId,
+              workspaceRoot,
+              sessionId,
+              userId: scope.authSubjectId,
+              requestId,
+            })
+          : undefined,
         ...(intent.operation === "reload"
           ? {
               async applyReload(input?: { runtimeBundle: RuntimeProvisionerContext["runtimeBundle"] }) {

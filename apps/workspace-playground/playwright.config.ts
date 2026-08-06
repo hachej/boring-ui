@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 
 const APP_DIR = dirname(fileURLToPath(import.meta.url))
 const E2E_WORKSPACE_ROOT = resolve(process.env.BORING_AGENT_WORKSPACE_ROOT || resolve(APP_DIR, "e2e/fixtures/workspace"))
+const E2E_COMPANY_CONTEXT_ROOT = resolve(process.env.BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT || resolve(APP_DIR, "e2e/fixtures/company-context"))
 const E2E_SESSION_ROOT = resolve(process.env.BORING_AGENT_SESSION_ROOT || resolve(APP_DIR, "e2e/fixtures/sessions"))
 const VITE_PORT = Number(process.env.PLAYWRIGHT_VITE_PORT) || 5380
 const AGENT_API_PORT = Number(process.env.PLAYWRIGHT_AGENT_API_PORT) || 5390
@@ -53,8 +54,10 @@ export default defineConfig({
       `PORT=${VITE_PORT}`,
       `AGENT_API_PORT=${AGENT_API_PORT}`,
       `BORING_AGENT_WORKSPACE_ROOT=${shell(E2E_WORKSPACE_ROOT)}`,
+      `BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT=${shell(E2E_COMPANY_CONTEXT_ROOT)}`,
       `BORING_AGENT_SESSION_ROOT=${shell(E2E_SESSION_ROOT)}`,
       `BORING_PLAYGROUND_DIST_ONLY=${shell(process.env.BORING_PLAYGROUND_DIST_ONLY || "")}`,
+      "BORING_WORKSPACE_PLAYGROUND_MULTI_FS=1",
       "BORING_AGENT_E2E_SCRIPTED_PI=1",
       // Scripted Pi is hermetic and does not need the local bwrap runtime.
       "BORING_AGENT_MODE=direct",

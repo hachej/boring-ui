@@ -260,6 +260,8 @@ function TimelineReasoningPart({ item, showThoughts }: { item: Extract<Renderabl
 function PlainToolCard({ part, renderers }: { part: Extract<BoringChatPart, { type: 'tool-call' }>; renderers: ToolRendererOverrides }) {
   const toolPart = toToolPart(part)
   if (!toolPart) return null
+  // Custom renderers own both pending and resolved presentation. Inline
+  // metadata changes placement, not whether the override remains authoritative.
   const { renderer, part: resolved, resolution } = resolveToolRendererForPart(toolPart, renderers)
   return (
     <div

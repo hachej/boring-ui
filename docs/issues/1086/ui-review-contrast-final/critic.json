@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "mode": "candidate",
+  "confidence": 1,
+  "candidate": {
+    "overall": 8,
+    "dimensions": {
+      "hierarchy": 8,
+      "spacingAlignment": 8,
+      "typographyColor": 8,
+      "consistency": 8,
+      "interactionStates": 8,
+      "responsiveAccessibility": 8
+    }
+  },
+  "visualFindings": [
+    {
+      "stateIds": [
+        "ask-user-inline-contrast-final:ask-user-inline:candidate:desktop:pending-light:d531680b52ab"
+      ],
+      "evidence": "Deterministic fixture critic.",
+      "severity": "note"
+    }
+  ],
+  "topFixes": []
+}

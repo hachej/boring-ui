@@ -8,8 +8,15 @@ import {
 import { postUiCommand } from "../../../front/bridge"
 import { useDataClient, useFileList } from "./data"
 import { DataProvider } from "./data/DataProvider"
+import { FilesystemRootsBinding } from "./FilesystemRootsBinding"
 import { useCatalogRegistry } from "../../../front/registry"
-import { FileTreePane, preloadFileTreeComponent } from "./file-tree/FileTreeView"
+import {
+  FileTreePane,
+  preloadFileTreeComponent,
+  type FileTreePaneParams,
+} from "./file-tree/FileTreeView"
+import { useFileTreeRoots } from "./file-tree/FileTreeRootsProvider"
+import type { WorkspaceSourceProps } from "../../../shared/types/panel"
 import { FilesystemFilePanelBinding } from "./filePanelBinding"
 import { FilesystemAgentFileBridge } from "./agentFileBridge"
 import { CodeEditorPane } from "./code-editor/CodeEditorPane"
@@ -45,14 +52,15 @@ export {
 } from "./agentFileBridge"
 export type { UseFilePaneOptions, UseFilePaneReturn } from "./useFilePane"
 export type { UseAutoOpenAgentFilesOptions } from "./agentFileBridge"
-
 function FilesystemDataProvider({
   apiBaseUrl,
   authHeaders,
+  authScopeKey,
   onAuthError,
   apiTimeout,
   children,
 }: PluginProviderProps) {
+  const headersKey = JSON.stringify(Object.entries(authHeaders ?? {}).sort(([left], [right]) => left.localeCompare(right)))
   return createElement(
     DataProvider,
     {
@@ -60,7 +68,10 @@ function FilesystemDataProvider({
       authHeaders,
       onAuthError,
       timeout: apiTimeout,
-      children,
+      children: createElement(FilesystemRootsBinding, {
+        requestKey: `${apiBaseUrl}\n${headersKey}\n${authScopeKey ?? ""}`,
+        children,
+      }),
     },
   )
 }
@@ -73,7 +84,16 @@ function FilesystemTreePreloadBinding() {
   return null
 }
 
-
+export function FilesystemFileTreeSource(props: WorkspaceSourceProps<FileTreePaneParams>) {
+  const roots = useFileTreeRoots()
+  return createElement(FileTreePane, {
+    ...props,
+    params: {
+      ...props.params,
+      roots: roots ? [...roots] : undefined,
+    },
+  })
+}
 
 function FilesystemCatalogBinding() {
   const client = useDataClient()
@@ -85,8 +105,8 @@ function FilesystemCatalogBinding() {
 
     const catalog = createFilesCatalog({
       client,
-      onSelect: (path) => {
-        postUiCommand({ kind: "openFile", params: { path } })
+      onSelect: ({ filesystem, path }) => {
+        postUiCommand({ kind: "openFile", params: { filesystem, path } })
       },
     })
 
@@ -114,7 +134,7 @@ const filesystemFront: BoringFrontSetup = (api) => {
   api.registerWorkspaceSource({
     id: FILES_LEFT_TAB_ID,
     label: "Files",
-    component: FileTreePane,
+    component: FilesystemFileTreeSource,
     source: "builtin",
     icon: FolderTree,
   })

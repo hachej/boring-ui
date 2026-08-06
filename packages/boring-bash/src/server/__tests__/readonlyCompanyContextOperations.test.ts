@@ -61,6 +61,10 @@ describe("createReadonlyProjectionOperations", () => {
         "/company/hr/policy.md",
         "/company/legal/contract.md",
       ] });
+    await expect(ops.find(
+      { filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, path: "/company" },
+      "*[Pp][Oo][Ll][Ii][Cc][Yy]*",
+    )).resolves.toMatchObject({ paths: ["/company/hr/policy.md"] });
 
     const grep = await ops.grep({ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, path: "/company" }, "policy");
     expect(grep.matches.map((match) => match.path)).toContain("/company/hr/policy.md");
