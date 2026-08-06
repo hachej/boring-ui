@@ -6,8 +6,13 @@ export type QuestionsStore = {
   getPending(sessionId: string | null | undefined): AskUserQuestion | null
   setPending(question: AskUserQuestion | null, sessionId?: string | null): void
   getPendingHints(): PendingQuestionHint[]
+  getPendingByToolCallId(toolCallId: string): AskUserQuestion | null
   getHydratedPendingKeys(): string[]
   setPendingHints(hints: PendingQuestionHint[]): void
+  beginQuestionAction(question: AskUserQuestion): boolean
+  finishQuestionAction(question: AskUserQuestion): void
+  isQuestionActionInFlight(question: AskUserQuestion): boolean
+  getQuestionActionKeys(): string[]
   subscribe(listener: () => void): () => void
 }
 
@@ -24,6 +29,8 @@ export function createQuestionsStore(): QuestionsStore {
   const listeners = new Set<() => void>()
   const pendingBySession = new Map<string, AskUserQuestion>()
   const hintsBySession = new Map<string, PendingQuestionHint>()
+  const actionsInFlight = new Set<string>()
+  const actionKey = (question: AskUserQuestion) => `${question.sessionId}:${question.questionId}`
   const emit = () => { for (const listener of [...listeners]) listener() }
   return {
     getPending(sessionId) {
@@ -32,7 +39,12 @@ export function createQuestionsStore(): QuestionsStore {
     setPending(question, sessionId) {
       if (question) {
         pendingBySession.set(question.sessionId, question)
-        hintsBySession.set(question.sessionId, { questionId: question.questionId, sessionId: question.sessionId, status: question.status })
+        hintsBySession.set(question.sessionId, {
+          questionId: question.questionId,
+          sessionId: question.sessionId,
+          ...(question.toolCallId ? { toolCallId: question.toolCallId } : {}),
+          status: question.status,
+        })
       } else if (sessionId) {
         pendingBySession.delete(sessionId)
         hintsBySession.delete(sessionId)
@@ -44,6 +56,12 @@ export function createQuestionsStore(): QuestionsStore {
     },
     getPendingHints() {
       return [...hintsBySession.values()]
+    },
+    getPendingByToolCallId(toolCallId) {
+      for (const question of pendingBySession.values()) {
+        if (question.status === "ready" && question.toolCallId === toolCallId) return question
+      }
+      return null
     },
     getHydratedPendingKeys() {
       return [...pendingBySession.values()].map((question) => `${question.sessionId}:${question.questionId}:${question.status}`)
@@ -62,6 +80,22 @@ export function createQuestionsStore(): QuestionsStore {
         }
       }
       emit()
+    },
+    beginQuestionAction(question) {
+      const key = actionKey(question)
+      if (actionsInFlight.has(key)) return false
+      actionsInFlight.add(key)
+      emit()
+      return true
+    },
+    finishQuestionAction(question) {
+      if (actionsInFlight.delete(actionKey(question))) emit()
+    },
+    isQuestionActionInFlight(question) {
+      return actionsInFlight.has(actionKey(question))
+    },
+    getQuestionActionKeys() {
+      return [...actionsInFlight]
     },
     subscribe(listener) {
       listeners.add(listener)
@@ -88,7 +122,8 @@ export function pendingQuestionSnapshot(store: QuestionsStore): string {
     .map((hint) => `${hint.sessionId}:${hint.questionId}:${hint.status ?? "ready"}`)
     .sort()
   const hydrated = store.getHydratedPendingKeys().sort()
-  return `${hints.length ? hints.join("|") : "none"}#hydrated=${hydrated.join("|")}`
+  const actions = store.getQuestionActionKeys().sort()
+  return `${hints.length ? hints.join("|") : "none"}#hydrated=${hydrated.join("|")}#actions=${actions.join("|")}`
 }
 
 export function isSessionOpen(runtime: Pick<QuestionsRuntime, "activeSessionId" | "openSessionIds">, sessionId: string): boolean {

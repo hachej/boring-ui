@@ -1,0 +1,474 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "ask-user-inline-v1",
+  "results": [
+    {
+      "id": "fixture-ready",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:pending:fd55f9404b31",
+      "passed": true,
+      "evidence": "actual=ask-user-inline"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:pending:fd55f9404b31",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:pending:fd55f9404b31",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:pending:fd55f9404b31",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:pending:fd55f9404b31",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:pending:fd55f9404b31",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:pending:fd55f9404b31",
+      "passed": true,
+      "evidence": "1440/1440"
+    },
+    {
+      "id": "surface-bounds",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:pending:fd55f9404b31",
+      "passed": true,
+      "evidence": "{\"x\":24,\"y\":36,\"width\":1392,\"height\":393}"
+    },
+    {
+      "id": "single-presentation",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:pending:fd55f9404b31",
+      "passed": true,
+      "evidence": "pane=0;inline=1;resolved=0"
+    },
+    {
+      "id": "checkpoint-state",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:pending:fd55f9404b31",
+      "passed": true,
+      "evidence": "checkpoint=pending;selected=none;submit=Continue"
+    },
+    {
+      "id": "raw-json-hidden",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:pending:fd55f9404b31",
+      "passed": true,
+      "evidence": "visible=false"
+    },
+    {
+      "id": "focused-control-visible",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:pending:fd55f9404b31",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "mobile-touch-targets",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:pending:fd55f9404b31",
+      "passed": true,
+      "evidence": "pass"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:selected:9df76a3dff0a",
+      "passed": true,
+      "evidence": "actual=ask-user-inline"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:selected:9df76a3dff0a",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:selected:9df76a3dff0a",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:selected:9df76a3dff0a",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:selected:9df76a3dff0a",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:selected:9df76a3dff0a",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:selected:9df76a3dff0a",
+      "passed": true,
+      "evidence": "1440/1440"
+    },
+    {
+      "id": "surface-bounds",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:selected:9df76a3dff0a",
+      "passed": true,
+      "evidence": "{\"x\":24,\"y\":36,\"width\":1392,\"height\":393}"
+    },
+    {
+      "id": "single-presentation",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:selected:9df76a3dff0a",
+      "passed": true,
+      "evidence": "pane=0;inline=1;resolved=0"
+    },
+    {
+      "id": "checkpoint-state",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:selected:9df76a3dff0a",
+      "passed": true,
+      "evidence": "checkpoint=selected;selected=Request changesReturn the work with specific feedback.;submit=Continue"
+    },
+    {
+      "id": "raw-json-hidden",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:selected:9df76a3dff0a",
+      "passed": true,
+      "evidence": "visible=false"
+    },
+    {
+      "id": "focused-control-visible",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:selected:9df76a3dff0a",
+      "passed": true,
+      "evidence": "{\"label\":\"input\",\"bounds\":{\"x\":54,\"y\":288,\"width\":16,\"height\":16},\"occluded\":false}"
+    },
+    {
+      "id": "mobile-touch-targets",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:selected:9df76a3dff0a",
+      "passed": true,
+      "evidence": "pass"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:resolved:c0869b79b29b",
+      "passed": true,
+      "evidence": "actual=ask-user-inline"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:resolved:c0869b79b29b",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:resolved:c0869b79b29b",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:resolved:c0869b79b29b",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:resolved:c0869b79b29b",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:resolved:c0869b79b29b",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:resolved:c0869b79b29b",
+      "passed": true,
+      "evidence": "1440/1440"
+    },
+    {
+      "id": "surface-bounds",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:resolved:c0869b79b29b",
+      "passed": true,
+      "evidence": "{\"x\":24,\"y\":36,\"width\":1392,\"height\":62}"
+    },
+    {
+      "id": "single-presentation",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:resolved:c0869b79b29b",
+      "passed": true,
+      "evidence": "pane=0;inline=0;resolved=1"
+    },
+    {
+      "id": "checkpoint-state",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:resolved:c0869b79b29b",
+      "passed": true,
+      "evidence": "checkpoint=resolved;selected=none;submit=none"
+    },
+    {
+      "id": "raw-json-hidden",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:resolved:c0869b79b29b",
+      "passed": true,
+      "evidence": "visible=false"
+    },
+    {
+      "id": "focused-control-visible",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:resolved:c0869b79b29b",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "mobile-touch-targets",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:resolved:c0869b79b29b",
+      "passed": true,
+      "evidence": "pass"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:pending:9c202e08141c",
+      "passed": true,
+      "evidence": "actual=ask-user-inline"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:pending:9c202e08141c",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:pending:9c202e08141c",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:pending:9c202e08141c",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:pending:9c202e08141c",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:pending:9c202e08141c",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:pending:9c202e08141c",
+      "passed": true,
+      "evidence": "390/390"
+    },
+    {
+      "id": "surface-bounds",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:pending:9c202e08141c",
+      "passed": true,
+      "evidence": "{\"x\":24,\"y\":36,\"width\":342,\"height\":437}"
+    },
+    {
+      "id": "single-presentation",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:pending:9c202e08141c",
+      "passed": true,
+      "evidence": "pane=0;inline=1;resolved=0"
+    },
+    {
+      "id": "checkpoint-state",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:pending:9c202e08141c",
+      "passed": true,
+      "evidence": "checkpoint=pending;selected=none;submit=Continue"
+    },
+    {
+      "id": "raw-json-hidden",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:pending:9c202e08141c",
+      "passed": true,
+      "evidence": "visible=false"
+    },
+    {
+      "id": "focused-control-visible",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:pending:9c202e08141c",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "mobile-touch-targets",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:pending:9c202e08141c",
+      "passed": true,
+      "evidence": "pass"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:selected:dd5270124024",
+      "passed": true,
+      "evidence": "actual=ask-user-inline"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:selected:dd5270124024",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:selected:dd5270124024",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:selected:dd5270124024",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:selected:dd5270124024",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:selected:dd5270124024",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:selected:dd5270124024",
+      "passed": true,
+      "evidence": "390/390"
+    },
+    {
+      "id": "surface-bounds",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:selected:dd5270124024",
+      "passed": true,
+      "evidence": "{\"x\":24,\"y\":36,\"width\":342,\"height\":437}"
+    },
+    {
+      "id": "single-presentation",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:selected:dd5270124024",
+      "passed": true,
+      "evidence": "pane=0;inline=1;resolved=0"
+    },
+    {
+      "id": "checkpoint-state",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:selected:dd5270124024",
+      "passed": true,
+      "evidence": "checkpoint=selected;selected=Request changesReturn the work with specific feedback.;submit=Continue"
+    },
+    {
+      "id": "raw-json-hidden",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:selected:dd5270124024",
+      "passed": true,
+      "evidence": "visible=false"
+    },
+    {
+      "id": "focused-control-visible",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:selected:dd5270124024",
+      "passed": true,
+      "evidence": "{\"label\":\"input\",\"bounds\":{\"x\":54,\"y\":332,\"width\":16,\"height\":16},\"occluded\":false}"
+    },
+    {
+      "id": "mobile-touch-targets",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:selected:dd5270124024",
+      "passed": true,
+      "evidence": "pass"
+    },
+    {
+      "id": "fixture-ready",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:resolved:61d40d1adff6",
+      "passed": true,
+      "evidence": "actual=ask-user-inline"
+    },
+    {
+      "id": "console-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:resolved:61d40d1adff6",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "page-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:resolved:61d40d1adff6",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "request-failures",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:resolved:61d40d1adff6",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "http-errors",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:resolved:61d40d1adff6",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "axe-serious-critical",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:resolved:61d40d1adff6",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "horizontal-overflow",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:resolved:61d40d1adff6",
+      "passed": true,
+      "evidence": "390/390"
+    },
+    {
+      "id": "surface-bounds",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:resolved:61d40d1adff6",
+      "passed": true,
+      "evidence": "{\"x\":24,\"y\":36,\"width\":342,\"height\":62}"
+    },
+    {
+      "id": "single-presentation",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:resolved:61d40d1adff6",
+      "passed": true,
+      "evidence": "pane=0;inline=0;resolved=1"
+    },
+    {
+      "id": "checkpoint-state",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:resolved:61d40d1adff6",
+      "passed": true,
+      "evidence": "checkpoint=resolved;selected=none;submit=none"
+    },
+    {
+      "id": "raw-json-hidden",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:resolved:61d40d1adff6",
+      "passed": true,
+      "evidence": "visible=false"
+    },
+    {
+      "id": "focused-control-visible",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:resolved:61d40d1adff6",
+      "passed": true,
+      "evidence": "none"
+    },
+    {
+      "id": "mobile-touch-targets",
+      "stateId": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:resolved:61d40d1adff6",
+      "passed": true,
+      "evidence": "pass"
+    }
+  ]
+}
