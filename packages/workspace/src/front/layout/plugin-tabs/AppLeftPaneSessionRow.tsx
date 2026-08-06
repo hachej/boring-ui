@@ -79,6 +79,8 @@ export function AppSessionRow({
   return (
     <div
       data-boring-workspace-part="app-session-row"
+      data-boring-session-id={session.id}
+      data-boring-agent-type-id={session.agentTypeId}
       data-boring-session-state={state}
       draggable={actionsAvailable && canSplit && !rename.editing && !menuOpen}
       onDragStart={actionsAvailable && canSplit ? (event) => {

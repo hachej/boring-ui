@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url"
 const APP_DIR = dirname(fileURLToPath(import.meta.url))
 const E2E_WORKSPACE_ROOT = resolve(process.env.BORING_AGENT_WORKSPACE_ROOT || resolve(APP_DIR, "e2e/fixtures/workspace"))
 const E2E_SESSION_ROOT = resolve(process.env.BORING_AGENT_SESSION_ROOT || resolve(APP_DIR, "e2e/fixtures/sessions"))
-const VITE_PORT = 5380
-const AGENT_API_PORT = 5390
+const VITE_PORT = Number(process.env.PLAYWRIGHT_VITE_PORT) || 5380
+const AGENT_API_PORT = Number(process.env.PLAYWRIGHT_AGENT_API_PORT) || 5390
 const SERVER_HOME = resolve(process.env.HOME || resolve(APP_DIR, "e2e/fixtures/home"))
 const SERVER_CONFIG = resolve(process.env.XDG_CONFIG_HOME || resolve(SERVER_HOME, ".config"))
 const SERVER_CACHE = resolve(process.env.XDG_CACHE_HOME || resolve(SERVER_HOME, ".cache"))
@@ -54,13 +54,19 @@ export default defineConfig({
       `AGENT_API_PORT=${AGENT_API_PORT}`,
       `BORING_AGENT_WORKSPACE_ROOT=${shell(E2E_WORKSPACE_ROOT)}`,
       `BORING_AGENT_SESSION_ROOT=${shell(E2E_SESSION_ROOT)}`,
+      `BORING_PLAYGROUND_DIST_ONLY=${shell(process.env.BORING_PLAYGROUND_DIST_ONLY || "")}`,
       "BORING_AGENT_E2E_SCRIPTED_PI=1",
+      // Scripted Pi is hermetic and does not need the local bwrap runtime.
+      "BORING_AGENT_MODE=direct",
+      // Scripted Pi never calls a provider, but the real model endpoint still
+      // needs one available model before the composer becomes interactive.
+      "ANTHROPIC_API_KEY=scripted-e2e-not-a-real-key",
       "BORING_AGENT_E2E_SCRIPTED_PI_TICK_MS=300",
       "BORING_AGENT_E2E_SCRIPTED_PI_TOOL_DELAY_TICKS=20",
       "pnpm exec vite",
     ].join(" ")}`,
     port: VITE_PORT,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !process.env.CI && !process.env.BORING_PLAYGROUND_DIST_ONLY,
     timeout: 300_000,
   },
 })

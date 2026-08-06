@@ -5,18 +5,13 @@ import { homedir } from 'node:os'
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import { CURRENT_SESSION_VERSION } from '@mariozechner/pi-coding-agent'
-import type { AgentHarness, RunContext, AgentSendInput } from '@hachej/boring-agent/shared'
+import type { AgentCoreHarnessFactory, AgentHarness, RunContext, AgentSendInput } from '@hachej/boring-agent/shared'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '@hachej/boring-agent/shared'
 
-interface AgentHarnessFactoryInput {
-  cwd: string
-  runtimeCwd?: string
-  systemPromptAppend?: string
-  sessionNamespace?: string
-  sessionRoot?: string
-  sessionDir?: string
+type RequiredAgentHarnessFactoryInput = Parameters<AgentCoreHarnessFactory>[0]
+type AgentHarnessFactoryInput = Omit<RequiredAgentHarnessFactoryInput, 'tools'> & {
+  tools?: RequiredAgentHarnessFactoryInput['tools']
 }
-
 
 
 type ScriptedMessage = Record<string, unknown>
@@ -41,11 +36,26 @@ const MAX_SESSION_ID_LENGTH = 128
 const SAFE_NATIVE_SESSION_ID = /^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$/
 interface SessionListOptions { includeId?: string; includeEmpty?: boolean }
 
-let persistedHarness: ScriptedPiHarness | undefined
+const persistedHarnesses = new Map<string, ScriptedPiHarness>()
+
+function scriptedResponseMarker(sessionNamespace?: string): string {
+  const agentTypeId = sessionNamespace?.split('--')[0]?.trim()
+  return agentTypeId ? `PI_NATIVE_ASSISTANT_DONE:${agentTypeId}` : 'PI_NATIVE_ASSISTANT_DONE'
+}
 
 export function createPersistedScriptedPiHarness(input: AgentHarnessFactoryInput): ScriptedPiHarness {
-  persistedHarness ??= createScriptedPiHarness(input)
-  return persistedHarness
+  const key = JSON.stringify([
+    input.sessionRoot ?? '',
+    input.sessionNamespace ?? '',
+    input.sessionDir ?? '',
+    input.cwd,
+  ])
+  let harness = persistedHarnesses.get(key)
+  if (!harness) {
+    harness = createScriptedPiHarness(input)
+    persistedHarnesses.set(key, harness)
+  }
+  return harness
 }
 
 interface PiAgentSessionSnapshot {
@@ -83,6 +93,8 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): Script
   const tickMs = readTickMs()
   const toolDelayTicks = readToolDelayTicks()
   const reasoningPartCount = readReasoningPartCount()
+  const responseMarker = scriptedResponseMarker(input.sessionNamespace)
+  const capabilityToolName = input.tools?.find((tool) => tool.name.endsWith('_capability'))?.name
 
   const getAdapter = async (sessionId: string, sessionCtx: SessionCtx): Promise<ScriptedPiSessionAdapter> => {
     let adapter = adapters.get(sessionId)
@@ -92,6 +104,8 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): Script
         tickMs,
         toolDelayTicks,
         reasoningPartCount,
+        responseMarker,
+        capabilityToolName,
         await sessions.loadMessages(sessionCtx, sessionId),
         (messages) => sessions.persistMessages(sessionCtx, sessionId, messages),
       )
@@ -386,6 +400,8 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     private readonly tickMs: number,
     private readonly toolDelayTicks: number,
     private readonly reasoningPartCount: number,
+    private readonly responseMarker: string,
+    private readonly capabilityToolName: string | undefined,
     initialMessages: ScriptedMessage[],
     private readonly persistMessages: (messages: readonly ScriptedMessage[]) => Promise<void>,
   ) {
@@ -481,8 +497,9 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     const assistantId = `a${this.turn}`
     const toolCallId = `tool-${this.turn}`
     const reasoningTexts = ['Reasoning visible', 'Second reasoning visible', 'Third reasoning visible'].slice(0, this.reasoningPartCount)
-    const finalText = 'PI_NATIVE_ASSISTANT_DONE'
-    const toolOutput = 'TOOL_E2E_OUTPUT'
+    const finalText = this.responseMarker
+    const toolName = this.capabilityToolName ?? 'grep'
+    const toolOutput = this.capabilityToolName ?? 'TOOL_E2E_OUTPUT'
     const run: ScriptedRun = { cancelled: false }
 
     const userMessage = {
@@ -533,8 +550,8 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     const toolPart = {
       type: 'toolCall',
       id: toolCallId,
-      name: 'grep',
-      arguments: { pattern: 'baseline' },
+      name: toolName,
+      arguments: this.capabilityToolName ? {} : { pattern: 'baseline' },
       state: 'input-available',
     }
     assistantContent.push(toolPart)
@@ -547,8 +564,8 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
         partial: { id: assistantId },
         toolCall: {
           id: toolCallId,
-          name: 'grep',
-          arguments: { pattern: 'baseline' },
+          name: toolName,
+          arguments: this.capabilityToolName ? {} : { pattern: 'baseline' },
         },
       },
     })

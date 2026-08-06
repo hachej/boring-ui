@@ -5,6 +5,11 @@ import { basename, dirname, isAbsolute, relative, resolve } from "node:path"
 import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
 import { createNodeWorkspace } from "@hachej/boring-sandbox/providers/node-workspace"
 import { createPersistedScriptedPiHarness } from "./testing/scriptedPiHarness"
+import {
+  SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS,
+  SCRIPTED_TWO_AGENT_DEFAULT,
+  SCRIPTED_TWO_AGENT_FLEET,
+} from "./testing/twoAgentFleet"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 import { createWorkspaceBeadsOperations } from "@hachej/boring-tasks/server"
 import { loadBoringFactoryAgents } from "./factoryAgents"
@@ -86,16 +91,25 @@ export async function startPlaygroundServer(): Promise<void> {
       ...(factoryAgents ? { agents: factoryAgents, defaultAgentTypeId: "boring-concierge" } : {}),
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
       ...(process.env.BORING_AGENT_E2E_SCRIPTED_PI === "1"
-        ? { harnessFactory: createPersistedScriptedPiHarness }
+        ? {
+            harnessFactory: createPersistedScriptedPiHarness,
+            agents: SCRIPTED_TWO_AGENT_FLEET,
+            defaultAgentTypeId: SCRIPTED_TWO_AGENT_DEFAULT,
+          }
         : {}),
-      plugins: [{
-        dir: resolve(APP_ROOT, "../../plugins/tasks"),
-        options: {
-          beadsOperations,
-          config: { providers: [{ provider: "github", repo: "auto" }, { provider: "beads" }] },
+      plugins: [
+        {
+          dir: resolve(APP_ROOT, "../../plugins/tasks"),
+          options: {
+            beadsOperations,
+            config: { providers: [{ provider: "github", repo: "auto" }, { provider: "beads" }] },
+          },
+          trust: "internal",
         },
-        trust: "internal",
-      }],
+        ...(process.env.BORING_AGENT_E2E_SCRIPTED_PI === "1"
+          ? SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS
+          : []),
+      ],
       defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
       runtimeProvisioner: multiFilesystemPlayground
         ? async ({ runtimeBundle }) => {
