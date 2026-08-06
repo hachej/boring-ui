@@ -14,6 +14,7 @@ paths, configs, or commands from the CLI.
 
 The registry includes:
 
+- `ask-user-inline`, which reviews pending, selected, and resolved inline question states at desktop and mobile widths.
 - `automation-pane-popover`, which reviews the Automations pane and New
   automation editor at desktop and mobile widths through the private fixture host.
 - `workspace-command-palette`, which reviews the real workbench with known and

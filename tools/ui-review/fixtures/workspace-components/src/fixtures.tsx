@@ -1,4 +1,6 @@
 import { useLayoutEffect, useMemo, useState, type ReactNode } from "react"
+import { askUserPlugin } from "@hachej/boring-ask-user/front"
+import type { AskUserQuestion } from "@hachej/boring-ask-user/shared"
 import type { Automation, AutomationRun } from "@hachej/boring-automation/shared"
 import { AutomationClientProvider, AutomationPanel, type AutomationClient } from "@hachej/boring-automation/testing"
 import { DataExplorer } from "@hachej/boring-data-explorer/front"
@@ -14,6 +16,7 @@ import {
   type FileTreeNode,
   type PanelConfig,
 } from "@hachej/boring-workspace"
+import { captureFrontPlugin } from "@hachej/boring-workspace/plugin"
 
 const RICH_MARKDOWN = `# Workspace Notes
 
@@ -87,13 +90,16 @@ export function UiReviewComponentFixture({ name }: { name: string }) {
   const content = renderFixture(name)
   const centered = name === "data-catalog"
   const automation = name === "automation-pane"
+  const askUser = name === "ask-user-inline"
   return (
     <main
       className={centered
         ? "flex min-h-screen items-start justify-center bg-background p-8 text-foreground"
         : automation
           ? "min-h-screen bg-background text-foreground"
-          : "min-h-screen bg-background p-4 text-foreground"}
+          : askUser
+            ? "flex min-h-screen items-start justify-center bg-background p-6 text-foreground"
+            : "min-h-screen bg-background p-4 text-foreground"}
       data-ui-review-fixture={name}
       style={automation ? { height: "100vh" } : undefined}
     >
@@ -150,9 +156,75 @@ function renderFixture(name: string): ReactNode {
       return <DataCatalogFixture />
     case "automation-pane":
       return <AutomationPaneFixture />
+    case "ask-user-inline":
+      return <AskUserInlineFixture />
     default:
       return <div data-ui-review-fixture-error>Unknown component fixture: {name}</div>
   }
+}
+
+const askUserRegistrations = captureFrontPlugin(askUserPlugin).registrations
+const AskUserProvider = askUserRegistrations.providers[0]!.component
+const askUserRenderer = askUserRegistrations.toolRenderers.find((renderer) => renderer.id === "ask_user")!
+const ASK_USER_FIXTURE_QUESTION: AskUserQuestion = {
+  questionId: "ui-review-question",
+  sessionId: "ui-review-session",
+  toolCallId: "ui-review-tool-call",
+  ownerPrincipalId: "anonymous",
+  status: "ready",
+  title: "Choose a review direction",
+  context: "Select the next step for this implementation review.",
+  schema: {
+    wireVersion: 1,
+    submitLabel: "Continue",
+    fields: [{
+      type: "radio",
+      name: "direction",
+      label: "What should happen next?",
+      required: true,
+      options: [
+        { value: "approve", label: "Approve", description: "Continue with the current implementation." },
+        { value: "changes", label: "Request changes", description: "Return the work with specific feedback." },
+      ],
+    }],
+  },
+  answerToken: "ui-review-answer-token",
+  createdAt: "2026-08-05T20:00:00.000Z",
+  updatedAt: "2026-08-05T20:00:00.000Z",
+}
+
+function AskUserInlineFixture() {
+  const [ready, setReady] = useState(false)
+  const state = new URLSearchParams(window.location.search).get("state") ?? "pending"
+  useLayoutEffect(() => {
+    const originalFetch = globalThis.fetch.bind(globalThis)
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, window.location.origin)
+      const body = typeof init?.body === "string" ? init.body : ""
+      if (url.pathname === "/api/v1/ui/state") {
+        return jsonResponse(state === "resolved" ? { "questions.pending": { hint: null, hintsBySession: {} } } : {
+          "questions.pending": {
+            hint: { questionId: ASK_USER_FIXTURE_QUESTION.questionId, sessionId: ASK_USER_FIXTURE_QUESTION.sessionId, toolCallId: ASK_USER_FIXTURE_QUESTION.toolCallId, status: "ready" },
+            hintsBySession: { [ASK_USER_FIXTURE_QUESTION.sessionId]: { questionId: ASK_USER_FIXTURE_QUESTION.questionId, sessionId: ASK_USER_FIXTURE_QUESTION.sessionId, toolCallId: ASK_USER_FIXTURE_QUESTION.toolCallId, status: "ready" } },
+          },
+        })
+      }
+      if (url.pathname === "/api/v1/workspace-bridge/call" && body.includes("ask-user.v1.pending")) return jsonResponse({ ok: true, output: { pending: state === "resolved" ? null : ASK_USER_FIXTURE_QUESTION } })
+      if (url.pathname === "/api/v1/workspace-bridge/call") return jsonResponse({ ok: true, output: { ok: true, status: "answered" } })
+      return originalFetch(input, init)
+    }
+    setReady(true)
+    return () => { globalThis.fetch = originalFetch }
+  }, [state])
+  if (!ready) return null
+  const part = state === "resolved"
+    ? { type: "tool-call", toolName: "ask_user", toolCallId: ASK_USER_FIXTURE_QUESTION.toolCallId, state: "output-available", input: { title: ASK_USER_FIXTURE_QUESTION.title } }
+    : { type: "tool-call", toolName: "ask_user", toolCallId: ASK_USER_FIXTURE_QUESTION.toolCallId, state: "input-available", input: { title: ASK_USER_FIXTURE_QUESTION.title } }
+  return <div className="w-full max-w-[720px]" data-ui-review-ask-user-state={state}>
+    <AskUserProvider agentTypeId="default" apiBaseUrl="" activeSessionId={ASK_USER_FIXTURE_QUESTION.sessionId} openSessionIds={[ASK_USER_FIXTURE_QUESTION.sessionId]}>
+      {askUserRenderer.render(part)}
+    </AskUserProvider>
+  </div>
 }
 
 const AUTOMATIONS: Automation[] = [

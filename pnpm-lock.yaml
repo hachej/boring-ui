@@ -1826,6 +1826,9 @@ importers:
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../../../../packages/agent
+      '@hachej/boring-ask-user':
+        specifier: workspace:*
+        version: link:../../../../plugins/ask-user
       '@hachej/boring-automation':
         specifier: workspace:*
         version: link:../../../../plugins/boring-automation
