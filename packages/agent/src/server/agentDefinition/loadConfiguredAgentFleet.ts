@@ -1,5 +1,5 @@
 import { lstat, readFile, realpath } from 'node:fs/promises'
-import { isAbsolute, dirname, relative, resolve, sep } from 'node:path'
+import { basename, isAbsolute, dirname, relative, resolve, sep } from 'node:path'
 
 import { parse as parseYaml } from 'yaml'
 
@@ -21,10 +21,14 @@ import type { Sha256Digest } from '../../shared/digest'
  * are explicitly out — the card states they "cannot hold a seat" / "cannot
  * hold a pi session".
  */
-const MODEL_TIER_CANDIDATES: Readonly<
-  Record<string, readonly { readonly provider: string; readonly id: string; readonly envVar: string }[]>
-> = Object.freeze({
-  T1: [{ provider: 'anthropic', id: 'claude-fable', envVar: 'ANTHROPIC_API_KEY' }],
+export interface ModelTierCandidate {
+  readonly provider: string
+  readonly id: string
+  readonly envVar: string
+}
+
+export const MODEL_TIER_CANDIDATES: Readonly<Record<string, readonly ModelTierCandidate[]>> = Object.freeze({
+  T1: [{ provider: 'anthropic', id: 'claude-fable-5', envVar: 'ANTHROPIC_API_KEY' }],
   T2: [{ provider: 'anthropic', id: 'claude-opus-4-8', envVar: 'ANTHROPIC_API_KEY' }],
   T3: [{ provider: 'anthropic', id: 'claude-sonnet-4-6', envVar: 'ANTHROPIC_API_KEY' }],
   T4: [{ provider: 'anthropic', id: 'claude-haiku-4-5-20251001', envVar: 'ANTHROPIC_API_KEY' }],
@@ -48,6 +52,14 @@ export interface LoadConfiguredAgentFleetOptions {
   readonly fleetConfigPath: string
   /** Path to `.agents/factory/policy.yaml` (read for `models.seats` tiers). */
   readonly policyPath: string
+  /**
+   * Directory containing `<skill>/SKILL.md` canonical skill sources.
+   * Defaults to the `skills` directory sibling of `personasDir` (i.e.
+   * `.agents/skills` next to `.agents/personas`) — override when that
+   * sibling-directory layout assumption doesn't hold (e.g. isolated fixture
+   * trees that don't mirror the full `.agents/` shape).
+   */
+  readonly skillsRoot?: string
   /** Overridable for tests; defaults to `process.env`. */
   readonly env?: NodeJS.ProcessEnv
 }
@@ -95,8 +107,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const SHA256_RE = /^sha256:[0-9a-f]{64}$/
 
 function parseFleetConfig(raw: unknown, path: string): readonly FleetSeatBinding[] {
+  const name = basename(path)
   if (!isRecord(raw) || !Array.isArray(raw.seats)) {
-    throw new FleetConfigError({ field: 'seats', message: `${path} must declare a "seats" array` })
+    throw new FleetConfigError({ field: 'seats', message: `${name} must declare a "seats" array` })
   }
   return raw.seats.map((entry, index) => {
     if (
@@ -107,14 +120,14 @@ function parseFleetConfig(raw: unknown, path: string): readonly FleetSeatBinding
     ) {
       throw new FleetConfigError({
         field: `seats[${index}]`,
-        message: `${path} seats[${index}] must have seat, agentTypeId, and skills`,
+        message: `${name} seats[${index}] must have seat, agentTypeId, and skills`,
       })
     }
     const skills = entry.skills.map((skill, skillIndex) => {
       if (!isRecord(skill) || typeof skill.name !== 'string' || typeof skill.digest !== 'string' || !SHA256_RE.test(skill.digest)) {
         throw new FleetConfigError({
           field: `seats[${index}].skills[${skillIndex}]`,
-          message: `${path} seats[${index}].skills[${skillIndex}] must have a name and a sha256:... digest`,
+          message: `${name} seats[${index}].skills[${skillIndex}] must have a name and a sha256:... digest`,
         })
       }
       return Object.freeze({ name: skill.name, digest: skill.digest as Sha256Digest })
@@ -137,16 +150,20 @@ function parseSeatTiers(raw: unknown): Readonly<Record<string, string>> {
 }
 
 async function readYamlFile(path: string, field: string): Promise<unknown> {
+  const name = basename(path)
   let content: string
   try {
     content = await readFile(path, 'utf8')
   } catch (error) {
-    throw new FleetConfigError({ field, message: `${path} could not be read`, cause: error })
+    // Redact the absolute filesystem path from the diagnostic surface; the
+    // cause (not surfaced in messages/logs by default) retains it for
+    // programmatic callers that need it.
+    throw new FleetConfigError({ field, message: `${name} could not be read`, cause: error })
   }
   try {
     return parseYaml(content)
   } catch (error) {
-    throw new FleetConfigError({ field, message: `${path} is not valid YAML`, cause: error })
+    throw new FleetConfigError({ field, message: `${name} is not valid YAML`, cause: error })
   }
 }
 
@@ -212,7 +229,7 @@ export async function loadConfiguredAgentFleet(
     seatTiers = Object.freeze({})
   }
 
-  const skillsRoot = resolve(dirname(options.personasDir), 'skills')
+  const skillsRoot = options.skillsRoot ?? resolve(dirname(options.personasDir), 'skills')
 
   const agents: ConfiguredAgentHostAgentSpec[] = []
   const diagnostics: FleetLoaderDiagnostic[] = []

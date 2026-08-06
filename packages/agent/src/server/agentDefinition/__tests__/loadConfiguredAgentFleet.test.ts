@@ -27,11 +27,18 @@ describe('loadConfiguredAgentFleet', () => {
     expect(alpha.definition.instructions).toContain('boring-skill:start name=greet')
     expect(alpha.model).toEqual({ preferred: 'anthropic:claude-sonnet-4-6' })
 
-    expect(result.diagnostics).toHaveLength(1)
-    expect(result.diagnostics[0]).toMatchObject({
+    expect(result.diagnostics).toHaveLength(2)
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
       seat: 'broken',
       code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH,
-    })
+    }))
+    // m7 (fix round 1): pin the persona-level exclusion path too — a
+    // definitionId/agentTypeId mismatch is a persona defect, not a skill
+    // digest problem, and must land on the distinct diagnostic code.
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      seat: 'mismatched',
+      code: ErrorCode.enum.AGENT_FLEET_SEAT_PERSONA_INVALID,
+    }))
   })
 
   test('omits preferredModel when no candidate API key is present', async () => {

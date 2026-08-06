@@ -9,3 +9,6 @@ seats:
     skills:
       - name: greet
         digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  - seat: mismatched
+    agentTypeId: fixture-mismatched-expected
+    skills: []

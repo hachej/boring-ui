@@ -11,6 +11,8 @@ const POLICY_PATH = resolve(REPOSITORY_ROOT, '.agents', 'factory', 'policy.yaml'
 
 export interface LoadBoringFactoryAgentsOptions {
   readonly preferredModels?: Partial<Record<BoringFactoryRole, string>>
+  /** Overridable for tests; defaults to `process.env`. */
+  readonly env?: NodeJS.ProcessEnv
 }
 
 /**
@@ -26,6 +28,7 @@ export async function loadBoringFactoryAgents(
     personasDir: PERSONAS_DIR,
     fleetConfigPath: FLEET_CONFIG_PATH,
     policyPath: POLICY_PATH,
+    ...(options.env ? { env: options.env } : {}),
   })
   if (diagnostics.length > 0) {
     throw Object.assign(

@@ -68,7 +68,11 @@ describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () =
     const preferredModels: Partial<Record<BoringFactoryRole, string>> = {
       steward: 'test-provider:planning-model',
     }
-    const agents = await loadBoringFactoryAgents({ preferredModels })
+    // m5 (fix round 1): inject an empty env so this doesn't read ambient
+    // ANTHROPIC_API_KEY — on a keyed dev machine, tier-based model
+    // resolution would otherwise give `worker` a real preferred model too,
+    // breaking the "not.toHaveProperty('model')" assertion below.
+    const agents = await loadBoringFactoryAgents({ preferredModels, env: {} })
 
     expect(agents.find((agent) => agent.agentTypeId === 'boring-steward')).toMatchObject({
       model: { preferred: 'test-provider:planning-model' },

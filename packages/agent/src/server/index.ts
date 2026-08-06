@@ -99,6 +99,7 @@ export type {
 export {
   FleetConfigError,
   loadConfiguredAgentFleet,
+  MODEL_TIER_CANDIDATES,
 } from './agentDefinition/loadConfiguredAgentFleet'
 export type {
   FleetConfigErrorCode,
@@ -108,7 +109,15 @@ export type {
   FleetSkillBinding,
   LoadConfiguredAgentFleetOptions,
   LoadConfiguredAgentFleetResult,
+  ModelTierCandidate,
 } from './agentDefinition/loadConfiguredAgentFleet'
+export {
+  LEGACY_DEFAULT_AGENT_FLEET,
+  resolveDefaultAgentFleet,
+} from './agentDefinition/resolveDefaultAgentFleet'
+export type {
+  ResolveDefaultAgentFleetOptions,
+} from './agentDefinition/resolveDefaultAgentFleet'
 export {
   createResolvedAgentDigest,
   resolveAgentDeployment,

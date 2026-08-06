@@ -373,7 +373,9 @@ function extractBoringAgentBlock(pkg: unknown): unknown {
   }
   // The persona package manifest omits schemaVersion (implicit v1); the
   // shared AgentDefinition validator requires it explicitly.
-  return { schemaVersion: 1, ...(agent as Record<string, unknown>) }
+  // Spread first, forced schemaVersion last: the persona package must not be
+  // able to override the implicit v1 by declaring its own schemaVersion.
+  return { ...(agent as Record<string, unknown>), schemaVersion: 1 }
 }
 
 function freezeDefinition(definition: AgentDefinition): CompiledAgentDefinition {
