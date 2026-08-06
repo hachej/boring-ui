@@ -34,6 +34,46 @@ beforeEach(() => {
 })
 
 describe("pending task chat binding recovery", () => {
+  it("uses the latest plugin client when a pending binding outlives its provider", async () => {
+    const first = client(0)
+    const latest = client(0)
+    registerPendingTaskChatBinding(pending, first.value)
+    registerPendingTaskChatBinding(pending, latest.value)
+
+    window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
+      detail: { agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "accepted" },
+    }))
+
+    await waitFor(() => expect(latest.postJson).toHaveBeenCalledOnce())
+    expect(first.postJson).not.toHaveBeenCalled()
+  })
+
+  it("does not restore a stale client when a replaced provider reaches capped recovery", async () => {
+    vi.useFakeTimers()
+    const first = client(0)
+    first.postJson.mockRejectedValue(new TypeError("old client offline"))
+    const latest = client(0)
+    latest.postJson.mockRejectedValue(new TypeError("service unavailable"))
+    registerPendingTaskChatBinding(pending, first.value)
+    window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
+      detail: { agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "accepted" },
+    }))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(first.postJson).toHaveBeenCalledOnce()
+
+    registerPendingTaskChatBinding(pending, latest.value)
+    await vi.runAllTimersAsync()
+    expect(first.postJson).toHaveBeenCalledOnce()
+    expect(latest.postJson).toHaveBeenCalledTimes(5)
+
+    latest.postJson.mockResolvedValue({ ok: true })
+    window.dispatchEvent(new Event("focus"))
+    await vi.runAllTimersAsync()
+    expect(latest.postJson).toHaveBeenCalledTimes(6)
+    expect(window.sessionStorage.getItem(storageKey)).toBe("[]")
+  })
+
   it("binds accepted in-memory intent when sessionStorage is unavailable", async () => {
     const api = client(0)
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("storage unavailable") })

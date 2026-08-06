@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, test, vi } from "vitest"
 
@@ -44,6 +44,25 @@ function renderBoard(adapters: readonly BoringTaskAdapter[], workspaceId = "task
 describe("TaskKanbanBoard source isolation", () => {
   beforeEach(() => localStorage.clear())
 
+  test("ignores a delayed source response from the previous Workspace", async () => {
+    let resolveFirst!: (tasks: ReturnType<typeof task>[]) => void
+    const firstAdapter = adapter("shared", "Shared", vi.fn(() => new Promise<ReturnType<typeof task>[]>((resolve) => { resolveFirst = resolve })))
+    const view = renderBoard([firstAdapter], "workspace-a")
+
+    const secondAdapter = adapter("shared", "Shared", vi.fn(async () => [task("shared", "b1", "Workspace B current")]))
+    view.rerender(
+      <WorkspacePluginClientProvider agentTypeId="default" apiBaseUrl="" workspaceId="workspace-b">
+        <TaskKanbanBoard adapters={[secondAdapter]} />
+      </WorkspacePluginClientProvider>,
+    )
+    expect(await screen.findByText("Workspace B current")).toBeInTheDocument()
+    await act(async () => resolveFirst([task("shared", "a1", "Workspace A stale")]))
+
+    await waitFor(() => expect(firstAdapter.listTasks).toHaveBeenCalledOnce())
+    expect(screen.queryByText("Workspace A stale")).not.toBeInTheDocument()
+    expect(screen.getByText("Workspace B current")).toBeInTheDocument()
+  })
+
   test("never hydrates another Workspace's cached task data", async () => {
     const firstAdapter = adapter("shared", "Shared", vi.fn(async () => [task("shared", "1", "Workspace A secret")]))
     const first = renderBoard([firstAdapter], "workspace-a")
@@ -87,6 +106,30 @@ describe("TaskKanbanBoard source isolation", () => {
     expect(screen.queryByText("Workspace A task")).not.toBeInTheDocument()
     expect(screen.getByText("Workspace B task")).toBeInTheDocument()
     expect(screen.queryByText("late Workspace A failure")).not.toBeInTheDocument()
+  })
+
+  test("cleans up a refresh invalidated by a later mutation", async () => {
+    const user = userEvent.setup()
+    let resolveRefresh!: (tasks: ReturnType<typeof task>[]) => void
+    let resolveDelete!: () => void
+    const listTasks = vi.fn()
+      .mockResolvedValueOnce([task("shared", "a1", "Delete during refresh")])
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
+    const source: BoringTaskAdapter = {
+      ...adapter("shared", "Shared", listTasks),
+      capabilities: { move: false, delete: true },
+      deleteTask: vi.fn(() => new Promise<void>((resolve) => { resolveDelete = resolve })),
+    }
+    renderBoard([source])
+    expect(await screen.findByText("Delete during refresh")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Refresh" }))
+    await user.click(screen.getByRole("button", { name: "Open actions for a1" }))
+    await user.click(screen.getByRole("button", { name: "Delete issue" }))
+    resolveRefresh([task("shared", "a1", "Delete during refresh")])
+    resolveDelete()
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh" })).not.toBeDisabled())
+    expect(screen.queryByText("Delete during refresh")).not.toBeInTheDocument()
   })
 
   test("does not let a stale refresh resurrect a successfully deleted task", async () => {

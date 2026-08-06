@@ -241,7 +241,7 @@ describe("askUserPlugin front shell", () => {
     const Panel = getPanel()
     render(
       <Provider apiBaseUrl="" activeSessionId={s1Question.sessionId} openSessionIds={[s1Question.sessionId, s2Question.sessionId]}>
-        <Panel params={{ sessionId: s2Question.sessionId, questionId: s2Question.questionId, exactQuestion: true }} api={{ close: vi.fn() }} className="h-full" />
+        <Panel params={{ sessionId: s2Question.sessionId, questionId: s2Question.questionId }} api={{ close: vi.fn() }} className="h-full" />
       </Provider>,
     )
     expect(await screen.findByText("Clicked artifact question")).toBeInTheDocument()

@@ -34,6 +34,27 @@ describe('useExternalRemotePiSession', () => {
     expect(createRemoteSession).toHaveBeenCalledTimes(2)
   })
 
+  it('clears a retained snapshot when its suspended session is removed', () => {
+    const first = remoteSession()
+    const createRemoteSession = vi.fn(() => first)
+    const { result, rerender } = renderHook(
+      ({ sessionId, enabled }: { sessionId: string | undefined; enabled: boolean }) => useExternalRemotePiSession({
+        sessionId,
+        agentTypeId: 'default',
+        workspaceId: 'workspace-1',
+        storageScope: 'workspace-1',
+        createRemoteSession,
+        enabled,
+      }),
+      { initialProps: { sessionId: 'session-1' as string | undefined, enabled: true } },
+    )
+
+    rerender({ sessionId: 'session-1', enabled: false })
+    expect(result.current).toBe(first)
+    rerender({ sessionId: undefined, enabled: false })
+    expect(result.current).toBeUndefined()
+  })
+
   it('keeps hydration alive across semantically equal request-header objects', () => {
     const first = remoteSession()
     const second = remoteSession()

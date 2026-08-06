@@ -94,11 +94,9 @@ export function TaskSessionDisclosure({
   const [unavailableArtifacts, setUnavailableArtifacts] = useState<ReadonlyMap<string, ReadonlySet<string>>>(() => new Map())
   const [error, setError] = useState<string | null>(null)
   const sourceKey = JSON.stringify([task.adapterId, task.id])
-  const enrichedLinksKey = useRef<string | null>(null)
   const requestScope = useRef({ sourceKey, version: 0 })
   if (requestScope.current.sourceKey !== sourceKey) {
     requestScope.current = { sourceKey, version: requestScope.current.version + 1 }
-    enrichedLinksKey.current = null
   }
   const beginRequest = useCallback(() => {
     const version = ++requestScope.current.version
@@ -168,10 +166,7 @@ export function TaskSessionDisclosure({
   useEffect(() => () => { requestScope.current.version += 1 }, [])
 
   useEffect(() => {
-    const nextKey = JSON.stringify(links.map((link) => [link.id, link.agentTypeId, link.sessionId]))
-    if (!expanded || enrichedLinksKey.current === nextKey) return
-    enrichedLinksKey.current = nextKey
-    void refreshDetails(links)
+    if (expanded) void refreshDetails(links)
   }, [expanded, links, refreshDetails])
 
   useEffect(() => {

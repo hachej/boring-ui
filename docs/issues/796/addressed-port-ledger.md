@@ -97,7 +97,7 @@ Base: PR #1044 (`fix/775-post-agenthost-cutover`). Every source path has exactly
 
 ## New addressed integration paths
 
-- `apps/workspace-playground/src/server/dev.ts` — playground host explicitly selects the `default` Agent for its directly constructed Tasks plugin; the plugin itself has no fallback.
+- `apps/workspace-playground/src/server/dev.ts` — playground host supplies its selected default Agent (`default` normally, `boring-concierge` in factory mode) to the directly constructed Tasks plugin; the plugin itself has no fallback.
 - `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts` — exact Gateway state authorization and redacted run projection.
 - `packages/workspace/src/app/server/createWorkspaceAgentServer.ts` — same authority for standalone Workspace composition.
 - `packages/workspace/src/app/front/PluginAppLeftHost.tsx` and `WorkspaceAgentFront.tsx` — validated parameterized Inbox overlay requests.
