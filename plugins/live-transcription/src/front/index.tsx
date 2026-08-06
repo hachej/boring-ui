@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
-import { MicIcon } from "lucide-react"
+import { MicIcon, PanelRightOpenIcon } from "lucide-react"
 import {
   ChatMessageContributionProvider,
   ComposerContributionProvider,
@@ -136,10 +136,10 @@ export function LiveTranscriptComposerDock() {
       const result = await liveTranscriptController.review()
       setNotice(
         result.startsWith("Transcript review dispatched")
-          ? "Review sent"
+          ? "Agent nudged"
           : result.startsWith("Transcript review queued")
-            ? "Review queued"
-            : "Agent unavailable",
+            ? "Nudge queued until the agent is idle"
+            : "Nudge failed — retry",
       )
     } finally {
       setReviewing(false)
@@ -210,12 +210,11 @@ export function LiveTranscriptComposerDock() {
                 })
               }}
               disabled={!recording.transcriptPath}
-              aria-label="Open transcript"
-              title="Open transcript"
-              className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-45"
+              aria-label="Open transcript in new pane"
+              title="Open transcript in new pane"
+              className="inline-flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-45"
             >
-              <DocumentIcon />
-              Transcript
+              <PanelRightOpenIcon aria-hidden="true" className="size-4" strokeWidth={1.8} />
             </button>
             <button
               type="button"
@@ -226,13 +225,13 @@ export function LiveTranscriptComposerDock() {
               <SparkIcon />
               {reviewing
                 ? "Wait…"
-                : notice === "Review sent"
-                  ? "Sent"
-                  : notice === "Review queued"
+                : notice === "Agent nudged"
+                  ? "Nudged"
+                  : notice === "Nudge queued until the agent is idle"
                     ? "Queued"
-                    : notice === "Agent unavailable"
+                    : notice === "Nudge failed — retry"
                       ? "Retry"
-                      : "Review"}
+                      : "Nudge"}
             </button>
             <button
               type="button"
@@ -248,7 +247,7 @@ export function LiveTranscriptComposerDock() {
         </div>
 
         {notice && notice !== "Finalizing transcript…" ? (
-          <div role="status" aria-live="polite" className="sr-only">{notice}</div>
+          <div role="status" aria-live="polite" className="border-t border-border/50 px-3 py-1.5 text-[11px] text-muted-foreground">{notice}</div>
         ) : null}
 
       </div>
@@ -290,10 +289,6 @@ function StopIcon() {
       <span className="size-2.5 rounded-[2px] bg-current" />
     </span>
   )
-}
-
-function DocumentIcon() {
-  return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current" strokeWidth="1.4" strokeLinejoin="round"><path d="M4 1.75h5l3 3V14.25H4z"/><path d="M9 1.75v3h3"/></svg>
 }
 
 function SparkIcon() {

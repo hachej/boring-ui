@@ -446,6 +446,10 @@ export async function createFolderModeApp(opts: {
       if (!liveTranscriptDispatcher) throw new Error("live_transcript_disabled: agent dispatcher is not ready")
       return await liveTranscriptDispatcher.resolve(ctx, options)
     },
+    async resolveWithWorkspace(ctx, options) {
+      if (!liveTranscriptDispatcher?.resolveWithWorkspace) throw new Error("live_transcript_disabled: workspace agent binding is not ready")
+      return await liveTranscriptDispatcher.resolveWithWorkspace(ctx, options)
+    },
   }
   const liveTranscriptPlugin = liveTranscriptEnabled && opts.liveTranscripts
     ? (await import("@hachej/boring-transcription/server")).createLiveTranscriptServerPlugin({
