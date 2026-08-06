@@ -9,6 +9,7 @@ export {
   omitPluginAuthoringProvisioning,
   projectAgentSpecPluginArtifacts,
   provisionWorkspaceAgentServer,
+  resolveDefaultAgentFleet,
   resolveWorkspaceAgentServerPluginCollection,
   readWorkspacePluginPackagePiSnapshot,
   readWorkspacePluginPackageRuntimePlugins,

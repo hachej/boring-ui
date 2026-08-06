@@ -1,0 +1,11 @@
+seats:
+  - seat: alpha
+    agentTypeId: fixture-alpha
+    skills:
+      - name: greet
+        digest: sha256:830555b295458756d3c94bce4cc763d7e666e47b59a9718015de3d237818d116
+  - seat: broken
+    agentTypeId: fixture-broken
+    skills:
+      - name: greet
+        digest: sha256:0000000000000000000000000000000000000000000000000000000000000000

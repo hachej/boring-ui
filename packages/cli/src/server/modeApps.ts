@@ -860,8 +860,22 @@ export async function createWorkspacesModeApp(opts: {
   const authorizeAgentRequest = async (request: FastifyRequest) => {
     return trustedLocalScope.issueScope(await workspaceFromRequest(request))
   }
+  // BORING_AGENT_FLEET=1 composes the config-driven production fleet
+  // (gh-1106 slice 3) from .agents/{personas,factory} alongside the default
+  // agent; flag absent preserves the legacy single-default-agent boot
+  // byte-identically. Fails closed per seat.
+  const cliHubFleetAgents = process.env.BORING_AGENT_FLEET === "1"
+    ? [
+        { agentTypeId: "default", legacyDefault: true } as const,
+        ...(await agentServer.loadConfiguredAgentFleet({
+          personasDir: resolve(process.cwd(), ".agents", "personas"),
+          fleetConfigPath: resolve(process.cwd(), ".agents", "factory", "fleet.yaml"),
+          policyPath: resolve(process.cwd(), ".agents", "factory", "policy.yaml"),
+        })).agents,
+      ]
+    : [{ agentTypeId: "default", legacyDefault: true } as const]
   const agentHost = await agentServer.createAgentHost({
-    agents: [{ agentTypeId: "default", legacyDefault: true }],
+    agents: cliHubFleetAgents,
     fleetCompiler: { async compile({ agents }) { return agents } },
     hostId: "cli-trusted-local",
     scopeVerifier: trustedLocalScope.scopeVerifier,

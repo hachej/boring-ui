@@ -17,6 +17,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   }
 })
 
+import { ErrorCode } from '@hachej/boring-agent/shared'
+
 import { loadBoringFactoryAgents, type BoringFactoryRole } from './factoryAgents'
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../..')
@@ -44,14 +46,18 @@ async function expectedInstructions(role: string, skills: readonly string[]): Pr
   return [base, ...blocks].join('\n\n')
 }
 
-describe('loadBoringFactoryAgents', () => {
+// Migrated (gh-1106 slice 3): factoryAgents.ts is now a thin call to
+// loadConfiguredAgentFleet(); these tests exercise that loader against the
+// repository's real .agents/personas + .agents/factory/fleet.yaml tree
+// instead of the deleted bespoke composition.
+describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () => {
   test('composes exactly the independently expected canonical skills in deterministic order', async () => {
     const agents = await loadBoringFactoryAgents()
 
     expect(agents.map((agent) => agent.agentTypeId)).toEqual(EXPECTED.map(({ id }) => id))
     for (const [index, expected] of EXPECTED.entries()) {
       const agent = agents[index]
-      if ('legacyDefault' in agent) throw new Error('factory agent must be configured')
+      if (!agent || 'legacyDefault' in agent) throw new Error('factory agent must be configured')
       expect(agent.definition.instructions).toBe(await expectedInstructions(expected.role, expected.skills))
       expect(agent.definition.instructions.match(/boring-skill:start/g)).toHaveLength(expected.skills.length)
       expect(agent.definition.instructions.match(/boring-skill:end/g)).toHaveLength(expected.skills.length)
@@ -70,15 +76,16 @@ describe('loadBoringFactoryAgents', () => {
     expect(agents.find((agent) => agent.agentTypeId === 'boring-worker')).not.toHaveProperty('model')
   })
 
-  test('fails boot with a stable redacted error when a canonical skill is unavailable', async () => {
+  test('fails boot with a stable, redacted diagnostic when a canonical skill is unavailable', async () => {
     fsFailure.skill = 'triage'
     try {
       const error = await loadBoringFactoryAgents().catch((cause: unknown) => cause)
       expect(error).toMatchObject({
         name: 'TrustedAgentCompositionError',
-        code: 'CONFIG_INVALID',
-        field: 'skills.triage',
-        message: 'canonical skill is unavailable',
+        diagnostics: [
+          { seat: 'concierge', code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH },
+          { seat: 'triage', code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH },
+        ],
       })
       expect(String(error)).not.toMatch(/private\/root|SKILL\.md missing/)
     } finally {

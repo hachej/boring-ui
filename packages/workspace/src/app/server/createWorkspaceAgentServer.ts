@@ -38,6 +38,7 @@ import {
   type VerifiedAgentScopeClaim,
   type WorkspaceProvisioningResult,
   type WorkspaceAgentDispatcherResolver,
+  loadConfiguredAgentFleet,
 } from "@hachej/boring-agent/server"
 import type { AgentEffectAdmission } from "@hachej/boring-agent/core"
 import {
@@ -206,6 +207,12 @@ export interface CreateWorkspaceAgentServerOptions
     Pick<ServerBootstrapOptions, "defaults" | "excludeDefaults"> {
   /** Trusted deployment fleet. Omission preserves the standalone default Agent. */
   agents?: readonly AgentHostAgentSpec[]
+  /**
+   * Repository root used to resolve `.agents/{personas,factory}` when
+   * `BORING_AGENT_FLEET=1` composes the fleet and `agents` is not supplied.
+   * Defaults to `process.cwd()`.
+   */
+  fleetRepositoryRoot?: string
   /** App-owned trust compiler for configured Agent plugin/model bindings. */
   fleetCompiler?: AgentFleetCompiler
   /** Default Agent selected for package-level server plugin ownership. */
@@ -1201,6 +1208,26 @@ function emitLocalCliBridgeAuthWarning(): void {
   console.warn(message)
 }
 
+const LEGACY_DEFAULT_AGENT_FLEET = [{ agentTypeId: "default", legacyDefault: true } as const]
+
+/**
+ * `BORING_AGENT_FLEET=1` composes the config-driven production fleet
+ * (gh-1106 slice 3) from `.agents/{personas,factory}` under `repositoryRoot`
+ * (defaults to `process.cwd()`); flag absent preserves the legacy
+ * single-default-agent boot byte-identically. Fails closed per seat — the
+ * default agent is always present alongside any successfully composed seats.
+ */
+export async function resolveDefaultAgentFleet(repositoryRoot?: string): Promise<readonly AgentHostAgentSpec[]> {
+  if (process.env.BORING_AGENT_FLEET !== "1") return LEGACY_DEFAULT_AGENT_FLEET
+  const root = repositoryRoot ?? process.cwd()
+  const { agents: configuredAgents } = await loadConfiguredAgentFleet({
+    personasDir: resolve(root, ".agents", "personas"),
+    fleetConfigPath: resolve(root, ".agents", "factory", "fleet.yaml"),
+    policyPath: resolve(root, ".agents", "factory", "policy.yaml"),
+  })
+  return [...LEGACY_DEFAULT_AGENT_FLEET, ...configuredAgents]
+}
+
 export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
@@ -1392,7 +1419,7 @@ export async function createWorkspaceAgentServer(
     workspaceScopeId,
     basename(workspaceRoot),
   ].filter(Boolean))
-  const agents = opts.agents ?? [{ agentTypeId: "default", legacyDefault: true } as const]
+  const agents = opts.agents ?? await resolveDefaultAgentFleet(opts.fleetRepositoryRoot)
   const allPluginAgentProjection = bootstrapServer({
     defaults: opts.defaults,
     plugins: pluginCollection.resolvedPluginArtifacts.map((artifact) => artifact.plugin),

@@ -15,6 +15,7 @@ import {
 import { AgentDefinitionErrorCode, ErrorCode } from '../../shared/error-codes'
 
 const AGENT_MANIFEST = 'agent.json'
+const AGENT_PACKAGE_MANIFEST = 'package.json'
 const AGENT_INSTRUCTIONS = 'instructions.md'
 const MAX_MANIFEST_BYTES = 64 * 1024
 const MAX_INSTRUCTIONS_BYTES = 256 * 1024
@@ -26,6 +27,7 @@ export type AgentDirectoryCompilerErrorCode =
   | 'AGENT_MANIFEST_NOT_FILE'
   | 'AGENT_MANIFEST_INVALID_UTF8'
   | 'AGENT_MANIFEST_INVALID_JSON'
+  | 'AGENT_MANIFEST_MISSING_BORING_AGENT'
   | 'AGENT_ASSET_NOT_FOUND'
   | 'AGENT_ASSET_NOT_FILE'
   | 'AGENT_ASSET_INVALID_UTF8'
@@ -138,7 +140,7 @@ async function resolveAgentRoot(directory: string): Promise<string> {
 interface ReadContainedFileOptions {
   root: string
   path: string
-  field: 'agent.json' | 'instructionsRef'
+  field: 'agent.json' | 'package.json' | 'instructionsRef'
   kind: 'manifest' | 'asset'
   maxBytes: number
 }
@@ -311,7 +313,7 @@ async function readContainedFile({
 
 function decodeUtf8(
   bytes: Uint8Array,
-  field: 'agent.json' | 'instructionsRef',
+  field: 'agent.json' | 'package.json' | 'instructionsRef',
 ): string {
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
@@ -328,18 +330,50 @@ function decodeUtf8(
   }
 }
 
-function parseManifest(content: string): unknown {
+function parseManifest(content: string, field: 'agent.json' | 'package.json'): unknown {
   try {
     return JSON.parse(content) as unknown
   } catch (error) {
     throw new AgentDirectoryCompilerError({
       code: ErrorCode.enum.CONFIG_INVALID,
       compilerCode: 'AGENT_MANIFEST_INVALID_JSON',
-      field: 'agent.json',
-      message: 'agent.json must contain valid JSON',
+      field,
+      message: `${field} must contain valid JSON`,
       cause: error,
     })
   }
+}
+
+function extractBoringAgentBlock(pkg: unknown): unknown {
+  if (typeof pkg !== 'object' || pkg === null) {
+    throw new AgentDirectoryCompilerError({
+      code: ErrorCode.enum.CONFIG_INVALID,
+      compilerCode: 'AGENT_MANIFEST_MISSING_BORING_AGENT',
+      field: 'package.json',
+      message: 'package.json must be a JSON object',
+    })
+  }
+  const boring = (pkg as Record<string, unknown>).boring
+  if (typeof boring !== 'object' || boring === null) {
+    throw new AgentDirectoryCompilerError({
+      code: ErrorCode.enum.CONFIG_INVALID,
+      compilerCode: 'AGENT_MANIFEST_MISSING_BORING_AGENT',
+      field: 'package.json#boring',
+      message: 'package.json must declare a boring block',
+    })
+  }
+  const agent = (boring as Record<string, unknown>).agent
+  if (typeof agent !== 'object' || agent === null) {
+    throw new AgentDirectoryCompilerError({
+      code: ErrorCode.enum.CONFIG_INVALID,
+      compilerCode: 'AGENT_MANIFEST_MISSING_BORING_AGENT',
+      field: 'package.json#boring.agent',
+      message: 'package.json must declare a boring.agent block',
+    })
+  }
+  // The persona package manifest omits schemaVersion (implicit v1); the
+  // shared AgentDefinition validator requires it explicitly.
+  return { schemaVersion: 1, ...(agent as Record<string, unknown>) }
 }
 
 function freezeDefinition(definition: AgentDefinition): CompiledAgentDefinition {
@@ -353,16 +387,11 @@ function freezeDefinition(definition: AgentDefinition): CompiledAgentDefinition 
   })
 }
 
-export async function compileAgentDirectory(directory: string): Promise<CompiledAgentBundle> {
-  const root = await resolveAgentRoot(directory)
-  const manifestContent = decodeUtf8(await readContainedFile({
-    root,
-    path: AGENT_MANIFEST,
-    field: 'agent.json',
-    kind: 'manifest',
-    maxBytes: MAX_MANIFEST_BYTES,
-  }), 'agent.json')
-  const validation = validateAgentDefinition(parseManifest(manifestContent))
+async function compileFromManifestObject(
+  root: string,
+  rawManifest: unknown,
+): Promise<CompiledAgentBundle> {
+  const validation = validateAgentDefinition(rawManifest)
   if (!validation.valid) throw new AgentDefinitionValidationError(validation.issues[0])
   if (validation.value.instructionsRef !== AGENT_INSTRUCTIONS) {
     throw new AgentDefinitionValidationError({
@@ -399,4 +428,34 @@ export async function compileAgentDirectory(directory: string): Promise<Compiled
   const definition = freezeDefinition(validation.value)
 
   return Object.freeze({ definition, definitionDigest, assets })
+}
+
+export async function compileAgentDirectory(directory: string): Promise<CompiledAgentBundle> {
+  const root = await resolveAgentRoot(directory)
+  const manifestContent = decodeUtf8(await readContainedFile({
+    root,
+    path: AGENT_MANIFEST,
+    field: 'agent.json',
+    kind: 'manifest',
+    maxBytes: MAX_MANIFEST_BYTES,
+  }), 'agent.json')
+  return compileFromManifestObject(root, parseManifest(manifestContent, 'agent.json'))
+}
+
+/**
+ * Compiles a persona authored as a plugin-shaped package: `package.json`'s
+ * `boring.agent` block stands in for `agent.json`, `instructions.md` is
+ * unchanged. Used for `.agents/personas/<seat>` fleet packages.
+ */
+export async function compilePersonaPackageDirectory(directory: string): Promise<CompiledAgentBundle> {
+  const root = await resolveAgentRoot(directory)
+  const manifestContent = decodeUtf8(await readContainedFile({
+    root,
+    path: AGENT_PACKAGE_MANIFEST,
+    field: 'package.json',
+    kind: 'manifest',
+    maxBytes: MAX_MANIFEST_BYTES,
+  }), 'package.json')
+  const boringAgent = extractBoringAgentBlock(parseManifest(manifestContent, 'package.json'))
+  return compileFromManifestObject(root, boringAgent)
 }

@@ -1,28 +1,32 @@
 #!/usr/bin/env node
-// Recomputes the sha256 pins baked into apps/workspace-playground/src/server/factoryAgents.ts
-// (`{ name: <skill>, digest: 'sha256:<hex>' }` entries inside ROLE_BINDING_DEFINITIONS). Those
-// pins guard the trusted-agent-composition instruction appendices — see
-// createConfiguredAgentHostAgentSpec's canonical-skill digest check — and were previously
-// repinned by hand after every .agents/skills/<name>/SKILL.md edit (#1101, #1085 and earlier).
+// Recomputes the sha256 pins baked into .agents/factory/fleet.yaml (each seat's
+// `skills: [{ name, digest }]` bindings). Those pins guard the trusted-agent-composition
+// instruction appendices — see createConfiguredAgentHostAgentSpec's canonical-skill digest
+// check, consumed by loadConfiguredAgentFleet() — and were previously repinned by hand after
+// every .agents/skills/<name>/SKILL.md edit (#1101, #1085 and earlier).
 //
-// Deliberately asymmetric with the consumer (factoryAgents.ts's canonicalSkillContent): the
-// consumer enforces symlink/containment checks on the skill file because it runs against an
+// gh-1106 slice 3 moved the pin site from apps/workspace-playground/src/server/factoryAgents.ts
+// (a TS object-literal pin, matched by regex) to fleet.yaml (structural YAML, parsed properly).
+//
+// Deliberately asymmetric with the consumer (loadConfiguredAgentFleet's canonicalSkillContent):
+// the consumer enforces symlink/containment checks on the skill file because it runs against an
 // admitted repository root at agent-boot time. This script only ever reads a fixed, repo-relative
 // `.agents/skills/<name>/SKILL.md` path under a trusted developer/CI checkout, so those runtime
 // admission checks don't apply here — there's no untrusted root to escape.
 //
 // --check (CI-usable): recompute each pinned skill's digest from its canonical SKILL.md and fail
 //   (exit 1) listing any that drifted. Also fails loudly if the parsed pin count looks wrong,
-//   so a pattern that silently stops matching (e.g. a reformatted/multiline entry) can't produce
-//   a false "all clear".
-// --write: rewrite the drifted pins in place, using the original match spans (not a global
-//   string replace) so colliding digest values (skill A's old digest equals skill B's new
-//   digest, or vice versa) can never cross-contaminate each other.
+//   so an unexpected shape (e.g. a reformatted seat/skills block) can't produce a false "all clear".
+// --write: rewrite the drifted pins in place via the YAML document (preserving comments/formatting
+//   through the `yaml` package's CST-aware setter), never a blind digest string replace — so
+//   colliding digest values (skill A's old digest equals skill B's new digest, or vice versa) can
+//   never cross-contaminate each other.
 
 import { readFile, writeFile } from 'node:fs/promises'
+import { parseDocument } from 'yaml'
 
-const pinSitePath = 'apps/workspace-playground/src/server/factoryAgents.ts'
-const pinSiteUrl = new URL('../apps/workspace-playground/src/server/factoryAgents.ts', import.meta.url)
+const pinSitePath = '.agents/factory/fleet.yaml'
+const pinSiteUrl = new URL('../.agents/factory/fleet.yaml', import.meta.url)
 
 // The full set of skills the pin site is expected to reference today. Anything parsed outside
 // this set, or any skill in this set that fails to parse at all, is a hard error rather than a
@@ -34,21 +38,29 @@ async function sha256(content) {
   return `sha256:${Buffer.from(hash).toString('hex')}`
 }
 
-// Anchors on the `{ name: '<skill>', digest: 'sha256:<hex>' }` shape rather than a bare
-// sha256-looking regex, so unrelated sha256 literals elsewhere in the file (or repo) are never
-// touched. Tolerant of whitespace/newlines between fields and an optional trailing comma, so a
-// reformatted (e.g. multiline) entry is still matched instead of silently dropped.
-const PIN_PATTERN = /\{\s*name:\s*'([^']+)'\s*,\s*digest:\s*'(sha256:[0-9a-f]{64})'\s*,?\s*\}/g
+const SHA256_RE = /^sha256:[0-9a-f]{64}$/
 
-function parsePins(source) {
+/** Walks the parsed YAML document's seats[].skills[] structurally (no regex). */
+function collectPins(doc) {
+  const seats = doc.get('seats', true)
+  if (!seats || typeof seats.items !== 'object') {
+    throw new Error(`${pinSitePath}: expected a top-level "seats" sequence`)
+  }
   const pins = []
-  for (const match of source.matchAll(PIN_PATTERN)) {
-    pins.push({
-      name: match[1],
-      digest: match[2],
-      start: match.index,
-      end: match.index + match[0].length,
-    })
+  for (const seatNode of seats.items) {
+    const seat = seatNode.get('seat')
+    const skills = seatNode.get('skills', true)
+    if (!skills || typeof skills.items !== 'object') {
+      throw new Error(`${pinSitePath}: seat "${seat}" is missing a "skills" sequence`)
+    }
+    for (const skillNode of skills.items) {
+      const name = skillNode.get('name')
+      const digest = skillNode.get('digest')
+      if (typeof name !== 'string' || typeof digest !== 'string' || !SHA256_RE.test(digest)) {
+        throw new Error(`${pinSitePath}: seat "${seat}" has a malformed skill pin`)
+      }
+      pins.push({ seat, name, digest, node: skillNode })
+    }
   }
   return pins
 }
@@ -56,16 +68,17 @@ function parsePins(source) {
 async function main() {
   const mode = process.argv.includes('--write') ? 'write' : 'check'
   const source = await readFile(pinSiteUrl, 'utf8')
-  const pins = parsePins(source)
+  const doc = parseDocument(source)
+  const pins = collectPins(doc)
 
   const parsedNames = new Set(pins.map((pin) => pin.name))
   const missing = EXPECTED_SKILLS.filter((name) => !parsedNames.has(name))
   const unexpected = [...parsedNames].filter((name) => !EXPECTED_SKILLS.includes(name))
   if (missing.length > 0 || unexpected.length > 0) {
     throw new Error(
-      `${pinSitePath}: pin pattern did not parse the expected skill set — ` +
+      `${pinSitePath}: pin parse did not find the expected skill set — ` +
       `missing=${JSON.stringify(missing)} unexpected=${JSON.stringify(unexpected)}. ` +
-      'The pin site was likely reformatted; update PIN_PATTERN/EXPECTED_SKILLS in ' +
+      'The pin site was likely reshaped; update EXPECTED_SKILLS in ' +
       'scripts/refresh-skill-digests.mjs rather than trusting a silent partial match.',
     )
   }
@@ -109,17 +122,14 @@ async function main() {
   }
 
   const driftedByName = new Map(drifted.map((d) => [d.name, d]))
-  // Rewrite back-to-front using each match's own [start, end) span, never a global
-  // string/digest replace — a global replace would cross-contaminate whenever one skill's old
-  // digest collides with another skill's new (or old) digest.
-  let rewritten = source
-  for (const pin of [...pins].sort((a, b) => b.start - a.start)) {
+  // Every occurrence of a drifted skill (it may be pinned under multiple seats) gets its own
+  // node's digest set independently — never a blind string replace across the document.
+  for (const pin of pins) {
     const d = driftedByName.get(pin.name)
     if (!d) continue
-    const replacement = `{ name: '${pin.name}', digest: '${d.actual}' }`
-    rewritten = rewritten.slice(0, pin.start) + replacement + rewritten.slice(pin.end)
+    pin.node.set('digest', d.actual)
   }
-  await writeFile(pinSiteUrl, rewritten)
+  await writeFile(pinSiteUrl, String(doc))
   console.log(`repinned ${drifted.length} skill digest(s) in ${pinSitePath}:`)
   for (const d of drifted) console.log(`  ${d.name}: ${d.pinned} -> ${d.actual}`)
 }
