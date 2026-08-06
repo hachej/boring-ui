@@ -82,7 +82,7 @@ describe("TaskSessionDisclosure", () => {
     })
     vi.spyOn(window, "confirm").mockReturnValue(true)
 
-    render(<TaskSessionDisclosure
+    const { rerender } = render(<TaskSessionDisclosure
       task={task}
       shell={shellCapabilities}
       pluginClient={{
@@ -133,6 +133,15 @@ describe("TaskSessionDisclosure", () => {
     await user.click(screen.getByRole("menuitem", { name: "Unlink session from #776" }))
     expect(window.confirm).toHaveBeenCalledWith("Unlink this chat from #776? The transcript will be kept.")
     expect(postJson).toHaveBeenCalledWith("/api/boring-tasks/sessions/unlink", { linkId: "link-1" })
+    rerender(<TaskSessionDisclosure
+      task={task}
+      shell={shellCapabilities}
+      pluginClient={{
+        postJson: postJson as unknown as WorkspacePluginClient["postJson"],
+        getJson: vi.fn(async () => ({ summary: { title: "Exact work", updatedAt: Date.parse("2026-07-19T01:00:00.000Z") }, state: { status: "idle", queue: { followUps: [{}] } } })) as WorkspacePluginClient["getJson"],
+      }}
+      sessionLinks={[]}
+    />)
     await waitFor(() => expect(screen.getByRole("button", { name: "0 sessions" })).toBeInTheDocument())
   })
 

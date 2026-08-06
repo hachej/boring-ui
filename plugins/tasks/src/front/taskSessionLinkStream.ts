@@ -19,15 +19,10 @@ interface TaskSessionLinkChange extends TaskSessionLinks {
   revision: number
 }
 
-export const TASK_SESSION_LINK_RECEIPT_EVENT = "boring-tasks:session-link-receipt"
+export const TASK_SESSION_LINK_REFRESH_EVENT = "boring-tasks:session-links-refresh"
 
-export function emitTaskSessionLinkReceipt(value: unknown): void {
-  if (!value || typeof value !== "object") return
-  const workspaceId = (value as { workspaceId?: unknown }).workspaceId
-  const item = taskLinks(value)
-  if (typeof workspaceId === "string" && workspaceId.length > 0 && item) {
-    window.dispatchEvent(new CustomEvent(TASK_SESSION_LINK_RECEIPT_EVENT, { detail: { workspaceId, ...item } }))
-  }
+export function requestTaskSessionLinkRefresh(workspaceId: string): void {
+  if (workspaceId) window.dispatchEvent(new CustomEvent(TASK_SESSION_LINK_REFRESH_EVENT, { detail: { workspaceId } }))
 }
 
 export function taskSessionLinkKey(adapterId: string, taskId: string): string {
@@ -59,7 +54,17 @@ function envelope(value: unknown): { streamId: string; revision: number } | unde
 
 export function useTaskSessionLinks(pluginClient: WorkspacePluginClient): ReadonlyMap<string, readonly BoringTaskSessionLink[]> | null {
   const [linksByTask, setLinksByTask] = useState<ReadonlyMap<string, readonly BoringTaskSessionLink[]> | null>(null)
+  const [connectionVersion, setConnectionVersion] = useState(0)
   const cursor = useRef<{ streamId: string; revision: number } | null>(null)
+
+  useEffect(() => {
+    const onRefresh = (event: Event) => {
+      const detail = (event as CustomEvent<{ workspaceId?: unknown }>).detail
+      if (detail?.workspaceId === (pluginClient.workspaceId ?? "workspace")) setConnectionVersion((version) => version + 1)
+    }
+    window.addEventListener(TASK_SESSION_LINK_REFRESH_EVENT, onRefresh)
+    return () => window.removeEventListener(TASK_SESSION_LINK_REFRESH_EVENT, onRefresh)
+  }, [pluginClient.workspaceId])
 
   useEffect(() => {
     if (typeof EventSource === "undefined") return
@@ -100,20 +105,8 @@ export function useTaskSessionLinks(pluginClient: WorkspacePluginClient): Readon
         applyTaskLinks(item)
       } catch { /* Ignore malformed stream frames. */ }
     })
-    const onReceipt = (event: Event) => {
-      const detail = (event as CustomEvent<unknown>).detail
-      const receiptWorkspaceId = detail && typeof detail === "object"
-        ? (detail as { workspaceId?: unknown }).workspaceId
-        : undefined
-      const item = taskLinks(detail)
-      if (receiptWorkspaceId === (pluginClient.workspaceId ?? "workspace") && item) applyTaskLinks(item)
-    }
-    window.addEventListener(TASK_SESSION_LINK_RECEIPT_EVENT, onReceipt)
-    return () => {
-      window.removeEventListener(TASK_SESSION_LINK_RECEIPT_EVENT, onReceipt)
-      source.close()
-    }
-  }, [pluginClient.apiBaseUrl, pluginClient.workspaceId])
+    return () => source.close()
+  }, [connectionVersion, pluginClient.apiBaseUrl, pluginClient.workspaceId])
 
   return linksByTask
 }

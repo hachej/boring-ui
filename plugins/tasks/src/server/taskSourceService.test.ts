@@ -233,6 +233,37 @@ describe("task source service", () => {
 })
 
 describe("github task source", () => {
+  test("associates exact issue references without matching longer issue numbers", async () => {
+    const issues = [1, 10].map((number) => ({
+      number,
+      title: `Issue ${number}`,
+      body: null,
+      url: `https://github.test/issues/${number}`,
+      state: "OPEN" as const,
+      labels: [],
+    }))
+    const executor: GitHubIssueExecutor = {
+      listIssues: vi.fn(async () => issues),
+      listPullRequests: vi.fn(async () => [
+        { number: 101, title: "Fix #10", state: "OPEN" },
+        { number: 102, title: "Fix #1 exactly", state: "OPEN" },
+        { number: 103, title: "URL for ten", body: "https://github.test/issues/10", state: "OPEN" },
+        { number: 104, title: "URL for one", body: "https://github.test/issues/1", state: "OPEN" },
+      ]),
+      viewIssue: vi.fn(async ({ issueNumber }) => issues.find((issue) => issue.number === issueNumber)!),
+      addLabels: vi.fn(async () => undefined),
+      removeLabels: vi.fn(async () => undefined),
+      closeIssue: vi.fn(async () => undefined),
+      reopenIssue: vi.fn(async () => undefined),
+    }
+    const github = createGitHubTaskSource({ owner: "hachej", repo: "boring-ui", executor })
+
+    const tasks = await github.listTasks({})
+
+    expect(tasks.find((task) => task.id === "1")?.pullRequests?.map((pr) => pr.number)).toEqual(["#102", "#104"])
+    expect(tasks.find((task) => task.id === "10")?.pullRequests?.map((pr) => pr.number)).toEqual(["#101", "#103"])
+  })
+
   test("maps generic status moves to GitHub labels through executor last mile", async () => {
     const issue = {
       number: 123,
