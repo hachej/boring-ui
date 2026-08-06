@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto"
-import type { BoringTaskSessionLink } from "../shared"
-import type { AtomicTaskSessionLinkStore, TaskSessionLinkSnapshot } from "./taskSessionLinkStore"
+import type { TaskSessionLinkMutationReceipt, TaskSessionLinkSnapshot, TaskSessionLinkStore } from "./taskSessionLinkStore"
 
 export interface TaskSessionLinkEvent extends TaskSessionLinkSnapshot {
   streamId: string
@@ -51,30 +50,19 @@ export class TaskSessionLinkEvents {
 }
 
 export function taskSessionLinkStoreWithEvents(
-  store: AtomicTaskSessionLinkStore,
+  store: TaskSessionLinkStore,
   workspaceId: string,
   events: TaskSessionLinkEvents,
-): AtomicTaskSessionLinkStore {
-  const publish = (link: BoringTaskSessionLink, links: BoringTaskSessionLink[]) => {
-    events.publish(workspaceId, { adapterId: link.adapterId, taskId: link.taskId, links })
-  }
-  const linkWithSnapshot: AtomicTaskSessionLinkStore["linkWithSnapshot"] = async (input) => {
-    const result = await store.linkWithSnapshot(input)
-    if (result.created) publish(result.link, result.links)
-    return result
-  }
-  const unlinkWithSnapshot: AtomicTaskSessionLinkStore["unlinkWithSnapshot"] = async (linkId, expectedAgentTypeId) => {
-    const result = await store.unlinkWithSnapshot(linkId, expectedAgentTypeId)
-    publish(result.link, result.links)
-    return result
+): TaskSessionLinkStore {
+  const publishReceipt = (receipt: TaskSessionLinkMutationReceipt) => {
+    if (receipt.changed) events.publish(workspaceId, receipt.snapshot)
+    return receipt
   }
   return {
     list: (adapterId, taskId) => store.list(adapterId, taskId),
     listBySessionIds: (sessionIds) => store.listBySessionIds(sessionIds),
     snapshotLinks: () => store.snapshotLinks(),
-    linkWithSnapshot,
-    link: async (input) => (await linkWithSnapshot(input)).link,
-    unlinkWithSnapshot,
-    unlink: async (linkId, expectedAgentTypeId) => (await unlinkWithSnapshot(linkId, expectedAgentTypeId)).link,
+    link: async (input) => publishReceipt(await store.link(input)),
+    unlink: async (linkId, expectedAgentTypeId) => publishReceipt(await store.unlink(linkId, expectedAgentTypeId)),
   }
 }

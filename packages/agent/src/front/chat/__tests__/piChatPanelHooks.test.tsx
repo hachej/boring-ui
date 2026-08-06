@@ -6,14 +6,13 @@ import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSess
 import { useExternalRemotePiSession } from '../piChatPanelHooks'
 
 function remoteSession() {
-  return { dispose: vi.fn() } as unknown as RemotePiSession
+  return { dispose: vi.fn(), suspendStream: vi.fn(), resumeStream: vi.fn() } as unknown as RemotePiSession
 }
 
 describe('useExternalRemotePiSession', () => {
   it('releases and restores the remote stream without unmounting its owner', () => {
     const first = remoteSession()
-    const second = remoteSession()
-    const createRemoteSession = vi.fn(() => createRemoteSession.mock.calls.length === 1 ? first : second)
+    const createRemoteSession = vi.fn(() => first)
     const { result, rerender } = renderHook(
       ({ enabled }) => useExternalRemotePiSession({
         sessionId: 'session-1',
@@ -27,11 +26,14 @@ describe('useExternalRemotePiSession', () => {
     )
 
     expect(createRemoteSession).toHaveBeenCalledTimes(1)
+    expect(first.resumeStream).toHaveBeenCalledTimes(1)
     rerender({ enabled: false })
-    expect(first.dispose).toHaveBeenCalledTimes(1)
+    expect(first.suspendStream).toHaveBeenCalledTimes(1)
+    expect(first.dispose).not.toHaveBeenCalled()
     expect(result.current).toBe(first)
     rerender({ enabled: true })
-    expect(createRemoteSession).toHaveBeenCalledTimes(2)
+    expect(first.resumeStream).toHaveBeenCalledTimes(2)
+    expect(createRemoteSession).toHaveBeenCalledTimes(1)
   })
 
   it('clears a retained snapshot when its suspended session is removed', () => {

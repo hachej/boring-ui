@@ -29,17 +29,19 @@ function fixture(options: { authorizeError?: boolean } = {}) {
   const linkStore = {
     list: vi.fn(async (adapterId: string, taskId: string) => links.filter((link) => link.adapterId === adapterId && link.taskId === taskId)),
     listBySessionIds: vi.fn(async (sessionIds: readonly string[]) => new Map(sessionIds.map((sessionId) => [sessionId, links.filter((link) => link.sessionId === sessionId)]))),
+    snapshotLinks: vi.fn(async () => []),
     link: vi.fn(async (input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }) => {
       const existing = links.find((link) => link.adapterId === input.adapterId && link.taskId === input.taskId && link.sessionId === input.sessionId)
-      if (existing) return existing
+      if (existing) return { link: existing, snapshot: { adapterId: input.adapterId, taskId: input.taskId, links: links.filter((link) => link.adapterId === input.adapterId && link.taskId === input.taskId) }, changed: false }
       const link = { id: `link-${links.length + 1}`, ...input, createdAt: "2026-07-18T00:00:00.000Z" }
       links.push(link)
-      return link
+      return { link, snapshot: { adapterId: input.adapterId, taskId: input.taskId, links: links.filter((candidate) => candidate.adapterId === input.adapterId && candidate.taskId === input.taskId) }, changed: true }
     }),
     unlink: vi.fn(async (linkId: string, expectedAgentTypeId?: string) => {
       const index = links.findIndex((link) => link.id === linkId && (expectedAgentTypeId === undefined || link.agentTypeId === expectedAgentTypeId))
       if (index < 0) throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_MISSING, "Task session link was not found.")
-      return links.splice(index, 1)[0]!
+      const link = links.splice(index, 1)[0]!
+      return { link, snapshot: { adapterId: link.adapterId, taskId: link.taskId, links: links.filter((candidate) => candidate.adapterId === link.adapterId && candidate.taskId === link.taskId) }, changed: true }
     }),
   }
   const authorizeSession = options.authorizeError
@@ -166,7 +168,7 @@ describe("manage_tasks execution", () => {
 
   it("cannot unlink another Agent's task-session provenance", async () => {
     const fixtureValue = fixture()
-    const foreign = await fixtureValue.linkStore.link({ adapterId: "source-a", taskId: "1", agentTypeId: "beta", sessionId: "foreign-session" })
+    const foreign = (await fixtureValue.linkStore.link({ adapterId: "source-a", taskId: "1", agentTypeId: "beta", sessionId: "foreign-session" })).link
 
     await expect(fixtureValue.tool.execute({ action: "unlink_session", linkId: foreign.id }, context)).resolves.toMatchObject({
       isError: true,

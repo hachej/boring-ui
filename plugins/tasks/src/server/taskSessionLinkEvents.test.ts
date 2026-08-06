@@ -1,30 +1,31 @@
 import { describe, expect, it, vi } from "vitest"
 import { TaskSessionLinkEvents, taskSessionLinkStoreWithEvents } from "./taskSessionLinkEvents"
 import type { BoringTaskSessionLink } from "../shared"
-import type { AtomicTaskSessionLinkStore } from "./taskSessionLinkStore"
+import type { TaskSessionLinkStore } from "./taskSessionLinkStore"
 
-function memoryStore(): AtomicTaskSessionLinkStore {
+function memoryStore(): TaskSessionLinkStore {
   const links: BoringTaskSessionLink[] = []
-  const linkWithSnapshot: AtomicTaskSessionLinkStore["linkWithSnapshot"] = async (input) => {
-    const existing = links.find((link) => link.adapterId === input.adapterId && link.taskId === input.taskId && link.agentTypeId === input.agentTypeId && link.sessionId === input.sessionId)
-    if (existing) return { link: existing, links: [...links], created: false }
-    const link = { id: `link-${links.length + 1}`, ...input, createdAt: new Date(0).toISOString() }
-    links.push(link)
-    return { link, links: [...links], created: true }
-  }
-  const unlinkWithSnapshot: AtomicTaskSessionLinkStore["unlinkWithSnapshot"] = async (linkId, expectedAgentTypeId) => {
-    const index = links.findIndex((link) => link.id === linkId && (expectedAgentTypeId === undefined || link.agentTypeId === expectedAgentTypeId))
-    const link = links.splice(index, 1)[0]!
-    return { link, links: [...links] }
-  }
+  const snapshot = (adapterId: string, taskId: string) => ({
+    adapterId,
+    taskId,
+    links: links.filter((link) => link.adapterId === adapterId && link.taskId === taskId),
+  })
   return {
-    async list(adapterId, taskId) { return links.filter((link) => link.adapterId === adapterId && link.taskId === taskId) },
+    async list(adapterId, taskId) { return snapshot(adapterId, taskId).links },
     async listBySessionIds(sessionIds) { return new Map(sessionIds.map((id) => [id, links.filter((link) => link.sessionId === id)])) },
     async snapshotLinks() { return [] },
-    linkWithSnapshot,
-    async link(input) { return (await linkWithSnapshot(input)).link },
-    unlinkWithSnapshot,
-    async unlink(linkId, expectedAgentTypeId) { return (await unlinkWithSnapshot(linkId, expectedAgentTypeId)).link },
+    async link(input) {
+      const existing = links.find((link) => link.adapterId === input.adapterId && link.taskId === input.taskId && link.agentTypeId === input.agentTypeId && link.sessionId === input.sessionId)
+      if (existing) return { link: existing, snapshot: snapshot(input.adapterId, input.taskId), changed: false }
+      const link = { id: `link-${links.length + 1}`, ...input, createdAt: new Date(0).toISOString() }
+      links.push(link)
+      return { link, snapshot: snapshot(input.adapterId, input.taskId), changed: true }
+    },
+    async unlink(linkId, expectedAgentTypeId) {
+      const index = links.findIndex((link) => link.id === linkId && (expectedAgentTypeId === undefined || link.agentTypeId === expectedAgentTypeId))
+      const link = links.splice(index, 1)[0]!
+      return { link, snapshot: snapshot(link.adapterId, link.taskId), changed: true }
+    },
   }
 }
 
@@ -37,7 +38,7 @@ describe("TaskSessionLinkEvents", () => {
     events.subscribe("workspace-b", workspaceB)
     const store = taskSessionLinkStoreWithEvents(memoryStore(), "workspace-a", events)
 
-    const link = await store.link({ adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "native-secret" })
+    const link = (await store.link({ adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "native-secret" })).link
     expect(workspaceA).toHaveBeenLastCalledWith(expect.objectContaining({
       adapterId: "github",
       taskId: "776",

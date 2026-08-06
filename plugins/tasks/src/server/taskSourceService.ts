@@ -210,11 +210,11 @@ export function createTaskSourceService(registry: BoringTaskSourceRegistry): Tas
       const adapterId = adapterIdFromInput(input)
       await service.getTask(ctx, { adapterId, taskId: input.taskId })
       await binding.authorizeSession(input.sessionId)
-      return await binding.linkStore.link({ adapterId, taskId: input.taskId, sessionId: input.sessionId, agentTypeId: binding.agentTypeId })
+      return (await binding.linkStore.link({ adapterId, taskId: input.taskId, sessionId: input.sessionId, agentTypeId: binding.agentTypeId })).link
     },
 
     async unlinkSession(linkId, binding, expectedAgentTypeId) {
-      return await binding.linkStore.unlink(linkId, expectedAgentTypeId)
+      return (await binding.linkStore.unlink(linkId, expectedAgentTypeId)).link
     },
 
     async resolveSessionTasks(ctx, sessionIds, binding) {

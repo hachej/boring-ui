@@ -46,12 +46,14 @@ describe("FileTaskSessionLinkStore", () => {
     const workspace = new MemoryWorkspace()
     const store = new FileTaskSessionLinkStore(workspace)
 
-    const first = await store.link({ agentTypeId: "alpha", adapterId: "github", taskId: "776", sessionId: "native-a" })
+    const firstReceipt = await store.link({ agentTypeId: "alpha", adapterId: "github", taskId: "776", sessionId: "native-a" })
     const duplicate = await store.link({ agentTypeId: "alpha", adapterId: "github", taskId: "776", sessionId: "native-a" })
+    const first = firstReceipt.link
     await store.link({ agentTypeId: "alpha", adapterId: "github", taskId: "other", sessionId: "native-b" })
     await store.link({ agentTypeId: "alpha", adapterId: "beads", taskId: "776", sessionId: "native-c" })
 
-    expect(duplicate).toEqual(first)
+    expect(firstReceipt).toMatchObject({ changed: true, snapshot: { adapterId: "github", taskId: "776", links: [first] } })
+    expect(duplicate).toEqual({ ...firstReceipt, changed: false })
     expect(await store.list("github", "776")).toEqual([first])
     expect(first.id).not.toContain("776")
     expect(workspace.files.has(".pi/tasks/session-links.json")).toBe(true)
@@ -109,14 +111,14 @@ describe("FileTaskSessionLinkStore", () => {
 
   it("unlinks stale bindings without consulting a session", async () => {
     const store = new FileTaskSessionLinkStore(new MemoryWorkspace())
-    const link = await store.link({ agentTypeId: "alpha", adapterId: "github", taskId: "776", sessionId: "now-missing" })
-    await expect(store.unlink(link.id)).resolves.toEqual(link)
+    const link = (await store.link({ agentTypeId: "alpha", adapterId: "github", taskId: "776", sessionId: "now-missing" })).link
+    await expect(store.unlink(link.id)).resolves.toEqual({ link, changed: true, snapshot: { adapterId: "github", taskId: "776", links: [] } })
     await expect(store.unlink(link.id)).rejects.toMatchObject({ code: TASK_ERROR_CODES.SESSION_LINK_MISSING } satisfies Partial<TaskSessionLinkStoreError>)
   })
 
   it("atomically rejects unlinking a link owned by another Agent", async () => {
     const store = new FileTaskSessionLinkStore(new MemoryWorkspace())
-    const link = await store.link({ agentTypeId: "beta", adapterId: "github", taskId: "776", sessionId: "foreign" })
+    const link = (await store.link({ agentTypeId: "beta", adapterId: "github", taskId: "776", sessionId: "foreign" })).link
 
     await expect(store.unlink(link.id, "alpha")).rejects.toMatchObject({ code: TASK_ERROR_CODES.SESSION_LINK_MISSING })
     await expect(store.list("github", "776")).resolves.toEqual([link])
