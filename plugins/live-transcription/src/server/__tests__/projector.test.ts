@@ -13,6 +13,16 @@ const initial: TranscriptDocument = {
 afterEach(() => vi.useRealTimers())
 
 describe("LiveTranscriptProjector", () => {
+  it("renders provider-neutral timestamped paragraphs without invented speaker labels", () => {
+    const markdown = renderTranscriptMarkdown({
+      ...initial,
+      showSpeakerLabels: false,
+      lines: [{ startSeconds: 3.9, speaker: 1, text: "Bonjour à tous" }],
+    })
+    expect(markdown).toContain("[00:00:03] Bonjour à tous")
+    expect(markdown).not.toContain("Speaker")
+  })
+
   it("serializes throttled whole-document writes and terminal-flushes once", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000)

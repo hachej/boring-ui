@@ -11,6 +11,8 @@ export interface TranscriptDocument {
   title: string
   startedAt: string
   state: "active" | "complete" | "interrupted"
+  /** False for providers such as Kyutai that do not identify speakers. */
+  showSpeakerLabels?: boolean
   lines: readonly ProjectedTranscriptLine[]
 }
 
@@ -26,7 +28,8 @@ export function renderTranscriptMarkdown(document: TranscriptDocument): string {
   for (const line of document.lines) {
     const text = line.text.replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim()
     if (!text) continue
-    lines.push("", `[${formatTimestamp(line.startSeconds)}] **Speaker ${line.speaker}:** ${text}`)
+    const content = document.showSpeakerLabels === false ? text : `**Speaker ${line.speaker}:** ${text}`
+    lines.push("", `[${formatTimestamp(line.startSeconds)}] ${content}`)
   }
   return `${lines.join("\n")}\n`
 }

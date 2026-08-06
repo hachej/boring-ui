@@ -203,7 +203,13 @@ export class LiveTranscriptManager {
     const startedAt = new Date(this.now()).toISOString()
     const path = `live-transcripts/${startedAt.slice(0, 10)}-${randomBytes(12).toString("hex")}.md`
     await workspace.mkdir("live-transcripts", { recursive: true })
-    const initialDocument: TranscriptDocument = { title, startedAt, state: "active", lines: [] }
+    const initialDocument: TranscriptDocument = {
+      title,
+      startedAt,
+      state: "active",
+      showSpeakerLabels: this.options.upstreamProvider !== "kyutai",
+      lines: [],
+    }
     const markdown = renderTranscriptMarkdown(initialDocument)
     const stat = await workspace.writeFileWithStat(path, markdown)
     const id = randomUUID()
@@ -521,7 +527,13 @@ export class LiveTranscriptManager {
     state: "active" | "complete" | "interrupted",
     lines: ProjectedTranscriptLine[],
   ): TranscriptDocument {
-    return { title: session.title, startedAt: session.startedAt, state, lines }
+    return {
+      title: session.title,
+      startedAt: session.startedAt,
+      state,
+      showSpeakerLabels: this.options.upstreamProvider !== "kyutai",
+      lines,
+    }
   }
 
   private requireActive(id: string): LiveSession {
