@@ -421,7 +421,7 @@ Do not overwrite existing string-only `appLeftOverlay` persistence.
 `useAgentDetails` request key is:
 
 ```text
-{ workspaceId, viewedAgentTypeId, apiBaseUrl, authEpoch, capabilityEpoch }
+{ workspaceId, viewedAgentTypeId, apiBaseUrl, authEpoch, capabilityEpoch, leaseExpiresAt }
 ```
 
 For every key change or retry:
