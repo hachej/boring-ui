@@ -41,6 +41,7 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
         sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
         pruneWhenSessionMissing: true,
         focus: { closeWorkbenchLeftPane: true },
+        composer: { visible: false },
         inbox: {
           kind: "question",
           sourceLabel: "question",

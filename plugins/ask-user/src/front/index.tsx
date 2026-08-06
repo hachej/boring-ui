@@ -3,6 +3,7 @@
 import { Button, EmptyState, Notice, Pane, PaneBody, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
 import {
   WORKSPACE_COMPOSER_STOP_EVENT,
+  postUiCommand,
   useWorkspaceAttention,
   useWorkspaceContext,
   workspaceComposerStopAppliesToSession,
@@ -10,7 +11,7 @@ import {
   type PluginProviderProps,
 } from "@hachej/boring-workspace"
 import { definePlugin, type BoringFrontAppLeftOverlayProps, type BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
-import { CheckCircle2, HelpCircle, Inbox, XCircle } from "lucide-react"
+import { CheckCircle2, HelpCircle, Inbox, SquareArrowOutUpRight, XCircle } from "lucide-react"
 import { useEffect, useMemo, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import type { AskUserAnswerValue, AskUserQuestion } from "../shared/types"
@@ -83,7 +84,7 @@ async function resolveQuestionAction(
   }
 }
 
-function PendingQuestionBody({ question, onResolved, compact = false }: { question: AskUserQuestion; onResolved?: () => void; compact?: boolean }) {
+function PendingQuestionBody({ question, onResolved, onOpen, compact = false }: { question: AskUserQuestion; onResolved?: () => void; onOpen?: () => void; compact?: boolean }) {
   const runtime = useQuestionsRuntime()
   const [error, setError] = useState<string | null>(null)
   useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
@@ -100,7 +101,8 @@ function PendingQuestionBody({ question, onResolved, compact = false }: { questi
   return <QuestionFormProvider key={question.questionId} schema={question.schema} submitting={submitting} onSubmit={(values) => run("submit", values)} onCancel={() => run("cancel")}>
     <QuestionForm className={compact ? "space-y-4" : "flex min-h-0 flex-1 flex-col"}>
       <div className={compact ? "space-y-4" : "flex-1 overflow-auto p-4"}>
-        <section className="rounded-md border border-border/60 bg-muted/30 p-4">
+        <section className="relative rounded-md border border-border/60 bg-muted/30 p-4 pr-12">
+          {onOpen ? <Button type="button" variant="ghost" size="icon-sm" className="absolute right-3 top-3" style={{ width: 44, height: 44 }} onClick={onOpen} aria-label="Open Questions" title="Open Questions"><SquareArrowOutUpRight className="h-4 w-4" /></Button> : null}
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Waiting for answer</div>
           <h2 className="mt-2 text-balance text-sm font-semibold leading-5 text-foreground">{question.title ?? "Question"}</h2>
           {question.context ? <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">{question.context}</p> : null}
@@ -152,7 +154,7 @@ function InlineQuestion({ part }: { part: unknown }) {
   const toolPart = typeof part === "object" && part ? part as { toolCallId?: unknown; state?: unknown; input?: unknown } : null
   const toolCallId = typeof toolPart?.toolCallId === "string" ? toolPart.toolCallId : null
   const question = toolCallId ? runtime.getPendingByToolCallId(toolCallId) : null
-  if (question) return <section data-boring-ask-user-inline-question="true" data-testid="ask-user-inline-question" className="my-3 rounded-lg border border-border/70 bg-card p-4 text-sm shadow-sm"><PendingQuestionBody question={question} compact /></section>
+  if (question) return <section data-boring-ask-user-inline-question="true" data-testid="ask-user-inline-question" className="my-3 rounded-lg border border-border/70 bg-card p-4 text-sm shadow-sm"><PendingQuestionBody question={question} compact onOpen={() => postUiCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { sessionId: question.sessionId } } })} /></section>
   if (toolPart?.state !== "output-available" && toolPart?.state !== "output-error" && toolPart?.state !== "aborted") return null
   const input = typeof toolPart.input === "object" && toolPart.input ? toolPart.input as { title?: unknown } : null
   const title = typeof input?.title === "string" ? input.title : "Agent question"

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { WORKSPACE_ATTENTION_ACTION_EVENT, WORKSPACE_COMPOSER_STOP_EVENT, WORKSPACE_COMPOSER_STOP_REASONS, WorkspaceProvider, events, userMeta, useWorkspaceAttention, workspaceEvents } from "@hachej/boring-workspace"
+import { UI_COMMAND_EVENT, WORKSPACE_ATTENTION_ACTION_EVENT, WORKSPACE_COMPOSER_STOP_EVENT, WORKSPACE_COMPOSER_STOP_REASONS, WorkspaceProvider, events, userMeta, useWorkspaceAttention, workspaceEvents } from "@hachej/boring-workspace"
 import { captureFrontPlugin } from "@hachej/boring-workspace/plugin"
 import type { AskUserQuestion } from "../../shared/types"
 import { askUserPlugin } from "../index"
@@ -416,6 +416,7 @@ describe("askUserPlugin front shell", () => {
       label: "Choose A or B",
       inbox: expect.objectContaining({ kind: "question", sourceLabel: "question", priority: 10 }),
       sessionBadge: expect.objectContaining({ kind: "question" }),
+      composer: { visible: false },
       agentTypeId: "alpha",
     })))
   })
@@ -480,6 +481,14 @@ describe("askUserPlugin front shell", () => {
 
     expect(await screen.findByText("Choose A or B")).toBeInTheDocument()
     expect(screen.getByTestId("ask-user-inline-question")).toBeInTheDocument()
+    const onCommand = vi.fn()
+    window.addEventListener(UI_COMMAND_EVENT, onCommand)
+    fireEvent.click(screen.getByRole("button", { name: "Open Questions" }))
+    expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.objectContaining({
+      kind: "openSurface",
+      params: { kind: "questions", target: question.questionId, meta: { sessionId: question.sessionId } },
+    }) }))
+    window.removeEventListener(UI_COMMAND_EVENT, onCommand)
 
     rerender(<Provider apiBaseUrl="" activeSessionId="other"><>{renderer.render({ toolCallId: "another-call" })}</></Provider>)
     expect(screen.queryByTestId("ask-user-inline-question")).not.toBeInTheDocument()

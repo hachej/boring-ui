@@ -43,6 +43,7 @@ export type AskUserInlineHardGateSnapshot = UiReviewBrowserErrors & {
     inlineCount: number
     resolvedCount: number
     paneCount: number
+    openIconCount: number
     selectedValue: string | null
     submitLabel: string | null
     rawSchemaVisible: boolean
@@ -67,8 +68,9 @@ export function evaluateAskUserInlineHardGates(snapshot: AskUserInlineHardGateSn
   add("single-presentation", snapshot.question.paneCount === 0 && snapshot.question.inlineCount <= 1 && snapshot.question.resolvedCount <= 1, `pane=${snapshot.question.paneCount};inline=${snapshot.question.inlineCount};resolved=${snapshot.question.resolvedCount}`)
 
   const expected = snapshot.checkpoint === "resolved"
-    ? snapshot.question.inlineCount === 0 && snapshot.question.resolvedCount === 1
+    ? snapshot.question.inlineCount === 0 && snapshot.question.resolvedCount === 1 && snapshot.question.openIconCount === 0
     : snapshot.question.inlineCount === 1
+      && snapshot.question.openIconCount === 1
       && snapshot.question.resolvedCount === 0
       && snapshot.question.submitLabel === "Continue"
       && (snapshot.checkpoint !== "selected" || snapshot.question.selectedValue?.startsWith("Request changes") === true)

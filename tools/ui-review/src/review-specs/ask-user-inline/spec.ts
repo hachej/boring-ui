@@ -80,6 +80,7 @@ export const askUserInlineSpec: UiReviewSpec = {
             inlineCount: document.querySelectorAll('[data-boring-ask-user-inline-question="true"]').length,
             resolvedCount: document.querySelectorAll('[data-boring-ask-user-resolved-question="true"]').length,
             paneCount: [...document.querySelectorAll("*")].filter((element) => visible(element) && element.textContent?.trim() === "Agent needs input").length,
+            openIconCount: [...document.querySelectorAll('button[aria-label="Open Questions"]')].filter(visible).length,
             selectedValue: selected?.closest("label")?.textContent?.replace(/\s+/g, " ").trim() ?? null,
             submitLabel: submit?.textContent?.trim() ?? null,
             rawSchemaVisible: document.body.innerText.includes('"wireVersion"'),
