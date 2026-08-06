@@ -34,11 +34,14 @@ only (do not duplicate in VISION).
 
 ## 4. Beadle automation + policy parser
 
-- **Today**: no dispatcher; task→chat only on human click;
-  `plugins/boring-automation` exists as the scheduling host.
+- **Today**: no supervisor; task→chat only on human click;
+  `plugins/boring-automation` exists as the scheduling host. Workers pull
+  their own beads (`br ready` → lease + session-id stamp); the Beadle never
+  picks beads.
 - **Delta**: a `boring-automation` scheduled automation on the tick cadence in
   `.agents/factory/policy.yaml`: spawn workers while ready > active (cap), break
-  stale leases (require handoff notes), flag beads closed without proof,
+  stale leases (no heartbeat past `stale_lease_minutes`; require handoff notes
+  or a provably dead session), flag beads closed without proof,
   rebase epic branches past thresholds, file conflict beads.
 
 ## 5. Trust ladder + bugfix lane
