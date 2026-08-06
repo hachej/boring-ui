@@ -237,10 +237,14 @@ export class FileTaskSessionLinkStore implements AtomicTaskSessionLinkStore {
   }
 
   private async write(store: StoredLinks): Promise<void> {
+    const serialized = `${JSON.stringify({ ...store, links: [...store.links].sort(compareLinks) }, null, 2)}\n`
+    if (encoder.encode(serialized).byteLength > MAX_STORE_BYTES) {
+      throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_STORE_ERROR, "Task session link store is at capacity.")
+    }
     const temporary = `${STORE_PATH}.tmp-${randomUUID()}`
     try {
       await this.workspace.mkdir(STORE_DIR, { recursive: true })
-      await this.workspace.writeFile(temporary, `${JSON.stringify({ ...store, links: [...store.links].sort(compareLinks) }, null, 2)}\n`)
+      await this.workspace.writeFile(temporary, serialized)
       await this.workspace.rename(temporary, STORE_PATH)
     } catch (error) {
       if (this.workspace.unlink) await this.workspace.unlink(temporary).catch(() => {})

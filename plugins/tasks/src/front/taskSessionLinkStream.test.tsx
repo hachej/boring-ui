@@ -19,11 +19,11 @@ class MockEventSource {
   close() { this.closed = true }
 }
 
-function client(): WorkspacePluginClient {
+function client(workspaceId = "workspace-a"): WorkspacePluginClient {
   return {
     agentTypeId: "default",
     apiBaseUrl: "/api",
-    workspaceId: "workspace-a",
+    workspaceId,
     workspaceHeaders: () => ({}),
     getJson: vi.fn(),
     readJsonFile: vi.fn(),
@@ -71,6 +71,33 @@ describe("useTaskSessionLinks", () => {
     expect(result.current?.has(key)).toBe(false)
     unmount()
     expect(source.closed).toBe(true)
+  })
+
+  it("clears prior descriptors immediately when the Workspace changes", () => {
+    vi.stubGlobal("EventSource", MockEventSource)
+    const { result, rerender } = renderHook(({ workspaceId }) => useTaskSessionLinks(client(workspaceId)), {
+      initialProps: { workspaceId: "workspace-a" },
+    })
+    const source = MockEventSource.instances[0]!
+    act(() => source.emit("snapshot", { streamId: "shared", revision: 1, tasks: [{ adapterId: "github", taskId: "776", links: [link("old")] }] }))
+
+    rerender({ workspaceId: "workspace-b" })
+
+    expect(result.current).toBeNull()
+    expect(source.closed).toBe(true)
+    expect(MockEventSource.instances[1]?.url).toContain("workspaceId=workspace-b")
+  })
+
+  it("reconnects for an authoritative snapshot when a revision is skipped", () => {
+    vi.stubGlobal("EventSource", MockEventSource)
+    const { result } = renderHook(() => useTaskSessionLinks(client()))
+    const source = MockEventSource.instances[0]!
+    act(() => source.emit("snapshot", { streamId: "stream-a", revision: 2, tasks: [{ adapterId: "github", taskId: "776", links: [link("old")] }] }))
+    act(() => source.emit("change", { streamId: "stream-a", revision: 4, adapterId: "github", taskId: "776", links: [link("gap")] }))
+
+    expect(source.closed).toBe(true)
+    expect(result.current).toBeNull()
+    expect(MockEventSource.instances).toHaveLength(2)
   })
 
   it("replaces state from a reconnect snapshot", () => {
