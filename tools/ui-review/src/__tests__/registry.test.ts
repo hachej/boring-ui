@@ -39,7 +39,7 @@ describe("UI review spec registry", () => {
     expect(componentSpec.target.root).toBe("tools/ui-review/fixtures/workspace-components")
     expect(componentSpec.checkpoints.every((checkpoint) => checkpoint.visualBaseline)).toBe(true)
     const askUserSpec = uiReviewSpecs.get("ask-user-inline")
-    expect(askUserSpec.checkpoints.map((checkpoint) => checkpoint.id)).toEqual(["pending", "selected", "resolved"])
+    expect(askUserSpec.checkpoints.map((checkpoint) => checkpoint.id)).toEqual(["pending-light", "pending", "selected", "resolved"])
     const automationSpec = uiReviewSpecs.get("automation-pane-popover")
     expect(automationSpec.target.root).toBe("tools/ui-review/fixtures/workspace-components")
     expect(automationSpec.checkpoints).toHaveLength(4)

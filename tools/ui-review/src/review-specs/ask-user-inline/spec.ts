@@ -33,6 +33,10 @@ export const askUserInlineSpec: UiReviewSpec = {
     { name: "mobile", width: 390, height: 844, deviceScaleFactor: 1 },
   ],
   checkpoints: [
+    { id: "pending-light", viewportNames: ["desktop"], colorScheme: "light", reach: async (page) => {
+      await openFixture(page, "pending")
+      await expect(page.getByTestId("ask-user-inline-question")).toBeVisible()
+    } },
     { id: "pending", colorScheme: "dark", reach: async (page) => {
       await openFixture(page, "pending")
       await expect(page.getByTestId("ask-user-inline-question")).toBeVisible()
@@ -50,7 +54,7 @@ export const askUserInlineSpec: UiReviewSpec = {
   criticPrompt: "Review the supplied inline ask_user pending, selected, and resolved screenshots against the design context. Prioritize hierarchy, legibility, action contrast, density, responsive behavior, state continuity, and whether the question remains the primary interaction. Return only UiCriticReportV1 JSON. Scores are advisory and every finding must cite supplied state ids.",
   criticContextPaths: [".impeccable.md", "plugins/ask-user/README.md"],
   ownerSpotChecks: [
-    "Compare pending, selected, and resolved inline-question states at desktop and mobile widths.",
+    "Compare light and dark pending states plus selected and resolved states at desktop and mobile widths.",
     "Confirm the primary action label is readable in dark mode and choices have clear selected state.",
     "Confirm no duplicate Questions pane or raw ask_user JSON appears in any checkpoint.",
     "Confirm progress from pending to resolved preserves the conversation-first hierarchy.",

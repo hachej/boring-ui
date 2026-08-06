@@ -55,6 +55,13 @@ describe('@hachej/boring-ui-kit primitives', () => {
     expect(cn('px-2 text-sm', false, 'px-4')).toBe('text-sm px-4')
   })
 
+  it('keeps inverse buttons on the semantic foreground/background token pair', () => {
+    const html = renderToStaticMarkup(<Button variant="inverse">Continue</Button>)
+    expect(html).toContain('data-variant="inverse"')
+    expect(html).toContain('bg-foreground')
+    expect(html).toContain('text-background')
+  })
+
   it('renders the core primitives with stable data slots', () => {
     const html = renderToStaticMarkup(
       <div>

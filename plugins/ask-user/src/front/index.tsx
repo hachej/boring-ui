@@ -112,7 +112,7 @@ function PendingQuestionBody({ question, onResolved, onOpen, compact = false }: 
       </div>
       <div className={compact ? "flex justify-between gap-3 border-t pt-3" : "flex justify-between border-t bg-background px-4 py-3"}>
         <p className="min-w-0 text-xs text-muted-foreground">Sends answers and continues the agent.</p>
-        <div className="flex gap-2"><Button asChild variant="outline" size="sm" className="h-11 sm:h-8"><QuestionCancelButton>Cancel</QuestionCancelButton></Button><Button asChild size="sm" className="h-11 bg-white !text-black hover:bg-white/90 sm:h-8"><QuestionSubmitButton>{question.schema.submitLabel ?? "Send answers"}</QuestionSubmitButton></Button></div>
+        <div className="flex gap-2"><Button asChild variant="outline" size="sm" className="h-11 sm:h-8"><QuestionCancelButton>Cancel</QuestionCancelButton></Button><Button asChild variant="inverse" size="sm" className="h-11 sm:h-8"><QuestionSubmitButton>{question.schema.submitLabel ?? "Send answers"}</QuestionSubmitButton></Button></div>
       </div>
     </QuestionForm>
   </QuestionFormProvider>
