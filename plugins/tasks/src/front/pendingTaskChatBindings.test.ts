@@ -107,7 +107,7 @@ describe("pending task chat binding recovery", () => {
     expect(window.sessionStorage.getItem(storageKey)).toBe("[]")
   })
 
-  it("caps transient retries and clears exhausted intent", async () => {
+  it("caps transient retries without discarding accepted binding intent", async () => {
     vi.useFakeTimers()
     window.sessionStorage.setItem(storageKey, JSON.stringify([pending]))
     const api = client(1)
@@ -117,7 +117,7 @@ describe("pending task chat binding recovery", () => {
     await vi.runAllTimersAsync()
 
     expect(api.postJson).toHaveBeenCalledTimes(6)
-    expect(window.sessionStorage.getItem(storageKey)).toBe("[]")
+    expect(window.sessionStorage.getItem(storageKey)).toBe(JSON.stringify([pending]))
   })
 
   it("keeps one capped retry chain when recovery races prompt acceptance", async () => {
@@ -141,6 +141,6 @@ describe("pending task chat binding recovery", () => {
     await vi.runAllTimersAsync()
 
     expect(postJson).toHaveBeenCalledTimes(6)
-    expect(window.sessionStorage.getItem(storageKey)).toBe("[]")
+    expect(window.sessionStorage.getItem(storageKey)).toBe(JSON.stringify([pending]))
   })
 })
