@@ -4,7 +4,7 @@
 
 beadle:
   tick_minutes: 10
-  worker_cap: 2 # concurrent /exec workers, fleet-wide
+  worker_cap: 3 # concurrent /exec workers, fleet-wide; max 1 UI-surface worker at a time (file-collision lane rule)
   stale_lease_minutes: 90
   lease_heartbeat_minutes: 15 # a working session must touch its bead at least this often
   bugfix_reserved_slots: 0 # worker slots held for the bugfix lane
