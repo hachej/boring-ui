@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Inbox, MailOpen, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
-import { HumanArtifactList, useWorkspaceAttention, useAppLeftOverlayChrome, cn, type HumanArtifact } from "@hachej/boring-workspace"
+import { HumanArtifactList, useWorkspaceAttention, useAppLeftOverlayChrome, cn } from "@hachej/boring-workspace"
 import { attentionBlockerToInboxItem, isInboxAttentionBlocker } from "./attentionBlockerAdapter"
 import { InboxFilterBar } from "./InboxFilterBar"
 import { InboxSection } from "./InboxSection"
@@ -109,25 +109,14 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
     handleShellResult(shell.openDetachedChat({ agentTypeId: item.agentTypeId, sessionId: item.sessionId }, { title: item.title }))
   }, [handleShellResult, shell])
   const renderExpandedItem = useCallback((item: WorkspaceInboxItemViewModel) => {
-    const blocker = blockers.find((entry) => entry.id === item.id)
-    const questionArtifact: HumanArtifact | null = blocker?.surfaceKind && blocker.target
-      ? {
-          id: `${item.id}:question`,
-          surfaceKind: blocker.surfaceKind,
-          target: blocker.target,
-          title: item.title,
-          description: "Answer requested",
-        }
-      : null
-    const artifacts = [...(questionArtifact ? [questionArtifact] : []), ...item.artifacts]
     const tasks = item.sessionId ? relatedTasks.get(item.sessionId) ?? [] : []
     return (
       <div className="px-4 py-3">
-        <HumanArtifactList artifacts={artifacts} onOpen={(artifact) => handleShellResult(shell.openInboxArtifact(item, artifact))} />
+        <HumanArtifactList artifacts={item.artifacts} onOpen={(artifact) => handleShellResult(shell.openInboxArtifact(item, artifact))} />
         <RelatedTaskList tasks={tasks} className="mt-3" />
       </div>
     )
-  }, [blockers, handleShellResult, relatedTasks, shell])
+  }, [handleShellResult, relatedTasks, shell])
   return (
     <div data-boring-workspace-part="inbox-overlay" className="flex h-full min-h-0 flex-col bg-background">
       <header className={cn(

@@ -11,7 +11,7 @@ import { type TaskManagementService, TaskSourceServiceError } from "./taskSource
 import {
   TaskSessionLinkStoreError,
   taskSessionLinkStoreForWorkspace,
-  type AtomicTaskSessionLinkStore,
+  type TaskSessionLinkStore,
   type TaskSessionLinkWorkspace,
 } from "./taskSessionLinkStore"
 import {
@@ -121,7 +121,7 @@ export function registerTaskSessionLinkRoutes(
     run: (binding: {
       actor: Awaited<ReturnType<TaskSessionLinkTrustedContext["actorResolver"]>>
       workspace: TaskSessionLinkWorkspace
-      store: AtomicTaskSessionLinkStore
+      store: TaskSessionLinkStore
       resolver: TaskSessionLinkTrustedContext["workspaceAgentDispatcherResolver"]
     }) => Promise<T>,
   ): Promise<T> {

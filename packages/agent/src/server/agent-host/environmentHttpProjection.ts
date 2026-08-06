@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import {
   fileRoutes,
+  filesystemsRoutes,
   fsEventsRoutes,
   gitRoutes,
   searchRoutes,
@@ -97,9 +98,10 @@ export async function registerAgentHostEnvironmentRoutes(
   }
 
   await app.register(fileRoutes, { getWorkspace, getFilesystemBindings })
+  await app.register(filesystemsRoutes, { getFilesystemBindings })
   await app.register(fsEventsRoutes, { getWorkspace, deferLeaseRelease })
   await app.register(treeRoutes, { getWorkspace, getFilesystemBindings })
-  await app.register(searchRoutes, { getFileSearch })
+  await app.register(searchRoutes, { getFileSearch, getFilesystemBindings })
   await app.register(gitRoutes, {
     getWorkspace: getGitWorkspace,
     getWorkspaceHostRoot: (workspace) => gitHostRoots.get(workspace as object)

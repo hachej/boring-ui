@@ -48,6 +48,20 @@ describe('inbox item model', () => {
     expect(inbox.actions).toEqual([{ id: 'open', label: 'Open' }])
   })
 
+  it('deduplicates an explicit artifact that already targets the question surface', () => {
+    const artifact = { id: 'explicit', surfaceKind: 'questions', target: 'q1', title: 'Answer question' }
+    const inbox = attentionBlockerToInboxItem({
+      id: 'b1',
+      reason: 'ask-user.question',
+      label: 'Need input',
+      target: 'q1',
+      surfaceKind: 'questions',
+      inbox: { kind: 'question', sourceLabel: 'question', artifacts: [artifact] },
+    })
+
+    expect(inbox.artifacts).toEqual([artifact])
+  })
+
   it('only admits explicit Inbox blockers and never infers missing chat ownership', () => {
     expect(isInboxAttentionBlocker({ id: 'plain', reason: 'composer.blocked', label: 'Plain blocker' })).toBe(false)
     expect(attentionBlockerToInboxItem({

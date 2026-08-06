@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "runId": "ask-user-inline-icon-final",
+  "scenarioId": "ask-user-inline",
+  "rubricVersion": "impeccable-v1",
+  "resolvedModel": "fixture",
+  "candidateRevision": "2f9535f5d31222e1ce416fe1b3473be002b4fb67",
+  "candidateTreeHash": "84621d986d22ca8ce6b64c6e6e86b10726965ac19c48df803efe1efa763ab9c1",
+  "states": [
+    {
+      "id": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:pending:fd55f9404b31",
+      "scenarioId": "ask-user-inline",
+      "role": "candidate",
+      "checkpoint": "pending",
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/desktop/001-pending.png",
+      "screenshotDigest": "fd55f9404b31d94db35286425596ca25e3c9b59acc618e8e16a430a5cc4a0b60",
+      "screenshotBytes": 35713,
+      "source": "known"
+    },
+    {
+      "id": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:selected:9df76a3dff0a",
+      "scenarioId": "ask-user-inline",
+      "role": "candidate",
+      "checkpoint": "selected",
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/desktop/002-selected.png",
+      "screenshotDigest": "9df76a3dff0abceca79598b926503057c55d357a841439f7008cc0f0a828a213",
+      "screenshotBytes": 36201,
+      "source": "known"
+    },
+    {
+      "id": "ask-user-inline-icon-final:ask-user-inline:candidate:desktop:resolved:c0869b79b29b",
+      "scenarioId": "ask-user-inline",
+      "role": "candidate",
+      "checkpoint": "resolved",
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 900,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/desktop/003-resolved.png",
+      "screenshotDigest": "c0869b79b29ba791bf00f5848c69df88cee6c5a1fe47dc2e449952381cb40295",
+      "screenshotBytes": 11785,
+      "source": "known"
+    },
+    {
+      "id": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:pending:9c202e08141c",
+      "scenarioId": "ask-user-inline",
+      "role": "candidate",
+      "checkpoint": "pending",
+      "viewport": {
+        "name": "mobile",
+        "width": 390,
+        "height": 844,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/mobile/004-pending.png",
+      "screenshotDigest": "9c202e08141c54cac815206b9ca0e029a3a8f7bced9c63215b954e123891cdeb",
+      "screenshotBytes": 31494,
+      "source": "known"
+    },
+    {
+      "id": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:selected:dd5270124024",
+      "scenarioId": "ask-user-inline",
+      "role": "candidate",
+      "checkpoint": "selected",
+      "viewport": {
+        "name": "mobile",
+        "width": 390,
+        "height": 844,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/mobile/005-selected.png",
+      "screenshotDigest": "dd527012402445af5e499606418bd9c25d3f50f54f075eaa42bde098f0e65598",
+      "screenshotBytes": 31915,
+      "source": "known"
+    },
+    {
+      "id": "ask-user-inline-icon-final:ask-user-inline:candidate:mobile:resolved:61d40d1adff6",
+      "scenarioId": "ask-user-inline",
+      "role": "candidate",
+      "checkpoint": "resolved",
+      "viewport": {
+        "name": "mobile",
+        "width": 390,
+        "height": 844,
+        "deviceScaleFactor": 1
+      },
+      "screenshotPath": "selected/mobile/006-resolved.png",
+      "screenshotDigest": "61d40d1adff6a6ff1e3456000fc4b84673112f44a788f7d976a8e2717d73af76",
+      "screenshotBytes": 8624,
+      "source": "known"
+    }
+  ],
+  "statePairs": []
+}

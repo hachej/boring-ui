@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react"
 
-interface SessionStateResponse {
-  summary?: { title?: unknown }
+interface SessionSummariesResponse {
+  summaries?: Array<{ ref?: { sessionId?: unknown }; title?: unknown }>
 }
 
 export function useInboxSessionTitles({
@@ -29,19 +29,22 @@ export function useInboxSessionTitles({
     }
     const controller = new AbortController()
     const stableHeaders = Object.fromEntries(JSON.parse(headersKey) as Array<[string, string]>)
-    void Promise.all(requested.map(async (sessionId) => {
-      const response = await fetch(`${apiBaseUrl}/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions/${encodeURIComponent(sessionId)}/state`, {
-        method: "GET",
-        headers: stableHeaders,
-        signal: controller.signal,
+    void fetch(`${apiBaseUrl}/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions/summaries`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json", ...stableHeaders },
+      body: JSON.stringify({ sessionIds: requested }),
+      signal: controller.signal,
+    }).then(async (response) => {
+      if (!response.ok) return new Map<string, string>()
+      const payload = await response.json() as SessionSummariesResponse
+      const entries = (payload.summaries ?? []).flatMap((summary) => {
+        const sessionId = typeof summary.ref?.sessionId === "string" ? summary.ref.sessionId : ""
+        const title = typeof summary.title === "string" ? summary.title.trim() : ""
+        return sessionId && title ? [[sessionId, title] as const] : []
       })
-      if (!response.ok) return undefined
-      const payload = await response.json() as SessionStateResponse
-      const title = typeof payload.summary?.title === "string" ? payload.summary.title.trim() : ""
-      return title ? [sessionId, title] as const : undefined
-    })).then((entries) => {
-      setTitles(new Map(entries.filter((entry): entry is readonly [string, string] => entry !== undefined)))
-    }).catch(() => {
+      return new Map(entries)
+    }).then(setTitles).catch(() => {
       if (!controller.signal.aborted) setTitles(new Map())
     })
     return () => controller.abort()

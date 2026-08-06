@@ -595,7 +595,11 @@ describe("workspaces mode runtime plugin wiring", () => {
       expect(remove.json()).toMatchObject({ ok: true })
       await sse.waitForClose()
 
-      const runtime = await app.inject({ method: "GET", url: plugin!.frontTarget!.entryUrl! })
+      let runtime = await app.inject({ method: "GET", url: plugin!.frontTarget!.entryUrl! })
+      for (let attempt = 0; runtime.statusCode !== 404 && attempt < 40; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 25))
+        runtime = await app.inject({ method: "GET", url: plugin!.frontTarget!.entryUrl! })
+      }
       expect(runtime.statusCode).toBe(404)
     } finally {
       await sse.close()

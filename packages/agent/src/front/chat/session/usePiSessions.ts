@@ -434,7 +434,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       throw err
     }
     const body = await response.json()
-    const session = addressedCreatedSession(body, init?.title)
+    const session = addressedCreatedSession(body, options.agentTypeId, init?.title)
     if (!sourceIsCurrent(scope)) return session
     ensurePendingScope()
     rememberConfirmedEmptySession(session.id)
@@ -611,13 +611,19 @@ function toAddressedSessionSummary(value: unknown): SessionSummary {
   }
 }
 
-function addressedCreatedSession(value: unknown, title?: string): SessionSummary {
-  if (typeof value !== 'object' || value === null || typeof (value as { sessionId?: unknown }).sessionId !== 'string') {
+function addressedCreatedSession(value: unknown, expectedAgentTypeId: string, title?: string): SessionSummary {
+  if (
+    typeof value !== 'object'
+    || value === null
+    || typeof (value as { sessionId?: unknown }).sessionId !== 'string'
+    || (value as { agentTypeId?: unknown }).agentTypeId !== expectedAgentTypeId
+  ) {
     throw new Error('invalid addressed session ref')
   }
   const now = new Date().toISOString()
   return {
     id: (value as { sessionId: string }).sessionId,
+    agentTypeId: expectedAgentTypeId,
     title: title ?? 'Untitled',
     createdAt: now,
     updatedAt: now,
