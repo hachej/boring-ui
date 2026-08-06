@@ -233,7 +233,9 @@ export function TaskSessionDisclosure({
     try {
       await pluginClient.postJson("/api/boring-tasks/sessions/unlink", { linkId: row.link.id })
       setActivity((current) => ({
-        sessions: current.sessions.filter((session) => session.sessionId !== row.link.sessionId),
+        sessions: current.sessions.filter((session) => (
+          session.sessionId !== row.link.sessionId || session.agentTypeId !== row.link.agentTypeId
+        )),
         omittedSessionKeys: current.omittedSessionKeys.filter((key) => key !== addressedSessionKey(row.link.agentTypeId, row.link.sessionId)),
       }))
       setHandovers((current) => {
