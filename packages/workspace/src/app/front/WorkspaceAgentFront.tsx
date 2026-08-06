@@ -2252,33 +2252,38 @@ export function WorkspaceAgentFront<
       : undefined
   ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
   const shellSessionCreateSequenceRef = useRef(0)
+  const quickSessionCreateSequenceRef = useRef(0)
   const effectiveActiveSessionRef = useRef({ sessionId: effectiveActiveSessionId, agentTypeId: effectiveActiveSessionAgentTypeId ?? undefined })
   effectiveActiveSessionRef.current = { sessionId: effectiveActiveSessionId, agentTypeId: effectiveActiveSessionAgentTypeId ?? undefined }
-  const createShellChatSession = useCallback(async (options?: { title?: string }) => {
-    const previousActiveId = effectiveActiveSessionId
-    const previousAgentTypeId = effectiveActiveSessionAgentTypeId ?? undefined
+  const createAddressedSessionWithoutActivating = useCallback(async (dedupeKey: string, options?: { title?: string }) => {
+    const previous = effectiveActiveSessionRef.current
     try {
-      shellSessionCreateSequenceRef.current += 1
-      const session = await coordinateRemoteCreate(`shell:${shellSessionCreateSequenceRef.current}`, options)
+      const session = await coordinateRemoteCreate(dedupeKey, options)
       const sessionId = createdSessionId(session)
       if (!sessionId) return { success: false as const, reason: "create-failed" as const, message: "Chat session creation did not return a canonical session." }
-      const createdAgentTypeId = typeof (session as { agentTypeId?: unknown }).agentTypeId === "string"
-        ? (session as { agentTypeId: string }).agentTypeId
-        : selectedAgentTypeId
+      const createdAgentTypeId = (session as { agentTypeId?: unknown }).agentTypeId
+      if (typeof createdAgentTypeId !== "string") {
+        if (previous.sessionId) rawSwitch(previous.sessionId, previous.agentTypeId)
+        return { success: false as const, reason: "create-failed" as const, message: "Chat session creation did not return an addressed Agent owner." }
+      }
       const activeAfterCreate = effectiveActiveSessionRef.current
       const selectionStillAtCreationBoundary = (
         activeAfterCreate.sessionId === sessionId && activeAfterCreate.agentTypeId === createdAgentTypeId
       ) || (
-        activeAfterCreate.sessionId === previousActiveId && activeAfterCreate.agentTypeId === previousAgentTypeId
+        activeAfterCreate.sessionId === previous.sessionId && activeAfterCreate.agentTypeId === previous.agentTypeId
       )
-      if (selectionStillAtCreationBoundary && previousActiveId && (previousActiveId !== sessionId || previousAgentTypeId !== createdAgentTypeId)) {
-        rawSwitch(previousActiveId, previousAgentTypeId)
+      if (selectionStillAtCreationBoundary && previous.sessionId && (previous.sessionId !== sessionId || previous.agentTypeId !== createdAgentTypeId)) {
+        rawSwitch(previous.sessionId, previous.agentTypeId)
       }
       return { success: true as const, ref: { agentTypeId: createdAgentTypeId, sessionId } }
     } catch (error) {
       return { success: false as const, reason: "create-failed" as const, message: error instanceof Error ? error.message : "Chat session creation failed." }
     }
-  }, [coordinateRemoteCreate, effectiveActiveSessionAgentTypeId, effectiveActiveSessionId, rawSwitch, selectedAgentTypeId])
+  }, [coordinateRemoteCreate, rawSwitch])
+  const createShellChatSession = useCallback(async (options?: { title?: string }) => {
+    shellSessionCreateSequenceRef.current += 1
+    return await createAddressedSessionWithoutActivating(`shell:${shellSessionCreateSequenceRef.current}`, options)
+  }, [createAddressedSessionWithoutActivating])
   const deleteShellChatSession = useCallback(async (ref: { agentTypeId: string; sessionId: string }) => {
     try {
       if (!sessionSourceIsCurrent()) {
@@ -2309,26 +2314,15 @@ export function WorkspaceAgentFront<
   })
   const createChatSessionInPopover = useCallback(() => {
     setLeftOverlay(null)
-    const previousActiveRef = providerActiveSessionRef
-    const created = resolvedCreate("quick")
-    void created.then((session) => {
-      const id = createdSessionId(session)
-      if (!id) return
-      shellCapabilitiesHost.shellCapabilities.openDetachedChat({ agentTypeId: selectedAgentTypeId, sessionId: id }, {
+    quickSessionCreateSequenceRef.current += 1
+    void createAddressedSessionWithoutActivating(`quick:${quickSessionCreateSequenceRef.current}`, { title: defaultSessionTitle }).then((result) => {
+      if (!result.success) return
+      shellCapabilitiesHost.shellCapabilities.openDetachedChat(result.ref, {
         title: defaultSessionTitle,
         composingEnabled: true,
       })
-      // Quick chat is an auxiliary popover: creating it must not steal the
-      // selected/full chat from the main stage or left session list.
-      if (previousActiveRef.sessionId !== id || previousActiveRef.agentTypeId !== selectedAgentTypeId) {
-        rawSwitch(previousActiveRef.sessionId, previousActiveRef.agentTypeId)
-      }
-    }).catch(() => {
-      // Creation errors are surfaced by the session API/chat layer; the menu
-      // should not leave a stale detached chat behind.
     })
-    return created
-  }, [defaultSessionTitle, providerActiveSessionRef, rawSwitch, resolvedCreate, selectedAgentTypeId, shellCapabilitiesHost.shellCapabilities])
+  }, [createAddressedSessionWithoutActivating, defaultSessionTitle, shellCapabilitiesHost.shellCapabilities])
   const providerPanels = baseProviderPanels
   const pluginAppLeftActions = usePluginAppLeftActions({ plugins: capturedPlugins, activeOverlay: leftOverlay, setActiveOverlay: setLeftOverlay })
   const chatTopOverlayActions = useMemo(() => {

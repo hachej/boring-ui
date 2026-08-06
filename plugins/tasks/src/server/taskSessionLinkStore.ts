@@ -18,17 +18,18 @@ export interface TaskSessionLinkSnapshot {
   links: BoringTaskSessionLink[]
 }
 
+export interface TaskSessionLinkMutationReceipt {
+  link: BoringTaskSessionLink
+  snapshot: TaskSessionLinkSnapshot
+  changed: boolean
+}
+
 export interface TaskSessionLinkStore {
   list(adapterId: string, taskId: string): Promise<BoringTaskSessionLink[]>
   listBySessionIds(sessionIds: readonly string[]): Promise<Map<string, BoringTaskSessionLink[]>>
-  link(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<BoringTaskSessionLink>
-  unlink(linkId: string, expectedAgentTypeId?: string): Promise<BoringTaskSessionLink>
-}
-
-export interface AtomicTaskSessionLinkStore extends TaskSessionLinkStore {
   snapshotLinks(): Promise<TaskSessionLinkSnapshot[]>
-  linkWithSnapshot(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[]; created: boolean }>
-  unlinkWithSnapshot(linkId: string, expectedAgentTypeId?: string): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[] }>
+  link(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<TaskSessionLinkMutationReceipt>
+  unlink(linkId: string, expectedAgentTypeId?: string): Promise<TaskSessionLinkMutationReceipt>
 }
 
 const STORE_PATH = ".pi/tasks/session-links.json"
@@ -103,6 +104,14 @@ function compareLinks(left: BoringTaskSessionLink, right: BoringTaskSessionLink)
     || compareText(left.id, right.id)
 }
 
+function taskSnapshot(links: BoringTaskSessionLink[], adapterId: string, taskId: string): TaskSessionLinkSnapshot {
+  return {
+    adapterId,
+    taskId,
+    links: links.filter((link) => link.adapterId === adapterId && link.taskId === taskId).sort(compareLinks),
+  }
+}
+
 interface WorkspaceWriterQueue { pending: Promise<unknown> }
 const writerQueuesByWorkspaceRoot = new Map<string, WorkspaceWriterQueue>()
 
@@ -119,7 +128,7 @@ export function taskSessionLinkStoreForWorkspace(workspace: TaskSessionLinkWorks
   return new FileTaskSessionLinkStore(workspace)
 }
 
-export class FileTaskSessionLinkStore implements AtomicTaskSessionLinkStore {
+export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
   constructor(private readonly workspace: TaskSessionLinkWorkspace) {}
 
   private async awaitPendingWrites(): Promise<void> {
@@ -168,11 +177,7 @@ export class FileTaskSessionLinkStore implements AtomicTaskSessionLinkStore {
     ))
   }
 
-  async link(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<BoringTaskSessionLink> {
-    return (await this.linkWithSnapshot(input)).link
-  }
-
-  async linkWithSnapshot(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[]; created: boolean }> {
+  async link(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<TaskSessionLinkMutationReceipt> {
     const normalized = {
       adapterId: validateId(input.adapterId, "adapterId"),
       taskId: validateId(input.taskId, "taskId"),
@@ -180,24 +185,19 @@ export class FileTaskSessionLinkStore implements AtomicTaskSessionLinkStore {
       sessionId: validateId(input.sessionId, "sessionId"),
     }
     return await this.mutate(async (store) => {
-      const taskLinks = () => store.links.filter((link) => link.adapterId === normalized.adapterId && link.taskId === normalized.taskId)
-      const existing = taskLinks().find((link) => link.agentTypeId === normalized.agentTypeId && link.sessionId === normalized.sessionId)
-      if (existing) return { link: existing, links: taskLinks().sort(compareLinks), created: false }
+      const existing = store.links.find((link) => link.adapterId === normalized.adapterId && link.taskId === normalized.taskId && link.agentTypeId === normalized.agentTypeId && link.sessionId === normalized.sessionId)
+      if (existing) return { link: existing, snapshot: taskSnapshot(store.links, normalized.adapterId, normalized.taskId), changed: false }
       if (store.links.length >= MAX_LINKS) {
         throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_STORE_ERROR, "Task session link store is at capacity.")
       }
       const link: BoringTaskSessionLink = { id: randomUUID(), ...normalized, createdAt: new Date().toISOString() }
       store.links.push(link)
       await this.write(store)
-      return { link, links: taskLinks().sort(compareLinks), created: true }
+      return { link, snapshot: taskSnapshot(store.links, normalized.adapterId, normalized.taskId), changed: true }
     })
   }
 
-  async unlink(linkId: string, expectedAgentTypeId?: string): Promise<BoringTaskSessionLink> {
-    return (await this.unlinkWithSnapshot(linkId, expectedAgentTypeId)).link
-  }
-
-  async unlinkWithSnapshot(linkId: string, expectedAgentTypeId?: string): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[] }> {
+  async unlink(linkId: string, expectedAgentTypeId?: string): Promise<TaskSessionLinkMutationReceipt> {
     const normalizedLinkId = validateId(linkId, "linkId")
     const normalizedExpectedAgentTypeId = expectedAgentTypeId === undefined ? undefined : validateId(expectedAgentTypeId, "agentTypeId")
     return await this.mutate(async (store) => {
@@ -205,10 +205,7 @@ export class FileTaskSessionLinkStore implements AtomicTaskSessionLinkStore {
       if (index < 0) throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_MISSING, "Task session link was not found.")
       const [link] = store.links.splice(index, 1)
       await this.write(store)
-      const links = store.links
-        .filter((candidate) => candidate.adapterId === link!.adapterId && candidate.taskId === link!.taskId)
-        .sort(compareLinks)
-      return { link: link!, links }
+      return { link: link!, snapshot: taskSnapshot(store.links, link!.adapterId, link!.taskId), changed: true }
     })
   }
 
