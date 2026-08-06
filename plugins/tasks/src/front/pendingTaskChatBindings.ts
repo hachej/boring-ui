@@ -5,6 +5,7 @@ import {
   type WorkspaceShellSessionRef,
 } from "@hachej/boring-workspace/plugin"
 import { emitWorkspaceTaskProvenanceChanged } from "@hachej/boring-workspace"
+import { emitTaskSessionLinkReceipt } from "./taskSessionLinkStream"
 
 const STORAGE_KEY = "boring-tasks:pending-chat-bindings:v1"
 const retryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -58,12 +59,13 @@ async function bind(binding: PendingTaskChatBinding, client: Pick<WorkspacePlugi
   if (bindingAttempts.has(key)) return
   bindingAttempts.add(key)
   try {
-    await client.postJson("/api/boring-tasks/sessions/link", {
+    const receipt = await client.postJson<{ links?: unknown }>("/api/boring-tasks/sessions/link", {
       adapterId: binding.adapterId,
       taskId: binding.taskId,
       agentTypeId: binding.agentTypeId,
       sessionId: binding.sessionId,
     })
+    emitTaskSessionLinkReceipt({ workspaceId: binding.workspaceId, adapterId: binding.adapterId, taskId: binding.taskId, links: receipt.links })
     removePending(binding)
     emitWorkspaceTaskProvenanceChanged()
   } catch (error) {

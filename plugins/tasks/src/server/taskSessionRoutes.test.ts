@@ -73,10 +73,11 @@ describe("task session link routes", () => {
       },
     })
     const body = { adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "native-exact" }
-    const first = await handlers.get("/api/boring-tasks/sessions/link")!({ body }, reply()) as { link: { id: string } }
-    const second = await handlers.get("/api/boring-tasks/sessions/link")!({ body }, reply()) as { link: { id: string } }
+    const first = await handlers.get("/api/boring-tasks/sessions/link")!({ body }, reply()) as { link: { id: string }; links: Array<{ id: string }> }
+    const second = await handlers.get("/api/boring-tasks/sessions/link")!({ body }, reply()) as { link: { id: string }; links: Array<{ id: string }> }
 
     expect(second.link.id).toBe(first.link.id)
+    expect(second.links.map((link) => link.id)).toEqual([first.link.id])
     expect(authorizeSession).toHaveBeenCalledWith(
       { workspaceId: "workspace-a", userId: "user-a" },
       { agentTypeId: "alpha", sessionId: "native-exact" },

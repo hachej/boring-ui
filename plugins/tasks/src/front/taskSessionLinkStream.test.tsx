@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { WorkspacePluginClient } from "@hachej/boring-workspace"
-import { taskSessionLinkKey, useTaskSessionLinks } from "./taskSessionLinkStream"
+import { emitTaskSessionLinkReceipt, taskSessionLinkKey, useTaskSessionLinks } from "./taskSessionLinkStream"
 
 class MockEventSource {
   static instances: MockEventSource[] = []
@@ -71,6 +71,17 @@ describe("useTaskSessionLinks", () => {
     expect(result.current?.has(key)).toBe(false)
     unmount()
     expect(source.closed).toBe(true)
+  })
+
+  it("applies the canonical mutation receipt without waiting for stream delivery", () => {
+    vi.stubGlobal("EventSource", MockEventSource)
+    const { result } = renderHook(() => useTaskSessionLinks(client()))
+    const source = MockEventSource.instances[0]!
+    act(() => source.emit("snapshot", { streamId: "stream-a", revision: 0, tasks: [] }))
+    act(() => emitTaskSessionLinkReceipt({ workspaceId: "workspace-b", adapterId: "github", taskId: "776", links: [link("wrong-workspace")] }))
+    expect(result.current?.size).toBe(0)
+    act(() => emitTaskSessionLinkReceipt({ workspaceId: "workspace-a", adapterId: "github", taskId: "776", links: [link("receipt")] }))
+    expect(result.current?.get(taskSessionLinkKey("github", "776"))?.map((item) => item.sessionId)).toEqual(["native-receipt"])
   })
 
   it("replaces state from a reconnect snapshot", () => {
