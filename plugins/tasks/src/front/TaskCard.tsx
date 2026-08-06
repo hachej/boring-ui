@@ -62,11 +62,12 @@ export async function createLinkedTaskChat(
   if (!created.success) throw new Error(created.message)
   const deleteCreatedSession = async () => {
     if (shell.deleteChatSession) {
-      await shell.deleteChatSession(created.ref)
+      const deleted = await shell.deleteChatSession(created.ref)
+      if (!deleted.success) throw new Error(`Task chat rollback failed: ${deleted.message}`)
       return
     }
     const sessionsPath = `/api/v1/agents/${encodeURIComponent(created.ref.agentTypeId)}/sessions`
-    await pluginClient.deleteJson(`${sessionsPath}/${encodeURIComponent(created.ref.sessionId)}`).catch(() => undefined)
+    await pluginClient.deleteJson(`${sessionsPath}/${encodeURIComponent(created.ref.sessionId)}`)
     await shell.refreshChatSessions?.().catch(() => undefined)
   }
   if (created.ref.agentTypeId !== pluginClient.agentTypeId) {

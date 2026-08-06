@@ -1,25 +1,30 @@
 import { describe, expect, it, vi } from "vitest"
 import { TaskSessionLinkEvents, taskSessionLinkStoreWithEvents } from "./taskSessionLinkEvents"
 import type { BoringTaskSessionLink } from "../shared"
-import type { TaskSessionLinkStore } from "./taskSessionLinkStore"
+import type { AtomicTaskSessionLinkStore } from "./taskSessionLinkStore"
 
-function memoryStore(): TaskSessionLinkStore {
+function memoryStore(): AtomicTaskSessionLinkStore {
   const links: BoringTaskSessionLink[] = []
+  const linkWithSnapshot: AtomicTaskSessionLinkStore["linkWithSnapshot"] = async (input) => {
+    const existing = links.find((link) => link.adapterId === input.adapterId && link.taskId === input.taskId && link.agentTypeId === input.agentTypeId && link.sessionId === input.sessionId)
+    if (existing) return { link: existing, links: [...links], created: false }
+    const link = { id: `link-${links.length + 1}`, ...input, createdAt: new Date(0).toISOString() }
+    links.push(link)
+    return { link, links: [...links], created: true }
+  }
+  const unlinkWithSnapshot: AtomicTaskSessionLinkStore["unlinkWithSnapshot"] = async (linkId) => {
+    const index = links.findIndex((link) => link.id === linkId)
+    const link = links.splice(index, 1)[0]!
+    return { link, links: [...links] }
+  }
   return {
     async list(adapterId, taskId) { return links.filter((link) => link.adapterId === adapterId && link.taskId === taskId) },
     async listBySessionIds(sessionIds) { return new Map(sessionIds.map((id) => [id, links.filter((link) => link.sessionId === id)])) },
     async snapshotLinks() { return [] },
-    async link(input) {
-      const existing = links.find((link) => link.adapterId === input.adapterId && link.taskId === input.taskId && link.agentTypeId === input.agentTypeId && link.sessionId === input.sessionId)
-      if (existing) return existing
-      const link = { id: `link-${links.length + 1}`, ...input, createdAt: new Date(0).toISOString() }
-      links.push(link)
-      return link
-    },
-    async unlink(linkId) {
-      const index = links.findIndex((link) => link.id === linkId)
-      return links.splice(index, 1)[0]!
-    },
+    linkWithSnapshot,
+    async link(input) { return (await linkWithSnapshot(input)).link },
+    unlinkWithSnapshot,
+    async unlink(linkId) { return (await unlinkWithSnapshot(linkId)).link },
   }
 }
 

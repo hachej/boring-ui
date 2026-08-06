@@ -21,11 +21,14 @@ export interface TaskSessionLinkSnapshot {
 export interface TaskSessionLinkStore {
   list(adapterId: string, taskId: string): Promise<BoringTaskSessionLink[]>
   listBySessionIds(sessionIds: readonly string[]): Promise<Map<string, BoringTaskSessionLink[]>>
-  snapshotLinks?(): Promise<TaskSessionLinkSnapshot[]>
   link(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<BoringTaskSessionLink>
-  linkWithSnapshot?(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[]; created: boolean }>
   unlink(linkId: string): Promise<BoringTaskSessionLink>
-  unlinkWithSnapshot?(linkId: string): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[] }>
+}
+
+export interface AtomicTaskSessionLinkStore extends TaskSessionLinkStore {
+  snapshotLinks(): Promise<TaskSessionLinkSnapshot[]>
+  linkWithSnapshot(input: { adapterId: string; taskId: string; agentTypeId: string; sessionId: string }): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[]; created: boolean }>
+  unlinkWithSnapshot(linkId: string): Promise<{ link: BoringTaskSessionLink; links: BoringTaskSessionLink[] }>
 }
 
 const STORE_PATH = ".pi/tasks/session-links.json"
@@ -116,17 +119,22 @@ export function taskSessionLinkStoreForWorkspace(workspace: TaskSessionLinkWorks
   return new FileTaskSessionLinkStore(workspace)
 }
 
-export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
-  private readonly queue: WorkspaceWriterQueue
+export class FileTaskSessionLinkStore implements AtomicTaskSessionLinkStore {
+  constructor(private readonly workspace: TaskSessionLinkWorkspace) {}
 
-  constructor(private readonly workspace: TaskSessionLinkWorkspace) {
-    this.queue = writerQueueFor(workspace.root)
+  private async awaitPendingWrites(): Promise<void> {
+    const queue = writerQueueFor(this.workspace.root)
+    const pending = queue.pending
+    await pending.catch(() => {})
+    if (writerQueuesByWorkspaceRoot.get(this.workspace.root) === queue && queue.pending === pending) {
+      writerQueuesByWorkspaceRoot.delete(this.workspace.root)
+    }
   }
 
   async list(adapterId: string, taskId: string): Promise<BoringTaskSessionLink[]> {
     const normalizedAdapterId = validateId(adapterId, "adapterId")
     const normalizedTaskId = validateId(taskId, "taskId")
-    await this.queue.pending.catch(() => {})
+    await this.awaitPendingWrites()
     const store = await this.read()
     return store.links
       .filter((link) => link.adapterId === normalizedAdapterId && link.taskId === normalizedTaskId)
@@ -135,7 +143,7 @@ export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
 
   async listBySessionIds(sessionIds: readonly string[]): Promise<Map<string, BoringTaskSessionLink[]>> {
     const normalizedIds = sessionIds.map((sessionId) => validateId(sessionId, "sessionId"))
-    await this.queue.pending.catch(() => {})
+    await this.awaitPendingWrites()
     const store = await this.read()
     const requested = new Set(normalizedIds)
     const grouped = new Map(normalizedIds.map((sessionId) => [sessionId, [] as BoringTaskSessionLink[]]))
@@ -146,7 +154,7 @@ export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
   }
 
   async snapshotLinks(): Promise<TaskSessionLinkSnapshot[]> {
-    await this.queue.pending.catch(() => {})
+    await this.awaitPendingWrites()
     const store = await this.read()
     const snapshots = new Map<string, TaskSessionLinkSnapshot>()
     for (const link of [...store.links].sort(compareLinks)) {
@@ -204,8 +212,15 @@ export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
   }
 
   private mutate<T>(operation: (store: StoredLinks) => Promise<T>): Promise<T> {
-    const result = this.queue.pending.then(async () => operation(await this.read()))
-    this.queue.pending = result.then(() => undefined, () => undefined)
+    const queue = writerQueueFor(this.workspace.root)
+    const result = queue.pending.then(async () => operation(await this.read()))
+    const settled = result.then(() => undefined, () => undefined)
+    queue.pending = settled
+    void settled.then(() => {
+      if (writerQueuesByWorkspaceRoot.get(this.workspace.root) === queue && queue.pending === settled) {
+        writerQueuesByWorkspaceRoot.delete(this.workspace.root)
+      }
+    })
     return result
   }
 

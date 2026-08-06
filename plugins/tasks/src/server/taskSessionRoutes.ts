@@ -11,7 +11,7 @@ import { type TaskManagementService, TaskSourceServiceError } from "./taskSource
 import {
   TaskSessionLinkStoreError,
   taskSessionLinkStoreForWorkspace,
-  type TaskSessionLinkStore,
+  type AtomicTaskSessionLinkStore,
   type TaskSessionLinkWorkspace,
 } from "./taskSessionLinkStore"
 import {
@@ -76,6 +76,22 @@ function exactSessionIdsBody(body: unknown, maxEntries = 50): string[] {
   return unique
 }
 
+function exactSessionRefsBody(body: unknown, maxEntries = 20): Array<{ agentTypeId: string; sessionId: string }> {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new TaskSessionRouteError(400, TASK_ERROR_CODES.SESSION_INVALID_BODY, "request body must be an object")
+  }
+  const value = body as Record<string, unknown>
+  if (Object.keys(value).length !== 1 || !Array.isArray(value.sessions) || value.sessions.length < 1 || value.sessions.length > maxEntries) {
+    throw new TaskSessionRouteError(400, TASK_ERROR_CODES.SESSION_INVALID_BODY, `sessions must contain between 1 and ${maxEntries} addressed entries`)
+  }
+  const unique = new Map<string, { agentTypeId: string; sessionId: string }>()
+  for (const entry of value.sessions) {
+    const ref = exactSessionBody(entry, ["agentTypeId", "sessionId"])
+    unique.set(`${ref.agentTypeId}\u0000${ref.sessionId}`, { agentTypeId: ref.agentTypeId, sessionId: ref.sessionId })
+  }
+  return [...unique.values()]
+}
+
 function exactSessionBody(body: unknown, keys: readonly string[]): Record<string, string> {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new TaskSessionRouteError(400, TASK_ERROR_CODES.SESSION_INVALID_BODY, "request body must be an object")
@@ -105,7 +121,7 @@ export function registerTaskSessionLinkRoutes(
     run: (binding: {
       actor: Awaited<ReturnType<TaskSessionLinkTrustedContext["actorResolver"]>>
       workspace: TaskSessionLinkWorkspace
-      store: TaskSessionLinkStore
+      store: AtomicTaskSessionLinkStore
       resolver: TaskSessionLinkTrustedContext["workspaceAgentDispatcherResolver"]
     }) => Promise<T>,
   ): Promise<T> {
@@ -162,7 +178,6 @@ export function registerTaskSessionLinkRoutes(
           if (ready) write("change", event)
           else queued.push(event)
         })
-        if (!store.snapshotLinks) throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_STORE_ERROR, "Task session link snapshot is unavailable.")
         const cursor = events.cursor(actor.workspaceId)
         return events.snapshot(await store.snapshotLinks(), cursor)
       })
@@ -218,14 +233,14 @@ export function registerTaskSessionLinkRoutes(
 
   app.post("/api/boring-tasks/sessions/handovers", async (request, reply) => {
     try {
-      const sessionIds = exactSessionIdsBody(request.body, 20)
+      const sessions = exactSessionRefsBody(request.body)
       return await withTrustedStore(request, async ({ actor, resolver }) => {
         if (!resolver.readSessionRunDetails) throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session Handover summaries are unavailable.")
-        const matches: Array<{ sessionId: string; handover: ReturnType<typeof projectHandovers>[number] }> = []
-        const omittedSessionIds: string[] = []
-        for (const sessionId of sessionIds) {
+        const matches: Array<{ agentTypeId: string; sessionId: string; handover: ReturnType<typeof projectHandovers>[number] }> = []
+        const omittedSessions: Array<{ agentTypeId: string; sessionId: string }> = []
+        for (const session of sessions) {
           try {
-            const runs = await resolver.readSessionRunDetails(actor, { agentTypeId, sessionId }, HANDOVER_OPERATION_DETAIL_KINDS, { request })
+            const runs = await resolver.readSessionRunDetails(actor, session, HANDOVER_OPERATION_DETAIL_KINDS, { request })
             let latestSuccessfulHandover: ReturnType<typeof projectHandovers>[number] | undefined
             for (const run of runs) {
               const events: HandoverProjectionEvent[] = [
@@ -236,13 +251,13 @@ export function registerTaskSessionLinkRoutes(
               const projected = projectHandovers(events)[0]
               if (run.state === "success" && run.details.some((detail) => handoverOperationsFromDetails(detail).length > 0)) latestSuccessfulHandover = projected
             }
-            if (latestSuccessfulHandover) matches.push({ sessionId, handover: latestSuccessfulHandover })
-            else omittedSessionIds.push(sessionId)
+            if (latestSuccessfulHandover) matches.push({ ...session, handover: latestSuccessfulHandover })
+            else omittedSessions.push(session)
           } catch {
-            omittedSessionIds.push(sessionId)
+            omittedSessions.push(session)
           }
         }
-        return { ok: true as const, matches, omittedSessionIds }
+        return { ok: true as const, matches, omittedSessions }
       })
     } catch (cause) {
       return reply.status(statusFor(cause)).send(responseError(cause))

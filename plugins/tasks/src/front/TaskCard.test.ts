@@ -100,6 +100,16 @@ describe("task native session creation handoff", () => {
     expect(api.postJson).not.toHaveBeenCalled()
   })
 
+  it("surfaces a failed shell-owned rollback after detached placement failure", async () => {
+    const target = shell({
+      openDetachedChat: vi.fn(() => ({ success: false as const, reason: "placement-failed" as const, message: "no room" })),
+      deleteChatSession: vi.fn(async () => ({ success: false as const, reason: "open-failed" as const, message: "delete denied" })),
+    })
+    const api = client()
+
+    await expect(createLinkedTaskChat(task, anchor, target, api.value)).rejects.toThrow("Task chat rollback failed: delete denied")
+  })
+
   it("does not open a chat when canonical creation fails", async () => {
     const target = shell({
       createChatSession: vi.fn(async () => ({ success: false as const, reason: "create-failed" as const, message: "unavailable" })),

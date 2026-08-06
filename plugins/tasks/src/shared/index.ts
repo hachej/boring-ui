@@ -207,14 +207,18 @@ export interface SessionHandoverSummary {
   artifacts: import("@hachej/boring-workspace/shared").HumanArtifact[]
 }
 
-export interface SessionHandoverMatch {
+export interface TaskSessionRef {
+  agentTypeId: string
   sessionId: string
+}
+
+export interface SessionHandoverMatch extends TaskSessionRef {
   handover: SessionHandoverSummary
 }
 
 export interface SessionHandoverResolution {
   matches: SessionHandoverMatch[]
-  omittedSessionIds: string[]
+  omittedSessions: TaskSessionRef[]
 }
 
 export interface BoringTaskAdapterCapabilities {

@@ -24,6 +24,7 @@ const link = (id: string, sessionId: string, createdAt: string): BoringTaskSessi
 })
 
 const activity = (sessionId: string, overrides: Partial<TaskSessionActivity> = {}): TaskSessionActivity => ({
+  agentTypeId: "alpha",
   sessionId,
   title: `Session ${sessionId}`,
   updatedAt: "2026-07-19T01:00:00.000Z",
@@ -55,13 +56,28 @@ describe("buildTaskSessionRows", () => {
       activity("queued", { updatedAt: "2026-07-19T02:00:00.000Z", queuedCount: 1, hasError: true }),
       activity("working", { updatedAt: "2026-07-19T05:00:00.000Z", status: "streaming", queuedCount: 1, hasError: true }),
       activity("error", { updatedAt: "2026-07-19T03:00:00.000Z", status: "error", hasError: true }),
-    ], ["missing"])
+    ], [JSON.stringify(["alpha", "missing"])])
 
     expect(rows.map((row) => [row.link.id, row.status, row.available])).toEqual([
       ["working", "Working", true],
       ["error", "Error", true],
       ["queued", "Queued", true],
       ["unavailable", "Idle", false],
+    ])
+  })
+
+  it("keeps colliding session IDs isolated by Agent owner", () => {
+    const alpha = link("alpha-link", "shared-id", "2026-07-19T01:00:00.000Z")
+    const beta = { ...link("beta-link", "shared-id", "2026-07-19T02:00:00.000Z"), agentTypeId: "beta" }
+    const rows = buildTaskSessionRows(
+      [alpha, beta],
+      [activity("shared-id", { agentTypeId: "beta", title: "Beta work" })],
+      [JSON.stringify(["alpha", "shared-id"])],
+    )
+
+    expect(rows.map((row) => [row.link.agentTypeId, row.available, row.activity?.title])).toEqual([
+      ["beta", true, "Beta work"],
+      ["alpha", false, undefined],
     ])
   })
 })
@@ -73,7 +89,7 @@ describe("TaskSessionDisclosure", () => {
     const outputArtifacts = Array.from({ length: 11 }, (_, index) => ({ id: `artifact-${index + 1}`, surfaceKind: "workspace.open.path", target: `docs/${index + 1}.md`, title: `Artifact ${index + 1}` }))
     const postJson = vi.fn(async (path: string) => {
       if (path.endsWith("/sessions/activity")) return { sessions: [activity("native-exact", { title: "Exact work" })], omittedSessionIds: [] }
-      if (path.endsWith("/sessions/handovers")) return { ok: true, matches: [{ sessionId: "native-exact", handover: { id: "handover:latest", runId: "run", terminalEntryId: "latest", artifacts: outputArtifacts } }], omittedSessionIds: [] }
+      if (path.endsWith("/sessions/handovers")) return { ok: true, matches: [{ agentTypeId: "alpha", sessionId: "native-exact", handover: { id: "handover:latest", runId: "run", terminalEntryId: "latest", artifacts: outputArtifacts } }], omittedSessions: [] }
       if (path.endsWith("/sessions/unlink")) return { ok: true, link: storedLink }
       throw new Error(`unexpected path ${path}`)
     })
@@ -152,7 +168,7 @@ describe("TaskSessionDisclosure", () => {
     const secondLink = { ...link("link-second", "native-second", "2026-07-19T02:00:00.000Z"), taskId: secondTask.id }
     const postJson = vi.fn(async (path: string, body: unknown) => {
       const taskId = (body as { taskId?: string }).taskId
-      if (path.endsWith("/sessions/handovers")) return { ok: true, matches: [], omittedSessionIds: [] }
+      if (path.endsWith("/sessions/handovers")) return { ok: true, matches: [], omittedSessions: [] }
       const sessionIds = (body as { sessionIds?: string[] }).sessionIds ?? []
       return { sessions: sessionIds.map((sessionId) => activity(sessionId, { title: sessionId === "native-second" ? "Second work" : "First work" })), omittedSessionIds: [] }
     })
@@ -187,7 +203,7 @@ describe("TaskSessionDisclosure", () => {
     const unavailable = link("link-old", "native-denied", "2026-07-19T01:00:00.000Z")
     const available = link("link-new", "native-open", "2026-07-19T02:00:00.000Z")
     const postJson = vi.fn(async (path: string) => path.endsWith("/sessions/handovers")
-      ? { ok: true, matches: [], omittedSessionIds: ["native-denied"] }
+      ? { ok: true, matches: [], omittedSessions: [{ agentTypeId: "alpha", sessionId: "native-denied" }] }
       : { sessions: [activity("native-open", { title: "Open work" })], omittedSessionIds: ["native-denied"] })
     const shellCapabilities = shell({
       openDetachedChat: vi.fn(() => ({ success: false as const, reason: "open-failed" as const, message: "disconnected context" })),

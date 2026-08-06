@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type { BoringTaskSessionLink } from "../shared"
-import type { TaskSessionLinkSnapshot, TaskSessionLinkStore } from "./taskSessionLinkStore"
+import type { AtomicTaskSessionLinkStore, TaskSessionLinkSnapshot } from "./taskSessionLinkStore"
 
 export interface TaskSessionLinkEvent extends TaskSessionLinkSnapshot {
   streamId: string
@@ -43,37 +43,30 @@ export class TaskSessionLinkEvents {
 }
 
 export function taskSessionLinkStoreWithEvents(
-  store: TaskSessionLinkStore,
+  store: AtomicTaskSessionLinkStore,
   workspaceId: string,
   events: TaskSessionLinkEvents,
-): TaskSessionLinkStore {
+): AtomicTaskSessionLinkStore {
   const publish = (link: BoringTaskSessionLink, links: BoringTaskSessionLink[]) => {
     events.publish(workspaceId, { adapterId: link.adapterId, taskId: link.taskId, links })
+  }
+  const linkWithSnapshot: AtomicTaskSessionLinkStore["linkWithSnapshot"] = async (input) => {
+    const result = await store.linkWithSnapshot(input)
+    if (result.created) publish(result.link, result.links)
+    return result
+  }
+  const unlinkWithSnapshot: AtomicTaskSessionLinkStore["unlinkWithSnapshot"] = async (linkId) => {
+    const result = await store.unlinkWithSnapshot(linkId)
+    publish(result.link, result.links)
+    return result
   }
   return {
     list: (adapterId, taskId) => store.list(adapterId, taskId),
     listBySessionIds: (sessionIds) => store.listBySessionIds(sessionIds),
-    ...(store.snapshotLinks ? { snapshotLinks: () => store.snapshotLinks!() } : {}),
-    async link(input) {
-      if (store.linkWithSnapshot) {
-        const result = await store.linkWithSnapshot(input)
-        if (result.created) publish(result.link, result.links)
-        return result.link
-      }
-      const existing = await store.list(input.adapterId, input.taskId)
-      const link = await store.link(input)
-      if (!existing.some((candidate) => candidate.id === link.id)) publish(link, await store.list(link.adapterId, link.taskId))
-      return link
-    },
-    async unlink(linkId) {
-      if (store.unlinkWithSnapshot) {
-        const result = await store.unlinkWithSnapshot(linkId)
-        publish(result.link, result.links)
-        return result.link
-      }
-      const link = await store.unlink(linkId)
-      publish(link, await store.list(link.adapterId, link.taskId))
-      return link
-    },
+    snapshotLinks: () => store.snapshotLinks(),
+    linkWithSnapshot,
+    link: async (input) => (await linkWithSnapshot(input)).link,
+    unlinkWithSnapshot,
+    unlink: async (linkId) => (await unlinkWithSnapshot(linkId)).link,
   }
 }

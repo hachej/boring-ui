@@ -13,6 +13,7 @@ interface BindingAttemptState {
   timer?: ReturnType<typeof setTimeout>
 }
 
+const pendingByKey = new Map<string, PendingTaskChatBinding>()
 const attemptStates = new Map<string, BindingAttemptState>()
 const listeners = new Map<string, { prompt: EventListener; status: EventListener }>()
 const MAX_BIND_ATTEMPTS = 6
@@ -35,23 +36,29 @@ function bindingKey(binding: PendingTaskChatBinding): string {
   return [binding.workspaceId, binding.adapterId, binding.taskId, binding.agentTypeId, binding.sessionId].join("\u0000")
 }
 
+function validPending(value: unknown): value is PendingTaskChatBinding {
+  if (!value || typeof value !== "object") return false
+  const item = value as Partial<PendingTaskChatBinding>
+  return [item.workspaceId, item.adapterId, item.taskId, item.agentTypeId, item.sessionId]
+    .every((part) => typeof part === "string" && part.length > 0)
+}
+
 function readPending(): PendingTaskChatBinding[] {
-  if (typeof window === "undefined") return []
-  try {
-    const parsed = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? "[]") as unknown
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((item): item is PendingTaskChatBinding => {
-      if (!item || typeof item !== "object") return false
-      const value = item as Partial<PendingTaskChatBinding>
-      return [value.workspaceId, value.adapterId, value.taskId, value.agentTypeId, value.sessionId]
-        .every((part) => typeof part === "string" && part.length > 0)
-    })
-  } catch {
-    return []
+  if (typeof window !== "undefined") {
+    try {
+      const parsed = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? "[]") as unknown
+      if (Array.isArray(parsed)) {
+        for (const binding of parsed.filter(validPending)) pendingByKey.set(bindingKey(binding), binding)
+      }
+    } catch { /* In-memory intent remains authoritative when tab storage is unavailable. */ }
   }
+  return [...pendingByKey.values()]
 }
 
 function writePending(bindings: readonly PendingTaskChatBinding[]): void {
+  pendingByKey.clear()
+  for (const binding of bindings) pendingByKey.set(bindingKey(binding), binding)
+  if (typeof window === "undefined") return
   try { window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(bindings)) } catch { /* Best-effort tab recovery. */ }
 }
 
@@ -121,6 +128,8 @@ function watch(binding: PendingTaskChatBinding, client: Pick<WorkspacePluginClie
     const detail = (event as CustomEvent<WorkspaceChatPromptAcceptedDetail>).detail
     if (detail?.agentTypeId === binding.agentTypeId && detail.sessionId === binding.sessionId) accept()
   }
+  // AgentHost emits working=true only for an accepted running/aborting turn. This
+  // recovers when the detached composer unmounts before its local receipt event.
   const status: EventListener = (event) => {
     const detail = (event as CustomEvent<{ agentTypeId?: unknown; sessionId?: unknown; working?: unknown }>).detail
     if (detail?.working === true && detail.agentTypeId === binding.agentTypeId && detail.sessionId === binding.sessionId) accept()
@@ -128,6 +137,13 @@ function watch(binding: PendingTaskChatBinding, client: Pick<WorkspacePluginClie
   listeners.set(key, { prompt, status })
   window.addEventListener(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, prompt)
   window.addEventListener(CHAT_SESSION_STATUS_EVENT, status)
+}
+
+export function resetPendingTaskChatBindingsForTests(): void {
+  for (const key of [...listeners.keys()]) stopWatching(key)
+  for (const state of attemptStates.values()) if (state.timer) clearTimeout(state.timer)
+  attemptStates.clear()
+  pendingByKey.clear()
 }
 
 export function registerPendingTaskChatBinding(
