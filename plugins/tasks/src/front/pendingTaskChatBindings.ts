@@ -1,16 +1,29 @@
-import type { WorkspacePluginClient } from "@hachej/boring-workspace"
+import { WorkspacePluginClientRequestError, type WorkspacePluginClient } from "@hachej/boring-workspace"
 import {
   WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT,
   type WorkspaceChatPromptAcceptedDetail,
   type WorkspaceShellSessionRef,
 } from "@hachej/boring-workspace/plugin"
 import { emitWorkspaceTaskProvenanceChanged } from "@hachej/boring-workspace"
-import { emitTaskSessionLinkReceipt } from "./taskSessionLinkStream"
+import { requestTaskSessionLinkRefresh } from "./taskSessionLinkStream"
 
 const STORAGE_KEY = "boring-tasks:pending-chat-bindings:v1"
-const retryTimers = new Map<string, ReturnType<typeof setTimeout>>()
-const bindingAttempts = new Set<string>()
+interface BindingAttemptState {
+  attempt: number
+  inFlight: boolean
+  timer?: ReturnType<typeof setTimeout>
+}
+
+const attemptStates = new Map<string, BindingAttemptState>()
 const listeners = new Map<string, EventListener>()
+const MAX_BIND_ATTEMPTS = 6
+
+function retryableBindingError(error: unknown): boolean {
+  return !(error instanceof WorkspacePluginClientRequestError)
+    || error.status === 408
+    || error.status === 429
+    || error.status >= 500
+}
 
 export interface PendingTaskChatBinding extends WorkspaceShellSessionRef {
   workspaceId: string
@@ -19,7 +32,7 @@ export interface PendingTaskChatBinding extends WorkspaceShellSessionRef {
 }
 
 function bindingKey(binding: PendingTaskChatBinding): string {
-  return `${binding.workspaceId}\u0000${binding.agentTypeId}\u0000${binding.sessionId}`
+  return [binding.workspaceId, binding.adapterId, binding.taskId, binding.agentTypeId, binding.sessionId].join("\u0000")
 }
 
 function readPending(): PendingTaskChatBinding[] {
@@ -48,31 +61,42 @@ function removePending(binding: PendingTaskChatBinding): void {
   const listener = listeners.get(key)
   if (listener) window.removeEventListener(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, listener)
   listeners.delete(key)
-  const timer = retryTimers.get(key)
-  if (timer) clearTimeout(timer)
-  retryTimers.delete(key)
-  bindingAttempts.delete(key)
+  const attemptState = attemptStates.get(key)
+  if (attemptState?.timer) clearTimeout(attemptState.timer)
+  attemptStates.delete(key)
 }
 
-async function bind(binding: PendingTaskChatBinding, client: Pick<WorkspacePluginClient, "postJson">, attempt = 0): Promise<void> {
+async function bind(binding: PendingTaskChatBinding, client: Pick<WorkspacePluginClient, "postJson">): Promise<void> {
   const key = bindingKey(binding)
-  if (bindingAttempts.has(key)) return
-  bindingAttempts.add(key)
+  if (!readPending().some((candidate) => bindingKey(candidate) === key)) return
+  const state = attemptStates.get(key) ?? { attempt: 0, inFlight: false }
+  if (state.inFlight || state.timer) return
+  state.inFlight = true
+  attemptStates.set(key, state)
   try {
-    const receipt = await client.postJson<{ links?: unknown }>("/api/boring-tasks/sessions/link", {
+    await client.postJson("/api/boring-tasks/sessions/link", {
       adapterId: binding.adapterId,
       taskId: binding.taskId,
       agentTypeId: binding.agentTypeId,
       sessionId: binding.sessionId,
     })
-    emitTaskSessionLinkReceipt({ workspaceId: binding.workspaceId, adapterId: binding.adapterId, taskId: binding.taskId, links: receipt.links })
     removePending(binding)
+    requestTaskSessionLinkRefresh(binding.workspaceId)
     emitWorkspaceTaskProvenanceChanged()
   } catch (error) {
-    bindingAttempts.delete(key)
-    const delay = Math.min(1_000 * 2 ** attempt, 30_000)
-    retryTimers.set(key, setTimeout(() => { void bind(binding, client, attempt + 1) }, delay))
-    if (attempt === 0) console.error("Failed to bind submitted task chat; retrying", error)
+    state.inFlight = false
+    if (!retryableBindingError(error) || state.attempt + 1 >= MAX_BIND_ATTEMPTS) {
+      removePending(binding)
+      console.error("Failed to bind submitted task chat", error)
+      return
+    }
+    const delay = Math.min(1_000 * 2 ** state.attempt, 30_000)
+    state.attempt += 1
+    state.timer = setTimeout(() => {
+      state.timer = undefined
+      void bind(binding, client)
+    }, delay)
+    if (state.attempt === 1) console.error("Failed to bind submitted task chat; retrying", error)
   }
 }
 

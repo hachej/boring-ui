@@ -253,15 +253,24 @@ export function registerTaskSessionLinkRoutes(
     try {
       const body = exactSessionBody(request.body, ["adapterId", "taskId", "agentTypeId", "sessionId"])
       if (body.agentTypeId !== agentTypeId) throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session Agent is forbidden.")
-      return await withTrustedStore(request, async ({ actor, store, resolver }) => {
+      return await withTrustedStore(request, async ({ actor, workspace, store, resolver }) => {
         if (!resolver.authorizeSession) throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session linking is unavailable.")
-        try {
-          await resolver.authorizeSession(actor, { agentTypeId, sessionId: body.sessionId }, { request })
-        } catch {
-          throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session link access is forbidden.")
-        }
-        const link = await store.link({ adapterId: body.adapterId, taskId: body.taskId, agentTypeId, sessionId: body.sessionId })
-        return { ok: true as const, link, links: await store.list(link.adapterId, link.taskId) }
+        const link = await service.bindSession(
+          { workspaceId: actor.workspaceId, workspace },
+          { adapterId: body.adapterId, taskId: body.taskId, sessionId: body.sessionId },
+          {
+            agentTypeId,
+            linkStore: store,
+            authorizeSession: async (sessionId) => {
+              try {
+                await resolver.authorizeSession!(actor, { agentTypeId, sessionId }, { request })
+              } catch {
+                throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session link access is forbidden.")
+              }
+            },
+          },
+        )
+        return { ok: true as const, link }
       })
     } catch (cause) {
       return reply.status(statusFor(cause)).send(responseError(cause))

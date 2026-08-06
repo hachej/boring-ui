@@ -4,6 +4,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { HumanArtifactList, emitWorkspaceTaskProvenanceChanged, openHumanArtifact, type WorkspacePluginClient } from "@hachej/boring-workspace"
 import type { WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard, BoringTaskSessionLink, SessionHandoverResolution, SessionHandoverSummary } from "../shared"
+import { requestTaskSessionLinkRefresh } from "./taskSessionLinkStream"
 
 export interface TaskSessionActivity {
   sessionId: string
@@ -78,11 +79,11 @@ export function TaskSessionDisclosure({
 }: {
   task: BoringTaskCard
   shell: WorkspaceShellCapabilities
-  pluginClient: Pick<WorkspacePluginClient, "getJson" | "postJson">
+  pluginClient: Pick<WorkspacePluginClient, "workspaceId" | "getJson" | "postJson">
   sessionLinks?: readonly BoringTaskSessionLink[]
 }) {
   const [expanded, setExpanded] = useState(false)
-  const [links, setLinks] = useState<TaskSessionLinkDisclosure[]>(() => [...(sessionLinks ?? [])])
+  const links = useMemo<TaskSessionLinkDisclosure[]>(() => [...(sessionLinks ?? [])], [sessionLinks])
   const [activity, setActivity] = useState<ActivityResponse>({ sessions: [], omittedSessionIds: [] })
   const [handovers, setHandovers] = useState<ReadonlyMap<string, SessionHandoverSummary>>(() => new Map())
   const [unavailableArtifacts, setUnavailableArtifacts] = useState<ReadonlyMap<string, ReadonlySet<string>>>(() => new Map())
@@ -162,13 +163,11 @@ export function TaskSessionDisclosure({
   useEffect(() => () => { requestScope.current.version += 1 }, [])
 
   useEffect(() => {
-    const nextLinks = [...(sessionLinks ?? [])]
-    const nextKey = JSON.stringify(nextLinks.map((link) => [link.id, link.agentTypeId, link.sessionId]))
-    setLinks(nextLinks)
+    const nextKey = JSON.stringify(links.map((link) => [link.id, link.agentTypeId, link.sessionId]))
     if (!expanded || enrichedLinksKey.current === nextKey) return
     enrichedLinksKey.current = nextKey
-    void refreshDetails(nextLinks)
-  }, [expanded, refreshDetails, sessionLinks])
+    void refreshDetails(links)
+  }, [expanded, links, refreshDetails])
 
   useEffect(() => {
     const onStatus = (event: Event) => {
@@ -227,7 +226,7 @@ export function TaskSessionDisclosure({
     if (!window.confirm(`Unlink this chat from ${task.number}? The transcript will be kept.`)) return
     try {
       await pluginClient.postJson("/api/boring-tasks/sessions/unlink", { linkId: row.link.id })
-      setLinks((current) => current?.filter((link) => link.id !== row.link.id) ?? current)
+      requestTaskSessionLinkRefresh(pluginClient.workspaceId ?? "workspace")
       setActivity((current) => ({
         sessions: current.sessions.filter((session) => session.sessionId !== row.link.sessionId),
         omittedSessionIds: current.omittedSessionIds.filter((sessionId) => sessionId !== row.link.sessionId),
@@ -245,7 +244,7 @@ export function TaskSessionDisclosure({
     }
   }
 
-  const count = sessionLinks === undefined ? undefined : links.length
+  const count = sessionLinks?.length
   return (
     <div className="w-full" data-task-session-disclosure="true" onClick={(event) => event.stopPropagation()}>
       <button

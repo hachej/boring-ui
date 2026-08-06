@@ -176,12 +176,17 @@ function descriptionFromBody(body: string | null | undefined): string | undefine
   return compact.length > 180 ? `${compact.slice(0, 177)}…` : compact || undefined
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
 function associatedPullRequests(issue: GitHubIssue, pullRequests: readonly GitHubPullRequest[]): GitHubPullRequest[] {
-  const issueRef = `#${issue.number}`
+  const issueRef = new RegExp(`(^|[^\\d])#${issue.number}(?!\\d)`)
   const issueUrl = issue.url?.toLowerCase()
+  const issueUrlRef = issueUrl ? new RegExp(`${escapeRegex(issueUrl)}(?!\\d)`) : undefined
   return pullRequests.filter((pr) => {
     const haystack = `${pr.title}\n${pr.body ?? ""}\n${pr.url ?? ""}`.toLowerCase()
-    return haystack.includes(issueRef.toLowerCase()) || Boolean(issueUrl && haystack.includes(issueUrl))
+    return issueRef.test(haystack) || Boolean(issueUrlRef?.test(haystack))
   })
 }
 

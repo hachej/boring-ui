@@ -42,13 +42,26 @@ function reply(): TestReply {
   }
 }
 
-async function routes(options: Parameters<typeof createTasksServerPlugin>[0]) {
+const githubSource: BoringTaskSourceRuntime = {
+  summary: () => ({ id: "github", label: "GitHub", capabilities: { move: false, delete: false } }),
+  getBoardConfig: async () => ({ adapterId: "github", columns: [{ id: "open", title: "Open" }] }),
+  listTasks: async () => [{ id: "776", number: "#776", title: "Task", statusId: "open", adapterId: "github" }],
+  getTask: async (_context, input) => input.taskId === "776"
+    ? {
+        task: { id: "776", number: "#776", title: "Task", statusId: "open", adapterId: "github" },
+        metadata: [],
+        relations: [],
+      }
+    : undefined,
+}
+
+async function routes(options: Parameters<typeof createTasksServerPlugin>[0] = {}) {
   const handlers = new Map<string, Handler>()
   const app = {
     get(path: string, handler: Handler) { handlers.set(path, handler) },
     post(path: string, handler: Handler) { handlers.set(path, handler) },
   }
-  const plugin = createTasksServerPlugin({ agentTypeId: "alpha", ...options })
+  const plugin = createTasksServerPlugin({ agentTypeId: "alpha", sources: options.sources ?? [githubSource], ...options })
   await plugin.routes!(app as never, {} as never)
   return handlers
 }
@@ -73,11 +86,10 @@ describe("task session link routes", () => {
       },
     })
     const body = { adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "native-exact" }
-    const first = await handlers.get("/api/boring-tasks/sessions/link")!({ body }, reply()) as { link: { id: string }; links: Array<{ id: string }> }
-    const second = await handlers.get("/api/boring-tasks/sessions/link")!({ body }, reply()) as { link: { id: string }; links: Array<{ id: string }> }
+    const first = await handlers.get("/api/boring-tasks/sessions/link")!({ body }, reply()) as { link: { id: string } }
+    const second = await handlers.get("/api/boring-tasks/sessions/link")!({ body }, reply()) as { link: { id: string } }
 
     expect(second.link.id).toBe(first.link.id)
-    expect(second.links.map((link) => link.id)).toEqual([first.link.id])
     expect(authorizeSession).toHaveBeenCalledWith(
       { workspaceId: "workspace-a", userId: "user-a" },
       { agentTypeId: "alpha", sessionId: "native-exact" },
@@ -340,6 +352,31 @@ describe("task session link routes", () => {
     const forbiddenReply = reply()
     await validationHandlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", agentTypeId: "alpha", sessionId: "native" } }, forbiddenReply)
     expect(forbiddenReply).toMatchObject({ statusCode: 403, payload: { code: TASK_ERROR_CODES.SESSION_FORBIDDEN } })
+  })
+
+  it("rejects a missing task before authorizing or persisting its session link", async () => {
+    const workspace = new MemoryWorkspace()
+    const authorizeSession = vi.fn(async () => undefined)
+    const handlers = await routes({
+      trusted: {
+        actorResolver: async () => ({ workspaceId: "workspace-a", userId: "user-a" }),
+        workspaceAgentDispatcherResolver: {
+          resolve: vi.fn() as never,
+          runWithWorkspaceAgent: runWithWorkspace(workspace) as never,
+          resolveWithWorkspace: async () => ({ dispatcher: {} as never, workspace: workspace as never }),
+          authorizeSession,
+        },
+      },
+    })
+    const response = reply()
+
+    await handlers.get("/api/boring-tasks/sessions/link")!({
+      body: { adapterId: "github", taskId: "missing", agentTypeId: "alpha", sessionId: "native" },
+    }, response)
+
+    expect(response).toMatchObject({ statusCode: 404, payload: { code: TASK_ERROR_CODES.NOT_FOUND } })
+    expect(authorizeSession).not.toHaveBeenCalled()
+    expect(workspace.files.size).toBe(0)
   })
 
   it("returns the same forbidden response for denied and nonexistent native sessions", async () => {
