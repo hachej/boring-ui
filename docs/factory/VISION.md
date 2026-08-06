@@ -25,7 +25,7 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
 | L0 Chassis | AgentHost fleet spec, identity/authority split, plugin system, sandboxed tool admission | exists (#1075) |
 | L1 Work graph | Beads via plain `br` CLI; GH issues = human intake, 1 epic = 1 GH issue | br live; UI read-only provider in #1075 |
 | L2 Seats | concierge / triage / steward / worker / reviewer under `.agents/personas/` | authored in #1075; no production loader |
-| L3 Loops | /triage /plan /exec skills + Beadle dispatcher automation | skills exist; Beadle missing |
+| L3 Loops | /triage /plan /exec skills + Beadle supervisor automation (workers pull) | skills exist; Beadle missing |
 | L4 Human plane | Concierge front door, inbox intentions, (later) Swarm Console | intentions exist; edges landing (session↔task, artifact handover) |
 | L5 Comms | thread=bead convention only; Agent Mail/Buzz deferred | convention adoptable now |
 
@@ -37,9 +37,14 @@ Agent Mail — adopted selectively; deviations are deliberate and listed below.
 2. **Beads**: plain `br` for all agents. Git history of `.beads/issues.jsonl`
    is the audit trail. Beadle flags beads closed without linked proof/handoff.
    No verb ACLs.
-3. **Beadle**: a boring-ui automation. Tick cadence and worker cap live in
-   policy.yaml; workers self-claim via `br` lease; breaks stale leases; spawns
-   workers while ready > active; sweeps epic-branch drift.
+3. **Beadle** (amended 2026-08-06): a supervisor, never a dispatcher. Dispatch
+   is pull-based, flywheel-style: a worker session starts with `br ready
+   --json`, leases exactly one bead, and stamps its own session id on the bead
+   at claim — claim and binding are one atomic act by the worker. The Beadle
+   only guarantees pullers exist and janitors the graph: spawns workers while
+   ready > active (up to the cap), breaks stale leases, flags proof-less
+   closures, sweeps epic-branch drift. It never chooses which bead. Tick
+   cadence and worker cap live in policy.yaml.
 4. **Trust ladder**: class A = path-allowlist AND reviewer-pass AND size-cap.
    Ladder/config/workflow/fleet-policy files are permanently class B (no agent
    can widen its own permissions). Config: `.agents/factory/policy.yaml`,
@@ -76,7 +81,7 @@ The factory adds no new runtime. Every moving part is an existing primitive:
 
 | Factory part | Primitive |
 | --- | --- |
-| Beadle dispatcher | `plugins/boring-automation` scheduled automation |
+| Beadle supervisor | `plugins/boring-automation` scheduled automation |
 | Task board (GH + Beads) | `plugins/tasks` sources — `githubSource` (main) + Beads adapter (read-only, on PR #1075; merge + registry seam = TODO 3) |
 | Seats | AgentHost fleet spec + `.agents/personas/*` identities |
 | Worker execution | pi sessions (1 bead = 1 session) + pi-subagents for ephemeral roles |
