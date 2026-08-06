@@ -169,17 +169,18 @@ describe("live transcript front surface", () => {
     expect(screen.queryByText("Nudge controls")).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Agent nudge settings" })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "Open transcript" }))
+    fireEvent.click(screen.getByRole("button", { name: "Open transcript in new pane" }))
     expect(postUiCommand).toHaveBeenCalledWith({
       kind: "openSurface",
       params: { kind: "workspace.open.path", target: "live-transcripts/a.md" },
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Review" }))
+    fireEvent.click(screen.getByRole("button", { name: "Nudge" }))
     await waitFor(() => expect(review).toHaveBeenCalledOnce())
-    expect(await screen.findByRole("button", { name: "Sent" })).toBeVisible()
+    expect(await screen.findByRole("button", { name: "Nudged" })).toBeVisible()
+    expect(screen.getByRole("status")).toHaveTextContent("Agent nudged")
     review.mockResolvedValue("Transcript review queued until the originating chat is idle.")
-    fireEvent.click(screen.getByRole("button", { name: "Sent" }))
+    fireEvent.click(screen.getByRole("button", { name: "Nudged" }))
     expect(await screen.findByRole("button", { name: "Queued" })).toBeVisible()
     review.mockResolvedValue("Failed to fetch")
     fireEvent.click(screen.getByRole("button", { name: "Queued" }))

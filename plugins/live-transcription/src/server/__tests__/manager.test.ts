@@ -76,24 +76,46 @@ describe("LiveTranscriptManager", () => {
       })
       callbackCompleted = true
     })
+    const sendReview = vi.fn(async () => ({ status: "accepted" as const, cursor: 1 }))
+    const upstream = {
+      connect: vi.fn(async () => undefined),
+      sendPcm: vi.fn(async () => undefined),
+      drain: vi.fn(async () => undefined),
+      close: vi.fn(),
+    }
     const manager = new LiveTranscriptManager({
       dispatcherResolver: {
         runWithWorkspaceAgent,
-        async resolve() { throw new Error("compatibility resolver must not be used") },
+        async resolve() { throw new Error("compatibility dispatcher must not be used") },
+        async resolveWithWorkspace() {
+          return {
+            dispatcher: {} as never,
+            workspace,
+            bindPiSession: async () => ({
+              visibleUserMessageTarget: { isIdle: async () => true, sendIfIdle: sendReview },
+            }),
+          }
+        },
       } as WorkspaceAgentDispatcherResolver,
       agentTypeId: "default",
       actorResolver: () => ({ workspaceId: "default", userId: "local" }),
       upstreamUrl: "ws://127.0.0.1:18772/asr",
+      createUpstreamForTest: () => upstream,
     })
 
     const started = await manager.start(request, { sessionId: "chat-1" })
     expect(runWithWorkspaceAgent).toHaveBeenCalledOnce()
     expect(callbackCompleted).toBe(false)
-    await expect(manager.review(started.liveSessionId)).rejects.toMatchObject({ code: "live_transcript_disabled" })
+    const socket = new FakeSocket()
+    manager.handleBrowserSocket(started.liveSessionId, socket as never)
+    socket.emit("message", Buffer.from(started.socketNonce), true)
+    await vi.waitFor(() => expect(manager.status(started.liveSessionId).state).toBe("active"))
+    await expect(manager.review(started.liveSessionId)).resolves.toEqual({ status: "dispatched" })
+    expect(sendReview).toHaveBeenCalledOnce()
 
-    await manager.interruptBeforeAttachment(started.liveSessionId, "attachment_failed")
+    await manager.stop(started.liveSessionId)
     await vi.waitFor(() => expect(callbackCompleted).toBe(true))
-    expect(await workspace.readFile(started.transcriptPath)).toContain("- State: interrupted")
+    expect(await workspace.readFile(started.transcriptPath)).toContain("- State: complete")
   })
 
   it("owns one process lease, redeems one nonce, projects full snapshots, and stops idempotently", async () => {

@@ -157,7 +157,16 @@ export class LiveTranscriptManager {
       request,
     }, async (binding: LeaseBoundWorkspaceAgent) => {
       try {
-        const response = await this.createSession(binding.workspace, sessionId, title)
+        let reviewTarget: PiSessionVisibleUserTurnTarget | undefined
+        if (this.options.dispatcherResolver.resolveWithWorkspace) {
+          const resolved = await this.options.dispatcherResolver.resolveWithWorkspace(actor, { request })
+          if (!resolved.bindPiSession) {
+            throw new LiveTranscriptError("live_transcript_disabled", "Visible transcript review is unavailable.", 503)
+          }
+          const boundSession = await resolved.bindPiSession(sessionId, actor)
+          reviewTarget = boundSession.visibleUserMessageTarget
+        }
+        const response = await this.createSession(binding.workspace, sessionId, title, reviewTarget)
         const session = this.active
         if (!session || session.id !== response.liveSessionId) {
           throw new LiveTranscriptError("live_transcript_disabled", "Live transcript lease was not published.", 503)
