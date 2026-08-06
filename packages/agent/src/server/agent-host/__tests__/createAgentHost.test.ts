@@ -9,9 +9,11 @@ import type { AgentHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { InMemorySessionChangesTracker } from '../../http/sessionChangesTracker'
+import type { RuntimeFilesystemBinding } from '../../runtime/mode'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import { assertComposedAgentHostRouteTable } from '../testing/compositionRouteProof'
 import { createAgentHost } from '../createAgentHost'
+import { registerAgentHostEnvironmentRoutes } from '../environmentHttpProjection'
 
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
@@ -244,6 +246,119 @@ describe('createAgentHost', () => {
       agentTypeId: 'alpha',
     }))
     await created.host.close()
+  })
+
+  it('projects every actor-authorized filesystem to the Environment catalog and only assigned filesystems to each Agent', async () => {
+    const workspaceRoot = await root()
+    const binding = (filesystem: string, content: string): RuntimeFilesystemBinding => ({
+      filesystem,
+      access: 'readonly',
+      operations: {
+        read: vi.fn(async () => ({ content })),
+        async list() { return { entries: [] } },
+        async find() { return { paths: [] } },
+        async grep() { return { matches: [] } },
+        async stat() { return { isDirectory: false } },
+        rejectMutation() { throw new Error('readonly') },
+      },
+    })
+    const company = binding('company_context', 'company')
+    const nutritionist = binding('nutritionist_context', 'nutritionist')
+    const legal = binding('legal_context', 'legal')
+    const toolsByAgent = new Map<string, Parameters<AgentHarnessFactory>[0]['tools']>()
+    const harnessFactory: AgentHarnessFactory = async (input) => {
+      toolsByAgent.set(input.systemPromptAppend!, input.tools)
+      return createScriptedPiHarness(input)
+    }
+    const resolveAgentBindings = vi.fn(async (agentTypeId: string) => [
+      company,
+      agentTypeId === 'nutritionist' ? nutritionist : legal,
+    ])
+    const created = await createAgentHost({
+      ...options(workspaceRoot),
+      agents: [
+        { agentTypeId: 'nutritionist', definition: { instructions: 'nutritionist', label: 'Nutritionist' } },
+        { agentTypeId: 'legal', definition: { instructions: 'legal', label: 'Legal' } },
+      ],
+      harnessFactory,
+      resolveAuthorizedEnvironmentScope: async () => ({
+        placementIdentity: 'context-catalog-environment',
+        workspaceRoot,
+        provisioningFingerprint: 'context-catalog-environment-v1',
+        resolveFilesystemBindings: async () => [company, nutritionist, legal],
+      }),
+      resolveAuthorizedAgentRuntimeScope: async ({ agentTypeId }) => ({
+        identity: `context-runtime:${agentTypeId}`,
+        physicalBindingIdentity: `context-runtime:${agentTypeId}`,
+        resourceInputDigest: `context-resources:${agentTypeId}:v1`,
+        sessionNamespace: `context:${agentTypeId}`,
+        getFilesystemBindings: async () => await resolveAgentBindings(agentTypeId),
+      }),
+    })
+    const app = Fastify({ logger: false })
+    await registerAgentHostEnvironmentRoutes(app, {
+      created,
+      authorizeAgentRequest: async () => scope,
+    })
+
+    try {
+      const catalog = await app.inject({ method: 'GET', url: '/api/v1/filesystems' })
+      expect(catalog.statusCode).toBe(200)
+      expect(catalog.json().filesystems.map((entry: { filesystem: string }) => entry.filesystem)).toEqual([
+        'user',
+        'company_context',
+        'nutritionist_context',
+        'legal_context',
+      ])
+
+      await created.gateway.createSession({
+        scope,
+        agentTypeId: 'nutritionist',
+        requestId: 'nutritionist-context-session',
+      })
+      await created.gateway.createSession({
+        scope,
+        agentTypeId: 'legal',
+        requestId: 'legal-context-session',
+      })
+      const toolContext = (requestId: string) => ({
+        abortSignal: new AbortController().signal,
+        toolCallId: requestId,
+        userId: 'subject-a',
+        workspaceId: 'workspace-a',
+        requestId,
+      })
+      const nutritionistRead = toolsByAgent.get('nutritionist')!.find((tool) => tool.name === 'read')!
+      const legalRead = toolsByAgent.get('legal')!.find((tool) => tool.name === 'read')!
+
+      const ownNutritionist = await nutritionistRead.execute(
+        { filesystem: 'nutritionist_context', path: 'knowledge.md' },
+        toolContext('nutritionist-own-read'),
+      )
+      expect(ownNutritionist.isError).not.toBe(true)
+      expect(nutritionist.operations.read).toHaveBeenCalledOnce()
+
+      await expect(nutritionistRead.execute(
+        { filesystem: 'legal_context', path: 'knowledge.md' },
+        toolContext('nutritionist-foreign-read'),
+      )).rejects.toThrow('No filesystem binding is available for legal_context')
+      expect(legal.operations.read).not.toHaveBeenCalled()
+
+      const ownLegal = await legalRead.execute(
+        { filesystem: 'legal_context', path: 'knowledge.md' },
+        toolContext('legal-own-read'),
+      )
+      expect(ownLegal.isError).not.toBe(true)
+      expect(legal.operations.read).toHaveBeenCalledOnce()
+      expect(resolveAgentBindings.mock.calls.map(([agentTypeId]) => agentTypeId)).toEqual([
+        'nutritionist',
+        'nutritionist',
+        'legal',
+      ])
+    } finally {
+      await app.close()
+      await created.host.close()
+    }
   })
 
   it('waits for fire-and-forget callback lease operations before revocation and release', async () => {
