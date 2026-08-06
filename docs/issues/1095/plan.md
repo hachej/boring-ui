@@ -1,7 +1,7 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/1095
 issue: 1095
-state: ready-for-agent
+state: ready-for-human
 updated: 2026-08-05
 flag: flag:agent-inspection
 track: owner
@@ -13,40 +13,44 @@ track: owner
 
 Users cannot inspect one Agent and reliably answer:
 
-- Which definition, configured instructions, and model policy apply?
+- Which public definition, configured instructions, and model policy apply?
 - Which logical environments, working directory, runtime, sandbox, and filesystem bindings can it use?
-- Which access was requested, which access is currently enforced, what is checked only at execution time, and which areas are not represented?
-- Which skills, Agent/Pi plugin contributions, tools, commands, and health facts belong to this Agent?
+- Which access was requested, which access is currently enforced, what is checked only when used, and which areas are not represented?
+- Which skills, Agent/Pi package contributions, tools, commands, and health facts belong to this Agent?
 - Which package also contributes workspace/Boring applications without incorrectly making those workspace capabilities appear Agent-owned?
 
-The relevant data is fragmented across fleet compilation, published runtime bindings, environment/workspace adapters, models, skills, tools, commands, plugin bootstrap, and readiness projections. The repository has no universal permission model. Missing data therefore cannot mean “no access,” and plugin/tool presence cannot mean authorization.
+The facts are fragmented across fleet compilation, lazy runtime bindings, environment/workspace adapters, models, skills, tools, commands, plugin bootstrap, and readiness projections. The repository has no universal permission model. Missing data therefore cannot mean “no access,” and plugin/tool presence cannot mean authorization.
 
 The current navigation also mixes ownership:
 
-- Skills are addressed to an Agent.
-- The current Plugins overlay is workspace-scoped (`/api/v1/agent-plugins`), not Agent-scoped.
+- Skills are presented globally but are addressed to an Agent/runtime context.
+- The existing Plugins experience is composition-dependent, not a per-Agent inventory:
+  - the standalone Workspace server exposes a server-instance host package inventory plus SSE events;
+  - the CLI hub resolves that inventory through its workspace-scoped routing layer;
+  - Core does not currently mount `/api/v1/agent-plugins`;
+  - reload is not part of that catalog endpoint: it is the Agent-addressed `POST /api/v1/agents/:agentTypeId/reload`, invoked through the overlay’s host callback for the active chat Agent.
 - Tasks, Automation, dashboards, and other registered workspace applications are workspace capabilities.
 
-Moving the current Plugins overlay into every Agent would duplicate workspace-only packages and falsely imply Agent ownership. Serializing compiled specs, runtime objects, plugin configuration, paths, prompts, diagnostics, or environment objects would expose secrets, host topology, or misleading permission claims.
+Moving the existing Plugins surface into each Agent would duplicate host/workspace packages and falsely imply Agent ownership. Serializing compiled specs, runtime objects, plugin configuration, absolute paths, prompts, diagnostics, or environment objects would expose secrets, host topology, or misleading permission claims.
 
 ## Solution
 
-Add a feature-flagged, read-only **Agent Details** management page inside the workspace shell. In fleet mode the user selects an Agent using the existing future-chat selector and activates an adjacent gear/details button. In single-Agent mode, when the selector is hidden, a compact identity row provides the same Agent-specific gear. Opening the page snapshots that Agent ID into immutable `viewedAgentTypeId`; selector changes never silently retarget an open page.
+Add a feature-flagged, read-only **Agent Details** management overlay for the plugin-tabs workspace layout. In fleet mode, the user selects an Agent using the existing future-chat selector and activates an adjacent gear/details button. In selector-hidden single-Agent plugin-tabs mode, a compact identity row provides the same Agent-specific gear. Opening Details snapshots that Agent ID into immutable `viewedAgentTypeId`; selector changes never silently retarget an open page. Classic layout does not expose the gear in phase 1 because it does not render the management overlay slot.
 
-Phase 1 uses six sections:
+The overlay contains six sections:
 
 1. **Overview** — Agent identity, public definition metadata, provenance, inspection coverage, and static/runtime snapshot state.
-2. **Configuration** — explicitly authorized configured Agent instructions, public instruction contribution provenance, safe public fingerprints, and model policy/snapshot.
+2. **Configuration** — explicitly authorized configured Agent instructions, public instruction-contribution provenance, safe public fingerprints, and model policy/snapshot.
 3. **Runtime** — logical environments, CWD, runtime/sandbox, bindings, tools, and commands.
 4. **Access** — requested/effective facts, enforcement source, scope, authority, coverage, conditions, freshness, and explicit Unknown states.
-5. **Extensions** — Agent skills and Agent-associated packages; Agent/Pi contributions are distinct from linked workspace/Boring contributions from the same package.
-6. **Diagnostics** — typed configuration validity, readiness/capability states, and stable producer-authored diagnostic codes.
+5. **Extensions** — statically known and passively captured Agent skills plus Agent-associated packages; Agent/Pi contributions are distinct from linked workspace/Boring contributions from the same package.
+6. **Diagnostics** — typed configuration validity, readiness/capability states, snapshot freshness/staleness, and stable producer-authored diagnostic codes.
 
-When the Agent Skills navigation-cutover flag is enabled and a fresh authenticated current-principal capability lease proves that Agent Details Skills is a usable replacement for every advertised Agent, the global Agent Skills action leaves workspace navigation and Skills remains available through Agent Details.
+When the Agent Skills navigation-cutover flag is enabled and a fresh authenticated current-principal capability lease proves that Agent Details Skills is a usable contract/UI replacement for every advertised Agent, the global Agent Skills action leaves workspace navigation. Replacement availability does not require every Agent to have an instantiated runtime or a populated runtime inventory: Agent Details must truthfully render statically proven skill facts together with `not-instantiated`, partial, and Unknown runtime coverage.
 
-Agent Details also shows Agent-associated plugin facts, but phase 1 does **not** remove or replace the existing workspace-scoped Plugins surface or its reload workflow. That surface owns `/api/v1/agent-plugins` and workspace package lifecycle; per-Agent Extensions is not an equivalent replacement. The generic Plugins menu remains in phase 1 while Tasks, Automation, dashboards, and other workspace applications remain unchanged. Its eventual removal is the long-term goal, but is blocked on a separate owner-approved Workspace Settings → Plugins replacement that preserves workspace-only package inspection and reload semantics.
+Agent Details shows Agent-associated package facts, but phase 1 does **not** remove or replace the existing Plugins experience. Existing Plugins behavior remains unchanged in every composition in which it exists today. Its eventual generic-menu removal remains the long-term goal, blocked on a separately approved Workspace Settings → Plugins replacement that preserves host/workspace package inspection, SSE updates, and the appropriate reload semantics.
 
-The server exposes an explicitly authorized, versioned projection built only from allowlisted static facts and immutable frozen snapshots captured during normal compile/binding/admission work. Opening Details must never acquire an environment, resolve a runtime scope, create/publish a binding, construct a harness, provision a workspace, load packages, scan skills, start a sandbox, create a session, resolve execution-time bindings, or reload plugins.
+The server exposes an explicitly authorized, versioned projection built only from allowlisted static facts and immutable facet snapshots captured or atomically replaced by normal compile/publication/admission, readiness-tracker, and effective-resource refresh lifecycle owners. Opening Details must never acquire an environment, resolve a runtime scope, create/publish a binding, construct a harness, provision a workspace, load packages, scan skills, start a sandbox, create a session, resolve execution-time bindings, or reload plugins.
 
 Phase 1 is fully read-only. It contains no install, assignment, edit, reload, permission mutation, prompt mutation, environment mutation, or configuration mutation controls.
 
@@ -68,56 +72,69 @@ authorizeAgentInspection(request, {
 Rules:
 
 - General inspection authorization runs before Agent-existence disclosure.
-- One app authorization call returns an immutable capability set carried with the verified request scope; the Host does not perform one remote policy round-trip per section.
+- One app authorization call returns an immutable section-capability set carried with the verified request scope; Agent Host does not perform one remote policy round-trip per section.
 - Host scope verification still enforces workspace/Agent isolation.
 - Default policy denies inspection unless the host explicitly grants it.
 - Configured instruction text requires `agent.inspect.instructions`.
 - Runtime topology requires `agent.inspect.runtime`.
 - Access topology requires `agent.inspect.access`.
 - Extensions requires `agent.inspect.extensions`.
-- The contract supports owner/editor/viewer/local principals without hard-coding product roles into Agent Host. Core and standalone composition map principals to capabilities.
+- The Host contract supports owner/editor/viewer/local principals without hard-coding product roles into Agent Host; Core and standalone composition map their principals to capabilities.
+- Standalone’s explicit local/no-token development principal receives the configured local inspection capability set; this is an explicit host policy, not an implicit Agent Host fallback.
 - A denied section appears only inside an already-authorized inspection response as `state: "denied"`. Unauthorized callers receive no Agent or section existence oracle.
-- Responses use `Cache-Control: private, no-store`.
+- Responses use explicit `Cache-Control: private, no-store`; this is a new endpoint policy, not claimed as an existing repository default.
+- Inspection authorization controls presentation only and grants no execution permission.
 
-Expose browser capability through a dedicated authenticated, workspace/principal-scoped lease such as `GET /api/v1/agent-inspection-capabilities`. It is computed from the same authorization seam after workspace scope verification and returns only already-advertised Agent IDs, their inspectable sections, server-bounded lease timing, and `skillsReplacementAvailable`. Agent-associated plugin inspection availability is separate and is never workspace Plugins replacement proof. It never exposes denied/unknown Agent IDs, policy internals, role names, or principal identifiers. The browser binds it to current workspace identity, an opaque auth epoch, and the lease epoch/expiry.
+Use `AgentGatewayErrorCode` for the addressed route boundary. Reuse `AGENT_SCOPE_DENIED` and `AGENT_TYPE_UNKNOWN` where their established semantics apply, and add stable `AGENT_INSPECTION_DENIED` and `AGENT_INSPECTION_UNAVAILABLE` codes rather than returning arbitrary error strings. Section denial remains a typed section state, not an HTTP error. Inspection-specific reason/staleness codes live in a closed shared enum separate from gateway error codes.
 
-Inspection authorization controls presentation only; it grants no execution permission.
+### 2. Capability lease, server exposure, and Skills cutover are independent
 
-### 2. Exposure, Skills cutover, and future Plugins cutover are independent
+Expose browser capability through an authenticated, workspace/principal-scoped **Agent inspection capability lease**, such as `GET /api/v1/agent-inspection-capabilities`. This name is deliberately distinct from Core’s boot-cached `/api/v1/capabilities` and in-process `WorkspaceShellCapabilities`.
 
-- `agentInspectionEnabled`: server kill switch and capability lease advertisement. When false, inspection metadata is not wired, the details route is unavailable, and gear/page are hidden.
+The lease returns only already-advertised Agent IDs, per-Agent inspectable sections, per-Agent `skillsReplacementAvailable`, the explicit aggregate `allAdvertisedAgentsSkillsReplaceable`, `issuedAt`, `expiresAt`, bounded `maxAgeSeconds`, and opaque `capabilityEpoch`. The server computes the aggregate as true only when every Agent in that same advertised list has `skillsReplacementAvailable: true`; clients validate this invariant and fail closed rather than recomputing against a different inventory. The lease omits principal identifiers, role names, denied Agent identities, policy internals, and all execution permissions.
+
+Two phase-1 controls exist:
+
+- `agentInspectionEnabled`: server kill switch, snapshot wiring, capability lease, route, gear, and page exposure.
 - `agentSkillsNavCutoverEnabled`: requests retirement of the global Agent Skills action.
-- `workspacePluginsNavCutoverEnabled`: reserved for the separate Workspace Settings → Plugins replacement. It defaults off, is not enabled by this issue, and cannot use Agent Details Extensions as replacement proof.
 
-Effective **Skills** cutover is:
+There is no inert `workspacePluginsNavCutoverEnabled` in phase 1. The future Workspace Settings → Plugins issue owns any future Plugins cutover flag and replacement proof.
+
+Effective Skills cutover is:
 
 ```text
 agentSkillsNavCutoverEnabled
-AND authenticated capability lease is unexpired/current
-AND skillsReplacementAvailable is true for every advertised Agent
+AND capability lease is authenticated and unexpired
+AND allAdvertisedAgentsSkillsReplaceable is true and consistent with every advertised Agent's skillsReplacementAvailable value
 ```
 
-The existing workspace Plugins surface remains visible and functional throughout phase 1 regardless of Agent Details plugin facts. A future Plugins cutover requires its own authenticated `workspacePluginsReplacementAvailable` proof from the Workspace Settings replacement; Agent-associated plugin coverage is insufficient.
+`skillsReplacementAvailable` is a contract/UI capability, not “a populated runtime snapshot exists.” For one advertised Agent, it is true only when the current principal may inspect Extensions and the server/client can represent:
 
-Gear/page visibility derives from an unexpired authenticated per-Agent capability lease, never a build-time flag or unauthenticated workspace hint. The lease has server-issued `issuedAt`, `expiresAt`, and bounded `maxAgeSeconds`. The browser revalidates before expiry and on focus/visibility/pageshow/online/reconnect.
+- statically proven configured/bootstrap skill facts with safe provenance;
+- runtime facts when a passive snapshot exists;
+- `not-instantiated` when no runtime exists;
+- partial/Unknown runtime discovery coverage without implying absence.
 
-While the lease is loading, expired, stale, revoked, malformed, or failed, the UI fails closed synchronously:
+No request-time scan or runtime boot is allowed to make the gate true. The accepted phase-1 limitation is that ambient/runtime-discovered skills for a never-instantiated Agent may remain Unknown until normal runtime publication; statically configured package/bootstrap skills remain visible where bootstrap can prove them. Static rows are intentionally thin—safe name, source kind, and plugin/package identifier where available—and do not claim descriptions, enablement, diagnostics, or ambient discovery that bootstrap cannot prove.
 
-- stale Details data clears immediately;
-- Details closes or becomes unavailable before retry;
-- speculative gear targets are not offered;
-- legacy Agent Skills navigation is restored in the same render/state transition;
-- the workspace Plugins surface remains available.
+Navigation is intentionally principal-dependent: a principal denied `agent.inspect.extensions` retains legacy Skills while an authorized principal may receive the cutover. This is the fail-closed product behavior, not an attempt to provide role-invariant navigation.
 
-Capability loss, server-side role/policy/flag change, endpoint error, or flag race cannot leave neither Skills surface available. Disabling the Skills navigation flag restores legacy Skills without disabling Details. Disabling server inspection removes endpoint exposure. Neither flag deletes legacy components or persisted values.
+The browser treats `expiresAt` as a hard boundary with no stale grace. It revalidates before expiry and on focus, `visibilitychange` to visible, `pageshow`, `online`, and transport/auth reconnect. Expiry, malformed/revoked lease, or failed revalidation synchronously clears Details data, closes/disables Details, removes speculative gear targets, and restores legacy Agent Skills before retry. Existing Plugins behavior is unaffected.
 
-### 3. Viewed Agent identity is explicit and immutable until user action
+Flag wiring is explicit rather than environment-only magic:
+
+- `CreateWorkspaceAgentServerOptions` gains an `agentInspection` option containing `enabled`, `skillsNavCutoverEnabled`, and the app authorization callback.
+- Core server configuration maps its authenticated principal/policy into that option.
+- Standalone/local composition supplies its explicit local principal mapping.
+- Workspace front receives only authenticated capability-lease output and host-provided identity fencing props; it cannot enable the route or cutover by itself.
+
+### 3. Viewed, selected, and current Agent identities are distinct
 
 - Fleet gear accessible name: `View details for {selected Agent}`.
 - Activating gear snapshots the target into `viewedAgentTypeId`.
-- Changing future-chat selection changes the gear’s prospective target but never retargets an open page.
-- Only explicit `View {Agent} details` changes the viewed Agent.
-- Agent Details children must not read contextual `WorkspaceProvider.agentTypeId`, which follows future-chat selection.
+- Changing future-chat selection changes only the gear’s prospective target.
+- Only explicit `View {Agent} details` retargets an open Details overlay.
+- Details children must not read `useWorkspacePluginClient().agentTypeId`, which follows future-chat selection.
 - Requests never infer viewed Agent from active chat/session ownership.
 
 The page context strip shows:
@@ -126,79 +143,123 @@ The page context strip shows:
 - if different: `New chats use: Gamma` with `View Gamma details`
 - if different: `Current chat uses: Beta` with `View Beta details`
 
-These actions change only Details target. They never create/switch a chat or alter future-chat selection.
+These actions change only Details target. They never create/switch chat or alter future-chat selection.
 
-### 4. Entry interaction covers fleet, single-Agent, and failure states
+### 4. Entry interaction is truthful and plugin-tabs-only in phase 1
 
-The existing fleet selector is native, so phase 1 does not add per-option gear actions or replace it.
+The existing fleet selector is native, so phase 1 does not add per-option gears or replace it.
 
-- Fleet mode: persistent 44×44 CSS-pixel details button beside selector.
-- Selector-hidden single-Agent mode: compact Agent identity row plus same 44×44 button.
+- Fleet plugin-tabs mode: persistent 44×44 CSS-pixel details button beside selector.
+- Selector-hidden single-Agent plugin-tabs mode: compact identity row plus same button.
+- Classic layout: no gear and no Agent Details overlay in phase 1.
 - Fleet/capability loading: non-interactive status placeholder, not a speculative target.
-- Fleet error, capability error/revocation, removed Agent, or host fallback absent from advertised fleet: hide/disable gear with concise explanatory text and preserve legacy navigation.
+- Fleet error, capability error/revocation, removed Agent, or fallback absent from advertised fleet: hide/disable gear with concise explanation and preserve legacy Skills.
 - Never request Details for a known-unadvertised fallback.
-- Entry remains keyboard accessible in expanded, collapsed, narrow, and mobile layouts and is never hover-only.
+- Entry remains keyboard accessible in expanded, collapsed, narrow, and mobile plugin-tabs layouts and is never hover-only.
 
-### 5. In-shell management page, not a public browser route
+### 5. Use the existing management overlay mechanism
 
-Use an in-shell Agent Details page state in `WorkspaceAgentFront`, rendered in the full center management area. Do not add a deep link or `WorkspaceFullPagePanel` contract in phase 1.
+Render Agent Details through the real plugin-tabs `chatOverlay` slot using `ManagementOverlaySurface`. Do not invent a center-page state machine, browser deep link, or `WorkspaceFullPagePanel` contract in phase 1.
 
-Switching/creating a chat closes Details through existing shell behavior. Focus moves to page heading on open and returns to gear, or a stable shell fallback if gear disappeared, on close.
-
-### 6. Static and passive runtime facts have explicit semantics
-
-Inspection has two sources:
-
-- **Static facts:** immutable public records produced during normal fleet compilation/bootstrap.
-- **Passive runtime facts:** immutable, already-redacted frozen snapshots captured during normal binding publication/admission.
-
-Slice 1 adds a synchronous non-acquiring accessor:
+`WorkspaceAgentFront` owns a separate typed Details state:
 
 ```ts
-inspectPublishedCurrentSnapshot(
-  agentTypeId: string,
-  workspaceScopeId: string,
-):
-  | { state: "none" }
-  | { state: "ambiguous" }
-  | { state: "current"; snapshot: FrozenAgentInspectionSnapshot }
+{ workspaceId, viewedAgentTypeId, section }
 ```
 
-The accessor:
+Interaction rules:
 
-- reads only `publishedCurrentBindings`;
-- filters by the already-verified `(agentTypeId, workspaceScopeId)` pair;
-- does not need or derive physical/runtime binding identity;
-- never calls `resolveAgentRuntimeScope`, `resolveBinding`, or environment acquisition;
-- returns a frozen inspection snapshot, never a mutable runtime binding.
+- Agent Details and the existing string `leftOverlay` are mutually exclusive visual occupants of the same slot.
+- Explicitly opening Details closes the currently visible legacy management overlay through the normal user-action path; automatic Skills cutover suppression must not mutate persisted overlay state.
+- Explicitly opening an existing legacy overlay closes Details.
+- `muteActiveSession` is true while Details occupies `chatOverlay`, matching existing management-overlay behavior.
+- New-chat creation and chat-selection actions close Details before changing chat state.
+- On open, focus moves to the Details heading. On close, focus returns to the originating gear or a stable shell fallback if the gear disappeared.
+- The overlay uses the existing shell sizing, scroll, and mobile behavior from `ManagementOverlaySurface`.
 
-`none` means no published current binding exists and maps runtime sections to `not-instantiated`. `ambiguous` maps to `unknown` with a stable ambiguity reason. `current` means a published current snapshot exists even when one or more of its section item arrays are empty. A current snapshot with `items: []` and complete coverage is an authoritative current-empty result, never `none` or `not-instantiated`; a current snapshot with empty unknown coverage is represented-but-unknown. `current` is usable only when its frozen workspace/subject applicability and binding generation match the authorized request; mismatch maps to Unknown. Historical/session-pinned bindings are never auto-selected.
+### 6. Pair-keyed immutable facet snapshots define “current”
 
-Details must not call:
+The existing `publishedCurrentBindings` map is keyed by physical binding identity and can retain multiple historical current entries for one `(agentTypeId, workspaceScopeId)` pair. Details must not filter that map and interpret pair cardinality.
 
-- `resolveAgentRuntimeScope` or `resolveBinding`;
-- runtime/environment acquisition or adapter `create`;
-- `getHotReloadableResources`;
-- dynamic prompt loaders;
-- `getSlashCommands` or `getOrCreatePiSession`;
-- request-time model/skill/package discovery;
-- execution-time filesystem binding resolution;
-- provisioning, session creation, reload, or remote inspection I/O.
+Add a separate private pair-keyed registry owned by Agent Host. Keys use the same collision-safe canonical JSON-array encoding pattern as the existing current key, never delimiter concatenation:
 
-Do not add callable/async adapter inspection methods. Producers append immutable typed descriptors to normal compile/binding/admission results. Execution-time/ad-hoc decisions remain `conditional` or `unknown`.
+```ts
+type InspectionPairKey = string // JSON.stringify([agentTypeId, workspaceScopeId])
+
+interface FrozenInspectionFacet<T> {
+  facetGeneration: number
+  capturedAt: string
+  freshness: "current" | "stale"
+  reasonCodes: AgentInspectionReasonCode[]
+  value: T
+}
+
+interface PublishedCurrentInspectionSnapshot {
+  pairGeneration: number
+  publishedAt: string
+  freshness: "current" | "stale"
+  staleReasonCodes: AgentInspectionReasonCode[]
+  snapshot: FrozenAgentInspectionSnapshot // composed from immutable facets
+  facets: Readonly<Record<AgentInspectionFacetName, FrozenInspectionFacet<unknown>>>
+  internalPublication: {
+    currentBindingKey: string
+    supersededBindingKey?: string
+  }
+}
+```
+
+Rules:
+
+- Normal current-binding publication atomically replaces the pair entry: last published current wins.
+- `pairGeneration` is monotonic per Agent/workspace pair and independent of the existing per-`currentKey` binding generation.
+- Every publication or accepted facet replacement creates a new immutable pair record; live tracker/array objects never enter the registry.
+- Facet replacement is permitted beyond initial publication only from an existing normal lifecycle owner, is fenced by the owning `currentBindingKey`, atomically clones/replaces the named facet, and increments both `pairGeneration` and that facet's `facetGeneration`. A late callback from a superseded/disposed binding is ignored.
+- Replacement records internal supersession metadata for lifecycle/testing but never exposes private binding keys to clients.
+- Existing `publishedBindings` and session-pinned/historical binding behavior remain untouched.
+- Disposal clears the pair entry only if the disposed binding still owns the current pair snapshot; disposing a superseded binding cannot erase a newer snapshot.
+- Host shutdown unsubscribes readiness listeners and clears the registry.
+- A race before publication or during an in-progress facet refresh may report `transitioning`/Unknown or the affected facet as stale; once a commit completes, the pair has at most one current immutable record.
+- The synchronous accessor reads only this pair registry and never resolves runtime identity or returns a live binding.
+
+```ts
+inspectPublishedCurrentSnapshot(agentTypeId, workspaceScopeId):
+  | { state: "none" }
+  | { state: "transitioning"; reasonCodes: string[] }
+  | { state: "current"; pairGeneration: number; snapshot: FrozenAgentInspectionSnapshot }
+  | { state: "stale"; pairGeneration: number; capturedAt: string; reasonCodes: string[] }
+```
+
+Core obtains `workspaceScopeId` only by reusing the existing Agent-request `authorizeAgentRequest`/runtime `verify` flow, whose composite scope encodes `[workspaceId, sessionNamespace]`. Details must not derive a parallel scope key. That authorization may perform its existing eager scope-descriptor/resource-digest work; it remains boot-free but is not described as cost-free.
+
+Post-publication mutable facets are explicit:
+
+- `ReadyStatusTracker` remains the readiness owner. The existing readiness `onTrackerCreated` lifecycle callback subscribes to tracker transitions and contributes a newly constructed advisory readiness facet on every emitted transition, with its own `capturedAt` and monotonic `facetGeneration`. Publication/disposal owns subscription setup and teardown. Tracker events never authorize access and never expose arbitrary readiness messages.
+- Effective runtime skills, packages, and extensions are re-captured immediately after the existing normal `refreshEffectiveResources()` lifecycle moments used by initial harness setup, session creation, and session reload. Capture consumes the already-refreshed bounded arrays; Details itself never calls the refresher or hot scanner.
+- Hot-scannable/runtime-discovered inventory coverage is always capped at `partial`, carries stable `live-discovery-may-lag` and last-refresh provenance/reason data plus `capturedAt`, and can never assert authoritative complete absence. A later filesystem/plugin-dir change may be unknown until another normal refresh. Static configured/bootstrap skill coverage remains a separate independently authoritative facet and may be `complete` for exactly its declared source set.
+- Before an in-place mutable-facet operation, the owning lifecycle marks the affected facet stale/transitioning. Success atomically replaces it. Capture, refresh, or callback failure retains the last bytes only as stale with a stable failure reason; failure must never relabel old bytes current.
+
+In-place `reloadSession` behavior is explicit:
+
+- reload start marks all affected runtime facets stale with `runtime-reload-in-progress` before live mutation;
+- successful reload captures and atomically republishes new frozen facets with incremented generations and new `capturedAt` values;
+- failed reload never relabels old bytes current; affected facets remain stale with a stable failure reason until a later successful normal publication/refresh or process restart;
+- Details may show statically proven facts while runtime sections report stale/Unknown.
+
+`none` maps runtime sections to `not-instantiated`. A current static snapshot or non-hot-scannable facet with `items: []` and complete coverage is authoritative current-empty, not `none`. Hot-scannable/runtime-discovered inventories never use complete coverage even when their captured item list is empty.
+
+Details must never call `resolveAgentRuntimeScope`, `resolveBinding`, environment acquisition, adapter `create`, `getHotReloadableResources`, dynamic prompt loaders, `getSlashCommands`, `getOrCreatePiSession`, request-time model/skill/package discovery, execution-time filesystem resolution, provisioning, session creation, reload, or remote inspection I/O.
 
 ### 7. No effective full session prompt in phase 1
 
-The V1 DTO never contains arbitrary `existingSessionId` or a full effective prompt and never auto-selects a session.
+The V1 DTO contains no arbitrary session ID and no full effective prompt.
 
 - Configured Agent definition instructions may be included only after `agent.inspect.instructions` authorization.
-- Without authorization, text is omitted and section/fact reports denial.
-- `instructionsRef` never becomes a raw host path. A logical source label may be shown.
-- Instruction fingerprint is returned only under instruction authorization and includes exactly normalized fields already disclosed at that level.
-- Hidden static/plugin prompt contributions show provenance only. No hidden-content hash is returned.
-- A producer may supply an explicitly public artifact/version ID under configuration authorization, but not a digest derived from hidden prompt text.
+- Without authorization, text/fingerprint are omitted and the section reports denial.
+- Instruction references never become raw host paths; logical source labels may be shown.
+- Instruction fingerprints include exactly normalized fields already disclosed at the same authorization level.
+- Hidden static/plugin prompt contributions show provenance only; no hidden-content hash.
 - Dynamic prompt sources are never executed.
-- Effective exact-session prompt inspection is a separately designed, separately authorized future feature.
+- Exact-session effective-prompt inspection is a separate future feature.
 
 ### 8. Every section reports completeness, freshness, applicability, and authority
 
@@ -211,16 +272,16 @@ interface AgentInspectionSectionV1<T> {
     | "not-instantiated"
     | "not-applicable"
     | "denied"
+    | "stale"
   coverage: "complete" | "partial" | "none" | "unknown"
   authority: "authoritative" | "advisory" | "none"
-  reasonCodes: string[]
+  reasonCodes: AgentInspectionReasonCode[]
   capturedAt?: string
+  pairGeneration?: number
   scope: {
     kind: "workspace" | "subject" | "session" | "binding" | "static"
     workspaceInvariant: boolean
-    subjectId?: string
-    sessionId?: string
-    bindingGeneration?: number
+    subjectApplicability?: "current-subject" | "workspace-wide" | "unknown"
   }
   items: T[]
 }
@@ -229,37 +290,25 @@ interface AgentInspectionSectionV1<T> {
 Rules:
 
 - Top-level `assembledAt` is response assembly time, not freshness.
-- `capturedAt` belongs to producer snapshot.
-- `items: []` + complete coverage is an authoritative empty set.
+- `capturedAt` belongs to the producer snapshot.
+- `items: []` + complete coverage is authoritative empty.
 - `items: []` + unknown coverage means nothing was represented.
-- Subject/session facts appear only when snapshot authority matches current authorized request.
-- Old binding generations are not relabeled current.
-- A public static fingerprint is never described as a raw source-definition digest.
+- Subject/session facts appear only when snapshot applicability matches current authorized request.
+- Superseded/stale generations are never relabeled current.
+- Public static fingerprints are not raw source-definition digests.
 
 ### 9. Access facts present enforcement truth; they do not implement policy
 
-Each fact contains:
-
-- category and logical resource identifier;
-- action;
-- requested state and independent requested source;
-- effective state and independent enforcement source;
-- scope/applicability;
-- authoritative flag;
-- capture time and binding generation;
-- coverage category;
-- stable condition/reason codes;
-- contribution provenance distinct from enforcement.
-
-Semantics:
+Each fact contains category, logical resource identifier, action, requested state/source, effective state/enforcement source, scope/applicability, authority, capture time/pair generation, coverage, stable reason codes, and contribution provenance distinct from enforcement.
 
 - `not-requested` requires a complete authoritative request declaration; ordinary absence is Unknown.
-- `allowed`/`denied` requires the component that enforces the decision and a matching captured scope/actor.
+- `allowed`/`denied` requires the actual enforcing component and matching captured scope/actor.
 - Execution-time admission is `conditional` with safe condition codes.
-- Plugin discovery, a tool name, JavaScript method, empty grants array, or binding existence never proves access.
+- Per-request filesystem bindings report only immutable declarations plus `conditional` / `Checked when used` effective state. Because `getFilesystemBindings({ scope, sessionId, requestId })` is evaluated for each authorized operation, its result is never frozen as a standing allowed/denied grant or placement authority.
+- Plugin discovery, tool name, method existence, empty grants, or binding existence never proves access.
 - Unsupported categories remain Unknown.
 
-Required UI copy:
+Required copy includes:
 
 - `Requested — not proof of access`
 - `Allowed in this scope at {time}`
@@ -273,66 +322,31 @@ Persistent note:
 
 > Reported access is limited to the enforcement sources listed here; it may not enumerate execution-time or ambient host policy.
 
-Trust labels describe execution domains, not endorsements:
+Trust labels describe execution domains, not endorsements.
 
-- `Runs in host trust domain — not a safety endorsement`
-- `Sandbox execution boundary — access still depends on reported policy`
-
-### 10. Public data is typed, bounded, and producer-authored
+### 10. Public data is typed, bounded, producer-authored, and JSON-disciplined
 
 Do not sanitize arbitrary internal objects after serialization.
 
-- Construct DTOs field-by-field from typed inspection records.
+- Construct DTOs field-by-field from typed records.
 - Diagnostics use stable codes plus closed, typed, bounded arguments.
-- Omit arbitrary messages, stacks, provider errors, plugin config, resolved policy, headers, and environment values.
-- `operatorSafeMessage` exists only on a dedicated producer-authored contract; it is never regex-scrubbed from arbitrary errors.
-- Tool shapes expose mechanically derived parameter names/types/required flags. Omit defaults, examples, descriptions, regex patterns, unknown fields, and executable content.
+- Omit arbitrary messages, stacks, provider errors, plugin config/policy, headers, environment values, paths, and opaque handles.
+- Tool shapes expose only mechanically derived parameter names/types/required flags; omit defaults, examples, descriptions, patterns, unknown fields, and executable content.
 - Labels/descriptions require explicit display-safe metadata.
-- Strings, arrays, maps, nesting, diagnostics, tools, bindings, and contributions have fixed maximums.
-- Reject/normalize control, ANSI, bidi, NUL, and non-display characters through type-specific constructors.
+- Strings, arrays, maps, nesting, diagnostics, tools, bindings, and contributions have fixed maxima.
+- Reject/normalize ANSI, bidi, control, NUL, and non-display characters through type-specific constructors.
 - URLs are omitted unless a dedicated public URL type removes credentials/fragments and rejects non-allowlisted query values.
+- No generic sanitizer is claimed to make arbitrary strings safe.
 
-No generic sanitizer is claimed to make arbitrary strings safe.
+Add the new transport and lease DTOs to `packages/agent/src/shared/gateway/__tests__/dtoDiscipline.test.ts`’s JSON DTO checks. Do not assume all existing shared types are JSON-safe.
 
 ### 11. Public fingerprints cannot encode hidden data
 
-Every returned fingerprint has a typed versioned input and the same disclosure authorization as every field that can affect it:
+Every returned fingerprint has a typed, versioned public input and the same disclosure authorization as every field that can affect it. Never reuse `resolvedPolicyDigest`, runtime identity hashes, compiled-spec hashes, raw schema/prompt hashes, or producer digests without proven public inputs.
 
-```ts
-interface PublicAgentSpecFingerprintInputV1 {
-  agentTypeId: string
-  publicDefinitionId?: string
-  publicDefinitionVersion?: string
-  publicLabel?: string
-  publicDescription?: string
-  publicProvenanceIds: string[]
-}
+Tests compare complete unauthorized DTO bytes while independently varying hidden instructions, prompt options, plugin config/policy, schema defaults/examples/patterns, secrets, runtime identity, and physical paths. Public fingerprints remain identical.
 
-interface PublicInstructionFingerprintInputV1 {
-  normalizedDisclosedInstructions: string
-  publicSourceIds: string[]
-}
-
-interface PublicToolShapeFingerprintInputV1 {
-  publicToolId: string
-  parameters: Array<{
-    name: string
-    type: string
-    required: boolean
-  }>
-}
-```
-
-Rules:
-
-- `publicAgentSpecFingerprint` includes only independently public identity/metadata. It cannot change when hidden instructions, plugin config/policy, runtime identity, paths, secrets, or private prompt material change.
-- `PublicInstructionFingerprintInputV1` is emitted only under `agent.inspect.instructions` and contains exactly the text/source IDs already disclosed.
-- Tool shape fingerprints include only visible parameter name/type/required structure.
-- Never reuse `resolvedPolicyDigest`, runtime identity hashes, raw compiled-spec hashes, raw schema hashes, raw prompt hashes, or producer digests without proven public inputs.
-- Hidden prompt/plugin contributions use an explicitly public producer artifact/version ID or no identifier. Hashing hidden content is forbidden.
-- Tests compare complete unauthorized DTO bytes while independently varying hidden instructions, prompt options, plugin config/policy, schema defaults/examples/patterns, secrets, runtime identity, and physical paths. Every public fingerprint must remain identical.
-
-### 12. Logical editor targets only
+### 12. Logical editor targets only; legacy path leakage is tracked separately
 
 Skills/plugins never expose absolute paths or host/package locations.
 
@@ -340,424 +354,310 @@ Skills/plugins never expose absolute paths or host/package locations.
 { filesystemId: string; relativePath: string }
 ```
 
-The target is produced only by the workspace/filesystem adapter that owns the authorized logical filesystem. Global/package/host/unmapped sources have no editor target. Agent Details does not reuse current absolute-path skill projection or rely on client bridge validation as authorization.
+`filesystemId` is the bounded public identifier mapped explicitly from the existing `RuntimeFilesystemBinding.filesystem` concept (including the reserved logical `user` filesystem where applicable); it is not a claim that a new durable ID-to-filesystem registry exists. The target is produced only by the workspace/filesystem adapter owning the authorized logical filesystem. Global/package/host/unmapped sources have no editor target. Agent Details does not reuse the current absolute-path skill projection.
+
+Before Slice 2 merges, file and link a separate security follow-up for the legacy `skills.ts` behavior that can return absolute out-of-workspace paths. That legacy issue is not silently widened into #1095, but Agent Details must not reproduce it.
 
 ### 13. Package and contribution ownership is explicit
 
-Extensions uses a three-way model:
+Extensions uses:
 
 1. Agent/Pi contributions associated with viewed Agent.
 2. Workspace/Boring contributions from the same Agent-associated package, shown as linked workspace capabilities and explicitly not Agent-owned.
 3. Workspace-only packages, omitted from Agent Details.
 
-Generic Agent transport stays namespace-neutral:
+Generic Agent transport remains namespace-neutral; workspace app maps `pi`/`boring` vocabulary. Base Agent shared code gains no Workspace taxonomy/value import.
 
-```ts
-contributions: Array<{
-  namespace: string
-  ownership: "agent" | "workspace-linked"
-  kinds: string[]
-  provenance: PublicProvenanceV1
-}>
-```
+Phase 1 preserves existing Plugins behavior exactly by composition:
 
-Workspace app layer maps `pi`/`boring` manifest vocabulary into this form. `packages/agent/src/shared/**` gains no Workspace taxonomy/value imports.
+- standalone Workspace server: existing server-instance host inventory and SSE behavior remain;
+- CLI hub: existing workspace-scoped routing behavior remains;
+- Core: no new generic Plugins endpoint or menu is invented;
+- reload remains Agent-addressed through the existing host callback targeting the active chat Agent.
 
-Phase 1 does not cut over the workspace Plugins surface. Agent Details shows only Agent-associated package facts and linked workspace contributions; it is not replacement proof for `/api/v1/agent-plugins` or reload. The generic Plugins menu may disappear only in a separate Workspace Settings → Plugins effort after that workspace-owned replacement advertises fresh authenticated replacement availability. Workspace app actions remain.
+Agent Details plugin facts are not replacement proof for the generic Plugins experience.
 
-### 14. Reuse pure projection logic without invoking live resolvers
+### 14. Reuse pure projections without invoking live resolvers
 
-Do not duplicate model, skill, readiness, tool, command, or runtime-capability formatting rules.
+Pure readiness/capability normalization and public summary constructors live beside their semantic owners. `runtimeCapabilityProjection.ts` remains orchestration and consumes them; inspection capture consumes the same helpers only over already-captured typed inputs. Current candidate resolution, `resolveAgentRuntimeScope`, `findPublishedCurrentBinding`, and live route orchestration remain exclusive to existing paths.
 
-Slice 1 reconciles readiness and runtime-capability vocabulary without turning `runtimeCapabilityProjection.ts` into a new utility owner:
+If a handler is entangled with Fastify/discovery/acquisition, extract only a pure constructor over a typed already-captured fixture. Add parity tests and document Details’ stricter omissions.
 
-- pure readiness/capability-state normalization and public summary constructors should live beside their semantic owners, likely existing readiness/route modules or new server-internal helpers adjacent to them;
-- `runtimeCapabilityProjection.ts` remains orchestration and consumes those pure helpers;
-- inspection snapshot capture consumes the same helpers only over already-captured typed inputs;
-- current candidate resolution, `resolveAgentRuntimeScope`, `findPublishedCurrentBinding`, and live route orchestration remain exclusive to existing runtime-capability routes;
-- Details never invokes those live paths.
+Commands may remain Unknown in phase 1 when proving them would require `getSlashCommands`/live Pi session creation.
 
-Apply the same extraction to model/skill/tool/command/readiness routes where feasible. If a handler is entangled with Fastify/discovery/acquisition, create a pure constructor beside the route/readiness semantic owner over an already-captured typed fixture and leave resolver/orchestration unchanged. Add parity tests for shared state vocabulary and document Details’ stricter omissions.
+### 15. Workspace base front remains independent of Agent values
 
-### 15. Base workspace front remains independent of Agent values
-
-Place Agent transport fetch/validation in workspace app integration layer:
+Transport fetch/validation belongs in workspace app integration:
 
 - `packages/workspace/src/app/front/agent-details/useAgentDetails.ts`
 - `packages/workspace/src/app/front/agent-details/useAgentInspectionCapabilities.ts`
 - `packages/workspace/src/app/front/agent-details/agentDetailsAdapter.ts`
 
-That layer may compose Agent values under existing app rules. It validates schema version, identity, envelopes, bounds, and additive fields, then passes a workspace-owned presentation model into base chrome.
+Base `packages/workspace/src/front/**` receives a workspace-owned presentation model via props and has zero Agent value imports.
 
-Base `packages/workspace/src/front/**` components receive plain props and use type-only imports where permitted. They have zero Agent value imports.
+Add a machine check to `packages/workspace/scripts/check-plugin-invariants.mjs` that rejects value imports from `@hachej/boring-agent` in workspace base front/shared, matching the documented invariant. Type-only imports remain subject to existing rules.
 
 ### 16. Skills and Plugins views are pure prop-fed inventories
 
-Extract stateless presentation components:
+Slice 4 exclusively owns extraction of stateless `SkillsInventory` and `PluginsInventory`. Legacy `SkillsPage` and `PluginsOverlay` retain current fetch/reload/event ownership for rollback. Details performs one inspection fetch and passes validated section items to pure inventories.
 
-- `SkillsInventory`
-- `PluginsInventory`
+Details components do not fetch contextual skills, call `/api/v1/agent-plugins`, subscribe to global plugin events, invoke reload/install/edit, or read `useWorkspacePluginClient().agentTypeId`.
 
-Legacy `SkillsPage` and `PluginsOverlay` retain current fetch/reload/event ownership for rollback. Details performs one inspection fetch and passes validated section items to pure inventories.
+### 17. Auth and capability fencing have explicit owners
 
-Details components must not:
+Introduce an opaque `inspectionAuthIdentityKey` supplied by the authentication owner solely for client cache/race fencing:
 
-- fetch selected-context skills;
-- call `/api/v1/agent-plugins`;
-- subscribe to global plugin reload events;
-- call reload/install/edit endpoints;
-- read contextual `WorkspaceProvider.agentTypeId`.
+- Core auth/session provider owns and rotates a non-secret opaque generation/key whenever authenticated session identity, authorization subject, or relevant role/policy identity changes.
+- Core threads it through `CoreWorkspaceAgentFront` into workspace app/front props.
+- Standalone/local composition supplies a constant local identity key tied to its explicit local-principal policy.
+- Workspace code never derives the key by hashing tokens/headers and never logs/persists it.
+- The key is not authorization; server authorization remains authoritative.
 
-### 17. Navigation and data lifecycle are reversible and race-safe
-
-Do not overwrite existing string-only `appLeftOverlay` persistence.
-
-- Details state is separate typed `{ workspaceId, viewedAgentTypeId, section }` state.
-- Under phase-1 Skills cutover, only a legacy persisted `skills` value is suppressed, not rewritten. A persisted `plugins` value continues opening the existing workspace Plugins surface.
-- Optional Skills compatibility opening waits for fleet/capability resolution and maps only `skills` to Agent Details Extensions for an advertised authorized Agent. Any future Plugins migration must target the separate Workspace Settings → Plugins replacement, never Agent Details.
-- Loading/error, removed Agent, corrupt state, unadvertised fallback, or capability loss closes safely to chat with no blank pane.
-- Rollback reads untouched legacy value.
-
-`useAgentDetails` request key is:
+`useAgentDetails` request identity is:
 
 ```text
-{ workspaceId, viewedAgentTypeId, apiBaseUrl, authEpoch, capabilityEpoch, leaseExpiresAt }
+{ workspaceId, viewedAgentTypeId, apiBaseUrl, inspectionAuthIdentityKey, capabilityEpoch }
 ```
 
-For every key change or retry:
+`leaseExpiresAt` is a hard validity gate, not a request-key member. Renewal with unchanged `capabilityEpoch` does not churn a Details refetch. If effective capability changes, the server returns a changed `capabilityEpoch`, which invalidates Details. Expiry/failure still clears synchronously before retry.
 
-- create `AbortController`;
-- increment a monotonic request epoch;
-- abort prior request during cleanup;
-- commit only from latest matching epoch;
-- synchronously clear prior presentation data on workspace/auth/capability change or revocation;
-- close/disable Details before refetch when capability is lost.
+For each request-key change/retry: abort prior request, increment monotonic epoch, commit only from the latest matching epoch, and synchronously clear prior data on workspace/auth/capability change or revocation.
 
-A late Alpha response cannot replace Gamma, survive into another workspace, remain after auth change, or remain after capability revocation. Header values are not persisted/logged; auth provider supplies opaque epoch/key identity.
+### 18. Persisted Skills suppression is non-destructive
+
+Details state remains separate from string-only `appLeftOverlay` persistence.
+
+The existing `WorkspaceAgentFront` self-healing validator currently writes `null` when Skills is disabled, which deletes its localStorage key. Slice 5 must distinguish:
+
+- **host configuration disables Skills:** retain existing invalid-state cleanup;
+- **Skills is merely hidden by Agent Details cutover:** suppress rendering/action without calling `setLeftOverlay(null)` or rewriting storage.
+
+A persisted `plugins` value continues opening the existing Plugins surface. Optional compatibility opening maps only persisted `skills` to Agent Details Extensions after fleet and capability resolution identify the resolved future-chat Agent and prove that Agent advertised/replaceable. If no such Agent is available, compatibility mapping is dropped for that render and chat remains visible; it must not guess a fallback or mutate persistence. Turning cutover off reads the untouched Skills value and reopens the legacy overlay. Corrupt/removed-Agent states close safely to chat without blank panes.
 
 ## Inspection Contract
 
 ### Transport ownership
 
-Define internal snapshots first. Publish a minimal versioned namespace-neutral transport under `packages/agent/src/shared/agentInspection.ts` only after real producer fixtures exist. Workspace app adapter maps it to workspace presentation.
+Define internal snapshots first. Publish a minimal namespace-neutral `AgentInspectionResponseV1` under `packages/agent/src/shared/agentInspection.ts` only after producer fixtures exist. Workspace app adapter maps it to presentation.
 
-### Top-level V1
-
-```ts
-interface AgentInspectionResponseV1 {
-  schemaVersion: 1
-  assembledAt: string
-  agent: {
-    agentTypeId: string
-    label: string
-    publicDescription?: string
-    publicDefinitionId?: string
-    publicDefinitionVersion?: string
-    publicAgentSpecFingerprint: string
-    provenance: PublicProvenanceV1
-  }
-  overview: AgentInspectionSectionV1<OverviewFactV1>
-  configuration: AgentInspectionSectionV1<ConfigurationFactV1>
-  runtime: AgentInspectionSectionV1<RuntimeFactV1>
-  access: AgentInspectionSectionV1<AccessFactV1>
-  extensions: AgentInspectionSectionV1<ExtensionFactV1>
-  diagnostics: AgentInspectionSectionV1<DiagnosticFactV1>
-}
-```
+Top-level V1 contains `schemaVersion`, `assembledAt`, public Agent identity/provenance/fingerprint, and six `AgentInspectionSectionV1` envelopes: overview, configuration, runtime, access, extensions, diagnostics.
 
 Rules:
 
-- Breaking semantics increment `schemaVersion`; additive fields remain V1 and clients ignore unknown additive fields.
-- Deterministic ordering applies to every collection.
-- Every type has size/count/depth bounds.
-- Section state/coverage/authority/freshness/scope are mandatory.
-- No effective prompt or arbitrary session ID exists in V1.
-- Model availability is not credential presence or standing authorization.
-- Unknown is first-class, not error/empty.
-- Every fingerprint uses its matching `Public*FingerprintInputV1` authorization and cannot encode omitted data.
+- Breaking semantics increment version; additive fields remain V1 and clients ignore unknown additive fields.
+- Deterministic ordering and explicit count/size/depth bounds apply throughout.
+- No effective prompt or arbitrary session ID.
+- Model availability is not credential presence or standing execution authorization.
+- Unknown is first-class.
+- Every fingerprint uses matching authorized public inputs only.
 
 ### Details route
 
-Add `GET /api/v1/agents/:agentTypeId/details` only when `agentInspectionEnabled`.
+Add `GET /api/v1/agents/:agentTypeId/details` only when `agentInspection.enabled`.
 
-Request sequence:
+Sequence:
 
 1. app-owned general inspection authorization;
 2. Host workspace/Agent scope verification;
 3. unknown-Agent lookup;
-4. per-section capability application from authorized scope;
-5. projection from immutable static records and `inspectPublishedCurrentSnapshot` result;
+4. per-section capability application;
+5. static projection plus pair-keyed frozen snapshot accessor;
 6. bounds/schema validation;
-7. `Cache-Control: private, no-store` response.
+7. private/no-store response.
 
-Client headers cannot choose storage/authorization scope. Stable denied/unknown codes follow repository conventions without existence disclosure before authorization.
+Client headers cannot choose storage/authorization scope.
 
-### Capability advertisement route
+### Capability lease route
 
-Add authenticated `GET /api/v1/agent-inspection-capabilities` under server flag.
+Add authenticated `GET /api/v1/agent-inspection-capabilities` under the same server flag. It returns bounded lease timing, advertised Agent entries with per-Agent section capability and per-Agent `skillsReplacementAvailable`, explicit `allAdvertisedAgentsSkillsReplaceable`, and `capabilityEpoch` only. The aggregate must equal the conjunction over that exact advertised list.
 
-Response is bounded/non-cacheable and acts as a server-bounded authenticated capability lease. It includes:
-
-- `issuedAt`, `expiresAt`, and bounded `maxAgeSeconds`; the server chooses the maximum lifetime and the client cannot extend it;
-- workspace identity already authorized for browser;
-- already-advertised Agent IDs only;
-- general/section availability per Agent;
-- `skillsReplacementAvailable` computed from current principal authorization plus actual populated Agent Skills replacement support;
-- Agent-associated plugin inspection availability, explicitly **not** a claim that the workspace Plugins surface can be removed;
-- capability epoch/version suitable for client invalidation.
-
-The client treats `expiresAt` as a hard boundary with no stale grace. It revalidates early enough to complete before expiry (bounded by the smaller of 80% of the lease lifetime or 30 seconds before expiry), and also revalidates on window focus, `visibilitychange` to visible, `pageshow`, browser `online`, and transport/auth reconnect. A failed, malformed, revoked, or expired lease synchronously clears Agent Details data, closes/disables the page, restores legacy Agent Skills navigation, and preserves the workspace Plugins surface before any asynchronous retry. Server-side flag, role, policy, or section-capability changes therefore take effect without requiring workspace or auth-epoch changes.
-
-It omits principal ID, roles, policy internals, denied Agent identities, and any execution permission. Workspace/auth changes invalidate response. Lease expiry, focus/reconnect revalidation, or a changed server-side flag/role/policy/section capability also invalidates it even when workspace and auth epoch are unchanged.
+Per-Agent `skillsReplacementAvailable` means the authorized page/contract can render known static facts plus truthful runtime `partial | unknown | not-instantiated` (and `complete` only for independently authoritative non-hot/static source sets); it never means an Agent has a populated binding.
 
 ## Server Architecture
 
-### Static snapshot
+### Static facts
 
-Add internal types/constructors near Agent Host:
+Create internal types/constructors near Agent Host (`inspectionSnapshot.ts`, `inspectionProjection.ts`). Capture compiler-supplied public Agent identity, typed public fingerprints, configured instruction text gated at response, logical instruction source, provenance-only hidden contributions, complete requested-model declarations, statically configured skill provenance where bootstrap can prove it, Agent-associated package provenance, and section coverage/reason codes. Static skill rows are deliberately limited to safe name/source/plugin-or-package identity that trusted bootstrap actually supplies; they do not invent descriptions, enable state, ambient skills, or diagnostics.
 
-- `packages/agent/src/server/agent-host/inspectionSnapshot.ts`
-- `packages/agent/src/server/agent-host/inspectionProjection.ts`
+### Pair-keyed published inspection registry
 
-Capture only proven public facts:
-
-- compiler-supplied public Agent identity;
-- `publicAgentSpecFingerprint` from typed public input;
-- configured instruction text gated at response time;
-- logical instruction source;
-- authorized instruction fingerprint;
-- prompt contribution provenance without hidden-content digest;
-- requested model facts only where declaration is complete;
-- Agent-associated package provenance supplied by trusted bootstrap;
-- section coverage/reason codes.
-
-### Published binding snapshot/accessor
-
-Normal binding publication attaches a frozen bounded already-redacted inspection snapshot.
-
-`inspectPublishedCurrentSnapshot(agentTypeId, workspaceScopeId)` synchronously filters `publishedCurrentBindings` by verified pair and returns `none`, `ambiguous`, or `current(frozenSnapshot)`. It never resolves identity or returns mutable binding.
-
-Snapshot capture may reuse pure runtime-capability and route serializers extracted in Slice 1, but occurs only during the normal operation that already owns data. Zero/one/multiple current publications, subject mismatch, and generation mismatch have exact tests with forbidden resolver/acquirer spies at zero.
+Add the separate pair registry and publication/facet-replacement lifecycle described in Decision 6. Do not change session-pinned binding selection. Capture immutable snapshots only during normal lifecycle owners; atomically replace owner-fenced facets on readiness transitions and effective-resource refreshes; mark/re-capture around in-place reload. Tests prove identity supersession, pair/facet generation, late-callback fencing, disposal/subscription ownership, stale failure behavior, and pinned bindings never surfacing as current.
 
 ### Environment/access producers
 
-Environment, workspace, runtime mode, sandbox, filesystem, and admission producers may contribute immutable facts during existing lifecycle. Each declares:
-
-- logical resource ID/label;
-- captured scope/actor applicability;
-- coverage/authority;
-- requested/effective truth source;
-- stable condition/reason codes;
-- capture time and binding generation.
-
-Absence maps Unknown. Physical paths, handles, mounts, credentials, and environment values never enter snapshot.
+Environment, workspace, runtime-mode, sandbox, filesystem, and admission owners contribute immutable logical declarations during existing lifecycle. Each declares scope/applicability, coverage/authority, requested/effective truth source, reason codes, capture time, and pair generation. Per-request filesystem evaluation is represented only as conditional/Checked-when-used and is never cached as a standing grant. Absence is Unknown. Physical topology never enters snapshots.
 
 ### Runtime inventory producers
 
-Models, skills, Agent/Pi plugins, tools, commands, readiness, and diagnostics contribute typed summaries during binding/harness publication. Request-time inspection never calls acquiring/discovery routes.
-
-Skills get editor targets only from authorized adapters. Workspace-only packages are omitted. Workspace-linked contributions appear only for Agent-associated packages.
+Models, runtime-discovered skills, Agent/Pi packages, tools, commands when safely available, readiness, and typed diagnostics contribute during normal binding/harness lifecycle. Readiness is re-contributed from `ReadyStatusTracker` subscriptions installed through `onTrackerCreated`; effective skill/package/extension inventory is re-captured after normal `refreshEffectiveResources()` moments. Hot-scannable/runtime-discovered coverage stays partial with `live-discovery-may-lag`, last-refresh provenance, and `capturedAt`; static configured skill coverage remains independently authoritative. Failed re-contribution leaves the affected facet stale. Request-time inspection never invokes discovery/acquisition.
 
 ### Workspace bootstrap provenance
 
-Normalize trusted package/bootstrap metadata into bounded namespace-neutral input keyed by package ID. Include only public package identity/version/artifact ID, contribution namespaces/kinds, linked workspace kinds, authoritative admission/load state, typed diagnostic codes, and public trust-domain semantics.
-
-Never include config values, raw policy, bridge handlers, source paths, prompt text, arbitrary messages, or hidden-content digests.
+Normalize trusted bootstrap metadata into bounded namespace-neutral input keyed by package ID. Include only public identity/version/artifact ID, contribution namespaces/kinds, linked workspace kinds, admission/load state, typed diagnostics, trust-domain semantics, and statically configured skill provenance. Never include config/policy values, handlers, paths, prompt text, arbitrary messages, or hidden-content digests.
 
 ## UI Architecture
 
-### Authenticated capability and app integration layer
+### App integration
 
-Add:
-
-- `useAgentInspectionCapabilities.ts`
-- `useAgentDetails.ts`
-- `agentDetailsAdapter.ts`
-- focused hook/adapter tests.
-
-Capability hook is fenced by workspace/auth epoch **and lease expiry** and exposes only an unexpired authenticated advertisement. It schedules bounded pre-expiry revalidation and listens for focus, visibility-to-visible, pageshow, online, and transport/auth reconnect. Details hook receives workspace identity, viewed Agent, API base, headers, auth epoch, capability epoch, and lease expiry. It aborts/increments epoch on every identity/scope/auth/capability/lease change and rejects late/mismatched/malformed responses. Expiry or revalidation failure synchronously clears data, closes/disables Details, and restores legacy Skills navigation before retry; workspace Plugins never disappears in phase 1.
+Add capability/details hooks and adapter under `packages/workspace/src/app/front/agent-details/`. The capability hook is fenced by workspace, `inspectionAuthIdentityKey`, `capabilityEpoch`, and hard lease expiry. It revalidates before expiry and on focus/visibility/pageshow/online/reconnect. Details uses the request identity from Decision 17 and rejects mismatched/malformed/late responses.
 
 ### Base presentation
 
-Add prop-fed components under `packages/workspace/src/front/chrome/agent-details/`:
+Add prop-fed components under `packages/workspace/src/front/chrome/agent-details/` for page, section navigation, context strip, access facts, Skills inventory, and Plugins inventory. Base front consumes no Agent values.
 
-- `AgentDetailsPage.tsx`
-- `AgentDetailsNavigation.tsx`
-- `AgentContextStrip.tsx`
-- `AgentAccessFacts.tsx`
-- `SkillsInventory.tsx`
-- `PluginsInventory.tsx`
-- focused tests.
+### Overlay behavior
 
-Base layer consumes workspace-owned presentation model, not Agent values.
+Use `ManagementOverlaySurface` through plugin-tabs `chatOverlay`. Workspace shell owns only typed state, mutual exclusion, mute/close/focus wiring, and presentation props. Section behavior remains in focused components.
 
-### Six-section behavior
-
-Desktop uses stable section rail/tablist. Narrow/mobile uses horizontally scrollable tablist with active item scrolled into view.
-
-- Arrow Left/Right and Home/End navigate tabs.
-- Loading uses `role="status"`.
-- Errors use `role="alert"` and Retry.
-- Page failure differs from section denied/unknown/not-instantiated.
-- `not-instantiated` is neutral, not unhealthy.
-- Narrow Access uses labeled cards/definition rows, not detached scrolling table.
-- Long instructions/structural summaries collapse by default, are bounded/copyable, and wrap without page horizontal scroll.
-- State is text+icon, never color alone.
+Desktop uses a stable section rail/tablist; narrow/mobile uses horizontally scrollable tabs. Arrow keys/Home/End navigate. Loading uses `role=status`; page errors use `role=alert`; denied/Unknown/not-instantiated/stale are section states, not generic failure. Access becomes labeled cards on narrow screens. Long content is bounded, wrapped, and collapsible. State is text+icon, never color alone.
 
 ## Flag / Abstraction
 
-- **Server:** `agentInspectionEnabled`, default false. Gates snapshot wiring, routes, capability advertisement, gear/page exposure.
-- **Skills navigation:** `agentSkillsNavCutoverEnabled`, default false. Effective only with an unexpired authenticated `skillsReplacementAvailable` lease for every advertised Agent. Loading/error/expiry/revocation fails closed synchronously to legacy Skills.
-- **Plugins navigation:** `workspacePluginsNavCutoverEnabled` is a reserved future control, default false and not enabled in phase 1. It requires a separate workspace-owned Settings/Plugins replacement and fresh `workspacePluginsReplacementAvailable`; Agent Details plugin facts cannot satisfy it. The existing workspace Plugins surface/reload remains.
-- **Abstractions:** immutable snapshots; discriminated no-acquire accessor; section envelopes; typed public fingerprints; capability advertisement; minimal transport; app adapter; prop-fed UI; explicit viewed-Agent state.
-- **Rollback:** disable the Skills cutover to restore legacy Skills; disable server inspection to remove endpoint/page. Workspace Plugins is unaffected in phase 1. Preserve legacy components/persistence for one release window. No deletion without explicit permission.
+- **Needed?:** Yes.
+- **Server path:** `CreateWorkspaceAgentServerOptions.agentInspection.enabled`, default false, gates snapshot wiring and both routes.
+- **Skills path:** `CreateWorkspaceAgentServerOptions.agentInspection.skillsNavCutoverEnabled`, default false, advertised only through authenticated lease.
+- **Core path:** Core server config supplies authorization and flags; Core auth front supplies `inspectionAuthIdentityKey`.
+- **Standalone path:** explicit local principal policy plus constant auth identity key.
+- **No phase-1 Plugins flag:** future Workspace Settings owns it.
+- **Rollback:** disable Skills cutover to restore untouched legacy Skills; disable server inspection to remove routes/page. Existing Plugins behavior is unaffected. Legacy components/persistence remain for one release window; no deletion without written approval.
 
 ## Test Seams
 
 ### Highest public seams
 
-- Authenticated capability/details HTTP contracts through real Core and standalone Workspace composition.
-- Agent Host no-acquisition behavior around published snapshots.
-- Workspace adapter identity/schema/bounds validation.
-- Capability/Details hook race fencing.
-- `WorkspaceAgentFront` fleet and single-Agent identity/navigation behavior.
+- Authenticated capability/details routes through real Core and standalone compositions.
+- Agent Host pair-keyed frozen inspection registry and no-acquisition behavior.
+- Workspace adapter schema/identity/bounds validation.
+- Capability/Details hook race and lease fencing.
+- Plugin-tabs `WorkspaceAgentFront` overlay/identity/navigation behavior.
 - Desktop/mobile scripted proof.
+
+### Required Host/snapshot tests
+
+1. Pair registry last-current-wins after runtime identity/config/plugin change.
+2. Pair generation increments independently of existing `currentKey` generations.
+3. Superseded binding disposal cannot remove newer snapshot.
+4. Current binding disposal clears only its owned pair record.
+5. Session-pinned/historical bindings never surface through current inspection.
+6. Reload start marks stale; success republishes; failure stays stale.
+7. `none` differs from authoritative current-empty and stale.
+8. First/repeated Details requests call none of the forbidden resolving/acquiring/discovery APIs and change no binding/session/request-ledger state.
+9. Static facts remain available when runtime is not instantiated/stale.
+10. Every `ReadyStatusTracker` transition owner-fenced through `onTrackerCreated` replaces only the readiness facet, increments facet/pair generation, updates `capturedAt`, and ignores late events after supersession/disposal.
+11. Normal effective-resource refresh/session-create lifecycle re-captures skill/package/extension facets; hot-scannable coverage remains partial with `live-discovery-may-lag` even for an empty list, while static configured coverage remains separately authoritative.
+12. Readiness/resource capture or refresh failure leaves prior bytes stale with a stable reason and never relabels them current.
 
 ### Required authorization/capability tests
 
-1. Server flag off: routes unavailable, no details payload.
-2. Flag on but capability denied: no Agent existence disclosure.
-3. General auth precedes scope/Agent lookup.
+1. Server flag off: routes absent and snapshot wiring disabled.
+2. Flag on but general capability denied: no Agent existence disclosure.
+3. General authorization precedes scope/Agent lookup.
 4. Section capabilities independently deny instructions/runtime/access/extensions.
-5. Core owner/editor/viewer and standalone local/no-token mappings are explicit.
+5. Core owner/editor/viewer mappings and standalone local/no-token mapping are explicit.
 6. Forged workspace/storage headers cannot choose scope.
-7. Unknown Agent/denied scope use stable non-leaking codes.
+7. Stable `AgentGatewayErrorCode` values cover denied/unavailable/unknown cases.
 8. Responses are private/no-store.
-9. Advertisement is authenticated, bound to workspace/auth epoch, and carries server-bounded `issuedAt`/`expiresAt`/`maxAgeSeconds`; denied/unadvertised Agents never appear.
-10. Gear requires per-Agent general capability from an unexpired lease.
-11. Skills cutover requires current `skillsReplacementAvailable` for every advertised Agent; Agent plugin facts never remove the workspace Plugins surface.
-12. Loading, expiry, role downgrade, capability loss, malformed/stale advertisement, endpoint error, and flag race synchronously clear/close Details and preserve/restore legacy Skills without dead-end.
-13. Focus, visibility, pageshow, online, and transport/auth reconnect revalidate; bounded pre-expiry refresh occurs before the hard expiry.
-14. Server-side role, policy, section capability, and inspection/Skills flag changes are observed on revalidation even when auth epoch and workspace identity do not change.
-15. `workspacePluginsNavCutoverEnabled` cannot become effective without separate authenticated workspace replacement proof; in phase 1 Plugins inventory/reload remains reachable.
-
-### Required no-side-effect/accessor tests
-
-For first and repeated Details requests assert zero calls/changes to:
-
-- runtime scope resolver/`resolveBinding`;
-- environment acquisition/adapter create;
-- harness/session creation/`getOrCreatePiSession`;
-- provisioning/filesystem resolution;
-- dynamic prompt/resource loaders;
-- package/skill discovery;
-- hot reload/slash-command loading;
-- session files/counts, binding keys/generations, request ledger effects, runtime publication.
-
-Accessor tests prove:
-
-- zero matching current publications -> `none`/`not-instantiated`;
-- one -> `current(frozenSnapshot)`, including authoritative current-empty section arrays that must not collapse to none/not-instantiated;
-- multiple -> `ambiguous`;
-- key uses only Agent/workspace;
-- subject/generation mismatch -> Unknown projection;
-- all forbidden resolver/acquirer calls remain zero.
+9. Lease includes bounded timing, current advertised Agent entries, per-Agent replacement values, the consistent `allAdvertisedAgentsSkillsReplaceable` aggregate, capability epoch, and no role/principal details.
+10. Per-Agent `skillsReplacementAvailable` is true for authorized representable `not-instantiated`/partial/Unknown Agents and does not require a runtime inventory; the aggregate is true only when every advertised Agent qualifies.
+11. Statically configured skill provenance appears where bootstrap proves it; ambient unknown is labeled Unknown.
+12. Expiry, downgrade, revocation, malformed lease, endpoint error, and flag race clear/close Details and restore Skills synchronously.
+13. Focus/visibility/pageshow/online/reconnect and bounded pre-expiry refresh revalidate.
+14. Server-side role/policy/section/flag changes rotate capability epoch even without workspace/auth change.
+15. Capability renewal with unchanged epoch does not refetch Details solely because expiry changed.
 
 ### Required contract/security tests
 
 1. `[] + complete` differs from `[] + unknown`.
-2. `assembledAt` never overwrites `capturedAt`.
-3. Old generation/other-subject/session facts cannot become current authoritative.
+2. `assembledAt` never overwrites producer `capturedAt`.
+3. Superseded/stale/other-subject/session facts cannot become current authoritative.
 4. `not-requested` requires complete authoritative declaration.
 5. Allowed/denied requires matching authoritative enforcement scope.
 6. Configured instruction text/fingerprint require instruction capability.
-7. Hidden prompt text has no content-derived digest.
-8. Dynamic prompts are not invoked.
-9. Seeded secrets, credential URLs, paths, config/policy, stacks, headers never serialize.
-10. Strings reject/normalize ANSI/bidi/control/NUL/oversize/unsafe URLs/path messages.
-11. Diagnostics accept only known codes/typed bounded args.
-12. Tool structures omit defaults/examples/descriptions/patterns/unknown fields.
-13. Editor targets require approved filesystem ID + safe relative path.
-14. Ordering/count/depth/length bounds hold.
-15. Namespace-neutral DTO contains no Workspace taxonomy.
-16. Pure serializer parity includes helpers extracted from `runtimeCapabilityProjection.ts`; stricter omissions documented.
-17. Unauthorized complete DTO bytes and every fingerprint remain identical when hidden instructions, prompt options, plugin config/policy, schema defaults/examples/patterns, secrets, runtime identity, or physical paths change.
-18. Fingerprint constructors reject non-public inputs and emit only at matching authorization.
+7. Hidden prompt text has no content-derived digest; dynamic prompts never run.
+8. Seeded secrets, URLs, paths, config/policy, stacks, and headers never serialize.
+9. Diagnostics accept only known codes/typed bounded args.
+10. Tool shapes omit defaults/examples/descriptions/patterns/unknown fields.
+11. Editor targets require approved filesystem ID + relative path.
+12. Ordering/count/depth/length bounds hold.
+13. Namespace-neutral DTO contains no Workspace taxonomy.
+14. Unauthorized complete DTO bytes/fingerprints remain identical as hidden inputs vary.
+15. New transport and lease satisfy `dtoDiscipline.test.ts` JSON checks.
+16. Workspace invariant check rejects Agent value imports in base front/shared.
+17. Core Details scope uses the existing authorize/verify-produced composite workspace scope and rejects any independently derived or client-selected scope.
+18. Mutable facet failures/supersession cannot relabel an older readiness or hot-discovery capture current.
 
 ### Required UI tests
 
-1. Fleet gear is selector-adjacent, 44×44, and names Agent.
-2. Single-Agent selector-hidden mode renders identity+gear.
-3. Loading shows non-target status; fleet error/removed/unadvertised fallback/denial disables entry and preserves legacy nav.
-4. Opening snapshots viewed ID; selector change does not retarget/refetch.
-5. Current-chat, future-chat, viewed identities can all differ; explicit actions alter only viewed.
-6. Open/close creates/switches no chat and restores focus.
-7. Six sections support keyboard/focus/loading/retry/page failure/denied/unknown/not-instantiated.
-8. Access copy includes Requested-not-grant and symmetric Allowed/Denied captured-scope wording.
-9. Trust copy is not endorsement.
-10. Skills/Plugins are prop-fed, no contextual/global fetch/reload subscription.
-11. Extensions distinguish Agent/Pi, linked workspace, omitted workspace-only.
-12. Server flag hides gear/page; Skills nav flag off preserves legacy Skills; workspace Plugins remains in phase 1.
-13. Effective Skills cutover removes global Skills while Plugins, Tasks, Automation, and workspace apps remain.
-14. Legacy persisted values survive flags; no blank pane on errors/removal/corruption.
-15. `useAgentDetails` fencing blocks late Alpha-after-Gamma, prior workspace, prior auth, expired/revoked capability responses and clears stale data immediately.
-16. Expanded/collapsed/mobile/narrow remain accessible.
-17. Capability expiry/loss restores legacy Skills synchronously before suppressing replacement and closes Details.
-18. Focus/reconnect/pre-expiry revalidation observes server-side policy/role/flag changes with unchanged workspace/auth epoch.
-19. Future Plugins cutover remains ineffective without a workspace-owned replacement lease; existing inventory/reload behavior remains.
+1. Fleet gear is selector-adjacent, 44×44, Agent-named, and plugin-tabs-only.
+2. Single-Agent plugin-tabs mode renders identity+gear; classic layout does not.
+3. Loading/error/removed/unadvertised/denied states never target a speculative Agent and preserve legacy Skills.
+4. Opening snapshots viewed ID; selector changes do not retarget.
+5. Viewed/future/current identities can differ; explicit actions change only viewed.
+6. Details and legacy overlays are visually mutually exclusive; mute/new-chat auto-close/focus restore work.
+7. Six sections support keyboard/focus/loading/retry/denied/Unknown/not-instantiated/stale.
+8. Access/trust copy is symmetric and non-misleading.
+9. Skills/Plugins inventories are prop-fed with no contextual/global fetch/reload subscription.
+10. Extensions distinguish Agent, linked workspace, and omitted workspace-only contributions.
+11. Existing Plugins behavior remains unchanged per composition: standalone host catalog/SSE, CLI workspace routing, no invented Core endpoint, Agent-addressed reload callback.
+12. Skills cutover uses the validated all-Agents aggregate and removes only global Skills while Plugins/Tasks/Automation/apps remain as today; role-dependent legacy-vs-Details navigation is intentionally fail-closed.
+13. Persisted `skills` survives cutover-on → cutover-off; validator does not delete storage during suppression.
+14. Persisted `plugins` continues opening existing Plugins.
+15. `inspectionAuthIdentityKey` changes fence late results; lease expiry gates without request-key churn.
+16. Expanded/collapsed/mobile/narrow plugin-tabs layouts remain accessible.
 
 ### Avoid testing
 
-- Do not snapshot raw prompts, schemas, catalogs, config, or internal objects.
-- Do not treat discovery/association as authorization.
-- Do not assert private Host map shape when public no-side-effect behavior suffices.
-- Do not require live credentials/providers/remote workers/runtime boot.
-- Do not retest Tasks/Automation internals; assert navigation preservation only.
+- Raw prompt/schema/catalog/config snapshots.
+- Discovery as authorization.
+- Private map shape where public lifecycle behavior suffices.
+- Live credentials/providers/remote workers/runtime boot.
+- Tasks/Automation internals beyond navigation preservation.
 
 ## Acceptance
 
 ### Product
 
-- Every advertised Agent is inspectable through fleet selector+gear or single-Agent identity+gear.
-- Loading/error/unadvertised/capability-loss states never target invalid Agent and never remove legacy replacement before Extensions availability is proven.
-- Read-only page uses six sections.
-- Instructions visible only to authorized inspectors; hidden contributions show provenance/public artifact ID only.
-- Runtime includes logical CWD/runtime/sandbox/bindings without physical topology.
-- Access shows requested/effective source, scope, authority, coverage, freshness, conditions, Unknown, and non-misleading copy.
-- Skills/Agent-associated packages are Agent-level.
-- Linked workspace contributions are not Agent-owned; workspace-only omitted.
-- Global Agent Skills disappears only under an unexpired authenticated effective Skills cutover.
-- The workspace-scoped Plugins surface and reload remain in phase 1; Agent Details plugin facts do not replace them.
-- The generic Plugins menu remains a documented long-term removal target, blocked on a separate Workspace Settings → Plugins replacement; workspace apps remain.
+- Every advertised Agent in plugin-tabs layout is inspectable through selector+gear or single-Agent identity+gear.
+- Classic layout remains unchanged in phase 1.
+- Read-only overlay presents Overview, Configuration, Runtime, Access, Extensions, Diagnostics.
+- Instructions are visible only to authorized inspectors.
+- Runtime shows logical topology only.
+- Access shows requested/effective source, authority, coverage, freshness, conditions, and Unknown.
+- Static configured skills plus passive runtime skills are Agent-level; never-instantiated/partial/Unknown are truthful.
+- Agent-associated packages and linked workspace contributions are distinguished; workspace-only packages are omitted.
+- Global Agent Skills disappears only under a valid authenticated replacement lease.
+- Existing Plugins behavior remains unchanged per composition.
+- Generic Plugins removal remains a documented future Workspace Settings goal.
 - No mutation controls.
 
 ### Identity/lifecycle
 
-- Viewed Agent is immutable until explicit action.
+- Viewed Agent changes only through explicit action.
 - Viewed/future/current identities never cross.
-- Opening/reloading performs no runtime/session/provisioning/discovery mutation.
-- Runtime absence/ambiguity/staleness/subject mismatch explicit.
-- Late responses cannot cross Agent/workspace/auth/capability/lease epochs.
-- Capability expiry or refresh failure synchronously clears/closes Details and restores legacy Skills; focus/reconnect/pre-expiry revalidation observes server changes without an auth/workspace change.
-- A published current snapshot with authoritative empty items remains current-empty and is not mislabeled not-instantiated.
+- Opening/reloading Details performs no runtime/session/provisioning/discovery mutation.
+- Pair-keyed current snapshot supersedes older runtime identities deterministically.
+- Owner-fenced immutable facet replacement keeps readiness current across tracker transitions and keeps effective inventories tied to their last normal refresh.
+- Hot-scannable/runtime-discovered coverage never claims complete absence and carries `live-discovery-may-lag`.
+- Reload or facet-refresh staleness is explicit and never relabeled current after failure.
+- Late responses cannot cross Agent/workspace/auth/capability epochs.
+- Lease expiry is a hard gate but not a request-key churn source.
 
 ### Security/correctness
 
-- App section auth plus Host scope verification enforced.
-- Server flag off removes endpoint.
-- No secrets, credentials, raw env, paths, config/policy, handles, arbitrary diagnostics, raw schemas, effective prompt.
-- Effective access only from matching authoritative immutable snapshots.
+- App section authorization plus Host scope verification is enforced.
+- Server flag off removes exposure.
+- No secrets, raw env, paths, config/policy, arbitrary diagnostics, raw schemas, hidden digests, or effective prompt.
+- Effective access comes only from matching authoritative immutable facts.
 - Unknown never means allowed/denied.
-- DTO bounded/validated/deterministic/no-store.
-- Public fingerprints use same-authorization public inputs only; hidden data cannot affect unauthorized DTO bytes.
-- Passive lookup distinguishes none from ambiguity without runtime identity resolution.
+- DTOs are bounded, deterministic, JSON-disciplined, and no-store.
+- Public fingerprints cannot encode omitted data.
+- Workspace base front has no Agent value imports, enforced mechanically.
 
 ### Quality
 
-- Package invariants preserved.
 - Focused producer/projection/adapter/hook/component tests; shell suite only integration.
-- Accessibility and desktop/mobile layouts proven.
-- Relevant typechecks, tests, invariants, E2E, UI review, security review, thermo pass exact SHA.
+- Accessibility and desktop/mobile plugin-tabs layouts proven.
+- Relevant typechecks, tests, `pnpm lint:invariants`, E2E, UI review, security review, and thermo pass on exact SHA.
 
 ## Proof
 
@@ -781,221 +681,184 @@ pnpm --filter @hachej/boring-workspace exec vitest run \
   src/app/front/__tests__/WorkspaceAgentFront.test.tsx \
   src/app/server/__tests__/createWorkspaceAgentServer.test.ts
 
-pnpm run check:invariants
+pnpm lint:invariants
 git diff --check
 git diff --cached --name-only
 git status --short
 git rev-parse HEAD
 ```
 
-### Artifacts
+### Exact-SHA proof-of-work record
 
-Capture exact SHA and desktop/mobile artifacts showing:
+Each implementation PR posts the repository proof-of-work comment required by `docs/procedures/proof-of-work.md`:
 
-1. Alpha viewed while new chats use Gamma/current chat Beta.
-2. Authorized configuration and provenance-only hidden contributions.
-3. Runtime/Access with complete/partial/conditional/Unknown/not-instantiated.
-4. Requested-not-grant and symmetric Allowed/Denied copy.
-5. Extensions Agent/Pi versus linked workspace contributions.
-6. Global nav with Skills retired only under a valid lease, while workspace Plugins (including reload), Tasks, and Automation remain.
-7. Single-Agent identity+gear and fleet loading/error/unadvertised fallback states.
-8. Mobile section navigation/Access cards.
-9. No mutation controls.
+- subject includes the Bead/slice ID;
+- comment names the exact current PR head SHA;
+- exact commands and outcomes are listed;
+- screenshot/demo artifact URLs and what to inspect are listed;
+- independent security/spec/UI/thermo reviewer results are named;
+- residual Unknown coverage and waivers are explicit;
+- a new commit invalidates the prior proof comment and requires a refreshed exact-SHA record.
 
-### Manual
+### Visual/manual proof
 
-1. No sessions/bindings: open Details; counts unchanged.
-2. Change future selection while Alpha viewed; no retarget/refetch.
-3. Explicit View future/current actions change only viewed Agent.
-4. Trigger out-of-order Alpha/Gamma responses, workspace switch, auth epoch change, hard lease expiry, capability revocation, and server-side role/policy/flag change without workspace/auth change; stale content never commits/remains, Details closes, and Skills restores synchronously.
-5. Exercise requested denial, conditional, partial, Unknown fixtures and copy.
-6. Search response/DOM for seeded secret/path/control markers; none.
-7. Vary hidden inputs and compare unauthorized serialized DTO bytes; identical.
-8. Toggle Skills cutover off; legacy Skills/persistence returns. Confirm workspace Plugins inventory/reload never disappeared.
-9. Toggle server inspection off; routes/gear/page unavailable.
+Capture desktop/mobile artifacts showing Alpha viewed while future/current Agents differ, authorized configuration, hidden-contribution provenance only, runtime/access complete/partial/conditional/Unknown/not-instantiated/stale states, Extensions ownership split, Skills cutover with existing Plugins/Tasks/Automation unchanged, selector-hidden entry, error/revocation states, and no mutation controls.
 
-### Review
-
-- Security/authorization review after Slices 1–3.
-- High-taste UI review for hierarchy/access/trust/focus/mobile.
-- Thermonuclear review before cutover.
-- Proof comments name commands, SHA, artifacts, reviewers, residual Unknown coverage.
+Manual proof confirms: no sessions/bindings change when opening Details; selector change does not retarget; explicit context actions only retarget Details; auth/capability/lease races clear stale data; hidden inputs do not change unauthorized DTO bytes; persisted Skills survives cutover rollback; existing Plugins behavior is unchanged per composition; server kill switch removes both routes and gear.
 
 ## Slices
 
-### Slice 1: Internal truth-source and safety primitives (no route)
+### Slice 1: Internal current-snapshot and safety primitives (no route)
 
 **Delivers:**
 
-- Immutable static/binding envelopes with coverage/authority/freshness/scope/actor/bounds.
-- App authorization contract/default-deny integration interface.
-- Typed public constructors, diagnostics, tool structures, editor targets, `Public*FingerprintInputV1`.
-- Synchronous `inspectPublishedCurrentSnapshot` discriminating none/ambiguous/current without identity resolution.
-- Pure readiness/capability helpers extracted beside their readiness/route semantic owners; `runtimeCapabilityProjection.ts` remains orchestration and consumes them. Other pure constructors follow the same ownership rule where safe.
-- No-side-effect/adversarial tests.
+- Pair-keyed immutable current inspection registry with last-current-wins, monotonic pair/facet generations, owner-fenced facet replacement, internal supersession metadata, disposal/subscription ownership, and shutdown clearing.
+- Readiness-transition and effective-resource-refresh facet semantics, plus reload stale/success/failure lifecycle.
+- Immutable section envelopes with coverage/authority/freshness/applicability/bounds.
+- App authorization integration contract.
+- Typed public constructors, diagnostics, editor targets, and public fingerprints.
+- Pure readiness/capability helpers beside semantic owners; runtime capability route remains orchestration.
+- No-side-effect and hidden-data invariance tests.
+- Machine check for workspace base-front Agent value-import invariant.
 
 **Likely files:**
 
 - `packages/agent/src/server/agent-host/inspectionSnapshot.ts` (new)
+- `packages/agent/src/server/agent-host/inspectionProjection.ts` (new)
 - `packages/agent/src/server/agent-host/types.ts`
 - `packages/agent/src/server/agent-host/createAgentHost.ts`
 - `packages/agent/src/server/agent-host/runtimeCapabilityProjection.ts`
-- extracted server-internal runtime summary helper (exact path finalized here)
-- focused Agent Host tests
+- semantic-owner pure helper files
+- `packages/workspace/scripts/check-plugin-invariants.mjs`
+- focused Agent Host/invariant tests
 
 **Blocked by:** None.
 
-**Ownership:** Agent Host/runtime owner owns accessor/frozen snapshot/helper extraction. Shared-contract reviewer owns fingerprint inputs. No workspace UI work.
-
-**Proof:** Agent typecheck; envelope/scope/actor/freshness/bounds; zero/one/multiple accessor; hidden-data byte/fingerprint invariance; runtime parity; repeated no-side-effect; adversarial producer tests; security review.
+**Proof:** Agent/Workspace typecheck; identity supersession/disposal/pinned/reload tests; readiness transition generation and late-callback fencing; zero forbidden calls; DTO/fingerprint invariance; invariant script; security review.
 
 **Review budget:** Exceeds routine PR but contains one invariant: only immutable proven public facts can become inspectable.
 
-### Slice 2: Minimal flagged V1 static projection and capability advertisement
+### Slice 2: Flagged static V1, authorization, capability lease, and auth identity fencing
 
 **Delivers:**
 
-- Minimal namespace-neutral V1.
-- Server kill switch and Core/standalone authorization mappings.
-- Authenticated workspace/principal-scoped server-bounded capability lease with `issuedAt`/`expiresAt`/`maxAgeSeconds`.
-- Authorized non-cacheable details route.
-- Public identity/fingerprint, instruction gating/fingerprint, provenance-only hidden contributions, complete requested model facts, Agent package provenance.
-- Static sections and explicit runtime not-instantiated.
+- Namespace-neutral V1 transport and JSON DTO discipline.
+- `AgentGatewayErrorCode` additions and closed inspection reason codes.
+- `CreateWorkspaceAgentServerOptions.agentInspection` threading.
+- Core and standalone authorization mappings.
+- Explicit Core-owned `inspectionAuthIdentityKey` threaded through `CoreWorkspaceAgentFront`; standalone constant.
+- Authenticated bounded capability lease and authorized details route.
+- Static identity/instruction/model/package/known-skill provenance and explicit runtime `not-instantiated`.
 - Workspace app adapter parser boundary.
+- Legacy absolute skill-path follow-up issue filed and linked before merge.
 
 **Blocked by:** Slice 1.
 
-**Ownership:** Agent/Core server owner implements routes/advertisement/auth/DTO; workspace app owner implements adapter parser. Navigation suppression prohibited.
+**Proof:** auth order/non-disclosure; Core/standalone mappings; flags; lease; auth-key rotation without token material; schema/bounds/no-store; hidden-data invariance; DTO discipline; no acquire; security/API review.
 
-**Proof:** flags, roles/capabilities, auth order, no leaks, workspace/auth advertisement fencing, schema/bounds, hidden fingerprint invariance, no-store, typecheck/invariants, API/security review.
-
-**Review budget:** Security-sensitive public exposure; excludes environment/access/runtime inventories/UI.
+**Review budget:** Security-sensitive public exposure; no runtime truth/UI cutover.
 
 ### Slice 3A: Environment and access truth snapshots
 
-**Delivers:**
-
-- Immutable logical environment/CWD/runtime/sandbox/binding records from named producers.
-- Requested/effective facts with independent sources, authority, scope/actor, capture/generation, conditions, Unknown.
-- No universal engine/callable descriptors.
-- Typed UI access-copy fixtures including Requested-not-grant and Allowed/Denied captured-scope wording.
+**Delivers:** immutable logical environment/CWD/runtime/sandbox/binding declarations; independent requested/effective enforcement sources; scope/authority/coverage/freshness/conditions/Unknown; per-request filesystem facts limited to conditional/Checked-when-used rather than frozen standing grants; no universal engine or callable descriptor.
 
 **Blocked by:** Slice 2.
 
-**Ownership:** Runtime/environment/workspace adapter owner supplies immutable facts; Agent Host owner aggregates only typed descriptors.
+**Ownership:** runtime/environment/workspace enforcement owners produce facts; Agent Host aggregates typed records only.
 
-**Proof:** authoritative/partial/unknown/conditional fixtures; actor/session/generation fencing; topology omission; no acquire; copy fixture contract; thermo/security review.
-
-**Review budget:** Highest-risk; independent from inventories/UI.
+**Proof:** authoritative/partial/Unknown/conditional fixtures; actor/generation fencing; topology omission; no acquire; thermo/security review.
 
 ### Slice 3B: Runtime inventories and contribution snapshots
 
-**Delivers:**
-
-- Immutable models, skills, Agent/Pi packages, tools, commands, readiness, typed diagnostics during normal publication.
-- Pure serializers with parity/stricter omission tests, including runtime capability helpers.
-- Logical editor targets.
-- Namespace-neutral contributions and workspace mapping for linked contributions.
-- Pure Skills/Plugins inventories may be extracted here or Slice 4.
+**Delivers:** immutable models, runtime-discovered skills, Agent/Pi packages, tools, safely available commands, readiness, diagnostics; readiness re-contribution on tracker transitions; effective skill/package/extension re-capture after normal refresh/session-create moments; partial `live-discovery-may-lag` runtime coverage independent from authoritative static configured coverage; namespace-neutral contribution mapping; logical editor targets; parity/stricter omission tests.
 
 **Blocked by:** Slice 2.
 
-**Ownership:** Agent runtime inventory owner handles model/skill/tool/command/readiness capture; workspace plugin owner handles safe package provenance mapping.
+**Ownership:** Agent runtime inventory owners capture facts; workspace plugin owner maps safe package provenance. UI inventory extraction is explicitly excluded and belongs to Slice 4.
 
-**Proof:** no discovery/acquire; parity; path/schema/diagnostic bounds; package ownership; Agent/Workspace typechecks/invariants.
+**Proof:** no discovery/acquire on Details; readiness facet transition/capturedAt/generation and late-event tests; effective-resource refresh re-capture plus stale-on-failure and never-complete hot-discovery tests; parity; path/schema/diagnostic bounds; package ownership; Agent/Workspace invariants.
 
-**Review budget:** May split internally by owner if serializer extraction too broad, without public scope change.
-
-### Slice 4: Agent Details UI behind current authenticated capability
+### Slice 4: Plugin-tabs Agent Details overlay
 
 **Delivers:**
 
-- Capability-lease and Details hooks/adapters plus prop-fed six-section page.
-- Bounded pre-expiry refresh plus focus/visibility/pageshow/online/reconnect revalidation.
-- Synchronous expiry/failure clearing, Details closure, and legacy Skills restoration.
-- Fleet selector gear and selector-hidden single-Agent identity+gear.
-- Immutable viewed state/context actions.
-- Loading/error/revoked/removed/unadvertised entry states.
-- AbortController + epoch fencing across Agent/workspace/auth/capability.
-- Accessible responsive sections, Access cards/copy, all section states.
-- Pure Skills/Plugins inventories.
-- Non-destructive Details state.
-- Fixture UI can proceed after Slice 2; final integration waits 3A/3B.
+- Capability/details hooks and adapter using `inspectionAuthIdentityKey`, `capabilityEpoch`, and lease validity gate.
+- `ManagementOverlaySurface` integration through plugin-tabs `chatOverlay`.
+- Typed viewed-Agent state; mutual exclusion, mute, auto-close, and focus restoration.
+- Fleet and selector-hidden single-Agent gear; no classic-layout gear.
+- Six accessible responsive sections.
+- Pure prop-fed Skills/Plugins inventories (single owner for extraction).
+- Fixture UI after Slice 2; final integration after 3A/3B.
 
 **Blocked by:** Slice 2 for fixture contract; integration by 3A/3B.
 
-**Ownership:** Workspace app-front owner owns hooks/fencing/thin shell wiring. Base-front UI owner owns pure page/accessibility. No section logic in `WorkspaceAgentFront.tsx`.
+**Proof:** Workspace/Core typechecks; adapter/hook/component/shell tests; identity/auth/capability/lease races; overlay lifecycle; desktop/mobile plugin-tabs artifacts; high-taste UI review.
 
-**Proof:** typecheck; adapter/hooks/components/shell; capability and late-response/workspace/auth/revocation fencing; identity E2E; single/loading/error/fallback; access copy; keyboard/focus; desktop/mobile; UI review.
-
-**Review budget:** Keep shell changes thin and focused components separate.
-
-### Slice 5: Agent Skills navigation cutover, compatibility, exact-SHA proof
+### Slice 5: Skills navigation cutover, compatibility, and exact-SHA proof
 
 **Delivers:**
 
-- Skills nav flag removes global Agent Skills only when an unexpired authenticated lease proves Skills replacement for all advertised Agents.
-- Fail-closed loading/expiry/role downgrade/capability loss/malformed/stale/error/flag-race behavior with synchronous Details clearing/closure and legacy Skills restoration.
-- Server-side role/policy/section/flag changes observed through bounded pre-expiry and focus/reconnect revalidation without workspace/auth changes.
-- Existing workspace Plugins inventory/reload, Tasks, Automation, and workspace apps preserved.
-- Future generic Plugins removal explicitly blocked on a separate Workspace Settings → Plugins replacement and its own authenticated replacement lease.
-- Legacy overlay values suppressed non-destructively and restored on rollback.
-- Full proof; legacy wrappers retained; no deletion.
+- Skills cutover using per-Agent representability-based `skillsReplacementAvailable` plus validated `allAdvertisedAgentsSkillsReplaceable`, including never-instantiated/partial/Unknown Agents and intentional role-dependent fail-closed navigation.
+- Validator distinction between host-disabled and cutover-suppressed Skills; persisted key survives rollback.
+- Existing Plugins behavior preserved unchanged per composition.
+- Fail-closed expiry/revocation/policy/flag races.
+- Full exact-SHA proof-of-work comments and artifacts.
+- Legacy wrappers retained; no deletion.
 
 **Blocked by:** Slices 3A, 3B, 4.
 
-**Ownership:** Workspace shell/navigation owner owns reversible cutover/persistence compatibility. Agent server changes prohibited except final-review blocker fixes.
-
-**Proof:** full CI/E2E/UI; lease expiry/focus/reconnect/server-policy-change/replacement/flag-race tests; workspace Plugins inventory/reload preservation; rollback; exact SHA/status/diff; security/spec/thermo.
-
-**Review budget:** Focused cutover PR after prior slices.
+**Proof:** full CI/E2E/UI; Skills rollback persistence; capability races; per-composition Plugins regression proof; exact SHA/status/diff; security/spec/thermo review.
 
 ## Dependencies
 
 ```text
-Slice 1 internal primitives
-  -> Slice 2 static V1 + capability advertisement
-      -> Slice 3A environment/access --------------------------┐
-      -> Slice 3B inventories/contributions -------------------+-> Slice 5 Skills cutover
-      -> Slice 4 fixture UI + capability lease ----------------┘
+Slice 1 pair registry + internal safety
+  -> Slice 2 static V1 + authorization + lease + auth identity
+      -> Slice 3A environment/access -----------------------┐
+      -> Slice 3B runtime inventories ----------------------+-> Slice 5 Skills cutover
+      -> Slice 4 fixture UI; integration waits for 3A/3B ---┘
 
-Future separate issue: Workspace Settings → Plugins replacement
-  -> future authenticated workspace Plugins cutover (not phase 1)
+Separate future issue: Workspace Settings → Plugins replacement
+  -> future generic Plugins-menu cutover
 ```
 
-After owner approval, create dependency-aware Beads. Validate with `br dep cycles` and `bv --robot-insights`; never bare `bv`.
+After owner approval, create dependency-aware Beads and validate the graph with the repository-approved Beads tooling before `/exec`.
 
 ## Out of Scope
 
 - Effective full session prompt.
 - Editing instructions/models/CWD/environments/permissions/skills/plugins/tools/assignments.
-- Moving or removing the existing workspace Plugins inventory/reload surface in phase 1.
+- Moving/removing existing Plugins behavior in phase 1.
 - Plugin install/uninstall/enable/disable/reload from Agent Details.
 - Universal permission engine or claims about unrepresented rights.
-- Request-time acquisition/discovery/remote inspection/adapter introspection.
-- Secrets, credential values/presence claims, raw env, private paths, mounts, roots, config/policy, handles, arbitrary diagnostics, raw schemas, hidden-content digests.
-- Building Workspace Settings → Plugins or executing the eventual generic Plugins-menu cutover; that separate issue owns workspace-only package inspection/reload replacement.
-- Changing Tasks/Automation/dashboards/workspace app ownership.
+- Request-time acquisition/discovery/remote inspection/callable adapter inspection.
+- Secrets, credential presence, raw env, private paths, mounts, roots, config/policy, handles, arbitrary diagnostics, raw schemas, hidden-content digests.
+- Implementing the legacy absolute-skill-path follow-up inside #1095.
+- Building Workspace Settings → Plugins or generic Plugins cutover.
+- Changing Tasks/Automation/dashboard/workspace-app ownership.
 - Replacing native selector.
+- Classic-layout Details in phase 1.
 - Browser deep link.
 - Deleting legacy components/persistence.
-- Cross-workspace/org fleet administration.
+- Cross-workspace/organization fleet administration.
 
 ## Open Questions
 
-No product decision blocks implementation. Secure phase-1 defaults are explicit:
+No product decision blocks implementation after owner approval. Secure defaults are explicit:
 
-- inspection/instruction disclosure default-deny;
-- effective prompt excluded;
-- hidden prompt contributions have provenance/public producer artifact ID only, never hidden-content digest;
+- inspection/instruction disclosure is default-deny;
+- effective prompt is excluded;
+- hidden prompt/plugin content has no derived digest;
 - unrepresented access is Unknown;
-- workspace-owned Settings/Plugins replacement and generic-menu cutover deferred; existing workspace Plugins inspection/reload preserved;
-- in-shell read-only page;
-- server exposure/Skills nav cutover independently reversible;
-- Skills cutover requires an unexpired authenticated Skills replacement lease;
-- capability leases are server-bounded and revalidated before expiry and on focus/reconnect, with synchronous clear/close/restore on expiry/failure;
-- workspace Plugins remains in phase 1; eventual generic Plugins removal requires a separate Workspace Settings replacement and authenticated proof;
-- hidden data cannot affect unauthorized fingerprints;
-- passive selection uses discriminated no-acquire snapshot accessor.
+- current runtime inspection uses a pair-keyed last-current-wins immutable facet registry, not binding-map cardinality;
+- readiness transitions and effective-resource refreshes replace only owner-fenced facets; failures leave stale data stale;
+- hot-scannable/runtime-discovered inventory is partial with `live-discovery-may-lag`, while static configured skill coverage is independently authoritative;
+- never-instantiated Agents still satisfy Skills replacement when the authorized UI/contract truthfully represents static known facts and unknown runtime coverage;
+- phase 1 uses the existing plugin-tabs management overlay and does not expose classic-layout gear;
+- Skills cutover suppression preserves persisted state;
+- existing Plugins behavior remains unchanged by composition;
+- opaque auth identity is host-owned and never derived from token material;
+- capability epoch invalidates requests while lease expiry is a hard gate; per-Agent replacement values and the explicit all-advertised-Agents aggregate are consistent;
+- exact-SHA proof comments follow repository proof-of-work format.
 
-Any relaxation requires a new owner-approved issue and security review.
+Any relaxation or future generic Plugins removal requires a new owner-approved issue and security review.
