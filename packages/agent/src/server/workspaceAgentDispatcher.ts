@@ -158,6 +158,7 @@ async function dispatchGatewayInput(
           requestId,
           clientNonce,
           content,
+          ...(input.displayMessage ? { displayContent: input.displayMessage } : {}),
           ...(input.model ? { model: input.model } : {}),
           ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
           ...(input.attachments ? { attachments: input.attachments } : {}),

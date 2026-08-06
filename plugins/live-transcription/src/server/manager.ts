@@ -157,16 +157,12 @@ export class LiveTranscriptManager {
       request,
     }, async (binding: LeaseBoundWorkspaceAgent) => {
       try {
-        let reviewTarget: PiSessionVisibleUserTurnTarget | undefined
-        if (this.options.dispatcherResolver.resolveWithWorkspace) {
-          const resolved = await this.options.dispatcherResolver.resolveWithWorkspace(actor, { request })
-          if (!resolved.bindPiSession) {
-            throw new LiveTranscriptError("live_transcript_disabled", "Visible transcript review is unavailable.", 503)
-          }
-          const boundSession = await resolved.bindPiSession(sessionId, actor)
-          reviewTarget = boundSession.visibleUserMessageTarget
-        }
-        const response = await this.createSession(binding.workspace, sessionId, title, reviewTarget)
+        const response = await this.createSession(
+          binding.workspace,
+          sessionId,
+          title,
+          createLeaseReviewTarget(binding, sessionId),
+        )
         const session = this.active
         if (!session || session.id !== response.liveSessionId) {
           throw new LiveTranscriptError("live_transcript_disabled", "Live transcript lease was not published.", 503)
@@ -560,6 +556,44 @@ export class LiveTranscriptManager {
 
   private now(): number {
     return (this.options.now ?? Date.now)()
+  }
+}
+
+function createLeaseReviewTarget(
+  binding: LeaseBoundWorkspaceAgent,
+  sessionId: string,
+): PiSessionVisibleUserTurnTarget {
+  return {
+    // Admission is atomic in dispatch; this advisory answer avoids a separate,
+    // racy state read while preserving the broker's busy retry behavior.
+    async isIdle() { return true },
+    async sendIfIdle(input) {
+      return await new Promise((resolve, reject) => {
+        let accepted = false
+        void binding.dispatch({
+          sessionId,
+          requestId: input.requestId,
+          clientNonce: input.requestId,
+          content: input.message,
+          ...(input.displayMessage ? { displayMessage: input.displayMessage } : {}),
+        }, async () => {}, ({ receipt }) => {
+          accepted = true
+          resolve({
+            status: "accepted",
+            cursor: receipt.cursor,
+            ...(receipt.duplicate ? { duplicate: true } : {}),
+          })
+        }).catch((error) => {
+          if (accepted) return
+          const code = (error as { code?: unknown })?.code
+          if (code === "AGENT_COMMAND_INVALID_STATE") return resolve({ status: "busy" })
+          if (code === "AGENT_SESSION_NOT_FOUND" || code === "AGENT_SCOPE_DENIED" || code === "AGENT_SESSION_RUNTIME_SCOPE_MISMATCH") {
+            return resolve({ status: "gone" })
+          }
+          reject(error)
+        })
+      })
+    },
   }
 }
 
