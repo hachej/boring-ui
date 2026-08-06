@@ -83,9 +83,7 @@ export function LiveTranscriptComposerAction({
       title={recording.error ?? `${label}${recording.phase === "idle" ? "" : ` ${formatClock(elapsedSeconds)}`}`}
       disabled={disabled}
       onClick={() => { void toggle().catch(() => undefined) }}
-      className={`flex h-8 items-center rounded-full text-[11px] font-medium transition-colors disabled:cursor-wait disabled:opacity-65 ${
-        recordingThisMode ? "w-8 justify-center" : "gap-1.5 px-2"
-      } ${
+      className={`flex h-8 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium transition-colors disabled:cursor-wait disabled:opacity-65 ${
         recordingThisMode || recording.phase === "starting"
           ? "bg-red-500/12 text-red-600 hover:bg-red-500/20 dark:text-red-400"
           : recording.phase === "error"
@@ -96,12 +94,14 @@ export function LiveTranscriptComposerAction({
       {recording.phase === "starting" || recording.phase === "transcribing" ? (
         <LoadingIcon />
       ) : recordingThisMode ? (
-        <RecordingIcon />
+        <StopIcon />
       ) : (
         <MicrophoneIcon />
       )}
       {recording.phase === "starting" || recording.phase === "transcribing" ? (
         <span>{recording.phase === "transcribing" ? "Transcribing" : "Starting"} {formatClock(elapsedSeconds)}</span>
+      ) : recordingThisMode ? (
+        <span aria-live="off" className="min-w-[3ch] tabular-nums">{formatClock(elapsedSeconds)}</span>
       ) : null}
     </button>
   )
@@ -280,18 +280,22 @@ function LoadingIcon() {
 }
 
 function MicrophoneIcon() {
-  return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current" strokeWidth="1.5" strokeLinecap="round"><rect x="5" y="1.5" width="6" height="9" rx="3"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2"/></svg>
+  return (
+    <svg aria-hidden="true" viewBox="0 0 20 20" className="size-4 fill-none stroke-current" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="6.5" y="2" width="7" height="10.5" rx="3.5" />
+      <path d="M4 9.5a6 6 0 0 0 12 0M10 15.5V18M7.5 18h5" />
+    </svg>
+  )
 }
 
-function RecordingIcon() {
+function StopIcon() {
   return (
     <span
       aria-hidden="true"
-      data-boring-agent-part="short-recording-indicator"
-      className="relative flex size-4 items-center justify-center"
+      data-boring-agent-part="recording-stop-icon"
+      className="flex size-4 items-center justify-center"
     >
-      <span className="absolute size-3.5 rounded-full border border-current/35" />
-      <span className="size-2 rounded-full bg-current animate-pulse motion-reduce:animate-none" />
+      <span className="size-2.5 rounded-[2px] bg-current" />
     </span>
   )
 }

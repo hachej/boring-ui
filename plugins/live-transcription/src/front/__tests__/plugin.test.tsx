@@ -103,9 +103,8 @@ describe("live transcript front surface", () => {
 
     const view = render(<LiveTranscriptComposerAction updateDraft={(update) => { draft = update(draft) }} />)
     const stopButton = screen.getByRole("button", { name: "Stop short recording" })
-    expect(stopButton).toHaveClass("w-8")
-    expect(view.container.querySelector('[data-boring-agent-part="short-recording-indicator"]')).toBeInTheDocument()
-    expect(screen.queryByText(/Short \d{2}:\d{2}/)).not.toBeInTheDocument()
+    expect(view.container.querySelector('[data-boring-agent-part="recording-stop-icon"]')).toBeInTheDocument()
+    expect(stopButton).toHaveTextContent(/\d{2}:\d{2}/)
     fireEvent.click(stopButton)
 
     await waitFor(() => expect(stopShort).toHaveBeenCalledOnce())

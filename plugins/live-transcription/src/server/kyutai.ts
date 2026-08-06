@@ -14,7 +14,7 @@ export class KyutaiConnection {
   private pendingMarker: Promise<void> | undefined
   private resolveMarker: (() => void) | undefined
   private rejectMarker: ((error: LiveTranscriptError) => void) | undefined
-  private readonly words: Array<{ text: string; startSeconds: number }> = []
+  private readonly words: Array<{ text: string; startSeconds: number; endSeconds?: number }> = []
 
   constructor(
     private readonly url: string,
@@ -111,10 +111,21 @@ export class KyutaiConnection {
         throw new LiveTranscriptError("live_transcript_upstream_failed", "Kyutai returned an invalid word.", 502)
       }
       this.words.push({ text: message.text, startSeconds: Math.max(0, message.start_time) })
-      this.callbacks.onSnapshot({ lines: this.words.map((word) => ({ ...word, speaker: 0 })), remainingDiarizationSeconds: 0 })
+      this.publishSnapshot()
       return
     }
-    if (message.type === "EndWord" || message.type === "Step" || message.type === "Ready") return
+    if (message.type === "EndWord") {
+      if (typeof message.stop_time !== "number" || !Number.isFinite(message.stop_time)) {
+        throw new LiveTranscriptError("live_transcript_upstream_failed", "Kyutai returned an invalid word boundary.", 502)
+      }
+      const word = this.words.at(-1)
+      if (word) {
+        word.endSeconds = Math.max(word.startSeconds, message.stop_time)
+        this.publishSnapshot()
+      }
+      return
+    }
+    if (message.type === "Step" || message.type === "Ready") return
     if (message.type === "Marker") {
       if (message.id !== this.markerId) throw new LiveTranscriptError("live_transcript_upstream_failed", "Kyutai returned an unexpected marker.", 502)
       this.resolveMarker?.()
@@ -122,6 +133,10 @@ export class KyutaiConnection {
     }
     if (message.type === "Error") throw new LiveTranscriptError("live_transcript_upstream_failed", "Kyutai rejected the stream.", 502)
     throw new LiveTranscriptError("live_transcript_upstream_failed", "Kyutai returned an unsupported message.", 502)
+  }
+
+  private publishSnapshot(): void {
+    this.callbacks.onSnapshot({ lines: this.words.map((word) => ({ ...word, speaker: 0 })), remainingDiarizationSeconds: 0 })
   }
 
   private fail(error: LiveTranscriptError): void {
