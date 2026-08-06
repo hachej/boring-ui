@@ -27,7 +27,7 @@ export function MobileSingleChatPane({
           ) : null}
         </div>
         {topActions ? <div className="flex shrink-0 items-center gap-1">{topActions}</div> : null}
-        {onClosePane ? (
+        {onClosePane && totalPanes > 1 ? (
           <button
             type="button"
             className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"

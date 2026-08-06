@@ -224,6 +224,50 @@ describe("ChatPaneStageDock", () => {
     expect(closePane).toHaveBeenNthCalledWith(2, "b")
   })
 
+  it("hides the close control on the final remaining pane but keeps split", () => {
+    const closePane = vi.fn()
+    render(
+      <ChatPaneStageDock
+        panes={[{ id: "a", title: "A" }]}
+        onSplitPane={vi.fn()}
+        onClosePane={closePane}
+        renderPane={(pane) => <div>{pane.id}</div>}
+      />,
+    )
+
+    expect(screen.queryByRole("button", { name: /Close .* pane/ })).toBeNull()
+    expect(screen.getByRole("button", { name: "Split A chat vertically" })).toBeTruthy()
+  })
+
+  it("restores the close control reactively once a second pane exists", () => {
+    const closePane = vi.fn()
+    const { rerender } = render(
+      <ChatPaneStageDock
+        panes={[{ id: "a", title: "A" }]}
+        onSplitPane={vi.fn()}
+        onClosePane={closePane}
+        renderPane={(pane) => <div>{pane.id}</div>}
+      />,
+    )
+
+    expect(screen.queryByRole("button", { name: /Close .* pane/ })).toBeNull()
+
+    rerender(
+      <ChatPaneStageDock
+        panes={[
+          { id: "a", title: "A" },
+          { id: "b", title: "B" },
+        ]}
+        onSplitPane={vi.fn()}
+        onClosePane={closePane}
+        renderPane={(pane) => <div>{pane.id}</div>}
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: "Close A pane" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Close B pane" })).toBeTruthy()
+  })
+
   it("opens session actions for pin, rename, and delete", () => {
     const onTogglePin = vi.fn()
     const onRename = vi.fn()
