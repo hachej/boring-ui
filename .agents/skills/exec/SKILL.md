@@ -20,7 +20,10 @@ Read the artifact, `docs/procedures/boring-loop.md`, and
 
 Require clear scope, acceptance, proof, dependencies, and risk; repair planning
 gaps through `/skill:plan` and stop on unresolved human intent. For Beads work,
-lease exactly one ready bead with `br` before working; never work unclaimed.
+pull your work: `br ready --json`, lease exactly one bead, and stamp your
+session id on it in the same act — never work unclaimed. Refresh the lease as
+you work (any `br` touch counts; cadence key `beadle.lease_heartbeat_minutes`);
+poll long waits synchronously so the heartbeat keeps beating.
 
 Implement the smallest bounded slice with behavior tests, record current proof,
 apply the Model Card review ladder and mandatory code-thermo gate, and integrate
