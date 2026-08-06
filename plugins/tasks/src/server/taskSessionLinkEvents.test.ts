@@ -62,12 +62,24 @@ describe("TaskSessionLinkEvents", () => {
 
   it("keeps a pre-read snapshot cursor behind overlapping changes for replay", () => {
     const events = new TaskSessionLinkEvents()
+    events.subscribe("workspace-a", () => undefined)
     const cursor = events.cursor("workspace-a")
     events.publish("workspace-a", { adapterId: "github", taskId: "776", links: [] })
 
     expect(events.snapshot([], cursor)).toMatchObject({ streamId: cursor.streamId, revision: 0, tasks: [] })
     expect(events.cursor("workspace-a").revision).toBe(1)
     expect(events.cursor("workspace-b").revision).toBe(0)
+  })
+
+  it("drops inactive Workspace revision state after the last subscriber leaves", () => {
+    const events = new TaskSessionLinkEvents()
+    const unsubscribe = events.subscribe("workspace-a", () => undefined)
+    events.publish("workspace-a", { adapterId: "github", taskId: "776", links: [] })
+    expect(events.cursor("workspace-a").revision).toBe(1)
+
+    unsubscribe()
+    events.publish("workspace-a", { adapterId: "github", taskId: "777", links: [] })
+    expect(events.cursor("workspace-a").revision).toBe(0)
   })
 
   it("does not publish a second event for an idempotent link", async () => {

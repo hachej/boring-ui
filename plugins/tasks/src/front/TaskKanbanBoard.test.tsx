@@ -60,6 +60,35 @@ describe("TaskKanbanBoard source isolation", () => {
     expect(screen.queryByText("Workspace A secret")).not.toBeInTheDocument()
   })
 
+  test("ignores an in-flight mutation after switching Workspaces", async () => {
+    const user = userEvent.setup()
+    let rejectDelete!: (error: Error) => void
+    const deleteResult = new Promise<void>((_resolve, reject) => { rejectDelete = reject })
+    const firstAdapter: BoringTaskAdapter = {
+      ...adapter("shared", "Shared", vi.fn(async () => [task("shared", "a1", "Workspace A task")])),
+      capabilities: { move: false, delete: true },
+      deleteTask: vi.fn(async () => await deleteResult),
+    }
+    const view = renderBoard([firstAdapter], "workspace-a")
+    expect(await screen.findByText("Workspace A task")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Open actions for a1" }))
+    await user.click(screen.getByRole("button", { name: "Delete issue" }))
+
+    const secondAdapter = adapter("shared", "Shared", vi.fn(async () => [task("shared", "b1", "Workspace B task")]))
+    view.rerender(
+      <WorkspacePluginClientProvider agentTypeId="default" apiBaseUrl="" workspaceId="workspace-b">
+        <TaskKanbanBoard adapters={[secondAdapter]} />
+      </WorkspacePluginClientProvider>,
+    )
+    expect(await screen.findByText("Workspace B task")).toBeInTheDocument()
+    rejectDelete(new Error("late Workspace A failure"))
+
+    await waitFor(() => expect(firstAdapter.deleteTask).toHaveBeenCalled())
+    expect(screen.queryByText("Workspace A task")).not.toBeInTheDocument()
+    expect(screen.getByText("Workspace B task")).toBeInTheDocument()
+    expect(screen.queryByText("late Workspace A failure")).not.toBeInTheDocument()
+  })
+
   test("keeps healthy source tasks visible and retries only the failing source", async () => {
     const user = userEvent.setup()
     let failing = true
