@@ -915,6 +915,54 @@ describe("WorkspaceAgentFront", () => {
     expect(plugins).not.toHaveAttribute("data-active")
   })
 
+
+  it("updates plugin app-left action trailing indicator when overlay opens", async () => {
+    const user = userEvent.setup()
+    const TrailingIndicator = (props: { active?: boolean }) => {
+      return <div data-testid="trailing-indicator">{props.active ? "Active" : "Inactive"}</div>
+    }
+    const pluginWithTrailing = definePlugin({
+      id: "trailing-indicator-plugin",
+      appLeftActions: [{
+        id: "test-action",
+        label: "Test Action",
+        icon: () => null,
+        overlay: () => <div>Test Overlay</div>,
+        trailing: TrailingIndicator,
+      }],
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-trailing-indicator"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        plugins={[pluginWithTrailing]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    const testAction = within(appNav).getByRole("button", { name: "Test Action" })
+    const indicator = screen.getByTestId("trailing-indicator")
+
+    expect(indicator).toHaveTextContent("Inactive")
+
+    await user.click(testAction)
+
+    await waitFor(() => {
+      expect(indicator).toHaveTextContent("Active")
+    })
+    expect(testAction).toHaveAttribute("data-active", "true")
+
+    await user.click(testAction)
+
+    await waitFor(() => {
+      expect(indicator).toHaveTextContent("Inactive")
+    })
+    expect(testAction).not.toHaveAttribute("data-active")
+  })
+
   it("rejects plugin app-left actions that collide with built-in overlays", () => {
     const collidingPlugin = definePlugin({
       id: "colliding-action",
