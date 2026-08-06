@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { WorkspacePluginClient } from "@hachej/boring-workspace"
+import { WORKSPACE_DETACHED_CHAT_VISIBILITY_EVENT } from "@hachej/boring-workspace/plugin"
 import { requestTaskSessionLinkRefresh, taskSessionLinkKey, useTaskSessionLinks } from "./taskSessionLinkStream"
 
 class MockEventSource {
@@ -85,6 +86,22 @@ describe("useTaskSessionLinks", () => {
     const reconnected = MockEventSource.instances[1]!
     act(() => reconnected.emit("snapshot", { streamId: "stream-a", revision: 1, tasks: [{ adapterId: "github", taskId: "776", links: [link("receipt")] }] }))
     expect(result.current?.get(taskSessionLinkKey("github", "776"))?.map((item) => item.sessionId)).toEqual(["native-receipt"])
+  })
+
+  it("releases its HTTP stream while a detached chat is open and reconnects on close", () => {
+    vi.stubGlobal("EventSource", MockEventSource)
+    renderHook(() => useTaskSessionLinks(client()))
+    const source = MockEventSource.instances[0]!
+
+    act(() => window.dispatchEvent(new CustomEvent(WORKSPACE_DETACHED_CHAT_VISIBILITY_EVENT, { detail: { open: true } })))
+    expect(source.closed).toBe(true)
+    expect(MockEventSource.instances).toHaveLength(1)
+
+    act(() => requestTaskSessionLinkRefresh("workspace-a"))
+    expect(MockEventSource.instances).toHaveLength(1)
+
+    act(() => window.dispatchEvent(new CustomEvent(WORKSPACE_DETACHED_CHAT_VISIBILITY_EVENT, { detail: { open: false } })))
+    expect(MockEventSource.instances).toHaveLength(2)
   })
 
   it("replaces state from a reconnect snapshot", () => {

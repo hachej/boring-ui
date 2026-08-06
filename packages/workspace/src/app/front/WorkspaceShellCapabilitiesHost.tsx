@@ -6,6 +6,7 @@ import { DetachedChatPopover } from "../../front/chrome/chat/DetachedChatPopover
 import type { ChatPanelHostProps } from "../../front/chrome/chat/ChatPanelHost"
 import type { WorkspaceShellCapabilities, WorkspaceShellCapabilityResult, WorkspaceShellCreatedSessionResult } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import type { WorkspaceShellSessionRef } from "../../front/shell/WorkspaceShellCapabilitiesContext"
+import { WORKSPACE_DETACHED_CHAT_VISIBILITY_EVENT } from "../../shared/plugins/workspaceShellCapabilities"
 import { workspaceSessionKey } from "../../front/sessionIdentity"
 import { useWorkspaceShellCapabilitiesController } from "./useWorkspaceShellCapabilitiesController"
 
@@ -72,6 +73,11 @@ export function useWorkspaceShellCapabilitiesHost({
   }, [shellCapabilities])
 
   const floatingChatRef = floatingChatSession?.ref ?? null
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(WORKSPACE_DETACHED_CHAT_VISIBILITY_EVENT, {
+      detail: { open: floatingChatRef !== null, ...(floatingChatRef ? { ref: floatingChatRef } : {}) },
+    }))
+  }, [floatingChatRef])
   const floatingChatSessionId = floatingChatRef?.sessionId ?? null
   const floatingChatSessionKey = floatingChatRef ? workspaceSessionKey(floatingChatRef.sessionId, floatingChatRef.agentTypeId) : null
   const floatingChatTitle = floatingChatSessionId

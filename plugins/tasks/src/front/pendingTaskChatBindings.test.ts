@@ -64,6 +64,19 @@ describe("pending task chat binding recovery", () => {
     await waitFor(() => expect(api.postJson).toHaveBeenCalledOnce())
   })
 
+  it("binds from Workspace activity when the detached chat closes before its prompt response", async () => {
+    window.sessionStorage.setItem(storageKey, JSON.stringify([pending]))
+    const api = client(0)
+
+    resumePendingTaskChatBindings(api.value)
+    window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+      detail: { agentTypeId: "alpha", sessionId: "native-exact", working: true },
+    }))
+
+    await waitFor(() => expect(api.postJson).toHaveBeenCalledOnce())
+    expect(window.sessionStorage.getItem(storageKey)).toBe("[]")
+  })
+
   it("binds two task intents that deliberately share one accepted session", async () => {
     const second = { ...pending, adapterId: "beads:workspace", taskId: "bead-2" }
     window.sessionStorage.setItem(storageKey, JSON.stringify([pending, second]))
