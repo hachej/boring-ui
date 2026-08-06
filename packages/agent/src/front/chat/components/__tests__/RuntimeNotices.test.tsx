@@ -48,4 +48,37 @@ describe('RuntimeNotices', () => {
     fireEvent.click(within(protocol).getByRole('button', { name: 'Dismiss notice' }))
     expect(onDismiss).toHaveBeenCalledWith('protocol-error')
   })
+
+  test.each(['chat-error', 'protocol-error', 'session-navigation-error'])(
+    'gives terminal chat error %s plain-language framing, collapsible details, and a reload action',
+    (id) => {
+      const reload = vi.fn()
+      vi.stubGlobal('location', { ...window.location, reload })
+
+      render(<RuntimeNotices notices={[{ id, level: 'error', text: 'ECONNRESET: socket hang up at fetchSession (remotePiSession.ts:42)' }]} />)
+
+      const row = screen.getByText('Chat history unavailable').closest('[data-boring-agent-part="runtime-notice"]') as HTMLElement
+      expect(row).toBeTruthy()
+      expect(within(row).getByText(/saved conversation could not be loaded/i)).toBeTruthy()
+
+      // The raw error is demoted to a collapsed technical-details disclosure,
+      // not shown as the headline message.
+      const details = within(row).getByText('Error details').closest('details') as HTMLDetailsElement
+      expect(details).toBeTruthy()
+      expect(details.open).toBe(false)
+      expect(within(row).getByText(/ECONNRESET/)).toBeTruthy()
+
+      fireEvent.click(within(row).getByRole('button', { name: 'Reload workspace' }))
+      expect(reload).toHaveBeenCalledTimes(1)
+
+      vi.unstubAllGlobals()
+    },
+  )
+
+  test('non-terminal notices keep the raw text as the headline with no reload action', () => {
+    render(<RuntimeNotices notices={[{ id: 'connection-reconnecting', level: 'warning', text: 'Reconnecting to the agent session…' }]} />)
+    expect(screen.queryByText('Chat history unavailable')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reload workspace' })).toBeNull()
+    expect(screen.getByText('Reconnecting to the agent session…')).toBeTruthy()
+  })
 })

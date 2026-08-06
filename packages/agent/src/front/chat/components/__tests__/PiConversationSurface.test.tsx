@@ -206,4 +206,75 @@ describe('PiConversationSurface', () => {
     rerender(renderSurface(textMessages(100), 'session-b'))
     expect(screen.getAllByTestId('timeline-message')).toHaveLength(60)
   })
+
+  test('a terminal chat error replaces the loading skeleton instead of stacking with it', () => {
+    render(
+      <PiConversationSurface
+        chrome
+        emptyHero={false}
+        messages={[]}
+        emptyStateHydrating
+        suggestions={[]}
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        runtimeNotices={[{ id: 'session-navigation-error', level: 'error', text: 'Could not load session list.' }]}
+        onDismissNotice={() => {}}
+        onScrollToBottomReady={() => {}}
+        onSuggestionSubmit={async () => undefined}
+        onRestoreDraft={() => {}}
+      />,
+    )
+
+    expect(screen.queryByLabelText('Loading chat history')).toBeNull()
+    expect(screen.getByText('Chat history unavailable')).toBeTruthy()
+  })
+
+  test('a terminal chat error replaces the empty-chat hero instead of contradicting it', () => {
+    render(
+      <PiConversationSurface
+        chrome
+        emptyHero={false}
+        messages={[]}
+        emptyStateHydrating={false}
+        emptyState={{ title: 'What should we work on?' }}
+        suggestions={[]}
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        runtimeNotices={[{ id: 'chat-error', level: 'error', text: 'stream closed unexpectedly' }]}
+        onDismissNotice={() => {}}
+        onScrollToBottomReady={() => {}}
+        onSuggestionSubmit={async () => undefined}
+        onRestoreDraft={() => {}}
+      />,
+    )
+
+    expect(screen.queryByText('What should we work on?')).toBeNull()
+    expect(screen.getByText('Chat history unavailable')).toBeTruthy()
+  })
+
+  test('with no terminal error, empty/loading states render as before', () => {
+    render(
+      <PiConversationSurface
+        chrome
+        emptyHero={false}
+        messages={[]}
+        emptyStateHydrating={false}
+        emptyState={{ title: 'What should we work on?' }}
+        suggestions={[]}
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        runtimeNotices={[]}
+        onDismissNotice={() => {}}
+        onScrollToBottomReady={() => {}}
+        onSuggestionSubmit={async () => undefined}
+        onRestoreDraft={() => {}}
+      />,
+    )
+
+    expect(screen.getByText('What should we work on?')).toBeTruthy()
+    expect(screen.queryByText('Chat history unavailable')).toBeNull()
+  })
 })

@@ -52,6 +52,7 @@ import {
   type PanelNotice,
 } from './components/ChatNotices'
 import { PiConversationSurface } from './components/PiConversationSurface'
+import { hasTerminalChatError, isTerminalChatErrorId } from './components/terminalChatErrors'
 import type {
   ActionableSlashCommand,
   MessageMention,
@@ -494,7 +495,17 @@ export function PiChatPanel<
           dismissible: true,
         }]
       : []
-    return [...fromState, ...sessionNotice, ...largeStateNotice, ...localNotices].filter((notice) => !dismissedNoticeIds.has(notice.id))
+    const combined = [...fromState, ...sessionNotice, ...largeStateNotice, ...localNotices]
+      .filter((notice) => !dismissedNoticeIds.has(notice.id))
+    // A terminal chat error (history failed to load) already explains why the
+    // agent looks unreachable. Showing reconnect/warmup/retry chatter next to
+    // it reads as contradictory ("reconnecting..." beside "history
+    // unavailable"), so drop that noise once a terminal error is present.
+    if (!hasTerminalChatError(combined)) return combined
+    return combined.filter((notice) =>
+      isTerminalChatErrorId(notice.id) ||
+      (notice.id !== 'connection-reconnecting' && notice.id !== 'auto-retry' && !notice.id.includes('warmup')),
+    )
   }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, selectedChatState, sessionsError])
 
   const addLocalNotice = useCallback((notice: PanelNotice) => {

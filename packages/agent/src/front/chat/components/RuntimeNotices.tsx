@@ -7,6 +7,7 @@ import { Button } from '@hachej/boring-ui-kit'
 import { cn } from '../../lib'
 import type { PiChatRuntimeNotice } from '../pi/piChatReducer'
 import { noticeIconClass, noticeSurfaceClass, noticeTextClass } from './noticeStyles'
+import { isTerminalChatErrorId } from './terminalChatErrors'
 
 export type RuntimeNoticeKind = 'reconnect' | 'protocol' | 'warmup' | 'plugin' | 'retry' | 'generic'
 
@@ -55,6 +56,11 @@ function RuntimeNoticeRow({ notice, onDismiss, onAction, renderAction }: Runtime
   const Icon = iconForNotice(kind, notice.level)
   const actionLabel = notice.actionLabel ?? defaultActionLabel(kind)
   const hostAction = renderAction?.(notice)
+  // A terminal chat error means the transcript itself failed to load (session
+  // lookup, history hydrate, protocol desync) rather than transient noise.
+  // These get plain-language framing, collapsible technical details, and an
+  // explicit recovery action instead of the raw server error string.
+  const isTerminalError = isTerminalChatErrorId(notice.id)
 
   return (
     <div
@@ -71,10 +77,28 @@ function RuntimeNoticeRow({ notice, onDismiss, onAction, renderAction }: Runtime
     >
       <Icon className={cn(noticeIconClass(notice.level), kind === 'retry' && 'animate-spin motion-reduce:animate-none')} aria-hidden="true" />
       <div className="min-w-0 flex-1">
-        <p className={noticeTextClass()}>{notice.text}</p>
+        {isTerminalError ? (
+          <>
+            <p className="text-sm font-semibold text-foreground">Chat history unavailable</p>
+            <p className={noticeTextClass('mt-0.5')}>
+              The saved conversation could not be loaded. Reload the workspace to try again.
+            </p>
+            <details className="mt-2 text-xs text-muted-foreground">
+              <summary className="cursor-pointer select-none">Error details</summary>
+              <p className="mt-1 break-words">{notice.text}</p>
+            </details>
+          </>
+        ) : (
+          <p className={noticeTextClass()}>{notice.text}</p>
+        )}
       </div>
       {hostAction ?? null}
-      {actionLabel && onAction ? (
+      {isTerminalError ? (
+        <Button type="button" variant="outline" size="sm" onClick={() => window.location.reload()}>
+          Reload workspace
+        </Button>
+      ) : null}
+      {!isTerminalError && actionLabel && onAction ? (
         <Button type="button" variant="ghost" size="sm" onClick={() => onAction(notice.id)}>
           {actionLabel}
         </Button>

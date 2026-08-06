@@ -17,6 +17,7 @@ import {
 import { RuntimeNoticeMessages, type PanelNotice } from './ChatNotices'
 import { PiTimelineMessage } from './PiTimelineMessage'
 import type { MessageMention, MessageMentionCatalog } from './MessageMentions'
+import { hasTerminalChatError } from './terminalChatErrors'
 
 // Heavy sessions (tool-heavy runs reach thousands of messages) must not mount
 // the whole transcript at once. Render a window anchored to the latest message
@@ -76,6 +77,11 @@ export function PiConversationSurface({
 }: PiConversationSurfaceProps) {
   const messageItems = buildMessageRenderItems(messages)
   const total = messageItems.length
+  // A terminal error (history failed to load) already explains the empty
+  // transcript below via RuntimeNoticeMessages. Rendering the "What should we
+  // work on?" hero or a loading skeleton next to it reads as contradictory,
+  // so let the error notice stand alone.
+  const terminalError = hasTerminalChatError(runtimeNotices)
 
   const [visibleCount, setVisibleCount] = useState(TRANSCRIPT_WINDOW)
   // Start each session at the latest window rather than inheriting a large
@@ -105,10 +111,10 @@ export function PiConversationSurface({
         chrome ? 'max-w-3xl px-6 py-8' : 'max-w-[680px] px-4 py-4',
         emptyHero && 'py-4 text-center',
       )}>
-        {messages.length === 0 && emptyStateHydrating ? (
+        {messages.length === 0 && emptyStateHydrating && !terminalError ? (
           <ConversationHistoryLoadingState />
         ) : null}
-        {messages.length === 0 && !emptyStateHydrating ? (
+        {messages.length === 0 && !emptyStateHydrating && !terminalError ? (
           <ChatEmptyState
             eyebrow={emptyState?.eyebrow}
             title={emptyState?.title}
