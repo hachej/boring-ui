@@ -8,9 +8,8 @@
 /**
  * Returns a v4-shaped UUID using `crypto.randomUUID()` when available
  * (secure contexts), falling back to a `crypto.getRandomValues()`-based
- * RFC 4122 v4 id when `randomUUID` is missing (insecure contexts), and
- * finally to a `Math.random()`-based id if no Web Crypto is available at
- * all (e.g. very old browsers or non-DOM test environments).
+ * RFC 4122 v4 id when `randomUUID` is missing (insecure contexts).
+ * Throws rather than generating a predictable id when Web Crypto is unavailable.
  */
 export function safeRandomUUID(): string {
   const cryptoObj = globalThis.crypto as Crypto | undefined
@@ -24,5 +23,5 @@ export function safeRandomUUID(): string {
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
   }
 
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  throw new Error('Secure random UUID generation requires crypto.getRandomValues()')
 }

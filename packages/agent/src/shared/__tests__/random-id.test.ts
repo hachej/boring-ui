@@ -21,13 +21,13 @@ describe('safeRandomUUID', () => {
     }
   })
 
-  it('falls back to Math.random when no Web Crypto is available at all', () => {
+  it('throws when no Web Crypto is available at all', () => {
     const originalCrypto = globalThis.crypto
     delete (globalThis as { crypto?: Crypto }).crypto
     try {
-      const id = safeRandomUUID()
-      expect(typeof id).toBe('string')
-      expect(id.length).toBeGreaterThan(0)
+      expect(() => safeRandomUUID()).toThrow(
+        'Secure random UUID generation requires crypto.getRandomValues()',
+      )
     } finally {
       Object.defineProperty(globalThis, 'crypto', { value: originalCrypto, configurable: true, writable: true })
     }
