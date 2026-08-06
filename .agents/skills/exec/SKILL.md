@@ -21,6 +21,8 @@ Read the artifact, `docs/procedures/boring-loop.md`, and
 Require clear scope, acceptance, proof, dependencies, and risk; repair planning
 gaps through `/skill:plan` and stop on unresolved human intent. For Beads work,
 lease exactly one ready bead with `br` before working; never work unclaimed.
+If dispatched by the Beadle, verify the bound bead id and lease first; if the
+session has no bound bead id, stop and flag it — do not pick one yourself.
 
 Implement the smallest bounded slice with behavior tests, record current proof,
 apply the Model Card review ladder and mandatory code-thermo gate, and integrate

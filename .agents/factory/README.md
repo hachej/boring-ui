@@ -31,7 +31,7 @@ One line per stage. The gate column is what must be true before work leaves it.
 | refine | concierge | `ask-boring` routing | boring-loop | idea/issue → agreed epic scope | owner says go (conversational) |
 | triage | triage | `triage` | boring-loop | GH issue → category, state, first blocker, route | exactly one state, one next action |
 | plan | steward | `plan` | `issue-plans.md` | epic → bead graph + proof path | **human gate 1**: plan-approval intention |
-| dispatch | beadle (automation) | — | `worktree-agent.md` | ready beads → claimed bead + worker session | worker cap and lease rules in policy.yaml |
+| dispatch | beadle (automation) | — | `worktree-agent.md` | ready beads → claimed bead + worker session | worker cap and lease rules in policy.yaml; Beadle stamps the session id on the bead and injects the bead id into the session at spawn |
 | exec | worker | `exec` | `worktree-agent.md`, `proof-of-work.md` | one bead → commits + proof + handoff | focused proof green; handoff written |
 | review | reviewer | `fresh-eyes`, code review | `owner-review-card.md` | exact SHA → dispositions | no blocker/major open at that SHA |
 | merge | owner, or automatic for class A | — | `rolling-small-fixes.md` (bug lane) | reviewed PR → main | **human gate 2**: trust ladder in policy.yaml |
@@ -90,6 +90,11 @@ These rules apply to every seat including the Concierge — its durable state
 lives in beads/notes, never in accumulated session context.
 
 - One bead = one durable session. Identity lives in the seat, not the session.
+- The **Beadle writes the binding** at dispatch (session id on the bead, bead
+  id in the session's opening context); the **worker maintains it** — first
+  action is verifying the lease and bound bead, and a session that wakes
+  without a bead id stops rather than improvises. Planners never touch
+  sessions; their contract ends at ready beads.
 - The handoff ritual (`.agents/skills/handoff/`, procedure
   `docs/procedures/session-handoff.md`) runs **before** compaction at
   the policy threshold. Convention: commit work in progress, persist the full
