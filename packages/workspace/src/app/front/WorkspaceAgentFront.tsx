@@ -903,18 +903,41 @@ export function WorkspaceAgentFront<
     && !remoteSessionApi.error
     && !remoteSessionsArePreviousWorkspace
   const remoteSessionsPending = remoteSessionHookEnabled && !remoteSessionsAvailable
+  // Latest sessions/refresh read inside the activity stream's onActivity
+  // closure without resubscribing the SSE connection on every list change.
+  const remoteSessionsActivityRef = useRef({
+    sessions: remoteSessionApi.sessions,
+    refresh: remoteSessionApi.refresh,
+    selectedAgentTypeId,
+  })
+  remoteSessionsActivityRef.current = {
+    sessions: remoteSessionApi.sessions,
+    refresh: remoteSessionApi.refresh,
+    selectedAgentTypeId,
+  }
   useEffect(() => {
     if (!remoteSessionsAvailable) return
     return startSessionActivityStream({
       endpoint: apiBaseUrl,
       workspaceId,
-      onActivity: ({ ref, status }) => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
-        detail: {
-          sessionId: ref.sessionId,
-          agentTypeId: ref.agentTypeId,
-          working: status === "running" || status === "aborting",
-        },
-      })),
+      onActivity: ({ ref, status }) => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: {
+            sessionId: ref.sessionId,
+            agentTypeId: ref.agentTypeId,
+            working: status === "running" || status === "aborting",
+          },
+        }))
+        // A session created out-of-band (e.g. an external chat entrypoint)
+        // surfaces here as activity before this hook's own list has ever
+        // fetched it. Reconcile the list immediately instead of waiting on
+        // a manual refresh or remount (gh-778).
+        if (status !== "running" && status !== "aborting") return
+        const current = remoteSessionsActivityRef.current
+        if (ref.agentTypeId !== current.selectedAgentTypeId) return
+        const known = current.sessions.some((session) => session.id === ref.sessionId)
+        if (!known) void current.refresh?.({ background: true })
+      },
     })
   }, [apiBaseUrl, remoteSessionsAvailable, sessionSourceIdentity, workspaceId])
   useEffect(() => {
