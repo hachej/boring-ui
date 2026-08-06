@@ -220,7 +220,7 @@ function AskUserInlineFixture() {
   const part = state === "resolved"
     ? { type: "tool-call", toolName: "ask_user", toolCallId: ASK_USER_FIXTURE_QUESTION.toolCallId, state: "output-available", input: { title: ASK_USER_FIXTURE_QUESTION.title } }
     : { type: "tool-call", toolName: "ask_user", toolCallId: ASK_USER_FIXTURE_QUESTION.toolCallId, state: "input-available", input: { title: ASK_USER_FIXTURE_QUESTION.title } }
-  return <div className="w-full max-w-[720px]" data-ui-review-ask-user-state={state}>
+  return <div className="w-full max-w-[720px]" data-boring-agent data-ui-review-ask-user-state={state}>
     <AskUserProvider agentTypeId="default" apiBaseUrl="" activeSessionId={ASK_USER_FIXTURE_QUESTION.sessionId} openSessionIds={[ASK_USER_FIXTURE_QUESTION.sessionId]}>
       {askUserRenderer.render(part)}
     </AskUserProvider>

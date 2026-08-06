@@ -79,6 +79,22 @@ export const askUserInlineSpec: UiReviewSpec = {
           const rect = target?.getBoundingClientRect()
           const selected = document.querySelector<HTMLInputElement>('input[name="direction"]:checked')
           const submit = [...document.querySelectorAll("button")].find((button) => visible(button) && button.textContent?.trim() === "Continue")
+          let submitColors: { color: string; background: string; expectedColor: string; expectedBackground: string } | null = null
+          if (submit) {
+            const probe = document.createElement("span")
+            probe.style.color = "var(--boring-primary-foreground)"
+            probe.style.backgroundColor = "var(--boring-primary)"
+            document.body.append(probe)
+            const actual = getComputedStyle(submit)
+            const expected = getComputedStyle(probe)
+            submitColors = {
+              color: actual.color,
+              background: actual.backgroundColor,
+              expectedColor: expected.color,
+              expectedBackground: expected.backgroundColor,
+            }
+            probe.remove()
+          }
           return {
             bounds: rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null,
             inlineCount: document.querySelectorAll('[data-boring-ask-user-inline-question="true"]').length,
@@ -87,6 +103,7 @@ export const askUserInlineSpec: UiReviewSpec = {
             openIconCount: [...document.querySelectorAll('button[aria-label="Open Questions"]')].filter(visible).length,
             selectedValue: selected?.closest("label")?.textContent?.replace(/\s+/g, " ").trim() ?? null,
             submitLabel: submit?.textContent?.trim() ?? null,
+            submitColors,
             rawSchemaVisible: document.body.innerText.includes('"wireVersion"'),
           }
         }),

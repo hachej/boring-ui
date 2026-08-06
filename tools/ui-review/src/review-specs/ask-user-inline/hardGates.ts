@@ -24,6 +24,7 @@ const REQUIRED_GATES = [
   "single-presentation",
   "checkpoint-state",
   "raw-json-hidden",
+  "submit-theme-tokens",
   "focused-control-visible",
   "mobile-touch-targets",
 ] as const
@@ -46,6 +47,7 @@ export type AskUserInlineHardGateSnapshot = UiReviewBrowserErrors & {
     openIconCount: number
     selectedValue: string | null
     submitLabel: string | null
+    submitColors: { color: string; background: string; expectedColor: string; expectedBackground: string } | null
     rawSchemaVisible: boolean
   }
   focusedControl: { label: string; bounds: Bounds; occluded: boolean } | null
@@ -76,6 +78,12 @@ export function evaluateAskUserInlineHardGates(snapshot: AskUserInlineHardGateSn
       && (snapshot.checkpoint !== "selected" || snapshot.question.selectedValue?.startsWith("Request changes") === true)
   add("checkpoint-state", expected, `checkpoint=${snapshot.checkpoint};selected=${snapshot.question.selectedValue ?? "none"};submit=${snapshot.question.submitLabel ?? "none"}`)
   add("raw-json-hidden", !snapshot.question.rawSchemaVisible, `visible=${snapshot.question.rawSchemaVisible}`)
+  const submitTokensMatch = snapshot.checkpoint === "resolved" || Boolean(
+    snapshot.question.submitColors
+      && snapshot.question.submitColors.color === snapshot.question.submitColors.expectedColor
+      && snapshot.question.submitColors.background === snapshot.question.submitColors.expectedBackground,
+  )
+  add("submit-theme-tokens", submitTokensMatch, JSON.stringify(snapshot.question.submitColors))
 
   const focusPassed = !snapshot.focusedControl || (insideViewport(snapshot.focusedControl.bounds, snapshot.viewport) && !snapshot.focusedControl.occluded)
   add("focused-control-visible", focusPassed, snapshot.focusedControl ? JSON.stringify(snapshot.focusedControl) : "none")
