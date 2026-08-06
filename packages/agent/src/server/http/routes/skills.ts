@@ -10,7 +10,7 @@
  *   { skills: [{ name: string, description: string }] }
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import {
   DefaultPackageManager,
   getAgentDir,
@@ -35,12 +35,31 @@ interface SkillsQuery {
 
 const CACHE_TTL_MS = 30_000
 
-function pathForWorkspaceEditor(workspaceRoot: string, filePath: string): string {
-  const pathWithinWorkspace = relative(resolve(workspaceRoot), resolve(filePath))
-  if (pathWithinWorkspace === '' || pathWithinWorkspace === '..' || pathWithinWorkspace.startsWith(`..${sep}`) || isAbsolute(pathWithinWorkspace)) {
-    return filePath
+function provisionedWorkspaceRoot(additionalSkillPaths: readonly string[]): string | undefined {
+  // Provisioning contributes <real workspace root>/.agents/skills even when
+  // Workspace.root is the runtime-visible /workspace coordinate.
+  const userSkillsSuffix = `${sep}.agents${sep}skills`
+  const userSkillsPath = additionalSkillPaths
+    .map((skillPath) => resolve(skillPath))
+    .find((skillPath) => skillPath.endsWith(userSkillsSuffix))
+  return userSkillsPath ? dirname(dirname(userSkillsPath)) : undefined
+}
+
+export function pathForWorkspaceEditor(
+  workspaceRoot: string,
+  filePath: string,
+  additionalSkillPaths: readonly string[] = [],
+): string {
+  const roots = [workspaceRoot, provisionedWorkspaceRoot(additionalSkillPaths)]
+  for (const root of roots) {
+    if (!root) continue
+    const pathWithinWorkspace = relative(resolve(root), resolve(filePath))
+    if (pathWithinWorkspace === '' || pathWithinWorkspace === '..' || pathWithinWorkspace.startsWith(`..${sep}`) || isAbsolute(pathWithinWorkspace)) {
+      continue
+    }
+    return pathWithinWorkspace.split(sep).join('/')
   }
-  return pathWithinWorkspace.split(sep).join('/')
+  return filePath
 }
 
 export interface SkillsRoutesOptions {
@@ -117,7 +136,7 @@ export function skillsRoutes(
     const skills: SkillSummary[] = (result.skills as unknown as Array<Record<string, unknown>>).map((s) => ({
       name: String(s.name),
       description: String(s.description ?? ''),
-      ...(typeof s.filePath === 'string' ? { filePath: pathForWorkspaceEditor(workspaceRoot, s.filePath) } : {}),
+      ...(typeof s.filePath === 'string' ? { filePath: pathForWorkspaceEditor(workspaceRoot, s.filePath, additionalSkillPaths) } : {}),
       ...(typeof (s.sourceInfo as { scope?: unknown } | undefined)?.scope === 'string' ? { source: (s.sourceInfo as { scope: string }).scope } : {}),
     }))
     const entry = { skills, expiresAt: now + CACHE_TTL_MS }
