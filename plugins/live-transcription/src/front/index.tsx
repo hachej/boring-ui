@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
+import { MicIcon } from "lucide-react"
 import {
   ChatMessageContributionProvider,
   ComposerContributionProvider,
@@ -96,7 +97,7 @@ export function LiveTranscriptComposerAction({
       ) : recordingThisMode ? (
         <StopIcon />
       ) : (
-        <MicrophoneIcon />
+        <MicIcon aria-hidden="true" className="size-4" strokeWidth={1.8} />
       )}
       {recording.phase === "starting" || recording.phase === "transcribing" ? (
         <span>{recording.phase === "transcribing" ? "Transcribing" : "Starting"} {formatClock(elapsedSeconds)}</span>
@@ -277,15 +278,6 @@ export function appendTranscriptToDraft(draft: string, transcript: string): stri
 
 function LoadingIcon() {
   return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 animate-spin fill-none stroke-current" strokeWidth="1.5"><path d="M8 1.5a6.5 6.5 0 1 1-6.5 6.5" /></svg>
-}
-
-function MicrophoneIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 20 20" className="size-4 fill-none stroke-current" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="6.5" y="2" width="7" height="10.5" rx="3.5" />
-      <path d="M4 9.5a6 6 0 0 0 12 0M10 15.5V18M7.5 18h5" />
-    </svg>
-  )
 }
 
 function StopIcon() {

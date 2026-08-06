@@ -1689,6 +1689,9 @@ importers:
       '@fastify/websocket':
         specifier: ^11.2.0
         version: 11.3.0
+      lucide-react:
+        specifier: ^1.25.0
+        version: 1.25.0(react@19.2.7)
       ws:
         specifier: ^8.21.0
         version: 8.21.1
