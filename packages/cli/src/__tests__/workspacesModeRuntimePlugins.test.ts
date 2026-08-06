@@ -770,7 +770,7 @@ describe("workspaces mode runtime plugin wiring", () => {
     try {
       const response = await app.inject({
         method: "GET",
-        url: "/api/v1/agent/skills?refresh=1",
+        url: "/api/v1/agents/default/skills?refresh=1",
         headers: { "x-boring-workspace-id": workspace.id },
       })
       expect(response.statusCode).toBe(200)
