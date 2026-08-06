@@ -27,6 +27,7 @@ export interface WorkspaceShellSessionRef {
 export const WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT = "boring-workspace:chat-prompt-accepted"
 
 export interface WorkspaceChatPromptAcceptedDetail extends WorkspaceShellSessionRef {
+  workspaceId: string
   clientNonce: string
 }
 

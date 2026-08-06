@@ -407,6 +407,27 @@ describe('addressed Agent Host HTTP projection', () => {
     await app.close()
   })
 
+  it('bounds batch summary inventory scans when requested sessions are absent', async () => {
+    const { app, gateway } = await buildApp()
+    let page = 0
+    const listSessions = vi.spyOn(gateway, 'listSessions').mockImplementation(async (input) => {
+      gateway.calls.push({ method: 'listSessions', input })
+      page += 1
+      return { sessions: [], nextCursor: `page-${page}` }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions/summaries',
+      payload: { sessionIds: ['missing'] },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ summaries: [], omittedSessionIds: ['missing'], scanTruncated: true })
+    expect(listSessions).toHaveBeenCalledTimes(10)
+    await app.close()
+  })
+
   it('rejects malformed, extra, and invalid addressed inputs before authorization or Gateway dispatch', async () => {
     const authorizeAgentRequest = vi.fn(async () => scope)
     const { app, gateway } = await buildApp({ authorizeAgentRequest })
