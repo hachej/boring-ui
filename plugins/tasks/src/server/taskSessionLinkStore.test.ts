@@ -1,4 +1,4 @@
-import { TASK_ERROR_CODES } from "../shared"
+import { TASK_ERROR_CODES, type BoringTaskSessionLink } from "../shared"
 import { describe, expect, it } from "vitest"
 import { FileTaskSessionLinkStore, TaskSessionLinkStoreError, taskSessionLinkStoreForWorkspace, type TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
 
@@ -120,6 +120,39 @@ describe("FileTaskSessionLinkStore", () => {
 
     await expect(store.unlink(link.id, "alpha")).rejects.toMatchObject({ code: TASK_ERROR_CODES.SESSION_LINK_MISSING })
     await expect(store.list("github", "776")).resolves.toEqual([link])
+  })
+
+  it("rejects a mutation before it can persist an unreadable oversized store", async () => {
+    const workspace = new MemoryWorkspace()
+    const maxBytes = 4 * 1024 * 1024
+    const encoder = new TextEncoder()
+    const linksOfLength = (length: number): BoringTaskSessionLink[] => Array.from({ length }, (_, index) => ({
+      id: String(index).padEnd(512, "i"),
+      adapterId: "a".repeat(512),
+      taskId: "t".repeat(512),
+      agentTypeId: "g".repeat(512),
+      sessionId: String(index).padEnd(512, "s"),
+      createdAt: "2026-08-06T00:00:00.000Z",
+    }))
+    const serializedSize = (length: number) => encoder.encode(`${JSON.stringify({ version: 1, links: linksOfLength(length) }, null, 2)}\n`).byteLength
+    let low = 0
+    let high = 10_000
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2)
+      if (serializedSize(middle) <= maxBytes) low = middle
+      else high = middle - 1
+    }
+    const links = linksOfLength(low)
+    workspace.files.set(".pi/tasks/session-links.json", `${JSON.stringify({ version: 1, links }, null, 2)}\n`)
+    const store = new FileTaskSessionLinkStore(workspace)
+
+    await expect(store.link({
+      adapterId: "z".repeat(512),
+      taskId: "z".repeat(512),
+      agentTypeId: "z".repeat(512),
+      sessionId: "z".repeat(512),
+    })).rejects.toMatchObject({ code: TASK_ERROR_CODES.SESSION_LINK_STORE_ERROR })
+    await expect(store.list("a".repeat(512), "t".repeat(512))).resolves.toHaveLength(links.length)
   })
 
   it("persists deterministic link ordering", async () => {

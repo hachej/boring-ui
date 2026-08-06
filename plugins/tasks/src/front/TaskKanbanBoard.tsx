@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react"
 import { Columns3, List } from "lucide-react"
 import { useWorkspacePluginClient } from "@hachej/boring-workspace"
 import type { BoringTaskAdapter, BoringTaskBoardConfig, BoringTaskCard, BoringTaskColumn, BoringTaskErrorCode, BoringTaskSourceError } from "../shared"
@@ -139,8 +139,12 @@ function writeViewMode(cacheKey: string, mode: TaskBoardViewMode): void {
 }
 
 export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
+  const pluginClient = useWorkspacePluginClient()
   const allAdapterIds = useMemo(() => adapters.map((adapter) => adapter.id), [adapters])
-  const cacheKey = useMemo(() => `boring-tasks:board-cache:v1:${allAdapterIds.join("|")}`, [allAdapterIds])
+  const cacheKey = useMemo(
+    () => `boring-tasks:board-cache:v2:${JSON.stringify([pluginClient.workspaceId ?? "workspace", ...allAdapterIds])}`,
+    [allAdapterIds, pluginClient.workspaceId],
+  )
   const cachedState = useMemo(() => readCachedBoardState(cacheKey), [cacheKey])
   const cachedColumnIds = useMemo(
     () => cachedState ? new Set(Object.values(cachedState.configs).flatMap((config) => config.columns.map((column) => column.id))) : new Set<string>(),
@@ -168,12 +172,29 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   stateRef.current = state
   const toolbarRef = useRef<HTMLDivElement | null>(null)
   const adaptersById = useMemo(() => new Map(adapters.map((adapter) => [adapter.id, adapter])), [adapters])
-  const pluginClient = useWorkspacePluginClient()
   const sessionLinksByTask = useTaskSessionLinks(pluginClient)
   useEffect(() => { resumePendingTaskChatBindings(pluginClient) }, [pluginClient])
   const attentionByTask = useTaskAttention(state?.tasks ?? EMPTY_TASKS)
   const adapterIdsRef = useRef(new Set(allAdapterIds))
   adapterIdsRef.current = new Set(allAdapterIds)
+  const activeCacheKeyRef = useRef(cacheKey)
+
+  useLayoutEffect(() => {
+    if (activeCacheKeyRef.current === cacheKey) return
+    activeCacheKeyRef.current = cacheKey
+    for (const [adapterId, version] of sourceRequestVersions.current) sourceRequestVersions.current.set(adapterId, version + 1)
+    pendingSourceIds.current.clear()
+    const nextState = cachedState ? { configs: cachedState.configs, tasks: cachedState.tasks, errors: cachedState.errors } : null
+    stateRef.current = nextState
+    setState(nextState)
+    setVisibleColumnIds(cachedColumnIds)
+    setLoading(!cachedState)
+    setError(null)
+    setViewModeState(readViewMode(cacheKey))
+    setActiveTaskRef(null)
+    setDetailSelection(null)
+    setDetailOpen(false)
+  }, [cacheKey, cachedColumnIds, cachedState])
 
   const setViewMode = (mode: TaskBoardViewMode) => {
     setViewModeState(mode)

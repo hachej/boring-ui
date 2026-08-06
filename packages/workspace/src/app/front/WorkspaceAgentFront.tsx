@@ -2222,6 +2222,8 @@ export function WorkspaceAgentFront<
       : undefined
   ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
   const shellSessionCreateSequenceRef = useRef(0)
+  const effectiveActiveSessionRef = useRef({ sessionId: effectiveActiveSessionId, agentTypeId: effectiveActiveSessionAgentTypeId ?? undefined })
+  effectiveActiveSessionRef.current = { sessionId: effectiveActiveSessionId, agentTypeId: effectiveActiveSessionAgentTypeId ?? undefined }
   const createShellChatSession = useCallback(async (options?: { title?: string }) => {
     const previousActiveId = effectiveActiveSessionId
     const previousAgentTypeId = effectiveActiveSessionAgentTypeId ?? undefined
@@ -2233,7 +2235,13 @@ export function WorkspaceAgentFront<
       const createdAgentTypeId = typeof (session as { agentTypeId?: unknown }).agentTypeId === "string"
         ? (session as { agentTypeId: string }).agentTypeId
         : selectedAgentTypeId
-      if (previousActiveId && (previousActiveId !== sessionId || previousAgentTypeId !== createdAgentTypeId)) {
+      const activeAfterCreate = effectiveActiveSessionRef.current
+      const selectionStillAtCreationBoundary = (
+        activeAfterCreate.sessionId === sessionId && activeAfterCreate.agentTypeId === createdAgentTypeId
+      ) || (
+        activeAfterCreate.sessionId === previousActiveId && activeAfterCreate.agentTypeId === previousAgentTypeId
+      )
+      if (selectionStillAtCreationBoundary && previousActiveId && (previousActiveId !== sessionId || previousAgentTypeId !== createdAgentTypeId)) {
         rawSwitch(previousActiveId, previousAgentTypeId)
       }
       return { success: true as const, ref: { agentTypeId: createdAgentTypeId, sessionId } }

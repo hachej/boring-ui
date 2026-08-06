@@ -33,9 +33,9 @@ function detailFor(adapterId: string, id: string, body = "Full plain-text descri
   }
 }
 
-function renderBoard(adapters: readonly BoringTaskAdapter[]) {
+function renderBoard(adapters: readonly BoringTaskAdapter[], workspaceId = "tasks-test") {
   return render(
-    <WorkspacePluginClientProvider agentTypeId="default" apiBaseUrl="" workspaceId="tasks-test">
+    <WorkspacePluginClientProvider agentTypeId="default" apiBaseUrl="" workspaceId={workspaceId}>
       <TaskKanbanBoard adapters={adapters} />
     </WorkspacePluginClientProvider>,
   )
@@ -43,6 +43,22 @@ function renderBoard(adapters: readonly BoringTaskAdapter[]) {
 
 describe("TaskKanbanBoard source isolation", () => {
   beforeEach(() => localStorage.clear())
+
+  test("never hydrates another Workspace's cached task data", async () => {
+    const firstAdapter = adapter("shared", "Shared", vi.fn(async () => [task("shared", "1", "Workspace A secret")]))
+    const first = renderBoard([firstAdapter], "workspace-a")
+    expect(await screen.findByText("Workspace A secret")).toBeInTheDocument()
+
+    const secondAdapter = adapter("shared", "Shared", vi.fn(async () => []))
+    first.rerender(
+      <WorkspacePluginClientProvider agentTypeId="default" apiBaseUrl="" workspaceId="workspace-b">
+        <TaskKanbanBoard adapters={[secondAdapter]} />
+      </WorkspacePluginClientProvider>,
+    )
+    expect(screen.queryByText("Workspace A secret")).not.toBeInTheDocument()
+    await waitFor(() => expect(secondAdapter.listTasks).toHaveBeenCalled())
+    expect(screen.queryByText("Workspace A secret")).not.toBeInTheDocument()
+  })
 
   test("keeps healthy source tasks visible and retries only the failing source", async () => {
     const user = userEvent.setup()
