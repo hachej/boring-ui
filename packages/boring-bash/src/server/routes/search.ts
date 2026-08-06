@@ -51,6 +51,19 @@ export function searchRoutes(
     return opts.filesystemBindings ?? []
   }
 
+  // fileSearch must resolve (and lease its request-scoped runtime) before
+  // filesystem bindings are requested — a second resolver competing for the
+  // same runtime before the lease is held would race it. Bundling both
+  // resolutions behind one function makes that order structural: there is no
+  // call site left where a caller could request bindings first.
+  async function resolveSearchContext(
+    request: import('fastify').FastifyRequest,
+  ): Promise<{ fileSearch: FileSearch; bindings: RuntimeFilesystemBinding[] }> {
+    const fileSearch = await resolveFileSearch(request)
+    const bindings = await resolveFilesystemBindings(request)
+    return { fileSearch, bindings }
+  }
+
   app.get('/api/v1/files/search', async (request, reply) => {
     const query = request.query as Record<string, unknown>
     const q = query.q
@@ -85,10 +98,7 @@ export function searchRoutes(
     }
 
     try {
-      // Resolve sequentially so request-scoped runtimes are leased before a
-      // second resolver asks for the same binding.
-      const fileSearch = await resolveFileSearch(request)
-      const bindings = await resolveFilesystemBindings(request)
+      const { fileSearch, bindings } = await resolveSearchContext(request)
       const userResults = (await fileSearch.search(q, limit)).map((path) => ({
         filesystem: 'user',
         path,

@@ -1,10 +1,10 @@
+import { parseFilesystemCatalog } from "@hachej/boring-bash/shared"
 import type {
   FetchClientOptions,
   FileContent,
   FileEntry,
   FileSearchResource,
   FileStat,
-  FilesystemCatalogCapabilities,
   FilesystemCatalogEntry,
   GitUrlMetadata,
 } from "./types"
@@ -26,48 +26,6 @@ function isFileSearchResource(value: unknown): value is FileSearchResource {
   const resource = value as { filesystem?: unknown; path?: unknown }
   return typeof resource.filesystem === "string" && resource.filesystem.length > 0
     && typeof resource.path === "string" && resource.path.length > 0
-}
-
-const CATALOG_CAPABILITIES = ["read", "list", "search", "write", "delete", "move", "mkdir"] as const
-const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
-
-function validCatalogString(value: unknown, maxLength: number): value is string {
-  return typeof value === "string"
-    && value.length > 0
-    && value.length <= maxLength
-    && value.trim() === value
-    && !CONTROL_CHARACTERS.test(value)
-}
-
-function isCatalogCapabilities(value: unknown): value is FilesystemCatalogCapabilities {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false
-  const capabilities = value as Record<string, unknown>
-  return CATALOG_CAPABILITIES.every((capability) => typeof capabilities[capability] === "boolean")
-}
-
-function parseFilesystemCatalog(value: unknown): FilesystemCatalogEntry[] {
-  if (!value || typeof value !== "object" || !Array.isArray((value as { filesystems?: unknown }).filesystems)) return []
-  const seen = new Set<string>()
-  const entries: FilesystemCatalogEntry[] = []
-  for (const candidate of (value as { filesystems: unknown[] }).filesystems) {
-    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue
-    const entry = candidate as Record<string, unknown>
-    if (!validCatalogString(entry.filesystem, 128) || seen.has(entry.filesystem)) continue
-    if (!validCatalogString(entry.label, 128)) continue
-    if (!validCatalogString(entry.rootDir, 512)) continue
-    if (entry.access !== "readonly" && entry.access !== "readwrite") continue
-    if (!isCatalogCapabilities(entry.capabilities)) continue
-    const capabilities = entry.capabilities
-    seen.add(entry.filesystem)
-    entries.push({
-      filesystem: entry.filesystem,
-      label: entry.label,
-      rootDir: entry.rootDir,
-      access: entry.access,
-      capabilities: Object.fromEntries(CATALOG_CAPABILITIES.map((capability) => [capability, capabilities[capability]])) as unknown as FilesystemCatalogCapabilities,
-    })
-  }
-  return entries
 }
 
 export class FetchClient {

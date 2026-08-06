@@ -1,4 +1,8 @@
 import type { UiFileResource } from "../../../../shared/types/filesystem"
+export type {
+  FilesystemCatalogCapabilities,
+  FilesystemCatalogEntry,
+} from "@hachej/boring-bash/shared"
 
 export interface FileEntry {
   name: string
@@ -21,24 +25,6 @@ export interface FileContent {
 }
 
 export type FileSearchResource = UiFileResource
-
-export interface FilesystemCatalogCapabilities {
-  read: boolean
-  list: boolean
-  search: boolean
-  write: boolean
-  delete: boolean
-  move: boolean
-  mkdir: boolean
-}
-
-export interface FilesystemCatalogEntry {
-  filesystem: string
-  label: string
-  rootDir: string
-  access: "readonly" | "readwrite"
-  capabilities: FilesystemCatalogCapabilities
-}
 
 export interface FileStat {
   size: number

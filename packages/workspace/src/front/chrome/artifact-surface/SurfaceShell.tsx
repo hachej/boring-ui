@@ -59,6 +59,13 @@ export interface SurfaceShellOpenFileOptions {
   mode?: "view" | "edit" | "diff"
 }
 
+/** Result of openFileCore — the shared resolve/activate logic behind openFile
+ * (sync + async) and openSurface's file-kind branch. Failure carries a stable
+ * `code` so each caller can translate it into its own idiom (warn/err/throw). */
+type OpenFileCoreResult =
+  | { ok: true; path: string; filesystem: FilesystemId }
+  | { ok: false; code: string; message: string; component?: string }
+
 export interface SurfaceShellApi {
   /** Open a file in the workbench. Idempotent — re-activates an existing pane for the same filesystem/path. */
   openFile: (path: string, options?: SurfaceShellOpenFileOptions) => void
@@ -457,54 +464,114 @@ export function SurfaceShell({
     })
   }, [emitFileOpened])
 
+  // Shared core for every "open a file-backed surface" path (sync openFile,
+  // openSurface's file-kind branch, and the async openFile command). Resolves
+  // the request, reuses/activates the matching panel, and is the single call
+  // site for emitFileOpened — callers only decide how to surface a failure
+  // (warn, return an err(), or throw).
+  const openFileCore = useCallback((
+    api: DockviewApi,
+    path: string,
+    options?: SurfaceShellOpenFileOptions & { extraParams?: Record<string, unknown> },
+  ): OpenFileCoreResult => {
+    const normalizedPath = normalizeWorkbenchPath(path)
+    const filesystem = normalizeUiFilesystem(options?.filesystem)
+    const request: SurfaceOpenRequest = {
+      kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
+      target: normalizedPath,
+      filesystem,
+    }
+    const resolved = surfaceResolverRegistryRef.current.resolve(request)
+
+    const finish = (): OpenFileCoreResult => {
+      emitFileOpened(normalizedPath, { ...options, filesystem })
+      return { ok: true, path: normalizedPath, filesystem }
+    }
+
+    if (resolved) {
+      if (!panelRegistryRef.current.has(resolved.component)) {
+        return {
+          ok: false,
+          code: "NO_SURFACE_PANEL",
+          message: `surface resolver "${request.kind}" returned unknown panel "${resolved.component}" for "${normalizedPath}"`,
+          component: resolved.component,
+        }
+      }
+      const panelId = surfacePanelId(request, resolved)
+      const params = {
+        ...fileBackedParams(resolved.params, normalizedPath, { filesystem, mode: options?.mode }),
+        ...options?.extraParams,
+      }
+      fileBackedPanelIdsRef.current.add(panelId)
+      if (activateExistingFilePanel(api, normalizedPath, filesystem, resolved.component, params)) {
+        return finish()
+      }
+      prepareFilePreview(api, normalizedPath, filesystem, fileBackedPanelIdsRef.current)
+      if (!activateDockviewPanel({
+        id: panelId,
+        component: resolved.component,
+        title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
+        params: workbenchPreviewParams(params),
+      })) {
+        return { ok: false, code: "not-ready", message: "surface not ready" }
+      }
+      return finish()
+    }
+
+    const existing = findOpenFilePanel(api, normalizedPath, filesystem)
+    if (existing) {
+      existing.api.setActive()
+      return finish()
+    }
+    return {
+      ok: false,
+      code: "NO_SURFACE_RESOLVER",
+      message: `no registered surface resolver handles ${normalizedPath}`,
+    }
+  }, [activateDockviewPanel, activateExistingFilePanel, emitFileOpened])
+
   const openFileSync = useCallback((path: string, options?: SurfaceShellOpenFileOptions) => {
     const api = apiRef.current
     if (!api) {
       console.warn("[SurfaceShell] openFile: surface not ready (dockview not initialized)")
       return
     }
-    const normalizedPath = normalizeWorkbenchPath(path)
-    const request: SurfaceOpenRequest = {
-      kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
-      target: normalizedPath,
-      filesystem: normalizeUiFilesystem(options?.filesystem),
+    const result = openFileCore(api, path, options)
+    if (!result.ok) {
+      console.warn(`[SurfaceShell] openFile: ${result.message}`)
     }
-    const resolved = surfaceResolverRegistryRef.current.resolve(request)
-    if (resolved) {
-      if (!panelRegistryRef.current.has(resolved.component)) {
-        console.warn(`[SurfaceShell] openFile: resolver returned unknown panel "${resolved.component}" for "${normalizedPath}"`)
-        return
-      }
-      const panelId = surfacePanelId(request, resolved)
-      const params = fileBackedParams(resolved.params, normalizedPath, { filesystem: request.filesystem, mode: options?.mode })
-      fileBackedPanelIdsRef.current.add(panelId)
-      if (activateExistingFilePanel(api, normalizedPath, normalizeUiFilesystem(request.filesystem), resolved.component, params)) {
-        emitFileOpened(normalizedPath, { ...options, filesystem: request.filesystem })
-        return
-      }
-      prepareFilePreview(api, normalizedPath, normalizeUiFilesystem(request.filesystem), fileBackedPanelIdsRef.current)
-      if (activateDockviewPanel({
-        id: panelId,
-        component: resolved.component,
-        title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-        params: workbenchPreviewParams(params),
-      })) {
-        emitFileOpened(normalizedPath, { ...options, filesystem: request.filesystem })
-      }
-      return
-    }
-
-    const existing = findOpenFilePanel(api, normalizedPath, request.filesystem)
-    if (existing) {
-      existing.api.setActive()
-      emitFileOpened(normalizedPath, { ...options, filesystem: request.filesystem })
-      return
-    }
-    console.warn(`[SurfaceShell] openFile: no surface resolver matched "${normalizedPath}"`)
-  }, [activateDockviewPanel, activateExistingFilePanel, emitFileOpened])
+  }, [openFileCore])
 
   const openSurfaceSync = useCallback((request: SurfaceOpenRequest) => {
     const normalizedRequest = normalizeSurfaceOpenRequest(request)
+
+    if (normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND) {
+      const api = apiRef.current
+      if (!api) {
+        console.warn("[SurfaceShell] openSurface: surface not ready (dockview not initialized)")
+        return
+      }
+      const surfaceMode = normalizedRequest.meta?.mode
+      const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
+      const result = openFileCore(api, normalizedRequest.target, {
+        filesystem: normalizedRequest.filesystem,
+        ...(surfaceMode === "view" || surfaceMode === "edit" || surfaceMode === "diff" ? { mode: surfaceMode } : {}),
+        ...(closeWorkbenchOnDone && onCloseRef.current
+          ? { extraParams: { __closeWorkbenchOnDone: onCloseRef.current } }
+          : {}),
+      })
+      if (result.ok) return
+      if (result.code === "NO_SURFACE_PANEL") {
+        const known = panelRegistryRef.current.list().map((p) => p.id).join(", ")
+        throw new Error(
+          `openSurface: unknown component "${result.component}". Registered panels: [${known}]. ` +
+            `Register the component through a panel output before resolving to it.`,
+        )
+      }
+      console.warn(`[SurfaceShell] openSurface: ${result.message}`)
+      return
+    }
+
     const resolved = surfaceResolverRegistryRef.current.resolve(normalizedRequest)
     if (!resolved) {
       console.warn(`[SurfaceShell] openSurface: no resolver matched kind="${normalizedRequest.kind}" target="${normalizedRequest.target}"`)
@@ -519,59 +586,15 @@ export function SurfaceShell({
       )
     }
     const panelId = surfacePanelId(normalizedRequest, resolved)
-    if (normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND) {
-      fileBackedPanelIdsRef.current.add(panelId)
-    }
-    const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
-    const surfaceMode = normalizedRequest.meta?.mode
-    const baseParams = normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
-      ? fileBackedParams(
-          resolved.params,
-          normalizedRequest.target,
-          {
-            filesystem: normalizedRequest.filesystem,
-            ...(surfaceMode === "view" || surfaceMode === "edit" || surfaceMode === "diff" ? { mode: surfaceMode } : {}),
-          },
-        )
-      : resolved.params
-    const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
-      ? { ...(baseParams ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
-      : baseParams
-    const fileOptions: SurfaceShellOpenFileOptions | null = normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
-      ? {
-          filesystem: normalizeUiFilesystem(normalizedRequest.filesystem),
-          ...(surfaceMode === "view" || surfaceMode === "edit" || surfaceMode === "diff" ? { mode: surfaceMode } : {}),
-        }
-      : null
-    if (
-      normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND &&
-      apiRef.current &&
-      activateExistingFilePanel(apiRef.current, normalizedRequest.target, normalizeUiFilesystem(normalizedRequest.filesystem), resolved.component, resolvedParams ?? {})
-    ) {
-      emitFileOpened(normalizedRequest.target, fileOptions!)
-      return
-    }
-    if (normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND && apiRef.current) {
-      prepareFilePreview(
-        apiRef.current,
-        normalizedRequest.target,
-        normalizeUiFilesystem(normalizedRequest.filesystem),
-        fileBackedPanelIdsRef.current,
-      )
-    }
     if (!activateDockviewPanel({
       id: panelId,
       component: resolved.component,
       title: resolved.title ?? normalizedRequest.target,
-      params: normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
-        ? workbenchPreviewParams(resolvedParams)
-        : resolvedParams,
+      params: resolved.params,
     })) {
       console.warn("[SurfaceShell] openSurface: surface not ready (dockview not initialized)")
-    } else if (fileOptions) {
-      emitFileOpened(normalizedRequest.target, fileOptions)
     }
-  }, [activateDockviewPanel, activateExistingFilePanel, emitFileOpened])
+  }, [activateDockviewPanel, openFileCore])
 
   const openPanelSync = useCallback((config: OpenPanelConfig) => {
     const api = apiRef.current
@@ -740,45 +763,8 @@ export function SurfaceShell({
       try {
         const api = apiRef.current
         if (!api) return err("not-ready", "surface not ready")
-        const normalizedPath = normalizeWorkbenchPath(path)
-        const request: SurfaceOpenRequest = {
-          kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
-          target: normalizedPath,
-          filesystem: normalizeUiFilesystem(options?.filesystem),
-        }
-        const resolved = surfaceResolverRegistryRef.current.resolve(request)
-        if (resolved) {
-          if (!panelRegistryRef.current.has(resolved.component)) {
-            return err(
-              "NO_SURFACE_PANEL",
-              `surface resolver "${request.kind}" returned unknown panel "${resolved.component}"`,
-            )
-          }
-          const panelId = surfacePanelId(request, resolved)
-          const params = fileBackedParams(resolved.params, normalizedPath, { filesystem: request.filesystem, mode: options?.mode })
-          fileBackedPanelIdsRef.current.add(panelId)
-          if (activateExistingFilePanel(api, normalizedPath, normalizeUiFilesystem(request.filesystem), resolved.component, params)) {
-            emitFileOpened(normalizedPath, { ...options, filesystem: request.filesystem })
-            return ok()
-          }
-          prepareFilePreview(api, normalizedPath, normalizeUiFilesystem(request.filesystem), fileBackedPanelIdsRef.current)
-          if (!activateDockviewPanel({
-            id: panelId,
-            component: resolved.component,
-            title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-            params: workbenchPreviewParams(params),
-          })) return err("not-ready", "surface not ready")
-          emitFileOpened(normalizedPath, { ...options, filesystem: request.filesystem })
-          return ok()
-        }
-
-        const existing = findOpenFilePanel(api, normalizedPath, request.filesystem)
-        if (existing) {
-          existing.api.setActive()
-          emitFileOpened(normalizedPath, { ...options, filesystem: request.filesystem })
-          return ok()
-        }
-        return err("NO_SURFACE_RESOLVER", `no registered surface resolver handles ${normalizedPath}`)
+        const result = openFileCore(api, path, options)
+        return result.ok ? ok() : err(result.code, result.message)
       } catch (error) {
         return err(
           "INVALID_SURFACE_PATH",
@@ -786,7 +772,7 @@ export function SurfaceShell({
         )
       }
     },
-    [activateDockviewPanel, activateExistingFilePanel, emitFileOpened],
+    [openFileCore],
   )
 
   const bridge = useMemo<WorkspaceBridge>(() => {

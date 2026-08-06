@@ -1,34 +1,22 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { RuntimeFilesystemBinding } from '../../agent/runtime/types'
 import { ERROR_CODE_INTERNAL } from './errorCodes'
+import {
+  CATALOG_STRING_MAX_LENGTH,
+  isValidCatalogString,
+  type FilesystemCatalogCapabilities,
+  type FilesystemCatalogEntry,
+  type FilesystemCatalogResponse,
+} from '../../shared/catalog'
+
+export type {
+  FilesystemCatalogCapabilities,
+  FilesystemCatalogEntry,
+  FilesystemCatalogResponse,
+  LogicalFilesystemRoot,
+} from '../../shared/catalog'
 
 const USER_FILESYSTEM_ID = 'user'
-const MAX_FILESYSTEM_LENGTH = 128
-const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
-
-export interface FilesystemCatalogCapabilities {
-  read: boolean
-  list: boolean
-  search: boolean
-  write: boolean
-  delete: boolean
-  move: boolean
-  mkdir: boolean
-}
-
-export type LogicalFilesystemRoot = '.' | `/${string}`
-
-export interface FilesystemCatalogEntry {
-  filesystem: string
-  label: string
-  rootDir: LogicalFilesystemRoot
-  access: 'readonly' | 'readwrite'
-  capabilities: FilesystemCatalogCapabilities
-}
-
-export interface FilesystemCatalogResponse {
-  filesystems: FilesystemCatalogEntry[]
-}
 
 export interface FilesystemsRouteOptions {
   filesystemBindings?: RuntimeFilesystemBinding[]
@@ -54,11 +42,7 @@ const PRIMARY_FILESYSTEM: FilesystemCatalogEntry = {
 }
 
 function validFilesystem(value: unknown): value is string {
-  return typeof value === 'string'
-    && value.length > 0
-    && value.length <= MAX_FILESYSTEM_LENGTH
-    && value.trim() === value
-    && !CONTROL_CHARACTERS.test(value)
+  return isValidCatalogString(value, CATALOG_STRING_MAX_LENGTH)
 }
 
 function capabilitiesFor(binding: RuntimeFilesystemBinding): FilesystemCatalogCapabilities {
