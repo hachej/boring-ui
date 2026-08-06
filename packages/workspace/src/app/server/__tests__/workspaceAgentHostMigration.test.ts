@@ -113,4 +113,78 @@ describe("Workspace AgentHost composition root", () => {
       await app.close()
     }
   })
+
+  // Owner smoke found the fleet agent selector unusable: WorkspaceAgentFront.tsx
+  // sends x-boring-storage-scope as `${workspaceScopeId}:${agentTypeId}` per
+  // agent (gh-1106 multi-agent selector), but the exact-match allowlist check
+  // 403'd every compound value. Only the portion before the first `:` is the
+  // real workspace/storage selector — the suffix is client-side namespacing,
+  // not a security boundary — so a crafted `<foreign>:<anything>` must still
+  // be denied on the (unchanged) prefix check.
+  test("accepts agent-namespaced storage scopes, still rejects a foreign prefix", async () => {
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: await workspaceRoot(),
+      mode: "direct",
+      logger: false,
+      provisionWorkspace: false,
+      externalPlugins: false,
+      harnessFactory: harnessFactory(),
+    })
+    try {
+      const bare = await app.inject({
+        method: "GET",
+        url: "/api/v1/agents",
+        headers: { "x-boring-storage-scope": "default" },
+      })
+      expect(bare.statusCode).toBe(200)
+
+      const compound = await app.inject({
+        method: "GET",
+        url: "/api/v1/agents",
+        headers: { "x-boring-storage-scope": "default:boring-worker" },
+      })
+      expect(compound.statusCode).toBe(200)
+
+      const trailingColon = await app.inject({
+        method: "GET",
+        url: "/api/v1/agents",
+        headers: { "x-boring-storage-scope": "default:" },
+      })
+      expect(trailingColon.statusCode).toBe(200)
+
+      // The security-relevant prefix is still exact-match: a crafted value
+      // must not smuggle a foreign selector through, whether bare or with a
+      // trailing agent-type suffix that happens to look legitimate.
+      const foreignBare = await app.inject({
+        method: "GET",
+        url: "/api/v1/agents",
+        headers: { "x-boring-storage-scope": "other" },
+      })
+      expect(foreignBare.statusCode).toBe(403)
+
+      const foreignCompound = await app.inject({
+        method: "GET",
+        url: "/api/v1/agents",
+        headers: { "x-boring-storage-scope": "other:anything" },
+      })
+      expect(foreignCompound.statusCode).toBe(403)
+      expect(foreignCompound.json()).toEqual({
+        error: {
+          code: "WORKSPACE_UNINITIALIZED",
+          message: "workspace/storage selector is not allowed",
+        },
+      })
+
+      const foreignPrefixOfAllowed = await app.inject({
+        method: "GET",
+        url: "/api/v1/agents",
+        // "default" is allowed, but "evil:default" must not accidentally
+        // resolve to an allowed prefix.
+        headers: { "x-boring-storage-scope": "evil:default" },
+      })
+      expect(foreignPrefixOfAllowed.statusCode).toBe(403)
+    } finally {
+      await app.close()
+    }
+  })
 })

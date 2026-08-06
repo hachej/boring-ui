@@ -359,9 +359,19 @@ function trustedWorkspaceScopeId(
     && "workspaceId" in request.query
     ? (request.query as { workspaceId?: unknown }).workspaceId
     : undefined
+  // x-boring-storage-scope may be a per-agent-scoped compound value
+  // (`${workspaceScopeId}:${agentTypeId}`, see WorkspaceAgentFront.tsx's
+  // `sessionStorageScope` for the fleet agent selector, gh-1106) rather than
+  // a bare workspace scope id. Only the portion before the first `:` is the
+  // actual workspace/storage selector that needs to match; the suffix is
+  // client-side namespacing and isn't a security boundary here.
+  const storageScopeHeader = request.headers["x-boring-storage-scope"]
+  const normalizedStorageScope = typeof storageScopeHeader === "string"
+    ? storageScopeHeader.split(":", 1)[0]
+    : storageScopeHeader
   const selectors = [
     request.headers["x-boring-workspace-id"],
-    request.headers["x-boring-storage-scope"],
+    normalizedStorageScope,
     rawFileWorkspaceSelector,
   ].flatMap((value) => typeof value === "string" ? [value.trim()] : [])
   if (selectors.some((selector) => selector.length === 0 || !allowedSelectors.has(selector))) {
