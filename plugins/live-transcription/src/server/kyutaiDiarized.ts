@@ -10,6 +10,7 @@ interface StreamingUpstream {
 }
 
 const DIARIZER_CONNECT_TIMEOUT_MS = 5_000
+const DIARIZER_HIGH_WATER_BYTES = 4 * 1024 * 1024
 
 interface UpstreamCallbacks {
   onSnapshot: (snapshot: WhisperLiveKitSnapshot) => void
@@ -58,7 +59,10 @@ export class KyutaiDiarizedConnection implements StreamingUpstream {
     this.diarizer = options.createDiarizerForTest?.(diarizerCallbacks) ?? new WhisperLiveKitConnection(
       diarizerUrl,
       diarizerCallbacks,
-      { bearerToken: options.diarizerBearerToken, highWaterBytes: options.highWaterBytes },
+      {
+        bearerToken: options.diarizerBearerToken,
+        highWaterBytes: Math.max(options.highWaterBytes ?? 0, DIARIZER_HIGH_WATER_BYTES),
+      },
     )
   }
 
@@ -164,9 +168,19 @@ async function settleWithin(promise: Promise<void>, timeoutMs: number): Promise<
 
 function speakerIntervals(lines: readonly WhisperLiveKitLine[]): Array<WhisperLiveKitLine & { endSeconds: number }> {
   const sorted = [...lines].sort((left, right) => left.startSeconds - right.startSeconds || left.speaker - right.speaker)
+  // WLK full snapshots may revise or permute raw Sortformer IDs. Canonicalize
+  // from the complete current timeline so stale provisional IDs cannot leave a
+  // lone human displayed as Speaker 3.
+  const canonicalSpeakers = new Map<number, number>()
   return sorted.flatMap((line, index) => {
     const endSeconds = line.endSeconds ?? sorted[index + 1]?.startSeconds
-    return endSeconds !== undefined && endSeconds >= line.startSeconds ? [{ ...line, endSeconds }] : []
+    if (endSeconds === undefined || endSeconds < line.startSeconds) return []
+    let speaker = canonicalSpeakers.get(line.speaker)
+    if (speaker === undefined) {
+      speaker = canonicalSpeakers.size
+      canonicalSpeakers.set(line.speaker, speaker)
+    }
+    return [{ ...line, speaker, endSeconds }]
   })
 }
 

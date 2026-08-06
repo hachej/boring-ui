@@ -37,8 +37,8 @@ describe("Kyutai + WhisperLiveKit diarization", () => {
       ]),
     )
     expect(merged.lines).toEqual([
-      { text: "Bonjour", startSeconds: 0, endSeconds: 0.8, speaker: 7 },
-      { text: "docteur", startSeconds: 0.8, endSeconds: 1.4, speaker: 3 },
+      { text: "Bonjour", startSeconds: 0, endSeconds: 0.8, speaker: 0 },
+      { text: "docteur", startSeconds: 0.8, endSeconds: 1.4, speaker: 1 },
     ])
   })
 
@@ -54,7 +54,9 @@ describe("Kyutai + WhisperLiveKit diarization", () => {
     kyutaiCallbacks.onSnapshot(snapshot([{ text: "Salut", startSeconds: 1, endSeconds: 1.5, speaker: 0 }]))
     expect(onSnapshot).toHaveBeenLastCalledWith(snapshot([{ text: "Salut", startSeconds: 1, endSeconds: 1.5, speaker: 0 }]))
     diarizerCallbacks.onSnapshot(snapshot([{ text: "ignored", startSeconds: 0, endSeconds: 2, speaker: 4 }]))
-    expect(onSnapshot).toHaveBeenLastCalledWith(snapshot([{ text: "Salut", startSeconds: 1, endSeconds: 1.5, speaker: 4 }]))
+    expect(onSnapshot).toHaveBeenLastCalledWith(snapshot([{ text: "Salut", startSeconds: 1, endSeconds: 1.5, speaker: 0 }]))
+    diarizerCallbacks.onSnapshot(snapshot([{ text: "revised", startSeconds: 0, endSeconds: 2, speaker: 9 }]))
+    expect(onSnapshot).toHaveBeenLastCalledWith(snapshot([{ text: "Salut", startSeconds: 1, endSeconds: 1.5, speaker: 0 }]))
   })
 
   it("fails open when the diarizer cannot connect", async () => {
