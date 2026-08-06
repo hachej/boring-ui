@@ -53,7 +53,7 @@ describe("KyutaiComposerManager", () => {
     })
     expect(socket.sent).toContain(JSON.stringify({ type: "word", text: "Bonjour" }))
 
-    socket.emit("message", Buffer.alloc(3_200), true)
+    socket.emit("message", Buffer.alloc(4_800), true)
     await vi.waitFor(() => expect(sendPcm).toHaveBeenCalledOnce())
     await expect(manager.stop(started.composerStreamId)).resolves.toEqual({ text: "Bonjour le monde" })
     expect(socket.sent).toContain(JSON.stringify({ type: "word", text: "le monde" }))

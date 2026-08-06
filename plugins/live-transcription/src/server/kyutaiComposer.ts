@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto"
 import type WebSocket from "ws"
-import { LIVE_NONCE_BYTES, LIVE_PCM_FRAME_BYTES, LIVE_SOCKET_HIGH_WATER_BYTES } from "../shared"
+import { KYUTAI_PCM_FRAME_BYTES, LIVE_NONCE_BYTES, LIVE_SOCKET_HIGH_WATER_BYTES } from "../shared"
 import { LiveTranscriptError } from "./errors"
 import { KyutaiConnection } from "./kyutai"
 import type { WhisperLiveKitSnapshot } from "./whisperLiveKit"
@@ -96,9 +96,9 @@ export class KyutaiComposerManager {
           return
         }
         if (session.phase !== "active") return
-        if (data.byteLength !== LIVE_PCM_FRAME_BYTES || data.byteLength % 2 !== 0) return this.fail(session, "live_transcript_invalid_audio")
+        if (data.byteLength !== KYUTAI_PCM_FRAME_BYTES || data.byteLength % 2 !== 0) return this.fail(session, "live_transcript_invalid_audio")
         session.audioBytes += data.byteLength
-        const maxAudioBytes = Math.floor((this.options.maxDurationMs ?? 30 * 60 * 1_000) * 32)
+        const maxAudioBytes = Math.floor((this.options.maxDurationMs ?? 30 * 60 * 1_000) * (KYUTAI_PCM_FRAME_BYTES / 100))
         if (session.audioBytes > maxAudioBytes) return this.fail(session, "live_transcript_limit_exceeded")
         try {
           await session.upstream?.sendPcm(data)

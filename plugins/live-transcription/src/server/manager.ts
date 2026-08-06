@@ -4,6 +4,7 @@ import type { LeaseBoundWorkspaceAgent, Workspace } from "@hachej/boring-agent/s
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto"
 import type WebSocket from "ws"
 import {
+  KYUTAI_PCM_FRAME_BYTES,
   LIVE_NONCE_BYTES,
   LIVE_PCM_FRAME_BYTES,
   LIVE_SOCKET_HIGH_WATER_BYTES,
@@ -355,12 +356,14 @@ export class LiveTranscriptManager {
           return
         }
         if (session.phase !== "active") return
-        if (data.byteLength !== LIVE_PCM_FRAME_BYTES || data.byteLength % 2 !== 0) {
+        const expectedFrameBytes = this.options.upstreamProvider === "kyutai" ? KYUTAI_PCM_FRAME_BYTES : LIVE_PCM_FRAME_BYTES
+        if (data.byteLength !== expectedFrameBytes || data.byteLength % 2 !== 0) {
           await this.terminate(session, "interrupted", "live_transcript_invalid_audio")
           return
         }
         session.audioBytes += data.byteLength
-        const maxAudioBytes = Math.floor((this.options.maxDurationMs ?? 4 * 60 * 60 * 1_000) * 32)
+        const bytesPerMillisecond = expectedFrameBytes / 100
+        const maxAudioBytes = Math.floor((this.options.maxDurationMs ?? 4 * 60 * 60 * 1_000) * bytesPerMillisecond)
         if (session.audioBytes > maxAudioBytes) {
           await this.terminate(session, "interrupted", "live_transcript_limit_exceeded")
           return
