@@ -25,15 +25,9 @@ export interface WorkspaceShellSessionRef {
 }
 
 export const WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT = "boring-workspace:chat-prompt-accepted"
-export const WORKSPACE_DETACHED_CHAT_VISIBILITY_EVENT = "boring-workspace:detached-chat-visibility"
 
 export interface WorkspaceChatPromptAcceptedDetail extends WorkspaceShellSessionRef {
   clientNonce: string
-}
-
-export interface WorkspaceDetachedChatVisibilityDetail {
-  open: boolean
-  ref?: WorkspaceShellSessionRef
 }
 
 export type WorkspaceShellCreatedSessionResult =

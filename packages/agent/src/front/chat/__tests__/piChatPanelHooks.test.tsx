@@ -10,6 +10,29 @@ function remoteSession() {
 }
 
 describe('useExternalRemotePiSession', () => {
+  it('releases and restores the remote stream without unmounting its owner', () => {
+    const first = remoteSession()
+    const second = remoteSession()
+    const createRemoteSession = vi.fn(() => createRemoteSession.mock.calls.length === 1 ? first : second)
+    const { rerender } = renderHook(
+      ({ enabled }) => useExternalRemotePiSession({
+        sessionId: 'session-1',
+        agentTypeId: 'default',
+        workspaceId: 'workspace-1',
+        storageScope: 'workspace-1',
+        createRemoteSession,
+        enabled,
+      }),
+      { initialProps: { enabled: true } },
+    )
+
+    expect(createRemoteSession).toHaveBeenCalledTimes(1)
+    rerender({ enabled: false })
+    expect(first.dispose).toHaveBeenCalledTimes(1)
+    rerender({ enabled: true })
+    expect(createRemoteSession).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps hydration alive across semantically equal request-header objects', () => {
     const first = remoteSession()
     const second = remoteSession()
