@@ -10,7 +10,6 @@ import {
   createAgentHost,
   createPiResourceDigestFence,
   createPiResourceDigestInput,
-  createLegacyRuntimeScopeIdentityV1,
   createResolvedRuntimeScopeIdentity,
   createSandboxRuntimeModeAdapter,
   createValidatingAgentFleetCompiler,
@@ -192,21 +191,6 @@ export interface WorkspaceAgentServerPluginContext {
  */
 export type WorkspacePluginEntry = WorkspaceServerPlugin | DirPluginEntry
 
-export interface WorkspaceRuntimeScopeV1Migration {
-  /** Agent whose exact v1 predecessor may migrate. */
-  agentTypeId: string
-  /** Reproduced v1 digest; checked against all server-side predecessor inputs. */
-  expectedIdentity: string
-  /** Prior physical placement digest used by the v1 identity formula. */
-  legacyPlacementIdentity: string
-  /** Prior physical provisioning fingerprint used by the v1 identity formula. */
-  legacyProvisioningGeneration: string
-  /** Audit evidence digest for the reproduced predecessor. */
-  evidenceDigest: string
-  /** Defaults to the Agent runtime session namespace. */
-  sessionNamespace?: string
-}
-
 export interface CreateWorkspaceAgentServerOptions
   extends WorkspaceAgentCreateOptions,
     Pick<ServerBootstrapOptions, "defaults" | "excludeDefaults"> {
@@ -218,8 +202,6 @@ export interface CreateWorkspaceAgentServerOptions
   defaultAgentTypeId?: string
   /** Optional host admission called immediately before each Agent effect. */
   admitEffect?: AgentEffectAdmission
-  /** Exact, server-reproduced v1 runtime pin migrations. Never sourced from HTTP input. */
-  runtimeScopeIdentityMigrations?: readonly WorkspaceRuntimeScopeV1Migration[]
   /**
    * Host-installed server plugins. Accepts pre-built `WorkspaceServerPlugin`
    * objects or `{ dir, options?, hotReload?, trust? }` directory-source entries.
@@ -1553,12 +1535,6 @@ export async function createWorkspaceAgentServer(
     runtimePluginIds: buildRuntimeProvisioningInputs().map((entry) => entry.id),
     provisionWorkspace: opts.provisionWorkspace !== false,
   }))
-  const semanticProvisioningIdentity = identityDigest(canonicalIdentityJson({
-    runtimeMode: resolvedMode,
-    runtimeContributionIds: runtimeEnvContributions.map((entry) => entry.id),
-    runtimePluginIds: buildRuntimeProvisioningInputs().map((entry) => entry.id),
-    provisionWorkspace: opts.provisionWorkspace !== false,
-  }))
   const scopeIssuer = createWorkspaceAgentScopeIssuer(workspaceScopeId)
   const agentHost = await createAgentHost({
     agents,
@@ -1673,58 +1649,21 @@ export async function createWorkspaceAgentServer(
           ].filter((part): part is string => Boolean(part)).join("\n\n") || undefined
         : undefined
 
-      const semanticIdentityInput = {
-        artifacts: contribution.artifacts,
-        validatedConfig: contribution.validatedConfig,
-        grants: contribution.grants,
-        placementClassIdentity: resolvedMode,
-        isolationMode: resolvedMode,
-        toolContractDigests: contribution.toolContractDigests,
-        provisioningIdentity: semanticProvisioningIdentity,
-        bindingInputs: {
-          sessionNamespace: "",
-          base: baseBindingInputs,
-          contribution: contribution.bindingInputs,
-        },
-      } as const
-      const identity = createResolvedRuntimeScopeIdentity(semanticIdentityInput)
-      const physicalBindingIdentity = identityDigest(canonicalIdentityJson({
-        identity,
-        placementIdentity: environment.placementIdentity,
-        provisioningFingerprint: environment.provisioningFingerprint,
-      }))
-      const sessionIdentityMigrations = (opts.runtimeScopeIdentityMigrations ?? [])
-        .filter((migration) => migration.agentTypeId === agentTypeId)
-        .map((migration) => {
-          const sessionNamespace = migration.sessionNamespace ?? ""
-          const fromIdentity = createLegacyRuntimeScopeIdentityV1({
-            artifacts: contribution.artifacts,
-            validatedConfig: contribution.validatedConfig,
-            grants: contribution.grants,
-            placementIdentity: migration.legacyPlacementIdentity,
-            isolationMode: resolvedMode,
-            toolContractDigests: contribution.toolContractDigests,
-            provisioningGeneration: migration.legacyProvisioningGeneration,
-            bindingInputs: {
-              workspaceScopeId: verifiedClaim.workspaceScopeId,
-              environmentProvisioningFingerprint: migration.legacyProvisioningGeneration,
-              sessionNamespace,
-              base: baseBindingInputs,
-              contribution: contribution.bindingInputs,
-            },
-          })
-          if (fromIdentity !== migration.expectedIdentity) {
-            throw new Error(`runtime identity migration evidence does not reproduce ${migration.expectedIdentity}`)
-          }
-          return {
-            schemaVersion: 1 as const,
-            agentTypeId,
+      const identity = createResolvedRuntimeScopeIdentity({
+          artifacts: contribution.artifacts,
+          validatedConfig: contribution.validatedConfig,
+          grants: contribution.grants,
+          placementIdentity: environment.placementIdentity,
+          isolationMode: resolvedMode,
+          toolContractDigests: contribution.toolContractDigests,
+          provisioningGeneration: environment.provisioningFingerprint,
+          bindingInputs: {
             workspaceScopeId: verifiedClaim.workspaceScopeId,
-            sessionNamespace,
-            fromIdentity,
-            toIdentity: identity,
-            evidenceDigest: migration.evidenceDigest,
-          }
+            environmentProvisioningFingerprint: environment.provisioningFingerprint,
+            sessionNamespace: "",
+            base: baseBindingInputs,
+            contribution: contribution.bindingInputs,
+          },
         })
       const staticSystemPromptAppend = [baseSystemPromptAppend, contribution.agentOptions.systemPromptAppend]
         .filter((part): part is string => Boolean(part))
@@ -1774,8 +1713,7 @@ export async function createWorkspaceAgentServer(
       const { resourceInputDigest, revalidateResourceInputs } = await createPiResourceDigestFence(buildResourceDigestInput)
       return {
         identity,
-        physicalBindingIdentity,
-        ...(sessionIdentityMigrations.length > 0 ? { sessionIdentityMigrations } : {}),
+        physicalBindingIdentity: identity,
         resourceInputDigest,
         ...(intent.operation === "reload" ? {
           async revalidateResourceInputs() {
