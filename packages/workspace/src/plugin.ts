@@ -44,10 +44,12 @@ export {
 export type { AppLeftOverlayChromeValue } from "./shared/plugins/appLeftOverlayChrome"
 export {
   WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT,
+  WORKSPACE_DETACHED_CHAT_VISIBILITY_EVENT,
   useWorkspaceShellCapabilities,
 } from "./shared/plugins/workspaceShellCapabilities"
 export type {
   WorkspaceChatPromptAcceptedDetail,
+  WorkspaceDetachedChatVisibilityDetail,
   WorkspaceShellAnchorRect,
   WorkspaceShellArtifactTarget,
   WorkspaceShellCapabilityResult,

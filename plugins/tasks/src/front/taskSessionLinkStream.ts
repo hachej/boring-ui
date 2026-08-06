@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import type { WorkspacePluginClient } from "@hachej/boring-workspace"
+import { WORKSPACE_DETACHED_CHAT_VISIBILITY_EVENT, type WorkspaceDetachedChatVisibilityDetail } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskSessionLink } from "../shared"
 
 export interface TaskSessionLinks {
@@ -55,7 +56,18 @@ function envelope(value: unknown): { streamId: string; revision: number } | unde
 export function useTaskSessionLinks(pluginClient: WorkspacePluginClient): ReadonlyMap<string, readonly BoringTaskSessionLink[]> | null {
   const [linksByTask, setLinksByTask] = useState<ReadonlyMap<string, readonly BoringTaskSessionLink[]> | null>(null)
   const [connectionVersion, setConnectionVersion] = useState(0)
+  const [detachedChatOpen, setDetachedChatOpen] = useState(() => typeof document !== "undefined"
+    && document.querySelector('[data-boring-workspace-part="detached-panel-popover"]') !== null)
   const cursor = useRef<{ streamId: string; revision: number } | null>(null)
+
+  useEffect(() => {
+    const onVisibility = (event: Event) => {
+      const detail = (event as CustomEvent<WorkspaceDetachedChatVisibilityDetail>).detail
+      if (typeof detail?.open === "boolean") setDetachedChatOpen(detail.open)
+    }
+    window.addEventListener(WORKSPACE_DETACHED_CHAT_VISIBILITY_EVENT, onVisibility)
+    return () => window.removeEventListener(WORKSPACE_DETACHED_CHAT_VISIBILITY_EVENT, onVisibility)
+  }, [])
 
   useEffect(() => {
     const onRefresh = (event: Event) => {
@@ -67,7 +79,7 @@ export function useTaskSessionLinks(pluginClient: WorkspacePluginClient): Readon
   }, [pluginClient.workspaceId])
 
   useEffect(() => {
-    if (typeof EventSource === "undefined") return
+    if (detachedChatOpen || typeof EventSource === "undefined") return
     const endpoint = pluginClient.apiBaseUrl.replace(/\/$/, "")
     const query = pluginClient.workspaceId ? `?workspaceId=${encodeURIComponent(pluginClient.workspaceId)}` : ""
     const source = new EventSource(`${endpoint}/api/boring-tasks/session-links/events${query}`, { withCredentials: true })
@@ -106,7 +118,7 @@ export function useTaskSessionLinks(pluginClient: WorkspacePluginClient): Readon
       } catch { /* Ignore malformed stream frames. */ }
     })
     return () => source.close()
-  }, [connectionVersion, pluginClient.apiBaseUrl, pluginClient.workspaceId])
+  }, [connectionVersion, detachedChatOpen, pluginClient.apiBaseUrl, pluginClient.workspaceId])
 
   return linksByTask
 }

@@ -15,8 +15,9 @@ interface BindingAttemptState {
 }
 
 const attemptStates = new Map<string, BindingAttemptState>()
-const listeners = new Map<string, EventListener>()
+const listeners = new Map<string, { prompt: EventListener; status: EventListener }>()
 const MAX_BIND_ATTEMPTS = 6
+const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
 
 function retryableBindingError(error: unknown): boolean {
   return !(error instanceof WorkspacePluginClientRequestError)
@@ -55,12 +56,18 @@ function writePending(bindings: readonly PendingTaskChatBinding[]): void {
   try { window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(bindings)) } catch { /* Best-effort tab recovery. */ }
 }
 
+function stopWatching(key: string): void {
+  const listener = listeners.get(key)
+  if (!listener) return
+  window.removeEventListener(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, listener.prompt)
+  window.removeEventListener(CHAT_SESSION_STATUS_EVENT, listener.status)
+  listeners.delete(key)
+}
+
 function removePending(binding: PendingTaskChatBinding): void {
   const key = bindingKey(binding)
   writePending(readPending().filter((candidate) => bindingKey(candidate) !== key))
-  const listener = listeners.get(key)
-  if (listener) window.removeEventListener(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, listener)
-  listeners.delete(key)
+  stopWatching(key)
   const attemptState = attemptStates.get(key)
   if (attemptState?.timer) clearTimeout(attemptState.timer)
   attemptStates.delete(key)
@@ -103,16 +110,21 @@ async function bind(binding: PendingTaskChatBinding, client: Pick<WorkspacePlugi
 function watch(binding: PendingTaskChatBinding, client: Pick<WorkspacePluginClient, "postJson">): void {
   const key = bindingKey(binding)
   if (listeners.has(key)) return
-  const listener: EventListener = (event) => {
-    const detail = (event as CustomEvent<WorkspaceChatPromptAcceptedDetail>).detail
-    if (detail?.agentTypeId !== binding.agentTypeId || detail.sessionId !== binding.sessionId) return
-    const registered = listeners.get(key)
-    if (registered) window.removeEventListener(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, registered)
-    listeners.delete(key)
+  const accept = () => {
+    stopWatching(key)
     void bind(binding, client)
   }
-  listeners.set(key, listener)
-  window.addEventListener(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, listener)
+  const prompt: EventListener = (event) => {
+    const detail = (event as CustomEvent<WorkspaceChatPromptAcceptedDetail>).detail
+    if (detail?.agentTypeId === binding.agentTypeId && detail.sessionId === binding.sessionId) accept()
+  }
+  const status: EventListener = (event) => {
+    const detail = (event as CustomEvent<{ agentTypeId?: unknown; sessionId?: unknown; working?: unknown }>).detail
+    if (detail?.working === true && detail.agentTypeId === binding.agentTypeId && detail.sessionId === binding.sessionId) accept()
+  }
+  listeners.set(key, { prompt, status })
+  window.addEventListener(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, prompt)
+  window.addEventListener(CHAT_SESSION_STATUS_EVENT, status)
 }
 
 export function registerPendingTaskChatBinding(
