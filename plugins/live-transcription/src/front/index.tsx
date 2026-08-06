@@ -348,12 +348,15 @@ function LiveTranscriptComposerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false
     void fetch("/api/v1/workspace/meta")
-      .then(async (response) => response.ok ? await response.json() as { liveTranscripts?: { ready?: boolean; streamingComposer?: boolean } } : undefined)
+      .then(async (response) => response.ok ? await response.json() as { liveTranscripts?: { ready?: boolean; streamingComposer?: boolean; pcmSampleRate?: number } } : undefined)
       .then((meta) => {
-        if (!cancelled) setCapabilities({
-          ready: meta?.liveTranscripts?.ready === true,
-          streamingComposer: meta?.liveTranscripts?.streamingComposer === true,
-        })
+        if (!cancelled) {
+          liveTranscriptController.setStreamingSampleRate(meta?.liveTranscripts?.pcmSampleRate ?? 16_000)
+          setCapabilities({
+            ready: meta?.liveTranscripts?.ready === true,
+            streamingComposer: meta?.liveTranscripts?.streamingComposer === true,
+          })
+        }
       })
       .catch(() => {
         if (!cancelled) setCapabilities({ ready: false, streamingComposer: false })

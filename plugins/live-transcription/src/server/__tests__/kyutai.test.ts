@@ -1,10 +1,18 @@
 // @vitest-environment node
 import { WebSocketServer } from "ws"
 import { describe, expect, it, vi } from "vitest"
-import { KyutaiConnection, resamplePcm16ToFloat32 } from "../kyutai"
+import { KyutaiConnection, pcm16ToFloat32, resamplePcm16ToFloat32 } from "../kyutai"
 
 describe("Kyutai moshi-server adapter", () => {
-  it("resamples PCM16 16 kHz to normalized float32 24 kHz", () => {
+  it("normalizes native 24 kHz PCM16 without changing its sample count", () => {
+    const input = new Uint8Array(4)
+    const view = new DataView(input.buffer)
+    view.setInt16(0, -32_768, true)
+    view.setInt16(2, 32_767, true)
+    expect(pcm16ToFloat32(input)).toEqual(new Float32Array([-1, 0.999969482421875]))
+  })
+
+  it("retains the compatibility 16 kHz to 24 kHz resampler", () => {
     const input = new Uint8Array(4)
     const view = new DataView(input.buffer)
     view.setInt16(0, -32_768, true)

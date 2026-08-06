@@ -62,7 +62,7 @@ export class KyutaiConnection {
     if (data.byteLength === 0 || data.byteLength % 2 !== 0) {
       throw new LiveTranscriptError("live_transcript_invalid_audio", "Kyutai PCM must contain complete 16-bit samples.", 400)
     }
-    await this.send(encodeMessage({ type: "Audio", pcm: resamplePcm16ToFloat32(data) }))
+    await this.send(encodeMessage({ type: "Audio", pcm: pcm16ToFloat32(data) }))
   }
 
   async drain(timeoutMs: number): Promise<void> {
@@ -133,6 +133,16 @@ export class KyutaiConnection {
   }
 }
 
+export function pcm16ToFloat32(data: Uint8Array): Float32Array {
+  const input = new DataView(data.buffer, data.byteOffset, data.byteLength)
+  const output = new Float32Array(data.byteLength / 2)
+  for (let index = 0; index < output.length; index += 1) {
+    output[index] = input.getInt16(index * 2, true) / 0x8000
+  }
+  return output
+}
+
+/** @deprecated Compatibility helper for callers that still hold 16 kHz PCM. */
 export function resamplePcm16ToFloat32(data: Uint8Array): Float32Array {
   const input = new DataView(data.buffer, data.byteOffset, data.byteLength)
   const inputLength = data.byteLength / 2

@@ -1,7 +1,12 @@
 import type { SlashCommand } from "@hachej/boring-agent/front"
 import { postUiCommand } from "@hachej/boring-workspace"
 import {
+  KYUTAI_PCM_FRAME_BYTES,
+  KYUTAI_PCM_FRAME_SAMPLES,
+  KYUTAI_PCM_SAMPLE_RATE,
   LIVE_PCM_FRAME_BYTES,
+  LIVE_PCM_FRAME_SAMPLES,
+  LIVE_PCM_SAMPLE_RATE,
   LIVE_SOCKET_HIGH_WATER_BYTES,
   LIVE_TRANSCRIPT_BASE_PATH,
   SHORT_DICTATION_MAX_BYTES,
@@ -33,6 +38,11 @@ export class LiveTranscriptBrowserController {
   private shortBytes = 0
   private shortLimitReached = false
   private composerStreamId: string | undefined
+  private streamingSampleRate: number = LIVE_PCM_SAMPLE_RATE
+
+  setStreamingSampleRate(sampleRate: number): void {
+    this.streamingSampleRate = sampleRate === KYUTAI_PCM_SAMPLE_RATE ? KYUTAI_PCM_SAMPLE_RATE : LIVE_PCM_SAMPLE_RATE
+  }
 
   commands(): SlashCommand[] {
     return [
@@ -442,7 +452,15 @@ export class LiveTranscriptBrowserController {
     this.assertAttachCurrent(input)
 
     const Context = window.AudioContext
-    const context = new Context()
+    const outputSampleRate = this.streamingSampleRate
+    const frameSamples = outputSampleRate === KYUTAI_PCM_SAMPLE_RATE ? KYUTAI_PCM_FRAME_SAMPLES : LIVE_PCM_FRAME_SAMPLES
+    const frameBytes = outputSampleRate === KYUTAI_PCM_SAMPLE_RATE ? KYUTAI_PCM_FRAME_BYTES : LIVE_PCM_FRAME_BYTES
+    // Kyutai consumes native 24 kHz audio. Asking Web Audio for that rate uses
+    // the browser's production resampler instead of degrading 48 kHz audio to
+    // 16 kHz and then synthesizing it back to 24 kHz on the server.
+    const context = outputSampleRate === KYUTAI_PCM_SAMPLE_RATE
+      ? new Context({ sampleRate: KYUTAI_PCM_SAMPLE_RATE })
+      : new Context()
     const workletUrl = createLiveTranscriptWorkletUrl()
     await context.audioWorklet.addModule(workletUrl)
     this.assertAttachCurrent(input)
@@ -450,6 +468,7 @@ export class LiveTranscriptBrowserController {
       numberOfInputs: 1,
       numberOfOutputs: 1,
       outputChannelCount: [1],
+      processorOptions: { outputSampleRate, frameSamples },
     })
     const source = context.createMediaStreamSource(stream)
     this.capture = { stream, context, source, worklet, workletUrl }
@@ -458,7 +477,7 @@ export class LiveTranscriptBrowserController {
         void this.failCapture("Live transcript worklet backpressure limit was exceeded.")
         return
       }
-      if (event.data?.type !== "frame" || !(event.data.data instanceof ArrayBuffer) || event.data.data.byteLength !== LIVE_PCM_FRAME_BYTES) {
+      if (event.data?.type !== "frame" || !(event.data.data instanceof ArrayBuffer) || event.data.data.byteLength !== frameBytes) {
         void this.failCapture("Live transcript worklet emitted invalid audio.")
         return
       }
