@@ -20,15 +20,23 @@ export class TaskSessionLinkEvents {
     this.listenersByWorkspace.set(workspaceId, listeners)
     return () => {
       listeners.delete(listener)
-      if (listeners.size === 0) this.listenersByWorkspace.delete(workspaceId)
+      if (listeners.size === 0) {
+        this.listenersByWorkspace.delete(workspaceId)
+        this.revisionsByWorkspace.delete(workspaceId)
+      }
     }
   }
 
   publish(workspaceId: string, snapshot: TaskSessionLinkSnapshot): void {
+    const listeners = this.listenersByWorkspace.get(workspaceId)
+    if (!listeners?.size) {
+      this.revisionsByWorkspace.delete(workspaceId)
+      return
+    }
     const revision = (this.revisionsByWorkspace.get(workspaceId) ?? 0) + 1
     this.revisionsByWorkspace.set(workspaceId, revision)
     const event = { streamId: this.streamId, revision, ...snapshot }
-    for (const listener of this.listenersByWorkspace.get(workspaceId) ?? []) {
+    for (const listener of listeners) {
       try { listener(event) } catch { /* A disconnected client cannot fail a durable mutation. */ }
     }
   }

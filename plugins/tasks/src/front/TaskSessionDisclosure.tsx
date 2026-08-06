@@ -314,14 +314,15 @@ export function TaskSessionDisclosure({
               {handover ? (
                 <HumanArtifactList
                   artifacts={handover.artifacts}
-                  unavailableArtifactIds={unavailableArtifacts.get(sessionId!)}
+                  unavailableArtifactIds={unavailableArtifacts.get(addressedSessionKey(row.link.agentTypeId, sessionId!))}
                   className="border-t border-border/50 px-1 pb-1 pt-1"
                   onOpen={(artifact) => {
                     const result = openHumanArtifact(shell, artifact, { sessionId: sessionId! })
                     if (result.success) return
                     setUnavailableArtifacts((current) => {
                       const next = new Map(current)
-                      next.set(sessionId!, new Set([...(current.get(sessionId!) ?? []), artifact.id]))
+                      const sessionKey = addressedSessionKey(row.link.agentTypeId, sessionId!)
+                      next.set(sessionKey, new Set([...(current.get(sessionKey) ?? []), artifact.id]))
                       return next
                     })
                   }}

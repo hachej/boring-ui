@@ -168,6 +168,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const detailTriggerRef = useRef<HTMLButtonElement | null>(null)
   const sourceRequestVersions = useRef(new Map<string, number>())
   const pendingSourceIds = useRef(new Set<string>())
+  const taskMutationVersions = useRef(new Map<string, number>())
   const stateRef = useRef(state)
   stateRef.current = state
   const toolbarRef = useRef<HTMLDivElement | null>(null)
@@ -192,6 +193,8 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     setError(null)
     setViewModeState(readViewMode(cacheKey))
     setActiveTaskRef(null)
+    setMovingTaskId(null)
+    setDeletingTaskId(null)
     setDetailSelection(null)
     setDetailOpen(false)
   }, [cacheKey, cachedColumnIds, cachedState])
@@ -348,6 +351,14 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     event.dataTransfer.setData("text/plain", task.number)
   }
 
+  const beginTaskMutation = (adapterId: string, taskId: string) => {
+    const workspaceKey = cacheKey
+    const mutationKey = JSON.stringify([workspaceKey, adapterId, taskId])
+    const version = (taskMutationVersions.current.get(mutationKey) ?? 0) + 1
+    taskMutationVersions.current.set(mutationKey, version)
+    return () => activeCacheKeyRef.current === workspaceKey && taskMutationVersions.current.get(mutationKey) === version
+  }
+
   const moveTask = async (taskId: string, adapterId: string, statusId: string) => {
     if (!state) return
     const task = state.tasks.find((candidate) => candidate.id === taskId && candidate.adapterId === adapterId)
@@ -361,7 +372,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
       return
     }
 
-    const previous = state.tasks
+    const mutationIsCurrent = beginTaskMutation(adapterId, taskId)
     const movingAdapterId = task.adapterId
     setMovingTaskId(taskId)
     setError(null)
@@ -372,18 +383,25 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
 
     try {
       const moved = await adapter.moveTask({ taskId, statusId })
-      setState((current) => current ? {
-        ...current,
-        tasks: current.tasks.map((candidate) => candidate.id === taskId && candidate.adapterId === adapterId ? moved : candidate),
-      } : current)
+      if (mutationIsCurrent()) {
+        setState((current) => current ? {
+          ...current,
+          tasks: current.tasks.map((candidate) => candidate.id === taskId && candidate.adapterId === adapterId ? moved : candidate),
+        } : current)
+      }
     } catch (cause) {
-      setState((current) => current ? { ...current, tasks: previous } : current)
-      if (selectedAdapterIds.has(movingAdapterId)) {
-        setError(cause instanceof Error ? cause.message : String(cause))
+      if (mutationIsCurrent()) {
+        setState((current) => current ? {
+          ...current,
+          tasks: current.tasks.map((candidate) => candidate.id === taskId && candidate.adapterId === adapterId ? task : candidate),
+        } : current)
+        if (selectedAdapterIds.has(movingAdapterId)) setError(cause instanceof Error ? cause.message : String(cause))
       }
     } finally {
-      setMovingTaskId(null)
-      setActiveTaskRef(null)
+      if (mutationIsCurrent()) {
+        setMovingTaskId(null)
+        setActiveTaskRef(null)
+      }
     }
   }
 
@@ -393,7 +411,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
       setError(`Task source does not support issue deletion: ${task.adapterId}`)
       return
     }
-    const previous = state?.tasks ?? []
+    const mutationIsCurrent = beginTaskMutation(task.adapterId, task.id)
     setDeletingTaskId(task.id)
     setError(null)
     setState((current) => current ? {
@@ -403,10 +421,14 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     try {
       await adapter.deleteTask({ taskId: task.id })
     } catch (cause) {
-      setState((current) => current ? { ...current, tasks: previous } : current)
-      if (selectedAdapterIds.has(task.adapterId)) setError(cause instanceof Error ? cause.message : String(cause))
+      if (mutationIsCurrent()) {
+        setState((current) => current && !current.tasks.some((candidate) => candidate.id === task.id && candidate.adapterId === task.adapterId)
+          ? { ...current, tasks: [...current.tasks, task] }
+          : current)
+        if (selectedAdapterIds.has(task.adapterId)) setError(cause instanceof Error ? cause.message : String(cause))
+      }
     } finally {
-      setDeletingTaskId(null)
+      if (mutationIsCurrent()) setDeletingTaskId(null)
     }
   }
 
