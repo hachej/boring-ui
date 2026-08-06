@@ -608,7 +608,7 @@ function ChatPaneHeaderActions({ activePanel }: IDockviewHeaderActionsProps) {
             {stage.topActions}
           </div>
         ) : null}
-        {stage.onClosePane ? (
+        {stage.onClosePane && stage.panes.length > 1 ? (
           <CornerChromeButton
             label={`Close ${title} pane`}
             appearance="chat"
