@@ -16,9 +16,16 @@ fact has exactly one authority, and no stage invents a second path to it.
 
 ## Beads (`br`)
 
-The graph is the only authority on work state. All seats run `br` directly in
-their worktree; there are no verb ACLs and no second write path. `.beads/` is
-committed, so git history is the audit trail.
+The graph is the only authority on work state. All seats run `br` directly;
+there are no verb ACLs and no second write path. `.beads/` is committed, so
+git history is the audit trail.
+
+**One graph, not per-branch copies**: the live DB is the canonical checkout's
+`.beads/`. Sessions running in a `.worktrees/` worktree must pass
+`--db <canonical-checkout>/.beads/beads.db` on every `br` call — the worktree's
+own `.beads/` is a stale branch snapshot, and a bead created in the canonical
+graph is invisible without the flag (found the hard way, first factory run,
+gh-1051).
 
 - Claim work by lease off the ready list; never work an unclaimed bead.
 - Record handoff notes on the bead before compaction or release.
