@@ -420,7 +420,7 @@ export class LiveTranscriptBrowserController {
       { kind },
     )
     this.preparationId = prepared.preparationId
-    const deadline = Date.now() + 5 * 60_000
+    const deadline = Date.now() + 12 * 60_000
     let status = prepared
     while (status.state === "warming" && Date.now() < deadline && generation === this.attachGeneration) {
       await new Promise((resolve) => setTimeout(resolve, 2_000))

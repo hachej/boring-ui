@@ -36,21 +36,26 @@ class ExoscaleProvider:
         return str(json.loads(result.stdout).get("state", "unknown")).lower()
 
     def start(self) -> None:
-        subprocess.run(
-            [self.exo_bin, "compute", "instance", "start", self.instance_id, "--zone", self.zone, "--force"],
-            check=True, capture_output=True, text=True, timeout=300,
-        )
+        self._request_transition("start")
 
     def stop(self) -> None:
-        subprocess.run(
-            [self.exo_bin, "compute", "instance", "stop", self.instance_id, "--zone", self.zone, "--force"],
-            check=True, capture_output=True, text=True, timeout=300,
-        )
+        self._request_transition("stop")
+
+    def _request_transition(self, action: str) -> None:
+        try:
+            subprocess.run(
+                [self.exo_bin, "compute", "instance", action, self.instance_id, "--zone", self.zone, "--force"],
+                check=True, capture_output=True, text=True, timeout=20,
+            )
+        except subprocess.TimeoutExpired:
+            # exo waits for the asynchronous operation to finish. The request has
+            # already been accepted; state polling below is the source of truth.
+            return
 
 
 class LeaseController:
     def __init__(self, provider: ExoscaleProvider, ready: Callable[[], bool], *, lease_ttl: float = 90,
-                 idle_grace: float = 180, max_runtime: float = 4 * 3600, ready_timeout: float = 300):
+                 idle_grace: float = 180, max_runtime: float = 4 * 3600, ready_timeout: float = 600):
         self.provider, self.ready = provider, ready
         self.lease_ttl, self.idle_grace = lease_ttl, idle_grace
         self.max_runtime, self.ready_timeout = max_runtime, ready_timeout
