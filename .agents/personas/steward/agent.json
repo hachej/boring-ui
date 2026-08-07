@@ -1,8 +1,0 @@
-{
-  "schemaVersion": 1,
-  "definitionId": "boring-steward",
-  "version": "2026.08.04",
-  "label": "Boring Steward",
-  "description": "Issue-bound planner and integration supervisor.",
-  "instructionsRef": "instructions.md"
-}
