@@ -215,6 +215,13 @@ check.
 - Hosted roster provider (#475 governance config) — follow-up; v1 roster is
   the class-B `fleet.yaml`.
 - #1100 Agent Details UI (separate epic, sequenced after).
+
+**Explicitly in-contract (owner-confirmed at gate):** a persona package is a
+regular boring plugin and may carry any other plugin surface alongside
+`boring.agent` — front assets/panes, `pi.*` declarations, server routes —
+all flowing through the normal plugin pipeline unchanged. An agent can ship
+its own UI enhancements in the same package. Only seat *activation* stays
+roster-gated; the package's non-agent surfaces load like any plugin's.
 - #1087 per-agent MCP grants — plugs into the policy seam this creates.
 - Any migration of the `boring.agent` manifest grammar (ratified: none).
 - Roster/governance UI, multi-project rosters (#1056), Beadle automation.
