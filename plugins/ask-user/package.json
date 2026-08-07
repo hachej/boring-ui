@@ -57,7 +57,7 @@
   },
   "dependencies": {
     "@hachej/boring-ui-kit": "workspace:*",
-    "lucide-react": "^1.25.0",
+    "lucide-react": "^1.27.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
@@ -70,8 +70,8 @@
     "@vitejs/plugin-react": "^4.0.0",
     "fastify": "^5.9.0",
     "jsdom": "^29.1.1",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "tsup": "^8.4.0",
     "typescript": "~6.0.3",
     "vitest": "^4.1.9"

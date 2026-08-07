@@ -1,8 +1,0 @@
-{
-  "schemaVersion": 1,
-  "definitionId": "boring-concierge",
-  "version": "2026.08.04",
-  "label": "Boring Concierge",
-  "description": "Owner-facing entry point for feedback, routing, and portfolio narration.",
-  "instructionsRef": "instructions.md"
-}
