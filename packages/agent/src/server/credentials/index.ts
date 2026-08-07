@@ -10,3 +10,4 @@ export type {
   InMemoryCredentialBackendEntryV1,
 } from './hostResolver'
 export { withResolvedCredential } from './withResolvedCredential'
+export * from './vault'

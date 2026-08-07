@@ -8,6 +8,7 @@ import {
   ErrorCode,
   ErrorLogFieldsSchema,
 } from '../error-codes'
+import { CREDENTIAL_ERROR_CODES } from '../credentials'
 
 const EXPECTED_ERROR_CODES = [
   'UNAUTHORIZED',
@@ -117,6 +118,19 @@ const EXPECTED_ERROR_CODES = [
   'INTERNAL_ERROR',
 ] as const
 
+/**
+ * ERROR_CODES.md carries one table per registry. Codes are read per section so
+ * the canonical `ERROR_CODES` enum and the credential enum stay independently
+ * in sync instead of being conflated into one flat list.
+ */
+function docSection(markdown: string, heading: string): string {
+  const start = markdown.indexOf(`## ${heading}`)
+  if (start < 0) throw new Error(`Missing ERROR_CODES.md section: ${heading}`)
+  const rest = markdown.slice(start + heading.length + 3)
+  const end = rest.indexOf('\n## ')
+  return end < 0 ? rest : rest.slice(0, end)
+}
+
 function docCodesFromMarkdown(markdown: string): string[] {
   const matches = Array.from(
     markdown.matchAll(/^\|\s*`([A-Z0-9_]+)`\s*\|/gm),
@@ -185,9 +199,21 @@ describe('docs parity', () => {
   test('ERROR_CODES.md stays in sync with enum values', () => {
     const docsPath = new URL('../../../docs/ERROR_CODES.md', import.meta.url)
     const markdown = readFileSync(docsPath, 'utf8')
-    const docCodes = docCodesFromMarkdown(markdown)
+    const docCodes = docCodesFromMarkdown(docSection(markdown, 'Registry'))
 
     expect(new Set(docCodes)).toEqual(new Set(ERROR_CODES))
     expect(docCodes).toHaveLength(ERROR_CODES.length)
+  })
+
+  test('ERROR_CODES.md documents every credential error code', () => {
+    const docsPath = new URL('../../../docs/ERROR_CODES.md', import.meta.url)
+    const markdown = readFileSync(docsPath, 'utf8')
+    const docCodes = docCodesFromMarkdown(
+      docSection(markdown, 'Credential registry'),
+    )
+    const credentialCodes = Object.values(CREDENTIAL_ERROR_CODES)
+
+    expect(new Set(docCodes)).toEqual(new Set(credentialCodes))
+    expect(docCodes).toHaveLength(credentialCodes.length)
   })
 })
