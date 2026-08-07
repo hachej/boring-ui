@@ -39,7 +39,7 @@ export interface LiveTranscriptServerPluginOptions {
 export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPluginOptions): WorkspaceServerPlugin {
   validateLocalAuthority(options.authority, options.upstreamUrl, options.upstreamProvider)
   if (options.diarizerUrl) validateLocalAuthority(options.authority, options.diarizerUrl, "sortformer")
-  if (options.lifecycleUrl && !options.lifecycleBearerToken) throw new LiveTranscriptError("live_transcript_local_only", "Lifecycle bearer token is required.", 500)
+  if (options.lifecycleUrl && (!options.lifecycleBearerToken || options.lifecycleBearerToken.length < 32)) throw new LiveTranscriptError("live_transcript_local_only", "Lifecycle bearer token must contain at least 32 characters.", 500)
   const lifecycle = new ComputeLifecycleCoordinator(options.lifecycleUrl
     ? new ComputeLifecycleClient(validateLifecycleUrl(options.lifecycleUrl), options.lifecycleBearerToken!)
     : undefined)

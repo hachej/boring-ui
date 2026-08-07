@@ -64,15 +64,19 @@ export class ComputeLifecycleCoordinator {
   prepare(kind: CaptureKind): PreparationStatus {
     if (!this.client) return { preparationId: "disabled", state: "ready" }
     const preparation: Preparation = { id: randomUUID(), kind, state: "warming" }
+    preparation.expiry = setTimeout(() => { void this.cancel(preparation.id) }, 15 * 60_000)
     this.preparations.set(preparation.id, preparation)
     void this.client.acquire(preparation.id).then((lease) => {
       if (!this.preparations.has(preparation.id)) return void this.client?.release(lease.id).catch(() => undefined)
       preparation.lease = lease
       preparation.state = "ready"
+      if (preparation.expiry) clearTimeout(preparation.expiry)
       preparation.expiry = setTimeout(() => { void this.cancel(preparation.id) }, 2 * 60_000)
     }).catch((error) => {
       preparation.state = "failed"
       preparation.error = error instanceof Error ? error.message : "Transcription GPU failed to start."
+      if (preparation.expiry) clearTimeout(preparation.expiry)
+      preparation.expiry = setTimeout(() => { this.preparations.delete(preparation.id) }, 2 * 60_000)
     })
     return this.publicStatus(preparation)
   }
@@ -142,7 +146,7 @@ export class ComputeLifecycleCoordinator {
 export function validateLifecycleUrl(raw: string): string {
   let url: URL
   try { url = new URL(raw) } catch { throw new LiveTranscriptError("live_transcript_local_only", "Lifecycle URL is invalid.", 500) }
-  if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "::1"].includes(url.hostname) || url.pathname !== "/v1" || url.search || url.username || url.password) {
+  if (url.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(url.hostname) || url.pathname !== "/v1" || url.search || url.username || url.password) {
     throw new LiveTranscriptError("live_transcript_local_only", "Lifecycle service must use the exact loopback /v1 authority.", 500)
   }
   return url.toString().replace(/\/$/, "")
