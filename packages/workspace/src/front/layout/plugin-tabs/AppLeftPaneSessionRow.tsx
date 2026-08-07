@@ -65,7 +65,8 @@ export function AppSessionRow({
   const pinAvailable = canPin && Boolean(onTogglePinned)
   const showMenu = splitAvailable || pinAvailable || canCopy || renameAvailable || Boolean(onDelete)
   const actionWidthClassName = showMenu ? "w-7" : "w-0"
-  const statusWidthClassName = ownerLabel ? "w-auto max-w-28 gap-1" : attentionBadge || working ? "w-[88px]" : actionWidthClassName
+  const showWorkingBadge = working && !activeDot
+  const statusWidthClassName = ownerLabel ? "w-auto max-w-28 gap-1" : attentionBadge || showWorkingBadge ? "w-[88px]" : actionWidthClassName
   const rename = useInlineSessionRename({
     sessionId: session.id,
     title,
@@ -149,7 +150,7 @@ export function AppSessionRow({
               >
                 {attentionBadge.label}
               </span>
-            ) : working ? (
+            ) : showWorkingBadge ? (
               <span
                 data-boring-workspace-part="app-session-badge"
                 data-boring-badge="working"

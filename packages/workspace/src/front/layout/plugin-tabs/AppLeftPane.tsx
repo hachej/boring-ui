@@ -232,6 +232,11 @@ export function AppLeftPane({
   const pinnedSet = useMemo(() => new Set(normalizedPinnedSessionIds), [normalizedPinnedSessionIds])
   const workingSessionIds = useWorkingSessionIds(sessions)
   const agentTreeEnabled = agents.length > 0
+  const [agentFilter, setAgentFilter] = useState("")
+  const filteredAgents = useMemo(() => {
+    const query = agentFilter.trim().toLocaleLowerCase()
+    return query ? agents.filter((agent) => agent.label.toLocaleLowerCase().includes(query)) : agents
+  }, [agentFilter, agents])
   const [expandedAgentIds, setExpandedAgentIds] = useState<ReadonlySet<string>>(() => new Set())
   useEffect(() => {
     if (!selectedAgentTypeId) return
@@ -336,6 +341,7 @@ export function AppLeftPane({
       : isActiveProjectSession && openSet.has(sessionKey)
         ? "open"
         : "normal"
+    const working = isActiveProjectSession && workingSessionIds.has(sessionKey)
     return (
       <AppSessionRow
         key={sessionKey}
@@ -347,10 +353,10 @@ export function AppLeftPane({
         // A session from another project switches to that workspace instead.
         canSplit={isActiveProjectSession}
         canPin={isActiveProjectSession}
-        working={isActiveProjectSession && workingSessionIds.has(sessionKey)}
+        working={working}
         attentionBadge={isActiveProjectSession ? sessionBadges.get(sessionKey) : undefined}
         activeDot={agentTreeEnabled}
-        activeDotActive={isActiveProjectSession && sessionKey === normalizedActiveSessionId}
+        activeDotActive={working}
         compact={agentTreeEnabled && !pinned}
         ownerLabel={showOwnerLabel && session.agentTypeId ? agentLabelById.get(session.agentTypeId) : undefined}
         onSwitch={isActiveProjectSession
@@ -377,7 +383,7 @@ export function AppLeftPane({
       />
     )
   }
-  const renderAgentTree = (showSessions: boolean) => agents.map((agent) => {
+  const renderAgentTree = (showSessions: boolean) => filteredAgents.map((agent) => {
     const ownedSessions = sessionsByAgent.get(agent.agentTypeId) ?? []
     const totalSessionCount = sessionCountByAgent.get(agent.agentTypeId) ?? 0
     const expanded = showSessions && expandedAgentIds.has(agent.agentTypeId)
@@ -575,11 +581,21 @@ export function AppLeftPane({
               ) : null}
               {agentTreeEnabled ? (
                 <section aria-label="Agents" className="space-y-0.5">
-                  <div className="flex items-center justify-between px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
-                    <span>Agents</span>
-                    <span className="font-normal normal-case tracking-normal text-muted-foreground">{agents.length} {agents.length === 1 ? "seat" : "seats"}</span>
+                  <div className="flex items-center justify-between gap-3 px-2 pb-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">Agents</span>
+                    <label className="relative min-w-0 flex-1">
+                      <Search className="pointer-events-none absolute left-1.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/65" strokeWidth={1.75} aria-hidden="true" />
+                      <input
+                        type="search"
+                        value={agentFilter}
+                        onChange={(event) => setAgentFilter(event.target.value)}
+                        aria-label="Filter Agents"
+                        placeholder="Filter Agents"
+                        className="h-6 w-full rounded-md border border-border/60 bg-transparent pl-6 pr-2 text-[11px] font-normal tracking-normal text-foreground outline-none placeholder:text-muted-foreground/55 focus:border-ring/60 focus:ring-1 focus:ring-ring/25"
+                      />
+                    </label>
                   </div>
-                  {renderAgentTree(true)}
+                  {filteredAgents.length > 0 ? renderAgentTree(true) : <div className="px-2 py-2 text-[11px] text-muted-foreground">No matching Agents.</div>}
                 </section>
               ) : (
                 <SessionSubSection title={pinnedSessions.length > 0 ? "Recent" : undefined} empty={sessionsLoading ? "Loading chats…" : "No chats yet."}>

@@ -16,7 +16,8 @@ function snapshot(requestFailures: AgentSidebarHardGateSnapshot["requestFailures
     sidebar: {
       agentCount: 2,
       agentHeading: "Agents",
-      agentSeatSummary: "2 seats",
+      agentSeatSummary: null,
+      agentFilterCount: 1,
       legacyFilterCount: 0,
       visibleActionCount: 0,
       visibleAgentCountLabels: 2,

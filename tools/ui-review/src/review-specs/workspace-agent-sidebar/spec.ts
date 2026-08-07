@@ -117,6 +117,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
             agentCount: agentTrees.length,
             agentHeading: text('section[aria-label="Agents"] > div > span:first-child'),
             agentSeatSummary: text('section[aria-label="Agents"] > div span:last-child'),
+            agentFilterCount: document.querySelectorAll('[aria-label="Filter Agents"]').length,
             legacyFilterCount: document.querySelectorAll('[aria-label="Filter chats by Agent"]').length,
             visibleActionCount: actionButtons.filter(visible).length,
             visibleAgentCountLabels: [...document.querySelectorAll('[data-boring-agent-session-count="true"]')].filter(visible).length,

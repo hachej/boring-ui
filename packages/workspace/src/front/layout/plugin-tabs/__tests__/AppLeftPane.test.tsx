@@ -89,10 +89,12 @@ describe("AppLeftPane", () => {
     expect(nestedAlphaRow?.querySelector(".app-left-session-trailing svg")).toBeInTheDocument()
     const pinnedAlphaRow = screen.getAllByText("Alpha session")[0]!.closest('[data-boring-workspace-part="app-session-row"]')
     expect(pinnedAlphaRow).toHaveTextContent("Alpha")
+    expect(screen.queryByTitle("Active session")).not.toBeInTheDocument()
     act(() => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
       detail: { sessionId: "alpha-one", agentTypeId: "alpha", working: true },
     })))
-    expect(pinnedAlphaRow).toHaveTextContent("working")
+    expect(screen.getAllByTitle("Active session")).toHaveLength(2)
+    expect(pinnedAlphaRow).not.toHaveTextContent("working")
     expect(pinnedAlphaRow).toHaveTextContent("Alpha")
     expect(screen.getAllByText("Alpha").length).toBeGreaterThan(1)
     await waitFor(() => expect(screen.getAllByText("Alpha session")).toHaveLength(2))
@@ -113,6 +115,11 @@ describe("AppLeftPane", () => {
 
     await user.click(screen.getByRole("button", { name: "Expand Boring Beta; 1 session" }))
     expect(screen.getByText("Beta session")).toBeInTheDocument()
+
+    const filter = screen.getByRole("searchbox", { name: "Filter Agents" })
+    await user.type(filter, "beta")
+    expect(screen.queryByText("Alpha", { selector: ".app-left-agent-row span" })).not.toBeInTheDocument()
+    expect(screen.getByText("Beta", { selector: ".app-left-agent-row span" })).toBeInTheDocument()
   })
 
   it("keeps the Agent controls in single-Agent and multi-project modes", () => {

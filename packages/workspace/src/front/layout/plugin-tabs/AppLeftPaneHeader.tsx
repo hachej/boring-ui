@@ -14,7 +14,7 @@ export function AppLeftPaneHeader({
   showBrand?: boolean
 }) {
   const title = appTitle || "Boring UI"
-  const workspace = topSlot ?? (workspaceLabel ? <span className="truncate">{workspaceLabel}</span> : null)
+  const workspace = topSlot ?? (!showBrand && workspaceLabel ? <span className="truncate">{workspaceLabel}</span> : null)
 
   return (
     <div className="flex h-[50px] shrink-0 items-center border-b border-border/50 px-2 pr-3" data-boring-workspace-part="app-left-header">

@@ -6,7 +6,7 @@ import {
 } from "../../core/contracts"
 import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 
-export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v1"
+export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v2"
 
 const KNOWN_ABORTED_REQUESTS: Array<{
   rationale: string
@@ -45,6 +45,7 @@ export interface AgentSidebarHardGateSnapshot extends UiReviewBrowserErrors {
     agentCount: number
     agentHeading: string | null
     agentSeatSummary: string | null
+    agentFilterCount: number
     legacyFilterCount: number
     visibleActionCount: number
     visibleAgentCountLabels: number
@@ -81,7 +82,7 @@ export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnap
   const agentNavigationExpected = snapshot.checkpoint !== "agent-details" || !snapshot.viewport.mobile
   const surfaceReady = snapshot.checkpoint === "agent-details" ? state.detailOverlayCount === 1 : state.agentCount === 2
   const statePassed = surfaceReady
-    && (!agentNavigationExpected || (state.agentCount === 2 && state.agentHeading === "Agents" && state.agentSeatSummary === "2 seats"))
+    && (!agentNavigationExpected || (state.agentCount === 2 && state.agentHeading === "Agents" && state.agentFilterCount === 1))
     && state.legacyFilterCount === 0
     && (snapshot.checkpoint !== "hover-actions" || state.visibleActionCount >= 4)
     && (snapshot.checkpoint !== "expanded-sessions" || (state.expandedRegionCount >= 2 && state.guideCount >= 2))

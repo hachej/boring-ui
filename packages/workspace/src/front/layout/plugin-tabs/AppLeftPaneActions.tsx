@@ -171,7 +171,7 @@ export function AgentChatActions({
   ].filter((action): action is NonNullable<typeof action> => Boolean(action))
 
   return (
-    <span className="app-left-agent-actions pointer-events-none flex shrink-0 items-center opacity-0">
+    <span className="app-left-agent-actions pointer-events-none flex w-0 shrink-0 items-center overflow-hidden opacity-0">
       {actions.map((action) => (
         <button
           key={action.label}

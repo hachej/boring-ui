@@ -69,6 +69,11 @@ import {
 import { startSessionActivityStream } from "../../front/sessionActivity"
 
 const AGENT_OVERLAY_PREFIX = "agent-details:"
+const NATIVE_SESSION_UUID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
+
+function provisionalSessionTitle(sessionId: string, defaultTitle: string): string {
+  return sessionId === "default" || NATIVE_SESSION_UUID_PATTERN.test(sessionId) ? defaultTitle : sessionId
+}
 
 function agentOverlayId(agentTypeId: string): string {
   return `${AGENT_OVERLAY_PREFIX}${encodeURIComponent(agentTypeId)}`
@@ -2170,7 +2175,11 @@ export function WorkspaceAgentFront<
     const sessionRef = workspaceSessionRefFromKey(id)
     return {
       id,
-      title: sessionTitleById.get(id) ?? (sessionRef.sessionId === "default" ? defaultSessionTitle : sessionRef.sessionId),
+      // Never expose a raw native UUID while list metadata catches up. New
+      // sessions start with the default title and adopt their real title as
+      // soon as the authoritative session row arrives. Human-readable custom
+      // ids remain useful provisional labels for embedded providers.
+      title: sessionTitleById.get(id) ?? provisionalSessionTitle(sessionRef.sessionId, defaultSessionTitle),
       panel: "chat",
       params: makeCenterParams(id),
     }
