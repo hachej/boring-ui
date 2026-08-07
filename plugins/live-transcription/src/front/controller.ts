@@ -291,7 +291,7 @@ export class LiveTranscriptBrowserController {
     } catch (error) {
       if (error instanceof LiveAttachCancelledError) {
         try {
-          await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/${encodeURIComponent(started.liveSessionId)}/interrupt`, { reason: "cancelled_before_attachment" })
+          await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/${encodeURIComponent(started.liveSessionId)}/interrupt`, { reason: "attachment_failed" })
         } catch {}
         await this.cleanup(started.liveSessionId)
         liveTranscriptBrowserState.set({ phase: "idle" })

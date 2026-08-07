@@ -81,7 +81,8 @@ class LeaseControllerTests(unittest.TestCase):
         controller = MODULE.LeaseController(provider, lambda: True, idle_grace=60)
         acquired = []
         try:
-            controller.stop_after = time.monotonic()
+            with controller.lock:
+                controller.stop_after = time.monotonic()
             stopping = threading.Thread(target=controller._stop_until_verified)
             stopping.start()
             self.assertTrue(stop_entered.wait(1))

@@ -201,7 +201,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self._send(401, {"error": "unauthorized"})
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if length < 0 or length > 4096:
+            if length < 0:
+                return self._send(400, {"error": "invalid content length"})
+            if length > 4096:
                 return self._send(413, {"error": "request too large"})
             body = json.loads(self.rfile.read(length) or b"{}")
             if self.path == "/v1/leases/acquire":
@@ -250,7 +252,7 @@ def tcp_ready_targets(raw_targets: str, auth_entries: list[dict[str, str]]) -> C
 
     def ready() -> bool:
         for target, auth in zip(targets, auth_entries):
-            if target.scheme != "ws" or target.hostname not in {"127.0.0.1", "localhost"} or not target.port:
+            if target.scheme != "ws" or target.hostname != "127.0.0.1" or not target.port:
                 return False
             key = base64.b64encode(os.urandom(16)).decode()
             path = target.path + (("?" + target.query) if target.query else "")
