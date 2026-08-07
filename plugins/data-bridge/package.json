@@ -67,7 +67,7 @@
     "@hachej/boring-workspace": "workspace:*",
     "@perspective-dev/client": "5.0.0",
     "tsup": "^8.4.0",
-    "typescript": "~7.0.2",
+    "typescript": "~6.0.3",
     "vitest": "^4.1.9"
   },
   "dependencies": {}
