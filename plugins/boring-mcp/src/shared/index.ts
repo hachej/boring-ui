@@ -16,10 +16,21 @@ export const MCP_ERROR_CODES = {
   SECRET_LEAK_GUARD: "MCP_SECRET_LEAK_GUARD",
   INPUT_INVALID: "MCP_INPUT_INVALID",
   RESOURCE_URI_INVALID: "MCP_RESOURCE_URI_INVALID",
+  USER_REGISTERED_SOURCE_DISABLED: "MCP_USER_REGISTERED_SOURCE_DISABLED",
+  USER_REGISTERED_ENDPOINT_SCHEME_INVALID: "MCP_USER_REGISTERED_ENDPOINT_SCHEME_INVALID",
+  USER_REGISTERED_ENDPOINT_HOST_BLOCKED: "MCP_USER_REGISTERED_ENDPOINT_HOST_BLOCKED",
+  USER_REGISTERED_ENDPOINT_CREDENTIALS_INVALID: "MCP_USER_REGISTERED_ENDPOINT_CREDENTIALS_INVALID",
+  USER_REGISTERED_ENDPOINT_TRANSPORT_INVALID: "MCP_USER_REGISTERED_ENDPOINT_TRANSPORT_INVALID",
 } as const
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[keyof typeof MCP_ERROR_CODES]
-export type McpProviderId = "notion" | "airtable" | (string & {})
+/**
+ * "user-registered" is an explicit discriminator for caller-supplied MCP
+ * endpoints (see {@link McpUserRegisteredSourceConfig}), distinct from the
+ * untyped `(string & {})` escape hatch used for forward-compatible provider
+ * ids. It never appears in {@link DEFAULT_MCP_PROVIDER_TEMPLATES}.
+ */
+export type McpProviderId = "notion" | "airtable" | "user-registered" | (string & {})
 export type McpTransport = "streamable-http"
 export type McpSourceStatus = "connected" | "expired" | "revoked" | "error" | "unconfigured"
 export type McpToolRisk = "read" | "write" | "admin" | "unknown"
@@ -257,6 +268,142 @@ export const AIRTABLE_MCP_TEMPLATE: McpProviderTemplate = {
 }
 
 export const DEFAULT_MCP_PROVIDER_TEMPLATES = [NOTION_MCP_TEMPLATE, AIRTABLE_MCP_TEMPLATE] as const
+
+/**
+ * A user-supplied MCP server registration. This is the escape hatch for
+ * endpoints outside {@link DEFAULT_MCP_PROVIDER_TEMPLATES} — no credential
+ * value ever lives here (see plan #1011: credential custody is a separate,
+ * currently-blocked slice). `headerNames` only records which header keys the
+ * transport should attach at call time from wherever credentials eventually
+ * come from.
+ *
+ * `enabled` is a required, explicit opt-in: {@link createUserRegisteredMcpProviderTemplate}
+ * default-denies (`USER_REGISTERED_SOURCE_DISABLED`) unless it is `true`. A
+ * user-registered source is never admitted implicitly.
+ */
+export interface McpUserRegisteredSourceConfig {
+  enabled: boolean
+  endpoint: string
+  displayName: string
+  transport?: McpTransport
+  headerNames?: string[]
+  allowedTools?: string[]
+  deniedTools?: string[]
+  allowedResourceUriPrefixes?: string[]
+}
+
+const BLOCKED_HOSTNAME_SUFFIXES = [".local", ".internal", ".localhost"]
+const BLOCKED_HOSTNAME_EXACT = new Set(["localhost", "metadata.google.internal"])
+
+function ipv4OctetsFromHostname(hostname: string): number[] | undefined {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname)
+  if (!match) return undefined
+  const octets = match.slice(1, 5).map(Number)
+  return octets.every((octet) => octet >= 0 && octet <= 255) ? octets : undefined
+}
+
+function isBlockedIpv4(octets: number[]): boolean {
+  const [a, b] = octets
+  if (a === 127) return true // loopback
+  if (a === 10) return true // private
+  if (a === 0) return true // "this network"
+  if (a === 169 && b === 254) return true // link-local + cloud metadata service (169.254.169.254)
+  if (a === 172 && b >= 16 && b <= 31) return true // private
+  if (a === 192 && b === 168) return true // private
+  if (a === 100 && b >= 64 && b <= 127) return true // carrier-grade NAT
+  return false
+}
+
+function isBlockedIpv6(hostname: string): boolean {
+  const normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase()
+  if (normalized === "::1") return true // loopback
+  if (normalized === "::") return true
+  if (normalized.startsWith("fe80:")) return true // link-local
+  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true // unique local
+  if (normalized.startsWith("::ffff:")) {
+    const embedded = ipv4OctetsFromHostname(normalized.slice("::ffff:".length))
+    if (embedded && isBlockedIpv4(embedded)) return true
+  }
+  return false
+}
+
+function isBlockedHostname(hostname: string): boolean {
+  const lower = hostname.toLowerCase()
+  if (BLOCKED_HOSTNAME_EXACT.has(lower)) return true
+  if (BLOCKED_HOSTNAME_SUFFIXES.some((suffix) => lower.endsWith(suffix))) return true
+  const ipv4 = ipv4OctetsFromHostname(lower)
+  if (ipv4) return isBlockedIpv4(ipv4)
+  if (lower.includes(":")) return isBlockedIpv6(lower)
+  return false
+}
+
+/**
+ * SSRF-safe validation for a user-registered MCP endpoint. Enforces:
+ * https-only, no credentials embedded in the URL, and a blocklist covering
+ * loopback / link-local / private-network / cloud-metadata-service hosts.
+ * Throws {@link McpError} with a stable code per rejection reason.
+ */
+export function validateUserRegisteredMcpEndpoint(endpoint: string, transport?: McpTransport): URL {
+  if (transport && transport !== "streamable-http") {
+    throw new McpError(
+      MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_TRANSPORT_INVALID,
+      "User-registered MCP sources only support the streamable-http transport",
+    )
+  }
+  let url: URL
+  try {
+    url = new URL(endpoint)
+  } catch {
+    throw new McpError(MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_SCHEME_INVALID, "Invalid MCP endpoint URL")
+  }
+  if (url.protocol !== "https:") {
+    throw new McpError(
+      MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_SCHEME_INVALID,
+      "User-registered MCP endpoints must use https",
+    )
+  }
+  if (url.username || url.password) {
+    throw new McpError(
+      MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_CREDENTIALS_INVALID,
+      "User-registered MCP endpoints must not embed credentials in the URL",
+    )
+  }
+  if (isBlockedHostname(url.hostname)) {
+    throw new McpError(
+      MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED,
+      "User-registered MCP endpoint host is not allowed (loopback, link-local, private, or metadata-service address)",
+    )
+  }
+  return url
+}
+
+/**
+ * Builds a {@link McpProviderTemplate} for a user-registered source. This is
+ * the plugin's single admission point for the escape hatch: it is
+ * default-deny (throws `USER_REGISTERED_SOURCE_DISABLED` unless
+ * `config.enabled === true`) and always runs the endpoint through
+ * {@link validateUserRegisteredMcpEndpoint} before returning a template,
+ * regardless of caller. It never mutates {@link DEFAULT_MCP_PROVIDER_TEMPLATES}.
+ */
+export function createUserRegisteredMcpProviderTemplate(config: McpUserRegisteredSourceConfig): McpProviderTemplate {
+  if (!config.enabled) {
+    throw new McpError(
+      MCP_ERROR_CODES.USER_REGISTERED_SOURCE_DISABLED,
+      "User-registered MCP sources must be explicitly enabled",
+    )
+  }
+  const url = validateUserRegisteredMcpEndpoint(config.endpoint, config.transport)
+  return {
+    id: "user-registered",
+    displayName: config.displayName,
+    endpoint: url.toString(),
+    transport: "streamable-http",
+    readOnlyDefault: true,
+    allowedTools: config.allowedTools ?? [],
+    deniedTools: config.deniedTools ?? ["create_*", "update_*", "delete_*", "publish_*", "admin_*"],
+    allowedResourceUriPrefixes: config.allowedResourceUriPrefixes,
+  }
+}
 
 export function getMcpProviderTemplate(
   provider: string,
