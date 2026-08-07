@@ -8,6 +8,7 @@ import { LiveTranscriptError, liveTranscriptErrorPayload } from "./errors"
 import { LiveTranscriptManager, type LiveTranscriptManagerOptions } from "./manager"
 import { KyutaiComposerManager } from "./kyutaiComposer"
 import { transcribeShortDictation } from "./dictation"
+import { ComputeLifecycleClient, ComputeLifecycleCoordinator, validateLifecycleUrl } from "./computeLifecycle"
 
 export interface LiveTranscriptServerPluginOptions {
   dispatcherResolver: WorkspaceAgentDispatcherResolver
@@ -21,6 +22,9 @@ export interface LiveTranscriptServerPluginOptions {
   /** Optional raw Sortformer `/v1/diarize` endpoint used only to label `/live` Kyutai words. */
   diarizerUrl?: string
   diarizerBearerToken?: string
+  /** Optional authenticated loopback service that leases on-demand transcription compute. */
+  lifecycleUrl?: string
+  lifecycleBearerToken?: string
   setupTimeoutMs?: number
   drainTimeoutMs?: number
   maxDurationMs?: number
@@ -35,6 +39,10 @@ export interface LiveTranscriptServerPluginOptions {
 export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPluginOptions): WorkspaceServerPlugin {
   validateLocalAuthority(options.authority, options.upstreamUrl, options.upstreamProvider)
   if (options.diarizerUrl) validateLocalAuthority(options.authority, options.diarizerUrl, "sortformer")
+  if (options.lifecycleUrl && !options.lifecycleBearerToken) throw new LiveTranscriptError("live_transcript_local_only", "Lifecycle bearer token is required.", 500)
+  const lifecycle = new ComputeLifecycleCoordinator(options.lifecycleUrl
+    ? new ComputeLifecycleClient(validateLifecycleUrl(options.lifecycleUrl), options.lifecycleBearerToken!)
+    : undefined)
   const manager = new LiveTranscriptManager({
     dispatcherResolver: options.dispatcherResolver,
     agentTypeId: options.agentTypeId,
@@ -62,6 +70,7 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
         maxDurationMs: options.maxDurationMs,
       })
     : undefined
+  lifecycle.setActiveChecker(() => Boolean(manager.getAgentReloadBlock()) || Boolean(composerManager?.isActive))
 
   return defineServerPlugin({
     id: "live-transcription",
@@ -70,13 +79,38 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
     routes: async (app) => {
       await app.register(fastifyWebsocket)
 
+      app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/compute/prepare`, async (request, reply) => withControl(request, reply, options.authority, async () => {
+        const body = strictRecord(request.body, ["kind"])
+        if (body.kind !== "live" && body.kind !== "composer") throw new LiveTranscriptError("live_transcript_disabled", "Capture kind was invalid.", 400)
+        return lifecycle.prepare(body.kind)
+      }))
+      app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/compute/status`, async (request, reply) => withControl(request, reply, options.authority, async () => {
+        const body = strictRecord(request.body, ["preparationId"])
+        if (typeof body.preparationId !== "string") throw new LiveTranscriptError("live_transcript_disabled", "GPU preparation id was invalid.", 400)
+        return lifecycle.status(body.preparationId)
+      }))
+      app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/compute/cancel`, async (request, reply) => withControl(request, reply, options.authority, async () => {
+        const body = strictRecord(request.body, ["preparationId"])
+        if (typeof body.preparationId !== "string") throw new LiveTranscriptError("live_transcript_disabled", "GPU preparation id was invalid.", 400)
+        await lifecycle.cancel(body.preparationId)
+        return { cancelled: true }
+      }))
+
       app.post(LIVE_TRANSCRIPT_BASE_PATH, async (request, reply) => withControl(request, reply, options.authority, async () => {
-        const body = strictRecord(request.body, ["sessionId", "title"])
+        const body = strictRecord(request.body, ["sessionId", "title", "preparationId"])
         if (typeof body.sessionId !== "string" || (body.title !== undefined && typeof body.title !== "string")) {
           throw new LiveTranscriptError("live_transcript_session_not_found", "A valid originating Pi session is required.", 400)
         }
         if (composerManager?.isActive) throw new LiveTranscriptError("live_transcript_already_active", "A composer microphone stream is already active.", 409)
-        return await manager.start(request, { sessionId: body.sessionId, title: body.title as string | undefined })
+        const lease = lifecycle.take(requirePreparationId(body.preparationId, lifecycle.enabled), "live")
+        try {
+          const result = await manager.start(request, { sessionId: body.sessionId, title: body.title as string | undefined })
+          lifecycle.adopt(lease)
+          return result
+        } catch (error) {
+          await lifecycle.release(lease)
+          throw error
+        }
       }))
 
       app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/dictate`, async (request, reply) => withControl(request, reply, options.authority, async () => {
@@ -97,10 +131,18 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
       }))
 
       app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/composer`, async (request, reply) => withControl(request, reply, options.authority, async () => {
-        strictEmptyBody(request.body)
+        const body = strictRecord(request.body, ["preparationId"])
         if (!composerManager) throw new LiveTranscriptError("live_transcript_disabled", "Streaming composer dictation requires Kyutai.", 409)
         if (manager.getAgentReloadBlock()) throw new LiveTranscriptError("live_transcript_already_active", "A live transcript is already active.", 409)
-        return composerManager.start()
+        const lease = lifecycle.take(requirePreparationId(body.preparationId, lifecycle.enabled), "composer")
+        try {
+          const result = composerManager.start()
+          lifecycle.adopt(lease)
+          return result
+        } catch (error) {
+          await lifecycle.release(lease)
+          throw error
+        }
       }))
 
       app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/composer/:id/stop`, async (request, reply) => withControl(request, reply, options.authority, async () => {
@@ -171,6 +213,7 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
       app.addHook("onClose", async () => {
         composerManager?.close()
         await manager.close()
+        await lifecycle.close()
       })
     },
   })
@@ -200,6 +243,12 @@ function strictRecord(value: unknown, allowedKeys: string[]): Record<string, unk
     throw new LiveTranscriptError("live_transcript_disabled", "Live transcript request body contained unsupported fields.", 400)
   }
   return record
+}
+
+function requirePreparationId(value: unknown, required: boolean): string {
+  if (!required && value === undefined) return "disabled"
+  if (typeof value !== "string") throw new LiveTranscriptError("live_transcript_upstream_failed", "Transcription GPU preparation is required.", 409)
+  return value
 }
 
 function strictEmptyBody(value: unknown): void {

@@ -38,6 +38,7 @@ export class LiveTranscriptBrowserController {
   private shortBytes = 0
   private shortLimitReached = false
   private composerStreamId: string | undefined
+  private preparationId: string | undefined
   private streamingSampleRate: number = LIVE_PCM_SAMPLE_RATE
 
   setStreamingSampleRate(sampleRate: number): void {
@@ -173,10 +174,12 @@ export class LiveTranscriptBrowserController {
   async startComposer(onWord: (word: string) => void): Promise<void> {
     if (this.active || this.composerStreamId || this.shortRecorder || this.capture) throw new Error("Another microphone recording is already active.")
     liveTranscriptBrowserState.set({ recordingKind: "composer", phase: "starting" })
+    const generation = ++this.attachGeneration
     try {
-      const started = await postJson<{ composerStreamId: string; socketNonce: string }>(`${LIVE_TRANSCRIPT_BASE_PATH}/composer`, {})
+      const preparationId = await this.prepareCompute("composer", generation)
+      const started = await postJson<{ composerStreamId: string; socketNonce: string }>(`${LIVE_TRANSCRIPT_BASE_PATH}/composer`, { preparationId })
+      this.preparationId = undefined
       this.composerStreamId = started.composerStreamId
-      const generation = ++this.attachGeneration
       await this.attachStream({
         socketNonce: started.socketNonce,
         socketPath: `${LIVE_TRANSCRIPT_BASE_PATH}/composer/${encodeURIComponent(started.composerStreamId)}/audio`,
@@ -186,6 +189,9 @@ export class LiveTranscriptBrowserController {
       })
       liveTranscriptBrowserState.set({ recordingKind: "composer", phase: "recording", startedAt: Date.now() })
     } catch (error) {
+      const preparationId = this.preparationId
+      this.preparationId = undefined
+      if (preparationId) try { await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/compute/cancel`, { preparationId }) } catch {}
       const id = this.composerStreamId
       if (id) {
         try { await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/composer/${encodeURIComponent(id)}/stop`, {}) } catch {}
@@ -198,6 +204,14 @@ export class LiveTranscriptBrowserController {
 
   async stopComposer(): Promise<void> {
     const id = this.composerStreamId
+    if (!id && (this.preparationId || liveTranscriptBrowserState.getSnapshot().phase === "starting")) {
+      this.attachGeneration += 1
+      const preparationId = this.preparationId
+      this.preparationId = undefined
+      if (preparationId) try { await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/compute/cancel`, { preparationId }) } catch {}
+      liveTranscriptBrowserState.set({ phase: "idle" })
+      return
+    }
     if (!id) return
     this.stopping = true
     this.attachGeneration += 1
@@ -224,13 +238,24 @@ export class LiveTranscriptBrowserController {
       return "live_transcript_already_active: A microphone recording is already active."
     }
     let started: LiveTranscriptStartResponse
+    const attachGeneration = ++this.attachGeneration
+    liveTranscriptBrowserState.set({ recordingKind: "live", phase: "starting" })
     try {
+      const preparationId = await this.prepareCompute("live", attachGeneration)
       started = await postJson<LiveTranscriptStartResponse>(LIVE_TRANSCRIPT_BASE_PATH, {
         sessionId,
+        preparationId,
         ...(title?.trim() ? { title: title.trim() } : {}),
       })
+      this.preparationId = undefined
     } catch (error) {
-      return formatError(error)
+      const preparationId = this.preparationId
+      this.preparationId = undefined
+      if (preparationId) try { await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/compute/cancel`, { preparationId }) } catch {}
+      if (error instanceof LiveAttachCancelledError) return "Live transcript stopped during GPU preparation."
+      const message = formatError(error)
+      liveTranscriptBrowserState.set({ recordingKind: "live", phase: "error", error: message })
+      return message
     }
     this.active = started
     liveTranscriptBrowserState.set({
@@ -247,7 +272,6 @@ export class LiveTranscriptBrowserController {
       params: { kind: "workspace.open.path", target: started.transcriptPath },
     })
 
-    const attachGeneration = ++this.attachGeneration
     try {
       await this.attachLive(started, attachGeneration)
       liveTranscriptBrowserState.set({
@@ -281,6 +305,14 @@ export class LiveTranscriptBrowserController {
 
   async stop(): Promise<string> {
     const active = this.active
+    if (!active && (this.preparationId || liveTranscriptBrowserState.getSnapshot().phase === "starting")) {
+      this.attachGeneration += 1
+      const preparationId = this.preparationId
+      this.preparationId = undefined
+      if (preparationId) try { await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/compute/cancel`, { preparationId }) } catch {}
+      liveTranscriptBrowserState.set({ phase: "idle" })
+      return "Live transcript stopped during GPU preparation."
+    }
     if (!active) return "live_transcript_not_active: No live transcript is active."
     this.stopping = true
     this.attachGeneration += 1
@@ -380,6 +412,30 @@ export class LiveTranscriptBrowserController {
     }
     if (subcommand === "status" && !remainder) return await this.status()
     return "Usage: /live start [optional title] | /live stop | /live status"
+  }
+
+  private async prepareCompute(kind: "live" | "composer", generation: number): Promise<string> {
+    const prepared = await postJson<{ preparationId: string; state: "warming" | "ready" | "failed"; error?: string }>(
+      `${LIVE_TRANSCRIPT_BASE_PATH}/compute/prepare`,
+      { kind },
+    )
+    this.preparationId = prepared.preparationId
+    const deadline = Date.now() + 5 * 60_000
+    let status = prepared
+    while (status.state === "warming" && Date.now() < deadline && generation === this.attachGeneration) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000))
+      if (generation !== this.attachGeneration) break
+      status = await postJson<typeof prepared>(`${LIVE_TRANSCRIPT_BASE_PATH}/compute/status`, { preparationId: prepared.preparationId })
+    }
+    if (generation !== this.attachGeneration) {
+      this.preparationId = undefined
+      try { await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/compute/cancel`, { preparationId: prepared.preparationId }) } catch {}
+      throw new LiveAttachCancelledError()
+    }
+    if (status.state === "ready") return prepared.preparationId
+    this.preparationId = undefined
+    try { await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/compute/cancel`, { preparationId: prepared.preparationId }) } catch {}
+    throw new Error(status.error ?? "Transcription GPU did not become ready in time.")
   }
 
   private async attachLive(started: LiveTranscriptStartResponse, generation: number): Promise<void> {

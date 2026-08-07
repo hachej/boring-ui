@@ -34,15 +34,17 @@ describe("LiveTranscriptBrowserController live attachment", () => {
     vi.stubGlobal("navigator", { mediaDevices: { getUserMedia: vi.fn(() => streamPromise) } })
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      const payload = url.endsWith("/stop")
-        ? { liveSessionId: "live-1", transcriptPath: "live-transcripts/a.md", state: "complete" }
-        : {
-            liveSessionId: "live-1",
-            transcriptPath: "live-transcripts/a.md",
-            socketNonce: "nonce",
-            reviewIntervalMs: 60_000,
-            state: "setup",
-          }
+      const payload = url.endsWith("/compute/prepare")
+        ? { preparationId: "disabled", state: "ready" }
+        : url.endsWith("/stop")
+          ? { liveSessionId: "live-1", transcriptPath: "live-transcripts/a.md", state: "complete" }
+          : {
+              liveSessionId: "live-1",
+              transcriptPath: "live-transcripts/a.md",
+              socketNonce: "nonce",
+              reviewIntervalMs: 60_000,
+              state: "setup",
+            }
       return { ok: true, json: async () => payload } as Response
     }))
 
@@ -52,9 +54,9 @@ describe("LiveTranscriptBrowserController live attachment", () => {
     const stopping = controller.stop()
     resolveStream(stream)
 
-    await expect(stopping).resolves.toContain("Live transcript complete")
-    await expect(starting).resolves.toContain("stopped before microphone attachment")
-    expect(stopTrack).toHaveBeenCalledOnce()
+    await expect(stopping).resolves.toContain("stopped during GPU preparation")
+    await expect(starting).resolves.toContain("stopped during GPU preparation")
+    expect(stopTrack).not.toHaveBeenCalled()
     expect(liveTranscriptBrowserState.getSnapshot().phase).not.toBe("recording")
   })
 })
