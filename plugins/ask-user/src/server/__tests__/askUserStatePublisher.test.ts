@@ -198,3 +198,37 @@ describe("AskUserStatePublisher", () => {
     await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null, hintsBySession: {} }))
   }, 30_000)
 })
+
+describe("ask-user pending lifecycle", () => {
+  it("keeps a pending question alive until it is answered", async () => {
+    const store = await makeStore()
+    const runtime = new AskUserRuntime({ store })
+    const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
+    const question = await waitForPending(store, "s1")
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    await expect(store.getPending("s1")).resolves.not.toBeNull()
+    await waitForRuntimeWaiter(runtime, question!.questionId)
+    await runtime.submitAnswer(question!.questionId, "s1", { answer: "ok" })
+    await expect(pending).resolves.toMatchObject({ status: "answered" })
+  }, 30_000)
+
+  it("returns abort while the question is pending", async () => {
+    const store = await makeStore()
+    const runtime = new AskUserRuntime({ store })
+    const controller = new AbortController()
+    const pending = runtime.ask({ sessionId: "s1", title: "T", schema }, controller.signal)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    controller.abort()
+    await expect(pending).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
+  })
+
+  it("keeps a pending question alive before the runtime waiter is registered", async () => {
+    const store = await makeStore()
+    const runtime = new AskUserRuntime({ store })
+    const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
+    const question = await waitForPending(store, "s1")
+    await waitForRuntimeWaiter(runtime, question!.questionId)
+    await runtime.submitAnswer(question!.questionId, "s1", { answer: "ok" })
+    await expect(pending).resolves.toMatchObject({ status: "answered" })
+  }, 30_000)
+})

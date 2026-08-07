@@ -10,7 +10,15 @@
 import { createEventBus } from "./bus"
 import type { WorkspaceEventMap } from "./types"
 
-export const events = createEventBus<WorkspaceEventMap>()
+const WORKSPACE_EVENT_BUS_GLOBAL_KEY = "__BORING_WORKSPACE_EVENT_BUS_V1__" as const
+type WorkspaceEventBus = ReturnType<typeof createEventBus<WorkspaceEventMap>>
+const browserRealm = globalThis as typeof globalThis & {
+  [WORKSPACE_EVENT_BUS_GLOBAL_KEY]?: WorkspaceEventBus
+}
+
+/** Separately bundled plugin entrypoints must publish and subscribe through one browser-realm bus. */
+export const events = browserRealm[WORKSPACE_EVENT_BUS_GLOBAL_KEY]
+  ?? (browserRealm[WORKSPACE_EVENT_BUS_GLOBAL_KEY] = createEventBus<WorkspaceEventMap>())
 
 export {
   userMeta,

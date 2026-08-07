@@ -2,6 +2,8 @@ import type { BoringTaskAdapterSummary, BoringTaskBoardConfig, BoringTaskCard, B
 
 export interface BoringTaskSourceContext {
   workspaceId?: string
+  /** Trusted Workspace binding used by tools and Host-leased routes. */
+  workspace?: { readonly root: string }
   workspaceRoot?: string
 }
 
@@ -12,6 +14,7 @@ export interface BoringTaskSourceRuntime {
   getBoardConfig(ctx: BoringTaskSourceContext): Promise<BoringTaskBoardConfig> | BoringTaskBoardConfig
   listTasks(ctx: BoringTaskSourceContext): Promise<BoringTaskCard[]> | BoringTaskCard[]
   getTask?(ctx: BoringTaskSourceContext, input: BoringTaskGetInput): Promise<BoringTaskDetail | undefined> | BoringTaskDetail | undefined
+  getTaskCard?(ctx: BoringTaskSourceContext, taskId: string): Promise<BoringTaskCard | undefined> | BoringTaskCard | undefined
   moveTask?(ctx: BoringTaskSourceContext, input: BoringTaskMoveInput): Promise<BoringTaskCard> | BoringTaskCard
   deleteTask?(ctx: BoringTaskSourceContext, input: BoringTaskDeleteInput): Promise<void> | void
 }

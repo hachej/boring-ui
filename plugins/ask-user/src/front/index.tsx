@@ -6,6 +6,7 @@ import {
   postUiCommand,
   useWorkspaceAttention,
   useWorkspaceContext,
+  useWorkspaceContextOptional,
   workspaceComposerStopAppliesToSession,
   type PaneProps,
   type PluginProviderProps,
@@ -16,15 +17,21 @@ import { useEffect, useMemo, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import type { AskUserAnswerValue, AskUserQuestion } from "../shared/types"
 import { createQuestionsClient, QuestionsClientError } from "./client"
-import { pendingQuestionSnapshot, QuestionsRuntimeContext, isSessionOpen, sharedQuestionsStore, useQuestionsRuntime, type QuestionsRuntime } from "./runtime"
+import { createQuestionsStore, pendingQuestionSnapshot, QuestionsRuntimeContext, isSessionOpen, useQuestionsRuntime, type QuestionsRuntime } from "./runtime"
 import { useAskUserAttentionActions, useAskUserAttentionBlockers, useAskUserComposerStopCancel, useAskUserPendingRefresh } from "./providerHooks"
 import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton } from "./primitives"
 import { InboxOverlay } from "./inbox/InboxOverlay"
 import { isInboxAttentionBlocker } from "./inbox/attentionBlockerAdapter"
 
-function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, activeSessionId, openSessionIds, children }: PluginProviderProps) {
+function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, authScopeKey, activeSessionId, openSessionIds, children }: PluginProviderProps) {
+  const workspaceId = useWorkspaceContextOptional()?.workspaceId
+  const authIdentity = useMemo(
+    () => authScopeKey ?? JSON.stringify(Object.entries(authHeaders ?? {}).sort(([left], [right]) => left.localeCompare(right))),
+    [authHeaders, authScopeKey],
+  )
+  const store = useMemo(() => createQuestionsStore(), [agentTypeId, apiBaseUrl, authIdentity, workspaceId])
   const runtime = useMemo<QuestionsRuntime>(() => ({
-    ...sharedQuestionsStore,
+    ...store,
     agentTypeId,
     apiBaseUrl,
     authHeaders,
@@ -32,10 +39,10 @@ function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, activeSessionId
     openSessionIds,
     async refreshPending(sessionId) {
       const pending = await createQuestionsClient({ apiBaseUrl, headers: authHeaders }).pending(sessionId)
-      sharedQuestionsStore.setPending(pending, sessionId)
+      store.setPending(pending, sessionId)
       return pending
     },
-  }), [activeSessionId, agentTypeId, apiBaseUrl, authHeaders, openSessionIds])
+  }), [activeSessionId, agentTypeId, apiBaseUrl, authHeaders, openSessionIds, store])
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
   useAskUserAttentionBlockers(runtime, pendingSnapshot)
   useAskUserAttentionActions(runtime)
@@ -171,9 +178,13 @@ function InboxCountBadge() {
   if (count === 0) return null
   return <span data-boring-workspace-part="app-left-inbox-count" aria-label={`${count} inbox item${count === 1 ? "" : "s"}`} className="inline-flex min-w-5 items-center justify-center rounded-full bg-[color:var(--accent)] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white shadow-sm">{count > 99 ? "99+" : String(count)}</span>
 }
-function AskUserInboxOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
+function AskUserInboxOverlay({ onClose, params }: BoringFrontAppLeftOverlayProps) {
   const { workspaceId } = useWorkspaceContext()
-  return <InboxOverlay onClose={onClose} pinStorageKey={`boring-workspace:inbox-pins:${workspaceId ?? "workspace"}`} />
+  return <InboxOverlay
+    onClose={onClose}
+    initialItemId={params?.itemId}
+    pinStorageKey={`boring-workspace:inbox-pins:${workspaceId ?? "workspace"}`}
+  />
 }
 
 export interface CreateAskUserPluginOptions { appLeftInbox?: boolean }

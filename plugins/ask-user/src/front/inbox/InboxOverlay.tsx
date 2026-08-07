@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Inbox, MailOpen, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
-import { emitWorkspaceAttentionAction, useWorkspaceAttention, useAppLeftOverlayChrome, useWorkspacePluginClient, cn } from "@hachej/boring-workspace"
+import { HumanArtifactList, useWorkspaceAttention, useAppLeftOverlayChrome, cn } from "@hachej/boring-workspace"
 import { attentionBlockerToInboxItem, isInboxAttentionBlocker } from "./attentionBlockerAdapter"
 import { InboxFilterBar } from "./InboxFilterBar"
 import { InboxSection } from "./InboxSection"
@@ -15,10 +15,15 @@ import {
   type WorkspaceInboxItemViewModel,
 } from "./inboxItemModel"
 import { useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"
+import { useRelatedTasks } from "./taskProvenanceClient"
+import { useQuestionsRuntime } from "../runtime"
+import { useInboxSessionTitles } from "./sessionTitleClient"
+import { RelatedTaskList } from "./RelatedTaskList"
 
 export interface InboxOverlayProps {
   onClose: () => void
   pinStorageKey?: string
+  initialItemId?: string
 }
 
 function readPinnedIds(storageKey?: string): ReadonlySet<string> {
@@ -43,25 +48,40 @@ function writePinnedIds(storageKey: string | undefined, ids: ReadonlySet<string>
   }
 }
 
-export function InboxOverlay({ onClose, pinStorageKey }: InboxOverlayProps) {
+export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOverlayProps) {
   const { headerInsetStart, headerInsetEnd } = useAppLeftOverlayChrome()
   const { blockers } = useWorkspaceAttention()
   const shell = useWorkspaceInboxShell()
-  const pluginClient = useWorkspacePluginClient()
+  const runtime = useQuestionsRuntime()
   const [filter, setFilter] = useState<InboxFilter>("all")
   const [shellError, setShellError] = useState<string | null>(null)
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(initialItemId ?? null)
   const [pinnedIds, setPinnedIds] = useState<ReadonlySet<string>>(() => readPinnedIds(pinStorageKey))
   useEffect(() => {
     setPinnedIds(readPinnedIds(pinStorageKey))
   }, [pinStorageKey])
+  useEffect(() => {
+    if (initialItemId) setSelectedItemId(initialItemId)
+  }, [initialItemId])
   const sorted = useMemo(() => sortInboxItems(blockers.filter(isInboxAttentionBlocker).map(attentionBlockerToInboxItem)), [blockers])
   const filtered = useMemo(() => filterInboxItems(sorted, filter), [filter, sorted])
   const items = useMemo(() => mergeInboxPinnedState(filtered, pinnedIds), [filtered, pinnedIds])
   const pinnedItems = useMemo(() => items.filter((item) => item.pinned), [items])
   const unpinnedItems = useMemo(() => items.filter((item) => !item.pinned), [items])
-  const selectedItem = useMemo(() => items.find((item) => item.id === selectedItemId) ?? null, [items, selectedItemId])
-  const selectedBlocker = useMemo(() => selectedItem ? blockers.find((blocker) => blocker.id === selectedItem.id) : undefined, [blockers, selectedItem])
+  const inboxSessionIds = useMemo(() => sorted.flatMap((item) => (
+    item.agentTypeId === runtime.agentTypeId && item.sessionId ? [item.sessionId] : []
+  )), [runtime.agentTypeId, sorted])
+  const relatedTasks = useRelatedTasks({
+    apiBaseUrl: runtime.apiBaseUrl,
+    headers: runtime.authHeaders,
+    sessionIds: inboxSessionIds,
+  })
+  const sessionTitles = useInboxSessionTitles({
+    agentTypeId: runtime.agentTypeId,
+    apiBaseUrl: runtime.apiBaseUrl,
+    headers: runtime.authHeaders,
+    sessionIds: inboxSessionIds,
+  })
   const counts = useMemo(() => ({
     all: sorted.length,
     questions: filterInboxItems(sorted, "questions").length,
@@ -80,29 +100,23 @@ export function InboxOverlay({ onClose, pinStorageKey }: InboxOverlayProps) {
   const handleShellResult = useCallback((result: ReturnType<typeof shell.openInboxArtifact>) => {
     setShellError(result.success ? null : result.message)
   }, [])
-  const openArtifact = useCallback((item: WorkspaceInboxItemViewModel) => {
-    if (!item.artifact) {
-      setSelectedItemId(item.id)
-      setShellError(null)
-      return
-    }
-    const result = shell.openInboxArtifact(item)
-    handleShellResult(result)
-    setSelectedItemId(result.success ? null : item.id)
-  }, [handleShellResult, shell])
+  const openItem = useCallback((item: WorkspaceInboxItemViewModel) => {
+    setShellError(null)
+    setSelectedItemId((current) => current === item.id ? null : item.id)
+  }, [])
   const openChat = useCallback((item: WorkspaceInboxItemViewModel) => {
-    if (!item.sessionId) return
-    handleShellResult(shell.openDetachedChat({ agentTypeId: item.agentTypeId ?? pluginClient.agentTypeId, sessionId: item.sessionId }, { title: item.title }))
-  }, [handleShellResult, pluginClient.agentTypeId, shell])
-  const handleDetailAction = useCallback((actionId: string) => {
-    if (!selectedItem || !selectedBlocker) return
-    emitWorkspaceAttentionAction({ blockerId: selectedBlocker.id, actionId, blocker: selectedBlocker, sessionId: selectedItem.sessionId ?? undefined })
-    if (actionId === "open") {
-      if (selectedItem.artifact) openArtifact(selectedItem)
-      else setShellError("This inbox item has no artifact target.")
-    }
-  }, [openArtifact, selectedBlocker, selectedItem])
-
+    if (!item.agentTypeId || !item.sessionId) return
+    handleShellResult(shell.openDetachedChat({ agentTypeId: item.agentTypeId, sessionId: item.sessionId }, { title: item.title }))
+  }, [handleShellResult, shell])
+  const renderExpandedItem = useCallback((item: WorkspaceInboxItemViewModel) => {
+    const tasks = item.sessionId ? relatedTasks.get(item.sessionId) ?? [] : []
+    return (
+      <div className="px-4 py-3">
+        <HumanArtifactList artifacts={item.artifacts} onOpen={(artifact) => handleShellResult(shell.openInboxArtifact(item, artifact))} />
+        <RelatedTaskList tasks={tasks} className="mt-3" />
+      </div>
+    )
+  }, [handleShellResult, relatedTasks, shell])
   return (
     <div data-boring-workspace-part="inbox-overlay" className="flex h-full min-h-0 flex-col bg-background">
       <header className={cn(
@@ -128,32 +142,6 @@ export function InboxOverlay({ onClose, pinStorageKey }: InboxOverlayProps) {
 
       <InboxFilterBar filter={filter} counts={counts} onFilterChange={setFilter} />
       {shellError ? <div className="border-b border-border/60 bg-destructive/10 px-4 py-2 text-xs text-destructive">{shellError}</div> : null}
-      {selectedItem ? (
-        <div className="border-b border-border/60 bg-background px-4 py-3 text-xs">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="truncate font-medium text-foreground">{selectedItem.title}</div>
-              <div className="mt-1 line-clamp-2 text-muted-foreground">{selectedItem.description}</div>
-            </div>
-            <button type="button" className="shrink-0 text-muted-foreground hover:text-foreground" onClick={() => setSelectedItemId(null)}>Close</button>
-          </div>
-          {selectedItem.actions.length > 0 && selectedBlocker ? (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {selectedItem.actions.map((action) => (
-                <button
-                  key={action.id}
-                  type="button"
-                  className="rounded-md border border-border/80 bg-background px-2 py-1 text-[11px] font-medium hover:bg-muted/60"
-                  onClick={() => handleDetailAction(action.id)}
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)] py-2" aria-live="polite">
         {items.length === 0 ? (
           <div className="flex h-full min-h-[180px] items-center justify-center px-6 text-center text-sm text-muted-foreground">
@@ -165,8 +153,26 @@ export function InboxOverlay({ onClose, pinStorageKey }: InboxOverlayProps) {
           </div>
         ) : (
           <>
-            <InboxSection title="Pinned" items={pinnedItems} onTogglePinned={togglePinned} onOpenArtifact={openArtifact} onOpenChat={openChat} />
-            <InboxSection title="Inbox" items={unpinnedItems} onTogglePinned={togglePinned} onOpenArtifact={openArtifact} onOpenChat={openChat} />
+            <InboxSection
+              title="Pinned"
+              items={pinnedItems}
+              onTogglePinned={togglePinned}
+              onOpenArtifact={openItem}
+              onOpenChat={openChat}
+              expandedItemId={selectedItemId}
+              sessionTitles={sessionTitles}
+              renderExpanded={renderExpandedItem}
+            />
+            <InboxSection
+              title="Inbox"
+              items={unpinnedItems}
+              onTogglePinned={togglePinned}
+              onOpenArtifact={openItem}
+              onOpenChat={openChat}
+              expandedItemId={selectedItemId}
+              sessionTitles={sessionTitles}
+              renderExpanded={renderExpandedItem}
+            />
           </>
         )}
       </div>

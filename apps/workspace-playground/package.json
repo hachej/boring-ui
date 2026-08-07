@@ -24,8 +24,8 @@
     "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-diagram": "workspace:*",
     "@duckdb/node-api": "1.5.2-r.2",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "@hachej/boring-data-explorer": "workspace:*",
     "@hachej/boring-data-catalog": "workspace:*"
   },

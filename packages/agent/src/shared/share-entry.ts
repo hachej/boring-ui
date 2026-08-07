@@ -22,6 +22,7 @@
 import { z } from 'zod'
 
 import { ErrorCode } from './error-codes'
+import { safeRandomUUID } from './random-id'
 import { formatPath, type AgentSchemaIssue } from './schema-issue'
 import type { Workspace } from './workspace'
 
@@ -60,7 +61,7 @@ export const OpaqueShareLocatorIdSchema = z
 
 /** Mints a fresh opaque share-entry id. Web Crypto only — no `node:*` (invariant). */
 function mintShareEntryId(): string {
-  return globalThis.crypto.randomUUID()
+  return safeRandomUUID()
 }
 
 // ---------------------------------------------------------------------------

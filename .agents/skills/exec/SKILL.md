@@ -23,7 +23,20 @@ gaps through `/skill:plan` and stop on unresolved human intent. For Beads work,
 pull your work: `br ready --json`, lease exactly one bead, and stamp your
 session id on it in the same act — never work unclaimed. Refresh the lease as
 you work (any `br` touch counts; cadence key `beadle.lease_heartbeat_minutes`);
-poll long waits synchronously so the heartbeat keeps beating.
+poll long waits synchronously so the heartbeat keeps beating. Never end a turn
+waiting for an event you did not schedule a wake-up for. Never delegate work
+that carries a stop-and-ask gate to a sub-agent — the sub-agent inherits the
+gate but cannot verify who satisfies it (escalate gates up, never down).
+Syntax that bites: `br comments add <id> -m "..."` (plural, id first) and
+`--assignee` (no `-a` on update); a failed comment is a lost heartbeat — check
+exit status.
+
+**Owner demo/retest gate:** before inviting the owner to test (or RE-test) a
+live surface, the exact reported action must pass in that exact environment —
+same origin, same click path — proven by an automated run (Playwright/curl)
+with a screenshot. Fixes that live on other branches get cherry-picked into
+the demo environment first. "Should work now" is never grounds for an invite;
+a wasted owner test is a factory defect.
 
 Implement the smallest bounded slice with behavior tests, record current proof,
 apply the Model Card review ladder and mandatory code-thermo gate, and integrate

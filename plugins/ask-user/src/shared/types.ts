@@ -1,3 +1,4 @@
+import type { HumanArtifact } from "@hachej/boring-workspace/shared"
 import type { ASK_USER_COMMAND_KINDS } from "./constants"
 
 export type AskUserOption = {
@@ -91,6 +92,7 @@ export type AskUserRequest = {
   title?: string
   context?: string
   schema?: AskUserFormSchema
+  artifacts?: HumanArtifact[]
   timeoutMs?: number
   /** Pi tool-call correlation for the inline transcript renderer. */
   toolCallId?: string
@@ -102,6 +104,7 @@ export type AskUserToolInput = {
   title: string
   context?: string
   schema: AskUserFormSchema
+  artifacts?: HumanArtifact[]
   timeoutMs?: number
 }
 
@@ -117,6 +120,7 @@ export type AskUserQuestion = {
   title?: string
   context?: string
   schema?: AskUserFormSchema
+  artifacts: HumanArtifact[]
   answerToken: string
   createdAt: string
   updatedAt: string

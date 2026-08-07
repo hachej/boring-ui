@@ -10,7 +10,7 @@
  *   { skills: [{ name: string, description: string }] }
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import {
   DefaultPackageManager,
   getAgentDir,
@@ -45,12 +45,30 @@ interface SkillsQuery {
 
 const CACHE_TTL_MS = 30_000
 
-function pathForWorkspaceEditor(workspaceRoot: string, filePath: string): string | undefined {
-  const pathWithinWorkspace = relative(resolve(workspaceRoot), resolve(filePath))
-  if (pathWithinWorkspace === '' || pathWithinWorkspace === '..' || pathWithinWorkspace.startsWith(`..${sep}`) || isAbsolute(pathWithinWorkspace)) {
-    return undefined
+function provisionedWorkspaceRoots(additionalSkillPaths: readonly string[]): string[] {
+  // Provisioning can contribute both runtime-visible and real-disk
+  // <workspace root>/.agents/skills paths, so preserve every coordinate.
+  const userSkillsSuffix = `${sep}.agents${sep}skills`
+  return additionalSkillPaths
+    .map((skillPath) => resolve(skillPath))
+    .filter((skillPath) => skillPath.endsWith(userSkillsSuffix))
+    .map((skillPath) => dirname(dirname(skillPath)))
+}
+
+export function pathForWorkspaceEditor(
+  workspace: Pick<Workspace, 'root'>,
+  filePath: string,
+  additionalSkillPaths: readonly string[] = [],
+): string {
+  const roots = [workspace.root, ...provisionedWorkspaceRoots(additionalSkillPaths)]
+  for (const root of roots) {
+    const pathWithinWorkspace = relative(resolve(root), resolve(filePath))
+    if (pathWithinWorkspace === '' || pathWithinWorkspace === '..' || pathWithinWorkspace.startsWith(`..${sep}`) || isAbsolute(pathWithinWorkspace)) {
+      continue
+    }
+    return pathWithinWorkspace.split(sep).join('/')
   }
-  return pathWithinWorkspace.split(sep).join('/')
+  return filePath
 }
 
 function resourceKey(resource: AgentSkillResource): string {
@@ -134,9 +152,12 @@ export function skillsRoutes(
     })
     const invocationSkills: SkillSummary[] = (result.skills as unknown as Array<Record<string, unknown>>).map((s) => {
       const absoluteFilePath = typeof s.filePath === 'string' ? s.filePath : undefined
-      const workspacePath = absoluteFilePath ? pathForWorkspaceEditor(workspaceRoot, absoluteFilePath) : undefined
+      const workspacePath = absoluteFilePath
+        ? pathForWorkspaceEditor(workspace, absoluteFilePath, additionalSkillPaths ?? [])
+        : undefined
       const resource = absoluteFilePath
-        ? resourceSnapshot?.locateSkill(absoluteFilePath) ?? (workspacePath ? { filesystem: 'user' as const, path: workspacePath } : undefined)
+        ? resourceSnapshot?.locateSkill(absoluteFilePath) ??
+          (workspacePath && !isAbsolute(workspacePath) ? { filesystem: 'user' as const, path: workspacePath } : undefined)
         : undefined
       return {
         name: String(s.name),

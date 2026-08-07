@@ -16,6 +16,7 @@ export function useExternalRemotePiSession({
   fetch,
   createRemoteSession,
   remoteSessionOptions,
+  enabled = true,
 }: {
   sessionId?: string
   agentTypeId: string
@@ -26,6 +27,7 @@ export function useExternalRemotePiSession({
   fetch?: typeof globalThis.fetch
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
+  enabled?: boolean
 }): RemotePiSession | undefined {
   const [session, setSession] = useState<RemotePiSession | undefined>()
   const remoteSessionOptionsRef = useRef(remoteSessionOptions)
@@ -46,6 +48,7 @@ export function useExternalRemotePiSession({
     }
     const next = (createRemoteSession ?? createRemotePiSession)({
       ...remoteSessionOptionsRef.current,
+      autoStart: false,
       sessionId,
       agentTypeId,
       workspaceId,
@@ -57,6 +60,11 @@ export function useExternalRemotePiSession({
     setSession(next)
     return () => next.dispose()
   }, [agentTypeId, apiBaseUrl, createRemoteSession, fetch, remoteSessionOptionsKey, sessionId, stableRequestHeaders, storageScope, workspaceId])
+  useEffect(() => {
+    if (!session) return
+    if (enabled) session.resumeStream?.()
+    else session.suspendStream?.()
+  }, [enabled, session])
   return session
 }
 

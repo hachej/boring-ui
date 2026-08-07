@@ -1,8 +1,10 @@
 import type { DragEvent } from "react"
-import type { BoringTaskCard } from "../shared"
+import type { BoringTaskCard, BoringTaskSessionLink } from "../shared"
 import type { BoringTaskColumnView } from "./taskBoardModel"
 import { canDropInColumn } from "./taskBoardModel"
 import { TaskCard } from "./TaskCard"
+import { taskAttentionKey, type TaskAttentionItem } from "./useTaskAttention"
+import { taskSessionLinkKey } from "./taskSessionLinkStream"
 
 interface TaskKanbanColumnProps {
   column: BoringTaskColumnView
@@ -15,6 +17,9 @@ interface TaskKanbanColumnProps {
   onTaskOpenDetail?: (task: BoringTaskCard, trigger: HTMLButtonElement) => void
   canDragTask?: (task: BoringTaskCard) => boolean
   canDeleteTask?: (task: BoringTaskCard) => boolean
+  deleteEffectForTask?: (task: BoringTaskCard) => "close" | "delete"
+  attentionByTask?: ReadonlyMap<string, readonly TaskAttentionItem[]>
+  sessionLinksByTask?: ReadonlyMap<string, readonly BoringTaskSessionLink[]> | null
   canOpenTaskDetail?: (task: BoringTaskCard) => boolean
 }
 
@@ -29,6 +34,9 @@ export function TaskKanbanColumn({
   onTaskOpenDetail,
   canDragTask = () => moveEnabled,
   canDeleteTask = () => false,
+  deleteEffectForTask = () => "delete",
+  attentionByTask = new Map(),
+  sessionLinksByTask = new Map(),
   canOpenTaskDetail = () => Boolean(onTaskOpenDetail),
 }: TaskKanbanColumnProps) {
   const acceptsDrop = moveEnabled && canDropInColumn(column)
@@ -98,6 +106,9 @@ export function TaskKanbanColumn({
             draggable={!column.unmapped && canDragTask(task)}
             unmapped={column.unmapped}
             deleteEnabled={canDeleteTask(task)}
+            deleteEffect={deleteEffectForTask(task)}
+            attention={attentionByTask.get(taskAttentionKey(task))}
+            sessionLinks={sessionLinksByTask ? sessionLinksByTask.get(taskSessionLinkKey(task.adapterId, task.id)) ?? [] : undefined}
             onDelete={onTaskDelete}
             onOpenDetail={canOpenTaskDetail(task) ? onTaskOpenDetail : undefined}
             onDragStart={onTaskDragStart}
