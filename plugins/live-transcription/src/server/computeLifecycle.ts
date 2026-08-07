@@ -146,7 +146,7 @@ export class ComputeLifecycleCoordinator {
 export function validateLifecycleUrl(raw: string): string {
   let url: URL
   try { url = new URL(raw) } catch { throw new LiveTranscriptError("live_transcript_local_only", "Lifecycle URL is invalid.", 500) }
-  if (url.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(url.hostname) || url.pathname !== "/v1" || url.search || url.username || url.password) {
+  if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.pathname !== "/v1" || url.search || url.username || url.password) {
     throw new LiveTranscriptError("live_transcript_local_only", "Lifecycle service must use the exact loopback /v1 authority.", 500)
   }
   return url.toString().replace(/\/$/, "")

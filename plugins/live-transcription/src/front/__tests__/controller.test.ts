@@ -46,7 +46,7 @@ describe("LiveTranscriptBrowserController live attachment", () => {
     const startResponse = new Promise<Response>((resolve) => { resolveStart = resolve })
     const stopTrack = vi.fn()
     vi.stubGlobal("navigator", { mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: stopTrack }] } as unknown as MediaStream)) } })
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith("/compute/prepare")) return { ok: true, json: async () => ({ preparationId: "prep-1", state: "ready" }) } as Response
       if (url.endsWith("/compute/cancel")) return { ok: true, json: async () => ({ cancelled: true }) } as Response
@@ -60,7 +60,9 @@ describe("LiveTranscriptBrowserController live attachment", () => {
     await expect(controller.stop()).resolves.toContain("stopped during GPU preparation")
     resolveStart({ ok: true, json: async () => ({ liveSessionId: "live-1", transcriptPath: "live-transcripts/a.md", socketNonce: "nonce", reviewIntervalMs: 60_000, state: "setup" }) } as Response)
     await expect(starting).resolves.toContain("stopped before microphone attachment")
-    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/interrupt"))).toBe(true)
+    const interruptCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/interrupt"))
+    expect(interruptCall).toBeDefined()
+    expect(JSON.parse(String(interruptCall?.[1]?.body))).toEqual({ reason: "attachment_failed" })
     expect(stopTrack).toHaveBeenCalledOnce()
     expect(liveTranscriptBrowserState.getSnapshot().phase).toBe("idle")
   })
