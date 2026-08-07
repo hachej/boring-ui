@@ -70,9 +70,10 @@ const fsAllow = [
 // the standard helper doesn't cover. Add those alongside the shared
 // aliases.
 const playgroundOnlyAliases = [
-  // Keep app code importing the public package CSS subpath, but point the
-  // playground's local monorepo dev server at the source CSS so Vite serves
-  // it as text/css even when package dist artifacts are stale/missing.
+  // Keep app code importing the public package CSS subpaths, but point the
+  // playground's local monorepo dev server at source CSS so a bare tsup build
+  // (clean:true) cannot wipe a live demo's generated styles.
+  { find: "@hachej/boring-agent/front/styles.css", replacement: resolve(__dirname, "../../packages/agent/src/front/styles/globals.css") },
   { find: "@hachej/boring-workspace/globals.css", replacement: resolve(__dirname, "../../packages/workspace/src/globals.css") },
   // Cover subpath imports from runtime extensions (e.g. boring-ui-factory
   // .pi/extensions) that land through Vite's /@fs/ resolver.
