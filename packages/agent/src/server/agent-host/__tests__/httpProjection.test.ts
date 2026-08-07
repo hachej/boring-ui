@@ -60,7 +60,7 @@ class FakeGateway implements AgentGateway {
 
   async listSessions(input: Parameters<AgentGateway['listSessions']>[0]) {
     this.calls.push({ method: 'listSessions', input })
-    return { sessions: [summary], nextCursor: 'next-page' }
+    return { sessions: [summary], ...(input.cursor ? {} : { nextCursor: 'next-page' }) }
   }
 
   async createSession(input: Parameters<AgentGateway['createSession']>[0]) {
@@ -256,6 +256,13 @@ describe('addressed Agent Host HTTP projection', () => {
     const listed = await app.inject({ method: 'GET', url: '/api/v1/agents/alpha/sessions?limit=25' })
     expect(listed.statusCode).toBe(200)
     expect(listed.json()).toEqual({ sessions: [summary], nextCursor: 'next-page' })
+    const batch = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions/summaries',
+      payload: { sessionIds: ['session-1', 'missing'] },
+    })
+    expect(batch.statusCode).toBe(200)
+    expect(batch.json()).toEqual({ summaries: [summary], omittedSessionIds: ['missing'] })
     const created = await app.inject({
       method: 'POST',
       url: '/api/v1/agents/alpha/sessions',
@@ -400,12 +407,34 @@ describe('addressed Agent Host HTTP projection', () => {
     await app.close()
   })
 
+  it('bounds batch summary inventory scans when requested sessions are absent', async () => {
+    const { app, gateway } = await buildApp()
+    let page = 0
+    const listSessions = vi.spyOn(gateway, 'listSessions').mockImplementation(async (input) => {
+      gateway.calls.push({ method: 'listSessions', input })
+      page += 1
+      return { sessions: [], nextCursor: `page-${page}` }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions/summaries',
+      payload: { sessionIds: ['missing'] },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ summaries: [], omittedSessionIds: ['missing'], scanTruncated: true })
+    expect(listSessions).toHaveBeenCalledTimes(10)
+    await app.close()
+  })
+
   it('rejects malformed, extra, and invalid addressed inputs before authorization or Gateway dispatch', async () => {
     const authorizeAgentRequest = vi.fn(async () => scope)
     const { app, gateway } = await buildApp({ authorizeAgentRequest })
     const cases = [
       { request: { method: 'GET', url: '/api/v1/agents?extra=1' }, field: 'query' },
       { request: { method: 'GET', url: '/api/v1/agents/alpha/sessions?limit=0' }, field: 'query.limit' },
+      { request: { method: 'POST', url: '/api/v1/agents/alpha/sessions/summaries', payload: { sessionIds: [] } }, field: 'body.sessionIds' },
       { request: { method: 'POST', url: '/api/v1/agents/alpha/sessions', payload: { title: 'ok', extra: true } }, field: 'body' },
       { request: { method: 'GET', url: '/api/v1/agents/alpha/sessions/session-1/state?extra=1' }, field: 'query' },
       { request: { method: 'GET', url: '/api/v1/agents/alpha/sessions/session-1/events?cursor=abc' }, field: 'query.cursor' },

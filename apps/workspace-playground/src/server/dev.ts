@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
-import { readFile, readdir, stat } from "node:fs/promises"
-import { basename, dirname, isAbsolute, relative, resolve } from "node:path"
-import { createRemoteWorkerModeAdapter, ReadonlyFilesystemMutationError, type RuntimeFilesystemCapability } from "@hachej/boring-agent/server"
+import { basename, dirname, resolve } from "node:path"
+import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
+import { createReadonlyProjectionOperations } from "@hachej/boring-bash/server"
+import { createNodeWorkspace } from "@hachej/boring-sandbox/providers/node-workspace"
 import { createPersistedScriptedPiHarness } from "./testing/scriptedPiHarness"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
-import { createTasksServerPlugin } from "@hachej/boring-tasks/server"
+import { createWorkspaceBeadsOperations } from "@hachej/boring-tasks/server"
+import { loadBoringFactoryAgents } from "./factoryAgents"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
 export const VITE_PORT = Number(process.env.PORT) || 5200
@@ -42,14 +44,6 @@ function normalizePlaygroundBindingPath(rawPath: string): string {
   return (rawPath.trim() || "/").replace(/^\/+/, "")
 }
 
-function resolvePlaygroundBindingPath(root: string, rawPath: string): string {
-  const normalized = normalizePlaygroundBindingPath(rawPath)
-  const resolved = resolve(root, normalized || ".")
-  const rel = relative(root, resolved)
-  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return resolved
-  throw new Error("path escapes playground binding root")
-}
-
 let agentBoot: Promise<void> | null = null
 
 export async function startPlaygroundServer(): Promise<void> {
@@ -66,8 +60,15 @@ export async function startPlaygroundServer(): Promise<void> {
     const remoteWorkerWorkspaceId = remoteWorkerModeAdapter
       ? (process.env.BORING_WORKSPACE_PLAYGROUND_WORKSPACE_ID?.trim() || randomUUID())
       : undefined
+    const beadsOperations = remoteWorkerModeAdapter
+      ? undefined
+      : createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
     const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
+    const factoryAgentsEnabled = process.env.VITE_BORING_FACTORY_AGENTS === "1"
+    const factoryAgents = factoryAgentsEnabled ? await loadBoringFactoryAgents() : undefined
     const multiFilesystemPlayground = process.env.BORING_WORKSPACE_PLAYGROUND_MULTI_FS === "1" || process.env.VITE_PLAYGROUND_MULTI_FS === "1"
+    const companyContextRoot = resolve(process.env.BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT || COMPANY_CONTEXT_DIR)
+    if (multiFilesystemPlayground) mkdirSync(companyContextRoot, { recursive: true })
     let hideCompanySkills = process.env.BORING_WORKSPACE_PLAYGROUND_HIDE_COMPANY_SKILLS === "1"
     const companySkillPathHidden = (path: string) => {
       const normalized = normalizePlaygroundBindingPath(path)
@@ -79,7 +80,7 @@ export async function startPlaygroundServer(): Promise<void> {
       console.log(`[workspace-playground] remote worker workspace id: ${remoteWorkerWorkspaceId}`)
     }
     if (multiFilesystemPlayground) {
-      console.log(`[workspace-playground] company context: ${COMPANY_CONTEXT_DIR}${hideCompanySkills ? " (skills denied)" : ""}`)
+      console.log(`[workspace-playground] company context: ${companyContextRoot}${hideCompanySkills ? " (skills denied)" : ""}`)
     }
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
@@ -89,70 +90,69 @@ export async function startPlaygroundServer(): Promise<void> {
       mode: remoteWorkerModeAdapter ? undefined : localRuntimeMode,
       runtimeModeAdapter: remoteWorkerModeAdapter,
       logger: true,
+      ...(factoryAgents ? { agents: factoryAgents, defaultAgentTypeId: "boring-concierge" } : {}),
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
       ...(process.env.BORING_AGENT_E2E_SCRIPTED_PI === "1"
         ? { harnessFactory: createPersistedScriptedPiHarness }
         : {}),
-      plugins: [createTasksServerPlugin({
-        workspaceRoot,
-        config: { providers: [{ provider: "github", repo: "auto" }] },
-      })],
+      plugins: [{
+        dir: resolve(APP_ROOT, "../../plugins/tasks"),
+        options: {
+          beadsOperations,
+          config: { providers: [{ provider: "github", repo: "auto" }, { provider: "beads" }] },
+        },
+        trust: "internal",
+      }],
       defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram", "@hachej/boring-bi-dashboard"],
-      runtimeProvisioner: multiFilesystemPlayground
-        ? async ({ runtimeBundle }) => {
-            const bundle = runtimeBundle as typeof runtimeBundle & { filesystemBindings?: unknown[] }
-            bundle.filesystemBindings = [
-              ...(bundle.filesystemBindings ?? []),
-              {
-                filesystem: "company_context",
-                access: "readonly",
-                operations: {
-                  async read({ path }: { path: string }) {
-                    if (companySkillPathHidden(path)) throw new Error("company_context path is not readable")
-                    const target = resolvePlaygroundBindingPath(COMPANY_CONTEXT_DIR, path)
-                    return { content: await readFile(target, "utf8") }
-                  },
-                  async list({ path }: { path: string }) {
-                    if (companySkillPathHidden(path)) throw new Error("company_context path is not readable")
-                    const target = resolvePlaygroundBindingPath(COMPANY_CONTEXT_DIR, path)
-                    const entries = await readdir(target)
+      getFilesystemBindings: multiFilesystemPlayground
+        ? async () => {
+            const baseOperations = createReadonlyProjectionOperations({
+              filesystem: "company_context",
+              projectionRoot: companyContextRoot,
+            })
+            return [{
+              filesystem: "company_context",
+              access: "readonly",
+              operations: {
+                ...baseOperations,
+                async read(descriptor) {
+                  if (companySkillPathHidden(descriptor.path)) throw new Error("company_context path is not readable")
+                  return baseOperations.read(descriptor)
+                },
+                async list(descriptor) {
+                  if (companySkillPathHidden(descriptor.path)) throw new Error("company_context path is not readable")
+                  const result = await baseOperations.list(descriptor)
+                  return hideCompanySkills && normalizePlaygroundBindingPath(descriptor.path) === ".agents"
+                    ? { ...result, entries: result.entries.filter((entry) => entry !== "skills") }
+                    : result
+                },
+                async stat(descriptor) {
+                  if (companySkillPathHidden(descriptor.path)) throw new Error("company_context path is not readable")
+                  return baseOperations.stat(descriptor)
+                },
+                async resolveAccess(descriptor) {
+                  const hidden = companySkillPathHidden(descriptor.path)
+                  const decision = await baseOperations.resolveAccess?.(descriptor)
+                  if (!decision) {
                     return {
-                      entries: hideCompanySkills && normalizePlaygroundBindingPath(path) === ".agents"
-                        ? entries.filter((entry) => entry !== "skills")
-                        : entries,
-                    }
-                  },
-                  async find() {
-                    return { paths: [] }
-                  },
-                  async grep() {
-                    return { matches: [] }
-                  },
-                  async stat({ path }: { path: string }) {
-                    if (companySkillPathHidden(path)) throw new Error("company_context path is not readable")
-                    const target = resolvePlaygroundBindingPath(COMPANY_CONTEXT_DIR, path)
-                    return { isDirectory: (await stat(target)).isDirectory() }
-                  },
-                  async resolveAccess({ filesystem, path }: { filesystem: string; path: string }) {
-                    return {
-                      filesystem,
-                      normalizedPath: normalizePlaygroundBindingPath(path),
+                      filesystem: descriptor.filesystem,
+                      normalizedPath: normalizePlaygroundBindingPath(descriptor.path),
                       access: "readonly" as const,
                       capabilities: {
-                        read: !companySkillPathHidden(path),
+                        read: !hidden,
                         write: false,
                         "create-child": false,
                         delete: false,
                         "move-from": false,
                       },
                     }
-                  },
-                  rejectMutation(operation: string) {
-                    throw new ReadonlyFilesystemMutationError("company_context", operation as RuntimeFilesystemCapability)
-                  },
+                  }
+                  return hidden
+                    ? { ...decision, capabilities: { ...decision.capabilities, read: false } }
+                    : decision
                 },
               },
-            ]
+            }]
           }
         : undefined,
       workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },

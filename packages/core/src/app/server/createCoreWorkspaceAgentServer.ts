@@ -13,6 +13,7 @@ import {
   createResolvedRuntimeScopeIdentity,
   createValidatingAgentFleetCompiler,
   provisionWorkspaceRuntime,
+  projectAuthorizedSessionRunDetails,
   resolveDefaultAgentFleet,
   withRuntimeEnvContributions,
   type AgentEffectAdmission,
@@ -1067,6 +1068,14 @@ export async function createCoreWorkspaceAgentServer(
       }
       return await workspaceAgentDispatcherResolver.resolveWithWorkspace(actor, resolveOptions)
     },
+    async authorizeSession(actor, ref, resolveOptions) {
+      if (!workspaceAgentDispatcherResolver?.authorizeSession) throw new Error('workspace agent session authorization is not ready')
+      await workspaceAgentDispatcherResolver.authorizeSession(actor, ref, resolveOptions)
+    },
+    async readSessionRunDetails(actor, ref, detailKinds, resolveOptions) {
+      if (!workspaceAgentDispatcherResolver?.readSessionRunDetails) throw new Error('workspace agent run details are not ready')
+      return await workspaceAgentDispatcherResolver.readSessionRunDetails(actor, ref, detailKinds, resolveOptions)
+    },
   }
   const basePluginResolveContext: WorkspaceAgentServerPluginContext = {
     workspaceRoot: pluginWorkspaceRoot,
@@ -1576,6 +1585,18 @@ export async function createCoreWorkspaceAgentServer(
       },
       async resolve() {
         throw new Error('unbounded workspace agent dispatcher resolution is unavailable')
+      },
+      async authorizeSession(context, ref, resolveOptions) {
+        const scope = await authorizeAgentRequest(resolveOptions?.request, context)
+        await agentHost.gateway.readSessionState({ scope, ref })
+      },
+      async readSessionRunDetails(context, ref, detailKinds, resolveOptions) {
+        if (detailKinds.length < 1 || detailKinds.length > 16 || detailKinds.some((kind) => !kind || kind.length > 128)) {
+          throw new TypeError('invalid structured detail kinds')
+        }
+        const scope = await authorizeAgentRequest(resolveOptions?.request, context)
+        const snapshot = await agentHost.gateway.readSessionState({ scope, ref })
+        return projectAuthorizedSessionRunDetails(snapshot.state.messages, detailKinds)
       },
     }
     workspaceAgentDispatcherResolver = directDispatcherResolver

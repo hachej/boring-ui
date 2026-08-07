@@ -67,6 +67,8 @@ describe("ask-user full workflow", () => {
     })
     const pending = (await store.getPending("s1"))!
 
+    // A question is published to Inbox/session attention state. The user
+    // explicitly opens Questions only when they choose to.
     await vi.waitFor(() => {
       expect(bridge.commands).toEqual([])
     })

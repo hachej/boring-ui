@@ -1,6 +1,6 @@
 import Fastify from 'fastify'
 import { describe, test, expect } from 'vitest'
-import { skillsRoutes } from '../skills'
+import { pathForWorkspaceEditor, skillsRoutes } from '../skills'
 import { createNodeWorkspace } from '@agent-test-host'
 import { ErrorCode } from '../../../../shared/error-codes'
 import type { RuntimeFilesystemBinding } from '../../../runtime/mode'
@@ -56,6 +56,37 @@ function buildApp(opts: Parameters<typeof skillsRoutes>[1]) {
   app.register(skillsRoutes, opts)
   return app.ready().then(() => app)
 }
+
+describe('pathForWorkspaceEditor', () => {
+  test('uses the real root encoded by provisioned paths without rewriting global skills', () => {
+    const realWorkspaceRoot = '/data/workspaces/example'
+    const additionalSkillPaths = [
+      `${realWorkspaceRoot}/.boring-agent/skills`,
+      `${realWorkspaceRoot}/.agents/skills`,
+    ]
+    const localFilePath = `${realWorkspaceRoot}/.agents/skills/review/SKILL.md`
+    const globalFilePath = '/home/example/.pi/agent/skills/review/SKILL.md'
+
+    const editorPath = pathForWorkspaceEditor({ root: '/workspace' }, localFilePath, additionalSkillPaths)
+
+    expect(editorPath).toBe('.agents/skills/review/SKILL.md')
+    expect(editorPath.startsWith('/')).toBe(false)
+    expect(editorPath.split('/')).not.toContain('..')
+    expect(pathForWorkspaceEditor({ root: '/workspace' }, globalFilePath, additionalSkillPaths)).toBe(globalFilePath)
+  })
+
+  test('tries the real provisioned root when a virtual root appears first', () => {
+    const realWorkspaceRoot = '/data/workspaces/example'
+    const localFilePath = `${realWorkspaceRoot}/.agents/skills/review/SKILL.md`
+    const additionalSkillPaths = [
+      '/workspace/.agents/skills',
+      `${realWorkspaceRoot}/.agents/skills`,
+    ]
+
+    expect(pathForWorkspaceEditor({ root: '/workspace' }, localFilePath, additionalSkillPaths))
+      .toBe('.agents/skills/review/SKILL.md')
+  })
+})
 
 describe('GET /api/v1/agents/default/skills', () => {
   test('returns skills array (possibly empty) for a workspace root', async () => {

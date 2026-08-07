@@ -1,3 +1,5 @@
+import { safeRandomUUID } from '../shared/random-id'
+
 export function agentResourceUrl(apiBaseUrl: string | undefined, path: string): string {
   const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
   return `${base}${path}`
@@ -17,6 +19,5 @@ export function withStorageScope(
 }
 
 export function createRequestId(operation: string): string {
-  const suffix = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
-  return `${operation}:${suffix}`
+  return `${operation}:${safeRandomUUID()}`
 }

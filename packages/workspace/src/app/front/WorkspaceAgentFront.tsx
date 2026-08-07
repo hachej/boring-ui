@@ -40,6 +40,8 @@ import { ChatSessionTransitionState, WorkbenchWarmupOverlay } from "./WorkspaceA
 import { WorkspaceUiStateSync } from "./WorkspaceUiStateSync"
 import { WorkspaceAgentFleetSelector, useWorkspaceAgentFleet } from "./WorkspaceAgentFleetSelector"
 import { PluginAppLeftOverlayHost, assertUniqueAppLeftActionIds, pluginAppLeftActionIds, usePluginAppLeftActions, type AppLeftOverlayId } from "./PluginAppLeftHost"
+import { WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, appLeftOverlayRequestFromEvent } from "../../shared/plugins/appLeftOverlay"
+import { WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT } from "../../shared/plugins/workspaceShellCapabilities"
 import { CloseLeftPaneOnAttention } from "./CloseLeftPaneOnAttention"
 import { workspaceRequestHeaders, type WorkspaceWarmupStatus } from "./workspacePreload"
 import {
@@ -203,6 +205,8 @@ export interface WorkspaceAgentFrontProps<
   agentTypeId: string
   /** Advertise and persist a separate Agent target for future session creation. */
   showAgentSelector?: boolean
+  /** Dev-only HTTP/1.1 connection budgeting for the standalone playground. */
+  donateActiveChatTransportToDetached?: boolean
   chatPanel?: ComponentType<WorkspaceChatPanelProps>
   useSessions?: UseWorkspaceAgentSessions<TSession>
   requestHeaders?: Record<string, string>
@@ -638,6 +642,7 @@ export function WorkspaceAgentFront<
   workspaceId,
   agentTypeId,
   showAgentSelector = false,
+  donateActiveChatTransportToDetached = false,
   chatPanel: chatPanelProp,
   useSessions: useSessionsProp,
   requestHeaders,
@@ -923,6 +928,7 @@ export function WorkspaceAgentFront<
       onActivity: ({ ref, status }) => {
         window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
           detail: {
+            workspaceId,
             sessionId: ref.sessionId,
             agentTypeId: ref.agentTypeId,
             working: status === "running" || status === "aborting",
@@ -1281,7 +1287,26 @@ export function WorkspaceAgentFront<
     defaultLeftOverlay,
     shellPersistenceEnabled,
   ) as [AppLeftOverlayId, (next: AppLeftOverlayId | ((previous: AppLeftOverlayId) => AppLeftOverlayId)) => void]
+  const [leftOverlayParams, setLeftOverlayParams] = useState<Readonly<Record<string, string>> | undefined>()
+  const leftOverlayParamsOwnerRef = useRef<AppLeftOverlayId>(null)
   const pluginOverlayActionIds = useMemo(() => pluginAppLeftActionIds(capturedPlugins), [capturedPlugins])
+  useEffect(() => {
+    const onOpenOverlay = (event: Event) => {
+      const request = appLeftOverlayRequestFromEvent(event)
+      if (!request || !pluginOverlayActionIds.has(request.id)) return
+      leftOverlayParamsOwnerRef.current = request.id
+      setLeftOverlayParams(request.params)
+      setLeftOverlay(request.id)
+    }
+    window.addEventListener(WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, onOpenOverlay)
+    return () => window.removeEventListener(WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, onOpenOverlay)
+  }, [pluginOverlayActionIds, setLeftOverlay])
+  useEffect(() => {
+    if (leftOverlayParamsOwnerRef.current === leftOverlay) return
+    leftOverlayParamsOwnerRef.current = null
+    setLeftOverlayParams(undefined)
+  }, [leftOverlay])
+  const activeLeftOverlayParams = leftOverlayParamsOwnerRef.current === leftOverlay ? leftOverlayParams : undefined
   useEffect(() => {
     const customOverlayActive = Boolean(leftOverlay && appLeftOverlayActions?.some((action) => action.id === leftOverlay))
     if (
@@ -2059,7 +2084,10 @@ export function WorkspaceAgentFront<
       workspaceWarmupStatus,
       hydrateMessages,
       allowPromptDuringInitialHydration: emptySessionIds.has(sessionKey),
-      onPromptSubmitStarted: ({ sessionId: submittedSessionId }: { sessionId: string; clientNonce: string }) => {
+      onPromptSubmitStarted: ({ sessionId: submittedSessionId, clientNonce }: { sessionId: string; clientNonce: string }) => {
+        window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
+          detail: { workspaceId, agentTypeId: sessionRef.agentTypeId ?? selectedAgentTypeId, sessionId: submittedSessionId, clientNonce },
+        }))
         setInitialHydrationPromptStarted((current) => {
           const currentIds = current.workspaceId === workspaceId ? current.ids : new Set<string>()
           const submittedKey = workspaceSessionKey(submittedSessionId, sessionRef.agentTypeId ?? selectedAgentTypeId)
@@ -2224,6 +2252,63 @@ export function WorkspaceAgentFront<
         }
       : undefined
   ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
+  const shellSessionCreateSequenceRef = useRef(0)
+  const quickSessionCreateSequenceRef = useRef(0)
+  const effectiveActiveSessionRef = useRef({ sessionId: effectiveActiveSessionId, agentTypeId: effectiveActiveSessionAgentTypeId ?? undefined })
+  effectiveActiveSessionRef.current = { sessionId: effectiveActiveSessionId, agentTypeId: effectiveActiveSessionAgentTypeId ?? undefined }
+  const createAddressedSessionWithoutActivating = useCallback(async (dedupeKey: string, options?: { title?: string }) => {
+    const previous = effectiveActiveSessionRef.current
+    try {
+      const session = await coordinateRemoteCreate(dedupeKey, options)
+      const sessionId = createdSessionId(session)
+      if (!sessionId) return { success: false as const, reason: "create-failed" as const, message: "Chat session creation did not return a canonical session." }
+      const returnedAgentTypeId = (session as { agentTypeId?: unknown }).agentTypeId
+      // The create operation is issued through the selected Agent's attested
+      // session source. Custom providers may omit the redundant owner field.
+      const createdAgentTypeId = typeof returnedAgentTypeId === "string" ? returnedAgentTypeId : selectedAgentTypeId
+      const activeAfterCreate = effectiveActiveSessionRef.current
+      const selectionStillAtCreationBoundary = (
+        activeAfterCreate.sessionId === sessionId && activeAfterCreate.agentTypeId === createdAgentTypeId
+      ) || (
+        activeAfterCreate.sessionId === previous.sessionId && activeAfterCreate.agentTypeId === previous.agentTypeId
+      )
+      if (returnedAgentTypeId !== undefined && returnedAgentTypeId !== selectedAgentTypeId) {
+        try {
+          await rawDelete(sessionId, createdAgentTypeId)
+        } catch (rollbackError) {
+          return { success: false as const, reason: "create-failed" as const, message: `Chat session creation returned a mismatched addressed Agent owner and rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}` }
+        }
+        const activeAfterRollback = effectiveActiveSessionRef.current
+        const selectionStillAtRollbackBoundary = (
+          (activeAfterRollback.sessionId === sessionId && activeAfterRollback.agentTypeId === createdAgentTypeId)
+          || (activeAfterRollback.sessionId === previous.sessionId && activeAfterRollback.agentTypeId === previous.agentTypeId)
+        )
+        if (selectionStillAtRollbackBoundary && previous.sessionId) rawSwitch(previous.sessionId, previous.agentTypeId)
+        return { success: false as const, reason: "create-failed" as const, message: "Chat session creation returned a mismatched addressed Agent owner." }
+      }
+      if (selectionStillAtCreationBoundary && previous.sessionId && (previous.sessionId !== sessionId || previous.agentTypeId !== createdAgentTypeId)) {
+        rawSwitch(previous.sessionId, previous.agentTypeId)
+      }
+      return { success: true as const, ref: { agentTypeId: createdAgentTypeId, sessionId } }
+    } catch (error) {
+      return { success: false as const, reason: "create-failed" as const, message: error instanceof Error ? error.message : "Chat session creation failed." }
+    }
+  }, [coordinateRemoteCreate, rawDelete, rawSwitch, selectedAgentTypeId])
+  const createShellChatSession = useCallback(async (options?: { title?: string }) => {
+    shellSessionCreateSequenceRef.current += 1
+    return await createAddressedSessionWithoutActivating(`shell:${shellSessionCreateSequenceRef.current}`, options)
+  }, [createAddressedSessionWithoutActivating])
+  const deleteShellChatSession = useCallback(async (ref: { agentTypeId: string; sessionId: string }) => {
+    try {
+      if (!sessionSourceIsCurrent()) {
+        return { success: false as const, reason: "open-failed" as const, message: "Chat session source changed before deletion." }
+      }
+      await resolvedDelete(ref.sessionId, ref.agentTypeId)
+      return { success: true as const }
+    } catch (error) {
+      return { success: false as const, reason: "open-failed" as const, message: error instanceof Error ? error.message : "Chat session deletion failed." }
+    }
+  }, [resolvedDelete, sessionSourceIsCurrent])
   const shellCapabilitiesHost = useWorkspaceShellCapabilitiesHost({
     appLeftPaneCollapsed,
     workspaceId,
@@ -2231,35 +2316,27 @@ export function WorkspaceAgentFront<
     sessionTitleById,
     defaultSessionTitle,
     makeCenterParams,
+    createChatSession: createShellChatSession,
+    deleteChatSession: deleteShellChatSession,
     openChatPane,
     refreshChatSessions: async () => {
       await remoteSessionApi.refresh?.({ background: true, throwOnError: true })
     },
     surfaceDispatch,
+    isAppLeftOverlayAvailable: (id) => pluginOverlayActionIds.has(id),
     onDockOverlay: () => setLeftOverlay(null),
   })
   const createChatSessionInPopover = useCallback(() => {
     setLeftOverlay(null)
-    const previousActiveRef = providerActiveSessionRef
-    const created = resolvedCreate("quick")
-    void created.then((session) => {
-      const id = createdSessionId(session)
-      if (!id) return
-      shellCapabilitiesHost.shellCapabilities.openDetachedChat({ agentTypeId: selectedAgentTypeId, sessionId: id }, {
+    quickSessionCreateSequenceRef.current += 1
+    void createAddressedSessionWithoutActivating(`quick:${quickSessionCreateSequenceRef.current}`, { title: defaultSessionTitle }).then((result) => {
+      if (!result.success) return
+      shellCapabilitiesHost.shellCapabilities.openDetachedChat(result.ref, {
         title: defaultSessionTitle,
         composingEnabled: true,
       })
-      // Quick chat is an auxiliary popover: creating it must not steal the
-      // selected/full chat from the main stage or left session list.
-      if (previousActiveRef.sessionId !== id || previousActiveRef.agentTypeId !== selectedAgentTypeId) {
-        rawSwitch(previousActiveRef.sessionId, previousActiveRef.agentTypeId)
-      }
-    }).catch(() => {
-      // Creation errors are surfaced by the session API/chat layer; the menu
-      // should not leave a stale detached chat behind.
     })
-    return created
-  }, [defaultSessionTitle, providerActiveSessionRef, rawSwitch, resolvedCreate, selectedAgentTypeId, shellCapabilitiesHost.shellCapabilities])
+  }, [createAddressedSessionWithoutActivating, defaultSessionTitle, shellCapabilitiesHost.shellCapabilities])
   const providerPanels = baseProviderPanels
   const pluginAppLeftActions = usePluginAppLeftActions({ plugins: capturedPlugins, activeOverlay: leftOverlay, setActiveOverlay: setLeftOverlay })
   const chatTopOverlayActions = useMemo(() => {
@@ -2330,6 +2407,7 @@ export function WorkspaceAgentFront<
     plugins: capturedPlugins,
     activeOverlay: leftOverlay,
     onClose: () => setLeftOverlay(null),
+    params: activeLeftOverlayParams,
     headerInsetStart: mobileShellActive,
     headerInsetEnd: !surfaceOpen,
   })
@@ -2361,6 +2439,16 @@ export function WorkspaceAgentFront<
       headerInsetEnd={!surfaceOpen}
     />
   ) : null)
+  const detachedTransportDonationActive = donateActiveChatTransportToDetached && shellCapabilitiesHost.floatingChatOpen
+  const streamDonorPaneId = activeChatPaneId ?? chatPanes[0]?.id
+  const renderedCenterParams = detachedTransportDonationActive && chatPanes.length === 0
+    ? { ...centerParams, sessionStreamingEnabled: false }
+    : centerParams
+  const renderedChatPanes = detachedTransportDonationActive
+    ? chatPanes.map((pane) => pane.id === streamDonorPaneId
+      ? { ...pane, params: { ...(pane.params ?? centerParams), sessionStreamingEnabled: false } }
+      : pane)
+    : chatPanes
   const mainContent = remoteSessionsTransitioning ? (
     <ChatSessionTransitionState />
   ) : (
@@ -2369,8 +2457,8 @@ export function WorkspaceAgentFront<
       nav={isPluginTabsLayout ? null : effectiveNavOpen ? "session-list" : null}
       navParams={navParams}
       center="chat"
-      centerParams={centerParams}
-      chatPanes={chatPanes}
+      centerParams={renderedCenterParams}
+      chatPanes={renderedChatPanes}
       chatTopActions={chatTopOverlayActions}
       chatPaneSessionActions={chatPaneSessionActions}
       activeChatPaneId={activeChatPaneId}

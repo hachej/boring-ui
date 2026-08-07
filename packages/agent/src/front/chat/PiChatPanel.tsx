@@ -173,6 +173,8 @@ export interface PiChatPanelProps<
   toolRenderers?: ToolRendererOverrides
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
+  /** Keep local UI state mounted while temporarily releasing the remote event stream. */
+  sessionStreamingEnabled?: boolean
   hydrateMessages?: boolean
   allowPromptDuringInitialHydration?: boolean
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
@@ -239,6 +241,7 @@ export function PiChatPanel<
   toolRenderers,
   createRemoteSession,
   remoteSessionOptions,
+  sessionStreamingEnabled = true,
   hydrateMessages = true,
   allowPromptDuringInitialHydration = false,
   workspaceWarmupStatus,
@@ -318,6 +321,7 @@ export function PiChatPanel<
     fetch,
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
+    enabled: sessionStreamingEnabled,
   })
   const activePiSession = externalSessionId ? externalPiSession : sessions.activePiSession
   const chatState = useRemotePiSessionState(activePiSession)
@@ -1088,6 +1092,7 @@ export function PiChatPanel<
     if (typeof window === 'undefined' || !activeChatSessionId) return
     const emitStatus = () => window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
       detail: {
+        ...(workspaceId ? { workspaceId } : {}),
         sessionId: activeChatSessionId,
         ...(agentTypeId ? { agentTypeId } : {}),
         working: isStreaming,
@@ -1104,7 +1109,7 @@ export function PiChatPanel<
     // session-list "working" badge disappear while the run is still active.
     // The selected/running panel emits `working: false` when it observes the
     // terminal status, and a later remount of an idle session also reconciles it.
-  }, [activeChatSessionId, agentTypeId, isStreaming])
+  }, [activeChatSessionId, agentTypeId, isStreaming, workspaceId])
 
   const onTextareaKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Escape' && isStreaming) {

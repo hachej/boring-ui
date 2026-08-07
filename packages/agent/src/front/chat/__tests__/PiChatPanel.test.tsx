@@ -437,7 +437,7 @@ describe('PiChatPanel sandbox shell', () => {
     unmount()
     window.removeEventListener('boring:chat-session-status', onStatus)
 
-    expect(statusEvents).toContainEqual({ sessionId: 'pi-1', agentTypeId: 'beta', working: true })
+    expect(statusEvents).toContainEqual({ workspaceId: 'workspace-a', sessionId: 'pi-1', agentTypeId: 'beta', working: true })
   })
 
   test('keeps the working indicator slot mounted across stream start and finish', async () => {

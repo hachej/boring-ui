@@ -672,6 +672,9 @@ export async function createWorkspacesModeApp(opts: {
       const pluginCollection = await workspaceAppServer.resolveWorkspaceAgentServerPluginCollection({
         workspaceRoot: workspace.path,
         bridge: getBridge(workspace.id),
+        // Workspaces mode has one explicit CLI-owned Agent address. Pass it to
+        // trusted plugins rather than letting plugins invent a fallback.
+        agentTypeId: "default",
         defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
         installPluginAuthoring: false,
         excludeDefaults: ["boring-ui-plugin-cli-package"],
