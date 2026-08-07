@@ -4,7 +4,7 @@ import type { Workspace } from '../../shared/workspace'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
 import { sessionStreamPath, type AgentEvent } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
-import { formatOffset, parseOffset, type EventStreamStore } from '../events/eventStreamStore'
+import { formatOffset, parseOffset, MAX_READ_LIMIT, type EventStreamStore } from '../events/eventStreamStore'
 import type {
   PiChatEventStreamResult,
   PiChatEventSubscriber,
@@ -15,7 +15,7 @@ import type {
 import type { PiAgentPromptInput, PiAgentSessionAdapter } from './PiAgentSessionAdapter'
 import { buildPiChatQueuedFollowUps, buildPiChatSnapshot } from './piChatSnapshot'
 import { PiChatEventMapper } from './piChatEvents'
-import { PiChatReplayBuffer } from './piChatReplayBuffer'
+import { DEFAULT_REPLAY_BUFFER_MAX_EVENTS, PiChatReplayBuffer } from './piChatReplayBuffer'
 import { followUpSelector, hasFollowUpSelector, PiChatMessageMetadataReconciler } from './piChatMessageMetadataReconciler'
 import { buildPiChatHistory } from './piChatHistory'
 import { PiChatMeteringCoordinator, type AgentMeteringSink, type MeteringErrorLogger } from './metering'
@@ -920,10 +920,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
     const streamPath = sessionStreamPath(sessionKey)
-    let initialSeq: number
+    let buffer: PiChatReplayBuffer
     try {
       await this.eventStore?.createStream(streamPath)
-      initialSeq = await this.readDurableLatestPiChatSeq(streamPath)
+      buffer = await this.hydrateDurableReplayBuffer(streamPath)
     } catch (error) {
       if (this.lifecycle.isClosing) await this.lifecycle.rejectLateAdapter(adapter, error)
       throw error
@@ -931,7 +931,6 @@ export class HarnessPiChatService implements PiChatSessionService {
     await this.lifecycle.assertAdapterOwned(adapter)
     // Durable stream setup is another await window deletion can cross.
     await this.assertSessionIncarnation(sessionKey, generation, adapter)
-    const buffer = new PiChatReplayBuffer({ initialLatestSeq: initialSeq })
     const mapper = new PiChatEventMapper({
       sessionId,
       initialSeq: buffer.latestSeq,
@@ -967,6 +966,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     return channel
   }
 
+  /** Cheap cold-snapshot seq lookup (no buffer hydration) — see {@link hydrateDurableReplayBuffer} for the live-channel path. */
   private async readDurableLatestPiChatSeq(streamPath: string): Promise<number> {
     if (!this.eventStore) return 0
     const meta = await this.eventStore.getStreamMeta(streamPath)
@@ -980,6 +980,70 @@ export class HarnessPiChatService implements PiChatSessionService {
     const envelope = tail.events[0]?.data as Partial<AgentEvent> | undefined
     const seq = envelope?.chunk?.seq
     return typeof seq === 'number' && Number.isInteger(seq) && seq >= 0 ? seq : tailIndex + 1
+  }
+
+  /**
+   * On cold channel construction, rehydrate a fresh {@link PiChatReplayBuffer}
+   * from the durable event store (when present) so resuming clients replay
+   * genuinely — not merely resume seq counting from a high-water-mark with an
+   * empty buffer, which forces every behind-the-tip cursor into
+   * `PI_CHAT_REPLAY_GAP`. Reads at most the buffer's own retention window
+   * (`DEFAULT_REPLAY_BUFFER_MAX_EVENTS`) worth of trailing entries — older
+   * history is already outside what the in-memory buffer would retain even
+   * across a live process, so this preserves prior semantics for very long
+   * streams while fixing the common "just restarted" resume case.
+   */
+  private async hydrateDurableReplayBuffer(streamPath: string): Promise<PiChatReplayBuffer> {
+    if (!this.eventStore) return new PiChatReplayBuffer()
+    const meta = await this.eventStore.getStreamMeta(streamPath)
+    if (!meta) return new PiChatReplayBuffer()
+    // Despite the field's name, `meta.nextOffset` is already the LAST
+    // entry's own seq (see SqliteEventStreamStore#getStreamMetaSync:
+    // `formatOffset(next_offset - 1)`), not one-past-the-end. `readEvents`'s
+    // `offset` is an exclusive lower bound (returns seq > offset), so the
+    // window [tailSeq - hydrationLimit, tailSeq] with that exclusive bound
+    // yields exactly `hydrationLimit` entries — verified by
+    // `hydrates exactly hydrationLimit trailing envelopes at the window
+    // boundary, no off-by-one` below. Do not "correct" this to
+    // `tailIndex - hydrationLimit + 1`: that shifts the exclusive bound one
+    // seq forward and drops the oldest entry in the window instead.
+    const tailIndex = parseOffset(meta.nextOffset)
+    if (tailIndex < 0) return new PiChatReplayBuffer()
+
+    const hydrationLimit = Math.min(DEFAULT_REPLAY_BUFFER_MAX_EVENTS, MAX_READ_LIMIT)
+    const windowStart = Math.max(-1, tailIndex - hydrationLimit)
+    const page = await this.eventStore.readEvents(streamPath, {
+      offset: formatOffset(windowStart),
+      limit: hydrationLimit,
+    })
+    const chunks = page.events
+      .map((event) => (event.data as Partial<AgentEvent> | undefined)?.chunk)
+      .filter((chunk): chunk is PiChatEvent => Boolean(chunk) && typeof chunk?.seq === 'number')
+
+    const buffer = new PiChatReplayBuffer()
+    let lastSeq = -1
+    for (const chunk of chunks) {
+      // Defensive: a durable stream must yield strictly increasing seq. If it
+      // doesn't (corrupt/foreign data), stop hydrating rather than throw —
+      // the caller still gets a working buffer, just without full replay.
+      if (chunk.seq <= lastSeq) break
+      buffer.publish(chunk)
+      lastSeq = chunk.seq
+    }
+
+    if (buffer.latestSeq > 0) return buffer
+
+    // No usable chunks were hydrated (e.g. legacy/foreign envelopes without a
+    // `chunk.seq`, per the pre-existing `seeds restart PiChatEvent seq from
+    // the durable tail chunk instead of eventIndex` contract). Fall back to
+    // seq-only continuity from the raw tail envelope so numbering still
+    // advances monotonically, even though replay for behind-the-tip cursors
+    // will report a gap in that legacy-data case.
+    const tail = page.events.at(-1)
+    const envelope = tail?.data as Partial<AgentEvent> | undefined
+    const seq = envelope?.chunk?.seq
+    const fallbackSeq = typeof seq === 'number' && Number.isInteger(seq) && seq >= 0 ? seq : tailIndex + 1
+    return fallbackSeq > 0 ? new PiChatReplayBuffer({ initialLatestSeq: fallbackSeq }) : buffer
   }
 
   /**
