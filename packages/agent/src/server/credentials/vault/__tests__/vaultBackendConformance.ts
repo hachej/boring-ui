@@ -1,9 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, test } from 'vitest'
-import {
-  CREDENTIAL_ERROR_CODES,
-  CredentialResolutionError,
-} from '../../../../shared/credentials'
+import { CREDENTIAL_ERROR_CODES } from '../../../../shared/credentials'
 import type {
   CredentialFieldId,
   ProviderId,
@@ -124,7 +121,7 @@ export function runVaultCredentialStoreConformanceV1(
         { deletedAt: new Date().toISOString(), reason: 'credential-tombstone' },
       )
       await expect(backend.read(workspaceId, providerId, [fieldId]))
-        .rejects.toBeInstanceOf(CredentialResolutionError)
+        .rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.UNREADABLE })
     })
   })
 }

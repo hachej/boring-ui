@@ -9,19 +9,34 @@ export async function runCredentialVaultPostgresMigrationsV1(
       workspace_id text NOT NULL,
       provider_id text NOT NULL,
       credential_id text NOT NULL,
-      credential_version bigint NOT NULL CHECK (credential_version > 0),
-      dek_generation bigint NOT NULL CHECK (dek_generation > 0),
+      display_label text NOT NULL,
+      credential_type text NOT NULL,
+      credential_schema_version integer NOT NULL DEFAULT 1
+        CHECK (credential_schema_version > 0),
+      state text NOT NULL CHECK (state IN (
+        'active', 'disabled', 'revoked', 'needs_reauth',
+        'intentionally_absent', 'instance_fallback_enabled'
+      )),
+      credential_version bigint NOT NULL
+        CHECK (credential_version > 0 AND credential_version <= 9007199254740991),
+      dek_generation bigint NOT NULL
+        CHECK (dek_generation > 0 AND dek_generation <= 9007199254740991),
       material_kind text NOT NULL CHECK (material_kind IN ('field-set', 'none')),
+      masked_last_four_suffix text,
+      created_at timestamptz NOT NULL DEFAULT NOW(),
+      updated_at timestamptz NOT NULL DEFAULT NOW(),
       PRIMARY KEY (workspace_id, provider_id)
     )
   `)
   await sql.unsafe(`
     CREATE TABLE IF NOT EXISTS workspace_credential_keys (
       workspace_id text NOT NULL,
-      dek_generation bigint NOT NULL CHECK (dek_generation > 0),
+      dek_generation bigint NOT NULL
+        CHECK (dek_generation > 0 AND dek_generation <= 9007199254740991),
       kms_provider_id text NOT NULL,
       key_ref text NOT NULL,
-      key_version bigint NOT NULL CHECK (key_version > 0),
+      key_version bigint NOT NULL
+        CHECK (key_version > 0 AND key_version <= 9007199254740991),
       payload_format text NOT NULL,
       payload_format_id text,
       ciphertext bytea,
@@ -29,6 +44,10 @@ export async function runCredentialVaultPostgresMigrationsV1(
       auth_tag bytea,
       aad_context bytea,
       opaque_authenticated_payload bytea,
+      state text NOT NULL DEFAULT 'active'
+        CHECK (state IN ('active', 'retired', 'destroyed')),
+      created_at timestamptz NOT NULL DEFAULT NOW(),
+      updated_at timestamptz NOT NULL DEFAULT NOW(),
       PRIMARY KEY (workspace_id, dek_generation)
     )
   `)
@@ -36,7 +55,8 @@ export async function runCredentialVaultPostgresMigrationsV1(
     CREATE TABLE IF NOT EXISTS workspace_provider_credential_fields (
       workspace_id text NOT NULL,
       provider_id text NOT NULL,
-      credential_version bigint NOT NULL CHECK (credential_version > 0),
+      credential_version bigint NOT NULL
+        CHECK (credential_version > 0 AND credential_version <= 9007199254740991),
       field_id text NOT NULL,
       dek_generation bigint,
       envelope_version text,

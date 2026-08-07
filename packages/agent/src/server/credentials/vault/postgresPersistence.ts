@@ -99,17 +99,22 @@ implements CredentialVaultPersistenceV1 {
   ): Promise<void> {
     await this.sql`
       INSERT INTO workspace_provider_credentials (
-        workspace_id, provider_id, credential_id, credential_version,
+        workspace_id, provider_id, credential_id, display_label,
+        credential_type, credential_schema_version, state, credential_version,
         dek_generation, material_kind
       ) VALUES (
-        ${workspaceId}, ${providerId}, ${record.credentialId},
+        ${workspaceId}, ${providerId}, ${record.credentialId}, ${providerId},
+        'field-set.v1', 1,
+        ${record.materialKind === 'none' ? 'intentionally_absent' : 'active'},
         ${record.credentialVersion}, ${record.dekGeneration}, ${record.materialKind}
       )
       ON CONFLICT (workspace_id, provider_id) DO UPDATE SET
         credential_id = EXCLUDED.credential_id,
         credential_version = EXCLUDED.credential_version,
         dek_generation = EXCLUDED.dek_generation,
-        material_kind = EXCLUDED.material_kind
+        material_kind = EXCLUDED.material_kind,
+        state = EXCLUDED.state,
+        updated_at = NOW()
     `
   }
 
@@ -263,7 +268,9 @@ implements CredentialVaultPersistenceV1 {
         nonce = EXCLUDED.nonce,
         auth_tag = EXCLUDED.auth_tag,
         aad_context = EXCLUDED.aad_context,
-        opaque_authenticated_payload = EXCLUDED.opaque_authenticated_payload
+        opaque_authenticated_payload = EXCLUDED.opaque_authenticated_payload,
+        state = 'active',
+        updated_at = NOW()
     `
   }
 
