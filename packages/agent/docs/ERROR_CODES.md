@@ -126,6 +126,32 @@ All API failures must use the response envelope:
 | `AR1_SHARE_NOT_FOUND` | `GET /a/:id` deep link: no such Lane W share entry, or the entry belongs to a workspace the requester is not authorized/scoped to (identical response either way — no existence oracle) | 404 | user-fix | warn | stable (public API) |
 | `AR1_SHARE_TOMBSTONED` | `GET /a/:id` deep link: share entry exists but its target file is gone; response renders provenance + last-known metadata, never a bare 404 | 200 | user-fix | warn | stable (public API) |
 
+## Credential registry
+
+Credential failures use their own stable enum, `CREDENTIAL_ERROR_CODES` in
+`src/shared/credentials/errors.ts`, surfaced as `CredentialResolutionError.code`.
+These are trusted-API codes: messages are metadata only and never carry a
+credential value, a workspace DEK, or KEK material.
+
+| Code | When it fires | HTTP status | Suggested client action | Log level | Stability |
+| --- | --- | --- | --- | --- | --- |
+| `CREDENTIAL_PROVIDER_UNKNOWN` | The referenced provider is not in the startup provider registry | 404 | report-bug | warn | stable (trusted API) |
+| `CREDENTIAL_NOT_CONFIGURED` | No credential material is configured for that workspace/provider, or a required registered field is absent | 404 | user-fix (connect the provider) | warn | stable (trusted API) |
+| `CREDENTIAL_DISABLED` | The workspace credential exists but is administratively disabled | 403 | user-fix | warn | stable (trusted API) |
+| `CREDENTIAL_REVOKED` | The workspace credential was revoked; no fallback is attempted | 403 | user-fix (reconnect) | warn | stable (trusted API) |
+| `CREDENTIAL_FORBIDDEN` | The verified principal may not use this credential | 403 | user-fix | warn | stable (trusted API) |
+| `CREDENTIAL_WORKSPACE_MISMATCH` | A credential artifact does not belong to the authority-verified workspace | 403 | report-bug | error | stable (trusted API) |
+| `CREDENTIAL_CONSUMER_MISMATCH` | A reference, binding, and provider triple disagree, or the binding is not registered for its provider | 403 | report-bug | warn | stable (trusted API) |
+| `CREDENTIAL_DELIVERY_FORBIDDEN` | The requested delivery channel is not permitted for that binding, or a lease was serialized | 403 | report-bug | error | stable (trusted API) |
+| `CREDENTIAL_AUTHORITY_INVALID` | The workspace credential authority is unissued, copied, or expired | 403 | re-auth | warn | stable (trusted API) |
+| `CREDENTIAL_SCHEMA_MISMATCH` | A credential reference, registry/binding definition, KEK context, or envelope AAD context failed strict validation | 400 | report-bug | warn | stable (trusted API) |
+| `CREDENTIAL_UNREADABLE` | A credential envelope or wrapped workspace DEK failed AES-256-GCM authentication — tampered ciphertext/nonce/tag, a swapped AAD component, a wrong KEK, or another backend's envelope. Never treated as "absent" | 500 | operator-fix | error | stable (trusted API) |
+| `CREDENTIAL_BACKEND_UNAVAILABLE` | The credential store or its KEK provider reported not-ready or failed unexpectedly; the operation fails closed with no fallback | 503 | retry/operator-fix | error | stable (trusted API) |
+| `CREDENTIAL_KEK_UNAVAILABLE` | The configured KEK source is missing, unreadable, or the wrong length, so no workspace DEK could be wrapped or unwrapped. Never falls back to another backend or to plaintext | 503 | operator-fix (mount/repair the sealed KEK file) | error | stable (trusted API) |
+| `CREDENTIAL_LEASE_EXPIRED` | A resolved credential lease was used after disposal or expiry | 410 | resolve a fresh lease | warn | stable (trusted API) |
+| `CREDENTIAL_OAUTH_STATE_INVALID` | A one-use OAuth state transaction was unknown, replayed, or expired | 400 | restart the connect flow | warn | stable (trusted API) |
+| `CREDENTIAL_OAUTH_REFRESH_FAILED` | Upstream refused a refresh-token exchange | 401 | re-auth | warn | stable (trusted API) |
+
 ## Readiness error details
 
 `WORKSPACE_NOT_READY` is reserved for workspace substrate requirements:
