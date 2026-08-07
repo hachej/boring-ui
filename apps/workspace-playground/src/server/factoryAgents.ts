@@ -1,11 +1,11 @@
 import { resolve } from 'node:path'
 
 import { loadConfiguredAgentFleet, type AgentHostAgentSpec } from '@hachej/boring-agent/server'
+import { discoverRepositoryAgentPackages } from '@hachej/boring-workspace/server'
 
 export type BoringFactoryRole = 'concierge' | 'triage' | 'steward' | 'worker' | 'reviewer'
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../..')
-const PERSONAS_DIR = resolve(REPOSITORY_ROOT, '.agents', 'personas')
 const FLEET_CONFIG_PATH = resolve(REPOSITORY_ROOT, '.agents', 'factory', 'fleet.yaml')
 const POLICY_PATH = resolve(REPOSITORY_ROOT, '.agents', 'factory', 'policy.yaml')
 
@@ -25,9 +25,10 @@ export async function loadBoringFactoryAgents(
   options: LoadBoringFactoryAgentsOptions = {},
 ): Promise<readonly AgentHostAgentSpec[]> {
   const { agents, diagnostics } = await loadConfiguredAgentFleet({
-    personasDir: PERSONAS_DIR,
+    discoveredPackages: await discoverRepositoryAgentPackages(REPOSITORY_ROOT),
     fleetConfigPath: FLEET_CONFIG_PATH,
     policyPath: POLICY_PATH,
+    skillsRoot: resolve(REPOSITORY_ROOT, '.agents', 'skills'),
     ...(options.env ? { env: options.env } : {}),
   })
   if (diagnostics.length > 0) {

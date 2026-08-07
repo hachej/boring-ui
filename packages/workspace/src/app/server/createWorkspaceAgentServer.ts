@@ -59,6 +59,7 @@ import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
+import { discoverRepositoryAgentPackages } from "../../server/agentPlugins/discoverAgentPackages"
 import { PLUGIN_SIGNATURE_CACHE_FILE } from "../../server/agentPlugins/signatureCache"
 import type { BoringPluginFrontTargetResolver, BoringPluginSource, BoringPluginSourceInput } from "../../server/agentPlugins/types"
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
@@ -1251,7 +1252,14 @@ export async function createWorkspaceAgentServer(
   // and no explicit `opts.agents`, the resolved fleet has 6 agents even though
   // the option was omitted, and must not inherit the legacy global-contribution
   // route shape (gh-1106 slice 3 fix round 1, M3).
-  const agents = opts.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: opts.fleetRepositoryRoot })
+  const fleetRepositoryRoot = opts.fleetRepositoryRoot ?? process.cwd()
+  const discoveredPackages = !opts.agents && process.env.BORING_AGENT_FLEET === '1'
+    ? await discoverRepositoryAgentPackages(fleetRepositoryRoot)
+    : undefined
+  const agents = opts.agents ?? await resolveDefaultAgentFleet({
+    repositoryRoot: fleetRepositoryRoot,
+    ...(discoveredPackages ? { discoveredPackages } : {}),
+  })
   const isLegacyDefaultFleet = agents.length === 1 && "legacyDefault" in agents[0]!
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
@@ -1350,6 +1358,9 @@ export async function createWorkspaceAgentServer(
   // explicit so later activation code does not infer trust from paths.
   const resolveBoringPluginDirs = (): BoringPluginSource[] => uniquePluginSources([
       ...defaultPluginPackagePaths.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
+      ...(process.env.BORING_AGENT_FLEET === '1'
+        ? [{ rootDir: join(fleetRepositoryRoot, '.agents', 'personas'), kind: 'internal' as const }]
+        : []),
       ...collectBoringPluginSources(workspaceRoot, pluginCollection, opts.additionalBoringPluginDirs, externalPluginsEnabled),
     ])
   const boringPluginDirs: BoringPluginSource[] = []

@@ -11,5 +11,8 @@
       "description": "Fresh exact-revision reviewer for standards, spec, and proof.",
       "instructionsRef": "instructions.md"
     }
+  },
+  "pi": {
+    "skills": ["fresh-eyes", "handoff"]
   }
 }

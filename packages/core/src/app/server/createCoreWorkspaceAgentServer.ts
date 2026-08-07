@@ -59,6 +59,7 @@ import {
 } from '@hachej/boring-workspace/app/server'
 import {
   createWorkspaceUiTools,
+  discoverRepositoryAgentPackages,
   uiRoutes,
   type WorkspaceBridge,
   type WorkspaceBridgeCallRequest,
@@ -1252,7 +1253,14 @@ export async function createCoreWorkspaceAgentServer(
   // the deployed core app host (apps/full-app), same helper as
   // createWorkspaceAgentServer and the CLI hub; flag absent preserves the
   // legacy single-default-agent boot byte-identically.
-  const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot })
+  const fleetRepositoryRoot = options.fleetRepositoryRoot ?? process.cwd()
+  const discoveredPackages = !options.agents && process.env.BORING_AGENT_FLEET === '1'
+    ? await discoverRepositoryAgentPackages(fleetRepositoryRoot)
+    : undefined
+  const agents = options.agents ?? await resolveDefaultAgentFleet({
+    repositoryRoot: fleetRepositoryRoot,
+    ...(discoveredPackages ? { discoveredPackages } : {}),
+  })
   const scopeAuthority = createCoreAgentScopeAuthority({
     appId: config.appId,
     workspaceStore,

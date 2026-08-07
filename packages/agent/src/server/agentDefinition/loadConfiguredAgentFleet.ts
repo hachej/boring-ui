@@ -1,5 +1,5 @@
 import { lstat, readFile, realpath } from 'node:fs/promises'
-import { basename, isAbsolute, dirname, relative, resolve, sep } from 'node:path'
+import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { parse as parseYaml } from 'yaml'
 
@@ -45,32 +45,53 @@ export interface FleetSeatBinding {
   readonly skills: readonly FleetSkillBinding[]
 }
 
+export interface DiscoveredAgentPackageDescriptor {
+  readonly rootDir: string
+  readonly manifest: {
+    readonly boring: {
+      readonly agent: {
+        readonly definitionId: string
+        readonly version: string
+        readonly label?: string
+        readonly description?: string
+        readonly instructionsRef: string
+      }
+    }
+    readonly pi?: { readonly skills?: readonly string[] }
+  }
+  readonly preflight: {
+    readonly ok: boolean
+    readonly errors?: readonly { readonly code: string; readonly message: string }[]
+  }
+}
+
 export interface LoadConfiguredAgentFleetOptions {
-  /** Directory containing `<seat>/package.json` persona packages. */
-  readonly personasDir: string
+  /** Plugin-manager scan descriptors injected by the workspace/CLI boot layer. */
+  readonly discoveredPackages: readonly DiscoveredAgentPackageDescriptor[]
   /** Path to `.agents/factory/fleet.yaml`. */
   readonly fleetConfigPath: string
   /** Path to `.agents/factory/policy.yaml` (read for `models.seats` tiers). */
   readonly policyPath: string
   /**
    * Directory containing `<skill>/SKILL.md` canonical skill sources.
-   * Defaults to the `skills` directory sibling of `personasDir` (i.e.
-   * `.agents/skills` next to `.agents/personas`) — override when that
-   * sibling-directory layout assumption doesn't hold (e.g. isolated fixture
-   * trees that don't mirror the full `.agents/` shape).
+   * This root is host-owned because shared skill names are not package paths.
    */
-  readonly skillsRoot?: string
+  readonly skillsRoot: string
   /** Overridable for tests; defaults to `process.env`. */
   readonly env?: NodeJS.ProcessEnv
 }
 
 export type FleetLoaderDiagnosticCode = Extract<
   AgentErrorCode,
-  'AGENT_FLEET_SEAT_PERSONA_INVALID' | 'AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH'
+  | 'AGENT_FLEET_SEAT_PERSONA_INVALID'
+  | 'AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH'
+  | 'AGENT_DEFINITION_ID_CONFLICT'
+  | 'AGENT_DEFINITION_UNSEATED'
 >
 
 export interface FleetLoaderDiagnostic {
-  readonly seat: string
+  readonly seat?: string
+  readonly agentTypeId: string
   readonly code: FleetLoaderDiagnosticCode
   readonly message: string
 }
@@ -178,33 +199,44 @@ function resolveSeatModel(tier: string | undefined, env: NodeJS.ProcessEnv): str
   return undefined
 }
 
+async function readVerifiedSkillContent(
+  root: string,
+  reference: string,
+  skill: FleetSkillBinding,
+): Promise<string> {
+  const rootTarget = await realpath(root)
+  let candidate = resolve(rootTarget, reference)
+  const candidateStat = await lstat(candidate)
+  if (candidateStat.isDirectory()) candidate = resolve(candidate, 'SKILL.md')
+  const fileStat = await lstat(candidate)
+  if (!fileStat.isFile() || fileStat.isSymbolicLink()) throw new Error('skill source is not a regular file')
+  const target = await realpath(candidate)
+  if (!isInside(rootTarget, target)) throw new Error('skill source resolves outside its admitted root')
+  const content = await readFile(target, 'utf8')
+  if (await sha256(content) !== skill.digest) throw new Error('skill digest mismatch')
+  return content
+}
+
 async function canonicalSkillContent(skillsRoot: string, skill: FleetSkillBinding): Promise<string> {
-  const candidate = resolve(skillsRoot, skill.name, 'SKILL.md')
   try {
-    const fileStat = await lstat(candidate)
-    if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
-      throw new Error(`canonical skill "${skill.name}" must be a regular non-symlink file`)
-    }
-    const target = await realpath(candidate)
-    if (!isInside(skillsRoot, target)) {
-      throw new Error(`canonical skill "${skill.name}" resolves outside the admitted skills root`)
-    }
-    const content = await readFile(target, 'utf8')
-    const digest = await sha256(content)
-    if (digest !== skill.digest) {
-      throw new Error(`canonical skill "${skill.name}" digest mismatch`)
-    }
-    return content
+    return await readVerifiedSkillContent(skillsRoot, `${skill.name}/SKILL.md`, skill)
   } catch {
-    // Redact filesystem paths/causes from the diagnostic surface.
     throw new Error(`canonical skill "${skill.name}" is unavailable`)
+  }
+}
+
+async function packageSkillContent(packageRoot: string, skill: FleetSkillBinding): Promise<string> {
+  try {
+    return await readVerifiedSkillContent(packageRoot, skill.name, skill)
+  } catch {
+    throw new Error(`package skill "${skill.name}" is unavailable`)
   }
 }
 
 /**
  * Loads the config-driven production/CLI agent fleet: `.agents/factory/fleet.yaml`
- * seat → skill-digest bindings, `.agents/personas/<seat>` plugin-shaped persona
- * packages, and `.agents/factory/policy.yaml` `models.seats` tiers resolved via
+ * seat → skill-digest bindings, boot-injected plugin-shaped persona package
+ * descriptors, and `.agents/factory/policy.yaml` `models.seats` tiers resolved via
  * the hardcoded MODEL-CARD priority map above.
  *
  * Fails closed per seat: a persona that fails materialization, digest
@@ -229,35 +261,94 @@ export async function loadConfiguredAgentFleet(
     seatTiers = Object.freeze({})
   }
 
-  const skillsRoot = options.skillsRoot ?? resolve(dirname(options.personasDir), 'skills')
-
   const agents: ConfiguredAgentHostAgentSpec[] = []
   const diagnostics: FleetLoaderDiagnostic[] = []
+  const packagesByDefinitionId = new Map<string, DiscoveredAgentPackageDescriptor[]>()
+  for (const descriptor of options.discoveredPackages) {
+    const definitionId = descriptor.manifest.boring.agent.definitionId
+    const existing = packagesByDefinitionId.get(definitionId) ?? []
+    existing.push(descriptor)
+    packagesByDefinitionId.set(definitionId, existing)
+  }
+  const seatedDefinitionIds = new Set(seats.map((seat) => seat.agentTypeId))
+  const conflictedDefinitionIds = new Set<string>()
+  for (const [definitionId, descriptors] of packagesByDefinitionId) {
+    if (descriptors.length > 1) {
+      conflictedDefinitionIds.add(definitionId)
+      for (const _descriptor of descriptors) {
+        diagnostics.push({
+          agentTypeId: definitionId,
+          code: ErrorCode.enum.AGENT_DEFINITION_ID_CONFLICT,
+          message: `agent definition "${definitionId}" is claimed by multiple discovered packages`,
+        })
+      }
+    } else if (!seatedDefinitionIds.has(definitionId)) {
+      const descriptor = descriptors[0]!
+      diagnostics.push(descriptor.preflight.ok ? {
+        agentTypeId: definitionId,
+        code: ErrorCode.enum.AGENT_DEFINITION_UNSEATED,
+        message: `discovered agent definition "${definitionId}" is not seated and remains inert`,
+      } : {
+        agentTypeId: definitionId,
+        code: ErrorCode.enum.AGENT_FLEET_SEAT_PERSONA_INVALID,
+        message: `discovered agent definition "${definitionId}" failed plugin preflight and is excluded`,
+      })
+    }
+  }
 
   for (const binding of seats) {
     let recorded = false
     try {
+      const descriptors = packagesByDefinitionId.get(binding.agentTypeId) ?? []
+      if (conflictedDefinitionIds.has(binding.agentTypeId)) continue
+      const descriptor = descriptors[0]
+      if (!descriptor || !descriptor.preflight.ok) throw new Error(`seat "${binding.seat}" has no valid discovered agent package`)
       const source = await materializeAgentDirectory({
-        directory: resolve(options.personasDir, binding.seat),
+        directory: descriptor.rootDir,
         expectedAgentTypeId: binding.agentTypeId,
         manifest: 'package.json',
       })
+
+      const declaredSkills = descriptor.manifest.pi?.skills ?? []
+      const declaredSet = new Set(declaredSkills)
+      const pinnedSet = new Set(binding.skills.map((skill) => skill.name))
+      if (
+        declaredSet.size !== declaredSkills.length ||
+        pinnedSet.size !== binding.skills.length ||
+        declaredSet.size !== pinnedSet.size ||
+        [...declaredSet].some((name) => !pinnedSet.has(name))
+      ) {
+        recorded = true
+        diagnostics.push({
+          seat: binding.seat,
+          agentTypeId: binding.agentTypeId,
+          code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH,
+          message: `seat "${binding.seat}" skill pins do not exactly match its package pi.skills declarations`,
+        })
+        continue
+      }
 
       const instructionAppendices: { name: string; digest: Sha256Digest; content: string }[] = []
       for (const skill of binding.skills) {
         let content: string
         try {
-          content = await canonicalSkillContent(skillsRoot, skill)
+          content = skill.name.includes('/')
+            ? await packageSkillContent(descriptor.rootDir, skill)
+            : await canonicalSkillContent(options.skillsRoot, skill)
         } catch (error) {
           recorded = true
           diagnostics.push({
             seat: binding.seat,
+            agentTypeId: binding.agentTypeId,
             code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH,
             message: error instanceof Error ? error.message : `skill "${skill.name}" is unavailable`,
           })
           throw error
         }
-        instructionAppendices.push({ name: skill.name, digest: skill.digest, content })
+        const appendixName = skill.name.includes('/')
+          ? `package-${instructionAppendices.length + 1}-${skill.digest.slice('sha256:'.length, 'sha256:'.length + 12)}`
+          : skill.name
+        instructionAppendices.push({ name: appendixName, digest: skill.digest, content })
       }
 
       const preferredModel = resolveSeatModel(seatTiers[binding.seat], env)
@@ -273,6 +364,7 @@ export async function loadConfiguredAgentFleet(
       if (!recorded) {
         diagnostics.push({
           seat: binding.seat,
+          agentTypeId: binding.agentTypeId,
           code: ErrorCode.enum.AGENT_FLEET_SEAT_PERSONA_INVALID,
           message: error instanceof Error ? error.message : `seat "${binding.seat}" persona is invalid`,
         })

@@ -7,7 +7,12 @@ import {
   type BoringPackagePiField,
   type BoringPluginPackageJson,
 } from "../../shared/plugins/manifest"
-import type { BoringPluginSource, BoringPluginSourceInput, BoringServerPluginManifest } from "./types"
+import type {
+  BoringPluginSource,
+  BoringPluginSourceInput,
+  BoringServerPluginManifest,
+  DiscoveredBoringAgentPackage,
+} from "./types"
 import { assertCanonicalPluginId, extractDefinePluginId } from "./canonicalPluginId"
 import { resolveContainedPluginPath } from "./pluginPaths"
 
@@ -26,6 +31,7 @@ export interface BoringPluginPreflightResult {
 export interface BoringPluginScanResult {
   preflight: BoringPluginPreflightResult
   plugins: BoringServerPluginManifest[]
+  agentPackages: DiscoveredBoringAgentPackage[]
 }
 
 interface DiscoveredBoringPluginDirs {
@@ -63,8 +69,38 @@ function parsePackageJson(rootDir: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8")) as Record<string, unknown>
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
 function hasPluginMetadata(pkg: Record<string, unknown>): boolean {
   return pkg.boring !== undefined || pkg.pi !== undefined
+}
+
+function agentPackageManifest(raw: Record<string, unknown>): DiscoveredBoringAgentPackage["manifest"] | undefined {
+  if (!isRecord(raw.boring) || !isRecord(raw.boring.agent)) return undefined
+  const agent = raw.boring.agent
+  if (
+    typeof agent.definitionId !== "string" ||
+    typeof agent.version !== "string" ||
+    typeof agent.instructionsRef !== "string"
+  ) return undefined
+  const rawSkills = isRecord(raw.pi) ? raw.pi.skills : undefined
+  if (rawSkills !== undefined && (!Array.isArray(rawSkills) || rawSkills.some((skill) => typeof skill !== "string"))) {
+    return undefined
+  }
+  return {
+    boring: {
+      agent: {
+        definitionId: agent.definitionId,
+        version: agent.version,
+        ...(typeof agent.label === "string" ? { label: agent.label } : {}),
+        ...(typeof agent.description === "string" ? { description: agent.description } : {}),
+        instructionsRef: agent.instructionsRef,
+      },
+    },
+    ...(rawSkills ? { pi: { skills: rawSkills as string[] } } : {}),
+  }
 }
 
 function resolvePluginPath(rootDir: string, value: string | undefined, options: { mustExist?: boolean } = {}): string | undefined {
@@ -111,11 +147,14 @@ function packagePathContainmentIssues(rootDir: string, pkg: BoringPluginPackageJ
     if (issue) issues.push({ ...issue, ...(pluginId ? { pluginId } : {}) })
   }
   push(pathPreflightIssue(rootDir, boring?.front, "boring.front", { mustExist: true }))
+  push(pathPreflightIssue(rootDir, boring?.agent?.instructionsRef, "boring.agent.instructionsRef", { mustExist: true }))
   if (boring?.server !== false && boring?.server !== undefined) {
     push(pathPreflightIssue(rootDir, boring.server, "boring.server"))
   }
   pi?.extensions?.forEach((value, index) => push(pathPreflightIssue(rootDir, value, `pi.extensions[${index}]`, { mustExist: true })))
-  pi?.skills?.forEach((value, index) => push(pathPreflightIssue(rootDir, value, `pi.skills[${index}]`, { mustExist: true })))
+  pi?.skills?.forEach((value, index) => {
+    if (value.includes("/")) push(pathPreflightIssue(rootDir, value, `pi.skills[${index}]`, { mustExist: true }))
+  })
   return issues
 }
 
@@ -168,6 +207,7 @@ export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): Boring
   const plugins: BoringServerPluginManifest[] = []
   const seenIds = new Map<string, string>()
   const discovered = discoverBoringPluginDirs(pluginDirs)
+  const rawPackages = new Map<string, Record<string, unknown>>()
 
   for (const pluginDir of discovered.missingDirs) {
     errors.push({ pluginDir, code: "MISSING_PLUGIN_DIR", message: "registered plugin source directory does not exist" })
@@ -189,6 +229,7 @@ export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): Boring
       })
       continue
     }
+    rawPackages.set(rootDir, raw)
     if (!hasPluginMetadata(raw)) {
       if (source.registered) {
         errors.push({
@@ -288,7 +329,7 @@ export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): Boring
     }
     const version = pkg.version ?? "0.0.0"
     const extensionPaths = resolvePluginPaths(rootDir, pi?.extensions)
-    const skillPaths = resolvePluginPaths(rootDir, pi?.skills)
+    const skillPaths = resolvePluginPaths(rootDir, pi?.skills?.filter((value) => value.includes("/")))
     plugins.push({
       id,
       rootDir,
@@ -304,8 +345,20 @@ export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): Boring
     })
   }
 
+  const agentPackages = [...rawPackages].flatMap(([rootDir, raw]) => {
+    const manifest = agentPackageManifest(raw)
+    if (!manifest) return []
+    const packageErrors = errors
+      .filter((error) => resolve(error.pluginDir) === resolve(rootDir))
+      .map((error) => ({ code: error.code, message: error.message }))
+    return [{
+      rootDir,
+      manifest,
+      preflight: { ok: packageErrors.length === 0, errors: packageErrors },
+    }]
+  })
   const preflight = { ok: errors.length === 0, errors }
-  return { preflight, plugins }
+  return { preflight, plugins, agentPackages }
 }
 
 export function preflightBoringPlugins(pluginDirs: BoringPluginSourceInput[]): BoringPluginPreflightResult {
