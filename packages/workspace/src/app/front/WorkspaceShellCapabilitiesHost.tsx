@@ -4,13 +4,14 @@ import { useEffect, useState, type ReactNode } from "react"
 import type { DispatchContext } from "../../front/bridge"
 import { DetachedChatPopover } from "../../front/chrome/chat/DetachedChatPopover"
 import type { ChatPanelHostProps } from "../../front/chrome/chat/ChatPanelHost"
-import type { WorkspaceShellCapabilities } from "../../front/shell/WorkspaceShellCapabilitiesContext"
+import type { WorkspaceShellCapabilities, WorkspaceShellCapabilityResult, WorkspaceShellCreatedSessionResult } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import type { WorkspaceShellSessionRef } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import { workspaceSessionKey } from "../../front/sessionIdentity"
 import { useWorkspaceShellCapabilitiesController } from "./useWorkspaceShellCapabilitiesController"
 
 export interface WorkspaceShellCapabilitiesHostResult {
   floatingChatNode: ReactNode
+  floatingChatOpen: boolean
   shellCapabilities: WorkspaceShellCapabilities
 }
 
@@ -21,10 +22,13 @@ export function useWorkspaceShellCapabilitiesHost({
   sessionTitleById,
   defaultSessionTitle,
   makeCenterParams,
+  createChatSession,
+  deleteChatSession,
   openChatPane,
   refreshChatSessions,
   surfaceDispatch,
   onDockOverlay,
+  isAppLeftOverlayAvailable,
 }: {
   appLeftPaneCollapsed: boolean
   workspaceId: string
@@ -32,16 +36,27 @@ export function useWorkspaceShellCapabilitiesHost({
   sessionTitleById: Map<string, string | null | undefined>
   defaultSessionTitle: string
   makeCenterParams: (sessionKey: string, options?: { bridgeEnabled?: boolean }) => unknown
+  createChatSession: (options?: { title?: string }) => Promise<WorkspaceShellCreatedSessionResult>
+  deleteChatSession: (ref: WorkspaceShellSessionRef) => Promise<WorkspaceShellCapabilityResult>
   openChatPane: (sessionId: string, agentTypeId?: string) => void
   refreshChatSessions: () => Promise<void>
   surfaceDispatch: DispatchContext
   onDockOverlay?: () => void
+  isAppLeftOverlayAvailable?: (id: string) => boolean
 }): WorkspaceShellCapabilitiesHostResult {
   const [floatingChatSession, setFloatingChatSession] = useState<{ ref: WorkspaceShellSessionRef; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>(null)
   useEffect(() => {
     setFloatingChatSession(null)
   }, [workspaceId])
-  const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSession, openChatPane, refreshChatSessions, surfaceDispatch })
+  const shellCapabilities = useWorkspaceShellCapabilitiesController({
+    setFloatingChatSession,
+    createChatSession,
+    deleteChatSession,
+    openChatPane,
+    refreshChatSessions,
+    surfaceDispatch,
+    isAppLeftOverlayAvailable,
+  })
 
   useEffect(() => {
     const onOpenDetachedChat = (event: Event) => {
@@ -88,6 +103,7 @@ export function useWorkspaceShellCapabilitiesHost({
 
   return {
     floatingChatNode,
+    floatingChatOpen: floatingChatRef !== null,
     shellCapabilities,
   }
 }

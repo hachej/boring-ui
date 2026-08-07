@@ -57,6 +57,7 @@ export const navigateToLineSchema = z.object({
 
 export const expandToFileSchema = z.object({
   path: safePath,
+  filesystem: z.string().min(1).optional(),
 })
 
 export { MAX_PANELS }

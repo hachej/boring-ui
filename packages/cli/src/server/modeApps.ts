@@ -668,6 +668,9 @@ export async function createWorkspacesModeApp(opts: {
       const pluginCollection = await workspaceAppServer.resolveWorkspaceAgentServerPluginCollection({
         workspaceRoot: workspace.path,
         bridge: getBridge(workspace.id),
+        // Workspaces mode has one explicit CLI-owned Agent address. Pass it to
+        // trusted plugins rather than letting plugins invent a fallback.
+        agentTypeId: "default",
         defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
         installPluginAuthoring: false,
         excludeDefaults: ["boring-ui-plugin-cli-package"],
@@ -868,8 +871,14 @@ export async function createWorkspacesModeApp(opts: {
   const authorizeAgentRequest = async (request: FastifyRequest) => {
     return trustedLocalScope.issueScope(await workspaceFromRequest(request))
   }
+  // BORING_AGENT_FLEET=1 composes the config-driven production fleet
+  // (gh-1106 slice 3) from .agents/{personas,factory} alongside the default
+  // agent; flag absent preserves the legacy single-default-agent boot
+  // byte-identically. Shared with createWorkspaceAgentServer/Core via the
+  // canonical @hachej/boring-agent/server helper (M9 fix round 1: this used
+  // to duplicate that composition inline).
   const agentHost = await agentServer.createAgentHost({
-    agents: [{ agentTypeId: "default", legacyDefault: true }],
+    agents: await agentServer.resolveDefaultAgentFleet(),
     fleetCompiler: { async compile({ agents }) { return agents } },
     hostId: "cli-trusted-local",
     scopeVerifier: trustedLocalScope.scopeVerifier,

@@ -138,6 +138,11 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
 
   if (toolParts.length === 0) return null
 
+  const inlineToolKeys = new Set(toolParts.flatMap(({ part, key }) => {
+    const { renderer } = resolveToolRendererForPart(part, mergedToolRenderers)
+    return renderer.presentation === 'inline' ? [key] : []
+  }))
+
   return (
     <Collapsible
       open={isOpen}
@@ -145,6 +150,11 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
       className="not-prose my-1.5"
       data-boring-agent-tool-state={visualState}
     >
+      {toolParts.map(({ part, key }) => {
+        if (!inlineToolKeys.has(key)) return null
+        const { renderer, part: resolvedPart, resolution } = resolveToolRendererForPart(part, mergedToolRenderers)
+        return <div key={key} data-boring-agent-part="inline-tool-renderer" data-tool-call-id={resolvedPart.toolCallId} data-tool-renderer-key={resolution.key}>{renderer(resolvedPart)}</div>
+      })}
       <CollapsibleTrigger
         aria-label={`Tool calls: ${title}`}
         className={cn(
@@ -192,7 +202,13 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
           <div className="absolute left-[5px] top-0 bottom-2 w-px bg-border/35" />
           <div className="flex min-w-0 flex-col gap-1.5 [&_[data-boring-agent-part=tool-card]]:!my-0">
             {toolParts.map(({ part, key }) => {
-              const { renderer, part: resolvedPart, resolution } = resolveToolRendererForPart(part, mergedToolRenderers)
+              // Inline cards are only meaningful while their plugin can render
+              // pending state. Keep the canonical tool result reachable in the
+              // disclosure for completion, cancellation, and transcript replay.
+              const { renderer, part: resolvedPart, resolution } = resolveToolRendererForPart(
+                part,
+                inlineToolKeys.has(key) ? {} : mergedToolRenderers,
+              )
               return (
                 <div
                   key={key}

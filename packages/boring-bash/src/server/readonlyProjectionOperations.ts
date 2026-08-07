@@ -158,11 +158,35 @@ function pageVisibleResults<T>(items: T[], options: ReadonlyProjectionSearchOpti
 }
 
 function globToRegex(pattern: string): RegExp {
-  const escaped = pattern
-    .replace(/[|\\{}()[\]^$+?.]/g, "\\$&")
-    .replace(/\*\*/g, ".*")
-    .replace(/\*/g, "[^/]*");
-  return new RegExp(`^${escaped}$`);
+  let source = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === "*") {
+      if (pattern[index + 1] === "*") {
+        source += ".*";
+        index += 1;
+      } else {
+        source += "[^/]*";
+      }
+      continue;
+    }
+    if (char === "?") {
+      source += "[^/]";
+      continue;
+    }
+    if (char === "[") {
+      const closing = pattern.indexOf("]", index + 1);
+      if (closing > index + 1) {
+        const content = pattern.slice(index + 1, closing);
+        const negated = content.startsWith("!") ? `^${content.slice(1)}` : content;
+        source += `[${negated.replace(/\\/g, "\\\\")}]`;
+        index = closing;
+        continue;
+      }
+    }
+    source += char.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+  }
+  return new RegExp(`^${source}$`);
 }
 
 export interface ReadonlyProjectionHandle {

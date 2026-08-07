@@ -353,12 +353,27 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
 
     const browserClaim = await inject(workspaceId)
     expect(browserClaim.statusCode).toBe(200)
+    const environmentRouteHeaders = {
+      'x-test-user-id': 'user-1',
+      'x-boring-storage-scope': workspaceId,
+    }
     const environmentRoute = await app.inject({
       method: 'GET',
       url: '/api/v1/files/search?q=proof',
-      headers: { 'x-test-user-id': 'user-1', 'x-boring-storage-scope': workspaceId },
+      headers: environmentRouteHeaders,
     })
     expect(environmentRoute.statusCode).toBe(200)
+    expect(environmentRoute.json()).toEqual({ resources: [] })
+
+    const filesystemCatalog = await app.inject({
+      method: 'GET',
+      url: '/api/v1/filesystems',
+      headers: environmentRouteHeaders,
+    })
+    expect(filesystemCatalog.statusCode).toBe(200)
+    expect(filesystemCatalog.json().filesystems).toEqual([
+      expect.objectContaining({ filesystem: 'user', rootDir: '.', access: 'readwrite' }),
+    ])
 
     const omitted = await inject()
     expect(omitted.statusCode).toBe(200)

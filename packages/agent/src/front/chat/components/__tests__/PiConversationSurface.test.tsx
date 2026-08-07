@@ -182,7 +182,9 @@ describe('PiConversationSurface', () => {
     expect(ids).not.toContain('m0')
 
     // Revealing older expands the window upward.
-    fireEvent.click(screen.getByRole('button', { name: /Load 40 older messages/ }))
+    const loadOlder = screen.getByRole('button', { name: /Load 40 older messages/ })
+    expect(loadOlder.className).toContain('boring-agent-history-action')
+    fireEvent.click(loadOlder)
     ids = screen.getAllByTestId('timeline-message').map((el) => el.getAttribute('data-boring-agent-message-id'))
     expect(ids).toHaveLength(100)
     expect(ids[0]).toBe('m0')
@@ -203,5 +205,76 @@ describe('PiConversationSurface', () => {
     // Switching sessions snaps back to the latest window.
     rerender(renderSurface(textMessages(100), 'session-b'))
     expect(screen.getAllByTestId('timeline-message')).toHaveLength(60)
+  })
+
+  test('a terminal chat error replaces the loading skeleton instead of stacking with it', () => {
+    render(
+      <PiConversationSurface
+        chrome
+        emptyHero={false}
+        messages={[]}
+        emptyStateHydrating
+        suggestions={[]}
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        runtimeNotices={[{ id: 'session-navigation-error', level: 'error', text: 'Could not load session list.' }]}
+        onDismissNotice={() => {}}
+        onScrollToBottomReady={() => {}}
+        onSuggestionSubmit={async () => undefined}
+        onRestoreDraft={() => {}}
+      />,
+    )
+
+    expect(screen.queryByLabelText('Loading chat history')).toBeNull()
+    expect(screen.getByText('Chat history unavailable')).toBeTruthy()
+  })
+
+  test('a terminal chat error replaces the empty-chat hero instead of contradicting it', () => {
+    render(
+      <PiConversationSurface
+        chrome
+        emptyHero={false}
+        messages={[]}
+        emptyStateHydrating={false}
+        emptyState={{ title: 'What should we work on?' }}
+        suggestions={[]}
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        runtimeNotices={[{ id: 'chat-error', level: 'error', text: 'stream closed unexpectedly' }]}
+        onDismissNotice={() => {}}
+        onScrollToBottomReady={() => {}}
+        onSuggestionSubmit={async () => undefined}
+        onRestoreDraft={() => {}}
+      />,
+    )
+
+    expect(screen.queryByText('What should we work on?')).toBeNull()
+    expect(screen.getByText('Chat history unavailable')).toBeTruthy()
+  })
+
+  test('with no terminal error, empty/loading states render as before', () => {
+    render(
+      <PiConversationSurface
+        chrome
+        emptyHero={false}
+        messages={[]}
+        emptyStateHydrating={false}
+        emptyState={{ title: 'What should we work on?' }}
+        suggestions={[]}
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        runtimeNotices={[]}
+        onDismissNotice={() => {}}
+        onScrollToBottomReady={() => {}}
+        onSuggestionSubmit={async () => undefined}
+        onRestoreDraft={() => {}}
+      />,
+    )
+
+    expect(screen.getByText('What should we work on?')).toBeTruthy()
+    expect(screen.queryByText('Chat history unavailable')).toBeNull()
   })
 })

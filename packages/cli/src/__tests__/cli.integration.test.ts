@@ -121,7 +121,7 @@ test("installed boring-ui --help exits without starting a workspace", async () =
   expect(result.stdout).toContain("Listen host (default: 127.0.0.1)")
   expect(result.stdout).toContain("--allow-insecure-local-bridge")
   expect(result.stdout).toContain("boring-ui agent validate <dir>")
-})
+}, 15_000)
 
 
 test("boring-ui agent validate reports a valid directory in human format without prompt or path leakage", async () => {

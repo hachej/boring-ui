@@ -2,6 +2,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import type { BoringChatMessage } from '../../../../shared/chat'
+import type { ToolPart } from '../../../bareToolRenderers'
 import { ArtifactOpenProvider } from '../../../ArtifactOpenContext'
 import { ChatMessageContributionProvider } from '../../messageContributions'
 import { PiTimelineMessage } from '../PiTimelineMessage'
@@ -9,9 +10,9 @@ import { PiTimelineMessage } from '../PiTimelineMessage'
 vi.mock('../../../primitives/message', () => ({
   Message: ({ children, from, ...props }: any) => <article data-from={from} {...props}>{children}</article>,
   MessageContent: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-  MessageResponse: ({ children, components }: any) => {
+  MessageResponse: ({ children, components, codeFilename }: any) => {
     const Paragraph = components?.p
-    return <div data-testid="message-response">{Paragraph ? <Paragraph>{children}</Paragraph> : children}</div>
+    return <div data-testid="message-response" data-code-filename={codeFilename}>{Paragraph ? <Paragraph>{children}</Paragraph> : children}</div>
   },
 }))
 
@@ -45,6 +46,41 @@ vi.mock('../../../primitives/attachments', () => ({
 }))
 
 describe('PiTimelineMessage', () => {
+  test('uses an inline renderer for pending and resolved action-tool presentation', () => {
+    const inlineRenderer = Object.assign(
+      vi.fn((part: ToolPart) => <div data-testid="inline-tool">{part.state === 'output-available' ? 'Answer submitted' : 'Pending question'}</div>),
+      { presentation: 'inline' as const },
+    )
+    const pending: BoringChatMessage = {
+      id: 'ask-user-pending', role: 'assistant',
+      parts: [{ type: 'tool-call', id: 'ask-call', toolName: 'ask_user', state: 'input-available' }],
+    }
+    const resolved: BoringChatMessage = {
+      ...pending,
+      id: 'ask-user-resolved',
+      parts: [{ type: 'tool-call', id: 'ask-call', toolName: 'ask_user', state: 'output-available', output: { content: [{ type: 'text', text: 'User answered: A' }] } }],
+    }
+    const { rerender } = render(<PiTimelineMessage message={pending} isLast={false} isStreaming={false} showThoughts={false} toolRenderers={{ ask_user: inlineRenderer }} />)
+    expect(screen.getByTestId('inline-tool').textContent).toBe('Pending question')
+
+    rerender(<PiTimelineMessage message={resolved} isLast={false} isStreaming={false} showThoughts={false} toolRenderers={{ ask_user: inlineRenderer }} />)
+    expect(screen.getByTestId('inline-tool').textContent).toBe('Answer submitted')
+    expect(screen.queryByTestId('tool-output')).toBeNull()
+  })
+
+  test('keeps non-inline action-tool overrides authoritative', () => {
+    const renderer = vi.fn((part: ToolPart) => <div data-testid="custom-action-tool">Custom {part.toolName}</div>)
+    const message: BoringChatMessage = {
+      id: 'custom-action', role: 'assistant',
+      parts: [{ type: 'tool-call', id: 'custom-call', toolName: 'reverse', state: 'output-available', output: 'done' }],
+    }
+
+    render(<PiTimelineMessage message={message} isLast={false} isStreaming={false} showThoughts={false} toolRenderers={{ reverse: renderer }} />)
+
+    expect(screen.getByTestId('custom-action-tool').textContent).toBe('Custom reverse')
+    expect(renderer).toHaveBeenCalledTimes(1)
+  })
+
   test('allows a provider to replace a message without feature logic in the timeline', () => {
     const message: BoringChatMessage = {
       id: 'custom-1',
@@ -100,7 +136,7 @@ describe('PiTimelineMessage', () => {
     expect(reasoning.getAttribute('data-streaming')).toBe('true')
     expect(within(reasoning).getByTestId('reasoning-content').textContent).toBe('first thought\n\nsecond thought')
 
-    fireEvent.click(within(reasoning).getByRole('button', { name: 'thoughts' }))
+    fireEvent.click(within(reasoning).getByRole('button', { name: 'Reasoning' }))
     expect(within(row).getByTestId('reasoning').getAttribute('data-open')).toBe('true')
 
     const tools = within(row).getByTestId('tool-call-group').closest('[data-boring-agent-part="message-tools"]')
@@ -112,6 +148,60 @@ describe('PiTimelineMessage', () => {
     expect(reasoning.compareDocumentPosition(tools!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(tools!.compareDocumentPosition(notice!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(notice!.compareDocumentPosition(text!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(row).queryByRole('button', { name: 'Copy message' })).toBeNull()
+  })
+
+  test('keeps final assistant actions hidden from message streaming status alone', () => {
+    const message: BoringChatMessage = {
+      id: 'a-status-streaming',
+      role: 'assistant',
+      status: 'streaming',
+      parts: [{ type: 'text', id: 'a-status-streaming:text', text: 'Still working' }],
+    }
+
+    render(
+      <PiTimelineMessage
+        message={message}
+        isLast
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Copy message' })).toBeNull()
+  })
+
+  test('infers a code filename from the immediately preceding write tool', () => {
+    const message: BoringChatMessage = {
+      id: 'a-timestamp',
+      role: 'assistant',
+      status: 'done',
+      parts: [
+        { type: 'tool-call', id: 'write', toolName: 'write', input: { path: 'packages/agent/src/example.ts' }, state: 'output-available' },
+        { type: 'text', id: 'a-timestamp:text', text: 'Updated the file.' },
+      ],
+    }
+
+    render(<PiTimelineMessage message={message} isLast isStreaming={false} showThoughts={false} toolRenderers={{}} />)
+
+    expect(screen.getByText('Updated the file.').closest('[data-testid="message-response"]')?.getAttribute('data-code-filename')).toBe('packages/agent/src/example.ts')
+  })
+
+  test('does not infer a filename from a stale or non-writing tool', () => {
+    const message: BoringChatMessage = {
+      id: 'a-tool-only',
+      role: 'assistant',
+      status: 'done',
+      parts: [
+        { type: 'tool-call', id: 'write', toolName: 'write', input: { path: 'stale.ts' }, state: 'output-available' },
+        { type: 'notice', id: 'notice', level: 'info', text: 'Finished.' },
+        { type: 'text', id: 'a-tool-only:text', text: '```ts\nconst done = true\n```' },
+      ],
+    }
+
+    render(<PiTimelineMessage message={message} isLast isStreaming={false} showThoughts={false} toolRenderers={{}} />)
+    expect(screen.getByTestId('message-response').getAttribute('data-code-filename')).toBeNull()
   })
 
   test('renders action tools (bash) as plain cards and groups read-only tools', () => {

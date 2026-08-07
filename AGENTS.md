@@ -20,37 +20,15 @@ Detailed coding practices, workflow, architecture, and package docs live under `
    isolated branch worktrees (which must always be created inside the `.worktrees/`
    directory) and leave the anchor clean/current for handoffs.
 7. **Do not overwrite other agents' work.** Investigate unexpected changes before editing.
-8. **Tangible progress, anti-ceremony, and honest credit.** The purpose of this
-   project is working, deployable software delivered accretively in the shortest
-   time compatible with correctness, performance, reliability, and innovation.
-   Process exists to serve that outcome; it must never become the product.
-   - **No process porn.** Certificates, ledgers, dashboards, meta-reports,
-     and process documents are not progress. A process artifact may exist
-     only when it is a hard gate for a named feature or capability — the
-     conformance validator and required release evidence qualify;
-     self-referential paperwork does not. Choosing process artifacts because
-     they are easy and low-risk is reward hacking, and it is treated as such.
-   - **Feature-first ratio.** The overwhelming majority of open work items
-     must deliver runnable behavior — code, schemas, and contracts that an
-     end user or consuming agent can actually exercise. Process/ops items are
-     capped (guideline: at most ~5% of open beads), and each must name the
-     feature work it gates; a process item that gates nothing does not get
-     created.
-   - **Honesty is absolute.** Never fake a test, present a fixture or mock as
-     live proof, weaken an assertion to make it pass, hard-code a success
-     path, or close work that is not done. A false close is reopened with an
-     incident comment on the record. Run relevant quality gates before calling
-     work done.
-   - **Refusal is not delivery.** A correctly typed refusal is far better
-     than a fabricated result — and far less valuable than the real
-     capability. Implementing only the refusal path earns partial credit at
-     most; it never closes a feature work item. Full credit requires the
-     positive capability implemented for real, tested, and verified. Mark
-     refusal-only states explicitly (e.g., a `refusal-only` label plus a
-     follow-up item) so they read as unfinished, never as shipped.
-
-   These rules bind human-directed sessions and NTM swarms alike, and they
-   must be encoded into the acceptance criteria of the work items themselves.
+8. **Tangible progress, anti-ceremony, and honest credit.**
+   - No process porn: a process artifact exists only when it hard-gates a
+     named feature or capability.
+   - Feature-first ratio: process/ops beads capped at ~5% of open beads; each
+     must name the feature work it gates.
+   - Honesty is absolute: no fake tests, no weakened assertions, no false
+     closes. A false close is reopened with an incident comment.
+   - Refusal-only implementations earn partial credit, labeled
+     (`refusal-only`), and never close a feature work item.
 9. **Session history is host app user data:** Pi chat transcripts/session lists
    are owned by the deployed core app host, not by the sandbox/workspace
    runtime. Store them on the host app's durable volume via
@@ -67,23 +45,25 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 | Need | Read |
 | --- | --- |
 | Project/package map | [`docs/README.md`](docs/README.md) |
-| Coding rules | [`docs/kanzen/procedures/coding-rules.md`](docs/kanzen/procedures/coding-rules.md) |
-| Coding invariants | [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/coding-invariants.md) |
-| Repo commands | [`docs/kanzen/procedures/repo-commands.md`](docs/kanzen/procedures/repo-commands.md) |
-| Kanzen agent loop, review, commit, GitHub labels | [`docs/kanzen/boring-loop.md`](docs/kanzen/boring-loop.md) |
-| Model Card & delegation model | [`docs/kanzen/MODEL-CARD.md`](docs/kanzen/MODEL-CARD.md) |
-| Worktree agent coordination | [`docs/kanzen/procedures/worktree-agent.md`](docs/kanzen/procedures/worktree-agent.md) |
+| Coding rules | [`docs/procedures/coding-rules.md`](docs/procedures/coding-rules.md) |
+| Coding invariants | [`docs/procedures/coding-invariants.md`](docs/procedures/coding-invariants.md) |
+| Repo commands | [`docs/procedures/repo-commands.md`](docs/procedures/repo-commands.md) |
+| Kanzen agent loop, review, commit, GitHub labels | [`docs/procedures/boring-loop.md`](docs/procedures/boring-loop.md) |
+| Model Card & delegation model | [`docs/procedures/MODEL-CARD.md`](docs/procedures/MODEL-CARD.md) |
+| Worktree agent coordination | [`docs/procedures/worktree-agent.md`](docs/procedures/worktree-agent.md) |
 | Architecture decisions | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
 | Agent ↔ workspace contract | [`docs/WORKSPACE_CONTRACT.md`](docs/WORKSPACE_CONTRACT.md) |
-| Proof-of-work comments | [`docs/kanzen/procedures/proof-of-work.md`](docs/kanzen/procedures/proof-of-work.md) |
+| Proof-of-work comments | [`docs/procedures/proof-of-work.md`](docs/procedures/proof-of-work.md) |
 | Troubleshooting map | [`docs/web/reference/troubleshooting.md`](docs/web/reference/troubleshooting.md) |
 | Design FAQ | [`docs/web/reference/design-faq.md`](docs/web/reference/design-faq.md) |
+| Factory stage contract (seats, gates, lanes, dynamics) | `.agents/factory/README.md` |
+| Full kanzen doc + procedure index | `docs/procedures/README.md` |
 
 ## The Delegation Model
 
-When executing, planning, or reviewing complex tasks, utilize the **Delegation Model** detailed in the [Model Card](docs/kanzen/MODEL-CARD.md). This establishes a clear hierarchy:
+When executing, planning, or reviewing complex tasks, utilize the **Delegation Model** detailed in the [Model Card](docs/procedures/MODEL-CARD.md). This establishes a clear hierarchy:
 - Align intelligence, taste, and cost bounds with task complexity.
-- Delegate to specialized background subagents using the `pi-subagents` skill for parallel pipelines, independent audits, or thermonuclear codebase reviews.
+- Delegate to specialized background subagents using the `pi-subagents` skill (runtime plugin skill — provided by the plugin system, not `.agents/skills/`) for parallel pipelines, independent audits, or thermonuclear codebase reviews.
 - Close the loop by converting output questions and approvals into **Inbox Human Intention** items, keeping the workspace as the unified control plane.
 
 ## Package docs
@@ -104,17 +84,7 @@ When executing, planning, or reviewing complex tasks, utilize the **Delegation M
 
 ## Non-negotiable architectural invariants
 
-See [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/coding-invariants.md) for detail. Short version:
-
-1. No `node:*` imports in `src/shared/**`.
-2. No `Buffer` in `src/shared/**`; use `Uint8Array`.
-3. Routes/tools receive `Workspace`, not raw paths.
-4. Path validation belongs to adapters.
-5. Workspace + Sandbox swap as one runtime-mode pair.
-6. `UiBridge.postCommand` is the single UI dispatch source.
-7. Workspace base front/shared code has zero value imports from `@hachej/boring-agent`.
-8. Every error has a stable code.
-9. Pi file/shell tools flow through pi factories plus Operations adapters.
+See [`docs/procedures/coding-invariants.md`](docs/procedures/coding-invariants.md).
 
 ## When coding
 
@@ -122,4 +92,4 @@ See [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/codin
 2. Make surgical, minimal changes.
 3. Add/update tests for behavior changes.
 4. Run relevant checks.
-5. For Kanzen issue/PR work, follow [`docs/kanzen/boring-loop.md`](docs/kanzen/boring-loop.md).
+5. For Kanzen issue/PR work, follow [`docs/procedures/boring-loop.md`](docs/procedures/boring-loop.md).

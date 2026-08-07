@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { workspaceSessionKey, type WorkspaceSessionRef } from "../sessionIdentity"
+import type { HumanArtifact } from "../../shared/artifacts"
 
 export const WORKSPACE_ATTENTION_ACTION_EVENT = "boring-workspace:attention-action" as const
 
@@ -31,6 +32,7 @@ export type WorkspaceAttentionInboxMetadata = {
   createdAt?: string | number | Date
   updatedAt?: string | number | Date
   priority?: number
+  artifacts?: HumanArtifact[]
 }
 
 export type WorkspaceAttentionFocusMetadata = {
@@ -60,6 +62,8 @@ export type WorkspaceAttentionBlocker = {
   inbox?: WorkspaceAttentionInboxMetadata
   /** Optional shell focus behavior requested by the plugin that owns this blocker. */
   focus?: WorkspaceAttentionFocusMetadata
+  /** Composer projection policy. Set `visible: false` when the interaction is already rendered inline. */
+  composer?: { visible?: boolean }
   actions?: WorkspaceAttentionBlockerAction[]
 }
 

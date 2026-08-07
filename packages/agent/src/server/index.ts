@@ -72,6 +72,7 @@ export type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 export {
   AgentDirectoryCompilerError,
   compileAgentDirectory,
+  compilePersonaPackageDirectory,
 } from './agentDefinition/compileAgentDirectory'
 export type {
   AgentDirectoryCompilerErrorCode,
@@ -86,6 +87,37 @@ export type {
   AuthoredAgentSourceV1,
   MaterializeAgentDirectoryInput,
 } from './agentDefinition/materializeAgentDirectory'
+export {
+  createConfiguredAgentHostAgentSpec,
+  TrustedAgentCompositionError,
+} from './agentDefinition/createConfiguredAgentHostAgentSpec'
+export type {
+  CreateConfiguredAgentHostAgentSpecInput,
+  TrustedAgentInstructionAppendix,
+  TrustedAuthoredAgentPolicy,
+} from './agentDefinition/createConfiguredAgentHostAgentSpec'
+export {
+  FleetConfigError,
+  loadConfiguredAgentFleet,
+  MODEL_TIER_CANDIDATES,
+} from './agentDefinition/loadConfiguredAgentFleet'
+export type {
+  FleetConfigErrorCode,
+  FleetLoaderDiagnostic,
+  FleetLoaderDiagnosticCode,
+  FleetSeatBinding,
+  FleetSkillBinding,
+  LoadConfiguredAgentFleetOptions,
+  LoadConfiguredAgentFleetResult,
+  ModelTierCandidate,
+} from './agentDefinition/loadConfiguredAgentFleet'
+export {
+  LEGACY_DEFAULT_AGENT_FLEET,
+  resolveDefaultAgentFleet,
+} from './agentDefinition/resolveDefaultAgentFleet'
+export type {
+  ResolveDefaultAgentFleetOptions,
+} from './agentDefinition/resolveDefaultAgentFleet'
 export {
   createResolvedAgentDigest,
   resolveAgentDeployment,
@@ -213,6 +245,7 @@ export {
   type RuntimeEnvContributionContext,
 } from './runtimeEnvContributions'
 export { createBoundWorkspaceAgentDispatcher } from './workspaceAgentDispatcher'
+export { projectAuthorizedSessionRunDetails, type AuthorizedSessionRunDetails } from './sessionRunDetails'
 export { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 export type {
   AgentMeteringSink,

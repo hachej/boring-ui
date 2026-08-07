@@ -305,7 +305,11 @@ export function createGovernanceFilesystemBindings(
           throw new Error(`company_context ${operation} operation is unavailable`)
         },
       }
-      return [{ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, access: 'readwrite', operations } satisfies RuntimeFilesystemBinding]
+      return [{
+        filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,
+        access: 'readwrite',
+        operations,
+      } satisfies RuntimeFilesystemBinding]
     }
 
     const rules = service.companyContextRules(user)
@@ -353,6 +357,10 @@ export function createGovernanceFilesystemBindings(
       },
     }
 
-    return [{ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, access: 'readonly', operations } satisfies RuntimeFilesystemBinding]
+    return [{
+      filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,
+      access: 'readonly',
+      operations,
+    } satisfies RuntimeFilesystemBinding]
   }
 }

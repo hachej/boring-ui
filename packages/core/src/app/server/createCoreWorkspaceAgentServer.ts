@@ -13,6 +13,8 @@ import {
   createResolvedRuntimeScopeIdentity,
   createValidatingAgentFleetCompiler,
   provisionWorkspaceRuntime,
+  projectAuthorizedSessionRunDetails,
+  resolveDefaultAgentFleet,
   withRuntimeEnvContributions,
   type AgentEffectAdmission,
   type AgentFleetCompiler,
@@ -281,6 +283,12 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   sandboxHandleStore?: SandboxHandleStore
   /** Trusted Agent fleet compiled before any Agent route is mounted. */
   agents?: readonly AgentHostAgentSpec[]
+  /**
+   * Repository root used to resolve `.agents/{personas,factory}` when
+   * `BORING_AGENT_FLEET=1` composes the fleet and `agents` is not supplied.
+   * Defaults to `process.cwd()`.
+   */
+  fleetRepositoryRoot?: string
   /** Optional stricter app compiler layered over Core's loaded-plugin preflight. */
   fleetCompiler?: AgentFleetCompiler
   /** Legacy route alias target; defaults to the first configured Agent. */
@@ -1060,6 +1068,14 @@ export async function createCoreWorkspaceAgentServer(
       }
       return await workspaceAgentDispatcherResolver.resolveWithWorkspace(actor, resolveOptions)
     },
+    async authorizeSession(actor, ref, resolveOptions) {
+      if (!workspaceAgentDispatcherResolver?.authorizeSession) throw new Error('workspace agent session authorization is not ready')
+      await workspaceAgentDispatcherResolver.authorizeSession(actor, ref, resolveOptions)
+    },
+    async readSessionRunDetails(actor, ref, detailKinds, resolveOptions) {
+      if (!workspaceAgentDispatcherResolver?.readSessionRunDetails) throw new Error('workspace agent run details are not ready')
+      return await workspaceAgentDispatcherResolver.readSessionRunDetails(actor, ref, detailKinds, resolveOptions)
+    },
   }
   const basePluginResolveContext: WorkspaceAgentServerPluginContext = {
     workspaceRoot: pluginWorkspaceRoot,
@@ -1231,7 +1247,12 @@ export async function createCoreWorkspaceAgentServer(
     return authorizeStorageScope(ctx.request, ctx.workspaceId, canonicalScope ?? ctx.workspaceId)
   }
 
-  const agents = options.agents ?? [{ agentTypeId: 'default', legacyDefault: true } as const]
+  // BORING_AGENT_FLEET=1 composes the config-driven production fleet
+  // (gh-1106 slice 3, B2 fix round 1) from .agents/{personas,factory} for
+  // the deployed core app host (apps/full-app), same helper as
+  // createWorkspaceAgentServer and the CLI hub; flag absent preserves the
+  // legacy single-default-agent boot byte-identically.
+  const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot })
   const scopeAuthority = createCoreAgentScopeAuthority({
     appId: config.appId,
     workspaceStore,
@@ -1564,6 +1585,18 @@ export async function createCoreWorkspaceAgentServer(
       },
       async resolve() {
         throw new Error('unbounded workspace agent dispatcher resolution is unavailable')
+      },
+      async authorizeSession(context, ref, resolveOptions) {
+        const scope = await authorizeAgentRequest(resolveOptions?.request, context)
+        await agentHost.gateway.readSessionState({ scope, ref })
+      },
+      async readSessionRunDetails(context, ref, detailKinds, resolveOptions) {
+        if (detailKinds.length < 1 || detailKinds.length > 16 || detailKinds.some((kind) => !kind || kind.length > 128)) {
+          throw new TypeError('invalid structured detail kinds')
+        }
+        const scope = await authorizeAgentRequest(resolveOptions?.request, context)
+        const snapshot = await agentHost.gateway.readSessionState({ scope, ref })
+        return projectAuthorizedSessionRunDetails(snapshot.state.messages, detailKinds)
       },
     }
     workspaceAgentDispatcherResolver = directDispatcherResolver

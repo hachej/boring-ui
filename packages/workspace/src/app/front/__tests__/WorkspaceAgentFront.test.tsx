@@ -4,8 +4,10 @@ import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../../front/agentPlugins/reloadEvent"
 import { UI_COMMAND_EVENT, type UiCommand } from "../../../front/bridge"
+import { useWorkspacePluginClient } from "../../../front/plugin/useWorkspacePluginClient"
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
 import type { PanelConfig } from "../../../front/registry/types"
+import { requestAppLeftOverlay } from "../../../shared/plugins/appLeftOverlay"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
 import {
@@ -283,11 +285,59 @@ describe("WorkspaceAgentFront", () => {
       stream?.emit("snapshot", { sessions: [] })
     })
 
-    expect(statuses).toContainEqual({ sessionId: "session-1", agentTypeId: "default", working: true })
-    expect(statuses.at(-1)).toEqual({ sessionId: "session-1", agentTypeId: "default", working: false })
+    expect(statuses).toContainEqual({ workspaceId: "working-session-stream", sessionId: "session-1", agentTypeId: "default", working: true })
+    expect(statuses.at(-1)).toEqual({ workspaceId: "working-session-stream", sessionId: "session-1", agentTypeId: "default", working: false })
     unmount()
     expect(stream?.close).toHaveBeenCalledTimes(1)
     window.removeEventListener("boring:chat-session-status", onStatus)
+  })
+
+  it("reconciles the session list when activity reports a session created out-of-band (gh-778)", () => {
+    MockEventSource.instances = []
+    vi.stubGlobal("EventSource", MockEventSource)
+    const refresh = vi.fn()
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="external-session-stream"
+        chatPanel={SessionIdChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "session-1", title: "Session one", status: "idle" }],
+          activeSession: { id: "session-1", title: "Session one", status: "idle" },
+          activeSessionId: "session-1",
+          loading: false,
+          error: undefined,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+          refresh,
+        })}
+      />,
+    )
+    const stream = MockEventSource.instances.find((instance) => instance.url.includes("/api/v1/agents/session-activity/events"))
+
+    // Activity for a session already known to the list must not trigger an
+    // extra refresh.
+    act(() => {
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "session-1" }, status: "running" })
+    })
+    expect(refresh).not.toHaveBeenCalled()
+
+    // Activity for a session the list has never fetched (created via an
+    // external entrypoint) must trigger a background refresh so it appears
+    // without a manual refresh or remount.
+    act(() => {
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "external-session" }, status: "running" })
+    })
+    expect(refresh).toHaveBeenCalledWith({ background: true })
+
+    refresh.mockClear()
+    // Activity for a different agent type's session must not leak into this
+    // agent-scoped session list's refresh.
+    act(() => {
+      stream?.emit("activity", { ref: { agentTypeId: "other-agent", sessionId: "other-agent-session" }, status: "running" })
+    })
+    expect(refresh).not.toHaveBeenCalled()
   })
 
   it("renders a known active session while remote sessions are still loading", () => {
@@ -416,12 +466,9 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByText("First session")).toBeInTheDocument()
   })
 
-  it("replaces the sole closed chat pane with a fresh New chat pane", async () => {
-    const user = userEvent.setup()
-    const createSession = vi.fn()
-
+  it("hides the close action on the sole chat pane (#1051: the center always needs one chat)", () => {
     function Harness() {
-      const [sessions, setSessions] = useState([
+      const [sessions] = useState([
         { id: "s1", title: "First session", updatedAt: Date.now() },
       ])
       const [activeSessionId, setActiveSessionId] = useState("s1")
@@ -433,10 +480,7 @@ describe("WorkspaceAgentFront", () => {
           activeSessionId={activeSessionId}
           onSwitchSession={setActiveSessionId}
           onCreateSession={() => {
-            createSession()
             const session = { id: "fresh", title: "New chat", updatedAt: Date.now() }
-            setSessions((current) => [...current, session])
-            setActiveSessionId(session.id)
             return session
           }}
           persistenceEnabled={false}
@@ -446,12 +490,7 @@ describe("WorkspaceAgentFront", () => {
 
     render(<Harness />)
     expect(visibleChatSessionIds()).toEqual(["s1"])
-
-    await user.click(screen.getByLabelText("Close First session pane"))
-
-    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["fresh"]))
-    expect(createSession).toHaveBeenCalledOnce()
-    expect(screen.getByLabelText("Close New chat pane")).toBeInTheDocument()
+    expect(screen.queryByLabelText("Close First session pane")).not.toBeInTheDocument()
   })
 
   it("keeps colliding addressed sessions distinct through pane activation and deletion", async () => {
@@ -524,6 +563,181 @@ describe("WorkspaceAgentFront", () => {
 
     await user.click(screen.getByLabelText("Delete Alpha shared"))
     expect(deleted).toEqual([["shared", "beta"], ["shared", "alpha"]])
+  })
+
+  it("selects the future-session Agent without replacing addressed panes and filters inventory", async () => {
+    const user = userEvent.setup()
+    const createOwners: string[] = []
+    const pluginClientOwners: string[] = []
+    const pluginProviderOwners: string[] = []
+    let removeBetaShared: (() => void) | undefined
+    function FleetClientProbe() {
+      pluginClientOwners.push(useWorkspacePluginClient().agentTypeId)
+      return null
+    }
+    function FleetProviderProbe({ agentTypeId, children }: PluginProviderProps) {
+      pluginProviderOwners.push(agentTypeId)
+      return <>{children}</>
+    }
+    const fleetProbePlugin = definePlugin({
+      id: "fleet-owner-probe",
+      setup(api) {
+        api.registerBinding({ id: "client", component: FleetClientProbe })
+        api.registerProvider({ id: "provider", component: FleetProviderProbe })
+      },
+    })
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://workspace.test").pathname
+      if (path === "/api/v1/agents") {
+        return new Response(JSON.stringify([
+          { agentTypeId: "default", label: "Concierge" },
+          { agentTypeId: "beta", label: "Worker" },
+        ]), { status: 200 })
+      }
+      if (path.endsWith("/ready-status")) return new Response(null, { status: 200 })
+      if (path.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (path.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+
+    function AddressedFleetChat(props: WorkspaceChatPanelProps) {
+      return <div data-testid="fleet-pane">{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    const useFleetSessions: UseWorkspaceAgentSessions = (options) => {
+      const [inventories, setInventories] = useState<Record<string, WorkspaceAgentSession[]>>({
+        default: [{ id: "shared", agentTypeId: "default", title: "Concierge shared" }],
+        beta: [
+          { id: "shared", agentTypeId: "beta", title: "Worker shared" },
+          { id: "keep", agentTypeId: "beta", title: "Worker keep" },
+        ],
+      })
+      removeBetaShared = () => setInventories((current) => ({
+        ...current,
+        beta: (current.beta ?? []).filter((session) => session.id !== "shared"),
+      }))
+      const inventory = inventories[options.agentTypeId] ?? []
+      return {
+        sourceIdentity: options.sourceIdentity,
+        sessions: inventory,
+        activeSessionId: inventory[0]?.id ?? null,
+        activeSessionAgentTypeId: inventory[0]?.agentTypeId ?? null,
+        activeSession: inventory[0] ?? null,
+        loading: false,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        delete: vi.fn(),
+        create: async () => {
+          createOwners.push(options.agentTypeId)
+          const session = { id: `new-${options.agentTypeId}`, agentTypeId: options.agentTypeId, title: "New chat" }
+          setInventories((current) => ({
+            ...current,
+            [options.agentTypeId]: [...(current[options.agentTypeId] ?? []), session],
+          }))
+          return session
+        },
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-selection"
+        chatPanel={AddressedFleetChat}
+        useSessions={useFleetSessions}
+        showAgentSelector
+        defaultNavOpen
+        plugins={[fleetProbePlugin]}
+        persistenceEnabled
+      />,
+    )
+
+    const selector = await screen.findByRole("combobox", { name: "Agent for new chats" })
+    await waitFor(() => expect(selector).toHaveValue("default"))
+    expect(screen.getByTestId("fleet-pane")).toHaveTextContent("default/shared")
+    expect(pluginClientOwners.at(-1)).toBe("default")
+    expect(pluginProviderOwners.at(-1)).toBe("default")
+
+    await user.selectOptions(selector, "beta")
+
+    await waitFor(() => expect(selector).toHaveValue("beta"))
+    expect(localStorage.getItem("boring-ui-v2:layout:fleet-selection:selectedAgentTypeId")).toBe("beta")
+    expect(createOwners).toEqual([])
+    expect(screen.getByTestId("fleet-pane")).toHaveTextContent("default/shared")
+    expect(pluginClientOwners.at(-1)).toBe("beta")
+    expect(pluginProviderOwners.at(-1)).toBe("default")
+    expandHistory()
+    const sessionBrowser = screen.getByLabelText("Session browser")
+    expect(within(sessionBrowser).getByText("Worker shared")).toBeInTheDocument()
+    expect(within(sessionBrowser).queryByText("Concierge shared")).not.toBeInTheDocument()
+
+    await user.click(screen.getByLabelText("Open Worker shared in chat pane"))
+    expect(screen.getAllByTestId("fleet-pane").map((pane) => pane.textContent)).toEqual([
+      "default/shared",
+      "beta/shared",
+    ])
+    expect(pluginProviderOwners.at(-1)).toBe("beta")
+
+    await user.click(screen.getByLabelText("Chat session Concierge shared"))
+    expect(pluginProviderOwners.at(-1)).toBe("default")
+    act(() => removeBetaShared?.())
+    await waitFor(() => expect(screen.getAllByTestId("fleet-pane").map((pane) => pane.textContent)).toEqual([
+      "default/shared",
+    ]))
+
+    await user.click(screen.getByRole("button", { name: "New session" }))
+    await waitFor(() => expect(createOwners).toEqual(["beta"]))
+  })
+
+  it("falls back to the host-default Agent when a stored fleet selection is stale", async () => {
+    localStorage.setItem("boring-ui-v2:layout:fleet-stale:selectedAgentTypeId", "retired")
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://workspace.test").pathname
+      if (path === "/api/v1/agents") {
+        return new Response(JSON.stringify([
+          { agentTypeId: "default", label: "Concierge" },
+          { agentTypeId: "worker", label: "Worker" },
+        ]), { status: 200 })
+      }
+      if (path.endsWith("/ready-status")) return new Response(null, { status: 200 })
+      if (path.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (path.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-stale"
+        chatPanel={ChatPanel}
+        showAgentSelector
+        provisionWorkspace={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Agent for new chats" })).toHaveValue("default"))
+  })
+
+  it("keeps the host-default path usable when fleet discovery fails", async () => {
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://workspace.test").pathname
+      if (path === "/api/v1/agents") return new Response(null, { status: 503 })
+      if (path.endsWith("/ready-status")) return new Response(null, { status: 200 })
+      if (path.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (path.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-error"
+        chatPanel={ChatPanel}
+        showAgentSelector
+        provisionWorkspace={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Agent for new chats" })).toBeDisabled())
+    expect(screen.getByLabelText("Agent list is unavailable; new chats will use the host-default Agent.")).toBeInTheDocument()
+    expect(screen.getByText("Chat panel")).toBeInTheDocument()
   })
 
   it("initializes a controlled colliding id to its explicit active owner", () => {
@@ -700,6 +914,37 @@ describe("WorkspaceAgentFront", () => {
     await user.click(automations)
     expect(automations).not.toHaveAttribute("data-active")
     expect(plugins).not.toHaveAttribute("data-active")
+  })
+
+  it("never mounts a different plugin overlay with stale request params", async () => {
+    const user = userEvent.setup()
+    const mountedParams: Array<string | undefined> = []
+    function SecondOverlay({ params }: { params?: Readonly<Record<string, string>> }) {
+      useEffect(() => { mountedParams.push(params?.itemId) }, [params])
+      return <div data-testid="second-overlay-body">Second overlay</div>
+    }
+    const plugin = definePlugin({
+      id: "parameterized-overlays",
+      appLeftActions: [
+        { id: "first-overlay", label: "First overlay", overlay: () => <div>First overlay</div> },
+        { id: "second-overlay", label: "Second overlay", overlay: SecondOverlay },
+      ],
+    })
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-overlay-params"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        plugins={[plugin]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    act(() => { requestAppLeftOverlay("first-overlay", { itemId: "inbox-item" }) })
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Second overlay" }))
+
+    expect(await screen.findByTestId("second-overlay-body")).toBeInTheDocument()
+    expect(mountedParams).toEqual([undefined])
   })
 
   it("rejects plugin app-left actions that collide with built-in overlays", () => {
@@ -1836,6 +2081,75 @@ describe("WorkspaceAgentFront", () => {
     expect(getCapturedChatProps()?.initialDraft).toBe("restore and send")
     expect(getCapturedChatProps()?.autoSubmitInitialDraft).toBe(true)
     expect(seenSessionIds).not.toContain("sess-old")
+  })
+
+  it("keeps an in-flight auto-submit session bound to the Agent that admitted its creation", async () => {
+    const user = userEvent.setup()
+    const capturedByRef = new Map<string, CapturedChatPanelProps>()
+    let resolveDefaultCreate: ((session: WorkspaceAgentSession) => void) | undefined
+    const createOwners: string[] = []
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://workspace.test").pathname
+      if (path === "/api/v1/agents") {
+        return new Response(JSON.stringify([
+          { agentTypeId: "default", label: "Concierge" },
+          { agentTypeId: "beta", label: "Worker" },
+        ]), { status: 200 })
+      }
+      if (path.endsWith("/ready-status")) return new Response(null, { status: 200 })
+      if (path.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (path.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+    const useFleetSessions: UseWorkspaceAgentSessions = (options) => ({
+      sourceIdentity: options.sourceIdentity,
+      sessions: [{ id: `old-${options.agentTypeId}`, agentTypeId: options.agentTypeId, title: "Old" }],
+      activeSessionId: `old-${options.agentTypeId}`,
+      activeSessionAgentTypeId: options.agentTypeId,
+      activeSession: { id: `old-${options.agentTypeId}`, agentTypeId: options.agentTypeId, title: "Old" },
+      loading: false,
+      workspaceId: options.workspaceId,
+      switch: vi.fn(),
+      delete: vi.fn(),
+      create: () => {
+        createOwners.push(options.agentTypeId)
+        if (options.agentTypeId === "default") {
+          return new Promise((resolve) => { resolveDefaultCreate = resolve })
+        }
+        return Promise.resolve({ id: "unexpected-beta", agentTypeId: "beta", title: "Unexpected" })
+      },
+    })
+    const CapturingChat = (props: WorkspaceChatPanelProps) => {
+      capturedByRef.set(`${props.agentTypeId}/${props.sessionId}`, props as CapturedChatPanelProps)
+      return <div>{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-auto-submit"
+        chatPanel={CapturingChat}
+        useSessions={useFleetSessions}
+        showAgentSelector
+        chatParams={{ initialDraft: "resume", autoSubmitInitialDraft: true }}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(createOwners).toEqual(["default"]))
+    const selector = await screen.findByRole("combobox", { name: "Agent for new chats" })
+    await user.selectOptions(selector, "beta")
+    expect(createOwners).toEqual(["default"])
+
+    await act(async () => {
+      resolveDefaultCreate?.({ id: "created", agentTypeId: "default", title: "Created" })
+    })
+    await waitFor(() => expect([...capturedByRef.keys()]).toContain("default/created"))
+    expect(capturedByRef.get("default/created")).toMatchObject({
+      sessionId: "created",
+      agentTypeId: "default",
+      autoSubmitInitialDraft: true,
+    })
+    expect(createOwners).toEqual(["default"])
   })
 
   it("keeps hydration disabled after auth-return auto-submit props clear until the chat explicitly unlocks it", async () => {

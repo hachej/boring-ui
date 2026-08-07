@@ -6,12 +6,15 @@ import type { SurfaceOpenRequest } from '../../../shared/types/surface'
 import type { WorkspaceShellSessionRef } from '../../../shared/plugins/workspaceShellCapabilities'
 import { useWorkspaceShellCapabilitiesController } from '../useWorkspaceShellCapabilitiesController'
 
-function Probe({ openChatPane, openSurface, refreshChatSessions }: { openChatPane: (sessionId: string) => void; openSurface: (request: SurfaceOpenRequest) => void; refreshChatSessions: () => Promise<void> }) {
+function Probe({ openChatPane, openSurface, refreshChatSessions }: { openChatPane: (sessionId: string, agentTypeId?: string) => void; openSurface: (request: SurfaceOpenRequest) => void; refreshChatSessions: () => Promise<void> }) {
   const [floatingChatSession, setFloatingChatSession] = useState<{ ref: WorkspaceShellSessionRef; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>(null)
   const shell = useWorkspaceShellCapabilitiesController({
     setFloatingChatSession,
+    createChatSession: async () => ({ success: true, ref: { agentTypeId: 'alpha', sessionId: 'created' } }),
+    deleteChatSession: async () => ({ success: true }),
     openChatPane,
     refreshChatSessions,
+    isAppLeftOverlayAvailable: (id) => id === 'inbox',
     surfaceDispatch: {
       surface: () => ({
         openSurface,
@@ -36,6 +39,8 @@ function Probe({ openChatPane, openSurface, refreshChatSessions }: { openChatPan
     <button type="button" onClick={() => void shell.refreshChatSessions?.()}>Refresh chats</button>
     <button type="button" onClick={() => shell.openDetachedChat({ agentTypeId: 'alpha', sessionId: 'shared' })}>Open alpha chat</button>
     <button type="button" onClick={() => shell.openDetachedChat({ agentTypeId: 'beta', sessionId: 'shared' })}>Open beta chat</button>
+    <button type="button" onClick={() => shell.openFullChat({ agentTypeId: 'beta', sessionId: 'shared' })}>Open full chat</button>
+    <button type="button" onClick={() => shell.openInboxItem('question-1')}>Open inbox item</button>
     <output aria-label="Detached chat ref">{floatingChatSession ? `${floatingChatSession.ref.agentTypeId}/${floatingChatSession.ref.sessionId}` : ''}</output>
   </>
 }
@@ -66,6 +71,22 @@ describe('useWorkspaceShellCapabilitiesController', () => {
     await user.click(screen.getByRole('button', { name: 'Refresh chats' }))
 
     expect(refreshChatSessions).toHaveBeenCalledOnce()
+  })
+
+  it('opens full chat and Inbox items through addressed, validated capabilities', async () => {
+    const user = userEvent.setup()
+    const openChatPane = vi.fn()
+    const dispatch = vi.spyOn(window, 'dispatchEvent')
+    render(<Probe openChatPane={openChatPane} openSurface={vi.fn()} refreshChatSessions={vi.fn(async () => undefined)} />)
+
+    await user.click(screen.getByRole('button', { name: 'Open full chat' }))
+    expect(openChatPane).toHaveBeenCalledWith('shared', 'beta')
+    await user.click(screen.getByRole('button', { name: 'Open inbox item' }))
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'boring-workspace:open-app-left-overlay',
+      detail: { id: 'inbox', params: { itemId: 'question-1' } },
+    }))
+    dispatch.mockRestore()
   })
 
   it('keeps the Agent owner when equal session ids open as detached chats', async () => {

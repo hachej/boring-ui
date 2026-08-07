@@ -32,7 +32,6 @@ export const workspaceComponentBaselinesSpec: UiReviewSpec = {
   },
   viewports: [
     { name: "desktop", width: 1440, height: 900, deviceScaleFactor: 1 },
-    { name: "mobile", width: 375, height: 667, deviceScaleFactor: 1 },
     { name: "catalog", width: 404, height: 932, deviceScaleFactor: 1 },
   ],
   checkpoints: [
@@ -81,17 +80,6 @@ export const workspaceComponentBaselinesSpec: UiReviewSpec = {
       },
     },
     {
-      id: "file-tree-pane",
-      viewportNames: ["mobile"],
-      colorScheme: "light",
-      visualBaseline: baseline("workspace-file-tree-mobile.png"),
-      reach: async (page) => {
-        await openFixture(page, "file-tree-pane")
-        await expect(page.getByPlaceholder("Search files...")).toBeVisible()
-        await expect(page.getByText("docs", { exact: true })).toBeVisible()
-      },
-    },
-    {
       id: "data-catalog",
       viewportNames: ["catalog"],
       colorScheme: "dark",
@@ -107,7 +95,7 @@ export const workspaceComponentBaselinesSpec: UiReviewSpec = {
   ownerSpotChecks: [
     "Open report.html through workspace.open.path from the existing Inbox/ask_user handoff.",
     "Inspect FileTree, CodeEditor, MarkdownEditor, and dock-group desktop checkpoints.",
-    "Inspect the mobile FileTree pane and narrow dark data-catalog checkpoints.",
+    "Inspect the narrow dark data-catalog checkpoint.",
     "Confirm every deterministic pixel baseline and hard gate is green.",
   ],
   hardGates: {

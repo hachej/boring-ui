@@ -1,3 +1,4 @@
+import { HumanArtifactListSchema } from "@hachej/boring-workspace/shared"
 import { z } from "zod"
 import {
   ASK_USER_FIELD_NAME_PATTERN,
@@ -226,6 +227,7 @@ export const AskUserToolInputSchema = z
     title: boundedString(ASK_USER_SCHEMA_LIMITS.maxTitleLength).min(1),
     context: optionalBoundedString(ASK_USER_SCHEMA_LIMITS.maxContextLength),
     schema: AskUserFormSchemaSchema,
+    artifacts: HumanArtifactListSchema.optional(),
     timeoutMs: z
       .number()
       .int()
@@ -241,6 +243,7 @@ export const AskUserRequestSchema = z
     title: boundedString(ASK_USER_SCHEMA_LIMITS.maxTitleLength).optional(),
     context: optionalBoundedString(ASK_USER_SCHEMA_LIMITS.maxContextLength),
     schema: AskUserFormSchemaSchema.optional(),
+    artifacts: HumanArtifactListSchema.optional(),
     timeoutMs: z
       .number()
       .int()

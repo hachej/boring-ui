@@ -54,6 +54,7 @@ describe('usePiSessions addressed Agent transport', () => {
     expect(calls.some((call) => call.url.includes('cursor=page-2'))).toBe(true)
 
     await act(async () => { await result.current.create({ title: 'Created' }) })
+    expect(result.current.sessions.find((session) => session.id === 'created')).toMatchObject({ agentTypeId: 'alpha' })
     const create = calls.find((call) => call.init?.method === 'POST')
     expect(create?.url).toContain('/api/v1/agents/alpha/sessions')
     expect(JSON.parse(String(create?.init?.body))).toEqual({ title: 'Created' })

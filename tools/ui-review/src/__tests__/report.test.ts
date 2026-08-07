@@ -31,7 +31,7 @@ const manifest: UiReviewManifest = {
 
 const hardGates: UiHardGateReport = {
   schemaVersion: 1,
-  contractVersion: "command-palette-v2",
+  contractVersion: "command-palette-v3",
   results: [{ id: "console-errors", stateId: "state-1", passed: false, evidence: '<form action="https://example.com">bad</form>' }],
 }
 const hardGateManifest: UiReviewManifest = {
@@ -53,7 +53,7 @@ const closedGateIds = [
 ]
 const completeHardGates: UiHardGateReport = {
   schemaVersion: 1,
-  contractVersion: "command-palette-v2",
+  contractVersion: "command-palette-v3",
   results: closedGateIds.map((id) => ({ id, stateId: "state-1", passed: true, evidence: "pass" })),
 }
 
