@@ -100,6 +100,72 @@ describe("boring agent plugin assets", () => {
     expect(readBoringPlugins([root])).toEqual([])
   })
 
+  test("asset manager exposes preflighted agent package descriptors without resolving bare skills as paths", async () => {
+    const root = await tmp("boring-plugin-agent-package-")
+    await writeFile(join(root, "instructions.md"), "You are a fixture persona.\n", "utf8")
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "agent-package",
+      version: "1.0.0",
+      boring: {
+        agent: {
+          definitionId: "fixture-persona",
+          version: "1.0.0",
+          instructionsRef: "instructions.md",
+        },
+      },
+      pi: { skills: ["shared-skill"] },
+    }), "utf8")
+
+    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+    const result = await manager.load()
+
+    expect(result.errors).toEqual([])
+    expect(manager.inspectAgentPackages()).toEqual([{
+      rootDir: root,
+      manifest: {
+        boring: { agent: expect.objectContaining({ definitionId: "fixture-persona" }) },
+        pi: { skills: ["shared-skill"] },
+      },
+      preflight: { ok: true, errors: [] },
+    }])
+  })
+
+  test("agent descriptors retain preflight-invalid claimants for fail-closed conflict checks", async () => {
+    const collection = await tmp("boring-plugin-agent-conflict-")
+    const valid = join(collection, "valid")
+    const invalid = join(collection, "invalid")
+    await mkdir(valid)
+    await mkdir(invalid)
+    for (const root of [valid, invalid]) {
+      await writeFile(join(root, "package.json"), JSON.stringify({
+        name: `agent-package-${root === valid ? "valid" : "invalid"}`,
+        version: "1.0.0",
+        boring: {
+          agent: {
+            definitionId: "conflicted-persona",
+            version: "1.0.0",
+            instructionsRef: "instructions.md",
+          },
+        },
+        pi: { skills: [] },
+      }), "utf8")
+    }
+    await writeFile(join(valid, "instructions.md"), "Valid persona.\n", "utf8")
+
+    const manager = new BoringPluginAssetManager({ pluginDirs: [collection], errorRoot: join(collection, ".errors") })
+    await manager.load()
+
+    expect(manager.inspectAgentPackages()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ rootDir: valid, preflight: { ok: true, errors: [] } }),
+      expect.objectContaining({
+        rootDir: invalid,
+        preflight: expect.objectContaining({ ok: false, errors: expect.arrayContaining([
+          expect.objectContaining({ code: "INVALID_PLUGIN_METADATA" }),
+        ]) }),
+      }),
+    ]))
+  })
+
   test("scan and load preserve explicit source metadata without leaking it to list payloads", async () => {
     const root = await tmp("boring-plugin-source-metadata-")
     await writePlugin(root)

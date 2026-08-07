@@ -11,5 +11,8 @@
       "description": "Owner-facing entry point for feedback, routing, and portfolio narration.",
       "instructionsRef": "instructions.md"
     }
+  },
+  "pi": {
+    "skills": ["feedback", "triage", "handoff"]
   }
 }

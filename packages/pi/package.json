@@ -10,7 +10,7 @@
   ],
   "pi": {
     "skills": [
-      "skills"
+      "./skills"
     ]
   }
 }
