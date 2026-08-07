@@ -8,6 +8,7 @@ export interface AgentDetailsOverlayAgent {
   agentTypeId: string
   label: string
   description?: string
+  pluginIds?: readonly string[]
   sessionsStatus?: "loading" | "loaded" | "error"
 }
 
@@ -90,15 +91,34 @@ export function AgentDetailsOverlay({
               </div>
             </dl>
 
+            <section aria-labelledby="agent-plugins-heading">
+              <h3 id="agent-plugins-heading" className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Plugins</h3>
+              <p className="mt-2 text-sm leading-6 text-foreground/85">
+                Runtime plugins explicitly bound to this Agent. Workspace UI plugins do not automatically grant Agent tools.
+              </p>
+              {agent.pluginIds?.length ? (
+                <ul className="mt-3 divide-y divide-border/50 border-y border-border/60">
+                  {agent.pluginIds.map((pluginId) => (
+                    <li key={pluginId} className="flex items-center justify-between gap-3 py-2.5">
+                      <span className="min-w-0 truncate text-sm font-medium text-foreground">{pluginId}</span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">Configured</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 border-y border-border/60 py-3 text-sm text-muted-foreground">No runtime plugins configured.</p>
+              )}
+            </section>
+
             <section aria-labelledby="agent-configuration-heading">
               <h3 id="agent-configuration-heading" className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Configuration</h3>
               <p className="mt-2 text-sm leading-6 text-foreground/85">
                 This agent is configured by the host fleet definition. Runtime editing is not available in this playground.
               </p>
-              <dl className="mt-3 grid gap-3">
-                <div className="rounded-lg border border-border/60 bg-card/50 px-3 py-2.5">
+              <dl className="mt-3 border-y border-border/60 py-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <dt className="text-[11px] font-medium text-muted-foreground">Agent ID</dt>
-                  <dd className="mt-1 break-all font-mono text-xs text-foreground">{agent.agentTypeId}</dd>
+                  <dd className="break-all font-mono text-xs text-foreground">{agent.agentTypeId}</dd>
                 </div>
               </dl>
             </section>

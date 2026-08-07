@@ -10,6 +10,7 @@ export interface WorkspaceAddressedAgentOption {
   agentTypeId: string
   label: string
   description?: string
+  pluginIds?: readonly string[]
 }
 
 interface FleetSnapshot<TSession extends WorkspaceAgentSession> {

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { ChevronRight, Plus, Search } from "lucide-react"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
-import { AgentChatActions, PrimaryAction, NewChatAction, KbdHint, RailAction } from "./AppLeftPaneActions"
+import { AgentChatActions, FleetNewChatAction, PrimaryAction, NewChatAction, KbdHint, RailAction } from "./AppLeftPaneActions"
 import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
 import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
@@ -231,7 +231,8 @@ export function AppLeftPane({
   const openSet = useMemo(() => new Set(normalizedOpenSessionIds), [normalizedOpenSessionIds])
   const pinnedSet = useMemo(() => new Set(normalizedPinnedSessionIds), [normalizedPinnedSessionIds])
   const workingSessionIds = useWorkingSessionIds(sessions)
-  const agentTreeEnabled = agents.length > 0
+  // A single Agent is the workspace default, so its chats stay flat.
+  const agentTreeEnabled = agents.length > 1
   const [agentFilter, setAgentFilter] = useState("")
   const filteredAgents = useMemo(() => {
     const query = agentFilter.trim().toLocaleLowerCase()
@@ -564,6 +565,29 @@ export function AppLeftPane({
             </div>
           ) : (
             <div className={agentTreeEnabled ? "space-y-0.5 py-1" : "space-y-4 py-1"}>
+              {agentTreeEnabled ? (
+                <div className="px-0 pb-2">
+                  <FleetNewChatAction
+                    agents={agents}
+                    selectedAgentTypeId={selectedAgentTypeId}
+                    onCreateSession={(agentTypeId) => {
+                      expandAgent(agentTypeId)
+                      onSelectAgent?.(agentTypeId)
+                      onCreateSession(agentTypeId)
+                    }}
+                    onCreateSplitSession={onCreateSplitSession ? (agentTypeId) => {
+                      expandAgent(agentTypeId)
+                      onSelectAgent?.(agentTypeId)
+                      onCreateSplitSession(agentTypeId)
+                    } : undefined}
+                    onCreatePopoverSession={onCreatePopoverSession ? (agentTypeId) => {
+                      expandAgent(agentTypeId)
+                      onSelectAgent?.(agentTypeId)
+                      onCreatePopoverSession(agentTypeId)
+                    } : undefined}
+                  />
+                </div>
+              ) : null}
               {pinnedSessions.length > 0 ? (
                 agentTreeEnabled ? (
                   <section className="mb-3 border-b border-border/50 px-0 pb-3" aria-label="Pinned chats">

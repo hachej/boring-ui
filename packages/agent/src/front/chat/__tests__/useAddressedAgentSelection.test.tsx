@@ -13,7 +13,7 @@ describe('useAddressedAgentSelection', () => {
   test('fetches the scoped agent list from the configured base URL and defaults to the first agent', async () => {
     const fetchMock = vi.fn(async () => jsonResponse([
       { agentTypeId: 'alpha', label: 'Alpha' },
-      { agentTypeId: 'review/agent', label: 'Reviewer', description: 'Reviews changes' },
+      { agentTypeId: 'review/agent', label: 'Reviewer', description: 'Reviews changes', pluginIds: ['ask-user', 'pr-review'] },
     ]))
 
     const { result } = renderHook(
@@ -37,7 +37,7 @@ describe('useAddressedAgentSelection', () => {
     })
     expect(result.current.agents).toEqual([
       { agentTypeId: 'alpha', label: 'Alpha' },
-      { agentTypeId: 'review/agent', label: 'Reviewer', description: 'Reviews changes' },
+      { agentTypeId: 'review/agent', label: 'Reviewer', description: 'Reviews changes', pluginIds: ['ask-user', 'pr-review'] },
     ])
     expect(result.current.selectedAgentTypeId).toBe('alpha')
 

@@ -353,22 +353,15 @@ export function ChatPaneStageDock({
         className="relative h-full min-h-0 w-full bg-background"
       >
         <DockviewReact
-          // A one-pane session switch replaces the pane rather than adding a
-          // split. Remount Dockview for that replacement so its internal
-          // active-panel/render-container state cannot lag behind React and
-          // intermittently leave the previous session selected or the next
-          // session blank. Multi-pane layouts retain a stable instance.
-          key={panes.length === 1 ? panes[0].id : "multi-pane"}
           className="dv-shell dv-chat-stage h-full"
           components={STAGE_COMPONENTS}
           defaultTabComponent={ChatPaneHeader as React.FunctionComponent<IDockviewPanelHeaderProps>}
           rightHeaderActionsComponent={ChatPaneHeaderActions}
-          // Dockview's "always" renderer can leave the active React panel in
-          // its hidden render overlay after a session switch, producing a
-          // titled but completely blank chat stage. Render active pane content
-          // in its visible group instead; scroll retention must not depend on
-          // a renderer path that can hide the active conversation.
-          defaultRenderer="onlyWhenVisible"
+          // Keep chat content mounted while a session switch resolves. Besides
+          // preserving transcript scroll position, this retains the established
+          // loading transition instead of tearing down the whole stage and
+          // briefly exposing an empty canvas.
+          defaultRenderer="always"
           // Groups always hold exactly one pane (center drops are vetoed),
           // so the single header stretches across the full group width and
           // reads as a flat pane header, not a tab.

@@ -100,6 +100,16 @@ describe("AppLeftPane", () => {
     await waitFor(() => expect(screen.getAllByText("Alpha session")).toHaveLength(2))
     expect(screen.queryByText("Beta session")).not.toBeInTheDocument()
 
+    await user.click(screen.getByRole("button", { name: "Start new chat with Boring Alpha" }))
+    await user.click(screen.getByRole("button", { name: "Start split chat with Boring Alpha" }))
+    await user.click(screen.getByRole("button", { name: "Start quick chat with Boring Alpha" }))
+    expect(onCreateSession).toHaveBeenCalledWith("alpha")
+    expect(onCreateSplitSession).toHaveBeenCalledWith("alpha")
+    expect(onCreatePopoverSession).toHaveBeenCalledWith("alpha")
+    await user.click(screen.getByRole("button", { name: "Choose Agent for new chat" }))
+    await user.click(screen.getByRole("menuitem", { name: "Beta" }))
+    expect(onCreateSession).toHaveBeenCalledWith("beta")
+
     await user.click(screen.getByRole("button", { name: "Collapse Boring Alpha; 1 session" }))
     expect(screen.queryByRole("region", { name: "Boring Alpha sessions" })).not.toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Settings for Boring Alpha" }))
@@ -113,7 +123,6 @@ describe("AppLeftPane", () => {
     expect(onCreateSplitSession).toHaveBeenCalledWith("alpha")
     expect(onCreatePopoverSession).toHaveBeenCalledWith("alpha")
 
-    await user.click(screen.getByRole("button", { name: "Expand Boring Beta; 1 session" }))
     expect(screen.getByText("Beta session")).toBeInTheDocument()
 
     const filter = screen.getByRole("searchbox", { name: "Filter Agents" })
@@ -122,7 +131,7 @@ describe("AppLeftPane", () => {
     expect(screen.getByText("Beta", { selector: ".app-left-agent-row span" })).toBeInTheDocument()
   })
 
-  it("keeps the Agent controls in single-Agent and multi-project modes", () => {
+  it("uses a flat Chats list in single-Agent and multi-project modes", () => {
     render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
@@ -146,9 +155,9 @@ describe("AppLeftPane", () => {
       </WorkspaceAttentionProvider>,
     )
 
-    expect(screen.getByRole("button", { name: "Select Boring Solo; 0 sessions" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "New chat with Boring Solo" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Settings for Boring Solo" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Chats" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Select Boring Solo; 0 sessions" })).not.toBeInTheDocument()
     expect(screen.getByText("Project")).toBeInTheDocument()
   })
 

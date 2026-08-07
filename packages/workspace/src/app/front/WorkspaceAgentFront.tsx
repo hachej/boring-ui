@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
-import { Plug, Sparkles } from "lucide-react"
+import { Sparkles } from "lucide-react"
 import {
   PiChatPanel as DefaultPiChatPanel,
   usePiSessions as useDefaultPiSessions,
@@ -2439,15 +2439,6 @@ export function WorkspaceAgentFront<
         onClick: () => setLeftOverlay((cur) => cur === action.id ? null : action.id),
       })
     }
-    if (pluginsActionEnabled) {
-      actions.push({
-        id: "plugins",
-        label: "Plugins",
-        icon: <Plug className="h-4 w-4" strokeWidth={1.75} />,
-        active: leftOverlay === "plugins",
-        onClick: () => setLeftOverlay((cur) => cur === "plugins" ? null : "plugins"),
-      })
-    }
     if (skillsActionEnabled) {
       actions.push({
         id: "skills",
@@ -2459,7 +2450,7 @@ export function WorkspaceAgentFront<
     }
     assertUniqueAppLeftActionIds(actions)
     return actions
-  }, [appLeftActions, appLeftOverlayActions, leftOverlay, pluginAppLeftActions, pluginsActionEnabled, skillsActionEnabled])
+  }, [appLeftActions, appLeftOverlayActions, leftOverlay, pluginAppLeftActions, skillsActionEnabled])
 
   const pluginLeftOverlayNode = PluginAppLeftOverlayHost({
     plugins: capturedPlugins,

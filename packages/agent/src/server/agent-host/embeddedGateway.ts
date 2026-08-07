@@ -252,6 +252,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
     return this.runtime.compiledAgents.map((agent) => ({
       agentTypeId: agent.agentTypeId,
       label: 'legacyDefault' in agent ? 'Agent' : agent.definition.label,
+      ...('legacyDefault' in agent || !agent.plugins?.length
+        ? {}
+        : { pluginIds: agent.plugins.map((plugin) => plugin.name) }),
       ...('legacyDefault' in agent || !agent.definition.version
         ? {}
         : { definition: { version: agent.definition.version, digest: canonicalDigest(agent.definition as unknown as JsonValue) } }),

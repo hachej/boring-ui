@@ -86,7 +86,7 @@ describe("ChatPaneStageDock", () => {
     expect(onDrop).toHaveBeenCalledWith("shared", "beta")
   })
 
-  it('mounts panes in their visible group instead of Dockview\'s hidden render overlay', () => {
+  it('mounts panes with the "always" renderer so switching preserves loading and scroll state', () => {
     dockviewProps.mockClear()
     render(
       <ChatPaneStageDock
@@ -99,13 +99,11 @@ describe("ChatPaneStageDock", () => {
       />,
     )
 
-    // Dockview's "always" renderer can strand the active React panel in its
-    // visibility:hidden overlay, leaving only the pane title visible.
     expect(dockviewProps).toHaveBeenCalled()
-    expect(dockviewProps.mock.calls[0][0]).toMatchObject({ defaultRenderer: "onlyWhenVisible" })
+    expect(dockviewProps.mock.calls[0][0]).toMatchObject({ defaultRenderer: "always" })
   })
 
-  it("remounts Dockview when the only pane switches sessions", () => {
+  it("keeps Dockview mounted when the only pane switches sessions", () => {
     dockviewMounts.mockClear()
     const { rerender } = render(
       <ChatPaneStageDock
@@ -114,8 +112,6 @@ describe("ChatPaneStageDock", () => {
         renderPane={(pane) => <div>{pane.id}</div>}
       />,
     )
-    expect(dockviewMounts).toHaveBeenCalledTimes(1)
-
     rerender(
       <ChatPaneStageDock
         panes={[{ id: "b", title: "B" }]}
@@ -123,7 +119,8 @@ describe("ChatPaneStageDock", () => {
         renderPane={(pane) => <div>{pane.id}</div>}
       />,
     )
-    expect(dockviewMounts).toHaveBeenCalledTimes(2)
+
+    expect(dockviewMounts).toHaveBeenCalledTimes(1)
   })
 
   it("renders chat top actions only in the active pane header", () => {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AgentSummary } from '../../shared/gateway/types'
 import { gatewayResponseError } from './gatewayResponseError'
 
-export type AddressedAgentOption = Pick<AgentSummary, 'agentTypeId' | 'label' | 'description'>
+export type AddressedAgentOption = Pick<AgentSummary, 'agentTypeId' | 'label' | 'description' | 'pluginIds'>
 
 export interface UseAddressedAgentSelectionOptions {
   apiBaseUrl?: string
@@ -164,6 +164,9 @@ function parseAgentOptions(value: unknown): AddressedAgentOption[] {
       agentTypeId: record.agentTypeId,
       label: typeof record.label === 'string' && record.label.length > 0 ? record.label : record.agentTypeId,
       ...(typeof record.description === 'string' ? { description: record.description } : {}),
+      ...(Array.isArray(record.pluginIds)
+        ? { pluginIds: record.pluginIds.filter((pluginId): pluginId is string => typeof pluginId === 'string' && pluginId.length > 0) }
+        : {}),
     }
   })
 }

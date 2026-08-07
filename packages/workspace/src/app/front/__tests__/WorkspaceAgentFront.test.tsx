@@ -572,7 +572,7 @@ describe("WorkspaceAgentFront", () => {
     const sessionScopes = new Map<string, string | undefined>()
     const agents = [
       { agentTypeId: "alpha", label: "Alpha" },
-      { agentTypeId: "beta", label: "Beta" },
+      { agentTypeId: "beta", label: "Beta", pluginIds: ["ask-user", "pr-review"] },
     ]
     const useAgentSelection = () => {
       const [selectedAgentTypeId, setSelectedAgentTypeId] = useState("alpha")
@@ -655,6 +655,9 @@ describe("WorkspaceAgentFront", () => {
     const detailsOverlay = document.querySelector('[data-boring-workspace-part="agent-details-overlay"]')
     expect(detailsOverlay).not.toBeNull()
     expect(detailsOverlay).toHaveTextContent("Beta")
+    expect(detailsOverlay).toHaveTextContent("Plugins")
+    expect(detailsOverlay).toHaveTextContent("ask-user")
+    expect(detailsOverlay).toHaveTextContent("pr-review")
     await user.click(screen.getByRole("button", { name: "Close Beta details" }))
 
     await user.click(screen.getByRole("button", { name: "Settings for Beta" }))
@@ -758,7 +761,7 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => expect(resizeSeparator).toHaveAttribute("aria-valuenow", "220"))
     expect(within(appNav).getAllByRole("button", { name: "New chat" })).toHaveLength(1)
     expect(within(appNav).getByRole("button", { name: "Search" })).toBeInTheDocument()
-    expect(within(appNav).getByRole("button", { name: "Plugins" })).toBeInTheDocument()
+    expect(within(appNav).queryByRole("button", { name: "Plugins" })).not.toBeInTheDocument()
     expect(within(appNav).getByRole("button", { name: "Skills" })).toBeInTheDocument()
     await user.click(within(appNav).getByRole("button", { name: "New chat" }))
     expect(onCreateSession).toHaveBeenCalledOnce()
@@ -794,7 +797,7 @@ describe("WorkspaceAgentFront", () => {
     const collapsedRail = screen.getByLabelText("Collapsed app navigation")
     expect(collapsedRail).toHaveClass("w-11")
     expect(within(collapsedRail).getByRole("button", { name: "Search" })).toBeInTheDocument()
-    expect(within(collapsedRail).getByRole("button", { name: "Plugins" })).toBeInTheDocument()
+    expect(within(collapsedRail).queryByRole("button", { name: "Plugins" })).not.toBeInTheDocument()
     expect(within(collapsedRail).getByRole("button", { name: "Skills" })).toBeInTheDocument()
     expect(within(collapsedRail).getByRole("button", { name: "New chat" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
@@ -819,24 +822,24 @@ describe("WorkspaceAgentFront", () => {
 
     const appNav = screen.getByLabelText("App navigation")
     const automations = within(appNav).getByRole("button", { name: "Automations" })
-    const plugins = within(appNav).getByRole("button", { name: "Plugins" })
+    const skills = within(appNav).getByRole("button", { name: "Skills" })
 
     await user.click(automations)
     expect(automations).toHaveAttribute("data-active", "true")
     expect(automations).toHaveAttribute("aria-current", "page")
-    expect(plugins).not.toHaveAttribute("data-active")
+    expect(skills).not.toHaveAttribute("data-active")
 
-    await user.click(plugins)
+    await user.click(skills)
     expect(automations).not.toHaveAttribute("data-active")
-    expect(plugins).toHaveAttribute("data-active", "true")
+    expect(skills).toHaveAttribute("data-active", "true")
 
     await user.click(automations)
     expect(automations).toHaveAttribute("data-active", "true")
-    expect(plugins).not.toHaveAttribute("data-active")
+    expect(skills).not.toHaveAttribute("data-active")
 
     await user.click(automations)
     expect(automations).not.toHaveAttribute("data-active")
-    expect(plugins).not.toHaveAttribute("data-active")
+    expect(skills).not.toHaveAttribute("data-active")
   })
 
   it("never mounts a different plugin overlay with stale request params", async () => {
@@ -893,13 +896,13 @@ describe("WorkspaceAgentFront", () => {
         workspaceId="plugin-tabs-host-colliding-action"
         workspaceLayout="plugin-tabs"
         chatPanel={SessionIdChatPanel}
-        appLeftActions={[{ id: "plugins", label: "Host Plugins", icon: null, onClick: () => undefined }]}
+        appLeftActions={[{ id: "skills", label: "Host Skills", icon: null, onClick: () => undefined }]}
         persistenceEnabled={false}
       />,
     )).toThrow(/duplicate app-left action id/)
   })
 
-  it("can hide plugin-tabs Skills and Plugins actions", () => {
+  it("can hide plugin-tabs Skills and never exposes a global Plugins action", () => {
     render(
       <WorkspaceAgentFront
         workspaceId="plugin-tabs-hidden-overlays"
@@ -1055,50 +1058,19 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => expect(screen.getByText("Classic source body")).toBeInTheDocument())
   })
 
-  it("opens the Plugins overlay from the app nav and lists external plugins only", async () => {
-    const user = userEvent.setup()
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agents/default/ready-status")) return new Response(null, { status: 200 })
-      if (url.includes("/api/v1/agent-plugins")) {
-        return new Response(JSON.stringify([{ id: "external-plugin", boring: { label: "External Plugin" }, version: "1.2.3", revision: 4, frontTarget: { kind: "module-url", revision: 4 } }]), { status: 200 })
-      }
-      if (url.includes("/api/v1/agents/default/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
-      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
-      return new Response(null, { status: 204 })
-    }))
-
-    function PluginPanel() {
-      return <div>Demo plugin panel body</div>
-    }
-    const plugin = definePlugin({
-      id: "demo-plugin",
-      label: "Demo Plugin",
-      panels: [{ id: "demo-plugin.panel", label: "Demo Panel", placement: "workspace-page", component: PluginPanel }],
-    })
-
+  it("does not expose a global Plugins navigation action", () => {
     render(
       <WorkspaceAgentFront
-        workspaceId="plugin-tabs-plugins-overlay"
+        workspaceId="plugin-tabs-no-global-plugins"
         workspaceLayout="plugin-tabs"
         chatPanel={SessionIdChatPanel}
         sessions={[{ id: "s1", title: "First session" }]}
         activeSessionId="s1"
-        plugins={[plugin]}
         persistenceEnabled={false}
       />,
     )
 
-    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Plugins" }))
-    const overlay = document.querySelector('[data-boring-workspace-part="plugins-overlay"]')
-    expect(overlay).not.toBeNull()
-    await waitFor(() => expect(overlay!).toHaveTextContent("External Plugin"))
-    expect(overlay!).toHaveTextContent("external-plugin")
-    expect(overlay!).not.toHaveTextContent("Demo Plugin")
-    expect(overlay!).not.toHaveTextContent("Demo Panel")
-
-    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+    expect(within(screen.getByLabelText("App navigation")).queryByRole("button", { name: "Plugins" })).not.toBeInTheDocument()
     expect(document.querySelector('[data-boring-workspace-part="plugins-overlay"]')).toBeNull()
   })
 
@@ -1134,7 +1106,6 @@ describe("WorkspaceAgentFront", () => {
   })
 
   it.each([
-    { action: "Plugins", part: "plugins-overlay" },
     { action: "Skills", part: "skills-page" },
   ])("closes the $action overlay when switching sessions from app navigation", async ({ action, part }) => {
     const user = userEvent.setup()
@@ -1208,13 +1179,13 @@ describe("WorkspaceAgentFront", () => {
     )
 
     const appNav = screen.getByLabelText("App navigation")
-    await user.click(within(appNav).getByRole("button", { name: "Plugins" }))
-    await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="plugins-overlay"]')).not.toBeNull())
+    await user.click(within(appNav).getByRole("button", { name: "Skills" }))
+    await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="skills-page"]')).not.toBeNull())
 
     await user.click(within(appNav).getByText("First session"))
 
     expect(onSwitchSession).toHaveBeenCalledWith("s1", "default")
-    expect(document.querySelector('[data-boring-workspace-part="plugins-overlay"]')).toBeNull()
+    expect(document.querySelector('[data-boring-workspace-part="skills-page"]')).toBeNull()
   })
 
   it("opens Skills as a chat overlay and uses the UI bridge to open a skill", async () => {
