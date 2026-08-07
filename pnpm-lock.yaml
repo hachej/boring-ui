@@ -307,6 +307,9 @@ importers:
       nanoid:
         specifier: ^6.0.0
         version: 6.0.0
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
       shiki:
         specifier: ^4.3.0
         version: 4.3.1
