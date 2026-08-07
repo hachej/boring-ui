@@ -38,7 +38,7 @@ function pendingStateFor(q: typeof question) {
 }
 
 test.describe("ask_user Questions pane", () => {
-  test("chat blocker reopens the Questions pane after the pane is closed", async ({ page }) => {
+  test("chat blocker opens the Questions pane only after explicit user action", async ({ page }) => {
     await page.route("**/api/v1/ui/state", async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({ json: pendingStateFor(question) })
@@ -60,10 +60,7 @@ test.describe("ask_user Questions pane", () => {
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await expect(page.getByRole("textbox", { name: "Agent prompt" })).toBeVisible({ timeout: 10_000 })
     const questionsHeading = page.getByTestId("artifact-surface").getByRole("heading", { name: "Choose A or B" })
-    await expect(questionsHeading).toBeVisible({ timeout: 8_000 })
-
-    await page.getByRole("button", { name: "Close Questions" }).click()
-    await expect(questionsHeading).toBeHidden({ timeout: 5_000 })
+    await expect(questionsHeading).toBeHidden({ timeout: 8_000 })
 
     await page.getByRole("button", { name: "Open Questions" }).evaluate((button: HTMLButtonElement) => button.click())
     await expect(questionsHeading).toBeVisible({ timeout: 8_000 })
@@ -101,6 +98,9 @@ test.describe("ask_user Questions pane", () => {
     const chat = page.locator('[data-boring-agent-part="chat"]')
     await expect(chat).toHaveAttribute("data-pi-chat-session-id", /.+/, { timeout: 10_000 })
     targetSessionId = (await chat.getAttribute("data-pi-chat-session-id")) ?? undefined
+    // The mock can only address the canonical session after first boot. Reload
+    // so the next state hydration carries that exact owner/session pair.
+    await page.reload({ waitUntil: "domcontentloaded" })
     await expect(page.getByRole("button", { name: "Cancel question" })).toBeVisible({ timeout: 10_000 })
     // Visibility can precede the pending bridge hydration when this spec runs
     // after the long playground matrix. Wait for the handler's source record

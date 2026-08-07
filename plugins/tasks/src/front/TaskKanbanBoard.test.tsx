@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, test, vi } from "vitest"
 
@@ -33,9 +33,9 @@ function detailFor(adapterId: string, id: string, body = "Full plain-text descri
   }
 }
 
-function renderBoard(adapters: readonly BoringTaskAdapter[]) {
+function renderBoard(adapters: readonly BoringTaskAdapter[], workspaceId = "tasks-test") {
   return render(
-    <WorkspacePluginClientProvider agentTypeId="default" apiBaseUrl="" workspaceId="tasks-test">
+    <WorkspacePluginClientProvider agentTypeId="default" apiBaseUrl="" workspaceId={workspaceId}>
       <TaskKanbanBoard adapters={adapters} />
     </WorkspacePluginClientProvider>,
   )
@@ -43,6 +43,171 @@ function renderBoard(adapters: readonly BoringTaskAdapter[]) {
 
 describe("TaskKanbanBoard source isolation", () => {
   beforeEach(() => localStorage.clear())
+
+  test("ignores a delayed source response from the previous Workspace", async () => {
+    let resolveFirst!: (tasks: ReturnType<typeof task>[]) => void
+    const firstAdapter = adapter("shared", "Shared", vi.fn(() => new Promise<ReturnType<typeof task>[]>((resolve) => { resolveFirst = resolve })))
+    const view = renderBoard([firstAdapter], "workspace-a")
+
+    const secondAdapter = adapter("shared", "Shared", vi.fn(async () => [task("shared", "b1", "Workspace B current")]))
+    view.rerender(
+      <WorkspacePluginClientProvider agentTypeId="default" apiBaseUrl="" workspaceId="workspace-b">
+        <TaskKanbanBoard adapters={[secondAdapter]} />
+      </WorkspacePluginClientProvider>,
+    )
+    expect(await screen.findByText("Workspace B current")).toBeInTheDocument()
+    await act(async () => resolveFirst([task("shared", "a1", "Workspace A stale")]))
+
+    await waitFor(() => expect(firstAdapter.listTasks).toHaveBeenCalledOnce())
+    expect(screen.queryByText("Workspace A stale")).not.toBeInTheDocument()
+    expect(screen.getByText("Workspace B current")).toBeInTheDocument()
+  })
+
+  test("never hydrates another Workspace's cached task data", async () => {
+    const firstAdapter = adapter("shared", "Shared", vi.fn(async () => [task("shared", "1", "Workspace A secret")]))
+    const first = renderBoard([firstAdapter], "workspace-a")
+    expect(await screen.findByText("Workspace A secret")).toBeInTheDocument()
+
+    const secondAdapter = adapter("shared", "Shared", vi.fn(async () => []))
+    first.rerender(
+      <WorkspacePluginClientProvider agentTypeId="default" apiBaseUrl="" workspaceId="workspace-b">
+        <TaskKanbanBoard adapters={[secondAdapter]} />
+      </WorkspacePluginClientProvider>,
+    )
+    expect(screen.queryByText("Workspace A secret")).not.toBeInTheDocument()
+    await waitFor(() => expect(secondAdapter.listTasks).toHaveBeenCalled())
+    expect(screen.queryByText("Workspace A secret")).not.toBeInTheDocument()
+  })
+
+  test("ignores an in-flight mutation after switching Workspaces", async () => {
+    const user = userEvent.setup()
+    let rejectDelete!: (error: Error) => void
+    const deleteResult = new Promise<void>((_resolve, reject) => { rejectDelete = reject })
+    const firstAdapter: BoringTaskAdapter = {
+      ...adapter("shared", "Shared", vi.fn(async () => [task("shared", "a1", "Workspace A task")])),
+      capabilities: { move: false, delete: true },
+      deleteTask: vi.fn(async () => await deleteResult),
+    }
+    const view = renderBoard([firstAdapter], "workspace-a")
+    expect(await screen.findByText("Workspace A task")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Open actions for a1" }))
+    await user.click(screen.getByRole("button", { name: "Delete task" }))
+
+    const secondAdapter = adapter("shared", "Shared", vi.fn(async () => [task("shared", "b1", "Workspace B task")]))
+    view.rerender(
+      <WorkspacePluginClientProvider agentTypeId="default" apiBaseUrl="" workspaceId="workspace-b">
+        <TaskKanbanBoard adapters={[secondAdapter]} />
+      </WorkspacePluginClientProvider>,
+    )
+    expect(await screen.findByText("Workspace B task")).toBeInTheDocument()
+    rejectDelete(new Error("late Workspace A failure"))
+
+    await waitFor(() => expect(firstAdapter.deleteTask).toHaveBeenCalled())
+    expect(screen.queryByText("Workspace A task")).not.toBeInTheDocument()
+    expect(screen.getByText("Workspace B task")).toBeInTheDocument()
+    expect(screen.queryByText("late Workspace A failure")).not.toBeInTheDocument()
+  })
+
+  test("explains close semantics and restores a failed removal at its original position", async () => {
+    const user = userEvent.setup()
+    let rejectClose!: (error: Error) => void
+    const closeResult = new Promise<void>((_resolve, reject) => { rejectClose = reject })
+    const source: BoringTaskAdapter = {
+      ...adapter("github", "GitHub", vi.fn(async () => [
+        task("github", "a", "First"),
+        task("github", "b", "Second"),
+        task("github", "c", "Third"),
+      ])),
+      capabilities: { move: false, delete: true, deleteEffect: "close" },
+      deleteTask: vi.fn(async () => await closeResult),
+    }
+    const view = renderBoard([source])
+    expect(await screen.findByText("Second")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Open actions for b" }))
+    const closeButton = screen.getByRole("button", { name: "Close task (does not delete)" })
+    expect(closeButton).toHaveAttribute("title", "Closes this task in its source; it will not be deleted.")
+    await user.click(closeButton)
+    expect(screen.queryByText("Second")).not.toBeInTheDocument()
+
+    rejectClose(new Error("close failed"))
+    await waitFor(() => expect(screen.getByText("Second")).toBeInTheDocument())
+    expect([...view.container.querySelectorAll("[data-task-id]")].map((element) => element.getAttribute("data-task-id"))).toEqual(["a", "b", "c"])
+  })
+
+  test("serializes removals within one Workspace so rollbacks cannot reorder peers", async () => {
+    const user = userEvent.setup()
+    let rejectDelete!: (error: Error) => void
+    const source: BoringTaskAdapter = {
+      ...adapter("source", "Source", vi.fn(async () => [
+        task("source", "a", "First"),
+        task("source", "b", "Second"),
+        task("source", "c", "Third"),
+      ])),
+      capabilities: { move: false, delete: true },
+      deleteTask: vi.fn(() => new Promise<void>((_resolve, reject) => { rejectDelete = reject })),
+    }
+    renderBoard([source])
+    expect(await screen.findByText("Third")).toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "Open actions for b" }))
+    await user.click(screen.getByRole("button", { name: "Delete task" }))
+    await user.click(screen.getByRole("button", { name: "Open actions for c" }))
+    expect(screen.getByRole("button", { name: "Delete task" })).toBeDisabled()
+    expect(source.deleteTask).toHaveBeenCalledTimes(1)
+
+    rejectDelete(new Error("second failed"))
+    await waitFor(() => expect(screen.getByText("Second")).toBeInTheDocument())
+  })
+
+  test("cleans up a refresh invalidated by a later mutation", async () => {
+    const user = userEvent.setup()
+    let resolveRefresh!: (tasks: ReturnType<typeof task>[]) => void
+    let resolveDelete!: () => void
+    const listTasks = vi.fn()
+      .mockResolvedValueOnce([task("shared", "a1", "Delete during refresh")])
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
+    const source: BoringTaskAdapter = {
+      ...adapter("shared", "Shared", listTasks),
+      capabilities: { move: false, delete: true },
+      deleteTask: vi.fn(() => new Promise<void>((resolve) => { resolveDelete = resolve })),
+    }
+    renderBoard([source])
+    expect(await screen.findByText("Delete during refresh")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Refresh" }))
+    await user.click(screen.getByRole("button", { name: "Open actions for a1" }))
+    await user.click(screen.getByRole("button", { name: "Delete task" }))
+    resolveRefresh([task("shared", "a1", "Delete during refresh")])
+    resolveDelete()
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh" })).not.toBeDisabled())
+    expect(screen.queryByText("Delete during refresh")).not.toBeInTheDocument()
+  })
+
+  test("does not let a stale refresh resurrect a successfully deleted task", async () => {
+    const user = userEvent.setup()
+    let resolveRefresh!: (tasks: ReturnType<typeof task>[]) => void
+    let resolveDelete!: () => void
+    const listTasks = vi.fn()
+      .mockResolvedValueOnce([task("shared", "a1", "Delete me")])
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
+    const source: BoringTaskAdapter = {
+      ...adapter("shared", "Shared", listTasks),
+      capabilities: { move: false, delete: true },
+      deleteTask: vi.fn(() => new Promise<void>((resolve) => { resolveDelete = resolve })),
+    }
+    renderBoard([source])
+    expect(await screen.findByText("Delete me")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Open actions for a1" }))
+    await user.click(screen.getByRole("button", { name: "Delete task" }))
+    await user.click(screen.getByRole("button", { name: "Refresh" }))
+
+    resolveRefresh([task("shared", "a1", "Delete me")])
+    await waitFor(() => expect(listTasks).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText("Delete me")).not.toBeInTheDocument()
+    resolveDelete()
+    await waitFor(() => expect(source.deleteTask).toHaveBeenCalledOnce())
+    expect(screen.queryByText("Delete me")).not.toBeInTheDocument()
+  })
 
   test("keeps healthy source tasks visible and retries only the failing source", async () => {
     const user = userEvent.setup()

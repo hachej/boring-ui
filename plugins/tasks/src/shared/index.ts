@@ -1,3 +1,5 @@
+export { TASK_ERROR_CODES, type TaskErrorCode } from "./error-codes"
+
 export const TASKS_PLUGIN_ID = "tasks"
 export const TASKS_PLUGIN_LABEL = "Tasks"
 export const TASKS_ROUTE_PREFIX = "/api/boring-tasks"
@@ -30,6 +32,18 @@ export const BORING_TASK_ERROR_CODES = [
   "TASK_BEADS_DUPLICATE_ID",
   "TASK_SOURCE_LIST_FAILED",
   "TASK_SOURCE_ERROR",
+  "TASK_DELETE_APPROVAL_REQUIRED",
+  "TASK_SESSION_CURRENT_UNAVAILABLE",
+  "TASK_SESSION_FORBIDDEN",
+  "TASK_SESSION_INVALID_BODY",
+  "TASK_SESSION_LINK_MISSING",
+  "TASK_SESSION_LINK_STORE_ERROR",
+  "TASK_SESSION_LINK_STORE_INVALID",
+  "TASK_SOURCE_FORBIDDEN",
+  "TASK_STATUS_NOT_ACCEPTING",
+  "TASK_TOOL_CONTEXT_UNAVAILABLE",
+  "TASK_TOOL_ERROR",
+  "TASK_TOOL_FORBIDDEN",
 ] as const
 
 export type BoringTaskErrorCode = (typeof BORING_TASK_ERROR_CODES)[number]
@@ -60,6 +74,18 @@ export const BORING_TASK_ERROR_DEFINITIONS: Readonly<Record<BoringTaskErrorCode,
   TASK_BEADS_DUPLICATE_ID: { status: 502, retryable: false },
   TASK_SOURCE_LIST_FAILED: { status: 502, retryable: true },
   TASK_SOURCE_ERROR: { status: 500, retryable: true },
+  TASK_DELETE_APPROVAL_REQUIRED: { status: 409, retryable: false },
+  TASK_SESSION_CURRENT_UNAVAILABLE: { status: 409, retryable: false },
+  TASK_SESSION_FORBIDDEN: { status: 403, retryable: false },
+  TASK_SESSION_INVALID_BODY: { status: 400, retryable: false },
+  TASK_SESSION_LINK_MISSING: { status: 404, retryable: false },
+  TASK_SESSION_LINK_STORE_ERROR: { status: 500, retryable: true },
+  TASK_SESSION_LINK_STORE_INVALID: { status: 500, retryable: false },
+  TASK_SOURCE_FORBIDDEN: { status: 403, retryable: false },
+  TASK_STATUS_NOT_ACCEPTING: { status: 409, retryable: false },
+  TASK_TOOL_CONTEXT_UNAVAILABLE: { status: 409, retryable: false },
+  TASK_TOOL_ERROR: { status: 500, retryable: true },
+  TASK_TOOL_FORBIDDEN: { status: 403, retryable: false },
 })
 
 export interface BoringTaskSourceError {
@@ -145,9 +171,61 @@ export interface BoringTaskDetail {
   updatedAt?: string
 }
 
+export interface BoringTaskSessionLink {
+  id: string
+  adapterId: string
+  taskId: string
+  agentTypeId: string
+  sessionId: string
+  createdAt: string
+}
+
+export interface HumanIntentionTaskRef {
+  adapterId: string
+  taskId: string
+  number: string
+  title: string
+  statusId: string
+  url?: string
+}
+
+export interface SessionTaskMatch {
+  sessionId: string
+  tasks: HumanIntentionTaskRef[]
+}
+
+export interface SessionTaskResolution {
+  matches: SessionTaskMatch[]
+  omittedSessionIds: string[]
+}
+
+export interface SessionHandoverSummary {
+  id: string
+  runId: string
+  terminalEntryId: string
+  createdAt?: string
+  artifacts: import("@hachej/boring-workspace/shared").HumanArtifact[]
+}
+
+export interface TaskSessionRef {
+  agentTypeId: string
+  sessionId: string
+}
+
+export interface SessionHandoverMatch extends TaskSessionRef {
+  handover: SessionHandoverSummary
+}
+
+export interface SessionHandoverResolution {
+  matches: SessionHandoverMatch[]
+  omittedSessions: TaskSessionRef[]
+}
+
 export interface BoringTaskAdapterCapabilities {
   move: boolean
   delete?: boolean
+  /** Adapter-defined effect; GitHub currently closes rather than permanently deletes. */
+  deleteEffect?: "close" | "delete"
   detail?: boolean
 }
 

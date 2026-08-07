@@ -8,6 +8,7 @@ export interface WorkspacePluginClient {
   getJson<T = unknown>(path: string, options?: { missingMessage?: string }): Promise<T>
   readJsonFile<T>(path: string, options?: { missingMessage?: string }): Promise<T>
   postJson<T = unknown>(path: string, body?: unknown, options?: { headers?: Record<string, string> }): Promise<T>
+  deleteJson<T = unknown>(path: string): Promise<T>
   sendAgentPrompt(message: string, options?: { title?: string; noncePrefix?: string }): Promise<void>
 }
 
@@ -147,6 +148,7 @@ function createWorkspacePluginClientWithOptions(
         prefixFallback: options?.prefixFallbackStatuses?.includes(response.status) ?? false,
       })
     }
+    if (response.status === 204) return undefined as T
     return await response.json() as T
   }
   const getJson = async <T = unknown,>(
@@ -166,6 +168,8 @@ function createWorkspacePluginClientWithOptions(
         }
       : options?.headers ? { headers: options.headers } : {}),
   }, `request failed for ${path}`)
+  const deleteJson = async <T = unknown,>(path: string): Promise<T> =>
+    fetchJson<T>(path, { method: "DELETE" }, `request failed for ${path}`)
   const sendAgentPrompt = async (
     message: string,
     options?: { title?: string; noncePrefix?: string },
@@ -201,6 +205,7 @@ function createWorkspacePluginClientWithOptions(
     getJson,
     readJsonFile,
     postJson,
+    deleteJson,
     sendAgentPrompt,
   }
 }
