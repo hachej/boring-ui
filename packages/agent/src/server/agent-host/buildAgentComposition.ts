@@ -106,19 +106,23 @@ export function decideDurableEventStore(input: {
     return failedDurableEventStoreDecision(null, reason)
   }
   const path = join(root, EVENT_STORE_FILE_NAME)
-  let opened: OpenDatabaseResult
+  let opened: OpenDatabaseResult | undefined
   try {
     opened = openDatabase(path)
-    const store = new SqliteEventStreamStore(opened.sql, opened.runTransaction)
+    let operationFailure: string | undefined
+    const store = observeEventStoreFailures(
+      new SqliteEventStreamStore(opened.sql, opened.runTransaction),
+      (error) => { operationFailure ??= error instanceof Error ? error.message : String(error) },
+    )
     return {
-      opened: { store, close: () => opened.db.close() },
+      opened: { store, close: () => opened!.db.close() },
       snapshot() {
         try {
-          const streamRow = opened.sql.exec('SELECT COUNT(*) AS count FROM boring_event_streams').toArray()[0]
-          const eventRow = opened.sql.exec('SELECT COUNT(*) AS count FROM boring_event_stream_entries').toArray()[0]
+          const streamRow = opened!.sql.exec('SELECT COUNT(*) AS count FROM boring_event_streams').toArray()[0]
+          const eventRow = opened!.sql.exec('SELECT COUNT(*) AS count FROM boring_event_stream_entries').toArray()[0]
           return {
-            mode: 'active',
-            reason: null,
+            mode: operationFailure ? 'failed' : 'active',
+            reason: operationFailure ?? null,
             storagePath: path,
             counts: {
               streams: Number(streamRow?.count ?? 0),
@@ -128,7 +132,7 @@ export function decideDurableEventStore(input: {
         } catch (error) {
           return {
             mode: 'failed',
-            reason: error instanceof Error ? error.message : String(error),
+            reason: operationFailure ?? (error instanceof Error ? error.message : String(error)),
             storagePath: path,
             counts: { streams: 0, events: 0 },
           }
@@ -136,10 +140,38 @@ export function decideDurableEventStore(input: {
       },
     }
   } catch (error) {
+    try { opened?.db.close() } catch {}
     const reason = error instanceof Error ? error.message : String(error)
     reportEventStoreOpenFailure(input.telemetry, path, reason)
     return failedDurableEventStoreDecision(path, reason)
   }
+}
+
+function observeEventStoreFailures(
+  store: EventStreamStore,
+  onFailure: (error: unknown) => void,
+): EventStreamStore {
+  return new Proxy(store, {
+    get(target, property, receiver) {
+      const member = Reflect.get(target, property, receiver) as unknown
+      if (typeof member !== 'function') return member
+      return (...args: unknown[]) => {
+        try {
+          const result = Reflect.apply(member, target, args) as unknown
+          if (result && typeof (result as { then?: unknown }).then === 'function') {
+            return Promise.resolve(result).catch((error) => {
+              onFailure(error)
+              throw error
+            })
+          }
+          return result
+        } catch (error) {
+          onFailure(error)
+          throw error
+        }
+      }
+    },
+  })
 }
 
 function failedDurableEventStoreDecision(

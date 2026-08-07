@@ -334,8 +334,10 @@ function createRuntime(
       return inventory.list(agentTypeId, scope, claim)
     },
     isDraining: () => draining,
-    getDurableStreamReadiness: () => publishedCurrentBindings.values().next().value?.composition.durableStreamReadiness
-      ?? publishedBindings.values().next().value?.composition.durableStreamReadiness,
+    getDurableStreamReadiness: () => aggregateDurableStreamReadiness(
+      [...(publishedCurrentBindings.size > 0 ? publishedCurrentBindings : publishedBindings).values()]
+        .map((binding) => binding.composition.durableStreamReadiness),
+    ),
     assertOpen() {
       if (draining) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'agent host is closing')
     },
@@ -684,6 +686,33 @@ function createRuntime(
   return runtime
 }
 
+
+function aggregateDurableStreamReadiness(
+  snapshots: readonly import('./buildAgentComposition').DurableStreamReadinessSnapshot[],
+): import('./buildAgentComposition').DurableStreamReadinessSnapshot | undefined {
+  if (snapshots.length === 0) return undefined
+  const byStoragePath = new Map<string, import('./buildAgentComposition').DurableStreamReadinessSnapshot>()
+  for (const snapshot of snapshots) {
+    const key = snapshot.storagePath ?? `${snapshot.mode}:${snapshot.reason ?? ''}`
+    const current = byStoragePath.get(key)
+    if (!current || snapshot.counts.events > current.counts.events) byStoragePath.set(key, snapshot)
+  }
+  const unique = [...byStoragePath.values()]
+  const failed = unique.filter((snapshot) => snapshot.mode === 'failed')
+  const active = unique.filter((snapshot) => snapshot.mode === 'active')
+  const storagePaths = [...new Set(unique.flatMap((snapshot) => snapshot.storagePath ? [snapshot.storagePath] : []))]
+  return {
+    mode: failed.length > 0 ? 'failed' : active.length > 0 ? 'active' : 'disabled',
+    reason: failed.length > 0
+      ? [...new Set(failed.map((snapshot) => snapshot.reason ?? 'unknown durable stream failure'))].join('; ')
+      : active.length > 0 ? null : unique[0]?.reason ?? null,
+    storagePath: storagePaths.length === 1 ? storagePaths[0]! : null,
+    counts: {
+      streams: unique.reduce((count, snapshot) => count + snapshot.counts.streams, 0),
+      events: unique.reduce((count, snapshot) => count + snapshot.counts.events, 0),
+    },
+  }
+}
 
 function readyEnvironmentCapabilities(): import('../runtime/readyStatus').AgentCapabilityReadiness {
   return Object.freeze({
