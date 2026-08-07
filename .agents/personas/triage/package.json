@@ -1,0 +1,15 @@
+{
+  "name": "@hachej/boring-persona-triage",
+  "version": "2026.08.04",
+  "private": true,
+  "description": "Classifies tracked work and advances one verified transition.",
+  "boring": {
+    "agent": {
+      "definitionId": "boring-triage",
+      "version": "2026.08.04",
+      "label": "Boring Triage",
+      "description": "Classifies tracked work and advances one verified transition.",
+      "instructionsRef": "instructions.md"
+    }
+  }
+}

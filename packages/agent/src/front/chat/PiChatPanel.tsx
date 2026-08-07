@@ -53,6 +53,7 @@ import {
   type PanelNotice,
 } from './components/ChatNotices'
 import { PiConversationSurface } from './components/PiConversationSurface'
+import { filterCompetingNoiseNotices } from './components/terminalChatErrors'
 import type {
   ActionableSlashCommand,
   MessageMention,
@@ -505,8 +506,16 @@ export function PiChatPanel<
           dismissible: true,
         }]
       : []
-    return [...fromState, ...sessionNotice, ...largeStateNotice, ...localNotices].filter((notice) => !dismissedNoticeIds.has(notice.id))
-  }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, selectedChatState, sessionsError])
+    const combined = [...fromState, ...sessionNotice, ...largeStateNotice, ...localNotices]
+      .filter((notice) => !dismissedNoticeIds.has(notice.id))
+    // A terminal chat error (history failed to load, no messages present)
+    // already explains why the agent looks unreachable. Showing
+    // reconnect/retry chatter next to it reads as contradictory
+    // ("reconnecting..." beside "history unavailable"), so drop that noise —
+    // but only when there's genuinely no history, matching the gate in
+    // RuntimeNotices/PiConversationSurface (see terminalChatErrors.ts).
+    return filterCompetingNoiseNotices(combined, messages.length === 0)
+  }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, messages.length, selectedChatState, sessionsError])
 
   const addLocalNotice = useCallback((notice: PanelNotice) => {
     setLocalNotices((previous) => {

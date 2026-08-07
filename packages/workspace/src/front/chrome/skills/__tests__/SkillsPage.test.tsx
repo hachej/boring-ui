@@ -128,4 +128,32 @@ describe("SkillsPage resource rows", () => {
       expect.objectContaining({ missingMessage: expect.any(String) }),
     ))
   })
+
+  it("summarises the skill count in the header description", async () => {
+    mocks.getJson.mockResolvedValue({ skills: [{ name: "alpha" }] })
+    render(<SkillsPage />)
+    await screen.findByText("1 skill available to slash commands")
+  })
+
+  it("shows an alert with a retry action and no empty state when loading fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    mocks.getJson.mockRejectedValue(new Error("boom"))
+    render(<SkillsPage />)
+
+    const alert = await screen.findByRole("alert")
+    expect(alert.textContent).toContain("boom")
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy()
+    expect(screen.queryByText("No skills found")).toBeNull()
+
+    mocks.getJson.mockResolvedValue({ skills: [{ name: "alpha" }] })
+    screen.getByRole("button", { name: "Retry" }).click()
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull())
+    consoleError.mockRestore()
+  })
+
+  it("shows the empty state when there are no skills", async () => {
+    mocks.getJson.mockResolvedValue({ skills: [] })
+    render(<SkillsPage />)
+    await screen.findByText("No skills found")
+  })
 })

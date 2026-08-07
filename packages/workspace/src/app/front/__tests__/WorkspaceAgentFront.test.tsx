@@ -291,6 +291,54 @@ describe("WorkspaceAgentFront", () => {
     window.removeEventListener("boring:chat-session-status", onStatus)
   })
 
+  it("reconciles the session list when activity reports a session created out-of-band (gh-778)", () => {
+    MockEventSource.instances = []
+    vi.stubGlobal("EventSource", MockEventSource)
+    const refresh = vi.fn()
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="external-session-stream"
+        chatPanel={SessionIdChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "session-1", title: "Session one", status: "idle" }],
+          activeSession: { id: "session-1", title: "Session one", status: "idle" },
+          activeSessionId: "session-1",
+          loading: false,
+          error: undefined,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+          refresh,
+        })}
+      />,
+    )
+    const stream = MockEventSource.instances.find((instance) => instance.url.includes("/api/v1/agents/session-activity/events"))
+
+    // Activity for a session already known to the list must not trigger an
+    // extra refresh.
+    act(() => {
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "session-1" }, status: "running" })
+    })
+    expect(refresh).not.toHaveBeenCalled()
+
+    // Activity for a session the list has never fetched (created via an
+    // external entrypoint) must trigger a background refresh so it appears
+    // without a manual refresh or remount.
+    act(() => {
+      stream?.emit("activity", { ref: { agentTypeId: "default", sessionId: "external-session" }, status: "running" })
+    })
+    expect(refresh).toHaveBeenCalledWith({ background: true })
+
+    refresh.mockClear()
+    // Activity for a different agent type's session must not leak into this
+    // agent-scoped session list's refresh.
+    act(() => {
+      stream?.emit("activity", { ref: { agentTypeId: "other-agent", sessionId: "other-agent-session" }, status: "running" })
+    })
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
   it("renders a known active session while remote sessions are still loading", () => {
     const PendingChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>

@@ -1,0 +1,78 @@
+import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+
+import { afterEach, describe, expect, test, vi } from 'vitest'
+
+import { LEGACY_DEFAULT_AGENT_FLEET, resolveDefaultAgentFleet } from '../resolveDefaultAgentFleet'
+
+const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../../../..')
+
+const loggerMocks = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn() }))
+vi.mock('@hachej/boring-bash/server', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@hachej/boring-bash/server')>()
+  return {
+    ...actual,
+    createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: loggerMocks.warn, error: loggerMocks.error }),
+  }
+})
+
+describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', () => {
+  afterEach(() => {
+    loggerMocks.warn.mockClear()
+    loggerMocks.error.mockClear()
+  })
+
+  test('flag absent: byte-identical legacy single-default-agent boot', async () => {
+    const agents = await resolveDefaultAgentFleet({ repositoryRoot: REPOSITORY_ROOT, env: {} })
+    expect(agents).toEqual(LEGACY_DEFAULT_AGENT_FLEET)
+    expect(Object.isFrozen(agents)).toBe(true)
+  })
+
+  test('flag=1: composes the default agent plus the repository factory seats', async () => {
+    const agents = await resolveDefaultAgentFleet({
+      repositoryRoot: REPOSITORY_ROOT,
+      env: { BORING_AGENT_FLEET: '1', ANTHROPIC_API_KEY: 'test-key' },
+    })
+    expect(agents[0]).toEqual({ agentTypeId: 'default', legacyDefault: true })
+    expect(agents.slice(1).map((agent) => agent.agentTypeId)).toEqual([
+      'boring-concierge',
+      'boring-triage',
+      'boring-steward',
+      'boring-worker',
+      'boring-reviewer',
+    ])
+  })
+
+  describe('flag=1 with a missing/malformed .agents tree (M4: degrade, do not crash boot)', () => {
+    let root: string
+
+    afterEach(async () => {
+      if (root) await rm(root, { recursive: true, force: true })
+    })
+
+    test('degrades to the legacy default agent and logs a diagnostic', async () => {
+      root = await mkdtemp(join(tmpdir(), 'fleet-boot-degrade-'))
+      // No .agents/ tree at all under this root.
+      const agents = await resolveDefaultAgentFleet({
+        repositoryRoot: root,
+        env: { BORING_AGENT_FLEET: '1' },
+      })
+      expect(agents).toEqual(LEGACY_DEFAULT_AGENT_FLEET)
+      expect(loggerMocks.error).toHaveBeenCalledTimes(1)
+      expect(loggerMocks.error.mock.calls[0]?.[0]).toMatch(/degrading to the legacy default agent/)
+    })
+
+    test('degrades on a malformed fleet.yaml too', async () => {
+      root = await mkdtemp(join(tmpdir(), 'fleet-boot-degrade-'))
+      await mkdir(join(root, '.agents', 'factory'), { recursive: true })
+      await writeFile(join(root, '.agents', 'factory', 'fleet.yaml'), 'not: [valid, seats, shape')
+      const agents = await resolveDefaultAgentFleet({
+        repositoryRoot: root,
+        env: { BORING_AGENT_FLEET: '1' },
+      })
+      expect(agents).toEqual(LEGACY_DEFAULT_AGENT_FLEET)
+      expect(loggerMocks.error).toHaveBeenCalledTimes(1)
+    })
+  })
+})
