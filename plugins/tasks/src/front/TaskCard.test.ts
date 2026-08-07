@@ -32,6 +32,7 @@ function shell(overrides: Partial<WorkspaceShellCapabilities> = {}): WorkspaceSh
 function client(postJson = vi.fn(), deleteJson = vi.fn()) {
   return {
     value: {
+      workspaceId: "workspace",
       agentTypeId: "alpha",
       postJson: postJson as WorkspacePluginClient["postJson"],
       deleteJson: deleteJson as WorkspacePluginClient["deleteJson"],
@@ -43,7 +44,7 @@ function client(postJson = vi.fn(), deleteJson = vi.fn()) {
 
 function promptAccepted(agentTypeId = "alpha", sessionId = "native-pi-exact") {
   window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
-    detail: { agentTypeId, sessionId, clientNonce: "nonce-1" },
+    detail: { workspaceId: "workspace", agentTypeId, sessionId, clientNonce: "nonce-1" },
   }))
 }
 

@@ -1,4 +1,4 @@
-import { compileAgentDirectory } from './compileAgentDirectory'
+import { compileAgentDirectory, compilePersonaPackageDirectory } from './compileAgentDirectory'
 import { AgentDefinitionValidationError } from '../../shared/agent-definition'
 import {
   AgentDefinitionErrorCode,
@@ -25,6 +25,12 @@ export type AuthoredAgentSourceV1 = Readonly<{
 export interface MaterializeAgentDirectoryInput {
   directory: string
   expectedAgentTypeId?: string
+  /**
+   * Manifest shape to compile. Defaults to `agent.json` for backward
+   * compatibility. `package.json` reads the `boring.agent` block, used by
+   * plugin-shaped personas (`.agents/personas/<seat>`).
+   */
+  manifest?: 'agent.json' | 'package.json'
 }
 
 export class AuthoredAgentMaterializationError extends Error {
@@ -64,7 +70,9 @@ export async function materializeAgentDirectory(
 ): Promise<AuthoredAgentSourceV1> {
   let bundle: Awaited<ReturnType<typeof compileAgentDirectory>>
   try {
-    bundle = await compileAgentDirectory(input.directory)
+    bundle = input.manifest === 'package.json'
+      ? await compilePersonaPackageDirectory(input.directory)
+      : await compileAgentDirectory(input.directory)
   } catch (error) {
     if (
       error instanceof AgentDefinitionValidationError &&

@@ -170,6 +170,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const pendingSourceIds = useRef(new Map<string, Map<string, number>>())
   const activeTaskMutationCounts = useRef(new Map<string, number>())
   const taskMutationVersions = useRef(new Map<string, number>())
+  const deleteInFlightScopes = useRef(new Set<string>())
   const stateRef = useRef(state)
   stateRef.current = state
   const toolbarRef = useRef<HTMLDivElement | null>(null)
@@ -450,9 +451,16 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const deleteTask = async (task: BoringTaskCard) => {
     const adapter = adaptersById.get(task.adapterId)
     if (!adapter?.capabilities.delete || !adapter.deleteTask) {
-      setError(`Task source does not support issue deletion: ${task.adapterId}`)
+      setError(`Task source does not support removing tasks: ${task.adapterId}`)
       return
     }
+    const deleteScope = cacheKey
+    if (deleteInFlightScopes.current.has(deleteScope)) return
+    deleteInFlightScopes.current.add(deleteScope)
+    const originalTasks = stateRef.current?.tasks ?? []
+    const originalIndex = originalTasks.findIndex((candidate) => candidate.id === task.id && candidate.adapterId === task.adapterId)
+    const previousTask = originalIndex > 0 ? originalTasks[originalIndex - 1] : undefined
+    const nextTask = originalIndex >= 0 ? originalTasks[originalIndex + 1] : undefined
     const mutation = beginTaskMutation(task.adapterId, task.id)
     setDeletingTaskId(task.id)
     setError(null)
@@ -472,7 +480,18 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
       if (mutation.isCurrent()) {
         setState((current) => {
           if (!current || current.tasks.some((candidate) => candidate.id === task.id && candidate.adapterId === task.adapterId)) return current
-          const next = { ...current, tasks: [...current.tasks, task] }
+          const tasks = [...current.tasks]
+          const sameTask = (candidate: BoringTaskCard, neighbor: BoringTaskCard | undefined) =>
+            Boolean(neighbor && candidate.id === neighbor.id && candidate.adapterId === neighbor.adapterId)
+          const nextIndex = tasks.findIndex((candidate) => sameTask(candidate, nextTask))
+          const previousIndex = tasks.findIndex((candidate) => sameTask(candidate, previousTask))
+          const insertionIndex = nextIndex >= 0
+            ? nextIndex
+            : previousIndex >= 0
+              ? previousIndex + 1
+              : originalIndex < 0 ? tasks.length : Math.min(originalIndex, tasks.length)
+          tasks.splice(insertionIndex, 0, task)
+          const next = { ...current, tasks }
           stateRef.current = next
           writeCachedBoardState(cacheKey, next)
           return next
@@ -480,6 +499,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
         if (selectedAdapterIds.has(task.adapterId)) setError(cause instanceof Error ? cause.message : String(cause))
       }
     } finally {
+      deleteInFlightScopes.current.delete(deleteScope)
       const clearBusyState = mutation.isCurrent()
       mutation.finish()
       if (clearBusyState) setDeletingTaskId(null)
@@ -730,7 +750,8 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                           compact
                           attention={attentionByTask.get(taskAttentionKey(task))}
                           sessionLinks={sessionLinksByTask ? sessionLinksByTask.get(taskSessionLinkKey(task.adapterId, task.id)) ?? [] : undefined}
-                          deleteEnabled={Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
+                          deleteEnabled={deletingTaskId === null && Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
+                          deleteEffect={adaptersById.get(task.adapterId)?.capabilities.deleteEffect ?? "delete"}
                           onDelete={(task) => void deleteTask(task)}
                           onOpenDetail={canOpenTaskDetail(task) ? openTaskDetail : undefined}
                           onDragStart={handleTaskDragStart}
@@ -759,7 +780,8 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                 sessionLinksByTask={sessionLinksByTask}
                 onTaskOpenDetail={openTaskDetail}
                 canDragTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.move && adaptersById.get(task.adapterId)?.moveTask)}
-                canDeleteTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
+                canDeleteTask={(task) => deletingTaskId === null && Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
+                deleteEffectForTask={(task) => adaptersById.get(task.adapterId)?.capabilities.deleteEffect ?? "delete"}
                 canOpenTaskDetail={canOpenTaskDetail}
               />
             ))}
