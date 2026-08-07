@@ -34,6 +34,7 @@ export type {
   CatalogRow,
   CatalogSearchArgs,
   CatalogSearchResult,
+  FileTreeRevealRequest,
   LeftTabParams,
   LeftTabComponent,
   PluginProvider,
@@ -43,6 +44,8 @@ export type {
   ToolExecContext,
   ToolResult,
 } from "./shared/plugins"
+export * from "./shared/artifacts"
+export { WORKSPACE_TASK_PROVENANCE_CHANGED_EVENT, emitWorkspaceTaskProvenanceChanged } from "./shared/plugins/taskProvenance"
 export { CatalogRegistry } from "./shared/plugins/CatalogRegistry"
 export type { CatalogRegistryOptions } from "./shared/plugins/CatalogRegistry"
 export {
@@ -53,6 +56,7 @@ export {
   PluginErrorProvider,
   usePluginErrors,
   WorkspacePluginClientProvider,
+  WorkspacePluginClientRequestError,
   createWorkspacePluginClient,
   useWorkspacePluginClient,
 } from "./front/plugin"
@@ -106,12 +110,17 @@ export {
 } from "./front/registry"
 export { useAppLeftOverlayChrome } from "./shared/plugins/appLeftOverlayChrome"
 export type { AppLeftOverlayChromeValue } from "./shared/plugins/appLeftOverlayChrome"
-export { useWorkspaceShellCapabilities } from "./shared/plugins/workspaceShellCapabilities"
+export {
+  WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT,
+  useWorkspaceShellCapabilities,
+} from "./shared/plugins/workspaceShellCapabilities"
 export type {
+  WorkspaceChatPromptAcceptedDetail,
   WorkspaceShellAnchorRect,
   WorkspaceShellArtifactTarget,
   WorkspaceShellCapabilityResult,
   WorkspaceShellCapabilities,
+  WorkspaceShellCreatedSessionResult,
   WorkspaceShellSessionRef,
 } from "./shared/plugins/workspaceShellCapabilities"
 export { getFileIcon } from "./front/registry"
@@ -198,6 +207,9 @@ export { CommandPalette } from "./front/components/CommandPalette"
 export type { CommandPaletteProps } from "./front/components/CommandPalette"
 export { WorkspaceLoadingState } from "./front/components/WorkspaceLoadingState"
 export type { WorkspaceLoadingStateProps } from "./front/components/WorkspaceLoadingState"
+export { HumanArtifactList } from "./front/components/HumanArtifactList"
+export type { HumanArtifactListProps } from "./front/components/HumanArtifactList"
+export { openHumanArtifact } from "./front/artifacts/openHumanArtifact"
 
 // Panes (dockview wrappers — require WorkspaceProvider)
 export { ArtifactSurfacePane } from "./front/chrome/artifact-surface/ArtifactSurfacePane"
@@ -206,16 +218,8 @@ export { EmptyPane } from "./front/chrome/empty-pane/EmptyPane"
 export type { EmptyPaneProps } from "./front/chrome/empty-pane/EmptyPane"
 export { CodeEditorPane } from "./plugins/filesystemPlugin/front/code-editor/CodeEditorPane"
 export type { CodeEditorPaneProps } from "./plugins/filesystemPlugin/front/code-editor/CodeEditorPane"
-export {
-  FileTreePane,
-  FileTreeView,
-} from "./plugins/filesystemPlugin/front/file-tree/FileTreeView"
-export type {
-  FileTreePaneProps,
-  FileTreePaneParams,
-  FileTreeRootConfig,
-  FileTreeViewProps,
-} from "./plugins/filesystemPlugin/front/file-tree/FileTreeView"
+export { FileTreeView } from "./plugins/filesystemPlugin/front/file-tree/FileTreeView"
+export type { FileTreeViewProps } from "./plugins/filesystemPlugin/front/file-tree/FileTreeView"
 export { MarkdownEditorPane } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditorPane"
 export type { MarkdownEditorPaneProps } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditorPane"
 export { definePanel } from "./front/registry/types"
@@ -363,6 +367,7 @@ export {
 } from "./front/provider"
 export type {
   WorkspaceProviderProps,
+  WorkspaceOpenFileHandler,
   FrontPluginHotReloadMode,
   ThemeProviderProps,
   WorkspaceBridgeContextValue,

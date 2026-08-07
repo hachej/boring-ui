@@ -38,6 +38,7 @@ import type {
   PluginProvider,
 } from "../../shared/plugins/types"
 import type { BoringFrontFactoryWithId, CapturedFrontPlugin } from "../../shared/plugins/frontFactory"
+import type { UiFileResource } from "../../shared/types/filesystem"
 import type { CommandConfig, PanelConfig, WorkspaceSourceRegistration } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
@@ -296,9 +297,11 @@ function WorkspacePluginProviders({
   agentTypeId,
   apiBaseUrl,
   authHeaders,
+  authScopeKey,
   onAuthError,
   apiTimeout,
   activeSessionId,
+  activeSessionAgentTypeId,
   openSessionIds,
   children,
 }: {
@@ -306,12 +309,16 @@ function WorkspacePluginProviders({
   agentTypeId: string
   apiBaseUrl: string
   authHeaders?: Record<string, string>
+  authScopeKey?: string
   onAuthError?: (statusCode: number) => void
   apiTimeout?: number
   activeSessionId?: string | null
+  /** Addressed owner for active-session work; defaults to the future-session Agent. */
+  activeSessionAgentTypeId?: string | null
   openSessionIds?: readonly string[]
   children: ReactNode
 }) {
+  const providerAgentTypeId = activeSessionAgentTypeId ?? agentTypeId
   const providers = plugins.flatMap((plugin) =>
     plugin.registrations.providers.map((provider) => ({ plugin, provider })),
   )
@@ -321,9 +328,10 @@ function WorkspacePluginProviders({
     return (
       <Provider
         key={`${plugin.id}:provider:${provider.id}`}
-        agentTypeId={agentTypeId}
+        agentTypeId={providerAgentTypeId}
         apiBaseUrl={apiBaseUrl}
         authHeaders={authHeaders}
+        authScopeKey={authScopeKey}
         onAuthError={onAuthError}
         apiTimeout={apiTimeout}
         activeSessionId={activeSessionId}
@@ -335,13 +343,20 @@ function WorkspacePluginProviders({
   }, children)
 }
 
-function WorkspaceOpenFileBinding({ onOpenFile }: { onOpenFile?: (path: string) => void }) {
+export type WorkspaceOpenFileHandler = (resource: UiFileResource) => void
+
+function WorkspaceOpenFileBinding({ onOpenFile }: { onOpenFile?: WorkspaceOpenFileHandler }) {
   useEffect(() => {
     if (!onOpenFile) return
     return events.on(workspaceEvents.uiCommand, ({ command }) => {
       if (command.kind !== "openFile") return
       const path = command.params.path
-      if (typeof path === "string") onOpenFile(path)
+      if (typeof path !== "string") return
+      const filesystem = command.params.filesystem
+      onOpenFile({
+        filesystem: typeof filesystem === "string" ? filesystem : "user",
+        path,
+      })
     })
   }, [onOpenFile])
 
@@ -370,10 +385,18 @@ export interface WorkspaceProviderProps {
   capabilities?: Record<string, boolean>
   apiBaseUrl?: string
   authHeaders?: Record<string, string>
+  /**
+   * Host-controlled auth identity/version signal. Change this after cookie-auth
+   * transitions so request-visible plugin data fails closed and reloads.
+   * Browsers cannot observe arbitrary cookie mutation without such a signal.
+   */
+  authScopeKey?: string
   /** Per-request timeout for the data layer's FetchClient, in ms. */
   apiTimeout?: number
   /** Active chat/session scope shared with plugin providers that need session-scoped data. */
   activeSessionId?: string | null
+  /** Addressed owner for active-session plugin work. */
+  activeSessionAgentTypeId?: string | null
   /** Session ids that are currently open in chat panes, for plugins that must avoid opening closed-session UI. */
   openSessionIds?: readonly string[]
   /** Authoritative addressed chat sessions used to drop stale session-scoped Inbox/attention entries. */
@@ -392,7 +415,7 @@ export interface WorkspaceProviderProps {
   manageDocumentTitle?: boolean
   bridgeEndpoint?: string | null
   onAuthError?: (statusCode: number) => void
-  onOpenFile?: (path: string) => void
+  onOpenFile?: WorkspaceOpenFileHandler
   debug?: boolean
   /**
    * Hot-load dynamically discovered front plugin modules. The current
@@ -408,6 +431,10 @@ export interface WorkspaceProviderProps {
 // ---------------------------------------------------------------------------
 // WorkspaceProvider
 // ---------------------------------------------------------------------------
+
+function stableHeadersKey(headers: Record<string, string> | undefined): string {
+  return JSON.stringify(Object.entries(headers ?? {}).sort(([left], [right]) => left.localeCompare(right)))
+}
 
 function scopedAuthHeaders(
   workspaceId: string | undefined,
@@ -436,8 +463,10 @@ export function WorkspaceProvider({
   capabilities,
   apiBaseUrl = "",
   authHeaders,
+  authScopeKey,
   apiTimeout,
   activeSessionId,
+  activeSessionAgentTypeId,
   openSessionIds,
   attentionSessions,
   attentionSessionIds,
@@ -623,10 +652,13 @@ export function WorkspaceProvider({
     [themeSetTheme, themeToggleTheme],
   )
 
-  const resolvedAuthHeaders = useMemo(
-    () => scopedAuthHeaders(workspaceId, authHeaders),
-    [authHeaders, workspaceId],
-  )
+  const authHeadersKey = stableHeadersKey(authHeaders)
+  const resolvedAuthHeaders = useMemo(() => {
+    const entries = JSON.parse(authHeadersKey) as Array<[string, string]>
+    const snapshot = entries.length > 0 ? Object.fromEntries(entries) : undefined
+    const scoped = scopedAuthHeaders(workspaceId, snapshot)
+    return scoped ? Object.freeze(scoped) : undefined
+  }, [authHeadersKey, workspaceId])
 
   useEffect(() => {
     if (!manageDocumentTitle) return
@@ -668,9 +700,11 @@ export function WorkspaceProvider({
                     agentTypeId={agentTypeId}
                     apiBaseUrl={apiBaseUrl}
                     authHeaders={resolvedAuthHeaders}
+                    authScopeKey={authScopeKey}
                     onAuthError={onAuthError}
                     apiTimeout={apiTimeout}
                     activeSessionId={activeSessionId}
+                    activeSessionAgentTypeId={activeSessionAgentTypeId}
                     openSessionIds={openSessionIds}
                   >
                     <WorkspacePluginBindings plugins={pluginsWithBindings} />
@@ -681,11 +715,7 @@ export function WorkspaceProvider({
                       catalogs={catalogs}
                     />
                     <WorkspaceShortcuts store={store} />
-                    <CommandPalette
-                      sessionSearch={commandPaletteSessionSearch}
-                      apiBaseUrl={apiBaseUrl}
-                      authHeaders={resolvedAuthHeaders}
-                    />
+                    <CommandPalette sessionSearch={commandPaletteSessionSearch} />
                     <Toaster />
                     {children}
                     {(typeof import.meta !== 'undefined' && import.meta.env?.DEV) && <PluginInspector plugins={pluginMetas} />}

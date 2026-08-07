@@ -49,6 +49,9 @@ const globalTestFiles = new Set([
 const globalTestPrefixes = [
   '.github/workflows/',
   'scripts/',
+  '.agents/skills/',
+  '.agents/factory/',
+  '.agents/personas/',
 ]
 
 const changedNames = new Set()

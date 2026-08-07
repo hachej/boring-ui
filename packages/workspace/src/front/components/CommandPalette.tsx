@@ -31,7 +31,6 @@ import {
 } from "@hachej/boring-ui-kit"
 import { useCatalogs } from "../plugin/useCatalogs"
 import { useCommands } from "../plugin/useCommands"
-import { postUiCommand } from "../bridge"
 import {
   CATALOG_MODE_LABEL,
   searchCommands,
@@ -43,7 +42,7 @@ import { useWorkspaceContextOptional } from "../provider/WorkspaceProvider"
 import { useCommandPaletteSelection } from "./useCommandPaletteSelection"
 import { useCommandPaletteChrome } from "./useCommandPaletteChrome"
 import { useCommandPaletteCatalogSearch } from "./useCommandPaletteCatalogSearch"
-import type { CatalogConfig, CatalogRow, CatalogSearchResult } from "../../shared/plugins/types"
+import type { CatalogConfig, CatalogRow } from "../../shared/plugins/types"
 import type { CommandConfig } from "../registry/types"
 import type { RecentEntry } from "./recent"
 import { workspaceSessionKeyFor } from "../sessionIdentity"
@@ -67,34 +66,6 @@ export interface CommandPaletteSessionSearchConfig {
 
 export interface CommandPaletteProps {
   sessionSearch?: CommandPaletteSessionSearchConfig
-  apiBaseUrl?: string
-  authHeaders?: Record<string, string>
-}
-
-const FILES_CATALOG_ID = "files"
-
-function fileRowFromPath(path: string): CatalogRow {
-  const lastSlash = path.lastIndexOf("/")
-  return {
-    id: path,
-    title: lastSlash >= 0 ? path.slice(lastSlash + 1) : path,
-    subtitle: lastSlash >= 0 ? path.slice(0, lastSlash + 1) : undefined,
-  }
-}
-
-function toFileSearchGlob(query: string): string {
-  const trimmed = query.trim()
-  if (!trimmed) return trimmed
-  const glob = /[*?\[\]{}]/.test(trimmed) ? trimmed : `*${trimmed}*`
-  return glob.replace(/[a-z]/gi, (char) => {
-    const lower = char.toLowerCase()
-    const upper = char.toUpperCase()
-    return lower === upper ? char : `[${upper}${lower}]`
-  })
-}
-
-function emptySearchResult(): CatalogSearchResult {
-  return { items: [], total: 0, hasMore: false }
 }
 
 function defaultSessionSearch(
@@ -109,57 +80,14 @@ function defaultSessionSearch(
   })
 }
 
-function joinApiUrl(base: string | undefined, path: string): string {
-  if (!base) return path
-  return `${base.replace(/\/$/, "")}${path}`
-}
-
-function createFallbackFilesCatalog(options?: { apiBaseUrl?: string; authHeaders?: Record<string, string> }): CatalogConfig {
-  return {
-    id: FILES_CATALOG_ID,
-    label: "Files",
-    adapter: {
-      async search({ query, limit, signal }) {
-        const trimmed = query.trim()
-        if (!trimmed || signal?.aborted) return emptySearchResult()
-        const params = new URLSearchParams({ q: toFileSearchGlob(trimmed) })
-        if (limit != null) params.set("limit", String(limit))
-        const response = await fetch(joinApiUrl(options?.apiBaseUrl, `/api/v1/files/search?${params.toString()}`), {
-          credentials: "include",
-          headers: options?.authHeaders,
-          signal,
-        })
-        if (!response.ok) throw new Error(`File search failed (${response.status})`)
-        const payload = await response.json() as { results?: unknown }
-        const paths = Array.isArray(payload.results)
-          ? payload.results.filter((path): path is string => typeof path === "string")
-          : []
-        if (signal?.aborted) return emptySearchResult()
-        return { items: paths.map(fileRowFromPath), total: paths.length, hasMore: false }
-      },
-    },
-    onSelect(row) {
-      postUiCommand({ kind: "openFile", params: { path: row.id } })
-    },
-  }
-}
-
-export function CommandPalette({ sessionSearch, apiBaseUrl, authHeaders }: CommandPaletteProps = {}) {
+export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [mode, setMode] = useState<PaletteMode>(() => sessionSearch ? "chats" : "catalogs")
   const registeredCatalogs = useCatalogs()
   const commands = useCommands()
   const workspaceCtx = useWorkspaceContextOptional()
-  const fallbackFilesCatalog = useMemo(
-    () => createFallbackFilesCatalog({ apiBaseUrl, authHeaders }),
-    [apiBaseUrl, authHeaders],
-  )
-  const catalogs = useMemo(() => (
-    registeredCatalogs.some((catalog) => catalog.id === FILES_CATALOG_ID)
-      ? registeredCatalogs
-      : [fallbackFilesCatalog, ...registeredCatalogs]
-  ), [fallbackFilesCatalog, registeredCatalogs])
+  const catalogs = registeredCatalogs
   const pluginLabelMap = useMemo(() => {
     const map: Record<string, string> = {}
     for (const plugin of workspaceCtx?.registeredPlugins ?? []) {

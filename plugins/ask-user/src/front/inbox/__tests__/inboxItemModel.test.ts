@@ -10,7 +10,7 @@ function item(partial: Partial<WorkspaceInboxItem> & Pick<WorkspaceInboxItem, 'i
     source: { type: 'plugin', pluginId: 'test', label: 'test' },
     sessionId: null,
     targetLabel: '',
-    artifact: null,
+    artifacts: [],
     createdAt: partial.updatedAt,
     priority: 0,
     actions: [],
@@ -24,6 +24,7 @@ describe('inbox item model', () => {
       id: 'b1',
       reason: 'ask-user.question',
       label: 'Need input',
+      agentTypeId: 'alpha',
       sessionId: 's1',
       target: 'file.ts',
       surfaceKind: 'file',
@@ -37,17 +38,40 @@ describe('inbox item model', () => {
       id: 'b1',
       kind: 'question',
       title: 'Need input',
+      agentTypeId: 'alpha',
       sessionId: 's1',
       targetLabel: 'file.ts',
       priority: 5,
       chatAvailable: true,
     })
-    expect(inbox.artifact).toEqual({ type: 'surface', surfaceKind: 'file', target: 'file.ts', params: { sessionId: 's1' } })
+    expect(inbox.artifacts).toEqual([{ id: 'b1:surface', surfaceKind: 'file', target: 'file.ts', title: 'Need input' }])
     expect(inbox.actions).toEqual([{ id: 'open', label: 'Open' }])
   })
 
-  it('only admits blockers explicitly contributed to inbox', () => {
+  it('deduplicates an explicit artifact that already targets the question surface', () => {
+    const artifact = { id: 'explicit', surfaceKind: 'questions', target: 'q1', title: 'Answer question' }
+    const inbox = attentionBlockerToInboxItem({
+      id: 'b1',
+      reason: 'ask-user.question',
+      label: 'Need input',
+      target: 'q1',
+      surfaceKind: 'questions',
+      inbox: { kind: 'question', sourceLabel: 'question', artifacts: [artifact] },
+    })
+
+    expect(inbox.artifacts).toEqual([artifact])
+  })
+
+  it('only admits explicit Inbox blockers and never infers missing chat ownership', () => {
     expect(isInboxAttentionBlocker({ id: 'plain', reason: 'composer.blocked', label: 'Plain blocker' })).toBe(false)
+    expect(attentionBlockerToInboxItem({
+      id: 'ownerless',
+      reason: 'ask-user.question',
+      label: 'Ownerless',
+      sessionId: 'shared-id',
+      pruneWhenSessionMissing: true,
+      inbox: { kind: 'question', sourceLabel: 'question' },
+    }).chatAvailable).toBe(false)
     expect(isInboxAttentionBlocker({
       id: 'question',
       reason: 'ask-user.question',

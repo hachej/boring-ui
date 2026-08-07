@@ -65,6 +65,7 @@ standalone (`createAgentApp`) with zero core dependency.
 
 - [`DECISIONS.md`](DECISIONS.md) — locked architectural decisions registry for the agent runtime (what/why/rationale/re-evaluate-when). Changing a locked decision requires updating this doc.
 - [`WORKSPACE_CONTRACT.md`](WORKSPACE_CONTRACT.md) — the agent ↔ workspace integration contract: HTTP routes, component exports, UiBridge/UiCommand semantics, import boundaries.
+- [`PROJECT_ENVIRONMENT_MODEL.md`](PROJECT_ENVIRONMENT_MODEL.md) — proposed vocabulary and authority boundaries for Product Workspaces, Projects, Environments, Sessions, filesystem grants, and execution mounts; does not supersede locked decisions until ratified.
 - [`TAILWIND-V4-STYLE-ISOLATION.md`](TAILWIND-V4-STYLE-ISOLATION.md) — how packages share Tailwind v4 tokens: workspace owns `--boring-*` `:root` tokens; agent inherits them scoped to `[data-boring-agent]` (test-enforced).
 - [`PERFORMANCE.md`](PERFORMANCE.md) — historical Vercel-sandbox vs local FS latency benchmarks (harness removed; kept for reference).
 - [`FIXES.md`](FIXES.md) — production/runtime fix ledger for recurring incidents and deploy bugs.

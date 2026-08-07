@@ -52,6 +52,7 @@ import {
   type PanelNotice,
 } from './components/ChatNotices'
 import { PiConversationSurface } from './components/PiConversationSurface'
+import { filterCompetingNoiseNotices } from './components/terminalChatErrors'
 import type {
   ActionableSlashCommand,
   MessageMention,
@@ -171,6 +172,8 @@ export interface PiChatPanelProps<
   toolRenderers?: ToolRendererOverrides
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
+  /** Keep local UI state mounted while temporarily releasing the remote event stream. */
+  sessionStreamingEnabled?: boolean
   hydrateMessages?: boolean
   allowPromptDuringInitialHydration?: boolean
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
@@ -237,6 +240,7 @@ export function PiChatPanel<
   toolRenderers,
   createRemoteSession,
   remoteSessionOptions,
+  sessionStreamingEnabled = true,
   hydrateMessages = true,
   allowPromptDuringInitialHydration = false,
   workspaceWarmupStatus,
@@ -316,6 +320,7 @@ export function PiChatPanel<
     fetch,
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
+    enabled: sessionStreamingEnabled,
   })
   const activePiSession = externalSessionId ? externalPiSession : sessions.activePiSession
   const chatState = useRemotePiSessionState(activePiSession)
@@ -494,8 +499,16 @@ export function PiChatPanel<
           dismissible: true,
         }]
       : []
-    return [...fromState, ...sessionNotice, ...largeStateNotice, ...localNotices].filter((notice) => !dismissedNoticeIds.has(notice.id))
-  }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, selectedChatState, sessionsError])
+    const combined = [...fromState, ...sessionNotice, ...largeStateNotice, ...localNotices]
+      .filter((notice) => !dismissedNoticeIds.has(notice.id))
+    // A terminal chat error (history failed to load, no messages present)
+    // already explains why the agent looks unreachable. Showing
+    // reconnect/retry chatter next to it reads as contradictory
+    // ("reconnecting..." beside "history unavailable"), so drop that noise —
+    // but only when there's genuinely no history, matching the gate in
+    // RuntimeNotices/PiConversationSurface (see terminalChatErrors.ts).
+    return filterCompetingNoiseNotices(combined, messages.length === 0)
+  }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, messages.length, selectedChatState, sessionsError])
 
   const addLocalNotice = useCallback((notice: PanelNotice) => {
     setLocalNotices((previous) => {
@@ -1068,6 +1081,7 @@ export function PiChatPanel<
     if (typeof window === 'undefined' || !activeChatSessionId) return
     const emitStatus = () => window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
       detail: {
+        ...(workspaceId ? { workspaceId } : {}),
         sessionId: activeChatSessionId,
         ...(agentTypeId ? { agentTypeId } : {}),
         working: isStreaming,
@@ -1084,7 +1098,7 @@ export function PiChatPanel<
     // session-list "working" badge disappear while the run is still active.
     // The selected/running panel emits `working: false` when it observes the
     // terminal status, and a later remount of an idle session also reconciles it.
-  }, [activeChatSessionId, agentTypeId, isStreaming])
+  }, [activeChatSessionId, agentTypeId, isStreaming, workspaceId])
 
   const onTextareaKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Escape' && isStreaming) {

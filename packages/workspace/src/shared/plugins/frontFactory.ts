@@ -56,6 +56,7 @@ export interface BoringFrontBindingRegistration {
 
 export interface BoringFrontAppLeftOverlayProps {
   onClose: () => void
+  params?: Readonly<Record<string, string>>
 }
 
 export interface BoringFrontAppLeftActionRegistration {
@@ -109,6 +110,8 @@ export type BoringFrontToolRenderer = (part: unknown) => ReactNode
 export interface BoringFrontToolRendererRegistration {
   id: string
   render: BoringFrontToolRenderer
+  /** Render outside the generic collapsed tool-call disclosure. */
+  presentation?: "inline"
 }
 
 export interface BoringFrontAPI {

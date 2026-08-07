@@ -7,6 +7,7 @@ export type CommandPaletteSurfaceObservation = {
   inputDividerCount: number
   dialogWidth: number | null
   keyboardHintsPresent: boolean
+  touchHintPresent: boolean
   commandModePressed: boolean | null
 }
 
@@ -38,6 +39,7 @@ export function observeCommandPaletteSurface(input: { checkpoint: string }): Com
     inputDividerCount: dividerCount,
     dialogWidth: dialogContent && visible(dialogContent) ? dialogContent.getBoundingClientRect().width : null,
     keyboardHintsPresent: /navigate/i.test(bodyText) && /open/i.test(bodyText) && /close/i.test(bodyText),
+    touchHintPresent: /tap a result to open/i.test(bodyText),
     commandModePressed: commandMode ? commandMode.getAttribute("aria-pressed") === "true" : null,
   }
 }

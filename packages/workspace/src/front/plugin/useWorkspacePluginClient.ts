@@ -8,6 +8,7 @@ export interface WorkspacePluginClient {
   getJson<T = unknown>(path: string, options?: { missingMessage?: string }): Promise<T>
   readJsonFile<T>(path: string, options?: { missingMessage?: string }): Promise<T>
   postJson<T = unknown>(path: string, body?: unknown, options?: { headers?: Record<string, string> }): Promise<T>
+  deleteJson<T = unknown>(path: string): Promise<T>
   sendAgentPrompt(message: string, options?: { title?: string; noncePrefix?: string }): Promise<void>
 }
 
@@ -76,21 +77,41 @@ function deleteHeaderCaseInsensitive(headers: Record<string, string>, name: stri
   }
 }
 
-async function responseError(response: Response, fallback: string, options?: { prefixFallback?: boolean }): Promise<string> {
+export class WorkspacePluginClientRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly body?: unknown,
+  ) {
+    super(message)
+    this.name = "WorkspacePluginClientRequestError"
+  }
+}
+
+async function responseError(response: Response, fallback: string, options?: { prefixFallback?: boolean }): Promise<WorkspacePluginClientRequestError> {
   const text = await response.text().catch(() => "")
-  if (!text) return `${fallback} (${response.status})`
+  if (!text) return new WorkspacePluginClientRequestError(`${fallback} (${response.status})`, response.status)
   try {
-    const parsed = JSON.parse(text) as { error?: { message?: unknown }; message?: unknown }
-    const message = typeof parsed.error?.message === "string"
+    const parsed = JSON.parse(text) as { error?: { message?: unknown } | string; message?: unknown }
+    const message = typeof parsed.error === "object" && typeof parsed.error?.message === "string"
       ? parsed.error.message
       : typeof parsed.message === "string"
         ? parsed.message
-        : text
+        : typeof parsed.error === "string"
+          ? parsed.error
+          : text
     const rendered = `${message} (${response.status})`
-    return options?.prefixFallback ? `${fallback}: ${rendered}` : rendered
+    return new WorkspacePluginClientRequestError(
+      options?.prefixFallback ? `${fallback}: ${rendered}` : rendered,
+      response.status,
+      parsed,
+    )
   } catch {
     const rendered = `${text.slice(0, 200)} (${response.status})`
-    return options?.prefixFallback ? `${fallback}: ${rendered}` : rendered
+    return new WorkspacePluginClientRequestError(
+      options?.prefixFallback ? `${fallback}: ${rendered}` : rendered,
+      response.status,
+    )
   }
 }
 
@@ -123,10 +144,11 @@ function createWorkspacePluginClientWithOptions(
       headers,
     })
     if (!response.ok) {
-      throw new Error(await responseError(response, fallback, {
+      throw await responseError(response, fallback, {
         prefixFallback: options?.prefixFallbackStatuses?.includes(response.status) ?? false,
-      }))
+      })
     }
+    if (response.status === 204) return undefined as T
     return await response.json() as T
   }
   const getJson = async <T = unknown,>(
@@ -146,6 +168,8 @@ function createWorkspacePluginClientWithOptions(
         }
       : options?.headers ? { headers: options.headers } : {}),
   }, `request failed for ${path}`)
+  const deleteJson = async <T = unknown,>(path: string): Promise<T> =>
+    fetchJson<T>(path, { method: "DELETE" }, `request failed for ${path}`)
   const sendAgentPrompt = async (
     message: string,
     options?: { title?: string; noncePrefix?: string },
@@ -181,6 +205,7 @@ function createWorkspacePluginClientWithOptions(
     getJson,
     readJsonFile,
     postJson,
+    deleteJson,
     sendAgentPrompt,
   }
 }

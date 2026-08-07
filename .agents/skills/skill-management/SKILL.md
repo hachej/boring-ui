@@ -10,8 +10,8 @@ Route exactly one explicit subskill; load only its procedure.
 
 | Subskill | Procedure |
 | --- | --- |
-| `reduce-size <skill-path>` | Read `docs/kanzen/procedures/skill-size-reduction.md`, then preserve behavior while shrinking active context. |
-| `create <name-or-goal>` | Read `docs/kanzen/procedures/skill-authoring.md`, including its pinned Matt Pocock reference, then create and validate the skill. |
+| `reduce-size <skill-path>` | Read `docs/procedures/skill-size-reduction.md`, then preserve behavior while shrinking active context. |
+| `create <name-or-goal>` | Read `docs/procedures/skill-authoring.md`, including its pinned Matt Pocock reference, then create and validate the skill. |
 
 Invocation:
 

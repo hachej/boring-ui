@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { createQuestionsClient, deriveIdempotencyKey, readPendingQuestionHintFromState, readPendingQuestionHintsFromState } from "../client"
+import { createQuestionsClient, deriveIdempotencyKey, normalizeQuestion, readPendingQuestionHintFromState, readPendingQuestionHintsFromState } from "../client"
 import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import type { AskUserQuestion } from "../../shared/types"
 
@@ -15,6 +15,7 @@ const question: AskUserQuestion = {
   answerToken: "secret",
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
+  artifacts: [],
   schema: { wireVersion: 1, fields: [{ type: "text", name: "answer", label: "Answer" }] },
 }
 
@@ -48,6 +49,14 @@ describe("ask-user front client", () => {
       { questionId: "q2", sessionId: "s2", status: "ready" },
     ])
     expect(readPendingQuestionHintFromState(state)).toEqual({ questionId: "legacy", sessionId: "s-legacy", status: "ready" })
+  })
+
+  it("hydrates plural associated artifacts atomically without accepting malformed values", () => {
+    const artifact = { id: "plan", surfaceKind: "file", target: "docs/plan.md", title: "Plan" }
+    const base = { ...question, artifacts: [artifact] }
+    expect(normalizeQuestion(base)?.artifacts).toEqual([artifact])
+    expect(normalizeQuestion({ ...base, artifacts: [{ ...artifact, target: 42 }] })?.artifacts).toEqual([])
+    expect(normalizeQuestion({ ...question, artifact })?.artifacts).toEqual([])
   })
 
   it("cancels through the bridge when crypto.subtle is unavailable", async () => {

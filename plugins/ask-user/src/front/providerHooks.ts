@@ -1,11 +1,10 @@
-import { useEffect, useRef } from "react"
+import { useEffect } from "react"
 import {
   UI_COMMAND_EVENT,
   WORKSPACE_ATTENTION_ACTION_EVENT,
   WORKSPACE_COMPOSER_STOP_EVENT,
   WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT,
   events,
-  postUiCommand,
   useWorkspaceAttention,
   workspaceComposerStopAppliesToSession,
   workspaceComposerStopTargetSessionId,
@@ -42,12 +41,14 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
         sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
         pruneWhenSessionMissing: true,
         focus: { closeWorkbenchLeftPane: true },
+        composer: { visible: false },
         inbox: {
           kind: "question",
           sourceLabel: "question",
           createdAt: hydrated?.createdAt,
           updatedAt: hydrated?.updatedAt ?? hydrated?.createdAt,
           priority: 10,
+          artifacts: hydrated?.artifacts ?? [],
         },
         actions,
       })
@@ -56,41 +57,20 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
   }, [addBlocker, removeBlocker, runtime, pendingSnapshot])
 }
 
-export function useAskUserAutoOpen(runtime: QuestionsRuntime, activeSessionId: string | null | undefined, pendingSnapshot: string): void {
-  const autoOpenedQuestionsRef = useRef(new Set<string>())
-  useEffect(() => {
-    for (const hint of runtime.getPendingHints()) {
-      if (!isSessionOpen(runtime, hint.sessionId)) autoOpenedQuestionsRef.current.delete(`${hint.sessionId}:${hint.questionId}`)
-    }
-    if (!activeSessionId || !isSessionOpen(runtime, activeSessionId)) return
-    const hint = runtime.getPendingHints().find((candidate) => candidate.sessionId === activeSessionId)
-    if (!hint || (hint.status && hint.status !== "ready")) return
-    const hydrated = runtime.getPending(activeSessionId)
-    if (!hydrated || hydrated.questionId !== hint.questionId || hydrated.status !== "ready") return
-    const key = `${hint.sessionId}:${hint.questionId}`
-    if (autoOpenedQuestionsRef.current.has(key)) return
-    autoOpenedQuestionsRef.current.add(key)
-    postUiCommand({
-      kind: "openSurface",
-      params: {
-        kind: ASK_USER_SURFACE_KIND,
-        target: hint.questionId,
-        meta: { sessionId: hint.sessionId, openOnlyWhenSessionOpen: true },
-      },
-    })
-  }, [activeSessionId, runtime, pendingSnapshot])
-}
-
 export function useAskUserAttentionActions(runtime: QuestionsRuntime): void {
   useEffect(() => {
     const onAction = (event: Event) => {
       const detail = (event as CustomEvent<WorkspaceAttentionActionDetail>).detail
       if (!detail || detail.actionId !== "cancel" || detail.blocker.reason !== "ask-user.question") return
-      const sessionId = detail.blocker.sessionId ?? detail.sessionId ?? runtime.activeSessionId
+      const sessionId = detail.blocker.sessionId ?? detail.sessionId
+      if (!sessionId) return
       const pending = runtime.getPending(sessionId)
       if (!pending || (detail.blocker.target && pending.questionId !== detail.blocker.target)) return
+      if (!runtime.beginQuestionAction(pending)) return
       runtime.setPending(null, pending.sessionId)
-      void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending).catch(() => undefined)
+      void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending)
+        .catch(() => undefined)
+        .finally(() => runtime.finishQuestionAction(pending))
     }
     window.addEventListener(WORKSPACE_ATTENTION_ACTION_EVENT, onAction)
     return () => window.removeEventListener(WORKSPACE_ATTENTION_ACTION_EVENT, onAction)
@@ -106,8 +86,11 @@ export function useAskUserComposerStopCancel(runtime: QuestionsRuntime): void {
       if (!pending || !workspaceComposerStopAppliesToSession(detail, pending.sessionId, {
         fallbackSessionId: runtime.activeSessionId,
       })) return
+      if (!runtime.beginQuestionAction(pending)) return
       runtime.setPending(null, pending.sessionId)
-      void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending).catch(() => undefined)
+      void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending)
+        .catch(() => undefined)
+        .finally(() => runtime.finishQuestionAction(pending))
     }
     window.addEventListener(WORKSPACE_COMPOSER_STOP_EVENT, onStop)
     return () => window.removeEventListener(WORKSPACE_COMPOSER_STOP_EVENT, onStop)

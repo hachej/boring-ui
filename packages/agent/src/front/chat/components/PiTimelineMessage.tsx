@@ -89,14 +89,15 @@ function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
   const hasMentions = effectiveMentionCatalog.files
     || effectiveMentionCatalog.commands.length > 0
     || effectiveMentionCatalog.skills.length > 0
-  const mentionsEnabled = Boolean(isAssistant && !(isStreaming && isLast) && hasMentions)
+  const messageIsStreaming = isAssistant && isLast && (isStreaming || message.status === 'streaming')
+  const mentionsEnabled = Boolean(isAssistant && !messageIsStreaming && hasMentions)
   const mentionMarkdownComponents = useMemo(
     () => mentionsEnabled
       ? createMessageMentionMarkdownComponents(effectiveMentionCatalog, activateCurrentMention)
       : undefined,
     [activateCurrentMention, effectiveMentionCatalog, mentionSignature, mentionsEnabled],
   )
-  const shouldReserveStreamingActions = isStreaming && isAssistant && isLast
+  const shouldReserveStreamingActions = messageIsStreaming
 
   return (
     <Message
@@ -158,7 +159,7 @@ function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
             })}
           </Attachments>
         ) : null}
-        {finalParts.map((item) => {
+        {finalParts.map((item, index) => {
           if (item.kind === 'reasoning') {
             return (
               <TimelineReasoningPart
@@ -190,6 +191,7 @@ function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
                 <MessageResponse
                   key={`${mentionSignature || 'no-message-mentions'}:${mentionsEnabled ? 'enabled' : 'static'}`}
                   components={mentionMarkdownComponents}
+                  codeFilename={codeFilenameForPart(finalParts, index)}
                   className="boring-agent-markdown max-w-none"
                 >
                   {text}
@@ -206,7 +208,7 @@ function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
       {isAssistant && (textParts.length > 0 || shouldReserveStreamingActions) ? (
         <MessageActionsBar
           text={textParts.map((part) => part.text).join('\n\n')}
-          visible={!isStreaming}
+          visible={!messageIsStreaming}
         />
       ) : null}
     </Message>
@@ -242,7 +244,7 @@ function TimelineReasoningPart({ item, showThoughts }: { item: Extract<Renderabl
     >
       <ReasoningTrigger
         className="mb-1 w-fit rounded-[var(--radius-sm)] px-0 py-0 !text-xs !font-normal !text-muted-foreground/75 hover:bg-transparent hover:!text-muted-foreground/75 [&_svg]:!text-muted-foreground/75"
-        getThinkingMessage={(streaming) => <span>{streaming ? 'thinking' : 'thoughts'}</span>}
+        getThinkingMessage={() => <span>Reasoning</span>}
         onClick={toggleManualOpen}
       />
       <ReasoningContent>{item.text}</ReasoningContent>
@@ -258,6 +260,8 @@ function TimelineReasoningPart({ item, showThoughts }: { item: Extract<Renderabl
 function PlainToolCard({ part, renderers }: { part: Extract<BoringChatPart, { type: 'tool-call' }>; renderers: ToolRendererOverrides }) {
   const toolPart = toToolPart(part)
   if (!toolPart) return null
+  // Custom renderers own both pending and resolved presentation. Inline
+  // metadata changes placement, not whether the override remains authoritative.
   const { renderer, part: resolved, resolution } = resolveToolRendererForPart(toolPart, renderers)
   return (
     <div
@@ -317,6 +321,16 @@ function groupRenderableParts(message: BoringChatMessage): RenderablePart[] {
 
   flushTools()
   return grouped
+}
+
+function codeFilenameForPart(parts: RenderablePart[], index: number): string | undefined {
+  const precedingPart = parts[index - 1]
+  if (!precedingPart || precedingPart.kind !== 'tool-plain') return undefined
+  if (precedingPart.part.toolName !== 'write' && precedingPart.part.toolName !== 'edit') return undefined
+  const input = precedingPart.part.input
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return undefined
+  const path = (input as Record<string, unknown>).path
+  return typeof path === 'string' && path.trim() ? path : undefined
 }
 
 function NoticeBubble({ level, text }: { level: 'info' | 'warning' | 'error'; text: string }) {
@@ -415,17 +429,17 @@ function MessageActionsBar({
     }
   }
   const iconActionBtnClass = cn(
-    'inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]',
-    'text-muted-foreground/35 transition-colors',
-    'hover:bg-foreground/[0.04] hover:text-muted-foreground/80',
-    'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--accent)]/40',
+    'boring-agent-message-action inline-flex size-8 items-center justify-center rounded-[var(--radius-sm)]',
+    'text-muted-foreground/70 transition-colors duration-150',
+    'hover:bg-foreground/[0.04] hover:text-muted-foreground',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/40',
   )
   const hiddenActionProps = visible ? {} : { tabIndex: -1 }
   return (
     <div
       aria-hidden={!visible}
       className={cn(
-        'flex min-h-6 items-center gap-0.5 -mt-1 transition-opacity duration-200',
+        'flex min-h-8 items-center gap-1 -mt-1 text-xs text-muted-foreground transition-opacity duration-200',
         visible ? 'opacity-100' : 'pointer-events-none opacity-0',
       )}
     >

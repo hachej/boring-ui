@@ -437,7 +437,7 @@ describe('PiChatPanel sandbox shell', () => {
     unmount()
     window.removeEventListener('boring:chat-session-status', onStatus)
 
-    expect(statusEvents).toContainEqual({ sessionId: 'pi-1', agentTypeId: 'beta', working: true })
+    expect(statusEvents).toContainEqual({ workspaceId: 'workspace-a', sessionId: 'pi-1', agentTypeId: 'beta', working: true })
   })
 
   test('keeps the working indicator slot mounted across stream start and finish', async () => {
@@ -1677,7 +1677,7 @@ describe('PiChatPanel sandbox shell', () => {
     await screen.findByText('answer')
     expect(document.querySelectorAll('[data-boring-agent-part="message-reasoning"]')).toHaveLength(1)
     const reasoning = document.querySelector('[data-boring-agent-part="message-reasoning"]')
-    expect(reasoning?.querySelector('button')?.textContent).toMatch(/thoughts/i)
+    expect(reasoning?.querySelector('button')?.textContent).toMatch(/reasoning/i)
     expect(reasoning?.getAttribute('data-state')).toBe('closed')
 
     fireEvent.click(reasoning!.querySelector('button')!)

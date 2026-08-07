@@ -62,7 +62,7 @@ describe("@hachej/boring-workspace public API", () => {
 
   describe("dockview panes", () => {
     it("exports all pane wrappers", () => {
-      expect(api.FileTreePane).toBeDefined()
+      expect("FileTreePane" in api).toBe(false)
       expect(api.CodeEditorPane).toBeDefined()
       expect(api.MarkdownEditorPane).toBeDefined()
       expect("DataCatalogPane" in api).toBe(false)

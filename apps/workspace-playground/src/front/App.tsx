@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
-import { FileTreePane, WorkspaceProvider } from "@hachej/boring-workspace"
+import { WorkspaceProvider } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
-import { definePlugin, type WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
@@ -76,7 +75,13 @@ function isFullPageRoute(): boolean {
 }
 
 function isMultiFilesystemPlaygroundRoute(): boolean {
-  return (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_PLAYGROUND_MULTI_FS === "1"
+  if ((import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_PLAYGROUND_MULTI_FS === "1") return true
+  if (typeof window === "undefined") return false
+  return new URLSearchParams(window.location.search).get("multiFilesystem") === "1"
+}
+
+function factoryAgentsEnabled(): boolean {
+  return (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_FACTORY_AGENTS === "1"
 }
 
 interface WorkspaceMeta {
@@ -104,51 +109,9 @@ const playgroundDeckPlugin = createDeckPlugin({
   },
 })
 
-function MultiFilesystemFileTreeSource(props: WorkspaceSourceProps) {
-  return (
-    <FileTreePane
-      {...props}
-      params={{
-        ...(props.params as Record<string, unknown> | undefined),
-        chromeless: false,
-        roots: [
-          {
-            filesystem: "user",
-            label: "Workspace",
-            rootDir: ".",
-            access: "readwrite",
-            searchPlaceholder: "Search workspace files...",
-          },
-          {
-            filesystem: "company_context",
-            label: "Company",
-            rootDir: "/",
-            access: "readonly",
-            searchPlaceholder: "Filter company files...",
-          },
-        ],
-      } as Parameters<typeof FileTreePane>[0]["params"]}
-    />
-  )
-}
-
-const multiFilesystemPlaygroundPlugin = definePlugin({
-  id: "workspace-playground-multi-fs",
-  label: "Workspace playground multi-filesystem fixtures",
-  workspaceSources: [
-    {
-      id: "files",
-      label: "Files",
-      source: "app",
-      component: MultiFilesystemFileTreeSource,
-    },
-  ],
-})
-
 const askUserPlugin = createAskUserPlugin({ appLeftInbox: true })
 const tasksPlugin = createTasksPlugin()
 const workspacePlugins = [askUserPlugin, tasksPlugin, playgroundDeckPlugin, diagramPlugin]
-const multiFilesystemWorkspacePlugins = [askUserPlugin, tasksPlugin, playgroundDeckPlugin, diagramPlugin, multiFilesystemPlaygroundPlugin]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
 function resetPlaygroundStorageIfRequested(): void {
@@ -207,7 +170,8 @@ export function WorkspaceShell() {
   const loadingShowcase = useMemo(loadingStateMode, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const multiFilesystem = useMemo(isMultiFilesystemPlaygroundRoute, [])
-  const activeWorkspacePlugins = multiFilesystem ? multiFilesystemWorkspacePlugins : workspacePlugins
+  const factoryAgents = useMemo(factoryAgentsEnabled, [])
+  const defaultAgentTypeId = factoryAgents ? "boring-concierge" : "default"
   const [projectName, setProjectName] = useState("Workspace")
   const [workspaceId, setWorkspaceId] = useState("Workspace")
   const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
@@ -293,7 +257,9 @@ export function WorkspaceShell() {
   return (
     <WorkspaceAgentFront
       workspaceId={showcase ? "default" : workspaceId}
-      agentTypeId="default"
+      agentTypeId={defaultAgentTypeId}
+      showAgentSelector={factoryAgents && !showcase}
+      donateActiveChatTransportToDetached
       apiBaseUrl=""
       persistenceEnabled
       providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${multiFilesystem ? "multi-fs:" : ""}${workspaceId}`}
@@ -311,7 +277,7 @@ export function WorkspaceShell() {
       onSwitchSession={showcase ? handleActiveSessionIdChange : undefined}
       onCreateSession={showcase ? createShowcaseSession : undefined}
       onRenameSession={showcase ? renameShowcaseSession : undefined}
-      plugins={activeWorkspacePlugins}
+      plugins={workspacePlugins}
       chatParams={{ thinkingControl: true }}
     />
   )
