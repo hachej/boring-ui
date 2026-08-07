@@ -117,6 +117,37 @@ describe("askUserPlugin front shell", () => {
     expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")).length).toBeGreaterThanOrEqual(2)
   })
 
+  it("does not carry a colliding session question across Workspace identities", async () => {
+    let currentQuestion: AskUserQuestion | null = question
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
+        return Response.json({ ok: true, output: { pending: currentQuestion } })
+      }
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(currentQuestion))
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const Panel = getPanel()
+    const panel = <Panel params={{}} api={{ close: vi.fn() }} className="h-full" />
+    const view = render(
+      <WorkspaceProvider agentTypeId="alpha" apiBaseUrl="" plugins={[]} workspaceId="workspace-a">
+        <Provider apiBaseUrl="" activeSessionId="default">{panel}</Provider>
+      </WorkspaceProvider>,
+    )
+    expect(await screen.findByText("Choose A or B")).toBeInTheDocument()
+
+    currentQuestion = null
+    view.rerender(
+      <WorkspaceProvider agentTypeId="alpha" apiBaseUrl="" plugins={[]} workspaceId="workspace-b">
+        <Provider apiBaseUrl="" activeSessionId="default">{panel}</Provider>
+      </WorkspaceProvider>,
+    )
+
+    await waitFor(() => expect(screen.queryByText("Choose A or B")).not.toBeInTheDocument())
+    expect(await screen.findByText("No pending questions")).toBeInTheDocument()
+  })
+
   it("hydrates and shows a blocking hidden-session question on a fresh active session", async () => {
     const blockedQuestion = { ...question, questionId: "fresh-hidden-q1", sessionId: "blocked-session", title: "Question from blocked session", answerToken: "fresh-hidden-token-1" }
     const pendingBySession = new Map<string, AskUserQuestion>([[blockedQuestion.sessionId, blockedQuestion]])

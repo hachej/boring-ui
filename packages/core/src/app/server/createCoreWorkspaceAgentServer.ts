@@ -14,6 +14,7 @@ import {
   createValidatingAgentFleetCompiler,
   provisionWorkspaceRuntime,
   projectAuthorizedSessionRunDetails,
+  resolveDefaultAgentFleet,
   withRuntimeEnvContributions,
   type AgentEffectAdmission,
   type AgentFleetCompiler,
@@ -282,6 +283,12 @@ export interface CreateCoreWorkspaceAgentServerOptions {
   sandboxHandleStore?: SandboxHandleStore
   /** Trusted Agent fleet compiled before any Agent route is mounted. */
   agents?: readonly AgentHostAgentSpec[]
+  /**
+   * Repository root used to resolve `.agents/{personas,factory}` when
+   * `BORING_AGENT_FLEET=1` composes the fleet and `agents` is not supplied.
+   * Defaults to `process.cwd()`.
+   */
+  fleetRepositoryRoot?: string
   /** Optional stricter app compiler layered over Core's loaded-plugin preflight. */
   fleetCompiler?: AgentFleetCompiler
   /** Legacy route alias target; defaults to the first configured Agent. */
@@ -1240,7 +1247,12 @@ export async function createCoreWorkspaceAgentServer(
     return authorizeStorageScope(ctx.request, ctx.workspaceId, canonicalScope ?? ctx.workspaceId)
   }
 
-  const agents = options.agents ?? [{ agentTypeId: 'default', legacyDefault: true } as const]
+  // BORING_AGENT_FLEET=1 composes the config-driven production fleet
+  // (gh-1106 slice 3, B2 fix round 1) from .agents/{personas,factory} for
+  // the deployed core app host (apps/full-app), same helper as
+  // createWorkspaceAgentServer and the CLI hub; flag absent preserves the
+  // legacy single-default-agent boot byte-identically.
+  const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot })
   const scopeAuthority = createCoreAgentScopeAuthority({
     appId: config.appId,
     workspaceStore,

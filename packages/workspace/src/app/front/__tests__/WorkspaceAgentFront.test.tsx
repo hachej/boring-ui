@@ -285,8 +285,8 @@ describe("WorkspaceAgentFront", () => {
       stream?.emit("snapshot", { sessions: [] })
     })
 
-    expect(statuses).toContainEqual({ sessionId: "session-1", agentTypeId: "default", working: true })
-    expect(statuses.at(-1)).toEqual({ sessionId: "session-1", agentTypeId: "default", working: false })
+    expect(statuses).toContainEqual({ workspaceId: "working-session-stream", sessionId: "session-1", agentTypeId: "default", working: true })
+    expect(statuses.at(-1)).toEqual({ workspaceId: "working-session-stream", sessionId: "session-1", agentTypeId: "default", working: false })
     unmount()
     expect(stream?.close).toHaveBeenCalledTimes(1)
     window.removeEventListener("boring:chat-session-status", onStatus)

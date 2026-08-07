@@ -959,6 +959,7 @@ export function WorkspaceAgentFront<
       onActivity: ({ ref, status }) => {
         window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
           detail: {
+            workspaceId,
             sessionId: ref.sessionId,
             agentTypeId: ref.agentTypeId,
             working: status === "running" || status === "aborting",
@@ -2105,7 +2106,7 @@ export function WorkspaceAgentFront<
       allowPromptDuringInitialHydration: emptySessionIds.has(sessionKey),
       onPromptSubmitStarted: ({ sessionId: submittedSessionId, clientNonce }: { sessionId: string; clientNonce: string }) => {
         window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
-          detail: { agentTypeId: sessionRef.agentTypeId ?? effectiveAgentTypeId, sessionId: submittedSessionId, clientNonce },
+          detail: { workspaceId, agentTypeId: sessionRef.agentTypeId ?? effectiveAgentTypeId, sessionId: submittedSessionId, clientNonce },
         }))
         setInitialHydrationPromptStarted((current) => {
           const currentIds = current.workspaceId === workspaceId ? current.ids : new Set<string>()
@@ -2280,17 +2281,30 @@ export function WorkspaceAgentFront<
       const session = await coordinateRemoteCreate(dedupeKey, options)
       const sessionId = createdSessionId(session)
       if (!sessionId) return { success: false as const, reason: "create-failed" as const, message: "Chat session creation did not return a canonical session." }
-      const createdAgentTypeId = (session as { agentTypeId?: unknown }).agentTypeId
-      if (typeof createdAgentTypeId !== "string") {
-        if (previous.sessionId) rawSwitch(previous.sessionId, previous.agentTypeId)
-        return { success: false as const, reason: "create-failed" as const, message: "Chat session creation did not return an addressed Agent owner." }
-      }
+      const returnedAgentTypeId = (session as { agentTypeId?: unknown }).agentTypeId
+      // The create operation is issued through the selected Agent's attested
+      // session source. Custom providers may omit the redundant owner field.
+      const createdAgentTypeId = typeof returnedAgentTypeId === "string" ? returnedAgentTypeId : selectedAgentTypeId
       const activeAfterCreate = effectiveActiveSessionRef.current
       const selectionStillAtCreationBoundary = (
         activeAfterCreate.sessionId === sessionId && activeAfterCreate.agentTypeId === createdAgentTypeId
       ) || (
         activeAfterCreate.sessionId === previous.sessionId && activeAfterCreate.agentTypeId === previous.agentTypeId
       )
+      if (returnedAgentTypeId !== undefined && returnedAgentTypeId !== selectedAgentTypeId) {
+        try {
+          await rawDelete(sessionId, createdAgentTypeId)
+        } catch (rollbackError) {
+          return { success: false as const, reason: "create-failed" as const, message: `Chat session creation returned a mismatched addressed Agent owner and rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}` }
+        }
+        const activeAfterRollback = effectiveActiveSessionRef.current
+        const selectionStillAtRollbackBoundary = (
+          (activeAfterRollback.sessionId === sessionId && activeAfterRollback.agentTypeId === createdAgentTypeId)
+          || (activeAfterRollback.sessionId === previous.sessionId && activeAfterRollback.agentTypeId === previous.agentTypeId)
+        )
+        if (selectionStillAtRollbackBoundary && previous.sessionId) rawSwitch(previous.sessionId, previous.agentTypeId)
+        return { success: false as const, reason: "create-failed" as const, message: "Chat session creation returned a mismatched addressed Agent owner." }
+      }
       if (selectionStillAtCreationBoundary && previous.sessionId && (previous.sessionId !== sessionId || previous.agentTypeId !== createdAgentTypeId)) {
         rawSwitch(previous.sessionId, previous.agentTypeId)
       }
@@ -2298,7 +2312,7 @@ export function WorkspaceAgentFront<
     } catch (error) {
       return { success: false as const, reason: "create-failed" as const, message: error instanceof Error ? error.message : "Chat session creation failed." }
     }
-  }, [coordinateRemoteCreate, rawSwitch])
+  }, [coordinateRemoteCreate, rawDelete, rawSwitch, selectedAgentTypeId])
   const createShellChatSession = useCallback(async (options?: { title?: string }) => {
     shellSessionCreateSequenceRef.current += 1
     return await createAddressedSessionWithoutActivating(`shell:${shellSessionCreateSequenceRef.current}`, {

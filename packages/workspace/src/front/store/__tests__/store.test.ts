@@ -165,6 +165,26 @@ describe("Store actions", () => {
     expect(notifs[0].timestamp).toBeGreaterThan(0)
   })
 
+  it("showNotification works in insecure contexts where crypto.randomUUID is unavailable", () => {
+    // crypto.randomUUID() throws in non-secure contexts (plain HTTP over
+    // LAN/Tailscale). Simulate that by removing it and confirm the store
+    // falls back instead of throwing.
+    const originalRandomUUID = globalThis.crypto.randomUUID
+    // @ts-expect-error - simulating an insecure-context Crypto object
+    delete globalThis.crypto.randomUUID
+    try {
+      const store = createWorkspaceStore()
+      expect(() =>
+        store.getState().showNotification({ message: "hello", type: "info" }),
+      ).not.toThrow()
+      const notifs = store.getState().notifications
+      expect(notifs).toHaveLength(1)
+      expect(notifs[0].id).toBeTruthy()
+    } finally {
+      globalThis.crypto.randomUUID = originalRandomUUID
+    }
+  })
+
   it("dismissNotification removes by id", () => {
     const store = createWorkspaceStore()
     store.getState().showNotification({ message: "hello", type: "info" })

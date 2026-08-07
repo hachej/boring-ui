@@ -91,7 +91,7 @@ describe("TaskKanbanBoard source isolation", () => {
     const view = renderBoard([firstAdapter], "workspace-a")
     expect(await screen.findByText("Workspace A task")).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Open actions for a1" }))
-    await user.click(screen.getByRole("button", { name: "Delete issue" }))
+    await user.click(screen.getByRole("button", { name: "Delete task" }))
 
     const secondAdapter = adapter("shared", "Shared", vi.fn(async () => [task("shared", "b1", "Workspace B task")]))
     view.rerender(
@@ -106,6 +106,57 @@ describe("TaskKanbanBoard source isolation", () => {
     expect(screen.queryByText("Workspace A task")).not.toBeInTheDocument()
     expect(screen.getByText("Workspace B task")).toBeInTheDocument()
     expect(screen.queryByText("late Workspace A failure")).not.toBeInTheDocument()
+  })
+
+  test("explains close semantics and restores a failed removal at its original position", async () => {
+    const user = userEvent.setup()
+    let rejectClose!: (error: Error) => void
+    const closeResult = new Promise<void>((_resolve, reject) => { rejectClose = reject })
+    const source: BoringTaskAdapter = {
+      ...adapter("github", "GitHub", vi.fn(async () => [
+        task("github", "a", "First"),
+        task("github", "b", "Second"),
+        task("github", "c", "Third"),
+      ])),
+      capabilities: { move: false, delete: true, deleteEffect: "close" },
+      deleteTask: vi.fn(async () => await closeResult),
+    }
+    const view = renderBoard([source])
+    expect(await screen.findByText("Second")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Open actions for b" }))
+    const closeButton = screen.getByRole("button", { name: "Close task (does not delete)" })
+    expect(closeButton).toHaveAttribute("title", "Closes this task in its source; it will not be deleted.")
+    await user.click(closeButton)
+    expect(screen.queryByText("Second")).not.toBeInTheDocument()
+
+    rejectClose(new Error("close failed"))
+    await waitFor(() => expect(screen.getByText("Second")).toBeInTheDocument())
+    expect([...view.container.querySelectorAll("[data-task-id]")].map((element) => element.getAttribute("data-task-id"))).toEqual(["a", "b", "c"])
+  })
+
+  test("serializes removals within one Workspace so rollbacks cannot reorder peers", async () => {
+    const user = userEvent.setup()
+    let rejectDelete!: (error: Error) => void
+    const source: BoringTaskAdapter = {
+      ...adapter("source", "Source", vi.fn(async () => [
+        task("source", "a", "First"),
+        task("source", "b", "Second"),
+        task("source", "c", "Third"),
+      ])),
+      capabilities: { move: false, delete: true },
+      deleteTask: vi.fn(() => new Promise<void>((_resolve, reject) => { rejectDelete = reject })),
+    }
+    renderBoard([source])
+    expect(await screen.findByText("Third")).toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "Open actions for b" }))
+    await user.click(screen.getByRole("button", { name: "Delete task" }))
+    await user.click(screen.getByRole("button", { name: "Open actions for c" }))
+    expect(screen.getByRole("button", { name: "Delete task" })).toBeDisabled()
+    expect(source.deleteTask).toHaveBeenCalledTimes(1)
+
+    rejectDelete(new Error("second failed"))
+    await waitFor(() => expect(screen.getByText("Second")).toBeInTheDocument())
   })
 
   test("cleans up a refresh invalidated by a later mutation", async () => {
@@ -124,7 +175,7 @@ describe("TaskKanbanBoard source isolation", () => {
     expect(await screen.findByText("Delete during refresh")).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Refresh" }))
     await user.click(screen.getByRole("button", { name: "Open actions for a1" }))
-    await user.click(screen.getByRole("button", { name: "Delete issue" }))
+    await user.click(screen.getByRole("button", { name: "Delete task" }))
     resolveRefresh([task("shared", "a1", "Delete during refresh")])
     resolveDelete()
 
@@ -147,7 +198,7 @@ describe("TaskKanbanBoard source isolation", () => {
     renderBoard([source])
     expect(await screen.findByText("Delete me")).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Open actions for a1" }))
-    await user.click(screen.getByRole("button", { name: "Delete issue" }))
+    await user.click(screen.getByRole("button", { name: "Delete task" }))
     await user.click(screen.getByRole("button", { name: "Refresh" }))
 
     resolveRefresh([task("shared", "a1", "Delete me")])

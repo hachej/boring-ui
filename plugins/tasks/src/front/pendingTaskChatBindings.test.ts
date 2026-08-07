@@ -41,11 +41,27 @@ describe("pending task chat binding recovery", () => {
     registerPendingTaskChatBinding(pending, latest.value)
 
     window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
-      detail: { agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "accepted" },
+      detail: { workspaceId: "workspace-a", agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "accepted" },
     }))
 
     await waitFor(() => expect(latest.postJson).toHaveBeenCalledOnce())
     expect(first.postJson).not.toHaveBeenCalled()
+  })
+
+  it("does not accept a colliding addressed session event from another workspace", async () => {
+    const api = client(0)
+    registerPendingTaskChatBinding(pending, api.value)
+
+    window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
+      detail: { workspaceId: "workspace-b", agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "other-workspace" },
+    }))
+    window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+      detail: { workspaceId: "workspace-b", agentTypeId: "alpha", sessionId: "native-exact", working: true },
+    }))
+    await Promise.resolve()
+
+    expect(api.postJson).not.toHaveBeenCalled()
+    expect(window.sessionStorage.getItem(storageKey)).toBe(JSON.stringify([pending]))
   })
 
   it("does not restore a stale client when a replaced provider reaches capped recovery", async () => {
@@ -56,7 +72,7 @@ describe("pending task chat binding recovery", () => {
     latest.postJson.mockRejectedValue(new TypeError("service unavailable"))
     registerPendingTaskChatBinding(pending, first.value)
     window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
-      detail: { agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "accepted" },
+      detail: { workspaceId: "workspace-a", agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "accepted" },
     }))
     await Promise.resolve()
     await Promise.resolve()
@@ -80,7 +96,7 @@ describe("pending task chat binding recovery", () => {
     registerPendingTaskChatBinding(pending, api.value)
 
     window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
-      detail: { agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "accepted" },
+      detail: { workspaceId: "workspace-a", agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "accepted" },
     }))
 
     await waitFor(() => expect(api.postJson).toHaveBeenCalledOnce())
@@ -109,11 +125,11 @@ describe("pending task chat binding recovery", () => {
     await Promise.resolve()
     expect(api.postJson).not.toHaveBeenCalled()
     window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
-      detail: { agentTypeId: "alpha", sessionId: "another", clientNonce: "wrong" },
+      detail: { workspaceId: "workspace-a", agentTypeId: "alpha", sessionId: "another", clientNonce: "wrong" },
     }))
     expect(api.postJson).not.toHaveBeenCalled()
     window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
-      detail: { agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "accepted" },
+      detail: { workspaceId: "workspace-a", agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "accepted" },
     }))
     await waitFor(() => expect(api.postJson).toHaveBeenCalledOnce())
   })
@@ -124,7 +140,7 @@ describe("pending task chat binding recovery", () => {
 
     resumePendingTaskChatBindings(api.value)
     window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
-      detail: { agentTypeId: "alpha", sessionId: "native-exact", working: true },
+      detail: { workspaceId: "workspace-a", agentTypeId: "alpha", sessionId: "native-exact", working: true },
     }))
 
     await waitFor(() => expect(api.postJson).toHaveBeenCalledOnce())
@@ -138,7 +154,7 @@ describe("pending task chat binding recovery", () => {
 
     resumePendingTaskChatBindings(api.value)
     window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
-      detail: { agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "accepted" },
+      detail: { workspaceId: "workspace-a", agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "accepted" },
     }))
 
     await waitFor(() => expect(api.postJson).toHaveBeenCalledTimes(2))
@@ -194,7 +210,7 @@ describe("pending task chat binding recovery", () => {
 
     resumePendingTaskChatBindings(api)
     window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
-      detail: { agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "accepted" },
+      detail: { workspaceId: "workspace-a", agentTypeId: "alpha", sessionId: "native-exact", clientNonce: "accepted" },
     }))
     await Promise.resolve()
     resolveSnapshot({ summary: { turnCount: 1 } })
