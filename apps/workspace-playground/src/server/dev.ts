@@ -132,24 +132,18 @@ export async function startPlaygroundServer(): Promise<void> {
                 },
                 async resolveAccess(descriptor) {
                   const hidden = companySkillPathHidden(descriptor.path)
-                  const decision = await baseOperations.resolveAccess?.(descriptor)
-                  if (!decision) {
-                    return {
-                      filesystem: descriptor.filesystem,
-                      normalizedPath: normalizePlaygroundBindingPath(descriptor.path),
-                      access: "readonly" as const,
-                      capabilities: {
-                        read: !hidden,
-                        write: false,
-                        "create-child": false,
-                        delete: false,
-                        "move-from": false,
-                      },
-                    }
+                  return {
+                    filesystem: descriptor.filesystem,
+                    normalizedPath: normalizePlaygroundBindingPath(descriptor.path),
+                    access: "readonly" as const,
+                    capabilities: {
+                      read: !hidden,
+                      write: false,
+                      "create-child": false,
+                      delete: false,
+                      "move-from": false,
+                    },
                   }
-                  return hidden
-                    ? { ...decision, capabilities: { ...decision.capabilities, read: false } }
-                    : decision
                 },
               },
             }]
