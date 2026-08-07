@@ -357,13 +357,10 @@ export function ChatPaneStageDock({
           components={STAGE_COMPONENTS}
           defaultTabComponent={ChatPaneHeader as React.FunctionComponent<IDockviewPanelHeaderProps>}
           rightHeaderActionsComponent={ChatPaneHeaderActions}
-          // Keep every pane's content element permanently mounted in the
-          // overlay render container instead of the default "onlyWhenVisible"
-          // renderer, which detaches and re-appends a group's content element
-          // each time the group is activated. That detach/reattach resets the
-          // scroll container's scrollTop to 0, so switching panes used to jank
-          // the newly-active chat transcript back to the top (#276). "always"
-          // toggles visibility in place and preserves scroll position.
+          // Keep chat content mounted while a session switch resolves. Besides
+          // preserving transcript scroll position, this retains the established
+          // loading transition instead of tearing down the whole stage and
+          // briefly exposing an empty canvas.
           defaultRenderer="always"
           // Groups always hold exactly one pane (center drops are vetoed),
           // so the single header stretches across the full group width and
