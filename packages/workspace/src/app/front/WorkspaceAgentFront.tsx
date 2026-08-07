@@ -849,7 +849,10 @@ export function WorkspaceAgentFront<
   const chatPanel = (chatPanelProp ?? DefaultPiChatPanel) as ComponentType<WorkspaceChatPanelProps>
   const useSessions = (useSessionsProp ?? useDefaultWorkspacePiSessions) as UseWorkspaceAgentSessions<TSession>
   const shouldUseRemoteSessions = !chatPanelProp || Boolean(useSessionsProp)
-  const remoteSessionHookEnabled = shouldUseRemoteSessions && provisionWorkspace !== false
+  // provisionWorkspace only controls workspace runtime provisioning; it must not
+  // disable remote pi-chat sessions when the default remote-backed chat panel is
+  // still active (gh-601).
+  const remoteSessionHookEnabled = shouldUseRemoteSessions
   const sessionSourceIdentity = useMemo(() => sessionDataSourceIdentity({
     workspaceId,
     agentTypeId: selectedAgentTypeId,

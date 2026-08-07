@@ -1965,7 +1965,7 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByRole("button", { name: "Open workbench" })).toBeInTheDocument()
   })
 
-  it("does not start default remote session warmup when provisioning is disabled", async () => {
+  it("does not start workspace provisioning warmup when provisioning is disabled, but keeps remote sessions enabled (gh-601)", async () => {
     const onWarmup = vi.fn()
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input)
@@ -1993,7 +1993,9 @@ describe("WorkspaceAgentFront", () => {
       expect(call[1]?.headers).toMatchObject({ "x-boring-workspace-id": "no-provision" })
       expect(call[1]?.headers).not.toHaveProperty("X-BORING-WORKSPACE-ID")
     }
-    expect(fetchMock.mock.calls.some(([input]) => isDefaultSessionsCollectionUrl(String(input)))).toBe(false)
+    // gh-601: provisionWorkspace=false must not disable the default remote pi-chat
+    // session hook, since the default chat panel still talks to /api/v1/agent/pi-chat/*.
+    expect(fetchMock.mock.calls.some(([input]) => isDefaultSessionsCollectionUrl(String(input)))).toBe(true)
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/ready-status"))).toBe(false)
   })
 
