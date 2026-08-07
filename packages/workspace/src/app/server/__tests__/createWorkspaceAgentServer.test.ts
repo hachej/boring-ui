@@ -1448,6 +1448,109 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
+  // M3 fix round 1 (gh-1106 slice 3): `legacyGlobalPluginAgentContributions`
+  // used to key off `opts.agents === undefined`. With BORING_AGENT_FLEET=1
+  // and no explicit `opts.agents`, the RESOLVED fleet has more than the
+  // legacy default agent, but the option is still `undefined` — the old
+  // condition wrongly kept the legacy "give every agent the global plugin
+  // surface" behavior instead of scoping per agent.
+  test("BORING_AGENT_FLEET=1 with no explicit opts.agents scopes plugin contributions per Agent, not the legacy global fleet", async () => {
+    const workspaceRoot = await makeTempDir("boring-agent-fleet-flag-")
+    const fleetRoot = await makeTempDir("boring-agent-fleet-flag-repo-")
+    await mkdir(join(fleetRoot, ".agents", "personas", "one"), { recursive: true })
+    await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
+    await writeFile(
+      join(fleetRoot, ".agents", "personas", "one", "package.json"),
+      JSON.stringify({
+        name: "@fixture/one",
+        version: "1.0.0",
+        private: true,
+        boring: {
+          agent: {
+            definitionId: "fixture-one",
+            version: "1.0.0",
+            label: "Fixture One",
+            description: "M3 regression fixture persona.",
+            instructionsRef: "instructions.md",
+          },
+        },
+      }),
+      "utf8",
+    )
+    await writeFile(join(fleetRoot, ".agents", "personas", "one", "instructions.md"), "You are One.\n", "utf8")
+    await writeFile(
+      join(fleetRoot, ".agents", "factory", "fleet.yaml"),
+      "seats:\n  - seat: one\n    agentTypeId: fixture-one\n    skills: []\n",
+      "utf8",
+    )
+
+    const globalTool = {
+      name: "global_tool",
+      description: "app-global plugin tool",
+      parameters: { type: "object", properties: {} },
+      async execute() { return { content: [] } },
+    }
+    const previousFlag = process.env.BORING_AGENT_FLEET
+    process.env.BORING_AGENT_FLEET = "1"
+    let app: Awaited<ReturnType<typeof createWorkspaceAgentServer>> | undefined
+    try {
+      app = await createWorkspaceAgentServer({
+        workspaceRoot,
+        fleetRepositoryRoot: fleetRoot,
+        logger: false,
+        provisionWorkspace: false,
+        externalPlugins: false,
+        piResourceAuthorizedRoots: ["/plugins"],
+        plugins: [{
+          id: "global-plugin",
+          contentDigest: "global-plugin-content-v1",
+          agentTools: [globalTool],
+          systemPrompt: "GLOBAL_PLUGIN_PROMPT",
+        }],
+        fleetCompiler: { async compile({ agents }) { return agents } },
+      })
+
+      const [routeOptions] = agentServerMock.captureResolvedRuntimeScope.mock.calls.at(-1) as unknown as [{
+        authorizedScope: object
+      }]
+      const [hostOptions, createHostCall] = [
+        agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
+          agents: readonly { agentTypeId: string }[]
+          resolveDirectRuntimeScopeForTest(input: { agentTypeId: string; scope: object }): Promise<{
+            extraTools?: Array<{ name: string }>
+            systemPromptAppend?: string
+          }>
+        },
+        agentServerMock.createAgentHost.mock.calls.at(-1)![0] as { agents: readonly { agentTypeId: string }[] },
+      ]
+      // Sanity: the flag actually composed a multi-agent fleet (default +
+      // the fixture seat), so `opts.agents` really was left undefined while
+      // the resolved fleet was not the single-legacy-agent shape.
+      expect(createHostCall.agents.map((agent) => agent.agentTypeId).sort()).toEqual(["default", "fixture-one"])
+
+      const scope = routeOptions.authorizedScope
+      // The literal `{ agentTypeId: 'default', legacyDefault: true }` fleet
+      // member is a deliberate catch-all and keeps every discovered plugin's
+      // resources by design (same as the "normalizes..." test's `legacy`
+      // case above) — that part is unaffected by this fix.
+      //
+      // The actual M3 bug: a resolved fleet seat that is NOT that literal
+      // legacyDefault entry (here, the fixture's own composed seat) must be
+      // scoped to only its own explicitly-bound plugins — it has none bound,
+      // so it must not inherit the unbound global plugin's tools/prompt via
+      // the base Pi options, which `legacyGlobalPluginAgentContributions`
+      // used to wrongly apply server-wide whenever `opts.agents` was
+      // undefined, flag or no flag.
+      const seatScope = await hostOptions.resolveDirectRuntimeScopeForTest({ agentTypeId: "fixture-one", scope })
+      expect(seatScope.extraTools?.map((tool) => tool.name) ?? []).not.toContain("global_tool")
+      expect(seatScope.systemPromptAppend ?? "").not.toContain("GLOBAL_PLUGIN_PROMPT")
+    } finally {
+      if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
+      else process.env.BORING_AGENT_FLEET = previousFlag
+      if (app) await app.close()
+    }
+  })
+
   test.each([
     {
       name: "unknown plugin ID",
