@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import {
   buildFilesystemAgentTools,
   buildHarnessAgentTools,
@@ -12,6 +13,10 @@ import { HarnessPiChatService } from '../pi-chat/harnessPiChatService'
 import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from '../runtime/modeReadiness'
 import { getOptionalRuntimeBundleStorageRoot, type RuntimeBundle } from '../runtime/mode'
+import { openDatabase, type OpenDatabaseResult } from '../events/sqlStorage'
+import { SqliteEventStreamStore, type EventStreamStore } from '../events/eventStreamStore'
+import { safeCapture, type TelemetrySink } from '../../shared/telemetry'
+import { ErrorCode } from '../../shared/error-codes'
 import type {
   CompiledAgentHostAgentSpec,
   CreateAgentHostOptions,
@@ -19,6 +24,58 @@ import type {
 } from './types'
 import type { EnvironmentProvisioningSnapshot } from './environmentLease'
 import { sessionNamespaceForAgent } from './sessionInventory'
+
+/**
+ * Flag-gated durable event streaming. When set (`1`/`true`), production
+ * composition constructs a {@link SqliteEventStreamStore} on the host
+ * session-root volume so `HarnessPiChatService` can resume live streams
+ * across process restarts. Absent (default), behavior is byte-identical to
+ * pre-durability composition: no store, in-memory streaming only.
+ */
+export const DURABLE_STREAM_ENV_FLAG = 'BORING_CHAT_DURABLE_STREAM'
+export const EVENT_STORE_FILE_NAME = '.agent-event-stream.sqlite'
+
+export function isDurableStreamEnabled(): boolean {
+  const raw = process.env[DURABLE_STREAM_ENV_FLAG]
+  return raw === '1' || raw === 'true'
+}
+
+/**
+ * Opens (or creates) the durable event-stream SQLite database under the same
+ * durable-volume root convention as session storage (AGENTS.md hard rule 9):
+ * sibling to `BORING_AGENT_SESSION_ROOT` when set, else the workspace root.
+ * Returns `undefined` and logs a stable-coded diagnostic if the store cannot
+ * be opened — callers must fall back to in-memory streaming rather than
+ * crash boot or silently claim durability.
+ */
+export function openDurableEventStore(input: {
+  readonly sessionRoot?: string
+  readonly workspaceRoot: string
+  readonly telemetry?: TelemetrySink
+}): { store: EventStreamStore; close: () => void } | undefined {
+  const root = input.sessionRoot ?? input.workspaceRoot
+  const path = join(root, EVENT_STORE_FILE_NAME)
+  let opened: OpenDatabaseResult
+  try {
+    opened = openDatabase(path)
+  } catch (error) {
+    if (input.telemetry) {
+      safeCapture(input.telemetry, {
+        name: 'agent.event-store.open-failed',
+        properties: {
+          code: ErrorCode.enum.EVENT_STORE_OPEN_FAILED,
+          path,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      })
+    }
+    return undefined
+  }
+  return {
+    store: new SqliteEventStreamStore(opened.sql, opened.runTransaction),
+    close: () => opened.db.close(),
+  }
+}
 
 export interface BuildAgentCompositionInput {
   readonly agent: CompiledAgentHostAgentSpec
@@ -139,6 +196,13 @@ export async function buildAgentComposition(
     telemetry: options.telemetry,
   })
   const sessionStore = harness.sessions
+  const durableEventStore = isDurableStreamEnabled()
+    ? openDurableEventStore({
+        sessionRoot: options.sessionRoot,
+        workspaceRoot: runtimeBundle.workspace.root,
+        telemetry: options.telemetry,
+      })
+    : undefined
   const service = new HarnessPiChatService({
     harness,
     sessionStore,
@@ -148,6 +212,7 @@ export async function buildAgentComposition(
     attachmentUrl: ({ sessionId, messageId, index }) =>
       `/api/v1/agents/${encodeURIComponent(input.agent.agentTypeId)}/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(messageId)}/${index}`,
     metering: options.metering,
+    eventStore: durableEventStore?.store,
   })
   let disposed: Promise<void> | undefined
 
@@ -160,7 +225,7 @@ export async function buildAgentComposition(
     readyTracker,
     runtimeScopeIdentity: runtimeScope.identity,
     dispose() {
-      disposed ??= service.dispose()
+      disposed ??= service.dispose().finally(() => durableEventStore?.close())
       return disposed
     },
   }

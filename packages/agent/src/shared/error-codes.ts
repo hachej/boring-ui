@@ -125,6 +125,9 @@ export const ErrorCode = z.enum([
   'AR1_SHARE_NOT_FOUND',
   'AR1_SHARE_TOMBSTONED',
 
+  // Event stream durability
+  'EVENT_STORE_OPEN_FAILED',
+
   // Internal
   'ERR_NOT_IMPLEMENTED_UNTIL_T1',
   'INTERNAL_ERROR',
