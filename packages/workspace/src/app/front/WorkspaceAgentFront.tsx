@@ -950,20 +950,10 @@ export function WorkspaceAgentFront<
   const shouldUseRemoteSessions = !chatPanelProp || Boolean(useSessionsProp)
   // Provisioning and server-backed sessions are separate concerns: apps can
   // disable workspace provisioning and still use real pi-chat sessions.
-  const remoteSessionsResolved = remoteSessionsEnabled ?? (provisionWorkspace !== false)
+  // gh-601: the default remote-backed chat must not silently fall back to
+  // local-only session ids just because workspace provisioning is disabled.
+  const remoteSessionsResolved = remoteSessionsEnabled ?? true
   const remoteSessionHookEnabled = shouldUseRemoteSessions && remoteSessionsResolved
-  const remoteSessionsDisabledWarnedRef = useRef(false)
-  useEffect(() => {
-    if (remoteSessionsDisabledWarnedRef.current) return
-    if (!shouldUseRemoteSessions || remoteSessionsResolved || provisionWorkspace !== false) return
-    if (remoteSessionsEnabled !== undefined) return
-    remoteSessionsDisabledWarnedRef.current = true
-    if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
-      console.warn(
-        "[boring-ui] WorkspaceAgentFront: provisionWorkspace={false} also disabled server-backed chat sessions, so the chat panel will use local-only session ids while still reaching the agent pi-chat routes. Pass remoteSessionsEnabled={true} to keep remote sessions.",
-      )
-    }
-  }, [provisionWorkspace, remoteSessionsEnabled, remoteSessionsResolved, shouldUseRemoteSessions])
   const fleetAgentIdentity = addressedAgents.agents.map((agent) => agent.agentTypeId).sort().join(",")
   const sessionSourceIdentity = useMemo(() => sessionDataSourceIdentity({
     workspaceId,
