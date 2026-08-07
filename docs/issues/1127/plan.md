@@ -10,6 +10,11 @@ flag: BORING_AGENT_CHANNELS (new; adapter host is dead code when off)
 
 Adversarially reviewed 2026-08-07 (3 blockers, 6 majors folded in — r1);
 independent fresh-eyes review folded in — r2 (3 majors, 3 mediums, minors).
+Reuse research folded in — r2.1: Cloudflare Agents (cloud or vendored) was
+assessed and **rejected** (no WhatsApp/SMS in its channel catalog; runtime
+hard-coupled to Durable Objects) — see
+[`cloudflare-channels-assessment.md`](cloudflare-channels-assessment.md);
+Vercel's `@chat-adapter/whatsapp` adopted as the Slice 2 provider-edge spike.
 
 ## Problem
 
@@ -264,8 +269,15 @@ policy, gone-session recovery, full conformance suite.
 
 ### Slice 2: WhatsApp adapter (Meta Cloud API)
 **Bead:** on approval
-**Delivers:** signature verify + handshake, payload parse, dialect rendering +
+**Delivers:** the provider edge behind our `ChannelAdapter` contract —
+webhook signature verify + handshake, payload parse, dialect rendering +
 chunking, send with retry, 24h template fallback, host wiring + credentials.
+**Approach (per the reuse assessment):** start with a **half-day spike using
+Vercel's `@chat-adapter/whatsapp`** (MIT, plain Node >= 20) standalone as the
+provider edge — verify/parse, chunked send, template fallback — wrapped
+behind our contract. Fall back to the hand-rolled Meta client only if the
+package drags in the rest of Vercel's bot framework instead of standing
+alone.
 **Blocked by:** 1b; Meta business account + test number (owner-side).
 **Proof:** acceptance 7; manual demo recording.
 **Review budget:** inside
