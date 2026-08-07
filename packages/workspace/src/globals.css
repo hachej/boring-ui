@@ -464,6 +464,22 @@
   .command-palette-secondary-action {
     opacity: 1;
   }
+
+  /*
+   * The workbench activity rail is 32px-dense on a mouse. On touch its icons
+   * are the only way into a workspace category, so they grow to the 44px
+   * minimum; the rail drops its inline padding so the wider targets still fit
+   * the existing 44px gutter and nothing reflows around it.
+   */
+  [data-boring-workspace-part="workbench-activity-rail"] {
+    padding-inline: 0;
+  }
+
+  .workbench-rail-action,
+  .workbench-rail-slot {
+    width: 44px;
+    height: 44px;
+  }
 }
 
 @media (hover: none) {
