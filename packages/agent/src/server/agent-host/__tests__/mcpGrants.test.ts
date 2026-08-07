@@ -167,6 +167,69 @@ describe('resolveAgentMcpGrants', () => {
     ])
   })
 
+  test('a connector unknown to the supplied catalog is denied, not left unfiltered (catalog.getConnectorTools returns undefined)', () => {
+    const grants: McpGrant[] = [
+      { workspaceId: WORKSPACE_A, agentTypeId: AGENT_RESEARCHER, connectorId: 'shadow-connector', allowedTools: ['anything_at_all'] },
+    ]
+    const emptyCatalog = catalog({}) // getConnectorTools('shadow-connector') -> undefined: unknown to the catalog
+
+    const resolved = resolveAgentMcpGrants({
+      workspaceId: WORKSPACE_A,
+      agentTypeId: AGENT_RESEARCHER,
+      mcpServerRefs: ['shadow-connector'],
+      grants,
+      catalog: emptyCatalog,
+    })
+
+    expect(resolved.connectors).toEqual([])
+    expect(resolved.diagnostics).toEqual([
+      {
+        code: ErrorCode.enum.AGENT_MCP_GRANT_CONNECTOR_UNKNOWN,
+        connectorId: 'shadow-connector',
+        message: expect.stringContaining('shadow-connector'),
+      },
+    ])
+  })
+
+  test('a grant with a missing/non-array allowedTools is treated as no tools rather than throwing "not iterable"', () => {
+    const grants = [
+      { workspaceId: WORKSPACE_A, agentTypeId: AGENT_RESEARCHER, connectorId: 'notion' } as unknown as McpGrant,
+    ]
+
+    expect(() =>
+      resolveAgentMcpGrants({
+        workspaceId: WORKSPACE_A,
+        agentTypeId: AGENT_RESEARCHER,
+        mcpServerRefs: ['notion'],
+        grants,
+      }),
+    ).not.toThrow()
+
+    const resolved = resolveAgentMcpGrants({
+      workspaceId: WORKSPACE_A,
+      agentTypeId: AGENT_RESEARCHER,
+      mcpServerRefs: ['notion'],
+      grants,
+    })
+    expect(resolved.connectors).toEqual([{ connectorId: 'notion', allowedTools: [] }])
+  })
+
+  test('duplicate mcpServerRefs do not produce duplicate connector entries', () => {
+    const grants: McpGrant[] = [
+      { workspaceId: WORKSPACE_A, agentTypeId: AGENT_RESEARCHER, connectorId: 'notion', allowedTools: ['NOTION_RETRIEVE_PAGE'] },
+    ]
+
+    const resolved = resolveAgentMcpGrants({
+      workspaceId: WORKSPACE_A,
+      agentTypeId: AGENT_RESEARCHER,
+      mcpServerRefs: ['notion', 'notion', 'notion'],
+      grants,
+    })
+
+    expect(resolved.connectors).toEqual([{ connectorId: 'notion', allowedTools: ['NOTION_RETRIEVE_PAGE'] }])
+    expect(resolved.diagnostics).toEqual([])
+  })
+
   test('no declared mcpServerRefs resolves to no connectors and no diagnostics, regardless of grants', () => {
     const grants: McpGrant[] = [
       { workspaceId: WORKSPACE_A, agentTypeId: AGENT_RESEARCHER, connectorId: 'notion', allowedTools: ['NOTION_RETRIEVE_PAGE'] },

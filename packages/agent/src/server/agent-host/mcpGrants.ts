@@ -7,6 +7,37 @@ import { ErrorCode } from '../../shared/error-codes'
  * agentTypeId)` pair yields nothing, ever, regardless of what other Agents
  * in the same workspace are granted.
  */
+/**
+ * Thrown by {@link assertValidGrantToolNames} when a grant's `allowedTools`
+ * contains a glob metacharacter. `allowedTools` here is meant to be an
+ * exact-match allowlist of tool names; `plugins/boring-mcp`'s
+ * `deniedTools`/`wildcardMatch` glob-interprets `"*"` (and other glob
+ * metacharacters) as "match everything". Storing `["*"]` here and later
+ * interpreting it as a glob at the consumption seam would silently flip an
+ * intended single-item allowlist into "every tool is allowed" — the exact
+ * opposite of the grant model's default-deny intent. Reject it at
+ * grant-write time instead so this footgun can never be stored.
+ */
+export class McpGrantToolNameInvalidError extends Error {
+  readonly code = ErrorCode.enum.AGENT_MCP_GRANT_TOOL_NAME_INVALID
+  readonly tool: string
+
+  constructor(tool: string) {
+    super(`MCP grant tool name '${tool}' contains a glob metacharacter, which is not a valid exact tool name for allowedTools.`)
+    this.name = 'McpGrantToolNameInvalidError'
+    this.tool = tool
+  }
+}
+
+const GLOB_METACHARACTER_PATTERN = /[*?[\]]/
+
+/** Throws {@link McpGrantToolNameInvalidError} if any tool name in `allowedTools` contains a glob metacharacter (`*`, `?`, `[`, `]`). Call before persisting a grant. */
+export function assertValidGrantToolNames(allowedTools: readonly string[]): void {
+  for (const tool of allowedTools) {
+    if (GLOB_METACHARACTER_PATTERN.test(tool)) throw new McpGrantToolNameInvalidError(tool)
+  }
+}
+
 export interface McpGrant {
   readonly workspaceId: string
   readonly agentTypeId: string
@@ -30,6 +61,9 @@ export interface McpConnectorCatalog {
 export type McpGrantDiagnosticCode =
   | typeof ErrorCode.enum.AGENT_MCP_GRANT_REF_UNGRANTED
   | typeof ErrorCode.enum.AGENT_MCP_GRANT_TOOL_NOT_ALLOWED
+  | typeof ErrorCode.enum.AGENT_MCP_GRANT_RECORD_MALFORMED
+  | typeof ErrorCode.enum.AGENT_MCP_GRANT_CONNECTOR_UNKNOWN
+  | typeof ErrorCode.enum.AGENT_MCP_GRANT_TOOL_NAME_INVALID
 
 export interface McpGrantDiagnostic {
   readonly code: McpGrantDiagnosticCode
@@ -83,7 +117,7 @@ export function resolveAgentMcpGrants(input: ResolveAgentMcpGrantsInput): Resolv
     grantsByConnector.set(grant.connectorId, grant)
   }
 
-  for (const ref of mcpServerRefs) {
+  for (const ref of new Set(mcpServerRefs)) {
     const grant = grantsByConnector.get(ref)
     if (!grant) {
       diagnostics.push({
@@ -95,8 +129,26 @@ export function resolveAgentMcpGrants(input: ResolveAgentMcpGrantsInput): Resolv
     }
 
     const catalogTools = catalog?.getConnectorTools(grant.connectorId)
+    if (catalog && !catalogTools) {
+      // The connector is unknown to the catalog. This must DENY, not skip
+      // filtering: silently admitting every grant.allowedTools entry here
+      // would mean an unrecognized/misconfigured connectorId gets a free
+      // pass to every tool a grant happens to list, which is the opposite
+      // of default-deny.
+      diagnostics.push({
+        code: ErrorCode.enum.AGENT_MCP_GRANT_CONNECTOR_UNKNOWN,
+        connectorId: grant.connectorId,
+        message: `Grant for connector '${grant.connectorId}' references a connector unknown to the supplied catalog; the connector was dropped.`,
+      })
+      continue
+    }
+
     const allowedTools: string[] = []
-    for (const tool of grant.allowedTools) {
+    // Defend against a grant sourced from a third-party/legacy store where
+    // `allowedTools` may be missing or non-array despite the interface
+    // declaring it required — iterating it directly would throw "not
+    // iterable" and take down resolution for every other ref.
+    for (const tool of Array.isArray(grant.allowedTools) ? grant.allowedTools : []) {
       if (catalogTools && !catalogTools.includes(tool)) {
         diagnostics.push({
           code: ErrorCode.enum.AGENT_MCP_GRANT_TOOL_NOT_ALLOWED,

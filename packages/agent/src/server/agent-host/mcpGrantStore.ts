@@ -1,10 +1,17 @@
-import type { McpGrant } from './mcpGrants'
+import { ErrorCode } from '../../shared/error-codes'
+import { assertValidGrantToolNames, type McpGrant, type McpGrantDiagnostic } from './mcpGrants'
 
 /** The kind tag used when per-agent MCP grants are persisted as workspace runtime resources. */
 export const MCP_GRANT_RESOURCE_KIND = 'mcp-grant'
 
+/** A grant listing that skipped one or more malformed rows; `diagnostics` carries a stable-coded entry per skipped row instead of throwing. */
+export interface ListedMcpGrants {
+  readonly grants: readonly McpGrant[]
+  readonly diagnostics: readonly McpGrantDiagnostic[]
+}
+
 export interface McpGrantStore {
-  listGrants(workspaceId: string): Promise<readonly McpGrant[]>
+  listGrants(workspaceId: string): Promise<ListedMcpGrants>
   putGrant(grant: McpGrant): Promise<void>
   deleteGrant(input: { readonly workspaceId: string; readonly agentTypeId: string; readonly connectorId: string }): Promise<void>
 }
@@ -54,15 +61,34 @@ function isMcpGrantResource(resource: WorkspaceRuntimeResourceLike): boolean {
   return resource.kind === MCP_GRANT_RESOURCE_KIND && resource.state !== 'deleted'
 }
 
-function toGrant(resource: WorkspaceRuntimeResourceLike): McpGrant {
-  const allowedTools = Array.isArray(resource.config.allowedTools)
-    ? resource.config.allowedTools.filter((tool): tool is string => typeof tool === 'string')
-    : []
+/**
+ * `WorkspaceRuntimeResourceLike.config` is typed as required, but the
+ * underlying store's `config` field is optional/nullable in practice (older
+ * rows, other writers, or a bad migration can leave it `null`/`undefined`).
+ * A single such row must not crash `listGrants` for the whole workspace —
+ * that would be a self-DoS on the authority path (every Agent in the
+ * workspace loses every grant because of one bad row). Skip malformed rows
+ * with a stable diagnostic instead of throwing.
+ */
+function toGrant(resource: WorkspaceRuntimeResourceLike): { grant: McpGrant } | { diagnostic: McpGrantDiagnostic } {
+  const config = resource.config as Record<string, unknown> | null | undefined
+  if (!config || typeof config !== 'object' || !Array.isArray(config.allowedTools)) {
+    return {
+      diagnostic: {
+        code: ErrorCode.enum.AGENT_MCP_GRANT_RECORD_MALFORMED,
+        connectorId: resource.provider,
+        message: `MCP grant record for connector '${resource.provider}' (agentTypeId '${resource.purpose}') has a missing or malformed config and was skipped.`,
+      },
+    }
+  }
+  const allowedTools = config.allowedTools.filter((tool): tool is string => typeof tool === 'string')
   return {
-    workspaceId: resource.workspaceId,
-    agentTypeId: resource.purpose,
-    connectorId: resource.provider,
-    allowedTools,
+    grant: {
+      workspaceId: resource.workspaceId,
+      agentTypeId: resource.purpose,
+      connectorId: resource.provider,
+      allowedTools,
+    },
   }
 }
 
@@ -77,9 +103,16 @@ export function createWorkspaceRuntimeResourceMcpGrantStore(host: WorkspaceRunti
   return {
     async listGrants(workspaceId) {
       const resources = await host.listWorkspaceRuntimeResources(workspaceId)
-      return resources.filter(isMcpGrantResource).map(toGrant)
+      const grants: McpGrant[] = []
+      const diagnostics: McpGrantDiagnostic[] = []
+      for (const outcome of resources.filter(isMcpGrantResource).map(toGrant)) {
+        if ('grant' in outcome) grants.push(outcome.grant)
+        else diagnostics.push(outcome.diagnostic)
+      }
+      return { grants, diagnostics }
     },
     async putGrant(grant) {
+      assertValidGrantToolNames(grant.allowedTools)
       await host.putWorkspaceRuntimeResource(grant.workspaceId, {
         kind: MCP_GRANT_RESOURCE_KIND,
         purpose: grant.agentTypeId,
@@ -108,9 +141,10 @@ export function createInMemoryMcpGrantStore(seed: readonly McpGrant[] = []): Mcp
   for (const grant of seed) grants.set(key(grant), grant)
   return {
     async listGrants(workspaceId) {
-      return Array.from(grants.values()).filter((g) => g.workspaceId === workspaceId)
+      return { grants: Array.from(grants.values()).filter((g) => g.workspaceId === workspaceId), diagnostics: [] }
     },
     async putGrant(grant) {
+      assertValidGrantToolNames(grant.allowedTools)
       grants.set(key(grant), grant)
     },
     async deleteGrant(input) {

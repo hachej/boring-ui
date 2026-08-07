@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { ErrorCode } from '../../../shared/error-codes'
 import {
   createInMemoryMcpGrantStore,
   createWorkspaceRuntimeResourceMcpGrantStore,
@@ -48,10 +49,11 @@ describe('createWorkspaceRuntimeResourceMcpGrantStore', () => {
       allowedTools: ['NOTION_RETRIEVE_PAGE'],
     })
 
-    expect(await store.listGrants('ws-1')).toEqual([
-      { workspaceId: 'ws-1', agentTypeId: 'researcher', connectorId: 'notion', allowedTools: ['NOTION_RETRIEVE_PAGE'] },
-    ])
-    expect(await store.listGrants('ws-2')).toEqual([])
+    expect(await store.listGrants('ws-1')).toEqual({
+      grants: [{ workspaceId: 'ws-1', agentTypeId: 'researcher', connectorId: 'notion', allowedTools: ['NOTION_RETRIEVE_PAGE'] }],
+      diagnostics: [],
+    })
+    expect(await store.listGrants('ws-2')).toEqual({ grants: [], diagnostics: [] })
   })
 
   test('persists as a kind=mcp-grant resource keyed by (purpose=agentTypeId, provider=connectorId)', async () => {
@@ -73,7 +75,39 @@ describe('createWorkspaceRuntimeResourceMcpGrantStore', () => {
     await store.putGrant({ workspaceId: 'ws-1', agentTypeId: 'researcher', connectorId: 'notion', allowedTools: ['x'] })
     await store.deleteGrant({ workspaceId: 'ws-1', agentTypeId: 'researcher', connectorId: 'notion' })
 
-    expect(await store.listGrants('ws-1')).toEqual([])
+    expect(await store.listGrants('ws-1')).toEqual({ grants: [], diagnostics: [] })
+  })
+
+  test('rejects a glob metacharacter in allowedTools at write time instead of storing a footgun', async () => {
+    const host = createFakeWorkspaceRuntimeResourceHost()
+    const store = createWorkspaceRuntimeResourceMcpGrantStore(host)
+
+    await expect(
+      store.putGrant({ workspaceId: 'ws-1', agentTypeId: 'researcher', connectorId: 'notion', allowedTools: ['*'] }),
+    ).rejects.toMatchObject({ code: ErrorCode.enum.AGENT_MCP_GRANT_TOOL_NAME_INVALID })
+    expect(await store.listGrants('ws-1')).toEqual({ grants: [], diagnostics: [] })
+  })
+
+  test('skips a malformed grant row (missing config) with a stable diagnostic instead of crashing listGrants', async () => {
+    const host = createFakeWorkspaceRuntimeResourceHost()
+    const store = createWorkspaceRuntimeResourceMcpGrantStore(host)
+
+    await store.putGrant({ workspaceId: 'ws-1', agentTypeId: 'researcher', connectorId: 'notion', allowedTools: ['NOTION_RETRIEVE_PAGE'] })
+    await store.putGrant({ workspaceId: 'ws-1', agentTypeId: 'airtable-agent', connectorId: 'airtable', allowedTools: [] })
+    // Simulate a malformed row from another writer that skipped this store's
+    // own validation (e.g. an older schema, or a direct DB write): the
+    // in-memory fake host stores object references, so mutating the row
+    // returned by listWorkspaceRuntimeResources mutates the "persisted" row.
+    const airtableRow = (await host.listWorkspaceRuntimeResources('ws-1')).find(
+      (r) => r.provider === 'airtable',
+    ) as { config: unknown }
+    airtableRow.config = undefined
+
+    const result = await store.listGrants('ws-1')
+    expect(result.grants).toEqual([{ workspaceId: 'ws-1', agentTypeId: 'researcher', connectorId: 'notion', allowedTools: ['NOTION_RETRIEVE_PAGE'] }])
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ code: ErrorCode.enum.AGENT_MCP_GRANT_RECORD_MALFORMED, connectorId: 'airtable' }),
+    ])
   })
 })
 
@@ -83,10 +117,17 @@ describe('createInMemoryMcpGrantStore', () => {
     await store.putGrant({ workspaceId: 'a', agentTypeId: 'x', connectorId: 'notion', allowedTools: ['t1'] })
     await store.putGrant({ workspaceId: 'b', agentTypeId: 'x', connectorId: 'notion', allowedTools: ['t2'] })
 
-    expect(await store.listGrants('a')).toEqual([{ workspaceId: 'a', agentTypeId: 'x', connectorId: 'notion', allowedTools: ['t1'] }])
-    expect(await store.listGrants('b')).toEqual([{ workspaceId: 'b', agentTypeId: 'x', connectorId: 'notion', allowedTools: ['t2'] }])
+    expect(await store.listGrants('a')).toEqual({ grants: [{ workspaceId: 'a', agentTypeId: 'x', connectorId: 'notion', allowedTools: ['t1'] }], diagnostics: [] })
+    expect(await store.listGrants('b')).toEqual({ grants: [{ workspaceId: 'b', agentTypeId: 'x', connectorId: 'notion', allowedTools: ['t2'] }], diagnostics: [] })
 
     await store.deleteGrant({ workspaceId: 'a', agentTypeId: 'x', connectorId: 'notion' })
-    expect(await store.listGrants('a')).toEqual([])
+    expect(await store.listGrants('a')).toEqual({ grants: [], diagnostics: [] })
+  })
+
+  test('rejects a glob metacharacter in allowedTools at write time', async () => {
+    const store = createInMemoryMcpGrantStore()
+    await expect(
+      store.putGrant({ workspaceId: 'a', agentTypeId: 'x', connectorId: 'notion', allowedTools: ['*'] }),
+    ).rejects.toMatchObject({ code: ErrorCode.enum.AGENT_MCP_GRANT_TOOL_NAME_INVALID })
   })
 })

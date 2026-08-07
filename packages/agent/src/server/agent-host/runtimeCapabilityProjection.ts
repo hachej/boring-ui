@@ -205,16 +205,18 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       let mcpGrantDiagnostics: readonly McpGrantDiagnostic[] | undefined
       if (mcpGrants) {
         const refs = mcpGrants.getMcpServerRefs(agentTypeId) ?? []
-        const grants = refs.length > 0 ? await mcpGrants.store.listGrants(claim.workspaceScopeId) : []
+        const listed = refs.length > 0
+          ? await mcpGrants.store.listGrants(claim.workspaceScopeId)
+          : { grants: [], diagnostics: [] }
         const resolved = resolveAgentMcpGrants({
           workspaceId: claim.workspaceScopeId,
           agentTypeId,
           mcpServerRefs: refs,
-          grants,
+          grants: listed.grants,
           catalog: mcpGrants.catalog,
         })
         resolvedMcpGrants = resolved.connectors
-        mcpGrantDiagnostics = resolved.diagnostics
+        mcpGrantDiagnostics = [...listed.diagnostics, ...resolved.diagnostics]
       }
       return {
         harness: binding.composition.harness,
