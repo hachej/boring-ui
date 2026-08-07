@@ -1306,7 +1306,7 @@ describe("WorkspaceAgentFront", () => {
             name: "review",
             description: "Review the current diff",
             source: "project",
-            filePath: ".agents/skills/review/SKILL.md",
+            resource: { filesystem: "user", path: ".agents/skills/review/SKILL.md" },
           }],
         }), {
           status: 200,
@@ -1350,10 +1350,10 @@ describe("WorkspaceAgentFront", () => {
       await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
       expect(screen.getByText("Review the current diff")).toBeInTheDocument()
 
-      await user.click(screen.getByRole("button", { name: "Open skill review in workspace" }))
+      await user.click(screen.getByRole("button", { name: "Open skill review from project" }))
       expect(commands).toContainEqual({
         kind: "openFile",
-        params: { path: ".agents/skills/review/SKILL.md", mode: "view" },
+        params: { path: ".agents/skills/review/SKILL.md", filesystem: "user", mode: "view" },
       })
       expect(screen.getByText("/review")).toBeInTheDocument()
 

@@ -15,6 +15,9 @@ export {
   createManagementProjectionOperations,
 } from "./managementProjectionOperations";
 
+export { createAgentResourceFilesystemBinding } from './agentResourceOperations'
+export type { ReadonlyMultiRootMount } from './agentResourceOperations'
+
 export {
   READONLY_PROJECTION_BINDING_NOT_FOUND_CODE,
   READONLY_PROJECTION_INVALID_PATH_CODE,

@@ -37,10 +37,11 @@ export function useServerSkills({
       headers: withStorageScope(requestHeaders, storageScope),
     })
       .then((res) => (res.ok ? res.json() : null))
-      .then((payload: { skills?: Array<{ name: string; description: string }> } | null) => {
+      .then((payload: { skills?: Array<{ name: string; description: string; invocable?: boolean }> } | null) => {
         if (aborted || !payload?.skills) return
         let added = 0
         for (const skill of payload.skills) {
+          if (skill.invocable === false) continue
           if (!registry.get(skill.name)) {
             registry.register({ name: skill.name, description: skill.description, kind: 'skill', source: 'skill', handler: () => {} })
             added++
