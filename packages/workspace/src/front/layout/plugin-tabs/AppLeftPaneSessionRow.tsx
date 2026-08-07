@@ -30,6 +30,8 @@ export function AppSessionRow({
   working = false,
   attentionBadge,
   activeDot = false,
+  compact = false,
+  ownerLabel,
   onSwitch,
   onOpenAsPane,
   onTogglePinned,
@@ -44,6 +46,8 @@ export function AppSessionRow({
   working?: boolean
   attentionBadge?: WorkspaceAttentionSessionBadge
   activeDot?: boolean
+  compact?: boolean
+  ownerLabel?: string
   onSwitch?: (id: string) => void
   onOpenAsPane?: (id: string) => void
   onTogglePinned?: (id: string) => void
@@ -59,7 +63,7 @@ export function AppSessionRow({
   const pinAvailable = canPin && Boolean(onTogglePinned)
   const showMenu = splitAvailable || pinAvailable || canCopy || renameAvailable || Boolean(onDelete)
   const actionWidthClassName = showMenu ? "w-7" : "w-0"
-  const statusWidthClassName = attentionBadge || working ? "w-[88px]" : actionWidthClassName
+  const statusWidthClassName = ownerLabel ? "w-auto max-w-28 gap-1" : attentionBadge || working ? "w-[88px]" : actionWidthClassName
   const rename = useInlineSessionRename({
     sessionId: session.id,
     title,
@@ -94,7 +98,7 @@ export function AppSessionRow({
         event.dataTransfer.setData("text/plain", title)
         event.dataTransfer.effectAllowed = "copyMove"
       } : undefined}
-      className="app-left-session-row group relative h-9 w-full"
+      className={cn("app-left-session-row group relative w-full", compact ? "h-8" : "h-9")}
     >
       {rename.field ? (
         <div className={rowClassName}>
@@ -151,7 +155,10 @@ export function AppSessionRow({
               >
                 working
               </span>
-            ) : pinned ? (
+            ) : null}
+            {ownerLabel ? (
+              <span className="truncate text-[11px] font-medium text-muted-foreground">{ownerLabel}</span>
+            ) : !attentionBadge && !working && pinned ? (
               <Pin className="h-3.5 w-3.5 shrink-0 fill-current text-[color:var(--accent)]" strokeWidth={1.75} aria-hidden="true" />
             ) : null}
           </span>

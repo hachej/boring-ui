@@ -279,6 +279,10 @@ export function AppLeftPane({
     agent.agentTypeId,
     sessions.filter((session) => session.agentTypeId === agent.agentTypeId).length,
   ])), [agents, sessions])
+  const agentLabelById = useMemo(() => new Map(agents.map((agent) => [
+    agent.agentTypeId,
+    agent.label.replace(/^Boring\s+/i, "") || agent.label,
+  ])), [agents])
   const projectItems = useMemo(() => {
     const source = projects ?? []
     if (layoutMode !== "multi-project") return source
@@ -346,6 +350,8 @@ export function AppLeftPane({
         working={isActiveProjectSession && workingSessionIds.has(sessionKey)}
         attentionBadge={isActiveProjectSession ? sessionBadges.get(sessionKey) : undefined}
         activeDot={agentTreeEnabled}
+        compact={agentTreeEnabled && !pinned}
+        ownerLabel={pinned && session.agentTypeId ? agentLabelById.get(session.agentTypeId) : undefined}
         onSwitch={isActiveProjectSession
           ? session.agentTypeId
             ? () => onSwitchSession(session.id, session.agentTypeId)
@@ -387,7 +393,7 @@ export function AppLeftPane({
       <section key={agent.agentTypeId} data-boring-workspace-part="app-left-agent-tree" data-boring-agent-type-id={agent.agentTypeId} className="space-y-0.5">
         <div
           data-selected={selectedAgentTypeId === agent.agentTypeId ? "true" : "false"}
-          className="group flex min-h-11 w-full items-center gap-1 rounded-md pr-1 text-foreground/82 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-within:bg-foreground/[0.055] data-[selected=true]:text-foreground md:min-h-8"
+          className="app-left-agent-row group flex h-10 w-full items-center gap-1 rounded-md pr-1 text-foreground/82 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-within:bg-foreground/[0.055] data-[selected=true]:text-foreground md:h-8"
         >
           {showSessions ? (
             <button
@@ -421,7 +427,7 @@ export function AppLeftPane({
           />
         </div>
         {expanded ? (
-          <div id={panelId} role="region" aria-label={`${agent.label} sessions`} className="space-y-0.5 pl-7">
+          <div id={panelId} role="region" aria-label={`${agent.label} sessions`} className="ml-3.5 space-y-0.5 border-l border-border/60 pl-3.5">
             <SessionSubSection empty={empty}>
               {ownedSessions.map((session) => renderSession(session, false))}
             </SessionSubSection>
@@ -497,10 +503,16 @@ export function AppLeftPane({
         </nav>
       </section>
 
-      <section className="flex min-h-24 flex-1 flex-col border-t border-border/40 pt-3" aria-labelledby="app-left-chats-heading">
-        <h2 id="app-left-chats-heading" className="shrink-0 px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
-          Chats
-        </h2>
+      <section
+        className="flex min-h-24 flex-1 flex-col border-t border-border/40 pt-3"
+        aria-labelledby={agentTreeEnabled ? undefined : "app-left-chats-heading"}
+        aria-label={agentTreeEnabled ? "Agent navigation" : undefined}
+      >
+        {!agentTreeEnabled ? (
+          <h2 id="app-left-chats-heading" className="shrink-0 px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
+            Chats
+          </h2>
+        ) : null}
         {!agentTreeEnabled ? (
           <div data-boring-workspace-part="app-left-new-chat" className="shrink-0 px-2 pb-2">
             <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
@@ -544,13 +556,31 @@ export function AppLeftPane({
               </section>
             </div>
           ) : (
-            <div className="space-y-4 py-1">
+            <div className={agentTreeEnabled ? "space-y-0.5 py-1" : "space-y-4 py-1"}>
               {pinnedSessions.length > 0 ? (
-                <SessionSubSection title="Pinned">
-                  {pinnedSessions.map((session) => renderSession(session, true))}
-                </SessionSubSection>
+                agentTreeEnabled ? (
+                  <section className="mb-3 border-b border-border/50 px-0 pb-3" aria-label="Pinned chats">
+                    <div className="flex items-center justify-between px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
+                      <span>Pinned chats</span>
+                      <span className="font-normal tabular-nums text-muted-foreground">{pinnedSessions.length}</span>
+                    </div>
+                    <div className="space-y-0.5">{pinnedSessions.map((session) => renderSession(session, true))}</div>
+                  </section>
+                ) : (
+                  <SessionSubSection title="Pinned">
+                    {pinnedSessions.map((session) => renderSession(session, true))}
+                  </SessionSubSection>
+                )
               ) : null}
-              {agentTreeEnabled ? renderAgentTree(true) : (
+              {agentTreeEnabled ? (
+                <section aria-label="Agents" className="space-y-0.5">
+                  <div className="flex items-center justify-between px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
+                    <span>Agents</span>
+                    <span className="font-normal normal-case tracking-normal text-muted-foreground">{agents.length} {agents.length === 1 ? "seat" : "seats"}</span>
+                  </div>
+                  {renderAgentTree(true)}
+                </section>
+              ) : (
                 <SessionSubSection title={pinnedSessions.length > 0 ? "Recent" : undefined} empty={sessionsLoading ? "Loading chats…" : "No chats yet."}>
                   {regularSessions.map((session) => renderSession(session, false))}
                 </SessionSubSection>

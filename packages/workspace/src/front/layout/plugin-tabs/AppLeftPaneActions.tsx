@@ -171,7 +171,7 @@ export function AgentChatActions({
   ].filter((action): action is NonNullable<typeof action> => Boolean(action))
 
   return (
-    <span className="pointer-events-auto flex w-auto shrink-0 items-center overflow-hidden opacity-100 transition-opacity motion-reduce:transition-none md:pointer-events-none md:w-0 md:opacity-0 md:group-hover:pointer-events-auto md:group-hover:w-auto md:group-hover:opacity-100 md:group-focus-within:pointer-events-auto md:group-focus-within:w-auto md:group-focus-within:opacity-100">
+    <span className="app-left-agent-actions pointer-events-none flex w-0 shrink-0 items-center overflow-hidden opacity-0 transition-opacity motion-reduce:transition-none">
       {actions.map((action) => (
         <button
           key={action.label}

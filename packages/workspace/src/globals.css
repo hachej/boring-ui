@@ -466,7 +466,20 @@
   }
 }
 
+.app-left-agent-row:hover .app-left-agent-actions,
+.app-left-agent-row:focus-within .app-left-agent-actions {
+  pointer-events: auto;
+  width: auto;
+  opacity: 1;
+}
+
 @media (hover: none) {
+  .app-left-agent-actions {
+    pointer-events: auto;
+    width: auto;
+    opacity: 1;
+  }
+
   .app-left-new-chat-secondary {
     width: auto;
     opacity: 1;

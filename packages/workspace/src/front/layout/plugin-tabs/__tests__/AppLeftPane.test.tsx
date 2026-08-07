@@ -65,6 +65,7 @@ describe("AppLeftPane", () => {
             { agentTypeId: "beta", label: "Boring Beta", sessionsStatus: "loaded" },
           ]}
           selectedAgentTypeId="alpha"
+          pinnedSessionRefs={[{ agentTypeId: "alpha", sessionId: "alpha-one" }]}
           sessions={[
             { id: "alpha-one", agentTypeId: "alpha", title: "Alpha session" },
             { id: "beta-one", agentTypeId: "beta", title: "Beta session" },
@@ -83,7 +84,15 @@ describe("AppLeftPane", () => {
     )
 
     expect(screen.queryByLabelText("Filter chats by Agent")).not.toBeInTheDocument()
-    expect(screen.getByText("Alpha")).toBeInTheDocument()
+    expect(screen.getByText("Pinned chats")).toBeInTheDocument()
+    const pinnedAlphaRow = screen.getByText("Alpha session").closest('[data-boring-workspace-part="app-session-row"]')
+    expect(pinnedAlphaRow).toHaveTextContent("Alpha")
+    act(() => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+      detail: { sessionId: "alpha-one", agentTypeId: "alpha", working: true },
+    })))
+    expect(pinnedAlphaRow).toHaveTextContent("working")
+    expect(pinnedAlphaRow).toHaveTextContent("Alpha")
+    expect(screen.getAllByText("Alpha").length).toBeGreaterThan(1)
     await waitFor(() => expect(screen.getByText("Alpha session")).toBeInTheDocument())
     expect(screen.queryByText("Beta session")).not.toBeInTheDocument()
 

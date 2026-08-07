@@ -658,7 +658,9 @@ describe("WorkspaceAgentFront", () => {
     await user.click(screen.getByRole("button", { name: "Close Beta details" }))
 
     await user.click(screen.getByRole("button", { name: "Settings for Beta" }))
-    expect(document.querySelector('[data-boring-workspace-part="agent-details-overlay"]')).toHaveTextContent("Agent settings")
+    const unifiedDetailsOverlay = document.querySelector('[data-boring-workspace-part="agent-details-overlay"]')
+    expect(unifiedDetailsOverlay).toHaveTextContent("Configuration")
+    expect(within(unifiedDetailsOverlay as HTMLElement).queryByRole("tab")).not.toBeInTheDocument()
   })
 
   it("initializes a controlled colliding id to its explicit active owner", () => {
