@@ -121,6 +121,7 @@ All API failures must use the response envelope:
 | `PACKAGE_RESOURCE_INVALID` | A declared or scanned package resource (skill/agent) failed validation | 400 | user-fix | warn | stable (public API) |
 | `PACKAGE_RESOURCE_CONFLICT` | Two package resources claim the same identity/path | 409 | user-fix | warn | stable (public API) |
 | `RUNTIME_FILESYSTEM_BINDING_DUPLICATE` | A filesystem id was bound more than once while merging host/request-scoped runtime filesystem bindings | 500 | report-bug | error | stable (public API) |
+| `RUNTIME_READONLY_FILESYSTEM_POLICY_INVALID` | A readonly primary-workspace path is not a normalized workspace-relative path | 400 | user-fix | warn | stable (public API) |
 | `EVENT_STORE_OPEN_FAILED` | `BORING_CHAT_DURABLE_STREAM=1` but the SQLite event-stream store could not be opened: either no host-resolvable root exists (no `sessionRoot` and no host storage root — this deliberately never falls back to an in-sandbox/guest path) or `openDatabase` failed at the resolved path (bad path/permissions); host falls back to in-memory streaming for that composition instead of crashing boot | n/a (boot-time diagnostic, not an HTTP response) | report-bug | error | stable (public API) |
 | `ERR_NOT_IMPLEMENTED_UNTIL_T1` | Headless core method exists but the durable T1 implementation has not landed yet | 501 | retry-after-upgrade | warn | stable (public API) |
 | `INTERNAL_ERROR` | Catch-all internal failure | 500 | report-bug | error | internal (may change) |

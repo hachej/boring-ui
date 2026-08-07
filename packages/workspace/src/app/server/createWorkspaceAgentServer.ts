@@ -12,8 +12,11 @@ import {
   createPiResourceDigestInput,
   createResolvedRuntimeScopeIdentity,
   createSandboxRuntimeModeAdapter,
+  createUserFilesystemBinding,
   createValidatingAgentFleetCompiler,
   digestPiResourceInputs,
+  mergeRuntimeFilesystemBindings,
+  normalizeRuntimeReadonlyFilesystemPolicy,
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
   projectAuthorizedSessionRunDetails,
@@ -162,6 +165,8 @@ export interface WorkspaceAgentCreateOptions {
   runtimeProvisioning?: WorkspaceProvisioningResult
   telemetry?: TelemetrySink
   metering?: AgentMeteringSink
+  /** Workspace-relative prefixes in the primary user filesystem that cannot be mutated. */
+  readonlyWorkspacePaths?: readonly string[]
   getFilesystemBindings?: (ctx: {
     request?: FastifyRequest
     workspaceId: string
@@ -1246,6 +1251,9 @@ export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
+  const readonlyWorkspacePolicy = opts.readonlyWorkspacePaths
+    ? normalizeRuntimeReadonlyFilesystemPolicy(opts.readonlyWorkspacePaths)
+    : undefined
   // Resolved early: `legacyGlobalPluginAgentContributions` below must key off
   // the RESOLVED fleet, not `opts.agents`'s presence — with BORING_AGENT_FLEET=1
   // and no explicit `opts.agents`, the resolved fleet has 6 agents even though
@@ -1635,6 +1643,7 @@ export async function createWorkspaceAgentServer(
     runtimeMode: resolvedMode,
     workspaceScopeId,
     workspaceRoot,
+    readonlyWorkspacePolicyRevision: readonlyWorkspacePolicy?.revision ?? null,
   }))
   const environmentProvisioningFingerprint = identityDigest(canonicalIdentityJson({
     runtimeMode: resolvedMode,
@@ -1682,13 +1691,25 @@ export async function createWorkspaceAgentServer(
         placementIdentity: environmentPlacementIdentity,
         workspaceRoot,
         provisioningFingerprint: environmentProvisioningFingerprint,
-        transformRuntimeBundle: runtimeEnvContributions.length > 0
-          ? (runtimeBundle) => withRuntimeEnvContributions(runtimeBundle, {
-              workspaceId: verifiedClaim.workspaceScopeId,
-              workspaceRoot,
-              runtimeMode: resolvedMode,
-              runtimeBundle,
-            }, runtimeEnvContributions, opts.telemetry)
+        transformRuntimeBundle: runtimeEnvContributions.length > 0 || readonlyWorkspacePolicy
+          ? async (runtimeBundle) => {
+              const transformed = runtimeEnvContributions.length > 0
+                ? await withRuntimeEnvContributions(runtimeBundle, {
+                    workspaceId: verifiedClaim.workspaceScopeId,
+                    workspaceRoot,
+                    runtimeMode: resolvedMode,
+                    runtimeBundle,
+                  }, runtimeEnvContributions, opts.telemetry)
+                : runtimeBundle
+              if (!readonlyWorkspacePolicy) return transformed
+              return {
+                ...transformed,
+                filesystemBindings: [...mergeRuntimeFilesystemBindings(
+                  [createUserFilesystemBinding(transformed.workspace, readonlyWorkspacePolicy)],
+                  transformed.filesystemBindings,
+                ) ?? []],
+              }
+            }
           : undefined,
         provisionRuntime: async ({ runtimeBundle }) => await runRuntimeProvisioning(runtimeBundle),
         resolveFilesystemBindings: async ({ requestId }) => {
