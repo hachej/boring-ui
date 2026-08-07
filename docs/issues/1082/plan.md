@@ -3,16 +3,19 @@ github: https://github.com/hachej/boring-ui/issues/1082
 issue: 1082
 state: ready-for-human
 updated: 2026-08-07
-revision: r2
+revision: r3
 flag: not-needed
 track: owner
 ---
 
-# gh-1082 BYOK tenant keys — plan r2 (post-#1132)
+# gh-1082 BYOK tenant keys — plan r3 (post-#1132)
 
 Revision of the r1 draft (branch `docs/1082-byok-plan`, commit `5ebcd2422`)
 now that **PR #1132 ([16f.2] KmsBackend + local-KEK envelope crypto) is open
 and implements the crypto core**. This revision replans only what remains.
+r3 folds the adversarial review of r2: external rollback anchor (S1),
+envelope deletion port ops (S1), authenticated store pointer + dual-read
+write rules (S8), S3 shipping dependency.
 Companion decision memo: [`key-scope-decision.md`](key-scope-decision.md)
 (per-workspace vs per-seat DEK scoping — owner decision required before the
 rotation slice).
@@ -70,20 +73,41 @@ Known, filed gaps from the #1132 crypto review (beads):
 
 ## Remaining slices (ordered)
 
-### S1 — Postgres persistence + authenticated current-version marker
+### S1 — Postgres persistence + external rollback anchor + envelope deletion
 **Beads:** new (Postgres pass) + `wt-391-forward-byok-version-rollback-0th`
 **Blocked by:** #1132 merge.
 Implement `CredentialVaultPersistenceV1` on Postgres (3 tables matching the
-ratified model: credential record, wrapped DEK, field envelopes). Fold the
-rollback fix into this pass, per the bead ("do before the Postgres pass"):
-make the current-version pointer cryptographically authenticated — e.g. a
-per-record MAC/mini-envelope under the workspace DEK covering
-`(credentialId, currentVersion, dekGeneration, materialKind)`, verified on
-every read, plus monotonic-version enforcement in the store (reject any write
-that does not strictly increase `credentialVersion`). A DB-write rollback then
-fails as `CREDENTIAL_UNREADABLE`, not a silent downgrade.
+ratified model: credential record, wrapped DEK, field envelopes), plus two
+gaps the r2 review surfaced:
+
+**Rollback prevention (gh-1082-f1).** A MAC-under-DEK current-version marker
+is *not* sufficient: an attacker with DB write access replays a full snapshot
+(old row + its validly-MACed marker together), and store-level monotonic
+checks are bypassed by direct DB writes. The anchor must live **outside
+attacker-writable storage**: a monotonic current-version counter per
+workspace held in the KEK-provider/KMS context (one integer per workspace —
+for local-KEK, in the operator-owned sealed mount beside the KEK; for a
+remote KMS backend, in KMS-side context/metadata). Reads verify the record's
+`credentialVersion` against the external counter; a snapshot replay then
+presents a stale counter value and fails as `CREDENTIAL_UNREADABLE`. No
+per-record MAC mini-envelope — with the external counter it is pure surface.
+**Honest framing:** the counter *narrows* the window (the current version is
+authenticated), but old ciphertext an attacker exfiltrated before rotation is
+only made cryptographically dead by S2's generation-destroy. S1 narrows;
+S2 closes.
+
+**Envelope deletion (r2 finding 2).** The #1132 port has no delete
+operations, so superseded field envelopes and old wrapped DEKs live forever —
+retained replay material, and S2's generation-destroy is impossible. Extend
+`CredentialVaultPersistenceV1` in this pass: delete/tombstone superseded
+credential-version field envelopes on successful rotation to a new version,
+and `deleteWrappedDek(workspaceId, dekGeneration)` for S2. Tombstones record
+metadata (version, deleted-at, reason) — never ciphertext.
+
 **Proof:** #1132's conformance suite re-run against Postgres persistence;
-new test: pointer rolled back to v1 after rotation to v2 → fail closed.
+snapshot-replay test (old row + old marker restored wholesale → fail closed);
+superseded-version envelopes verified absent from the store after a
+successful new-version write.
 
 ### S2 — DEK-generation rotation (crypto-shred lever)
 **Bead:** `wt-391-forward-byok-dek-rotation-fil`
@@ -109,6 +133,10 @@ Deepgram definitions), consumer bindings, KMS backend selection from env
 routes (create/replace/disable/revoke/delete; masked last-4 metadata reads
 only, no plaintext read API). Instance-fallback tombstone semantics per
 Decision 27.
+**Dependency note:** S3 builds against the `CredentialVaultPersistenceV1`
+port (in-memory impl) now and can proceed in parallel, but ships to
+production only after S1's schema lands — the disable/revoke tombstone state
+S3 depends on is defined by S1's schema work.
 **Proof:** route tests — role gating, no secret in any GET/list/status
 response, disable/revoke tombstone suppresses instance fallback.
 
@@ -143,9 +171,27 @@ Unchanged from r1 (consent-quarantine, amendment E, no auto-promotion).
 **Blocked by:** S3/S4.
 
 ### S8 — Migration off `WORKSPACE_SETTINGS_ENCRYPTION_KEY` (16f.7)
-Unchanged from r1 (decrypt-once/re-encrypt/verify/switch-pointer, rollback
-restores previous safe path only, retirement gated on backup retention +
-owner approval). **Blocked by:** S1.
+Core mechanics unchanged from r1 (decrypt-once/re-encrypt/verify/
+switch-pointer per (workspace, provider), rollback restores the previous safe
+path only, retirement gated on backup retention + owner approval), with two
+r3 specifications:
+
+- **Authenticated store pointer.** The which-store-is-authoritative pointer
+  is itself a downgrade lever: a DB-write attacker who flips it back to
+  "legacy" re-routes reads through `WORKSPACE_SETTINGS_ENCRYPTION_KEY`
+  ciphertext. The pointer must be covered by S1's external rollback anchor
+  (fold pointer state into the per-workspace counter context), so a flipped
+  pointer fails `CREDENTIAL_UNREADABLE` rather than silently downgrading.
+  Legitimate rollback goes through the anchored path, not a raw DB write.
+- **Dual-read-window write rules.** Between re-encrypt and pointer switch,
+  writes are forbidden on the legacy path: the migration marks the
+  (workspace, provider) entry migration-locked before re-encrypting; a
+  legacy-path write attempt during the window fails visibly (retryable
+  error), never lands silently in a store about to stop being read. After
+  the pointer switch, all writes go to the vault store only — no dual-write,
+  ever.
+
+**Blocked by:** S1 (schema, anchor, deletion port).
 
 ## Non-goals
 

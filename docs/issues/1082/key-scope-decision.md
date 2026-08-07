@@ -22,9 +22,10 @@ prevent misuse of a credential that is deliberately shared; the control point fo
 registry and lease resolver (16f.1), which already enforces this per binding, with
 `CREDENTIAL_CONSUMER_MISMATCH` / `CREDENTIAL_DELIVERY_FORBIDDEN` on violation.
 
-**Blast radius on seat compromise.** Seats run in sandboxes and — under the shipped
-Tier-1 model — **never hold the DEK, the KEK, or even the credential plaintext**;
-resolution is host-side and the secret never enters the sandbox. A compromised seat
+**Blast radius on seat compromise.** Seats run in sandboxes and — under the
+ratified Tier-1 model (host-side resolution, planned in S6; the shipped 16f.1
+host resolver already enforces host-only delivery) — **never hold the DEK, the
+KEK, or even the credential plaintext**; the secret never enters the sandbox. A compromised seat
 gets exactly the leases the host resolver grants that seat's bindings, and that is
 identical under either key scope. Per-seat DEKs shrink nothing here; they only add
 key-management surface. The keys' real blast-radius boundary is the host process,
