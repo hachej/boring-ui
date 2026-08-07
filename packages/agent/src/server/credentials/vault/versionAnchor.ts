@@ -342,6 +342,8 @@ export function createLocalFileCredentialVersionAnchorV1(
         unreadable('Credential version anchor mutation is already locked')
       }
       try {
+        // A process crash can leave the lock behind. Future writes then fail
+        // closed until operator cleanup rather than guessing lock ownership.
         const state = await readSealedState(options)
         const current = copyWorkspaceState(state, workspaceId)
         const mutation = await mutate(current)
