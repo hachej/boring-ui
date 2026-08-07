@@ -27,9 +27,9 @@ Today the single-root assumption is hard-coded end to end:
 - `buildBwrapArgs` emits exactly one `--bind <root> /workspace --chdir
   /workspace` (duplicated byte-identical in `packages/boring-sandbox/src/
   providers/bwrap/` and `packages/boring-bash/src/agent/runtime/`).
-- Every `RuntimeBashStrategy` spawn hook takes one root; bwrap hardcodes
-  inner cwd `/workspace` (`packages/boring-bash/src/agent/tools/harness/
-  bashToolOptions.ts`).
+- Every `RuntimeBashStrategy` spawn hook takes one root; `buildBwrapArgs`
+  always emits `--chdir /workspace` (the `local-sandbox` strategy's
+  `sandboxRoot` option feeds only `bwrapSpawnHook`'s env).
 - `RuntimeFilesystemBinding` (`packages/agent/src/server/runtime/mode.ts`)
   has no `mountable`/materialization field and no `sourceRoot` — bindings are
   pure logical file-ops, and #970's multi-root readonly projection engine is
@@ -67,6 +67,28 @@ the lease identity** (folded into `placementIdentity`). Agents whose
 grants resolve to different mount sets get different environments; sharing
 happens only on identical mount sets. Grant enforcement is structural, not
 advisory.
+
+**Reclamation.** Today `EnvironmentLeaseManager.release()` only decrements
+`references`; on the common path a zero-reference record is never disposed
+(disposal happens only via `retire()`/`close()`). Acceptable with one
+record per workspace scope; unacceptable once mount sets fork records —
+every distinct grant-set would strand a live sandbox until host shutdown,
+and grant edits would strand the old record forever. This epic adds
+disposal-at-zero (or idle-timeout eviction with an explicit bound) for
+mount-forked records. Owner decision 5 (fork-over-fail) is ratifiable only
+together with this reclamation story.
+
+**Fingerprint reconciliation.** `createEnvironmentProvisioningFingerprint`
+documents that contribution grants are deliberately excluded so grant-only
+changes share the lease (`runtimeScopeIdentity.ts:61-65`). The mount set is
+not a grant: it is Environment-mutating identity derived *from* grants.
+It enters `placementIdentity` (the lease key), and therefore flows into the
+fingerprint too, which already digests `placementIdentity` — key and
+fingerprint stay consistent by construction. The invariant's wording is
+amended, not violated: grant changes that leave the resolved mount set
+unchanged still share the lease. `AGENT_SHARED_ENVIRONMENT_UNAVAILABLE`
+keeps its current meaning (same-key fingerprint mismatch); differing mount
+sets never reach it because their keys already differ.
 
 Rules (amending `PROJECT_ENVIRONMENT_MODEL.md`, not repealing it):
 
@@ -121,20 +143,33 @@ already govern fs access).
   `materialization?: { sourceRoot: string }` (server-private, never wired to
   the browser catalog) and the shared `FilesystemCatalogEntry.capabilities`
   vocabulary gains `'execute'` so the UI can show which fs an agent can exec
-  in. The governance `company_context` projection dir is the one existing
-  materialized binding; #1107's `knowledge/` folders are the next.
+  in. Stated plainly: **v1 has zero real mountable bindings until #1107**.
+  The governance `company_context` projection is a per-operation `mkdtemp`
+  destroyed in `finally` and actor-varying — not mountable by rules 2 and 5.
+  The slice-5 server-configured fixture is the first mountable binding;
+  #1107 `knowledge/` folders are the first real ones.
 - **Provider seam**: `SandboxProviderCreateContextV1` gains optional
   `mounts?: readonly { sourceRoot; logicalPath; access: 'ro'|'rw' }[]` and
   `ProviderCapabilities` gains `mounts: boolean`. Providers that don't
   declare it (direct, vercel-sandbox, remote-worker) reject a non-empty
   mount list at create time with a stable error code (fail closed). bwrap
   implements it; the two byte-identical `buildBwrapArgs` copies are
-  deduplicated first. Mount hygiene: every `sourceRoot` is host-side
-  realpath-resolved and containment-checked before emitting bind args
-  (symlinked sourceRoots must not bind through), and `logicalPath` lives in
-  a dedicated namespace **outside `/workspace`** (default `/mnt/<fsid>`) —
-  mounts under the primary rw root are forbidden, avoiding bind shadowing
-  and ro-under-`HOME` breakage (`--setenv HOME /workspace` stays).
+  deduplicated first. Mount hygiene (defined by this epic — there is no
+  existing discipline to reuse; the nearest prior art, governance
+  `assertInsideRoot`, is check-then-use-original, exactly the TOCTOU shape
+  to avoid):
+  - every `sourceRoot` is realpath-resolved and containment-checked **once
+    at lease create**, and the **resolved** paths are what every subsequent
+    exec binds — bwrap re-spawns per command, so per-exec re-resolution
+    would reopen the race. Residual risk stated: `--bind` itself follows
+    symlinks at mount time; the resolved-path rule bounds it to
+    lease-create time.
+  - `logicalPath` lives in a dedicated namespace **outside `/workspace`**
+    (default `/mnt/<fsid>`); mounts under the primary rw root are
+    forbidden, avoiding bind shadowing and ro-under-`HOME` breakage
+    (`--setenv HOME /workspace` stays).
+  - the existing out-of-workspace `dirname(workspaceRoot)/.boring-agent`
+    bind is brought under the same resolved-once rule.
 - **Pairing invariant**: untouched. The pair is still created atomically by
   `SandboxProviderV1.create`; mounts are inputs to that one create, not a
   second realization path. `providerAdapter.ts` keeps owning bundle assembly.
@@ -182,10 +217,11 @@ already govern fs access).
   decision 3 for confirmation — it is agent-visible surface).
 - **ro-only named mounts in v1**: `access: 'rw'` is contract-supported but
   only the primary root uses rw until an owner decision (below) opens it.
-- Sequencing blockers per issue: #971 merged to main, #1107 approved (it
-  defines the knowledge/package filesystems this epic mounts). Slices 1–3
-  can land before those; slices 4–6 rebase on them (slice 6 has a fixture
-  fallback if #1107 slips).
+- Sequencing blockers: **all slices start after #971 (or its slim rebuild,
+  branch `review/942-readonly-slim`, currently being rebuilt) merges** —
+  #971 touches every file the early slices touch, so nothing lands before
+  it. #1107 approval gates only the real knowledge filesystems; slice 5's
+  fixture fallback keeps the epic independent of #1107 delivery.
 
 ## Flag / Abstraction
 
@@ -193,45 +229,51 @@ already govern fs access).
 - Path: `BORING_ENV_MOUNTS=1` gates mount realization; exec grants are
   policy-data (default deny) so they need no flag of their own.
 - Rollback: unset flag → mount resolution yields the empty set for every
-  agent (so lease keys re-converge and providers receive no mounts) **and**
-  the exec-grant gate is ignored (bash offered exactly as today) — flag off
-  is byte-for-byte today's behavior, no granted-but-unmounted half state.
-  Binding `materialization` is inert metadata.
+  agent (empty set encodes as *absence* in `placementIdentity`, so lease
+  keys are byte-identical to pre-epic keys — tested) **and** the exec-grant
+  gate is ignored (bash offered exactly as today) — flag off is
+  byte-for-byte today's behavior, no granted-but-unmounted half state and
+  no lease-bucket split. Binding `materialization` is inert metadata.
 
 ## Staged slices
 
-1. **Contract + docs** — `materialization` on `RuntimeFilesystemBinding`
-   (reconciling the duplicate shape in
+1. **Contract + provider substrate** — `materialization` on
+   `RuntimeFilesystemBinding` (reconciling the duplicate shape in
    `packages/boring-bash/src/agent/runtime/types.ts`), `'execute'` catalog
    capability, `mounts` on provider context + capabilities (all optional),
-   amend `PROJECT_ENVIRONMENT_MODEL.md`. No behavior change; typecheck +
-   existing conformance stays green.
-2. **Provider substrate** — dedupe `buildBwrapArgs` (and resolve its latent
-   `sandboxRoot` parameter: honor it or delete it), implement N-mount bwrap
-   with realpath + containment + overlap validation (reusing #970's
-   `assertMounts` discipline) and the `/mnt/<fsid>` namespace rule,
-   fail-closed rejection in direct/vercel-sandbox/remote-worker, conformance
-   + bwrap-args snapshot tests (incl. symlinked-sourceRoot rejection).
-   Behind flag.
-3. **Environment scope + lease plumbing** — carry the resolved mount set
+   amend `PROJECT_ENVIRONMENT_MODEL.md`; dedupe `buildBwrapArgs`; implement
+   N-mount bwrap with the resolve-once hygiene rules above and the
+   `/mnt/<fsid>` namespace rule; fail-closed rejection in
+   direct/vercel-sandbox/remote-worker; conformance + bwrap-args snapshot
+   tests (incl. symlinked-sourceRoot resolution). Behind flag. Also
+   reconcile the latent `sandboxRoot` option (it lives on the
+   `local-sandbox` strategy and feeds `bwrapSpawnHook`'s env, not
+   `buildBwrapArgs`, which always `--chdir /workspace`): honor or delete.
+2. **Environment scope + lease plumbing** — carry the resolved mount set
    through `AgentHostEnvironmentScope`/`ResolvedEnvironmentScope` →
-   `EnvironmentLeaseManager` (mount set folded into the lease key) →
-   `ModeContext`/`RuntimeModeAdapter.create` → provider context. Tests:
-   different mount sets ⇒ distinct leases; identical sets share.
-4. **Exec grants** — `environment.bash.execute` in fleet/agent policy
+   `EnvironmentLeaseManager` (mount set folded into `placementIdentity`) →
+   `ModeContext`/`RuntimeModeAdapter.create` → provider context; add
+   disposal-at-zero / idle eviction for mount-forked records. Encoding
+   rule: an empty mount set contributes **nothing** to `placementIdentity`
+   (no `[]` suffix), so flag-off and pre-epic keys are byte-identical —
+   with a test, else flag-off splits every lease bucket. Tests: different
+   mount sets ⇒ distinct leases; identical sets share; zero-ref forked
+   records reclaimed.
+3. **Exec grants** — `environment.bash.execute` in fleet/agent policy
    schema; bash-tool gating in `buildAgentComposition`; mount-set
    derivation from grants; implicit primary-fs grant materialized; tests
    for default-deny and grant-scoped tool assembly.
-5. **Shell routing** — multi-root cwd selection + cross-root qualification in
-   boring-bash on the #971 substrate; readonly mounts produce #971's stable
-   denial codes.
-6. **Demo/e2e** — agent with a ro-mounted knowledge fs + primary scratch
+4. **Shell routing** (deferrable) — multi-root cwd selection + cross-root
+   qualification in boring-bash on the #971 substrate; readonly mounts
+   produce #971's stable denial codes. Deferrable because the demo works
+   from `/workspace` via `ls /mnt/<fsid>` without cwd selection.
+5. **Demo/e2e** — agent with a ro-mounted knowledge fs + primary scratch
    workspace, grants-configured in fleet policy; e2e proves: file tools see
    both, shell sees both at declared paths, write into ro mount denied,
    ungranted sibling agent gets no mount and no bash for that fs. Uses a
-   plain server-configured materialized binding as fixture so acceptance
-   does not hard-depend on #1107 delivery; swaps to #1107 `knowledge/`
-   when available.
+   plain server-configured materialized binding as fixture (the only
+   mountable binding until #1107); swaps to #1107 `knowledge/` when
+   available.
 
 ## Non-goals
 
@@ -250,8 +292,9 @@ already govern fs access).
   (`packages/boring-sandbox/src/providers/__tests__/conformance/`) +
   `dualTargetParity` contracts for mount behavior; capability-projection
   tests for grants; boring-bash tool tests for cwd/qualification.
-- Existing prior art: #970 `assertMounts`/containment tests; governance
-  `filesystemBindings` projection tests; `environmentLease.test.ts`.
+- Existing prior art: governance `filesystemBindings` projection tests;
+  `environmentLease.test.ts` (extended for forking + reclamation). No
+  reusable mount-validation prior art exists — slice 1 defines it.
 - Avoid testing: bwrap binary internals; re-testing #971 authorization paths
   beyond the new cross-root cases.
 
@@ -274,6 +317,9 @@ already govern fs access).
   both roots + denied write; catalog UI showing `execute` capability badge.
 
 ## Owner decisions required
+
+Q1–Q4 and Q6 are review-endorsed (fresh-eyes r2); Q5 is ratifiable only
+together with the lease reclamation story above.
 
 1. **rw named mounts in v1?** Contract supports `rw`; plan ships ro-only for
    named filesystems. Open rw now (scratch/exec workspaces beyond primary)
