@@ -1,0 +1,4 @@
+models:
+  seats:
+    alpha: T3
+    broken: T3
