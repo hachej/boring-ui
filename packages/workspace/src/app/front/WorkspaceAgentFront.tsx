@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
-import { Plug, Sparkles } from "lucide-react"
+import { Sparkles } from "lucide-react"
 import {
   PiChatPanel as DefaultPiChatPanel,
   usePiSessions as useDefaultPiSessions,
+  useAddressedAgentSelection as useDefaultAddressedAgentSelection,
   searchPiSessions,
   type SlashCommand,
   type ToolRendererOverrides,
@@ -21,6 +22,7 @@ import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
+import { AgentDetailsOverlay } from "../../front/chrome/agents/AgentDetailsOverlay"
 import { AppLeftPane, AppLeftRail } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { useViewportWidth } from "../../front/layout/useViewportWidth"
@@ -38,7 +40,6 @@ import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../front/agentPlugins
 import { WorkspaceBackgroundBoot } from "./WorkspaceBackgroundBoot"
 import { ChatSessionTransitionState, WorkbenchWarmupOverlay } from "./WorkspaceAgentStatusStates"
 import { WorkspaceUiStateSync } from "./WorkspaceUiStateSync"
-import { WorkspaceAgentFleetSelector, useWorkspaceAgentFleet } from "./WorkspaceAgentFleetSelector"
 import { PluginAppLeftOverlayHost, assertUniqueAppLeftActionIds, pluginAppLeftActionIds, usePluginAppLeftActions, type AppLeftOverlayId } from "./PluginAppLeftHost"
 import { WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, appLeftOverlayRequestFromEvent } from "../../shared/plugins/appLeftOverlay"
 import { WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT } from "../../shared/plugins/workspaceShellCapabilities"
@@ -55,6 +56,7 @@ import {
   type SessionCreateProtocolError,
 } from "../../front/sessionCreateProtocol"
 import { useSessionCreationCoordinator } from "./useSessionCreationCoordinator"
+import { useAddressedFleetSessions, type WorkspaceAddressedAgentOption } from "./addressedFleetSessions"
 import {
   persistedWorkspaceSessionRef,
   workspaceSessionKey,
@@ -65,6 +67,26 @@ import {
   type WorkspaceSessionRef,
 } from "../../front/sessionIdentity"
 import { startSessionActivityStream } from "../../front/sessionActivity"
+
+const AGENT_OVERLAY_PREFIX = "agent-details:"
+const NATIVE_SESSION_UUID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
+
+function provisionalSessionTitle(sessionId: string, defaultTitle: string): string {
+  return sessionId === "default" || NATIVE_SESSION_UUID_PATTERN.test(sessionId) ? defaultTitle : sessionId
+}
+
+function agentOverlayId(agentTypeId: string): string {
+  return `${AGENT_OVERLAY_PREFIX}${encodeURIComponent(agentTypeId)}`
+}
+
+function parseAgentOverlayId(id: string | null): { agentTypeId: string } | null {
+  if (!id?.startsWith(AGENT_OVERLAY_PREFIX)) return null
+  try {
+    return { agentTypeId: decodeURIComponent(id.slice(AGENT_OVERLAY_PREFIX.length)) }
+  } catch {
+    return null
+  }
+}
 
 interface PendingCreatePane {
   afterId: string
@@ -97,6 +119,8 @@ export interface WorkspaceAgentSessionsApi<
   loading: boolean
   loadingMore?: boolean
   hasMore?: boolean
+  /** True only when missing rows may be pruned across every addressed owner. */
+  inventoryAuthoritative?: boolean
   error?: Error | null
   activeSessionId?: string | null
   /** Hidden addressed boot candidate; not active until create confirms it. */
@@ -107,7 +131,7 @@ export interface WorkspaceAgentSessionsApi<
   workspaceId?: string | null
   switch: (id: string, agentTypeId?: string) => void
   /** Returns the canonical created row; void providers are a protocol violation. */
-  create: (input?: { title?: string; resumeSessionId?: string }) => TSession | Promise<TSession>
+  create: (input?: { title?: string; resumeSessionId?: string; agentTypeId?: string }) => TSession | Promise<TSession>
   rename?: (id: string, title: string, agentTypeId?: string) => void | Promise<unknown>
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
@@ -129,6 +153,21 @@ export type UseWorkspaceAgentSessions<
   /** Stable expected source identity that custom results must attest. */
   sourceIdentity: string
 }) => WorkspaceAgentSessionsApi<TSession>
+
+export interface WorkspaceAddressedAgentSelection {
+  agents: WorkspaceAddressedAgentOption[]
+  selectedAgentTypeId: string | undefined
+  loading: boolean
+  error: Error | undefined
+  selectAgentTypeId: (agentTypeId: string) => void
+}
+
+export type UseWorkspaceAddressedAgentSelection = (options: {
+  apiBaseUrl?: string
+  requestHeaders?: Record<string, string | undefined>
+  storageScope?: string
+  enabled?: boolean
+}) => WorkspaceAddressedAgentSelection
 
 export type WorkspaceAgentLayout = "classic" | "plugin-tabs"
 export type WorkspaceAgentAppLeftLayoutMode = "single-project" | "multi-project"
@@ -201,12 +240,12 @@ export interface WorkspaceAgentFrontProps<
       | "storageKey"
     > {
   workspaceId: string
-  /** Immutable host-default AgentGateway owner. */
+  /** Default/single AgentGateway owner. Fleet mode uses it only until discovery resolves. */
   agentTypeId: string
-  /** Advertise and persist a separate Agent target for future session creation. */
-  showAgentSelector?: boolean
-  /** Dev-only HTTP/1.1 connection budgeting for the standalone playground. */
-  donateActiveChatTransportToDetached?: boolean
+  /** Discover and expose the full addressed Host fleet in plugin-tabs navigation. */
+  addressedAgentSelection?: boolean
+  /** Injectable discovery hook for tests and non-default hosts. */
+  useAddressedAgentSelection?: UseWorkspaceAddressedAgentSelection
   chatPanel?: ComponentType<WorkspaceChatPanelProps>
   useSessions?: UseWorkspaceAgentSessions<TSession>
   requestHeaders?: Record<string, string>
@@ -475,12 +514,13 @@ const emptySurfaceSnapshot: SurfaceShellSnapshot = {
 
 function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSessions>[0]): WorkspaceAgentSessionsApi {
   const workspaceId = options.workspaceId ?? workspaceIdFromHeaders(options.requestHeaders) ?? options.storageKey
-  const sessionStorageScope = options.sessionStorageScope ?? workspaceId
+  const activeSessionStorageScope = options.sessionStorageScope ?? workspaceId
   const piSessions = useDefaultPiSessions({
     apiBaseUrl: options.apiBaseUrl,
     agentTypeId: options.agentTypeId,
     workspaceId,
-    storageScope: sessionStorageScope,
+    storageScope: workspaceId,
+    activeSessionStorageScope,
     sourceIdentity: options.sourceIdentity,
     requestHeaders: options.requestHeaders,
     enabled: options.enabled,
@@ -509,7 +549,7 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
       })
       if (!response.ok) throw new Error(`session delete failed (${response.status})`)
     },
-    workspaceId: piSessions.dataStorageScope === sessionStorageScope
+    workspaceId: piSessions.dataStorageScope === workspaceId
       ? workspaceId
       : piSessions.dataStorageScope,
   }
@@ -640,9 +680,9 @@ export function WorkspaceAgentFront<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 >({
   workspaceId,
-  agentTypeId,
-  showAgentSelector = false,
-  donateActiveChatTransportToDetached = false,
+  agentTypeId: defaultAgentTypeId,
+  addressedAgentSelection = false,
+  useAddressedAgentSelection: useAddressedAgentSelectionProp,
   chatPanel: chatPanelProp,
   useSessions: useSessionsProp,
   requestHeaders,
@@ -753,25 +793,16 @@ export function WorkspaceAgentFront<
     () => workspaceRequestHeaders(workspaceId, { ...(requestHeaders ?? EMPTY_HEADERS), ...(authHeaders ?? EMPTY_HEADERS) }),
     [authHeaders, requestHeaders, workspaceId],
   )
-  const fleetSelection = useWorkspaceAgentFleet({
-    enabled: showAgentSelector,
-    hostDefaultAgentTypeId: agentTypeId,
+  const fleetModeEnabled = addressedAgentSelection && isPluginTabsLayout
+  const useAgentSelection = useAddressedAgentSelectionProp ?? useDefaultAddressedAgentSelection
+  const addressedAgents = useAgentSelection({
     apiBaseUrl,
-    requestHeaders: resolvedAuthHeaders,
-    storageKey: `${shellStorageKey}:selectedAgentTypeId`,
+    requestHeaders: resolvedRequestHeaders,
+    storageScope: workspaceId,
+    enabled: fleetModeEnabled,
   })
-  // With the selector off, the host prop is authoritative synchronously; the
-  // fleet hook's stored state lags one render behind host agentTypeId changes.
-  const selectedAgentTypeId = showAgentSelector ? fleetSelection.selectedAgentTypeId : agentTypeId
-  const [skipEmptyAutoCreateForAgent, setSkipEmptyAutoCreateForAgent] = useState<string | null>(null)
-  const selectFleetAgent = useCallback((nextAgentTypeId: string) => {
-    if (nextAgentTypeId !== selectedAgentTypeId) setSkipEmptyAutoCreateForAgent(nextAgentTypeId)
-    fleetSelection.selectAgent(nextAgentTypeId)
-  }, [fleetSelection.selectAgent, selectedAgentTypeId])
-  const fleetSelectorState = useMemo(() => ({
-    ...fleetSelection,
-    selectAgent: selectFleetAgent,
-  }), [fleetSelection, selectFleetAgent])
+  const effectiveAgentTypeId = addressedAgents.selectedAgentTypeId ?? defaultAgentTypeId
+  const selectedAgentTypeId = effectiveAgentTypeId
   const localSessionStore = useMemo(
     () => createLocalStorageSessions({ storageKey: resolvedSessionStorageKey }),
     [resolvedSessionStorageKey],
@@ -795,7 +826,7 @@ export function WorkspaceAgentFront<
   }))
   const chatPaneStorageKey = `boring-workspace:chat-panes:${workspaceId}`
   const [chatPaneState, setChatPaneState] = useState<ChatPaneState>(() =>
-    (shellPersistenceEnabled ? readStoredChatPaneState(chatPaneStorageKey, workspaceId, agentTypeId) : null)
+    (shellPersistenceEnabled ? readStoredChatPaneState(chatPaneStorageKey, workspaceId, effectiveAgentTypeId) : null)
       ?? { workspaceId, ids: [], activeId: null },
   )
   const chatPaneStateRef = useRef(chatPaneState)
@@ -814,17 +845,17 @@ export function WorkspaceAgentFront<
 
   const pinnedStorageKey = `boring-workspace:pinned-sessions:${workspaceId}`
   const [pinnedState, setPinnedState] = useState<{ workspaceId: string; ids: string[] }>(() =>
-    (shellPersistenceEnabled ? readStoredPinnedSessions(pinnedStorageKey, workspaceId, agentTypeId) : null)
+    (shellPersistenceEnabled ? readStoredPinnedSessions(pinnedStorageKey, workspaceId, effectiveAgentTypeId) : null)
       ?? { workspaceId, ids: [] },
   )
   const pinnedIds = pinnedState.workspaceId === workspaceId ? pinnedState.ids : EMPTY_STRING_LIST
   useEffect(() => {
     setPinnedState((previous) => {
       if (previous.workspaceId === workspaceId) return previous
-      return (shellPersistenceEnabled ? readStoredPinnedSessions(pinnedStorageKey, workspaceId, agentTypeId) : null)
+      return (shellPersistenceEnabled ? readStoredPinnedSessions(pinnedStorageKey, workspaceId, effectiveAgentTypeId) : null)
         ?? { workspaceId, ids: [] }
     })
-  }, [agentTypeId, pinnedStorageKey, shellPersistenceEnabled, workspaceId])
+  }, [effectiveAgentTypeId, pinnedStorageKey, shellPersistenceEnabled, workspaceId])
   const toggleSessionPinned = useCallback((sessionId: string, sessionAgentTypeId?: string) => {
     const sessionKey = workspaceSessionKey(sessionId, sessionAgentTypeId)
     setPinnedState((previous) => {
@@ -844,10 +875,10 @@ export function WorkspaceAgentFront<
   useEffect(() => {
     setChatPaneState((previous) => {
       if (previous.workspaceId === workspaceId) return previous
-      return (shellPersistenceEnabled ? readStoredChatPaneState(chatPaneStorageKey, workspaceId, agentTypeId) : null)
+      return (shellPersistenceEnabled ? readStoredChatPaneState(chatPaneStorageKey, workspaceId, effectiveAgentTypeId) : null)
         ?? { workspaceId, ids: [], activeId: null }
     })
-  }, [agentTypeId, chatPaneStorageKey, shellPersistenceEnabled, workspaceId])
+  }, [effectiveAgentTypeId, chatPaneStorageKey, shellPersistenceEnabled, workspaceId])
   const workspaceWarmupStatus = workspaceWarmupState.workspaceId === workspaceId
     ? workspaceWarmupState.status
     : PREPARING_WARMUP_STATUS
@@ -855,25 +886,31 @@ export function WorkspaceAgentFront<
   const useSessions = (useSessionsProp ?? useDefaultWorkspacePiSessions) as UseWorkspaceAgentSessions<TSession>
   const shouldUseRemoteSessions = !chatPanelProp || Boolean(useSessionsProp)
   const remoteSessionHookEnabled = shouldUseRemoteSessions && provisionWorkspace !== false
+  const fleetAgentIdentity = addressedAgents.agents.map((agent) => agent.agentTypeId).sort().join(",")
   const sessionSourceIdentity = useMemo(() => sessionDataSourceIdentity({
     workspaceId,
-    agentTypeId: selectedAgentTypeId,
+    agentTypeId: fleetModeEnabled ? `fleet:${fleetAgentIdentity}` : effectiveAgentTypeId,
     apiBaseUrl,
     storageKey: resolvedSessionStorageKey,
     requestHeaders: resolvedRequestHeaders,
     enabled: remoteSessionHookEnabled,
-  }), [apiBaseUrl, remoteSessionHookEnabled, resolvedRequestHeaders, resolvedSessionStorageKey, selectedAgentTypeId, workspaceId])
-  // Pane layout must survive future-session fleet selection changes: reset it
-  // only when the fleet-invariant source (workspace/backend/config) changes,
-  // never when only the selected future-session Agent changes.
+  }), [effectiveAgentTypeId, apiBaseUrl, fleetAgentIdentity, fleetModeEnabled, remoteSessionHookEnabled, resolvedRequestHeaders, resolvedSessionStorageKey, workspaceId])
+  const sourceIdentityForAgent = useCallback((ownerAgentTypeId: string) => sessionDataSourceIdentity({
+    workspaceId,
+    agentTypeId: ownerAgentTypeId,
+    apiBaseUrl,
+    storageKey: `${resolvedSessionStorageKey}:${ownerAgentTypeId}`,
+    requestHeaders: resolvedRequestHeaders,
+    enabled: remoteSessionHookEnabled && fleetModeEnabled,
+  }), [apiBaseUrl, fleetModeEnabled, remoteSessionHookEnabled, resolvedRequestHeaders, resolvedSessionStorageKey, workspaceId])
   const chatPaneSourceIdentity = useMemo(() => sessionDataSourceIdentity({
     workspaceId,
-    agentTypeId,
+    agentTypeId: defaultAgentTypeId,
     apiBaseUrl,
     storageKey: resolvedSessionStorageKey,
     requestHeaders: resolvedRequestHeaders,
     enabled: remoteSessionHookEnabled,
-  }), [agentTypeId, apiBaseUrl, remoteSessionHookEnabled, resolvedRequestHeaders, resolvedSessionStorageKey, workspaceId])
+  }), [apiBaseUrl, defaultAgentTypeId, remoteSessionHookEnabled, resolvedRequestHeaders, resolvedSessionStorageKey, workspaceId])
   const chatPaneSourceIdentityRef = useRef(chatPaneSourceIdentity)
   useIsomorphicLayoutEffect(() => {
     if (chatPaneSourceIdentityRef.current === chatPaneSourceIdentity) return
@@ -881,17 +918,32 @@ export function WorkspaceAgentFront<
     setChatPaneState({ workspaceId, ids: [], activeId: null })
   }, [chatPaneSourceIdentity, workspaceId])
   const remoteSessionActionsUnavailable = () => undefined
-  const remoteSessionApi = useSessions({
+  const primaryRemoteSessionApi = useSessions({
     requestHeaders: resolvedRequestHeaders,
     storageKey: resolvedSessionStorageKey,
-    sessionStorageScope: showAgentSelector ? `${workspaceId}:${selectedAgentTypeId}` : workspaceId,
+    sessionStorageScope: fleetModeEnabled ? `${workspaceId}:single-disabled` : workspaceId,
     agentTypeId: selectedAgentTypeId,
     workspaceId,
     apiBaseUrl,
-    enabled: remoteSessionHookEnabled,
-    refreshKey: selectedAgentTypeId,
+    enabled: remoteSessionHookEnabled && !fleetModeEnabled,
     sourceIdentity: sessionSourceIdentity,
   })
+  const addressedFleetSessions = useAddressedFleetSessions<TSession>({
+    agents: addressedAgents.agents,
+    selectedAgentTypeId: addressedAgents.selectedAgentTypeId,
+    selectAgentTypeId: addressedAgents.selectAgentTypeId,
+    discoveryLoading: addressedAgents.loading,
+    discoveryError: addressedAgents.error,
+    useSessions,
+    requestHeaders: resolvedRequestHeaders,
+    storageKey: resolvedSessionStorageKey,
+    workspaceId,
+    apiBaseUrl,
+    enabled: remoteSessionHookEnabled && fleetModeEnabled,
+    fleetSourceIdentity: sessionSourceIdentity,
+    sourceIdentityForAgent,
+  })
+  const remoteSessionApi = fleetModeEnabled ? addressedFleetSessions.api : primaryRemoteSessionApi
   const [remoteSessionSnapshot, setRemoteSessionSnapshot] = useState<{
     sourceIdentity: string
     sessions: TSession[]
@@ -972,7 +1024,7 @@ export function WorkspaceAgentFront<
   const remoteSessionsHaveStaleData = remoteSessionsPending
     && remoteSessionSnapshot.sourceIdentity === sessionSourceIdentity
     && remoteSessionSnapshot.sessions.length > 0
-  const pendingStoredActiveSessionId = remoteSessionsPending && !showAgentSelector
+  const pendingStoredActiveSessionId = remoteSessionsPending && !fleetModeEnabled
     ? readStoredSessionId(resolvedSessionStorageKey)
     : null
   const pendingRemoteActiveSessionId = remoteSessionsPending && remoteSessionsSourceAttested && !remoteSessionsArePreviousWorkspace
@@ -1012,7 +1064,7 @@ export function WorkspaceAgentFront<
   })
   const coordinateRemoteCreate = useCallback((
     dedupeKey: string,
-    input?: { title?: string; resumeSessionId?: string },
+    input?: { title?: string; resumeSessionId?: string; agentTypeId?: string },
   ): Promise<TSession | undefined> => {
     if (!sessionSourceIsCurrent() || !remoteSessionsAvailable) return Promise.resolve(undefined)
     const create = remoteSessionApi.create
@@ -1030,12 +1082,10 @@ export function WorkspaceAgentFront<
     onDeleteSession !== undefined
   const emptySessionsGraceExpired = emptySessionsGrace.workspaceId === workspaceId && emptySessionsGrace.expired
   const suppressEmptyAutoCreateRef = useRef(false)
-  const fleetSelectionSuppressesAutoCreate = skipEmptyAutoCreateForAgent === selectedAgentTypeId
   const remoteEmptySessionsSettling = Boolean(
     remoteSessionsAvailable
     && sessionApi
     && !hasExplicitSessionProps
-    && !fleetSelectionSuppressesAutoCreate
     && activeRemoteSessions.length === 0
     && !emptySessionsGraceExpired,
   )
@@ -1049,7 +1099,6 @@ export function WorkspaceAgentFront<
       && !hasExplicitSessionProps
       && activeRemoteSessions.length === 0
       && emptySessionsGraceExpired
-      && !fleetSelectionSuppressesAutoCreate
       && !suppressEmptyAutoCreateRef.current
       && !remoteInitialSessionFailed,
   )
@@ -1151,7 +1200,10 @@ export function WorkspaceAgentFront<
     const attempt = { workspaceId, agentTypeId: selectedAgentTypeId }
     autoSubmitSessionCreateRef.current = attempt
     setAutoSubmitSessionAgentTypeId(attempt.agentTypeId)
-    void Promise.resolve(sessionApi.create({ title: defaultSessionTitle }))
+    void Promise.resolve(remoteSessionApi.create({
+      ...automaticSessionCreateInput(defaultSessionTitle),
+      agentTypeId: attempt.agentTypeId,
+    }))
       .then((session) => {
         if (autoSubmitSessionCreateRef.current !== attempt || autoSubmitSessionWorkspaceRef.current !== attempt.workspaceId) return
         if (typeof (session as { id?: unknown } | null | undefined)?.id !== "string") {
@@ -1166,7 +1218,7 @@ export function WorkspaceAgentFront<
         setAutoSubmitSessionAgentTypeId(undefined)
         setAutoSubmitSessionId(undefined)
       })
-  }, [autoSubmitSessionId, defaultSessionTitle, selectedAgentTypeId, sessionApi, workspaceId])
+  }, [autoSubmitSessionId, defaultSessionTitle, remoteSessionApi.create, selectedAgentTypeId, sessionApi, workspaceId])
   const effectiveActiveSessionId = autoSubmitSessionId !== undefined ? autoSubmitSessionId ?? null : resolvedActiveId
   const effectiveActiveSessionAgentTypeId = autoSubmitSessionId !== undefined
     ? autoSubmitSessionAgentTypeId ?? selectedAgentTypeId
@@ -1183,8 +1235,7 @@ export function WorkspaceAgentFront<
       ? rawSwitch(nextSessionId, nextAgentTypeId)
       : rawSwitch(nextSessionId)
   }, [effectiveActiveSessionId, rawSwitch, sessionSourceIsCurrent])
-  const resolvedCreate = useCallback((dedupeKey = "manual"): Promise<TSession | undefined> => {
-    setSkipEmptyAutoCreateForAgent((current) => current === selectedAgentTypeId ? null : current)
+  const resolvedCreate = useCallback((dedupeKey = "manual", ownerAgentTypeId?: string): Promise<TSession | undefined> => {
     if (remoteSessionsPending) return Promise.resolve(undefined)
     if (sessionApi) {
       // A user create owns the empty-list transition. Cancel only a queued boot
@@ -1192,17 +1243,18 @@ export function WorkspaceAgentFront<
       // explicit action still mints its own session.
       suppressEmptyAutoCreateRef.current = true
       sessionCreation.cancel((task) => task.phase === "queued" && task.dedupeKey === "initial-auto")
-      return coordinateRemoteCreate(dedupeKey)
-        .catch((error) => {
-          // A canceled queued boot create resolves without running its own error
-          // path. Re-arm boot creation if the user-owned request failed.
-          autoCreateSessionRef.current = false
-          setInitialRemoteSessionCreating({ workspaceId, creating: false })
-          throw error
-        })
-        .finally(() => {
-          suppressEmptyAutoCreateRef.current = false
-        })
+      return coordinateRemoteCreate(
+        dedupeKey,
+        ownerAgentTypeId ? { agentTypeId: ownerAgentTypeId } : undefined,
+      ).catch((error) => {
+        // A canceled queued boot create resolves without running its own error
+        // path. Re-arm boot creation if the user-owned request failed.
+        autoCreateSessionRef.current = false
+        setInitialRemoteSessionCreating({ workspaceId, creating: false })
+        throw error
+      }).finally(() => {
+        suppressEmptyAutoCreateRef.current = false
+      })
     }
     const created = onCreateSession ? onCreateSession() : localSessionStore.create()
     return Promise.resolve(created).then((session) => validateCreatedSession<TSession>(session))
@@ -1274,7 +1326,7 @@ export function WorkspaceAgentFront<
   )
   const [appLeftPaneWidth, setAppLeftPaneWidth] = useStoredNumberState(
     `${shellStorageKey}:appLeftPaneWidth`,
-    268,
+    276,
     shellPersistenceEnabled,
   )
   const effectiveAppLeftPaneWidth = clampNumber(appLeftPaneWidth, 220, 420)
@@ -1287,6 +1339,7 @@ export function WorkspaceAgentFront<
     defaultLeftOverlay,
     shellPersistenceEnabled,
   ) as [AppLeftOverlayId, (next: AppLeftOverlayId | ((previous: AppLeftOverlayId) => AppLeftOverlayId)) => void]
+  const activeAgentOverlay = parseAgentOverlayId(leftOverlay)
   const [leftOverlayParams, setLeftOverlayParams] = useState<Readonly<Record<string, string>> | undefined>()
   const leftOverlayParamsOwnerRef = useRef<AppLeftOverlayId>(null)
   const pluginOverlayActionIds = useMemo(() => pluginAppLeftActionIds(capturedPlugins), [capturedPlugins])
@@ -1309,18 +1362,25 @@ export function WorkspaceAgentFront<
   const activeLeftOverlayParams = leftOverlayParamsOwnerRef.current === leftOverlay ? leftOverlayParams : undefined
   useEffect(() => {
     const customOverlayActive = Boolean(leftOverlay && appLeftOverlayActions?.some((action) => action.id === leftOverlay))
+    const parsedAgentOverlay = parseAgentOverlayId(leftOverlay)
+    const agentOverlayActive = Boolean(parsedAgentOverlay)
+    const agentOverlayMissing = Boolean(parsedAgentOverlay
+      && !addressedAgents.loading
+      && !addressedAgents.agents.some((agent) => agent.agentTypeId === parsedAgentOverlay.agentTypeId))
     if (
       (leftOverlay === "skills" && !skillsActionEnabled)
       || (leftOverlay === "plugins" && !pluginsActionEnabled)
+      || agentOverlayMissing
       || (leftOverlay !== null
         && leftOverlay !== "skills"
         && leftOverlay !== "plugins"
+        && !agentOverlayActive
         && !pluginOverlayActionIds.has(leftOverlay)
         && !customOverlayActive)
     ) {
       setLeftOverlay(null)
     }
-  }, [appLeftOverlayActions, leftOverlay, pluginOverlayActionIds, pluginsActionEnabled, skillsActionEnabled])
+  }, [addressedAgents.agents, addressedAgents.loading, appLeftOverlayActions, leftOverlay, pluginOverlayActionIds, pluginsActionEnabled, skillsActionEnabled])
   const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
@@ -1408,14 +1468,16 @@ export function WorkspaceAgentFront<
       return
     }
     if (suppressEmptyAutoCreateRef.current) return
-    if (fleetSelectionSuppressesAutoCreate) return
     if (autoCreateSessionRef.current) return
     autoCreateSessionRef.current = true
     setInitialRemoteSessionCreating({ workspaceId, creating: true })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
     void coordinateRemoteCreate(
       "initial-auto",
-      automaticSessionCreateInput(defaultSessionTitle, sessionApi.resumeSessionId ?? undefined),
+      {
+        ...automaticSessionCreateInput(defaultSessionTitle, sessionApi.resumeSessionId ?? undefined),
+        ...(fleetModeEnabled ? { agentTypeId: effectiveAgentTypeId } : {}),
+      },
     )
       .catch(() => {
         if (!sessionSourceIsCurrent()) return
@@ -1423,7 +1485,7 @@ export function WorkspaceAgentFront<
         setInitialRemoteSessionCreating({ workspaceId, creating: false })
         setInitialRemoteSessionCreateFailed({ workspaceId, failed: true })
       })
-  }, [activeRemoteSessions.length, autoSubmitSessionId, coordinateRemoteCreate, defaultSessionTitle, fleetSelectionSuppressesAutoCreate, remoteEmptySessionsSettling, sessionApi, sessionSourceIsCurrent, workspaceId])
+  }, [activeRemoteSessions.length, effectiveAgentTypeId, autoSubmitSessionId, coordinateRemoteCreate, defaultSessionTitle, fleetModeEnabled, remoteEmptySessionsSettling, sessionApi, sessionSourceIsCurrent, workspaceId])
 
   useEffect(() => {
     surfaceOpenRef.current = surfaceOpen
@@ -1588,7 +1650,8 @@ export function WorkspaceAgentFront<
   // While remote sessions load, resolvedSessions is a one-item placeholder
   // for the stored active session — never an authoritative list to prune
   // restored panes against.
-  const sessionListAuthoritative = !sessionApi?.hasMore && !remoteSessionsPending
+  const sessionListAuthoritative = !remoteSessionsPending
+    && (sessionApi?.inventoryAuthoritative ?? !sessionApi?.hasMore)
   const resolvedSessionsByKey = useMemo(() => new Map(
     resolvedSessions.map((session) => [workspaceSessionKeyFor(session), session]),
   ), [resolvedSessions])
@@ -1665,38 +1728,23 @@ export function WorkspaceAgentFront<
       // session list arrives.
       if (remoteSessionsPending && current.ids.length > 0 && !pendingCreatedId) return current
       const currentActiveRef = current.activeId ? workspaceSessionRefFromKey(current.activeId) : undefined
-      // Changing the future-session Agent must not replace, reconnect, or close
-      // an already-open pane owned by a different addressed Agent. Continue
-      // reconciling inactive panes so authoritative deletions still apply.
-      const preserveCrossOwnerActive = Boolean(
-        showAgentSelector
-        && !hasExplicitSessionProps
-        && autoSubmitSessionId == null
-        && !pendingCreatedId
-        && currentActiveRef?.agentTypeId
-        && currentActiveRef.agentTypeId !== selectedAgentTypeId,
-      )
       const activeOwnerIsExplicit = Boolean(effectiveActiveSessionAgentTypeId)
       const currentMatchesControlledSession = activeOwnerIsExplicit
         ? current.activeId === chatSessionKey
         : currentActiveRef?.sessionId === chatSessionId
-      const resolvedDesiredSessionId = preserveCrossOwnerActive && current.activeId
+      const resolvedDesiredSessionId = !pendingCreatedId
+        && current.activeId
+        && (!canPruneMissingSessions || resolvedSessionsByKey.has(current.activeId))
+        && currentMatchesControlledSession
         ? current.activeId
-        : !pendingCreatedId
-          && current.activeId
-          && (!canPruneMissingSessions || resolvedSessionsByKey.has(current.activeId))
-          && currentMatchesControlledSession
-          ? current.activeId
-          : desiredSessionId
+        : desiredSessionId
       const rawIds = current.ids.length > 0 ? current.ids : [resolvedDesiredSessionId]
       const prunedIds = canPruneMissingSessions
-        ? rawIds.filter((id) => {
-            const ref = workspaceSessionRefFromKey(id)
-            return (showAgentSelector && Boolean(ref.agentTypeId) && ref.agentTypeId !== selectedAgentTypeId)
-              || resolvedSessionsByKey.has(id)
-              || optimisticCreatedPaneKeysRef.current.has(id)
-              || id === pendingCreatedId
-          })
+        ? rawIds.filter((id) => (
+            resolvedSessionsByKey.has(id)
+            || optimisticCreatedPaneKeysRef.current.has(id)
+            || id === pendingCreatedId
+          ))
         : rawIds
       const ids = prunedIds.length > 0 ? prunedIds : [resolvedDesiredSessionId]
       const activeId = current.activeId && ids.includes(current.activeId) ? current.activeId : ids[0] ?? resolvedDesiredSessionId
@@ -1720,7 +1768,7 @@ export function WorkspaceAgentFront<
       ) return previous
       return { workspaceId, ids: nextIds, activeId: nextActiveId }
     })
-  }, [autoSubmitSessionId, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, hasExplicitSessionProps, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, resolvedSessionsByKey, selectedAgentTypeId, sessionListAuthoritative, showAgentSelector, workspaceId])
+  }, [autoSubmitSessionId, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, resolvedSessionsByKey, sessionListAuthoritative, workspaceId])
   const [initialHydrationPromptStarted, setInitialHydrationPromptStarted] = useState<{ workspaceId: string; ids: Set<string> }>(() => ({
     workspaceId,
     ids: new Set(),
@@ -1821,6 +1869,7 @@ export function WorkspaceAgentFront<
     afterId: string,
     mode: "insert" | "replace",
     placementDirection?: ChatPaneSplitDirection,
+    ownerAgentTypeId?: string,
   ) => {
     if (pendingCreatePaneRef.current) return
     const pendingCreatePane: PendingCreatePane = {
@@ -1843,7 +1892,7 @@ export function WorkspaceAgentFront<
     const createReason = placementDirection
       ? `split:${afterId}:${placementDirection}`
       : "manual"
-    const created = resolvedCreate(createReason)
+    const created = resolvedCreate(createReason, ownerAgentTypeId)
     void Promise.resolve(created).then((session) => {
       const id = createdSessionId(session)
       // Some session providers signal creation through a later sessions update.
@@ -1864,7 +1913,7 @@ export function WorkspaceAgentFront<
 
       const createdAgentTypeId = typeof (session as { agentTypeId?: unknown } | null)?.agentTypeId === "string"
         ? (session as { agentTypeId: string }).agentTypeId
-        : selectedAgentTypeId
+        : ownerAgentTypeId ?? effectiveAgentTypeId
       const createdKey = workspaceSessionKey(id, createdAgentTypeId)
       const nextIds = mode === "replace"
         ? replaceActivePane(ids, afterId, createdKey)
@@ -1901,9 +1950,9 @@ export function WorkspaceAgentFront<
     if (pending.placementDirection) setChatPaneSplitPending(false)
   }, [workspaceId])
 
-  const createChatSession = useCallback(() => (
-    createChatPaneTransaction(activeChatPaneId, "replace")
-  ), [activeChatPaneId, createChatPaneTransaction])
+  const createChatSession = useCallback((ownerAgentTypeId = fleetModeEnabled ? effectiveAgentTypeId : undefined) => (
+    createChatPaneTransaction(activeChatPaneId, "replace", undefined, ownerAgentTypeId)
+  ), [activeChatPaneId, effectiveAgentTypeId, createChatPaneTransaction, fleetModeEnabled])
 
   const closeChatPane = useCallback((sessionKey: string) => {
     if (pendingCreatePaneRef.current) return
@@ -1931,9 +1980,9 @@ export function WorkspaceAgentFront<
     }
   }, [chatSessionKey, createChatPaneTransaction, rawSwitch, workspaceId])
 
-  const createChatPaneAfter = useCallback((afterId: string, placementDirection?: ChatPaneSplitDirection) => (
-    createChatPaneTransaction(afterId, "insert", placementDirection)
-  ), [createChatPaneTransaction])
+  const createChatPaneAfter = useCallback((afterId: string, placementDirection?: ChatPaneSplitDirection, ownerAgentTypeId = fleetModeEnabled ? effectiveAgentTypeId : undefined) => (
+    createChatPaneTransaction(afterId, "insert", placementDirection, ownerAgentTypeId)
+  ), [effectiveAgentTypeId, createChatPaneTransaction, fleetModeEnabled])
 
   const deleteSessionAndPane = useCallback((sessionId: string, sessionAgentTypeId?: string) => {
     const sessionKey = workspaceSessionKey(sessionId, sessionAgentTypeId)
@@ -1961,10 +2010,10 @@ export function WorkspaceAgentFront<
   // gets its OWN dedicated pane (inserted after the active one) so the existing
   // panes are never hijacked; with a single pane it just becomes the active
   // chat — no gratuitous split for the common case.
-  const createChatSessionPreferNewPane = useCallback(() => {
-    if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId)
-    return createChatSession()
-  }, [activeChatPaneId, chatPaneIds.length, createChatPaneAfter, createChatSession])
+  const createChatSessionPreferNewPane = useCallback((ownerAgentTypeId = effectiveAgentTypeId) => {
+    if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId, undefined, ownerAgentTypeId)
+    return createChatSession(ownerAgentTypeId)
+  }, [activeChatPaneId, effectiveAgentTypeId, chatPaneIds.length, createChatPaneAfter, createChatSession])
 
   const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(requestedAutoSubmitInitialDraft)
   const autoSubmitHydrationWorkspaceRef = useRef(workspaceId)
@@ -2086,7 +2135,7 @@ export function WorkspaceAgentFront<
       allowPromptDuringInitialHydration: emptySessionIds.has(sessionKey),
       onPromptSubmitStarted: ({ sessionId: submittedSessionId, clientNonce }: { sessionId: string; clientNonce: string }) => {
         window.dispatchEvent(new CustomEvent(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, {
-          detail: { workspaceId, agentTypeId: sessionRef.agentTypeId ?? selectedAgentTypeId, sessionId: submittedSessionId, clientNonce },
+          detail: { workspaceId, agentTypeId: sessionRef.agentTypeId ?? effectiveAgentTypeId, sessionId: submittedSessionId, clientNonce },
         }))
         setInitialHydrationPromptStarted((current) => {
           const currentIds = current.workspaceId === workspaceId ? current.ids : new Set<string>()
@@ -2126,7 +2175,11 @@ export function WorkspaceAgentFront<
     const sessionRef = workspaceSessionRefFromKey(id)
     return {
       id,
-      title: sessionTitleById.get(id) ?? (sessionRef.sessionId === "default" ? defaultSessionTitle : sessionRef.sessionId),
+      // Never expose a raw native UUID while list metadata catches up. New
+      // sessions start with the default title and adopt their real title as
+      // soon as the authoritative session row arrives. Human-readable custom
+      // ids remain useful provisional labels for embedded providers.
+      title: sessionTitleById.get(id) ?? provisionalSessionTitle(sessionRef.sessionId, defaultSessionTitle),
       panel: "chat",
       params: makeCenterParams(id),
     }
@@ -2199,12 +2252,8 @@ export function WorkspaceAgentFront<
       {topBarRight}
     </>
   )
-  const agentSelectorNode = showAgentSelector ? <WorkspaceAgentFleetSelector fleet={fleetSelectorState} /> : null
-  const topBarLeftContent = agentSelectorNode || topBarLeft ? (
-    <div className="flex min-w-0 items-center gap-2">
-      {agentSelectorNode}
-      {topBarLeft}
-    </div>
+  const topBarLeftContent = topBarLeft ? (
+    <div className="flex min-w-0 items-center gap-2">{topBarLeft}</div>
   ) : undefined
   const activeChatPaneRef = activeChatPaneId ? workspaceSessionRefFromKey(activeChatPaneId) : null
   const openChatPaneRefs = useMemo(() => chatPaneIds.map((id) => workspaceSessionRefFromKey(id)), [chatPaneIds])
@@ -2256,7 +2305,10 @@ export function WorkspaceAgentFront<
   const quickSessionCreateSequenceRef = useRef(0)
   const effectiveActiveSessionRef = useRef({ sessionId: effectiveActiveSessionId, agentTypeId: effectiveActiveSessionAgentTypeId ?? undefined })
   effectiveActiveSessionRef.current = { sessionId: effectiveActiveSessionId, agentTypeId: effectiveActiveSessionAgentTypeId ?? undefined }
-  const createAddressedSessionWithoutActivating = useCallback(async (dedupeKey: string, options?: { title?: string }) => {
+  const createAddressedSessionWithoutActivating = useCallback(async (
+    dedupeKey: string,
+    options?: { title?: string; agentTypeId?: string },
+  ) => {
     const previous = effectiveActiveSessionRef.current
     try {
       const session = await coordinateRemoteCreate(dedupeKey, options)
@@ -2296,8 +2348,11 @@ export function WorkspaceAgentFront<
   }, [coordinateRemoteCreate, rawDelete, rawSwitch, selectedAgentTypeId])
   const createShellChatSession = useCallback(async (options?: { title?: string }) => {
     shellSessionCreateSequenceRef.current += 1
-    return await createAddressedSessionWithoutActivating(`shell:${shellSessionCreateSequenceRef.current}`, options)
-  }, [createAddressedSessionWithoutActivating])
+    return await createAddressedSessionWithoutActivating(`shell:${shellSessionCreateSequenceRef.current}`, {
+      ...options,
+      agentTypeId: effectiveAgentTypeId,
+    })
+  }, [createAddressedSessionWithoutActivating, effectiveAgentTypeId])
   const deleteShellChatSession = useCallback(async (ref: { agentTypeId: string; sessionId: string }) => {
     try {
       if (!sessionSourceIsCurrent()) {
@@ -2326,17 +2381,20 @@ export function WorkspaceAgentFront<
     isAppLeftOverlayAvailable: (id) => pluginOverlayActionIds.has(id),
     onDockOverlay: () => setLeftOverlay(null),
   })
-  const createChatSessionInPopover = useCallback(() => {
+  const createChatSessionInPopover = useCallback((ownerAgentTypeId = fleetModeEnabled ? effectiveAgentTypeId : undefined) => {
     setLeftOverlay(null)
     quickSessionCreateSequenceRef.current += 1
-    void createAddressedSessionWithoutActivating(`quick:${quickSessionCreateSequenceRef.current}`, { title: defaultSessionTitle }).then((result) => {
+    void createAddressedSessionWithoutActivating(`quick:${quickSessionCreateSequenceRef.current}`, {
+      title: defaultSessionTitle,
+      agentTypeId: ownerAgentTypeId ?? effectiveAgentTypeId,
+    }).then((result) => {
       if (!result.success) return
       shellCapabilitiesHost.shellCapabilities.openDetachedChat(result.ref, {
         title: defaultSessionTitle,
         composingEnabled: true,
       })
     })
-  }, [createAddressedSessionWithoutActivating, defaultSessionTitle, shellCapabilitiesHost.shellCapabilities])
+  }, [createAddressedSessionWithoutActivating, defaultSessionTitle, effectiveAgentTypeId, fleetModeEnabled, shellCapabilitiesHost.shellCapabilities])
   const providerPanels = baseProviderPanels
   const pluginAppLeftActions = usePluginAppLeftActions({ plugins: capturedPlugins, activeOverlay: leftOverlay, setActiveOverlay: setLeftOverlay })
   const chatTopOverlayActions = useMemo(() => {
@@ -2381,15 +2439,6 @@ export function WorkspaceAgentFront<
         onClick: () => setLeftOverlay((cur) => cur === action.id ? null : action.id),
       })
     }
-    if (pluginsActionEnabled) {
-      actions.push({
-        id: "plugins",
-        label: "Plugins",
-        icon: <Plug className="h-4 w-4" strokeWidth={1.75} />,
-        active: leftOverlay === "plugins",
-        onClick: () => setLeftOverlay((cur) => cur === "plugins" ? null : "plugins"),
-      })
-    }
     if (skillsActionEnabled) {
       actions.push({
         id: "skills",
@@ -2401,7 +2450,7 @@ export function WorkspaceAgentFront<
     }
     assertUniqueAppLeftActionIds(actions)
     return actions
-  }, [appLeftActions, appLeftOverlayActions, leftOverlay, pluginAppLeftActions, pluginsActionEnabled, skillsActionEnabled])
+  }, [appLeftActions, appLeftOverlayActions, leftOverlay, pluginAppLeftActions, skillsActionEnabled])
 
   const pluginLeftOverlayNode = PluginAppLeftOverlayHost({
     plugins: capturedPlugins,
@@ -2422,7 +2471,26 @@ export function WorkspaceAgentFront<
     })
   }, [appLeftOverlayActions, leftOverlay, mobileShellActive, surfaceOpen, workspaceId])
 
-  const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
+  const activeAgentOverlayOption = activeAgentOverlay
+    ? addressedAgents.agents.find((agent) => agent.agentTypeId === activeAgentOverlay.agentTypeId)
+    : undefined
+  const agentLeftOverlayNode = activeAgentOverlay && activeAgentOverlayOption ? (
+    <AgentDetailsOverlay
+      agent={{
+        ...activeAgentOverlayOption,
+        sessionsStatus: addressedFleetSessions.statuses.get(activeAgentOverlayOption.agentTypeId) ?? "loading",
+      }}
+      sessionCount={resolvedSessions.filter((session) => session.agentTypeId === activeAgentOverlayOption.agentTypeId).length}
+      onCreateSession={() => {
+        setLeftOverlay(null)
+        void createChatSession(activeAgentOverlayOption.agentTypeId)
+      }}
+      onClose={() => setLeftOverlay(null)}
+      headerInsetStart={mobileShellActive}
+      headerInsetEnd={!surfaceOpen}
+    />
+  ) : null
+  const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? agentLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
     <SkillsPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={mobileShellActive}
@@ -2439,16 +2507,6 @@ export function WorkspaceAgentFront<
       headerInsetEnd={!surfaceOpen}
     />
   ) : null)
-  const detachedTransportDonationActive = donateActiveChatTransportToDetached && shellCapabilitiesHost.floatingChatOpen
-  const streamDonorPaneId = activeChatPaneId ?? chatPanes[0]?.id
-  const renderedCenterParams = detachedTransportDonationActive && chatPanes.length === 0
-    ? { ...centerParams, sessionStreamingEnabled: false }
-    : centerParams
-  const renderedChatPanes = detachedTransportDonationActive
-    ? chatPanes.map((pane) => pane.id === streamDonorPaneId
-      ? { ...pane, params: { ...(pane.params ?? centerParams), sessionStreamingEnabled: false } }
-      : pane)
-    : chatPanes
   const mainContent = remoteSessionsTransitioning ? (
     <ChatSessionTransitionState />
   ) : (
@@ -2457,8 +2515,8 @@ export function WorkspaceAgentFront<
       nav={isPluginTabsLayout ? null : effectiveNavOpen ? "session-list" : null}
       navParams={navParams}
       center="chat"
-      centerParams={renderedCenterParams}
-      chatPanes={renderedChatPanes}
+      centerParams={centerParams}
+      chatPanes={chatPanes}
       chatTopActions={chatTopOverlayActions}
       chatPaneSessionActions={chatPaneSessionActions}
       activeChatPaneId={activeChatPaneId}
@@ -2560,18 +2618,25 @@ export function WorkspaceAgentFront<
           topSlot={topBarLeftContent}
           bottomSlot={showThemeToggle || topBarRight != null ? <div className="flex w-full min-w-0 items-center gap-2">{topBarRightContent}</div> : undefined}
           sessions={resolvedSessions}
+          agents={fleetModeEnabled ? addressedAgents.agents.map((agent) => ({
+            ...agent,
+            sessionsStatus: addressedFleetSessions.statuses.get(agent.agentTypeId) ?? "loading",
+          })) : undefined}
+          selectedAgentTypeId={fleetModeEnabled ? addressedAgents.selectedAgentTypeId : undefined}
+          onSelectAgent={fleetModeEnabled ? addressedAgents.selectAgentTypeId : undefined}
+          onOpenAgentSettings={fleetModeEnabled ? (ownerAgentTypeId) => setLeftOverlay(agentOverlayId(ownerAgentTypeId)) : undefined}
           sessionsLoading={remoteSessionsTransitioning}
           activeSessionRef={activeChatPaneRef}
           muteActiveSession={Boolean(leftOverlay)}
           openSessionRefs={openChatPaneRefs}
           pinnedSessionRefs={pinnedRefs}
-          onCreateSession={() => {
+          onCreateSession={(ownerAgentTypeId) => {
             setLeftOverlay(null)
-            void createChatSession()
+            void createChatSession(ownerAgentTypeId)
           }}
-          onCreateSplitSession={() => {
+          onCreateSplitSession={(ownerAgentTypeId) => {
             setLeftOverlay(null)
-            void createChatPaneAfter(activeChatPaneId)
+            void createChatPaneAfter(activeChatPaneId, undefined, ownerAgentTypeId)
           }}
           onCreatePopoverSession={createChatSessionInPopover}
           onOpenCommandPalette={openCommandPalette}
@@ -2639,15 +2704,18 @@ export function WorkspaceAgentFront<
         commandPaletteSessionSearch={commandPaletteSessionSearch}
       >
         {beforeShell}
-        <WorkspaceBackgroundBoot
-          agentTypeId={selectedAgentTypeId}
-          workspaceId={workspaceId}
-          requestHeaders={resolvedRequestHeaders}
-          apiBaseUrl={apiBaseUrl}
-          preloadPaths={bootPreloadPaths}
-          provisionWorkspace={provisionWorkspace}
-          onStatusChange={handleWorkspaceWarmupStatusChange}
-        />
+        {addressedFleetSessions.sources}
+        {!fleetModeEnabled || addressedAgents.selectedAgentTypeId ? (
+          <WorkspaceBackgroundBoot
+            agentTypeId={effectiveAgentTypeId}
+            workspaceId={workspaceId}
+            requestHeaders={resolvedRequestHeaders}
+            apiBaseUrl={apiBaseUrl}
+            preloadPaths={bootPreloadPaths}
+            provisionWorkspace={provisionWorkspace}
+            onStatusChange={handleWorkspaceWarmupStatusChange}
+          />
+        ) : null}
         <WorkspaceUiStateSync
           bridgeEndpoint={bridgeEndpoint}
           requestHeaders={resolvedRequestHeaders}

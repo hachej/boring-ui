@@ -172,8 +172,6 @@ export interface PiChatPanelProps<
   toolRenderers?: ToolRendererOverrides
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
-  /** Keep local UI state mounted while temporarily releasing the remote event stream. */
-  sessionStreamingEnabled?: boolean
   hydrateMessages?: boolean
   allowPromptDuringInitialHydration?: boolean
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
@@ -240,7 +238,6 @@ export function PiChatPanel<
   toolRenderers,
   createRemoteSession,
   remoteSessionOptions,
-  sessionStreamingEnabled = true,
   hydrateMessages = true,
   allowPromptDuringInitialHydration = false,
   workspaceWarmupStatus,
@@ -320,7 +317,6 @@ export function PiChatPanel<
     fetch,
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
-    enabled: sessionStreamingEnabled,
   })
   const activePiSession = externalSessionId ? externalPiSession : sessions.activePiSession
   const chatState = useRemotePiSessionState(activePiSession)
@@ -1191,6 +1187,7 @@ export function PiChatPanel<
       <div
         data-boring-agent=""
         data-boring-agent-part="chat"
+        data-agent-type-id={agentTypeId}
         data-pi-chat-session-id={activeSessionId}
         data-pi-chat-connection={debugState?.connection ?? 'disconnected'}
         data-pi-chat-last-seq={debugState?.lastSeq ?? 0}

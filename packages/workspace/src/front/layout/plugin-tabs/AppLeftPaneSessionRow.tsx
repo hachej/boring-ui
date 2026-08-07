@@ -29,6 +29,10 @@ export function AppSessionRow({
   canPin = true,
   working = false,
   attentionBadge,
+  activeDot = false,
+  activeDotActive = state === "active",
+  compact = false,
+  ownerLabel,
   onSwitch,
   onOpenAsPane,
   onTogglePinned,
@@ -42,6 +46,10 @@ export function AppSessionRow({
   canPin?: boolean
   working?: boolean
   attentionBadge?: WorkspaceAttentionSessionBadge
+  activeDot?: boolean
+  activeDotActive?: boolean
+  compact?: boolean
+  ownerLabel?: string
   onSwitch?: (id: string) => void
   onOpenAsPane?: (id: string) => void
   onTogglePinned?: (id: string) => void
@@ -57,7 +65,8 @@ export function AppSessionRow({
   const pinAvailable = canPin && Boolean(onTogglePinned)
   const showMenu = splitAvailable || pinAvailable || canCopy || renameAvailable || Boolean(onDelete)
   const actionWidthClassName = showMenu ? "w-7" : "w-0"
-  const statusWidthClassName = attentionBadge || working ? "w-[88px]" : actionWidthClassName
+  const showWorkingBadge = working && !activeDot
+  const statusWidthClassName = ownerLabel ? "w-auto max-w-28 gap-1" : attentionBadge || showWorkingBadge ? "w-[88px]" : actionWidthClassName
   const rename = useInlineSessionRename({
     sessionId: session.id,
     title,
@@ -79,6 +88,8 @@ export function AppSessionRow({
   return (
     <div
       data-boring-workspace-part="app-session-row"
+      data-boring-session-id={session.id}
+      data-boring-agent-type-id={session.agentTypeId}
       data-boring-session-state={state}
       draggable={actionsAvailable && canSplit && !rename.editing && !menuOpen}
       onDragStart={actionsAvailable && canSplit ? (event) => {
@@ -90,7 +101,7 @@ export function AppSessionRow({
         event.dataTransfer.setData("text/plain", title)
         event.dataTransfer.effectAllowed = "copyMove"
       } : undefined}
-      className="app-left-session-row group relative h-9 w-full"
+      className={cn("app-left-session-row group relative w-full", compact ? "h-[29px]" : "h-[30px]")}
     >
       {rename.field ? (
         <div className={rowClassName}>
@@ -109,11 +120,19 @@ export function AppSessionRow({
           className={rowClassName}
           title={title}
         >
-          <span className="relative grid size-5 shrink-0 place-items-center" aria-hidden="true">
-            <MessageSquare
-              className={cn("h-4 w-4", state === "active" ? "text-[color:var(--accent)]" : "text-muted-foreground/65")}
-              strokeWidth={1.75}
-            />
+          <span className="relative grid size-5 shrink-0 place-items-center" aria-hidden={activeDot ? undefined : "true"}>
+            {activeDot ? (
+              activeDotActive ? (
+                <span title="Active session" className="size-2 rounded-full bg-[color:var(--accent)]">
+                  <span className="sr-only">Active session</span>
+                </span>
+              ) : null
+            ) : (
+              <MessageSquare
+                className={cn("h-4 w-4", state === "active" ? "text-[color:var(--accent)]" : "text-muted-foreground/65")}
+                strokeWidth={1.75}
+              />
+            )}
           </span>
           <span className={cn("min-w-0 flex-1 truncate text-[13px] leading-5", state === "active" ? "font-semibold" : "font-medium")}>
             {title}
@@ -131,7 +150,7 @@ export function AppSessionRow({
               >
                 {attentionBadge.label}
               </span>
-            ) : working ? (
+            ) : showWorkingBadge ? (
               <span
                 data-boring-workspace-part="app-session-badge"
                 data-boring-badge="working"
@@ -139,7 +158,10 @@ export function AppSessionRow({
               >
                 working
               </span>
-            ) : pinned ? (
+            ) : null}
+            {ownerLabel ? (
+              <span className="truncate text-[11px] font-medium text-muted-foreground">{ownerLabel}</span>
+            ) : !attentionBadge && !working && pinned ? (
               <Pin className="h-3.5 w-3.5 shrink-0 fill-current text-[color:var(--accent)]" strokeWidth={1.75} aria-hidden="true" />
             ) : null}
           </span>
@@ -151,9 +173,12 @@ export function AppSessionRow({
           data-boring-workspace-part="app-session-actions"
           data-action-count="1"
           className={cn(
-            "app-left-session-actions pointer-events-none absolute inset-y-0 right-1 z-10 flex items-center justify-end gap-0.5 opacity-0 transition-opacity motion-reduce:transition-none",
+            // Keep the reserved action hit area above the row button at all
+            // times. Toggling pointer-events only after hover creates a race
+            // where the underlying session button can win the same click.
+            "app-left-session-actions pointer-events-auto absolute inset-y-0 right-1 z-10 flex items-center justify-end gap-0.5 opacity-0",
             actionWidthClassName,
-            "group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100",
+            "group-hover:opacity-100 group-focus-within:opacity-100",
           )}
         >
           <AppSessionActionsMenu
