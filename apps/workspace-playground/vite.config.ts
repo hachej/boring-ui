@@ -119,6 +119,10 @@ export default defineConfig({
   server: {
     port: VITE_PORT,
     host: true,
+    // Stable review origins rebuild linked package bundles in place. Disable
+    // browser caching there so an old immutable entry module cannot import a
+    // freshly rebuilt graph and produce multiple React dispatchers.
+    headers: process.env.BORING_VITE_HMR === "0" ? { "Cache-Control": "no-store" } : undefined,
     hmr: process.env.BORING_VITE_HMR === "0"
       ? false
       : {
