@@ -98,6 +98,8 @@ All API failures must use the response envelope:
 | `MCP_AGENT_ARTIFACT_INVALID` | Managed MCP delivery artifact is path-shaped, non-Markdown, binary, malformed UTF-8, or otherwise invalid | 400 | user-fix | warn | stable (public API) |
 | `MCP_AGENT_ARTIFACT_TOO_LARGE` | Managed MCP final text, inline Markdown artifact, or serialized result exceeds the delivery v0 byte cap | 413 | user-fix | warn | stable (public API) |
 | `MCP_AGENT_ARTIFACT_UNAVAILABLE` | Managed MCP artifact is missing, unreadable through the authorized workspace, or changed during read | 409 | retry | warn | stable (public API) |
+| `AGENT_MCP_GRANT_REF_UNGRANTED` | Agent declared an `mcpServerRefs` connector with no matching per-agent MCP grant in the workspace; the connector is dropped, never silently allowed | 200 | user-fix | warn | stable (public API) |
+| `AGENT_MCP_GRANT_TOOL_NOT_ALLOWED` | A grant's `allowedTools` entry is not part of the connector's known tool catalog and was dropped during resolution | 200 | user-fix | warn | stable (public API) |
 | `PLUGIN_LOAD_FAILED` | Plugin failed to load/register | 500 | report-bug | error | stable (public API) |
 | `PLUGIN_NAME_COLLISION` | Plugin name collides with existing tool/plugin | 409 | user-fix | warn | stable (public API) |
 | `PLUGIN_RUNTIME_REVISION_MISMATCH` | Browser requested a stale plugin runtime revision after reload | 409 | retry | warn | stable (public API) |
