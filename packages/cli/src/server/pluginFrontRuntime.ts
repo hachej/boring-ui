@@ -2029,7 +2029,8 @@ export async function createPluginFrontRuntimeHost(
     ))
   }
 
-  async function disposeWorkspace(workspaceId: string): Promise<void> {
+  async function disposeWorkspace(rawWorkspaceId: string): Promise<void> {
+    const workspaceId = ensureSafeId("workspace", rawWorkspaceId)
     // Bump first (synchronously, before the two deletes below or the async
     // invalidateMatching sweep) so any serve() call whose validateRequest()
     // already passed for this workspace — but hasn't reached its own
