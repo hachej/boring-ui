@@ -14,38 +14,33 @@ export function AppLeftPaneHeader({
   showBrand?: boolean
 }) {
   const title = appTitle || "Boring UI"
+  const workspace = topSlot ?? (workspaceLabel ? <span className="truncate">{workspaceLabel}</span> : null)
 
   return (
-    <div className="shrink-0 px-2 pb-2 pt-2">
-      {showBrand ? (
-        <div className="flex h-8 min-w-0 items-center gap-2 pr-1" style={{ paddingLeft: "2.5rem" }}>
-          <span
-            aria-hidden="true"
-            className="grid size-7 shrink-0 place-items-center rounded-lg bg-foreground text-[12px] font-semibold text-background"
+    <div className="flex h-[50px] shrink-0 items-center border-b border-border/50 px-2 pr-3" data-boring-workspace-part="app-left-header">
+      <div className="flex min-w-0 flex-1 items-center gap-2" style={{ paddingLeft: "2.5rem" }}>
+        {showBrand ? (
+          <>
+            <span
+              aria-hidden="true"
+              className="grid size-6 shrink-0 place-items-center rounded-md bg-foreground text-[11px] font-bold text-background"
+            >
+              {(title[0] ?? "B").toUpperCase()}
+            </span>
+            <span className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.01em] text-foreground" data-boring-workspace-part="app-left-pane-brand">
+              {title}
+            </span>
+          </>
+        ) : null}
+        {workspace ? (
+          <div
+            className="ml-auto min-w-0 max-w-[45%] truncate text-right text-[11px] font-normal text-muted-foreground"
+            data-boring-workspace-part="app-left-pane-workspace"
           >
-            {(title[0] ?? "B").toUpperCase()}
-          </span>
-          <span className="truncate text-[15px] font-semibold tracking-tight text-foreground" data-boring-workspace-part="app-left-pane-brand">
-            {title}
-          </span>
-        </div>
-      ) : null}
-      {topSlot ? (
-        <div
-          className={showBrand ? "mt-1 min-w-0" : "min-w-0 pr-1"}
-          style={showBrand ? undefined : { paddingLeft: "2.5rem" }}
-          data-boring-workspace-part="app-left-pane-workspace"
-        >
-          {topSlot}
-        </div>
-      ) : workspaceLabel ? (
-        <div
-          className="mt-0.5 flex min-h-8 items-center gap-2 rounded-md px-2 text-[13px] text-foreground/72"
-          data-boring-workspace-part="app-left-pane-workspace"
-        >
-          <span className="truncate">{workspaceLabel}</span>
-        </div>
-      ) : null}
+            {workspace}
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

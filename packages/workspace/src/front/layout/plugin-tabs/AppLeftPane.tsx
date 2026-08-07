@@ -173,7 +173,7 @@ export function AppLeftRail({
 }
 
 export function AppLeftPane({
-  width = 268,
+  width = 276,
   appTitle,
   workspaceLabel,
   workspaceSectionTitle = "Workspaces",
@@ -394,7 +394,7 @@ export function AppLeftPane({
       <section key={agent.agentTypeId} data-boring-workspace-part="app-left-agent-tree" data-boring-agent-type-id={agent.agentTypeId} className="space-y-0.5">
         <div
           data-selected={selectedAgentTypeId === agent.agentTypeId ? "true" : "false"}
-          className="app-left-agent-row group relative flex h-10 w-full items-center gap-1 rounded-md pr-1 text-foreground/82 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-within:bg-foreground/[0.055] data-[selected=true]:text-foreground md:h-8"
+          className="app-left-agent-row group relative flex h-8 w-full items-center gap-1 rounded-md pr-1 text-foreground/82 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-within:bg-foreground/[0.055] data-[selected=true]:text-foreground"
         >
           {showSessions ? (
             <button
@@ -430,7 +430,7 @@ export function AppLeftPane({
           />
         </div>
         {expanded ? (
-          <div id={panelId} role="region" aria-label={`${agent.label} sessions`} className="ml-3.5 space-y-0.5 border-l border-border/60 pl-3.5">
+          <div id={panelId} role="region" aria-label={`${agent.label} sessions`} className="ml-[31px] space-y-0.5 border-l border-border/60 pl-2">
             <SessionSubSection empty={empty}>
               {ownedSessions.map((session) => renderSession(session, pinnedSet.has(workspaceSessionKeyFor(session)), activeProjectId ?? undefined, false))}
             </SessionSubSection>
@@ -483,14 +483,12 @@ export function AppLeftPane({
           showBrand={headerShowsBrand}
         />
       ) : (
-        <div className="h-12 shrink-0" aria-hidden="true" />
+        <div className="h-[50px] shrink-0" aria-hidden="true" />
       )}
 
-      <section className="boring-scrollbar-discreet min-h-0 max-h-[45%] shrink overflow-y-auto px-2 pb-3" aria-labelledby="app-left-workspace-heading">
-        <h2 id="app-left-workspace-heading" className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
-          Workspace
-        </h2>
-        <nav className="space-y-0.5" aria-label="Workspace actions">
+      <section className="boring-scrollbar-discreet min-h-0 max-h-[45%] shrink overflow-y-auto px-2 py-2.5" aria-labelledby="app-left-workspace-heading">
+        <h2 id="app-left-workspace-heading" className="sr-only">Workspace</h2>
+        <nav aria-label="Workspace actions">
           <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
           {actions.map((action) => (
             <PrimaryAction

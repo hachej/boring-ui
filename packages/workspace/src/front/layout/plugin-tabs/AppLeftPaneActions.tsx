@@ -28,7 +28,7 @@ export function PrimaryAction({
       data-active={active ? "true" : undefined}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "app-left-primary-action relative flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "app-left-primary-action relative flex h-[30px] w-full items-center gap-2 rounded-md px-2 text-left text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
           // When an overlay is open, it owns the selected nav state.
           ? "bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] font-semibold text-foreground hover:bg-[color:oklch(from_var(--accent)_l_c_h/0.18)]"
@@ -37,7 +37,7 @@ export function PrimaryAction({
             : "text-foreground/82 hover:bg-foreground/[0.055] hover:text-foreground",
       )}
     >
-      <span className={cn("grid size-5 shrink-0 place-items-center", active ? "text-[color:var(--accent)]" : emphasis ? "text-foreground/90" : "text-muted-foreground")} aria-hidden="true">{icon}</span>
+      <span className={cn("grid size-4 shrink-0 place-items-center", active ? "text-[color:var(--accent)]" : emphasis ? "text-foreground/90" : "text-muted-foreground")} aria-hidden="true">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {trailing ? <span className="shrink-0">{trailing}</span> : null}
     </button>

@@ -1321,7 +1321,7 @@ export function WorkspaceAgentFront<
   )
   const [appLeftPaneWidth, setAppLeftPaneWidth] = useStoredNumberState(
     `${shellStorageKey}:appLeftPaneWidth`,
-    268,
+    276,
     shellPersistenceEnabled,
   )
   const effectiveAppLeftPaneWidth = clampNumber(appLeftPaneWidth, 220, 420)

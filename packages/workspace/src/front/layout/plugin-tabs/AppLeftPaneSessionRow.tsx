@@ -100,7 +100,7 @@ export function AppSessionRow({
         event.dataTransfer.setData("text/plain", title)
         event.dataTransfer.effectAllowed = "copyMove"
       } : undefined}
-      className={cn("app-left-session-row group relative w-full", compact ? "h-8" : "h-9")}
+      className={cn("app-left-session-row group relative w-full", compact ? "h-[29px]" : "h-[30px]")}
     >
       {rename.field ? (
         <div className={rowClassName}>

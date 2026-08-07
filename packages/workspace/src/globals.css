@@ -495,6 +495,11 @@
 }
 
 @media (max-width: 767px), (hover: none) {
+  .app-left-agent-row,
+  .app-left-session-row {
+    height: 44px;
+  }
+
   .app-left-agent-actions {
     position: static;
     z-index: auto;
