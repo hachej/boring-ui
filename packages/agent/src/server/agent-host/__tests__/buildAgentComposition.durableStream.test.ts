@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -46,33 +46,52 @@ describe('openDurableEventStore', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('prefers sessionRoot over workspaceRoot, per AGENTS.md hard rule 9', () => {
+  it('writes under sessionRoot, not hostStorageRoot, per AGENTS.md hard rule 9', () => {
     const sessionRoot = join(dir, 'session-root')
-    const workspaceRoot = join(dir, 'workspace-root')
-    const opened = openDurableEventStore({ sessionRoot, workspaceRoot })
+    const hostStorageRoot = join(dir, 'host-storage-root')
+    const sessionRootDbPath = join(sessionRoot, EVENT_STORE_FILE_NAME)
+    const hostStorageRootDbPath = join(hostStorageRoot, EVENT_STORE_FILE_NAME)
+
+    const opened = openDurableEventStore({ sessionRoot, hostStorageRoot })
     expect(opened).toBeDefined()
     opened?.close()
-    // The db file was created under sessionRoot, not workspaceRoot.
-    expect(() => openDurableEventStore({ sessionRoot, workspaceRoot })).not.toThrow()
-    const reopened = openDurableEventStore({ sessionRoot, workspaceRoot })
-    reopened?.close()
+
+    // Real assertion, not a comment: the db file must land under sessionRoot
+    // and must NOT land under hostStorageRoot when both are supplied.
+    expect(existsSync(sessionRootDbPath)).toBe(true)
+    expect(existsSync(hostStorageRootDbPath)).toBe(false)
   })
 
-  it('falls back to workspaceRoot when sessionRoot is absent', () => {
-    const workspaceRoot = join(dir, 'workspace-only')
-    const opened = openDurableEventStore({ workspaceRoot })
+  it('falls back to hostStorageRoot (never workspace.root) when sessionRoot is absent', () => {
+    const hostStorageRoot = join(dir, 'host-storage-only')
+    const opened = openDurableEventStore({ hostStorageRoot })
     expect(opened).toBeDefined()
     opened?.close()
+    expect(existsSync(join(hostStorageRoot, EVENT_STORE_FILE_NAME))).toBe(true)
   })
 
-  it('reports EVENT_STORE_OPEN_FAILED via telemetry and returns undefined instead of throwing when the path is unusable', () => {
+  it('fails closed with EVENT_STORE_OPEN_FAILED when neither sessionRoot nor hostStorageRoot resolve — never falls back to a sandbox/guest path', () => {
+    const capture = vi.fn()
+
+    const opened = openDurableEventStore({ telemetry: { capture } })
+
+    expect(opened).toBeUndefined()
+    expect(capture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'agent.event-store.open-failed',
+        properties: expect.objectContaining({ code: ErrorCode.enum.EVENT_STORE_OPEN_FAILED }),
+      }),
+    )
+  })
+
+  it('reports EVENT_STORE_OPEN_FAILED via telemetry and returns undefined instead of throwing when the resolved path is unusable', () => {
     // A path segment that is actually a file (not a directory) cannot be mkdir'd into.
     const blockerPath = join(dir, 'blocker-file')
     writeFileSync(blockerPath, 'not a directory')
     const unusableRoot = join(blockerPath, 'nested')
     const capture = vi.fn()
 
-    const opened = openDurableEventStore({ workspaceRoot: unusableRoot, telemetry: { capture } })
+    const opened = openDurableEventStore({ hostStorageRoot: unusableRoot, telemetry: { capture } })
 
     expect(opened).toBeUndefined()
     expect(capture).toHaveBeenCalledWith(
@@ -84,13 +103,23 @@ describe('openDurableEventStore', () => {
   })
 
   it('PROOF: durable resume across restart — replay from cursor yields the same sequence with no gap', async () => {
+    // Exercise sessionRoot distinctly from hostStorageRoot: this is the path
+    // buildAgentComposition actually takes when options.sessionRoot is set
+    // (the common production case, per BORING_AGENT_SESSION_ROOT / AGENTS.md
+    // hard rule 9). A decoy hostStorageRoot is also supplied so this test
+    // would fail if sessionRoot precedence ever regressed.
     const sessionRoot = join(dir, 'durable-session-root')
-    const path = join(sessionRoot, EVENT_STORE_FILE_NAME)
+    const decoyHostStorageRoot = join(dir, 'decoy-host-storage-root')
     const streamPath = 'stream/proof'
 
     // "Boot 1": open the store, append events, then simulate a process
-    // restart by closing the underlying sqlite connection.
-    const first = openDurableEventStore({ workspaceRoot: sessionRoot })
+    // restart by closing the underlying sqlite connection. This constructs
+    // the store exactly as buildAgentComposition does (sessionRoot preferred,
+    // hostStorageRoot as the non-guest fallback) — it does not construct a
+    // full HarnessPiChatService/composition, since the restart-resume
+    // contract being proven here lives entirely in the store's on-disk
+    // durability, not in service-level wiring.
+    const first = openDurableEventStore({ sessionRoot, hostStorageRoot: decoyHostStorageRoot })
     expect(first).toBeDefined()
     if (!first) throw new Error('expected store to open')
     await first.store.createStream(streamPath)
@@ -100,10 +129,11 @@ describe('openDurableEventStore', () => {
     offsets.push(await first.store.appendEvent(streamPath, { i: 2 }))
     first.close()
 
-    // "Boot 2": a brand-new HarnessPiChatService-equivalent store instance
-    // over the same on-disk path — this is exactly what buildAgentComposition
-    // does on process restart when the flag is set.
-    const second = openDurableEventStore({ workspaceRoot: sessionRoot })
+    expect(existsSync(join(sessionRoot, EVENT_STORE_FILE_NAME))).toBe(true)
+    expect(existsSync(join(decoyHostStorageRoot, EVENT_STORE_FILE_NAME))).toBe(false)
+
+    // "Boot 2": a brand-new store instance over the same on-disk path.
+    const second = openDurableEventStore({ sessionRoot, hostStorageRoot: decoyHostStorageRoot })
     expect(second).toBeDefined()
     if (!second) throw new Error('expected store to reopen')
     expect(second.store).toBeInstanceOf(SqliteEventStreamStore)

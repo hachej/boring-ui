@@ -335,6 +335,42 @@ describe('HarnessPiChatService event store tap', () => {
     }
   })
 
+  it('PROOF: genuinely replays behind-the-tip events after restart, not just seq continuity', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+
+      const first = createService(store)
+      const firstLive: PiChatEvent[] = []
+      const firstSub = await first.service.subscribe(ctx, 's1', 0, (event) => firstLive.push(event))
+      emitSimpleTurn(first.adapter)
+      await waitFor(() => expect(firstLive).toHaveLength(2))
+      if (firstSub.type === 'ok') firstSub.unsubscribe()
+
+      // Simulate a process restart: a brand-new HarnessPiChatService instance
+      // over the same durable store, with no in-memory buffer carried over.
+      const second = createService(store)
+      const secondLive: PiChatEvent[] = []
+      // Resume from BEFORE the tip (cursor 0, latest is 2): a real client that
+      // was mid-stream when the process restarted. Without buffer hydration
+      // from the durable store, this must fail with PI_CHAT_REPLAY_GAP because
+      // the fresh in-memory buffer has zero events but a nonzero latestSeq.
+      const secondSub = await second.service.subscribe(ctx, 's1', 0, (event) => secondLive.push(event))
+
+      expect(secondSub.type).toBe('ok')
+      if (secondSub.type !== 'ok') throw new Error('expected successful resume subscription')
+      // The replayed events land via the subscriber callback synchronously
+      // during subscribe() — this is the actual replay content, not merely a
+      // seq high-water-mark. If hydration regresses to seq-only continuity,
+      // secondLive stays empty and this assertion fails.
+      expect(secondLive).toEqual(firstLive)
+
+      secondSub.unsubscribe()
+    } finally {
+      db.db.close()
+    }
+  })
+
   it('seeds restart PiChatEvent seq from the durable tail chunk instead of eventIndex', async () => {
     const db = openDatabase(':memory:')
     try {

@@ -65,7 +65,19 @@ export function openDatabase(path: string): OpenDatabaseResult {
   const { DatabaseSync: SqliteDatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
   const db = new SqliteDatabaseSync(path)
   if (path !== ':memory:') {
-    db.exec('PRAGMA journal_mode=WAL')
+    // Matches SqliteAgentRequestLedger's pragmas (the sibling durable sqlite
+    // store): WAL lets readers and the writer proceed concurrently, and
+    // busy_timeout makes a writer wait out another connection's write lock
+    // instead of throwing SQLITE_BUSY immediately. This matters here because
+    // multiple runtime bindings for the SAME workspace scope (different
+    // agentTypeId/identity/fingerprint keys — see createAgentHost.ts's
+    // composition cache) can concurrently open the same on-disk event-stream
+    // file; each is a distinct DatabaseSync connection but they are all
+    // single in-process writers serialized by SQLite's file lock, not a
+    // multi-replica/multi-process writer setup. busy_timeout absorbs that
+    // in-process lock contention window instead of poisoning a live channel
+    // on a transient SQLITE_BUSY.
+    db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;')
   }
 
   return {

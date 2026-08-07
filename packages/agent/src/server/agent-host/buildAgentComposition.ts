@@ -43,38 +43,53 @@ export function isDurableStreamEnabled(): boolean {
 /**
  * Opens (or creates) the durable event-stream SQLite database under the same
  * durable-volume root convention as session storage (AGENTS.md hard rule 9):
- * sibling to `BORING_AGENT_SESSION_ROOT` when set, else the workspace root.
- * Returns `undefined` and logs a stable-coded diagnostic if the store cannot
- * be opened — callers must fall back to in-memory streaming rather than
- * crash boot or silently claim durability.
+ * `sessionRoot` (the host's `BORING_AGENT_SESSION_ROOT`-derived path) when
+ * set, else the HOST-side storage root resolved via
+ * `getOptionalRuntimeBundleStorageRoot` — the same accessor already used
+ * twelve lines above this call for `bashRuntimeBundle`. This deliberately
+ * never falls back to `runtimeBundle.workspace.root`: in sandbox runtime
+ * mode that is an IN-SANDBOX (guest) path, and writing the durable store
+ * there would either fail invisibly or, worse, silently land the "durable"
+ * store inside an ephemeral guest filesystem that vanishes with the sandbox.
+ * If neither a session root nor a host storage root is resolvable, this
+ * fails closed: no store is opened, a stable-coded diagnostic is reported,
+ * and callers fall back to in-memory streaming rather than ever writing to
+ * a guest path or crashing boot.
  */
 export function openDurableEventStore(input: {
   readonly sessionRoot?: string
-  readonly workspaceRoot: string
+  readonly hostStorageRoot?: string
   readonly telemetry?: TelemetrySink
 }): { store: EventStreamStore; close: () => void } | undefined {
-  const root = input.sessionRoot ?? input.workspaceRoot
+  const root = input.sessionRoot ?? input.hostStorageRoot
+  if (!root) {
+    reportEventStoreOpenFailure(input.telemetry, '(no host-resolvable root)', 'No sessionRoot and no host storage root available; refusing to fall back to a sandbox/guest path.')
+    return undefined
+  }
   const path = join(root, EVENT_STORE_FILE_NAME)
   let opened: OpenDatabaseResult
   try {
     opened = openDatabase(path)
   } catch (error) {
-    if (input.telemetry) {
-      safeCapture(input.telemetry, {
-        name: 'agent.event-store.open-failed',
-        properties: {
-          code: ErrorCode.enum.EVENT_STORE_OPEN_FAILED,
-          path,
-          message: error instanceof Error ? error.message : String(error),
-        },
-      })
-    }
+    reportEventStoreOpenFailure(input.telemetry, path, error instanceof Error ? error.message : String(error))
     return undefined
   }
   return {
     store: new SqliteEventStreamStore(opened.sql, opened.runTransaction),
     close: () => opened.db.close(),
   }
+}
+
+function reportEventStoreOpenFailure(telemetry: TelemetrySink | undefined, path: string, message: string): void {
+  if (!telemetry) return
+  safeCapture(telemetry, {
+    name: 'agent.event-store.open-failed',
+    properties: {
+      code: ErrorCode.enum.EVENT_STORE_OPEN_FAILED,
+      path,
+      message,
+    },
+  })
 }
 
 export interface BuildAgentCompositionInput {
@@ -199,7 +214,7 @@ export async function buildAgentComposition(
   const durableEventStore = isDurableStreamEnabled()
     ? openDurableEventStore({
         sessionRoot: options.sessionRoot,
-        workspaceRoot: runtimeBundle.workspace.root,
+        hostStorageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
         telemetry: options.telemetry,
       })
     : undefined
