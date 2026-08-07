@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DURABLE_STREAM_ENV_FLAG,
   EVENT_STORE_FILE_NAME,
+  decideDurableEventStore,
   isDurableStreamEnabled,
   openDurableEventStore,
 } from '../buildAgentComposition'
@@ -32,6 +33,15 @@ describe('durable event stream flag', () => {
   it('treats unrecognized values as disabled', () => {
     process.env[DURABLE_STREAM_ENV_FLAG] = 'yes'
     expect(isDurableStreamEnabled()).toBe(false)
+  })
+
+  it('reports a disabled readiness snapshot when the flag is off', () => {
+    expect(decideDurableEventStore({ enabled: false }).snapshot()).toEqual({
+      mode: 'disabled',
+      reason: `${DURABLE_STREAM_ENV_FLAG} is not enabled`,
+      storagePath: null,
+      counts: { streams: 0, events: 0 },
+    })
   })
 })
 
@@ -70,18 +80,42 @@ describe('openDurableEventStore', () => {
     expect(existsSync(join(hostStorageRoot, EVENT_STORE_FILE_NAME))).toBe(true)
   })
 
-  it('fails closed with EVENT_STORE_OPEN_FAILED when neither sessionRoot nor hostStorageRoot resolve — never falls back to a sandbox/guest path', () => {
+  it('fails closed with a reason when neither sessionRoot nor hostStorageRoot resolve — never falls back to a sandbox/guest path', () => {
     const capture = vi.fn()
 
-    const opened = openDurableEventStore({ telemetry: { capture } })
+    const decision = decideDurableEventStore({ enabled: true, telemetry: { capture } })
 
-    expect(opened).toBeUndefined()
+    expect(decision.opened).toBeUndefined()
+    expect(decision.snapshot()).toEqual({
+      mode: 'failed',
+      reason: 'No sessionRoot and no host storage root available; refusing to fall back to a sandbox/guest path.',
+      storagePath: null,
+      counts: { streams: 0, events: 0 },
+    })
     expect(capture).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'agent.event-store.open-failed',
         properties: expect.objectContaining({ code: ErrorCode.enum.EVENT_STORE_OPEN_FAILED }),
       }),
     )
+  })
+
+  it('reports live stream and event counts when active', async () => {
+    const storageRoot = join(dir, 'readiness-counts')
+    const decision = decideDurableEventStore({ enabled: true, hostStorageRoot: storageRoot })
+    if (!decision.opened) throw new Error('expected durable store to open')
+
+    await decision.opened.store.createStream('stream/readiness')
+    await decision.opened.store.appendEvent('stream/readiness', { index: 0 })
+    await decision.opened.store.appendEvent('stream/readiness', { index: 1 })
+
+    expect(decision.snapshot()).toEqual({
+      mode: 'active',
+      reason: null,
+      storagePath: join(storageRoot, EVENT_STORE_FILE_NAME),
+      counts: { streams: 1, events: 2 },
+    })
+    decision.opened.close()
   })
 
   it('reports EVENT_STORE_OPEN_FAILED via telemetry and returns undefined instead of throwing when the resolved path is unusable', () => {

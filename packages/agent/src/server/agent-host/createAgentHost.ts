@@ -65,6 +65,7 @@ export interface AgentHostRuntime {
     claim: VerifiedAgentScopeClaim,
   ): Promise<readonly import('../../shared/session').SessionSummary[]>
   isDraining(): boolean
+  getDurableStreamReadiness(): import('./buildAgentComposition').DurableStreamReadinessSnapshot | undefined
   assertOpen(): void
   verify(scope: AuthorizedAgentScope): Promise<VerifiedAgentScopeClaim>
   resolveEnvironmentScope(
@@ -333,6 +334,8 @@ function createRuntime(
       return inventory.list(agentTypeId, scope, claim)
     },
     isDraining: () => draining,
+    getDurableStreamReadiness: () => publishedCurrentBindings.values().next().value?.composition.durableStreamReadiness
+      ?? publishedBindings.values().next().value?.composition.durableStreamReadiness,
     assertOpen() {
       if (draining) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'agent host is closing')
     },
@@ -853,6 +856,7 @@ export async function createAgentHost(
     gateway,
     acquireEnvironment: acquireAppEnvironment,
     runWithWorkspaceAgent,
+    getDurableStreamReadiness: () => runtime.getDurableStreamReadiness(),
     registerDirectRoutes(projectionOptions: AgentHostDirectProjectionOptions) {
       assertStrongLedger()
       return createAgentHostRoutes({
