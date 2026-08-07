@@ -41,4 +41,5 @@ export type {
   BoringTaskRelation,
   BoringTaskSourceError,
   BoringTaskStatusId,
+  BoringTaskSessionLink,
 } from "../shared"

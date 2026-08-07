@@ -30,7 +30,7 @@ import {
   type OptimisticUserMessage,
 } from './piChatQueueState'
 
-export type PiChatConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting'
+export type PiChatConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'suspended'
 
 export type { OptimisticUserMessage } from './piChatQueueState'
 

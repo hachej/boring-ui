@@ -210,12 +210,22 @@ function SessionRow({
   rowRef: (node: HTMLDivElement | null) => void
 }) {
   const [copied, setCopied] = useState(false)
+  const mountedRef = useRef(true)
+  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    mountedRef.current = false
+    if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current)
+  }, [])
   const copySessionId = useCallback((event: MouseEvent) => {
     event.stopPropagation()
     void copyText(session.id).then((ok) => {
-      if (!ok) return
+      if (!ok || !mountedRef.current) return
       setCopied(true)
-      window.setTimeout(() => setCopied(false), 1200)
+      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current)
+      copyResetTimerRef.current = setTimeout(() => {
+        copyResetTimerRef.current = null
+        if (mountedRef.current) setCopied(false)
+      }, 1200)
     })
   }, [session.id])
 

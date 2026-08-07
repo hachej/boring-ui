@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react"
 import { Columns3, List } from "lucide-react"
+import { useWorkspacePluginClient } from "@hachej/boring-workspace"
 import type { BoringTaskAdapter, BoringTaskBoardConfig, BoringTaskCard, BoringTaskColumn, BoringTaskErrorCode, BoringTaskSourceError } from "../shared"
 import { groupTasksByColumn } from "./taskBoardModel"
 import { TaskCard } from "./TaskCard"
 import { TaskDetailDialog, type TaskDetailSelection } from "./TaskDetailDialog"
 import { TaskKanbanColumn } from "./TaskKanbanColumn"
+import { taskAttentionKey, useTaskAttention } from "./useTaskAttention"
+import { taskSessionLinkKey, useTaskSessionLinks } from "./taskSessionLinkStream"
+import { resumePendingTaskChatBindings } from "./pendingTaskChatBindings"
 
 interface TaskKanbanBoardProps {
   adapters: readonly BoringTaskAdapter[]
@@ -29,6 +33,7 @@ interface EpicOption {
 }
 
 const TASK_BOARD_CACHE_TTL_MS = 2 * 60 * 1000
+const EMPTY_TASKS: readonly BoringTaskCard[] = []
 type TaskBoardViewMode = "kanban" | "list"
 
 function adapterSummary(adapters: readonly BoringTaskAdapter[], selectedCount: number): string {
@@ -134,8 +139,12 @@ function writeViewMode(cacheKey: string, mode: TaskBoardViewMode): void {
 }
 
 export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
+  const pluginClient = useWorkspacePluginClient()
   const allAdapterIds = useMemo(() => adapters.map((adapter) => adapter.id), [adapters])
-  const cacheKey = useMemo(() => `boring-tasks:board-cache:v1:${allAdapterIds.join("|")}`, [allAdapterIds])
+  const cacheKey = useMemo(
+    () => `boring-tasks:board-cache:v2:${JSON.stringify([pluginClient.workspaceId ?? "workspace", ...allAdapterIds])}`,
+    [allAdapterIds, pluginClient.workspaceId],
+  )
   const cachedState = useMemo(() => readCachedBoardState(cacheKey), [cacheKey])
   const cachedColumnIds = useMemo(
     () => cachedState ? new Set(Object.values(cachedState.configs).flatMap((config) => config.columns.map((column) => column.id))) : new Set<string>(),
@@ -158,13 +167,38 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const [detailOpen, setDetailOpen] = useState(false)
   const detailTriggerRef = useRef<HTMLButtonElement | null>(null)
   const sourceRequestVersions = useRef(new Map<string, number>())
-  const pendingSourceIds = useRef(new Set<string>())
+  const pendingSourceIds = useRef(new Map<string, Map<string, number>>())
+  const activeTaskMutationCounts = useRef(new Map<string, number>())
+  const taskMutationVersions = useRef(new Map<string, number>())
+  const deleteInFlightScopes = useRef(new Set<string>())
   const stateRef = useRef(state)
   stateRef.current = state
   const toolbarRef = useRef<HTMLDivElement | null>(null)
   const adaptersById = useMemo(() => new Map(adapters.map((adapter) => [adapter.id, adapter])), [adapters])
+  const sessionLinksByTask = useTaskSessionLinks(pluginClient)
+  useEffect(() => { resumePendingTaskChatBindings(pluginClient) }, [pluginClient])
+  const attentionByTask = useTaskAttention(state?.tasks ?? EMPTY_TASKS)
   const adapterIdsRef = useRef(new Set(allAdapterIds))
   adapterIdsRef.current = new Set(allAdapterIds)
+  const activeCacheKeyRef = useRef(cacheKey)
+
+  useLayoutEffect(() => {
+    if (activeCacheKeyRef.current === cacheKey) return
+    pendingSourceIds.current.delete(activeCacheKeyRef.current)
+    activeCacheKeyRef.current = cacheKey
+    const nextState = cachedState ? { configs: cachedState.configs, tasks: cachedState.tasks, errors: cachedState.errors } : null
+    stateRef.current = nextState
+    setState(nextState)
+    setVisibleColumnIds(cachedColumnIds)
+    setLoading(!cachedState)
+    setError(null)
+    setViewModeState(readViewMode(cacheKey))
+    setActiveTaskRef(null)
+    setMovingTaskId(null)
+    setDeletingTaskId(null)
+    setDetailSelection(null)
+    setDetailOpen(false)
+  }, [cacheKey, cachedColumnIds, cachedState])
 
   const setViewMode = (mode: TaskBoardViewMode) => {
     setViewModeState(mode)
@@ -207,13 +241,16 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     const requested = options.sourceIds
       ? adapters.filter((adapter) => options.sourceIds?.includes(adapter.id))
       : adapters
+    const pendingForWorkspace = pendingSourceIds.current.get(cacheKey) ?? new Map<string, number>()
+    pendingSourceIds.current.set(cacheKey, pendingForWorkspace)
     const requestVersions = new Map(requested.map((adapter) => {
-      const version = (sourceRequestVersions.current.get(adapter.id) ?? 0) + 1
-      sourceRequestVersions.current.set(adapter.id, version)
-      pendingSourceIds.current.add(adapter.id)
+      const sourceKey = JSON.stringify([cacheKey, adapter.id])
+      const version = (sourceRequestVersions.current.get(sourceKey) ?? 0) + 1
+      sourceRequestVersions.current.set(sourceKey, version)
+      pendingForWorkspace.set(adapter.id, (pendingForWorkspace.get(adapter.id) ?? 0) + 1)
       return [adapter.id, version] as const
     }))
-    setLoading(requested.length > 0 || pendingSourceIds.current.size > 0)
+    setLoading(requested.length > 0 || pendingForWorkspace.size > 0)
     setError(null)
     const entries = await Promise.all(requested.map(async (adapter) => {
       try {
@@ -223,12 +260,21 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
         return { ok: false as const, adapterId: adapter.id, cause }
       }
     }))
-    const versionIsCurrent = (adapterId: string) => sourceRequestVersions.current.get(adapterId) === requestVersions.get(adapterId)
-    for (const entry of entries) {
-      if (versionIsCurrent(entry.adapterId)) pendingSourceIds.current.delete(entry.adapterId)
+    for (const adapter of requested) {
+      const remaining = (pendingForWorkspace.get(adapter.id) ?? 1) - 1
+      if (remaining > 0) pendingForWorkspace.set(adapter.id, remaining)
+      else pendingForWorkspace.delete(adapter.id)
     }
-    const currentEntries = entries.filter((entry) => adapterIdsRef.current.has(entry.adapterId) && versionIsCurrent(entry.adapterId))
-    setLoading(pendingSourceIds.current.size > 0)
+    if (pendingForWorkspace.size === 0) pendingSourceIds.current.delete(cacheKey)
+    if (activeCacheKeyRef.current !== cacheKey) return
+
+    const versionIsCurrent = (adapterId: string) => sourceRequestVersions.current.get(JSON.stringify([cacheKey, adapterId])) === requestVersions.get(adapterId)
+    const currentEntries = entries.filter((entry) => (
+      adapterIdsRef.current.has(entry.adapterId)
+      && versionIsCurrent(entry.adapterId)
+      && (activeTaskMutationCounts.current.get(JSON.stringify([cacheKey, entry.adapterId])) ?? 0) === 0
+    ))
+    setLoading(pendingForWorkspace.size > 0)
     if (currentEntries.length === 0) return
 
     const previous = stateRef.current ?? { configs: {}, tasks: [], errors: {} }
@@ -318,6 +364,30 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     event.dataTransfer.setData("text/plain", task.number)
   }
 
+  const beginTaskMutation = (adapterId: string, taskId: string) => {
+    const workspaceKey = cacheKey
+    const adapterMutationKey = JSON.stringify([workspaceKey, adapterId])
+    const mutationKey = JSON.stringify([workspaceKey, adapterId, taskId])
+    const version = (taskMutationVersions.current.get(mutationKey) ?? 0) + 1
+    taskMutationVersions.current.set(mutationKey, version)
+    activeTaskMutationCounts.current.set(adapterMutationKey, (activeTaskMutationCounts.current.get(adapterMutationKey) ?? 0) + 1)
+    const sourceKey = JSON.stringify([workspaceKey, adapterId])
+    sourceRequestVersions.current.set(sourceKey, (sourceRequestVersions.current.get(sourceKey) ?? 0) + 1)
+    let finished = false
+    const isCurrent = () => activeCacheKeyRef.current === workspaceKey && taskMutationVersions.current.get(mutationKey) === version
+    return {
+      isCurrent,
+      finish() {
+        if (finished) return
+        finished = true
+        const remaining = (activeTaskMutationCounts.current.get(adapterMutationKey) ?? 1) - 1
+        if (remaining > 0) activeTaskMutationCounts.current.set(adapterMutationKey, remaining)
+        else activeTaskMutationCounts.current.delete(adapterMutationKey)
+        sourceRequestVersions.current.set(sourceKey, (sourceRequestVersions.current.get(sourceKey) ?? 0) + 1)
+      },
+    }
+  }
+
   const moveTask = async (taskId: string, adapterId: string, statusId: string) => {
     if (!state) return
     const task = state.tasks.find((candidate) => candidate.id === taskId && candidate.adapterId === adapterId)
@@ -331,7 +401,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
       return
     }
 
-    const previous = state.tasks
+    const mutation = beginTaskMutation(adapterId, taskId)
     const movingAdapterId = task.adapterId
     setMovingTaskId(taskId)
     setError(null)
@@ -342,28 +412,56 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
 
     try {
       const moved = await adapter.moveTask({ taskId, statusId })
-      setState((current) => current ? {
-        ...current,
-        tasks: current.tasks.map((candidate) => candidate.id === taskId && candidate.adapterId === adapterId ? moved : candidate),
-      } : current)
+      if (mutation.isCurrent()) {
+        setState((current) => {
+          if (!current) return current
+          const next = {
+            ...current,
+            tasks: current.tasks.map((candidate) => candidate.id === taskId && candidate.adapterId === adapterId ? moved : candidate),
+          }
+          stateRef.current = next
+          writeCachedBoardState(cacheKey, next)
+          return next
+        })
+      }
     } catch (cause) {
-      setState((current) => current ? { ...current, tasks: previous } : current)
-      if (selectedAdapterIds.has(movingAdapterId)) {
-        setError(cause instanceof Error ? cause.message : String(cause))
+      if (mutation.isCurrent()) {
+        setState((current) => {
+          if (!current) return current
+          const next = {
+            ...current,
+            tasks: current.tasks.map((candidate) => candidate.id === taskId && candidate.adapterId === adapterId ? task : candidate),
+          }
+          stateRef.current = next
+          writeCachedBoardState(cacheKey, next)
+          return next
+        })
+        if (selectedAdapterIds.has(movingAdapterId)) setError(cause instanceof Error ? cause.message : String(cause))
       }
     } finally {
-      setMovingTaskId(null)
-      setActiveTaskRef(null)
+      const clearBusyState = mutation.isCurrent()
+      mutation.finish()
+      if (clearBusyState) {
+        setMovingTaskId(null)
+        setActiveTaskRef(null)
+      }
     }
   }
 
   const deleteTask = async (task: BoringTaskCard) => {
     const adapter = adaptersById.get(task.adapterId)
     if (!adapter?.capabilities.delete || !adapter.deleteTask) {
-      setError(`Task source does not support issue deletion: ${task.adapterId}`)
+      setError(`Task source does not support removing tasks: ${task.adapterId}`)
       return
     }
-    const previous = state?.tasks ?? []
+    const deleteScope = cacheKey
+    if (deleteInFlightScopes.current.has(deleteScope)) return
+    deleteInFlightScopes.current.add(deleteScope)
+    const originalTasks = stateRef.current?.tasks ?? []
+    const originalIndex = originalTasks.findIndex((candidate) => candidate.id === task.id && candidate.adapterId === task.adapterId)
+    const previousTask = originalIndex > 0 ? originalTasks[originalIndex - 1] : undefined
+    const nextTask = originalIndex >= 0 ? originalTasks[originalIndex + 1] : undefined
+    const mutation = beginTaskMutation(task.adapterId, task.id)
     setDeletingTaskId(task.id)
     setError(null)
     setState((current) => current ? {
@@ -372,11 +470,39 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     } : current)
     try {
       await adapter.deleteTask({ taskId: task.id })
+      if (mutation.isCurrent()) {
+        setState((current) => {
+          if (current) writeCachedBoardState(cacheKey, current)
+          return current
+        })
+      }
     } catch (cause) {
-      setState((current) => current ? { ...current, tasks: previous } : current)
-      if (selectedAdapterIds.has(task.adapterId)) setError(cause instanceof Error ? cause.message : String(cause))
+      if (mutation.isCurrent()) {
+        setState((current) => {
+          if (!current || current.tasks.some((candidate) => candidate.id === task.id && candidate.adapterId === task.adapterId)) return current
+          const tasks = [...current.tasks]
+          const sameTask = (candidate: BoringTaskCard, neighbor: BoringTaskCard | undefined) =>
+            Boolean(neighbor && candidate.id === neighbor.id && candidate.adapterId === neighbor.adapterId)
+          const nextIndex = tasks.findIndex((candidate) => sameTask(candidate, nextTask))
+          const previousIndex = tasks.findIndex((candidate) => sameTask(candidate, previousTask))
+          const insertionIndex = nextIndex >= 0
+            ? nextIndex
+            : previousIndex >= 0
+              ? previousIndex + 1
+              : originalIndex < 0 ? tasks.length : Math.min(originalIndex, tasks.length)
+          tasks.splice(insertionIndex, 0, task)
+          const next = { ...current, tasks }
+          stateRef.current = next
+          writeCachedBoardState(cacheKey, next)
+          return next
+        })
+        if (selectedAdapterIds.has(task.adapterId)) setError(cause instanceof Error ? cause.message : String(cause))
+      }
     } finally {
-      setDeletingTaskId(null)
+      deleteInFlightScopes.current.delete(deleteScope)
+      const clearBusyState = mutation.isCurrent()
+      mutation.finish()
+      if (clearBusyState) setDeletingTaskId(null)
     }
   }
 
@@ -622,7 +748,10 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                           draggable={false}
                           unmapped={column.unmapped}
                           compact
-                          deleteEnabled={Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
+                          attention={attentionByTask.get(taskAttentionKey(task))}
+                          sessionLinks={sessionLinksByTask ? sessionLinksByTask.get(taskSessionLinkKey(task.adapterId, task.id)) ?? [] : undefined}
+                          deleteEnabled={deletingTaskId === null && Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
+                          deleteEffect={adaptersById.get(task.adapterId)?.capabilities.deleteEffect ?? "delete"}
                           onDelete={(task) => void deleteTask(task)}
                           onOpenDetail={canOpenTaskDetail(task) ? openTaskDetail : undefined}
                           onDragStart={handleTaskDragStart}
@@ -647,9 +776,12 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                 onTaskDragEnd={() => setActiveTaskRef(null)}
                 onTaskDrop={(taskId, adapterId, statusId) => void moveTask(taskId, adapterId, statusId)}
                 onTaskDelete={(task) => void deleteTask(task)}
+                attentionByTask={attentionByTask}
+                sessionLinksByTask={sessionLinksByTask}
                 onTaskOpenDetail={openTaskDetail}
                 canDragTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.move && adaptersById.get(task.adapterId)?.moveTask)}
-                canDeleteTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
+                canDeleteTask={(task) => deletingTaskId === null && Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
+                deleteEffectForTask={(task) => adaptersById.get(task.adapterId)?.capabilities.deleteEffect ?? "delete"}
                 canOpenTaskDetail={canOpenTaskDetail}
               />
             ))}

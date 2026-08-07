@@ -6,7 +6,7 @@ import { createReadonlyProjectionOperations } from "@hachej/boring-bash/server"
 import { createNodeWorkspace } from "@hachej/boring-sandbox/providers/node-workspace"
 import { createPersistedScriptedPiHarness } from "./testing/scriptedPiHarness"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
-import { createTasksServerPlugin, createWorkspaceBeadsOperations } from "@hachej/boring-tasks/server"
+import { createWorkspaceBeadsOperations } from "@hachej/boring-tasks/server"
 import { loadBoringFactoryAgents } from "./factoryAgents"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
@@ -81,11 +81,14 @@ export async function startPlaygroundServer(): Promise<void> {
       ...(process.env.BORING_AGENT_E2E_SCRIPTED_PI === "1"
         ? { harnessFactory: createPersistedScriptedPiHarness }
         : {}),
-      plugins: [createTasksServerPlugin({
-        workspaceRoot,
-        beadsOperations,
-        config: { providers: [{ provider: "github", repo: "auto" }, { provider: "beads" }] },
-      })],
+      plugins: [{
+        dir: resolve(APP_ROOT, "../../plugins/tasks"),
+        options: {
+          beadsOperations,
+          config: { providers: [{ provider: "github", repo: "auto" }, { provider: "beads" }] },
+        },
+        trust: "internal",
+      }],
       defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
       getFilesystemBindings: multiFilesystemPlayground
         ? async () => [{

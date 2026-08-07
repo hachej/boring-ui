@@ -67,12 +67,14 @@ export function PluginAppLeftOverlayHost({
   plugins,
   activeOverlay,
   onClose,
+  params,
   headerInsetStart,
   headerInsetEnd,
 }: {
   plugins: readonly CapturedFrontPlugin[]
   activeOverlay: AppLeftOverlayId
   onClose: () => void
+  params?: Readonly<Record<string, string>>
   headerInsetStart?: boolean
   headerInsetEnd?: boolean
 }): ReactNode {
@@ -87,7 +89,7 @@ export function PluginAppLeftOverlayHost({
     createElement(
       PluginErrorBoundary,
       { pluginId: entry.plugin.id, contributionKind: "app-left-action", contributionId: entry.action.id },
-      createElement(entry.action.overlay, { onClose }),
+      createElement(entry.action.overlay, { onClose, params }),
     ),
   )
 }
