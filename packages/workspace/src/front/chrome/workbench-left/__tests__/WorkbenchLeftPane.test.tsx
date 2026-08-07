@@ -105,6 +105,37 @@ describe("WorkbenchLeftPane", () => {
     expect(importer).toHaveBeenCalledTimes(1)
   })
 
+  test("empty, loading and loaded states are mutually exclusive", async () => {
+    // No source registered: the empty state stands alone, with no loading
+    // affordance competing for the same space.
+    const empty = renderLeftPane({ children: <WorkbenchLeftPane /> })
+    expect(screen.getByText("No workspace category registered.")).toBeInTheDocument()
+    expect(screen.queryByRole("status", { name: "Loading workspace category" })).not.toBeInTheDocument()
+    empty.unmount()
+
+    // A pending lazy source shows only the skeleton; once it resolves the
+    // skeleton is replaced by the body and never coexists with it.
+    let resolveSource: ((mod: { default: () => React.ReactElement }) => void) | undefined
+    const sources = new WorkspaceSourceRegistry()
+    sources.register("lazy.states", {
+      title: "Lazy",
+      lazy: true,
+      component: () => new Promise<{ default: () => React.ReactElement }>((resolve) => {
+        resolveSource = resolve
+      }),
+    })
+
+    renderLeftPane({ sources, children: <WorkbenchLeftPane /> })
+
+    expect(screen.getByRole("status", { name: "Loading workspace category" })).toHaveAttribute("aria-busy", "true")
+    expect(screen.queryByText("No workspace category registered.")).not.toBeInTheDocument()
+
+    resolveSource?.({ default: () => <div>resolved body</div> })
+
+    expect(await screen.findByText("resolved body")).toBeInTheDocument()
+    expect(screen.queryByRole("status", { name: "Loading workspace category" })).not.toBeInTheDocument()
+  })
+
   test("selecting a category opens its associated default center panel", () => {
     const panelRegistry = new PanelRegistry()
     const sources = new WorkspaceSourceRegistry()
