@@ -135,11 +135,11 @@ describe("HostedDueRunService", () => {
             : { ...runRow, status: "succeeded", completed_at: "2026-07-23T09:00:16.000Z", duration_ms: 1_000 }
         return [runRow]
       }
-      if (text.includes("FROM boring_automation_automations")) return [AUTOMATION_ROW]
+      if (text.includes("FROM boring_automation_automations")) return [{ ...AUTOMATION_ROW, agent_type_id: "researcher" }]
       return []
     }), { json: (value: unknown) => value }) as unknown as postgres.Sql
     const dispatch = vi.fn(async (input: { requestId: string }) => ({
-      ref: { agentTypeId: "selected-agent", sessionId: "session-1" },
+      ref: { agentTypeId: "researcher", sessionId: "session-1" },
       receipt: { accepted: true as const, cursor: 0, disposition: "prompt" as const, clientNonce: input.requestId },
       events: (async function* () {})(),
     }))
@@ -149,6 +149,7 @@ describe("HostedDueRunService", () => {
     const verifyActor = vi.fn(() => true)
     const service = new HostedDueRunService({
       agentTypeId: "selected-agent",
+      availableAgentTypeIds: ["selected-agent", "researcher"],
       sql,
       dispatcherResolver: resolver,
       verifyActor,
@@ -160,7 +161,7 @@ describe("HostedDueRunService", () => {
     const actor = { workspaceId: "workspace-a", userId: "user-a" }
     expect(verifyActor).toHaveBeenCalledWith(actor)
     expect(resolver.runWithWorkspaceAgent).toHaveBeenCalledWith(expect.objectContaining({
-      agentTypeId: "selected-agent",
+      agentTypeId: "researcher",
       context: actor,
     }), expect.any(Function))
     expect(dispatch).toHaveBeenCalledOnce()
