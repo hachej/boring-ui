@@ -86,7 +86,7 @@ describe("ChatPaneStageDock", () => {
     expect(onDrop).toHaveBeenCalledWith("shared", "beta")
   })
 
-  it('mounts panes with the "always" renderer so switching preserves loading and scroll state', () => {
+  it("renders the active pane in Dockview's visible group", () => {
     dockviewProps.mockClear()
     render(
       <ChatPaneStageDock
@@ -100,10 +100,10 @@ describe("ChatPaneStageDock", () => {
     )
 
     expect(dockviewProps).toHaveBeenCalled()
-    expect(dockviewProps.mock.calls[0][0]).toMatchObject({ defaultRenderer: "always" })
+    expect(dockviewProps.mock.calls[0][0]).toMatchObject({ defaultRenderer: "onlyWhenVisible" })
   })
 
-  it("keeps Dockview mounted when the only pane switches sessions", () => {
+  it("remounts Dockview when the only pane switches sessions", () => {
     dockviewMounts.mockClear()
     const { rerender } = render(
       <ChatPaneStageDock
@@ -120,7 +120,7 @@ describe("ChatPaneStageDock", () => {
       />,
     )
 
-    expect(dockviewMounts).toHaveBeenCalledTimes(1)
+    expect(dockviewMounts).toHaveBeenCalledTimes(2)
   })
 
   it("renders chat top actions only in the active pane header", () => {
