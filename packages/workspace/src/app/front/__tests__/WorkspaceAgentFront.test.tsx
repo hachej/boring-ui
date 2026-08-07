@@ -7,6 +7,7 @@ import { UI_COMMAND_EVENT, type UiCommand } from "../../../front/bridge"
 import { useWorkspacePluginClient } from "../../../front/plugin/useWorkspacePluginClient"
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
 import type { PanelConfig } from "../../../front/registry/types"
+import { requestAppLeftOverlay } from "../../../shared/plugins/appLeftOverlay"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
 import {
@@ -284,8 +285,8 @@ describe("WorkspaceAgentFront", () => {
       stream?.emit("snapshot", { sessions: [] })
     })
 
-    expect(statuses).toContainEqual({ sessionId: "session-1", agentTypeId: "default", working: true })
-    expect(statuses.at(-1)).toEqual({ sessionId: "session-1", agentTypeId: "default", working: false })
+    expect(statuses).toContainEqual({ workspaceId: "working-session-stream", sessionId: "session-1", agentTypeId: "default", working: true })
+    expect(statuses.at(-1)).toEqual({ workspaceId: "working-session-stream", sessionId: "session-1", agentTypeId: "default", working: false })
     unmount()
     expect(stream?.close).toHaveBeenCalledTimes(1)
     window.removeEventListener("boring:chat-session-status", onStatus)
@@ -915,6 +916,37 @@ describe("WorkspaceAgentFront", () => {
     expect(plugins).not.toHaveAttribute("data-active")
   })
 
+  it("never mounts a different plugin overlay with stale request params", async () => {
+    const user = userEvent.setup()
+    const mountedParams: Array<string | undefined> = []
+    function SecondOverlay({ params }: { params?: Readonly<Record<string, string>> }) {
+      useEffect(() => { mountedParams.push(params?.itemId) }, [params])
+      return <div data-testid="second-overlay-body">Second overlay</div>
+    }
+    const plugin = definePlugin({
+      id: "parameterized-overlays",
+      appLeftActions: [
+        { id: "first-overlay", label: "First overlay", overlay: () => <div>First overlay</div> },
+        { id: "second-overlay", label: "Second overlay", overlay: SecondOverlay },
+      ],
+    })
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-overlay-params"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        plugins={[plugin]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    act(() => { requestAppLeftOverlay("first-overlay", { itemId: "inbox-item" }) })
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Second overlay" }))
+
+    expect(await screen.findByTestId("second-overlay-body")).toBeInTheDocument()
+    expect(mountedParams).toEqual([undefined])
+  })
+
   it("rejects plugin app-left actions that collide with built-in overlays", () => {
     const collidingPlugin = definePlugin({
       id: "colliding-action",
@@ -1274,7 +1306,7 @@ describe("WorkspaceAgentFront", () => {
             name: "review",
             description: "Review the current diff",
             source: "project",
-            filePath: ".agents/skills/review/SKILL.md",
+            resource: { filesystem: "user", path: ".agents/skills/review/SKILL.md" },
           }],
         }), {
           status: 200,
@@ -1318,10 +1350,10 @@ describe("WorkspaceAgentFront", () => {
       await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
       expect(screen.getByText("Review the current diff")).toBeInTheDocument()
 
-      await user.click(screen.getByRole("button", { name: "Open skill review in workspace" }))
+      await user.click(screen.getByRole("button", { name: "Open skill review from project" }))
       expect(commands).toContainEqual({
         kind: "openFile",
-        params: { path: ".agents/skills/review/SKILL.md", mode: "view" },
+        params: { path: ".agents/skills/review/SKILL.md", filesystem: "user", mode: "view" },
       })
       expect(screen.getByText("/review")).toBeInTheDocument()
 

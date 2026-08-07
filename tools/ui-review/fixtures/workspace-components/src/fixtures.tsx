@@ -162,6 +162,7 @@ const ASK_USER_FIXTURE_QUESTION: AskUserQuestion = {
   status: "ready",
   title: "Choose a review direction",
   context: "Select the next step for this implementation review.",
+  artifacts: [],
   schema: {
     wireVersion: 1,
     submitLabel: "Continue",

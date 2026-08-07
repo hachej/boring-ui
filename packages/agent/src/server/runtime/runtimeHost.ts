@@ -1,4 +1,7 @@
-import type { RuntimeHostOperations } from '@hachej/boring-bash/agent'
+import type {
+  RuntimeFilesystemBinding,
+  RuntimeHostOperations,
+} from '@hachej/boring-bash/agent'
 import type {
   BoringAgentRuntimePaths,
   CreateNodeWorkspaceOptions,
@@ -29,4 +32,9 @@ export interface AgentRuntimeHostOperations extends RuntimeHostOperations {
   validatePath(root: string, requestedPath: string): string
   assertRealPathWithinWorkspace(root: string, targetPath: string): Promise<void>
   isIgnoredDirName(name: string): boolean
+  /** Host-owned confined projection for package resources outside the workspace. */
+  createAgentResourceFilesystemBinding(
+    filesystem: string,
+    mounts: readonly { readonly logicalRoot: string; readonly sourceRoot: string }[],
+  ): Promise<RuntimeFilesystemBinding>
 }

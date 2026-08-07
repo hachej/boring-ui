@@ -4,7 +4,9 @@ import type { FastifyRequest } from 'fastify'
 import type { InterruptReceipt, PiChatEvent, StopReceipt } from '../shared/chat'
 import type { AgentEvent, AgentMessageContent } from '../shared/events'
 import { ErrorCode } from '../shared/error-codes'
+import type { AgentSessionRef } from '../shared/gateway/types'
 import type { Workspace } from '../shared/workspace'
+import type { AuthorizedSessionRunDetails } from './sessionRunDetails'
 import type {
   LeaseBoundWorkspaceAgent,
   WorkspaceAgentDirectRunCallback,
@@ -67,6 +69,19 @@ export interface WorkspaceAgentDispatcherResolver {
     ctx: WorkspaceAgentDispatcherContext,
     options?: WorkspaceAgentDispatcherResolveOptions,
   ): Promise<WorkspaceAgentDispatcherBinding>
+  /** Authorize one exact addressed native session without exposing transcript data. */
+  authorizeSession?(
+    ctx: WorkspaceAgentDispatcherContext,
+    ref: AgentSessionRef,
+    options?: WorkspaceAgentDispatcherResolveOptions,
+  ): Promise<void>
+  /** Authorized transcript-redacted projection of allowlisted structured run details. */
+  readSessionRunDetails?(
+    ctx: WorkspaceAgentDispatcherContext,
+    ref: AgentSessionRef,
+    detailKinds: readonly string[],
+    options?: WorkspaceAgentDispatcherResolveOptions,
+  ): Promise<readonly AuthorizedSessionRunDetails[]>
 }
 
 /**
@@ -158,6 +173,7 @@ async function dispatchGatewayInput(
           requestId,
           clientNonce,
           content,
+          ...(input.displayMessage ? { displayContent: input.displayMessage } : {}),
           ...(input.model ? { model: input.model } : {}),
           ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
           ...(input.attachments ? { attachments: input.attachments } : {}),

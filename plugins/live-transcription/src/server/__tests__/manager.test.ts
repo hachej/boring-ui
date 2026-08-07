@@ -61,6 +61,14 @@ describe("LiveTranscriptManager", () => {
     const workspace = new MemoryWorkspace()
     const abort = new AbortController()
     let callbackCompleted = false
+    const dispatchReview = vi.fn(async (input, _onEvent, onAccepted) => {
+      const accepted = {
+        ref: { agentTypeId: "default", sessionId: input.sessionId },
+        receipt: { accepted: true as const, cursor: 1, disposition: "prompt" as const, clientNonce: input.clientNonce },
+      }
+      await onAccepted?.(accepted)
+      return accepted
+    })
     const runWithWorkspaceAgent = vi.fn(async (input, run) => {
       expect(input).toMatchObject({
         agentTypeId: "default",
@@ -70,30 +78,47 @@ describe("LiveTranscriptManager", () => {
       await run({
         workspace,
         signal: abort.signal,
-        dispatch: vi.fn(),
+        dispatch: dispatchReview,
         interrupt: vi.fn(),
         stop: vi.fn(),
       })
       callbackCompleted = true
     })
+    const upstream = {
+      connect: vi.fn(async () => undefined),
+      sendPcm: vi.fn(async () => undefined),
+      drain: vi.fn(async () => undefined),
+      close: vi.fn(),
+    }
     const manager = new LiveTranscriptManager({
       dispatcherResolver: {
         runWithWorkspaceAgent,
-        async resolve() { throw new Error("compatibility resolver must not be used") },
+        async resolve() { throw new Error("compatibility dispatcher must not be used") },
       } as WorkspaceAgentDispatcherResolver,
       agentTypeId: "default",
       actorResolver: () => ({ workspaceId: "default", userId: "local" }),
       upstreamUrl: "ws://127.0.0.1:18772/asr",
+      createUpstreamForTest: () => upstream,
     })
 
     const started = await manager.start(request, { sessionId: "chat-1" })
     expect(runWithWorkspaceAgent).toHaveBeenCalledOnce()
     expect(callbackCompleted).toBe(false)
-    await expect(manager.review(started.liveSessionId)).rejects.toMatchObject({ code: "live_transcript_disabled" })
+    const socket = new FakeSocket()
+    manager.handleBrowserSocket(started.liveSessionId, socket as never)
+    socket.emit("message", Buffer.from(started.socketNonce), true)
+    await vi.waitFor(() => expect(manager.status(started.liveSessionId).state).toBe("active"))
+    await expect(manager.review(started.liveSessionId)).resolves.toEqual({ status: "dispatched" })
+    expect(dispatchReview).toHaveBeenCalledOnce()
+    expect(dispatchReview.mock.calls[0]?.[0]).toMatchObject({
+      sessionId: "chat-1",
+      content: expect.stringContaining("Review the live transcript"),
+      displayMessage: expect.any(String),
+    })
 
-    await manager.interruptBeforeAttachment(started.liveSessionId, "attachment_failed")
+    await manager.stop(started.liveSessionId)
     await vi.waitFor(() => expect(callbackCompleted).toBe(true))
-    expect(await workspace.readFile(started.transcriptPath)).toContain("- State: interrupted")
+    expect(await workspace.readFile(started.transcriptPath)).toContain("- State: complete")
   })
 
   it("owns one process lease, redeems one nonce, projects full snapshots, and stops idempotently", async () => {

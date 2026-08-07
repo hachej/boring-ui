@@ -12,7 +12,11 @@ export function isLoopbackHost(host: string): boolean {
   return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1"
 }
 
-export function validateLocalAuthority(authority: LiveTranscriptAuthority, upstreamUrl: string): void {
+export function validateLocalAuthority(
+  authority: LiveTranscriptAuthority,
+  upstreamUrl: string,
+  provider: "whisperlivekit" | "kyutai" | "sortformer" = "whisperlivekit",
+): void {
   let origin: URL
   let upstream: URL
   try {
@@ -28,13 +32,13 @@ export function validateLocalAuthority(authority: LiveTranscriptAuthority, upstr
     || !["http:", "https:"].includes(origin.protocol)
     || !isLoopbackHost(upstream.hostname)
     || !["ws:", "wss:"].includes(upstream.protocol)
-    || upstream.pathname !== "/asr"
+    || upstream.pathname !== (provider === "kyutai" ? "/api/asr-streaming" : provider === "sortformer" ? "/v1/diarize" : "/asr")
     || upstream.username
     || upstream.password
   ) {
     throw new LiveTranscriptError(
       "live_transcript_local_only",
-      "Live transcripts require exact loopback listener, browser, and WhisperLiveKit authorities.",
+      "Live transcripts require exact loopback listener, browser, and transcription-service authorities.",
       500,
     )
   }

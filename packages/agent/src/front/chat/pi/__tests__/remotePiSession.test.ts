@@ -159,6 +159,31 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('suspends only the event transport and resumes from the retained cursor without rehydrating', async () => {
+    const streams = [openNdjsonStream(), openNdjsonStream()]
+    let eventCalls = 0
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return jsonResponse(snapshot({ seq: 42 }))
+      if (url.endsWith('/events?cursor=42')) return new Response(streams[eventCalls++]!.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock)
+
+    await waitUntil(() => eventCalls === 1)
+    session.suspendStream()
+    expect(session.getState().connection.state).toBe('suspended')
+    expect(session.getState().committedMessages).toHaveLength(1)
+    expect(session.getDebugState()).toMatchObject({ suspended: true, inflightFetches: 0 })
+
+    session.resumeStream()
+    await waitUntil(() => eventCalls === 2)
+    expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/state'))).toHaveLength(1)
+    expect(session.getState().committedMessages).toHaveLength(1)
+    expect(session.getDebugState().suspended).toBe(false)
+
+    session.dispose()
+  })
+
   it('silently reconnects after a hung event stream connect times out', async () => {
     const events = openNdjsonStream()
     let eventCalls = 0

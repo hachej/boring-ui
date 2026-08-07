@@ -19,6 +19,7 @@ import {
   validatePath,
   withWorkspacePythonEnv,
 } from '@hachej/boring-sandbox/providers/node-workspace'
+import { createAgentResourceFilesystemBinding } from '@hachej/boring-bash/server'
 import {
   createVercelSandboxProvider,
   VERCEL_SANDBOX_REMOTE_ROOT,
@@ -63,6 +64,7 @@ export const agentSandboxRuntimeHostOperations: AgentRuntimeHostOperations = {
   validatePath,
   assertRealPathWithinWorkspace,
   isIgnoredDirName,
+  createAgentResourceFilesystemBinding,
   buildBwrapArgs,
   withWorkspacePythonEnv,
 }

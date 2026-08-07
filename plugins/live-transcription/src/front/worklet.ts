@@ -5,8 +5,10 @@ export const LIVE_TRANSCRIPT_WORKLET_NAME = "boring-live-transcript-pcm16"
 export function createLiveTranscriptWorkletUrl(): string {
   const source = `
 class BoringLiveTranscriptPcm16 extends AudioWorkletProcessor {
-  constructor() {
+  constructor(options) {
     super();
+    this.outputSampleRate = options.processorOptions?.outputSampleRate || ${LIVE_PCM_SAMPLE_RATE};
+    this.frameSamples = options.processorOptions?.frameSamples || ${LIVE_PCM_FRAME_SAMPLES};
     this.input = [];
     this.position = 0;
     this.output = [];
@@ -47,17 +49,17 @@ class BoringLiveTranscriptPcm16 extends AudioWorkletProcessor {
       for (const channel of channels) sample += channel[index] || 0;
       this.input.push(sample / channels.length);
     }
-    const ratio = sampleRate / ${LIVE_PCM_SAMPLE_RATE};
+    const ratio = sampleRate / this.outputSampleRate;
     while (this.position + 1 < this.input.length) {
       const left = Math.floor(this.position);
       const fraction = this.position - left;
       const sample = this.input[left] * (1 - fraction) + this.input[left + 1] * fraction;
       this.output.push(Math.max(-1, Math.min(1, sample)));
       this.position += ratio;
-      if (this.output.length === ${LIVE_PCM_FRAME_SAMPLES}) {
-        const frame = new ArrayBuffer(${LIVE_PCM_FRAME_SAMPLES * 2});
+      if (this.output.length === this.frameSamples) {
+        const frame = new ArrayBuffer(this.frameSamples * 2);
         const view = new DataView(frame);
-        for (let index = 0; index < ${LIVE_PCM_FRAME_SAMPLES}; index += 1) {
+        for (let index = 0; index < this.frameSamples; index += 1) {
           const value = this.output[index];
           const pcm = value < 0 ? Math.round(value * 32768) : Math.round(value * 32767);
           view.setInt16(index * 2, pcm, true);

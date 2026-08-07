@@ -72,6 +72,7 @@ export type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 export {
   AgentDirectoryCompilerError,
   compileAgentDirectory,
+  compilePersonaPackageDirectory,
 } from './agentDefinition/compileAgentDirectory'
 export type {
   AgentDirectoryCompilerErrorCode,
@@ -95,6 +96,28 @@ export type {
   TrustedAgentInstructionAppendix,
   TrustedAuthoredAgentPolicy,
 } from './agentDefinition/createConfiguredAgentHostAgentSpec'
+export {
+  FleetConfigError,
+  loadConfiguredAgentFleet,
+  MODEL_TIER_CANDIDATES,
+} from './agentDefinition/loadConfiguredAgentFleet'
+export type {
+  FleetConfigErrorCode,
+  FleetLoaderDiagnostic,
+  FleetLoaderDiagnosticCode,
+  FleetSeatBinding,
+  FleetSkillBinding,
+  LoadConfiguredAgentFleetOptions,
+  LoadConfiguredAgentFleetResult,
+  ModelTierCandidate,
+} from './agentDefinition/loadConfiguredAgentFleet'
+export {
+  LEGACY_DEFAULT_AGENT_FLEET,
+  resolveDefaultAgentFleet,
+} from './agentDefinition/resolveDefaultAgentFleet'
+export type {
+  ResolveDefaultAgentFleetOptions,
+} from './agentDefinition/resolveDefaultAgentFleet'
 export {
   createResolvedAgentDigest,
   resolveAgentDeployment,
@@ -194,6 +217,8 @@ export type {
   PiPackageSource,
 } from './harness/pi-coding-agent/createHarness'
 export { createResourceSettingsManager } from './harness/pi-coding-agent/createHarness'
+export { parseSkillMetadataFrontmatter } from './skillFrontmatter'
+export type { SkillMetadataFrontmatter } from './skillFrontmatter'
 export {
   compactPiPackages,
   mergePiPackageSources,
@@ -222,6 +247,7 @@ export {
   type RuntimeEnvContributionContext,
 } from './runtimeEnvContributions'
 export { createBoundWorkspaceAgentDispatcher } from './workspaceAgentDispatcher'
+export { projectAuthorizedSessionRunDetails, type AuthorizedSessionRunDetails } from './sessionRunDetails'
 export { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 export type {
   AgentMeteringSink,
@@ -247,6 +273,11 @@ export type {
   RuntimeModeAdapter,
   RuntimeModeId,
 } from './runtime/mode'
+export {
+  RUNTIME_FILESYSTEM_BINDING_DUPLICATE_CODE,
+  RuntimeFilesystemBindingConfigurationError,
+  mergeRuntimeFilesystemBindings,
+} from './runtime/filesystemBindings'
 export {
   createFakeAuthorityVerifierV1,
   createHostSideCredentialResolverV1,

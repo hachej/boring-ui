@@ -11,6 +11,21 @@ describe("LiveTranscriptBrowserController live attachment", () => {
     liveTranscriptBrowserState.set({})
   })
 
+  it("leaves starting state when composer stream creation fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: false,
+      status: 502,
+      json: async () => ({ error: { code: "live_transcript_upstream_failed", message: "offline" } }),
+    } as Response)))
+    const controller = new LiveTranscriptBrowserController()
+
+    await expect(controller.startComposer(vi.fn())).rejects.toThrow("offline")
+    expect(liveTranscriptBrowserState.getSnapshot()).toMatchObject({
+      recordingKind: "composer",
+      phase: "error",
+    })
+  })
+
   it("cannot reacquire the microphone after stop wins during attachment", async () => {
     let resolveStream!: (stream: MediaStream) => void
     const streamPromise = new Promise<MediaStream>((resolve) => { resolveStream = resolve })

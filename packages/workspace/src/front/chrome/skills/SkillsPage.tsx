@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { FileText, RefreshCw, Sparkles, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
@@ -8,14 +8,17 @@ import { postUiCommand } from "../../bridge"
 import { ManagementOverlaySurface } from "../management/ManagementOverlaySurface"
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
 import type { PaneProps } from "../../registry/types"
+import { uiFileResourceKey, type UiFileResource } from "../../../shared/types/filesystem"
+import { isSafePluginRelativePath } from "../../../shared/plugins/manifest"
 
 interface SkillSummary {
   name: string
   description?: string
   source?: string
-  /** Absolute path to the skill's SKILL.md. Used to open the skill through
-   *  the workspace UI bridge, not by mutating chat/composer DOM. */
-  filePath?: string
+  /** False when the row exists for source management but Pi did not retain it as invocable. */
+  invocable?: boolean
+  /** Browser-safe resource identity. */
+  resource?: UiFileResource
 }
 
 interface SkillsResponse {
@@ -26,6 +29,31 @@ type LoadState =
   | { status: "loading"; skills: SkillSummary[]; error?: undefined }
   | { status: "ready"; skills: SkillSummary[]; error?: undefined }
   | { status: "error"; skills: SkillSummary[]; error: string }
+
+function isSafeRelativeSkillPath(value: unknown): value is string {
+  return typeof value === "string"
+    && isSafePluginRelativePath(value)
+    && !/%(?:2e|2f|5c)/i.test(value)
+    && !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)
+    && !value.split("/").some((segment) => segment === "" || segment === ".")
+}
+
+function openableResource(skill: SkillSummary): UiFileResource | undefined {
+  const resource = skill.resource
+  return resource
+    && typeof resource.filesystem === "string"
+    && resource.filesystem.length > 0
+    && isSafeRelativeSkillPath(resource.path)
+    ? resource
+    : undefined
+}
+
+function compareSkills(left: SkillSummary, right: SkillSummary): number {
+  return left.name.localeCompare(right.name)
+    || Number(left.invocable === false) - Number(right.invocable === false)
+    || (left.resource ? uiFileResourceKey(left.resource) : "")
+      .localeCompare(right.resource ? uiFileResourceKey(right.resource) : "")
+}
 
 export type SkillsPageProps = Partial<PaneProps> & {
   /** When provided, renders a close control in the header — used when Skills
@@ -40,11 +68,6 @@ export type SkillsPageProps = Partial<PaneProps> & {
 export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd = false }: SkillsPageProps) {
   const client = useWorkspacePluginClient()
   const [state, setState] = useState<LoadState>({ status: "loading", skills: [] })
-
-  const openSkillInWorkspace = useCallback((skill: SkillSummary) => {
-    if (!skill.filePath) return
-    postUiCommand({ kind: "openFile", params: { path: skill.filePath, mode: "view" } })
-  }, [])
 
   const loadSkills = useCallback(async (refresh = false) => {
     setState((current) => ({ status: "loading", skills: current.skills }))
@@ -69,16 +92,19 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
     void loadSkills(false)
   }, [loadSkills])
 
-  const sortedSkills = useMemo(
-    () => [...state.skills].sort((a, b) => a.name.localeCompare(b.name)),
-    [state.skills],
-  )
+  const sortedSkills = [...state.skills].sort(compareSkills)
+
+  // Header subtitle doubles as the count readout so the list size is legible
+  // without scrolling the pane.
+  const skillsDescription = sortedSkills.length > 0
+    ? `${sortedSkills.length} skill${sortedSkills.length === 1 ? "" : "s"} available to slash commands`
+    : "Workspace skills available to slash commands"
 
   return (
     <ManagementOverlaySurface
       part="skills-page"
       title="Skills"
-      description="Workspace skills available to slash commands"
+      description={skillsDescription}
       headerInsetStart={headerInsetStart}
       headerInsetEnd={headerInsetEnd}
       icon={(
@@ -114,49 +140,122 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
         ) : null}
       </>)}
     >
-      <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto p-4" aria-live="polite">
+      <div
+        className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto p-4"
+        aria-busy={state.status === "loading"}
+      >
         {state.status === "error" ? (
-          <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-            {state.error}
+          <div
+            role="alert"
+            className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive"
+          >
+            <span className="min-w-0">{state.error}</span>
+            <button
+              type="button"
+              onClick={() => void loadSkills(true)}
+              className="shrink-0 rounded-md border border-destructive/40 px-2 py-0.5 text-xs font-medium transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              Retry
+            </button>
           </div>
         ) : null}
 
         {state.status === "loading" && sortedSkills.length === 0 ? (
-          <div className="flex h-full min-h-[180px] items-center justify-center text-sm text-muted-foreground">
-            Loading skills…
-          </div>
+          <ul role="list" aria-label="Loading skills" className="grid gap-2">
+            {[0, 1, 2, 3].map((row) => (
+              <li
+                key={row}
+                aria-hidden="true"
+                className="animate-pulse rounded-xl border border-border/60 bg-card/70 px-3 py-2.5"
+              >
+                <div className="h-3.5 w-1/3 rounded bg-foreground/[0.08]" />
+                <div className="mt-2 h-3 w-4/5 rounded bg-foreground/[0.06]" />
+              </li>
+            ))}
+            <li className="sr-only">Loading skills…</li>
+          </ul>
         ) : sortedSkills.length === 0 ? (
-          <div className="flex h-full min-h-[180px] items-center justify-center text-center text-sm text-muted-foreground">
-            <div>
-              <div className="font-medium text-foreground/80">No skills found</div>
-              <p className="mt-1 max-w-xs">Reload plugins or add workspace skills to make them available in chat.</p>
+          state.status === "error" ? null : (
+            <div className="flex h-full min-h-[180px] items-center justify-center text-center text-sm text-muted-foreground">
+              <div>
+                <div className="font-medium text-foreground/80">No skills found</div>
+                <p className="mt-1 max-w-xs">Reload plugins or add workspace skills to make them available in chat.</p>
+              </div>
             </div>
-          </div>
+          )
         ) : (
           <ul role="list" className="grid gap-2">
-            {sortedSkills.map((skill) => {
+            {sortedSkills.map((skill, index) => {
+              const resource = openableResource(skill)
+              const managementOnly = skill.invocable === false
+              const body = (
+                <div className="flex min-h-11 w-full items-start justify-between gap-3 px-3 py-2.5">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <span className="min-w-0 truncate text-sm font-medium leading-5 text-foreground">
+                        {managementOnly ? skill.name : `/${skill.name}`}
+                      </span>
+                      {managementOnly ? (
+                        <span className="rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          Management source
+                        </span>
+                      ) : skill.source ? (
+                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground">
+                          {skill.source}
+                        </span>
+                      ) : null}
+                    </div>
+                    {managementOnly && skill.source ? (
+                      <p className="mt-1 truncate text-[11px] text-muted-foreground" title={skill.source}>
+                        Source: {skill.source}
+                      </p>
+                    ) : null}
+                    {skill.description ? (
+                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{skill.description}</p>
+                    ) : null}
+                  </div>
+                  {resource ? (
+                    <FileText
+                      className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground"
+                      strokeWidth={1.75}
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </div>
+              )
               return (
                 <li
-                  key={skill.name}
-                  className="rounded-xl border border-border/60 bg-card/70 px-3 py-2.5 cursor-pointer transition-colors hover:border-border hover:bg-muted/60"
+                  key={skill.resource
+                    ? uiFileResourceKey(skill.resource)
+                    : `${skill.name}\0${skill.source ?? ""}\0${skill.description ?? ""}\0${index}`}
+                  className="min-w-0"
                 >
-                  <button
-                    type="button"
-                    onClick={() => openSkillInWorkspace(skill)}
-                    title="Open skill"
-                    aria-label={`Open skill ${skill.name} in workspace`}
-                    className="block w-full text-left"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-foreground">/{skill.name}</div>
-                        {skill.description ? (
-                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{skill.description}</p>
-                        ) : null}
-                      </div>
-                      <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} aria-hidden="true" />
+                  {resource ? (
+                    <button
+                      type="button"
+                      onClick={() => postUiCommand({
+                        kind: "openFile",
+                        params: { ...resource, mode: "view" },
+                      })}
+                      title="Open skill source"
+                      aria-label={`Open ${managementOnly ? "management source" : "skill"} ${skill.name} from ${skill.source ?? resource.filesystem}`}
+                      className={cn(
+                        "group block w-full rounded-xl border border-border/60 bg-card/70 text-left transition-colors hover:border-border hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                        managementOnly && "border-dashed bg-muted/25",
+                      )}
+                    >
+                      {body}
+                    </button>
+                  ) : (
+                    <div
+                      className={cn(
+                        "rounded-xl border border-border/60 bg-card/70",
+                        managementOnly && "border-dashed bg-muted/25",
+                      )}
+                    >
+                      {body}
                     </div>
-                  </button>
+                  )}
                 </li>
               )
             })}
