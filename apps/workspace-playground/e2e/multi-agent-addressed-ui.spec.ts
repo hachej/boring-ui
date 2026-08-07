@@ -105,10 +105,10 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
   await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="alpha"]')).toHaveAttribute("data-pi-chat-session-id", alphaSessionId!)
   await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="beta"]')).toHaveAttribute("data-pi-chat-session-id", betaSessionId!)
 
-  await page.getByRole("button", { name: "Collapse Alpha sessions" }).click()
+  await page.getByRole("button", { name: /Collapse Alpha;/ }).click()
   await expect(betaRow).toBeVisible()
   await expect(alphaRow).toHaveCount(0)
-  await page.getByRole("button", { name: "Expand Alpha sessions" }).click()
+  await page.getByRole("button", { name: /Expand Alpha;/ }).click()
   await expect(alphaRow).toBeVisible()
 
   expect(addressedPaths.some((path) => path.startsWith(`${addressedPrefix}alpha/`))).toBe(true)

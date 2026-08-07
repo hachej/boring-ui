@@ -98,19 +98,20 @@ describe("AppLeftPane", () => {
     await waitFor(() => expect(screen.getAllByText("Alpha session")).toHaveLength(2))
     expect(screen.queryByText("Beta session")).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole("button", { name: "View details for Boring Alpha; 1 session" }))
+    await user.click(screen.getByRole("button", { name: "Collapse Boring Alpha; 1 session" }))
+    expect(screen.queryByRole("region", { name: "Boring Alpha sessions" })).not.toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Settings for Boring Alpha" }))
     await user.click(screen.getByRole("button", { name: "New chat with Boring Alpha" }))
     await user.click(screen.getByRole("button", { name: "New chat with Boring Alpha in split pane" }))
     await user.click(screen.getByRole("button", { name: "Quick chat with Boring Alpha" }))
 
-    expect(onOpenAgentDetails).toHaveBeenCalledWith("alpha")
+    expect(onOpenAgentDetails).not.toHaveBeenCalled()
     expect(onOpenAgentSettings).toHaveBeenCalledWith("alpha")
     expect(onCreateSession).toHaveBeenCalledWith("alpha")
     expect(onCreateSplitSession).toHaveBeenCalledWith("alpha")
     expect(onCreatePopoverSession).toHaveBeenCalledWith("alpha")
 
-    await user.click(screen.getByRole("button", { name: "Expand Boring Beta sessions" }))
+    await user.click(screen.getByRole("button", { name: "Expand Boring Beta; 1 session" }))
     expect(screen.getByText("Beta session")).toBeInTheDocument()
   })
 
@@ -138,7 +139,7 @@ describe("AppLeftPane", () => {
       </WorkspaceAttentionProvider>,
     )
 
-    expect(screen.getByRole("button", { name: "View details for Boring Solo; 0 sessions" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Select Boring Solo; 0 sessions" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "New chat with Boring Solo" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Settings for Boring Solo" })).toBeInTheDocument()
     expect(screen.getByText("Project")).toBeInTheDocument()

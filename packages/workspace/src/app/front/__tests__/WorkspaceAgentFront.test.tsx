@@ -651,7 +651,7 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => expect(createdBy).toHaveBeenCalledWith("beta"))
     expect(selected).toHaveBeenCalledWith("beta")
 
-    await user.click(screen.getByRole("button", { name: /View details for Beta/ }))
+    await user.click(screen.getByRole("button", { name: "Settings for Beta" }))
     const detailsOverlay = document.querySelector('[data-boring-workspace-part="agent-details-overlay"]')
     expect(detailsOverlay).not.toBeNull()
     expect(detailsOverlay).toHaveTextContent("Beta")

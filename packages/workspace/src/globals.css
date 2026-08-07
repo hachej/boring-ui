@@ -496,6 +496,8 @@
 
 @media (max-width: 767px), (hover: none) {
   .app-left-agent-actions {
+    position: static;
+    z-index: auto;
     pointer-events: auto;
     width: auto;
     opacity: 1;

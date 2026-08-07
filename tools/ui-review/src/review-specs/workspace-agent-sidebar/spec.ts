@@ -21,7 +21,7 @@ async function ensureAgentNavigation(page: Page): Promise<void> {
   await expect.poll(async () => await trees.count() === 2 || await open.isVisible().catch(() => false), { timeout: 60_000 }).toBe(true)
   if (await trees.count() !== 2) await open.click()
   await expect(trees).toHaveCount(2, { timeout: 60_000 })
-  await expect(page.getByRole("button", { name: /View details for Alpha/ })).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByRole("button", { name: /Collapse Alpha;/ })).toBeVisible({ timeout: 60_000 })
   await expect(page.locator('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="alpha"] [data-boring-workspace-part="app-session-row"]')).toHaveCount(1, { timeout: 60_000 })
   await expect(page.getByRole("heading", { name: "What should we work on?" })).toBeVisible({ timeout: 60_000 })
 }
@@ -58,7 +58,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
       await page.mouse.move(1_000, 500)
     } },
     { id: "hover-actions", viewportNames: ["desktop"], colorScheme: "dark", reach: async (page) => {
-      await page.getByRole("button", { name: /View details for Beta/ }).hover()
+      await page.locator('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="beta"] .app-left-agent-row').hover()
       await expect(page.getByRole("button", { name: "New chat with Beta", exact: true })).toBeVisible()
     } },
     { id: "expanded-sessions", colorScheme: "dark", reach: async (page) => {
@@ -78,7 +78,8 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
       await page.mouse.move(1_000, 500)
     } },
     { id: "agent-details", colorScheme: "dark", reach: async (page) => {
-      await page.getByRole("button", { name: /View details for Alpha/ }).click()
+      await page.locator('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="alpha"] .app-left-agent-row').hover()
+      await page.getByRole("button", { name: "Settings for Alpha" }).click()
       await expect(page.locator('[data-boring-workspace-part="agent-details-overlay"]')).toBeVisible()
       await expect(page.getByText("Configuration", { exact: true })).toBeVisible()
     } },
@@ -90,6 +91,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
     "Compare Agent list, expanded sessions, pinned chat, and Agent details at mobile 390×844.",
     "Confirm pinned chats remain top-level and show their Agent provenance.",
     "Confirm desktop actions appear on hover/focus while touch actions remain directly available.",
+    "Confirm Agent rows expand/collapse chats while only the dedicated settings control opens Agent details.",
     "Confirm Agent details is one unified page with no Overview/Settings tab split.",
     "Confirm all deterministic hard gates are green before approving visual taste.",
   ],

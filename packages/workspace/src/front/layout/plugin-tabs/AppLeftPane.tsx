@@ -88,6 +88,7 @@ export interface AppLeftPaneProps {
   agents?: readonly AppLeftPaneAgent[]
   selectedAgentTypeId?: string
   onSelectAgent?: (agentTypeId: string) => void
+  /** @deprecated Agent details open exclusively through onOpenAgentSettings. */
   onOpenAgentDetails?: (agentTypeId: string) => void
   onOpenAgentSettings?: (agentTypeId: string) => void
   sessionsLoading?: boolean
@@ -191,7 +192,6 @@ export function AppLeftPane({
   agents = [],
   selectedAgentTypeId,
   onSelectAgent,
-  onOpenAgentDetails,
   onOpenAgentSettings,
   sessionsLoading = false,
   activeSessionId,
@@ -394,7 +394,7 @@ export function AppLeftPane({
       <section key={agent.agentTypeId} data-boring-workspace-part="app-left-agent-tree" data-boring-agent-type-id={agent.agentTypeId} className="space-y-0.5">
         <div
           data-selected={selectedAgentTypeId === agent.agentTypeId ? "true" : "false"}
-          className="app-left-agent-row group flex h-10 w-full items-center gap-1 rounded-md pr-1 text-foreground/82 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-within:bg-foreground/[0.055] data-[selected=true]:text-foreground md:h-8"
+          className="app-left-agent-row group relative flex h-10 w-full items-center gap-1 rounded-md pr-1 text-foreground/82 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-within:bg-foreground/[0.055] data-[selected=true]:text-foreground md:h-8"
         >
           {showSessions ? (
             <button
@@ -411,9 +411,11 @@ export function AppLeftPane({
           <button
             type="button"
             data-boring-mobile-dismiss="true"
-            aria-label={`View details for ${agent.label}; ${totalSessionCount} ${totalSessionCount === 1 ? "session" : "sessions"}`}
-            title={`View ${agent.label} details`}
-            onClick={() => onOpenAgentDetails ? onOpenAgentDetails(agent.agentTypeId) : showSessions ? toggleAgentExpanded(agent.agentTypeId) : undefined}
+            aria-label={`${showSessions ? expanded ? "Collapse" : "Expand" : "Select"} ${agent.label}; ${totalSessionCount} ${totalSessionCount === 1 ? "session" : "sessions"}`}
+            aria-expanded={showSessions ? expanded : undefined}
+            aria-controls={showSessions ? panelId : undefined}
+            title={showSessions ? `${expanded ? "Collapse" : "Expand"} ${agent.label} chats` : `Select ${agent.label}`}
+            onClick={() => showSessions ? toggleAgentExpanded(agent.agentTypeId) : onSelectAgent?.(agent.agentTypeId)}
             className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{agent.label.replace(/^Boring\s+/i, "") || agent.label}</span>

@@ -2624,7 +2624,6 @@ export function WorkspaceAgentFront<
           })) : undefined}
           selectedAgentTypeId={fleetModeEnabled ? addressedAgents.selectedAgentTypeId : undefined}
           onSelectAgent={fleetModeEnabled ? addressedAgents.selectAgentTypeId : undefined}
-          onOpenAgentDetails={fleetModeEnabled ? (ownerAgentTypeId) => setLeftOverlay(agentOverlayId(ownerAgentTypeId)) : undefined}
           onOpenAgentSettings={fleetModeEnabled ? (ownerAgentTypeId) => setLeftOverlay(agentOverlayId(ownerAgentTypeId)) : undefined}
           sessionsLoading={remoteSessionsTransitioning}
           activeSessionRef={activeChatPaneRef}
