@@ -3,6 +3,7 @@ import type {
   ProvisionWorkspaceRuntimeOptions,
   RuntimeModeAdapter,
   RuntimeModeId,
+  RuntimeFilesystemBinding,
   WorkspaceAgentDispatcherResolver,
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningResult,
@@ -14,6 +15,7 @@ import type {
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
 import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
+import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
 import { registerWorkspacePluginConfigRoutes, registerWorkspaceTaskRoutes } from "./workspacePluginRoutes.js"
@@ -418,7 +420,12 @@ export async function createFolderModeApp(opts: {
     canonicalHost: string
     canonicalOrigin: string
     upstreamUrl: string
+    upstreamProvider?: "whisperlivekit" | "kyutai"
     upstreamBearerToken?: string
+    diarizerUrl?: string
+    diarizerBearerToken?: string
+    lifecycleUrl?: string
+    lifecycleBearerToken?: string
     reviewIntervalMs?: number
   }
 }): Promise<FastifyInstance> {
@@ -455,7 +462,12 @@ export async function createFolderModeApp(opts: {
           canonicalOrigin: opts.liveTranscripts.canonicalOrigin,
         },
         upstreamUrl: opts.liveTranscripts.upstreamUrl,
+        upstreamProvider: opts.liveTranscripts.upstreamProvider,
         upstreamBearerToken: opts.liveTranscripts.upstreamBearerToken,
+        diarizerUrl: opts.liveTranscripts.diarizerUrl,
+        diarizerBearerToken: opts.liveTranscripts.diarizerBearerToken,
+        lifecycleUrl: opts.liveTranscripts.lifecycleUrl,
+        lifecycleBearerToken: opts.liveTranscripts.lifecycleBearerToken,
         reviewIntervalMs: opts.liveTranscripts.reviewIntervalMs,
       })
     : undefined
@@ -553,6 +565,8 @@ export async function createFolderModeApp(opts: {
       liveTranscripts: {
         ready: true,
         commands: ["/live start", "/live stop", "/live status", "/review transcript"],
+        streamingComposer: opts.liveTranscripts?.upstreamProvider === "kyutai",
+        pcmSampleRate: opts.liveTranscripts?.upstreamProvider === "kyutai" ? 24_000 : 16_000,
       },
     } : {}),
   }))
@@ -568,11 +582,12 @@ export async function createWorkspacesModeApp(opts: {
   if (process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1") {
     throw new Error("live_transcript_local_only: live transcripts are supported only by boring-ui [folder]")
   }
-  const [workspaceAppServer, workspaceServer, agentServer, agentShared, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createBoringAutomationTool, DueRunService, FileAutomationStore, InMemoryAutomationRunEventBus, ManualRunExecutor, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
+  const [workspaceAppServer, workspaceServer, agentServer, agentShared, boringBashServer, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createBoringAutomationTool, DueRunService, FileAutomationStore, InMemoryAutomationRunEventBus, ManualRunExecutor, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
     import("@hachej/boring-agent/server"),
     import("@hachej/boring-agent/shared"),
+    import("@hachej/boring-bash/server"),
     import("fastify"),
     import("./pluginFrontRuntime.js"),
     import("@hachej/boring-automation/server"),
@@ -629,6 +644,7 @@ export async function createWorkspacesModeApp(opts: {
     idempotencyStore: InstanceType<typeof workspaceServer.InMemoryWorkspaceBridgeIdempotencyStore>
     extraTools: NonNullable<ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["agentOptions"]["extraTools"]>
     preservedUiStateKeys: NonNullable<ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["preservedUiStateKeys"]>
+    packageResources: ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["packageResources"]
   }
   const workspaceBridgeCores = new Map<string, Promise<WorkspaceBridgeCore>>()
   const workspaceEventClosers = new Map<string, Set<() => void>>()
@@ -637,7 +653,15 @@ export async function createWorkspacesModeApp(opts: {
     backendRegistry: InstanceType<typeof workspaceServer.RuntimeBackendRegistry>
     ensureLoaded: Promise<void>
   }>()
+  type CliPackageResourceRegistry = Awaited<ReturnType<typeof workspaceServer.resolveWorkspacePackageResources>>
+  interface CliPackageResourceSnapshot {
+    readonly registry: CliPackageResourceRegistry
+    readonly binding?: RuntimeFilesystemBinding
+  }
   const pluginPiSnapshots = new Map<string, CliPluginPiSnapshot>()
+  const packageResourceSnapshots = new Map<string, CliPackageResourceSnapshot>()
+  const packageResourceDiagnostics = new Map<string, Array<{ source: string; message: string; pluginId?: string }>>()
+  const runtimeProvisioningByWorkspace = new Map<string, WorkspaceProvisioningResult | undefined>()
   const lastReloadDiagnostics = new Map<string, Array<{ source: string; message: string; pluginId?: string }>>()
   const automationStores = new Map<string, InstanceType<typeof FileAutomationStore>>()
   const automationEventBus = new InMemoryAutomationRunEventBus()
@@ -676,6 +700,7 @@ export async function createWorkspacesModeApp(opts: {
         idempotencyStore: new workspaceServer.InMemoryWorkspaceBridgeIdempotencyStore(),
         extraTools: pluginCollection.agentOptions.extraTools ?? [],
         preservedUiStateKeys: pluginCollection.preservedUiStateKeys ?? [],
+        packageResources: pluginCollection.packageResources,
       }
     })().catch((error) => {
       workspaceBridgeCores.delete(workspace.id)
@@ -749,8 +774,63 @@ export async function createWorkspacesModeApp(opts: {
     return `${workspace.id}:${workspace.path}`
   }
 
-  function syncLoadedPluginPiSnapshot(workspace: LocalWorkspace, manager: { inspectLoadedPiSnapshot(): CliPluginPiSnapshot }): void {
-    pluginPiSnapshots.set(pluginRuntimeKey(workspace), manager.inspectLoadedPiSnapshot())
+  async function syncLoadedPluginPiSnapshot(
+    workspace: LocalWorkspace,
+    manager: {
+      inspectLoadedPiSnapshot(): CliPluginPiSnapshot
+      inspectLoaded(): Array<{ id: string; rootDir: string }>
+    },
+  ): Promise<void> {
+    const key = pluginRuntimeKey(workspace)
+    const discovered = manager.inspectLoadedPiSnapshot()
+    const diagnostics: Array<{ source: string; message: string; pluginId?: string }> = []
+    try {
+      const core = await getWorkspaceBridgeCore(workspace)
+      // CLI workspaces mode default is ambient-skills-ON (opposite of the
+      // Workspace-server library default, see createFolderModeApp's `pi:
+      // { noSkills: opts.loadAmbientSkills === false }` comment above) —
+      // but it must still respect an explicit `loadAmbientSkills: false`
+      // the way createWorkspaceAgentServer.ts's own
+      // rebuildPackageResourceRegistry gates ~/.pi/agent/skills. This
+      // enumeration used to run unconditionally, silently re-enabling
+      // ambient global skills after the caller opted out via noSkills.
+      const ambientSkillsEnabled = opts.loadAmbientSkills !== false
+      const sharedSkillPaths = await workspaceServer.enumerateExternalSkillFiles([
+        ...workspaceAppServer.resolveBoringPiSkillPaths(workspace.path),
+        ...(ambientSkillsEnabled ? [join(homedir(), ".pi", "agent", "skills")] : []),
+      ], workspace.path)
+      const snapshot = await workspaceServer.resolveWorkspacePackageResourceSnapshot({
+        declared: core.packageResources ?? [],
+        scanned: await workspaceServer.discoverPackageResourceRecords(manager.inspectLoaded()),
+        sharedSkillPaths,
+        createBinding: (mounts) => boringBashServer.createAgentResourceFilesystemBinding(
+          agentShared.AGENT_RESOURCES_FILESYSTEM_ID,
+          mounts,
+        ),
+      })
+      const { registry } = snapshot
+      diagnostics.push(...snapshot.diagnostics)
+      packageResourceSnapshots.set(key, snapshot)
+      pluginPiSnapshots.set(key, {
+        ...discovered,
+        additionalSkillPaths: [
+          ...discovered.additionalSkillPaths.filter((path) => !workspaceServer.packageResourceHandlesPath(path, registry.handledPackageRoots)),
+          ...registry.additionalSkillPaths,
+        ].filter((path, index, values) => values.indexOf(path) === index),
+        systemPromptAppend: [...new Set(
+          [discovered.systemPromptAppend, workspaceServer.packageResourceSystemPrompt(registry)].flatMap((value) => value
+            ? value.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean)
+            : []),
+        )].join("\n\n") || undefined,
+      })
+    } catch {
+      diagnostics.push({
+        source: "package-resource-registry",
+        message: "package skill resources could not be refreshed; the previous snapshot remains active",
+      })
+      if (!pluginPiSnapshots.has(key)) pluginPiSnapshots.set(key, discovered)
+    }
+    packageResourceDiagnostics.set(key, diagnostics)
   }
 
   function getOrCreatePluginRuntime(workspace: LocalWorkspace) {
@@ -767,7 +847,7 @@ export async function createWorkspacesModeApp(opts: {
         manager,
         backendRegistry,
         ensureLoaded: manager.load().then(async () => {
-          syncLoadedPluginPiSnapshot(workspace, manager)
+          await syncLoadedPluginPiSnapshot(workspace, manager)
           await backendRegistry.reloadFromLoadedPlugins(manager.inspectLoaded())
           // Fire-and-forget: pre-transform the loaded plugins' front entries
           // (and their react/@hachej/boring-workspace singletons) so the first
@@ -810,6 +890,9 @@ export async function createWorkspacesModeApp(opts: {
     }
     pluginRuntimes.delete(runtimeKey)
     pluginPiSnapshots.delete(runtimeKey)
+    packageResourceSnapshots.delete(runtimeKey)
+    packageResourceDiagnostics.delete(runtimeKey)
+    runtimeProvisioningByWorkspace.delete(workspace.id)
     lastReloadDiagnostics.delete(runtimeKey)
     automationStores.delete(runtimeKey)
     workspaceBridgeCores.delete(workspace.id)
@@ -889,15 +972,23 @@ export async function createWorkspacesModeApp(opts: {
         workspaceRoot: workspace.path,
         provisioningFingerprint: JSON.stringify([opts.mode, workspace.path]),
         async provisionRuntime({ runtimeBundle }) {
+          await getLoadedPluginRuntime(workspace)
+          const handledRoots = packageResourceSnapshots.get(pluginRuntimeKey(workspace))?.registry.handledPackageRoots ?? []
+          const plugins = workspaceAppServer.readWorkspacePluginPackageRuntimePlugins(
+            pluginDiscovery.resolveCliBoringPluginDirs(workspace.path),
+          ).map((plugin) => ({
+            ...plugin,
+            ...(plugin.skills
+              ? { skills: plugin.skills.filter((skill) => !workspaceServer.packageResourceHandlesPath(skill.source, handledRoots)) }
+              : {}),
+          }))
           return await provisionCliWorkspaceRuntime({
             workspaceRoot: workspace.path,
             mode: opts.mode,
             provisionWorkspace: opts.provisionWorkspace,
             adapter: runtimeBundle.provisioningAdapter,
             runtimeLayout: sandboxRuntimeHost.getBoringAgentRuntimePaths(runtimeLayoutRoot),
-            plugins: workspaceAppServer.readWorkspacePluginPackageRuntimePlugins(
-              pluginDiscovery.resolveCliBoringPluginDirs(workspace.path),
-            ),
+            plugins,
           })
         },
       }
@@ -936,7 +1027,7 @@ export async function createWorkspacesModeApp(opts: {
             const runtime = await getLoadedPluginRuntime(workspace)
             runtime.manager.setPluginDirs(pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, { includeFolderModeAutomation: true }))
             const scan = await runtime.manager.load()
-            syncLoadedPluginPiSnapshot(workspace, runtime.manager)
+            await syncLoadedPluginPiSnapshot(workspace, runtime.manager)
             syncRuntimeHostFromPluginEvents(runtimeHost, workspace.id, scan.events)
             const backendReload = await runtime.backendRegistry.reloadFromLoadedPlugins(runtime.manager.inspectLoaded())
             const diagnostics = [
@@ -978,11 +1069,15 @@ export async function createWorkspacesModeApp(opts: {
               message: `${error.code}: ${error.message} (${error.pluginDir})`,
               ...(error.pluginId ? { pluginId: error.pluginId } : {}),
             })),
+            // Browser-reported front import failures: the server scan/transform is
+            // green, so without these a plugin that never renders looks healthy to
+            // the agent. The plugin_diagnostics tool consumes this array.
             ...diagnosticsStore.frontErrors(workspace.id).map((error) => ({
               source: "plugin-front",
               message: error.message,
               pluginId: error.pluginId,
             })),
+            ...(packageResourceDiagnostics.get(pluginRuntimeKey(workspace)) ?? []),
           ],
         }),
       ]
@@ -1017,6 +1112,19 @@ export async function createWorkspacesModeApp(opts: {
         extraTools,
         systemPromptAppend: workspaceAppServer.buildWorkspaceContextPrompt(),
         loadSystemPromptAppend: async () => getLoadedPluginPiSnapshot(workspace).systemPromptAppend,
+        getFilesystemBindings: async () => {
+          const binding = packageResourceSnapshots.get(pluginRuntimeKey(workspace))?.binding
+          return binding ? [binding] : []
+        },
+        getSkillResourceSnapshot: async () => {
+          const skillRegistry = packageResourceSnapshots.get(pluginRuntimeKey(workspace))?.registry
+          if (!skillRegistry) return undefined
+          return {
+            generation: skillRegistry.generation,
+            managedSkills: skillRegistry.managedSkills,
+            locateSkill: skillRegistry.locateSkill,
+          }
+        },
       }
     },
   })

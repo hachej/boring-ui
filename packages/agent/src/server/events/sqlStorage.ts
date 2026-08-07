@@ -13,7 +13,23 @@ export interface SqlStorage {
   exec(query: string, ...bindings: unknown[]): SqlResult
 }
 
-export type RunTransaction = <T>(fn: () => T) => T
+/**
+ * `deferred` (SQLite's plain `BEGIN`) postpones acquiring any lock until the
+ * first read or write inside the transaction. That is fine for read-only
+ * transactions, but a transaction that reads THEN writes (e.g. a
+ * check-then-insert) starts under a read lock and must upgrade to a write
+ * lock mid-transaction — and SQLite refuses that upgrade with SQLITE_BUSY
+ * immediately if another connection holds the write lock, WITHOUT honoring
+ * `busy_timeout` (the busy handler only runs for the initial lock
+ * acquisition, not a lock *upgrade*). `immediate` (`BEGIN IMMEDIATE`)
+ * acquires the write lock up front, so `busy_timeout` applies normally and
+ * a concurrent writer simply waits instead of erroring. Use `immediate` for
+ * any transaction that writes — especially read-then-write — and reserve
+ * `deferred` for genuinely read-only transactions.
+ */
+export type SqlTransactionMode = 'deferred' | 'immediate'
+
+export type RunTransaction = <T>(fn: () => T, mode?: SqlTransactionMode) => T
 
 export interface OpenDatabaseResult {
   db: DatabaseSync
@@ -42,11 +58,11 @@ export function createNodeSqlStorage(db: DatabaseSync): SqlStorage {
 }
 
 export function createNodeTransactionSync(db: DatabaseSync): RunTransaction {
-  return <T>(fn: () => T): T => runTransaction(db, fn)
+  return <T>(fn: () => T, mode: SqlTransactionMode = 'deferred'): T => runTransaction(db, fn, mode)
 }
 
-export function runTransaction<T>(db: DatabaseSync, fn: () => T): T {
-  db.exec('BEGIN')
+export function runTransaction<T>(db: DatabaseSync, fn: () => T, mode: SqlTransactionMode = 'deferred'): T {
+  db.exec(mode === 'immediate' ? 'BEGIN IMMEDIATE' : 'BEGIN')
   try {
     const result = fn()
     db.exec('COMMIT')
@@ -65,7 +81,19 @@ export function openDatabase(path: string): OpenDatabaseResult {
   const { DatabaseSync: SqliteDatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
   const db = new SqliteDatabaseSync(path)
   if (path !== ':memory:') {
-    db.exec('PRAGMA journal_mode=WAL')
+    // Matches SqliteAgentRequestLedger's pragmas (the sibling durable sqlite
+    // store): WAL lets readers and the writer proceed concurrently, and
+    // busy_timeout makes a writer wait out another connection's write lock
+    // instead of throwing SQLITE_BUSY immediately. This matters here because
+    // multiple runtime bindings for the SAME workspace scope (different
+    // agentTypeId/identity/fingerprint keys — see createAgentHost.ts's
+    // composition cache) can concurrently open the same on-disk event-stream
+    // file; each is a distinct DatabaseSync connection but they are all
+    // single in-process writers serialized by SQLite's file lock, not a
+    // multi-replica/multi-process writer setup. busy_timeout absorbs that
+    // in-process lock contention window instead of poisoning a live channel
+    // on a transient SQLITE_BUSY.
+    db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;')
   }
 
   return {

@@ -28,6 +28,7 @@ import type {
   WorkspaceAgentDirectRunInput,
   WorkspaceAgentDispatcherContext,
 } from '../../shared/workspaceAgentDispatcher'
+import type { AgentSkillResourceSnapshot } from '../http/routes/skills'
 
 export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispatcher'
 
@@ -227,6 +228,17 @@ export interface ResolvedAgentRuntimeScope {
     readonly sessionId?: string
     readonly requestId: string
   }) => Promise<readonly RuntimeFilesystemBinding[] | undefined>
+  /**
+   * Skill-resource locator/catalog snapshot for the current reload
+   * generation. Threaded through the capability-projection layer so
+   * `/skills` can resolve package-managed skill locators without going
+   * through the legacy path-shaped `additionalSkillPaths` hot-reload API.
+   */
+  readonly getSkillResourceSnapshot?: (input: {
+    readonly scope: VerifiedAgentScopeClaim
+    readonly sessionId?: string
+    readonly requestId: string
+  }) => Promise<AgentSkillResourceSnapshot | undefined>
   readonly systemPromptAppend?: string
   readonly loadSystemPromptAppend?: () => Promise<string | undefined>
 }

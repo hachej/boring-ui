@@ -11,6 +11,8 @@ const authority = {
 describe("live transcript local authority", () => {
   it("accepts exact loopback authorities", () => {
     expect(() => validateLocalAuthority(authority, "ws://127.0.0.1:18772/asr")).not.toThrow()
+    expect(() => validateLocalAuthority(authority, "ws://127.0.0.1:18880/api/asr-streaming", "kyutai")).not.toThrow()
+    expect(() => validateLocalAuthority(authority, "ws://127.0.0.1:18881/v1/diarize", "sortformer")).not.toThrow()
     expect(() => assertExactOrigin({ headers: { host: authority.canonicalHost, origin: authority.canonicalOrigin } } as never, authority)).not.toThrow()
   })
 
@@ -18,6 +20,8 @@ describe("live transcript local authority", () => {
     expect(() => validateLocalAuthority({ ...authority, listenerHost: "0.0.0.0" }, "ws://127.0.0.1:18772/asr")).toThrow(expect.objectContaining({ code: "live_transcript_local_only" }))
     expect(() => validateLocalAuthority(authority, "ws://speech.example/asr")).toThrow(expect.objectContaining({ code: "live_transcript_local_only" }))
     expect(() => validateLocalAuthority(authority, "ws://127.0.0.1:18772/other")).toThrow(expect.objectContaining({ code: "live_transcript_local_only" }))
+    expect(() => validateLocalAuthority(authority, "ws://127.0.0.1:18880/asr", "kyutai")).toThrow(expect.objectContaining({ code: "live_transcript_local_only" }))
+    expect(() => validateLocalAuthority(authority, "ws://127.0.0.1:18881/asr", "sortformer")).toThrow(expect.objectContaining({ code: "live_transcript_local_only" }))
     expect(() => assertExactOrigin({ headers: { host: "127.0.0.1:5200", origin: authority.canonicalOrigin } } as never, authority)).toThrow(expect.objectContaining({ code: "live_transcript_local_only" }))
     expect(() => assertExactOrigin({ headers: { host: authority.canonicalHost, origin: "http://evil.test" } } as never, authority)).toThrow(expect.objectContaining({ code: "live_transcript_local_only" }))
   })

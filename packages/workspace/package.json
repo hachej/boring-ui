@@ -145,7 +145,7 @@
     "cmdk": "^1.1.1",
     "dnd-core": "^16.0.1",
     "dockview-react": "^7.0.4",
-    "fastify": "^5.9.0",
+    "fastify": "^5.11.0",
     "jiti": "^2.7.0",
     "lowlight": "^3.3.0",
     "lucide-react": "^1.27.0",
@@ -175,7 +175,7 @@
     "tailwindcss": "^4.3.3",
     "tsup": "^8.0.0",
     "typescript": "^6.0.3",
-    "vite": "^8.1.5",
+    "vite": "^8.2.0",
     "vite-plugin-dts": "^5.0.3",
     "vitest": "^4.1.9"
   }

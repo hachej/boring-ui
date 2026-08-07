@@ -25,6 +25,13 @@ export interface WorkspaceBridgeHandlerContribution {
   handler: WorkspaceBridgeHandler
 }
 
+export interface WorkspacePackageResourceContribution {
+  /** Exact package.json name, including npm scope. */
+  packageName: string
+  /** Server-only package installation root. Never serialize this value. */
+  packageRoot: string | URL
+}
+
 export interface WorkspaceAgentReloadBlock {
   /** Stable plugin-owned reason code. */
   code: string
@@ -62,6 +69,8 @@ export interface WorkspaceServerPlugin {
   extensionPaths?: string[]
   systemPrompt?: string
   skills?: PluginSkillSource[]
+  /** Installed package resources admitted by this trusted server plugin. */
+  packageResources?: WorkspacePackageResourceContribution[]
   agentTools?: AgentTool[]
   /** Trusted boot-time host RPC handlers. Only app/internal server plugins should provide these. */
   workspaceBridgeHandlers?: WorkspaceBridgeHandlerContribution[]
@@ -135,6 +144,26 @@ function validatePiPackages(pluginId: string, piPackages: unknown[]): void {
       if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || entry.length === 0)) {
         fail(pluginId, `piPackages[${i}].${key} must be a string array when provided`)
       }
+    }
+  }
+}
+
+const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/
+
+function validatePackageResources(
+  pluginId: string,
+  resources: WorkspacePackageResourceContribution[],
+): void {
+  for (let i = 0; i < resources.length; i++) {
+    const resource = resources[i]
+    if (!resource || typeof resource !== "object") {
+      fail(pluginId, `packageResources[${i}] must be an object`)
+    }
+    if (typeof resource.packageName !== "string" || !PACKAGE_NAME_PATTERN.test(resource.packageName)) {
+      fail(pluginId, `packageResources[${i}].packageName must be an exact lowercase npm package name`)
+    }
+    if (!isPathLike(resource.packageRoot)) {
+      fail(pluginId, `packageResources[${i}].packageRoot must be a string or URL`)
     }
   }
 }
@@ -338,6 +367,12 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
       fail(plugin.id, "assets must be an array when provided")
     }
     validatePluginAssets(plugin.id, plugin.assets)
+  }
+  if (plugin.packageResources !== undefined) {
+    if (!Array.isArray(plugin.packageResources)) {
+      fail(plugin.id, "packageResources must be an array when provided")
+    }
+    validatePackageResources(plugin.id, plugin.packageResources)
   }
   if (plugin.workspaceBridgeHandlers !== undefined) {
     if (!Array.isArray(plugin.workspaceBridgeHandlers)) {

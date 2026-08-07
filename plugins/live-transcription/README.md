@@ -7,11 +7,12 @@ WhisperLiveKit CPU `tiny` service documented in
 
 V0 provides a microphone button in the composer for short in-memory dictation;
 stopping inserts the returned French text into the editable draft. The same
-short-dictation control collapses to a recording icon while capturing and can
-stop the recording. Live mode streams microphone PCM to the
+short-dictation control becomes a stop button with an elapsed-time counter while
+capturing. Live mode streams microphone PCM to the
 loopback service and writes only a Markdown transcript. It intentionally does
 not retain audio. Anonymous `Speaker N`
-labels and French text may be inaccurate. While capture is active, the live
+labels and French text may be inaccurate. Kyutai word events are grouped into
+readable pause-bounded transcript paragraphs. While capture is active, the live
 process is the only supported transcript writer: byte/mtime conflict checks are
 best effort and are not atomic. Every 60 seconds, a changed projected revision
 creates one visible review turn in the originating Pi chat when it is idle;
@@ -22,6 +23,39 @@ an optional `.agents/live-transcription/review.md`; it is read again at each dis
 bounded to 32 KiB, and cannot replace the fixed untrusted-transcript safety
 envelope. Missing, empty, oversized, or invalid UTF-8 files use the built-in
 review instructions. Production/shared deployment is unsupported.
+
+## Kyutai streaming backend
+
+The default backend remains WhisperLiveKit. To use a local Kyutai
+`moshi-server`, select its adapter and forward a remote server to loopback when
+necessary (the plugin deliberately never connects to a non-loopback upstream):
+
+```bash
+export BORING_LIVE_TRANSCRIPTS_ENABLED=1
+export BORING_LIVE_TRANSCRIPTS_PROVIDER=kyutai
+export BORING_KYUTAI_URL=ws://127.0.0.1:18880/api/asr-streaming
+export BORING_KYUTAI_API_KEY=public_token # omit when the local server needs no key
+# Optional: enrich only /live transcripts with best-effort speaker labels.
+export BORING_LIVE_TRANSCRIPTS_DIARIZER_URL=ws://127.0.0.1:18881/v1/diarize
+# Optional: start/stop on-demand compute through the root-owned lease daemon.
+export BORING_LIVE_TRANSCRIPTS_LIFECYCLE_URL=http://127.0.0.1:18882/v1
+export BORING_LIVE_TRANSCRIPTS_LIFECYCLE_BEARER_TOKEN=<lifecycle token>
+```
+
+The adapter captures native 24 kHz PCM16 for Kyutai, converts it to float32
+MessagePack `Audio` messages, and sends a `Marker` plus bounded silence on stop.
+Without an optional diarizer, Kyutai `/live` Markdown is intentionally
+speaker-neutral: timestamped paragraphs are rendered without invented
+`Speaker 1` labels. When the optional loopback diarizer is configured, `/live`
+also sends a 16 kHz copy to the raw Streaming Sortformer sidecar and assigns
+Kyutai words by overlap with its anonymous speaker intervals. Kyutai remains the
+text authority; uncovered words render as `Speaker unknown`, and sidecar
+setup/runtime failures do not interrupt capture. See
+`services/sortformer/README.md` for the PoC service contract. See
+`services/lifecycle/README.md` for secure on-demand GPU operation.
+With Kyutai selected, the composer microphone streams each `Word` event directly
+into the editable draft without creating a transcript file. `/live start` keeps
+the separate Markdown transcript and agent-review sink.
 
 ## Robustness gates
 

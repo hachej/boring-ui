@@ -335,6 +335,42 @@ describe('HarnessPiChatService event store tap', () => {
     }
   })
 
+  it('PROOF: genuinely replays behind-the-tip events after restart, not just seq continuity', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+
+      const first = createService(store)
+      const firstLive: PiChatEvent[] = []
+      const firstSub = await first.service.subscribe(ctx, 's1', 0, (event) => firstLive.push(event))
+      emitSimpleTurn(first.adapter)
+      await waitFor(() => expect(firstLive).toHaveLength(2))
+      if (firstSub.type === 'ok') firstSub.unsubscribe()
+
+      // Simulate a process restart: a brand-new HarnessPiChatService instance
+      // over the same durable store, with no in-memory buffer carried over.
+      const second = createService(store)
+      const secondLive: PiChatEvent[] = []
+      // Resume from BEFORE the tip (cursor 0, latest is 2): a real client that
+      // was mid-stream when the process restarted. Without buffer hydration
+      // from the durable store, this must fail with PI_CHAT_REPLAY_GAP because
+      // the fresh in-memory buffer has zero events but a nonzero latestSeq.
+      const secondSub = await second.service.subscribe(ctx, 's1', 0, (event) => secondLive.push(event))
+
+      expect(secondSub.type).toBe('ok')
+      if (secondSub.type !== 'ok') throw new Error('expected successful resume subscription')
+      // The replayed events land via the subscriber callback synchronously
+      // during subscribe() — this is the actual replay content, not merely a
+      // seq high-water-mark. If hydration regresses to seq-only continuity,
+      // secondLive stays empty and this assertion fails.
+      expect(secondLive).toEqual(firstLive)
+
+      secondSub.unsubscribe()
+    } finally {
+      db.db.close()
+    }
+  })
+
   it('seeds restart PiChatEvent seq from the durable tail chunk instead of eventIndex', async () => {
     const db = openDatabase(':memory:')
     try {
@@ -354,6 +390,42 @@ describe('HarnessPiChatService event store tap', () => {
       const envelopes = result.events.map((event) => event.data as AgentEvent)
       expect(envelopes.map((event) => event.eventIndex)).toEqual([0, 1, 2])
       expect(envelopes.map((event) => event.chunk.seq)).toEqual([9, 10, 11])
+    } finally {
+      db.db.close()
+    }
+  })
+
+  it('hydrates exactly hydrationLimit trailing envelopes at the window boundary, no off-by-one', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      const path = streamPathFor(ctx, 's1')
+      await store.createStream(path)
+      // Seed 1005 durable envelopes directly (seq 0..1004), well past the
+      // 1000-entry hydration window, so restart hydration must trim to the
+      // most recent 1000: seq 5..1004.
+      for (let seq = 0; seq <= 1004; seq += 1) {
+        await store.appendAgentEvent('s1', { type: 'agent-start', seq, turnId: `turn-${seq}` }, { streamPath: path })
+      }
+
+      const restarted = createService(store)
+      // Cursor 4 is exactly the last seq OUTSIDE the retained window (window
+      // is [5, 1004]): resuming from there must succeed and replay all 1000
+      // retained events, proving the window holds the full 1000 — not 999.
+      const liveAtBoundary: PiChatEvent[] = []
+      const boundarySub = await restarted.service.subscribe(ctx, 's1', 4, (event) => liveAtBoundary.push(event))
+      expect(boundarySub.type).toBe('ok')
+      expect(liveAtBoundary).toHaveLength(1000)
+      expect(liveAtBoundary[0]).toMatchObject({ seq: 5 })
+      expect(liveAtBoundary.at(-1)).toMatchObject({ seq: 1004 })
+      if (boundarySub.type === 'ok') boundarySub.unsubscribe()
+
+      // Cursor 3 is one further back than the retained window covers: the
+      // fresh in-memory buffer genuinely has no event for seq 4, so this
+      // must report a gap rather than silently under- or over-replaying.
+      const secondRestart = createService(store)
+      const goneSub = await secondRestart.service.subscribe(ctx, 's1', 3, () => {})
+      expect(goneSub.type).toBe('replay_gap')
     } finally {
       db.db.close()
     }

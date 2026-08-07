@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import { describe, test, expect } from 'vitest'
 import { pathForWorkspaceEditor, skillsRoutes } from '../skills'
 import { createNodeWorkspace } from '@agent-test-host'
+import { ErrorCode } from '../../../../shared/error-codes'
 
 function buildApp(opts: Parameters<typeof skillsRoutes>[1]) {
   const app = Fastify({ logger: false })
@@ -69,7 +70,11 @@ describe('GET /api/v1/agents/default/skills', () => {
     expect(res.statusCode).toBe(200)
     const body = res.json()
     expect(body.skills).toEqual([])
-    expect(body.error).toContain('boom resolving workspace root')
+    expect(body.error).toEqual({
+      code: ErrorCode.enum.SKILL_DISCOVERY_FAILED,
+      message: 'skill discovery failed',
+    })
+    expect(JSON.stringify(body)).not.toContain('boom resolving workspace root')
 
     await app.close()
   })

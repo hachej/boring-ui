@@ -217,6 +217,8 @@ export type {
   PiPackageSource,
 } from './harness/pi-coding-agent/createHarness'
 export { createResourceSettingsManager } from './harness/pi-coding-agent/createHarness'
+export { parseSkillMetadataFrontmatter } from './skillFrontmatter'
+export type { SkillMetadataFrontmatter } from './skillFrontmatter'
 export {
   compactPiPackages,
   mergePiPackageSources,
@@ -271,6 +273,11 @@ export type {
   RuntimeModeAdapter,
   RuntimeModeId,
 } from './runtime/mode'
+export {
+  RUNTIME_FILESYSTEM_BINDING_DUPLICATE_CODE,
+  RuntimeFilesystemBindingConfigurationError,
+  mergeRuntimeFilesystemBindings,
+} from './runtime/filesystemBindings'
 export {
   createFakeAuthorityVerifierV1,
   createHostSideCredentialResolverV1,
