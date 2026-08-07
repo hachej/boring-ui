@@ -21,4 +21,26 @@ describe("TopBar", () => {
     expect(screen.getByText("boring-ui-factory")).toBeInTheDocument()
     expect(screen.queryByText("Boring UI")).not.toBeInTheDocument()
   })
+
+  it("pads the bar for the status-bar and notch insets", () => {
+    render(<TopBar />)
+
+    const header = screen.getByLabelText("App top bar")
+    expect(header.className).toContain("env(safe-area-inset-top)")
+    expect(header.className).toContain("env(safe-area-inset-left)")
+    expect(header.className).toContain("env(safe-area-inset-right)")
+  })
+
+  it("tags both top-bar controls for coarse-pointer target escalation", () => {
+    render(<TopBar onCommandPalette={() => {}} onNewChat={() => {}} />)
+
+    expect(screen.getByLabelText("Search catalogs and commands").className).toContain("topbar-search-action")
+    expect(screen.getByLabelText("New chat").className).toContain("topbar-icon-action")
+  })
+
+  it("tags the ⌘K badge so touch devices can drop it", () => {
+    render(<TopBar onCommandPalette={() => {}} />)
+
+    expect(screen.getByText("⌘K").className).toContain("topbar-desktop-hint")
+  })
 })

@@ -480,9 +480,47 @@
     width: 44px;
     height: 44px;
   }
+
+  /*
+   * The top bar is the only always-visible chrome on a phone, and both of its
+   * controls sit under the 44px minimum on a mouse (search pill 28px, new-chat
+   * icon ~32px). They grow to 44px on touch; the bar itself is `min-h-11`
+   * (44px) with no block padding, so the taller targets fill the existing row
+   * instead of reflowing it.
+   */
+  .topbar-search-action,
+  .topbar-icon-action {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /*
+   * The mobile bars' pill buttons are the only way between chat, sessions and
+   * workspace. They grow from 40px to the 44px minimum; the bar drops its
+   * block padding in exchange so the row stays ~44px plus the status-bar inset
+   * rather than growing to 60px.
+   */
+  [data-boring-workspace-part="mobile-chat-bar"],
+  [data-boring-workspace-part="mobile-workspace-bar"] {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: 0;
+  }
+
+  .mobile-shell-bar-action {
+    min-height: 44px;
+  }
 }
 
 @media (hover: none) {
+  /*
+   * A ⌘K badge is noise on a device with no keyboard. Keyed off `hover: none`
+   * rather than a width breakpoint so a touch tablet at 900px also drops it,
+   * matching how `.command-palette-footer-desktop-hints` reads on touch.
+   */
+  .topbar-desktop-hint {
+    display: none;
+  }
+
   .app-left-new-chat-secondary {
     width: auto;
     opacity: 1;
