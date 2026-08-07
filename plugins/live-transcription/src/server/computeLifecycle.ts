@@ -26,7 +26,7 @@ export class ComputeLifecycleClient implements LifecycleClient {
   constructor(private readonly baseUrl: string, private readonly token: string) {}
 
   async acquire(requestId: string): Promise<Lease> {
-    return await this.post<Lease>("/leases/acquire", { requestId }, 5 * 60_000)
+    return await this.post<Lease>("/leases/acquire", { requestId }, 12 * 60_000)
   }
   async heartbeat(id: string): Promise<void> { await this.post("/leases/heartbeat", { leaseId: id }, 15_000) }
   async release(id: string): Promise<void> { await this.post("/leases/release", { leaseId: id }, 60_000) }

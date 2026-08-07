@@ -3,6 +3,7 @@ import pathlib
 import sys
 import time
 import unittest
+from unittest import mock
 
 SPEC = importlib.util.spec_from_file_location("gpu_lifecycle", pathlib.Path(__file__).with_name("daemon.py"))
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -19,6 +20,14 @@ class FakeProvider:
     def state(self): return self.current
     def start(self): self.starts += 1; self.current = "running"
     def stop(self): self.stops += 1; self.current = "stopped"
+
+
+class ExoscaleProviderTests(unittest.TestCase):
+    def test_transition_timeout_means_request_was_accepted(self):
+        provider = MODULE.ExoscaleProvider("exo", "instance", "zone")
+        with mock.patch.object(MODULE.subprocess, "run", side_effect=MODULE.subprocess.TimeoutExpired("exo", 20)):
+            provider.start()
+            provider.stop()
 
 
 class LeaseControllerTests(unittest.TestCase):
