@@ -214,6 +214,14 @@ already govern fs access).
   - view mounts reuse the same provider contract unchanged: the bridge
     exposes a host FUSE mountpoint directory, which enters `mounts[]`
     exactly like a direct `sourceRoot` (providers never learn about FUSE).
+  - **backend generality (owner-ratified)**: the contract must not
+    specialize to local sources. S3 is the canonical remote example, two
+    ways: a raw bucket mounted on the host via off-the-shelf
+    `mountpoint-s3`/`s3fs` is just a `direct` mount (zero code); a
+    *policy-filtered or actor-varying* S3 view goes through an
+    S3-backed Operations adapter behind the FUSE bridge, keeping
+    credential custody host-side. Same split applies to SharePoint and
+    any future storage backend.
 - **Pairing invariant**: untouched. The pair is still created atomically by
   `SandboxProviderV1.create`; mounts are inputs to that one create, not a
   second realization path. `providerAdapter.ts` keeps owning bundle assembly.
