@@ -223,24 +223,29 @@ class ApiHandler(BaseHTTPRequestHandler):
         print(f"lifecycle api: {fmt % args}", flush=True)
 
 
-def tcp_ready_targets(raw_targets: str, bearer_tokens: list[str]) -> Callable[[], bool]:
+def tcp_ready_targets(raw_targets: str, auth_entries: list[dict[str, str]]) -> Callable[[], bool]:
     import base64
     import socket
     targets = [urllib.parse.urlparse(item.strip()) for item in raw_targets.split(",") if item.strip()]
     if len(targets) < 2:
         raise ValueError("Kyutai and Sortformer authenticated readiness targets are required")
-    if len(targets) != len(bearer_tokens):
-        raise ValueError("readiness target/token count mismatch")
+    if len(targets) != len(auth_entries):
+        raise ValueError("readiness target/auth count mismatch")
+    for auth in auth_entries:
+        if auth.get("header", "").lower() not in {"authorization", "kyutai-api-key"} or not auth.get("value"):
+            raise ValueError("invalid readiness authentication entry")
+        if any(character in auth["value"] for character in "\r\n"):
+            raise ValueError("invalid readiness authentication value")
 
     def ready() -> bool:
-        for target, token in zip(targets, bearer_tokens):
+        for target, auth in zip(targets, auth_entries):
             if target.scheme != "ws" or target.hostname not in {"127.0.0.1", "localhost", "::1"} or not target.port:
                 return False
             key = base64.b64encode(os.urandom(16)).decode()
             path = target.path + (("?" + target.query) if target.query else "")
             request = (f"GET {path} HTTP/1.1\r\nHost: {target.hostname}:{target.port}\r\nUpgrade: websocket\r\n"
                        f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n"
-                       f"Authorization: Bearer {token}\r\n\r\n").encode()
+                       f"{auth['header']}: {auth['value']}\r\n\r\n").encode()
             try:
                 with socket.create_connection((target.hostname, target.port), timeout=3) as connection:
                     connection.sendall(request)
@@ -267,10 +272,10 @@ def main() -> None:
         raise SystemExit("lifecycle daemon must bind to loopback")
     token = os.environ["BORING_GPU_LIFECYCLE_BEARER_TOKEN"]
     ready_targets = os.environ["BORING_GPU_READY_WEBSOCKETS"]
-    ready_tokens = json.loads(os.environ["BORING_GPU_READY_BEARER_TOKENS_JSON"])
+    ready_auth = json.loads(os.environ["BORING_GPU_READY_AUTH_JSON"])
     controller = LeaseController(
         ExoscaleProvider(args.exo_bin, args.instance_id, args.zone),
-        tcp_ready_targets(ready_targets, ready_tokens),
+        tcp_ready_targets(ready_targets, ready_auth),
         idle_grace=args.idle_grace,
         max_runtime=args.max_runtime,
     )

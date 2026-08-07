@@ -22,6 +22,20 @@ class FakeProvider:
     def stop(self): self.stops += 1; self.current = "stopped"
 
 
+class ReadinessTests(unittest.TestCase):
+    def test_rejects_unsafe_authentication_headers(self):
+        with self.assertRaises(ValueError):
+            MODULE.tcp_ready_targets(
+                "ws://127.0.0.1:1/a,ws://127.0.0.1:2/b",
+                [{"header": "X-Unsafe", "value": "secret"}, {"header": "Authorization", "value": "Bearer ok"}],
+            )
+        with self.assertRaises(ValueError):
+            MODULE.tcp_ready_targets(
+                "ws://127.0.0.1:1/a,ws://127.0.0.1:2/b",
+                [{"header": "kyutai-api-key", "value": "bad\r\nvalue"}, {"header": "Authorization", "value": "Bearer ok"}],
+            )
+
+
 class ExoscaleProviderTests(unittest.TestCase):
     def test_transition_timeout_means_request_was_accepted(self):
         provider = MODULE.ExoscaleProvider("exo", "instance", "zone")
