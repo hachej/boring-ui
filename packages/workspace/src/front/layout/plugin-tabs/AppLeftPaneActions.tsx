@@ -1,7 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { Check, ChevronDown, Columns2, MoreHorizontal, Plus, Settings, Zap } from "lucide-react"
+import { Check, ChevronDown, Columns2, MoreHorizontal, Plus, Zap } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ControlTooltip } from "../../components/ControlTooltip"
@@ -222,45 +222,6 @@ export function FleetNewChatAction({
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
-  )
-}
-
-export function AgentChatActions({
-  agentLabel,
-  onCreateSession,
-  onCreateSplitSession,
-  onCreatePopoverSession,
-  onOpenSettings,
-}: {
-  agentLabel: string
-  onCreateSession: () => void
-  onCreateSplitSession?: () => void
-  onCreatePopoverSession?: () => void
-  onOpenSettings?: () => void
-}) {
-  const actions = [
-    onCreateSplitSession ? { label: `New chat with ${agentLabel} in split pane`, title: "New chat in split pane", icon: <Columns2 className="size-3.5" strokeWidth={1.75} />, onClick: onCreateSplitSession } : null,
-    onCreatePopoverSession ? { label: `Quick chat with ${agentLabel}`, title: "Quick chat", icon: <Zap className="size-3.5" strokeWidth={1.85} />, onClick: onCreatePopoverSession } : null,
-    { label: `New chat with ${agentLabel}`, title: "New chat", icon: <Plus className="size-4" strokeWidth={2} />, onClick: onCreateSession },
-    onOpenSettings ? { label: `Settings for ${agentLabel}`, title: "Agent settings", icon: <Settings className="size-3.5" strokeWidth={1.75} />, onClick: onOpenSettings } : null,
-  ].filter((action): action is NonNullable<typeof action> => Boolean(action))
-
-  return (
-    <span className="app-left-agent-actions pointer-events-none flex w-0 shrink-0 items-center overflow-hidden opacity-0">
-      {actions.map((action) => (
-        <button
-          key={action.label}
-          type="button"
-          aria-label={action.label}
-          title={action.title}
-          data-boring-mobile-dismiss="true"
-          onClick={() => action.onClick()}
-          className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <span aria-hidden="true">{action.icon}</span>
-        </button>
-      ))}
-    </span>
   )
 }
 

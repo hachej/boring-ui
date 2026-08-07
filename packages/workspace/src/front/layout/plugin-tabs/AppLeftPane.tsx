@@ -1,15 +1,18 @@
 "use client"
 
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { ChevronRight, Plus, Search } from "lucide-react"
+import { ChevronRight, Plus, Search, X } from "lucide-react"
+import { Skeleton } from "@hachej/boring-ui-kit"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
-import { AgentChatActions, FleetNewChatAction, PrimaryAction, NewChatAction, KbdHint, RailAction } from "./AppLeftPaneActions"
+import { FleetNewChatAction, PrimaryAction, NewChatAction, KbdHint, RailAction } from "./AppLeftPaneActions"
+import { AppLeftPaneAgentCard, shortAgentLabel } from "./AppLeftPaneAgentCards"
 import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
 import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import { workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
 import { useWorkingSessionIds } from "../../sessionActivity"
+import { cn } from "../../lib/utils"
 
 export interface AppLeftPaneSession {
   id: string
@@ -238,22 +241,18 @@ export function AppLeftPane({
     const query = agentFilter.trim().toLocaleLowerCase()
     return query ? agents.filter((agent) => agent.label.toLocaleLowerCase().includes(query)) : agents
   }, [agentFilter, agents])
-  const [expandedAgentIds, setExpandedAgentIds] = useState<ReadonlySet<string>>(() => new Set())
+  const [agentsSectionOpen, setAgentsSectionOpen] = useState(true)
+  // The Chats lens is deliberately independent from the selected Agent: picking
+  // a different Agent (or starting a chat with it) must never silently rewrite
+  // or clear what the operator chose to look at.
+  const [chatsAgentLens, setChatsAgentLens] = useState<string | null>(null)
   useEffect(() => {
-    if (!selectedAgentTypeId) return
-    setExpandedAgentIds((current) => current.has(selectedAgentTypeId)
-      ? current
-      : new Set(current).add(selectedAgentTypeId))
-  }, [selectedAgentTypeId])
-  const toggleAgentExpanded = (agentTypeId: string) => setExpandedAgentIds((current) => {
-    const next = new Set(current)
-    if (next.has(agentTypeId)) next.delete(agentTypeId)
-    else next.add(agentTypeId)
-    return next
-  })
-  const expandAgent = (agentTypeId: string) => setExpandedAgentIds((current) => current.has(agentTypeId)
-    ? current
-    : new Set(current).add(agentTypeId))
+    // Only drop the lens when its Agent leaves the fleet entirely.
+    if (!chatsAgentLens) return
+    if (!agents.some((agent) => agent.agentTypeId === chatsAgentLens)) setChatsAgentLens(null)
+  }, [agents, chatsAgentLens])
+  const toggleChatsAgentLens = (agentTypeId: string) =>
+    setChatsAgentLens((current) => (current === agentTypeId ? null : agentTypeId))
   const { blockers } = useWorkspaceAttention()
   const sessionBadges = useMemo(() => {
     const badges = new Map<string, WorkspaceAttentionSessionBadge>()
@@ -277,18 +276,25 @@ export function AppLeftPane({
     () => sessions.filter((session) => !pinnedSet.has(workspaceSessionKeyFor(session))),
     [pinnedSet, sessions],
   )
-  const sessionsByAgent = useMemo(() => new Map(agents.map((agent) => [
-    agent.agentTypeId,
-    sessions.filter((session) => session.agentTypeId === agent.agentTypeId),
-  ])), [agents, sessions])
-  const sessionCountByAgent = useMemo(() => new Map(agents.map((agent) => [
-    agent.agentTypeId,
-    sessions.filter((session) => session.agentTypeId === agent.agentTypeId).length,
-  ])), [agents, sessions])
-  const agentLabelById = useMemo(() => new Map(agents.map((agent) => [
-    agent.agentTypeId,
-    agent.label.replace(/^Boring\s+/i, "") || agent.label,
-  ])), [agents])
+  const sessionCountByAgent = useMemo(() => {
+    const counts = new Map(agents.map((agent) => [agent.agentTypeId, 0]))
+    for (const session of sessions) {
+      if (!session.agentTypeId) continue
+      const current = counts.get(session.agentTypeId)
+      if (current !== undefined) counts.set(session.agentTypeId, current + 1)
+    }
+    return counts
+  }, [agents, sessions])
+  const agentLabelById = useMemo(
+    () => new Map(agents.map((agent) => [agent.agentTypeId, shortAgentLabel(agent.label)])),
+    [agents],
+  )
+  // One unified Chats list across the fleet; the lens only narrows what it shows.
+  const lensedSessions = useMemo(
+    () => (chatsAgentLens ? regularSessions.filter((session) => session.agentTypeId === chatsAgentLens) : regularSessions),
+    [chatsAgentLens, regularSessions],
+  )
+  const fleetSessionsPending = agents.some((agent) => (agent.sessionsStatus ?? "loading") === "loading")
   const projectItems = useMemo(() => {
     const source = projects ?? []
     if (layoutMode !== "multi-project") return source
@@ -384,68 +390,106 @@ export function AppLeftPane({
       />
     )
   }
-  const renderAgentTree = (showSessions: boolean) => filteredAgents.map((agent) => {
-    const ownedSessions = sessionsByAgent.get(agent.agentTypeId) ?? []
-    const totalSessionCount = sessionCountByAgent.get(agent.agentTypeId) ?? 0
-    const expanded = showSessions && expandedAgentIds.has(agent.agentTypeId)
-    const panelId = `boring-agent-sessions-${agent.agentTypeId}`
-    const empty = agent.sessionsStatus === "error"
-      ? "Chats unavailable."
-      : agent.sessionsStatus === "loaded" ? "No chats yet." : "Loading chats…"
+  const renderAgentCards = () => filteredAgents.map((agent) => {
     const createForAgent = (create: ((agentTypeId?: string) => void) | undefined) => () => {
-      if (showSessions) expandAgent(agent.agentTypeId)
       onSelectAgent?.(agent.agentTypeId)
       create?.(agent.agentTypeId)
     }
     return (
-      <section key={agent.agentTypeId} data-boring-workspace-part="app-left-agent-tree" data-boring-agent-type-id={agent.agentTypeId} className="space-y-0.5">
-        <div
-          data-selected={selectedAgentTypeId === agent.agentTypeId ? "true" : "false"}
-          className="app-left-agent-row group relative flex h-8 w-full items-center gap-1 rounded-md pr-1 text-foreground/82 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-within:bg-foreground/[0.055] data-[selected=true]:text-foreground"
-        >
-          {showSessions ? (
-            <button
-              type="button"
-              aria-label={`${expanded ? "Collapse" : "Expand"} ${agent.label} sessions`}
-              aria-expanded={expanded}
-              aria-controls={panelId}
-              onClick={() => toggleAgentExpanded(agent.agentTypeId)}
-              className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <ChevronRight className={`size-3.5 transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`} strokeWidth={1.75} aria-hidden="true" />
-            </button>
-          ) : <span className="size-7 shrink-0" aria-hidden="true" />}
-          <button
-            type="button"
-            data-boring-mobile-dismiss="true"
-            aria-label={`${showSessions ? expanded ? "Collapse" : "Expand" : "Select"} ${agent.label}; ${totalSessionCount} ${totalSessionCount === 1 ? "session" : "sessions"}`}
-            aria-expanded={showSessions ? expanded : undefined}
-            aria-controls={showSessions ? panelId : undefined}
-            title={showSessions ? `${expanded ? "Collapse" : "Expand"} ${agent.label} chats` : `Select ${agent.label}`}
-            onClick={() => showSessions ? toggleAgentExpanded(agent.agentTypeId) : onSelectAgent?.(agent.agentTypeId)}
-            className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{agent.label.replace(/^Boring\s+/i, "") || agent.label}</span>
-            <span data-boring-agent-session-count="true" className="shrink-0 text-[11px] font-normal tabular-nums text-muted-foreground/75" aria-hidden="true">{totalSessionCount}</span>
-          </button>
-          <AgentChatActions
-            agentLabel={agent.label}
-            onCreateSession={createForAgent(onCreateSession)}
-            onCreateSplitSession={onCreateSplitSession ? createForAgent(onCreateSplitSession) : undefined}
-            onCreatePopoverSession={onCreatePopoverSession ? createForAgent(onCreatePopoverSession) : undefined}
-            onOpenSettings={onOpenAgentSettings ? () => onOpenAgentSettings(agent.agentTypeId) : undefined}
-          />
-        </div>
-        {expanded ? (
-          <div id={panelId} role="region" aria-label={`${agent.label} sessions`} className="ml-[31px] space-y-0.5 border-l border-border/60 pl-2">
-            <SessionSubSection empty={empty}>
-              {ownedSessions.map((session) => renderSession(session, pinnedSet.has(workspaceSessionKeyFor(session)), activeProjectId ?? undefined, false))}
-            </SessionSubSection>
-          </div>
-        ) : null}
-      </section>
+      <AppLeftPaneAgentCard
+        key={agent.agentTypeId}
+        agentTypeId={agent.agentTypeId}
+        label={agent.label}
+        description={agent.description}
+        sessionCount={sessionCountByAgent.get(agent.agentTypeId) ?? 0}
+        sessionsStatus={agent.sessionsStatus}
+        selected={selectedAgentTypeId === agent.agentTypeId}
+        filtered={chatsAgentLens === agent.agentTypeId}
+        onSelect={onSelectAgent ? () => onSelectAgent(agent.agentTypeId) : undefined}
+        onToggleFilter={() => toggleChatsAgentLens(agent.agentTypeId)}
+        onCreateSession={createForAgent(onCreateSession)}
+        onCreateSplitSession={onCreateSplitSession ? createForAgent(onCreateSplitSession) : undefined}
+        onCreatePopoverSession={onCreatePopoverSession ? createForAgent(onCreatePopoverSession) : undefined}
+        onOpenSettings={onOpenAgentSettings ? () => onOpenAgentSettings(agent.agentTypeId) : undefined}
+      />
     )
   })
+
+  const renderAgentsSection = () => (
+    <section data-boring-workspace-part="app-left-pane-agents" aria-label="Agents" className="space-y-1">
+      <div className="flex items-center gap-1.5 px-1 pb-0.5">
+        <button
+          type="button"
+          aria-expanded={agentsSectionOpen}
+          aria-controls="boring-app-left-agents-panel"
+          onClick={() => setAgentsSectionOpen((open) => !open)}
+          className="group/agents flex h-6 min-w-0 shrink-0 items-center gap-1 rounded-md pl-0.5 pr-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75 transition-colors motion-reduce:transition-none hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          <ChevronRight
+            className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none", agentsSectionOpen && "rotate-90")}
+            strokeWidth={1.75}
+            aria-hidden="true"
+          />
+          <span>Agents</span>
+          <span className="ml-0.5 shrink-0 text-[10px] font-normal tabular-nums tracking-normal text-muted-foreground/75">{agents.length}</span>
+        </button>
+        {agentsSectionOpen ? (
+          <label className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-1.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/65" strokeWidth={1.75} aria-hidden="true" />
+            <input
+              type="search"
+              value={agentFilter}
+              onChange={(event) => setAgentFilter(event.target.value)}
+              aria-label="Filter Agents"
+              placeholder="Filter Agents"
+              className="h-6 w-full rounded-md border border-border/60 bg-transparent pl-6 pr-2 text-[11px] font-normal tracking-normal text-foreground outline-none placeholder:text-muted-foreground/55 focus:border-ring/60 focus:ring-1 focus:ring-ring/25"
+            />
+          </label>
+        ) : null}
+      </div>
+      {agentsSectionOpen ? (
+        <div id="boring-app-left-agents-panel" className="space-y-1 px-0.5">
+          {filteredAgents.length > 0
+            ? renderAgentCards()
+            : <div className="px-2 py-2 text-[11px] text-muted-foreground">No matching Agents.</div>}
+        </div>
+      ) : null}
+    </section>
+  )
+
+  const lensAgentLabel = chatsAgentLens ? agentLabelById.get(chatsAgentLens) : undefined
+  const renderFleetChatsSection = () => (
+    <section data-boring-workspace-part="app-left-pane-chats" aria-label="Chats" className="space-y-1">
+      <div className="flex items-center gap-1.5 px-2 pb-0.5">
+        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">Chats</span>
+        {lensAgentLabel ? (
+          <button
+            type="button"
+            onClick={() => setChatsAgentLens(null)}
+            aria-label={`Clear ${lensAgentLabel} chat filter`}
+            title="Show chats from every Agent"
+            data-boring-workspace-part="app-left-chats-lens"
+            className="flex h-5 min-w-0 items-center gap-1 rounded-full bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] pl-2 pr-1 text-[10px] font-medium tracking-normal text-[color:var(--accent)] transition-colors motion-reduce:transition-none hover:bg-[color:oklch(from_var(--accent)_l_c_h/0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            <span className="min-w-0 truncate">{lensAgentLabel}</span>
+            <X className="size-3 shrink-0" strokeWidth={2} aria-hidden="true" />
+          </button>
+        ) : null}
+        <span className="ml-auto shrink-0 text-[10px] font-normal tabular-nums text-muted-foreground/75">{lensedSessions.length}</span>
+      </div>
+      {lensedSessions.length === 0 && fleetSessionsPending && !chatsAgentLens ? (
+        <div data-boring-workspace-part="app-left-chats-loading-surface" className="space-y-1 px-2 py-1" aria-label="Loading chats">
+          <Skeleton className="h-[30px] w-full rounded-md" />
+          <Skeleton className="h-[30px] w-4/5 rounded-md" />
+          <Skeleton className="h-[30px] w-3/5 rounded-md" />
+        </div>
+      ) : (
+        <SessionSubSection empty={chatsAgentLens ? `No chats with ${lensAgentLabel} yet.` : "No chats yet."}>
+          {lensedSessions.map((session) => renderSession(session, false, activeProjectId ?? undefined, true))}
+        </SessionSubSection>
+      )}
+    </section>
+  )
 
   // Shared renderer for both the pinned project rows (in Pinned) and the rest
   // (in Projects), so they share one expand/pin state and identical behavior.
@@ -539,12 +583,7 @@ export function AppLeftPane({
                   {pinnedProjects.length > 0 ? renderProjectTree(pinnedProjects) : null}
                 </SessionSubSection>
               ) : null}
-              {agentTreeEnabled ? (
-                <section data-boring-workspace-part="app-left-pane-agents" className="space-y-1">
-                  <div className="px-2 pb-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/65">Agents</div>
-                  {renderAgentTree(false)}
-                </section>
-              ) : null}
+              {agentTreeEnabled ? renderAgentsSection() : null}
               <section data-boring-workspace-part="app-left-pane-section" className="space-y-1">
                 <div className="flex items-center justify-between gap-1 px-2 pb-0.5">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/65">{workspaceSectionTitle}</span>
@@ -564,24 +603,21 @@ export function AppLeftPane({
               </section>
             </div>
           ) : (
-            <div className={agentTreeEnabled ? "space-y-0.5 py-1" : "space-y-4 py-1"}>
+            <div className={agentTreeEnabled ? "space-y-3 py-1" : "space-y-4 py-1"}>
               {agentTreeEnabled ? (
-                <div className="px-0 pb-2">
+                <div className="px-0">
                   <FleetNewChatAction
                     agents={agents}
                     selectedAgentTypeId={selectedAgentTypeId}
                     onCreateSession={(agentTypeId) => {
-                      expandAgent(agentTypeId)
                       onSelectAgent?.(agentTypeId)
                       onCreateSession(agentTypeId)
                     }}
                     onCreateSplitSession={onCreateSplitSession ? (agentTypeId) => {
-                      expandAgent(agentTypeId)
                       onSelectAgent?.(agentTypeId)
                       onCreateSplitSession(agentTypeId)
                     } : undefined}
                     onCreatePopoverSession={onCreatePopoverSession ? (agentTypeId) => {
-                      expandAgent(agentTypeId)
                       onSelectAgent?.(agentTypeId)
                       onCreatePopoverSession(agentTypeId)
                     } : undefined}
@@ -604,23 +640,10 @@ export function AppLeftPane({
                 )
               ) : null}
               {agentTreeEnabled ? (
-                <section aria-label="Agents" className="space-y-0.5">
-                  <div className="flex items-center justify-between gap-3 px-2 pb-1">
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">Agents</span>
-                    <label className="relative min-w-0 flex-1">
-                      <Search className="pointer-events-none absolute left-1.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/65" strokeWidth={1.75} aria-hidden="true" />
-                      <input
-                        type="search"
-                        value={agentFilter}
-                        onChange={(event) => setAgentFilter(event.target.value)}
-                        aria-label="Filter Agents"
-                        placeholder="Filter Agents"
-                        className="h-6 w-full rounded-md border border-border/60 bg-transparent pl-6 pr-2 text-[11px] font-normal tracking-normal text-foreground outline-none placeholder:text-muted-foreground/55 focus:border-ring/60 focus:ring-1 focus:ring-ring/25"
-                      />
-                    </label>
-                  </div>
-                  {filteredAgents.length > 0 ? renderAgentTree(true) : <div className="px-2 py-2 text-[11px] text-muted-foreground">No matching Agents.</div>}
-                </section>
+                <>
+                  {renderAgentsSection()}
+                  {renderFleetChatsSection()}
+                </>
               ) : (
                 <SessionSubSection title={pinnedSessions.length > 0 ? "Recent" : undefined} empty={sessionsLoading ? "Loading chats…" : "No chats yet."}>
                   {regularSessions.map((session) => renderSession(session, false))}
