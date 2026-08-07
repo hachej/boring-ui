@@ -57,6 +57,16 @@ describe("ManualRunExecutor", () => {
     }))
   })
 
+  it("uses the host default for a legacy automation in a multi-Agent registry", async () => {
+    const harness = createHarness({ availableAgentTypeIds: ["default", "researcher"] })
+
+    await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+
+    expect(harness.resolver.runWithWorkspaceAgent).toHaveBeenCalledWith(expect.objectContaining({
+      agentTypeId: "default",
+    }), expect.any(Function))
+  })
+
   it("dispatches with the automation-selected Agent from the host registry", async () => {
     const harness = createHarness({ agentTypeId: "researcher", availableAgentTypeIds: ["default", "researcher"] })
 
