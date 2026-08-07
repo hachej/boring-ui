@@ -50,7 +50,10 @@ export function ManagementOverlaySurface({
             <p id={descriptionId} className="truncate text-xs text-muted-foreground" title={description}>{description}</p>
           </div>
         </div>
-        {actions ? <div role="group" aria-label={`${title} actions`} className="flex shrink-0 items-center gap-0.5">{actions}</div> : null}
+        {/* Actions stay icon-dense on a mouse; `management-overlay-actions`
+            grows every action to the 44px minimum on coarse pointers
+            (globals.css) so consumers don't each re-declare touch sizing. */}
+        {actions ? <div role="group" aria-label={`${title} actions`} className="management-overlay-actions flex shrink-0 items-center gap-0.5">{actions}</div> : null}
       </header>
       {children}
     </section>

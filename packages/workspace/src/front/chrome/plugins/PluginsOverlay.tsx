@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Plug, RefreshCw, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../agentPlugins/reloadEvent"
@@ -60,17 +60,26 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
   const [reloading, setReloading] = useState(false)
   const [reloadMessage, setReloadMessage] = useState<string | null>(null)
 
+  // Reload (host POST) and Retry (GET) can be triggered from the same error
+  // state. Every commit is stamped with the generation that started it, so a
+  // slow stale response can never land on top of a newer load or reload.
+  const generationRef = useRef(0)
+
   const loadPlugins = useCallback(async () => {
+    const generation = ++generationRef.current
+    const isStale = () => generationRef.current !== generation
     setState((current) => ({ status: "loading", plugins: current.plugins }))
     try {
       const plugins = await client.getJson<ExternalPluginEntry[]>("/api/v1/agent-plugins?external=1", {
         missingMessage: "Failed to load external plugins.",
       })
+      if (isStale()) return
       const sorted = Array.isArray(plugins)
         ? [...plugins].sort((a, b) => pluginLabel(a).localeCompare(pluginLabel(b)))
         : []
       setState({ status: "ready", plugins: sorted })
     } catch (error) {
+      if (isStale()) return
       const message = error instanceof Error ? error.message : "Failed to load external plugins."
       // A 404 means this deployment doesn't expose the external-plugins API at
       // all (e.g. a locked-down public app with externalPlugins: false). That's
@@ -144,6 +153,9 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
   const sorted = useMemo(() => [...state.plugins].sort((a, b) => pluginLabel(a).localeCompare(pluginLabel(b))), [state.plugins])
 
   const reload = useCallback(async () => {
+    // Invalidate any in-flight load so it can't commit while the host reload
+    // is still running.
+    generationRef.current += 1
     setReloading(true)
     setReloadMessage(null)
     try {
@@ -180,7 +192,7 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
           disabled={reloading || state.status === "loading"}
           aria-label="Reload plugins"
           title="Reload plugins"
-          className="min-h-11 min-w-11 text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground"
         >
           <RefreshCw className={cn("size-3", (reloading || state.status === "loading") && "animate-spin")} strokeWidth={1.75} />
         </IconButton>
@@ -191,7 +203,7 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
           onClick={onClose}
           aria-label="Close plugins"
           title="Close"
-          className="min-h-11 min-w-11 text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground"
         >
           <X className="size-3" strokeWidth={1.75} />
         </IconButton>

@@ -56,7 +56,48 @@ describe("PluginsOverlay states", () => {
       "External plugins loaded for this workspace",
     )
     expect(screen.getByRole("group", { name: "Plugins actions" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Reload plugins" })).toHaveClass("min-h-11", "min-w-11")
-    expect(screen.getByRole("button", { name: "Close plugins" })).toHaveClass("min-h-11", "min-w-11")
+    // Touch sizing now lives on the shared management surface action group
+    // (coarse-pointer rule in globals.css), not on each consumer's buttons.
+    expect(screen.getByRole("group", { name: "Plugins actions" })).toHaveClass("management-overlay-actions")
+    expect(screen.getByRole("button", { name: "Reload plugins" })).not.toHaveClass("min-h-11")
+    expect(screen.getByRole("button", { name: "Close plugins" })).not.toHaveClass("min-h-11")
+  })
+
+  it("ignores a stale retry response that resolves after a reload", async () => {
+    mocks.getJson.mockRejectedValueOnce(new Error("Plugin service unavailable"))
+    let resolveHostReload: ((value: string) => void) | undefined
+    render(
+      <PluginsOverlay
+        onClose={vi.fn()}
+        onReloadExternalPlugins={() => new Promise<string>((resolve) => {
+          resolveHostReload = resolve
+        })}
+      />,
+    )
+
+    await screen.findByRole("alert")
+
+    // Reload starts its host POST; the overlay stays interactive while it runs.
+    fireEvent.click(screen.getByRole("button", { name: "Reload plugins" }))
+    await waitFor(() => expect(resolveHostReload).toBeDefined())
+
+    // Retry fires a GET that will resolve late (and stale).
+    let resolveStale: ((value: unknown) => void) | undefined
+    mocks.getJson.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveStale = resolve
+    }))
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+    await waitFor(() => expect(resolveStale).toBeDefined())
+
+    // The reload settles and its own GET commits the fresh plugin list.
+    mocks.getJson.mockResolvedValueOnce([{ id: "fresh-plugin" }])
+    resolveHostReload?.("External plugins reloaded.")
+    expect((await screen.findAllByText("fresh-plugin")).length).toBeGreaterThan(0)
+
+    // The stale retry now lands with an older, empty payload — it must not win.
+    resolveStale?.([])
+    await waitFor(() => expect(screen.getAllByText("fresh-plugin").length).toBeGreaterThan(0))
+    expect(screen.queryByText("No external plugins loaded")).not.toBeInTheDocument()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   })
 })
