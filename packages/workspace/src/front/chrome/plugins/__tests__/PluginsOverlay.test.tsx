@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { PluginsOverlay } from "../PluginsOverlay"
@@ -95,8 +95,14 @@ describe("PluginsOverlay states", () => {
     expect((await screen.findAllByText("fresh-plugin")).length).toBeGreaterThan(0)
 
     // The stale retry now lands with an older, empty payload — it must not win.
-    resolveStale?.([])
-    await waitFor(() => expect(screen.getAllByText("fresh-plugin").length).toBeGreaterThan(0))
+    // Flushing inside act() guarantees the stale completion was actually
+    // processed (and rejected) before the assertions below run.
+    await act(async () => {
+      resolveStale?.([])
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(screen.getAllByText("fresh-plugin").length).toBeGreaterThan(0)
     expect(screen.queryByText("No external plugins loaded")).not.toBeInTheDocument()
     expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   })

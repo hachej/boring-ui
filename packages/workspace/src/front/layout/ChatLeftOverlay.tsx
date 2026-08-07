@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { cn } from "../lib/utils"
 
-const EXIT_DURATION_MS = 140
+/** Must match the CSS transition duration below so the exit isn't cut short. */
+const TRANSITION_DURATION_MS = 150
 
 /**
  * Chat-left management overlay (Skills, Plugins, host tools) with a short
@@ -31,7 +32,7 @@ export function ChatLeftOverlay({ overlay, hidden }: { overlay: ReactNode; hidde
     exitTimerRef.current = setTimeout(() => {
       exitTimerRef.current = undefined
       setRendered(null)
-    }, EXIT_DURATION_MS)
+    }, TRANSITION_DURATION_MS)
     return undefined
   }, [overlay])
 
