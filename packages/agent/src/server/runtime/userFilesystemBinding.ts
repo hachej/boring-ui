@@ -37,13 +37,14 @@ function conflict(currentMtimeMs: number | undefined, expectedMtimeMs: number): 
 export function createUserFilesystemBinding(
   workspace: Workspace,
   policy: RuntimeReadonlyFilesystemPolicy,
+  resolvePolicyPath: (path: string) => Promise<string> = async (path) => logicalPath(workspace, path),
 ): RuntimeFilesystemBinding {
-  const resolveAccess = (path: string) => resolveRuntimeReadonlyFilesystemAccess(policy, {
+  const resolveAccess = async (path: string) => resolveRuntimeReadonlyFilesystemAccess(policy, {
     filesystem: USER_FILESYSTEM_ID,
-    normalizedPath: logicalPath(workspace, path),
+    normalizedPath: await resolvePolicyPath(workspacePath(workspace, path)),
   })
-  const requireCapability = (path: string, capability: RuntimeFilesystemCapability): void => {
-    if (!resolveAccess(path).capabilities[capability]) {
+  const requireCapability = async (path: string, capability: RuntimeFilesystemCapability): Promise<void> => {
+    if (!(await resolveAccess(path)).capabilities[capability]) {
       throw new ReadonlyFilesystemMutationError(USER_FILESYSTEM_ID, capability)
     }
   }
@@ -74,7 +75,7 @@ export function createUserFilesystemBinding(
         return { isDirectory: (await workspace.stat(workspacePath(workspace, path))).kind === 'dir' }
       },
       async write({ path, content, expectedMtimeMs }) {
-        requireCapability(path, 'write')
+        await requireCapability(path, 'write')
         const target = workspacePath(workspace, path)
         if (expectedMtimeMs !== undefined) {
           let currentMtimeMs: number | undefined
@@ -100,7 +101,7 @@ export function createUserFilesystemBinding(
         return { mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined }
       },
       async writeBinary({ path, content }) {
-        requireCapability(path, 'write')
+        await requireCapability(path, 'write')
         const target = workspacePath(workspace, path)
         if (workspace.writeBinaryFileWithStat) {
           const stat = await workspace.writeBinaryFileWithStat(target, content)
@@ -112,23 +113,23 @@ export function createUserFilesystemBinding(
         return { mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined }
       },
       async delete({ path }) {
-        requireCapability(path, 'delete')
+        await requireCapability(path, 'delete')
         await workspace.unlink(workspacePath(workspace, path))
         return {}
       },
       async move({ from, to }) {
-        requireCapability(from, 'move-from')
-        requireCapability(to, 'write')
+        await requireCapability(from, 'move-from')
+        await requireCapability(to, 'write')
         await workspace.rename(workspacePath(workspace, from), workspacePath(workspace, to))
         return {}
       },
       async mkdir({ path, recursive }) {
-        requireCapability(path, 'create-child')
+        await requireCapability(path, 'create-child')
         await workspace.mkdir(workspacePath(workspace, path), { recursive })
         return {}
       },
       async resolveAccess({ path }) {
-        return resolveAccess(path)
+        return await resolveAccess(path)
       },
       rejectMutation(operation) {
         const capability: RuntimeFilesystemCapability = operation === 'delete'

@@ -1,12 +1,12 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { createNodeWorkspace } from '@agent-test-host'
 import { READONLY_FILESYSTEM_MUTATION_CODE } from '../../../shared/workspace'
 import { normalizeRuntimeReadonlyFilesystemPolicy } from '../readonlyFilesystemPolicy'
+import { sandboxRuntimeHostOperations } from '../sandboxRuntimeHost'
 import { createUserFilesystemBinding } from '../userFilesystemBinding'
-
 describe('createUserFilesystemBinding', () => {
   test('leaves path confinement to the Workspace adapter', async () => {
     const workspace = createNodeWorkspace(await mkdtemp(join(tmpdir(), 'boring-user-binding-')))
@@ -15,6 +15,18 @@ describe('createUserFilesystemBinding', () => {
       await expect(binding.operations.read({ filesystem: 'user', path })).rejects.toMatchObject({ statusCode: 400 })
       await expect(binding.operations.stat({ filesystem: 'user', path })).rejects.toMatchObject({ statusCode: 400 })
     }
+  })
+
+  test('rejects symlink aliases to readonly targets', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-user-binding-link-'))
+    await mkdir(join(root, 'protected'), { recursive: true })
+    await writeFile(join(root, 'protected/locked.txt'), 'locked')
+    await symlink('protected', join(root, 'alias'))
+    const binding = createUserFilesystemBinding(createNodeWorkspace(root), normalizeRuntimeReadonlyFilesystemPolicy(['protected']),
+      async (path) => await sandboxRuntimeHostOperations.resolveRealWorkspacePath(root, path))
+    await expect(binding.operations.write?.({ filesystem: 'user', path: 'alias/locked.txt', content: 'bypass' }))
+      .rejects.toMatchObject({ code: READONLY_FILESYSTEM_MUTATION_CODE })
+    await expect(readFile(join(root, 'protected/locked.txt'), 'utf8')).resolves.toBe('locked')
   })
 
   test('enforces readonly mutations while preserving writable siblings', async () => {

@@ -38,6 +38,7 @@ import {
   type RuntimeBundle,
   type RuntimeEnvContribution,
   type RuntimeFilesystemBinding,
+  RuntimeReadonlyFilesystemPolicyError,
   type RuntimeModeAdapter,
   type RuntimeModeId,
   type VerifiedAgentScopeClaim,
@@ -1705,7 +1706,11 @@ export async function createWorkspaceAgentServer(
               return {
                 ...transformed,
                 filesystemBindings: [...mergeRuntimeFilesystemBindings(
-                  [createUserFilesystemBinding(transformed.workspace, readonlyWorkspacePolicy)],
+                  [createUserFilesystemBinding(transformed.workspace, readonlyWorkspacePolicy, async (path) => {
+                    const root = runtimeHost.getNodeWorkspaceHostRoot(transformed.workspace)
+                    if (!root) throw new RuntimeReadonlyFilesystemPolicyError()
+                    return await runtimeHost.resolveRealWorkspacePath(root, path)
+                  })],
                   transformed.filesystemBindings,
                 ) ?? []],
               }

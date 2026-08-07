@@ -267,7 +267,9 @@ function withFilesystemRouting(
     parameters: withFilesystemParameter(tool.parameters, ids, dynamicBindings),
     async execute(params, ctx) {
       const filesystem = requestedFilesystem(params)
-      const bindings = options.getFilesystemBindings ? await options.getFilesystemBindings(ctx) ?? [] : filesystemBindings(bundle)
+      const bindings = filesystem === 'user'
+        ? filesystemBindings(bundle)
+        : options.getFilesystemBindings ? await options.getFilesystemBindings(ctx) ?? [] : filesystemBindings(bundle)
       if (filesystem !== 'user') {
         const result = await executeBoundFilesystemTool(tool.name, filesystem, params, bindings)
         const textContent = (result.content ?? [])

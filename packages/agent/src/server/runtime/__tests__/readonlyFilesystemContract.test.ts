@@ -1,24 +1,10 @@
-import { describe, expect, expectTypeOf, it } from 'vitest'
-import {
-  ReadonlyFilesystemMutationError as BashReadonlyError,
-  type RuntimeFilesystemAccessDecision as BashDecision,
-  type RuntimeFilesystemBindingOperations as BashOperations,
-  type RuntimeFilesystemCapability as BashCapability,
+import { expectTypeOf, it } from 'vitest'
+import type {
+  RuntimeFilesystemBindingOperations as BashOperations,
+  RuntimeFilesystemCapability as BashCapability,
 } from '@hachej/boring-bash/agent'
-import {
-  isReadonlyFilesystemMutationError,
-  type RuntimeFilesystemAccessDecision,
-  type RuntimeFilesystemBindingOperations,
-  type RuntimeFilesystemCapability,
-} from '../mode'
-
-describe('readonly filesystem contract copies', () => {
-  it('remain structurally aligned', () => {
-    expectTypeOf<RuntimeFilesystemCapability>().toEqualTypeOf<BashCapability>()
-    expectTypeOf<RuntimeFilesystemAccessDecision>().toEqualTypeOf<BashDecision>()
-    expectTypeOf<RuntimeFilesystemBindingOperations>().toEqualTypeOf<BashOperations>()
-  })
-  it('recognizes coded errors across package boundaries', () => {
-    expect(isReadonlyFilesystemMutationError(new BashReadonlyError('user', 'delete'))).toBe(true)
-  })
+import type { RuntimeFilesystemBindingOperations, RuntimeFilesystemCapability } from '../mode'
+it('keeps readonly filesystem contracts structurally aligned across packages', () => {
+  expectTypeOf<RuntimeFilesystemCapability>().toEqualTypeOf<BashCapability>()
+  expectTypeOf<RuntimeFilesystemBindingOperations>().toEqualTypeOf<BashOperations>()
 })

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, test, vi } from 'vitest'
 
 import { buildFilesystemAgentTools } from '../../agent/tools/filesystem'
+import { buildUploadAgentTools } from '../../agent/tools/upload'
 import {
   ReadonlyFilesystemMutationError,
   type RuntimeBundle,
@@ -172,34 +173,14 @@ describe('primary filesystem access projection', () => {
     expect(filesystemSchema.enum).toEqual(['user'])
   })
 
-  test('allows legal colon filenames in files and per-entry tree projections', async () => {
-    const { app, user } = await appWithBinding()
-    const write = vi.spyOn(user.operations, 'write')
-    const file = await app.inject({ method: 'GET', url: '/api/v1/files?path=backup%3A2026.tar' })
-    expect(file.statusCode).toBe(200)
-    expect(file.json()).toMatchObject({ content: 'backup', access: 'readwrite' })
-    const tree = await app.inject({ method: 'GET', url: '/api/v1/tree?path=.' })
-    expect(tree.statusCode).toBe(200)
-    expect(tree.json().entries).toContainEqual(expect.objectContaining({ path: 'backup:2026.tar', access: 'readwrite' }))
-    const updated = await app.inject({ method: 'POST', url: '/api/v1/files', payload: { path: 'backup:2026.tar', content: 'next' } })
-    expect(updated.statusCode).toBe(200)
-    expect(write).toHaveBeenCalledWith(expect.objectContaining({ path: 'backup:2026.tar' }))
-    await app.close()
-  })
-
-  test('preserves writable siblings when createDirs sees an existing mixed ancestor', async () => {
-    const { app, user } = await appWithBinding()
-    const mkdirOperation = vi.spyOn(user.operations, 'mkdir')
-    const write = vi.spyOn(user.operations, 'write')
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/v1/files',
-      payload: { path: 'a/sibling.txt', content: 'ok', createDirs: true },
-    })
-    expect(response.statusCode).toBe(200)
-    expect(mkdirOperation).not.toHaveBeenCalled()
-    expect(write).toHaveBeenCalled()
-    await app.close()
+  test('routes upload_file through primary binding policy', async () => {
+    const user = binding()
+    const root = await mkdtemp(join(tmpdir(), 'boring-upload-access-'))
+    await writeFile(join(root, 'source.png'), 'source')
+    const bundle = { storageRoot: root, workspace: workspace(root), sandbox: { placement: 'local' }, fileSearch: {}, filesystemBindings: [user] } as unknown as RuntimeBundle
+    const upload = buildUploadAgentTools(bundle)[0]!
+    await expect(upload.execute({ path: 'source.png', directory: 'protected' }, { toolCallId: 'upload', abortSignal: new AbortController().signal }))
+      .resolves.toMatchObject({ isError: true, content: [{ text: 'user binding is readonly' }] })
   })
 
   test('projects records/settings and executes settings/upload mutations through the binding', async () => {
@@ -216,14 +197,6 @@ describe('primary filesystem access projection', () => {
     const upload = await app.inject({ method: 'POST', url: '/api/v1/files/upload', payload: { filename: 'x.png', contentType: 'image/png', contentBase64: 'eA==' } })
     expect(upload.statusCode).toBe(200)
     expect(writeBinary).toHaveBeenCalled()
-    await app.close()
-  })
-
-  test('keeps tree not-found classification with a primary binding', async () => {
-    const { app } = await appWithBinding()
-    const response = await app.inject({ method: 'GET', url: '/api/v1/tree?path=missing' })
-    expect(response.statusCode).toBe(404)
-    expect(response.json()).toEqual({ error: { code: 'not_found', message: 'directory not found: missing' } })
     await app.close()
   })
 

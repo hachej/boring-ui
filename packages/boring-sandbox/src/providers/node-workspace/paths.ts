@@ -102,6 +102,28 @@ export async function assertRealPathWithinWorkspace(
   }
 }
 
+/** Resolve an existing path or nearest existing ancestor to its confined workspace-relative identity. */
+export async function resolveRealWorkspacePath(workspaceRoot: string, relPath: string): Promise<string> {
+  const root = await realpath(resolve(workspaceRoot))
+  const target = validatePath(workspaceRoot, relPath)
+  let ancestor = target
+  for (;;) {
+    try {
+      await lstat(ancestor)
+      break
+    } catch (error: unknown) {
+      if ((error as { code?: string }).code !== 'ENOENT') throw error
+      const parent = dirname(ancestor)
+      if (parent === ancestor) throw error
+      ancestor = parent
+    }
+  }
+  const resolved = resolve(await realpath(ancestor), relative(ancestor, target))
+  const canonical = relative(root, resolved)
+  validatePath(root, canonical)
+  return canonical.replace(/\\/g, '/') || '.'
+}
+
 /**
  * Validate an existing path and enforce realpath boundary.
  */
