@@ -74,11 +74,17 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
     [state.skills],
   )
 
+  // Header subtitle doubles as the count readout so the list size is legible
+  // without scrolling the pane.
+  const skillsDescription = sortedSkills.length > 0
+    ? `${sortedSkills.length} skill${sortedSkills.length === 1 ? "" : "s"} available to slash commands`
+    : "Workspace skills available to slash commands"
+
   return (
     <ManagementOverlaySurface
       part="skills-page"
       title="Skills"
-      description="Workspace skills available to slash commands"
+      description={skillsDescription}
       headerInsetStart={headerInsetStart}
       headerInsetEnd={headerInsetEnd}
       icon={(
@@ -114,49 +120,92 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
         ) : null}
       </>)}
     >
-      <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto p-4" aria-live="polite">
+      <div
+        className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto p-4"
+        aria-busy={state.status === "loading"}
+      >
         {state.status === "error" ? (
-          <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-            {state.error}
+          <div
+            role="alert"
+            className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive"
+          >
+            <span className="min-w-0">{state.error}</span>
+            <button
+              type="button"
+              onClick={() => void loadSkills(true)}
+              className="shrink-0 rounded-md border border-destructive/40 px-2 py-0.5 text-xs font-medium transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              Retry
+            </button>
           </div>
         ) : null}
 
         {state.status === "loading" && sortedSkills.length === 0 ? (
-          <div className="flex h-full min-h-[180px] items-center justify-center text-sm text-muted-foreground">
-            Loading skills…
-          </div>
+          <ul role="list" aria-label="Loading skills" className="grid gap-2">
+            {[0, 1, 2, 3].map((row) => (
+              <li
+                key={row}
+                aria-hidden="true"
+                className="animate-pulse rounded-xl border border-border/60 bg-card/70 px-3 py-2.5"
+              >
+                <div className="h-3.5 w-1/3 rounded bg-foreground/[0.08]" />
+                <div className="mt-2 h-3 w-4/5 rounded bg-foreground/[0.06]" />
+              </li>
+            ))}
+            <li className="sr-only">Loading skills…</li>
+          </ul>
         ) : sortedSkills.length === 0 ? (
-          <div className="flex h-full min-h-[180px] items-center justify-center text-center text-sm text-muted-foreground">
-            <div>
-              <div className="font-medium text-foreground/80">No skills found</div>
-              <p className="mt-1 max-w-xs">Reload plugins or add workspace skills to make them available in chat.</p>
+          state.status === "error" ? null : (
+            <div className="flex h-full min-h-[180px] items-center justify-center text-center text-sm text-muted-foreground">
+              <div>
+                <div className="font-medium text-foreground/80">No skills found</div>
+                <p className="mt-1 max-w-xs">Reload plugins or add workspace skills to make them available in chat.</p>
+              </div>
             </div>
-          </div>
+          )
         ) : (
           <ul role="list" className="grid gap-2">
             {sortedSkills.map((skill) => {
-              return (
-                <li
-                  key={skill.name}
-                  className="rounded-xl border border-border/60 bg-card/70 px-3 py-2.5 cursor-pointer transition-colors hover:border-border hover:bg-muted/60"
-                >
-                  <button
-                    type="button"
-                    onClick={() => openSkillInWorkspace(skill)}
-                    title="Open skill"
-                    aria-label={`Open skill ${skill.name} in workspace`}
-                    className="block w-full text-left"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-foreground">/{skill.name}</div>
-                        {skill.description ? (
-                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{skill.description}</p>
-                        ) : null}
-                      </div>
-                      <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} aria-hidden="true" />
+              const openable = Boolean(skill.filePath)
+              const body = (
+                <div className="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-2.5">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-sm font-medium leading-5 text-foreground">/{skill.name}</span>
+                      {skill.source ? (
+                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground">
+                          {skill.source}
+                        </span>
+                      ) : null}
                     </div>
-                  </button>
+                    {skill.description ? (
+                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{skill.description}</p>
+                    ) : null}
+                  </div>
+                  {openable ? (
+                    <FileText
+                      className="h-4 w-4 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground"
+                      strokeWidth={1.75}
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </div>
+              )
+              return (
+                <li key={skill.name} className="min-w-0">
+                  {openable ? (
+                    <button
+                      type="button"
+                      onClick={() => openSkillInWorkspace(skill)}
+                      title="Open skill"
+                      aria-label={`Open skill ${skill.name} in workspace`}
+                      className="group block w-full rounded-xl border border-border/60 bg-card/70 text-left transition-colors hover:border-border hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    >
+                      {body}
+                    </button>
+                  ) : (
+                    <div className="rounded-xl border border-border/60 bg-card/70">{body}</div>
+                  )}
                 </li>
               )
             })}

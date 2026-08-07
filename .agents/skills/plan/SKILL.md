@@ -35,6 +35,11 @@ canonical contracts: `docs/procedures/{boring-loop.md,MODEL-CARD.md}` and
 - Use `/skill:fresh-eyes` as tier 1, then continue the required Model Card ladder.
   Use `ask_user` for unresolved intent, risk, or approval. A plan-approval
   intention links the visual plan doc from `docs/procedures/visual-review-doc.md`.
+- **The Steward never self-certifies: an adversarial plan review
+  (cross-model per the Model Card) runs BEFORE the owner gate, always** — even
+  when every design decision was pre-ratified by the owner via grill. Grill →
+  draft → adversarial review → fold findings → gate. Material changes after
+  ratification go back to the owner; editorial ones fold silently.
 - Provider command names are advisory; translate legacy `/implement` to `/exec`.
 
 Return the canonical artifact/URL, method, slices/Beads, blockers, proof path, and

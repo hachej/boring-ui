@@ -22,20 +22,21 @@ async function source(role = 'triage', expectedAgentTypeId = 'boring-triage') {
   return materializeAgentDirectory({
     directory: resolve(FACTORY_ROOT, role),
     expectedAgentTypeId,
+    manifest: 'package.json',
   })
 }
 
 describe('Boring factory authored agents', () => {
   test.each(ROLES)('materializes identity-only %s definition', async (role, agentTypeId, label) => {
-    const manifestPath = resolve(FACTORY_ROOT, role, 'agent.json')
+    const manifestPath = resolve(FACTORY_ROOT, role, 'package.json')
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>
+    const boringAgent = (manifest.boring as Record<string, unknown>).agent as Record<string, unknown>
 
-    expect(Object.keys(manifest).sort()).toEqual([
+    expect(Object.keys(boringAgent).sort()).toEqual([
       'definitionId',
       'description',
       'instructionsRef',
       'label',
-      'schemaVersion',
       'version',
     ])
     await expect(source(role, agentTypeId)).resolves.toMatchObject({
