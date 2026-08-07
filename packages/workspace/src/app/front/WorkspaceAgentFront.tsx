@@ -22,6 +22,7 @@ import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
+import { AgentDetailsOverlay, type AgentDetailsSection } from "../../front/chrome/agents/AgentDetailsOverlay"
 import { AppLeftPane, AppLeftRail } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { useViewportWidth } from "../../front/layout/useViewportWidth"
@@ -66,6 +67,24 @@ import {
   type WorkspaceSessionRef,
 } from "../../front/sessionIdentity"
 import { startSessionActivityStream } from "../../front/sessionActivity"
+
+const AGENT_OVERLAY_PREFIX = "agent-details:"
+
+function agentOverlayId(agentTypeId: string, section: AgentDetailsSection): string {
+  return `${AGENT_OVERLAY_PREFIX}${encodeURIComponent(agentTypeId)}:${section}`
+}
+
+function parseAgentOverlayId(id: string | null): { agentTypeId: string; section: AgentDetailsSection } | null {
+  if (!id?.startsWith(AGENT_OVERLAY_PREFIX)) return null
+  const separator = id.lastIndexOf(":")
+  const section = id.slice(separator + 1)
+  if (section !== "overview" && section !== "settings") return null
+  try {
+    return { agentTypeId: decodeURIComponent(id.slice(AGENT_OVERLAY_PREFIX.length, separator)), section }
+  } catch {
+    return null
+  }
+}
 
 interface PendingCreatePane {
   afterId: string
@@ -1318,6 +1337,7 @@ export function WorkspaceAgentFront<
     defaultLeftOverlay,
     shellPersistenceEnabled,
   ) as [AppLeftOverlayId, (next: AppLeftOverlayId | ((previous: AppLeftOverlayId) => AppLeftOverlayId)) => void]
+  const activeAgentOverlay = parseAgentOverlayId(leftOverlay)
   const [leftOverlayParams, setLeftOverlayParams] = useState<Readonly<Record<string, string>> | undefined>()
   const leftOverlayParamsOwnerRef = useRef<AppLeftOverlayId>(null)
   const pluginOverlayActionIds = useMemo(() => pluginAppLeftActionIds(capturedPlugins), [capturedPlugins])
@@ -1340,18 +1360,25 @@ export function WorkspaceAgentFront<
   const activeLeftOverlayParams = leftOverlayParamsOwnerRef.current === leftOverlay ? leftOverlayParams : undefined
   useEffect(() => {
     const customOverlayActive = Boolean(leftOverlay && appLeftOverlayActions?.some((action) => action.id === leftOverlay))
+    const parsedAgentOverlay = parseAgentOverlayId(leftOverlay)
+    const agentOverlayActive = Boolean(parsedAgentOverlay)
+    const agentOverlayMissing = Boolean(parsedAgentOverlay
+      && !addressedAgents.loading
+      && !addressedAgents.agents.some((agent) => agent.agentTypeId === parsedAgentOverlay.agentTypeId))
     if (
       (leftOverlay === "skills" && !skillsActionEnabled)
       || (leftOverlay === "plugins" && !pluginsActionEnabled)
+      || agentOverlayMissing
       || (leftOverlay !== null
         && leftOverlay !== "skills"
         && leftOverlay !== "plugins"
+        && !agentOverlayActive
         && !pluginOverlayActionIds.has(leftOverlay)
         && !customOverlayActive)
     ) {
       setLeftOverlay(null)
     }
-  }, [appLeftOverlayActions, leftOverlay, pluginOverlayActionIds, pluginsActionEnabled, skillsActionEnabled])
+  }, [addressedAgents.agents, addressedAgents.loading, appLeftOverlayActions, leftOverlay, pluginOverlayActionIds, pluginsActionEnabled, skillsActionEnabled])
   const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
@@ -2447,7 +2474,28 @@ export function WorkspaceAgentFront<
     })
   }, [appLeftOverlayActions, leftOverlay, mobileShellActive, surfaceOpen, workspaceId])
 
-  const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
+  const activeAgentOverlayOption = activeAgentOverlay
+    ? addressedAgents.agents.find((agent) => agent.agentTypeId === activeAgentOverlay.agentTypeId)
+    : undefined
+  const agentLeftOverlayNode = activeAgentOverlay && activeAgentOverlayOption ? (
+    <AgentDetailsOverlay
+      agent={{
+        ...activeAgentOverlayOption,
+        sessionsStatus: addressedFleetSessions.statuses.get(activeAgentOverlayOption.agentTypeId) ?? "loading",
+      }}
+      sessionCount={resolvedSessions.filter((session) => session.agentTypeId === activeAgentOverlayOption.agentTypeId).length}
+      section={activeAgentOverlay.section}
+      onSectionChange={(section) => setLeftOverlay(agentOverlayId(activeAgentOverlayOption.agentTypeId, section))}
+      onCreateSession={() => {
+        setLeftOverlay(null)
+        void createChatSession(activeAgentOverlayOption.agentTypeId)
+      }}
+      onClose={() => setLeftOverlay(null)}
+      headerInsetStart={mobileShellActive}
+      headerInsetEnd={!surfaceOpen}
+    />
+  ) : null
+  const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? agentLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
     <SkillsPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={mobileShellActive}
@@ -2581,6 +2629,8 @@ export function WorkspaceAgentFront<
           })) : undefined}
           selectedAgentTypeId={fleetModeEnabled ? addressedAgents.selectedAgentTypeId : undefined}
           onSelectAgent={fleetModeEnabled ? addressedAgents.selectAgentTypeId : undefined}
+          onOpenAgentDetails={fleetModeEnabled ? (ownerAgentTypeId) => setLeftOverlay(agentOverlayId(ownerAgentTypeId, "overview")) : undefined}
+          onOpenAgentSettings={fleetModeEnabled ? (ownerAgentTypeId) => setLeftOverlay(agentOverlayId(ownerAgentTypeId, "settings")) : undefined}
           sessionsLoading={remoteSessionsTransitioning}
           activeSessionRef={activeChatPaneRef}
           muteActiveSession={Boolean(leftOverlay)}

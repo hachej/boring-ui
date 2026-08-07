@@ -29,6 +29,7 @@ export function AppSessionRow({
   canPin = true,
   working = false,
   attentionBadge,
+  activeDot = false,
   onSwitch,
   onOpenAsPane,
   onTogglePinned,
@@ -42,6 +43,7 @@ export function AppSessionRow({
   canPin?: boolean
   working?: boolean
   attentionBadge?: WorkspaceAttentionSessionBadge
+  activeDot?: boolean
   onSwitch?: (id: string) => void
   onOpenAsPane?: (id: string) => void
   onTogglePinned?: (id: string) => void
@@ -111,11 +113,19 @@ export function AppSessionRow({
           className={rowClassName}
           title={title}
         >
-          <span className="relative grid size-5 shrink-0 place-items-center" aria-hidden="true">
-            <MessageSquare
-              className={cn("h-4 w-4", state === "active" ? "text-[color:var(--accent)]" : "text-muted-foreground/65")}
-              strokeWidth={1.75}
-            />
+          <span className="relative grid size-5 shrink-0 place-items-center" aria-hidden={activeDot ? undefined : "true"}>
+            {activeDot ? (
+              state === "active" ? (
+                <span title="Active session" className="size-2 rounded-full bg-[color:var(--accent)]">
+                  <span className="sr-only">Active session</span>
+                </span>
+              ) : null
+            ) : (
+              <MessageSquare
+                className={cn("h-4 w-4", state === "active" ? "text-[color:var(--accent)]" : "text-muted-foreground/65")}
+                strokeWidth={1.75}
+              />
+            )}
           </span>
           <span className={cn("min-w-0 flex-1 truncate text-[13px] leading-5", state === "active" ? "font-semibold" : "font-medium")}>
             {title}

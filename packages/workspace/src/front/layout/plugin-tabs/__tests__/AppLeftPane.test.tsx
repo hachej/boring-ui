@@ -49,6 +49,90 @@ describe("AppLeftPane", () => {
     expect(newChat).toContainElement(screen.getByRole("button", { name: "New chat" }))
   })
 
+  it("renders a compact Agent tree with scoped chat actions and detail entry points", async () => {
+    const user = userEvent.setup()
+    const onCreateSession = vi.fn()
+    const onCreateSplitSession = vi.fn()
+    const onCreatePopoverSession = vi.fn()
+    const onOpenAgentDetails = vi.fn()
+    const onOpenAgentSettings = vi.fn()
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          agents={[
+            { agentTypeId: "alpha", label: "Boring Alpha", sessionsStatus: "loaded" },
+            { agentTypeId: "beta", label: "Boring Beta", sessionsStatus: "loaded" },
+          ]}
+          selectedAgentTypeId="alpha"
+          sessions={[
+            { id: "alpha-one", agentTypeId: "alpha", title: "Alpha session" },
+            { id: "beta-one", agentTypeId: "beta", title: "Beta session" },
+          ]}
+          onCreateSession={onCreateSession}
+          onCreateSplitSession={onCreateSplitSession}
+          onCreatePopoverSession={onCreatePopoverSession}
+          onOpenAgentDetails={onOpenAgentDetails}
+          onOpenAgentSettings={onOpenAgentSettings}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.queryByLabelText("Filter chats by Agent")).not.toBeInTheDocument()
+    expect(screen.getByText("Alpha")).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText("Alpha session")).toBeInTheDocument())
+    expect(screen.queryByText("Beta session")).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "View details for Boring Alpha; 1 session" }))
+    await user.click(screen.getByRole("button", { name: "Settings for Boring Alpha" }))
+    await user.click(screen.getByRole("button", { name: "New chat with Boring Alpha" }))
+    await user.click(screen.getByRole("button", { name: "New chat with Boring Alpha in split pane" }))
+    await user.click(screen.getByRole("button", { name: "Quick chat with Boring Alpha" }))
+
+    expect(onOpenAgentDetails).toHaveBeenCalledWith("alpha")
+    expect(onOpenAgentSettings).toHaveBeenCalledWith("alpha")
+    expect(onCreateSession).toHaveBeenCalledWith("alpha")
+    expect(onCreateSplitSession).toHaveBeenCalledWith("alpha")
+    expect(onCreatePopoverSession).toHaveBeenCalledWith("alpha")
+
+    await user.click(screen.getByRole("button", { name: "Expand Boring Beta sessions" }))
+    expect(screen.getByText("Beta session")).toBeInTheDocument()
+  })
+
+  it("keeps the Agent controls in single-Agent and multi-project modes", () => {
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          layoutMode="multi-project"
+          projects={[{ id: "project", name: "Project", sessions: [] }]}
+          activeProjectId="project"
+          agents={[{ agentTypeId: "solo", label: "Boring Solo", sessionsStatus: "loaded" }]}
+          selectedAgentTypeId="solo"
+          sessions={[]}
+          onCreateSession={vi.fn()}
+          onCreateSplitSession={vi.fn()}
+          onCreatePopoverSession={vi.fn()}
+          onOpenAgentDetails={vi.fn()}
+          onOpenAgentSettings={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.getByRole("button", { name: "View details for Boring Solo; 0 sessions" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "New chat with Boring Solo" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Settings for Boring Solo" })).toBeInTheDocument()
+    expect(screen.getByText("Project")).toBeInTheDocument()
+  })
+
   it("renders icon-only collapsed shortcuts with accessible labels", () => {
     const onCreateSession = vi.fn()
     const onOpenCommandPalette = vi.fn()

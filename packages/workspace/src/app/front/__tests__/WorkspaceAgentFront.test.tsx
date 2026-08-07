@@ -630,8 +630,10 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByRole("button", { name: "New chat with Alpha" })).toBeInTheDocument()
       expect(screen.getByRole("button", { name: "New chat with Beta" })).toBeInTheDocument()
       expect(screen.getAllByText("Alpha one").length).toBeGreaterThan(0)
-      expect(screen.getAllByText("Beta one").length).toBeGreaterThan(0)
     })
+    expect(screen.queryByText("Beta one")).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Expand Beta sessions" }))
+    expect(screen.getByText("Beta one")).toBeInTheDocument()
     expect(sessionScopes).toEqual(new Map([
       ["alpha", "fleet-ui:alpha"],
       ["beta", "fleet-ui:beta"],
@@ -648,6 +650,15 @@ describe("WorkspaceAgentFront", () => {
     await user.click(screen.getByRole("button", { name: "New chat with Beta" }))
     await waitFor(() => expect(createdBy).toHaveBeenCalledWith("beta"))
     expect(selected).toHaveBeenCalledWith("beta")
+
+    await user.click(screen.getByRole("button", { name: /View details for Beta/ }))
+    const detailsOverlay = document.querySelector('[data-boring-workspace-part="agent-details-overlay"]')
+    expect(detailsOverlay).not.toBeNull()
+    expect(detailsOverlay).toHaveTextContent("Beta")
+    await user.click(screen.getByRole("button", { name: "Close Beta details" }))
+
+    await user.click(screen.getByRole("button", { name: "Settings for Beta" }))
+    expect(document.querySelector('[data-boring-workspace-part="agent-details-overlay"]')).toHaveTextContent("Agent settings")
   })
 
   it("initializes a controlled colliding id to its explicit active owner", () => {

@@ -1,7 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { Columns2, MoreHorizontal, Zap } from "lucide-react"
+import { Columns2, MoreHorizontal, Plus, Settings, Zap } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { ControlTooltip } from "../../components/ControlTooltip"
 
@@ -86,11 +86,13 @@ export function RailAction({
 
 export function NewChatAction({
   icon,
+  agentLabel,
   onCreateSession,
   onCreateSplitSession,
   onCreatePopoverSession,
 }: {
   icon: ReactNode
+  agentLabel?: string
   onCreateSession: () => void
   onCreateSplitSession?: () => void
   onCreatePopoverSession?: () => void
@@ -99,6 +101,7 @@ export function NewChatAction({
     <div className="app-left-new-chat-action group flex h-8 w-full items-center rounded-md text-[13px] font-medium text-foreground transition-colors motion-reduce:transition-none hover:bg-foreground/[0.045] focus-within:ring-2 focus-within:ring-ring">
       <button
         type="button"
+        aria-label={agentLabel ? `New chat with ${agentLabel}` : undefined}
         data-boring-mobile-dismiss="true"
         onClick={(event) => {
           onCreateSession()
@@ -113,8 +116,8 @@ export function NewChatAction({
         {onCreateSplitSession ? (
           <button
             type="button"
-            aria-label="New chat in split pane"
-            title="New chat in split pane"
+            aria-label={agentLabel ? `New chat with ${agentLabel} in split pane` : "New chat in split pane"}
+            title={agentLabel ? `New chat with ${agentLabel} in split pane` : "New chat in split pane"}
             data-boring-mobile-dismiss="true"
             onClick={(event) => {
               event.stopPropagation()
@@ -129,8 +132,8 @@ export function NewChatAction({
         {onCreatePopoverSession ? (
           <button
             type="button"
-            aria-label="Quick chat"
-            title="Quick chat"
+            aria-label={agentLabel ? `Quick chat with ${agentLabel}` : "Quick chat"}
+            title={agentLabel ? `Quick chat with ${agentLabel}` : "Quick chat"}
             data-boring-mobile-dismiss="true"
             onClick={(event) => {
               event.stopPropagation()
@@ -144,6 +147,45 @@ export function NewChatAction({
         ) : null}
       </span>
     </div>
+  )
+}
+
+export function AgentChatActions({
+  agentLabel,
+  onCreateSession,
+  onCreateSplitSession,
+  onCreatePopoverSession,
+  onOpenSettings,
+}: {
+  agentLabel: string
+  onCreateSession: () => void
+  onCreateSplitSession?: () => void
+  onCreatePopoverSession?: () => void
+  onOpenSettings?: () => void
+}) {
+  const actions = [
+    onCreateSplitSession ? { label: `New chat with ${agentLabel} in split pane`, title: "New chat in split pane", icon: <Columns2 className="size-3.5" strokeWidth={1.75} />, onClick: onCreateSplitSession } : null,
+    onCreatePopoverSession ? { label: `Quick chat with ${agentLabel}`, title: "Quick chat", icon: <Zap className="size-3.5" strokeWidth={1.85} />, onClick: onCreatePopoverSession } : null,
+    { label: `New chat with ${agentLabel}`, title: "New chat", icon: <Plus className="size-4" strokeWidth={2} />, onClick: onCreateSession },
+    onOpenSettings ? { label: `Settings for ${agentLabel}`, title: "Agent settings", icon: <Settings className="size-3.5" strokeWidth={1.75} />, onClick: onOpenSettings } : null,
+  ].filter((action): action is NonNullable<typeof action> => Boolean(action))
+
+  return (
+    <span className="pointer-events-auto flex w-auto shrink-0 items-center overflow-hidden opacity-100 transition-opacity motion-reduce:transition-none md:pointer-events-none md:w-0 md:opacity-0 md:group-hover:pointer-events-auto md:group-hover:w-auto md:group-hover:opacity-100 md:group-focus-within:pointer-events-auto md:group-focus-within:w-auto md:group-focus-within:opacity-100">
+      {actions.map((action) => (
+        <button
+          key={action.label}
+          type="button"
+          aria-label={action.label}
+          title={action.title}
+          data-boring-mobile-dismiss="true"
+          onClick={() => action.onClick()}
+          className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span aria-hidden="true">{action.icon}</span>
+        </button>
+      ))}
+    </span>
   )
 }
 

@@ -1,9 +1,9 @@
 "use client"
 
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { Plus, Search } from "lucide-react"
+import { ChevronRight, Plus, Search } from "lucide-react"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
-import { PrimaryAction, NewChatAction, KbdHint, RailAction } from "./AppLeftPaneActions"
+import { AgentChatActions, PrimaryAction, NewChatAction, KbdHint, RailAction } from "./AppLeftPaneActions"
 import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
 import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
@@ -88,6 +88,8 @@ export interface AppLeftPaneProps {
   agents?: readonly AppLeftPaneAgent[]
   selectedAgentTypeId?: string
   onSelectAgent?: (agentTypeId: string) => void
+  onOpenAgentDetails?: (agentTypeId: string) => void
+  onOpenAgentSettings?: (agentTypeId: string) => void
   sessionsLoading?: boolean
   /** Raw legacy native session id. */
   activeSessionId?: string | null
@@ -189,6 +191,8 @@ export function AppLeftPane({
   agents = [],
   selectedAgentTypeId,
   onSelectAgent,
+  onOpenAgentDetails,
+  onOpenAgentSettings,
   sessionsLoading = false,
   activeSessionId,
   activeSessionRef,
@@ -227,14 +231,23 @@ export function AppLeftPane({
   const openSet = useMemo(() => new Set(normalizedOpenSessionIds), [normalizedOpenSessionIds])
   const pinnedSet = useMemo(() => new Set(normalizedPinnedSessionIds), [normalizedPinnedSessionIds])
   const workingSessionIds = useWorkingSessionIds(sessions)
-  const multiAgent = agents.length > 1
-  const [agentFilter, setAgentFilter] = useState("all")
-  const visibleAgentIds = useMemo(() => agentFilter === "all"
-    ? agents.map((agent) => agent.agentTypeId)
-    : agents.some((agent) => agent.agentTypeId === agentFilter) ? [agentFilter] : [], [agentFilter, agents])
+  const agentTreeEnabled = agents.length > 0
+  const [expandedAgentIds, setExpandedAgentIds] = useState<ReadonlySet<string>>(() => new Set())
   useEffect(() => {
-    if (agentFilter !== "all" && !agents.some((agent) => agent.agentTypeId === agentFilter)) setAgentFilter("all")
-  }, [agentFilter, agents])
+    if (!selectedAgentTypeId) return
+    setExpandedAgentIds((current) => current.has(selectedAgentTypeId)
+      ? current
+      : new Set(current).add(selectedAgentTypeId))
+  }, [selectedAgentTypeId])
+  const toggleAgentExpanded = (agentTypeId: string) => setExpandedAgentIds((current) => {
+    const next = new Set(current)
+    if (next.has(agentTypeId)) next.delete(agentTypeId)
+    else next.add(agentTypeId)
+    return next
+  })
+  const expandAgent = (agentTypeId: string) => setExpandedAgentIds((current) => current.has(agentTypeId)
+    ? current
+    : new Set(current).add(agentTypeId))
   const { blockers } = useWorkspaceAttention()
   const sessionBadges = useMemo(() => {
     const badges = new Map<string, WorkspaceAttentionSessionBadge>()
@@ -262,9 +275,10 @@ export function AppLeftPane({
     agent.agentTypeId,
     regularSessions.filter((session) => session.agentTypeId === agent.agentTypeId),
   ])), [agents, regularSessions])
-  const filteredRegularSessions = useMemo(() => multiAgent && agentFilter !== "all"
-    ? regularSessions.filter((session) => session.agentTypeId === agentFilter)
-    : regularSessions, [agentFilter, multiAgent, regularSessions])
+  const sessionCountByAgent = useMemo(() => new Map(agents.map((agent) => [
+    agent.agentTypeId,
+    sessions.filter((session) => session.agentTypeId === agent.agentTypeId).length,
+  ])), [agents, sessions])
   const projectItems = useMemo(() => {
     const source = projects ?? []
     if (layoutMode !== "multi-project") return source
@@ -272,16 +286,16 @@ export function AppLeftPane({
       if (project.id !== activeProjectId) return project
       return {
         ...project,
-        sessions: project.sessions ?? filteredRegularSessions.map((session) => ({
+        sessions: project.sessions ?? regularSessions.map((session) => ({
           id: session.id,
           agentTypeId: session.agentTypeId,
           title: session.title,
           updatedAt: session.updatedAt,
         })),
-        sessionCount: project.sessionCount ?? filteredRegularSessions.length,
+        sessionCount: project.sessionCount ?? regularSessions.length,
       }
     })
-  }, [activeProjectId, filteredRegularSessions, layoutMode, projects])
+  }, [activeProjectId, layoutMode, projects, regularSessions])
   // Expansion is owned here (lifted from the tree) so pinned-project rows in the
   // Pinned section can expand their project in the tree on click.
   const [expandedProjectIds, setExpandedProjectIds] = useState<ReadonlySet<string>>(() => {
@@ -331,6 +345,7 @@ export function AppLeftPane({
         canPin={isActiveProjectSession}
         working={isActiveProjectSession && workingSessionIds.has(sessionKey)}
         attentionBadge={isActiveProjectSession ? sessionBadges.get(sessionKey) : undefined}
+        activeDot={agentTreeEnabled}
         onSwitch={isActiveProjectSession
           ? session.agentTypeId
             ? () => onSwitchSession(session.id, session.agentTypeId)
@@ -355,6 +370,67 @@ export function AppLeftPane({
       />
     )
   }
+  const renderAgentTree = (showSessions: boolean) => agents.map((agent) => {
+    const ownedSessions = sessionsByAgent.get(agent.agentTypeId) ?? []
+    const totalSessionCount = sessionCountByAgent.get(agent.agentTypeId) ?? 0
+    const expanded = showSessions && expandedAgentIds.has(agent.agentTypeId)
+    const panelId = `boring-agent-sessions-${agent.agentTypeId}`
+    const empty = agent.sessionsStatus === "error"
+      ? "Chats unavailable."
+      : agent.sessionsStatus === "loaded" ? "No chats yet." : "Loading chats…"
+    const createForAgent = (create: ((agentTypeId?: string) => void) | undefined) => () => {
+      if (showSessions) expandAgent(agent.agentTypeId)
+      onSelectAgent?.(agent.agentTypeId)
+      create?.(agent.agentTypeId)
+    }
+    return (
+      <section key={agent.agentTypeId} data-boring-workspace-part="app-left-agent-tree" data-boring-agent-type-id={agent.agentTypeId} className="space-y-0.5">
+        <div
+          data-selected={selectedAgentTypeId === agent.agentTypeId ? "true" : "false"}
+          className="group flex min-h-11 w-full items-center gap-1 rounded-md pr-1 text-foreground/82 transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-within:bg-foreground/[0.055] data-[selected=true]:text-foreground md:min-h-8"
+        >
+          {showSessions ? (
+            <button
+              type="button"
+              aria-label={`${expanded ? "Collapse" : "Expand"} ${agent.label} sessions`}
+              aria-expanded={expanded}
+              aria-controls={panelId}
+              onClick={() => toggleAgentExpanded(agent.agentTypeId)}
+              className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ChevronRight className={`size-3.5 transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          ) : <span className="size-7 shrink-0" aria-hidden="true" />}
+          <button
+            type="button"
+            data-boring-mobile-dismiss="true"
+            aria-label={`View details for ${agent.label}; ${totalSessionCount} ${totalSessionCount === 1 ? "session" : "sessions"}`}
+            title={`View ${agent.label} details`}
+            onClick={() => onOpenAgentDetails ? onOpenAgentDetails(agent.agentTypeId) : showSessions ? toggleAgentExpanded(agent.agentTypeId) : undefined}
+            className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{agent.label.replace(/^Boring\s+/i, "") || agent.label}</span>
+            <span className="shrink-0 text-[11px] font-normal tabular-nums text-muted-foreground/75" aria-hidden="true">{totalSessionCount}</span>
+          </button>
+          <AgentChatActions
+            agentLabel={agent.label}
+            onCreateSession={createForAgent(onCreateSession)}
+            onCreateSplitSession={onCreateSplitSession ? createForAgent(onCreateSplitSession) : undefined}
+            onCreatePopoverSession={onCreatePopoverSession ? createForAgent(onCreatePopoverSession) : undefined}
+            onOpenSettings={onOpenAgentSettings ? () => onOpenAgentSettings(agent.agentTypeId) : undefined}
+          />
+        </div>
+        {expanded ? (
+          <div id={panelId} role="region" aria-label={`${agent.label} sessions`} className="space-y-0.5 pl-7">
+            <SessionSubSection empty={empty}>
+              {ownedSessions.map((session) => renderSession(session, false))}
+            </SessionSubSection>
+          </div>
+        ) : null}
+      </section>
+    )
+  })
+
   // Shared renderer for both the pinned project rows (in Pinned) and the rest
   // (in Projects), so they share one expand/pin state and identical behavior.
   const renderProjectTree = (items: AppLeftPaneProject[]) => (
@@ -425,27 +501,11 @@ export function AppLeftPane({
         <h2 id="app-left-chats-heading" className="shrink-0 px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
           Chats
         </h2>
-        <div data-boring-workspace-part="app-left-new-chat" className="shrink-0 px-2 pb-2">
-          {multiAgent ? (
-            <section aria-label="Agents" className="space-y-1">
-              <div className="flex items-center justify-between gap-2 px-2">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Agents</span>
-                <select aria-label="Filter chats by Agent" className="h-7 max-w-32 rounded-md border border-border bg-background px-1.5 text-xs text-foreground" value={agentFilter} onChange={(event) => setAgentFilter(event.currentTarget.value)}>
-                  <option value="all">All Agents</option>
-                  {agents.map((agent) => <option key={agent.agentTypeId} value={agent.agentTypeId}>{agent.label}</option>)}
-                </select>
-              </div>
-              {agents.map((agent) => (
-                <button key={agent.agentTypeId} type="button" aria-label={`New chat with ${agent.label}`} data-boring-agent-type-id={agent.agentTypeId} data-selected={selectedAgentTypeId === agent.agentTypeId ? "true" : "false"} className="flex min-h-11 w-full items-center justify-between rounded-md px-2 text-left text-sm text-muted-foreground transition-colors hover:bg-foreground/[0.055] hover:text-foreground data-[selected=true]:bg-muted/70 data-[selected=true]:text-foreground md:min-h-8" onClick={() => { onSelectAgent?.(agent.agentTypeId); onCreateSession(agent.agentTypeId) }}>
-                  <span className="truncate">{agent.label}</span>
-                  <Plus className="size-4 shrink-0" aria-hidden="true" />
-                </button>
-              ))}
-            </section>
-          ) : (
+        {!agentTreeEnabled ? (
+          <div data-boring-workspace-part="app-left-new-chat" className="shrink-0 px-2 pb-2">
             <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
-          )}
-        </div>
+          </div>
+        ) : null}
         <div
           data-boring-workspace-part="app-left-session-scroll"
           className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 pb-2 [mask-image:linear-gradient(to_bottom,transparent_0,black_8px,black_calc(100%_-_8px),transparent_100%)] motion-reduce:[mask-image:none]"
@@ -458,6 +518,12 @@ export function AppLeftPane({
                   {pinnedSessions.map((session) => renderSession(session, true))}
                   {pinnedProjects.length > 0 ? renderProjectTree(pinnedProjects) : null}
                 </SessionSubSection>
+              ) : null}
+              {agentTreeEnabled ? (
+                <section data-boring-workspace-part="app-left-pane-agents" className="space-y-1">
+                  <div className="px-2 pb-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/65">Agents</div>
+                  {renderAgentTree(false)}
+                </section>
               ) : null}
               <section data-boring-workspace-part="app-left-pane-section" className="space-y-1">
                 <div className="flex items-center justify-between gap-1 px-2 pb-0.5">
@@ -484,18 +550,7 @@ export function AppLeftPane({
                   {pinnedSessions.map((session) => renderSession(session, true))}
                 </SessionSubSection>
               ) : null}
-              {multiAgent ? visibleAgentIds.map((ownerAgentTypeId) => {
-                const agent = agents.find((candidate) => candidate.agentTypeId === ownerAgentTypeId)
-                const ownedSessions = sessionsByAgent.get(ownerAgentTypeId) ?? []
-                const empty = agent?.sessionsStatus === "error"
-                  ? "Chats unavailable."
-                  : agent?.sessionsStatus === "loaded" ? "No chats yet." : "Loading chats…"
-                return (
-                  <SessionSubSection key={ownerAgentTypeId} title={agent?.label ?? ownerAgentTypeId} empty={empty}>
-                    {ownedSessions.map((session) => renderSession(session, false))}
-                  </SessionSubSection>
-                )
-              }) : (
+              {agentTreeEnabled ? renderAgentTree(true) : (
                 <SessionSubSection title={pinnedSessions.length > 0 ? "Recent" : undefined} empty={sessionsLoading ? "Loading chats…" : "No chats yet."}>
                   {regularSessions.map((session) => renderSession(session, false))}
                 </SessionSubSection>
