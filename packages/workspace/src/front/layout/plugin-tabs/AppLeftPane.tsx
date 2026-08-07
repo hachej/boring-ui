@@ -273,8 +273,8 @@ export function AppLeftPane({
   )
   const sessionsByAgent = useMemo(() => new Map(agents.map((agent) => [
     agent.agentTypeId,
-    regularSessions.filter((session) => session.agentTypeId === agent.agentTypeId),
-  ])), [agents, regularSessions])
+    sessions.filter((session) => session.agentTypeId === agent.agentTypeId),
+  ])), [agents, sessions])
   const sessionCountByAgent = useMemo(() => new Map(agents.map((agent) => [
     agent.agentTypeId,
     sessions.filter((session) => session.agentTypeId === agent.agentTypeId).length,
@@ -328,7 +328,7 @@ export function AppLeftPane({
   )
   const headerVisible = headerMode !== "hidden" && (layoutMode !== "multi-project" || headerMode === "workspace")
   const headerShowsBrand = headerMode === "full" && layoutMode !== "multi-project"
-  const renderSession = (session: AppLeftPaneSession, pinned: boolean, projectId = activeProjectId ?? undefined) => {
+  const renderSession = (session: AppLeftPaneSession, pinned: boolean, projectId = activeProjectId ?? undefined, showOwnerLabel = pinned) => {
     const isActiveProjectSession = !projectId || projectId === activeProjectId
     const sessionKey = workspaceSessionKeyFor(session)
     const state: SessionRowState = isActiveProjectSession && sessionKey === normalizedActiveSessionId && !muteActiveSession
@@ -350,8 +350,9 @@ export function AppLeftPane({
         working={isActiveProjectSession && workingSessionIds.has(sessionKey)}
         attentionBadge={isActiveProjectSession ? sessionBadges.get(sessionKey) : undefined}
         activeDot={agentTreeEnabled}
+        activeDotActive={isActiveProjectSession && sessionKey === normalizedActiveSessionId}
         compact={agentTreeEnabled && !pinned}
-        ownerLabel={pinned && session.agentTypeId ? agentLabelById.get(session.agentTypeId) : undefined}
+        ownerLabel={showOwnerLabel && session.agentTypeId ? agentLabelById.get(session.agentTypeId) : undefined}
         onSwitch={isActiveProjectSession
           ? session.agentTypeId
             ? () => onSwitchSession(session.id, session.agentTypeId)
@@ -416,7 +417,7 @@ export function AppLeftPane({
             className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{agent.label.replace(/^Boring\s+/i, "") || agent.label}</span>
-            <span className="shrink-0 text-[11px] font-normal tabular-nums text-muted-foreground/75" aria-hidden="true">{totalSessionCount}</span>
+            <span data-boring-agent-session-count="true" className="shrink-0 text-[11px] font-normal tabular-nums text-muted-foreground/75" aria-hidden="true">{totalSessionCount}</span>
           </button>
           <AgentChatActions
             agentLabel={agent.label}
@@ -429,7 +430,7 @@ export function AppLeftPane({
         {expanded ? (
           <div id={panelId} role="region" aria-label={`${agent.label} sessions`} className="ml-3.5 space-y-0.5 border-l border-border/60 pl-3.5">
             <SessionSubSection empty={empty}>
-              {ownedSessions.map((session) => renderSession(session, false))}
+              {ownedSessions.map((session) => renderSession(session, pinnedSet.has(workspaceSessionKeyFor(session)), activeProjectId ?? undefined, false))}
             </SessionSubSection>
           </div>
         ) : null}

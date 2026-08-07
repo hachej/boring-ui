@@ -85,7 +85,9 @@ describe("AppLeftPane", () => {
 
     expect(screen.queryByLabelText("Filter chats by Agent")).not.toBeInTheDocument()
     expect(screen.getByText("Pinned chats")).toBeInTheDocument()
-    const pinnedAlphaRow = screen.getByText("Alpha session").closest('[data-boring-workspace-part="app-session-row"]')
+    const nestedAlphaRow = within(screen.getByRole("region", { name: "Boring Alpha sessions" })).getByText("Alpha session").closest('[data-boring-workspace-part="app-session-row"]')
+    expect(nestedAlphaRow?.querySelector(".app-left-session-trailing svg")).toBeInTheDocument()
+    const pinnedAlphaRow = screen.getAllByText("Alpha session")[0]!.closest('[data-boring-workspace-part="app-session-row"]')
     expect(pinnedAlphaRow).toHaveTextContent("Alpha")
     act(() => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
       detail: { sessionId: "alpha-one", agentTypeId: "alpha", working: true },
@@ -93,7 +95,7 @@ describe("AppLeftPane", () => {
     expect(pinnedAlphaRow).toHaveTextContent("working")
     expect(pinnedAlphaRow).toHaveTextContent("Alpha")
     expect(screen.getAllByText("Alpha").length).toBeGreaterThan(1)
-    await waitFor(() => expect(screen.getByText("Alpha session")).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText("Alpha session")).toHaveLength(2))
     expect(screen.queryByText("Beta session")).not.toBeInTheDocument()
 
     await user.click(screen.getByRole("button", { name: "View details for Boring Alpha; 1 session" }))

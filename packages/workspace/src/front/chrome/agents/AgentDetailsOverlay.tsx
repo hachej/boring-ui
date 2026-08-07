@@ -79,14 +79,14 @@ export function AgentDetailsOverlay({
               </p>
             </section>
 
-            <dl className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-lg border border-border/60 bg-card/50 px-3 py-2.5">
+            <dl className="flex flex-wrap items-center gap-x-8 gap-y-2 border-y border-border/60 py-3">
+              <div className="flex items-baseline gap-2">
                 <dt className="text-[11px] font-medium text-muted-foreground">Sessions</dt>
-                <dd className="mt-1 text-sm font-semibold tabular-nums text-foreground">{sessionCount}</dd>
+                <dd className="text-sm font-semibold tabular-nums text-foreground">{sessionCount}</dd>
               </div>
-              <div className="rounded-lg border border-border/60 bg-card/50 px-3 py-2.5">
+              <div className="flex items-baseline gap-2">
                 <dt className="text-[11px] font-medium text-muted-foreground">Status</dt>
-                <dd className="mt-1 text-sm font-semibold text-foreground">{statusLabel}</dd>
+                <dd className="text-sm font-semibold text-foreground">{statusLabel}</dd>
               </div>
             </dl>
 

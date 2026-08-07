@@ -473,13 +473,24 @@
   opacity: 1;
 }
 
-@media (hover: none) {
+.app-left-agent-row:hover [data-boring-agent-session-count="true"],
+.app-left-agent-row:focus-within [data-boring-agent-session-count="true"] {
+  display: none;
+}
+
+@media (max-width: 767px), (hover: none) {
   .app-left-agent-actions {
     pointer-events: auto;
     width: auto;
     opacity: 1;
   }
 
+  .app-left-agent-row [data-boring-agent-session-count="true"] {
+    display: inline !important;
+  }
+}
+
+@media (hover: none) {
   .app-left-new-chat-secondary {
     width: auto;
     opacity: 1;

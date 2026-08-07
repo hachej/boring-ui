@@ -30,6 +30,7 @@ export function AppSessionRow({
   working = false,
   attentionBadge,
   activeDot = false,
+  activeDotActive = state === "active",
   compact = false,
   ownerLabel,
   onSwitch,
@@ -46,6 +47,7 @@ export function AppSessionRow({
   working?: boolean
   attentionBadge?: WorkspaceAttentionSessionBadge
   activeDot?: boolean
+  activeDotActive?: boolean
   compact?: boolean
   ownerLabel?: string
   onSwitch?: (id: string) => void
@@ -119,7 +121,7 @@ export function AppSessionRow({
         >
           <span className="relative grid size-5 shrink-0 place-items-center" aria-hidden={activeDot ? undefined : "true"}>
             {activeDot ? (
-              state === "active" ? (
+              activeDotActive ? (
                 <span title="Active session" className="size-2 rounded-full bg-[color:var(--accent)]">
                   <span className="sr-only">Active session</span>
                 </span>
