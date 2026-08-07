@@ -5,6 +5,7 @@ export type { PiChatReplayRangeError } from '../../core/piChatSessionService'
 
 export const PI_CHAT_REPLAY_GAP = 'replay_gap'
 export const PI_CHAT_CURSOR_AHEAD = 'cursor_ahead'
+export const DEFAULT_REPLAY_BUFFER_MAX_EVENTS = 1_000
 
 export type PiChatReplayRangeResult =
   | { type: 'ok'; events: PiChatEvent[]; latestSeq: number; minReplaySeq: number }
@@ -33,7 +34,7 @@ export class PiChatReplayBuffer {
   private subscribers = new Set<PiChatReplaySubscriber>()
 
   constructor(options: PiChatReplayBufferOptions = {}) {
-    this.maxEvents = Math.max(1, Math.floor(options.maxEvents ?? 1_000))
+    this.maxEvents = Math.max(1, Math.floor(options.maxEvents ?? DEFAULT_REPLAY_BUFFER_MAX_EVENTS))
     this.latest = Math.max(0, Math.floor(options.initialLatestSeq ?? 0))
   }
 
