@@ -197,6 +197,10 @@ export class LiveTranscriptBrowserController {
         try { await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/composer/${encodeURIComponent(id)}/stop`, {}) } catch {}
       }
       await this.cleanupComposer()
+      if (error instanceof LiveAttachCancelledError) {
+        liveTranscriptBrowserState.set({ phase: "idle" })
+        return
+      }
       liveTranscriptBrowserState.set({ recordingKind: "composer", phase: "error", error: formatError(error, "Streaming dictation failed to start.") })
       throw error
     }
@@ -285,7 +289,14 @@ export class LiveTranscriptBrowserController {
       })
       return `Live transcript started: ${started.transcriptPath}`
     } catch (error) {
-      if (error instanceof LiveAttachCancelledError) return "Live transcript stopped before microphone attachment completed."
+      if (error instanceof LiveAttachCancelledError) {
+        try {
+          await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/${encodeURIComponent(started.liveSessionId)}/interrupt`, { reason: "cancelled_before_attachment" })
+        } catch {}
+        await this.cleanup(started.liveSessionId)
+        liveTranscriptBrowserState.set({ phase: "idle" })
+        return "Live transcript stopped before microphone attachment completed."
+      }
       const permissionDenied = error instanceof DOMException && error.name === "NotAllowedError"
       try {
         await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/${encodeURIComponent(started.liveSessionId)}/interrupt`, {
@@ -422,10 +433,17 @@ export class LiveTranscriptBrowserController {
     this.preparationId = prepared.preparationId
     const deadline = Date.now() + 12 * 60_000
     let status = prepared
+    let consecutivePollFailures = 0
     while (status.state === "warming" && Date.now() < deadline && generation === this.attachGeneration) {
       await new Promise((resolve) => setTimeout(resolve, 2_000))
       if (generation !== this.attachGeneration) break
-      status = await postJson<typeof prepared>(`${LIVE_TRANSCRIPT_BASE_PATH}/compute/status`, { preparationId: prepared.preparationId })
+      try {
+        status = await postJson<typeof prepared>(`${LIVE_TRANSCRIPT_BASE_PATH}/compute/status`, { preparationId: prepared.preparationId })
+        consecutivePollFailures = 0
+      } catch (error) {
+        consecutivePollFailures += 1
+        if (consecutivePollFailures >= 3) throw error
+      }
     }
     if (generation !== this.attachGeneration) {
       this.preparationId = undefined

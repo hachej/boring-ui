@@ -2,6 +2,7 @@ import importlib.util
 import pathlib
 import sys
 import time
+import threading
 import unittest
 from unittest import mock
 
@@ -64,6 +65,37 @@ class LeaseControllerTests(unittest.TestCase):
                 time.sleep(.02)
             self.assertEqual(provider.current, "stopped")
         finally:
+            controller.close()
+
+    def test_acquire_waits_until_in_flight_stop_finishes(self):
+        provider = FakeProvider()
+        provider.current = "running"
+        stop_entered = threading.Event()
+        allow_stop = threading.Event()
+        original_stop = provider.stop
+        def blocked_stop():
+            stop_entered.set()
+            allow_stop.wait(2)
+            original_stop()
+        provider.stop = blocked_stop
+        controller = MODULE.LeaseController(provider, lambda: True, idle_grace=60)
+        acquired = []
+        try:
+            controller.stop_after = time.monotonic()
+            stopping = threading.Thread(target=controller._stop_until_verified)
+            stopping.start()
+            self.assertTrue(stop_entered.wait(1))
+            acquiring = threading.Thread(target=lambda: acquired.append(controller.acquire("request-after-stop")))
+            acquiring.start()
+            time.sleep(.02)
+            self.assertEqual(acquired, [])
+            allow_stop.set()
+            stopping.join(3)
+            acquiring.join(5)
+            self.assertEqual(len(acquired), 1)
+            self.assertEqual(provider.current, "running")
+        finally:
+            allow_stop.set()
             controller.close()
 
     def test_expired_lease_stops_provider(self):

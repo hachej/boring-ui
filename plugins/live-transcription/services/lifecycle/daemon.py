@@ -64,6 +64,7 @@ class LeaseController:
         self.leases: dict[str, Lease] = {}
         self.requests: dict[str, str] = {}
         self.starting = False
+        self.stopping = False
         self.started_at: float | None = None
         self.stop_after: float | None = None
         self.closed = False
@@ -79,10 +80,8 @@ class LeaseController:
                 lease = self.leases[existing_id]
                 lease.expires_at = time.monotonic() + self.lease_ttl
                 return lease
-            while self.starting:
+            while self.starting or self.stopping:
                 self.condition.wait(timeout=1)
-            if self.provider.state() == "running" and self.ready():
-                return self._new_lease(request_id)
             self.starting = True
             self.stop_after = None
         try:
@@ -154,31 +153,40 @@ class LeaseController:
                     self.stop_after = now
                 if not self.leases and self.stop_after is None:
                     self.stop_after = now + self.idle_grace
-                should_stop = not self.starting and not self.leases and self.stop_after is not None and now >= self.stop_after
+                should_stop = not self.starting and not self.stopping and not self.leases and self.stop_after is not None and now >= self.stop_after
                 if should_stop:
                     self.stop_after = now + 30
             if should_stop:
                 self._stop_until_verified()
 
     def _stop_until_verified(self) -> None:
-        delay = 2
-        for _ in range(6):
-            try:
-                if self.provider.state() == "stopped":
-                    with self.lock:
-                        self.started_at = None
-                        self.stop_after = None
-                    return
-                self.provider.stop()
-                if self.provider.state() == "stopped":
-                    with self.lock:
-                        self.started_at = None
-                        self.stop_after = None
-                    return
-            except Exception as error:
-                print(f"lifecycle stop attempt failed: {error}", flush=True)
-            time.sleep(delay)
-            delay = min(delay * 2, 30)
+        with self.condition:
+            if self.leases or self.starting or self.stopping or self.stop_after is None:
+                return
+            self.stopping = True
+        try:
+            delay = 2
+            for _ in range(6):
+                try:
+                    if self.provider.state() == "stopped":
+                        with self.lock:
+                            self.started_at = None
+                            self.stop_after = None
+                        return
+                    self.provider.stop()
+                    if self.provider.state() == "stopped":
+                        with self.lock:
+                            self.started_at = None
+                            self.stop_after = None
+                        return
+                except Exception as error:
+                    print(f"lifecycle stop attempt failed: {error}", flush=True)
+                time.sleep(delay)
+                delay = min(delay * 2, 30)
+        finally:
+            with self.condition:
+                self.stopping = False
+                self.condition.notify_all()
 
 
 class ApiHandler(BaseHTTPRequestHandler):
@@ -188,12 +196,12 @@ class ApiHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         if self.headers.get("Origin"):
             return self._send(403, {"error": "browser origins are forbidden"})
-        supplied = self.headers.get("Authorization", "")
-        if not hmac.compare_digest(supplied, f"Bearer {self.bearer_token}"):
+        supplied = self.headers.get("Authorization", "").encode("utf-8", errors="replace")
+        if not hmac.compare_digest(supplied, f"Bearer {self.bearer_token}".encode()):
             return self._send(401, {"error": "unauthorized"})
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if length > 4096:
+            if length < 0 or length > 4096:
                 return self._send(413, {"error": "request too large"})
             body = json.loads(self.rfile.read(length) or b"{}")
             if self.path == "/v1/leases/acquire":
@@ -242,7 +250,7 @@ def tcp_ready_targets(raw_targets: str, auth_entries: list[dict[str, str]]) -> C
 
     def ready() -> bool:
         for target, auth in zip(targets, auth_entries):
-            if target.scheme != "ws" or target.hostname not in {"127.0.0.1", "localhost", "::1"} or not target.port:
+            if target.scheme != "ws" or target.hostname not in {"127.0.0.1", "localhost"} or not target.port:
                 return False
             key = base64.b64encode(os.urandom(16)).decode()
             path = target.path + (("?" + target.query) if target.query else "")
@@ -271,9 +279,11 @@ def main() -> None:
     parser.add_argument("--max-runtime", type=float, default=4 * 3600)
     args = parser.parse_args()
     host, port_text = args.listen.rsplit(":", 1)
-    if host not in {"127.0.0.1", "::1"}:
+    if host != "127.0.0.1":
         raise SystemExit("lifecycle daemon must bind to loopback")
     token = os.environ["BORING_GPU_LIFECYCLE_BEARER_TOKEN"]
+    if len(token) < 32:
+        raise SystemExit("BORING_GPU_LIFECYCLE_BEARER_TOKEN must be at least 32 characters")
     ready_targets = os.environ["BORING_GPU_READY_WEBSOCKETS"]
     ready_auth = json.loads(os.environ["BORING_GPU_READY_AUTH_JSON"])
     controller = LeaseController(
