@@ -37,6 +37,9 @@ export BORING_KYUTAI_URL=ws://127.0.0.1:18880/api/asr-streaming
 export BORING_KYUTAI_API_KEY=public_token # omit when the local server needs no key
 # Optional: enrich only /live transcripts with best-effort speaker labels.
 export BORING_LIVE_TRANSCRIPTS_DIARIZER_URL=ws://127.0.0.1:18881/v1/diarize
+# Optional: start/stop on-demand compute through the root-owned lease daemon.
+export BORING_LIVE_TRANSCRIPTS_LIFECYCLE_URL=http://127.0.0.1:18882/v1
+export BORING_LIVE_TRANSCRIPTS_LIFECYCLE_BEARER_TOKEN=<lifecycle token>
 ```
 
 The adapter captures native 24 kHz PCM16 for Kyutai, converts it to float32
@@ -48,7 +51,8 @@ also sends a 16 kHz copy to the raw Streaming Sortformer sidecar and assigns
 Kyutai words by overlap with its anonymous speaker intervals. Kyutai remains the
 text authority; uncovered words render as `Speaker unknown`, and sidecar
 setup/runtime failures do not interrupt capture. See
-`services/sortformer/README.md` for the PoC service contract.
+`services/sortformer/README.md` for the PoC service contract. See
+`services/lifecycle/README.md` for secure on-demand GPU operation.
 With Kyutai selected, the composer microphone streams each `Word` event directly
 into the editable draft without creating a transcript file. `/live start` keeps
 the separate Markdown transcript and agent-review sink.
