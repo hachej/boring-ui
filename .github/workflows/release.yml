@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  checks: read
   id-token: write
 
 jobs:
@@ -27,6 +28,17 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Re-verify exact tagged SHA release gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          release_sha=$(git rev-parse HEAD)
+          node scripts/require-release-candidate-check.mjs \
+            "$release_sha" \
+            "Release Candidate Built-Dist" \
+            "Main Green Summary"
 
       - name: Verify tag matches package versions
         run: |
