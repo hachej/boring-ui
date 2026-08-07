@@ -7,6 +7,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import {
   MCP_ERROR_CODES,
   McpError,
+  USER_REGISTERED_MCP_PROVIDER_ID,
   isBlockedMcpEndpointIpAddress,
   isUserRegisteredMcpSource,
   redactMcpSecrets,
@@ -70,11 +71,11 @@ async function defaultDnsResolver(hostname: string): Promise<readonly McpSdkReso
   return addresses.filter((entry): entry is McpSdkResolvedAddress => entry.family === 4 || entry.family === 6)
 }
 
-/** Resolve every address once, reject the whole hostname if any answer is unsafe, then select one vetted address to pin. */
-export async function resolveUserRegisteredMcpAddress(
+/** Resolve once, reject the whole hostname if any answer is unsafe, then return every vetted failover address. */
+export async function resolveUserRegisteredMcpAddresses(
   hostname: string,
   resolver: McpSdkDnsResolver = defaultDnsResolver,
-): Promise<McpSdkResolvedAddress> {
+): Promise<readonly McpSdkResolvedAddress[]> {
   let addresses: readonly McpSdkResolvedAddress[]
   try {
     addresses = await resolver(hostname)
@@ -99,11 +100,16 @@ export async function resolveUserRegisteredMcpAddress(
       { reason: "resolved_address_blocked" },
     )
   }
-  return addresses[0]
+  return addresses
 }
 
-export function createPinnedMcpDispatcher(hostname: string, pinned: McpSdkResolvedAddress): Agent {
+export function createPinnedMcpDispatcher(hostname: string, pinned: readonly McpSdkResolvedAddress[]): Agent {
+  if (pinned.length === 0) throw new Error("Pinned MCP dispatcher requires at least one address")
   return new Agent({
+    // Node's family autoselection consumes the complete lookup result and
+    // attempts later vetted addresses when an earlier connect fails.
+    autoSelectFamily: true,
+    autoSelectFamilyAttemptTimeout: 100,
     connect: {
       lookup(requestedHostname: string, options: LookupOptions, callback: (error: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void) {
         if (requestedHostname.toLowerCase().replace(/\.$/, "") !== hostname.toLowerCase().replace(/\.$/, "")) {
@@ -112,16 +118,17 @@ export function createPinnedMcpDispatcher(hostname: string, pinned: McpSdkResolv
           callback(error, "", 0)
           return
         }
-        if (options.all) callback(null, [pinned])
-        else callback(null, pinned.address, pinned.family)
+        if (options.all) callback(null, [...pinned])
+        else callback(null, pinned[0].address, pinned[0].family)
       },
     },
   })
 }
 
-export function createPinnedMcpFetch(dispatcher: Agent): typeof globalThis.fetch {
+export function createPinnedMcpFetch(expectedOrigin: string, dispatcher: Agent): (input: string | URL, init?: RequestInit) => Promise<Response> {
   return (input, init) => {
-    const requestUrl = typeof input === "string" || input instanceof URL ? input : input.url
+    const requestUrl = new URL(input.toString())
+    if (requestUrl.origin !== expectedOrigin) return Promise.reject(new Error("Pinned MCP fetch refused an unexpected origin"))
     const undiciInit = init as Parameters<typeof undiciFetch>[1]
     return undiciFetch(requestUrl, { ...undiciInit, dispatcher, redirect: "error" }) as unknown as Promise<Response>
   }
@@ -134,15 +141,32 @@ async function withClient<T>(options: McpSdkTransportOptions, source: McpSource,
     const endpoint = await resolveEndpoint(options, source)
     const url = snapshotMcpEndpointUrl(endpoint.url)
     const requestInit: RequestInit = { headers: normalizeHeaders(endpoint.headers) }
-    let fetch: typeof globalThis.fetch | undefined
+    let fetch: ((input: string | URL, init?: RequestInit) => Promise<Response>) | undefined
 
+    if (source.provider === USER_REGISTERED_MCP_PROVIDER_ID && !isUserRegisteredMcpSource(source)) {
+      throw new McpError(
+        MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID,
+        "User-registered MCP source did not cross the registration boundary",
+        { reason: "invalid_user_registration_provenance" },
+      )
+    }
     if (isUserRegisteredMcpSource(source)) {
-      validateUserRegisteredMcpEndpoint(url.toString(), "streamable-http")
-      const hostname = url.hostname.replace(/^\[|\]$/g, "")
-      const pinned = await resolveUserRegisteredMcpAddress(hostname, options.dnsResolver)
+      const registeredUrl = validateUserRegisteredMcpEndpoint(source.userRegistration.endpoint, source.userRegistration.transport)
+      if (url.toString() !== registeredUrl.toString()) {
+        throw new McpError(
+          MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID,
+          "Resolved MCP endpoint does not match the registered source endpoint",
+          { reason: "user_registration_endpoint_mismatch" },
+        )
+      }
+      const hostname = registeredUrl.hostname.replace(/^\[|\]$/g, "")
+      const pinned = await resolveUserRegisteredMcpAddresses(hostname, options.dnsResolver)
+      // No host-level dispatcher/proxy abstraction exists in this fetch stack.
+      // This dedicated Agent is required to pin DNS, but therefore bypasses
+      // global Undici dispatchers; proxy-only deployments need an egress seam.
       dispatcher = createPinnedMcpDispatcher(hostname, pinned)
       requestInit.redirect = "error"
-      fetch = createPinnedMcpFetch(dispatcher)
+      fetch = createPinnedMcpFetch(url.origin, dispatcher)
     }
 
     const transport = new StreamableHTTPClientTransport(url, { requestInit, fetch })

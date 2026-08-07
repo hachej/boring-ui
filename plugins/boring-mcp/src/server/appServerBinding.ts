@@ -18,6 +18,9 @@ import {
   DEFAULT_MCP_PROVIDER_TEMPLATES,
   MCP_ERROR_CODES,
   McpError,
+  USER_REGISTERED_MCP_PROVIDER_ID,
+  createUserRegisteredMcpSource,
+  isUserRegisteredMcpSource,
   type McpActor,
   type McpProviderId,
   type McpSource,
@@ -253,7 +256,7 @@ function sourceFromUnknown(value: unknown): McpSource | undefined {
   const credentialProvider = parseString(record.credentialProvider)
   if (!id || !workspaceId || !userId || !provider || !displayName || !status || !ownerKind || !credentialProvider) return undefined
   if (!['connected', 'expired', 'revoked', 'error', 'unconfigured'].includes(status)) return undefined
-  return {
+  const source: McpSource = {
     id,
     workspaceId,
     userId,
@@ -269,6 +272,17 @@ function sourceFromUnknown(value: unknown): McpSource | undefined {
     createdAt: parseString(record.createdAt),
     updatedAt: parseString(record.updatedAt),
   }
+  if (provider !== USER_REGISTERED_MCP_PROVIDER_ID) return source
+  const registration = asRecord(record.userRegistration)
+  const endpoint = parseString(registration.endpoint)
+  if (!endpoint || registration.transport !== 'streamable-http') return undefined
+  const { provider: _provider, ...input } = source
+  return createUserRegisteredMcpSource(input, {
+    enabled: true,
+    endpoint,
+    displayName,
+    transport: 'streamable-http',
+  })
 }
 
 function readRawStoredSources(settings: Record<string, unknown>, actor: McpActor): McpSource[] {
@@ -279,10 +293,23 @@ function readRawStoredSources(settings: Record<string, unknown>, actor: McpActor
     .filter((source): source is McpSource => Boolean(source && source.workspaceId === actor.workspaceId && source.userId === actor.userId))
 }
 
+function preserveUserRegistration(original: McpSource, next: McpSource): McpSource {
+  if (!isUserRegisteredMcpSource(original)) return next
+  const { provider: _provider, ...input } = next
+  return createUserRegisteredMcpSource(input, {
+    enabled: true,
+    endpoint: original.userRegistration.endpoint,
+    displayName: next.displayName,
+    transport: original.userRegistration.transport,
+  })
+}
+
 function normalizeStoredSourceId(actor: McpActor, source: McpSource): McpSource {
   try {
     const legacyId = createLegacyManagedConnectorSourceId(actor, source.provider)
-    return source.id === legacyId ? { ...source, id: createManagedConnectorSourceId(actor, source.provider) } : source
+    return source.id === legacyId
+      ? preserveUserRegistration(source, { ...source, id: createManagedConnectorSourceId(actor, source.provider) })
+      : source
   } catch {
     return source
   }
@@ -327,6 +354,13 @@ async function saveStoredSource(
   source: McpSource,
   removeSourceIds: readonly string[] = [],
 ): Promise<McpSource[]> {
+  if (source.provider === USER_REGISTERED_MCP_PROVIDER_ID && !isUserRegisteredMcpSource(source)) {
+    throw new McpError(
+      MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID,
+      'User-registered MCP source did not cross the registration boundary',
+      { reason: 'invalid_user_registration_provenance' },
+    )
+  }
   const patch = app.userStore.patchUserSettingsJsonPath
   if (patch && removeSourceIds.length === 0) {
     const updated = await patch.call(
@@ -379,7 +413,7 @@ export function createUserSettingsMcpSourceRegistry(
       const current = readStoredSources(currentSettings.settings, actor)
       const rawSources = readRawStoredSources(currentSettings.settings, actor)
       const existing = current.find((item) => item.id === source.id)
-      const next = { ...source, updatedAt: now, createdAt: source.createdAt ?? existing?.createdAt ?? now }
+      const next = preserveUserRegistration(source, { ...source, updatedAt: now, createdAt: source.createdAt ?? existing?.createdAt ?? now })
       const legacyId = existingLegacySourceIdFor(actor, next, rawSources)
       await saveStoredSource(app, actor, next, legacyId ? [legacyId] : [])
       return next
@@ -392,7 +426,7 @@ export function createUserSettingsMcpSourceRegistry(
           return legacySource ? normalizeStoredSourceId(actor, legacySource) : undefined
         })()
       if (!source) return undefined
-      const disconnected = { ...source, status: 'revoked' as const, updatedAt: new Date().toISOString() }
+      const disconnected = preserveUserRegistration(source, { ...source, status: 'revoked' as const, updatedAt: new Date().toISOString() })
       const legacyId = existingLegacySourceIdFor(actor, disconnected, readRawStoredSources(currentSettings.settings, actor))
       await saveStoredSource(app, actor, disconnected, legacyId ? [legacyId] : [])
       return disconnected
