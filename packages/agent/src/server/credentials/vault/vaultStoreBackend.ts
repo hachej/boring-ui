@@ -206,7 +206,10 @@ export function createVaultCredentialStoreBackendV1(
             fieldId,
           })
           if (!envelope) {
-            notConfigured('Required credential material is not configured')
+            // The anchored record asserts that this version is current. A
+            // missing current envelope is storage corruption/deletion, not an
+            // authenticated "not configured" state.
+            unreadable('Current credential field envelope is missing')
           }
           const plaintext = decryptCredentialFieldV1({
             plaintextDek,
