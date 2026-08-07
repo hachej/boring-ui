@@ -155,13 +155,13 @@ function watch(binding: PendingTaskChatBinding, client: Pick<WorkspacePluginClie
   }
   const prompt: EventListener = (event) => {
     const detail = (event as CustomEvent<WorkspaceChatPromptAcceptedDetail>).detail
-    if (detail?.agentTypeId === binding.agentTypeId && detail.sessionId === binding.sessionId) accept()
+    if (detail?.workspaceId === binding.workspaceId && detail.agentTypeId === binding.agentTypeId && detail.sessionId === binding.sessionId) accept()
   }
   // AgentHost emits working=true only for an accepted running/aborting turn. This
   // recovers when the detached composer unmounts before its local receipt event.
   const status: EventListener = (event) => {
-    const detail = (event as CustomEvent<{ agentTypeId?: unknown; sessionId?: unknown; working?: unknown }>).detail
-    if (detail?.working === true && detail.agentTypeId === binding.agentTypeId && detail.sessionId === binding.sessionId) accept()
+    const detail = (event as CustomEvent<{ workspaceId?: unknown; agentTypeId?: unknown; sessionId?: unknown; working?: unknown }>).detail
+    if (detail?.working === true && detail.workspaceId === binding.workspaceId && detail.agentTypeId === binding.agentTypeId && detail.sessionId === binding.sessionId) accept()
   }
   listeners.set(key, { prompt, status })
   window.addEventListener(WORKSPACE_CHAT_PROMPT_ACCEPTED_EVENT, prompt)

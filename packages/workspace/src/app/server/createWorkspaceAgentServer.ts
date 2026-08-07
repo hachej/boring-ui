@@ -40,6 +40,7 @@ import {
   type VerifiedAgentScopeClaim,
   type WorkspaceProvisioningResult,
   type WorkspaceAgentDispatcherResolver,
+  resolveDefaultAgentFleet,
 } from "@hachej/boring-agent/server"
 import type { AgentEffectAdmission } from "@hachej/boring-agent/core"
 import {
@@ -223,6 +224,12 @@ export interface CreateWorkspaceAgentServerOptions
     Pick<ServerBootstrapOptions, "defaults" | "excludeDefaults"> {
   /** Trusted deployment fleet. Omission preserves the standalone default Agent. */
   agents?: readonly AgentHostAgentSpec[]
+  /**
+   * Repository root used to resolve `.agents/{personas,factory}` when
+   * `BORING_AGENT_FLEET=1` composes the fleet and `agents` is not supplied.
+   * Defaults to `process.cwd()`.
+   */
+  fleetRepositoryRoot?: string
   /** App-owned trust compiler for configured Agent plugin/model bindings. */
   fleetCompiler?: AgentFleetCompiler
   /** Default Agent selected for package-level server plugin ownership. */
@@ -371,9 +378,19 @@ function trustedWorkspaceScopeId(
     && "workspaceId" in request.query
     ? (request.query as { workspaceId?: unknown }).workspaceId
     : undefined
+  // x-boring-storage-scope may be a per-agent-scoped compound value
+  // (`${workspaceScopeId}:${agentTypeId}`, see WorkspaceAgentFront.tsx's
+  // `sessionStorageScope` for the fleet agent selector, gh-1106) rather than
+  // a bare workspace scope id. Only the portion before the first `:` is the
+  // actual workspace/storage selector that needs to match; the suffix is
+  // client-side namespacing and isn't a security boundary here.
+  const storageScopeHeader = request.headers["x-boring-storage-scope"]
+  const normalizedStorageScope = typeof storageScopeHeader === "string"
+    ? storageScopeHeader.split(":", 1)[0]
+    : storageScopeHeader
   const selectors = [
     request.headers["x-boring-workspace-id"],
-    request.headers["x-boring-storage-scope"],
+    normalizedStorageScope,
     rawFileWorkspaceSelector,
   ].flatMap((value) => typeof value === "string" ? [value.trim()] : [])
   if (selectors.some((selector) => selector.length === 0 || !allowedSelectors.has(selector))) {
@@ -1224,6 +1241,13 @@ export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
+  // Resolved early: `legacyGlobalPluginAgentContributions` below must key off
+  // the RESOLVED fleet, not `opts.agents`'s presence — with BORING_AGENT_FLEET=1
+  // and no explicit `opts.agents`, the resolved fleet has 6 agents even though
+  // the option was omitted, and must not inherit the legacy global-contribution
+  // route shape (gh-1106 slice 3 fix round 1, M3).
+  const agents = opts.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: opts.fleetRepositoryRoot })
+  const isLegacyDefaultFleet = agents.length === 1 && "legacyDefault" in agents[0]!
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(
@@ -1267,15 +1291,17 @@ export async function createWorkspaceAgentServer(
       }),
     },
     ...opts,
-    agentTypeId: opts.defaultAgentTypeId ?? opts.agents?.[0]?.agentTypeId ?? "default",
+    agentTypeId: opts.defaultAgentTypeId ?? agents[0]?.agentTypeId ?? "default",
     workspaceRoot,
     bridge,
     installPluginAuthoring: pluginAuthoringEnabled,
   })
   const defaultPluginPackagePaths = pluginCollection.defaultPluginPackagePaths
-  // Omitted fleets are the historical one-Agent composition. Keep its route
-  // options byte-for-byte compatible; explicit fleets are scoped per Agent.
-  const legacyGlobalPluginAgentContributions = opts.agents === undefined
+  // The legacy one-Agent composition (no explicit fleet, flag off) keeps its
+  // route options byte-for-byte compatible; any resolved multi-agent fleet
+  // (explicit `opts.agents`, or BORING_AGENT_FLEET=1) is scoped per Agent.
+  // Keyed off the RESOLVED fleet, not `opts.agents`'s presence (M3 fix).
+  const legacyGlobalPluginAgentContributions = isLegacyDefaultFleet
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
   const allPluginEntries: WorkspacePluginEntry[] = [
     ...defaultPluginPackagePaths
@@ -1419,7 +1445,6 @@ export async function createWorkspaceAgentServer(
     workspaceScopeId,
     basename(workspaceRoot),
   ].filter(Boolean))
-  const agents = opts.agents ?? [{ agentTypeId: "default", legacyDefault: true } as const]
   const allPluginAgentProjection = bootstrapServer({
     defaults: opts.defaults,
     plugins: pluginCollection.resolvedPluginArtifacts.map((artifact) => artifact.plugin),

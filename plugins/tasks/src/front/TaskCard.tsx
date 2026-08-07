@@ -17,6 +17,7 @@ interface TaskCardProps {
   draggable: boolean
   unmapped?: boolean
   deleteEnabled?: boolean
+  deleteEffect?: "close" | "delete"
   compact?: boolean
   attention?: readonly TaskAttentionItem[]
   sessionLinks?: readonly BoringTaskSessionLink[]
@@ -93,7 +94,7 @@ export async function createLinkedTaskChat(
   return opened
 }
 
-export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = false, compact = false, attention = [], sessionLinks, onDelete, onOpenDetail, onDragStart, onDragEnd }: TaskCardProps) {
+export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = false, deleteEffect = "delete", compact = false, attention = [], sessionLinks, onDelete, onOpenDetail, onDragStart, onDragEnd }: TaskCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [openingChat, setOpeningChat] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -119,6 +120,10 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const hiddenTagCount = Math.max((task.tags?.length ?? 0) - tags.length, 0)
   const pullRequests = task.pullRequests?.slice(0, 2) ?? []
   const hiddenPullRequestCount = Math.max((task.pullRequests?.length ?? 0) - pullRequests.length, 0)
+  const deleteActionLabel = deleteEffect === "close" ? "Close task (does not delete)" : "Delete task"
+  const deleteActionTitle = deleteEnabled
+    ? deleteEffect === "close" ? "Closes this task in its source; it will not be deleted." : "Delete task"
+    : "This task source does not support removing tasks"
 
   const stopCardAction = (event: MouseEvent<HTMLElement>) => event.stopPropagation()
 
@@ -190,9 +195,9 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
                   </a>
                 ) : null}
                 <div className="my-1 border-t border-border/60" />
-                <button type="button" className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50" disabled={!deleteEnabled} onClick={deleteTask} title={deleteEnabled ? "Delete issue" : "This task source cannot delete issues"}>
+                <button type="button" className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50" disabled={!deleteEnabled} onClick={deleteTask} title={deleteActionTitle}>
                   <Trash2 className="size-3.5" strokeWidth={1.75} />
-                  Delete issue
+                  {deleteActionLabel}
                 </button>
               </div>
             ) : null}
@@ -243,9 +248,9 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
                   </a>
                 ) : null}
                 <div className="my-1 border-t border-border/60" />
-                <button type="button" className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50" disabled={!deleteEnabled} onClick={deleteTask} title={deleteEnabled ? "Delete issue" : "This task source cannot delete issues"}>
+                <button type="button" className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50" disabled={!deleteEnabled} onClick={deleteTask} title={deleteActionTitle}>
                   <Trash2 className="size-3.5" strokeWidth={1.75} />
-                  Delete issue
+                  {deleteActionLabel}
                 </button>
               </div>
             ) : null}

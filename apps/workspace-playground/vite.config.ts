@@ -173,10 +173,16 @@ export default defineConfig({
       ? { warmup: { clientFiles: [resolve(__dirname, "src/front/main.tsx")] } }
       : {}),
     host: true,
-    hmr: {
-      host: process.env.VITE_HMR_HOST ?? "100.68.199.114",
-      clientPort: Number(process.env.VITE_HMR_CLIENT_PORT ?? VITE_PORT),
-    },
+    // Stable review origins rebuild linked package bundles in place. Disable
+    // browser caching there so an old immutable entry module cannot import a
+    // freshly rebuilt graph and produce multiple React dispatchers.
+    headers: process.env.BORING_VITE_HMR === "0" ? { "Cache-Control": "no-store" } : undefined,
+    hmr: process.env.BORING_VITE_HMR === "0"
+      ? false
+      : {
+          host: process.env.VITE_HMR_HOST ?? "100.68.199.114",
+          clientPort: Number(process.env.VITE_HMR_CLIENT_PORT ?? VITE_PORT),
+        },
     fs: {
       allow: fsAllow,
     },

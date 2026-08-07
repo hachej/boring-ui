@@ -10,7 +10,7 @@
  *   { skills: [{ name: string, description: string }] }
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import {
   DefaultPackageManager,
   getAgentDir,
@@ -35,12 +35,30 @@ interface SkillsQuery {
 
 const CACHE_TTL_MS = 30_000
 
-function pathForWorkspaceEditor(workspaceRoot: string, filePath: string): string {
-  const pathWithinWorkspace = relative(resolve(workspaceRoot), resolve(filePath))
-  if (pathWithinWorkspace === '' || pathWithinWorkspace === '..' || pathWithinWorkspace.startsWith(`..${sep}`) || isAbsolute(pathWithinWorkspace)) {
-    return filePath
+function provisionedWorkspaceRoots(additionalSkillPaths: readonly string[]): string[] {
+  // Provisioning can contribute both runtime-visible and real-disk
+  // <workspace root>/.agents/skills paths, so preserve every coordinate.
+  const userSkillsSuffix = `${sep}.agents${sep}skills`
+  return additionalSkillPaths
+    .map((skillPath) => resolve(skillPath))
+    .filter((skillPath) => skillPath.endsWith(userSkillsSuffix))
+    .map((skillPath) => dirname(dirname(skillPath)))
+}
+
+export function pathForWorkspaceEditor(
+  workspace: Pick<Workspace, 'root'>,
+  filePath: string,
+  additionalSkillPaths: readonly string[] = [],
+): string {
+  const roots = [workspace.root, ...provisionedWorkspaceRoots(additionalSkillPaths)]
+  for (const root of roots) {
+    const pathWithinWorkspace = relative(resolve(root), resolve(filePath))
+    if (pathWithinWorkspace === '' || pathWithinWorkspace === '..' || pathWithinWorkspace.startsWith(`..${sep}`) || isAbsolute(pathWithinWorkspace)) {
+      continue
+    }
+    return pathWithinWorkspace.split(sep).join('/')
   }
-  return pathWithinWorkspace.split(sep).join('/')
+  return filePath
 }
 
 export interface SkillsRoutesOptions {
@@ -117,7 +135,7 @@ export function skillsRoutes(
     const skills: SkillSummary[] = (result.skills as unknown as Array<Record<string, unknown>>).map((s) => ({
       name: String(s.name),
       description: String(s.description ?? ''),
-      ...(typeof s.filePath === 'string' ? { filePath: pathForWorkspaceEditor(workspaceRoot, s.filePath) } : {}),
+      ...(typeof s.filePath === 'string' ? { filePath: pathForWorkspaceEditor(workspace, s.filePath, additionalSkillPaths) } : {}),
       ...(typeof (s.sourceInfo as { scope?: unknown } | undefined)?.scope === 'string' ? { source: (s.sourceInfo as { scope: string }).scope } : {}),
     }))
     const entry = { skills, expiresAt: now + CACHE_TTL_MS }
