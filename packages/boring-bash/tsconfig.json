@@ -21,6 +21,9 @@
       ],
       "@hachej/boring-agent/shared": [
         "../agent/src/shared/index.ts"
+      ],
+      "@hachej/boring-agent/server": [
+        "../agent/src/server/index.ts"
       ]
     },
     "forceConsistentCasingInFileNames": true,

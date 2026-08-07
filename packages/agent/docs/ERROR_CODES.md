@@ -117,6 +117,10 @@ All API failures must use the response envelope:
 | `PROVISIONING_UV_BOOTSTRAP_FAILED` | uv bootstrap/preflight failed for Python runtime packages | 500 | user-fix | error | stable (public API) |
 | `PROVISIONING_UV_INSTALL_FAILED` | uv venv or uv pip install failed | 500 | user-fix | error | stable (public API) |
 | `PROVISIONING_ARTIFACT_FAILED` | Runtime-mode adapter failed to prepare/upload install artifact | 500 | retry | error | stable (public API) |
+| `SKILL_DISCOVERY_FAILED` | Skill discovery failed without exposing package-manager or host-path details | 200 | retry | warn | stable (public API) |
+| `PACKAGE_RESOURCE_INVALID` | A declared or scanned package resource (skill/agent) failed validation | 400 | user-fix | warn | stable (public API) |
+| `PACKAGE_RESOURCE_CONFLICT` | Two package resources claim the same identity/path | 409 | user-fix | warn | stable (public API) |
+| `RUNTIME_FILESYSTEM_BINDING_DUPLICATE` | A filesystem id was bound more than once while merging host/request-scoped runtime filesystem bindings | 500 | report-bug | error | stable (public API) |
 | `ERR_NOT_IMPLEMENTED_UNTIL_T1` | Headless core method exists but the durable T1 implementation has not landed yet | 501 | retry-after-upgrade | warn | stable (public API) |
 | `INTERNAL_ERROR` | Catch-all internal failure | 500 | report-bug | error | internal (may change) |
 | `AR1_SHARE_NOT_FOUND` | `GET /a/:id` deep link: no such Lane W share entry, or the entry belongs to a workspace the requester is not authorized/scoped to (identical response either way — no existence oracle) | 404 | user-fix | warn | stable (public API) |

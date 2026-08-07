@@ -4,6 +4,7 @@ import type { AgentTool } from "../../shared/types/agent-tool"
 import {
   validateServerPlugin,
   type WorkspaceBridgeHandlerContribution,
+  type WorkspacePackageResourceContribution,
   type WorkspaceServerPlugin,
 } from "./defineServerPlugin"
 import {
@@ -19,6 +20,7 @@ export { definePluginAsset, resolvePluginAssetPath } from "./assets"
 export type {
   WorkspaceAgentReloadBlock,
   WorkspaceBridgeHandlerContribution,
+  WorkspacePackageResourceContribution,
   WorkspaceServerPlugin,
   WorkspaceServerPluginAsset,
 } from "./defineServerPlugin"
@@ -42,6 +44,10 @@ export type WorkspaceRouteContribution = {
   routes: FastifyPluginAsync
 }
 
+export interface WorkspacePackageResourceRecord extends WorkspacePackageResourceContribution {
+  readonly pluginId: string
+}
+
 export type WorkspaceAgentReloadBlocker = {
   id: string
   getBlock: NonNullable<WorkspaceServerPlugin["getAgentReloadBlock"]>
@@ -55,6 +61,7 @@ export interface ServerBootstrapResult {
   agentTools: AgentTool[]
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   provisioningContributions: WorkspaceProvisioningContribution[]
+  packageResources: WorkspacePackageResourceRecord[]
   routeContributions: WorkspaceRouteContribution[]
   agentReloadBlockers: WorkspaceAgentReloadBlocker[]
   workspaceBridgeHandlers: WorkspaceBridgeHandlerContribution[]
@@ -103,6 +110,14 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     ...(plugin.provisioning ? { provisioning: plugin.provisioning } : {}),
   }))
 
+  const packageResources = finalPlugins.flatMap((plugin) =>
+    (plugin.packageResources ?? []).map((resource) => ({
+      pluginId: plugin.id,
+      packageName: resource.packageName,
+      packageRoot: resource.packageRoot,
+    })),
+  )
+
   const routeContributions = finalPlugins
     .filter((p) => p.routes)
     .map((p) => ({ id: p.id, routes: p.routes! }))
@@ -123,6 +138,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     agentTools,
     runtimePlugins,
     provisioningContributions,
+    packageResources,
     routeContributions,
     agentReloadBlockers,
     workspaceBridgeHandlers,

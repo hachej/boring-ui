@@ -11,6 +11,7 @@ import { modelsRoutes, type ModelsRoutesOptions } from '../http/routes/models'
 import { readyStatusRoutes } from '../http/routes/readyStatus'
 import { sessionChangesRoutes } from '../http/routes/sessionChanges'
 import { skillsRoutes } from '../http/routes/skills'
+import type { AgentSkillResourceSnapshot } from '../http/routes/skills'
 import { systemPromptRoutes } from '../http/routes/systemPrompt'
 import type { SessionChangesTracker } from '../http/sessionChangesTracker'
 import type { AgentMeteringSink } from '../pi-chat/metering'
@@ -41,6 +42,14 @@ export interface AgentHostRuntimeCapabilityBinding {
   readonly readyTracker: ReadyStatusTracker
   readonly pi?: PiHarnessOptions
   readonly additionalSkillPaths?: readonly string[]
+  /**
+   * Skill-resource locator/catalog snapshot for the current reload
+   * generation, sourced from `ResolvedAgentRuntimeScope.getSkillResourceSnapshot`.
+   * Carries package-managed skill locators through the capability-projection
+   * path (Option A) rather than through the legacy path-shaped
+   * `additionalSkillPaths` hot-reload API, which #970 retires.
+   */
+  readonly skillResourceSnapshot?: AgentSkillResourceSnapshot
   readonly runContext: RunContext
 }
 
@@ -129,7 +138,19 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
     },
     async resolveBinding({ request, agentTypeId, sessionId }) {
       const { claim, binding } = await resolve(request, agentTypeId, sessionId)
+      // Start the (host-implemented, effectively synchronous) skill-resource
+      // read and immediately read hot-reloadable pi resources in the same
+      // synchronous tick — no `await` sits between the two calls, so a
+      // concurrent reload cannot swap the host's registry generation in
+      // between them (Option A: one immutable snapshot per read). Awaiting
+      // afterwards only unwraps a promise that has already settled.
+      const skillResourceSnapshotPromise = binding.scope.getSkillResourceSnapshot?.({
+        scope: claim,
+        sessionId,
+        requestId: request.id,
+      })
       const hotResources = binding.scope.pi?.getHotReloadableResources?.()
+      const skillResourceSnapshot = await skillResourceSnapshotPromise
       const pi = hotResources
         ? {
             ...binding.scope.pi,
@@ -157,6 +178,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
         readyTracker: binding.composition.readyTracker,
         pi,
         additionalSkillPaths: binding.environmentLease.provisioning?.skillPaths,
+        skillResourceSnapshot,
         runContext: {
           abortSignal: new AbortController().signal,
           workdir: binding.composition.runtimeBundle.workspace.root,
@@ -438,6 +460,7 @@ export function createAgentHostRuntimeCapabilityRoutes(
       ],
       getPiPackages: async (request) => (await resolve(request, agentId(request))).pi?.packages,
       getNoSkills: async (request) => (await resolve(request, agentId(request))).pi?.noSkills,
+      getSkillResourceSnapshot: async (request) => (await resolve(request, agentId(request))).skillResourceSnapshot,
     })
     await app.register(catalogRoutes, {
       path: '/api/v1/agents/:agentTypeId/tools',

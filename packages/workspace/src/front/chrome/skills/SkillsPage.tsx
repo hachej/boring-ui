@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { FileText, RefreshCw, Sparkles, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
@@ -8,14 +8,17 @@ import { postUiCommand } from "../../bridge"
 import { ManagementOverlaySurface } from "../management/ManagementOverlaySurface"
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
 import type { PaneProps } from "../../registry/types"
+import { uiFileResourceKey, type UiFileResource } from "../../../shared/types/filesystem"
+import { isSafePluginRelativePath } from "../../../shared/plugins/manifest"
 
 interface SkillSummary {
   name: string
   description?: string
   source?: string
-  /** Absolute path to the skill's SKILL.md. Used to open the skill through
-   *  the workspace UI bridge, not by mutating chat/composer DOM. */
-  filePath?: string
+  /** False when the row exists for source management but Pi did not retain it as invocable. */
+  invocable?: boolean
+  /** Browser-safe resource identity. */
+  resource?: UiFileResource
 }
 
 interface SkillsResponse {
@@ -26,6 +29,31 @@ type LoadState =
   | { status: "loading"; skills: SkillSummary[]; error?: undefined }
   | { status: "ready"; skills: SkillSummary[]; error?: undefined }
   | { status: "error"; skills: SkillSummary[]; error: string }
+
+function isSafeRelativeSkillPath(value: unknown): value is string {
+  return typeof value === "string"
+    && isSafePluginRelativePath(value)
+    && !/%(?:2e|2f|5c)/i.test(value)
+    && !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)
+    && !value.split("/").some((segment) => segment === "" || segment === ".")
+}
+
+function openableResource(skill: SkillSummary): UiFileResource | undefined {
+  const resource = skill.resource
+  return resource
+    && typeof resource.filesystem === "string"
+    && resource.filesystem.length > 0
+    && isSafeRelativeSkillPath(resource.path)
+    ? resource
+    : undefined
+}
+
+function compareSkills(left: SkillSummary, right: SkillSummary): number {
+  return left.name.localeCompare(right.name)
+    || Number(left.invocable === false) - Number(right.invocable === false)
+    || (left.resource ? uiFileResourceKey(left.resource) : "")
+      .localeCompare(right.resource ? uiFileResourceKey(right.resource) : "")
+}
 
 export type SkillsPageProps = Partial<PaneProps> & {
   /** When provided, renders a close control in the header — used when Skills
@@ -40,11 +68,6 @@ export type SkillsPageProps = Partial<PaneProps> & {
 export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd = false }: SkillsPageProps) {
   const client = useWorkspacePluginClient()
   const [state, setState] = useState<LoadState>({ status: "loading", skills: [] })
-
-  const openSkillInWorkspace = useCallback((skill: SkillSummary) => {
-    if (!skill.filePath) return
-    postUiCommand({ kind: "openFile", params: { path: skill.filePath, mode: "view" } })
-  }, [])
 
   const loadSkills = useCallback(async (refresh = false) => {
     setState((current) => ({ status: "loading", skills: current.skills }))
@@ -69,10 +92,7 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
     void loadSkills(false)
   }, [loadSkills])
 
-  const sortedSkills = useMemo(
-    () => [...state.skills].sort((a, b) => a.name.localeCompare(b.name)),
-    [state.skills],
-  )
+  const sortedSkills = [...state.skills].sort(compareSkills)
 
   // Header subtitle doubles as the count readout so the list size is legible
   // without scrolling the pane.
@@ -165,26 +185,38 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
           )
         ) : (
           <ul role="list" className="grid gap-2">
-            {sortedSkills.map((skill) => {
-              const openable = Boolean(skill.filePath)
+            {sortedSkills.map((skill, index) => {
+              const resource = openableResource(skill)
+              const managementOnly = skill.invocable === false
               const body = (
-                <div className="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-2.5">
+                <div className="flex min-h-11 w-full items-start justify-between gap-3 px-3 py-2.5">
                   <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate text-sm font-medium leading-5 text-foreground">/{skill.name}</span>
-                      {skill.source ? (
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <span className="min-w-0 truncate text-sm font-medium leading-5 text-foreground">
+                        {managementOnly ? skill.name : `/${skill.name}`}
+                      </span>
+                      {managementOnly ? (
+                        <span className="rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          Management source
+                        </span>
+                      ) : skill.source ? (
                         <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground">
                           {skill.source}
                         </span>
                       ) : null}
                     </div>
+                    {managementOnly && skill.source ? (
+                      <p className="mt-1 truncate text-[11px] text-muted-foreground" title={skill.source}>
+                        Source: {skill.source}
+                      </p>
+                    ) : null}
                     {skill.description ? (
                       <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{skill.description}</p>
                     ) : null}
                   </div>
-                  {openable ? (
+                  {resource ? (
                     <FileText
-                      className="h-4 w-4 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground"
+                      className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground"
                       strokeWidth={1.75}
                       aria-hidden="true"
                     />
@@ -192,19 +224,37 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
                 </div>
               )
               return (
-                <li key={skill.name} className="min-w-0">
-                  {openable ? (
+                <li
+                  key={skill.resource
+                    ? uiFileResourceKey(skill.resource)
+                    : `${skill.name}\0${skill.source ?? ""}\0${skill.description ?? ""}\0${index}`}
+                  className="min-w-0"
+                >
+                  {resource ? (
                     <button
                       type="button"
-                      onClick={() => openSkillInWorkspace(skill)}
-                      title="Open skill"
-                      aria-label={`Open skill ${skill.name} in workspace`}
-                      className="group block w-full rounded-xl border border-border/60 bg-card/70 text-left transition-colors hover:border-border hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      onClick={() => postUiCommand({
+                        kind: "openFile",
+                        params: { ...resource, mode: "view" },
+                      })}
+                      title="Open skill source"
+                      aria-label={`Open ${managementOnly ? "management source" : "skill"} ${skill.name} from ${skill.source ?? resource.filesystem}`}
+                      className={cn(
+                        "group block w-full rounded-xl border border-border/60 bg-card/70 text-left transition-colors hover:border-border hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                        managementOnly && "border-dashed bg-muted/25",
+                      )}
                     >
                       {body}
                     </button>
                   ) : (
-                    <div className="rounded-xl border border-border/60 bg-card/70">{body}</div>
+                    <div
+                      className={cn(
+                        "rounded-xl border border-border/60 bg-card/70",
+                        managementOnly && "border-dashed bg-muted/25",
+                      )}
+                    >
+                      {body}
+                    </div>
                   )}
                 </li>
               )
