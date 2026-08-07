@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
-import { FileTreePane, WorkspaceProvider, filesystemPlugin } from "@hachej/boring-workspace"
+import { WorkspaceProvider } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
-import { captureFrontPlugin, definePlugin, type WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
@@ -110,55 +109,9 @@ const playgroundDeckPlugin = createDeckPlugin({
   },
 })
 
-function MultiFilesystemFileTreeSource(props: WorkspaceSourceProps) {
-  return (
-    <FileTreePane
-      {...props}
-      params={{
-        ...(props.params as Record<string, unknown> | undefined),
-        chromeless: false,
-        roots: [
-          {
-            filesystem: "user",
-            label: "Workspace",
-            rootDir: ".",
-            access: "readwrite",
-            searchPlaceholder: "Search workspace files...",
-          },
-          {
-            filesystem: "company_context",
-            label: "Company",
-            rootDir: "/",
-            access: "readonly",
-            searchPlaceholder: "Filter company files...",
-          },
-        ],
-      } as Parameters<typeof FileTreePane>[0]["params"]}
-    />
-  )
-}
-
-const filesystemRegistrations = captureFrontPlugin(filesystemPlugin).registrations
-const multiFilesystemPlaygroundPlugin = definePlugin({
-  id: filesystemPlugin.pluginId,
-  label: filesystemPlugin.pluginLabel,
-  panels: filesystemRegistrations.panels,
-  workspaceSources: filesystemRegistrations.workspaceSources.map((source) => source.id === "files"
-    ? { ...source, component: MultiFilesystemFileTreeSource }
-    : source),
-  commands: filesystemRegistrations.panelCommands,
-  appLeftActions: filesystemRegistrations.appLeftActions,
-  surfaceResolvers: filesystemRegistrations.surfaceResolvers,
-  providers: filesystemRegistrations.providers,
-  bindings: filesystemRegistrations.bindings,
-  catalogs: filesystemRegistrations.catalogs,
-  toolRenderers: filesystemRegistrations.toolRenderers,
-})
-
 const askUserPlugin = createAskUserPlugin({ appLeftInbox: true })
 const tasksPlugin = createTasksPlugin()
 const workspacePlugins = [askUserPlugin, tasksPlugin, playgroundDeckPlugin, diagramPlugin]
-const multiFilesystemWorkspacePlugins = [multiFilesystemPlaygroundPlugin, askUserPlugin, tasksPlugin, playgroundDeckPlugin, diagramPlugin]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
 function resetPlaygroundStorageIfRequested(): void {
@@ -217,7 +170,7 @@ export function WorkspaceShell() {
   const loadingShowcase = useMemo(loadingStateMode, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const multiFilesystem = useMemo(isMultiFilesystemPlaygroundRoute, [])
-  const activeWorkspacePlugins = multiFilesystem ? multiFilesystemWorkspacePlugins : workspacePlugins
+  const activeWorkspacePlugins = workspacePlugins
   const factoryAgents = useMemo(factoryAgentsEnabled, [])
   const defaultAgentTypeId = factoryAgents ? "boring-concierge" : "default"
   const [projectName, setProjectName] = useState("Workspace")
@@ -325,7 +278,6 @@ export function WorkspaceShell() {
       onCreateSession={showcase ? createShowcaseSession : undefined}
       onRenameSession={showcase ? renameShowcaseSession : undefined}
       plugins={activeWorkspacePlugins}
-      excludeDefaults={multiFilesystem ? [filesystemPlugin.pluginId] : undefined}
       chatParams={{ thinkingControl: true }}
     />
   )
