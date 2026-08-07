@@ -82,7 +82,7 @@ describe("ChatPaneStageDock", () => {
     expect(onDrop).toHaveBeenCalledWith("shared", "beta")
   })
 
-  it('mounts panes with the "always" renderer so switching panes preserves scroll (#276)', () => {
+  it('mounts panes in their visible group instead of Dockview\'s hidden render overlay', () => {
     dockviewProps.mockClear()
     render(
       <ChatPaneStageDock
@@ -95,11 +95,10 @@ describe("ChatPaneStageDock", () => {
       />,
     )
 
-    // The default "onlyWhenVisible" renderer detaches and re-appends a group's
-    // content element on activation, which resets the transcript scroll
-    // container's scrollTop to 0. "always" keeps it mounted in place.
+    // Dockview's "always" renderer can strand the active React panel in its
+    // visibility:hidden overlay, leaving only the pane title visible.
     expect(dockviewProps).toHaveBeenCalled()
-    expect(dockviewProps.mock.calls[0][0]).toMatchObject({ defaultRenderer: "always" })
+    expect(dockviewProps.mock.calls[0][0]).toMatchObject({ defaultRenderer: "onlyWhenVisible" })
   })
 
   it("renders chat top actions only in the active pane header", () => {
