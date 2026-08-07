@@ -1,0 +1,54 @@
+# Boring Factory fleet — workspace-editable, git-audited.
+# This file is permanently trust-class B: no agent may modify it via a
+# class-A merge (see policy.yaml trust_ladder.class_b_always). Read by
+# loadConfiguredAgentFleet() (packages/agent) to compose the production and
+# CLI-hub agent fleet when BORING_AGENT_FLEET=1, and by the playground
+# (apps/workspace-playground) via the same loader.
+#
+# Skill digests are authority pins, refreshed via `pnpm check:skill-digests`
+# / `scripts/refresh-skill-digests.mjs --write` (gh-1106 slice 1, #1109).
+# Model per seat is NOT set here — it resolves at boot from policy.yaml's
+# `models.seats` tier through the MODEL-CARD priority table.
+
+seats:
+  - seat: concierge
+    agentTypeId: boring-concierge
+    skills:
+      - name: feedback
+        digest: sha256:707ae8fd12ace225be7d6de8c345c7d73cf9aa07763f138419f6d6b26b92a9af
+      - name: triage
+        digest: sha256:c9931f981b0d2d55415026c25bc27dec3e24fd310bee405360eba57d6cf58766
+      - name: handoff
+        digest: sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17
+
+  - seat: triage
+    agentTypeId: boring-triage
+    skills:
+      - name: triage
+        digest: sha256:c9931f981b0d2d55415026c25bc27dec3e24fd310bee405360eba57d6cf58766
+      - name: handoff
+        digest: sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17
+
+  - seat: steward
+    agentTypeId: boring-steward
+    skills:
+      - name: plan
+        digest: sha256:ba6e76d7cdd8ce2966ca38e66942f62bf882e56fca4cadd9ca360ee175f384ac
+      - name: handoff
+        digest: sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17
+
+  - seat: worker
+    agentTypeId: boring-worker
+    skills:
+      - name: exec
+        digest: sha256:cc0ab4c7e94dc8b2e65873681ccea281e19dd9850f726e978c8ba764643e8359
+      - name: handoff
+        digest: sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17
+
+  - seat: reviewer
+    agentTypeId: boring-reviewer
+    skills:
+      - name: fresh-eyes
+        digest: sha256:58f6cfb66cc2a31238e5c033f42b69b7fbd6089d06c9f6d5108caa7035e5f565
+      - name: handoff
+        digest: sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17

@@ -72,6 +72,7 @@ export type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 export {
   AgentDirectoryCompilerError,
   compileAgentDirectory,
+  compilePersonaPackageDirectory,
 } from './agentDefinition/compileAgentDirectory'
 export type {
   AgentDirectoryCompilerErrorCode,
@@ -95,6 +96,28 @@ export type {
   TrustedAgentInstructionAppendix,
   TrustedAuthoredAgentPolicy,
 } from './agentDefinition/createConfiguredAgentHostAgentSpec'
+export {
+  FleetConfigError,
+  loadConfiguredAgentFleet,
+  MODEL_TIER_CANDIDATES,
+} from './agentDefinition/loadConfiguredAgentFleet'
+export type {
+  FleetConfigErrorCode,
+  FleetLoaderDiagnostic,
+  FleetLoaderDiagnosticCode,
+  FleetSeatBinding,
+  FleetSkillBinding,
+  LoadConfiguredAgentFleetOptions,
+  LoadConfiguredAgentFleetResult,
+  ModelTierCandidate,
+} from './agentDefinition/loadConfiguredAgentFleet'
+export {
+  LEGACY_DEFAULT_AGENT_FLEET,
+  resolveDefaultAgentFleet,
+} from './agentDefinition/resolveDefaultAgentFleet'
+export type {
+  ResolveDefaultAgentFleetOptions,
+} from './agentDefinition/resolveDefaultAgentFleet'
 export {
   createResolvedAgentDigest,
   resolveAgentDeployment,
