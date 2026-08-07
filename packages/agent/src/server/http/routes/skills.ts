@@ -46,11 +46,11 @@ function provisionedWorkspaceRoots(additionalSkillPaths: readonly string[]): str
 }
 
 export function pathForWorkspaceEditor(
-  workspaceRoot: string,
+  workspace: Pick<Workspace, 'root'>,
   filePath: string,
   additionalSkillPaths: readonly string[] = [],
 ): string {
-  const roots = [workspaceRoot, ...provisionedWorkspaceRoots(additionalSkillPaths)]
+  const roots = [workspace.root, ...provisionedWorkspaceRoots(additionalSkillPaths)]
   for (const root of roots) {
     const pathWithinWorkspace = relative(resolve(root), resolve(filePath))
     if (pathWithinWorkspace === '' || pathWithinWorkspace === '..' || pathWithinWorkspace.startsWith(`..${sep}`) || isAbsolute(pathWithinWorkspace)) {
@@ -135,7 +135,7 @@ export function skillsRoutes(
     const skills: SkillSummary[] = (result.skills as unknown as Array<Record<string, unknown>>).map((s) => ({
       name: String(s.name),
       description: String(s.description ?? ''),
-      ...(typeof s.filePath === 'string' ? { filePath: pathForWorkspaceEditor(workspaceRoot, s.filePath, additionalSkillPaths) } : {}),
+      ...(typeof s.filePath === 'string' ? { filePath: pathForWorkspaceEditor(workspace, s.filePath, additionalSkillPaths) } : {}),
       ...(typeof (s.sourceInfo as { scope?: unknown } | undefined)?.scope === 'string' ? { source: (s.sourceInfo as { scope: string }).scope } : {}),
     }))
     const entry = { skills, expiresAt: now + CACHE_TTL_MS }

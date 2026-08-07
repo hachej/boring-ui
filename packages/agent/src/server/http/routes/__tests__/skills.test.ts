@@ -19,12 +19,12 @@ describe('pathForWorkspaceEditor', () => {
     const localFilePath = `${realWorkspaceRoot}/.agents/skills/review/SKILL.md`
     const globalFilePath = '/home/example/.pi/agent/skills/review/SKILL.md'
 
-    const editorPath = pathForWorkspaceEditor('/workspace', localFilePath, additionalSkillPaths)
+    const editorPath = pathForWorkspaceEditor({ root: '/workspace' }, localFilePath, additionalSkillPaths)
 
     expect(editorPath).toBe('.agents/skills/review/SKILL.md')
     expect(editorPath.startsWith('/')).toBe(false)
     expect(editorPath.split('/')).not.toContain('..')
-    expect(pathForWorkspaceEditor('/workspace', globalFilePath, additionalSkillPaths)).toBe(globalFilePath)
+    expect(pathForWorkspaceEditor({ root: '/workspace' }, globalFilePath, additionalSkillPaths)).toBe(globalFilePath)
   })
 
   test('tries the real provisioned root when a virtual root appears first', () => {
@@ -35,7 +35,7 @@ describe('pathForWorkspaceEditor', () => {
       `${realWorkspaceRoot}/.agents/skills`,
     ]
 
-    expect(pathForWorkspaceEditor('/workspace', localFilePath, additionalSkillPaths))
+    expect(pathForWorkspaceEditor({ root: '/workspace' }, localFilePath, additionalSkillPaths))
       .toBe('.agents/skills/review/SKILL.md')
   })
 })
