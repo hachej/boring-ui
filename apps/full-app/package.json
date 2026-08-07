@@ -29,7 +29,7 @@
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@modelcontextprotocol/sdk": "1.30.0",
-    "fastify": "^5.9.0",
+    "fastify": "^5.11.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -44,7 +44,7 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.1",
     "typescript": "^6.0.3",
-    "vite": "^8.1.5",
+    "vite": "^8.2.0",
     "yaml": "^2.9.0"
   }
 }

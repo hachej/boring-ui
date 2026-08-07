@@ -58,7 +58,7 @@
     "react-dom": "^18.0.0 || ^19.0.0"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "^0.82.1",
+    "@earendil-works/pi-ai": "^0.83.0",
     "@excalidraw/excalidraw": "^0.18.1",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
