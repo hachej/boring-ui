@@ -631,6 +631,31 @@ describe('HarnessPiChatService', () => {
     if (subscription.type === 'ok') subscription.unsubscribe()
   })
 
+  it('normalizes a pre-stream Codex context rejection without exposing provider JSON', async () => {
+    const adapter = createAdapter()
+    const run = deferred<void>()
+    adapter.prompt = vi.fn(() => run.promise)
+    const { service } = createService(adapter)
+    const events: PiChatEvent[] = []
+    const subscription = await service.subscribe(ctx, 's1', 0, (event) => events.push(event))
+
+    await service.prompt(ctx, 's1', { message: 'continue', clientNonce: 'nonce-overflow' })
+    run.reject(new Error('{"error":{"code":"context_length_exceeded","message":"Your input exceeds the context window of this model."}}'))
+    await run.promise.catch(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'error',
+      error: expect.objectContaining({
+        code: ErrorCode.enum.MODEL_CONTEXT_WINDOW_EXCEEDED,
+        message: expect.not.stringContaining('context_length_exceeded'),
+        retryable: true,
+      }),
+    }))
+
+    if (subscription.type === 'ok') subscription.unsubscribe()
+  })
+
   it('does not synthesize a prompt rejection after the prompt user message is consumed', async () => {
     const adapter = createAdapter()
     const run = deferred<void>()

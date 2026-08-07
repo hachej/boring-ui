@@ -1,5 +1,10 @@
 export type { BoringChatMessage, BoringChatMessageRole, BoringChatMessageStatus, BoringChatPart } from './boringChatMessage'
 export type { ChatError } from './chatError'
+export {
+  chatErrorFromUnknown,
+  isModelContextWindowError,
+  MODEL_CONTEXT_RECOVERY_MESSAGE,
+} from './modelContextError'
 export type { ChatAttachmentPayload, ChatModelSelection, ChatSubmitPayload, ThinkingLevel } from './chatSubmitPayload'
 export type {
   CommandReceipt,

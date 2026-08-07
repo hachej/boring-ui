@@ -1,7 +1,7 @@
 import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harness'
 import type { SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
-import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
+import { chatErrorFromUnknown, type BoringChatMessage, type BoringChatPart, type ChatError, type FollowUpPayload, type FollowUpReceipt, type InterruptPayload, type PiChatEvent, type PiChatSnapshot, type PromptPayload, type PromptReceipt, type QueuedUserMessage, type QueueClearPayload, type QueueClearReceipt, type StopPayload, type StopReceipt } from '../../shared/chat'
 import { sessionStreamPath, type AgentEvent } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
 import { formatOffset, parseOffset, type EventStreamStore } from '../events/eventStreamStore'
@@ -687,13 +687,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     error: unknown,
   ): void {
     if (!channel) return
-    const followUpError: ChatError = {
-      code: ErrorCode.enum.INTERNAL_ERROR,
-      message: error instanceof Error && error.message
-        ? error.message
-        : 'Queued follow-up failed before the agent run started.',
-      retryable: false,
-    }
+    const followUpError = chatErrorFromUnknown(
+      error,
+      'Queued follow-up failed before the agent run started.',
+    )
     const errorEvent = channel.mapper.mapSynthetic({
       type: 'error',
       turnId: channel.activeTurnId,
@@ -776,11 +773,10 @@ export class HarnessPiChatService implements PiChatSessionService {
       files: promptPayloadFileParts(payload, messageId),
       createdAt,
     })
-    const promptError: ChatError = {
-      code: ErrorCode.enum.INTERNAL_ERROR,
-      message: error instanceof Error && error.message ? error.message : 'Prompt failed before the agent run completed.',
-      retryable: false,
-    }
+    const promptError = chatErrorFromUnknown(
+      error,
+      'Prompt failed before the agent run completed.',
+    )
     const errorEvent = channel.mapper.mapSynthetic({
       type: 'error',
       turnId: channel.activeTurnId,

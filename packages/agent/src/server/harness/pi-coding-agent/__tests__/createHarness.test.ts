@@ -8,6 +8,7 @@ import {
   createResourceSettingsManager,
   createPiCodingAgentHarness,
   mergePiPackageSources,
+  withCodexContextBudget,
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
 import {
@@ -84,6 +85,25 @@ async function createSessionWithTurn(
 }
 
 describe("createPiCodingAgentHarness", () => {
+  it("reserves extra Codex context headroom before compaction/continue requests", () => {
+    const declaredContextWindow = 128_000;
+    const budgeted = withCodexContextBudget({
+      provider: "openai-codex",
+      id: "gpt-codex-test",
+      contextWindow: declaredContextWindow,
+    });
+
+    expect(budgeted.contextWindow).toBe(111_616);
+    // Pi's normal 16,384-token compaction reserve now triggers at 95,232
+    // instead of 111,616, so this oversized compacted continuation is trimmed.
+    expect(100_000).toBeGreaterThan(budgeted.contextWindow - 16_384);
+    expect(100_000).toBeLessThan(declaredContextWindow - 16_384);
+    expect(withCodexContextBudget({
+      provider: "anthropic",
+      contextWindow: declaredContextWindow,
+    }).contextWindow).toBe(declaredContextWindow);
+  });
+
   it("returns an AgentHarness with correct shape", () => {
     const harness = createPiCodingAgentHarness({
       tools: [noopTool],
