@@ -20,11 +20,6 @@ function workspacePath(workspace: Workspace, input: string): string {
   return normalized.replace(/^\.\//, '')
 }
 
-function logicalPath(workspace: Workspace, input: string): string {
-  const value = workspacePath(workspace, input)
-  return value === '.' ? '' : value
-}
-
 function conflict(currentMtimeMs: number | undefined, expectedMtimeMs: number): Error {
   return Object.assign(new Error('file has been modified since last read'), {
     code: ERROR_CODE_CONFLICT,
@@ -37,7 +32,7 @@ function conflict(currentMtimeMs: number | undefined, expectedMtimeMs: number): 
 export function createUserFilesystemBinding(
   workspace: Workspace,
   policy: RuntimeReadonlyFilesystemPolicy,
-  resolvePolicyPath: (path: string) => Promise<string> = async (path) => logicalPath(workspace, path),
+  resolvePolicyPath: (path: string) => Promise<string>,
 ): RuntimeFilesystemBinding {
   const resolveAccess = async (path: string) => resolveRuntimeReadonlyFilesystemAccess(policy, {
     filesystem: USER_FILESYSTEM_ID,

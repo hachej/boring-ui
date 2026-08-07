@@ -9,8 +9,9 @@ import { sandboxRuntimeHostOperations } from '../sandboxRuntimeHost'
 import { createUserFilesystemBinding } from '../userFilesystemBinding'
 describe('createUserFilesystemBinding', () => {
   test('leaves path confinement to the Workspace adapter', async () => {
-    const workspace = createNodeWorkspace(await mkdtemp(join(tmpdir(), 'boring-user-binding-')))
-    const binding = createUserFilesystemBinding(workspace, normalizeRuntimeReadonlyFilesystemPolicy(['protected']))
+    const root = await mkdtemp(join(tmpdir(), 'boring-user-binding-'))
+    const workspace = createNodeWorkspace(root)
+    const binding = createUserFilesystemBinding(workspace, normalizeRuntimeReadonlyFilesystemPolicy(['protected']), async (path) => await sandboxRuntimeHostOperations.resolveRealWorkspacePath(root, path))
     for (const path of ['/etc/passwd', 'C:/Windows/System32/config/SAM', '\\\\server\\share\\secret', '../outside']) {
       await expect(binding.operations.read({ filesystem: 'user', path })).rejects.toMatchObject({ statusCode: 400 })
       await expect(binding.operations.stat({ filesystem: 'user', path })).rejects.toMatchObject({ statusCode: 400 })
@@ -36,6 +37,7 @@ describe('createUserFilesystemBinding', () => {
     const binding = createUserFilesystemBinding(
       createNodeWorkspace(root),
       normalizeRuntimeReadonlyFilesystemPolicy(['mixed/protected']),
+      async (path) => await sandboxRuntimeHostOperations.resolveRealWorkspacePath(root, path),
     )
     await expect(binding.operations.resolveAccess?.({ filesystem: 'user', path: 'mixed/protected/locked.txt' }))
       .resolves.toMatchObject({ access: 'readonly', capabilities: { write: false, delete: false } })
