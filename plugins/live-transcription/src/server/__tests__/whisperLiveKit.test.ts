@@ -15,7 +15,7 @@ describe("WhisperLiveKit mode=full snapshots", () => {
       remaining_time_diarization: 2.5,
     }))).toEqual({
       lines: [
-        { startSeconds: 3.25, text: "Bonjour", speaker: 7 },
+        { startSeconds: 3.25, endSeconds: 5, text: "Bonjour", speaker: 7 },
         { startSeconds: 8.5, text: "Oui", speaker: 11 },
       ],
       remainingDiarizationSeconds: 2.5,

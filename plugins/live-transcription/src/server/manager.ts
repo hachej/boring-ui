@@ -4,6 +4,7 @@ import type { LeaseBoundWorkspaceAgent, Workspace } from "@hachej/boring-agent/s
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto"
 import type WebSocket from "ws"
 import {
+  KYUTAI_PCM_FRAME_BYTES,
   LIVE_NONCE_BYTES,
   LIVE_PCM_FRAME_BYTES,
   LIVE_SOCKET_HIGH_WATER_BYTES,
@@ -14,6 +15,9 @@ import {
 } from "../shared"
 import { LiveTranscriptError } from "./errors"
 import { LiveTranscriptProjector, renderTranscriptMarkdown, type ProjectedTranscriptLine, type TranscriptDocument } from "./projector"
+import { KyutaiConnection } from "./kyutai"
+import { KyutaiDiarizedConnection } from "./kyutaiDiarized"
+import { groupKyutaiTranscriptSnapshot } from "./kyutaiTranscript"
 import { WhisperLiveKitConnection, type WhisperLiveKitSnapshot } from "./whisperLiveKit"
 import { LiveReviewBroker } from "./reviewBroker"
 
@@ -57,7 +61,10 @@ export interface LiveTranscriptManagerOptions {
   agentTypeId?: string
   actorResolver: (request: FastifyRequest) => Promise<{ workspaceId: string; userId: string }> | { workspaceId: string; userId: string }
   upstreamUrl: string
+  upstreamProvider?: "whisperlivekit" | "kyutai"
   upstreamBearerToken?: string
+  diarizerUrl?: string
+  diarizerBearerToken?: string
   setupTimeoutMs?: number
   drainTimeoutMs?: number
   maxDurationMs?: number
@@ -150,7 +157,12 @@ export class LiveTranscriptManager {
       request,
     }, async (binding: LeaseBoundWorkspaceAgent) => {
       try {
-        const response = await this.createSession(binding.workspace, sessionId, title)
+        const response = await this.createSession(
+          binding.workspace,
+          sessionId,
+          title,
+          createLeaseReviewTarget(binding, sessionId),
+        )
         const session = this.active
         if (!session || session.id !== response.liveSessionId) {
           throw new LiveTranscriptError("live_transcript_disabled", "Live transcript lease was not published.", 503)
@@ -196,7 +208,13 @@ export class LiveTranscriptManager {
     const startedAt = new Date(this.now()).toISOString()
     const path = `live-transcripts/${startedAt.slice(0, 10)}-${randomBytes(12).toString("hex")}.md`
     await workspace.mkdir("live-transcripts", { recursive: true })
-    const initialDocument: TranscriptDocument = { title, startedAt, state: "active", lines: [] }
+    const initialDocument: TranscriptDocument = {
+      title,
+      startedAt,
+      state: "active",
+      showSpeakerLabels: this.options.upstreamProvider !== "kyutai" || Boolean(this.options.diarizerUrl),
+      lines: [],
+    }
     const markdown = renderTranscriptMarkdown(initialDocument)
     const stat = await workspace.writeFileWithStat(path, markdown)
     const id = randomUUID()
@@ -340,11 +358,7 @@ export class LiveTranscriptManager {
             onSnapshot: (snapshot: WhisperLiveKitSnapshot) => this.acceptSnapshot(session, snapshot),
             onFailure: (error: LiveTranscriptError) => { void this.interruptFromFailure(session, error) },
           }
-          session.upstream = this.options.createUpstreamForTest?.(callbacks) ?? new WhisperLiveKitConnection(
-            this.options.upstreamUrl,
-            callbacks,
-            { bearerToken: this.options.upstreamBearerToken, highWaterBytes: LIVE_SOCKET_HIGH_WATER_BYTES },
-          )
+          session.upstream = this.options.createUpstreamForTest?.(callbacks) ?? this.createUpstream(callbacks)
           try {
             await session.upstream.connect()
           } catch {
@@ -357,12 +371,14 @@ export class LiveTranscriptManager {
           return
         }
         if (session.phase !== "active") return
-        if (data.byteLength !== LIVE_PCM_FRAME_BYTES || data.byteLength % 2 !== 0) {
+        const expectedFrameBytes = this.options.upstreamProvider === "kyutai" ? KYUTAI_PCM_FRAME_BYTES : LIVE_PCM_FRAME_BYTES
+        if (data.byteLength !== expectedFrameBytes || data.byteLength % 2 !== 0) {
           await this.terminate(session, "interrupted", "live_transcript_invalid_audio")
           return
         }
         session.audioBytes += data.byteLength
-        const maxAudioBytes = Math.floor((this.options.maxDurationMs ?? 4 * 60 * 60 * 1_000) * 32)
+        const bytesPerMillisecond = expectedFrameBytes / 100
+        const maxAudioBytes = Math.floor((this.options.maxDurationMs ?? 4 * 60 * 60 * 1_000) * bytesPerMillisecond)
         if (session.audioBytes > maxAudioBytes) {
           await this.terminate(session, "interrupted", "live_transcript_limit_exceeded")
           return
@@ -416,6 +432,29 @@ export class LiveTranscriptManager {
     await this.interruptForSessionReplacement()
   }
 
+  private createUpstream(callbacks: {
+    onSnapshot: (snapshot: WhisperLiveKitSnapshot) => void
+    onFailure: (error: LiveTranscriptError) => void
+  }): UpstreamConnection {
+    if (this.options.upstreamProvider === "kyutai") {
+      if (this.options.diarizerUrl) {
+        return new KyutaiDiarizedConnection(this.options.upstreamUrl, this.options.diarizerUrl, callbacks, {
+          kyutaiApiKey: this.options.upstreamBearerToken,
+          diarizerBearerToken: this.options.diarizerBearerToken,
+          highWaterBytes: LIVE_SOCKET_HIGH_WATER_BYTES,
+        })
+      }
+      return new KyutaiConnection(this.options.upstreamUrl, callbacks, {
+        apiKey: this.options.upstreamBearerToken,
+        highWaterBytes: LIVE_SOCKET_HIGH_WATER_BYTES,
+      })
+    }
+    return new WhisperLiveKitConnection(this.options.upstreamUrl, callbacks, {
+      bearerToken: this.options.upstreamBearerToken,
+      highWaterBytes: LIVE_SOCKET_HIGH_WATER_BYTES,
+    })
+  }
+
   private acceptSnapshot(session: LiveSession, snapshot: WhisperLiveKitSnapshot): void {
     if (session.phase !== "active" && session.phase !== "stopping") return
     session.upstreamMessages += 1
@@ -423,7 +462,11 @@ export class LiveTranscriptManager {
       void this.terminate(session, "interrupted", "live_transcript_limit_exceeded")
       return
     }
-    const lines = snapshot.lines.map((line) => {
+    const sinkSnapshot = this.options.upstreamProvider === "kyutai"
+      ? groupKyutaiTranscriptSnapshot(snapshot)
+      : snapshot
+    const lines = sinkSnapshot.lines.map((line) => {
+      if (line.speaker < 0) return { startSeconds: line.startSeconds, speaker: 0, text: line.text }
       let speaker = session.speakerLabels.get(line.speaker)
       if (!speaker) {
         speaker = session.speakerLabels.size + 1
@@ -490,7 +533,13 @@ export class LiveTranscriptManager {
     state: "active" | "complete" | "interrupted",
     lines: ProjectedTranscriptLine[],
   ): TranscriptDocument {
-    return { title: session.title, startedAt: session.startedAt, state, lines }
+    return {
+      title: session.title,
+      startedAt: session.startedAt,
+      state,
+      showSpeakerLabels: this.options.upstreamProvider !== "kyutai" || Boolean(this.options.diarizerUrl),
+      lines,
+    }
   }
 
   private requireActive(id: string): LiveSession {
@@ -508,6 +557,44 @@ export class LiveTranscriptManager {
 
   private now(): number {
     return (this.options.now ?? Date.now)()
+  }
+}
+
+function createLeaseReviewTarget(
+  binding: LeaseBoundWorkspaceAgent,
+  sessionId: string,
+): PiSessionVisibleUserTurnTarget {
+  return {
+    // Admission is atomic in dispatch; this advisory answer avoids a separate,
+    // racy state read while preserving the broker's busy retry behavior.
+    async isIdle() { return true },
+    async sendIfIdle(input) {
+      return await new Promise((resolve, reject) => {
+        let accepted = false
+        void binding.dispatch({
+          sessionId,
+          requestId: input.requestId,
+          clientNonce: input.requestId,
+          content: input.message,
+          ...(input.displayMessage ? { displayMessage: input.displayMessage } : {}),
+        }, async () => {}, ({ receipt }) => {
+          accepted = true
+          resolve({
+            status: "accepted",
+            cursor: receipt.cursor,
+            ...(receipt.duplicate ? { duplicate: true } : {}),
+          })
+        }).catch((error) => {
+          if (accepted) return
+          const code = (error as { code?: unknown })?.code
+          if (code === "AGENT_COMMAND_INVALID_STATE") return resolve({ status: "busy" })
+          if (code === "AGENT_SESSION_NOT_FOUND" || code === "AGENT_SCOPE_DENIED" || code === "AGENT_SESSION_RUNTIME_SCOPE_MISMATCH") {
+            return resolve({ status: "gone" })
+          }
+          reject(error)
+        })
+      })
+    },
   }
 }
 

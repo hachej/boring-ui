@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
+import { MicIcon, PanelRightOpenIcon } from "lucide-react"
 import {
   ChatMessageContributionProvider,
   ComposerContributionProvider,
@@ -39,7 +40,10 @@ export function LiveTranscriptComposerTop() {
   return <LiveTranscriptComposerDock />
 }
 
-export function LiveTranscriptComposerAction({ updateDraft }: ComposerActionContributionProps) {
+export function LiveTranscriptComposerAction({
+  updateDraft,
+  streaming = false,
+}: ComposerActionContributionProps & { streaming?: boolean }) {
   const recording = useSyncExternalStore(
     liveTranscriptBrowserState.subscribe,
     liveTranscriptBrowserState.getSnapshot,
@@ -48,18 +52,23 @@ export function LiveTranscriptComposerAction({ updateDraft }: ComposerActionCont
   const elapsedSeconds = useElapsedSeconds(recording.startedAt, recording.phase)
   if (recording.recordingKind === "live" && isActiveRecordingPhase(recording.phase)) return null
 
-  const disabled = recording.phase === "transcribing"
-    || (recording.recordingKind === "short" && recording.phase === "starting")
-  const label = recording.phase === "transcribing"
-    ? "Transcribing short dictation"
-    : recording.recordingKind === "short" && recording.phase === "starting"
-      ? "Starting short dictation"
-      : recording.phase === "recording"
-        ? "Stop short recording"
-        : "Start short dictation"
+  const recordingThisMode = recording.phase === "recording" && recording.recordingKind === (streaming ? "composer" : "short")
+  const otherModeRecording = recording.phase === "recording" && !recordingThisMode
+  const disabled = recording.phase === "transcribing" || recording.phase === "starting" || otherModeRecording
+  const label = disabled
+    ? streaming ? "Starting streaming dictation" : "Transcribing short dictation"
+    : recordingThisMode
+      ? streaming ? "Stop streaming dictation" : "Stop short recording"
+      : streaming ? "Start streaming dictation" : "Start short dictation"
+  const appendWord = (word: string) => updateDraft((current) => appendTranscriptToDraft(current, word), { focus: false })
   const toggle = async () => {
     if (disabled) return
-    if (recording.recordingKind === "short" && recording.phase === "recording") {
+    if (streaming) {
+      if (recordingThisMode) await liveTranscriptController.stopComposer()
+      else await liveTranscriptController.startComposer(appendWord)
+      return
+    }
+    if (recordingThisMode) {
       const text = await liveTranscriptController.stopShort()
       if (text) updateDraft((current) => appendTranscriptToDraft(current, text))
       return
@@ -75,10 +84,8 @@ export function LiveTranscriptComposerAction({ updateDraft }: ComposerActionCont
       title={recording.error ?? `${label}${recording.phase === "idle" ? "" : ` ${formatClock(elapsedSeconds)}`}`}
       disabled={disabled}
       onClick={() => { void toggle().catch(() => undefined) }}
-      className={`flex h-8 items-center rounded-full text-[11px] font-medium transition-colors disabled:cursor-wait disabled:opacity-65 ${
-        recording.phase === "recording" ? "w-8 justify-center" : "gap-1.5 px-2"
-      } ${
-        recording.phase === "recording" || recording.phase === "starting"
+      className={`flex h-8 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium transition-colors disabled:cursor-wait disabled:opacity-65 ${
+        recordingThisMode || recording.phase === "starting"
           ? "bg-red-500/12 text-red-600 hover:bg-red-500/20 dark:text-red-400"
           : recording.phase === "error"
             ? "bg-destructive/10 text-destructive hover:bg-destructive/15"
@@ -87,13 +94,15 @@ export function LiveTranscriptComposerAction({ updateDraft }: ComposerActionCont
     >
       {recording.phase === "starting" || recording.phase === "transcribing" ? (
         <LoadingIcon />
-      ) : recording.phase === "recording" ? (
-        <RecordingIcon />
+      ) : recordingThisMode ? (
+        <StopIcon />
       ) : (
-        <MicrophoneIcon />
+        <MicIcon aria-hidden="true" className="size-4" strokeWidth={1.8} />
       )}
       {recording.phase === "starting" || recording.phase === "transcribing" ? (
         <span>{recording.phase === "transcribing" ? "Transcribing" : "Starting"} {formatClock(elapsedSeconds)}</span>
+      ) : recordingThisMode ? (
+        <span aria-live="off" className="min-w-[3ch] tabular-nums">{formatClock(elapsedSeconds)}</span>
       ) : null}
     </button>
   )
@@ -127,10 +136,10 @@ export function LiveTranscriptComposerDock() {
       const result = await liveTranscriptController.review()
       setNotice(
         result.startsWith("Transcript review dispatched")
-          ? "Review sent"
+          ? "Agent nudged"
           : result.startsWith("Transcript review queued")
-            ? "Review queued"
-            : "Agent unavailable",
+            ? "Nudge queued until the agent is idle"
+            : "Nudge failed — retry",
       )
     } finally {
       setReviewing(false)
@@ -201,12 +210,11 @@ export function LiveTranscriptComposerDock() {
                 })
               }}
               disabled={!recording.transcriptPath}
-              aria-label="Open transcript"
-              title="Open transcript"
-              className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-45"
+              aria-label="Open transcript in new pane"
+              title="Open transcript in new pane"
+              className="inline-flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-45"
             >
-              <DocumentIcon />
-              Transcript
+              <PanelRightOpenIcon aria-hidden="true" className="size-4" strokeWidth={1.8} />
             </button>
             <button
               type="button"
@@ -217,13 +225,13 @@ export function LiveTranscriptComposerDock() {
               <SparkIcon />
               {reviewing
                 ? "Wait…"
-                : notice === "Review sent"
-                  ? "Sent"
-                  : notice === "Review queued"
+                : notice === "Agent nudged"
+                  ? "Nudged"
+                  : notice === "Nudge queued until the agent is idle"
                     ? "Queued"
-                    : notice === "Agent unavailable"
+                    : notice === "Nudge failed — retry"
                       ? "Retry"
-                      : "Review"}
+                      : "Nudge"}
             </button>
             <button
               type="button"
@@ -239,7 +247,7 @@ export function LiveTranscriptComposerDock() {
         </div>
 
         {notice && notice !== "Finalizing transcript…" ? (
-          <div role="status" aria-live="polite" className="sr-only">{notice}</div>
+          <div role="status" aria-live="polite" className="border-t border-border/50 px-3 py-1.5 text-[11px] text-muted-foreground">{notice}</div>
         ) : null}
 
       </div>
@@ -271,25 +279,16 @@ function LoadingIcon() {
   return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 animate-spin fill-none stroke-current" strokeWidth="1.5"><path d="M8 1.5a6.5 6.5 0 1 1-6.5 6.5" /></svg>
 }
 
-function MicrophoneIcon() {
-  return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current" strokeWidth="1.5" strokeLinecap="round"><rect x="5" y="1.5" width="6" height="9" rx="3"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2"/></svg>
-}
-
-function RecordingIcon() {
+function StopIcon() {
   return (
     <span
       aria-hidden="true"
-      data-boring-agent-part="short-recording-indicator"
-      className="relative flex size-4 items-center justify-center"
+      data-boring-agent-part="recording-stop-icon"
+      className="flex size-4 items-center justify-center"
     >
-      <span className="absolute size-3.5 rounded-full border border-current/35" />
-      <span className="size-2 rounded-full bg-current animate-pulse motion-reduce:animate-none" />
+      <span className="size-2.5 rounded-[2px] bg-current" />
     </span>
   )
-}
-
-function DocumentIcon() {
-  return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current" strokeWidth="1.4" strokeLinejoin="round"><path d="M4 1.75h5l3 3V14.25H4z"/><path d="M9 1.75v3h3"/></svg>
 }
 
 function SparkIcon() {
@@ -316,11 +315,13 @@ function TranscriptReviewMessageContribution({ message }: ChatMessageContributio
     : null
 }
 
-const liveTranscriptComposerContribution: ComposerContribution = {
-  id: "live-transcription",
-  Top: LiveTranscriptComposerTop,
-  Action: LiveTranscriptComposerAction,
-  commands: liveTranscriptCommands,
+function createLiveTranscriptComposerContribution(streaming: boolean): ComposerContribution {
+  return {
+    id: "live-transcription",
+    Top: LiveTranscriptComposerTop,
+    Action: (props) => <LiveTranscriptComposerAction {...props} streaming={streaming} />,
+    commands: liveTranscriptCommands,
+  }
 }
 
 const disabledLiveTranscriptComposerContribution: ComposerContribution = {
@@ -334,22 +335,30 @@ const liveTranscriptMessageContribution: ChatMessageContribution = {
 }
 
 function LiveTranscriptComposerProvider({ children }: { children: ReactNode }) {
-  const [ready, setReady] = useState(false)
+  const [capabilities, setCapabilities] = useState({ ready: false, streamingComposer: false })
   useEffect(() => {
     let cancelled = false
     void fetch("/api/v1/workspace/meta")
-      .then(async (response) => response.ok ? await response.json() as { liveTranscripts?: { ready?: boolean } } : undefined)
+      .then(async (response) => response.ok ? await response.json() as { liveTranscripts?: { ready?: boolean; streamingComposer?: boolean; pcmSampleRate?: number } } : undefined)
       .then((meta) => {
-        if (!cancelled) setReady(meta?.liveTranscripts?.ready === true)
+        if (!cancelled) {
+          liveTranscriptController.setStreamingSampleRate(meta?.liveTranscripts?.pcmSampleRate ?? 16_000)
+          setCapabilities({
+            ready: meta?.liveTranscripts?.ready === true,
+            streamingComposer: meta?.liveTranscripts?.streamingComposer === true,
+          })
+        }
       })
       .catch(() => {
-        if (!cancelled) setReady(false)
+        if (!cancelled) setCapabilities({ ready: false, streamingComposer: false })
       })
     return () => { cancelled = true }
   }, [])
   const composerContribution = useMemo(
-    () => ready ? liveTranscriptComposerContribution : disabledLiveTranscriptComposerContribution,
-    [ready],
+    () => capabilities.ready
+      ? createLiveTranscriptComposerContribution(capabilities.streamingComposer)
+      : disabledLiveTranscriptComposerContribution,
+    [capabilities],
   )
   return (
     <ChatMessageContributionProvider contribution={liveTranscriptMessageContribution}>

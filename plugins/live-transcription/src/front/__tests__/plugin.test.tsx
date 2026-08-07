@@ -103,15 +103,34 @@ describe("live transcript front surface", () => {
 
     const view = render(<LiveTranscriptComposerAction updateDraft={(update) => { draft = update(draft) }} />)
     const stopButton = screen.getByRole("button", { name: "Stop short recording" })
-    expect(stopButton).toHaveClass("w-8")
-    expect(view.container.querySelector('[data-boring-agent-part="short-recording-indicator"]')).toBeInTheDocument()
-    expect(screen.queryByText(/Short \d{2}:\d{2}/)).not.toBeInTheDocument()
+    expect(view.container.querySelector('[data-boring-agent-part="recording-stop-icon"]')).toBeInTheDocument()
+    expect(stopButton).toHaveTextContent(/\d{2}:\d{2}/)
     fireEvent.click(stopButton)
 
     await waitFor(() => expect(stopShort).toHaveBeenCalledOnce())
     expect(draft).toBe("newer draft bonjour")
     expect(appendTranscriptToDraft("draft", "bonjour")).toBe("draft bonjour")
     expect(appendTranscriptToDraft("draft ", "bonjour")).toBe("draft bonjour")
+  })
+
+  it("streams Kyutai words into the current draft and stops from the same control", async () => {
+    let onWord: ((word: string) => void) | undefined
+    const startComposer = vi.spyOn(liveTranscriptController, "startComposer").mockImplementation(async (handler) => { onWord = handler })
+    const stopComposer = vi.spyOn(liveTranscriptController, "stopComposer").mockResolvedValue()
+    let draft = "existing"
+    const updateDraft = (update: (current: string) => string) => { draft = update(draft) }
+    const view = render(<LiveTranscriptComposerAction updateDraft={updateDraft} streaming />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Start streaming dictation" }))
+    await waitFor(() => expect(startComposer).toHaveBeenCalledOnce())
+    act(() => onWord?.("Bonjour"))
+    act(() => onWord?.("le monde"))
+    expect(draft).toBe("existing Bonjour le monde")
+
+    act(() => liveTranscriptBrowserState.set({ recordingKind: "composer", phase: "recording" }))
+    fireEvent.click(screen.getByRole("button", { name: "Stop streaming dictation" }))
+    await waitFor(() => expect(stopComposer).toHaveBeenCalledOnce())
+    view.unmount()
   })
 
   it("owns composer-top visibility and recording errors", () => {
@@ -150,17 +169,18 @@ describe("live transcript front surface", () => {
     expect(screen.queryByText("Nudge controls")).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Agent nudge settings" })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "Open transcript" }))
+    fireEvent.click(screen.getByRole("button", { name: "Open transcript in new pane" }))
     expect(postUiCommand).toHaveBeenCalledWith({
       kind: "openSurface",
       params: { kind: "workspace.open.path", target: "live-transcripts/a.md" },
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Review" }))
+    fireEvent.click(screen.getByRole("button", { name: "Nudge" }))
     await waitFor(() => expect(review).toHaveBeenCalledOnce())
-    expect(await screen.findByRole("button", { name: "Sent" })).toBeVisible()
+    expect(await screen.findByRole("button", { name: "Nudged" })).toBeVisible()
+    expect(screen.getByRole("status")).toHaveTextContent("Agent nudged")
     review.mockResolvedValue("Transcript review queued until the originating chat is idle.")
-    fireEvent.click(screen.getByRole("button", { name: "Sent" }))
+    fireEvent.click(screen.getByRole("button", { name: "Nudged" }))
     expect(await screen.findByRole("button", { name: "Queued" })).toBeVisible()
     review.mockResolvedValue("Failed to fetch")
     fireEvent.click(screen.getByRole("button", { name: "Queued" }))
