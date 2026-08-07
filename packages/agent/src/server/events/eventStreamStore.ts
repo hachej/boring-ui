@@ -105,7 +105,9 @@ export class SqliteEventStreamStore implements EventStreamStore {
 
   async appendEvent(path: string, event: unknown): Promise<string> {
     const data = JSON.stringify(event)
-    const offset = this.runTransaction(() => this.appendSerializedEvent(path, data))
+    // allocateSeq() reads next_offset then writes it (UPDATE ... RETURNING) —
+    // a read-then-write transaction needs BEGIN IMMEDIATE, see SqlTransactionMode.
+    const offset = this.runTransaction(() => this.appendSerializedEvent(path, data), 'immediate')
     this.notifyListeners(path)
     return offset
   }
@@ -114,6 +116,12 @@ export class SqliteEventStreamStore implements EventStreamStore {
     const data = JSON.stringify(event)
     let inserted = false
     try {
+      // Reads readIdempotencyKey (SELECT) THEN writes (two INSERTs) inside
+      // the same transaction — must be BEGIN IMMEDIATE. A deferred BEGIN
+      // starts under a read lock and SQLite refuses the mid-transaction
+      // upgrade to a write lock with SQLITE_BUSY immediately, WITHOUT
+      // honoring busy_timeout, whenever another connection holds the write
+      // lock. See SqlTransactionMode in sqlStorage.ts.
       const offset = this.runTransaction(() => {
         const existing = this.readIdempotencyKey(path, key)
         if (existing) {
@@ -139,7 +147,7 @@ export class SqliteEventStreamStore implements EventStreamStore {
         )
         inserted = true
         return formatOffset(seq)
-      })
+      }, 'immediate')
       if (inserted) this.notifyListeners(path)
       return offset
     } catch (error) {
@@ -158,6 +166,7 @@ export class SqliteEventStreamStore implements EventStreamStore {
     const path = opts.streamPath ?? sessionStreamPath(sessionId)
     let inserted = false
     try {
+      // Same read-then-write shape as appendEventOnce — BEGIN IMMEDIATE required.
       const offset = this.runTransaction(() => {
         if (opts.idempotencyKey !== undefined) {
           const existing = this.readIdempotencyKey(path, opts.idempotencyKey)
@@ -194,7 +203,7 @@ export class SqliteEventStreamStore implements EventStreamStore {
         }
         inserted = true
         return formatOffset(seq)
-      })
+      }, 'immediate')
       if (inserted) this.notifyListeners(path)
       return offset
     } catch (error) {

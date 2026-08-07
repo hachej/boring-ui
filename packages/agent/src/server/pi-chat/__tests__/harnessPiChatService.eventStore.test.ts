@@ -395,6 +395,42 @@ describe('HarnessPiChatService event store tap', () => {
     }
   })
 
+  it('hydrates exactly hydrationLimit trailing envelopes at the window boundary, no off-by-one', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      const path = streamPathFor(ctx, 's1')
+      await store.createStream(path)
+      // Seed 1005 durable envelopes directly (seq 0..1004), well past the
+      // 1000-entry hydration window, so restart hydration must trim to the
+      // most recent 1000: seq 5..1004.
+      for (let seq = 0; seq <= 1004; seq += 1) {
+        await store.appendAgentEvent('s1', { type: 'agent-start', seq, turnId: `turn-${seq}` }, { streamPath: path })
+      }
+
+      const restarted = createService(store)
+      // Cursor 4 is exactly the last seq OUTSIDE the retained window (window
+      // is [5, 1004]): resuming from there must succeed and replay all 1000
+      // retained events, proving the window holds the full 1000 — not 999.
+      const liveAtBoundary: PiChatEvent[] = []
+      const boundarySub = await restarted.service.subscribe(ctx, 's1', 4, (event) => liveAtBoundary.push(event))
+      expect(boundarySub.type).toBe('ok')
+      expect(liveAtBoundary).toHaveLength(1000)
+      expect(liveAtBoundary[0]).toMatchObject({ seq: 5 })
+      expect(liveAtBoundary.at(-1)).toMatchObject({ seq: 1004 })
+      if (boundarySub.type === 'ok') boundarySub.unsubscribe()
+
+      // Cursor 3 is one further back than the retained window covers: the
+      // fresh in-memory buffer genuinely has no event for seq 4, so this
+      // must report a gap rather than silently under- or over-replaying.
+      const secondRestart = createService(store)
+      const goneSub = await secondRestart.service.subscribe(ctx, 's1', 3, () => {})
+      expect(goneSub.type).toBe('replay_gap')
+    } finally {
+      db.db.close()
+    }
+  })
+
   it('reports durable latest seq from cold persisted state', async () => {
     const db = openDatabase(':memory:')
     try {

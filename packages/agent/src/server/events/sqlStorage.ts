@@ -13,7 +13,23 @@ export interface SqlStorage {
   exec(query: string, ...bindings: unknown[]): SqlResult
 }
 
-export type RunTransaction = <T>(fn: () => T) => T
+/**
+ * `deferred` (SQLite's plain `BEGIN`) postpones acquiring any lock until the
+ * first read or write inside the transaction. That is fine for read-only
+ * transactions, but a transaction that reads THEN writes (e.g. a
+ * check-then-insert) starts under a read lock and must upgrade to a write
+ * lock mid-transaction — and SQLite refuses that upgrade with SQLITE_BUSY
+ * immediately if another connection holds the write lock, WITHOUT honoring
+ * `busy_timeout` (the busy handler only runs for the initial lock
+ * acquisition, not a lock *upgrade*). `immediate` (`BEGIN IMMEDIATE`)
+ * acquires the write lock up front, so `busy_timeout` applies normally and
+ * a concurrent writer simply waits instead of erroring. Use `immediate` for
+ * any transaction that writes — especially read-then-write — and reserve
+ * `deferred` for genuinely read-only transactions.
+ */
+export type SqlTransactionMode = 'deferred' | 'immediate'
+
+export type RunTransaction = <T>(fn: () => T, mode?: SqlTransactionMode) => T
 
 export interface OpenDatabaseResult {
   db: DatabaseSync
@@ -42,11 +58,11 @@ export function createNodeSqlStorage(db: DatabaseSync): SqlStorage {
 }
 
 export function createNodeTransactionSync(db: DatabaseSync): RunTransaction {
-  return <T>(fn: () => T): T => runTransaction(db, fn)
+  return <T>(fn: () => T, mode: SqlTransactionMode = 'deferred'): T => runTransaction(db, fn, mode)
 }
 
-export function runTransaction<T>(db: DatabaseSync, fn: () => T): T {
-  db.exec('BEGIN')
+export function runTransaction<T>(db: DatabaseSync, fn: () => T, mode: SqlTransactionMode = 'deferred'): T {
+  db.exec(mode === 'immediate' ? 'BEGIN IMMEDIATE' : 'BEGIN')
   try {
     const result = fn()
     db.exec('COMMIT')

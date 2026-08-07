@@ -997,6 +997,16 @@ export class HarnessPiChatService implements PiChatSessionService {
     if (!this.eventStore) return new PiChatReplayBuffer()
     const meta = await this.eventStore.getStreamMeta(streamPath)
     if (!meta) return new PiChatReplayBuffer()
+    // Despite the field's name, `meta.nextOffset` is already the LAST
+    // entry's own seq (see SqliteEventStreamStore#getStreamMetaSync:
+    // `formatOffset(next_offset - 1)`), not one-past-the-end. `readEvents`'s
+    // `offset` is an exclusive lower bound (returns seq > offset), so the
+    // window [tailSeq - hydrationLimit, tailSeq] with that exclusive bound
+    // yields exactly `hydrationLimit` entries — verified by
+    // `hydrates exactly hydrationLimit trailing envelopes at the window
+    // boundary, no off-by-one` below. Do not "correct" this to
+    // `tailIndex - hydrationLimit + 1`: that shifts the exclusive bound one
+    // seq forward and drops the oldest entry in the window instead.
     const tailIndex = parseOffset(meta.nextOffset)
     if (tailIndex < 0) return new PiChatReplayBuffer()
 
