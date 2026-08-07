@@ -420,7 +420,10 @@ export async function createFolderModeApp(opts: {
     canonicalHost: string
     canonicalOrigin: string
     upstreamUrl: string
+    upstreamProvider?: "whisperlivekit" | "kyutai"
     upstreamBearerToken?: string
+    diarizerUrl?: string
+    diarizerBearerToken?: string
     reviewIntervalMs?: number
   }
 }): Promise<FastifyInstance> {
@@ -457,7 +460,10 @@ export async function createFolderModeApp(opts: {
           canonicalOrigin: opts.liveTranscripts.canonicalOrigin,
         },
         upstreamUrl: opts.liveTranscripts.upstreamUrl,
+        upstreamProvider: opts.liveTranscripts.upstreamProvider,
         upstreamBearerToken: opts.liveTranscripts.upstreamBearerToken,
+        diarizerUrl: opts.liveTranscripts.diarizerUrl,
+        diarizerBearerToken: opts.liveTranscripts.diarizerBearerToken,
         reviewIntervalMs: opts.liveTranscripts.reviewIntervalMs,
       })
     : undefined
@@ -555,6 +561,8 @@ export async function createFolderModeApp(opts: {
       liveTranscripts: {
         ready: true,
         commands: ["/live start", "/live stop", "/live status", "/review transcript"],
+        streamingComposer: opts.liveTranscripts?.upstreamProvider === "kyutai",
+        pcmSampleRate: opts.liveTranscripts?.upstreamProvider === "kyutai" ? 24_000 : 16_000,
       },
     } : {}),
   }))
