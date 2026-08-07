@@ -78,6 +78,19 @@ class LeaseControllerTests(unittest.TestCase):
         finally:
             controller.close()
 
+    def test_acquire_waits_for_stopping_provider_then_restarts_it(self):
+        provider = FakeProvider()
+        states = iter(["stopping", "stopped", "running"])
+        provider.state = lambda: next(states, "running")
+        controller = MODULE.LeaseController(provider, lambda: True, idle_grace=60)
+        try:
+            with mock.patch.object(MODULE.time, "sleep", return_value=None):
+                lease = controller.acquire("request-during-stop")
+            self.assertTrue(lease.lease_id)
+            self.assertEqual(provider.starts, 1)
+        finally:
+            controller.close()
+
     def test_readiness_failure_does_not_issue_lease(self):
         provider = FakeProvider()
         controller = MODULE.LeaseController(provider, lambda: False, ready_timeout=.02, idle_grace=.01)

@@ -86,11 +86,14 @@ class LeaseController:
             self.starting = True
             self.stop_after = None
         try:
-            if self.provider.state() == "stopped":
-                self.provider.start()
             deadline = time.monotonic() + self.ready_timeout
+            start_requested = False
             while time.monotonic() < deadline:
-                if self.provider.state() == "running" and self.ready():
+                state = self.provider.state()
+                if state == "stopped" and not start_requested:
+                    self.provider.start()
+                    start_requested = True
+                elif state == "running" and self.ready():
                     with self.condition:
                         self.started_at = self.started_at or time.monotonic()
                         return self._new_lease(request_id)
