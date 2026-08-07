@@ -1,5 +1,5 @@
 /** Logical filesystem identity used by tools, UI, and runtime bindings. */
-export type FilesystemId = "user" | "company_context" | (string & {});
+export type FilesystemId = "user" | (string & {});
 
 /** Access granted for a prepared runtime filesystem binding. */
 export type FilesystemAccess = "readonly" | "readwrite";

@@ -11,7 +11,7 @@ import {
   FixtureCompanyContextBindingProvider,
   listFixtureProjectionFiles,
   seedCompanyContextFixture,
-} from "../testing/companyContextFixtureProvider";
+} from "./companyContextFixture";
 import {
   READONLY_PROJECTION_INVALID_PATH_CODE,
   READONLY_PROJECTION_MUTATION_CODE,
@@ -112,12 +112,12 @@ describe("readonly company_context e2e harness", () => {
   test("unsafe projection fails reusable conformance in the e2e harness", async () => {
     const sourceRoot = await createSourceRoot();
     const unsafeHandle = {
-      kind: "company-context-fixture-projection" as const,
+      kind: "external-context-fixture-projection" as const,
       filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,
       sourceRoot,
       projectionRoot: sourceRoot,
       visiblePaths: await listFixtureProjectionFiles({
-        kind: "company-context-fixture-projection",
+        kind: "external-context-fixture-projection",
         filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,
         sourceRoot,
         projectionRoot: sourceRoot,
