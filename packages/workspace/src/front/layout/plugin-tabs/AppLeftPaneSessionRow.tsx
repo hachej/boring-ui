@@ -172,9 +172,12 @@ export function AppSessionRow({
           data-boring-workspace-part="app-session-actions"
           data-action-count="1"
           className={cn(
-            "app-left-session-actions pointer-events-none absolute inset-y-0 right-1 z-10 flex items-center justify-end gap-0.5 opacity-0 transition-opacity motion-reduce:transition-none",
+            // Keep the reserved action hit area above the row button at all
+            // times. Toggling pointer-events only after hover creates a race
+            // where the underlying session button can win the same click.
+            "app-left-session-actions pointer-events-auto absolute inset-y-0 right-1 z-10 flex items-center justify-end gap-0.5 opacity-0",
             actionWidthClassName,
-            "group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100",
+            "group-hover:opacity-100 group-focus-within:opacity-100",
           )}
         >
           <AppSessionActionsMenu

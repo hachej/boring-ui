@@ -1,14 +1,18 @@
 import { describe, expect, it, vi } from "vitest"
 import { act, fireEvent, render, screen } from "@testing-library/react"
-import type { ComponentType } from "react"
+import { useEffect, type ComponentType } from "react"
 
 // Capture the props handed to DockviewReact so we can assert the rendering
 // contract that keeps chat panes mounted across activation. The real dockview
 // component needs a DOM grid engine we don't exercise here, so it is mocked.
 const dockviewProps = vi.fn()
+const dockviewMounts = vi.fn()
 vi.mock("dockview-react", () => ({
   DockviewReact: (props: Record<string, unknown>) => {
     dockviewProps(props)
+    useEffect(() => {
+      dockviewMounts()
+    }, [])
     type MockPanelApi = { id: string; title: string; onDidTitleChange: () => { dispose: () => void } }
     const Header = props.defaultTabComponent as ComponentType<{ api: MockPanelApi }> | undefined
     const HeaderActions = props.rightHeaderActionsComponent as ComponentType<{ activePanel: { api: MockPanelApi } }> | undefined
@@ -99,6 +103,27 @@ describe("ChatPaneStageDock", () => {
     // visibility:hidden overlay, leaving only the pane title visible.
     expect(dockviewProps).toHaveBeenCalled()
     expect(dockviewProps.mock.calls[0][0]).toMatchObject({ defaultRenderer: "onlyWhenVisible" })
+  })
+
+  it("remounts Dockview when the only pane switches sessions", () => {
+    dockviewMounts.mockClear()
+    const { rerender } = render(
+      <ChatPaneStageDock
+        panes={[{ id: "a", title: "A" }]}
+        activePaneId="a"
+        renderPane={(pane) => <div>{pane.id}</div>}
+      />,
+    )
+    expect(dockviewMounts).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <ChatPaneStageDock
+        panes={[{ id: "b", title: "B" }]}
+        activePaneId="b"
+        renderPane={(pane) => <div>{pane.id}</div>}
+      />,
+    )
+    expect(dockviewMounts).toHaveBeenCalledTimes(2)
   })
 
   it("renders chat top actions only in the active pane header", () => {

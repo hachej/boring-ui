@@ -353,6 +353,12 @@ export function ChatPaneStageDock({
         className="relative h-full min-h-0 w-full bg-background"
       >
         <DockviewReact
+          // A one-pane session switch replaces the pane rather than adding a
+          // split. Remount Dockview for that replacement so its internal
+          // active-panel/render-container state cannot lag behind React and
+          // intermittently leave the previous session selected or the next
+          // session blank. Multi-pane layouts retain a stable instance.
+          key={panes.length === 1 ? panes[0].id : "multi-pane"}
           className="dv-shell dv-chat-stage h-full"
           components={STAGE_COMPONENTS}
           defaultTabComponent={ChatPaneHeader as React.FunctionComponent<IDockviewPanelHeaderProps>}
