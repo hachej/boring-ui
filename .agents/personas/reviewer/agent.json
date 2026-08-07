@@ -1,8 +1,0 @@
-{
-  "schemaVersion": 1,
-  "definitionId": "boring-reviewer",
-  "version": "2026.08.04",
-  "label": "Boring Reviewer",
-  "description": "Fresh exact-revision reviewer for standards, spec, and proof.",
-  "instructionsRef": "instructions.md"
-}
