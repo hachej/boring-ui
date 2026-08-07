@@ -65,6 +65,27 @@ function unreadable(message: string): never {
   throw new CredentialResolutionError(CREDENTIAL_ERROR_CODES.UNREADABLE, message)
 }
 
+async function acquireMutationLock(lockPath: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      return await open(lockPath, 'wx', 0o600)
+    } catch (error) {
+      if (
+        !error
+        || typeof error !== 'object'
+        || !('code' in error)
+        || (error as { code?: unknown }).code !== 'EEXIST'
+      ) unreadable('Credential version anchor lock is unavailable')
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+  }
+  throw new CredentialResolutionError(
+    CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
+    'Credential version anchor mutation lock is unavailable',
+    { retryable: true },
+  )
+}
+
 function emptyState(): MutableAnchorStateV1 {
   return { format: ANCHOR_FORMAT_V1, workspaces: {} }
 }
@@ -302,6 +323,12 @@ export async function initializeLocalFileCredentialVersionAnchorV1(
     file = await open(options.anchorFilePath, 'wx', 0o600)
     await file.writeFile(await sealState(emptyState(), options), 'utf8')
     await file.sync()
+    const directory = await open(dirname(options.anchorFilePath), 'r')
+    try {
+      await directory.sync()
+    } finally {
+      await directory.close()
+    }
   } catch (error) {
     if (error instanceof CredentialResolutionError) throw error
     unreadable('Credential version anchor could not be initialized')
@@ -335,12 +362,7 @@ export function createLocalFileCredentialVersionAnchorV1(
       ) => Promise<CredentialVersionMutationResultV1<T>>,
     ): Promise<T> {
       const lockPath = `${options.anchorFilePath}.lock`
-      let lock: Awaited<ReturnType<typeof open>>
-      try {
-        lock = await open(lockPath, 'wx', 0o600)
-      } catch {
-        unreadable('Credential version anchor mutation is already locked')
-      }
+      const lock = await acquireMutationLock(lockPath)
       try {
         // A process crash can leave the lock behind. Future writes then fail
         // closed until operator cleanup rather than guessing lock ownership.
