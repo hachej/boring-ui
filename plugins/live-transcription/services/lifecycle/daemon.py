@@ -36,10 +36,10 @@ class ExoscaleProvider:
         return str(json.loads(result.stdout).get("state", "unknown")).lower()
 
     def start(self) -> None:
-        subprocess.run([self.exo_bin, "compute", "instance", "start", self.instance_id, "--zone", self.zone], check=True, timeout=60)
+        subprocess.run([self.exo_bin, "compute", "instance", "start", self.instance_id, "--zone", self.zone, "--force"], check=True, timeout=60)
 
     def stop(self) -> None:
-        subprocess.run([self.exo_bin, "compute", "instance", "stop", self.instance_id, "--zone", self.zone], check=True, timeout=90)
+        subprocess.run([self.exo_bin, "compute", "instance", "stop", self.instance_id, "--zone", self.zone, "--force"], check=True, timeout=90)
 
 
 class LeaseController:
