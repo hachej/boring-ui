@@ -59,7 +59,7 @@ describe("Kyutai moshi-server adapter", () => {
       }))
       await expect(connection.drain(1_000)).resolves.toBeUndefined()
       expect(authorization).toBe("server-owned")
-      expect(audioFrames).toBe(36)
+      await vi.waitFor(() => expect(audioFrames).toBe(36))
     } finally {
       connection.close()
       for (const client of server.clients) client.terminate()
