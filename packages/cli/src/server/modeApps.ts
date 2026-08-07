@@ -424,6 +424,8 @@ export async function createFolderModeApp(opts: {
     upstreamBearerToken?: string
     diarizerUrl?: string
     diarizerBearerToken?: string
+    lifecycleUrl?: string
+    lifecycleBearerToken?: string
     reviewIntervalMs?: number
   }
 }): Promise<FastifyInstance> {
@@ -464,6 +466,8 @@ export async function createFolderModeApp(opts: {
         upstreamBearerToken: opts.liveTranscripts.upstreamBearerToken,
         diarizerUrl: opts.liveTranscripts.diarizerUrl,
         diarizerBearerToken: opts.liveTranscripts.diarizerBearerToken,
+        lifecycleUrl: opts.liveTranscripts.lifecycleUrl,
+        lifecycleBearerToken: opts.liveTranscripts.lifecycleBearerToken,
         reviewIntervalMs: opts.liveTranscripts.reviewIntervalMs,
       })
     : undefined

@@ -459,6 +459,8 @@ async function startFolderMode(opts: {
       diarizerBearerToken: liveTranscriptProvider === "kyutai"
         ? process.env.BORING_LIVE_TRANSCRIPTS_DIARIZER_BEARER_TOKEN
         : undefined,
+      lifecycleUrl: process.env.BORING_LIVE_TRANSCRIPTS_LIFECYCLE_URL,
+      lifecycleBearerToken: process.env.BORING_LIVE_TRANSCRIPTS_LIFECYCLE_BEARER_TOKEN,
     },
   })
 
