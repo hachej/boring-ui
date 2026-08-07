@@ -565,6 +565,55 @@ describe("WorkspaceAgentFront", () => {
     expect(deleted).toEqual([["shared", "beta"], ["shared", "alpha"]])
   })
 
+  it("addresses defaultAgentTypeId, not the first catalog Agent, before anything is selected", async () => {
+    const createdBy = vi.fn()
+    const agents = [
+      { agentTypeId: "alpha", label: "Alpha" },
+      { agentTypeId: "beta", label: "Beta" },
+    ]
+    // Nothing selected yet: the catalog leads with alpha, but the configured
+    // default is beta, so the plain new chat must target beta.
+    const useAgentSelection = () => ({
+      agents,
+      selectedAgentTypeId: undefined,
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const useFleetSessions: AttestedWorkspaceAgentFrontProps<WorkspaceAgentSession>["useSessions"] = (options) => ({
+      sessions: [],
+      loading: false,
+      activeSessionId: undefined,
+      activeSessionAgentTypeId: options.agentTypeId,
+      activeSession: undefined,
+      workspaceId: options.workspaceId,
+      switch: vi.fn(),
+      create: async () => {
+        createdBy(options.agentTypeId)
+        return { id: `${options.agentTypeId}-new`, agentTypeId: options.agentTypeId, title: "new", updatedAt: 1 }
+      },
+      delete: vi.fn(),
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-default-owner"
+        agentTypeId="beta"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAgentSelection}
+        useSessions={useFleetSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Start new chat with Beta" })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole("button", { name: "Start new chat with Alpha" })).not.toBeInTheDocument()
+  })
+
   it("discovers an addressed fleet, groups its chats, and creates through the chosen owner", async () => {
     const user = userEvent.setup()
     const createdBy = vi.fn()

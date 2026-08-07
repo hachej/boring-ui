@@ -234,8 +234,10 @@ export function AppLeftPane({
   const openSet = useMemo(() => new Set(normalizedOpenSessionIds), [normalizedOpenSessionIds])
   const pinnedSet = useMemo(() => new Set(normalizedPinnedSessionIds), [normalizedPinnedSessionIds])
   const workingSessionIds = useWorkingSessionIds(sessions)
-  // A single Agent is the workspace default, so its chats stay flat.
-  const agentTreeEnabled = agents.length > 1
+  // Any addressed fleet gets cards, including a fleet of one: "one card per
+  // Agent" is what exposes per-Agent settings and scoped chat creation. Hosts
+  // that want the plain single-Agent shell omit `agents` entirely.
+  const agentTreeEnabled = agents.length > 0
   const [agentFilter, setAgentFilter] = useState("")
   const filteredAgents = useMemo(() => {
     const query = agentFilter.trim().toLocaleLowerCase()
@@ -294,24 +296,40 @@ export function AppLeftPane({
     () => (chatsAgentLens ? regularSessions.filter((session) => session.agentTypeId === chatsAgentLens) : regularSessions),
     [chatsAgentLens, regularSessions],
   )
-  const fleetSessionsPending = agents.some((agent) => (agent.sessionsStatus ?? "loading") === "loading")
+  // Under a lens only the lensed Agent's inventory matters; reporting "no chats"
+  // while that Agent is still loading would be a false empty state.
+  const fleetSessionsPending = (chatsAgentLens
+    ? agents.filter((agent) => agent.agentTypeId === chatsAgentLens)
+    : agents
+  ).some((agent) => (agent.sessionsStatus ?? "loading") === "loading")
   const projectItems = useMemo(() => {
     const source = projects ?? []
     if (layoutMode !== "multi-project") return source
+    // The lens is one control over one unified set of chats, so it narrows the
+    // project tree exactly as it narrows the flat list. Leaving project rows
+    // unfiltered would make the lens look broken in multi-project mode.
+    const applyLens = <T extends { agentTypeId?: string }>(list: readonly T[]) =>
+      chatsAgentLens ? list.filter((session) => session.agentTypeId === chatsAgentLens) : list
     return source.map((project) => {
-      if (project.id !== activeProjectId) return project
-      return {
-        ...project,
-        sessions: project.sessions ?? regularSessions.map((session) => ({
+      const injected = project.id === activeProjectId && !project.sessions
+        ? regularSessions.map((session) => ({
           id: session.id,
           agentTypeId: session.agentTypeId,
           title: session.title,
           updatedAt: session.updatedAt,
-        })),
-        sessionCount: project.sessionCount ?? regularSessions.length,
+        }))
+        : project.sessions
+      if (!injected) return project
+      const lensed = applyLens(injected)
+      return {
+        ...project,
+        sessions: [...lensed],
+        // The count stays the true owned total; the lens narrows the rows, not
+        // the workspace's real size.
+        sessionCount: project.sessionCount ?? (project.id === activeProjectId ? regularSessions.length : injected.length),
       }
     })
-  }, [activeProjectId, layoutMode, projects, regularSessions])
+  }, [activeProjectId, chatsAgentLens, layoutMode, projects, regularSessions])
   // Expansion is owned here (lifted from the tree) so pinned-project rows in the
   // Pinned section can expand their project in the tree on click.
   const [expandedProjectIds, setExpandedProjectIds] = useState<ReadonlySet<string>>(() => {
@@ -457,27 +475,54 @@ export function AppLeftPane({
     </section>
   )
 
+  // Item 6: one global new-chat entry point for both layouts, targeting the
+  // Agent the pane is currently addressing (the host resolves that to the
+  // default Agent until one is explicitly picked).
+  const renderFleetNewChat = () => (
+    <div className="px-0">
+      <FleetNewChatAction
+        agents={agents}
+        selectedAgentTypeId={selectedAgentTypeId}
+        onCreateSession={(agentTypeId) => {
+          onSelectAgent?.(agentTypeId)
+          onCreateSession(agentTypeId)
+        }}
+        onCreateSplitSession={onCreateSplitSession ? (agentTypeId) => {
+          onSelectAgent?.(agentTypeId)
+          onCreateSplitSession(agentTypeId)
+        } : undefined}
+        onCreatePopoverSession={onCreatePopoverSession ? (agentTypeId) => {
+          onSelectAgent?.(agentTypeId)
+          onCreatePopoverSession(agentTypeId)
+        } : undefined}
+      />
+    </div>
+  )
+
   const lensAgentLabel = chatsAgentLens ? agentLabelById.get(chatsAgentLens) : undefined
+  // Wherever fleet chats are listed, the active lens is visible and clearable
+  // from right there — single-project and multi-project alike.
+  const renderLensChip = () => lensAgentLabel ? (
+    <button
+      type="button"
+      onClick={() => setChatsAgentLens(null)}
+      aria-label={`Clear ${lensAgentLabel} chat filter`}
+      title="Show chats from every Agent"
+      data-boring-workspace-part="app-left-chats-lens"
+      className="flex h-5 min-w-0 items-center gap-1 rounded-full bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] pl-2 pr-1 text-[10px] font-medium tracking-normal text-[color:var(--accent)] transition-colors motion-reduce:transition-none hover:bg-[color:oklch(from_var(--accent)_l_c_h/0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+    >
+      <span className="min-w-0 truncate">{lensAgentLabel}</span>
+      <X className="size-3 shrink-0" strokeWidth={2} aria-hidden="true" />
+    </button>
+  ) : null
   const renderFleetChatsSection = () => (
     <section data-boring-workspace-part="app-left-pane-chats" aria-label="Chats" className="space-y-1">
       <div className="flex items-center gap-1.5 px-2 pb-0.5">
         <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">Chats</span>
-        {lensAgentLabel ? (
-          <button
-            type="button"
-            onClick={() => setChatsAgentLens(null)}
-            aria-label={`Clear ${lensAgentLabel} chat filter`}
-            title="Show chats from every Agent"
-            data-boring-workspace-part="app-left-chats-lens"
-            className="flex h-5 min-w-0 items-center gap-1 rounded-full bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] pl-2 pr-1 text-[10px] font-medium tracking-normal text-[color:var(--accent)] transition-colors motion-reduce:transition-none hover:bg-[color:oklch(from_var(--accent)_l_c_h/0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-          >
-            <span className="min-w-0 truncate">{lensAgentLabel}</span>
-            <X className="size-3 shrink-0" strokeWidth={2} aria-hidden="true" />
-          </button>
-        ) : null}
+        {renderLensChip()}
         <span className="ml-auto shrink-0 text-[10px] font-normal tabular-nums text-muted-foreground/75">{lensedSessions.length}</span>
       </div>
-      {lensedSessions.length === 0 && fleetSessionsPending && !chatsAgentLens ? (
+      {lensedSessions.length === 0 && fleetSessionsPending ? (
         <div data-boring-workspace-part="app-left-chats-loading-surface" className="space-y-1 px-2 py-1" aria-label="Loading chats">
           <Skeleton className="h-[30px] w-full rounded-md" />
           <Skeleton className="h-[30px] w-4/5 rounded-md" />
@@ -510,12 +555,13 @@ export function AppLeftPane({
       onCreateProjectSession={onCreateProjectSession}
       onOpenProjectSettings={onOpenProjectSettings}
       onOpenProjectInNewTab={onOpenProjectInNewTab}
+      // Every fleet chat row names its owner, in the project tree too.
       renderProjectSession={(project, session) => renderSession({
         id: session.id,
         agentTypeId: session.agentTypeId,
         title: session.title,
         updatedAt: session.updatedAt,
-      }, pinnedSet.has(workspaceSessionKeyFor(session)), project.id)}
+      }, pinnedSet.has(workspaceSessionKeyFor(session)), project.id, agentTreeEnabled)}
     />
   )
 
@@ -577,6 +623,7 @@ export function AppLeftPane({
           {/* Multi-project (PR2): projects remain inside the Chats region. */}
           {layoutMode === "multi-project" ? (
             <div className="space-y-3 py-1">
+              {agentTreeEnabled ? renderFleetNewChat() : null}
               {pinnedSessions.length > 0 || pinnedProjects.length > 0 ? (
                 <SessionSubSection title="Pinned">
                   {pinnedSessions.map((session) => renderSession(session, true))}
@@ -587,6 +634,7 @@ export function AppLeftPane({
               <section data-boring-workspace-part="app-left-pane-section" className="space-y-1">
                 <div className="flex items-center justify-between gap-1 px-2 pb-0.5">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/65">{workspaceSectionTitle}</span>
+                  {renderLensChip()}
                   {onCreateProject ? (
                     <button
                       type="button"
@@ -604,26 +652,7 @@ export function AppLeftPane({
             </div>
           ) : (
             <div className={agentTreeEnabled ? "space-y-3 py-1" : "space-y-4 py-1"}>
-              {agentTreeEnabled ? (
-                <div className="px-0">
-                  <FleetNewChatAction
-                    agents={agents}
-                    selectedAgentTypeId={selectedAgentTypeId}
-                    onCreateSession={(agentTypeId) => {
-                      onSelectAgent?.(agentTypeId)
-                      onCreateSession(agentTypeId)
-                    }}
-                    onCreateSplitSession={onCreateSplitSession ? (agentTypeId) => {
-                      onSelectAgent?.(agentTypeId)
-                      onCreateSplitSession(agentTypeId)
-                    } : undefined}
-                    onCreatePopoverSession={onCreatePopoverSession ? (agentTypeId) => {
-                      onSelectAgent?.(agentTypeId)
-                      onCreatePopoverSession(agentTypeId)
-                    } : undefined}
-                  />
-                </div>
-              ) : null}
+              {agentTreeEnabled ? renderFleetNewChat() : null}
               {pinnedSessions.length > 0 ? (
                 agentTreeEnabled ? (
                   <section className="mb-3 border-b border-border/50 px-0 pb-3" aria-label="Pinned chats">
