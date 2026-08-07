@@ -5,6 +5,7 @@ import {
   validateLayoutPartition,
   validatePreferencesPartition,
 } from "../lib/validation"
+import { safeRandomUUID } from "../lib/randomId"
 
 const SIZE_WARN_THRESHOLD = 100_000
 const LAYOUT_VERSION = "2.0"
@@ -141,7 +142,7 @@ export function createWorkspaceStore(options: CreateWorkspaceStoreOptions = {}) 
               ...s.notifications,
               {
                 ...notification,
-                id: crypto.randomUUID(),
+                id: safeRandomUUID(),
                 timestamp: Date.now(),
               },
             ],
