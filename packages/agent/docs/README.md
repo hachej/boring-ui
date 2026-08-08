@@ -68,6 +68,7 @@ the agent ↔ workspace boundary is in
 
 - [API](./API.md) — the four entry points and what each exports.
 - [AUTHORING](./AUTHORING.md) — declarative agent directories, bounds, validation, and legacy catalog migration.
+- [AGENT_PACKAGES](./AGENT_PACKAGES.md) — install, seat, update, unseat, and remove plugin-shaped agent packages in a workspace.
 - [STYLING](./STYLING.md) — CSS-variable theming contract and public selectors.
 - [UI-SHADCN](./UI-SHADCN.md) — `ChatPanel` styling model and tool-renderer overrides.
 - [tools](./tools.md) — built-in tools, package-added tools, and how to add custom tools.
