@@ -199,6 +199,21 @@ describe("AppLeftPane", () => {
     expect(screen.getByText("Beta session")).toBeInTheDocument()
   })
 
+  it("keeps nested session-row chat actions a genuine 44px+ mobile touch target", () => {
+    renderFleetPane()
+
+    // Regression for the ui-review mobile touch gate (#1110 / #1162 lineage):
+    // the per-session chat-actions trigger on rows nested under agent rows
+    // must use integer px sizing past the 44px minimum (size-12 = 48px) so
+    // the measured rect stays >= 44 even when an in-flight sheet/dialog
+    // transform scales it fractionally. Desktop density returns at sm.
+    const triggers = screen.getAllByRole("button", { name: /^Chat actions for / })
+    expect(triggers.length).toBeGreaterThan(0)
+    for (const trigger of triggers) {
+      expect(trigger).toHaveClass("size-12", "shrink-0", "sm:size-6")
+    }
+  })
+
   it("drops the per-Agent lens in nested mode: disclosure is the only scoping", () => {
     renderFleetPane()
 
