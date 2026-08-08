@@ -49,6 +49,118 @@ describe("AppLeftPane", () => {
     expect(newChat).toContainElement(screen.getByRole("button", { name: "New chat" }))
   })
 
+  it("renders a compact Agent tree with scoped chat actions and detail entry points", async () => {
+    const user = userEvent.setup()
+    const onCreateSession = vi.fn()
+    const onCreateSplitSession = vi.fn()
+    const onCreatePopoverSession = vi.fn()
+    const onOpenAgentDetails = vi.fn()
+    const onOpenAgentSettings = vi.fn()
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          agents={[
+            { agentTypeId: "alpha", label: "Boring Alpha", sessionsStatus: "loaded" },
+            { agentTypeId: "beta", label: "Boring Beta", sessionsStatus: "loaded" },
+          ]}
+          selectedAgentTypeId="alpha"
+          pinnedSessionRefs={[{ agentTypeId: "alpha", sessionId: "alpha-one" }]}
+          sessions={[
+            { id: "alpha-one", agentTypeId: "alpha", title: "Alpha session" },
+            { id: "beta-one", agentTypeId: "beta", title: "Beta session" },
+          ]}
+          onCreateSession={onCreateSession}
+          onCreateSplitSession={onCreateSplitSession}
+          onCreatePopoverSession={onCreatePopoverSession}
+          onOpenAgentDetails={onOpenAgentDetails}
+          onOpenAgentSettings={onOpenAgentSettings}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.queryByLabelText("Filter chats by Agent")).not.toBeInTheDocument()
+    expect(screen.getByText("Pinned chats")).toBeInTheDocument()
+    const nestedAlphaRow = within(screen.getByRole("region", { name: "Boring Alpha sessions" })).getByText("Alpha session").closest('[data-boring-workspace-part="app-session-row"]')
+    expect(nestedAlphaRow?.querySelector(".app-left-session-trailing svg")).toBeInTheDocument()
+    const pinnedAlphaRow = screen.getAllByText("Alpha session")[0]!.closest('[data-boring-workspace-part="app-session-row"]')
+    expect(pinnedAlphaRow).toHaveTextContent("Alpha")
+    expect(screen.queryByTitle("Active session")).not.toBeInTheDocument()
+    act(() => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+      detail: { sessionId: "alpha-one", agentTypeId: "alpha", working: true },
+    })))
+    expect(screen.getAllByTitle("Active session")).toHaveLength(2)
+    expect(pinnedAlphaRow).not.toHaveTextContent("working")
+    expect(pinnedAlphaRow).toHaveTextContent("Alpha")
+    expect(screen.getAllByText("Alpha").length).toBeGreaterThan(1)
+    await waitFor(() => expect(screen.getAllByText("Alpha session")).toHaveLength(2))
+    expect(screen.queryByText("Beta session")).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "Start new chat with Boring Alpha" }))
+    await user.click(screen.getByRole("button", { name: "Start split chat with Boring Alpha" }))
+    await user.click(screen.getByRole("button", { name: "Start quick chat with Boring Alpha" }))
+    expect(onCreateSession).toHaveBeenCalledWith("alpha")
+    expect(onCreateSplitSession).toHaveBeenCalledWith("alpha")
+    expect(onCreatePopoverSession).toHaveBeenCalledWith("alpha")
+    await user.click(screen.getByRole("button", { name: "Choose Agent for new chat" }))
+    await user.click(screen.getByRole("menuitem", { name: "Beta" }))
+    expect(onCreateSession).toHaveBeenCalledWith("beta")
+
+    await user.click(screen.getByRole("button", { name: "Collapse Boring Alpha; 1 session" }))
+    expect(screen.queryByRole("region", { name: "Boring Alpha sessions" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Settings for Boring Alpha" }))
+    await user.click(screen.getByRole("button", { name: "New chat with Boring Alpha" }))
+    await user.click(screen.getByRole("button", { name: "New chat with Boring Alpha in split pane" }))
+    await user.click(screen.getByRole("button", { name: "Quick chat with Boring Alpha" }))
+
+    expect(onOpenAgentDetails).not.toHaveBeenCalled()
+    expect(onOpenAgentSettings).toHaveBeenCalledWith("alpha")
+    expect(onCreateSession).toHaveBeenCalledWith("alpha")
+    expect(onCreateSplitSession).toHaveBeenCalledWith("alpha")
+    expect(onCreatePopoverSession).toHaveBeenCalledWith("alpha")
+
+    expect(screen.getByText("Beta session")).toBeInTheDocument()
+
+    const filter = screen.getByRole("searchbox", { name: "Filter Agents" })
+    await user.type(filter, "beta")
+    expect(screen.queryByText("Alpha", { selector: ".app-left-agent-row span" })).not.toBeInTheDocument()
+    expect(screen.getByText("Beta", { selector: ".app-left-agent-row span" })).toBeInTheDocument()
+  })
+
+  it("uses a flat Chats list in single-Agent and multi-project modes", () => {
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          layoutMode="multi-project"
+          projects={[{ id: "project", name: "Project", sessions: [] }]}
+          activeProjectId="project"
+          agents={[{ agentTypeId: "solo", label: "Boring Solo", sessionsStatus: "loaded" }]}
+          selectedAgentTypeId="solo"
+          sessions={[]}
+          onCreateSession={vi.fn()}
+          onCreateSplitSession={vi.fn()}
+          onCreatePopoverSession={vi.fn()}
+          onOpenAgentDetails={vi.fn()}
+          onOpenAgentSettings={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.getByRole("heading", { name: "Chats" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Select Boring Solo; 0 sessions" })).not.toBeInTheDocument()
+    expect(screen.getByText("Project")).toBeInTheDocument()
+  })
+
   it("renders icon-only collapsed shortcuts with accessible labels", () => {
     const onCreateSession = vi.fn()
     const onOpenCommandPalette = vi.fn()

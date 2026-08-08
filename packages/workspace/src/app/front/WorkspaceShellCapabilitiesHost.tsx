@@ -92,10 +92,17 @@ export function useWorkspaceShellCapabilitiesHost({
       chatParams={floatingChatParams}
       initialPosition={{ left: appLeftPaneCollapsed ? 24 : effectiveAppLeftPaneWidth + 24, top: 72 }}
       composingEnabled={floatingChatSession?.composingEnabled ?? false}
-      onClose={() => setFloatingChatSession(null)}
+      onClose={() => {
+        setFloatingChatSession(null)
+        // Detached chats do not share the docked pane's session-sync lifecycle.
+        // Refresh on dismissal so a completed quick chat and its generated title
+        // are represented in the persistent session list immediately.
+        void refreshChatSessions()
+      }}
       onDock={() => {
         openChatPane(floatingChatRef.sessionId, floatingChatRef.agentTypeId)
         setFloatingChatSession(null)
+        void refreshChatSessions()
         onDockOverlay?.()
       }}
     />
