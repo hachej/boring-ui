@@ -2352,6 +2352,56 @@ describe("WorkspaceAgentFront", () => {
     expect(createOwners).toEqual(["default"])
   })
 
+  it("routes a no-arg creation entry point (collapsed rail) to the New chat picker target", async () => {
+    const user = userEvent.setup()
+    const createOwners: (string | undefined)[] = []
+    const useFleetSelection = () => ({
+      agents: [
+        { agentTypeId: "alpha", label: "Boring Alpha" },
+        { agentTypeId: "beta", label: "Boring Beta" },
+      ],
+      selectedAgentTypeId: "alpha",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const useFleetSessions: UseWorkspaceAgentSessions = (options) => ({
+      sourceIdentity: options.sourceIdentity,
+      sessions: [],
+      loading: false,
+      activeSessionId: null,
+      activeSessionAgentTypeId: null,
+      activeSession: null,
+      switch: vi.fn(),
+      delete: vi.fn(),
+      create: () => {
+        createOwners.push(options.agentTypeId)
+        return Promise.resolve({ id: `new-${options.agentTypeId}`, agentTypeId: options.agentTypeId, title: "New" })
+      },
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-no-arg-create"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useFleetSelection}
+        useSessions={useFleetSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    // Retarget the next chat to Beta through the picker…
+    await user.click(await screen.findByRole("button", { name: "Choose Agent for new chat" }))
+    await user.click(await screen.findByRole("menuitem", { name: /Beta/ }))
+    // …then create from a DIFFERENT entry point that passes no owner at all.
+    await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
+    await user.click(await screen.findByRole("button", { name: "New chat" }))
+
+    await waitFor(() => expect(createOwners).toEqual(["beta"]))
+  })
+
   it("keeps hydration disabled after auth-return auto-submit props clear until the chat explicitly unlocks it", async () => {
     let capturedChatProps: unknown
     const getCapturedChatProps = () => capturedChatProps as CapturedChatPanelProps | undefined

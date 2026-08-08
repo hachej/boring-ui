@@ -806,11 +806,19 @@ export function WorkspaceAgentFront<
   // The New chat picker chooses who the *next* chat belongs to. It is
   // deliberately separate from the addressed selection that drives the open
   // chat, so retargeting never navigates away from what the user is reading.
+  // It is the single target for EVERY creation entry point (rail "+", command
+  // palette, popover, shell capabilities, agent cards): each creation callback
+  // takes it as its default argument, so nothing has to special-case the picker.
   const [newChatAgentTypeIdOverride, setNewChatAgentTypeIdOverride] = useState<string | undefined>(undefined)
-  const newChatAgentTypeId = newChatAgentTypeIdOverride
-    && addressedAgents.agents.some((agent) => agent.agentTypeId === newChatAgentTypeIdOverride)
-    ? newChatAgentTypeIdOverride
-    : effectiveAgentTypeId
+  const addressedAgentOptions = addressedAgents.agents
+  useEffect(() => {
+    // Only drop the override when its Agent leaves the fleet entirely.
+    if (!newChatAgentTypeIdOverride) return
+    if (!addressedAgentOptions.some((agent) => agent.agentTypeId === newChatAgentTypeIdOverride)) {
+      setNewChatAgentTypeIdOverride(undefined)
+    }
+  }, [addressedAgentOptions, newChatAgentTypeIdOverride])
+  const newChatAgentTypeId = newChatAgentTypeIdOverride ?? effectiveAgentTypeId
   const localSessionStore = useMemo(
     () => createLocalStorageSessions({ storageKey: resolvedSessionStorageKey }),
     [resolvedSessionStorageKey],
@@ -1958,9 +1966,9 @@ export function WorkspaceAgentFront<
     if (pending.placementDirection) setChatPaneSplitPending(false)
   }, [workspaceId])
 
-  const createChatSession = useCallback((ownerAgentTypeId = fleetModeEnabled ? effectiveAgentTypeId : undefined) => (
+  const createChatSession = useCallback((ownerAgentTypeId = fleetModeEnabled ? newChatAgentTypeId : undefined) => (
     createChatPaneTransaction(activeChatPaneId, "replace", undefined, ownerAgentTypeId)
-  ), [activeChatPaneId, effectiveAgentTypeId, createChatPaneTransaction, fleetModeEnabled])
+  ), [activeChatPaneId, newChatAgentTypeId, createChatPaneTransaction, fleetModeEnabled])
 
   const closeChatPane = useCallback((sessionKey: string) => {
     if (pendingCreatePaneRef.current) return
@@ -1988,9 +1996,9 @@ export function WorkspaceAgentFront<
     }
   }, [chatSessionKey, createChatPaneTransaction, rawSwitch, workspaceId])
 
-  const createChatPaneAfter = useCallback((afterId: string, placementDirection?: ChatPaneSplitDirection, ownerAgentTypeId = fleetModeEnabled ? effectiveAgentTypeId : undefined) => (
+  const createChatPaneAfter = useCallback((afterId: string, placementDirection?: ChatPaneSplitDirection, ownerAgentTypeId = fleetModeEnabled ? newChatAgentTypeId : undefined) => (
     createChatPaneTransaction(afterId, "insert", placementDirection, ownerAgentTypeId)
-  ), [effectiveAgentTypeId, createChatPaneTransaction, fleetModeEnabled])
+  ), [newChatAgentTypeId, createChatPaneTransaction, fleetModeEnabled])
 
   const deleteSessionAndPane = useCallback((sessionId: string, sessionAgentTypeId?: string) => {
     const sessionKey = workspaceSessionKey(sessionId, sessionAgentTypeId)
@@ -2018,10 +2026,10 @@ export function WorkspaceAgentFront<
   // gets its OWN dedicated pane (inserted after the active one) so the existing
   // panes are never hijacked; with a single pane it just becomes the active
   // chat — no gratuitous split for the common case.
-  const createChatSessionPreferNewPane = useCallback((ownerAgentTypeId = effectiveAgentTypeId) => {
+  const createChatSessionPreferNewPane = useCallback((ownerAgentTypeId = newChatAgentTypeId) => {
     if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId, undefined, ownerAgentTypeId)
     return createChatSession(ownerAgentTypeId)
-  }, [activeChatPaneId, effectiveAgentTypeId, chatPaneIds.length, createChatPaneAfter, createChatSession])
+  }, [activeChatPaneId, newChatAgentTypeId, chatPaneIds.length, createChatPaneAfter, createChatSession])
 
   const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(requestedAutoSubmitInitialDraft)
   const autoSubmitHydrationWorkspaceRef = useRef(workspaceId)
@@ -2358,9 +2366,9 @@ export function WorkspaceAgentFront<
     shellSessionCreateSequenceRef.current += 1
     return await createAddressedSessionWithoutActivating(`shell:${shellSessionCreateSequenceRef.current}`, {
       ...options,
-      agentTypeId: effectiveAgentTypeId,
+      agentTypeId: newChatAgentTypeId,
     })
-  }, [createAddressedSessionWithoutActivating, effectiveAgentTypeId])
+  }, [createAddressedSessionWithoutActivating, newChatAgentTypeId])
   const deleteShellChatSession = useCallback(async (ref: { agentTypeId: string; sessionId: string }) => {
     try {
       if (!sessionSourceIsCurrent()) {
@@ -2389,12 +2397,12 @@ export function WorkspaceAgentFront<
     isAppLeftOverlayAvailable: (id) => pluginOverlayActionIds.has(id),
     onDockOverlay: () => setLeftOverlay(null),
   })
-  const createChatSessionInPopover = useCallback((ownerAgentTypeId = fleetModeEnabled ? effectiveAgentTypeId : undefined) => {
+  const createChatSessionInPopover = useCallback((ownerAgentTypeId = fleetModeEnabled ? newChatAgentTypeId : undefined) => {
     setLeftOverlay(null)
     quickSessionCreateSequenceRef.current += 1
     void createAddressedSessionWithoutActivating(`quick:${quickSessionCreateSequenceRef.current}`, {
       title: defaultSessionTitle,
-      agentTypeId: ownerAgentTypeId ?? effectiveAgentTypeId,
+      agentTypeId: ownerAgentTypeId ?? newChatAgentTypeId,
     }).then((result) => {
       if (!result.success) return
       shellCapabilitiesHost.shellCapabilities.openDetachedChat(result.ref, {
@@ -2402,7 +2410,7 @@ export function WorkspaceAgentFront<
         composingEnabled: true,
       })
     })
-  }, [createAddressedSessionWithoutActivating, defaultSessionTitle, effectiveAgentTypeId, fleetModeEnabled, shellCapabilitiesHost.shellCapabilities])
+  }, [createAddressedSessionWithoutActivating, defaultSessionTitle, newChatAgentTypeId, fleetModeEnabled, shellCapabilitiesHost.shellCapabilities])
   const providerPanels = baseProviderPanels
   const pluginAppLeftActions = usePluginAppLeftActions({ plugins: capturedPlugins, activeOverlay: leftOverlay, setActiveOverlay: setLeftOverlay })
   const chatTopOverlayActions = useMemo(() => {
