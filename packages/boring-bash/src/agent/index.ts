@@ -23,23 +23,21 @@ export type {
   HarnessRuntimeProvisioningSnapshot,
 } from './tools/harness'
 export type {
+  BwrapArgsOptions,
   RuntimeBashStrategy,
   RuntimeBundle,
+  RuntimeEnvironmentMount,
   RuntimeFilesystemBinding,
   RuntimeFilesystemBindingOperations,
+  RuntimeFilesystemMountKind,
   RuntimeFilesystemStrategy,
   RuntimeHostOperations,
   RuntimeRemoteWorkspacePathOptions,
 } from './runtime/types'
 
-export {
-  BWRAP_TIMEOUT_SECONDS,
-  KILL_GRACE_SECONDS,
-  RO_BIND_DIRS,
-  RO_BIND_TRY_DIRS,
-  buildBwrapArgs,
-} from './runtime/buildBwrapArgs'
-export type { BwrapArgsOptions } from './runtime/buildBwrapArgs'
+// The bwrap args builder implementation moved to
+// `@hachej/boring-sandbox/providers/bwrap` (gh-1123 slice 1 dedupe); hosts
+// inject it via `RuntimeHostOperations.buildBwrapArgs`.
 
 export { mergeRuntimeProvisioningEnv } from './runtime/env'
 export type {

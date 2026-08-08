@@ -1230,7 +1230,7 @@ describe("FileTreePane", () => {
         label: "Workspace",
         rootDir: ".",
         access: "readwrite",
-        capabilities: { read: true, list: true, search: true, write: true, mkdir: false, move: false, delete: true },
+        capabilities: { read: true, list: true, search: true, write: true, mkdir: false, move: false, delete: true, execute: false },
       }]} />, { wrapper })
       await waitFor(() => expect(screen.getByText("index.ts")).toBeInTheDocument())
 

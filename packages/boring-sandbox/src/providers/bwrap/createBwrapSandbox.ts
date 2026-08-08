@@ -1,4 +1,4 @@
-import { access, stat } from 'node:fs/promises'
+import { access, realpath, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
@@ -9,6 +9,7 @@ import {
   KILL_GRACE_SECONDS,
   buildBwrapArgs,
 } from './buildBwrapArgs'
+import type { SandboxEnvironmentMountV1 } from '../../shared/mounts'
 import { getNodeWorkspaceHostRoot } from '../node-workspace/createNodeWorkspace'
 import { withWorkspacePythonEnv } from '../node-workspace/workspacePythonEnv'
 
@@ -159,6 +160,12 @@ async function dirExists(path: string): Promise<boolean> {
   }
 }
 
+/**
+ * Computes the out-of-workspace `.boring-agent` global-tool binds. Resolved
+ * once at sandbox init (gh-1123 resolve-once hygiene): the parent source
+ * paths are realpath-resolved here and the resolved paths are re-bound
+ * verbatim on every exec, instead of re-probing the filesystem per command.
+ */
 async function buildGlobalToolMounts(workspaceRoot: string): Promise<string[]> {
   const globalRoot = dirname(workspaceRoot)
   if (globalRoot === workspaceRoot) return []
@@ -171,7 +178,8 @@ async function buildGlobalToolMounts(workspaceRoot: string): Promise<string[]> {
     if (!(await dirExists(parentRuntimePath))) return false
     if (await pathExists(childRuntimePath)) return false
 
-    args.push('--ro-bind', parentRuntimePath, `${SANDBOX_HOME}/${runtimeRelPath}`)
+    const resolvedParentRuntimePath = await realpath(parentRuntimePath)
+    args.push('--ro-bind', resolvedParentRuntimePath, `${SANDBOX_HOME}/${runtimeRelPath}`)
     return true
   }
 
@@ -197,6 +205,11 @@ export interface CreateBwrapSandboxOptions {
   network?: 'shared' | 'isolated'
   dropAllCapabilities?: boolean
   resourceLimits?: BwrapResourceLimits
+  /**
+   * Environment mounts (gh-1123), already realpath-resolved once at pair
+   * create by the provider. Re-bound verbatim on every exec.
+   */
+  mounts?: readonly SandboxEnvironmentMountV1[]
 }
 
 function positiveInteger(value: number | undefined, name: string): number | undefined {
@@ -245,6 +258,7 @@ export function createBwrapSandbox(opts: CreateBwrapSandboxOptions = {}): Sandbo
   let workspace: Workspace | null = null
   let hostWorkspaceRoot = sandboxOptions.hostWorkspaceRoot
   let runtimeContext = sandboxOptions.runtimeContext ?? { runtimeCwd: SANDBOX_HOME }
+  let globalToolMountArgs: string[] | null = null
 
   return {
     id: 'bwrap',
@@ -259,6 +273,7 @@ export function createBwrapSandbox(opts: CreateBwrapSandboxOptions = {}): Sandbo
       hostWorkspaceRoot = sandboxOptions.hostWorkspaceRoot ?? getNodeWorkspaceHostRoot(ctx.workspace) ?? ctx.workspace.root
       runtimeContext = sandboxOptions.runtimeContext ?? { runtimeCwd: SANDBOX_HOME }
       await assertBwrapAvailable()
+      globalToolMountArgs = await buildGlobalToolMounts(hostWorkspaceRoot)
     },
     async exec(cmd, opts) {
       if (!workspace) {
@@ -270,11 +285,13 @@ export function createBwrapSandbox(opts: CreateBwrapSandboxOptions = {}): Sandbo
       const maxOutputBytes = opts?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES
       const workspaceRoot = hostWorkspaceRoot ?? workspace.root
       const sandboxCwd = computeSandboxCwd(workspaceRoot, runtimeContext.runtimeCwd, opts?.cwd)
-      const postWorkspaceArgs = await buildGlobalToolMounts(workspaceRoot)
+      const postWorkspaceArgs = globalToolMountArgs
+        ?? await buildGlobalToolMounts(workspaceRoot)
       const baseArgs = buildBwrapArgs(workspaceRoot, {
         postWorkspaceArgs,
         network: sandboxOptions.network,
         dropAllCapabilities: sandboxOptions.dropAllCapabilities,
+        mounts: sandboxOptions.mounts,
       })
       const args = [
         ...withSandboxCwd(baseArgs, sandboxCwd),

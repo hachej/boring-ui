@@ -10,6 +10,7 @@ import type {
   TelemetrySink,
 } from '@hachej/boring-agent/shared'
 
+import { assertNoEnvironmentMounts } from '../../shared/mounts'
 import { PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
 import {
   SandboxProviderError,
@@ -512,6 +513,7 @@ export function createVercelSandboxProvider(
       await snapshotScheduler?.shutdown()
     },
     async create(ctx): Promise<WorkspaceSandboxPairV1> {
+      assertNoEnvironmentMounts('vercel-sandbox', ctx)
       const telemetry = ctx.telemetry
       const totalStartedAt = Date.now()
       captureSandboxSetupEvent(telemetry, ctx, 'agent.runtime.sandbox.setup.started', {

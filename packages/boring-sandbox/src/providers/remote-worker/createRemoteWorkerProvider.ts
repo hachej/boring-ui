@@ -4,6 +4,7 @@ import {
   PROVIDER_CAPABILITIES,
   PROVIDER_CONTRACT_VERSION,
 } from "../../shared/providerMatrix";
+import { assertNoEnvironmentMounts } from "../../shared/mounts";
 import {
   REMOTE_WORKER_ERROR_CODES_V1,
   REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS,
@@ -215,6 +216,7 @@ export function createRemoteWorkerSandboxProviderV1(
       return REMOTE_WORKER_RUNTIME_CWD;
     },
     async create(context): Promise<WorkspaceSandboxPairV1> {
+      assertNoEnvironmentMounts("remote-worker", context);
       let finishCreate = (): void => {};
       const pendingCreate = new Promise<void>((resolve) => {
         finishCreate = resolve;

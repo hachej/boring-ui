@@ -18,6 +18,7 @@ const PRIMARY_ROOT: FileTreeRootConfig = {
     delete: true,
     move: true,
     mkdir: true,
+    execute: true,
   },
 }
 
