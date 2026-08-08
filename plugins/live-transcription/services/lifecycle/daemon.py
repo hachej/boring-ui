@@ -30,7 +30,7 @@ class ExoscaleProvider:
 
     def state(self) -> str:
         result = subprocess.run(
-            [self.exo_bin, "compute", "instance", "show", self.instance_id, "--zone", self.zone, "-O", "json"],
+            [self.exo_bin, "x", "get-instance", self.instance_id, "--zone", self.zone, "-o", "json"],
             check=True, capture_output=True, text=True, timeout=30,
         )
         return str(json.loads(result.stdout).get("state", "unknown")).lower()
@@ -44,7 +44,7 @@ class ExoscaleProvider:
     def _request_transition(self, action: str) -> None:
         try:
             subprocess.run(
-                [self.exo_bin, "compute", "instance", action, self.instance_id, "--zone", self.zone, "--force"],
+                [self.exo_bin, "x", f"{action}-instance", self.instance_id, "--zone", self.zone, "-o", "json"],
                 check=True, capture_output=True, text=True, timeout=20,
             )
         except subprocess.TimeoutExpired:
