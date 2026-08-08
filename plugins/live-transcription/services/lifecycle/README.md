@@ -6,7 +6,7 @@ This root-owned, loopback-only service leases an on-demand GPU to the live-trans
 
 - Listens only on `127.0.0.1` and requires a bearer token.
 - Rejects requests with a browser `Origin` header.
-- Exoscale credentials remain in root's Exoscale profile; they are never passed to Boring UI.
+- A dedicated Exoscale key remains in root's Exoscale profile; it is limited to `get-instance`, `start-instance`, and `stop-instance` for the configured instance and is never passed to Boring UI.
 - Starts only after `/live start` or composer dictation requests a lease.
 - Requires authenticated WebSocket readiness from **both** Kyutai and Sortformer before granting a lease.
 - Uses 30-second app heartbeats and 90-second lease expiry.
@@ -17,7 +17,9 @@ This root-owned, loopback-only service leases an on-demand GPU to the live-trans
 
 ## Installation
 
-Install `daemon.py` root-owned (mode `0755`) under `/opt/boring-gpu-lifecycle/`. Put secrets in `/etc/boring-gpu-lifecycle.env` (mode `0600`):
+Install `daemon.py` root-owned (mode `0755`) under `/opt/boring-gpu-lifecycle/`. Create a non-editable IAM role with default deny and allow only `list-zones`, `get-operation`, plus `get-instance`, `start-instance`, and `stop-instance` when `parameters.id` equals the transcription instance UUID. Bind a dedicated API key to that role and store it in root's Exoscale CLI profile.
+
+Put lifecycle secrets in `/etc/boring-gpu-lifecycle.env` (mode `0600`):
 
 ```sh
 BORING_GPU_LIFECYCLE_BEARER_TOKEN=<random 32+ byte token>

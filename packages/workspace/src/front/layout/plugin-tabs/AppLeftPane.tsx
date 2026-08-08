@@ -494,7 +494,7 @@ export function AppLeftPane({
           aria-expanded={agentsSectionOpen}
           aria-controls="boring-app-left-agents-panel"
           onClick={() => setAgentsSectionOpen((open) => !open)}
-          className="group/agents flex h-6 min-w-0 shrink-0 items-center gap-1 rounded-md pl-0.5 pr-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75 transition-colors motion-reduce:transition-none hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          className="group/agents flex h-11 min-w-0 shrink-0 items-center sm:h-6 gap-1 rounded-md pl-0.5 pr-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75 transition-colors motion-reduce:transition-none hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         >
           <ChevronRight
             className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none", agentsSectionOpen && "rotate-90")}
@@ -513,7 +513,7 @@ export function AppLeftPane({
               onChange={(event) => setAgentFilter(event.target.value)}
               aria-label="Filter Agents"
               placeholder="Filter Agents"
-              className="h-6 w-full rounded-md border border-border/60 bg-transparent pl-6 pr-2 text-[11px] font-normal tracking-normal text-foreground outline-none placeholder:text-muted-foreground/55 focus:border-ring/60 focus:ring-1 focus:ring-ring/25"
+              className="h-11 w-full rounded-md border sm:h-6 border-border/60 bg-transparent pl-6 pr-2 text-[11px] font-normal tracking-normal text-foreground outline-none placeholder:text-muted-foreground/55 focus:border-ring/60 focus:ring-1 focus:ring-ring/25"
             />
           </label>
         ) : null}

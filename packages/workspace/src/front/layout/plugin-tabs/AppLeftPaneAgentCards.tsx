@@ -32,7 +32,9 @@ export interface AppLeftPaneAgentCardProps {
   onOpenSettings?: () => void
 }
 
-const cardActionClassName = "app-left-secondary-action grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+// Coarse pointers get the 44px touch target from main; desktop keeps the
+// compact 24px action of the nested design.
+const cardActionClassName = "app-left-secondary-action grid size-11 shrink-0 place-items-center sm:size-6 rounded-md text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 
 export function AppLeftPaneAgentCard({
   agentTypeId,
@@ -80,7 +82,7 @@ export function AppLeftPaneAgentCard({
         title={subtitle ? `${label} — ${subtitle}` : label}
         onClick={onToggle}
         disabled={!onToggle}
-        className="flex h-6 min-w-0 flex-1 items-center gap-1 rounded-md px-0.5 text-left focus-visible:outline-none disabled:cursor-default"
+        className="flex min-h-11 sm:min-h-0 sm:h-6 min-w-0 flex-1 items-center gap-1 rounded-md px-0.5 text-left focus-visible:outline-none disabled:cursor-default"
       >
         {expandable ? (
           <ChevronRight
