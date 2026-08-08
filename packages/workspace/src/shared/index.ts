@@ -40,7 +40,6 @@ export type {
   UiFileResourceInput,
 } from "./types/filesystem"
 export {
-  COMPANY_CONTEXT_FILESYSTEM_ID,
   USER_FILESYSTEM_ID,
   normalizeUiFileResource,
   normalizeUiFilesystem,

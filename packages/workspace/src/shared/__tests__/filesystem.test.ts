@@ -1,13 +1,14 @@
 import { describe, expect, test } from "vitest"
 
 import {
-  COMPANY_CONTEXT_FILESYSTEM_ID,
   USER_FILESYSTEM_ID,
   normalizeUiFileResource,
   normalizeUiFilesystem,
   uiFileResourceKey,
   withUiFileResource,
 } from "../types/filesystem"
+
+const EXTERNAL_FILESYSTEM_ID = "external"
 
 describe("UI filesystem identity primitives", () => {
   test("legacy path-only resources bind to user filesystem", () => {
@@ -22,31 +23,31 @@ describe("UI filesystem identity primitives", () => {
     })
   })
 
-  test("company resources require explicit filesystem field", () => {
-    expect(normalizeUiFileResource({ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, path: "/company/hr/policy.md" }))
-      .toEqual({ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, path: "/company/hr/policy.md" })
-    expect(normalizeUiFileResource("/company/hr/policy.md")).toEqual({
+  test("external resources require explicit filesystem field", () => {
+    expect(normalizeUiFileResource({ filesystem: EXTERNAL_FILESYSTEM_ID, path: "/docs/policy.md" }))
+      .toEqual({ filesystem: EXTERNAL_FILESYSTEM_ID, path: "/docs/policy.md" })
+    expect(normalizeUiFileResource("/docs/policy.md")).toEqual({
       filesystem: USER_FILESYSTEM_ID,
-      path: "/company/hr/policy.md",
+      path: "/docs/policy.md",
     })
   })
 
   test("path prefix strings do not switch filesystem identity", () => {
-    expect(normalizeUiFileResource("company_context:/company/hr/policy.md")).toEqual({
+    expect(normalizeUiFileResource("external:/docs/policy.md")).toEqual({
       filesystem: USER_FILESYSTEM_ID,
-      path: "company_context:/company/hr/policy.md",
+      path: "external:/docs/policy.md",
     })
-    expect(normalizeUiFileResource("/company_context/company/hr/policy.md")).toEqual({
+    expect(normalizeUiFileResource("/external/docs/policy.md")).toEqual({
       filesystem: USER_FILESYSTEM_ID,
-      path: "/company_context/company/hr/policy.md",
+      path: "/external/docs/policy.md",
     })
   })
 
   test("resource keys separate identical paths across filesystems", () => {
     expect(uiFileResourceKey({ filesystem: USER_FILESYSTEM_ID, path: "/same.md" }))
       .toBe("user:/same.md")
-    expect(uiFileResourceKey({ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, path: "/same.md" }))
-      .toBe("company_context:/same.md")
+    expect(uiFileResourceKey({ filesystem: EXTERNAL_FILESYSTEM_ID, path: "/same.md" }))
+      .toBe("external:/same.md")
     expect(uiFileResourceKey({ filesystem: "a:b", path: "c" }))
       .not.toBe(uiFileResourceKey({ filesystem: "a", path: "b:c" }))
   })
@@ -57,8 +58,8 @@ describe("UI filesystem identity primitives", () => {
       path: "/a.ts",
       mode: "edit",
     })
-    expect(withUiFileResource({ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, path: "/a.ts" })).toEqual({
-      filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,
+    expect(withUiFileResource({ filesystem: EXTERNAL_FILESYSTEM_ID, path: "/a.ts" })).toEqual({
+      filesystem: EXTERNAL_FILESYSTEM_ID,
       path: "/a.ts",
     })
   })
