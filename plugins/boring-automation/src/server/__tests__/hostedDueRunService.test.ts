@@ -118,6 +118,38 @@ describe("HostedDueRunService", () => {
     expect(queries[0]).toContain("updated_at <")
   })
 
+  it("reports an unknown selected Agent without dispatching or crashing the hosted batch", async () => {
+    const queries: string[] = []
+    const sql = Object.assign((async (strings: TemplateStringsArray) => {
+      const text = strings.join("?")
+      queries.push(text)
+      if (text.includes("updated_at <")) return []
+      if (text.includes("FROM boring_automation_automations")) {
+        return [{ ...AUTOMATION_ROW, agent_type_id: "retired" }]
+      }
+      return []
+    }), { json: (value: unknown) => value }) as unknown as postgres.Sql
+    const dispatch = vi.fn()
+    const resolver = directResolver(dispatch, { readFile: vi.fn() })
+    const service = new HostedDueRunService({
+      agentTypeId: "selected-agent",
+      availableAgentTypeIds: ["selected-agent", "researcher"],
+      sql,
+      dispatcherResolver: resolver,
+      verifyActor: vi.fn(() => true),
+      clock: () => new Date("2026-07-23T09:00:15.000Z"),
+    })
+
+    const result = await service.runDue()
+
+    expect(result.outcomes).toEqual([expect.objectContaining({
+      kind: "failed",
+      code: BORING_AUTOMATION_ERROR_CODES.AGENT_NOT_FOUND,
+    })])
+    expect(dispatch).not.toHaveBeenCalled()
+    expect(queries.some((query) => query.includes("INSERT INTO boring_automation_runs"))).toBe(false)
+  })
+
   it("executes a verified creator internally without fabricating a request", async () => {
     let runRow: MutableRunRow = { ...RUN_ROW }
     let lifecycleUpdates = 0
@@ -135,11 +167,11 @@ describe("HostedDueRunService", () => {
             : { ...runRow, status: "succeeded", completed_at: "2026-07-23T09:00:16.000Z", duration_ms: 1_000 }
         return [runRow]
       }
-      if (text.includes("FROM boring_automation_automations")) return [AUTOMATION_ROW]
+      if (text.includes("FROM boring_automation_automations")) return [{ ...AUTOMATION_ROW, agent_type_id: "researcher" }]
       return []
     }), { json: (value: unknown) => value }) as unknown as postgres.Sql
     const dispatch = vi.fn(async (input: { requestId: string }) => ({
-      ref: { agentTypeId: "selected-agent", sessionId: "session-1" },
+      ref: { agentTypeId: "researcher", sessionId: "session-1" },
       receipt: { accepted: true as const, cursor: 0, disposition: "prompt" as const, clientNonce: input.requestId },
       events: (async function* () {})(),
     }))
@@ -149,6 +181,7 @@ describe("HostedDueRunService", () => {
     const verifyActor = vi.fn(() => true)
     const service = new HostedDueRunService({
       agentTypeId: "selected-agent",
+      availableAgentTypeIds: ["selected-agent", "researcher"],
       sql,
       dispatcherResolver: resolver,
       verifyActor,
@@ -160,7 +193,7 @@ describe("HostedDueRunService", () => {
     const actor = { workspaceId: "workspace-a", userId: "user-a" }
     expect(verifyActor).toHaveBeenCalledWith(actor)
     expect(resolver.runWithWorkspaceAgent).toHaveBeenCalledWith(expect.objectContaining({
-      agentTypeId: "selected-agent",
+      agentTypeId: "researcher",
       context: actor,
     }), expect.any(Function))
     expect(dispatch).toHaveBeenCalledOnce()

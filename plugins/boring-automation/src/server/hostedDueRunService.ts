@@ -16,6 +16,7 @@ const HOSTED_RUN_STALE_AFTER_MS = 5 * 60_000
 
 export interface HostedDueRunServiceOptions {
   agentTypeId: string
+  availableAgentTypeIds?: readonly string[]
   sql: postgres.Sql
   dispatcherResolver: WorkspaceAgentDispatcherResolver
   verifyActor: (actor: HostedAutomationActor) => Promise<boolean> | boolean
@@ -97,6 +98,7 @@ export class HostedDueRunService {
         )
         const executor = new ManualRunExecutor({
           agentTypeId: this.options.agentTypeId,
+          availableAgentTypeIds: this.options.availableAgentTypeIds,
           store,
           dispatcherResolver: this.options.dispatcherResolver,
           actorResolver: () => candidate.actor,
