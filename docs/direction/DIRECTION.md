@@ -229,6 +229,27 @@ the PR ratifies only the file's presence and this section's FACTS; the
   #1150) in review. Channels (#1127) and executable environments (#1123)
   have ratified plans r2, no implementation.
 
+### Commercial premises (ratified 2026-08-08)
+
+Owner-ratified 2026-08-08 (unlike the niche/influencer direction below, which
+remains proposed).
+
+- **boring-ui provides the PREMISES, never the pricing.** The platform ships
+  the capability substrate — per-user and per-workspace provider credentials
+  (the BYOK vault), provenance-labeled provider rows in the model picker
+  (workspace / personal / platform-credits), and, when a consumer pulls it, a
+  per-workspace usage-facts feed (#819). It stays commercially neutral and
+  must not preclude any pricing topology.
+- **Each app/tenant repo adapts the strategy for its segment** (Seneca first):
+  e.g. monthly subscription (with BYOK or included usage) for B2B vertical
+  agents; credits for consumer/influencer funnels when self-signup opens.
+  Billing systems live app-side; the platform only ever emits facts.
+- **Sequencing consequence:** #819 metering ships only when a usage-priced
+  offer pulls it — the platform emits facts, the app bills. It is NOT a
+  blocker for the first niche agent under subscription pricing. This amends
+  the metering recommendation in
+  [`state/2026-08-08.md`](state/2026-08-08.md) §3/§4 (errata noted there).
+
 ### Proposed direction — owner ratification pending
 
 **Proposed, NOT ratified.** The owner intends to start building (a)
