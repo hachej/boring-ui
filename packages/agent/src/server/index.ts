@@ -281,6 +281,7 @@ export {
   mergeRuntimeFilesystemBindings,
 } from './runtime/filesystemBindings'
 export {
+  DEFAULT_READONLY_WORKSPACE_PATHS,
   RUNTIME_READONLY_FILESYSTEM_POLICY_INVALID_CODE,
   RuntimeReadonlyFilesystemPolicyError,
   normalizeRuntimeReadonlyFilesystemPolicy,

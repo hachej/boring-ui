@@ -16,6 +16,14 @@ export class RuntimeReadonlyFilesystemPolicyError extends Error {
   }
 }
 
+/**
+ * Default protected prefixes applied when a host does not configure its own.
+ * `.agents` holds agent governance/skill definitions: agents may read them but
+ * must never rewrite the rules they run under. Hosts opt out with an explicit
+ * empty array.
+ */
+export const DEFAULT_READONLY_WORKSPACE_PATHS: readonly string[] = Object.freeze(['.agents'])
+
 export interface RuntimeReadonlyFilesystemPolicy {
   readonly readonlyPaths: readonly string[]
   readonly revision: string
@@ -60,6 +68,29 @@ export function normalizeRuntimeReadonlyFilesystemPolicy(
   return Object.freeze({
     readonlyPaths: Object.freeze(readonlyPaths),
     revision: `readonly-paths-v1-${createHash('sha256').update(JSON.stringify(readonlyPaths)).digest('hex')}`,
+  })
+}
+
+/**
+ * Least-privilege composition of two decisions for the same request. A
+ * capability survives only when every decision grants it, so neither the
+ * requested lexical path nor its canonical target can unlock the other.
+ */
+export function intersectRuntimeFilesystemAccessDecisions(
+  ...decisions: readonly [RuntimeFilesystemAccessDecision, ...RuntimeFilesystemAccessDecision[]]
+): RuntimeFilesystemAccessDecision {
+  const [primary] = decisions
+  const merged = Object.fromEntries(
+    (Object.keys(primary.capabilities) as RuntimeFilesystemCapability[]).map((capability) => [
+      capability,
+      decisions.every((decision) => decision.capabilities[capability]),
+    ]),
+  ) as Record<RuntimeFilesystemCapability, boolean>
+  return Object.freeze({
+    filesystem: primary.filesystem,
+    normalizedPath: primary.normalizedPath,
+    access: merged.write ? 'readwrite' : 'readonly',
+    capabilities: Object.freeze(merged),
   })
 }
 

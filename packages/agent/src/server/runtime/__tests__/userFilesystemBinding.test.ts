@@ -30,6 +30,21 @@ describe('createUserFilesystemBinding', () => {
     await expect(readFile(join(root, 'protected/locked.txt'), 'utf8')).resolves.toBe('locked')
   })
 
+  test('rejects a protected lexical path aliased to a writable target', async () => {
+    // Reverse of the previous case: the protected name `.agents` is a symlink
+    // whose canonical target (`writable`) is NOT protected. Enforcing only the
+    // canonical path would authorize the write; the requested-path check denies it.
+    const root = await mkdtemp(join(tmpdir(), 'boring-user-binding-fwd-'))
+    await mkdir(join(root, 'writable'), { recursive: true })
+    await writeFile(join(root, 'writable/rules.md'), 'rules')
+    await symlink('writable', join(root, '.agents'))
+    const binding = createUserFilesystemBinding(createNodeWorkspace(root), normalizeRuntimeReadonlyFilesystemPolicy(['.agents']),
+      async (path) => await sandboxRuntimeHostOperations.resolveRealWorkspacePath(root, path))
+    await expect(binding.operations.write?.({ filesystem: 'user', path: '.agents/rules.md', content: 'bypass' }))
+      .rejects.toMatchObject({ code: READONLY_FILESYSTEM_MUTATION_CODE })
+    await expect(readFile(join(root, 'writable/rules.md'), 'utf8')).resolves.toBe('rules')
+  })
+
   test('enforces readonly mutations while preserving writable siblings', async () => {
     const root = await mkdtemp(join(tmpdir(), 'boring-user-binding-'))
     await mkdir(join(root, 'mixed/protected'), { recursive: true })

@@ -13,6 +13,7 @@ import {
   createResolvedRuntimeScopeIdentity,
   createSandboxRuntimeModeAdapter,
   createUserFilesystemBinding,
+  DEFAULT_READONLY_WORKSPACE_PATHS,
   createValidatingAgentFleetCompiler,
   digestPiResourceInputs,
   mergeRuntimeFilesystemBindings,
@@ -166,7 +167,11 @@ export interface WorkspaceAgentCreateOptions {
   runtimeProvisioning?: WorkspaceProvisioningResult
   telemetry?: TelemetrySink
   metering?: AgentMeteringSink
-  /** Workspace-relative prefixes in the primary user filesystem that cannot be mutated. */
+  /**
+   * Workspace-relative prefixes in the primary user filesystem that cannot be
+   * mutated. Defaults to {@link DEFAULT_READONLY_WORKSPACE_PATHS} (`['.agents']`);
+   * pass an explicit empty array to opt out entirely.
+   */
   readonlyWorkspacePaths?: readonly string[]
   getFilesystemBindings?: (ctx: {
     request?: FastifyRequest
@@ -1252,8 +1257,11 @@ export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
-  const readonlyWorkspacePolicy = opts.readonlyWorkspacePaths
-    ? normalizeRuntimeReadonlyFilesystemPolicy(opts.readonlyWorkspacePaths)
+  // Protection is on by default: an omitted option must not silently disable
+  // `.agents` enforcement. Only an explicit empty array opts out.
+  const resolvedReadonlyWorkspacePaths = opts.readonlyWorkspacePaths ?? DEFAULT_READONLY_WORKSPACE_PATHS
+  const readonlyWorkspacePolicy = resolvedReadonlyWorkspacePaths.length > 0
+    ? normalizeRuntimeReadonlyFilesystemPolicy(resolvedReadonlyWorkspacePaths)
     : undefined
   // Resolved early: `legacyGlobalPluginAgentContributions` below must key off
   // the RESOLVED fleet, not `opts.agents`'s presence — with BORING_AGENT_FLEET=1
@@ -1705,6 +1713,9 @@ export async function createWorkspaceAgentServer(
               if (!readonlyWorkspacePolicy) return transformed
               return {
                 ...transformed,
+                // Consumed by the bash tool builder for sandbox readonly binds
+                // and by provisioning guards; same policy, other enforcement points.
+                readonlyWorkspacePaths: readonlyWorkspacePolicy.readonlyPaths,
                 filesystemBindings: [...mergeRuntimeFilesystemBindings(
                   [createUserFilesystemBinding(transformed.workspace, readonlyWorkspacePolicy, async (path) => {
                     const root = runtimeHost.getNodeWorkspaceHostRoot(transformed.workspace)

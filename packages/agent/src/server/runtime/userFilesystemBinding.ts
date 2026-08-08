@@ -4,8 +4,9 @@ import {
   type Workspace,
 } from '../../shared/workspace'
 import { ERROR_CODE_CONFLICT } from '../http/middleware'
-import type { RuntimeFilesystemBinding } from './mode'
+import type { RuntimeFilesystemAccessDecision, RuntimeFilesystemBinding } from './mode'
 import {
+  intersectRuntimeFilesystemAccessDecisions,
   resolveRuntimeReadonlyFilesystemAccess,
   type RuntimeReadonlyFilesystemPolicy,
 } from './readonlyFilesystemPolicy'
@@ -34,10 +35,27 @@ export function createUserFilesystemBinding(
   policy: RuntimeReadonlyFilesystemPolicy,
   resolvePolicyPath: (path: string) => Promise<string>,
 ): RuntimeFilesystemBinding {
-  const resolveAccess = async (path: string) => resolveRuntimeReadonlyFilesystemAccess(policy, {
+  const decide = (normalizedPath: string) => resolveRuntimeReadonlyFilesystemAccess(policy, {
     filesystem: USER_FILESYSTEM_ID,
-    normalizedPath: await resolvePolicyPath(workspacePath(workspace, path)),
+    normalizedPath,
   })
+  // Symlinks must fail closed in BOTH directions: a writable alias pointing at
+  // a protected target is denied via the canonical path, and a protected
+  // lexical path (`.agents/x`) pointing at a writable target is denied via the
+  // requested path. Checking only one side leaves the other open.
+  const resolveAccess = async (path: string) => {
+    const requestedPath = workspacePath(workspace, path)
+    const canonical = decide(await resolvePolicyPath(requestedPath))
+    let requested: RuntimeFilesystemAccessDecision
+    try {
+      requested = decide(requestedPath)
+    } catch {
+      // Unrepresentable lexical paths (escapes, absolutes) stay the Workspace
+      // adapter's rejection to raise; the canonical decision still applies.
+      return canonical
+    }
+    return intersectRuntimeFilesystemAccessDecisions(canonical, requested)
+  }
   const requireCapability = async (path: string, capability: RuntimeFilesystemCapability): Promise<void> => {
     if (!(await resolveAccess(path)).capabilities[capability]) {
       throw new ReadonlyFilesystemMutationError(USER_FILESYSTEM_ID, capability)

@@ -79,6 +79,8 @@ export interface RuntimeBundle {
   bash?: RuntimeBashStrategy
   filesystem?: RuntimeFilesystemStrategy
   filesystemBindings?: RuntimeFilesystemBinding[]
+  /** Workspace-relative prefixes the host protects from mutation, including by spawned shells. */
+  readonlyWorkspacePaths?: readonly string[]
 }
 
 export function getRuntimeBundleStorageRoot(bundle: RuntimeBundle): string {

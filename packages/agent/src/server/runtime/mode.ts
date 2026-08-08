@@ -124,6 +124,12 @@ export interface RuntimeBundle {
   filesystem?: RuntimeFilesystemStrategy
   /** Optional filesystem bindings prepared for this runtime/session. */
   filesystemBindings?: RuntimeFilesystemBinding[]
+  /**
+   * Workspace-relative prefixes the host protects from mutation. Carried on the
+   * bundle so shell/provisioning enforcement uses the same policy as the
+   * Operations bindings instead of re-deriving it.
+   */
+  readonlyWorkspacePaths?: readonly string[]
   /** Provisioning operations derived from this bundle's acquired Workspace + Sandbox pair. */
   provisioningAdapter?: WorkspaceProvisioningAdapter
   /** Idempotently releases the acquired Workspace + Sandbox pair. */
