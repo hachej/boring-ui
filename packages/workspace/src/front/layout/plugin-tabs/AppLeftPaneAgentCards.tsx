@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronDown, ChevronRight, Columns2, ListFilter, Plus, Settings, Zap } from "lucide-react"
+import { ChevronRight, Columns2, ListFilter, MoreHorizontal, Plus, Settings, Zap } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -103,7 +103,7 @@ export function AppLeftPaneAgentCard({
             aria-hidden="true"
           />
         ) : null}
-        <span className={cn("min-w-0 truncate text-[13px] font-semibold leading-4", expandable && expanded ? "text-foreground" : "text-foreground/85")}>
+        <span className={cn("min-w-0 truncate text-[13px] leading-4", expandable && expanded ? "font-semibold text-foreground" : "font-medium text-foreground/80")}>
           {short}
         </span>
         <span
@@ -184,7 +184,7 @@ export function AppLeftPaneAgentCard({
                 title="More ways to start a chat"
                 className={cardActionClassName}
               >
-                <ChevronDown className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                <MoreHorizontal className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-44">

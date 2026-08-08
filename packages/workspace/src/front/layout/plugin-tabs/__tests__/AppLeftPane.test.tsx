@@ -226,6 +226,9 @@ describe("AppLeftPane", () => {
     // The working (pulsing) dot appears on the pinned row and its nested twin.
     await waitFor(() => expect(screen.getAllByTitle("Working")).toHaveLength(2))
 
+    // The filter hides behind its icon until asked for.
+    expect(screen.queryByRole("searchbox", { name: "Filter Agents" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Filter Agents" }))
     await user.type(screen.getByRole("searchbox", { name: "Filter Agents" }), "beta")
     expect(screen.queryByRole("button", { name: /Boring Alpha;/ })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Boring Beta;/ })).toBeInTheDocument()

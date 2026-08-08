@@ -79,7 +79,9 @@ export function AppSessionRow({
   const splitAvailable = state === "normal" && actionsAvailable && canSplit && Boolean(onOpenAsPane)
   const pinAvailable = canPin && Boolean(onTogglePinned)
   const showMenu = splitAvailable || pinAvailable || canCopy || renameAvailable || Boolean(onDelete)
-  const detachAvailable = actionsAvailable && Boolean(onOpenDetached)
+  // A chat already on stage has nothing to gain from the quick overlay —
+  // placement shortcuts only apply to chats that are not open yet.
+  const detachAvailable = state === "normal" && actionsAvailable && Boolean(onOpenDetached)
   // Placement shortcuts surface directly on hover (owner spec); the menu keeps
   // the rest. Width reserves one 28px slot per visible action.
   const hoverActionCount = (showMenu ? 1 : 0) + (splitAvailable ? 1 : 0) + (detachAvailable ? 1 : 0)

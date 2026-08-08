@@ -245,6 +245,10 @@ export function AppLeftPane({
   // mode; multi-project keeps chats inside the project tree instead.
   const nestedAgentChats = agentTreeEnabled && layoutMode !== "multi-project"
   const [agentFilter, setAgentFilter] = useState("")
+  // The filter input hides behind its icon until asked for (owner spec); it
+  // stays open while it holds a query so active filtering is never invisible.
+  const [agentFilterOpen, setAgentFilterOpen] = useState(false)
+  const agentFilterInputRef = useRef<HTMLInputElement | null>(null)
   const filteredAgents = useMemo(() => {
     const query = agentFilter.trim().toLocaleLowerCase()
     return query ? agents.filter((agent) => agent.label.toLocaleLowerCase().includes(query)) : agents
@@ -524,7 +528,7 @@ export function AppLeftPane({
           aria-expanded={agentsSectionOpen}
           aria-controls="boring-app-left-agents-panel"
           onClick={() => setAgentsSectionOpen((open) => !open)}
-          className="group/agents flex h-11 min-w-0 shrink-0 items-center sm:h-6 gap-1 rounded-md pl-0.5 pr-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75 transition-colors motion-reduce:transition-none hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          className="group/agents flex h-11 min-w-0 shrink-0 items-center sm:h-6 gap-1 rounded-md pl-0.5 pr-1 text-[11px] font-bold uppercase tracking-[0.14em] text-foreground/90 transition-colors motion-reduce:transition-none hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         >
           <ChevronRight
             className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none", agentsSectionOpen && "rotate-90")}
@@ -534,22 +538,45 @@ export function AppLeftPane({
           <span>Agents</span>
           <span className="ml-0.5 shrink-0 text-[10px] font-normal tabular-nums tracking-normal text-muted-foreground/75">{agents.length}</span>
         </button>
-        {agentsSectionOpen ? (
+        {agentsSectionOpen && (agentFilterOpen || agentFilter.trim() !== "") ? (
           <label className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-1.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/65" strokeWidth={1.75} aria-hidden="true" />
             <input
+              ref={agentFilterInputRef}
               type="search"
               value={agentFilter}
               onChange={(event) => setAgentFilter(event.target.value)}
+              onBlur={() => { if (agentFilter.trim() === "") setAgentFilterOpen(false) }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setAgentFilter("")
+                  setAgentFilterOpen(false)
+                }
+              }}
               aria-label="Filter Agents"
               placeholder="Filter Agents"
               className="h-11 w-full rounded-md border sm:h-6 border-border/60 bg-transparent pl-6 pr-2 text-[11px] font-normal tracking-normal text-foreground outline-none placeholder:text-muted-foreground/55 focus:border-ring/60 focus:ring-1 focus:ring-ring/25"
             />
           </label>
+        ) : agentsSectionOpen ? (
+          <span className="flex min-w-0 flex-1 justify-end">
+            <button
+              type="button"
+              aria-label="Filter Agents"
+              title="Filter Agents"
+              onClick={() => {
+                setAgentFilterOpen(true)
+                requestAnimationFrame(() => agentFilterInputRef.current?.focus())
+              }}
+              className="grid size-11 shrink-0 place-items-center sm:size-6 rounded-md text-muted-foreground/70 transition-colors motion-reduce:transition-none hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <Search className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          </span>
         ) : null}
       </div>
       {agentsSectionOpen ? (
-        <div id="boring-app-left-agents-panel" className="space-y-1 px-0.5">
+        <div id="boring-app-left-agents-panel" className="space-y-0.5 px-0.5">
           {filteredAgents.length > 0
             ? renderAgentCards()
             : <div className="px-2 py-2 text-[11px] text-muted-foreground">No matching Agents.</div>}
