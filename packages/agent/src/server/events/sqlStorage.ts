@@ -5,6 +5,11 @@ import type { DatabaseSync } from 'node:sqlite'
 
 const require = createRequire(import.meta.url)
 
+// DatabaseSync cannot yield while SQLite's busy handler waits. Keep each
+// synchronous lock wait short; write callers retry asynchronously so the
+// event loop can serve reads and unrelated work between attempts.
+export const SQLITE_BUSY_TIMEOUT_MS = 25
+
 export interface SqlResult {
   toArray(): Array<Record<string, unknown>>
 }
@@ -81,19 +86,12 @@ export function openDatabase(path: string): OpenDatabaseResult {
   const { DatabaseSync: SqliteDatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
   const db = new SqliteDatabaseSync(path)
   if (path !== ':memory:') {
-    // Matches SqliteAgentRequestLedger's pragmas (the sibling durable sqlite
-    // store): WAL lets readers and the writer proceed concurrently, and
-    // busy_timeout makes a writer wait out another connection's write lock
-    // instead of throwing SQLITE_BUSY immediately. This matters here because
-    // multiple runtime bindings for the SAME workspace scope (different
-    // agentTypeId/identity/fingerprint keys — see createAgentHost.ts's
-    // composition cache) can concurrently open the same on-disk event-stream
-    // file; each is a distinct DatabaseSync connection but they are all
-    // single in-process writers serialized by SQLite's file lock, not a
-    // multi-replica/multi-process writer setup. busy_timeout absorbs that
-    // in-process lock contention window instead of poisoning a live channel
-    // on a transient SQLITE_BUSY.
-    db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;')
+    // WAL lets readers and the writer proceed concurrently. Keep the native
+    // busy handler short because DatabaseSync occupies the event loop while
+    // waiting; EventStreamStore retries transient writer contention
+    // asynchronously instead of allowing one call to block for seconds.
+    // Set the timeout before journal_mode so initialization is bounded too.
+    db.exec(`PRAGMA busy_timeout=${SQLITE_BUSY_TIMEOUT_MS}; PRAGMA journal_mode=WAL;`)
   }
 
   return {
