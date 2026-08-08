@@ -37,7 +37,6 @@ function respond(payloads: {
   models?: unknown
   filesystems?: unknown
   rootTree?: unknown
-  personasTree?: unknown
 }) {
   mocks.getJson!.mockImplementation(async (path: string) => {
     const table: Array<[boolean, unknown, unknown]> = [
@@ -46,8 +45,7 @@ function respond(payloads: {
       [path.endsWith("/tools"), payloads.tools, { tools: [] }],
       [path.endsWith("/models"), payloads.models, { models: [] }],
       [path.startsWith("/api/v1/filesystems"), payloads.filesystems, { filesystems: [] }],
-      [path.startsWith("/api/v1/tree") && path.includes("path=.&"), payloads.rootTree, { entries: [] }],
-      [path.startsWith("/api/v1/tree"), payloads.personasTree, { entries: [] }],
+      [path.startsWith("/api/v1/tree"), payloads.rootTree, { entries: [] }],
     ]
     for (const [match, value, fallback] of table) {
       if (!match) continue
@@ -62,8 +60,6 @@ function renderOverlay() {
   return render(
     <AgentDetailsOverlay
       agent={agent}
-      sessionCount={3}
-      onCreateSession={vi.fn()}
       onClose={vi.fn()}
     />,
   )
@@ -178,8 +174,6 @@ describe("AgentDetailsOverlay", () => {
     render(
       <AgentDetailsOverlay
         agent={{ agentTypeId: "empty", label: "Empty" }}
-        sessionCount={0}
-        onCreateSession={vi.fn()}
         onClose={vi.fn()}
       />,
     )
@@ -210,13 +204,18 @@ describe("AgentDetailsOverlay", () => {
 
   it("lists persona instructions, workspace instructions, and knowledge sources as openable rows", async () => {
     respond({
+      // The seat directory ("desk-7") is deliberately NOT derivable from the
+      // agent id ("concierge"): the overlay must render what /describe reports
+      // instead of inverting a mapping only the Host owns.
+      describe: {
+        systemPrompt: null,
+        plugins: [],
+        mcpServers: [],
+        instructionFiles: [{ path: ".agents/personas/desk-7/instructions.md", name: "Persona instructions" }],
+      },
       rootTree: { entries: [
         { name: "AGENTS.md", kind: "file", path: "AGENTS.md" },
         { name: ".agents", kind: "dir", path: ".agents" },
-      ] },
-      personasTree: { entries: [
-        { name: "personas", kind: "dir", path: ".agents/personas" },
-        { name: "concierge", kind: "dir", path: ".agents/personas/concierge" },
       ] },
       filesystems: { filesystems: [
         { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
@@ -228,7 +227,7 @@ describe("AgentDetailsOverlay", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Open Persona instructions" }))
     expect(mocks.postUiCommand).toHaveBeenCalledWith({
       kind: "openFile",
-      params: { filesystem: "user", path: ".agents/personas/concierge/instructions.md", mode: "view" },
+      params: { filesystem: "user", path: ".agents/personas/desk-7/instructions.md", mode: "view" },
     })
     fireEvent.click(screen.getByRole("button", { name: "Open AGENTS.md" }))
     expect(mocks.postUiCommand).toHaveBeenCalledWith({
@@ -265,6 +264,104 @@ describe("AgentDetailsOverlay", () => {
       kind: "openFile",
       params: { filesystem: "user", path: ".boring/agent-prompts/concierge.md", mode: "view" },
     }))
+  })
+
+  it("creates the parent directory through the files route, never a separate mkdir", async () => {
+    respond({ describe: { systemPrompt: "Prompt body.", plugins: [], mcpServers: [] } })
+    mocks.postJson.mockResolvedValue({})
+    renderOverlay()
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open in workbench" }))
+    await waitFor(() => expect(mocks.postJson).toHaveBeenCalledWith("/api/v1/files", expect.objectContaining({
+      createDirs: true,
+    })))
+    // A fresh workspace without `.boring/` used to depend on a swallowed
+    // /api/v1/dirs call; that route is no longer touched at all.
+    expect(mocks.postJson.mock.calls.map((call) => call[0])).toEqual(["/api/v1/files"])
+  })
+
+  it("keeps the cached prompt when the live re-read fails, without a false error toast", async () => {
+    const prompt = "Cached prompt body."
+    let describeCalls = 0
+    mocks.getJson.mockImplementation(async (path: string) => {
+      if (path.endsWith("/describe")) {
+        describeCalls += 1
+        // First call (panel load) succeeds; the re-read on open fails.
+        if (describeCalls > 1) throw new Error("describe unavailable")
+        return { systemPrompt: prompt, plugins: [], mcpServers: [] }
+      }
+      if (path.endsWith("/skills")) return { skills: [] }
+      if (path.endsWith("/tools")) return { tools: [] }
+      if (path.endsWith("/models")) return { models: [] }
+      if (path.startsWith("/api/v1/filesystems")) return { filesystems: [] }
+      return { entries: [] }
+    })
+    mocks.postJson.mockResolvedValue({})
+    renderOverlay()
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open in workbench" }))
+    await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
+      kind: "openFile",
+      params: { filesystem: "user", path: ".boring/agent-prompts/concierge.md", mode: "view" },
+    }))
+    expect(mocks.postJson).toHaveBeenCalledWith("/api/v1/files", expect.objectContaining({
+      content: expect.stringContaining("Cached prompt body."),
+    }))
+    expect(mocks.postUiCommand).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "showNotification" }))
+  })
+
+  it("reports a real failure when the write itself fails", async () => {
+    respond({ describe: { systemPrompt: "Prompt body.", plugins: [], mcpServers: [] } })
+    mocks.postJson.mockRejectedValue(new Error("disk full"))
+    renderOverlay()
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open in workbench" }))
+    await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
+      kind: "showNotification",
+      params: { msg: "Couldn't open the composed prompt.", level: "error" },
+    }))
+  })
+
+  it("fences an attached skill body that itself contains a longer fence", async () => {
+    const skillBody = "# Triage\n\n`````text\nnested fence\n`````"
+    const prompt = `Prompt body.\n\n<!-- boring-skill:start name=triage digest=sha256:abc -->\n${skillBody}\n<!-- boring-skill:end name=triage -->`
+    respond({ describe: { systemPrompt: prompt, plugins: [], mcpServers: [] } })
+    mocks.postJson.mockResolvedValue({})
+    renderOverlay()
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open in workbench" }))
+    await waitFor(() => expect(mocks.postJson).toHaveBeenCalled())
+    const written = mocks.postJson.mock.calls.find((call) => call[0] === "/api/v1/files")?.[1] as { content: string }
+    // A fixed ``` (or ````) fence would be closed early by the nested one.
+    expect(written.content).toContain("``````text")
+    expect(written.content).toContain("nested fence")
+  })
+
+  it("does not let a slow response for the previous agent land on the current one", async () => {
+    const pending = new Map<string, (value: unknown) => void>()
+    mocks.getJson.mockImplementation((path: string) => {
+      if (path.includes("/agents/slow/")) {
+        return new Promise((resolve) => pending.set(path, resolve))
+      }
+      if (path.endsWith("/describe")) return Promise.resolve({ systemPrompt: null, plugins: [], mcpServers: [] })
+      if (path.endsWith("/skills")) return Promise.resolve({ skills: [{ name: "fast-skill" }] })
+      if (path.endsWith("/tools")) return Promise.resolve({ tools: [] })
+      if (path.endsWith("/models")) return Promise.resolve({ models: [] })
+      if (path.startsWith("/api/v1/filesystems")) return Promise.resolve({ filesystems: [] })
+      return Promise.resolve({ entries: [] })
+    })
+    const { rerender } = render(
+      <AgentDetailsOverlay agent={{ agentTypeId: "slow", label: "Slow" }} onClose={vi.fn()} />,
+    )
+    rerender(<AgentDetailsOverlay agent={{ agentTypeId: "fast", label: "Fast" }} onClose={vi.fn()} />)
+    expect(await screen.findByText("/fast-skill")).toBeInTheDocument()
+
+    // The stale agent finally answers with a completely different skill set.
+    for (const [path, resolve] of pending) {
+      resolve(path.endsWith("/skills") ? { skills: [{ name: "stale-skill" }] } : {})
+    }
+    await waitFor(() => expect(screen.getByText("/fast-skill")).toBeInTheDocument())
+    expect(screen.queryByText("/stale-skill")).not.toBeInTheDocument()
   })
 
   it("maps internal skill source labels to user words and hides unknown ones", async () => {

@@ -9,7 +9,7 @@ import { ManagementOverlaySurface } from "../management/ManagementOverlaySurface
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
 import type { PaneProps } from "../../registry/types"
 import { uiFileResourceKey, type UiFileResource } from "../../../shared/types/filesystem"
-import { isSafePluginRelativePath } from "../../../shared/plugins/manifest"
+import { openableSkillResource } from "../../../shared/skills/openableSkillResource"
 
 interface SkillSummary {
   name: string
@@ -29,24 +29,6 @@ type LoadState =
   | { status: "loading"; skills: SkillSummary[]; error?: undefined }
   | { status: "ready"; skills: SkillSummary[]; error?: undefined }
   | { status: "error"; skills: SkillSummary[]; error: string }
-
-function isSafeRelativeSkillPath(value: unknown): value is string {
-  return typeof value === "string"
-    && isSafePluginRelativePath(value)
-    && !/%(?:2e|2f|5c)/i.test(value)
-    && !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)
-    && !value.split("/").some((segment) => segment === "" || segment === ".")
-}
-
-function openableResource(skill: SkillSummary): UiFileResource | undefined {
-  const resource = skill.resource
-  return resource
-    && typeof resource.filesystem === "string"
-    && resource.filesystem.length > 0
-    && isSafeRelativeSkillPath(resource.path)
-    ? resource
-    : undefined
-}
 
 function compareSkills(left: SkillSummary, right: SkillSummary): number {
   return left.name.localeCompare(right.name)
@@ -186,7 +168,7 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
         ) : (
           <ul role="list" className="grid gap-2">
             {sortedSkills.map((skill, index) => {
-              const resource = openableResource(skill)
+              const resource = openableSkillResource(skill)
               const managementOnly = skill.invocable === false
               const body = (
                 <div className="flex min-h-11 w-full items-start justify-between gap-3 px-3 py-2.5">
