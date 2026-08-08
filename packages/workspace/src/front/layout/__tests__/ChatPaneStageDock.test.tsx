@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { act, fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { useEffect, type ComponentType } from "react"
 
 // Capture the props handed to DockviewReact so we can assert the rendering
@@ -103,8 +103,9 @@ describe("ChatPaneStageDock", () => {
     expect(dockviewProps.mock.calls[0][0]).toMatchObject({ defaultRenderer: "onlyWhenVisible" })
   })
 
-  it("remounts Dockview when the only pane switches sessions", () => {
+  it("shows a loading surface while remounting a switched single pane", async () => {
     dockviewMounts.mockClear()
+    dockviewProps.mockClear()
     const { rerender } = render(
       <ChatPaneStageDock
         panes={[{ id: "a", title: "A" }]}
@@ -112,6 +113,11 @@ describe("ChatPaneStageDock", () => {
         renderPane={(pane) => <div>{pane.id}</div>}
       />,
     )
+    expect(screen.getByRole("status", { name: "Loading chat" })).toBeInTheDocument()
+    const firstApi = mockDockApi([])
+    act(() => (dockviewProps.mock.calls.at(-1)?.[0].onReady as (event: { api: typeof firstApi }) => void)({ api: firstApi }))
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Loading chat" })).not.toBeInTheDocument())
+
     rerender(
       <ChatPaneStageDock
         panes={[{ id: "b", title: "B" }]}
@@ -119,7 +125,11 @@ describe("ChatPaneStageDock", () => {
         renderPane={(pane) => <div>{pane.id}</div>}
       />,
     )
+    expect(screen.getByRole("status", { name: "Loading chat" })).toBeInTheDocument()
+    const secondApi = mockDockApi([])
+    act(() => (dockviewProps.mock.calls.at(-1)?.[0].onReady as (event: { api: typeof secondApi }) => void)({ api: secondApi }))
 
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Loading chat" })).not.toBeInTheDocument())
     expect(dockviewMounts).toHaveBeenCalledTimes(2)
   })
 
