@@ -24,6 +24,10 @@ import type {
 } from './types'
 import type { EnvironmentProvisioningSnapshot } from './environmentLease'
 import { sessionNamespaceForAgent } from './sessionInventory'
+import type {
+  WorkspaceCredentialRuntimeViewV1,
+  WorkspaceCredentialVaultCompositionV1,
+} from '../credentials/startupComposition'
 
 /**
  * Flag-gated durable event streaming. When set (`1`/`true`), production
@@ -102,6 +106,14 @@ export interface BuildAgentCompositionInput {
     CreateAgentHostOptions,
     'runtimeModeAdapter' | 'runtimeHost' | 'sessionRoot' | 'telemetry' | 'metering' | 'harnessFactory'
   >
+  /**
+   * [1082 slice B] Host-scope credential-vault composition, resolved ONCE at
+   * host startup (`createAgentHost`) and shared by every runtime binding so
+   * all bindings see the same vault. This function never resolves env or
+   * constructs vault state itself; it only attaches the narrowed per-binding
+   * view. Env misconfiguration therefore throws at host startup, not here.
+   */
+  readonly credentialComposition?: WorkspaceCredentialVaultCompositionV1
   readonly observeSessionEvent?: (sessionId: string, event: import('../../shared/chat').PiChatEvent) => void
 }
 
@@ -113,6 +125,14 @@ export interface BuiltAgentComposition {
   readonly runtimeBundle: RuntimeBundle
   readonly readyTracker: ReadyStatusTracker
   readonly runtimeScopeIdentity: string
+  /**
+   * [1082 slice B] Narrowed per-binding credential view (registries + the
+   * pre-bound resolver). Present only when `BORING_CREDENTIAL_KMS_BACKEND`
+   * selected a backend at host startup. The raw vault backend and resolver
+   * minting stay on the host-scope composition and are deliberately not
+   * exposed here.
+   */
+  readonly credentials?: WorkspaceCredentialRuntimeViewV1
   dispose(): Promise<void>
 }
 
@@ -239,6 +259,7 @@ export async function buildAgentComposition(
     runtimeBundle,
     readyTracker,
     runtimeScopeIdentity: runtimeScope.identity,
+    credentials: input.credentialComposition?.runtimeView,
     dispose() {
       disposed ??= service.dispose().finally(() => durableEventStore?.close())
       return disposed
