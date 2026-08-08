@@ -4,21 +4,21 @@ import type { WorkspaceStore } from '../app/types.js'
 import { createPostSignupHook, type PostSignupContext } from '../auth/postSignupHook.js'
 import {
   SignupAgentDefaultsConfigError,
+  TRUSTED_SIGNUP_HOSTNAME_HEADER,
   assertSignupAgentDefaultsInFleet,
+  assertSignupAgentDefaultsUseBoundedProxy,
+  compileSignupAgentDefaults,
   normalizeSignupHostname,
   parseSignupAgentDefaults,
   resolveSignupDefaultAgentTypeId,
 } from '../signupAgentDefaults.js'
+import { ERROR_CODES } from '../../shared/errors.js'
 
 describe('normalizeSignupHostname', () => {
   it('normalizes case, port, and trailing dot to an exact hostname', () => {
     expect(normalizeSignupHostname('App.Seneca.EXAMPLE:443')).toBe('app.seneca.example')
     expect(normalizeSignupHostname('app.example.')).toBe('app.example')
     expect(normalizeSignupHostname('  app.example  ')).toBe('app.example')
-  })
-
-  it('uses only the first entry of a comma-joined forwarded host', () => {
-    expect(normalizeSignupHostname('app.example, evil.example')).toBe('app.example')
   })
 
   it('returns null for absent or malformed hosts instead of guessing', () => {
@@ -28,6 +28,9 @@ describe('normalizeSignupHostname', () => {
     expect(normalizeSignupHostname('[::1]:3000')).toBeNull()
     expect(normalizeSignupHostname('exa mple.com')).toBeNull()
     expect(normalizeSignupHostname('http://app.example')).toBeNull()
+    expect(normalizeSignupHostname('app.example,evil.example')).toBeNull()
+    expect(normalizeSignupHostname('app.example:not-a-port')).toBeNull()
+    expect(normalizeSignupHostname('app.example:65536')).toBeNull()
     expect(normalizeSignupHostname('app_example.com')).toBeNull()
     expect(normalizeSignupHostname(`${'a'.repeat(260)}.example`)).toBeNull()
   })
@@ -56,6 +59,39 @@ describe('parseSignupAgentDefaults', () => {
     expect(() => parseSignupAgentDefaults({ 'legal.example': 7 })).toThrow(SignupAgentDefaultsConfigError)
     expect(() => parseSignupAgentDefaults(['legal.example'])).toThrow(SignupAgentDefaultsConfigError)
     expect(() => parseSignupAgentDefaults('legal.example=legal')).toThrow(SignupAgentDefaultsConfigError)
+    expect(() => parseSignupAgentDefaults(new Map())).toThrow(SignupAgentDefaultsConfigError)
+    expect(() => parseSignupAgentDefaults(new Date())).toThrow(SignupAgentDefaultsConfigError)
+  })
+
+  it('accepts exact hostname keys that shadow Object prototype properties', () => {
+    expect(parseSignupAgentDefaults({ constructor: 'legal' })).toEqual({ constructor: 'legal' })
+  })
+
+  it('uses the canonical stable error code', () => {
+    try {
+      parseSignupAgentDefaults({ '*.example': 'legal' })
+      expect.unreachable('invalid signup mapping should throw')
+    } catch (error) {
+      expect(error).toMatchObject({ code: ERROR_CODES.INVALID_SIGNUP_AGENT_DEFAULTS })
+    }
+  })
+})
+
+describe('assertSignupAgentDefaultsUseBoundedProxy', () => {
+  it('rejects legacy unbounded forwarded-host trust for a non-empty mapping', () => {
+    expect(() => assertSignupAgentDefaultsUseBoundedProxy(
+      { 'legal.example': 'legal' },
+      'legacy-unsafe',
+    )).toThrow(SignupAgentDefaultsConfigError)
+  })
+
+  it('allows direct Host resolution, bounded proxy trust, and an empty mapping', () => {
+    expect(() => assertSignupAgentDefaultsUseBoundedProxy({ 'legal.example': 'legal' }, undefined)).not.toThrow()
+    expect(() => assertSignupAgentDefaultsUseBoundedProxy(
+      { 'legal.example': 'legal' },
+      { cidrs: ['10.0.0.0/8'], hops: 1 },
+    )).not.toThrow()
+    expect(() => assertSignupAgentDefaultsUseBoundedProxy({}, 'legacy-unsafe')).not.toThrow()
   })
 })
 
@@ -156,17 +192,40 @@ async function runSignup(opts: {
   config?: CoreConfig
   headers?: Record<string, string>
   state?: FakeStoreState
+  rawContext?: unknown
 }) {
   const config = opts.config ?? makeConfig()
   const { store, create, acceptInvite } = makeFakeStore(opts.state)
-  const hook = createPostSignupHook({ config, workspaceStore: store, transport: null })
-  await hook({ ...user }, ctxWithHeaders(opts.headers ?? {}))
+  const hook = createPostSignupHook({
+    config,
+    signupAgentDefaults: compileSignupAgentDefaults(
+      config.signupAgentDefaults,
+      ['boring-v2', 'legal'],
+      config.security?.trustedProxy,
+    ),
+    workspaceStore: store,
+    transport: null,
+  })
+  await hook({ ...user }, opts.rawContext ?? ctxWithHeaders(opts.headers ?? {}))
   return { create, acceptInvite }
 }
 
 describe('signup-domain default-agent initialization (Decision 28 hook)', () => {
+  it('does not consume an uncompiled mapping directly from CoreConfig', async () => {
+    const config = makeConfig()
+    const { store, create } = makeFakeStore()
+    const hook = createPostSignupHook({ config, workspaceStore: store, transport: null })
+
+    await hook(user, ctxWithHeaders({ [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'legal.example' }))
+
+    expect(create.mock.calls[0]![3]).toEqual({
+      isDefault: true,
+      defaultAgentTypeId: 'boring-v2',
+    })
+  })
+
   it('initializes the new default workspace from the exact trusted host mapping', async () => {
-    const { create } = await runSignup({ headers: { host: 'legal.example' } })
+    const { create } = await runSignup({ headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'legal.example' } })
     expect(create).toHaveBeenCalledTimes(1)
     expect(create).toHaveBeenCalledWith(user.id, 'Default workspace', 'test-app', {
       isDefault: true,
@@ -175,53 +234,43 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
   })
 
   it('normalizes the host (case/port) before the exact lookup', async () => {
-    const { create } = await runSignup({ headers: { host: 'Legal.Example:443' } })
+    const { create } = await runSignup({ headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'Legal.Example:443' } })
     expect(create.mock.calls[0]![3]).toEqual({ isDefault: true, defaultAgentTypeId: 'legal' })
   })
 
   it('falls back to the boot default for unmapped hosts; email domain never selects', async () => {
     // User email is someone@legal.example, but the request host is unmapped:
     // the email domain must have no effect on seat selection.
-    const { create } = await runSignup({ headers: { host: 'unmapped.example' } })
+    const { create } = await runSignup({ headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'unmapped.example' } })
     expect(create.mock.calls[0]![3]).toEqual({ isDefault: true, defaultAgentTypeId: 'boring-v2' })
   })
 
   it('persists no default when neither mapping nor boot default apply', async () => {
     const { create } = await runSignup({
       config: makeConfig({ defaultAgentTypeId: undefined, signupAgentDefaults: undefined }),
-      headers: { host: 'legal.example' },
+      headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'legal.example' },
     })
     expect(create.mock.calls[0]![3]).toEqual({ isDefault: true })
   })
 
-  it('never reads the agent id from bodies, queries, or arbitrary headers', async () => {
+  it('never reads the hostname or agent id from caller-controlled headers', async () => {
     const { create } = await runSignup({
-      headers: {
-        host: 'unmapped.example',
-        'x-agent-type-id': 'legal',
-        'x-default-agent': 'legal',
+      rawContext: {
+        ...ctxWithHeaders({
+          host: 'legal.example',
+          'x-forwarded-host': 'legal.example',
+          'x-agent-type-id': 'legal',
+          'x-default-agent': 'legal',
+        }),
+        body: { hostname: 'legal.example', agentTypeId: 'legal' },
+        query: { hostname: 'legal.example', agentTypeId: 'legal' },
       },
     })
     expect(create.mock.calls[0]![3]).toEqual({ isDefault: true, defaultAgentTypeId: 'boring-v2' })
   })
 
-  it('ignores x-forwarded-host unless a trusted proxy is configured', async () => {
-    const spoofed = await runSignup({
-      headers: { host: 'unmapped.example', 'x-forwarded-host': 'legal.example' },
-    })
-    expect(spoofed.create.mock.calls[0]![3]).toEqual({ isDefault: true, defaultAgentTypeId: 'boring-v2' })
-
-    const trusted = await runSignup({
-      config: makeConfig({
-        security: { csp: { enabled: false }, trustedProxy: { cidrs: ['10.0.0.0/8'], hops: 1 } },
-      }),
-      headers: { host: 'internal.lb', 'x-forwarded-host': 'legal.example' },
-    })
-    expect(trusted.create.mock.calls[0]![3]).toEqual({ isDefault: true, defaultAgentTypeId: 'legal' })
-  })
-
   it('does not persist the signup hostname as product identity', async () => {
-    const { create } = await runSignup({ headers: { host: 'legal.example' } })
+    const { create } = await runSignup({ headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'legal.example' } })
     const [, name, appId, options] = create.mock.calls[0]!
     expect(name).toBe('Default workspace')
     expect(appId).toBe('test-app')
@@ -231,7 +280,7 @@ describe('signup-domain default-agent initialization (Decision 28 hook)', () => 
 
   it('invite acceptance joins the invited workspace and never creates or rewrites a default', async () => {
     const { create, acceptInvite } = await runSignup({
-      headers: { host: 'legal.example', 'x-invite-token': 'tok' },
+      headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'legal.example', 'x-invite-token': 'tok' },
       state: {
         invite: {
           id: 'inv-1',

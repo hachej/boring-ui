@@ -7,6 +7,8 @@ import { REQUEST_SCOPE_WORKSPACE_HEADER } from './requestWorkspaceScope.js'
 import {
   normalizeSignupHostname,
   resolveSignupDefaultAgentTypeId,
+  TRUSTED_SIGNUP_HOSTNAME_HEADER,
+  type ValidatedSignupAgentDefaults,
 } from '../signupAgentDefaults.js'
 
 export interface PostSignupUser {
@@ -34,6 +36,8 @@ type InviteFailureCode =
 
 export interface PostSignupHookDeps {
   config: CoreConfig
+  /** Boot-compiled, fleet-validated map. Raw CoreConfig is never consumed. */
+  signupAgentDefaults?: ValidatedSignupAgentDefaults
   workspaceStore: WorkspaceStore
   transport: MailTransport | null
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
@@ -60,24 +64,15 @@ function readRequestWorkspaceId(ctx: PostSignupContext | null): string | null {
   }
 }
 
-/**
- * Reads the exact request hostname for the signup-domain mapping. The
- * `x-forwarded-host` value is honored only when the deployment declares a
- * trusted proxy; otherwise the direct `host` header is used. This is the sole
- * request-derived input to the mapping — agent ids never come from a body,
- * query, or arbitrary header.
- */
-function readSignupHost(ctx: PostSignupContext | null, config: CoreConfig): string | null {
-  const trustsProxy = Boolean(config.security?.trustedProxy)
-  if (trustsProxy) {
-    const forwarded = readHeader(ctx, 'x-forwarded-host')
-    if (forwarded) return forwarded
-  }
-  return readHeader(ctx, 'host')
-}
-
 export function createPostSignupHook(deps: PostSignupHookDeps) {
-  const { config, workspaceStore, transport, logger, disableDefaultWorkspaceCreation } = deps
+  const {
+    config,
+    signupAgentDefaults,
+    workspaceStore,
+    transport,
+    logger,
+    disableDefaultWorkspaceCreation,
+  } = deps
 
   return async function postSignupHook(
     user: PostSignupUser & Record<string, unknown>,
@@ -121,8 +116,10 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
       // The hostname is read once, matched exactly against boot-validated
       // trusted host configuration, then discarded — it is never persisted
       // and has no routing, membership, selection, or authorization effect.
-      const signupHostname = normalizeSignupHostname(readSignupHost(ctx, config))
-      const signupSeat = resolveSignupDefaultAgentTypeId(config.signupAgentDefaults, signupHostname)
+      const signupHostname = normalizeSignupHostname(
+        readHeader(ctx, TRUSTED_SIGNUP_HOSTNAME_HEADER),
+      )
+      const signupSeat = resolveSignupDefaultAgentTypeId(signupAgentDefaults, signupHostname)
       const initialSeat = signupSeat ?? config.defaultAgentTypeId
       await workspaceStore.create(user.id, 'Default workspace', config.appId, {
         isDefault: true,

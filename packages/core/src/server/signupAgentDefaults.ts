@@ -1,4 +1,5 @@
 import { AGENT_TYPE_ID_PATTERN } from './defaultAgentType.js'
+import { ERROR_CODES } from '../shared/errors.js'
 
 /**
  * Decision 28 hook: an exact trusted signup-domain mapping may initialize
@@ -13,17 +14,28 @@ import { AGENT_TYPE_ID_PATTERN } from './defaultAgentType.js'
  * never persisted as product identity.
  */
 export type SignupAgentDefaults = Readonly<Record<string, string>>
+declare const validatedSignupAgentDefaults: unique symbol
+export type ValidatedSignupAgentDefaults = SignupAgentDefaults & {
+  readonly [validatedSignupAgentDefaults]: true
+}
 
 /** Exact lowercase DNS hostname: labels of [a-z0-9-], no scheme/port/path. */
 const HOSTNAME_PATTERN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/
 
 export class SignupAgentDefaultsConfigError extends Error {
-  readonly code = 'invalid_signup_agent_defaults'
+  readonly code = ERROR_CODES.INVALID_SIGNUP_AGENT_DEFAULTS
   constructor(message: string) {
     super(message)
     this.name = 'SignupAgentDefaultsConfigError'
   }
 }
+
+/**
+ * Private handoff from Core's Fastify edge to Better Auth. The edge always
+ * overwrites any caller-supplied value with Fastify's trust-proxy-aware
+ * hostname before Better Auth can run the post-signup hook.
+ */
+export const TRUSTED_SIGNUP_HOSTNAME_HEADER = 'x-boring-internal-signup-hostname'
 
 /**
  * Normalizes a request hostname for exact-map lookup: lowercase, trailing dot
@@ -35,13 +47,16 @@ export function normalizeSignupHostname(raw: string | null | undefined): string 
   if (typeof raw !== 'string') return null
   let host = raw.trim().toLowerCase()
   if (!host) return null
-  // Multiple x-forwarded-host values: only the first (client-nearest trusted) entry.
-  const comma = host.indexOf(',')
-  if (comma !== -1) host = host.slice(0, comma).trim()
-  // IPv6 literals never participate in the exact-domain map.
-  if (host.startsWith('[')) return null
+  // Only a DNS authority with an optional numeric port is accepted. In
+  // particular, reject schemes, paths, IPv6 literals, and joined proxy values.
+  if (host.includes(',') || host.startsWith('[')) return null
   const colon = host.indexOf(':')
-  if (colon !== -1) host = host.slice(0, colon)
+  if (colon !== -1) {
+    if (colon !== host.lastIndexOf(':')) return null
+    const port = host.slice(colon + 1)
+    if (!/^\d{1,5}$/.test(port) || Number(port) > 65_535) return null
+    host = host.slice(0, colon)
+  }
   if (host.endsWith('.')) host = host.slice(0, -1)
   if (!host || host.length > 253) return null
   return HOSTNAME_PATTERN.test(host) ? host : null
@@ -54,7 +69,11 @@ export function normalizeSignupHostname(raw: string | null | undefined): string 
  */
 export function parseSignupAgentDefaults(value: unknown): SignupAgentDefaults {
   if (value === undefined || value === null) return Object.freeze({})
-  if (typeof value !== 'object' || Array.isArray(value)) {
+  if (
+    typeof value !== 'object'
+    || Array.isArray(value)
+    || ![Object.prototype, null].includes(Object.getPrototypeOf(value))
+  ) {
     throw new SignupAgentDefaultsConfigError(
       'signupAgentDefaults must be an object mapping exact hostname -> agentTypeId',
     )
@@ -72,14 +91,24 @@ export function parseSignupAgentDefaults(value: unknown): SignupAgentDefaults {
         `signupAgentDefaults[${JSON.stringify(host)}] must be an agent type id slug`,
       )
     }
-    if (host in out) {
-      throw new SignupAgentDefaultsConfigError(
-        `signupAgentDefaults has duplicate hostname ${JSON.stringify(host)} after normalization`,
-      )
-    }
     out[host] = agentTypeId
   }
   return Object.freeze(out)
+}
+
+/** A domain mapping cannot rely on the deliberately unbounded proxy mode. */
+export function assertSignupAgentDefaultsUseBoundedProxy(
+  signupAgentDefaults: SignupAgentDefaults,
+  trustedProxy: unknown,
+): void {
+  if (
+    Object.keys(signupAgentDefaults).length > 0
+    && trustedProxy === 'legacy-unsafe'
+  ) {
+    throw new SignupAgentDefaultsConfigError(
+      'signupAgentDefaults requires direct Host resolution or an exact bounded trusted proxy policy',
+    )
+  }
 }
 
 /**
@@ -99,6 +128,18 @@ export function assertSignupAgentDefaultsInFleet(
       )
     }
   }
+}
+
+/** Compile untrusted config input into the only mapping accepted by auth. */
+export function compileSignupAgentDefaults(
+  value: unknown,
+  availableAgentTypeIds: readonly string[],
+  trustedProxy: unknown,
+): ValidatedSignupAgentDefaults {
+  const signupAgentDefaults = parseSignupAgentDefaults(value)
+  assertSignupAgentDefaultsInFleet(signupAgentDefaults, availableAgentTypeIds)
+  assertSignupAgentDefaultsUseBoundedProxy(signupAgentDefaults, trustedProxy)
+  return signupAgentDefaults as ValidatedSignupAgentDefaults
 }
 
 /**

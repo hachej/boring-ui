@@ -22,12 +22,12 @@ export type { ResolveWorkspaceDefaultAgentTypeIdInput } from './defaultAgentType
 
 export {
   SignupAgentDefaultsConfigError,
-  assertSignupAgentDefaultsInFleet,
-  normalizeSignupHostname,
-  parseSignupAgentDefaults,
-  resolveSignupDefaultAgentTypeId,
+  compileSignupAgentDefaults,
 } from './signupAgentDefaults.js'
-export type { SignupAgentDefaults } from './signupAgentDefaults.js'
+export type {
+  SignupAgentDefaults,
+  ValidatedSignupAgentDefaults,
+} from './signupAgentDefaults.js'
 
 export { safeRedirect } from './security/index.js'
 

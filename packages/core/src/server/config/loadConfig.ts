@@ -104,7 +104,7 @@ function parseRateLimitOverrides(
   }
 }
 
-function parseSignupAgentDefaultsEnv(raw: string): Readonly<Record<string, string>> {
+function parseSignupAgentDefaultsEnv(raw: string): unknown {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
@@ -117,16 +117,7 @@ function parseSignupAgentDefaultsEnv(raw: string): Readonly<Record<string, strin
       },
     ])
   }
-  try {
-    return parseSignupAgentDefaults(parsed)
-  } catch (err) {
-    throw new ConfigValidationError([
-      {
-        message: err instanceof Error ? err.message : 'invalid signupAgentDefaults',
-        path: ['signupAgentDefaults'],
-      },
-    ])
-  }
+  return parsed
 }
 
 function parseTrustedProxyPolicy(
@@ -370,7 +361,21 @@ export function validateConfig(raw: unknown): CoreConfig {
       })),
     )
   }
-  return result.data as CoreConfig
+  const config = result.data as CoreConfig
+  if (config.signupAgentDefaults === undefined) return config
+  try {
+    return {
+      ...config,
+      signupAgentDefaults: parseSignupAgentDefaults(config.signupAgentDefaults),
+    }
+  } catch (error) {
+    throw new ConfigValidationError([
+      {
+        message: error instanceof Error ? error.message : 'invalid signupAgentDefaults',
+        path: ['signupAgentDefaults'],
+      },
+    ])
+  }
 }
 
 export function isGoogleOauthUsable(config: Pick<CoreConfig, 'features' | 'auth'>): boolean {
