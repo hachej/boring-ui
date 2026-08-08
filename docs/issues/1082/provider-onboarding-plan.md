@@ -3,7 +3,7 @@ github: https://github.com/hachej/boring-ui/issues/1082
 issue: 1082 (follow-on: pi provider onboarding)
 state: ready-for-human
 updated: 2026-08-08
-revision: r3
+revision: r3.1
 track: owner
 depends: PR #1132 (vault crypto, merged), PR #1145 (durable Postgres persistence, branch 196d22bd9 — not yet on main), [`plan.md`](plan.md) r3 (PR #1137)
 ---
@@ -196,6 +196,15 @@ Two surfaces, same components:
    **funding-provenance chip** for the current session (decision (d)). A
    hint on the panel says "new sessions use this credential" (no
    retroactive rebind of live sessions).
+
+   **Picker entry point (r3.1, owner-ratified):** the picker's
+   provenance-labeled provider rows end with an **"Add provider…"** action
+   that deep-links to the "My providers" settings surface, preserving
+   return context; connecting there runs the pi-native workflow (OAuth or
+   key + probe), and on success the user returns to their prior context
+   with the new provider row present and **selected as the funding
+   source**. Workspace owners see an equivalent **"Add workspace
+   provider"** entry in workspace settings only — not in the picker.
 6. **Manage** — per-provider actions: **Reconnect / Replace key** (rerun
    login or key form, mints new credentialVersion), **Re-test**, **Disable**
    (temporarily unusable, no fallback), **Revoke** (tombstone; suppresses
@@ -411,7 +420,10 @@ sizes shrink accordingly.
    connectable set (Anthropic, OpenAI, Google; rest listed as not yet
    available), pi login flow states (auth-url/device-code/code-paste),
    promote (API-key only), provenance-labeled picker rows + composer
-   funding chip. Tests: no credential value in any store/prop/response;
+   funding chip, and the picker's "Add provider…" deep link into "My
+   providers" with return-context restore + auto-select of the new
+   provider ("Add workspace provider" equivalent in workspace settings
+   only). Tests: no credential value in any store/prop/response;
    RBAC invisibility of the workspace panel; subscription rows show no
    promote affordance. *Expected size: medium — UI only, no new server
    concepts.*
