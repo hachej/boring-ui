@@ -11,6 +11,15 @@ export type {
   LoadConfigOptions,
 } from './config/index.js'
 
+export {
+  AGENT_TYPE_ID_PATTERN,
+  LEGACY_DEFAULT_AGENT_TYPE_ID,
+  isAgentTypeId,
+  parseTrustedDefaultAgentTypeId,
+  resolveWorkspaceDefaultAgentTypeId,
+} from './defaultAgentType.js'
+export type { ResolveWorkspaceDefaultAgentTypeIdInput } from './defaultAgentType.js'
+
 export { safeRedirect } from './security/index.js'
 
 export { createCoreApp, registerRoutes, withUserSettingsWriteLock } from './app/index.js'

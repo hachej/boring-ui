@@ -268,6 +268,10 @@ export async function loadConfig(
     databaseUrl,
     stores,
 
+    ...(env.BORING_DEFAULT_AGENT_TYPE_ID
+      ? { defaultAgentTypeId: env.BORING_DEFAULT_AGENT_TYPE_ID }
+      : {}),
+
     cors: {
       origins: securityConfig.corsOrigins,
       credentials: true as const,
