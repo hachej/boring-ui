@@ -11,7 +11,7 @@ import type { WorkspaceBridge, CommandResult, BridgeEventMap } from "../../bridg
 import type { WorkspaceState, PanelState } from "../../store/types"
 import { WorkbenchLeftPane } from "../workbench-left/WorkbenchLeftPane"
 import { useRegistry, useSurfaceResolverRegistry } from "../../registry"
-import { normalizeUiFilesystem, type FilesystemId, type UiFileResource } from "../../../shared/types/filesystem"
+import { normalizeUiFilesystem, parseFileOpenMode, type FilesystemId, type UiFileOpenMode, type UiFileResource } from "../../../shared/types/filesystem"
 import {
   closeWorkbenchPreview,
   isWorkbenchPreviewParams,
@@ -56,7 +56,7 @@ export interface OpenPanelConfig {
 
 export interface SurfaceShellOpenFileOptions {
   filesystem?: FilesystemId
-  mode?: "view" | "edit" | "diff"
+  mode?: UiFileOpenMode
 }
 
 /** Result of openFileCore — the shared resolve/activate logic behind openFile
@@ -460,7 +460,7 @@ export function SurfaceShell({
     const mode = panel?.params?.mode
     emitFileOpened(resource.path, {
       filesystem: resource.filesystem,
-      ...(mode === "view" || mode === "edit" || mode === "diff" ? { mode } : {}),
+      ...(parseFileOpenMode(mode) ? { mode: mode as UiFileOpenMode } : {}),
     })
   }, [emitFileOpened])
 
@@ -555,7 +555,7 @@ export function SurfaceShell({
       const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
       const result = openFileCore(api, normalizedRequest.target, {
         filesystem: normalizedRequest.filesystem,
-        ...(surfaceMode === "view" || surfaceMode === "edit" || surfaceMode === "diff" ? { mode: surfaceMode } : {}),
+        ...(parseFileOpenMode(surfaceMode) ? { mode: surfaceMode as UiFileOpenMode } : {}),
         ...(closeWorkbenchOnDone && onCloseRef.current
           ? { extraParams: { __closeWorkbenchOnDone: onCloseRef.current } }
           : {}),

@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { UI_FILE_OPEN_MODES } from "../../shared/types/filesystem"
 
 const PATH_MAX = 1024
 const MSG_MAX = 500
@@ -16,7 +17,7 @@ const safePath = z
 
 export const openFileSchema = z.object({
   path: safePath,
-  mode: z.enum(["view", "edit", "diff"]).optional(),
+  mode: z.enum(UI_FILE_OPEN_MODES).optional(),
   filesystem: z.string().min(1).optional(),
 })
 

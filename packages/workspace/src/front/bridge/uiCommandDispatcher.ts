@@ -7,7 +7,7 @@
  */
 import type { SurfaceShellApi, OpenPanelConfig } from "../chrome/artifact-surface/SurfaceShell"
 import type { UiCommand } from "./types"
-import { normalizeUiFilesystem } from "../../shared/types/filesystem"
+import { normalizeUiFilesystem, parseFileOpenMode } from "../../shared/types/filesystem"
 import type { SurfaceOpenRequest } from "../../shared/types/surface"
 
 /**
@@ -129,14 +129,14 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       if (!path) return
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
-      const mode = strParam(cmd.params, "mode")
+      const mode = parseFileOpenMode(strParam(cmd.params, "mode"))
       const run = (surface: SurfaceShellApi) => {
         try {
           surface.openFile(path, {
             filesystem: normalizeUiFilesystem(strParam(cmd.params, "filesystem")),
             // mode reaches the file panel params; "view" panels (markdown
             // etc.) render genuinely read-only.
-            ...(mode === "view" || mode === "edit" || mode === "diff" ? { mode } : {}),
+            ...(mode ? { mode } : {}),
           })
         } catch (err) {
           // eslint-disable-next-line no-console -- intentional dev signal
@@ -219,15 +219,18 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       // (e.g. Agent details Knowledge rows) carries only a filesystem id.
       // Requiring a non-empty path here used to drop those commands silently.
       const path = strParam(cmd.params, "path") ?? ""
-      const filesystem = strParam(cmd.params, "filesystem")
-      if (!path && !filesystem) return
+      const requestedFilesystem = strParam(cmd.params, "filesystem")
+      if (!path && !requestedFilesystem) return
+      // Same defaulting rule as openFile above: one function must not carry
+      // two. `requestedFilesystem` stays raw ONLY for the guard, which asks
+      // "did the caller name anything at all?".
+      const filesystem = normalizeUiFilesystem(requestedFilesystem)
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
       ctx.openWorkbenchSources?.()
       const run = (surface: SurfaceShellApi) => {
         try {
-          if (filesystem) surface.expandToFile(path, { filesystem })
-          else surface.expandToFile(path)
+          surface.expandToFile(path, { filesystem })
         } catch (err) {
           // eslint-disable-next-line no-console -- intentional dev signal
           console.warn(
