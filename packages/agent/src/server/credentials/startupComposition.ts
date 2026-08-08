@@ -48,7 +48,13 @@ import type { VaultCredentialStoreBackendV1 } from './vault'
  *   `CREDENTIAL_NOT_CONFIGURED` error at startup — a typo never silently
  *   disables the vault.
  * - KMS selected but persistence unavailable → `CREDENTIAL_NOT_CONFIGURED`;
- *   in-memory persistence requires an explicit `memory` opt-in (test/dev).
+ *   in-memory persistence requires an explicit `memory` opt-in (test/dev) and
+ *   is additionally refused under `NODE_ENV=production` without
+ *   `BORING_CREDENTIAL_ALLOW_MEMORY=1` — an in-memory vault dies with the
+ *   process and must never silently stand in for durable persistence.
+ * - The composition is resolved ONCE per host (`createAgentHost` startup) and
+ *   shared by all runtime bindings; bindings receive only the narrowed
+ *   `runtimeView` (registries + resolver), never the raw vault backend.
  * - Unreadable KEK / anchor at resolve time surfaces as the vault's own
  *   stable `CREDENTIAL_*` codes; nothing falls back to plaintext or env.
  * - No secret material is ever logged or echoed in errors (vault invariants
@@ -57,6 +63,14 @@ import type { VaultCredentialStoreBackendV1 } from './vault'
 
 export const CREDENTIAL_PERSISTENCE_ENV_KEY_V1 = 'BORING_CREDENTIAL_PERSISTENCE'
 export const CREDENTIAL_PERSISTENCE_MEMORY_OPT_IN_V1 = 'memory'
+/**
+ * Second gate for the in-memory persistence opt-in under
+ * `NODE_ENV=production`: without `BORING_CREDENTIAL_ALLOW_MEMORY=1` the
+ * `memory` selection is refused (`CREDENTIAL_NOT_CONFIGURED`). An in-memory
+ * vault evaporates with the process; production must inject durable
+ * persistence (#1145).
+ */
+export const CREDENTIAL_ALLOW_MEMORY_ENV_KEY_V1 = 'BORING_CREDENTIAL_ALLOW_MEMORY'
 
 /** Consumer-binding id family for pi LLM model calls (r3 S3 / plan r2 PR-B). */
 export const LLM_MODEL_CALL_BINDING_FAMILY_V1 = 'llm-model-call.v1'
@@ -247,14 +261,24 @@ export interface WorkspaceCredentialVaultCompositionOptionsV1 {
   readonly authorityVerifier?: WorkspaceCredentialAuthorityVerifierV1
 }
 
-export interface WorkspaceCredentialVaultCompositionV1 {
+/**
+ * Narrowed per-binding surface. Runtime bindings only ever see registries and
+ * the pre-bound resolver; the raw vault backend (plaintext write path) and
+ * resolver minting stay host-scope-only on the full composition.
+ */
+export interface WorkspaceCredentialRuntimeViewV1 {
   readonly providerRegistry: ProviderRegistryV1
   readonly bindingRegistry: CredentialConsumerBindingRegistryV1
   readonly catalog: readonly PiDerivedLlmProviderV1[]
   readonly skippedProviderIds: readonly string[]
-  readonly vaultBackend: VaultCredentialStoreBackendV1
   /** Present when an authority verifier was supplied at composition time. */
   readonly resolver?: WorkspaceCredentialResolverV1
+}
+
+export interface WorkspaceCredentialVaultCompositionV1 extends WorkspaceCredentialRuntimeViewV1 {
+  readonly vaultBackend: VaultCredentialStoreBackendV1
+  /** Host-scope narrowed view handed to each runtime binding. */
+  readonly runtimeView: WorkspaceCredentialRuntimeViewV1
   createResolver(
     authorityVerifier: WorkspaceCredentialAuthorityVerifierV1,
   ): WorkspaceCredentialResolverV1
@@ -294,6 +318,15 @@ export function resolveWorkspaceCredentialVaultCompositionFromEnvV1(
   if (!persistence) {
     const persistenceMode = options.env[CREDENTIAL_PERSISTENCE_ENV_KEY_V1]?.trim()
     if (persistenceMode === CREDENTIAL_PERSISTENCE_MEMORY_OPT_IN_V1) {
+      const isProduction = options.env.NODE_ENV?.trim() === 'production'
+      const memoryExplicitlyAllowed =
+        options.env[CREDENTIAL_ALLOW_MEMORY_ENV_KEY_V1]?.trim() === '1'
+      if (isProduction && !memoryExplicitlyAllowed) {
+        notConfigured(
+          'In-memory credential persistence is refused under NODE_ENV=production; '
+          + `inject durable persistence, or set ${CREDENTIAL_ALLOW_MEMORY_ENV_KEY_V1}=1 to override (dev only)`,
+        )
+      }
       persistence = createInMemoryCredentialVaultPersistenceV1()
     } else {
       notConfigured(
@@ -320,15 +353,25 @@ export function resolveWorkspaceCredentialVaultCompositionFromEnvV1(
     backend: vaultBackend,
   })
 
+  const resolver = options.authorityVerifier
+    ? createResolver(options.authorityVerifier)
+    : undefined
+  const runtimeView: WorkspaceCredentialRuntimeViewV1 = Object.freeze({
+    providerRegistry,
+    bindingRegistry,
+    catalog,
+    skippedProviderIds,
+    resolver,
+  })
+
   return Object.freeze({
     providerRegistry,
     bindingRegistry,
     catalog,
     skippedProviderIds,
     vaultBackend,
-    resolver: options.authorityVerifier
-      ? createResolver(options.authorityVerifier)
-      : undefined,
+    resolver,
+    runtimeView,
     createResolver,
   })
 }

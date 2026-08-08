@@ -341,6 +341,9 @@ export interface CreateAgentHostOptions {
    * [1082 slice B] BYOK credential-vault composition inputs. Enablement is
    * env-driven (`BORING_CREDENTIAL_KMS_BACKEND`); when enabled the host embeds
    * durable persistence (#1145) and the Core-owned authority verifier here.
+   * The composition is resolved exactly once, at `createAgentHost` startup:
+   * misconfigured env fails host creation with a stable `CREDENTIAL_*` error,
+   * and all runtime bindings share the single host-scope vault composition.
    * Absent env → composition absent, behavior identical to env-key-only auth.
    */
   readonly credentials?: AgentHostCredentialOptionsV1

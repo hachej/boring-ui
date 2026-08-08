@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
+import { createFakeAuthorityVerifierV1 } from '../testing'
 import {
-  createFakeAuthorityVerifierV1,
   createInMemoryCredentialVaultPersistenceV1,
   createPiDerivedLlmProviderRegistryV1,
   derivePiLlmProviderCatalogV1,
@@ -171,6 +171,87 @@ describe('startup vault composition (env selection)', () => {
     )
   })
 
+  test('memory opt-in is refused under NODE_ENV=production without the explicit dev flag', async () => {
+    const env = await localKekEnv()
+    env.NODE_ENV = 'production'
+    await expectCredentialError(
+      () => resolveWorkspaceCredentialVaultCompositionFromEnvV1({ env }),
+      CREDENTIAL_ERROR_CODES.NOT_CONFIGURED,
+    )
+    // Explicit override flag re-enables it (dev-like production sandboxes).
+    env.BORING_CREDENTIAL_ALLOW_MEMORY = '1'
+    expect(resolveWorkspaceCredentialVaultCompositionFromEnvV1({ env })).toBeDefined()
+    // Injected durable persistence is never blocked by NODE_ENV.
+    delete env.BORING_CREDENTIAL_ALLOW_MEMORY
+    delete env.BORING_CREDENTIAL_PERSISTENCE
+    expect(resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+      env,
+      persistence: createInMemoryCredentialVaultPersistenceV1(),
+    })).toBeDefined()
+  })
+
+  test('memory opt-in stays available outside production', async () => {
+    const env = await localKekEnv()
+    env.NODE_ENV = 'test'
+    expect(resolveWorkspaceCredentialVaultCompositionFromEnvV1({ env })).toBeDefined()
+  })
+
+  test('runtimeView narrows the per-binding surface: no vault backend, no resolver minting', async () => {
+    const env = await localKekEnv()
+    const scope = opaqueScope()
+    const composition = resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+      env,
+      authorityVerifier: createFakeAuthorityVerifierV1([
+        { scope, authority: authority('ws-a') },
+      ]),
+    })!
+    const view = composition.runtimeView
+    expect(view.providerRegistry).toBe(composition.providerRegistry)
+    expect(view.bindingRegistry).toBe(composition.bindingRegistry)
+    expect(view.resolver).toBe(composition.resolver)
+    expect('vaultBackend' in view).toBe(false)
+    expect('createResolver' in view).toBe(false)
+    expect(Object.isFrozen(view)).toBe(true)
+  })
+
+  test('one host-scope composition shared across bindings sees one vault, not per-binding forks', async () => {
+    const env = await localKekEnv()
+    const scope = opaqueScope()
+    const composition = resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+      env,
+      authorityVerifier: createFakeAuthorityVerifierV1([
+        { scope, authority: authority('ws-a') },
+      ]),
+    })!
+    // Bindings receive the same narrowed view object (buildAgentComposition
+    // attaches credentialComposition.runtimeView; it never re-resolves env).
+    const bindingA = composition.runtimeView
+    const bindingB = composition.runtimeView
+    expect(bindingA).toBe(bindingB)
+
+    await composition.vaultBackend.writeCredentialFields({
+      workspaceId: 'ws-a',
+      providerId: 'anthropic' as ProviderId,
+      fields: new Map<CredentialFieldId, Uint8Array>([
+        [LLM_API_KEY_FIELD_ID_V1, new TextEncoder().encode(SECRET)],
+      ]),
+    })
+    const refFactory = createProviderCredentialRefFactoryV1(bindingB.bindingRegistry)
+    const lease = await bindingB.resolver!.resolve(scope, refFactory.create({
+      providerId: 'anthropic' as ProviderId,
+      bindingId: llmModelCallBindingIdV1('anthropic'),
+      executionId: 'exec-shared',
+    }))
+    try {
+      const material = lease.material
+      if (material.kind !== 'field-set') throw new Error('expected field-set')
+      expect(new TextDecoder().decode(material.fields.get(LLM_API_KEY_FIELD_ID_V1)))
+        .toBe(SECRET)
+    } finally {
+      lease.dispose()
+    }
+  })
+
   test('injected persistence wins over the memory opt-in requirement', async () => {
     const env = await localKekEnv()
     delete env.BORING_CREDENTIAL_PERSISTENCE
@@ -224,16 +305,29 @@ describe('resolver end-to-end through the vault', () => {
     )
     expect(observed).toBe(SECRET)
 
-    // Wrong workspace authority never reads another workspace's credential.
-    const otherScope = opaqueScope()
-    const otherComposition = composition.createResolver(
-      createFakeAuthorityVerifierV1([{ scope: otherScope, authority: authority('ws-b') }]),
-    )
+    // Authority denial: a scope the verifier never granted is rejected with
+    // AUTHORITY_INVALID before any storage access.
+    const ungrantedScope = opaqueScope()
     await expectCredentialError(
-      () => otherComposition.resolve(otherScope, refFactory.create({
+      () => composition.resolver!.resolve(ungrantedScope, refFactory.create({
         providerId,
         bindingId: llmModelCallBindingIdV1('anthropic'),
         executionId: 'exec-2',
+      })),
+      CREDENTIAL_ERROR_CODES.AUTHORITY_INVALID,
+    )
+
+    // Storage keying (not authority): a validly-authorized ws-b principal
+    // resolves against ws-b's (empty) vault rows, never ws-a's material.
+    const wsBScope = opaqueScope()
+    const wsBResolver = composition.createResolver(
+      createFakeAuthorityVerifierV1([{ scope: wsBScope, authority: authority('ws-b') }]),
+    )
+    await expectCredentialError(
+      () => wsBResolver.resolve(wsBScope, refFactory.create({
+        providerId,
+        bindingId: llmModelCallBindingIdV1('anthropic'),
+        executionId: 'exec-3',
       })),
       CREDENTIAL_ERROR_CODES.NOT_CONFIGURED,
     )
@@ -268,7 +362,7 @@ describe('resolver end-to-end through the vault', () => {
       () => composition.resolver!.resolve(scope, refFactory.create({
         providerId: 'anthropic' as ProviderId,
         bindingId: llmModelCallBindingIdV1('anthropic'),
-        executionId: 'exec-3',
+        executionId: 'exec-5',
       })),
       CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE,
     )
