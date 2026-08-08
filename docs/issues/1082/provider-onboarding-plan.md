@@ -10,12 +10,17 @@ depends: PR #1132 (vault crypto, merged), PR #1145 (durable Postgres persistence
 
 # gh-1082 pi provider onboarding workflow — BYOK key → usable pi runtime provider
 
-Goal: a workspace owner connects an LLM provider (Anthropic / OpenAI /
-Gemini / OpenAI-compatible custom — via OAuth subscription login where the
-provider supports it, or an API key otherwise), the server validates the
-credential, stores it in the BYOK vault, and every subsequent pi session in
-that workspace can select and run models on that provider — with
-rotation/revocation and fail-closed semantics.
+Goal: a workspace **member** connects an LLM provider for themselves
+(Anthropic / OpenAI / Gemini / OpenAI-compatible custom — via OAuth
+subscription login where the provider supports it, or an API key otherwise),
+the server validates the credential, stores it in the BYOK vault, and every
+subsequent pi session that member starts runs on their credential. A
+workspace **owner** can additionally set a workspace-wide credential per
+provider as the fallback for members without a personal one. Rotation/
+revocation and fail-closed semantics throughout.
+
+**Scope (owner directive 2026-08-08): user-specific onboarding first, with
+the possibility to set a credential workspace-wide.**
 
 This plan is the *onboarding-workflow* specialization of 1082 plan-r3 slices
 S3 (registry + routes) and S4 (credential UI), extended with the two pieces
@@ -65,67 +70,69 @@ storage backend** and broker its interactive flows over our routes.
 
 | Area | Today | Delta |
 |---|---|---|
-| Where credentials come from | Instance `process.env` only. `packages/agent/src/server/models/modelConfig.ts` reads `ANTHROPIC_API_KEY` etc. via `getEnv`, plus `BORING_AGENT_CUSTOM_MODEL_*` / Infomaniak env blocks; pi `AuthStorage.create()` reads pi's own env/settings/auth files (comment in `createHarness.ts`: "Auth/model credentials are Pi-owned"). | Workspace-scoped credentials (API key **or** pi OAuth token) resolved from the BYOK vault take precedence; instance env remains operator fallback per Decision 27 tombstone semantics. |
+| Where credentials come from | Instance `process.env` only. `packages/agent/src/server/models/modelConfig.ts` reads `ANTHROPIC_API_KEY` etc. via `getEnv`, plus `BORING_AGENT_CUSTOM_MODEL_*` / Infomaniak env blocks; pi `AuthStorage.create()` reads pi's own env/settings/auth files (comment in `createHarness.ts`: "Auth/model credentials are Pi-owned"). | Vault credentials (API key **or** pi OAuth token) take precedence, resolved per actor: personal `(workspaceId, userId, providerId)` → workspace-wide → instance env, per Decision 27 tombstone semantics. |
 | Per-session registry | `createPiSession` (packages/agent/src/server/harness/pi-coding-agent/createHarness.ts ~L548) builds `AuthStorage.create()` → `ModelRegistry.create(authStorage)` → `registerConfiguredModelProviders(modelRegistry)`; all env-derived, workspace-blind. | Same construction site swaps in `AuthStorage.fromStorage(vaultBackend)` — a workspace-scoped `AuthStorageBackend` bridging pi's lock protocol to the vault via the host-side credential resolver (16f.1 `createHostSideCredentialResolverV1` / `withResolvedCredential`), with env-backed fallback. |
 | OAuth | None (env keys only). | pi's built-in OAuth providers (anthropic Claude Pro/Max, openai-codex, github-copilot, …) become connectable per workspace: login brokered host-side, tokens vault-stored, refresh via pi's own machinery writing through the vault backend. |
 | Vault | Crypto core merged (#1132): `packages/agent/src/server/credentials/vault/` (envelopeCrypto, local-KEK KmsBackend, vaultStoreBackend, persistence port). #1145 adds Postgres persistence + versionAnchor (branch, not on main). | Consumed as-is. Onboarding writes through `CredentialStoreBackendV1.writeCredentialFields` (fresh `credentialVersion` each write — including pi-initiated OAuth refresh writes). |
 | Provider registry | `ProviderRegistryV1` / `ProviderDefinitionV1` contract exists in `packages/agent/src/shared/credentials/registry.ts` (category `"llm"`, api-key field defs, consumer bindings, sandboxEgressOrigins) but only test registries construct it. | Startup registry **derived from pi**: LLM provider definitions generated from pi's `ModelRegistry` provider set + `getOAuthProviders()` (auth kinds, display names), annotated with vault consumer binding `llm-model-call.v1` and egress origins — not a hand-maintained list. |
-| Routes/UI | No credential routes, no credential UI. | Owner-only connect (OAuth broker + API-key), status, revoke routes; "Providers & credentials" settings surface rendered from the pi-derived registry. |
+| Routes/UI | No credential routes, no credential UI. | Member-scoped connect (OAuth broker + API-key), status, revoke routes for personal credentials; owner-only workspace-scope + promote; "My providers" and "Workspace providers" surfaces rendered from the pi-derived registry. |
 | Fleet tiers | `resolveSeatModel()` / `MODEL_TIER_CANDIDATES` in `loadConfiguredAgentFleet.ts` check instance env presence only. | Consult workspace credential presence via the resolver (r3 S5, bead wt-391-forward-703w). |
 | Validation | None. | OAuth: completing pi's login flow. API key: pi auth resolution + provider model-list probe before commit; re-probe on demand. |
 | Rotation/revocation | Vault supports versioning + KEK rewrap; no user-facing trigger. | Replace/re-login (new version), disable, revoke+tombstone actions in routes/UI; revoked credential suppresses instance fallback. OAuth refresh rotation handled by pi automatically. |
 
-## Scope & attribution model (owner ruling, r2)
+## Scope & resolution model (owner directive 2026-08-08)
 
-Owner ruling (PR #1151 comment): **"The creator of an automation should own
-the associated tokens."** Generalized: **every session bills to the
-credential of the human who caused it to exist.**
+**User-specific first, workspace-wide as fallback.**
 
-- **Interactive sessions** resolve the acting member's personal credential
-  first; the workspace credential is the floor/fallback.
-- **Automation/background runs** resolve the automation creator's
-  credential, via a **persisted `creatorUserId`** on the automation record —
-  independent of who later edits or triggers it (**editing ≠ funding
-  transfer**; funding moves only by explicit reassignment).
-- The **workspace credential remains the floor** for members/automations
-  without a personal credential; instance env keys remain operator-owned
-  fallback below that.
-
-This supersedes r1's "workspace-scope only, per-user out of scope" note:
-per-user credentials are **in scope** as an interactive+automation
-attribution layer on top of the workspace vault (same envelope machinery,
-credential scope key becomes `(workspaceId, userId | "workspace",
-providerId)`; see [`key-scope-decision.md`](key-scope-decision.md) for the
-DEK-scoping decision this feeds).
-
-Consequences specced in this plan:
-- **Actor-aware lease resolution** at session creation — including
-  background sessions, which carry `creatorUserId` instead of an acting
-  member (see per-session injection below).
-- **Fail-closed pause on dead creator credentials:** if an automation's
-  funding credential is revoked/expired/unrefreshable, the automation
-  **pauses** and an **Inbox Human Intention item** is raised for
-  reassignment — never silent fallback to the workspace key.
-- **Offboarding gate:** removing a member requires reassigning the funding
-  of automations they created (or accepting their pause).
+- **Primary: per-user credentials.** Each member connects providers for
+  themselves ("My providers"); stored in the vault keyed `(workspaceId,
+  userId, providerId)` — the credential-profile pattern: additive rows, no
+  AAD/crypto changes (see [`key-scope-decision.md`](key-scope-decision.md)).
+- **Secondary: workspace-wide credential.** An owner can set one credential
+  per provider workspace-wide — either directly or by **promoting their own
+  personal credential** — as the fallback for members without a personal
+  one. Stored as `(workspaceId, "workspace", providerId)`.
+- **Resolution order, fail-closed and simple:** session actor's personal
+  credential → workspace-wide credential → instance env. A
+  revoked-tombstoned credential at any layer stops the chain for that layer
+  per Decision 27 semantics (revoke suppresses fallback).
+- **Automations/background runs** resolve with the **creator's** personal
+  credential (persist `creatorUserId` on the automation record), then the
+  same fallback chain; if nothing resolves, the run **pauses** and an Inbox
+  Human Intention item is raised. An owner can reassign an automation's
+  creator; that is the whole reassignment story in v1.
 - **Offline liveness:** host-side pi-brokered OAuth refresh (vault-backed
   backend below) keeps creator-funded automations alive while the creator
   is offline — refresh needs no interactive session.
 
+**Deferred directions (explicitly out of scope, one paragraph, kept for the
+record):** agent-as-principal credential modeling, seat/tier credential
+profiles, and funding-transfer/offboarding machinery beyond the minimal
+"owner can reassign an automation's creator" above. None of these change
+the vault schema chosen here; they layer on the same scope key.
+
 ## UX flow
 
-Surface: **owner-only "Providers & credentials" panel in workspace settings**
-(workspace front chrome, alongside existing settings; governance RBAC from
-boring-governance gates it — non-owners see nothing, not a disabled panel).
+Two surfaces, same components:
+
+- **Primary: "My providers" in user settings** — every member connects
+  providers for themselves. Personal credentials are visible/manageable
+  only by their owner (and existence-only metadata to workspace owners).
+- **Secondary: "Workspace providers" in workspace settings** — owner-only
+  (governance RBAC from boring-governance; non-owners see nothing, not a
+  disabled panel). Sets the workspace-wide fallback credential per
+  provider, directly or via **"Promote to workspace"** on one of the
+  owner's personal credentials (copy, not move — mints a new
+  workspace-scoped credentialVersion).
 
 1. **Provider list** — rendered from the server's pi-derived provider
    registry (`GET /api/credentials/providers`): display name (pi
    `getProviderDisplayName`), supported auth methods (`oauth` and/or
-   `api_key`, from pi's provider auth contract), status per provider:
-   `not-configured | active (kind: oauth|api-key, …last4/account, vN,
-   connected-at) | disabled | revoked | instance-fallback` (status sourced
-   from pi's `getProviderAuthStatus` over the workspace AuthStorage plus
-   vault metadata).
+   `api_key`, from pi's provider auth contract), status per provider and
+   scope: `not-configured | active (kind: oauth|api-key, …last4/account,
+   vN, connected-at) | disabled | revoked | workspace-fallback |
+   instance-fallback` (status sourced from pi's `getProviderAuthStatus`
+   over the resolved AuthStorage plus vault metadata).
 2. **Connect (OAuth-capable provider — preferred path)** — "Sign in" starts
    a host-brokered pi login: the server runs `authStorage.login(providerId,
    callbacks)` against the workspace's vault-backed AuthStorage; the
@@ -244,27 +251,25 @@ fail-closed.
 **(b) Per-session injection.** In `createPiSession` (createHarness.ts),
 replace `AuthStorage.create()` with:
 
-- **Actor-aware resolution.** Session creation resolves a funding scope
-  first: interactive → acting member's `userId`; background/automation →
-  the automation's persisted `creatorUserId`. The vault backend is
-  constructed for that scope and layers `(workspaceId, userId, providerId)`
-  → `(workspaceId, "workspace", providerId)` → instance env, with the
-  revoked-tombstone fail-closed rule applying at each layer. For automation
-  sessions whose creator credential is dead (revoked/expired/unrefreshable),
-  resolution fails closed with `CREDENTIAL_CREATOR_UNAVAILABLE`: the run
-  pauses and an Inbox Human Intention item is raised — no silent drop to
-  the workspace key.
-- `createVaultAuthStorageBackend(fundingScope, resolver)` — implements pi's
+- **Actor-aware resolution.** Session creation resolves an actor first:
+  interactive → acting member's `userId`; background/automation → the
+  automation's persisted `creatorUserId`. The vault backend is constructed
+  for that actor and layers `(workspaceId, userId, providerId)` →
+  `(workspaceId, "workspace", providerId)` → instance env, with the
+  revoked-tombstone rule applying at each layer. If nothing resolves for
+  an automation run, it fails closed with `CREDENTIAL_UNRESOLVED`: the run
+  pauses and an Inbox Human Intention item is raised.
+- `createVaultAuthStorageBackend(actorScope, resolver)` — implements pi's
   `AuthStorageBackend` (`withLock`/`withLockAsync`) over the vault:
   serialized read-modify-write per workspace, exposing the workspace's
   decrypted credentials to pi in pi's own `AuthStorageData` shape and
   persisting pi's writes (OAuth refresh, logout) back as versioned vault
   writes. Compose via `AuthStorage.fromStorage(backend)`. Fallback
-  layering: a provider with no workspace credential delegates to the
-  env-backed instance credential (instance fallback), **unless** the
-  workspace credential is revoked-tombstoned, in which case the provider
-  resolves to "no key" (fail closed, stable error `CREDENTIAL_REVOKED`
-  surfaces as model-unavailable in the picker). This replaces r1's
+  layering per provider: actor's personal credential → workspace-wide
+  credential → env-backed instance credential, **unless** a credential in
+  the chain is revoked-tombstoned, in which case the chain stops there
+  (fail closed, stable error `CREDENTIAL_REVOKED` surfaces as
+  model-unavailable in the picker). This replaces r1's
   read-only `createWorkspaceAuthStorage` wrapper — a full backend is
   required so **pi's OAuth refresh writes land in the vault** instead of
   being lost.
@@ -278,9 +283,9 @@ replace `AuthStorage.create()` with:
   applies to new sessions (documented in UI) — except pi-initiated OAuth
   refresh, which updates the vault and the running session's in-memory
   token (pi's normal behavior).
-- Model picker (`routes/models.ts`) becomes workspace-aware by asking pi:
-  `getAvailable()` over the workspace AuthStorage (workspace credential or
-  non-suppressed instance fallback).
+- Model picker (`routes/models.ts`) becomes actor-aware by asking pi:
+  `getAvailable()` over the actor-resolved AuthStorage (personal →
+  workspace-wide → non-suppressed instance fallback).
 
 Invariant compliance: all of this is server-side (`packages/agent/src/server`),
 shared contract stays `node:`-free and Uint8Array-only; routes receive
@@ -302,11 +307,10 @@ Workspace-scoped context, not raw paths; every error has a stable code in the
 - **DEK rotation / crypto-shred** (r3 S2) is out of scope here but the UI
   reserves an "Advanced → rotate workspace encryption" affordance stub gated
   on the key-scope owner decision.
-- **Creator credential death (automations):** revoke/expiry/refresh failure
-  of a member credential pauses every automation funded by it and raises an
-  Inbox Human Intention item ("reassign funding for N automations");
-  **offboarding a member is gated on resolving these** (reassign or accept
-  pause). Editing an automation never silently re-funds it.
+- **Creator credential death (automations):** if an automation's chain
+  resolves to nothing (creator credential revoked/expired/unrefreshable and
+  no workspace/instance fallback), the automation pauses and an Inbox Human
+  Intention item is raised; an owner can reassign the automation's creator.
 - Instance-env keys are untouched by all of the above (operator-owned).
 
 ## Security constraints (fail-closed)
@@ -325,8 +329,9 @@ Workspace-scoped context, not raw paths; every error has a stable code in the
 - Missing/unreadable KEK, failed AAD, stale version anchor → typed
   `CREDENTIAL_*` error; **never** silent fallback to env for a workspace
   that has (or had) a workspace credential in revoked state.
-- Owner-only RBAC on every credential route including the OAuth broker
-  stream, enforced server-side.
+- Scope RBAC on every credential route including the OAuth broker stream,
+  enforced server-side: members touch only their own credentials;
+  workspace-scope writes (including promote) are owner-only.
 
 ## PR-sized slices
 
@@ -338,40 +343,36 @@ Workspace-scoped context, not raw paths; every error has a stable code in the
    KMS backend env selection. Tests: registry mirrors pi's providers,
    resolver end-to-end through vault, fail-closed on missing KEK.
 3. **PR-C — vault AuthStorage backend + credential routes + validation**:
-   `createVaultAuthStorageBackend` (incl. versioned refresh writes +
-   advisory lock), owner-gated routes (`connect`(api-key)/`status`/
-   `disable`/`revoke`/`delete`, metadata-only GET/list), pi-based key
-   validation, **host-brokered OAuth login route + event stream**. Tests:
-   role gating, probe/login-before-write, refresh write mints new version
-   under lock, no secret in any response/log/event, tombstone semantics.
-4. **PR-D — per-session pi resolution**: `AuthStorage.fromStorage(vault
+   `createVaultAuthStorageBackend` (per-user + workspace scope rows,
+   versioned refresh writes + advisory lock), routes: member-scoped
+   `connect`(api-key)/`status`/`disable`/`revoke`/`delete` on own
+   credentials, owner-gated workspace-scope equivalents + "promote to
+   workspace", metadata-only GET/list; pi-based key validation,
+   **host-brokered OAuth login route + event stream**. Tests: scope
+   gating (member ↔ own, owner ↔ workspace), probe/login-before-write,
+   refresh write mints new version under lock, no secret in any
+   response/log/event, tombstone semantics.
+4. **PR-D — per-session pi resolution**: actor resolution + persisted
+   `creatorUserId` for automations, `AuthStorage.fromStorage(vault
    backend)` in `createPiSession`, workspace-aware
-   `registerConfiguredModelProviders`, workspace-aware model list via pi
-   `getAvailable()`. Tests: workspace credential wins, OAuth refresh
-   persists to vault, revoked suppresses fallback, keyless workspace
-   identical to today, no plaintext outside session scope.
-5. **PR-E — Providers & credentials UI** (r3 S4): settings surface rendered
-   from the pi-derived registry, OAuth login flow UI (auth-url/device-code/
-   code-paste states), API-key connect/manage flows, status chips. Tests:
-   no credential value in any store/prop/response; RBAC invisibility for
-   non-owners.
+   `registerConfiguredModelProviders`, actor-aware model list via pi
+   `getAvailable()`. Tests: personal wins over workspace wins over env,
+   creator credential funds automation, OAuth refresh persists to vault,
+   revoked stops the chain, unresolved automation pauses + inbox item,
+   keyless workspace identical to today, no plaintext outside session
+   scope.
+5. **PR-E — providers UI** (r3 S4): "My providers" (all members) +
+   "Workspace providers" (owner-only) rendered from the pi-derived
+   registry, OAuth login flow UI (auth-url/device-code/code-paste states),
+   API-key connect/manage flows, promote-to-workspace, status chips.
+   Tests: no credential value in any store/prop/response; RBAC
+   invisibility of the workspace panel for non-owners.
 6. **PR-F — fleet tier integration** (r3 S5, bead wt-391-forward-703w):
    `resolveSeatModel()` consults workspace credential presence. Tests per r3.
-7. **PR-G — creator-funding attribution layer** (owner ruling): per-user
-   credential scope in vault + routes/UI ("My credentials" alongside the
-   owner panel), persisted `creatorUserId` on automations, actor-aware
-   funding-scope resolution wired into PR-D's backend construction,
-   dead-credential pause + Inbox Human Intention item, offboarding
-   reassignment gate. Tests: interactive resolves member-then-workspace,
-   automation resolves creator, editing does not transfer funding, dead
-   creator credential pauses (never falls back), offboarding blocked until
-   reassignment.
 
-Order: A → B → C → D → E → F → G (C precedes D since the vault backend
-lives in C; A–F are workspace-floor-complete without G, and G layers
-attribution on top without reworking them — PR-D's funding-scope parameter
-is designed in from the start). Each slice green-gated and independently
-revertible; UI (E) ships only after C+D so the flow is real end-to-end.
+Order: A → B → C → D → E → F (C precedes D since the vault backend lives
+in C). Each slice green-gated and independently revertible; UI (E) ships
+only after C+D so the flow is real end-to-end.
 
 ## Open questions (owner)
 
