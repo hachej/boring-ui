@@ -38,6 +38,7 @@ const REQUIRED_GATES = [
   "horizontal-overflow",
   "axe-serious-critical",
   "state-contract",
+  "session-row-action-overlap",
   "agent-touch-targets",
 ] as const
 
