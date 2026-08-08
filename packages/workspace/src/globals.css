@@ -482,6 +482,38 @@
   }
 
   /*
+   * The top bar is the only always-visible chrome on a phone, and both of its
+   * controls sit under the 44px minimum on a mouse (search pill 28px, new-chat
+   * icon ~32px). They grow to 44px on touch; the bar itself is `min-h-11`
+   * (44px) with no block padding, so the taller targets fill the existing row
+   * rather than reflowing the layout around it. The bar does measure 45px on
+   * touch, not 44: its 1px bottom border sits outside the 44px content box.
+   * That 1px is chrome, not padding, so the touch target is honestly 44px and
+   * the row is left to absorb the border instead of shrinking the target.
+   */
+  .topbar-search-action,
+  .topbar-icon-action {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /*
+   * The mobile bars' pill buttons are the only way between chat, sessions and
+   * workspace. They grow from 40px to the 44px minimum; the bar drops its
+   * block padding in exchange so the row stays ~44px plus the status-bar inset
+   * rather than growing to 60px.
+   */
+  [data-boring-workspace-part="mobile-chat-bar"],
+  [data-boring-workspace-part="mobile-workspace-bar"] {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: 0;
+  }
+
+  .mobile-shell-bar-action {
+    min-height: 44px;
+  }
+
+  /*
    * Management overlay headers (Skills, Plugins, plugin-provided tools) keep
    * 24px icon actions on a mouse. On touch every header action grows to the
    * 44px minimum from the shared surface, so consumers don't each override it.
@@ -518,6 +550,17 @@
 }
 
 @media (hover: none) {
+  /*
+   * `hover: none` means the primary input cannot hover — a touch device. It
+   * does not prove there is no keyboard (a tablet may have one attached), but
+   * it is the same signal `.command-palette-footer-desktop-hints` already uses
+   * to drop desktop shortcut hints, and it beats a width breakpoint because a
+   * touch tablet at 900px is still a device where a ⌘K badge is mostly noise.
+   */
+  .topbar-desktop-hint {
+    display: none;
+  }
+
   .app-left-new-chat-secondary {
     width: auto;
     opacity: 1;
@@ -526,5 +569,57 @@
   .app-left-session-actions {
     pointer-events: auto;
     opacity: 1;
+  }
+}
+
+/* Nested per-Agent chat disclosure: a brief settle so expand/collapse gives an
+   unmistakable response without a heavyweight height animation. */
+@keyframes boring-app-left-disclose {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+[data-boring-workspace-part="app-left-agent-sessions"] {
+  animation: boring-app-left-disclose 140ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-boring-workspace-part="app-left-agent-sessions"] {
+    animation: none;
+  }
+}
+
+/* Touch devices have no hover to gate the per-Agent secondary actions; showing
+   all of them permanently reads as clutter. Only the "+" stays per row; the
+   split/quick chat move behind a coarse-pointer follow-up (overflow menu),
+   but "+" and Settings stay: Agent details must remain reachable on touch. */
+@media (pointer: coarse) {
+  .app-left-agent-card-actions {
+    width: auto;
+    opacity: 1;
+  }
+
+  .app-left-agent-card-optional {
+    display: none;
+  }
+
+}
+
+/* "Start one" is the primary action of an empty Agent — it must be a real
+   touch target, not a 17px text link. Width-gated as well as pointer-gated so
+   narrow fine-pointer emulation gets it too; 48px keeps the measured rect
+   above the 44px gate even when an in-flight transform scales it slightly. */
+@media (pointer: coarse), (max-width: 500px) {
+  .app-left-empty-start {
+    display: inline-flex;
+    min-height: 48px;
+    min-width: 48px;
+    align-items: center;
+    justify-content: center;
+    padding-inline: 8px;
   }
 }

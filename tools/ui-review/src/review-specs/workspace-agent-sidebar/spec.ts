@@ -62,9 +62,9 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
       await expect(page.getByRole("button", { name: "New chat with Beta", exact: true })).toBeVisible()
     } },
     { id: "expanded-sessions", colorScheme: "dark", reach: async (page) => {
-      const expandBeta = page.getByRole("button", { name: "Expand Beta sessions" })
+      const expandBeta = page.getByRole("button", { name: /^Expand Beta;/ })
       if (await expandBeta.isVisible().catch(() => false)) await expandBeta.click()
-      await expect(page.getByRole("button", { name: "Collapse Beta sessions" })).toBeVisible()
+      await expect(page.getByRole("button", { name: /^Collapse Beta;/ })).toBeVisible()
       await page.mouse.move(1_000, 500)
     } },
     { id: "pinned-chat", colorScheme: "dark", reach: async (page) => {
