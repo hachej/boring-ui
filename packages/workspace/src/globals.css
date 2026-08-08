@@ -392,8 +392,24 @@
 }
 
 .app-left-session-actions,
-.app-left-session-trailing[data-reserve-actions="true"] {
+.app-left-session-trailing[data-trailing="empty"] {
   width: calc(var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px));
+}
+
+/* The rest of the trailing variants size themselves; provenance is the only
+   one that needs a ceiling so a long owner name cannot eat the title. */
+.app-left-session-trailing[data-trailing="badge"] {
+  width: 88px;
+}
+
+.app-left-session-trailing[data-trailing="owner"] {
+  width: auto;
+  max-width: 7rem;
+  gap: 0.25rem;
+}
+
+.app-left-session-trailing[data-trailing="marker"] {
+  width: auto;
 }
 
 /* App-left chrome stays compact for fine pointers while meeting 44px touch
@@ -561,10 +577,6 @@
   .app-left-agent-card-actions {
     width: auto;
     opacity: 1;
-  }
-
-  .app-left-agent-card-optional {
-    display: none;
   }
 
 }

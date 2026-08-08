@@ -34,8 +34,14 @@ export interface SessionTrailingInput {
   attentionBadge?: WorkspaceAttentionSessionBadge
   /** The session is producing output right now. */
   working: boolean
-  /** The row shows a working dot in its leading slot, so no working badge. */
-  activeDot: boolean
+  /**
+   * The row is ACTUALLY painting the pulsing working dot in its leading slot.
+   * This is the computed fact, not the `activeDot` prop: the row only paints
+   * the dot when `activeDot && activeDotActive && working`, so keying off
+   * `activeDot` alone made a working non-active row show neither dot nor
+   * badge — the working state vanished.
+   */
+  workingDotShown: boolean
   ownerLabel?: string
   pinned: boolean
   updatedAt?: string | number
@@ -50,9 +56,10 @@ export interface SessionTrailingInput {
 export function resolveSessionTrailingSlot(input: SessionTrailingInput): SessionTrailingSlot {
   const badge: SessionTrailingBadge = input.attentionBadge
     ? { kind: "attention", badge: input.attentionBadge }
-    // A working dot in the leading slot already says "working"; a badge too
-    // would be the same fact twice.
-    : input.working && !input.activeDot ? { kind: "working" }
+    // A painted working dot already says "working"; a badge too would be the
+    // same fact twice. If the dot is NOT painted, the badge is the only thing
+    // carrying that state, so it must appear.
+    : input.working && !input.workingDotShown ? { kind: "working" }
     : { kind: "none" }
 
   const marker: SessionTrailingMarker = ((): SessionTrailingMarker => {
@@ -65,14 +72,15 @@ export function resolveSessionTrailingSlot(input: SessionTrailingInput): Session
     if (input.pinned) return { kind: "pin" }
     const label = formatRelativeAge(input.updatedAt, input.now)
     if (!label) return { kind: "none" }
-    return { kind: "age", label, ...(exactTimestamp(input.updatedAt) ? { title: exactTimestamp(input.updatedAt) } : {}) }
+    const title = exactTimestamp(input.updatedAt)
+    return { kind: "age", label, ...(title ? { title } : {}) }
   })()
 
   return { badge, marker, reserveActions: badge.kind === "none" && marker.kind === "none" }
 }
 
 /** Human-readable absolute timestamp for the age tooltip. */
-export function exactTimestamp(updatedAt: string | number | undefined): string | undefined {
+function exactTimestamp(updatedAt: string | number | undefined): string | undefined {
   if (updatedAt === undefined) return undefined
   const value = typeof updatedAt === "number" ? updatedAt : Date.parse(updatedAt)
   if (!Number.isFinite(value)) return undefined

@@ -9,7 +9,7 @@ import type { AppLeftPaneSession } from "./AppLeftPane"
 import { AppSessionActionsMenu } from "./AppSessionActionsMenu"
 import { InlineSessionRename, useInlineSessionRename } from "./InlineSessionRename"
 import { encodeWorkspaceSessionDrag } from "../../sessionIdentity"
-import { exactTimestamp, resolveSessionTrailingSlot, type SessionTrailingBadge, type SessionTrailingMarker } from "./appSessionRowTrailing"
+import { resolveSessionTrailingSlot, type SessionTrailingBadge, type SessionTrailingMarker } from "./appSessionRowTrailing"
 
 export type AppSessionRowState = "normal" | "open" | "active"
 
@@ -145,19 +145,28 @@ export function AppSessionRow({
   // desktop and mobile had already computed differently.
   const hoverActionCount = (showMenu ? 1 : 0) + (splitAvailable ? 1 : 0) + (detachAvailable ? 1 : 0)
   const actionSlotStyle = { "--app-session-action-slots": hoverActionCount } as CSSProperties
+  // The dot is painted only under all three conditions; the resolver needs
+  // that computed fact, not the `activeDot` prop that merely allows it.
+  const workingDotShown = activeDot && activeDotActive && working
   const trailing = resolveSessionTrailingSlot({
     ...(attentionBadge ? { attentionBadge } : {}),
     working,
-    activeDot,
+    workingDotShown,
     ...(ownerLabel ? { ownerLabel } : {}),
     pinned,
     ...(session.updatedAt !== undefined ? { updatedAt: session.updatedAt } : {}),
     now: Date.now(),
   })
-  const exactUpdatedAt = trailing.marker.kind === "age" ? exactTimestamp(session.updatedAt) : undefined
-  const statusWidthClassName = trailing.marker.kind === "owner"
-    ? "w-auto max-w-28 gap-1"
-    : trailing.badge.kind !== "none" ? "w-[88px]" : "w-auto"
+  // The resolver already computed this for the age tooltip; the row title
+  // reuses it rather than recomputing the same timestamp a third time.
+  const exactUpdatedAt = trailing.marker.kind === "age" ? trailing.marker.title : undefined
+  // Sizing for every trailing variant lives in ONE layer (globals.css, beside
+  // the action-slot calc). The row states WHAT the slot holds; CSS decides how
+  // wide that is.
+  const trailingVariant = trailing.marker.kind === "owner"
+    ? "owner"
+    : trailing.badge.kind !== "none" ? "badge"
+    : trailing.reserveActions ? "empty" : "marker"
   const rename = useInlineSessionRename({
     sessionId: session.id,
     title,
@@ -226,7 +235,7 @@ export function AppSessionRow({
           ) : null}
           <span className={leadingSlotClassName} aria-hidden={activeDot ? undefined : "true"}>
             {activeDot ? (
-              activeDotActive && working ? (
+              workingDotShown ? (
                 // Pulsing accent dot = working. Under reduced motion the
                 // pulse stops and the dot dims instead.
                 <span
@@ -248,9 +257,8 @@ export function AppSessionRow({
           </span>
           <span
             style={actionSlotStyle}
-            data-action-count={hoverActionCount}
-            data-reserve-actions={trailing.reserveActions ? "true" : "false"}
-            className={cn("app-left-session-trailing flex shrink-0 justify-end overflow-hidden group-hover:opacity-0 group-focus-within:opacity-0", statusWidthClassName)}
+            data-trailing={trailingVariant}
+            className="app-left-session-trailing flex shrink-0 justify-end overflow-hidden group-hover:opacity-0 group-focus-within:opacity-0"
           >
             {renderTrailingBadge(trailing.badge)}
             {renderTrailingMarker(trailing.marker)}
@@ -261,7 +269,6 @@ export function AppSessionRow({
       {!rename.editing && hoverActionCount > 0 ? (
         <span
           data-boring-workspace-part="app-session-actions"
-          data-action-count={hoverActionCount}
           style={actionSlotStyle}
           className={cn(
             // Keep the reserved action hit area above the row button at all

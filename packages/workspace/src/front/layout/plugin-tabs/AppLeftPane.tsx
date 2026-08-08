@@ -5,7 +5,7 @@ import { ChevronRight, Plus, Search, X } from "lucide-react"
 import { Skeleton } from "@hachej/boring-ui-kit"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
 import { FleetNewChatAction, PrimaryAction, NewChatAction, KbdHint, RailAction } from "./AppLeftPaneActions"
-import { AppLeftPaneAgentCard, shortAgentLabel } from "./AppLeftPaneAgentCards"
+import { AppLeftPaneAgentCard, shortAgentLabel, type AppLeftPaneAgentStats } from "./AppLeftPaneAgentCards"
 import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
 import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
@@ -184,6 +184,9 @@ export function AppLeftRail({
   )
 }
 
+/** Shared zero-stats object: an Agent with no chats allocates nothing. */
+const EMPTY_AGENT_STATS: AppLeftPaneAgentStats = { sessions: 0, working: 0, attention: 0 }
+
 export function AppLeftPane({
   width = 276,
   appTitle,
@@ -336,7 +339,6 @@ export function AppLeftPane({
     }
     return stats
   }, [agents, sessionBadges, sessions, workingSessionIds])
-  const emptyAgentStats = { sessions: 0, working: 0, attention: 0 }
   const agentLabelById = useMemo(
     () => new Map(agents.map((agent) => [agent.agentTypeId, shortAgentLabel(agent.label)])),
     [agents],
@@ -468,7 +470,7 @@ export function AppLeftPane({
         agentTypeId={agent.agentTypeId}
         label={agent.label}
         description={agent.description}
-        stats={agentStats.get(agent.agentTypeId) ?? emptyAgentStats}
+        stats={agentStats.get(agent.agentTypeId) ?? EMPTY_AGENT_STATS}
         sessionsStatus={agent.sessionsStatus}
         filtered={chatsAgentLens === agent.agentTypeId}
         expandable={nestedAgentChats}
@@ -548,7 +550,7 @@ export function AppLeftPane({
             aria-hidden="true"
           />
           <span data-boring-workspace-part="app-left-agents-heading">Agents</span>
-          <span className="ml-0.5 shrink-0 text-[10px] font-normal tabular-nums tracking-normal text-muted-foreground/75">{agents.length}</span>
+          <span data-boring-workspace-part="app-left-agents-count" className="ml-0.5 shrink-0 text-[10px] font-normal tabular-nums tracking-normal text-muted-foreground/75">{agents.length}</span>
         </button>
         {agentsSectionOpen && (agentFilterOpen || agentFilter.trim() !== "") ? (
           <label className="relative min-w-0 flex-1">
@@ -605,7 +607,7 @@ export function AppLeftPane({
       <FleetNewChatAction
         agents={agents}
         selectedAgentTypeId={selectedAgentTypeId}
-        onSelectAgent={(agentTypeId) => onSelectAgent?.(agentTypeId)}
+        onSelectAgent={onSelectAgent}
         onCreateSession={(agentTypeId) => {
           onSelectAgent?.(agentTypeId)
           onCreateSession(agentTypeId)
