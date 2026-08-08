@@ -169,7 +169,7 @@ export function FleetNewChatAction({
   const shortLabel = selected.label.replace(/^Boring\s+/i, "") || selected.label
 
   return (
-    <div data-boring-workspace-part="app-left-fleet-new-chat" className="group/fleet-create flex h-[30px] w-full items-center rounded-md text-[13px] font-medium text-foreground hover:bg-foreground/[0.045] focus-within:ring-2 focus-within:ring-ring/40">
+    <div data-boring-workspace-part="app-left-fleet-new-chat" className="group/fleet-create flex h-11 w-full items-center sm:h-[30px] rounded-md text-[13px] font-medium text-foreground hover:bg-foreground/[0.045] focus-within:ring-2 focus-within:ring-ring/40">
       <button
         type="button"
         onClick={() => onCreateSession(selected.agentTypeId)}
@@ -180,14 +180,14 @@ export function FleetNewChatAction({
         <span className="shrink-0">New chat</span>
         <span className="min-w-0 flex-1 truncate text-right text-[11px] font-normal text-muted-foreground">{shortLabel}</span>
       </button>
-      <span className="pointer-events-none flex w-0 shrink-0 items-center overflow-hidden opacity-0 transition-[width,opacity] group-hover/fleet-create:pointer-events-auto group-hover/fleet-create:w-14 group-hover/fleet-create:opacity-100 group-focus-within/fleet-create:pointer-events-auto group-focus-within/fleet-create:w-14 group-focus-within/fleet-create:opacity-100 motion-reduce:transition-none">
+      <span className="pointer-events-none flex w-0 shrink-0 items-center overflow-hidden opacity-0 transition-[width,opacity] group-hover/fleet-create:pointer-events-auto group-hover/fleet-create:w-[88px] group-hover/fleet-create:opacity-100 group-focus-within/fleet-create:pointer-events-auto group-focus-within/fleet-create:w-[88px] group-focus-within/fleet-create:opacity-100 motion-reduce:transition-none sm:group-hover/fleet-create:w-14 sm:group-focus-within/fleet-create:w-14">
         {onCreateSplitSession ? (
           <button
             type="button"
             aria-label={`Start split chat with ${selected.label}`}
             title="New chat in split pane"
             onClick={() => onCreateSplitSession(selected.agentTypeId)}
-            className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="grid size-11 shrink-0 sm:size-7 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Columns2 className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
           </button>
@@ -198,7 +198,7 @@ export function FleetNewChatAction({
             aria-label={`Start quick chat with ${selected.label}`}
             title="Quick chat"
             onClick={() => onCreatePopoverSession(selected.agentTypeId)}
-            className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="grid size-11 shrink-0 sm:size-7 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Zap className="size-3.5" strokeWidth={1.85} aria-hidden="true" />
           </button>
@@ -206,7 +206,7 @@ export function FleetNewChatAction({
       </span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button type="button" aria-label="Choose Agent for new chat" title="Choose Agent" className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <button type="button" aria-label="Choose Agent for new chat" title="Choose Agent" className="grid size-11 shrink-0 sm:size-7 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <ChevronDown className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
           </button>
         </DropdownMenuTrigger>

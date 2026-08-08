@@ -25,7 +25,7 @@ export interface AppLeftPaneAgentCardProps {
   onOpenSettings?: () => void
 }
 
-const cardActionClassName = "app-left-secondary-action grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+const cardActionClassName = "app-left-secondary-action grid size-11 shrink-0 place-items-center sm:size-7 rounded-md text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 
 export function AppLeftPaneAgentCard({
   agentTypeId,
@@ -72,7 +72,7 @@ export function AppLeftPaneAgentCard({
         title={subtitle}
         onClick={onSelect}
         disabled={!onSelect}
-        className="flex min-w-0 flex-1 flex-col items-start gap-0.5 rounded-md px-1 py-0.5 text-left focus-visible:outline-none disabled:cursor-default"
+        className="flex min-h-11 min-w-0 flex-1 flex-col items-start gap-0.5 rounded-md sm:min-h-0 px-1 py-0.5 text-left focus-visible:outline-none disabled:cursor-default"
       >
         <span className="flex w-full min-w-0 items-center gap-1.5">
           <span className={cn("min-w-0 flex-1 truncate text-[13px] leading-4", selected ? "font-semibold text-foreground" : "font-medium text-foreground/85")}>
