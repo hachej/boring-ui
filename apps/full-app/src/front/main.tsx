@@ -124,6 +124,7 @@ createRoot(document.getElementById('root')!).render(
   <>
     <CoreWorkspaceAgentFront
       agentTypeId="default"
+      addressedAgentSelection
       plugins={fullAppFrontPlugins}
       apiBaseUrl=""
       apiTimeout={10_000}

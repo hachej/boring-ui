@@ -4,8 +4,15 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Worker } from 'node:worker_threads'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openDatabase, type SqlTransactionMode } from '../sqlStorage'
-import { SqliteEventStreamStore } from '../eventStreamStore'
+import {
+  openDatabase,
+  SQLITE_BUSY_TIMEOUT_MS,
+  type SqlTransactionMode,
+} from '../sqlStorage'
+import {
+  SQLITE_BUSY_RETRY_WINDOW_MS,
+  SqliteEventStreamStore,
+} from '../eventStreamStore'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const WORKER_PATH = join(__dirname, 'fixtures', 'concurrentAppendWorker.ts')
@@ -36,6 +43,48 @@ function runWorker(input: {
     })
     worker.once('error', reject)
   })
+}
+
+async function startHoldingWriteLock(dbPath: string, holdMs: number): Promise<{ done: Promise<void> }> {
+  let resolveLocked!: () => void
+  let rejectLocked!: (error: Error) => void
+  let resolveDone!: () => void
+  let rejectDone!: (error: Error) => void
+  const locked = new Promise<void>((resolve, reject) => {
+    resolveLocked = resolve
+    rejectLocked = reject
+  })
+  const done = new Promise<void>((resolve, reject) => {
+    resolveDone = resolve
+    rejectDone = reject
+  })
+  const worker = new Worker(`
+    const { parentPort, workerData } = require('node:worker_threads')
+    const { DatabaseSync } = require('node:sqlite')
+    const db = new DatabaseSync(workerData.dbPath)
+    db.exec('PRAGMA busy_timeout=1000; BEGIN IMMEDIATE')
+    parentPort.postMessage('locked')
+    Atomics.wait(new Int32Array(workerData.sleep), 0, 0, workerData.holdMs)
+    db.exec('COMMIT')
+    db.close()
+    parentPort.postMessage('done')
+  `, {
+    eval: true,
+    workerData: { dbPath, holdMs, sleep: new SharedArrayBuffer(4) },
+  })
+  worker.on('message', (message: string) => {
+    if (message === 'locked') resolveLocked()
+    if (message === 'done') {
+      resolveDone()
+      void worker.terminate()
+    }
+  })
+  worker.once('error', (error) => {
+    rejectLocked(error)
+    rejectDone(error)
+  })
+  await locked
+  return { done }
 }
 
 async function setupStreamFile(dir: string): Promise<{ dbPath: string; path: string }> {
@@ -126,6 +175,56 @@ describe('runTransaction concurrent-write contention (real sqlStorage.ts primiti
     // wording SQLite uses for this condition.
     expect(allErrors.some((error) => error.code === 'ERR_SQLITE_ERROR' && /lock|busy/i.test(error.message))).toBe(true)
   }, 20_000)
+})
+
+describe('SqliteEventStreamStore event-loop contention bound', () => {
+  let dir: string
+
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('does not let a concurrent writer stall reads or the event loop beyond the configured bounds', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'boring-event-stream-write-bound-'))
+    const { dbPath, path } = await setupStreamFile(dir)
+    const opened = openDatabase(dbPath)
+    const store = new SqliteEventStreamStore(opened.sql, opened.runTransaction)
+
+    try {
+      const lock = await startHoldingWriteLock(dbPath, 1_000)
+      const startedAt = performance.now()
+      let timerElapsed = Number.POSITIVE_INFINITY
+      const timer = new Promise<void>((resolve) => setTimeout(() => {
+        timerElapsed = performance.now() - startedAt
+        resolve()
+      }, 50))
+      const appendResult = store.appendEvent(path, { waitsForLock: true }).then(
+        () => ({ ok: true as const }),
+        (error: unknown) => ({ ok: false as const, error }),
+      )
+      const readStartedAt = performance.now()
+      await expect(store.readEvents(path, { offset: '-1' })).resolves.toMatchObject({ events: [] })
+      expect(performance.now() - readStartedAt).toBeLessThan(SQLITE_BUSY_TIMEOUT_MS + 150)
+
+      await timer
+      const result = await appendResult
+      const operationElapsed = performance.now() - startedAt
+
+      // busy_timeout=5000 held this timer until the worker released its lock.
+      // The short native wait lets it run near schedule; timer-based retries
+      // then give up inside a bounded window under sustained contention.
+      expect(timerElapsed).toBeLessThan(SQLITE_BUSY_TIMEOUT_MS + 150)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(String(result.error)).toMatch(/lock|busy/i)
+      expect(operationElapsed).toBeLessThan(
+        SQLITE_BUSY_RETRY_WINDOW_MS + SQLITE_BUSY_TIMEOUT_MS + 250,
+      )
+
+      await lock.done
+    } finally {
+      opened.db.close()
+    }
+  }, 5_000)
 })
 
 describe('SqliteEventStreamStore write-path transaction mode wiring', () => {

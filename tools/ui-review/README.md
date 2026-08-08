@@ -17,6 +17,8 @@ The registry includes:
 - `ask-user-inline`, which reviews pending, selected, and resolved inline question states at desktop and mobile widths.
 - `automation-pane-popover`, which reviews the Automations pane and New
   automation editor at desktop and mobile widths through the private fixture host.
+- `workspace-agent-sidebar`, which reviews the real addressed-Agent navigation,
+  pinned provenance, responsive actions, expansion hierarchy, and unified Agent page.
 - `workspace-command-palette`, which reviews the real workbench with known and
   explored states.
 - `workspace-component-baselines`, which replaces the retired Storybook suite

@@ -1,14 +1,18 @@
 import { describe, expect, it, vi } from "vitest"
-import { act, fireEvent, render, screen } from "@testing-library/react"
-import type { ComponentType } from "react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { useEffect, type ComponentType } from "react"
 
 // Capture the props handed to DockviewReact so we can assert the rendering
 // contract that keeps chat panes mounted across activation. The real dockview
 // component needs a DOM grid engine we don't exercise here, so it is mocked.
 const dockviewProps = vi.fn()
+const dockviewMounts = vi.fn()
 vi.mock("dockview-react", () => ({
   DockviewReact: (props: Record<string, unknown>) => {
     dockviewProps(props)
+    useEffect(() => {
+      dockviewMounts()
+    }, [])
     type MockPanelApi = { id: string; title: string; onDidTitleChange: () => { dispose: () => void } }
     const Header = props.defaultTabComponent as ComponentType<{ api: MockPanelApi }> | undefined
     const HeaderActions = props.rightHeaderActionsComponent as ComponentType<{ activePanel: { api: MockPanelApi } }> | undefined
@@ -82,7 +86,7 @@ describe("ChatPaneStageDock", () => {
     expect(onDrop).toHaveBeenCalledWith("shared", "beta")
   })
 
-  it('mounts panes with the "always" renderer so switching panes preserves scroll (#276)', () => {
+  it("renders the active pane in Dockview's visible group", () => {
     dockviewProps.mockClear()
     render(
       <ChatPaneStageDock
@@ -95,11 +99,38 @@ describe("ChatPaneStageDock", () => {
       />,
     )
 
-    // The default "onlyWhenVisible" renderer detaches and re-appends a group's
-    // content element on activation, which resets the transcript scroll
-    // container's scrollTop to 0. "always" keeps it mounted in place.
     expect(dockviewProps).toHaveBeenCalled()
-    expect(dockviewProps.mock.calls[0][0]).toMatchObject({ defaultRenderer: "always" })
+    expect(dockviewProps.mock.calls[0][0]).toMatchObject({ defaultRenderer: "onlyWhenVisible" })
+  })
+
+  it("shows a loading surface while remounting a switched single pane", async () => {
+    dockviewMounts.mockClear()
+    dockviewProps.mockClear()
+    const { rerender } = render(
+      <ChatPaneStageDock
+        panes={[{ id: "a", title: "A" }]}
+        activePaneId="a"
+        renderPane={(pane) => <div>{pane.id}</div>}
+      />,
+    )
+    expect(screen.getByRole("status", { name: "Loading chat" })).toBeInTheDocument()
+    const firstApi = mockDockApi([])
+    act(() => (dockviewProps.mock.calls.at(-1)?.[0].onReady as (event: { api: typeof firstApi }) => void)({ api: firstApi }))
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Loading chat" })).not.toBeInTheDocument())
+
+    rerender(
+      <ChatPaneStageDock
+        panes={[{ id: "b", title: "B" }]}
+        activePaneId="b"
+        renderPane={(pane) => <div>{pane.id}</div>}
+      />,
+    )
+    expect(screen.getByRole("status", { name: "Loading chat" })).toBeInTheDocument()
+    const secondApi = mockDockApi([])
+    act(() => (dockviewProps.mock.calls.at(-1)?.[0].onReady as (event: { api: typeof secondApi }) => void)({ api: secondApi }))
+
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Loading chat" })).not.toBeInTheDocument())
+    expect(dockviewMounts).toHaveBeenCalledTimes(2)
   })
 
   it("renders chat top actions only in the active pane header", () => {
