@@ -273,13 +273,18 @@ export function createRemoteSandboxV1(options: {
       command: string,
       execOptions: ExecOptions = {},
     ): Promise<ExecResult> {
+      if (execOptions.env && Object.keys(execOptions.env).length > 0) {
+        throw new SandboxProviderError(
+          REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+          "remote-worker exec env requires trusted credential delivery",
+        );
+      }
       const body = parseRemoteWorkerRequestV1(
         RemoteWorkerExecRequestSchemaV1,
         {
           invocationId: options.idFactory(),
           command,
           cwd: execOptions.cwd,
-          env: execOptions.env,
           timeoutMs: execOptions.timeoutMs ?? options.execTimeoutMs,
           maxOutputBytes: execOptions.maxOutputBytes ?? options.maxOutputBytes,
         },
