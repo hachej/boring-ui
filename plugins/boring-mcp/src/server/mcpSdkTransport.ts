@@ -53,8 +53,20 @@ async function withClient<T>(options: McpSdkTransportOptions, source: McpSource,
   const client = new Client({ name: options.clientName ?? "boring-mcp", version: options.clientVersion ?? "0.0.0" })
   try {
     const endpoint = await resolveEndpoint(options, source)
+    // validateUserRegisteredMcpEndpoint (shared/index.ts) is only a syntactic
+    // pre-filter on the literal endpoint string — it cannot stop a validated
+    // https:// host from 302-redirecting to a private/metadata address at
+    // connect time, and fetch's default `redirect: "follow"` would carry
+    // this transport's auth headers straight to wherever that redirect
+    // points. Until real connect-time enforcement lands (resolve-then-pin or
+    // an egress allowlist/proxy — see gh-1011-ssrf (bead wt-391-forward-1011-connect-time-ssrf-x35)), refuse to follow any
+    // redirect for user-registered sources rather than silently following it.
+    const requestInit: RequestInit = { headers: normalizeHeaders(endpoint.headers) }
+    if (source.provider === "user-registered") {
+      requestInit.redirect = "error"
+    }
     const transport = new StreamableHTTPClientTransport(normalizeUrl(endpoint.url), {
-      requestInit: { headers: normalizeHeaders(endpoint.headers) },
+      requestInit,
     })
     await client.connect(transport)
     return await run(client)

@@ -13,6 +13,7 @@ import type { PaneProps } from "../registry/types"
 import { readStoredNumber, writeStoredNumber } from "../store/localStorageValues"
 import type { ChatLayoutProps } from "./types"
 import { useWorkspaceAttention, useWorkspaceContext, workspaceAttentionSessionBadgeForBlocker } from "../provider"
+import { ChatLeftOverlay } from "./ChatLeftOverlay"
 import { ChatPaneStage } from "./ChatPaneStage"
 import { CornerChromeButton } from "./cornerChrome"
 import { MobileChatBar, MobileSingleChatPane, MobileWorkspaceBar } from "./mobileShell"
@@ -560,17 +561,7 @@ export function ChatLayout(props: ChatLayoutProps) {
               <PanelSlot id={centerId} params={props.centerParams} />
             )}
           </div>
-          {props.chatOverlay ? (
-            <div
-              data-boring-workspace-part="chat-left-overlay"
-              aria-hidden={chatCollapsed}
-              className="absolute inset-0 z-40 flex bg-background"
-            >
-              <div className="flex h-full w-full flex-col border-r border-border bg-background">
-                {props.chatOverlay}
-              </div>
-            </div>
-          ) : null}
+          <ChatLeftOverlay overlay={props.chatOverlay} hidden={chatCollapsed} />
         </main>
 
         {surfaceConfigured ? (

@@ -116,4 +116,22 @@ describe("MCP SDK Streamable HTTP transport", () => {
 
     expect(fake.seenHeaders).toContain("server-only-session-header")
   })
+
+  it("refuses to follow a redirect for a 'user-registered' source (redirect could otherwise carry auth headers to a private address)", async () => {
+    const redirectServer = createServer((req, res) => {
+      res.statusCode = 307
+      res.setHeader("location", "http://169.254.169.254/latest/meta-data")
+      res.end()
+    })
+    await new Promise<void>((resolve) => redirectServer.listen(0, "127.0.0.1", resolve))
+    const { port } = redirectServer.address() as AddressInfo
+    servers.push({ close: () => new Promise<void>((resolve, reject) => redirectServer.close((error) => error ? reject(error) : resolve())) })
+
+    const transport = createMcpSdkStreamableHttpTransport({
+      endpoint: { url: `http://127.0.0.1:${port}/mcp` },
+    })
+    const userRegisteredSource: McpSource = { ...source, provider: "user-registered" }
+
+    await expect(transport.listTools(userRegisteredSource)).rejects.toMatchObject({ code: "MCP_PROVIDER_ERROR" })
+  })
 })
