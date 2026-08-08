@@ -1252,12 +1252,16 @@ export async function createWorkspaceAgentServer(
   // and no explicit `opts.agents`, the resolved fleet has 6 agents even though
   // the option was omitted, and must not inherit the legacy global-contribution
   // route shape (gh-1106 slice 3 fix round 1, M3).
-  const fleetRepositoryRoot = opts.fleetRepositoryRoot ?? process.cwd()
-  const discoveredPackages = !opts.agents && process.env.BORING_AGENT_FLEET === '1'
+  // Everything fleet-related stays behind the flag check, including the
+  // `process.cwd()` fallback: with BORING_AGENT_FLEET unset this seam must do
+  // no eager work at all (gh-1107 slice 1 fix round: flag-off purity).
+  const fleetEnabled = !opts.agents && process.env.BORING_AGENT_FLEET === '1'
+  const fleetRepositoryRoot = fleetEnabled ? opts.fleetRepositoryRoot ?? process.cwd() : undefined
+  const discoveredPackages = fleetRepositoryRoot
     ? await discoverRepositoryAgentPackages(fleetRepositoryRoot)
     : undefined
   const agents = opts.agents ?? await resolveDefaultAgentFleet({
-    repositoryRoot: fleetRepositoryRoot,
+    ...(fleetRepositoryRoot ? { repositoryRoot: fleetRepositoryRoot } : {}),
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
   const isLegacyDefaultFleet = agents.length === 1 && "legacyDefault" in agents[0]!
@@ -1359,7 +1363,7 @@ export async function createWorkspaceAgentServer(
   const resolveBoringPluginDirs = (): BoringPluginSource[] => uniquePluginSources([
       ...defaultPluginPackagePaths.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
       ...(process.env.BORING_AGENT_FLEET === '1'
-        ? [{ rootDir: join(fleetRepositoryRoot, '.agents', 'personas'), kind: 'internal' as const }]
+        ? [{ rootDir: join(opts.fleetRepositoryRoot ?? process.cwd(), '.agents', 'personas'), kind: 'internal' as const }]
         : []),
       ...collectBoringPluginSources(workspaceRoot, pluginCollection, opts.additionalBoringPluginDirs, externalPluginsEnabled),
     ])
