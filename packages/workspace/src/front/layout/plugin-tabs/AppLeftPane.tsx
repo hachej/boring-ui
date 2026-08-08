@@ -89,7 +89,14 @@ export interface AppLeftPaneProps {
   sessions: AppLeftPaneSession[]
   /** Addressed Host fleet. Omit to preserve the single-Agent shell. */
   agents?: readonly AppLeftPaneAgent[]
+  /** The Agent the NEXT chat targets (the New chat picker's choice). */
   selectedAgentTypeId?: string
+  /**
+   * The Agent the host considers addressed. Used when no active session names
+   * its owner, so this presentational pane stops falling back to the New chat
+   * picker target — two different questions that only look alike.
+   */
+  addressedAgentTypeId?: string
   onSelectAgent?: (agentTypeId: string) => void
   /** @deprecated Agent details open exclusively through onOpenAgentSettings. */
   onOpenAgentDetails?: (agentTypeId: string) => void
@@ -196,6 +203,7 @@ export function AppLeftPane({
   sessions,
   agents = [],
   selectedAgentTypeId,
+  addressedAgentTypeId: addressedAgentTypeIdProp,
   onSelectAgent,
   onOpenAgentSettings,
   sessionsLoading = false,
@@ -258,7 +266,7 @@ export function AppLeftPane({
   // open so the pane never boots to an all-collapsed, chat-less wall.
   // Disclosure follows the chat the user is actually reading, never the New
   // chat picker: retargeting the next chat must not reshuffle the tree.
-  const addressedAgentTypeId = activeSessionRef?.agentTypeId ?? selectedAgentTypeId
+  const addressedAgentTypeId = activeSessionRef?.agentTypeId ?? addressedAgentTypeIdProp ?? selectedAgentTypeId
   const [expandedAgentIds, setExpandedAgentIds] = useState<ReadonlySet<string>>(
     () => new Set(addressedAgentTypeId ? [addressedAgentTypeId] : []),
   )
@@ -313,15 +321,22 @@ export function AppLeftPane({
     () => sessions.filter((session) => !pinnedSet.has(workspaceSessionKeyFor(session))),
     [pinnedSet, sessions],
   )
-  const sessionCountByAgent = useMemo(() => {
-    const counts = new Map(agents.map((agent) => [agent.agentTypeId, 0]))
+  // One pass, three numbers. These used to be a memoized count plus two full
+  // `sessions` scans re-run per Agent per render one line below it.
+  const agentStats = useMemo(() => {
+    const stats = new Map(agents.map((agent) => [agent.agentTypeId, { sessions: 0, working: 0, attention: 0 }]))
     for (const session of sessions) {
       if (!session.agentTypeId) continue
-      const current = counts.get(session.agentTypeId)
-      if (current !== undefined) counts.set(session.agentTypeId, current + 1)
+      const entry = stats.get(session.agentTypeId)
+      if (!entry) continue
+      const key = workspaceSessionKeyFor(session)
+      entry.sessions += 1
+      if (workingSessionIds.has(key)) entry.working += 1
+      if (sessionBadges.has(key)) entry.attention += 1
     }
-    return counts
-  }, [agents, sessions])
+    return stats
+  }, [agents, sessionBadges, sessions, workingSessionIds])
+  const emptyAgentStats = { sessions: 0, working: 0, attention: 0 }
   const agentLabelById = useMemo(
     () => new Map(agents.map((agent) => [agent.agentTypeId, shortAgentLabel(agent.label)])),
     [agents],
@@ -453,13 +468,7 @@ export function AppLeftPane({
         agentTypeId={agent.agentTypeId}
         label={agent.label}
         description={agent.description}
-        sessionCount={sessionCountByAgent.get(agent.agentTypeId) ?? 0}
-        workingCount={sessions.reduce((count, session) => (
-          session.agentTypeId === agent.agentTypeId && workingSessionIds.has(workspaceSessionKeyFor(session)) ? count + 1 : count
-        ), 0)}
-        attentionCount={sessions.reduce((count, session) => (
-          session.agentTypeId === agent.agentTypeId && sessionBadges.has(workspaceSessionKeyFor(session)) ? count + 1 : count
-        ), 0)}
+        stats={agentStats.get(agent.agentTypeId) ?? emptyAgentStats}
         sessionsStatus={agent.sessionsStatus}
         filtered={chatsAgentLens === agent.agentTypeId}
         expandable={nestedAgentChats}

@@ -14,15 +14,20 @@ export function shortAgentLabel(label: string): string {
   return label.replace(/^Boring\s+/i, "") || label
 }
 
+/** One pass over the pane's chats, not three scalars scanned three times. */
+export interface AppLeftPaneAgentStats {
+  sessions: number
+  /** Chats currently working (streaming/executing) for this Agent. */
+  working: number
+  /** Chats waiting on the user (question/review/approval badges). */
+  attention: number
+}
+
 export interface AppLeftPaneAgentCardProps {
   agentTypeId: string
   label: string
   description?: string
-  sessionCount: number
-  /** Chats currently working (streaming/executing) for this Agent. */
-  workingCount?: number
-  /** Chats waiting on the user (question/review/approval badges). */
-  attentionCount?: number
+  stats: AppLeftPaneAgentStats
   sessionsStatus?: "loading" | "loaded" | "error"
   /** The Chats lens is an optional filter (multi-project tree only). */
   filtered: boolean
@@ -50,9 +55,7 @@ export function AppLeftPaneAgentCard({
   agentTypeId,
   label,
   description,
-  sessionCount,
-  workingCount = 0,
-  attentionCount = 0,
+  stats,
   sessionsStatus,
   filtered,
   expandable = false,
@@ -70,7 +73,7 @@ export function AppLeftPaneAgentCard({
   const subtitle = description?.trim() || undefined
   const countLabel = sessionsStatus === "error"
     ? "chats unavailable"
-    : `${sessionCount} ${sessionCount === 1 ? "chat" : "chats"}`
+    : `${stats.sessions} ${stats.sessions === 1 ? "chat" : "chats"}`
 
   return (
     <div
@@ -110,29 +113,29 @@ export function AppLeftPaneAgentCard({
           data-boring-agent-session-count="true"
           className="min-w-0 flex-1 shrink-0 pl-0.5 text-[11px] font-normal leading-4 tabular-nums text-muted-foreground/80"
         >
-          {sessionsStatus === "error" ? "!" : sessionCount}
+          {sessionsStatus === "error" ? "!" : stats.sessions}
         </span>
         {/* Aggregate liveliness: quiet dot+count pairs so a collapsed Agent
             still tells you something is running or waiting on you. */}
-        {workingCount > 0 ? (
+        {stats.working > 0 ? (
           <span
             data-boring-workspace-part="agent-card-working-count"
-            title={`${workingCount} ${workingCount === 1 ? "chat is" : "chats are"} working`}
+            title={`${stats.working} ${stats.working === 1 ? "chat is" : "chats are"} working`}
             className="flex shrink-0 items-center gap-0.5 pl-1 text-[10px] tabular-nums leading-4 text-[color:var(--accent)]"
           >
             <span className="size-1.5 animate-pulse rounded-full bg-[color:var(--accent)] motion-reduce:animate-none" aria-hidden="true" />
-            {workingCount}
+            {stats.working}
             <span className="sr-only">working</span>
           </span>
         ) : null}
-        {attentionCount > 0 ? (
+        {stats.attention > 0 ? (
           <span
             data-boring-workspace-part="agent-card-attention-count"
-            title={`${attentionCount} ${attentionCount === 1 ? "chat needs" : "chats need"} your input`}
+            title={`${stats.attention} ${stats.attention === 1 ? "chat needs" : "chats need"} your input`}
             className="flex shrink-0 items-center gap-0.5 pl-1 text-[10px] tabular-nums leading-4 text-amber-700 dark:text-amber-300"
           >
             <span className="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />
-            {attentionCount}
+            {stats.attention}
             <span className="sr-only">waiting for you</span>
           </span>
         ) : null}

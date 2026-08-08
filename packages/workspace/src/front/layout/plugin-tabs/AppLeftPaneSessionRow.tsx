@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, type CSSProperties, type ReactNode } from "react"
 import { Columns2, MessageSquare, Pin, Zap } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
@@ -9,20 +9,29 @@ import type { AppLeftPaneSession } from "./AppLeftPane"
 import { AppSessionActionsMenu } from "./AppSessionActionsMenu"
 import { InlineSessionRename, useInlineSessionRename } from "./InlineSessionRename"
 import { encodeWorkspaceSessionDrag } from "../../sessionIdentity"
+import { exactTimestamp, resolveSessionTrailingSlot, type SessionTrailingBadge, type SessionTrailingMarker } from "./appSessionRowTrailing"
 
 export type AppSessionRowState = "normal" | "open" | "active"
 
-/** Compact relative age for the row's trailing slot ("now", "8m", "3h", "2d", "5w"). */
-export function formatSessionAge(updatedAt: string | number | undefined, now: number): string | null {
-  if (updatedAt === undefined) return null
-  const then = typeof updatedAt === "number" ? updatedAt : Date.parse(updatedAt)
-  if (!Number.isFinite(then)) return null
-  const seconds = Math.max(0, Math.floor((now - then) / 1000))
-  if (seconds < 60) return "now"
-  if (seconds < 3_600) return `${Math.floor(seconds / 60)}m`
-  if (seconds < 86_400) return `${Math.floor(seconds / 3_600)}h`
-  if (seconds < 604_800) return `${Math.floor(seconds / 86_400)}d`
-  return `${Math.floor(seconds / 604_800)}w`
+/** The split / detach hover shortcuts differ only by icon, words and handler. */
+function SessionHoverAction({ icon, label, title, onClick }: {
+  icon: ReactNode
+  label: string
+  title: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      draggable={false}
+      aria-label={label}
+      title={title}
+      onClick={onClick}
+      className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {icon}
+    </button>
+  )
 }
 
 function sessionBadgeToneClassName(tone: WorkspaceAttentionSessionBadge["tone"]): string {
@@ -31,6 +40,54 @@ function sessionBadgeToneClassName(tone: WorkspaceAttentionSessionBadge["tone"])
     case "warning": return "bg-amber-500/12 text-amber-700 dark:text-amber-300"
     case "neutral": return "bg-foreground/[0.07] text-muted-foreground"
     default: return "bg-[color:var(--accent)]/12 text-[color:var(--accent)]"
+  }
+}
+
+function renderTrailingBadge(badge: SessionTrailingBadge): ReactNode {
+  switch (badge.kind) {
+    case "attention":
+      return (
+        <span
+          data-boring-workspace-part="app-session-badge"
+          data-boring-badge={badge.badge.kind}
+          className={cn("pointer-events-none inline-flex max-w-full shrink-0 truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none", sessionBadgeToneClassName(badge.badge.tone))}
+        >
+          {badge.badge.label}
+        </span>
+      )
+    case "working":
+      return (
+        <span
+          data-boring-workspace-part="app-session-badge"
+          data-boring-badge="working"
+          className="pointer-events-none inline-flex shrink-0 rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+        >
+          working
+        </span>
+      )
+    case "none":
+      return null
+  }
+}
+
+function renderTrailingMarker(marker: SessionTrailingMarker): ReactNode {
+  switch (marker.kind) {
+    case "owner":
+      return <span className="truncate text-[11px] font-medium text-muted-foreground">{marker.label}</span>
+    case "pin":
+      return <Pin className="h-3.5 w-3.5 shrink-0 fill-current text-[color:var(--accent)]" strokeWidth={1.75} aria-hidden="true" />
+    case "age":
+      return (
+        <span
+          data-boring-workspace-part="app-session-age"
+          title={marker.title}
+          className="pointer-events-auto shrink-0 pl-1 text-[11px] tabular-nums leading-none text-muted-foreground"
+        >
+          {marker.label}
+        </span>
+      )
+    case "none":
+      return null
   }
 }
 
@@ -83,20 +140,24 @@ export function AppSessionRow({
   // placement shortcuts only apply to chats that are not open yet.
   const detachAvailable = state === "normal" && actionsAvailable && Boolean(onOpenDetached)
   // Placement shortcuts surface directly on hover (owner spec); the menu keeps
-  // the rest. Width reserves one 28px slot per visible action.
+  // the rest. One slot per visible action; the pixel size of a slot lives in
+  // CSS (one number per breakpoint) instead of a hardcoded width ladder that
+  // desktop and mobile had already computed differently.
   const hoverActionCount = (showMenu ? 1 : 0) + (splitAvailable ? 1 : 0) + (detachAvailable ? 1 : 0)
-  const actionWidthClassName = hoverActionCount === 3 ? "w-[84px]" : hoverActionCount === 2 ? "w-14" : hoverActionCount === 1 ? "w-7" : "w-0"
-  const showWorkingBadge = working && !activeDot
-  // The age is deliberately quiet: it only occupies the trailing slot when
-  // nothing more urgent (badge, provenance, pin) claims it, and it yields to
-  // the hover actions like the rest of the slot.
-  const age = !attentionBadge && !showWorkingBadge && !ownerLabel && !pinned
-    ? formatSessionAge(session.updatedAt, Date.now())
-    : null
-  const exactUpdatedAt = age !== null && session.updatedAt !== undefined
-    ? new Date(typeof session.updatedAt === "number" ? session.updatedAt : Date.parse(session.updatedAt)).toLocaleString()
-    : undefined
-  const statusWidthClassName = ownerLabel ? "w-auto max-w-28 gap-1" : attentionBadge || showWorkingBadge ? "w-[88px]" : age ? "w-auto" : actionWidthClassName
+  const actionSlotStyle = { "--app-session-action-slots": hoverActionCount } as CSSProperties
+  const trailing = resolveSessionTrailingSlot({
+    ...(attentionBadge ? { attentionBadge } : {}),
+    working,
+    activeDot,
+    ...(ownerLabel ? { ownerLabel } : {}),
+    pinned,
+    ...(session.updatedAt !== undefined ? { updatedAt: session.updatedAt } : {}),
+    now: Date.now(),
+  })
+  const exactUpdatedAt = trailing.marker.kind === "age" ? exactTimestamp(session.updatedAt) : undefined
+  const statusWidthClassName = trailing.marker.kind === "owner"
+    ? "w-auto max-w-28 gap-1"
+    : trailing.badge.kind !== "none" ? "w-[88px]" : "w-auto"
   const rename = useInlineSessionRename({
     sessionId: session.id,
     title,
@@ -186,40 +247,13 @@ export function AppSessionRow({
             {title}
           </span>
           <span
+            style={actionSlotStyle}
             data-action-count={hoverActionCount}
-            data-has-status={attentionBadge || working ? "true" : "false"}
+            data-reserve-actions={trailing.reserveActions ? "true" : "false"}
             className={cn("app-left-session-trailing flex shrink-0 justify-end overflow-hidden group-hover:opacity-0 group-focus-within:opacity-0", statusWidthClassName)}
           >
-            {attentionBadge ? (
-              <span
-                data-boring-workspace-part="app-session-badge"
-                data-boring-badge={attentionBadge.kind}
-                className={cn("pointer-events-none inline-flex max-w-full shrink-0 truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none", sessionBadgeToneClassName(attentionBadge.tone))}
-              >
-                {attentionBadge.label}
-              </span>
-            ) : showWorkingBadge ? (
-              <span
-                data-boring-workspace-part="app-session-badge"
-                data-boring-badge="working"
-                className="pointer-events-none inline-flex shrink-0 rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
-              >
-                working
-              </span>
-            ) : null}
-            {ownerLabel ? (
-              <span className="truncate text-[11px] font-medium text-muted-foreground">{ownerLabel}</span>
-            ) : !attentionBadge && !working && pinned ? (
-              <Pin className="h-3.5 w-3.5 shrink-0 fill-current text-[color:var(--accent)]" strokeWidth={1.75} aria-hidden="true" />
-            ) : age ? (
-              <span
-                data-boring-workspace-part="app-session-age"
-                title={exactUpdatedAt}
-                className="pointer-events-auto shrink-0 pl-1 text-[11px] tabular-nums leading-none text-muted-foreground"
-              >
-                {age}
-              </span>
-            ) : null}
+            {renderTrailingBadge(trailing.badge)}
+            {renderTrailingMarker(trailing.marker)}
           </span>
         </button>
       )}
@@ -228,38 +262,30 @@ export function AppSessionRow({
         <span
           data-boring-workspace-part="app-session-actions"
           data-action-count={hoverActionCount}
+          style={actionSlotStyle}
           className={cn(
             // Keep the reserved action hit area above the row button at all
             // times. Toggling pointer-events only after hover creates a race
             // where the underlying session button can win the same click.
             "app-left-session-actions pointer-events-auto absolute inset-y-0 right-1 z-10 flex items-center justify-end gap-0.5 opacity-0",
-            actionWidthClassName,
             "group-hover:opacity-100 group-focus-within:opacity-100",
           )}
         >
           {splitAvailable ? (
-            <button
-              type="button"
-              draggable={false}
-              aria-label={`Open ${title} in a split pane`}
+            <SessionHoverAction
+              icon={<Columns2 className="size-3.5" strokeWidth={1.75} aria-hidden="true" />}
+              label={`Open ${title} in a split pane`}
               title="Open in split pane"
               onClick={() => onOpenAsPane?.(session.id)}
-              className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Columns2 className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-            </button>
+            />
           ) : null}
           {detachAvailable ? (
-            <button
-              type="button"
-              draggable={false}
-              aria-label={`Open ${title} as a quick chat`}
+            <SessionHoverAction
+              icon={<Zap className="size-3.5" strokeWidth={1.85} aria-hidden="true" />}
+              label={`Open ${title} as a quick chat`}
               title="Open as quick chat"
               onClick={() => onOpenDetached?.(session.id)}
-              className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Zap className="size-3.5" strokeWidth={1.85} aria-hidden="true" />
-            </button>
+            />
           ) : null}
           {showMenu ? (
           <AppSessionActionsMenu

@@ -2641,6 +2641,9 @@ export function WorkspaceAgentFront<
           // The resolved selection, not the raw one: with nothing picked yet the
           // pane must address `defaultAgentTypeId`, never the first catalog entry.
           selectedAgentTypeId={fleetModeEnabled ? newChatAgentTypeId : undefined}
+          // The chat the user is READING, kept distinct from the New chat
+          // target above: retargeting must not reshuffle the tree.
+          addressedAgentTypeId={fleetModeEnabled ? effectiveAgentTypeId : undefined}
           onSelectAgent={fleetModeEnabled ? setNewChatAgentTypeIdOverride : undefined}
           onOpenAgentSettings={fleetModeEnabled ? (ownerAgentTypeId) => setLeftOverlay(agentOverlayId(ownerAgentTypeId)) : undefined}
           sessionsLoading={remoteSessionsTransitioning}

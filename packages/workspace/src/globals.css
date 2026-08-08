@@ -383,6 +383,19 @@
   background-color: oklch(from var(--foreground) l c h / 0.3);
 }
 
+/* The hover-action strip and the status slot it hides behind are the SAME
+   width, derived from one slot count set by the row and one slot size set
+   here per breakpoint. The previous hardcoded ladders had already drifted
+   (136px for three 44px slots), which is exactly what one source prevents. */
+.app-left-session-row {
+  --app-session-action-slot: 28px;
+}
+
+.app-left-session-actions,
+.app-left-session-trailing[data-reserve-actions="true"] {
+  width: calc(var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px));
+}
+
 /* App-left chrome stays compact for fine pointers while meeting 44px touch
    targets and keeping secondary actions discoverable on touch-only devices. */
 @media (pointer: coarse) {
@@ -406,19 +419,9 @@
     height: 44px;
   }
 
-  .app-left-session-trailing[data-action-count="1"][data-has-status="false"],
-  .app-left-session-actions[data-action-count="1"] {
-    width: 44px;
-  }
-
-  .app-left-session-trailing[data-action-count="2"][data-has-status="false"],
-  .app-left-session-actions[data-action-count="2"] {
-    width: 90px;
-  }
-
-  .app-left-session-trailing[data-action-count="3"][data-has-status="false"],
-  .app-left-session-actions[data-action-count="3"] {
-    width: 136px;
+  /* Coarse pointers get 44px slots. */
+  .app-left-session-row {
+    --app-session-action-slot: 44px;
   }
 }
 
