@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
-import { BookOpen, Bot, ChevronDown, ExternalLink, FileText, MessageSquarePlus, X } from "lucide-react"
+import { BookOpen, Bot, ChevronDown, ExternalLink, FileText, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { postUiCommand } from "../../bridge"
@@ -20,8 +20,10 @@ export interface AgentDetailsOverlayAgent {
 
 export interface AgentDetailsOverlayProps {
   agent: AgentDetailsOverlayAgent
-  sessionCount: number
-  onCreateSession: () => void
+  /** Accepted for host compatibility; the overlay no longer renders a chat count. */
+  sessionCount?: number
+  /** Accepted for host compatibility; chat creation lives in the left pane. */
+  onCreateSession?: () => void
   onClose: () => void
   headerInsetStart?: boolean
   headerInsetEnd?: boolean
@@ -186,7 +188,7 @@ function parseKnowledge(payload: unknown): KnowledgeSource[] {
 }
 
 /**
- * Resolve the model shown in the header strip: the agent's pinned model when
+ * Resolve the model shown in the Defaults section: the agent's pinned model when
  * set, else the host default, labeled through the models catalog.
  */
 function resolveModelLabel(modelsPayload: unknown, pinned: string | null): string | null {
@@ -300,8 +302,6 @@ const SYSTEM_PROMPT_PREVIEW_LIMIT = 280
 
 export function AgentDetailsOverlay({
   agent,
-  sessionCount,
-  onCreateSession,
   onClose,
   headerInsetStart = false,
   headerInsetEnd = false,
@@ -393,10 +393,6 @@ export function AgentDetailsOverlay({
     void load()
   }, [load])
 
-  const statusLabel = agent.sessionsStatus === "error"
-    ? "Unavailable"
-    : agent.sessionsStatus === "loading" ? "Loading" : "Ready"
-
   const description = capabilities.describe.value
   const systemPrompt = description?.systemPrompt ?? null
   const promptText = useMemo(() => systemPrompt ? normalizePromptText(systemPrompt) : null, [systemPrompt])
@@ -462,18 +458,7 @@ export function AgentDetailsOverlay({
             <Bot className="size-4" strokeWidth={1.75} aria-hidden="true" />
           </span>
         )}
-        actions={(<>
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            onClick={onCreateSession}
-            aria-label={`New chat with ${agent.label}`}
-            title="New chat"
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <MessageSquarePlus className="size-3" strokeWidth={1.75} />
-          </IconButton>
+        actions={(
           <IconButton
             type="button"
             variant="ghost"
@@ -485,33 +470,10 @@ export function AgentDetailsOverlay({
           >
             <X className="size-3" strokeWidth={1.75} />
           </IconButton>
-        </>)}
+        )}
       >
         <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto p-4">
           <div className="grid max-w-3xl gap-7">
-            <section aria-labelledby="agent-overview-heading">
-              <h3 id="agent-overview-heading" className="sr-only">Overview</h3>
-              <p className="text-sm leading-6 text-foreground/85">
-                {agent.description || `${agent.label} is ready to chat and work in this workspace.`}
-              </p>
-              <dl className="mt-3 flex flex-wrap items-center gap-x-8 gap-y-2 border-y border-border/60 py-3">
-                <div className="flex items-baseline gap-2">
-                  <dt className="text-[11px] font-medium text-muted-foreground">Chats</dt>
-                  <dd className="text-sm font-semibold tabular-nums text-foreground">{sessionCount}</dd>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <dt className="text-[11px] font-medium text-muted-foreground">Status</dt>
-                  <dd className="text-sm font-semibold text-foreground">{statusLabel}</dd>
-                </div>
-                {capabilities.modelLabel ? (
-                  <div className="flex min-w-0 items-baseline gap-2">
-                    <dt className="text-[11px] font-medium text-muted-foreground">Model</dt>
-                    <dd className="min-w-0 truncate text-sm font-semibold text-foreground">{capabilities.modelLabel}</dd>
-                  </div>
-                ) : null}
-              </dl>
-            </section>
-
             <DetailSection id="agent-instructions-heading" title="Instructions">
               {capabilities.describe.status === "loading" && capabilities.instructionFiles.length === 0 ? (
                 <SectionSkeleton />
@@ -763,6 +725,19 @@ export function AgentDetailsOverlay({
                     ? "The system prompt couldn't be loaded."
                     : "This agent uses the default instructions."}
                 </EmptyLine>
+              )}
+            </DetailSection>
+
+            <DetailSection id="agent-defaults-heading" title="Defaults">
+              {capabilities.describe.status === "loading" ? <SectionSkeleton /> : capabilities.modelLabel ? (
+                <dl className="mt-3 divide-y divide-border/50 border-y border-border/60">
+                  <div className="flex min-h-11 items-baseline justify-between gap-3 py-2.5 sm:min-h-0">
+                    <dt className="text-sm text-muted-foreground">Default model</dt>
+                    <dd className="min-w-0 truncate text-sm font-medium text-foreground">{capabilities.modelLabel}</dd>
+                  </div>
+                </dl>
+              ) : (
+                <EmptyLine>Uses the host default model.</EmptyLine>
               )}
             </DetailSection>
 

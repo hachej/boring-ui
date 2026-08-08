@@ -109,6 +109,34 @@ describe("AgentDetailsOverlay", () => {
     // The old developer-jargon copy never renders.
     expect(screen.queryByText(/Runtime plugins explicitly bound/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Workspace UI plugins do not automatically/)).not.toBeInTheDocument()
+    // Round 3: no New chat button, no readiness blurb, no Chats/Status strip.
+    expect(screen.queryByRole("button", { name: /New chat/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/is ready to chat and work/)).not.toBeInTheDocument()
+    expect(screen.queryByText("Chats")).not.toBeInTheDocument()
+    expect(screen.queryByText("Status")).not.toBeInTheDocument()
+  })
+
+  it("shows the resolved default model in the Defaults section", async () => {
+    respond({
+      describe: { systemPrompt: null, model: "claude-fable-5", plugins: [], mcpServers: [] },
+      models: { models: [{ id: "claude-fable-5", label: "Fable 5" }], defaultModel: { id: "claude-fable-5" } },
+    })
+    renderOverlay()
+
+    expect(await screen.findByText("Defaults")).toBeInTheDocument()
+    expect(screen.getByText("Default model")).toBeInTheDocument()
+    expect(screen.getByText("Fable 5")).toBeInTheDocument()
+  })
+
+  it("falls back to the host default model label when the agent pins none", async () => {
+    respond({
+      describe: { systemPrompt: null, plugins: [], mcpServers: [] },
+      models: { models: [{ id: "gpt-x", label: "GPT X" }], defaultModel: { id: "gpt-x" } },
+    })
+    renderOverlay()
+
+    expect(await screen.findByText("Default model")).toBeInTheDocument()
+    expect(screen.getByText("GPT X")).toBeInTheDocument()
   })
 
   it("opens a skill through the workbench command path", async () => {

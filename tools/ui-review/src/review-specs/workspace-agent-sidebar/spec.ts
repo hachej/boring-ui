@@ -132,7 +132,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
             nestedPinnedHasPin: Boolean(document.querySelector('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="alpha"] [data-boring-workspace-part="app-session-row"] .app-left-session-trailing svg')),
             detailOverlayCount: document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"]').length,
             detailTabCount: document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"] [role="tab"]').length,
-            capabilityHeadingCount: [...document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"] h3')].filter((heading) => ["System prompt", "Skills", "Tools", "MCP access", "Plugins"].includes(heading.textContent?.trim() ?? "")).length,
+            capabilityHeadingCount: [...document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"] h3')].filter((heading) => ["Instructions", "Knowledge", "Skills", "Tools", "MCP access", "Plugins", "System prompt", "Defaults"].includes(heading.textContent?.trim() ?? "")).length,
             legacyJargonCount: [...document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"]')].filter((overlay) => /Runtime plugins explicitly bound|host fleet definition|Configuration/.test(overlay.textContent ?? "")).length,
             undersizedAgentControls: mobile ? controls.map((control) => {
               const rect = control.getBoundingClientRect()
