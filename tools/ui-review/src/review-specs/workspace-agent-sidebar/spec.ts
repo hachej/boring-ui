@@ -142,6 +142,38 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
             // that happened to contain it.
             legacyJargonCount: [...document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"]')].filter((overlay) => /Runtime plugins explicitly bound|host fleet definition/.test(overlay.textContent ?? "")).length
               + [...document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"] h1, [data-boring-workspace-part="agent-details-overlay"] h2, [data-boring-workspace-part="agent-details-overlay"] h3')].filter((heading) => /^Configuration$/i.test(heading.textContent?.trim() ?? "")).length,
+            // Hover actions are absolutely positioned and have no background,
+            // so anything the trailing slot fails to reserve is drawn
+            // underneath them. Measured, because this is invisible to any
+            // assertion about markup.
+            actionOverlaps: [...document.querySelectorAll('[data-boring-workspace-part="app-session-row"]')].flatMap((row) => {
+              // Effective opacity, not just the element's own: the status slot
+              // fades out behind a fading-in action strip on pointer devices,
+              // and an invisible element cannot be overlapped.
+              const shown = (node: Element): boolean => {
+                let opacity = 1
+                for (let el: Element | null = node; el && el !== document.body; el = el.parentElement) {
+                  opacity *= Number(getComputedStyle(el).opacity)
+                }
+                return opacity > 0.05
+              }
+              const actions = row.querySelector(".app-left-session-actions")
+              if (!actions || !visible(actions) || !shown(actions)) return []
+              const strip = actions.getBoundingClientRect()
+              return ([
+                ["title", row.querySelector("span.flex-1")],
+                ["age", row.querySelector('[data-boring-workspace-part="app-session-age"]')],
+                ["badge", row.querySelector('[data-boring-workspace-part="app-session-badge"]')],
+                ["owner", row.querySelector(".app-left-session-trailing span.truncate")],
+              ] as Array<[string, Element | null]>).flatMap(([kind, node]) => {
+                if (!node || !shown(node)) return []
+                const rect = node.getBoundingClientRect()
+                const overlap = Math.min(rect.right, strip.right) - Math.max(rect.left, strip.left)
+                return overlap > 0
+                  ? [{ kind, label: node.textContent?.trim().slice(0, 20) ?? "", overlap: Math.round(overlap) }]
+                  : []
+              })
+            }),
             undersizedAgentControls: mobile ? controls.map((control) => {
               const rect = control.getBoundingClientRect()
               return { label: control.getAttribute("aria-label") || control.textContent?.trim() || "button", width: rect.width, height: rect.height }

@@ -32,6 +32,7 @@ function snapshot(requestFailures: AgentSidebarHardGateSnapshot["requestFailures
       detailTabCount: 0,
       capabilityHeadings: [],
       legacyJargonCount: 0,
+      actionOverlaps: [],
       undersizedAgentControls: [],
     },
   }
@@ -81,6 +82,28 @@ describe("workspace Agent sidebar state contract", () => {
     }).results.find((result) => result.id === "state-contract")
     expect(hover(6)).toMatchObject({ passed: true })
     expect(hover(4)).toMatchObject({ passed: false })
+  })
+})
+
+describe("workspace Agent sidebar action-overlap gate", () => {
+  const overlapGate = (actionOverlaps: AgentSidebarHardGateSnapshot["sidebar"]["actionOverlaps"]) => {
+    const base = snapshot([])
+    return evaluateAgentSidebarHardGates({ ...base, sidebar: { ...base.sidebar, actionOverlaps } })
+      .results.find((result) => result.id === "session-row-action-overlap")
+  }
+
+  it("passes when nothing renders under the hover actions", () => {
+    expect(overlapGate([])).toMatchObject({ passed: true })
+  })
+
+  it("fails on a title running under the action strip, with the measurement as evidence", () => {
+    const gate = overlapGate([{ kind: "title", label: "hi", overlap: 59 }])
+    expect(gate).toMatchObject({ passed: false })
+    expect(gate?.evidence).toContain("59")
+  })
+
+  it("fails on the age label too, not only the title", () => {
+    expect(overlapGate([{ kind: "age", label: "9h", overlap: 17 }])).toMatchObject({ passed: false })
   })
 })
 

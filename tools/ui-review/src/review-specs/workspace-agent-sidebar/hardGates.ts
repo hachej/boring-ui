@@ -13,7 +13,7 @@ import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 //   jargon ban; the no-tabs invariant is kept.
 // - Agent rows expose "New chat" (+), the "..." options trigger holding the
 //   placement variants, and Settings; the action count recognises the trigger.
-export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v6"
+export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v7"
 
 const KNOWN_ABORTED_REQUESTS: Array<{
   rationale: string
@@ -67,6 +67,7 @@ export interface AgentSidebarHardGateSnapshot extends UiReviewBrowserErrors {
     detailTabCount: number
     capabilityHeadings: string[]
     legacyJargonCount: number
+    actionOverlaps: Array<{ kind: string; label: string; overlap: number }>
     undersizedAgentControls: Array<{ label: string; width: number; height: number }>
   }
 }
@@ -131,6 +132,11 @@ export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnap
   add("horizontal-overflow", snapshot.documentWidth.scrollWidth <= snapshot.documentWidth.clientWidth, `${snapshot.documentWidth.scrollWidth}/${snapshot.documentWidth.clientWidth}`)
   add("axe-serious-critical", snapshot.axeViolations.length === 0, snapshot.axeViolations.map((entry) => `${entry.impact}:${entry.id}:${entry.nodes}`).join("\n") || "none")
   add("state-contract", statePassed, JSON.stringify(state))
+  // Row content must never render underneath the hover action strip. The
+  // trailing slot reserves the strip's width for every variant; when that
+  // reservation regresses, the title and the age silently sit under
+  // background-less icon buttons.
+  add("session-row-action-overlap", state.actionOverlaps.length === 0, JSON.stringify(state.actionOverlaps))
   add("agent-touch-targets", !snapshot.viewport.mobile || state.undersizedAgentControls.length === 0, JSON.stringify(state.undersizedAgentControls))
   return { schemaVersion: UI_REVIEW_SCHEMA_VERSION, contractVersion: AGENT_SIDEBAR_HARD_GATE_CONTRACT, results }
 }

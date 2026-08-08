@@ -391,13 +391,22 @@
   --app-session-action-slot: 28px;
 }
 
-.app-left-session-actions,
-.app-left-session-trailing[data-trailing="empty"] {
+.app-left-session-actions {
   width: calc(var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px));
 }
 
-/* The rest of the trailing variants size themselves; provenance is the only
-   one that needs a ceiling so a long owner name cannot eat the title. */
+/* EVERY variant reserves the action strip's width, not just the empty one.
+   The actions are absolutely positioned and have no background, so whatever
+   the trailing slot fails to reserve is drawn underneath them: the title, and
+   the age label itself. Reserving only on "empty" reserved almost nowhere,
+   because any session with a timestamp resolves to "marker".
+   min-width, not width, so the ceilings below can still clamp content. */
+.app-left-session-trailing {
+  min-width: calc(var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px));
+}
+
+/* Ceilings layered on top. min-width wins where they collide, because
+   overlapping the actions is never the better trade. */
 .app-left-session-trailing[data-trailing="badge"] {
   width: 88px;
 }
@@ -408,7 +417,8 @@
   gap: 0.25rem;
 }
 
-.app-left-session-trailing[data-trailing="marker"] {
+.app-left-session-trailing[data-trailing="marker"],
+.app-left-session-trailing[data-trailing="empty"] {
   width: auto;
 }
 
@@ -545,6 +555,15 @@
   .app-left-session-actions {
     pointer-events: auto;
     opacity: 1;
+  }
+
+  /* With no hover there is no fade: the actions are permanently visible AND
+     the status slot never goes transparent, so reserving space UNDER them is
+     not enough — the age would be drawn beneath the icons. Here the slot sits
+     beside the strip instead. */
+  .app-left-session-trailing {
+    min-width: 0;
+    margin-right: calc(var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px));
   }
 }
 
