@@ -13,7 +13,7 @@ import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 //   jargon ban; the no-tabs invariant is kept.
 // - Agent rows expose "New chat" (+), the "..." options trigger holding the
 //   placement variants, and Settings; the action count recognises the trigger.
-export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v5"
+export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v6"
 
 const KNOWN_ABORTED_REQUESTS: Array<{
   rationale: string
@@ -65,10 +65,23 @@ export interface AgentSidebarHardGateSnapshot extends UiReviewBrowserErrors {
     nestedPinnedHasPin: boolean
     detailOverlayCount: number
     detailTabCount: number
-    capabilityHeadingCount: number
+    capabilityHeadings: string[]
     legacyJargonCount: number
     undersizedAgentControls: Array<{ label: string; width: number; height: number }>
   }
+}
+
+/** The fixture fleet: exactly two Agents, each with three row controls. */
+const EXPECTED_AGENT_COUNT = 2
+const AGENT_ROW_ACTIONS_PER_AGENT = 3
+
+/** Every section the Agent details panel owes the operator, in order. */
+const EXPECTED_CAPABILITY_HEADINGS = [
+  "Instructions", "Knowledge", "Skills", "Tools", "MCP access", "Plugins", "System prompt", "Defaults",
+] as const
+
+function sameHeadings(actual: readonly string[], expected: readonly string[]): boolean {
+  return actual.length === expected.length && actual.every((heading, index) => heading === expected[index])
 }
 
 export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnapshot): UiHardGateReport {
@@ -92,13 +105,23 @@ export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnap
   const statePassed = surfaceReady
     && (!agentNavigationExpected || (state.agentCount === 2 && state.agentHeading === "Agents" && state.agentFilterCount === 1))
     && state.legacyFilterCount === 0
-    && (snapshot.checkpoint !== "hover-actions" || state.visibleActionCount >= 4)
+    // 3 controls ("+", "..." options, Settings) x 2 Agents. Asserting the
+    // real number, not a floor two controls could silently vanish under.
+    && (snapshot.checkpoint !== "hover-actions" || state.visibleActionCount === AGENT_ROW_ACTIONS_PER_AGENT * EXPECTED_AGENT_COUNT)
     && (snapshot.checkpoint !== "expanded-sessions" || (state.expandedRegionCount >= 2 && state.guideCount >= 2))
     && (snapshot.checkpoint !== "pinned-chat" || (state.pinnedHeading === "Pinned chats" && state.pinnedCount === 1 && state.pinnedProvenance === "Alpha" && state.pinnedAgentSessionCount >= 1 && state.nestedPinnedHasPin))
-    && (snapshot.checkpoint !== "agent-details" || (state.detailOverlayCount === 1 && state.detailTabCount === 0 && state.capabilityHeadingCount >= 5 && state.legacyJargonCount === 0))
+    && (snapshot.checkpoint !== "agent-details" || (
+      state.detailOverlayCount === 1
+      && state.detailTabCount === 0
+      && sameHeadings(state.capabilityHeadings, EXPECTED_CAPABILITY_HEADINGS)
+      && state.legacyJargonCount === 0
+    ))
     // Coarse pointers keep "+", the "..." options trigger, and Settings
     // directly visible per Agent.
-    && (!snapshot.viewport.mobile || snapshot.checkpoint !== "agent-list" || (state.visibleActionCount >= 4 && state.visibleAgentCountLabels === 2))
+    && (!snapshot.viewport.mobile || snapshot.checkpoint !== "agent-list" || (
+      state.visibleActionCount === AGENT_ROW_ACTIONS_PER_AGENT * EXPECTED_AGENT_COUNT
+      && state.visibleAgentCountLabels === EXPECTED_AGENT_COUNT
+    ))
 
   add("fixture-ready", surfaceReady, `agentCount=${state.agentCount};detailOverlayCount=${state.detailOverlayCount}`)
   add("console-errors", snapshot.consoleErrors.length === 0, snapshot.consoleErrors.join("\n") || "none")

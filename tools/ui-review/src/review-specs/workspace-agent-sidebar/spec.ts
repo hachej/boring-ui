@@ -108,7 +108,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
           }
           const text = (selector: string) => [...document.querySelectorAll(selector)].find(visible)?.textContent?.replace(/\s+/g, " ").trim() ?? null
           const agentTrees = [...document.querySelectorAll('[data-boring-workspace-part="app-left-agent-tree"]')]
-          const actionButtons = agentTrees.flatMap((tree) => [...tree.querySelectorAll<HTMLButtonElement>('button[aria-label^="New chat with"], button[aria-label^="New chat options for"], button[aria-label^="Quick chat with"], button[aria-label^="Settings for"]')])
+          const actionButtons = agentTrees.flatMap((tree) => [...tree.querySelectorAll<HTMLButtonElement>('button[aria-label^="New chat with"], button[aria-label^="New chat options for"], button[aria-label^="Settings for"]')])
           const controls = agentTrees.flatMap((tree) => [...tree.querySelectorAll<HTMLButtonElement>("button")]).filter(visible)
           const pinned = document.querySelector('section[aria-label="Pinned chats"]')
           const pinnedRow = pinned?.querySelector('[data-boring-workspace-part="app-session-row"]')
@@ -118,7 +118,9 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
             // Stable hook: the heading moved inside the collapse toggle in
             // the nested redesign, so a CSS path here drifts silently.
             agentHeading: text('[data-boring-workspace-part="app-left-agents-heading"]'),
-            agentSeatSummary: text('section[aria-label="Agents"] > div span:last-child'),
+            // Stable hook, like agentHeading above: the previous CSS path
+            // drifted onto the numeric count span without anyone noticing.
+            agentSeatSummary: text('[data-boring-workspace-part="app-left-agents-count"]'),
             agentFilterCount: document.querySelectorAll('[aria-label="Filter Agents"]').length,
             legacyFilterCount: document.querySelectorAll('[aria-label="Filter chats by Agent"]').length,
             visibleActionCount: actionButtons.filter(visible).length,
@@ -132,8 +134,14 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
             nestedPinnedHasPin: Boolean(document.querySelector('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="alpha"] [data-boring-workspace-part="app-session-row"] .app-left-session-trailing svg')),
             detailOverlayCount: document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"]').length,
             detailTabCount: document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"] [role="tab"]').length,
-            capabilityHeadingCount: [...document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"] h3')].filter((heading) => ["Instructions", "Knowledge", "Skills", "Tools", "MCP access", "Plugins", "System prompt", "Defaults"].includes(heading.textContent?.trim() ?? "")).length,
-            legacyJargonCount: [...document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"]')].filter((overlay) => /Runtime plugins explicitly bound|host fleet definition|Configuration/.test(overlay.textContent ?? "")).length,
+            // The SET, in order — a count could pass with the wrong five.
+            capabilityHeadings: [...document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"] h3')].map((heading) => heading.textContent?.trim() ?? ""),
+            // Prose is scanned for whole phrases; the single word
+            // "Configuration" is only jargon as a HEADING, and matching it
+            // across all overlay prose made this gate fire on any body copy
+            // that happened to contain it.
+            legacyJargonCount: [...document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"]')].filter((overlay) => /Runtime plugins explicitly bound|host fleet definition/.test(overlay.textContent ?? "")).length
+              + [...document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"] h1, [data-boring-workspace-part="agent-details-overlay"] h2, [data-boring-workspace-part="agent-details-overlay"] h3')].filter((heading) => /^Configuration$/i.test(heading.textContent?.trim() ?? "")).length,
             undersizedAgentControls: mobile ? controls.map((control) => {
               const rect = control.getBoundingClientRect()
               return { label: control.getAttribute("aria-label") || control.textContent?.trim() || "button", width: rect.width, height: rect.height }
