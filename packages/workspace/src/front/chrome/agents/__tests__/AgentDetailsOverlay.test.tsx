@@ -77,7 +77,6 @@ describe("AgentDetailsOverlay", () => {
     respond({
       describe: {
         systemPrompt: "You are the concierge. Route work carefully.",
-        plugins: [{ id: "ask-user" }, { id: "pr-review" }],
         mcpServers: [{ id: "github", tools: ["create_issue", "get_pr"] }],
       },
       skills: {
@@ -100,8 +99,9 @@ describe("AgentDetailsOverlay", () => {
     expect(screen.getByText("github")).toBeInTheDocument()
     expect(screen.getByText("2 tools")).toBeInTheDocument()
     expect(screen.getByText("create_issue, get_pr")).toBeInTheDocument()
+    // Plugin ids are the fleet LIST's fact; /describe no longer restates them
+    // in a second shape for the client to reconcile.
     expect(screen.getByText("ask-user")).toBeInTheDocument()
-    expect(screen.getByText("pr-review")).toBeInTheDocument()
     // The old developer-jargon copy never renders.
     expect(screen.queryByText(/Runtime plugins explicitly bound/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Workspace UI plugins do not automatically/)).not.toBeInTheDocument()
@@ -114,7 +114,7 @@ describe("AgentDetailsOverlay", () => {
 
   it("shows the resolved default model in the Defaults section", async () => {
     respond({
-      describe: { systemPrompt: null, model: "claude-fable-5", plugins: [], mcpServers: [] },
+      describe: { systemPrompt: null, model: "claude-fable-5", mcpServers: [] },
       models: { models: [{ id: "claude-fable-5", label: "Fable 5" }], defaultModel: { id: "claude-fable-5" } },
     })
     renderOverlay()
@@ -126,7 +126,7 @@ describe("AgentDetailsOverlay", () => {
 
   it("falls back to the host default model label when the agent pins none", async () => {
     respond({
-      describe: { systemPrompt: null, plugins: [], mcpServers: [] },
+      describe: { systemPrompt: null, mcpServers: [] },
       models: { models: [{ id: "gpt-x", label: "GPT X" }], defaultModel: { id: "gpt-x" } },
     })
     renderOverlay()
@@ -187,7 +187,7 @@ describe("AgentDetailsOverlay", () => {
 
   it("expands the long system prompt in place with prose-flowed text", async () => {
     const prompt = `Opening line\nthat wraps mid-sentence.\n\n${"More instructions. ".repeat(40)}End marker.`
-    respond({ describe: { systemPrompt: prompt, plugins: [], mcpServers: [] } })
+    respond({ describe: { systemPrompt: prompt, mcpServers: [] } })
     renderOverlay()
 
     const toggle = await screen.findByRole("button", { name: "Show more" })
@@ -209,9 +209,8 @@ describe("AgentDetailsOverlay", () => {
       // instead of inverting a mapping only the Host owns.
       describe: {
         systemPrompt: null,
-        plugins: [],
         mcpServers: [],
-        instructionFiles: [{ path: ".agents/personas/desk-7/instructions.md", name: "Persona instructions" }],
+        instructionFiles: [{ filesystem: "user", path: ".agents/personas/desk-7/instructions.md", role: "persona" }],
       },
       rootTree: { entries: [
         { name: "AGENTS.md", kind: "file", path: "AGENTS.md" },
@@ -245,7 +244,7 @@ describe("AgentDetailsOverlay", () => {
 
   it("materializes the composed prompt and opens it in the workbench", async () => {
     const prompt = "Prompt body.\n\n<!-- boring-skill:start name=triage digest=sha256:abc -->\n---\nname: triage\n---\n# Triage\n<!-- boring-skill:end name=triage -->"
-    respond({ describe: { systemPrompt: prompt, plugins: [], mcpServers: [] } })
+    respond({ describe: { systemPrompt: prompt, mcpServers: [] } })
     mocks.postJson.mockResolvedValue({})
     renderOverlay()
 
@@ -266,8 +265,26 @@ describe("AgentDetailsOverlay", () => {
     }))
   })
 
+  it("refuses to open an instruction ref the path guard rejects", async () => {
+    respond({
+      describe: {
+        systemPrompt: null,
+        mcpServers: [],
+        // A hostile/malformed ref must not become a clickable openFile.
+        instructionFiles: [{ filesystem: "user", path: "../../etc/passwd", role: "persona" }],
+      },
+    })
+    renderOverlay()
+
+    // The row still renders (the operator sees the agent HAS persona
+    // instructions) but it is inert, exactly like an unopenable skill.
+    expect(await screen.findByText("Persona instructions")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Open Persona instructions" })).not.toBeInTheDocument()
+    expect(mocks.postUiCommand).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "openFile" }))
+  })
+
   it("creates the parent directory through the files route, never a separate mkdir", async () => {
-    respond({ describe: { systemPrompt: "Prompt body.", plugins: [], mcpServers: [] } })
+    respond({ describe: { systemPrompt: "Prompt body.", mcpServers: [] } })
     mocks.postJson.mockResolvedValue({})
     renderOverlay()
 
@@ -288,7 +305,7 @@ describe("AgentDetailsOverlay", () => {
         describeCalls += 1
         // First call (panel load) succeeds; the re-read on open fails.
         if (describeCalls > 1) throw new Error("describe unavailable")
-        return { systemPrompt: prompt, plugins: [], mcpServers: [] }
+        return { systemPrompt: prompt, mcpServers: [] }
       }
       if (path.endsWith("/skills")) return { skills: [] }
       if (path.endsWith("/tools")) return { tools: [] }
@@ -311,7 +328,7 @@ describe("AgentDetailsOverlay", () => {
   })
 
   it("reports a real failure when the write itself fails", async () => {
-    respond({ describe: { systemPrompt: "Prompt body.", plugins: [], mcpServers: [] } })
+    respond({ describe: { systemPrompt: "Prompt body.", mcpServers: [] } })
     mocks.postJson.mockRejectedValue(new Error("disk full"))
     renderOverlay()
 
@@ -325,7 +342,7 @@ describe("AgentDetailsOverlay", () => {
   it("fences an attached skill body that itself contains a longer fence", async () => {
     const skillBody = "# Triage\n\n`````text\nnested fence\n`````"
     const prompt = `Prompt body.\n\n<!-- boring-skill:start name=triage digest=sha256:abc -->\n${skillBody}\n<!-- boring-skill:end name=triage -->`
-    respond({ describe: { systemPrompt: prompt, plugins: [], mcpServers: [] } })
+    respond({ describe: { systemPrompt: prompt, mcpServers: [] } })
     mocks.postJson.mockResolvedValue({})
     renderOverlay()
 
@@ -343,7 +360,7 @@ describe("AgentDetailsOverlay", () => {
       if (path.includes("/agents/slow/")) {
         return new Promise((resolve) => pending.set(path, resolve))
       }
-      if (path.endsWith("/describe")) return Promise.resolve({ systemPrompt: null, plugins: [], mcpServers: [] })
+      if (path.endsWith("/describe")) return Promise.resolve({ systemPrompt: null, mcpServers: [] })
       if (path.endsWith("/skills")) return Promise.resolve({ skills: [{ name: "fast-skill" }] })
       if (path.endsWith("/tools")) return Promise.resolve({ tools: [] })
       if (path.endsWith("/models")) return Promise.resolve({ models: [] })
@@ -386,7 +403,7 @@ describe("AgentDetailsOverlay", () => {
   it("surfaces per-section errors without breaking the rest of the page", async () => {
     respond({
       skills: new Error("boom"),
-      describe: { systemPrompt: "Prompt.", plugins: [], mcpServers: [] },
+      describe: { systemPrompt: "Prompt.", mcpServers: [] },
       tools: { tools: [{ name: "run_shell" }] },
     })
     renderOverlay()

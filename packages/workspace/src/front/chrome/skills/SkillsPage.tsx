@@ -9,7 +9,7 @@ import { ManagementOverlaySurface } from "../management/ManagementOverlaySurface
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
 import type { PaneProps } from "../../registry/types"
 import { uiFileResourceKey, type UiFileResource } from "../../../shared/types/filesystem"
-import { openableSkillResource } from "../../../shared/skills/openableSkillResource"
+import { openableFileResource } from "../../../shared/skills/openableFileResource"
 
 interface SkillSummary {
   name: string
@@ -168,7 +168,7 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
         ) : (
           <ul role="list" className="grid gap-2">
             {sortedSkills.map((skill, index) => {
-              const resource = openableSkillResource(skill)
+              const resource = openableFileResource(skill.resource)
               const managementOnly = skill.invocable === false
               const body = (
                 <div className="flex min-h-11 w-full items-start justify-between gap-3 px-3 py-2.5">

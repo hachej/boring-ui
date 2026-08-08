@@ -1,0 +1,303 @@
+import type { UiFileResource } from "../../../shared/types/filesystem"
+
+/**
+ * Transport decoding for the Agent details panel: every `/api/v1/agents/...`
+ * payload this page reads, turned into the shapes the view renders.
+ *
+ * Deliberately separate from the view. These are pure functions over `unknown`,
+ * so their edge cases (missing fields, wrong types, hostile values) get direct
+ * unit tests instead of a render plus six mocked fetches.
+ */
+
+export interface AgentSkillSummary {
+  name: string
+  description?: string
+  source?: string
+  invocable?: boolean
+  resource?: UiFileResource
+}
+
+export interface AgentToolSummary {
+  name: string
+  description?: string
+}
+
+/** An authored file behind the agent's instructions, as the Host reports it. */
+export interface AgentInstructionFile {
+  resource: UiFileResource
+  role: "persona"
+}
+
+export interface AgentDescription {
+  systemPrompt: string | null
+  model: string | null
+  mcpServers: { id: string; tools: string[] }[]
+  instructionFiles: AgentInstructionFile[]
+}
+
+export interface KnowledgeSource {
+  filesystem: string
+  label: string
+  rootDir?: string
+  access?: string
+}
+
+/**
+ * One panel status, not one per section. Every field below is filled by a
+ * single `Promise.allSettled` and committed once, so "loading" genuinely is
+ * global. Failure genuinely is per-request, so only that stays per-section.
+ */
+export interface SectionData<T> {
+  error: boolean
+  value: T[]
+}
+
+export interface AgentCapabilities {
+  status: "loading" | "ready"
+  describeError: boolean
+  description?: AgentDescription
+  skills: SectionData<AgentSkillSummary>
+  tools: SectionData<AgentToolSummary>
+  knowledge: SectionData<KnowledgeSource>
+  modelLabel: string | null
+  instructionFiles: AgentInstructionFile[]
+  /** Workspace-level instruction files that exist in this workspace. */
+  workspaceInstructionFiles: string[]
+}
+
+const EMPTY_SECTION = { error: false, value: [] }
+
+export const INITIAL_CAPABILITIES: AgentCapabilities = {
+  status: "loading",
+  describeError: false,
+  skills: EMPTY_SECTION,
+  tools: EMPTY_SECTION,
+  knowledge: EMPTY_SECTION,
+  modelLabel: null,
+  instructionFiles: [],
+  workspaceInstructionFiles: [],
+}
+
+/** Workspace-level instruction files that participate in every agent's context. */
+export const WORKSPACE_INSTRUCTION_FILES = [
+  { path: "AGENTS.md", blurb: "Workspace instructions every agent reads before working.", badge: "workspace" },
+  { path: "CLAUDE.md", blurb: "Additional workspace instructions for Claude-based agents.", badge: "workspace" },
+] as const
+
+export function parseSkills(payload: unknown): AgentSkillSummary[] {
+  const skills = (payload as { skills?: unknown })?.skills
+  if (!Array.isArray(skills)) return []
+  return skills
+    .filter((skill): skill is AgentSkillSummary =>
+      typeof (skill as AgentSkillSummary)?.name === "string" && (skill as AgentSkillSummary).name.length > 0)
+    .filter((skill) => skill.invocable !== false)
+    .sort((left, right) => left.name.localeCompare(right.name))
+}
+
+export function parseTools(payload: unknown): AgentToolSummary[] {
+  const tools = (payload as { tools?: unknown })?.tools
+  if (!Array.isArray(tools)) return []
+  return tools
+    .filter((tool): tool is AgentToolSummary =>
+      typeof (tool as AgentToolSummary)?.name === "string" && (tool as AgentToolSummary).name.length > 0)
+    .map((tool) => ({
+      name: tool.name,
+      ...(typeof tool.description === "string" && tool.description.trim()
+        ? { description: tool.description.trim() }
+        : {}),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name))
+}
+
+export function parseDescription(payload: unknown): AgentDescription {
+  const record = (payload ?? {}) as {
+    systemPrompt?: unknown
+    model?: unknown
+    mcpServers?: unknown
+    instructionFiles?: unknown
+  }
+  return {
+    systemPrompt: typeof record.systemPrompt === "string" && record.systemPrompt.trim()
+      ? record.systemPrompt
+      : null,
+    model: typeof record.model === "string" && record.model.trim() ? record.model.trim() : null,
+    mcpServers: Array.isArray(record.mcpServers)
+      ? record.mcpServers
+          .filter((server): server is { id: string; tools?: unknown } =>
+            typeof (server as { id?: unknown })?.id === "string" && ((server as { id: string }).id.length > 0))
+          .map((server) => ({
+            id: server.id,
+            tools: Array.isArray(server.tools)
+              ? server.tools.filter((tool): tool is string => typeof tool === "string")
+              : [],
+          }))
+      : [],
+    instructionFiles: Array.isArray(record.instructionFiles)
+      ? record.instructionFiles
+          .filter((file): file is { filesystem: unknown; path: unknown; role?: unknown } => Boolean(file))
+          // The path guard lives at the render/open boundary
+          // (`openableFileResource`); here we only keep well-formed refs.
+          .filter((file) => typeof file.filesystem === "string" && typeof file.path === "string")
+          .map((file) => ({
+            resource: { filesystem: file.filesystem as string, path: file.path as string },
+            role: "persona" as const,
+          }))
+      : [],
+  }
+}
+
+export function parseKnowledge(payload: unknown): KnowledgeSource[] {
+  const filesystems = (payload as { filesystems?: unknown })?.filesystems
+  if (!Array.isArray(filesystems)) return []
+  return filesystems
+    .filter((entry): entry is { filesystem: string; label?: unknown; rootDir?: unknown; access?: unknown } =>
+      typeof (entry as { filesystem?: unknown })?.filesystem === "string")
+    .map((entry) => ({
+      filesystem: entry.filesystem,
+      label: typeof entry.label === "string" && entry.label.trim() ? entry.label : entry.filesystem,
+      ...(typeof entry.rootDir === "string" ? { rootDir: entry.rootDir } : {}),
+      ...(typeof entry.access === "string" ? { access: entry.access } : {}),
+    }))
+}
+
+/** Names of the root-level FILES a `/api/v1/tree` listing reports. */
+export function parseRootFileNames(payload: unknown): string[] {
+  const entries = (payload as { entries?: unknown })?.entries
+  if (!Array.isArray(entries)) return []
+  return entries
+    .filter((entry) => (entry as { kind?: unknown })?.kind === "file" && typeof (entry as { name?: unknown }).name === "string")
+    .map((entry) => (entry as { name: string }).name)
+}
+
+/**
+ * Resolve the model shown in the Defaults section: the agent's pinned model when
+ * set, else the host default, labeled through the models catalog.
+ */
+export function resolveModelLabel(modelsPayload: unknown, pinned: string | null): string | null {
+  const record = (modelsPayload ?? {}) as {
+    models?: unknown
+    defaultModel?: { provider?: unknown; id?: unknown }
+  }
+  const models = Array.isArray(record.models)
+    ? record.models.filter((model): model is { id: string; label?: string } =>
+        typeof (model as { id?: unknown })?.id === "string")
+    : []
+  if (pinned) return models.find((model) => model.id === pinned)?.label ?? pinned
+  const defaultId = typeof record.defaultModel?.id === "string" ? record.defaultModel.id : null
+  if (!defaultId) return null
+  return models.find((model) => model.id === defaultId)?.label ?? defaultId
+}
+
+/**
+ * Server skill `source` values are internal scope labels (pi sourceInfo.scope,
+ * e.g. "temporary", "project"). Map them to user words; unknown values render
+ * no badge rather than leaking internal vocabulary.
+ */
+export function skillSourceLabel(source: string | undefined): string | undefined {
+  if (!source) return undefined
+  const value = source.trim().toLowerCase()
+  if (value === "temporary" || value === "project" || value === "workspace") return "workspace"
+  if (value === "user" || value === "global" || value === "host" || value === "fleet") return "built-in"
+  if (value.startsWith("shared/")) return "shared"
+  if (source.startsWith("@") || source.includes("/")) return "package"
+  return undefined
+}
+
+/**
+ * Prompt text flows like prose in the preview: single newlines inside a
+ * paragraph collapse to spaces, blank lines keep paragraph breaks.
+ */
+export function normalizePromptText(prompt: string): string {
+  return prompt
+    .replace(/\r\n?/g, "\n")
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.replace(/\s*\n\s*/g, " ").trim())
+    .filter(Boolean)
+    .join("\n\n")
+}
+
+/** A fence long enough to survive any fence already present in `body`. */
+function codeFenceFor(body: string): string {
+  const longest = [...body.matchAll(/^\s*(`{3,})/gm)]
+    .reduce((max, match) => Math.max(max, match[1]?.length ?? 0), 0)
+  return "`".repeat(Math.max(4, longest + 1))
+}
+
+/**
+ * Presentation-only formatting for the GENERATED composed-prompt file: each
+ * host-attached skill block (frontmatter + body) renders as a fenced code
+ * block under a small caption, so the workbench viewer doesn't typeset raw
+ * frontmatter as prose. The actual composition the server uses is untouched.
+ */
+export function formatComposedPromptMarkdown(prompt: string): string {
+  return prompt.replace(
+    /<!--\s*boring-skill:start\s+name=([\w./-]+)[^>]*-->\n?([\s\S]*?)<!--\s*boring-skill:end[^>]*-->/g,
+    (_match, name: string, body: string) => {
+      const trimmed = body.trim()
+      const fence = codeFenceFor(trimmed)
+      return `**Attached skill: /${name}**\n\n${fence}text\n${trimmed}\n${fence}`
+    },
+  )
+}
+
+/** The minimum this loader needs from the workspace plugin client. */
+export interface AgentCapabilitiesClient {
+  getJson(path: string, options?: { missingMessage?: string }): Promise<unknown>
+}
+
+/**
+ * Reads everything the panel shows in ONE fan-out. Per-agent instruction
+ * sources come from `/describe` — the Host owns that mapping — and only the
+ * workspace-level files are discovered from a single root listing.
+ */
+export async function loadAgentCapabilities(
+  client: AgentCapabilitiesClient,
+  agentTypeId: string,
+): Promise<AgentCapabilities> {
+  const base = `/api/v1/agents/${encodeURIComponent(agentTypeId)}`
+  const [describe, skills, tools, models, filesystems, rootTree] = await Promise.allSettled([
+    client.getJson(`${base}/describe`, { missingMessage: "This agent's details are unavailable." }),
+    client.getJson(`${base}/skills`, { missingMessage: "This agent's skills are unavailable." }),
+    client.getJson(`${base}/tools`, { missingMessage: "This agent's tools are unavailable." }),
+    client.getJson(`${base}/models`, { missingMessage: "Models are unavailable." }),
+    client.getJson(`/api/v1/filesystems`, { missingMessage: "Knowledge sources are unavailable." }),
+    client.getJson(`/api/v1/tree?path=.&filesystem=user`, { missingMessage: "Workspace files are unavailable." }),
+  ])
+  const description = describe.status === "fulfilled" ? parseDescription(describe.value) : undefined
+  return {
+    status: "ready",
+    describeError: describe.status !== "fulfilled",
+    ...(description ? { description } : {}),
+    skills: { error: skills.status !== "fulfilled", value: skills.status === "fulfilled" ? parseSkills(skills.value) : [] },
+    tools: { error: tools.status !== "fulfilled", value: tools.status === "fulfilled" ? parseTools(tools.value) : [] },
+    knowledge: {
+      error: filesystems.status !== "fulfilled",
+      value: filesystems.status === "fulfilled" ? parseKnowledge(filesystems.value) : [],
+    },
+    modelLabel: models.status === "fulfilled"
+      ? resolveModelLabel(models.value, description?.model ?? null)
+      : description?.model ?? null,
+    instructionFiles: description?.instructionFiles ?? [],
+    workspaceInstructionFiles: rootTree.status === "fulfilled" ? parseRootFileNames(rootTree.value) : [],
+  }
+}
+
+/** Re-reads the live composition for the generated read-only prompt file. */
+export async function readLiveSystemPrompt(
+  client: AgentCapabilitiesClient,
+  agentTypeId: string,
+  fallback: string,
+): Promise<string> {
+  try {
+    const fresh = parseDescription(await client.getJson(
+      `/api/v1/agents/${encodeURIComponent(agentTypeId)}/describe`,
+      { missingMessage: "This agent's details are unavailable." },
+    ))
+    return fresh.systemPrompt ?? fallback
+  } catch {
+    // A failed re-read is NOT a user-facing failure: the cached prompt is a
+    // perfectly good fallback, and reporting it would be a lie about an open
+    // that then succeeds.
+    return fallback
+  }
+}
