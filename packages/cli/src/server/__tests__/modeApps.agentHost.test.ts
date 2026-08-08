@@ -170,6 +170,7 @@ describe.sequential("CLI Agent Host composition", () => {
       registerDirectRoutes: vi.fn(() => async (app: FastifyInstance) => {
         app.addHook("onClose", hostClose)
       }),
+      getDurableStreamReadiness: vi.fn(() => undefined),
     })
     automationFailure.enabled = true
     await expect(createWorkspacesModeApp({
