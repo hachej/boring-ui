@@ -1723,7 +1723,12 @@ export async function createWorkspaceAgentServer(
                 readonlyWorkspacePaths: readonlyWorkspacePolicy.readonlyPaths,
                 filesystemBindings: [...mergeRuntimeFilesystemBindings(
                   [createUserFilesystemBinding(transformed.workspace, readonlyWorkspacePolicy, async (path) => {
-                    const root = runtimeHost.getNodeWorkspaceHostRoot(transformed.workspace)
+                    // Local/sandboxed bundles expose a confined workspace (root
+                    // `/workspace`) that is not a registered node workspace, so
+                    // prefer the mode adapter's host storage root before the
+                    // node-workspace registry lookup.
+                    const root = transformed.storageRoot
+                      ?? runtimeHost.getNodeWorkspaceHostRoot(transformed.workspace)
                     if (!root) throw new RuntimeReadonlyFilesystemPolicyError()
                     return await runtimeHost.resolveRealWorkspacePath(root, path)
                   })],
