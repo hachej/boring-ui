@@ -12,12 +12,14 @@ import type {
   PreparedFilesystemBinding,
 } from "../../shared/index";
 import {
-  COMPANY_CONTEXT_FILESYSTEM_ID,
-  FixtureCompanyContextBindingProvider,
   ScopedFilesystemRuntimeBindingManager,
   filesystemRuntimeScopeKey,
-  seedCompanyContextFixture,
 } from "../index";
+import {
+  COMPANY_CONTEXT_FILESYSTEM_ID,
+  FixtureCompanyContextBindingProvider,
+  seedCompanyContextFixture,
+} from "./companyContextFixture";
 
 const readonlyBinding: FilesystemBinding = {
   filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,

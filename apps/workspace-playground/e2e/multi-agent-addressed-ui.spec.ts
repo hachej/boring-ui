@@ -98,6 +98,18 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
   await expect(betaRow).toBeVisible()
   await expect(alphaRow).toBeVisible()
 
+  // Replacing the sole pane must never strand Dockview's chat renderer in its
+  // hidden overlay. Exercise the real browser path repeatedly; each click must
+  // leave exactly one visible chat owned by the selected session.
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await betaRow.locator("button").first().click()
+    await expect(page.locator('[data-boring-agent-part="chat"]')).toHaveCount(1)
+    await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="beta"]')).toHaveAttribute("data-pi-chat-session-id", betaSessionId)
+    await alphaRow.locator("button").first().click()
+    await expect(page.locator('[data-boring-agent-part="chat"]')).toHaveCount(1)
+    await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="alpha"]')).toHaveAttribute("data-pi-chat-session-id", alphaSessionId)
+  }
+
   await betaRow.hover()
   await betaRow.getByRole("button", { name: "Chat actions for Scripted baseline" }).click()
   await page.getByRole("menuitem", { name: "Open in new chat pane" }).click()

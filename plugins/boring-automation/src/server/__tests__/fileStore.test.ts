@@ -39,6 +39,7 @@ describe("FileAutomationStore persistence", () => {
       cron: "0 9 * * *",
       timezone: "UTC",
       model: "model-a",
+      agentTypeId: "researcher",
       prompt: "# Prompt\n",
     })
     const run = await store.beginRun({
@@ -50,7 +51,7 @@ describe("FileAutomationStore persistence", () => {
     })
 
     const reloaded = createStore()
-    await expect(reloaded.getAutomation(automation.id)).resolves.toMatchObject({ id: automation.id })
+    await expect(reloaded.getAutomation(automation.id)).resolves.toMatchObject({ id: automation.id, agentTypeId: "researcher" })
     await expect(reloaded.getPrompt(automation.id)).resolves.toBe("# Prompt\n")
     await expect(reloaded.listRuns(automation.id)).resolves.toEqual([expect.objectContaining({ id: run.id })])
 

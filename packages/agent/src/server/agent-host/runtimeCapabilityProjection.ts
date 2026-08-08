@@ -21,6 +21,26 @@ import type { AgentHostRuntime, RuntimeBinding } from './createAgentHost'
 import type { EmbeddedAgentGateway } from './embeddedGateway'
 import type { AgentHostDirectProjectionOptions } from './types'
 import { projectStableServiceError } from './stableServiceError'
+import {
+  resolveAgentMcpGrants,
+  type McpConnectorCatalog,
+  type McpGrantDiagnostic,
+  type ResolvedMcpConnectorGrant,
+} from './mcpGrants'
+import type { McpGrantStore } from './mcpGrantStore'
+
+/**
+ * Optional per-agent MCP grant resolution, wired into the capability
+ * projection so `mcpServerRefs` resolve through this seam and no parallel
+ * authorization path. Omitting this entirely preserves prior behavior
+ * (no MCP connectors surfaced through this binding).
+ */
+export interface AgentHostRuntimeCapabilityMcpGrantsOptions {
+  readonly store: McpGrantStore
+  readonly catalog?: McpConnectorCatalog
+  /** The Agent definition's declared `mcpServerRefs` for a given agentTypeId, treated as connector ids. */
+  getMcpServerRefs(agentTypeId: string): readonly string[] | undefined
+}
 
 const SAFE_REQUEST_ID = /^[A-Za-z0-9._:-]+$/
 const AgentParams = z.object({ agentTypeId: z.string().min(1).max(128) }).passthrough()
@@ -51,6 +71,15 @@ export interface AgentHostRuntimeCapabilityBinding {
    */
   readonly skillResourceSnapshot?: AgentSkillResourceSnapshot
   readonly runContext: RunContext
+  /**
+   * Connectors/tools this Agent is actually granted, resolved through
+   * per-agent MCP grants (gh-1087). Undefined when no grant seam is
+   * configured on this projection; empty array is default-deny (declared
+   * refs exist but nothing was granted).
+   */
+  readonly mcpGrants?: readonly ResolvedMcpConnectorGrant[]
+  /** Stable-coded diagnostics for any declared `mcpServerRefs` entry that was dropped during resolution. */
+  readonly mcpGrantDiagnostics?: readonly McpGrantDiagnostic[]
 }
 
 export interface AgentHostRuntimeCapabilityProjection {
@@ -91,8 +120,9 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
     AgentHostDirectProjectionOptions,
     'authorizeAgentRequest' | 'defaultSessionId' | 'filterModels' | 'sessionChangesTracker'
   >
+  readonly mcpGrants?: AgentHostRuntimeCapabilityMcpGrantsOptions
 }): AgentHostRuntimeCapabilityProjection {
-  const { runtime, gateway, options } = input
+  const { runtime, gateway, options, mcpGrants } = input
   const authorized = new WeakMap<FastifyRequest, Promise<{
     scope: import('../../shared/index').AuthorizedAgentScope
     claim: import('../../shared/index').VerifiedAgentScopeClaim
@@ -171,9 +201,28 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       const user = (request as typeof request & {
         user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null
       }).user
+      let resolvedMcpGrants: readonly ResolvedMcpConnectorGrant[] | undefined
+      let mcpGrantDiagnostics: readonly McpGrantDiagnostic[] | undefined
+      if (mcpGrants) {
+        const refs = mcpGrants.getMcpServerRefs(agentTypeId) ?? []
+        const listed = refs.length > 0
+          ? await mcpGrants.store.listGrants(claim.workspaceScopeId)
+          : { grants: [], diagnostics: [] }
+        const resolved = resolveAgentMcpGrants({
+          workspaceId: claim.workspaceScopeId,
+          agentTypeId,
+          mcpServerRefs: refs,
+          grants: listed.grants,
+          catalog: mcpGrants.catalog,
+        })
+        resolvedMcpGrants = resolved.connectors
+        mcpGrantDiagnostics = [...listed.diagnostics, ...resolved.diagnostics]
+      }
       return {
         harness: binding.composition.harness,
         tools: binding.composition.tools,
+        mcpGrants: resolvedMcpGrants,
+        mcpGrantDiagnostics,
         workspace: binding.composition.runtimeBundle.workspace,
         readyTracker: binding.composition.readyTracker,
         pi,

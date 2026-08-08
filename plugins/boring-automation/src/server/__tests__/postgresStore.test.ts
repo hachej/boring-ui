@@ -119,18 +119,19 @@ describe("PostgresAutomationStore actor isolation", () => {
       if (!text.includes("INSERT INTO boring_automation_automations")) return Promise.resolve([])
       return Promise.resolve([{
         id: values[0], title: values[3], enabled: values[4], cron: values[5], timezone: values[6], model: values[7],
-        created_at: values[8], updated_at: values[9],
+        agent_type_id: values[8], created_at: values[9], updated_at: values[10],
       }])
     }) as unknown as postgres.Sql
     const store = new PostgresAutomationStore(sql, { workspaceId: "workspace-a", userId: "user-a" }, undefined, workspace)
 
     const automation = await store.createAutomation({
-      title: "Daily", cron: "0 9 * * *", timezone: "UTC", model: "test:model", prompt: "canonical prompt",
+      title: "Daily", cron: "0 9 * * *", timezone: "UTC", model: "test:model", agentTypeId: "researcher", prompt: "canonical prompt",
     })
 
+    expect(automation.agentTypeId).toBe("researcher")
     expect(automation.promptRef).toBe(`.agents/automation/${automation.id}.md`)
     expect(files.get(automation.promptRef)).toBe("canonical prompt")
-    expect(queries[0]!.text).toContain("model, created_at")
+    expect(queries[0]!.text).toContain("model, agent_type_id, created_at")
     expect(queries[0]!.text).not.toMatch(/\bprompt\b/)
     expect(queries[0]!.values).not.toContain("canonical prompt")
   })
@@ -138,7 +139,7 @@ describe("PostgresAutomationStore actor isolation", () => {
   it("updates canonical prompt files without mirroring bodies into PostgreSQL", async () => {
     const queries: RecordedQuery[] = []
     const row = {
-      id: "automation-1", title: "Daily", enabled: true, cron: "0 9 * * *", timezone: "UTC", model: "test:model",
+      id: "automation-1", title: "Daily", enabled: true, cron: "0 9 * * *", timezone: "UTC", model: "test:model", agent_type_id: null,
       created_at: "2026-07-19T08:00:00.000Z", updated_at: "2026-07-19T08:00:00.000Z",
     }
     const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {

@@ -38,6 +38,11 @@ const { dbPath, path, mode, iterations, sharedBuf, sleepMs } = workerData as Wor
 const sync = new Int32Array(sharedBuf)
 
 const { db, sql } = openDatabase(dbPath)
+// This fixture isolates BEGIN IMMEDIATE semantics from the durable store's
+// production event-loop bound. Its long worker-local timeout lets the test
+// prove lock acquisition happens up front without transient errors; the
+// parent suite separately proves production uses short, yielding retries.
+db.exec('PRAGMA busy_timeout=5000')
 
 // Start barrier: block until the main thread flips sync[0] to 1, so both
 // workers begin their hammering loop at effectively the same instant.

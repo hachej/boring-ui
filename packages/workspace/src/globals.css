@@ -492,34 +492,28 @@
   }
 }
 
-.app-left-agent-row:hover .app-left-agent-actions,
-.app-left-agent-row:focus-within .app-left-agent-actions {
-  pointer-events: auto;
-  width: auto;
-  opacity: 1;
-}
-
-.app-left-agent-row:hover [data-boring-agent-session-count="true"],
-.app-left-agent-row:focus-within [data-boring-agent-session-count="true"] {
-  display: none;
-}
-
 @media (max-width: 767px), (hover: none) {
-  .app-left-agent-row,
   .app-left-session-row {
     height: 44px;
   }
 
-  .app-left-agent-actions {
-    position: static;
-    z-index: auto;
-    pointer-events: auto;
+  /*
+   * Agent cards carry three hover-revealed actions on a mouse. Touch has no
+   * hover, so every card action is always visible and grows to 44px.
+   */
+  .app-left-agent-card {
+    min-height: 44px;
+  }
+
+  .app-left-agent-card-actions {
     width: auto;
     opacity: 1;
   }
 
-  .app-left-agent-row [data-boring-agent-session-count="true"] {
-    display: inline !important;
+  .app-left-agent-card-actions > button,
+  .app-left-agent-card-create {
+    width: 44px;
+    height: 44px;
   }
 }
 

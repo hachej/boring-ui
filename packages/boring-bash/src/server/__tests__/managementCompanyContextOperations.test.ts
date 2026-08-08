@@ -5,16 +5,19 @@ import { tmpdir } from "node:os";
 import { describe, expect, test } from "vitest";
 
 import type { BoundFilesystemContext, FilesystemBinding, FilesystemBindingResolver } from "../../shared/index";
-import type { CompanyContextFixturePreparedHandle, FilesystemRuntimeLifecycleEvent } from "../index";
+import type { FilesystemRuntimeLifecycleEvent } from "../index";
+import {
+  ScopedFilesystemRuntimeBindingManager,
+  createManagementProjectionOperations,
+  createReadonlyProjectionOperations,
+} from "../index";
 import {
   COMPANY_CONTEXT_FILESYSTEM_ID,
   COMPANY_CONTEXT_SENTINEL,
   FixtureCompanyContextBindingProvider,
-  ScopedFilesystemRuntimeBindingManager,
-  createManagementProjectionOperations,
-  createReadonlyProjectionOperations,
   seedCompanyContextFixture,
-} from "../index";
+  type CompanyContextFixturePreparedHandle,
+} from "./companyContextFixture";
 
 const readonlyBinding: FilesystemBinding = {
   filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,

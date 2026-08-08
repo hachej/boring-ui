@@ -565,6 +565,55 @@ describe("WorkspaceAgentFront", () => {
     expect(deleted).toEqual([["shared", "beta"], ["shared", "alpha"]])
   })
 
+  it("addresses defaultAgentTypeId, not the first catalog Agent, before anything is selected", async () => {
+    const createdBy = vi.fn()
+    const agents = [
+      { agentTypeId: "alpha", label: "Alpha" },
+      { agentTypeId: "beta", label: "Beta" },
+    ]
+    // Nothing selected yet: the catalog leads with alpha, but the configured
+    // default is beta, so the plain new chat must target beta.
+    const useAgentSelection = () => ({
+      agents,
+      selectedAgentTypeId: undefined,
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const useFleetSessions: AttestedWorkspaceAgentFrontProps<WorkspaceAgentSession>["useSessions"] = (options) => ({
+      sessions: [],
+      loading: false,
+      activeSessionId: undefined,
+      activeSessionAgentTypeId: options.agentTypeId,
+      activeSession: undefined,
+      workspaceId: options.workspaceId,
+      switch: vi.fn(),
+      create: async () => {
+        createdBy(options.agentTypeId)
+        return { id: `${options.agentTypeId}-new`, agentTypeId: options.agentTypeId, title: "new", updatedAt: 1 }
+      },
+      delete: vi.fn(),
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-default-owner"
+        agentTypeId="beta"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAgentSelection}
+        useSessions={useFleetSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Start new chat with Beta" })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole("button", { name: "Start new chat with Alpha" })).not.toBeInTheDocument()
+  })
+
   it("discovers an addressed fleet, groups its chats, and creates through the chosen owner", async () => {
     const user = userEvent.setup()
     const createdBy = vi.fn()
@@ -631,9 +680,12 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByRole("button", { name: "New chat with Beta" })).toBeInTheDocument()
       expect(screen.getAllByText("Alpha one").length).toBeGreaterThan(0)
     })
-    expect(screen.queryByText("Beta one")).not.toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "Expand Beta sessions" }))
-    expect(screen.getByText("Beta one")).toBeInTheDocument()
+    // The Chats list is unified across the fleet: every owner's chats are
+    // listed together, labeled, with no per-Agent disclosure to open first.
+    const chats = screen.getByRole("region", { name: "Chats" })
+    expect(within(chats).getByText("Beta one")).toBeInTheDocument()
+    expect(within(chats).getByText("Beta one").closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Beta")
+    expect(within(chats).getByText("Alpha one").closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Alpha")
     expect(sessionScopes).toEqual(new Map([
       ["alpha", "fleet-ui:alpha"],
       ["beta", "fleet-ui:beta"],
@@ -1150,7 +1202,7 @@ describe("WorkspaceAgentFront", () => {
     await user.click(within(appNav).getByText("Second session"))
 
     expect(onSwitchSession).toHaveBeenCalledWith("s2", "default")
-    expect(document.querySelector(`[data-boring-workspace-part="${part}"]`)).toBeNull()
+    await waitFor(() => expect(document.querySelector(`[data-boring-workspace-part="${part}"]`)).toBeNull())
     expect(visibleChatSessionIds()).toEqual(["s2"])
   })
 
@@ -1185,7 +1237,7 @@ describe("WorkspaceAgentFront", () => {
     await user.click(within(appNav).getByText("First session"))
 
     expect(onSwitchSession).toHaveBeenCalledWith("s1", "default")
-    expect(document.querySelector('[data-boring-workspace-part="skills-page"]')).toBeNull()
+    await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="skills-page"]')).toBeNull())
   })
 
   it("opens Skills as a chat overlay and uses the UI bridge to open a skill", async () => {
@@ -1255,12 +1307,12 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByText("Skills").closest("header")?.className).not.toContain("pl-12")
 
       await user.click(screen.getByRole("button", { name: "Close skills" }))
-      expect(screen.queryByText("/review")).not.toBeInTheDocument()
+      await waitFor(() => expect(screen.queryByText("/review")).not.toBeInTheDocument())
       await user.click(screen.getByRole("button", { name: "Open app navigation" }))
       await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
       await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
       await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
-      expect(screen.queryByText("/review")).not.toBeInTheDocument()
+      await waitFor(() => expect(screen.queryByText("/review")).not.toBeInTheDocument())
 
     } finally {
       window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
