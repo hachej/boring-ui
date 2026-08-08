@@ -30,14 +30,15 @@ current status, snapshots hold the analysis. Vision components are defined in
 | Wave 3 — external MCP (#1011) | **In progress**: #1130/#1131 merged; #1135 SSRF slice open; then pause pending named consumer |
 | Landing lane (D28 presentation-only) | **Validation queue**: #1153 memo, #1154, #1156 |
 | Persona packages (#1107) | **Started**: plan merged (#1136); slice 1 (#1150) in review |
-| Channels (#1127) | Plan ratified (#1140); zero implementation |
-| Executable environments (#1123) | Plan ratified (#1139); zero implementation; weak H1 pull — parked |
-| Metering/billing (#819) | **Nothing merged**; H1 needs a minimal metering-facts slice; BL1 billing stays deferred |
+| Channels (#1127) | Plan ratified (#1140); zero implementation; **deprioritized** (ratified 2026-08-08) |
+| Executable environments (#1123) | Plan ratified (#1139); zero implementation; **ACTIVE at LOW priority** (ratified 2026-08-08) — analyst vertical agents need it; never preempts landing/BYOK/#1107 |
+| Metering/billing (#819) | **Nothing merged**; ships only when a usage-priced offer pulls it (Commercial premises, ratified 2026-08-08) — NOT a blocker for the first vertical agent under subscription pricing |
+| UI polish loop | Standing low-effort background work (ratified 2026-08-08) |
 | Wave 4 — SBX1 / remote host / marketplace | Frozen behind owner gates (correct) |
-| Niche/influencer agents | **Proposed direction** (owner ratification pending) — gap lists in [`state/2026-08-08.md`](state/2026-08-08.md) §5–6 |
+| Vertical agents (private → public) | **Ratified direction 2026-08-08** — every agent = fleet seat + persona/knowledge package + own landing; launches private (operational once the landing queue merges); "going public" is per-hostname ops once self-signup + caps exist. Gap lists in [`state/2026-08-08.md`](state/2026-08-08.md) §5–6 (public-vertical-agent re-label per errata) |
 
 ## Snapshots
 
 - [`state/2026-08-08.md`](state/2026-08-08.md) — first snapshot: full
   component analysis, lane ranking, paying-customer gaps, GTM readiness,
-  niche/influencer gap lists.
+  vertical-agent gap lists (private launch + public-vertical-agent features).

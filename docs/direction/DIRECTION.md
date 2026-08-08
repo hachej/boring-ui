@@ -194,15 +194,16 @@ this file's waves is not dispatchable without an owner amendment here.
 
 Everything above is the owner's last ratified direction (2026-07-27, refreshed
 2026-07-31 with §Lane reality). This section records what has ACTUALLY landed
-since, and one direction proposal. Companion analysis:
-[`docs/direction/state/2026-08-08.md`](state/2026-08-08.md).
+since, plus the direction ratified in the 2026-08-08 owner grill. Companion
+analysis: [`docs/direction/state/2026-08-08.md`](state/2026-08-08.md).
 
 ### Governance fix (this PR)
 
 This file claimed sequencing supremacy while not existing on `origin/main`
-(flagged by the #1153 reconciliation memo). This PR lands it on main. Merging
-the PR ratifies only the file's presence and this section's FACTS; the
-"proposed" items below still require explicit owner ratification.
+(flagged by the #1153 reconciliation memo). This PR lands it on main.
+**Decision 29 (AgentGateway v0) was ratified by the owner 2026-08-08**; the
+DECISIONS.md status flip lands via a separate ratification PR alongside
+Decision 30 (presentation-only landings).
 
 ### Verified landed since 2026-07-31 (do not re-plan)
 
@@ -229,10 +230,42 @@ the PR ratifies only the file's presence and this section's FACTS; the
   #1150) in review. Channels (#1127) and executable environments (#1123)
   have ratified plans r2, no implementation.
 
-### Commercial premises (ratified 2026-08-08)
+### Vertical agents — the semantic standard (ratified 2026-08-08)
 
-Owner-ratified 2026-08-08 (unlike the niche/influencer direction below, which
-remains proposed).
+**"Vertical agent" is the one product noun.** The earlier niche-agent /
+influencer-agent taxonomy is dissolved: an influencer agent is simply a
+vertical agent whose niche is a person or brand. Every vertical agent is the
+same shape — **fleet seat + persona/knowledge package + its own landing page**
+(`<agent>.senecaapp.ai`). This is the direct execution of VISION Horizon 1 and
+GTM Motions 5/2b.
+
+The surviving distinction is **AUDIENCE**, not agent kind:
+
+- **Private vertical agent** — invite-only members, hand-provisioned
+  workspace, workspace/BYOK funding. **Fully operational today** once the
+  landing validation queue merges.
+- **Public vertical agent** — open registration from the landing page →
+  per-signup workspace via the D28 signup-domain hook, pooled funding.
+  **REQUIRES** self-signup work, spend caps, and abuse guardrails before
+  opening.
+
+**Every agent launches private; "going public" is a per-hostname ops decision
+once caps exist.** The former "influencer agent" gap list in the snapshot is
+re-labeled **public-vertical-agent features** (self-signup, caps/guardrails,
+channels) — see [`state/2026-08-08.md`](state/2026-08-08.md) §5–6 with its
+errata.
+
+Sequencing consequences (ratified):
+
+- The niche-vs-influencer ordering dissolves: **ship landing pages per agent
+  now (private)**; pull self-signup only when the first public vertical agent
+  needs it. Wave 1.5 = merge the landing/default-agent validation queue, then
+  ship one named vertical agent end-to-end on a real hostname before further
+  Wave 3/4 expansion.
+- **#1107 slice 3 (workspace install/update path — add agents without
+  redeploy) is queued next** in the agent-packaging lane, below landing/BYOK.
+
+### Commercial premises (ratified 2026-08-08)
 
 - **boring-ui provides the PREMISES, never the pricing.** The platform ships
   the capability substrate — per-user and per-workspace provider credentials
@@ -241,26 +274,19 @@ remains proposed).
   per-workspace usage-facts feed (#819). It stays commercially neutral and
   must not preclude any pricing topology.
 - **Each app/tenant repo adapts the strategy for its segment** (Seneca first):
-  e.g. monthly subscription (with BYOK or included usage) for B2B vertical
-  agents; credits for consumer/influencer funnels when self-signup opens.
-  Billing systems live app-side; the platform only ever emits facts.
+  e.g. monthly subscription (with BYOK or included usage) for private B2B
+  vertical agents; credits for public-vertical-agent funnels when self-signup
+  opens. Billing systems live app-side; the platform only ever emits facts.
 - **Sequencing consequence:** #819 metering ships only when a usage-priced
   offer pulls it — the platform emits facts, the app bills. It is NOT a
-  blocker for the first niche agent under subscription pricing. This amends
-  the metering recommendation in
+  blocker for the first vertical agent under subscription pricing. This
+  amends the metering recommendation in
   [`state/2026-08-08.md`](state/2026-08-08.md) §3/§4 (errata noted there).
 
-### Proposed direction — owner ratification pending
+### Lane priorities (ratified 2026-08-08)
 
-**Proposed, NOT ratified.** The owner intends to start building (a)
-**niche/vertical agents**, each with its own landing page
-(`<agent>.senecaapp.ai`) — the direct execution of VISION Horizon 1 and GTM
-Motion 5 — and (b) **influencer agents**: agents packaged around a person or
-brand's voice, content corpus, and audience funnel (persona package +
-knowledge filesystem + branded landing + channels), the GTM Motion 2b/4
-creator wedge. The influencer-agent interpretation itself needs owner
-confirmation. If ratified, the wave sequencing above gains a **Wave 1.5 —
-first shipped vertical agent**: merge the landing/default-agent validation
-queue, then ship one named agent end-to-end on a real hostname before any
-further Wave 3/4 expansion. Gap lists and PR estimates:
-[`product-state-2026-08-08.md`](state/2026-08-08.md) §6.
+- **#1123 executable environments: ACTIVE at LOW priority** — it is what
+  analyst vertical agents need to execute over client data. Background slices
+  continue; it never preempts landing, BYOK, or #1107.
+- **#1127 channels: deprioritized.**
+- **UI polish loop: standing low-effort background work** — keeps running.
