@@ -6,7 +6,7 @@ import {
 } from "../../core/contracts"
 import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 
-export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v2"
+export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v3"
 
 const KNOWN_ABORTED_REQUESTS: Array<{
   rationale: string
@@ -88,7 +88,10 @@ export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnap
     && (snapshot.checkpoint !== "expanded-sessions" || (state.expandedRegionCount >= 2 && state.guideCount >= 2))
     && (snapshot.checkpoint !== "pinned-chat" || (state.pinnedHeading === "Pinned chats" && state.pinnedCount === 1 && state.pinnedProvenance === "Alpha" && state.pinnedAgentSessionCount >= 1 && state.nestedPinnedHasPin))
     && (snapshot.checkpoint !== "agent-details" || (state.detailOverlayCount === 1 && state.detailTabCount === 0 && state.configurationHeadingCount === 1))
-    && (!snapshot.viewport.mobile || snapshot.checkpoint !== "agent-list" || (state.visibleActionCount >= 8 && state.visibleAgentCountLabels === 2))
+    // v3 (owner-ratified nested design): coarse pointers keep only "New chat"
+    // and "Settings" per Agent directly visible (2 agents × 2 = 4); split and
+    // quick chat move behind the touch overflow follow-up.
+    && (!snapshot.viewport.mobile || snapshot.checkpoint !== "agent-list" || (state.visibleActionCount >= 4 && state.visibleAgentCountLabels === 2))
 
   add("fixture-ready", surfaceReady, `agentCount=${state.agentCount};detailOverlayCount=${state.detailOverlayCount}`)
   add("console-errors", snapshot.consoleErrors.length === 0, snapshot.consoleErrors.join("\n") || "none")

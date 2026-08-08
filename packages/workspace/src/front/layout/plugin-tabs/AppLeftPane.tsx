@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { ChevronRight, Plus, Search, X } from "lucide-react"
 import { Skeleton } from "@hachej/boring-ui-kit"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
@@ -252,6 +252,17 @@ export function AppLeftPane({
   const [expandedAgentIds, setExpandedAgentIds] = useState<ReadonlySet<string>>(
     () => new Set(selectedAgentTypeId ? [selectedAgentTypeId] : []),
   )
+  // Selection often resolves after the first render (async Agent discovery).
+  // Disclose the addressed Agent whenever selection lands on a new one, but
+  // never fight an explicit collapse of the currently selected Agent.
+  const lastAutoExpandedAgentIdRef = useRef<string | undefined>(selectedAgentTypeId ?? undefined)
+  useEffect(() => {
+    if (!selectedAgentTypeId || lastAutoExpandedAgentIdRef.current === selectedAgentTypeId) return
+    lastAutoExpandedAgentIdRef.current = selectedAgentTypeId
+    setExpandedAgentIds((current) => (
+      current.has(selectedAgentTypeId) ? current : new Set([...current, selectedAgentTypeId])
+    ))
+  }, [selectedAgentTypeId])
   const toggleAgentExpanded = (agentTypeId: string) => setExpandedAgentIds((current) => {
     const next = new Set(current)
     if (next.has(agentTypeId)) next.delete(agentTypeId)
@@ -448,11 +459,18 @@ export function AppLeftPane({
     )
     if (!nestedAgentChats) return card
     return (
-      <div key={agent.agentTypeId} className="space-y-0.5">
+      <div
+        key={agent.agentTypeId}
+        data-boring-workspace-part="app-left-agent-tree"
+        data-boring-agent-type-id={agent.agentTypeId}
+        className="space-y-0.5"
+      >
         {card}
         {expanded ? (
           <div
             data-boring-workspace-part="app-left-agent-sessions"
+            role="region"
+            aria-label={`${agent.label} sessions`}
             className="ml-3 space-y-px border-l border-border pl-0.5"
           >
             {agentSessions.length > 0

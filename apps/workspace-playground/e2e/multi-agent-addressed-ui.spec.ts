@@ -65,7 +65,9 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
   await expect(alphaNew).toBeVisible({ timeout: 120_000 })
   await expect(betaNew).toBeVisible()
   await expect(page.getByRole("combobox", { name: "Filter chats by Agent" })).toHaveCount(0)
-  await page.getByRole("button", { name: "Expand Beta sessions" }).click()
+  // The disclosure toggle's accessible name is stable ("Beta; 1 chat");
+  // expanded state is exposed via aria-expanded, not the label.
+  await page.getByRole("button", { name: /^Expand Beta;/ }).click()
 
   const betaRow = page.locator(
     `[data-boring-workspace-part="app-session-row"][data-boring-agent-type-id="beta"][data-boring-session-id="${betaSessionId}"]`,
@@ -130,10 +132,13 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
   await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="alpha"]')).toHaveAttribute("data-pi-chat-session-id", alphaSessionId!)
   await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="beta"]')).toHaveAttribute("data-pi-chat-session-id", betaSessionId!)
 
-  await page.getByRole("button", { name: /Collapse Alpha;/ }).click()
+  const alphaToggle = page.getByRole("button", { name: /(Expand|Collapse) Alpha;/ })
+  await expect(alphaToggle).toHaveAttribute("aria-expanded", "true")
+  await alphaToggle.click()
   await expect(betaRow).toBeVisible()
   await expect(alphaRow).toHaveCount(0)
-  await page.getByRole("button", { name: /Expand Alpha;/ }).click()
+  await expect(alphaToggle).toHaveAttribute("aria-expanded", "false")
+  await alphaToggle.click()
   await expect(alphaRow).toBeVisible()
 
   expect(addressedPaths.some((path) => path.startsWith(`${addressedPrefix}alpha/`))).toBe(true)

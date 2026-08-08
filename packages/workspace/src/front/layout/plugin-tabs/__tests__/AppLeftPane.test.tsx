@@ -89,10 +89,10 @@ describe("AppLeftPane", () => {
     const user = userEvent.setup()
     const handlers = renderFleetPane()
 
-    const cards = screen.getAllByRole("button", { name: /^Boring .*chats?$/ })
+    const cards = screen.getAllByRole("button", { name: /Boring .*chats?$/ })
     expect(cards.map((card) => card.getAttribute("aria-label"))).toEqual([
-      "Boring Alpha; 2 chats",
-      "Boring Beta; 1 chat",
+      "Collapse Boring Alpha; 2 chats",
+      "Expand Boring Beta; 1 chat",
     ])
     // Compact rows: the description survives only as the row tooltip; the row
     // itself stays a single line at session-row density.
@@ -128,14 +128,14 @@ describe("AppLeftPane", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "true")
     await user.click(toggle)
     expect(toggle).toHaveAttribute("aria-expanded", "false")
-    expect(screen.queryByRole("button", { name: /^Boring Alpha;/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Boring Alpha;/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("searchbox", { name: "Filter Agents" })).not.toBeInTheDocument()
     // Nested chats collapse with their Agents; pinned chats stay top-level.
     expect(screen.queryByText("Alpha follow-up")).not.toBeInTheDocument()
     expect(screen.getByText("Alpha session")).toBeInTheDocument()
 
     await user.click(toggle)
-    expect(screen.getByRole("button", { name: /^Boring Alpha;/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Boring Alpha;/ })).toBeInTheDocument()
   })
 
   it("nests each Agent's chats under its card behind a disclosure", async () => {
@@ -153,11 +153,11 @@ describe("AppLeftPane", () => {
     // Beta is collapsed: its chats are hidden until disclosed.
     expect(screen.queryByText("Beta session")).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole("button", { name: "Boring Beta; 1 chat" }))
+    await user.click(screen.getByRole("button", { name: /Boring Beta; 1 chat$/ }))
     expect(screen.getByText("Beta session").closest('[data-boring-workspace-part="app-left-agent-sessions"]')).toBeInTheDocument()
 
     // Collapse alpha again: its nested chats disappear, beta's stay.
-    await user.click(screen.getByRole("button", { name: "Boring Alpha; 2 chats" }))
+    await user.click(screen.getByRole("button", { name: /Boring Alpha; 2 chats$/ }))
     expect(screen.queryByText("Alpha follow-up")).not.toBeInTheDocument()
     expect(screen.getByText("Beta session")).toBeInTheDocument()
   })
@@ -193,8 +193,8 @@ describe("AppLeftPane", () => {
     await waitFor(() => expect(screen.getAllByTitle("Working")).toHaveLength(2))
 
     await user.type(screen.getByRole("searchbox", { name: "Filter Agents" }), "beta")
-    expect(screen.queryByRole("button", { name: /^Boring Alpha;/ })).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /^Boring Beta;/ })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Boring Alpha;/ })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Boring Beta;/ })).toBeInTheDocument()
   })
 
   it("defaults the plain fleet new chat to the selected Agent", async () => {
@@ -257,7 +257,7 @@ describe("AppLeftPane", () => {
 
     // A fleet of one still gets a card, which is the only route to per-Agent
     // settings now that they no longer live on a generic control.
-    expect(screen.getByRole("button", { name: "Boring Solo; 1 chat" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Boring Solo; 1 chat$/ })).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "New chat with Boring Solo" }))
     expect(onCreateSession).toHaveBeenCalledWith("solo")
     await user.click(screen.getByRole("button", { name: "Settings for Boring Solo" }))
@@ -324,7 +324,7 @@ describe("AppLeftPane", () => {
       pinnedSessionRefs: [],
     })
 
-    await user.click(screen.getByRole("button", { name: "Boring Beta; 0 chats" }))
+    await user.click(screen.getByRole("button", { name: /Boring Beta; 0 chats$/ }))
     expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
     expect(screen.getByLabelText("Loading chats")).toBeInTheDocument()
   })

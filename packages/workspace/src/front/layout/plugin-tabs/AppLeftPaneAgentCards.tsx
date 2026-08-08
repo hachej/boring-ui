@@ -69,7 +69,7 @@ export function AppLeftPaneAgentCard({
       className={cn(
         // Owner-ratified look: flat compact rows (no card borders/boxes),
         // session-row density; hover reveals the secondary actions.
-        "app-left-agent-card group relative flex min-h-7 w-full items-center gap-0.5 rounded-md px-1 py-0.5 transition-colors motion-reduce:transition-none",
+        "app-left-agent-card app-left-agent-row group relative flex min-h-7 w-full items-center gap-0.5 rounded-md px-1 py-0.5 transition-colors motion-reduce:transition-none",
         // Tint on hover only — a mouse click must not leave a lingering ring
         // that reads as "selected"; keyboard focus still gets its ring.
         "hover:bg-foreground/[0.05] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/40",
@@ -78,7 +78,7 @@ export function AppLeftPaneAgentCard({
       <button
         type="button"
         aria-expanded={expandable ? expanded : undefined}
-        aria-label={`${label}; ${countLabel}`}
+        aria-label={`${expandable ? `${expanded ? "Collapse" : "Expand"} ` : ""}${label}; ${countLabel}`}
         title={subtitle ? `${label} — ${subtitle}` : label}
         onClick={onToggle}
         disabled={!onToggle}
@@ -130,7 +130,7 @@ export function AppLeftPaneAgentCard({
             title="New chat in split pane"
             data-boring-mobile-dismiss="true"
             onClick={onCreateSplitSession}
-            className={cardActionClassName}
+            className={cn(cardActionClassName, "app-left-agent-card-optional")}
           >
             <Columns2 className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
           </button>
@@ -142,7 +142,7 @@ export function AppLeftPaneAgentCard({
             title="Quick chat"
             data-boring-mobile-dismiss="true"
             onClick={onCreatePopoverSession}
-            className={cardActionClassName}
+            className={cn(cardActionClassName, "app-left-agent-card-optional")}
           >
             <Zap className="size-3.5" strokeWidth={1.85} aria-hidden="true" />
           </button>

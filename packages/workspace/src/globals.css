@@ -552,9 +552,15 @@
 
 /* Touch devices have no hover to gate the per-Agent secondary actions; showing
    all of them permanently reads as clutter. Only the "+" stays per row; the
-   remaining actions are a coarse-pointer follow-up (overflow menu). */
+   split/quick chat move behind a coarse-pointer follow-up (overflow menu),
+   but "+" and Settings stay: Agent details must remain reachable on touch. */
 @media (pointer: coarse) {
   .app-left-agent-card-actions {
+    width: auto;
+    opacity: 1;
+  }
+
+  .app-left-agent-card-optional {
     display: none;
   }
 }
