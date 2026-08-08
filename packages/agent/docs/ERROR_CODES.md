@@ -45,6 +45,8 @@ All API failures must use the response envelope:
 | `AGENT_FLEET_SEAT_PERSONA_INVALID` | `loadConfiguredAgentFleet` excluded a fleet.yaml seat because its persona package failed to materialize or compose | 500 | fix persona package/spec | error | stable (trusted API) |
 | `AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH` | `loadConfiguredAgentFleet` excluded a fleet.yaml seat because a pinned skill's canonical content was unavailable or its digest drifted | 500 | run `pnpm write:skill-digests` or fix the skill file | error | stable (trusted API) |
 | `AGENT_FLEET_CONFIG_FILE_INVALID` | `loadConfiguredAgentFleet`'s fleet.yaml could not be read or parsed (whole-fleet failure, not per-seat) | 500 | fix `.agents/factory/fleet.yaml` | error | stable (trusted API) |
+| `AGENT_DEFINITION_ID_CONFLICT` | Multiple discovered plugin packages claim the same agent definition id, so every claimant is excluded | 500 | remove or rename conflicting definitions | error | stable (trusted API) |
+| `AGENT_DEFINITION_UNSEATED` | A discovered agent package is not named by the fleet roster and remains inert | 200 | seat it in class-B fleet config if activation is intended | info | stable (trusted API) |
 | `RUNTIME_PROVISIONING_FAILED` | Agent runtime dependency provisioning failed before Level 3 runtime dependencies became ready | 503 | retry/report | error | stable (public API) |
 | `RUNTIME_PROVISIONING_LOCKED` | Agent runtime provisioning is locked by another reconciler | 423 | retry | warn | stable (public API) |
 | `BWRAP_UNAVAILABLE` | `bwrap` binary not found | 500 | report-bug | error | stable (public API) |

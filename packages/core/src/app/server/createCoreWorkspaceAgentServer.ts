@@ -59,6 +59,7 @@ import {
 } from '@hachej/boring-workspace/app/server'
 import {
   createWorkspaceUiTools,
+  discoverRepositoryAgentPackages,
   uiRoutes,
   type WorkspaceBridge,
   type WorkspaceBridgeCallRequest,
@@ -1020,7 +1021,19 @@ export async function createCoreWorkspaceAgentServer(
   const sessionRoot = normalizeOptionalPath(options.sessionRoot)
     ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
     ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
-  const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot })
+  // BORING_AGENT_FLEET=1 composes the config-driven production fleet
+  // (gh-1106 slice 3, B2 fix round 1) from .agents/{personas,factory} for
+  // the deployed core app host (apps/full-app), same helper as
+  // createWorkspaceAgentServer and the CLI hub; flag absent preserves the
+  // legacy single-default-agent boot byte-identically.
+  const fleetRepositoryRoot = options.fleetRepositoryRoot ?? process.cwd()
+  const discoveredPackages = !options.agents && process.env.BORING_AGENT_FLEET === '1'
+    ? await discoverRepositoryAgentPackages(fleetRepositoryRoot)
+    : undefined
+  const agents = options.agents ?? await resolveDefaultAgentFleet({
+    repositoryRoot: fleetRepositoryRoot,
+    ...(discoveredPackages ? { discoveredPackages } : {}),
+  })
   registerTelemetryHooks(app, telemetry)
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
@@ -1249,11 +1262,6 @@ export async function createCoreWorkspaceAgentServer(
     return authorizeStorageScope(ctx.request, ctx.workspaceId, canonicalScope ?? ctx.workspaceId)
   }
 
-  // BORING_AGENT_FLEET=1 composes the config-driven production fleet
-  // (gh-1106 slice 3, B2 fix round 1) from .agents/{personas,factory} for
-  // the deployed core app host (apps/full-app), same helper as
-  // createWorkspaceAgentServer and the CLI hub; flag absent preserves the
-  // legacy single-default-agent boot byte-identically.
   const scopeAuthority = createCoreAgentScopeAuthority({
     appId: config.appId,
     workspaceStore,

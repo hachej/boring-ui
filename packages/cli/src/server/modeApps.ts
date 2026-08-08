@@ -953,8 +953,15 @@ export async function createWorkspacesModeApp(opts: {
   // byte-identically. Shared with createWorkspaceAgentServer/Core via the
   // canonical @hachej/boring-agent/server helper (M9 fix round 1: this used
   // to duplicate that composition inline).
+  const fleetRepositoryRoot = process.cwd()
+  const discoveredAgentPackages = process.env.BORING_AGENT_FLEET === "1"
+    ? await workspaceServer.discoverRepositoryAgentPackages(fleetRepositoryRoot)
+    : undefined
   const agentHost = await agentServer.createAgentHost({
-    agents: await agentServer.resolveDefaultAgentFleet(),
+    agents: await agentServer.resolveDefaultAgentFleet({
+      repositoryRoot: fleetRepositoryRoot,
+      ...(discoveredAgentPackages ? { discoveredPackages: discoveredAgentPackages } : {}),
+    }),
     fleetCompiler: { async compile({ agents }) { return agents } },
     hostId: "cli-trusted-local",
     scopeVerifier: trustedLocalScope.scopeVerifier,
