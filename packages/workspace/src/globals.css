@@ -563,4 +563,15 @@
   .app-left-agent-card-optional {
     display: none;
   }
+
+  /* "Start one" is the primary action of an empty Agent — it must be a real
+     touch target, not a 17px text link. */
+  .app-left-empty-start {
+    display: inline-flex;
+    min-height: 44px;
+    min-width: 44px;
+    align-items: center;
+    justify-content: center;
+    padding-inline: 8px;
+  }
 }

@@ -483,7 +483,7 @@ export function AppLeftPane({
                   </div>
                 )
                 : (
-                  <div className="flex h-[26px] items-center gap-1.5 pl-6 pr-1.5 text-[12px] text-muted-foreground/80">
+                  <div className="flex min-h-[26px] items-center gap-1.5 pl-6 pr-1.5 text-[12px] text-muted-foreground/80">
                     <span>No chats yet.</span>
                     <button
                       type="button"
@@ -492,7 +492,7 @@ export function AppLeftPane({
                         onSelectAgent?.(agent.agentTypeId)
                         onCreateSession(agent.agentTypeId)
                       }}
-                      className="rounded-sm text-[12px] font-medium text-[color:var(--accent)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      className="app-left-empty-start rounded-sm text-[12px] font-medium text-[color:var(--accent)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                     >
                       Start one
                     </button>
