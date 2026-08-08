@@ -17,6 +17,11 @@ import {
   registerFullAppManagedAgentMcpRoutes,
 } from './managedAgentMcp.js'
 import { assertProductionAgentModeIsSafe } from './productionSafety.js'
+import {
+  HOSTNAME_LANDING_ENV,
+  createHostnameLandingRootHandler,
+  parseHostnameLandings,
+} from './hostnameLandings.js'
 import type { WorkspaceAgentDispatcherResolver } from '@hachej/boring-agent/server'
 
 function pluginAuthoringEnabledFromEnv(): boolean {
@@ -42,6 +47,11 @@ async function main() {
     config,
     defaultAgentTypeId: 'default',
     serveFrontend: true,
+    // Presentation-only bounded landings keyed by exact Host (Decision 28);
+    // grants zero authority and never touches workspace/membership state.
+    frontendRootHandler: createHostnameLandingRootHandler(
+      parseHostnameLandings(process.env[HOSTNAME_LANDING_ENV]),
+    ),
     plugins: [...pluginComposition.plugins],
     defaultPluginPackages: [...pluginComposition.defaultPluginPackages],
     externalPlugins: false,
