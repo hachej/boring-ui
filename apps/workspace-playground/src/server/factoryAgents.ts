@@ -25,15 +25,22 @@ export async function loadBoringFactoryAgents(
   options: LoadBoringFactoryAgentsOptions = {},
 ): Promise<readonly AgentHostAgentSpec[]> {
   const { agents, diagnostics } = await loadConfiguredAgentFleet({
+    // The playground serves this repository as the workspace, so the fleet
+    // repository root and the served workspace root genuinely coincide here.
+    workspaceRoot: REPOSITORY_ROOT,
     personasDir: PERSONAS_DIR,
     fleetConfigPath: FLEET_CONFIG_PATH,
     policyPath: POLICY_PATH,
     ...(options.env ? { env: options.env } : {}),
   })
-  if (diagnostics.length > 0) {
+  // Only diagnostics that actually EXCLUDE a seat are fatal here. An
+  // unpublishable instructions path withholds one link; failing boot over it
+  // would be a worse outcome than the missing row it reports.
+  const excluding = diagnostics.filter((d) => d.code !== 'AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE')
+  if (excluding.length > 0) {
     throw Object.assign(
-      new Error(`fleet loader excluded seat(s): ${diagnostics.map((d) => `${d.seat} (${d.code})`).join(', ')}`),
-      { name: 'TrustedAgentCompositionError', diagnostics },
+      new Error(`fleet loader excluded seat(s): ${excluding.map((d) => `${d.seat} (${d.code})`).join(', ')}`),
+      { name: 'TrustedAgentCompositionError', diagnostics: excluding },
     )
   }
   if (!options.preferredModels) return agents

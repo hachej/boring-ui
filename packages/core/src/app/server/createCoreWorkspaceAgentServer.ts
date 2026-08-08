@@ -1020,7 +1020,10 @@ export async function createCoreWorkspaceAgentServer(
   const sessionRoot = normalizeOptionalPath(options.sessionRoot)
     ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
     ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
-  const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot })
+  // The base root, not a served one: core serves `<workspaceRoot>/<workspaceId>`
+  // per workspace, so a repository-rooted persona tree is correctly reported as
+  // unpublishable rather than linked to a path that resolves to nothing.
+  const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot, workspaceRoot })
   registerTelemetryHooks(app, telemetry)
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })

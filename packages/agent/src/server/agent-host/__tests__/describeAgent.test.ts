@@ -23,13 +23,20 @@ function createProjection(options: {
   refs?: readonly string[]
   /** Host hook that decides whether THIS subject may reach THIS agentTypeId. */
   resolveAgentRuntimeScope?: (agentTypeId: string) => Promise<unknown>
+  /** Mirrors createAgentHost: `verify` asserts the host is open first. */
+  draining?: boolean
 } = {}) {
   const runtime = {
     options: {},
     compiledAgents: agents,
     compiledById: new Map(agents.map((agent) => [agent.agentTypeId, agent])),
     registerSubscription: () => () => {},
-    verify: async () => ({ workspaceScopeId: 'ws-1', authSubjectId: 'user-1' }),
+    verify: async () => {
+      if (options.draining) {
+        throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'agent host is closing')
+      }
+      return { workspaceScopeId: 'ws-1', authSubjectId: 'user-1' }
+    },
     resolveAgentRuntimeScope: async (agentTypeId: string) => (
       options.resolveAgentRuntimeScope
         ? await options.resolveAgentRuntimeScope(agentTypeId)
@@ -118,6 +125,17 @@ describe('describeAgent', () => {
     await expect(projection.describeAgent({ request: {} as never, agentTypeId: 'nope' }))
       .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN })
     expect(seen).toEqual([])
+  })
+
+  test('stops serving during drain, like every sibling route', async () => {
+    // describe does not materialize a binding, so it does not inherit
+    // resolveBinding's assertOpen. It is still drain-gated because `authorize`
+    // goes through `runtime.verify`, which asserts open first
+    // (createAgentHost: `verify(scope) { runtime.assertOpen(); ... }`).
+    // Pinned here so that property stops being an inherited accident.
+    const projection = createProjection({ draining: true })
+    await expect(projection.describeAgent({ request: {} as never, agentTypeId: 'concierge' }))
+      .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED })
   })
 
   test('route serves the description and rejects unknown agents with a stable code', async () => {

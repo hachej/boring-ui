@@ -47,6 +47,15 @@ export interface FleetSeatBinding {
 }
 
 export interface LoadConfiguredAgentFleetOptions {
+  /**
+   * Root of the workspace the `user` filesystem serves. REQUIRED, because
+   * published `instructionFiles` are addressed relative to it — and only the
+   * caller knows it. It is NOT derivable from `personasDir`: a fleet can be
+   * composed from a repository root that is not the workspace root, and
+   * guessing "the last two segments" produced well-formed paths that resolved
+   * to nothing in the workspace.
+   */
+  readonly workspaceRoot: string
   /** Directory containing `<seat>/package.json` persona packages. */
   readonly personasDir: string
   /** Path to `.agents/factory/fleet.yaml`. */
@@ -236,11 +245,12 @@ export async function loadConfiguredAgentFleet(
   }
 
   const skillsRoot = options.skillsRoot ?? resolve(dirname(options.personasDir), 'skills')
-  // Same layout assumption the skillsRoot default already encodes, one level
-  // up: `<workspaceRoot>/.agents/personas`. Deriving it here keeps ONE truth,
-  // instead of asking every caller to restate the relative form next to the
-  // absolute one where the two can drift apart.
-  const workspaceRelativePersonasDir = relative(dirname(dirname(options.personasDir)), options.personasDir)
+  // Personas are only linkable when they live inside the workspace the `user`
+  // filesystem actually serves. When they don't, no ref is published at all —
+  // a well-formed path to a file the workbench cannot open is worse than no
+  // link, because the row looks live and silently opens nothing.
+  const personasAreInsideWorkspace = isInside(options.workspaceRoot, options.personasDir)
+  const workspaceRelativePersonasDir = relative(options.workspaceRoot, options.personasDir)
     .split(sep)
     .join('/')
 
@@ -277,20 +287,28 @@ export async function loadConfiguredAgentFleet(
       // The loader is the only place that knows seat -> persona directory;
       // publishing it here keeps clients from inverting the mapping.
       let instructionFiles: AgentInstructionFileRef[] | undefined
-      if (SAFE_SEAT_SEGMENT_RE.test(binding.seat)) {
+      // ONE honest failure path covering both ways a ref can be unpublishable:
+      // personas outside the served workspace, and a seat name that is not a
+      // safe path segment.
+      const unpublishableReason = !personasAreInsideWorkspace
+        ? `personas directory ${JSON.stringify(options.personasDir)} resolves outside the workspace root ${JSON.stringify(options.workspaceRoot)} that the "${AGENT_USER_FILESYSTEM_ID}" filesystem serves`
+        : !SAFE_SEAT_SEGMENT_RE.test(binding.seat)
+          ? `seat "${binding.seat}" is not a safe workspace-relative path segment`
+          : undefined
+      if (unpublishableReason) {
+        // Fails loud, not silent: the seat still composes, but the overlay
+        // gets no instruction row and the operator gets a stable code.
+        diagnostics.push({
+          seat: binding.seat,
+          code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
+          message: `${unpublishableReason}; its persona instructions will not be linkable`,
+        })
+      } else {
         instructionFiles = [{
           filesystem: AGENT_USER_FILESYSTEM_ID,
           path: `${workspaceRelativePersonasDir}/${binding.seat}/instructions.md`,
           role: 'persona',
         }]
-      } else {
-        // Fails loud, not silent: the seat still composes, but the overlay
-        // will have no instruction row and the operator gets a stable code.
-        diagnostics.push({
-          seat: binding.seat,
-          code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
-          message: `seat "${binding.seat}" cannot be published as a workspace-relative path segment; its persona instructions will not be linkable`,
-        })
       }
       const spec = await createConfiguredAgentHostAgentSpec({
         source,
