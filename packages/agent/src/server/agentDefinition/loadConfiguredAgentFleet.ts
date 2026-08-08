@@ -7,7 +7,8 @@ import { materializeAgentDirectory } from './materializeAgentDirectory'
 import { createConfiguredAgentHostAgentSpec } from './createConfiguredAgentHostAgentSpec'
 import { sha256 } from '../../shared/digest'
 import { ErrorCode, type ErrorCode as AgentErrorCode } from '../../shared/error-codes'
-import type { ConfiguredAgentHostAgentSpec } from '../agent-host/types'
+import { AGENT_USER_FILESYSTEM_ID } from '../agent-host/types'
+import type { AgentInstructionFileRef, ConfiguredAgentHostAgentSpec } from '../agent-host/types'
 import type { Sha256Digest } from '../../shared/digest'
 
 /**
@@ -60,13 +61,6 @@ export interface LoadConfiguredAgentFleetOptions {
    * trees that don't mirror the full `.agents/` shape).
    */
   readonly skillsRoot?: string
-  /**
-   * Workspace-relative form of `personasDir` (e.g. `.agents/personas`). When
-   * supplied, each composed seat carries `instructionFiles` pointing at its
-   * authored `instructions.md`, so clients never have to guess the persona
-   * directory back out of the agent id.
-   */
-  readonly personasRelativeDir?: string
   /** Overridable for tests; defaults to `process.env`. */
   readonly env?: NodeJS.ProcessEnv
 }
@@ -76,7 +70,9 @@ const SAFE_SEAT_SEGMENT_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 export type FleetLoaderDiagnosticCode = Extract<
   AgentErrorCode,
-  'AGENT_FLEET_SEAT_PERSONA_INVALID' | 'AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH'
+  | 'AGENT_FLEET_SEAT_PERSONA_INVALID'
+  | 'AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH'
+  | 'AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE'
 >
 
 export interface FleetLoaderDiagnostic {
@@ -240,6 +236,13 @@ export async function loadConfiguredAgentFleet(
   }
 
   const skillsRoot = options.skillsRoot ?? resolve(dirname(options.personasDir), 'skills')
+  // Same layout assumption the skillsRoot default already encodes, one level
+  // up: `<workspaceRoot>/.agents/personas`. Deriving it here keeps ONE truth,
+  // instead of asking every caller to restate the relative form next to the
+  // absolute one where the two can drift apart.
+  const workspaceRelativePersonasDir = relative(dirname(dirname(options.personasDir)), options.personasDir)
+    .split(sep)
+    .join('/')
 
   const agents: ConfiguredAgentHostAgentSpec[] = []
   const diagnostics: FleetLoaderDiagnostic[] = []
@@ -271,14 +274,24 @@ export async function loadConfiguredAgentFleet(
       }
 
       const preferredModel = resolveSeatModel(seatTiers[binding.seat], env)
-      // The loader is the only place that knows seat → persona directory;
+      // The loader is the only place that knows seat -> persona directory;
       // publishing it here keeps clients from inverting the mapping.
-      const instructionFiles = options.personasRelativeDir && SAFE_SEAT_SEGMENT_RE.test(binding.seat)
-        ? [{
-            path: `${options.personasRelativeDir.replace(/\/+$/, '')}/${binding.seat}/instructions.md`,
-            name: 'Persona instructions',
-          }]
-        : undefined
+      let instructionFiles: AgentInstructionFileRef[] | undefined
+      if (SAFE_SEAT_SEGMENT_RE.test(binding.seat)) {
+        instructionFiles = [{
+          filesystem: AGENT_USER_FILESYSTEM_ID,
+          path: `${workspaceRelativePersonasDir}/${binding.seat}/instructions.md`,
+          role: 'persona',
+        }]
+      } else {
+        // Fails loud, not silent: the seat still composes, but the overlay
+        // will have no instruction row and the operator gets a stable code.
+        diagnostics.push({
+          seat: binding.seat,
+          code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
+          message: `seat "${binding.seat}" cannot be published as a workspace-relative path segment; its persona instructions will not be linkable`,
+        })
+      }
       const spec = await createConfiguredAgentHostAgentSpec({
         source,
         policy: {

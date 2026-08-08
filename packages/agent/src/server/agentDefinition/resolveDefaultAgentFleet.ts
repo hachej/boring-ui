@@ -50,7 +50,6 @@ export async function resolveDefaultAgentFleet(
   try {
     const { agents: configuredAgents, diagnostics } = await loadConfiguredAgentFleet({
       personasDir: resolve(root, '.agents', 'personas'),
-      personasRelativeDir: '.agents/personas',
       fleetConfigPath: resolve(root, '.agents', 'factory', 'fleet.yaml'),
       policyPath: resolve(root, '.agents', 'factory', 'policy.yaml'),
       env,

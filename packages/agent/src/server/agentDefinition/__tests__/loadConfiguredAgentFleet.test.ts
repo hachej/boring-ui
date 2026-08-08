@@ -9,6 +9,9 @@ const FIXTURE_ROOT = resolve(import.meta.dirname, 'fixtures', 'fleet')
 const PERSONAS_DIR = resolve(FIXTURE_ROOT, 'personas')
 const FLEET_CONFIG_PATH = resolve(FIXTURE_ROOT, 'factory', 'fleet.yaml')
 const POLICY_PATH = resolve(FIXTURE_ROOT, 'factory', 'policy.yaml')
+const UNSAFE_SEAT_ROOT = resolve(import.meta.dirname, 'fixtures', 'unsafe-seat')
+const UNSAFE_SEAT_PERSONAS_DIR = resolve(UNSAFE_SEAT_ROOT, 'personas')
+const UNSAFE_SEAT_FLEET_CONFIG_PATH = resolve(UNSAFE_SEAT_ROOT, 'factory', 'fleet.yaml')
 
 describe('loadConfiguredAgentFleet', () => {
   test('composes valid seats and excludes an invalid seat with a stable diagnostic', async () => {
@@ -41,10 +44,9 @@ describe('loadConfiguredAgentFleet', () => {
     }))
   })
 
-  test('publishes the persona instructions path from the SEAT, not the agent id', async () => {
+  test('publishes the persona instructions ref from the SEAT, not the agent id', async () => {
     const result = await loadConfiguredAgentFleet({
       personasDir: PERSONAS_DIR,
-      personasRelativeDir: '.agents/personas',
       fleetConfigPath: FLEET_CONFIG_PATH,
       policyPath: POLICY_PATH,
       env: {},
@@ -52,24 +54,33 @@ describe('loadConfiguredAgentFleet', () => {
 
     const [alpha] = result.agents
     if (!alpha || 'legacyDefault' in alpha) throw new Error('expected a configured agent')
-    // seat "alpha" ≠ agentTypeId "fixture-alpha": nothing downstream can
-    // invert this mapping, which is why the loader publishes it.
+    // seat "alpha" != agentTypeId "fixture-alpha": nothing downstream can
+    // invert this mapping, which is why the loader publishes it. The personas
+    // dir is relative to the workspace root the layout implies, and `role` is
+    // a discriminator — the display words belong to the client.
     expect(alpha.instructionFiles).toEqual([
-      { path: '.agents/personas/alpha/instructions.md', name: 'Persona instructions' },
+      { filesystem: 'user', path: 'fleet/personas/alpha/instructions.md', role: 'persona' },
     ])
   })
 
-  test('omits instructionFiles when no workspace-relative personas dir is supplied', async () => {
+  test('reports a stable diagnostic when a seat name cannot be published as a path segment', async () => {
     const result = await loadConfiguredAgentFleet({
-      personasDir: PERSONAS_DIR,
-      fleetConfigPath: FLEET_CONFIG_PATH,
+      personasDir: UNSAFE_SEAT_PERSONAS_DIR,
+      fleetConfigPath: UNSAFE_SEAT_FLEET_CONFIG_PATH,
       policyPath: POLICY_PATH,
       env: {},
     })
 
-    const [alpha] = result.agents
-    if (!alpha || 'legacyDefault' in alpha) throw new Error('expected a configured agent')
-    expect(alpha.instructionFiles).toBeUndefined()
+    // The seat still composes — only its instruction link is withheld, and
+    // never silently.
+    expect(result.agents).toHaveLength(1)
+    const [agent] = result.agents
+    if (!agent || 'legacyDefault' in agent) throw new Error('expected a configured agent')
+    expect(agent.instructionFiles).toBeUndefined()
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      seat: 'odd seat',
+      code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
+    }))
   })
 
   test('omits preferredModel when no candidate API key is present', async () => {

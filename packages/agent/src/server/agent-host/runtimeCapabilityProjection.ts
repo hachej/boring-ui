@@ -83,25 +83,29 @@ export interface AgentHostRuntimeCapabilityBinding {
 }
 
 /**
- * User-facing "what can this agent do?" description, served without acquiring
- * a runtime binding: everything here comes from the compiled fleet spec plus
+ * User-facing "what can this agent do?" description. Authorized at the same
+ * per-agent bar as every sibling route, but served without materializing a
+ * runtime binding: everything here comes from the compiled fleet spec plus
  * the MCP grant seam.
+ *
+ * Deliberately NARROW: only what needs the compiled spec or the grant seam.
+ * Identity (`label`) and `pluginIds` already come from the fleet list route,
+ * and duplicating them here forced the client to reconcile two shapes for the
+ * same fact.
  */
 export interface AgentHostAgentDescription {
   readonly agentTypeId: string
-  readonly label: string
   /** Authored agent instructions; null for the legacy default agent. */
   readonly systemPrompt: string | null
   /** Preferred model id from the agent definition, when pinned. */
   readonly model: string | null
   /**
-   * Workspace-relative authored instruction sources behind `systemPrompt`.
-   * The Host is the only component that knows these paths (seat and
-   * agentTypeId are unrelated fleet.yaml fields), so clients render what they
-   * are given rather than guessing a persona directory.
+   * Authored instruction sources behind `systemPrompt`. The Host is the only
+   * component that knows these locations (seat and agentTypeId are unrelated
+   * fleet.yaml fields), so clients render what they are given rather than
+   * guessing a persona directory.
    */
   readonly instructionFiles: readonly AgentInstructionFileRef[]
-  readonly plugins: readonly { readonly id: string }[]
   /** MCP connectors this agent is actually granted (default-deny). */
   readonly mcpServers: readonly { readonly id: string; readonly tools: readonly string[] }[]
 }
@@ -167,12 +171,17 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
     }
     return result
   }
-  const resolve = async (request: FastifyRequest, agentTypeId: string, sessionId?: string) => {
+  /**
+   * The per-agent authorization decision, shared by every per-agent route.
+   * `runtime.resolveAgentRuntimeScope` invokes the host's
+   * `resolveAuthorizedAgentRuntimeScope` hook, which is the ONLY seam where a
+   * host can deny THIS subject access to THIS agentTypeId — workspace-scope
+   * authorization alone does not answer that question. Read-only projections
+   * stop here; routes that actually drive the harness continue into
+   * `resolveBinding`.
+   */
+  const authorizeAgentAccess = async (request: FastifyRequest, agentTypeId: string) => {
     const { scope, claim } = await authorize(request)
-    if (sessionId) {
-      const pinned = await gateway.resolveHostSessionBinding(scope, { agentTypeId, sessionId })
-      return { scope, claim: pinned.claim, binding: pinned.binding }
-    }
     const resolved = await runtime.resolveAgentRuntimeScope(
       agentTypeId,
       scope,
@@ -180,6 +189,15 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       'new-binding',
       request.id,
     )
+    return { scope, claim, resolved }
+  }
+  const resolve = async (request: FastifyRequest, agentTypeId: string, sessionId?: string) => {
+    if (sessionId) {
+      const { scope } = await authorize(request)
+      const pinned = await gateway.resolveHostSessionBinding(scope, { agentTypeId, sessionId })
+      return { scope, claim: pinned.claim, binding: pinned.binding }
+    }
+    const { scope, claim, resolved } = await authorizeAgentAccess(request, agentTypeId)
     const binding = await runtime.resolveBinding(agentTypeId, scope, claim, resolved)
     return { scope, claim, binding }
   }
@@ -274,11 +292,16 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       }
     },
     async describeAgent({ request, agentTypeId }) {
-      const { claim } = await authorize(request)
       const spec = runtime.compiledById.get(agentTypeId)
       if (!spec) {
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
       }
+      // Same per-agent authorization bar as every sibling route. This response
+      // carries the authored system prompt, the pinned model, instruction file
+      // locations and the granted MCP connectors — workspace-scope
+      // authorization alone must not be enough to read it. The binding itself
+      // is NOT materialized: nothing here drives the harness.
+      const { claim } = await authorizeAgentAccess(request, agentTypeId)
       const legacy = 'legacyDefault' in spec
       let mcpServers: AgentHostAgentDescription['mcpServers'] = []
       if (mcpGrants) {
@@ -300,11 +323,9 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       }
       return {
         agentTypeId,
-        label: legacy ? 'Agent' : spec.definition.label,
         systemPrompt: legacy ? null : spec.definition.instructions,
         model: legacy ? null : spec.model?.preferred ?? null,
         instructionFiles: legacy ? [] : spec.instructionFiles ?? [],
-        plugins: legacy ? [] : (spec.plugins ?? []).map((plugin) => ({ id: plugin.name })),
         mcpServers,
       }
     },

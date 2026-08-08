@@ -1,0 +1,4 @@
+seats:
+  - seat: odd seat
+    agentTypeId: fixture-odd
+    skills: []
