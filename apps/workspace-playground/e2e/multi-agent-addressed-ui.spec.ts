@@ -100,7 +100,17 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
 
   // Replacing the sole pane must never strand Dockview's chat renderer in its
   // hidden overlay. Exercise the real browser path repeatedly; each click must
-  // leave exactly one visible chat owned by the selected session.
+  // show intentional loading feedback and leave exactly one visible chat owned
+  // by the selected session.
+  await page.evaluate(() => {
+    const trackedWindow = window as Window & { __boringChatLoadingTransitions?: number }
+    trackedWindow.__boringChatLoadingTransitions = 0
+    new MutationObserver(() => {
+      if (document.querySelector('[data-boring-workspace-part="chat-pane-loading-surface"]')) {
+        trackedWindow.__boringChatLoadingTransitions = (trackedWindow.__boringChatLoadingTransitions ?? 0) + 1
+      }
+    }).observe(document.body, { childList: true, subtree: true })
+  })
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await betaRow.locator("button").first().click()
     await expect(page.locator('[data-boring-agent-part="chat"]')).toHaveCount(1)
@@ -109,6 +119,9 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
     await expect(page.locator('[data-boring-agent-part="chat"]')).toHaveCount(1)
     await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="alpha"]')).toHaveAttribute("data-pi-chat-session-id", alphaSessionId)
   }
+  expect(await page.evaluate(() => (
+    window as Window & { __boringChatLoadingTransitions?: number }
+  ).__boringChatLoadingTransitions ?? 0)).toBeGreaterThan(0)
 
   await betaRow.hover()
   await betaRow.getByRole("button", { name: "Chat actions for Scripted baseline" }).click()
