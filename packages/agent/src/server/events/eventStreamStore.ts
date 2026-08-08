@@ -10,6 +10,12 @@ const ZERO_COMPONENT = '0'.repeat(COMPONENT_PAD)
 export const DEFAULT_READ_LIMIT = 100
 export const MAX_READ_LIMIT = 1000
 
+// Total timer-based retry window for a continuously contended write. A final
+// attempt can add at most sqlStorage's short per-call busy timeout.
+export const SQLITE_BUSY_RETRY_WINDOW_MS = 250
+const SQLITE_BUSY_BACKOFF_START_MS = 5
+const SQLITE_BUSY_BACKOFF_MAX_MS = 50
+
 export interface EventStreamReadResult {
   events: Array<{ data: unknown; offset: string }>
   nextOffset: string
@@ -100,14 +106,18 @@ export class SqliteEventStreamStore implements EventStreamStore {
   }
 
   async createStream(path: string): Promise<void> {
-    this.sql.exec(`INSERT OR IGNORE INTO boring_event_streams (path) VALUES (?)`, path)
+    await this.retryBusy(() => {
+      this.sql.exec(`INSERT OR IGNORE INTO boring_event_streams (path) VALUES (?)`, path)
+    })
   }
 
   async appendEvent(path: string, event: unknown): Promise<string> {
     const data = JSON.stringify(event)
     // allocateSeq() reads next_offset then writes it (UPDATE ... RETURNING) —
     // a read-then-write transaction needs BEGIN IMMEDIATE, see SqlTransactionMode.
-    const offset = this.runTransaction(() => this.appendSerializedEvent(path, data), 'immediate')
+    const offset = await this.retryBusy(() => (
+      this.runTransaction(() => this.appendSerializedEvent(path, data), 'immediate')
+    ))
     this.notifyListeners(path)
     return offset
   }
@@ -122,32 +132,35 @@ export class SqliteEventStreamStore implements EventStreamStore {
       // upgrade to a write lock with SQLITE_BUSY immediately, WITHOUT
       // honoring busy_timeout, whenever another connection holds the write
       // lock. See SqlTransactionMode in sqlStorage.ts.
-      const offset = this.runTransaction(() => {
-        const existing = this.readIdempotencyKey(path, key)
-        if (existing) {
-          if (existing.data !== data) {
-            throw new EventStreamStoreError(`Event key "${key}" already has a conflicting payload.`)
+      const offset = await this.retryBusy(() => {
+        inserted = false
+        return this.runTransaction(() => {
+          const existing = this.readIdempotencyKey(path, key)
+          if (existing) {
+            if (existing.data !== data) {
+              throw new EventStreamStoreError(`Event key "${key}" already has a conflicting payload.`)
+            }
+            return formatOffset(existing.seq)
           }
-          return formatOffset(existing.seq)
-        }
 
-        const seq = this.allocateSeq(path)
-        this.sql.exec(
-          `INSERT INTO boring_event_stream_entries (path, seq, data) VALUES (?, ?, ?)`,
-          path,
-          seq,
-          data,
-        )
-        this.sql.exec(
-          `INSERT INTO boring_event_stream_keys (path, idempotency_key, seq, data) VALUES (?, ?, ?, ?)`,
-          path,
-          key,
-          seq,
-          data,
-        )
-        inserted = true
-        return formatOffset(seq)
-      }, 'immediate')
+          const seq = this.allocateSeq(path)
+          this.sql.exec(
+            `INSERT INTO boring_event_stream_entries (path, seq, data) VALUES (?, ?, ?)`,
+            path,
+            seq,
+            data,
+          )
+          this.sql.exec(
+            `INSERT INTO boring_event_stream_keys (path, idempotency_key, seq, data) VALUES (?, ?, ?, ?)`,
+            path,
+            key,
+            seq,
+            data,
+          )
+          inserted = true
+          return formatOffset(seq)
+        }, 'immediate')
+      })
       if (inserted) this.notifyListeners(path)
       return offset
     } catch (error) {
@@ -167,43 +180,46 @@ export class SqliteEventStreamStore implements EventStreamStore {
     let inserted = false
     try {
       // Same read-then-write shape as appendEventOnce — BEGIN IMMEDIATE required.
-      const offset = this.runTransaction(() => {
-        if (opts.idempotencyKey !== undefined) {
-          const existing = this.readIdempotencyKey(path, opts.idempotencyKey)
-          if (existing) {
-            this.assertSameAgentIdempotencyPayload(opts.idempotencyKey, existing.data, chunk)
-            return formatOffset(existing.seq)
+      const offset = await this.retryBusy(() => {
+        inserted = false
+        return this.runTransaction(() => {
+          if (opts.idempotencyKey !== undefined) {
+            const existing = this.readIdempotencyKey(path, opts.idempotencyKey)
+            if (existing) {
+              this.assertSameAgentIdempotencyPayload(opts.idempotencyKey, existing.data, chunk)
+              return formatOffset(existing.seq)
+            }
           }
-        }
 
-        const seq = this.allocateSeq(path)
-        const envelope: AgentEvent = {
-          v: 1,
-          eventIndex: seq,
-          timestamp: Date.now(),
-          sessionId,
-          chunk,
-        }
-        const data = JSON.stringify(envelope)
-        const keyData = opts.idempotencyKey === undefined ? undefined : JSON.stringify(chunk)
-        this.sql.exec(
-          `INSERT INTO boring_event_stream_entries (path, seq, data) VALUES (?, ?, ?)`,
-          path,
-          seq,
-          data,
-        )
-        if (opts.idempotencyKey !== undefined) {
+          const seq = this.allocateSeq(path)
+          const envelope: AgentEvent = {
+            v: 1,
+            eventIndex: seq,
+            timestamp: Date.now(),
+            sessionId,
+            chunk,
+          }
+          const data = JSON.stringify(envelope)
+          const keyData = opts.idempotencyKey === undefined ? undefined : JSON.stringify(chunk)
           this.sql.exec(
-            `INSERT INTO boring_event_stream_keys (path, idempotency_key, seq, data) VALUES (?, ?, ?, ?)`,
+            `INSERT INTO boring_event_stream_entries (path, seq, data) VALUES (?, ?, ?)`,
             path,
-            opts.idempotencyKey,
             seq,
-            keyData,
+            data,
           )
-        }
-        inserted = true
-        return formatOffset(seq)
-      }, 'immediate')
+          if (opts.idempotencyKey !== undefined) {
+            this.sql.exec(
+              `INSERT INTO boring_event_stream_keys (path, idempotency_key, seq, data) VALUES (?, ?, ?, ?)`,
+              path,
+              opts.idempotencyKey,
+              seq,
+              keyData,
+            )
+          }
+          inserted = true
+          return formatOffset(seq)
+        }, 'immediate')
+      })
       if (inserted) this.notifyListeners(path)
       return offset
     } catch (error) {
@@ -265,7 +281,9 @@ export class SqliteEventStreamStore implements EventStreamStore {
   }
 
   async closeStream(path: string): Promise<void> {
-    this.sql.exec(`UPDATE boring_event_streams SET closed = 1 WHERE path = ?`, path)
+    await this.retryBusy(() => {
+      this.sql.exec(`UPDATE boring_event_streams SET closed = 1 WHERE path = ?`, path)
+    })
     this.notifyListeners(path)
   }
 
@@ -284,6 +302,23 @@ export class SqliteEventStreamStore implements EventStreamStore {
     return () => {
       bucket.delete(listener)
       if (bucket.size === 0) this.listeners.delete(path)
+    }
+  }
+
+  private async retryBusy<T>(operation: () => T): Promise<T> {
+    const deadline = Date.now() + SQLITE_BUSY_RETRY_WINDOW_MS
+    let backoffMs = SQLITE_BUSY_BACKOFF_START_MS
+
+    while (true) {
+      try {
+        return operation()
+      } catch (error) {
+        if (!isSqliteBusy(error)) throw error
+        const remainingMs = deadline - Date.now()
+        if (remainingMs <= 0) throw error
+        await delay(Math.min(backoffMs, remainingMs))
+        backoffMs = Math.min(backoffMs * 2, SQLITE_BUSY_BACKOFF_MAX_MS)
+      }
     }
   }
 
@@ -357,6 +392,16 @@ export class SqliteEventStreamStore implements EventStreamStore {
       }
     }
   }
+}
+
+function isSqliteBusy(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const code = (error as Error & { code?: unknown }).code
+  return (code === 'SQLITE_BUSY' || code === 'ERR_SQLITE_ERROR') && /busy|lock/i.test(error.message)
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function clampLimit(value: number | undefined, defaultValue: number, maxValue: number): number {

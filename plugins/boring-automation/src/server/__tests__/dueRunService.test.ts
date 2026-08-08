@@ -158,6 +158,17 @@ describe("DueRunService", () => {
     expect(result.outcomes[1]).not.toHaveProperty("run.modelSnapshot")
   })
 
+  it("reports an unknown per-automation Agent without crashing the scheduled batch", async () => {
+    const execute = vi.fn(async () => {
+      throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.AGENT_NOT_FOUND, "automation agent retired is not available")
+    })
+    const service = new DueRunService({ store: storeFor([automation()]), executor: { run: execute } as never, clock: () => NOW })
+
+    await expect(service.runDue(request())).resolves.toMatchObject({
+      outcomes: [expect.objectContaining({ kind: "failed", code: BORING_AUTOMATION_ERROR_CODES.AGENT_NOT_FOUND })],
+    })
+  })
+
   it.each([
     [BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE, "active-run"],
     [BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_RECORDED, "duplicate-scheduled-run"],

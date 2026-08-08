@@ -1,6 +1,7 @@
 import { validateUiReviewSpec, type UiReviewSpec } from "./core/reviewSpec"
 import { askUserInlineSpec } from "./review-specs/ask-user-inline/spec"
 import { automationPanePopoverSpec } from "./review-specs/automation-pane-popover/spec"
+import { workspaceAgentSidebarSpec } from "./review-specs/workspace-agent-sidebar/spec"
 import { workspaceCommandPaletteSpec } from "./review-specs/workspace-command-palette/spec"
 import { workspaceComponentBaselinesSpec } from "./review-specs/workspace-component-baselines/spec"
 
@@ -27,6 +28,7 @@ export class UiReviewSpecRegistry {
 export const uiReviewSpecs = new UiReviewSpecRegistry()
   .register(askUserInlineSpec)
   .register(automationPanePopoverSpec)
+  .register(workspaceAgentSidebarSpec)
   .register(workspaceCommandPaletteSpec)
   .register(workspaceComponentBaselinesSpec)
 export const getUiReviewSpec = (id: string): UiReviewSpec => uiReviewSpecs.get(id)

@@ -76,6 +76,7 @@ export class FileAutomationStore implements AutomationStore {
       cron: input.cron,
       timezone: input.timezone,
       model: input.model,
+      ...(input.agentTypeId ? { agentTypeId: input.agentTypeId } : {}),
       ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
       promptRef: automationPromptPath(id),
       createdAt: now,

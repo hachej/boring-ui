@@ -1,12 +1,9 @@
 export {
-  COMPANY_CONTEXT_FILESYSTEM_ID,
-  COMPANY_CONTEXT_SENTINEL,
-  DEFAULT_COMPANY_CONTEXT_FIXTURE_FILES,
-  FixtureCompanyContextBindingProvider,
+  FixtureExternalContextBindingProvider,
   listFixtureProjectionFiles,
   readFixtureProjectionFile,
-  seedCompanyContextFixture,
-} from "./testing/companyContextFixtureProvider";
+  seedExternalContextFixture,
+} from "./testing/externalContextFixtureProvider";
 
 export {
   MANAGEMENT_PROJECTION_BINDING_REQUIRED_CODE,
@@ -38,13 +35,13 @@ export type {
 } from "./readonlyProjectionOperations";
 
 export type {
-  CompanyContextFixtureFile,
-  CompanyContextFixturePreparedBinding,
-  CompanyContextFixturePreparedHandle,
-  CompanyContextFixturePreparedLifecycle,
-  CompanyContextFixtureProjectionPolicy,
-  CompanyContextFixtureProviderOptions,
-} from "./testing/companyContextFixtureProvider";
+  ExternalContextFixtureFile,
+  ExternalContextFixturePreparedBinding,
+  ExternalContextFixturePreparedHandle,
+  ExternalContextFixturePreparedLifecycle,
+  ExternalContextFixtureProjectionPolicy,
+  ExternalContextFixtureProviderOptions,
+} from "./testing/externalContextFixtureProvider";
 
 export {
   ScopedFilesystemRuntimeBindingManager,
