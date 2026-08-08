@@ -75,15 +75,19 @@ export function AppSessionRow({
   })
   const activate = () => onSwitch?.(session.id)
   const rowClassName = cn(
-    "flex h-full w-full items-center gap-2 rounded-md px-2 text-left transition-colors motion-reduce:transition-none",
+    "flex h-full w-full items-center rounded-md text-left transition-colors motion-reduce:transition-none",
+    compact ? "gap-1.5 px-1.5" : "gap-2 px-2",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
     !actionsAvailable && "opacity-60",
+    // Active stays quiet: one step past the hover tint plus the accent dot,
+    // so the guide line and the rest of the pane keep their weight.
     state === "active"
-      ? "bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] text-foreground"
+      ? "bg-foreground/[0.07] text-foreground"
       : state === "open"
         ? "bg-foreground/[0.05] text-foreground/90 hover:bg-foreground/[0.08]"
         : "text-foreground/78 hover:bg-foreground/[0.055] hover:text-foreground",
   )
+  const leadingSlotClassName = compact ? "relative grid h-5 w-3 shrink-0 place-items-center" : "relative grid size-5 shrink-0 place-items-center"
 
   return (
     <div
@@ -105,7 +109,7 @@ export function AppSessionRow({
     >
       {rename.field ? (
         <div className={rowClassName}>
-          <span className="relative grid size-5 shrink-0 place-items-center" aria-hidden="true">
+          <span className={leadingSlotClassName} aria-hidden="true">
             <MessageSquare className="h-4 w-4 text-[color:var(--accent)]" strokeWidth={1.75} />
           </span>
           <InlineSessionRename field={rename.field} onCancel={rename.cancel} />
@@ -120,11 +124,25 @@ export function AppSessionRow({
           className={rowClassName}
           title={title}
         >
-          <span className="relative grid size-5 shrink-0 place-items-center" aria-hidden={activeDot ? undefined : "true"}>
+          {activeDot && state === "active" ? (
+            // The open chat announces itself with a discreet accent rail at
+            // the row edge; the dot is reserved for a chat that is working.
+            <span
+              aria-hidden="true"
+              data-boring-workspace-part="app-session-active-rail"
+              className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-[color:var(--accent)]"
+            />
+          ) : null}
+          <span className={leadingSlotClassName} aria-hidden={activeDot ? undefined : "true"}>
             {activeDot ? (
-              activeDotActive ? (
-                <span title="Active session" className="size-2 rounded-full bg-[color:var(--accent)]">
-                  <span className="sr-only">Active session</span>
+              activeDotActive && working ? (
+                // Pulsing accent dot = working. Under reduced motion the
+                // pulse stops and the dot dims instead.
+                <span
+                  title="Working"
+                  className="size-2 animate-pulse rounded-full bg-[color:var(--accent)] motion-reduce:animate-none motion-reduce:opacity-60"
+                >
+                  <span className="sr-only">Working</span>
                 </span>
               ) : null
             ) : (

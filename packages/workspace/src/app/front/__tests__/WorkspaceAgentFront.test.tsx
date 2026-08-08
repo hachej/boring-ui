@@ -680,12 +680,13 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByRole("button", { name: "New chat with Beta" })).toBeInTheDocument()
       expect(screen.getAllByText("Alpha one").length).toBeGreaterThan(0)
     })
-    // The Chats list is unified across the fleet: every owner's chats are
-    // listed together, labeled, with no per-Agent disclosure to open first.
-    const chats = screen.getByRole("region", { name: "Chats" })
-    expect(within(chats).getByText("Beta one")).toBeInTheDocument()
-    expect(within(chats).getByText("Beta one").closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Beta")
-    expect(within(chats).getByText("Alpha one").closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Alpha")
+    // Chats nest under their Agent: the addressed Agent (Alpha) starts
+    // disclosed, other owners' chats appear only after expanding their row.
+    expect(screen.getAllByText("Alpha one").length).toBeGreaterThan(0)
+    expect(screen.queryByText("Beta one")).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Expand Beta; 1 chat" }))
+    const betaBlock = screen.getAllByText("Beta one")[0]!.closest('[data-boring-workspace-part="app-left-agent-sessions"]')
+    expect(betaBlock).not.toBeNull()
     expect(sessionScopes).toEqual(new Map([
       ["alpha", "fleet-ui:alpha"],
       ["beta", "fleet-ui:beta"],
