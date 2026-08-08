@@ -803,6 +803,14 @@ export function WorkspaceAgentFront<
   })
   const effectiveAgentTypeId = addressedAgents.selectedAgentTypeId ?? defaultAgentTypeId
   const selectedAgentTypeId = effectiveAgentTypeId
+  // The New chat picker chooses who the *next* chat belongs to. It is
+  // deliberately separate from the addressed selection that drives the open
+  // chat, so retargeting never navigates away from what the user is reading.
+  const [newChatAgentTypeIdOverride, setNewChatAgentTypeIdOverride] = useState<string | undefined>(undefined)
+  const newChatAgentTypeId = newChatAgentTypeIdOverride
+    && addressedAgents.agents.some((agent) => agent.agentTypeId === newChatAgentTypeIdOverride)
+    ? newChatAgentTypeIdOverride
+    : effectiveAgentTypeId
   const localSessionStore = useMemo(
     () => createLocalStorageSessions({ storageKey: resolvedSessionStorageKey }),
     [resolvedSessionStorageKey],
@@ -2624,8 +2632,8 @@ export function WorkspaceAgentFront<
           })) : undefined}
           // The resolved selection, not the raw one: with nothing picked yet the
           // pane must address `defaultAgentTypeId`, never the first catalog entry.
-          selectedAgentTypeId={fleetModeEnabled ? effectiveAgentTypeId : undefined}
-          onSelectAgent={fleetModeEnabled ? addressedAgents.selectAgentTypeId : undefined}
+          selectedAgentTypeId={fleetModeEnabled ? newChatAgentTypeId : undefined}
+          onSelectAgent={fleetModeEnabled ? setNewChatAgentTypeIdOverride : undefined}
           onOpenAgentSettings={fleetModeEnabled ? (ownerAgentTypeId) => setLeftOverlay(agentOverlayId(ownerAgentTypeId)) : undefined}
           sessionsLoading={remoteSessionsTransitioning}
           activeSessionRef={activeChatPaneRef}

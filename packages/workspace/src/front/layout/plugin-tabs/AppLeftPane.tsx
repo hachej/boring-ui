@@ -256,20 +256,23 @@ export function AppLeftPane({
   const [agentsSectionOpen, setAgentsSectionOpen] = useState(true)
   // Per-Agent disclosure of the nested chat list; the addressed Agent starts
   // open so the pane never boots to an all-collapsed, chat-less wall.
+  // Disclosure follows the chat the user is actually reading, never the New
+  // chat picker: retargeting the next chat must not reshuffle the tree.
+  const addressedAgentTypeId = activeSessionRef?.agentTypeId ?? selectedAgentTypeId
   const [expandedAgentIds, setExpandedAgentIds] = useState<ReadonlySet<string>>(
-    () => new Set(selectedAgentTypeId ? [selectedAgentTypeId] : []),
+    () => new Set(addressedAgentTypeId ? [addressedAgentTypeId] : []),
   )
   // Selection often resolves after the first render (async Agent discovery).
   // Disclose the addressed Agent whenever selection lands on a new one, but
   // never fight an explicit collapse of the currently selected Agent.
-  const lastAutoExpandedAgentIdRef = useRef<string | undefined>(selectedAgentTypeId ?? undefined)
+  const lastAutoExpandedAgentIdRef = useRef<string | undefined>(addressedAgentTypeId ?? undefined)
   useEffect(() => {
-    if (!selectedAgentTypeId || lastAutoExpandedAgentIdRef.current === selectedAgentTypeId) return
-    lastAutoExpandedAgentIdRef.current = selectedAgentTypeId
+    if (!addressedAgentTypeId || lastAutoExpandedAgentIdRef.current === addressedAgentTypeId) return
+    lastAutoExpandedAgentIdRef.current = addressedAgentTypeId
     setExpandedAgentIds((current) => (
-      current.has(selectedAgentTypeId) ? current : new Set([...current, selectedAgentTypeId])
+      current.has(addressedAgentTypeId) ? current : new Set([...current, addressedAgentTypeId])
     ))
-  }, [selectedAgentTypeId])
+  }, [addressedAgentTypeId])
   const toggleAgentExpanded = (agentTypeId: string) => setExpandedAgentIds((current) => {
     const next = new Set(current)
     if (next.has(agentTypeId)) next.delete(agentTypeId)
