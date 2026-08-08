@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -8,6 +8,7 @@ import { AgentDefinitionErrorCode, ErrorCode } from '../../../shared/error-codes
 import {
   AgentDirectoryCompilerError,
   compileAgentDirectory,
+  compilePersonaPackageDirectory,
 } from '../compileAgentDirectory'
 
 const tempDirs: string[] = []
@@ -261,6 +262,87 @@ describe('compileAgentDirectory', () => {
       code: ErrorCode.enum.CONFIG_INVALID,
       compilerCode: 'AGENT_ASSET_INVALID_UTF8',
       field: 'instructionsRef',
+    } satisfies Partial<AgentDirectoryCompilerError>)
+  })
+})
+
+async function writePersonaPackage(directory: string): Promise<void> {
+  await writeFile(join(directory, 'package.json'), JSON.stringify({
+    name: '@fixture/persona',
+    boring: {
+      agent: {
+        definitionId: 'fixture-persona',
+        version: '1.0.0',
+        label: 'Fixture Persona',
+        instructionsRef: 'instructions.md',
+      },
+    },
+  }), 'utf8')
+  await writeFile(join(directory, 'instructions.md'), 'You are Fixture.', 'utf8')
+}
+
+describe('compilePersonaPackageDirectory knowledge/', () => {
+  it('omits knowledgeDir and keeps a knowledge-free digest when knowledge/ is absent', async () => {
+    const root = await makeTempDir('boring-agent-no-knowledge-')
+    await writePersonaPackage(root)
+
+    const bundle = await compilePersonaPackageDirectory(root)
+    expect(bundle.knowledgeDir).toBeUndefined()
+    expect(bundle.assets.map(({ path }) => path)).toEqual(['instructions.md'])
+  })
+
+  it('folds knowledge bytes into the definition digest; digest changes when knowledge bytes change', async () => {
+    const withoutKnowledge = await makeTempDir('boring-agent-knowledge-baseline-')
+    await writePersonaPackage(withoutKnowledge)
+    const baseline = await compilePersonaPackageDirectory(withoutKnowledge)
+
+    const root = await makeTempDir('boring-agent-knowledge-')
+    await writePersonaPackage(root)
+    await mkdir(join(root, 'knowledge', 'nested'), { recursive: true })
+    await writeFile(join(root, 'knowledge', 'facts.md'), 'fact one', 'utf8')
+    await writeFile(join(root, 'knowledge', 'nested', 'deep.md'), 'deep fact', 'utf8')
+
+    const first = await compilePersonaPackageDirectory(root)
+    expect(first.knowledgeDir).toBe(join(await realpath(root), 'knowledge'))
+    expect(first.assets.map(({ path }) => path).sort()).toEqual([
+      'instructions.md',
+      'knowledge/facts.md',
+      'knowledge/nested/deep.md',
+    ])
+    expect(first.definitionDigest).not.toBe(baseline.definitionDigest)
+
+    const unchanged = await compilePersonaPackageDirectory(root)
+    expect(unchanged.definitionDigest).toBe(first.definitionDigest)
+
+    await writeFile(join(root, 'knowledge', 'facts.md'), 'fact one, revised', 'utf8')
+    const changed = await compilePersonaPackageDirectory(root)
+    expect(changed.definitionDigest).not.toBe(first.definitionDigest)
+  })
+
+  it('fails closed on a symlink inside knowledge/', async () => {
+    const root = await makeTempDir('boring-agent-knowledge-symlink-')
+    const outside = await makeTempDir('boring-agent-knowledge-outside-')
+    await writePersonaPackage(root)
+    await mkdir(join(root, 'knowledge'))
+    await writeFile(join(outside, 'secret.md'), 'outside bytes', 'utf8')
+    await symlink(join(outside, 'secret.md'), join(root, 'knowledge', 'escape.md'))
+
+    await expect(compilePersonaPackageDirectory(root)).rejects.toMatchObject({
+      code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
+      compilerCode: 'AGENT_PATH_SYMLINK_ESCAPE',
+    } satisfies Partial<AgentDirectoryCompilerError>)
+  })
+
+  it('rejects a knowledge/ entry that is not valid UTF-8', async () => {
+    const root = await makeTempDir('boring-agent-knowledge-utf8-')
+    await writePersonaPackage(root)
+    await mkdir(join(root, 'knowledge'))
+    await writeFile(join(root, 'knowledge', 'binary.bin'), new Uint8Array([0xc3, 0x28]))
+
+    await expect(compilePersonaPackageDirectory(root)).rejects.toMatchObject({
+      code: ErrorCode.enum.CONFIG_INVALID,
+      compilerCode: 'AGENT_ASSET_INVALID_UTF8',
+      field: 'knowledge/binary.bin',
     } satisfies Partial<AgentDirectoryCompilerError>)
   })
 })
