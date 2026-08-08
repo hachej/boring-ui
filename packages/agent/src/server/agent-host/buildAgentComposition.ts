@@ -28,6 +28,8 @@ import { sessionNamespaceForAgent } from './sessionInventory'
 import { locateHostWorkspaceSkill, projectRuntimeSkillPathToHost } from './skillPathProjection'
 import type { AgentHarnessBackend } from './harnessBackend/types'
 import { createPiSessionHarnessBackend } from './harnessBackend/piSessionHarnessBackend'
+import { resolveWorkspaceCredentialVaultCompositionFromEnvV1 } from '../credentials/startupComposition'
+import type { WorkspaceCredentialVaultCompositionV1 } from '../credentials/startupComposition'
 
 /**
  * Flag-gated durable event streaming. When set (`1`/`true`), production
@@ -129,7 +131,7 @@ export interface BuildAgentCompositionInput {
   readonly environmentProvisioning?: EnvironmentProvisioningSnapshot
   readonly options: Pick<
     CreateAgentHostOptions,
-    'runtimeModeAdapter' | 'runtimeHost' | 'sessionRoot' | 'telemetry' | 'metering' | 'harnessFactory'
+    'runtimeModeAdapter' | 'runtimeHost' | 'sessionRoot' | 'telemetry' | 'metering' | 'harnessFactory' | 'credentials'
   >
   readonly observeSessionEvent?: (sessionId: string, event: import('../../shared/chat').PiChatEvent) => void
 }
@@ -143,6 +145,12 @@ export interface BuiltAgentComposition {
   readonly runtimeBundle: RuntimeBundle
   readonly readyTracker: ReadyStatusTracker
   readonly getFilesystemBindings?: (ctx: { sessionId?: string; userId?: string; requestId?: string }) => Promise<readonly RuntimeFilesystemBinding[]>
+  /**
+   * [1082 slice B] Vault-backed credential composition. Present only when
+   * `BORING_CREDENTIAL_KMS_BACKEND` selects a backend; misconfiguration fails
+   * composition with a stable `CREDENTIAL_*` error instead of degrading.
+   */
+  readonly credentials?: WorkspaceCredentialVaultCompositionV1
   dispose(): Promise<void>
 }
 
@@ -163,6 +171,14 @@ export async function buildAgentComposition(
   input: BuildAgentCompositionInput,
 ): Promise<BuiltAgentComposition> {
   const { runtimeScope, options } = input
+  // Fail-closed: a selected-but-misconfigured KMS backend throws a stable
+  // CREDENTIAL_* error here, before any harness/session is assembled. Absent
+  // env selection yields undefined and byte-identical composition behavior.
+  const credentials = resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+    env: options.credentials?.env ?? process.env,
+    persistence: options.credentials?.vaultPersistence,
+    authorityVerifier: options.credentials?.authorityVerifier,
+  })
   const bindingIsVisible = (binding: RuntimeFilesystemBinding) =>
     binding.agentTypeIds === undefined || binding.agentTypeIds.includes(input.agent.agentTypeId)
   const visibleBindings = input.runtimeBundle.filesystemBindings?.filter(bindingIsVisible)
@@ -355,6 +371,7 @@ export async function buildAgentComposition(
     runtimeBundle,
     readyTracker,
     ...(getFilesystemBindings ? { getFilesystemBindings } : {}),
+    credentials,
     dispose() {
       disposed ??= backend.close().finally(() => durableEventStore?.close())
       return disposed
