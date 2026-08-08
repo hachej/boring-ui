@@ -528,3 +528,33 @@
     opacity: 1;
   }
 }
+
+/* Nested per-Agent chat disclosure: a brief settle so expand/collapse gives an
+   unmistakable response without a heavyweight height animation. */
+@keyframes boring-app-left-disclose {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+[data-boring-workspace-part="app-left-agent-sessions"] {
+  animation: boring-app-left-disclose 140ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-boring-workspace-part="app-left-agent-sessions"] {
+    animation: none;
+  }
+}
+
+/* Touch devices have no hover to gate the per-Agent secondary actions; showing
+   all of them permanently reads as clutter. Only the "+" stays per row; the
+   remaining actions are a coarse-pointer follow-up (overflow menu). */
+@media (pointer: coarse) {
+  .app-left-agent-card-actions {
+    display: none;
+  }
+}

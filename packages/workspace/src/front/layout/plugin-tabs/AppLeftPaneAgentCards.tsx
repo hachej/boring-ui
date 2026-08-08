@@ -1,6 +1,6 @@
 "use client"
 
-import { Columns2, ListFilter, Plus, Settings, Zap } from "lucide-react"
+import { ChevronRight, Columns2, ListFilter, Plus, Settings, Zap } from "lucide-react"
 import { cn } from "../../lib/utils"
 
 /** Agent labels are workspace-branded upstream; the pane shows the short form. */
@@ -14,18 +14,25 @@ export interface AppLeftPaneAgentCardProps {
   description?: string
   sessionCount: number
   sessionsStatus?: "loading" | "loaded" | "error"
-  selected: boolean
-  /** The Chats lens is an optional filter, independent from the selected Agent. */
+  /** The Chats lens is an optional filter (multi-project tree only). */
   filtered: boolean
-  onSelect?: () => void
-  onToggleFilter: () => void
+  /**
+   * When the pane nests each Agent's chats under its card, the card is a
+   * disclosure row: default click means exactly one thing — toggle its nested
+   * chat list. New-chat targeting lives on the New chat picker and the "+".
+   */
+  expandable?: boolean
+  expanded?: boolean
+  onToggle?: () => void
+  /** Omitted in nested mode: the disclosure replaces the per-Agent lens. */
+  onToggleFilter?: () => void
   onCreateSession: () => void
   onCreateSplitSession?: () => void
   onCreatePopoverSession?: () => void
   onOpenSettings?: () => void
 }
 
-const cardActionClassName = "app-left-secondary-action grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+const cardActionClassName = "app-left-secondary-action grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 
 export function AppLeftPaneAgentCard({
   agentTypeId,
@@ -33,9 +40,10 @@ export function AppLeftPaneAgentCard({
   description,
   sessionCount,
   sessionsStatus,
-  selected,
   filtered,
-  onSelect,
+  expandable = false,
+  expanded = false,
+  onToggle,
   onToggleFilter,
   onCreateSession,
   onCreateSplitSession,
@@ -43,8 +51,8 @@ export function AppLeftPaneAgentCard({
   onOpenSettings,
 }: AppLeftPaneAgentCardProps) {
   const short = shortAgentLabel(label)
-  // Only fleets that publish a description get a second line; repeating the
-  // Agent type id under its own label would be noise, not identity.
+  // The description no longer earns a second line: compact rows show it only
+  // as the row tooltip so Agent rows match session-row density.
   const subtitle = description?.trim() || undefined
   const countLabel = sessionsStatus === "error"
     ? "chats unavailable"
@@ -54,46 +62,51 @@ export function AppLeftPaneAgentCard({
     <div
       data-boring-workspace-part="app-left-agent-card"
       data-boring-agent-type-id={agentTypeId}
-      data-selected={selected ? "true" : "false"}
       data-filtered={filtered ? "true" : "false"}
+      data-expanded={expandable ? (expanded ? "true" : "false") : undefined}
       className={cn(
-        "app-left-agent-card group relative flex w-full items-center gap-1 rounded-lg border px-1.5 py-1.5 transition-colors motion-reduce:transition-none",
-        "focus-within:ring-2 focus-within:ring-ring/40",
-        selected
-          ? "border-[color:oklch(from_var(--accent)_l_c_h/0.35)] bg-[color:oklch(from_var(--accent)_l_c_h/0.09)]"
-          : "border-border/45 bg-foreground/[0.015] hover:border-border/70 hover:bg-foreground/[0.045]",
+        // Owner-ratified look: flat compact rows (no card borders/boxes),
+        // session-row density; hover reveals the secondary actions.
+        "app-left-agent-card group relative flex min-h-7 w-full items-center gap-0.5 rounded-md px-1 py-0.5 transition-colors motion-reduce:transition-none",
+        // Tint on hover only — a mouse click must not leave a lingering ring
+        // that reads as "selected"; keyboard focus still gets its ring.
+        "hover:bg-foreground/[0.05] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/40",
       )}
     >
       <button
         type="button"
-        data-boring-mobile-dismiss="true"
-        aria-pressed={selected}
-        aria-label={`Use ${label} for new chats; ${countLabel}`}
-        title={subtitle}
-        onClick={onSelect}
-        disabled={!onSelect}
-        className="flex min-w-0 flex-1 flex-col items-start gap-0.5 rounded-md px-1 py-0.5 text-left focus-visible:outline-none disabled:cursor-default"
+        aria-expanded={expandable ? expanded : undefined}
+        aria-label={`${label}; ${countLabel}`}
+        title={subtitle ? `${label} — ${subtitle}` : label}
+        onClick={onToggle}
+        disabled={!onToggle}
+        className="flex h-6 min-w-0 flex-1 items-center gap-1 rounded-md px-0.5 text-left focus-visible:outline-none disabled:cursor-default"
       >
-        <span className="flex w-full min-w-0 items-center gap-1.5">
-          <span className={cn("min-w-0 flex-1 truncate text-[13px] leading-4", selected ? "font-semibold text-foreground" : "font-medium text-foreground/85")}>
-            {short}
-          </span>
-          <span
-            data-boring-agent-session-count="true"
-            className="shrink-0 rounded-full bg-foreground/[0.07] px-1.5 text-[10px] font-medium leading-4 tabular-nums text-muted-foreground"
-          >
-            {sessionsStatus === "error" ? "!" : sessionCount}
-          </span>
-        </span>
-        {subtitle ? (
-          <span className="w-full min-w-0 truncate text-[11px] leading-4 text-muted-foreground/85">{subtitle}</span>
+        {expandable ? (
+          <ChevronRight
+            className={cn("size-3 shrink-0 text-muted-foreground/70 transition-transform motion-reduce:transition-none", expanded && "rotate-90")}
+            strokeWidth={1.75}
+            aria-hidden="true"
+          />
         ) : null}
+        <span className={cn("min-w-0 truncate text-[13px] font-semibold leading-4", expandable && expanded ? "text-foreground" : "text-foreground/85")}>
+          {short}
+        </span>
+        <span
+          data-boring-agent-session-count="true"
+          className="min-w-0 flex-1 shrink-0 pl-0.5 text-[11px] font-normal leading-4 tabular-nums text-muted-foreground/80"
+        >
+          {sessionsStatus === "error" ? "!" : sessionCount}
+        </span>
       </button>
       {/*
         Secondary actions collapse to zero width off-hover so the Agent label
         gets the whole card, matching the session-row / new-chat idiom.
       */}
-      <span className="app-left-agent-card-actions flex w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[width,opacity] motion-reduce:transition-none group-hover:w-auto group-hover:opacity-100 group-focus-within:w-auto group-focus-within:opacity-100 data-[filtered=true]:w-auto data-[filtered=true]:opacity-100" data-filtered={filtered ? "true" : "false"}>
+      {/* Reveal on hover or keyboard focus; a mouse click on the row must not
+          leave the icons pinned open (plain focus-within would). */}
+      <span className="app-left-agent-card-actions flex w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[width,opacity] motion-reduce:transition-none group-hover:w-auto group-hover:opacity-100 group-has-[:focus-visible]:w-auto group-has-[:focus-visible]:opacity-100 data-[filtered=true]:w-auto data-[filtered=true]:opacity-100" data-filtered={filtered ? "true" : "false"}>
+        {onToggleFilter ? (
         <button
           type="button"
           aria-label={`${filtered ? "Clear" : "Show only"} ${label} chats`}
@@ -107,6 +120,7 @@ export function AppLeftPaneAgentCard({
         >
           <ListFilter className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
         </button>
+        ) : null}
         {onCreateSplitSession ? (
           <button
             type="button"
@@ -144,7 +158,7 @@ export function AppLeftPaneAgentCard({
           </button>
         ) : null}
       </span>
-      {/* Item 3: the "+" is the card's primary affordance, so it never hides. */}
+      {/* The "+" is the card's primary affordance, so it never hides. */}
       <button
         type="button"
         aria-label={`New chat with ${label}`}
