@@ -41,6 +41,8 @@ export interface FilesystemCatalogEntry {
   label: string;
   rootDir: LogicalFilesystemRoot;
   access: "readonly" | "readwrite";
+  /** Present when the binding was contributed by a definition-shaped source (e.g. an agent package's knowledge/). */
+  provenance?: "agent-definition";
   capabilities: FilesystemCatalogCapabilities;
 }
 
@@ -78,6 +80,7 @@ export function parseFilesystemCatalog(value: unknown): FilesystemCatalogEntry[]
       label: entry.label,
       rootDir: entry.rootDir as LogicalFilesystemRoot,
       access: entry.access,
+      ...(entry.provenance === "agent-definition" ? { provenance: entry.provenance } : {}),
       capabilities: Object.fromEntries(
         FILESYSTEM_CATALOG_CAPABILITIES.map((capability) => [capability, capabilities[capability]]),
       ) as unknown as FilesystemCatalogCapabilities,

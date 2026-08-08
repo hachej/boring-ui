@@ -61,6 +61,11 @@ describe('loadConfiguredAgentFleet', () => {
     expect(alpha.definition.instructions).toContain('boring-skill:start name=greet')
     expect(alpha.definition.instructions).toContain('boring-skill:start name=package-2-97e420f7713e')
     expect(alpha.model).toEqual({ preferred: 'anthropic:claude-sonnet-4-6' })
+    // gh-1107 slice 2: the compiled definition digest is the identity and
+    // the package's knowledge/ folder rides the spec for composition to
+    // mount as an agent-scoped readonly binding.
+    expect(alpha.definition.digest).toMatch(/^sha256:[0-9a-f]{64}$/)
+    expect(alpha.knowledge?.rootDir).toBe(resolve(PERSONAS_DIR, 'alpha', 'knowledge'))
 
     expect(result.diagnostics).toHaveLength(3)
     expect(result.diagnostics).toContainEqual(expect.objectContaining({
