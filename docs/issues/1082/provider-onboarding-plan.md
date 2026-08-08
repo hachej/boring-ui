@@ -3,7 +3,7 @@ github: https://github.com/hachej/boring-ui/issues/1082
 issue: 1082 (follow-on: pi provider onboarding)
 state: ready-for-human
 updated: 2026-08-08
-revision: r2
+revision: r3
 track: owner
 depends: PR #1132 (vault crypto, merged), PR #1145 (durable Postgres persistence, branch 196d22bd9 — not yet on main), [`plan.md`](plan.md) r3 (PR #1137)
 ---
@@ -21,6 +21,36 @@ revocation and fail-closed semantics throughout.
 
 **Scope (owner directive 2026-08-08): user-specific onboarding first, with
 the possibility to set a credential workspace-wide.**
+
+## Ratified decisions (2026-08-08)
+
+Owner rulings folded into this revision; the rest of the plan is
+interpreted through them.
+
+- **(a) Maximal pi reuse.** pi's `AuthStorage`, OAuth login flows, token
+  refresh, and `ModelRegistry` are used **out of the box**. Net-new code is
+  **only**: (1) the vault-backed `AuthStorageBackend` keyed `(workspaceId,
+  userId, providerId)`, (2) the personal → workspace → env scoping rule,
+  and (3) the settings menu (My providers / Workspace providers). Anything
+  else a slice appears to build is wiring, not construction.
+- **(b) Subscription posture.** **Subscriptions are interactive-only and
+  personal-only; anything that runs without the user present requires an
+  API key.** OAuth subscription tokens (Claude Pro/Max, Codex) are never
+  promotable to workspace scope and never fund background runs. An
+  automation whose creator lacks an API key for the needed provider
+  **pauses with an Inbox Human Intention prompt** ("connect an API key or
+  reassign") instead of running on a subscription.
+- **(c) v1 provider set.** Connectable in v1: **Anthropic** (API key +
+  Claude Pro/Max OAuth), **OpenAI** (API key + Codex OAuth), **Google**
+  (API key). The rest of the pi catalog (github-copilot, xai, radius,
+  openai-compatible custom, …) is **listed but not connectable** in v1 —
+  rows render from pi's registry with a "not yet available" state.
+- **(d) Funding-provenance chip.** The composer shows a small chip
+  indicating which credential funds the current session (personal /
+  workspace / provider label).
+- **(e) Picker model.** The model picker shows **provenance-labeled
+  provider rows** — workspace / personal / (platform credits, later) —
+  and **selecting a row = choosing the funding source**, not just a model.
 
 This plan is the *onboarding-workflow* specialization of 1082 plan-r3 slices
 S3 (registry + routes) and S4 (credential UI), extended with the two pieces
@@ -98,9 +128,12 @@ storage backend** and broker its interactive flows over our routes.
   per Decision 27 semantics (revoke suppresses fallback).
 - **Automations/background runs** resolve with the **creator's** personal
   credential (persist `creatorUserId` on the automation record), then the
-  same fallback chain; if nothing resolves, the run **pauses** and an Inbox
-  Human Intention item is raised. An owner can reassign an automation's
-  creator; that is the whole reassignment story in v1.
+  same fallback chain — restricted to **API-key credentials only** per
+  ratified decision (b): subscription OAuth tokens never fund unattended
+  runs. If nothing API-key-backed resolves, the run **pauses** and an
+  Inbox Human Intention item is raised ("connect an API key or reassign").
+  An owner can reassign an automation's creator; that is the whole
+  reassignment story in v1.
 - **Offline liveness:** host-side pi-brokered OAuth refresh (vault-backed
   backend below) keeps creator-funded automations alive while the creator
   is offline — refresh needs no interactive session.
@@ -122,8 +155,9 @@ Two surfaces, same components:
   (governance RBAC from boring-governance; non-owners see nothing, not a
   disabled panel). Sets the workspace-wide fallback credential per
   provider, directly or via **"Promote to workspace"** on one of the
-  owner's personal credentials (copy, not move — mints a new
-  workspace-scoped credentialVersion).
+  owner's personal **API-key** credentials (copy, not move — mints a new
+  workspace-scoped credentialVersion). Subscription OAuth credentials are
+  never promotable (ratified decision (b)).
 
 1. **Provider list** — rendered from the server's pi-derived provider
    registry (`GET /api/credentials/providers`): display name (pi
@@ -155,9 +189,13 @@ Two surfaces, same components:
    rate-limited / network), nothing stored. "Save anyway" is **not** offered
    in v1 — invalid credentials are never persisted (fail-closed onboarding).
 5. **Post-connect** — the model picker in pi chat shows the provider's
-   models for this workspace on the next session (pi `getAvailable()` over
-   the workspace AuthStorage); a hint on the panel says "new sessions use
-   this credential" (no retroactive rebind of live sessions).
+   models on the next session (pi `getAvailable()` over the actor-resolved
+   AuthStorage) as **provenance-labeled rows** (personal / workspace;
+   platform credits later) — selecting a row = choosing the funding source
+   (ratified decision (e)). The composer shows a small
+   **funding-provenance chip** for the current session (decision (d)). A
+   hint on the panel says "new sessions use this credential" (no
+   retroactive rebind of live sessions).
 6. **Manage** — per-provider actions: **Reconnect / Replace key** (rerun
    login or key form, mints new credentialVersion), **Re-test**, **Disable**
    (temporarily unusable, no fallback), **Revoke** (tombstone; suppresses
@@ -342,51 +380,57 @@ Workspace-scoped context, not raw paths; every error has a stable code in the
    `llm-model-call.v1` binding, composition in `buildAgentComposition.ts`,
    KMS backend env selection. Tests: registry mirrors pi's providers,
    resolver end-to-end through vault, fail-closed on missing KEK.
-3. **PR-C — vault AuthStorage backend + credential routes + validation**:
-   `createVaultAuthStorageBackend` (per-user + workspace scope rows,
-   versioned refresh writes + advisory lock), routes: member-scoped
-   `connect`(api-key)/`status`/`disable`/`revoke`/`delete` on own
-   credentials, owner-gated workspace-scope equivalents + "promote to
-   workspace", metadata-only GET/list; pi-based key validation,
-   **host-brokered OAuth login route + event stream**. Tests: scope
-   gating (member ↔ own, owner ↔ workspace), probe/login-before-write,
-   refresh write mints new version under lock, no secret in any
-   response/log/event, tombstone semantics.
-4. **PR-D — per-session pi resolution**: actor resolution + persisted
-   `creatorUserId` for automations, `AuthStorage.fromStorage(vault
-   backend)` in `createPiSession`, workspace-aware
-   `registerConfiguredModelProviders`, actor-aware model list via pi
-   `getAvailable()`. Tests: personal wins over workspace wins over env,
-   creator credential funds automation, OAuth refresh persists to vault,
-   revoked stops the chain, unresolved automation pauses + inbox item,
-   keyless workspace identical to today, no plaintext outside session
-   scope.
-5. **PR-E — providers UI** (r3 S4): "My providers" (all members) +
-   "Workspace providers" (owner-only) rendered from the pi-derived
-   registry, OAuth login flow UI (auth-url/device-code/code-paste states),
-   API-key connect/manage flows, promote-to-workspace, status chips.
-   Tests: no credential value in any store/prop/response; RBAC
-   invisibility of the workspace panel for non-owners.
+Trimmed per ratified decision (a): pi already provides auth storage
+semantics, OAuth flows, refresh, validation-by-resolution, and the model
+catalog — slices below build only the vault backend, the scoping rule, and
+the menu; everything else is wiring pi surfaces to routes/UI. Expected
+sizes shrink accordingly.
+
+3. **PR-C — vault AuthStorage backend + routes** (the one real net-new
+   module): `createVaultAuthStorageBackend` (scope rows, versioned refresh
+   writes + advisory lock) and thin routes that call pi — member-scoped
+   `connect`(api-key)/`status`/`disable`/`revoke`/`delete`, owner-gated
+   workspace scope + promote (API-key only), metadata-only GET/list,
+   **host-brokered pi `login()` event stream**. Validation is pi auth
+   resolution + model-list call, no custom adapters. Tests: scope gating,
+   probe/login-before-write, refresh mints new version under lock, no
+   secret in any response/log/event, tombstone semantics. *Expected size:
+   medium — backend + route shells; the auth logic is pi's.*
+4. **PR-D — per-session wiring**: actor resolution + persisted
+   `creatorUserId` (API-key-only rule for unattended runs),
+   `AuthStorage.fromStorage(vaultBackend)` swapped into `createPiSession`,
+   actor-aware model list via pi `getAvailable()`. No changes to pi's
+   registry/refresh machinery. Tests: personal > workspace > env, creator
+   API key funds automation, subscription never funds unattended runs,
+   OAuth refresh persists to vault, revoked stops the chain, unresolved
+   automation pauses + inbox item, keyless workspace identical to today.
+   *Expected size: small — a swap at one construction site + resolution
+   rule.*
+5. **PR-E — settings menu + picker/chip**: "My providers" (all members) +
+   "Workspace providers" (owner-only) rendered from pi's registry with v1
+   connectable set (Anthropic, OpenAI, Google; rest listed as not yet
+   available), pi login flow states (auth-url/device-code/code-paste),
+   promote (API-key only), provenance-labeled picker rows + composer
+   funding chip. Tests: no credential value in any store/prop/response;
+   RBAC invisibility of the workspace panel; subscription rows show no
+   promote affordance. *Expected size: medium — UI only, no new server
+   concepts.*
 6. **PR-F — fleet tier integration** (r3 S5, bead wt-391-forward-703w):
-   `resolveSeatModel()` consults workspace credential presence. Tests per r3.
+   `resolveSeatModel()` consults workspace credential presence. Tests per
+   r3. *Expected size: small.*
 
 Order: A → B → C → D → E → F (C precedes D since the vault backend lives
-in C). Each slice green-gated and independently revertible; UI (E) ships
+in C; B itself shrinks to composition/wiring since the provider catalog is
+pi's). Each slice green-gated and independently revertible; UI (E) ships
 only after C+D so the flow is real end-to-end.
 
 ## Open questions (owner)
 
-- r3 Q1 (local-KEK vs OVH-KMS for production) — unchanged, does not block.
+- Plan-r3 Q1 of [`plan.md`](plan.md) (local-KEK vs OVH-KMS custody for
+  production) — unchanged, does not block.
 - Fallback default for workspaces with an instance key but no workspace
   credential at UI launch (show "instance fallback" chip vs hide) —
   recommend show, it makes revoke semantics legible.
-- Which providers in v1: recommend **anthropic (OAuth Claude Pro/Max +
-  API-key) and openai-compatible custom** first (covers
-  Gemini-via-OpenAI-compat and Infomaniak); other pi OAuth providers
-  (openai-codex, github-copilot) come free from the pi-derived registry but
-  can be flag-gated.
-- **Subscription OAuth ToS posture:** pi's anthropic/openai-codex OAuth
-  flows authenticate personal subscription accounts (Claude Pro/Max,
-  ChatGPT Codex). Is offering these in a multi-user workspace product
-  acceptable, or is v1 OAuth limited to providers whose terms clearly
-  permit shared use? Recommend an owner ruling before PR-E exposes them.
+
+(Provider set, subscription posture, picker/chip model: answered by the
+ratified decisions above.)
