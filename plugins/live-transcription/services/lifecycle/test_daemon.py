@@ -46,9 +46,16 @@ class ExoscaleProviderTests(unittest.TestCase):
             provider.start()
             provider.stop()
         commands = [call.args[0] for call in run.call_args_list]
-        self.assertEqual(commands[0][:3], ["exo", "x", "get-instance"])
-        self.assertEqual(commands[1][:3], ["exo", "x", "start-instance"])
-        self.assertEqual(commands[2][:3], ["exo", "x", "stop-instance"])
+        self.assertEqual(commands[0], ["exo", "x", "get-instance", "instance", "--zone", "zone", "-o", "json"])
+        self.assertEqual(commands[1], ["exo", "x", "start-instance", "instance", "--zone", "zone", "-o", "json"])
+        self.assertEqual(commands[2], ["exo", "x", "stop-instance", "instance", "--zone", "zone", "-o", "json"])
+
+    def test_rejects_failed_transition_operation(self):
+        provider = MODULE.ExoscaleProvider("exo", "instance", "zone")
+        completed = MODULE.subprocess.CompletedProcess([], 0, stdout='{"state":"failure"}', stderr="")
+        with mock.patch.object(MODULE.subprocess, "run", return_value=completed):
+            with self.assertRaises(RuntimeError):
+                provider.start()
 
     def test_transition_timeout_means_request_was_accepted(self):
         provider = MODULE.ExoscaleProvider("exo", "instance", "zone")

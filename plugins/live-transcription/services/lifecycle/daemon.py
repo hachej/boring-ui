@@ -43,10 +43,13 @@ class ExoscaleProvider:
 
     def _request_transition(self, action: str) -> None:
         try:
-            subprocess.run(
+            result = subprocess.run(
                 [self.exo_bin, "x", f"{action}-instance", self.instance_id, "--zone", self.zone, "-o", "json"],
                 check=True, capture_output=True, text=True, timeout=20,
             )
+            operation = json.loads(result.stdout)
+            if operation.get("state") == "failure":
+                raise RuntimeError(f"Exoscale {action} operation failed")
         except subprocess.TimeoutExpired:
             # exo waits for the asynchronous operation to finish. The request has
             # already been accepted; state polling below is the source of truth.
