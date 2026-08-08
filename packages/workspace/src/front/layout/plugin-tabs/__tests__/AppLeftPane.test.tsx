@@ -115,6 +115,43 @@ describe("AppLeftPane", () => {
     expect(handlers.onOpenAgentDetails).not.toHaveBeenCalled()
   })
 
+  it("keeps 44px mobile touch targets on every Agents-section control (issue #1160)", () => {
+    renderFleetPane()
+
+    // Fleet new-chat row: the primary button fills a 44px-tall container that
+    // compacts to the 30px desktop density at the sm breakpoint.
+    const fleetRow = document.querySelector('[data-boring-workspace-part="app-left-fleet-new-chat"]')
+    expect(fleetRow).toHaveClass("h-11", "sm:h-[30px]")
+    expect(screen.getByRole("button", { name: "Start new chat with Boring Alpha" })).toHaveClass("h-full")
+    // Secondary fleet actions: split / quick / choose-agent icon buttons.
+    for (const name of [
+      "Start split chat with Boring Alpha",
+      "Start quick chat with Boring Alpha",
+      "Choose Agent for new chat",
+    ]) {
+      expect(screen.getByRole("button", { name })).toHaveClass("size-11", "sm:size-7")
+    }
+
+    // Section header toggle and filter input.
+    expect(screen.getByRole("button", { name: /^Agents/ })).toHaveClass("h-11", "sm:h-6")
+    expect(screen.getByRole("searchbox", { name: "Filter Agents" })).toHaveClass("h-11", "sm:h-6")
+
+    // Per-card primary select target grows to 44px tall on mobile.
+    for (const card of screen.getAllByRole("button", { name: /^Use Boring .* for new chats/ })) {
+      expect(card).toHaveClass("min-h-11", "sm:min-h-0")
+    }
+    // Per-card icon actions (filter / split / quick / settings / new chat).
+    for (const name of [
+      "Show only Boring Alpha chats",
+      "New chat with Boring Alpha in split pane",
+      "Quick chat with Boring Alpha",
+      "Settings for Boring Alpha",
+      "New chat with Boring Alpha",
+    ]) {
+      expect(screen.getByRole("button", { name })).toHaveClass("size-11", "sm:size-7")
+    }
+  })
+
   it("collapses the Agents section without touching the Chats list", async () => {
     const user = userEvent.setup()
     renderFleetPane()
