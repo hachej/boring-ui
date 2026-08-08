@@ -1,6 +1,11 @@
 # Landing-surface reconciliation memo (#391)
 
-**Status: OWNER GATE — decision requested, nothing here is ratified.**
+**Status: RATIFIED 2026-08-08 — path A chosen; Decision 30 accepted.**
+Owner ratified path A ("static deployment for now") on 2026-08-08; the draft
+below is promoted to [Decision 30](../../DECISIONS.md#30-presentation-only-hostname--landing-surface).
+The 7 obsolete D1 beads in section 5 were verified already closed in the
+committed beads DB (closed 2026-07-17, superseded by Decision 25 / PR #794);
+no bead edits were needed in the ratification PR.
 
 This memo reconciles the deleted AgentHost landing surface with the current
 Decision 25/28 architecture, proposes a draft Decision 30 for owner review,
