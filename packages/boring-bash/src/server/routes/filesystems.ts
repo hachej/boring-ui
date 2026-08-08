@@ -38,6 +38,9 @@ const PRIMARY_FILESYSTEM: FilesystemCatalogEntry = {
     delete: true,
     move: true,
     mkdir: true,
+    // The primary `user` fs carries the implicit exec grant for compat
+    // (gh-1123); per-agent grant wiring lands in the exec-grants slice.
+    execute: true,
   },
 }
 
@@ -56,6 +59,9 @@ function capabilitiesFor(binding: RuntimeFilesystemBinding): FilesystemCatalogCa
     delete: mutable && typeof operations.delete === 'function',
     move: mutable && typeof operations.move === 'function',
     mkdir: mutable && typeof operations.mkdir === 'function',
+    // Non-primary filesystems have no exec until an explicit
+    // `environment.bash.execute` grant resolves one (gh-1123, default deny).
+    execute: false,
   }
 }
 

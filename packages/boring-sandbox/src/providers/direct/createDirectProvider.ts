@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 
+import { assertNoEnvironmentMounts } from '../../shared/mounts'
 import { PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
 import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '../../shared/providerV1'
 import { createNodeWorkspace, disposeNodeWorkspace } from '../node-workspace/createNodeWorkspace'
@@ -20,6 +21,7 @@ export function createDirectSandboxProvider(
       return context.workspaceRoot
     },
     async create(context): Promise<WorkspaceSandboxPairV1> {
+      assertNoEnvironmentMounts('direct', context)
       await mkdir(context.workspaceRoot, { recursive: true })
       const runtimeContext = { runtimeCwd: context.workspaceRoot }
       const workspace = createNodeWorkspace(context.workspaceRoot, { runtimeContext })

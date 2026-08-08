@@ -1,4 +1,9 @@
-import { isAbsolute } from 'node:path'
+import { isAbsolute, posix } from 'node:path'
+
+import {
+  ENVIRONMENT_MOUNT_NAMESPACE,
+  type SandboxEnvironmentMountV1,
+} from '../../shared/mounts'
 
 const SANDBOX_HOME = '/workspace'
 const MAX_WORKSPACE_ROOT_LENGTH = 4096
@@ -24,31 +29,70 @@ export const RO_BIND_TRY_DIRS = [
   '/run/systemd/resolve',
 ]
 
-function validateWorkspaceRoot(workspaceRoot: string): void {
-  if (workspaceRoot.length === 0) {
-    throw new Error('workspaceRoot must not be empty')
+function validateHostPath(value: string, name: string): void {
+  if (value.length === 0) {
+    throw new Error(`${name} must not be empty`)
   }
 
-  if (!isAbsolute(workspaceRoot)) {
-    throw new Error('workspaceRoot must be an absolute path')
+  if (!isAbsolute(value)) {
+    throw new Error(`${name} must be an absolute path`)
   }
 
-  for (const segment of workspaceRoot.split('/')) {
+  for (const segment of value.split('/')) {
     if (segment === '.' || segment === '..') {
-      throw new Error('workspaceRoot must not contain traversal segments')
+      throw new Error(`${name} must not contain traversal segments`)
     }
   }
 
-  if (workspaceRoot.includes('\0')) {
-    throw new Error('workspaceRoot must not contain null bytes')
+  if (value.includes('\0')) {
+    throw new Error(`${name} must not contain null bytes`)
   }
 
-  if (workspaceRoot.includes('\n') || workspaceRoot.includes('\r')) {
-    throw new Error('workspaceRoot must not contain newlines')
+  if (value.includes('\n') || value.includes('\r')) {
+    throw new Error(`${name} must not contain newlines`)
   }
 
-  if (Buffer.byteLength(workspaceRoot, 'utf8') > MAX_WORKSPACE_ROOT_LENGTH) {
-    throw new Error('workspaceRoot exceeds max path length')
+  if (Buffer.byteLength(value, 'utf8') > MAX_WORKSPACE_ROOT_LENGTH) {
+    throw new Error(`${name} exceeds max path length`)
+  }
+}
+
+function validateWorkspaceRoot(workspaceRoot: string): void {
+  validateHostPath(workspaceRoot, 'workspaceRoot')
+}
+
+function validateMounts(
+  mounts: readonly SandboxEnvironmentMountV1[],
+  sandboxHome: string,
+): void {
+  const seenLogicalPaths = new Set<string>()
+  for (const mount of mounts) {
+    validateHostPath(mount.sourceRoot, 'mount sourceRoot')
+    validateHostPath(mount.logicalPath, 'mount logicalPath')
+
+    if (posix.normalize(mount.logicalPath) !== mount.logicalPath) {
+      throw new Error('mount logicalPath must be normalized')
+    }
+
+    // Dedicated namespace outside the primary rw root: avoids bind shadowing
+    // and readonly-under-HOME breakage (gh-1123 mount hygiene).
+    if (!mount.logicalPath.startsWith(`${ENVIRONMENT_MOUNT_NAMESPACE}/`)) {
+      throw new Error(
+        `mount logicalPath must live under ${ENVIRONMENT_MOUNT_NAMESPACE}/`,
+      )
+    }
+
+    if (
+      mount.logicalPath === sandboxHome
+      || mount.logicalPath.startsWith(`${sandboxHome}/`)
+    ) {
+      throw new Error('mount logicalPath must not live under the workspace root')
+    }
+
+    if (seenLogicalPaths.has(mount.logicalPath)) {
+      throw new Error(`duplicate mount logicalPath: ${mount.logicalPath}`)
+    }
+    seenLogicalPaths.add(mount.logicalPath)
   }
 }
 
@@ -58,10 +102,26 @@ export interface BwrapArgsOptions {
   network?: 'shared' | 'isolated'
   newSession?: boolean
   dropAllCapabilities?: boolean
+  /**
+   * Sandbox-visible home/primary root. Defaults to `/workspace`; reconciles
+   * the `local-sandbox` strategy's `sandboxRoot` option (gh-1123 slice 1).
+   */
+  sandboxHome?: string
+  /**
+   * Environment mounts (gh-1123). Source roots must already be
+   * realpath-resolved once at lease create; this builder re-emits the
+   * resolved paths verbatim on every spawn.
+   */
+  mounts?: readonly SandboxEnvironmentMountV1[]
 }
 
 export function buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions): string[] {
   validateWorkspaceRoot(workspaceRoot)
+
+  const sandboxHome = options?.sandboxHome ?? SANDBOX_HOME
+  validateHostPath(sandboxHome, 'sandboxHome')
+  const mounts = options?.mounts ?? []
+  validateMounts(mounts, sandboxHome)
 
   const network = options?.network ?? 'shared'
   const args: string[] = [
@@ -91,13 +151,21 @@ export function buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions
   args.push(
     '--bind',
     workspaceRoot,
-    SANDBOX_HOME,
+    sandboxHome,
     '--chdir',
-    SANDBOX_HOME,
+    sandboxHome,
     '--setenv',
     'HOME',
-    SANDBOX_HOME,
+    sandboxHome,
   )
+
+  for (const mount of mounts) {
+    args.push(
+      mount.access === 'rw' ? '--bind' : '--ro-bind',
+      mount.sourceRoot,
+      mount.logicalPath,
+    )
+  }
 
   if (options?.postWorkspaceArgs) {
     args.push(...options.postWorkspaceArgs)

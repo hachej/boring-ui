@@ -28,6 +28,10 @@ export const FILESYSTEM_CATALOG_CAPABILITIES = [
   "delete",
   "move",
   "mkdir",
+  // gh-1123: whether the agent may run shell commands with this filesystem
+  // mounted/selected (`environment.bash.execute` grant). Display vocabulary
+  // only; enforcement is server-side.
+  "execute",
 ] as const;
 
 export type FilesystemCatalogCapabilityKey = (typeof FILESYSTEM_CATALOG_CAPABILITIES)[number];
@@ -51,7 +55,12 @@ export interface FilesystemCatalogResponse {
 export function isFilesystemCatalogCapabilities(value: unknown): value is FilesystemCatalogCapabilities {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const capabilities = value as Record<string, unknown>;
-  return FILESYSTEM_CATALOG_CAPABILITIES.every((capability) => typeof capabilities[capability] === "boolean");
+  return FILESYSTEM_CATALOG_CAPABILITIES.every((capability) => {
+    // `execute` was added in gh-1123; tolerate payloads from servers that
+    // predate it (absent means false) instead of dropping the whole entry.
+    if (capability === "execute" && capabilities[capability] === undefined) return true;
+    return typeof capabilities[capability] === "boolean";
+  });
 }
 
 /** Parses and validates an untrusted `{ filesystems: [...] }` payload into
@@ -79,7 +88,7 @@ export function parseFilesystemCatalog(value: unknown): FilesystemCatalogEntry[]
       rootDir: entry.rootDir as LogicalFilesystemRoot,
       access: entry.access,
       capabilities: Object.fromEntries(
-        FILESYSTEM_CATALOG_CAPABILITIES.map((capability) => [capability, capabilities[capability]]),
+        FILESYSTEM_CATALOG_CAPABILITIES.map((capability) => [capability, capabilities[capability] === true]),
       ) as unknown as FilesystemCatalogCapabilities,
     });
   }

@@ -21,7 +21,9 @@ function bwrapSpawnHook(
 ): BashSpawnHook {
   const runtimeHost = bundle.runtimeHost
   if (!runtimeHost) throw new Error('local sandbox runtime requires injected host operations')
-  const args = runtimeHost.buildBwrapArgs(workspaceRoot)
+  // Honor the strategy's sandboxRoot end to end (gh-1123 slice 1): it now
+  // selects the bind target/chdir/HOME inside bwrap, not only the env paths.
+  const args = runtimeHost.buildBwrapArgs(workspaceRoot, { sandboxHome: sandboxRoot })
   const bwrapPrefix = ['bwrap', ...args].map(shellEscape).join(' ')
   return (context) => ({
     ...context,

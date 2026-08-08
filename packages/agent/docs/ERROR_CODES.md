@@ -52,6 +52,8 @@ All API failures must use the response envelope:
 | `OUTPUT_TRUNCATED` | Max output bytes reached; output was clipped | 200 | user-fix | warn | stable (public API) |
 | `SANDBOX_NOT_READY` | Remote sandbox cold start / provisioning | 503 | retry | warn | stable (public API) |
 | `SANDBOX_EXPIRED` | Remote sandbox TTL elapsed | 410 | retry | warn | stable (public API) |
+| `SANDBOX_MOUNT_INVALID` | Environment mount failed create-time validation (missing source, bad logical path, namespace violation) | 500 | operator-fix | error | stable (trusted API) |
+| `SANDBOX_PROVIDER_MOUNTS_UNSUPPORTED` | Provider without mount capability received a non-empty environment mount list (fail closed) | 500 | operator-fix | error | stable (trusted API) |
 | `VERCEL_API_ERROR` | Generic upstream Vercel SDK/API failure | 502 | retry | error | stable (public API) |
 | `REMOTE_WORKER_CONFIG_INVALID` | Static remote-worker fleet configuration is invalid or incomplete | 500 | report-bug | error | stable (trusted API) |
 | `REMOTE_WORKER_PROTOCOL_MISMATCH` | Worker protocol or provider-contract version differs from the configured V1 cohort | 502 | operator-fix | error | stable (trusted API) |

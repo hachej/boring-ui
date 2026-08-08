@@ -6,14 +6,16 @@ import {
   type SandboxProviderV1,
   type WorkspaceSandboxPairV1,
 } from '../../shared/providerV1'
+import { resolveContextMounts } from '../../shared/mounts'
 import { createNodeWorkspace, disposeNodeWorkspace } from '../node-workspace/createNodeWorkspace'
 import {
   createBwrapSandbox,
   type CreateBwrapSandboxOptions,
 } from './createBwrapSandbox'
+import { resolveEnvironmentMounts } from './resolveEnvironmentMounts'
 
 export interface BwrapSandboxProviderOptions {
-  sandbox?: Omit<CreateBwrapSandboxOptions, 'hostWorkspaceRoot' | 'runtimeContext'>
+  sandbox?: Omit<CreateBwrapSandboxOptions, 'hostWorkspaceRoot' | 'runtimeContext' | 'mounts'>
 }
 
 export function createBwrapSandboxProvider(
@@ -35,12 +37,20 @@ export function createBwrapSandboxProvider(
       }
 
       await mkdir(context.workspaceRoot, { recursive: true })
+      // Resolve-once mount hygiene (gh-1123): source roots are
+      // realpath-resolved exactly once here, and every subsequent exec binds
+      // the resolved paths. Flag-off resolves to the empty set.
+      const mounts = await resolveEnvironmentMounts(
+        context.workspaceRoot,
+        resolveContextMounts(context),
+      )
       const runtimeContext = { runtimeCwd: '/workspace' }
       const workspace = createNodeWorkspace(context.workspaceRoot, { runtimeContext })
       const sandbox = createBwrapSandbox({
         ...options.sandbox,
         hostWorkspaceRoot: context.workspaceRoot,
         runtimeContext,
+        mounts,
       })
 
       try {

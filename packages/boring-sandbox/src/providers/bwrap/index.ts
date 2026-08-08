@@ -4,6 +4,7 @@ export type {
 } from './createBwrapProvider'
 export { buildBwrapArgs } from './buildBwrapArgs'
 export type { BwrapArgsOptions } from './buildBwrapArgs'
+export { resolveEnvironmentMounts } from './resolveEnvironmentMounts'
 export { computeSandboxCwd, createBwrapSandbox } from './createBwrapSandbox'
 export type {
   BwrapResourceLimits,

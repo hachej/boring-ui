@@ -277,6 +277,40 @@ Actor-varying resources cannot be baked into a shared execution namespace. If
 one actor can read `company_context` and another cannot, either the resource
 stays file-tools-only or they receive separately enforced Environment views.
 
+#### Amendment: executable environments (gh-1123)
+
+The rules above are amended — not repealed — by the executable-environments
+epic ([`docs/issues/1123/plan.md`](issues/1123/plan.md)):
+
+1. `mount requires authorization` stays the only valid direction. A mount is
+   derived from an existing filesystem binding the agent already holds; it
+   adds physical visibility, never new logical access.
+2. Two mount kinds: `mountKind: 'direct'` binds a static real directory
+   declared as `materialization.sourceRoot`; `mountKind: 'view'` mounts a
+   live Operations bridge over a virtual/computed binding. No copy/sync
+   engine exists — a view routes every read through the adapter at access
+   time.
+3. Exec is an explicit per-agent grant (`environment.bash.execute`), never
+   inferred from read/write access. Default deny; the primary `user`
+   filesystem carries an implicit grant for compatibility, materialized by
+   the fleet policy compiler rather than silently special-cased.
+4. Readonly bindings mount `ro`; a binding never mounts wider than its
+   file-ops access. View mounts are readonly in v1.
+5. Actor-varying resources still never enter a **shared** execution
+   namespace. They may mount because environments fork per agent/grant-set
+   (the resolved mount set is part of the environment lease identity), so
+   each environment's mounts evaluate as exactly one agent's identity.
+
+Mount hygiene (provider substrate, slice 1): every mount `sourceRoot` is
+realpath-resolved and containment-checked once at create, and the resolved
+paths are what every subsequent exec binds; mount logical paths live in the
+dedicated `/mnt/<fsid>` namespace, never under `/workspace`. Providers that
+do not declare the `mounts` capability reject a non-empty mount list with
+the stable `SANDBOX_PROVIDER_MOUNTS_UNSUPPORTED` code (fail closed). Mount
+realization is gated by the server-side `BORING_ENV_MOUNTS` flag; flag off
+resolves every mount set to empty and is byte-identical to pre-epic
+behavior.
+
 ## Why there is no `ProjectRoot` object now
 
 The Environment already exposes one canonical primary Workspace root. Both of
