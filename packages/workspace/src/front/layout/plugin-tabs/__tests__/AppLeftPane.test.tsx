@@ -125,6 +125,18 @@ describe("AppLeftPane", () => {
     expect(handlers.onOpenAgentDetails).not.toHaveBeenCalled()
   })
 
+  it("retargets new chats from the picker without creating one", async () => {
+    const user = userEvent.setup()
+    const handlers = renderFleetPane()
+
+    await user.click(screen.getByRole("button", { name: "Choose Agent for new chat" }))
+    await user.click(screen.getByRole("menuitem", { name: /Beta/ }))
+    // Picking an Agent only changes the target; the user still decides when
+    // to start the chat.
+    expect(handlers.onSelectAgent).toHaveBeenCalledWith("beta")
+    expect(handlers.onCreateSession).not.toHaveBeenCalled()
+  })
+
   it("collapses the Agents section including the nested chats", async () => {
     const user = userEvent.setup()
     renderFleetPane()
@@ -240,9 +252,11 @@ describe("AppLeftPane", () => {
 
     await user.click(screen.getByRole("button", { name: "Start new chat with Boring Alpha" }))
     expect(handlers.onCreateSession).toHaveBeenCalledWith("alpha")
+    // Picking another Agent retargets the button; it does not start a chat.
     await user.click(screen.getByRole("button", { name: "Choose Agent for new chat" }))
     await user.click(screen.getByRole("menuitem", { name: "Beta" }))
-    expect(handlers.onCreateSession).toHaveBeenCalledWith("beta")
+    expect(handlers.onSelectAgent).toHaveBeenCalledWith("beta")
+    expect(handlers.onCreateSession).toHaveBeenCalledTimes(1)
   })
 
   it("keeps the flat Chats shell when no addressed fleet is supplied", () => {

@@ -593,6 +593,7 @@ export function AppLeftPane({
       <FleetNewChatAction
         agents={agents}
         selectedAgentTypeId={selectedAgentTypeId}
+        onSelectAgent={(agentTypeId) => onSelectAgent?.(agentTypeId)}
         onCreateSession={(agentTypeId) => {
           onSelectAgent?.(agentTypeId)
           onCreateSession(agentTypeId)

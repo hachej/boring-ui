@@ -154,12 +154,15 @@ export function NewChatAction({
 export function FleetNewChatAction({
   agents,
   selectedAgentTypeId,
+  onSelectAgent,
   onCreateSession,
   onCreateSplitSession,
   onCreatePopoverSession,
 }: {
   agents: readonly { agentTypeId: string; label: string }[]
   selectedAgentTypeId?: string
+  /** Retargets new chats without creating one; creation stays explicit. */
+  onSelectAgent?: (agentTypeId: string) => void
   onCreateSession: (agentTypeId: string) => void
   onCreateSplitSession?: (agentTypeId: string) => void
   onCreatePopoverSession?: (agentTypeId: string) => void
@@ -212,7 +215,7 @@ export function FleetNewChatAction({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={6} className="w-52 border-border/60">
           {agents.map((agent) => (
-            <DropdownMenuItem key={agent.agentTypeId} onSelect={() => onCreateSession(agent.agentTypeId)} className="gap-2 text-[13px]">
+            <DropdownMenuItem key={agent.agentTypeId} onSelect={() => onSelectAgent?.(agent.agentTypeId)} className="gap-2 text-[13px]">
               <span className="grid size-4 place-items-center" aria-hidden="true">
                 {agent.agentTypeId === selected.agentTypeId ? <Check className="size-3.5" strokeWidth={2} /> : null}
               </span>
