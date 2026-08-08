@@ -73,6 +73,35 @@ describe("parseSkills / parseTools", () => {
   })
 })
 
+describe("parseSkills totality (hostile payloads must not reach React)", () => {
+  it("drops a non-string description instead of passing an object to a text node", () => {
+    const [skill] = parseSkills({ skills: [{ name: "x", description: { a: 1 } }] })
+    expect(skill).toEqual({ name: "x" })
+  })
+
+  it("drops a non-string source instead of letting skillSourceLabel call .trim()", () => {
+    const [skill] = parseSkills({ skills: [{ name: "x", source: 42 }] })
+    expect(skill).toEqual({ name: "x" })
+    expect(() => skillSourceLabel(skill?.source)).not.toThrow()
+  })
+
+  it("drops a malformed resource and any unknown field the server adds", () => {
+    expect(parseSkills({ skills: [{ name: "x", resource: { path: 1 }, surprise: "!" }] }))
+      .toEqual([{ name: "x" }])
+    expect(parseSkills({ skills: [{ name: "x", resource: { filesystem: "user", path: "a.md" } }] }))
+      .toEqual([{ name: "x", resource: { filesystem: "user", path: "a.md" } }])
+  })
+
+  it("survives non-object entries", () => {
+    expect(parseSkills({ skills: [null, "str", 7, { name: "ok" }] })).toEqual([{ name: "ok" }])
+  })
+
+  it("trims descriptions and drops whitespace-only ones, like parseTools", () => {
+    expect(parseSkills({ skills: [{ name: "a", description: "  d  " }, { name: "b", description: "   " }] }))
+      .toEqual([{ name: "a", description: "d" }, { name: "b" }])
+  })
+})
+
 describe("parseKnowledge / parseRootFileNames", () => {
   it("falls back to the filesystem id when the label is blank", () => {
     expect(parseKnowledge({ filesystems: [{ filesystem: "docs", label: "  " }] }))

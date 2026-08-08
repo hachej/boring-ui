@@ -2026,6 +2026,23 @@ export function WorkspaceAgentFront<
   // gets its OWN dedicated pane (inserted after the active one) so the existing
   // panes are never hijacked; with a single pane it just becomes the active
   // chat — no gratuitous split for the common case.
+  /**
+   * Splitting a pane is NOT a "new chat" affordance: the button names the pane
+   * it splits ("Split <title> chat vertically"), so the new chat must belong to
+   * that pane's Agent, never to whatever the New chat picker currently targets.
+   * The pane key already carries its owner, so the host resolves it here rather
+   * than plumbing an extra argument through the presentational dock.
+   */
+  const splitChatPane = useCallback((afterId: string, placementDirection?: ChatPaneSplitDirection) => (
+    createChatPaneAfter(
+      afterId,
+      placementDirection,
+      fleetModeEnabled
+        ? workspaceSessionRefFromKey(afterId).agentTypeId ?? newChatAgentTypeId
+        : undefined,
+    )
+  ), [createChatPaneAfter, fleetModeEnabled, newChatAgentTypeId])
+
   const createChatSessionPreferNewPane = useCallback((ownerAgentTypeId = newChatAgentTypeId) => {
     if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId, undefined, ownerAgentTypeId)
     return createChatSession(ownerAgentTypeId)
@@ -2496,11 +2513,6 @@ export function WorkspaceAgentFront<
         ...activeAgentOverlayOption,
         sessionsStatus: addressedFleetSessions.statuses.get(activeAgentOverlayOption.agentTypeId) ?? "loading",
       }}
-      sessionCount={resolvedSessions.filter((session) => session.agentTypeId === activeAgentOverlayOption.agentTypeId).length}
-      onCreateSession={() => {
-        setLeftOverlay(null)
-        void createChatSession(activeAgentOverlayOption.agentTypeId)
-      }}
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={mobileShellActive}
       headerInsetEnd={!surfaceOpen}
@@ -2539,7 +2551,7 @@ export function WorkspaceAgentFront<
       onActiveChatPaneChange={activateChatPane}
       onCloseChatPane={closeChatPane}
       onCreateChatPaneAfter={isPluginTabsLayout ? undefined : createChatPaneAfter}
-      onSplitChatPane={createChatPaneAfter}
+      onSplitChatPane={splitChatPane}
       chatPaneSplitPending={chatPaneSplitPending}
       pendingChatPanePlacement={pendingChatPanePlacement}
       onPendingChatPanePlacementConsumed={consumePendingChatPanePlacement}

@@ -128,7 +128,10 @@ export function AgentDetailsOverlay({
       return {
         key: uiFileResourceKey(file.resource),
         title: copy.name,
-        blurb: copy.blurb,
+        // An inert card with no explanation reads as a rendering bug. Say
+        // what happened instead of showing a row that just doesn't respond.
+        blurb: resource ? copy.blurb : `${copy.blurb} This file can't be opened from here — its recorded location is not a valid workspace path.`,
+        ...(resource ? { badge: undefined } : { badge: "unavailable" }),
         icon: "file" as const,
         ...(resource ? {
           onOpen: () => openFile(resource),
@@ -219,7 +222,10 @@ export function AgentDetailsOverlay({
             <DetailSection
               id="agent-instructions-heading" title="Instructions"
               loading={loading} empty={instructionRows.length === 0}
-              emptyText="No workspace instruction files."
+              // Without this the section claims the agent HAS no instructions
+              // when the truth is that we failed to ask.
+              error={capabilities.describeError} errorText="Instructions couldn't be loaded."
+              emptyText="No instruction files."
             >
               <CardRows rows={instructionRows} />
             </DetailSection>

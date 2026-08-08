@@ -74,6 +74,14 @@ export function AppLeftPaneAgentCard({
   const countLabel = sessionsStatus === "error"
     ? "chats unavailable"
     : `${stats.sessions} ${stats.sessions === 1 ? "chat" : "chats"}`
+  // The working/attention pills carry `sr-only` text, but they sit INSIDE a
+  // button with an explicit aria-label, which replaces its content for
+  // assistive tech — so screen-reader users heard the chat count and nothing
+  // about liveliness. The accessible name states all three.
+  const livelinessLabel = [
+    stats.working > 0 ? `${stats.working} working` : undefined,
+    stats.attention > 0 ? `${stats.attention} ${stats.attention === 1 ? "needs" : "need"} you` : undefined,
+  ].filter(Boolean).join("; ")
 
   return (
     <div
@@ -93,7 +101,7 @@ export function AppLeftPaneAgentCard({
       <button
         type="button"
         aria-expanded={expandable ? expanded : undefined}
-        aria-label={`${expandable ? `${expanded ? "Collapse" : "Expand"} ` : ""}${label}; ${countLabel}`}
+        aria-label={`${expandable ? `${expanded ? "Collapse" : "Expand"} ` : ""}${label}; ${countLabel}${livelinessLabel ? `; ${livelinessLabel}` : ""}`}
         title={subtitle ? `${label} — ${subtitle}` : label}
         onClick={onToggle}
         disabled={!onToggle}

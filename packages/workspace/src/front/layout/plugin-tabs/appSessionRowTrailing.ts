@@ -11,8 +11,12 @@ export type SessionTrailingBadge =
   | { kind: "working" }
 
 /**
- * The marker half: provenance, pin, or the quiet age. Ordered by how much the
- * operator needs it, and yielded entirely once a badge claims the row.
+ * The marker half: provenance, pin, or the quiet age.
+ *
+ * Provenance is the exception that outranks the badge — an attention badge
+ * and "which Agent owns this" answer different questions and legitimately
+ * render side by side. The pin and the age are quiet enough to yield the slot
+ * entirely once a badge claims it.
  */
 export type SessionTrailingMarker =
   | { kind: "none" }

@@ -92,9 +92,10 @@ export interface AppLeftPaneProps {
   /** The Agent the NEXT chat targets (the New chat picker's choice). */
   selectedAgentTypeId?: string
   /**
-   * The Agent the host considers addressed. Used when no active session names
-   * its owner, so this presentational pane stops falling back to the New chat
-   * picker target — two different questions that only look alike.
+   * The Agent the host considers addressed, used when no active session names
+   * its owner. Supplying it is what keeps the pane off the New chat picker
+   * target — two different questions that only look alike. The picker target
+   * remains the last resort for hosts that pass neither.
    */
   addressedAgentTypeId?: string
   onSelectAgent?: (agentTypeId: string) => void

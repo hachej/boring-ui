@@ -81,17 +81,36 @@ export const INITIAL_CAPABILITIES: AgentCapabilities = {
 /** Workspace-level instruction files that participate in every agent's context. */
 export const WORKSPACE_INSTRUCTION_FILES = [
   { path: "AGENTS.md", blurb: "Workspace instructions every agent reads before working.", badge: "workspace" },
-  { path: "CLAUDE.md", blurb: "Additional workspace instructions for Claude-based agents.", badge: "workspace" },
+  { path: "CLAUDE.md", blurb: "Additional workspace instructions some agents also read.", badge: "workspace" },
 ] as const
 
 export function parseSkills(payload: unknown): AgentSkillSummary[] {
   const skills = (payload as { skills?: unknown })?.skills
   if (!Array.isArray(skills)) return []
+  // Validate then REBUILD, like parseTools. Checking `name` and asserting the
+  // whole object through returned the raw payload: a non-string `description`
+  // reached React as a child ("Objects are not valid as a React child" takes
+  // the whole overlay down) and a non-string `source` hit `.trim()`.
   return skills
-    .filter((skill): skill is AgentSkillSummary =>
-      typeof (skill as AgentSkillSummary)?.name === "string" && (skill as AgentSkillSummary).name.length > 0)
+    .filter((skill): skill is Record<string, unknown> => typeof skill === "object" && skill !== null)
+    .filter((skill) => typeof skill.name === "string" && skill.name.length > 0)
     .filter((skill) => skill.invocable !== false)
+    .map((skill) => ({
+      name: skill.name as string,
+      ...(typeof skill.description === "string" && skill.description.trim()
+        ? { description: skill.description.trim() }
+        : {}),
+      ...(typeof skill.source === "string" ? { source: skill.source } : {}),
+      ...(typeof skill.invocable === "boolean" ? { invocable: skill.invocable } : {}),
+      ...(isUiFileResourceShape(skill.resource) ? { resource: skill.resource } : {}),
+    }))
     .sort((left, right) => left.name.localeCompare(right.name))
+}
+
+/** Structural check only; safety lives in `openableFileResource`. */
+function isUiFileResourceShape(value: unknown): value is UiFileResource {
+  const record = value as { filesystem?: unknown; path?: unknown } | null
+  return Boolean(record) && typeof record?.filesystem === "string" && typeof record?.path === "string"
 }
 
 export function parseTools(payload: unknown): AgentToolSummary[] {
