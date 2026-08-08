@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import {
   BoringPluginAssetManager,
+  isRemoteMaterializedPiPackageRoot,
   type BoringPluginFrontTargetResolver,
   type BoringPluginSourceInput,
 } from "@hachej/boring-workspace/server"
@@ -125,6 +126,27 @@ export function resolveCliBoringPluginDirs(
     seen.add(key)
     return true
   })
+}
+
+/**
+ * Workspace-local package roots eligible to contribute `boring.agent` at
+ * fleet boot. `resolveRegisteredPluginSourceDirs` returns local path entries
+ * only, so installed git/npm copies remain ordinary plugins until the remote
+ * agent-distribution gate is implemented.
+ */
+export function resolveCliLocalAgentPackageDirs(
+  workspaceRoot: string,
+): BoringPluginSourceInput[] {
+  const resolvedWorkspaceRoot = resolve(workspaceRoot)
+  const localScope = resolvePluginSourceScopePaths("local", { workspaceRoot: resolvedWorkspaceRoot })
+  return resolveRegisteredPluginSourceDirs(localScope)
+    .filter((record) => !isRemoteMaterializedPiPackageRoot(record.rootDir, localScope))
+    .map((record) => ({
+      rootDir: record.rootDir,
+      kind: "external" as const,
+      registered: true,
+      workspaceId: resolvedWorkspaceRoot,
+    }))
 }
 
 export function readCliPluginPiSnapshot(
