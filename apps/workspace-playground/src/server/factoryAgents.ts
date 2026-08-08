@@ -26,10 +26,6 @@ export async function loadBoringFactoryAgents(
 ): Promise<readonly AgentHostAgentSpec[]> {
   const { agents, diagnostics } = await loadConfiguredAgentFleet({
     personasDir: PERSONAS_DIR,
-    // The playground serves this repository as the workspace, so the personas
-    // live at this workspace-relative path — which is what /describe reports
-    // to the Agent details overlay.
-    personasRelativeDir: '.agents/personas',
     fleetConfigPath: FLEET_CONFIG_PATH,
     policyPath: POLICY_PATH,
     ...(options.env ? { env: options.env } : {}),
