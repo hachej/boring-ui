@@ -1,4 +1,5 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
+import * as Dialog from "@radix-ui/react-dialog"
 import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
 import { Maximize2, MessageSquare, Minimize2, PanelRightClose, PanelRightOpen } from "lucide-react"
 import { cn } from "../lib/utils"
@@ -400,95 +401,91 @@ export function ChatLayout(props: ChatLayoutProps) {
       data-mobile-shell={mobileShell ? "true" : "false"}
       className={cn("relative flex h-full min-h-0 w-full overflow-hidden bg-background", props.className)}
     >
-      {mobileShell && navOpen && closeNav ? (
-        <div
-          aria-hidden="true"
-          data-boring-workspace-part="session-drawer-mobile-scrim"
-          className="absolute inset-0 z-40 bg-foreground/30"
-          onClick={closeNav}
-        />
-      ) : null}
-      {mobileShell && sidebarOpen && closeSidebar ? (
-        <div
-          aria-hidden="true"
-          data-boring-workspace-part="workbench-left-mobile-scrim"
-          className="absolute inset-0 z-30 bg-foreground/30"
-          onClick={closeSidebar}
-        />
-      ) : null}
-      <aside
-        data-boring-workspace-part="session-drawer"
-        data-boring-state={navOpen ? "expanded" : "collapsed"}
-        aria-label="Session browser"
-        aria-hidden={!navOpen}
-        className={cn(
-          mobileShell ? "absolute inset-y-0 left-0 z-50 h-full shadow-2xl" : "relative h-full shrink-0",
-          "min-h-0 overflow-hidden bg-background",
-          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-          navOpen
-            ? "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]"
-            : "pointer-events-none z-0",
-        )}
-        style={{
-          width: navOpen ? effectiveNavWidth : 0,
-          minWidth: navOpen ? effectiveNavWidth : 0,
-          maxWidth: navOpen ? effectiveNavWidth : 0,
-          willChange: "width",
-        }}
-      >
-        <div
-          className={cn(
-            "h-full min-h-0 overflow-hidden",
-            "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-            navOpen ? "opacity-100" : "invisible pointer-events-none opacity-0",
-          )}
-        >
-          <PanelSlot id={navId} params={props.navParams} />
-        </div>
-        {navOpen && !mobileShell ? (
-          <ResizeHandle
-            side="drawer-right"
-            ariaLabel="Resize sessions drawer"
-            onResize={(delta) => setNavWidth((w) => clamp(w + delta, 200, 360))}
-          />
-        ) : null}
-      </aside>
+      <Dialog.Root open={navOpen} onOpenChange={(open) => !open && closeNav?.()}>
+        <Dialog.Portal>
+          {mobileShell ? <Dialog.Overlay className="absolute inset-0 z-40 bg-foreground/30" /> : null}
+          <Dialog.Content asChild>
+            <aside
+              data-boring-workspace-part="session-drawer"
+              data-boring-state={navOpen ? "expanded" : "collapsed"}
+              aria-label="Session browser"
+              className={cn(
+                mobileShell ? "absolute inset-y-0 left-0 z-50 h-full shadow-2xl" : "relative h-full shrink-0",
+                "min-h-0 overflow-hidden bg-background",
+                "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                navOpen
+                  ? "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]"
+                  : "pointer-events-none z-0",
+              )}
+              style={{
+                width: navOpen ? effectiveNavWidth : 0,
+                minWidth: navOpen ? effectiveNavWidth : 0,
+                maxWidth: navOpen ? effectiveNavWidth : 0,
+                willChange: "width",
+              }}
+            >
+              <div
+                className={cn(
+                  "h-full min-h-0 overflow-hidden",
+                  "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                  navOpen ? "opacity-100" : "invisible pointer-events-none opacity-0",
+                )}
+              >
+                <PanelSlot id={navId} params={props.navParams} />
+              </div>
+              {navOpen && !mobileShell ? (
+                <ResizeHandle
+                  side="drawer-right"
+                  ariaLabel="Resize sessions drawer"
+                  onResize={(delta) => setNavWidth((w) => clamp(w + delta, 200, 360))}
+                />
+              ) : null}
+            </aside>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
-      <aside
-        data-boring-workspace-part="workbench-left-shell"
-        data-boring-state={sidebarOpen ? "expanded" : "collapsed"}
-        aria-label={sidebarOpen ? "Workbench left panel" : undefined}
-        aria-hidden={!sidebarOpen}
-        className={cn(
-          mobileShell ? "absolute inset-0 z-40 h-full" : "relative h-full shrink-0",
-          "min-h-0 overflow-hidden bg-background",
-          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-          sidebarOpen && "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
-        )}
-        style={{
-          width: sidebarOpen ? effectiveSidebarWidth : 0,
-          minWidth: sidebarOpen ? effectiveSidebarWidth : 0,
-          maxWidth: sidebarOpen ? effectiveSidebarWidth : 0,
-          willChange: "width",
-        }}
-      >
-        <div
-          className={cn(
-            "h-full min-h-0 overflow-hidden",
-            "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-            sidebarOpen ? "opacity-100" : "opacity-0",
-          )}
-        >
-          {sidebarOpen ? <PanelSlot id={props.sidebar ?? "workbench-left"} params={props.sidebarParams} /> : null}
-        </div>
-        {sidebarOpen && !mobileShell ? (
-          <ResizeHandle
-            side="drawer-right"
-            ariaLabel="Resize workbench left panel"
-            onResize={(delta) => setSidebarWidth((w) => clamp(w + delta, 200, Math.max(240, Math.floor(viewport * 0.5))))}
-          />
-        ) : null}
-      </aside>
+      <Dialog.Root open={sidebarOpen} onOpenChange={(open) => !open && closeSidebar?.()}>
+        <Dialog.Portal>
+          {mobileShell ? <Dialog.Overlay className="absolute inset-0 z-30 bg-foreground/30" /> : null}
+          <Dialog.Content asChild>
+            <aside
+              data-boring-workspace-part="workbench-left-shell"
+              data-boring-state={sidebarOpen ? "expanded" : "collapsed"}
+              aria-label={sidebarOpen ? "Workbench left panel" : undefined}
+              className={cn(
+                mobileShell ? "absolute inset-0 z-40 h-full" : "relative h-full shrink-0",
+                "min-h-0 overflow-hidden bg-background",
+                "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                sidebarOpen && "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+              )}
+              style={{
+                width: sidebarOpen ? effectiveSidebarWidth : 0,
+                minWidth: sidebarOpen ? effectiveSidebarWidth : 0,
+                maxWidth: sidebarOpen ? effectiveSidebarWidth : 0,
+                willChange: "width",
+              }}
+            >
+              <div
+                className={cn(
+                  "h-full min-h-0 overflow-hidden",
+                  "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                  sidebarOpen ? "opacity-100" : "opacity-0",
+                )}
+              >
+                {sidebarOpen ? <PanelSlot id={props.sidebar ?? "workbench-left"} params={props.sidebarParams} /> : null}
+              </div>
+              {sidebarOpen && !mobileShell ? (
+                <ResizeHandle
+                  side="drawer-right"
+                  ariaLabel="Resize workbench left panel"
+                  onResize={(delta) => setSidebarWidth((w) => clamp(w + delta, 200, Math.max(240, Math.floor(viewport * 0.5))))}
+                />
+              ) : null}
+            </aside>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       <div className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
         <main
