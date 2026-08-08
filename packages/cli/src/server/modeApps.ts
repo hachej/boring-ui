@@ -687,6 +687,7 @@ export async function createWorkspacesModeApp(opts: {
         // Workspaces mode has one explicit CLI-owned Agent address. Pass it to
         // trusted plugins rather than letting plugins invent a fallback.
         agentTypeId: "default",
+        availableAgentTypeIds: ["default"],
         defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
         installPluginAuthoring: false,
         excludeDefaults: ["boring-ui-plugin-cli-package"],

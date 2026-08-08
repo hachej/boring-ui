@@ -23,6 +23,7 @@ import type { AutomationStore } from "./store"
 
 export interface BoringAutomationServerPluginOptions {
   agentTypeId: string
+  availableAgentTypeIds?: readonly string[]
   workspaceRoot?: string
   store?: AutomationStore
   dispatcherResolver?: WorkspaceAgentDispatcherResolver
@@ -50,6 +51,7 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
   const manualRunExecutor = options.dispatcherResolver && options.actorResolver
       ? new ManualRunExecutor({
         agentTypeId: options.agentTypeId,
+        availableAgentTypeIds: options.availableAgentTypeIds,
         store,
         storeForRequest: options.storeForRequest,
         dispatcherResolver: options.dispatcherResolver,
@@ -72,6 +74,7 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
       resolveExecutor: options.dispatcherResolver
         ? async (actor, actorStore) => new ManualRunExecutor({
             agentTypeId: options.agentTypeId,
+            availableAgentTypeIds: options.availableAgentTypeIds,
             store: actorStore,
             dispatcherResolver: options.dispatcherResolver!,
             actorResolver: () => actor,
@@ -138,11 +141,15 @@ async function createHostedStore(
 
 export default function defaultBoringAutomationServerPlugin(
   options: BoringAutomationServerPluginOptions | undefined,
-  ctx?: Pick<WorkspaceAgentServerPluginContext, "workspaceRoot"> & Partial<Pick<WorkspaceAgentServerPluginContext, "agentTypeId" | "trusted">>,
+  ctx?: Pick<WorkspaceAgentServerPluginContext, "workspaceRoot"> & Partial<Pick<WorkspaceAgentServerPluginContext, "agentTypeId" | "availableAgentTypeIds" | "trusted">>,
 ): WorkspaceServerPlugin {
   const agentTypeId = options?.agentTypeId ?? ctx?.agentTypeId
   if (!agentTypeId) throw new Error("boring automation requires a host-selected agentTypeId")
-  const resolvedOptions: BoringAutomationServerPluginOptions = { ...options, agentTypeId }
+  const resolvedOptions: BoringAutomationServerPluginOptions = {
+    ...options,
+    agentTypeId,
+    availableAgentTypeIds: options?.availableAgentTypeIds ?? ctx?.availableAgentTypeIds,
+  }
   const trusted = ctx?.trusted
   if (!resolvedOptions.store && trusted?.sql && trusted.workspaceAgentDispatcherResolver && trusted.actorResolver) {
     const sql = trusted.sql as postgres.Sql
@@ -165,6 +172,7 @@ export default function defaultBoringAutomationServerPlugin(
       hostedTriggerToken: resolvedOptions.hostedTriggerToken ?? trusted.hostedAutomationTriggerToken,
       hostedDueRunService: resolvedOptions.hostedDueRunService ?? new HostedDueRunService({
         agentTypeId,
+        availableAgentTypeIds: resolvedOptions.availableAgentTypeIds,
         sql,
         dispatcherResolver,
         verifyActor: resolvedOptions.actorVerifier ?? trusted.actorVerifier!,

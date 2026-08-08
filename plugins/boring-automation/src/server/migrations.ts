@@ -12,12 +12,14 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
       cron text NOT NULL,
       timezone text NOT NULL,
       model text NOT NULL,
+      agent_type_id text,
       created_at timestamptz NOT NULL,
       updated_at timestamptz NOT NULL
     )
   `)
   await sql.unsafe(`
     ALTER TABLE boring_automation_automations
+      ADD COLUMN IF NOT EXISTS agent_type_id text,
       ADD COLUMN IF NOT EXISTS deleted_at timestamptz,
       DROP COLUMN IF EXISTS prompt,
       DROP COLUMN IF EXISTS prompt_file_ready
