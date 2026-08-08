@@ -81,7 +81,7 @@ createCoreWorkspaceAgentServer({
 
 When `registry`, `transport`, and `resolveActor` are provided, the plugin contributes the seven stable agent tools automatically: `mcp_servers_list`, `mcp_server_status`, `mcp_server_doctor`, `mcp_server_probe`, `mcp_tools_search`, `mcp_tool_describe`, and `mcp_readonly_call`.
 
-For non-Composio MCP endpoints, apps can still use `createMcpSdkStreamableHttpTransport({ endpoint })` directly.
+For trusted, app-configured non-Composio endpoints, apps can use `createMcpSdkStreamableHttpTransport({ endpoint })` directly. User-supplied endpoints must cross both authoritative shared constructors: build the template with `createUserRegisteredMcpProviderTemplate(...)` and the persisted/runtime source with `createUserRegisteredMcpSource(...)`. A structural object with `provider: "user-registered"` is intentionally rejected; persistence rehydrates accepted records through the source constructor before transport use.
 
 Apps may also list the package in `package.json#boring.defaultPluginPackages` for server/plugin discovery, but shipped app chrome should mount the front overlay explicitly when the UI must render.
 

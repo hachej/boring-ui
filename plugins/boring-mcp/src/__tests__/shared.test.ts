@@ -11,8 +11,10 @@ import {
   containsMcpSecret,
   containsMcpSecretOrCanary,
   createUserRegisteredMcpProviderTemplate,
+  createUserRegisteredMcpSource,
   doctorMcpSource,
   getMcpProviderTemplate,
+  isUserRegisteredMcpSource,
   redactMcpSecrets,
   toMcpSourceDto,
   validateUserRegisteredMcpEndpoint,
@@ -179,6 +181,14 @@ describe("user-registered MCP source type", () => {
     expect(getMcpProviderTemplate("airtable")).toBe(AIRTABLE_MCP_TEMPLATE)
   })
 
+  it("only trusts source instances produced by the registration factory", () => {
+    const { provider: _provider, ...input } = notionSource
+    const registered = createUserRegisteredMcpSource(input, baseConfig)
+    expect(isUserRegisteredMcpSource(registered)).toBe(true)
+    expect(isUserRegisteredMcpSource({ ...registered })).toBe(false)
+    expect(isUserRegisteredMcpSource({ ...notionSource, provider: "user-registered" })).toBe(false)
+  })
+
   it("builds a valid template for an enabled, well-formed endpoint", () => {
     const template = createUserRegisteredMcpProviderTemplate(baseConfig)
     expect(template.id).toBe("user-registered")
@@ -221,6 +231,11 @@ describe("user-registered MCP source type", () => {
     ["IPv6 link-local upper end of /10 (febf)", "https://[febf::1]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
     ["deprecated IPv6 site-local (fec0::/10)", "https://[fec0::1]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
     ["NAT64 well-known prefix", "https://[64:ff9b::a9fe:a9fe]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["NAT64 RFC 8215 local-use prefix", "https://[64:ff9b:1::a9fe:a9fe]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["IPv4 multicast", "https://224.0.0.1/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["IPv4 benchmarking", "https://198.18.0.1/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["IPv6 multicast", "https://[ff02::1]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["IPv6 documentation", "https://[2001:db8::1]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
     ["6to4-encoded loopback", "https://[2002:7f00:1::]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
   ])("rejects %s", (_label, endpoint, expectedCode) => {
     expect(() => validateUserRegisteredMcpEndpoint(endpoint)).toThrow(McpError)
@@ -256,7 +271,25 @@ describe("user-registered MCP source type", () => {
     expect(getMcpProviderTemplate("user-registered", [bypassTemplate])).toBeUndefined()
   })
 
-  it("getMcpProviderTemplate accepts a 'user-registered' template whose endpoint passes validation", () => {
+  it("getMcpProviderTemplate rejects endpoint-bearing custom-provider templates", () => {
+    expect(getMcpProviderTemplate("custom", [{
+      id: "custom",
+      displayName: "Mislabelled user endpoint",
+      endpoint: "https://mcp.example.com/stream",
+      transport: "streamable-http",
+      readOnlyDefault: true,
+      allowedTools: [],
+      deniedTools: [],
+    }])).toBeUndefined()
+  })
+
+  it("getMcpProviderTemplate rejects a forged template even when its endpoint passes validation", () => {
+    const real = createUserRegisteredMcpProviderTemplate(baseConfig)
+    const forged = { ...real }
+    expect(getMcpProviderTemplate("user-registered", [forged])).toBeUndefined()
+  })
+
+  it("getMcpProviderTemplate accepts a factory-created user-registered template", () => {
     const template = createUserRegisteredMcpProviderTemplate(baseConfig)
     expect(getMcpProviderTemplate("user-registered", [template])).toBe(template)
   })
