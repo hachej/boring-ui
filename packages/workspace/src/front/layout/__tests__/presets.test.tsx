@@ -1100,4 +1100,20 @@ describe("ChatLayout component", () => {
     )
     expect(container.querySelector(".custom-chat")).toBeInTheDocument()
   })
+
+  it("marks the session and workbench drawers with dialog semantics", () => {
+    const { container } = renderWithRegistry(
+      <ChatLayout center="empty" sidebar="workbench-left" sidebarParams={{ onClose: vi.fn() }} />,
+      ["session-list", "empty", "workbench-left"],
+    )
+
+    const sessionBrowser = screen.getByLabelText("Session browser")
+    expect(sessionBrowser).toHaveAttribute("role", "dialog")
+    expect(sessionBrowser).toHaveAttribute("aria-modal", "true")
+
+    const workbenchLeft = screen.getByLabelText("Workbench left panel")
+    expect(workbenchLeft).toHaveAttribute("role", "dialog")
+    expect(workbenchLeft).toHaveAttribute("aria-modal", "true")
+    expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(2)
+  })
 })
