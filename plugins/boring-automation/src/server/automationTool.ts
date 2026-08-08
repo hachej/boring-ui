@@ -25,6 +25,7 @@ const createInput = z.object({
   cron: nonEmpty,
   timezone: nonEmpty,
   model: nonEmpty,
+  agentTypeId: nonEmpty.optional(),
   thinkingLevel: thinkingLevel.optional(),
   prompt: z.string().optional(),
 }).strict()
@@ -36,6 +37,7 @@ const updateInput = z.object({
   cron: nonEmpty.optional(),
   timezone: nonEmpty.optional(),
   model: nonEmpty.optional(),
+  agentTypeId: nonEmpty.optional(),
   thinkingLevel: thinkingLevel.optional(),
   prompt: z.string().optional(),
 }).strict()
@@ -200,6 +202,7 @@ function publicErrorMessage(code: BoringAutomationErrorCode): string {
     case BORING_AUTOMATION_ERROR_CODES.INVALID_CRON: return "The cron schedule must contain five valid fields."
     case BORING_AUTOMATION_ERROR_CODES.INVALID_TIMEZONE: return "The timezone must be a valid IANA timezone."
     case BORING_AUTOMATION_ERROR_CODES.INVALID_MODEL: return "Use explicit provider:model-id syntax, for example anthropic:claude-sonnet."
+    case BORING_AUTOMATION_ERROR_CODES.AGENT_NOT_FOUND: return "The selected automation Agent is not available."
     case BORING_AUTOMATION_ERROR_CODES.AUTOMATION_NOT_FOUND: return "Automation not found in the active workspace."
     case BORING_AUTOMATION_ERROR_CODES.RUN_NOT_FOUND: return "Automation run not found in the active workspace."
     case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE: return "This automation already has an active run."
@@ -238,15 +241,15 @@ function automationToolJsonSchema(): Record<string, unknown> {
       operationOnly("list", { limit: limitSchema }),
       operationOnly("get", { automationId: id }, ["automationId"]),
       operationOnly("create", {
-        title: id, enabled: { type: "boolean" }, cron: id, timezone: id, model: id,
+        title: id, enabled: { type: "boolean" }, cron: id, timezone: id, model: id, agentTypeId: id,
         thinkingLevel: { enum: ["off", "low", "medium", "high"] }, prompt: { type: "string" },
       }, ["title", "cron", "timezone", "model"]),
       {
         ...operationOnly("update", {
-          automationId: id, title: id, enabled: { type: "boolean" }, cron: id, timezone: id, model: id,
+          automationId: id, title: id, enabled: { type: "boolean" }, cron: id, timezone: id, model: id, agentTypeId: id,
           thinkingLevel: { enum: ["off", "low", "medium", "high"] }, prompt: { type: "string" },
         }, ["automationId"]),
-        anyOf: ["title", "enabled", "cron", "timezone", "model", "thinkingLevel", "prompt"].map((field) => ({ required: [field] })),
+        anyOf: ["title", "enabled", "cron", "timezone", "model", "agentTypeId", "thinkingLevel", "prompt"].map((field) => ({ required: [field] })),
       },
       operationOnly("pause", { automationId: id }, ["automationId"]),
       operationOnly("resume", { automationId: id }, ["automationId"]),

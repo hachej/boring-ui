@@ -11,6 +11,11 @@ const FLEET_CONFIG_PATH = resolve(FIXTURE_ROOT, 'factory', 'fleet.yaml')
 const POLICY_PATH = resolve(FIXTURE_ROOT, 'factory', 'policy.yaml')
 const SKILLS_ROOT = resolve(FIXTURE_ROOT, 'skills')
 
+// Plugin preflight issue codes are workspace-owned string literals (see
+// packages/workspace/src/server/agentPlugins/scan.ts), not agent ErrorCode
+// enum members; hoisted so the fixture uses a named constant.
+const PREFLIGHT_INVALID_PLUGIN_METADATA = 'INVALID_PLUGIN_METADATA'
+
 function descriptor(
   directory: string,
   definitionId: string,
@@ -105,7 +110,7 @@ describe('loadConfiguredAgentFleet', () => {
       ...options([alpha, {
         ...alpha,
         rootDir: resolve(PERSONAS_DIR, 'broken'),
-        preflight: { ok: false, errors: [{ code: 'INVALID_PLUGIN_METADATA', message: 'fixture preflight failure' }] },
+        preflight: { ok: false, errors: [{ code: PREFLIGHT_INVALID_PLUGIN_METADATA, message: 'fixture preflight failure' }] },
       }]),
       env: {},
     })

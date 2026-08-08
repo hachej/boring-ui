@@ -1150,7 +1150,7 @@ describe("WorkspaceAgentFront", () => {
     await user.click(within(appNav).getByText("Second session"))
 
     expect(onSwitchSession).toHaveBeenCalledWith("s2", "default")
-    expect(document.querySelector(`[data-boring-workspace-part="${part}"]`)).toBeNull()
+    await waitFor(() => expect(document.querySelector(`[data-boring-workspace-part="${part}"]`)).toBeNull())
     expect(visibleChatSessionIds()).toEqual(["s2"])
   })
 
@@ -1185,7 +1185,7 @@ describe("WorkspaceAgentFront", () => {
     await user.click(within(appNav).getByText("First session"))
 
     expect(onSwitchSession).toHaveBeenCalledWith("s1", "default")
-    expect(document.querySelector('[data-boring-workspace-part="skills-page"]')).toBeNull()
+    await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="skills-page"]')).toBeNull())
   })
 
   it("opens Skills as a chat overlay and uses the UI bridge to open a skill", async () => {
@@ -1255,12 +1255,12 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByText("Skills").closest("header")?.className).not.toContain("pl-12")
 
       await user.click(screen.getByRole("button", { name: "Close skills" }))
-      expect(screen.queryByText("/review")).not.toBeInTheDocument()
+      await waitFor(() => expect(screen.queryByText("/review")).not.toBeInTheDocument())
       await user.click(screen.getByRole("button", { name: "Open app navigation" }))
       await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
       await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
       await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
-      expect(screen.queryByText("/review")).not.toBeInTheDocument()
+      await waitFor(() => expect(screen.queryByText("/review")).not.toBeInTheDocument())
 
     } finally {
       window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
