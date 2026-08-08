@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ERROR_CODES } from '../../../shared/errors.js'
 import type { TelemetrySink } from '../../../shared/telemetry.js'
 import type { CoreConfig } from '../../../shared/types.js'
+import { TRUSTED_SIGNUP_HOSTNAME_HEADER } from '../../../server/signupAgentDefaults.js'
 
 const agentMock = vi.hoisted(() => ({
   registerOptions: [] as Array<Record<string, unknown>>,
@@ -180,6 +181,61 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
   afterEach(() => {
     resetTelemetryEnv()
     vi.clearAllMocks()
+  })
+
+  it('fails boot when a trusted signup mapping names an unknown fleet member', async () => {
+    await expect(createCoreWorkspaceAgentServer({
+      serveFrontend: false,
+      config: {
+        appId: 'test-app',
+        cors: { origins: ['http://localhost:3000'], credentials: true },
+        auth: { url: 'http://localhost:3000' },
+        encryption: { workspaceSettingsKey: 'test-key' },
+        stores: 'postgres',
+        signupAgentDefaults: { 'legal.example': 'ghost-agent' },
+      } as CoreConfig,
+      agents: [{ agentTypeId: 'default', legacyDefault: true }],
+    })).rejects.toMatchObject({
+      code: ERROR_CODES.INVALID_SIGNUP_AGENT_DEFAULTS,
+    })
+    expect(agentMock.registerOptions).toHaveLength(0)
+  })
+
+  it('fails boot for malformed programmatic signup-host config', async () => {
+    await expect(createCoreWorkspaceAgentServer({
+      serveFrontend: false,
+      config: {
+        appId: 'test-app',
+        cors: { origins: ['http://localhost:3000'], credentials: true },
+        auth: { url: 'http://localhost:3000' },
+        encryption: { workspaceSettingsKey: 'test-key' },
+        stores: 'postgres',
+        signupAgentDefaults: { '*.example': 'default' },
+      } as CoreConfig,
+      agents: [{ agentTypeId: 'default', legacyDefault: true }],
+    })).rejects.toMatchObject({
+      code: ERROR_CODES.INVALID_SIGNUP_AGENT_DEFAULTS,
+    })
+    expect(agentMock.registerOptions).toHaveLength(0)
+  })
+
+  it('fails boot when signup mapping is combined with legacy unsafe proxy trust', async () => {
+    await expect(createCoreWorkspaceAgentServer({
+      serveFrontend: false,
+      config: {
+        appId: 'test-app',
+        cors: { origins: ['http://localhost:3000'], credentials: true },
+        auth: { url: 'http://localhost:3000' },
+        encryption: { workspaceSettingsKey: 'test-key' },
+        stores: 'postgres',
+        security: { csp: { enabled: false }, trustedProxy: 'legacy-unsafe' },
+        signupAgentDefaults: { 'legal.example': 'default' },
+      } as CoreConfig,
+      agents: [{ agentTypeId: 'default', legacyDefault: true }],
+    })).rejects.toMatchObject({
+      code: ERROR_CODES.INVALID_SIGNUP_AGENT_DEFAULTS,
+    })
+    expect(agentMock.registerOptions).toHaveLength(0)
   })
 
   it('uses the core DB telemetry env helper by default and passes the sink to agent routes', async () => {
@@ -356,6 +412,34 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
       const forwarded = handler.mock.calls[0]?.[0]
       expect(forwarded).toBeInstanceOf(Request)
       expect(forwarded?.headers.get('x-boring-internal-request-workspace')).toBe(encodeURIComponent('workspace-保险'))
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('overwrites the private signup hostname with Fastify trusted-host resolution', async () => {
+    const app = await createCoreWorkspaceAgentServer({
+      serveFrontend: false,
+      telemetry: { capture: vi.fn() },
+    })
+    const handler = vi.fn(async (_request: Request) => new Response('ok'))
+    app.auth.handler = handler as typeof app.auth.handler
+
+    try {
+      await app.inject({
+        method: 'POST',
+        url: '/auth/test',
+        headers: {
+          host: 'legal.example:443',
+          [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'attacker.example',
+          'x-forwarded-host': 'attacker.example',
+        },
+        payload: {},
+      })
+
+      const forwarded = handler.mock.calls[0]?.[0]
+      expect(forwarded).toBeInstanceOf(Request)
+      expect(forwarded?.headers.get(TRUSTED_SIGNUP_HOSTNAME_HEADER)).toBe('legal.example')
     } finally {
       await app.close()
     }

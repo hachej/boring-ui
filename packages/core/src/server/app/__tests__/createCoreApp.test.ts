@@ -142,6 +142,32 @@ describe('createCoreApp', () => {
     }
   })
 
+  it('resolves forwarded hostnames only through the bounded trusted proxy policy', async () => {
+    const config: CoreConfig = {
+      ...TEST_CONFIG,
+      security: { ...TEST_CONFIG.security!, trustedProxy: { cidrs: ['192.168.255.250/32'], hops: 1 } },
+    }
+    app = await createCoreApp(config, { manageShutdown: false })
+    app.get('/hostname', async (req) => ({ hostname: req.hostname }))
+    await app.ready()
+
+    const trusted = await app.inject({
+      method: 'GET',
+      url: '/hostname',
+      remoteAddress: '192.168.255.250',
+      headers: { host: 'internal.example', 'x-forwarded-host': 'legal.example' },
+    })
+    const untrusted = await app.inject({
+      method: 'GET',
+      url: '/hostname',
+      remoteAddress: '192.168.255.251',
+      headers: { host: 'internal.example', 'x-forwarded-host': 'legal.example' },
+    })
+
+    expect(JSON.parse(trusted.body).hostname).toBe('legal.example')
+    expect(JSON.parse(untrusted.body).hostname).toBe('internal.example')
+  })
+
   it('applies CORS headers for allowed origins', async () => {
     app = await createCoreApp(TEST_CONFIG, { manageShutdown: false })
     app.get('/test', async () => ({ ok: true }))
