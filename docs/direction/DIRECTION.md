@@ -195,7 +195,7 @@ this file's waves is not dispatchable without an owner amendment here.
 Everything above is the owner's last ratified direction (2026-07-27, refreshed
 2026-07-31 with §Lane reality). This section records what has ACTUALLY landed
 since, and one direction proposal. Companion analysis:
-[`docs/issues/391/product-state-2026-08-08.md`](issues/391/product-state-2026-08-08.md).
+[`docs/direction/state/2026-08-08.md`](state/2026-08-08.md).
 
 ### Governance fix (this PR)
 
@@ -242,4 +242,4 @@ confirmation. If ratified, the wave sequencing above gains a **Wave 1.5 —
 first shipped vertical agent**: merge the landing/default-agent validation
 queue, then ship one named agent end-to-end on a real hostname before any
 further Wave 3/4 expansion. Gap lists and PR estimates:
-[`product-state-2026-08-08.md`](issues/391/product-state-2026-08-08.md) §6.
+[`product-state-2026-08-08.md`](state/2026-08-08.md) §6.
