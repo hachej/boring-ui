@@ -108,14 +108,14 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
           }
           const text = (selector: string) => [...document.querySelectorAll(selector)].find(visible)?.textContent?.replace(/\s+/g, " ").trim() ?? null
           const agentTrees = [...document.querySelectorAll('[data-boring-workspace-part="app-left-agent-tree"]')]
-          const actionButtons = agentTrees.flatMap((tree) => [...tree.querySelectorAll<HTMLButtonElement>('button[aria-label^="New chat with"], button[aria-label^="Quick chat with"], button[aria-label^="Settings for"]')])
+          const actionButtons = agentTrees.flatMap((tree) => [...tree.querySelectorAll<HTMLButtonElement>('button[aria-label^="New chat with"], button[aria-label^="New chat options for"], button[aria-label^="Quick chat with"], button[aria-label^="Settings for"]')])
           const controls = agentTrees.flatMap((tree) => [...tree.querySelectorAll<HTMLButtonElement>("button")]).filter(visible)
           const pinned = document.querySelector('section[aria-label="Pinned chats"]')
           const pinnedRow = pinned?.querySelector('[data-boring-workspace-part="app-session-row"]')
           const provenance = pinnedRow?.querySelector(".app-left-session-trailing")?.textContent?.replace(/\s+/g, " ").trim() || null
           return {
             agentCount: agentTrees.length,
-            agentHeading: text('section[aria-label="Agents"] > div > span:first-child'),
+            agentHeading: text('[data-boring-workspace-part="app-left-agents-heading"]'),
             agentSeatSummary: text('section[aria-label="Agents"] > div span:last-child'),
             agentFilterCount: document.querySelectorAll('[aria-label="Filter Agents"]').length,
             legacyFilterCount: document.querySelectorAll('[aria-label="Filter chats by Agent"]').length,

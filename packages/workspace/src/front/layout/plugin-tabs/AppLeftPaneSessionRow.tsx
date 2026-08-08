@@ -215,7 +215,7 @@ export function AppSessionRow({
               <span
                 data-boring-workspace-part="app-session-age"
                 title={exactUpdatedAt}
-                className="pointer-events-auto shrink-0 pl-1 text-[10px] tabular-nums leading-none text-muted-foreground/70"
+                className="pointer-events-auto shrink-0 pl-1 text-[11px] tabular-nums leading-none text-muted-foreground"
               >
                 {age}
               </span>

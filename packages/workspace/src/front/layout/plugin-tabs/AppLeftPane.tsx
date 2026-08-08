@@ -535,7 +535,7 @@ export function AppLeftPane({
             strokeWidth={1.75}
             aria-hidden="true"
           />
-          <span>Agents</span>
+          <span data-boring-workspace-part="app-left-agents-heading">Agents</span>
           <span className="ml-0.5 shrink-0 text-[10px] font-normal tabular-nums tracking-normal text-muted-foreground/75">{agents.length}</span>
         </button>
         {agentsSectionOpen && (agentFilterOpen || agentFilter.trim() !== "") ? (
