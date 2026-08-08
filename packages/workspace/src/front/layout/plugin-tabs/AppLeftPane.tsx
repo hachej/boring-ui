@@ -115,6 +115,8 @@ export interface AppLeftPaneProps {
   onOpenCommandPalette: () => void
   onSwitchSession: (id: string, agentTypeId?: string) => void
   onOpenSessionAsPane: (id: string, agentTypeId?: string) => void
+  /** Opens an existing chat in the detached quick-chat overlay. */
+  onOpenSessionDetached?: (id: string, agentTypeId?: string) => void
   onToggleSessionPinned: (id: string, agentTypeId?: string) => void
   onDeleteSession?: (id: string, agentTypeId?: string) => unknown
   onRenameSession?: (id: string, title: string, agentTypeId?: string) => void | Promise<unknown>
@@ -210,6 +212,7 @@ export function AppLeftPane({
   onOpenCommandPalette,
   onSwitchSession,
   onOpenSessionAsPane,
+  onOpenSessionDetached,
   onToggleSessionPinned,
   onDeleteSession,
   onRenameSession,
@@ -409,6 +412,9 @@ export function AppLeftPane({
             ? () => onOpenSessionAsPane(session.id, session.agentTypeId)
             : () => onOpenSessionAsPane(session.id)
           : () => onOpenProjectSession?.(projectId, session.id)}
+        onOpenDetached={onOpenSessionDetached && isActiveProjectSession
+          ? () => onOpenSessionDetached(session.id, session.agentTypeId)
+          : undefined}
         onTogglePinned={session.agentTypeId
           ? () => onToggleSessionPinned(session.id, session.agentTypeId)
           : () => onToggleSessionPinned(session.id)}
@@ -441,6 +447,12 @@ export function AppLeftPane({
         label={agent.label}
         description={agent.description}
         sessionCount={sessionCountByAgent.get(agent.agentTypeId) ?? 0}
+        workingCount={sessions.reduce((count, session) => (
+          session.agentTypeId === agent.agentTypeId && workingSessionIds.has(workspaceSessionKeyFor(session)) ? count + 1 : count
+        ), 0)}
+        attentionCount={sessions.reduce((count, session) => (
+          session.agentTypeId === agent.agentTypeId && sessionBadges.has(workspaceSessionKeyFor(session)) ? count + 1 : count
+        ), 0)}
         sessionsStatus={agent.sessionsStatus}
         filtered={chatsAgentLens === agent.agentTypeId}
         expandable={nestedAgentChats}

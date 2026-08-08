@@ -30,8 +30,10 @@ describe("AppSessionRow native actions", () => {
   it("keeps session mutations in one actions menu", () => {
     const onDelete = vi.fn()
     row({ onDelete, onRename: vi.fn() })
+    // Split moved to a direct hover action; the menu must not repeat it.
+    expect(screen.getByRole("button", { name: /in a split pane$/ })).toBeInTheDocument()
     openMenu()
-    expect(screen.getByText("Open in new chat pane")).toBeInTheDocument()
+    expect(screen.queryByText("Open in new chat pane")).not.toBeInTheDocument()
     expect(screen.getByText("Pin chat")).toBeInTheDocument()
     expect(screen.getByText("Copy session ID")).toBeInTheDocument()
     expect(screen.getByText("Rename")).toBeInTheDocument()

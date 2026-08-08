@@ -2644,6 +2644,13 @@ export function WorkspaceAgentFront<
           onOpenCommandPalette={openCommandPalette}
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}
+          onOpenSessionDetached={(sessionId, ownerAgentTypeId) => {
+            setLeftOverlay(null)
+            shellCapabilitiesHost.shellCapabilities.openDetachedChat(
+              { sessionId, ...(ownerAgentTypeId ? { agentTypeId: ownerAgentTypeId } : {}) },
+              { composingEnabled: true },
+            )
+          }}
           onToggleSessionPinned={toggleSessionPinned}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
           onRenameSession={sessionApi?.rename ? resolvedRename : undefined}

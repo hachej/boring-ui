@@ -111,9 +111,14 @@ describe("AppLeftPane", () => {
 
     await user.click(screen.getByRole("button", { name: "New chat with Boring Beta" }))
     expect(handlers.onCreateSession).toHaveBeenCalledWith("beta")
-    await user.click(screen.getByRole("button", { name: "New chat with Boring Beta in split pane" }))
+    // Placement variants live behind the single caret menu (owner: three
+    // creation icons were too many).
+    expect(screen.queryByRole("button", { name: "New chat with Boring Beta in split pane" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "New chat options for Boring Beta" }))
+    await user.click(screen.getByText("New chat in split pane"))
     expect(handlers.onCreateSplitSession).toHaveBeenCalledWith("beta")
-    await user.click(screen.getByRole("button", { name: "Quick chat with Boring Beta" }))
+    await user.click(screen.getByRole("button", { name: "New chat options for Boring Beta" }))
+    await user.click(screen.getByText("Quick chat"))
     expect(handlers.onCreatePopoverSession).toHaveBeenCalledWith("beta")
     await user.click(screen.getByRole("button", { name: "Settings for Boring Beta" }))
     expect(handlers.onOpenAgentSettings).toHaveBeenCalledWith("beta")
@@ -179,6 +184,35 @@ describe("AppLeftPane", () => {
     const activeRow = document.querySelector('[data-boring-session-state="active"]')
     expect(activeRow?.querySelector('[data-boring-workspace-part="app-session-active-rail"]')).toBeTruthy()
     expect(screen.queryByTitle("Active session")).not.toBeInTheDocument()
+  })
+
+  it("aggregates working and attention counts on the Agent card", async () => {
+    renderFleetPane()
+
+    expect(document.querySelector('[data-boring-workspace-part="agent-card-working-count"]')).toBeNull()
+    act(() => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+      detail: { sessionId: "alpha-two", agentTypeId: "alpha", working: true },
+    })))
+    await waitFor(() => {
+      const workingCount = document.querySelector('[data-boring-workspace-part="agent-card-working-count"]')
+      expect(workingCount?.textContent).toContain("1")
+    })
+  })
+
+  it("shows a quiet relative age on idle session rows with the exact time on hover", () => {
+    const twoHoursAgo = Date.now() - 2 * 3_600_000
+    renderFleetPane({
+      sessions: [
+        { id: "alpha-one", agentTypeId: "alpha", title: "Alpha session", updatedAt: twoHoursAgo },
+        { id: "alpha-two", agentTypeId: "alpha", title: "Alpha follow-up", updatedAt: twoHoursAgo },
+        { id: "beta-one", agentTypeId: "beta", title: "Beta session" },
+      ],
+    })
+
+    const age = document.querySelector('[data-boring-workspace-part="app-session-age"]')
+    expect(age?.textContent).toBe("2h")
+    const row = age?.closest("button")
+    expect(row?.getAttribute("title")).toContain("Last activity:")
   })
 
   it("shows working state on fleet rows and filters cards by name", async () => {

@@ -840,8 +840,8 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).getByText("Pinned")).toBeInTheDocument()
     expect(within(appNav).getByText("Chats")).toBeInTheDocument()
 
-    await user.click(within(appNav).getByRole("button", { name: "Chat actions for Third session" }))
-    await user.click(screen.getByRole("menuitem", { name: "Open in new chat pane" }))
+    // Split is a direct hover action now, not a menu item.
+    await user.click(within(appNav).getByRole("button", { name: "Open Third session in a split pane" }))
     expect(onSwitchSession).toHaveBeenCalledWith("s3", "default")
 
     await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
@@ -1063,13 +1063,12 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).getByText("Beta kickoff")).toBeInTheDocument()
     expect(within(appNav).queryByRole("button", { name: "Pin Beta kickoff" })).not.toBeInTheDocument()
     expect(within(appNav).getByText("Active project session")).toBeInTheDocument()
-    // The active session is already open, so its menu offers pinning but no split action.
+    // The active session is already open, so it offers pinning but no split action.
+    expect(within(appNav).queryByRole("button", { name: "Open Active project session in a split pane" })).not.toBeInTheDocument()
     await user.click(within(appNav).getByRole("button", { name: "Chat actions for Active project session" }))
-    expect(screen.queryByRole("menuitem", { name: "Open in new chat pane" })).not.toBeInTheDocument()
     await user.click(screen.getByRole("menuitem", { name: "Pin chat" }))
-    // A session that isn't open still offers the split action.
-    await user.click(within(appNav).getByRole("button", { name: "Chat actions for Pinned session" }))
-    await user.click(screen.getByRole("menuitem", { name: "Open in new chat pane" }))
+    // A session that isn't open still offers the direct split action.
+    await user.click(within(appNav).getByRole("button", { name: "Open Pinned session in a split pane" }))
     // Restore the active project session to its project tree before collapsing it.
     await user.click(within(appNav).getByRole("button", { name: "Chat actions for Active project session" }))
     await user.click(screen.getByRole("menuitem", { name: "Unpin chat" }))

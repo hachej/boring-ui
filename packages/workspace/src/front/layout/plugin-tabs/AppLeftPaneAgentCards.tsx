@@ -1,6 +1,12 @@
 "use client"
 
-import { ChevronRight, Columns2, ListFilter, Plus, Settings, Zap } from "lucide-react"
+import { ChevronDown, ChevronRight, Columns2, ListFilter, Plus, Settings, Zap } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 
 /** Agent labels are workspace-branded upstream; the pane shows the short form. */
@@ -13,6 +19,10 @@ export interface AppLeftPaneAgentCardProps {
   label: string
   description?: string
   sessionCount: number
+  /** Chats currently working (streaming/executing) for this Agent. */
+  workingCount?: number
+  /** Chats waiting on the user (question/review/approval badges). */
+  attentionCount?: number
   sessionsStatus?: "loading" | "loaded" | "error"
   /** The Chats lens is an optional filter (multi-project tree only). */
   filtered: boolean
@@ -41,6 +51,8 @@ export function AppLeftPaneAgentCard({
   label,
   description,
   sessionCount,
+  workingCount = 0,
+  attentionCount = 0,
   sessionsStatus,
   filtered,
   expandable = false,
@@ -100,6 +112,30 @@ export function AppLeftPaneAgentCard({
         >
           {sessionsStatus === "error" ? "!" : sessionCount}
         </span>
+        {/* Aggregate liveliness: quiet dot+count pairs so a collapsed Agent
+            still tells you something is running or waiting on you. */}
+        {workingCount > 0 ? (
+          <span
+            data-boring-workspace-part="agent-card-working-count"
+            title={`${workingCount} ${workingCount === 1 ? "chat is" : "chats are"} working`}
+            className="flex shrink-0 items-center gap-0.5 pl-1 text-[10px] tabular-nums leading-4 text-[color:var(--accent)]"
+          >
+            <span className="size-1.5 animate-pulse rounded-full bg-[color:var(--accent)] motion-reduce:animate-none" aria-hidden="true" />
+            {workingCount}
+            <span className="sr-only">working</span>
+          </span>
+        ) : null}
+        {attentionCount > 0 ? (
+          <span
+            data-boring-workspace-part="agent-card-attention-count"
+            title={`${attentionCount} ${attentionCount === 1 ? "chat needs" : "chats need"} your input`}
+            className="flex shrink-0 items-center gap-0.5 pl-1 text-[10px] tabular-nums leading-4 text-amber-700 dark:text-amber-300"
+          >
+            <span className="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+            {attentionCount}
+            <span className="sr-only">waiting for you</span>
+          </span>
+        ) : null}
       </button>
       {/*
         Secondary actions collapse to zero width off-hover so the Agent label
@@ -123,30 +159,7 @@ export function AppLeftPaneAgentCard({
           <ListFilter className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
         </button>
         ) : null}
-        {onCreateSplitSession ? (
-          <button
-            type="button"
-            aria-label={`New chat with ${label} in split pane`}
-            title="New chat in split pane"
-            data-boring-mobile-dismiss="true"
-            onClick={onCreateSplitSession}
-            className={cn(cardActionClassName, "app-left-agent-card-optional")}
-          >
-            <Columns2 className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-          </button>
-        ) : null}
-        {onCreatePopoverSession ? (
-          <button
-            type="button"
-            aria-label={`Quick chat with ${label}`}
-            title="Quick chat"
-            data-boring-mobile-dismiss="true"
-            onClick={onCreatePopoverSession}
-            className={cn(cardActionClassName, "app-left-agent-card-optional")}
-          >
-            <Zap className="size-3.5" strokeWidth={1.85} aria-hidden="true" />
-          </button>
-        ) : null}
+
         {onOpenSettings ? (
           <button
             type="button"
@@ -158,6 +171,38 @@ export function AppLeftPaneAgentCard({
           >
             <Settings className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
           </button>
+        ) : null}
+        {onCreateSplitSession || onCreatePopoverSession ? (
+          // One "+" creates the default chat; this caret is the single place
+          // for the placement variants (owner: three placement icons were too
+          // many — compact into one affordance, keep the options).
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label={`New chat options for ${label}`}
+                title="More ways to start a chat"
+                className={cardActionClassName}
+              >
+                <ChevronDown className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-44">
+              <DropdownMenuItem onSelect={() => onCreateSession()}>
+                <Plus className="h-3.5 w-3.5" /> New chat
+              </DropdownMenuItem>
+              {onCreateSplitSession ? (
+                <DropdownMenuItem onSelect={() => onCreateSplitSession()}>
+                  <Columns2 className="h-3.5 w-3.5" /> New chat in split pane
+                </DropdownMenuItem>
+              ) : null}
+              {onCreatePopoverSession ? (
+                <DropdownMenuItem onSelect={() => onCreatePopoverSession()}>
+                  <Zap className="h-3.5 w-3.5" /> Quick chat
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : null}
       </span>
       {/* The "+" is the card's primary affordance, so it never hides. */}
