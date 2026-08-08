@@ -80,9 +80,11 @@ function collectPins(doc) {
     throw new Error(`${pinSitePath}: expected a top-level "seats" sequence`)
   }
   const pins = []
+  const seatEntries = []
   for (const seatNode of seats.items) {
     const seat = seatNode.get('seat')
     const agentTypeId = seatNode.get('agentTypeId')
+    seatEntries.push({ seat, agentTypeId, names: [] })
     const skills = seatNode.get('skills', true)
     if (!skills || typeof skills.items !== 'object') {
       throw new Error(`${pinSitePath}: seat "${seat}" is missing a "skills" sequence`)
@@ -96,26 +98,33 @@ function collectPins(doc) {
       }
       if (seenNames.has(name)) throw new Error(`${pinSitePath}: seat "${seat}" has duplicate skill pin '${name}'`)
       seenNames.add(name)
+      seatEntries.at(-1).names.push(name)
       pins.push({ seat, agentTypeId, name, digest, node: skillNode })
     }
   }
-  return pins
+  return { pins, seats: seatEntries }
 }
 
 async function main() {
   const mode = process.argv.includes('--write') ? 'write' : 'check'
   const source = await readFile(pinSiteUrl, 'utf8')
   const doc = parseDocument(source)
-  const pins = collectPins(doc)
+  const { pins, seats } = collectPins(doc)
   const personaSkills = await declaredPersonaSkills()
   const expectedSkills = new Set([...personaSkills.values()].flatMap((persona) => persona.skills))
 
-  for (const [definitionId, persona] of personaSkills) {
-    const pinned = pins.filter((pin) => pin.agentTypeId === definitionId).map((pin) => pin.name)
-    const missing = persona.skills.filter((name) => !pinned.includes(name))
-    const unexpected = pinned.filter((name) => !persona.skills.includes(name))
+  // Per SEAT, never aggregated per agentTypeId: the runtime loader compares each
+  // seat's pin set against its package pi.skills independently, so two seats of
+  // the same persona holding complementary incomplete pin sets must fail here
+  // exactly as they would at boot. Checking every declared seat (not only seats
+  // that produced pins) also closes the zero-skill unknown-persona escape.
+  for (const seat of seats) {
+    const persona = personaSkills.get(seat.agentTypeId)
+    if (!persona) throw new Error(`${pinSitePath}: seat '${seat.seat}' names unknown persona '${seat.agentTypeId}'`)
+    const missing = persona.skills.filter((name) => !seat.names.includes(name))
+    const unexpected = seat.names.filter((name) => !persona.skills.includes(name))
     if (missing.length > 0 || unexpected.length > 0) {
-      throw new Error(`${pinSitePath}: pins for '${definitionId}' do not match package pi.skills — missing=${JSON.stringify(missing)} unexpected=${JSON.stringify(unexpected)}`)
+      throw new Error(`${pinSitePath}: seat '${seat.seat}' pins do not match '${seat.agentTypeId}' package pi.skills — missing=${JSON.stringify(missing)} unexpected=${JSON.stringify(unexpected)}`)
     }
   }
 

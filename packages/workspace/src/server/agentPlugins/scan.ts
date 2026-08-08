@@ -77,29 +77,44 @@ function hasPluginMetadata(pkg: Record<string, unknown>): boolean {
   return pkg.boring !== undefined || pkg.pi !== undefined
 }
 
-function agentPackageManifest(raw: Record<string, unknown>): DiscoveredBoringAgentPackage["manifest"] | undefined {
+/**
+ * Projects an agent-package manifest.
+ *
+ * A package that claims a `boring.agent.definitionId` is always projected, even
+ * when the rest of its agent manifest is malformed: dropping it here would hide
+ * the claim from downstream `AGENT_DEFINITION_ID_CONFLICT` detection, letting a
+ * malformed duplicate claimant fail open (the valid package would boot as if it
+ * were the sole claimant). Malformed claimants are returned with `manifestIssues`
+ * so the caller can mark their preflight failed while keeping the claim visible.
+ */
+function agentPackageManifest(
+  raw: Record<string, unknown>,
+): { manifest: DiscoveredBoringAgentPackage["manifest"]; manifestIssues: string[] } | undefined {
   if (!isRecord(raw.boring) || !isRecord(raw.boring.agent)) return undefined
   const agent = raw.boring.agent
-  if (
-    typeof agent.definitionId !== "string" ||
-    typeof agent.version !== "string" ||
-    typeof agent.instructionsRef !== "string"
-  ) return undefined
+  if (typeof agent.definitionId !== "string" || !agent.definitionId.trim()) return undefined
+  const manifestIssues: string[] = []
+  if (typeof agent.version !== "string") manifestIssues.push("boring.agent.version: must be a string")
+  if (typeof agent.instructionsRef !== "string") manifestIssues.push("boring.agent.instructionsRef: must be a string")
   const rawSkills = isRecord(raw.pi) ? raw.pi.skills : undefined
-  if (rawSkills !== undefined && (!Array.isArray(rawSkills) || rawSkills.some((skill) => typeof skill !== "string"))) {
-    return undefined
-  }
+  const skillsValid =
+    rawSkills === undefined ||
+    (Array.isArray(rawSkills) && rawSkills.every((skill) => typeof skill === "string"))
+  if (!skillsValid) manifestIssues.push("pi.skills: must be an array of strings")
   return {
-    boring: {
-      agent: {
-        definitionId: agent.definitionId,
-        version: agent.version,
-        ...(typeof agent.label === "string" ? { label: agent.label } : {}),
-        ...(typeof agent.description === "string" ? { description: agent.description } : {}),
-        instructionsRef: agent.instructionsRef,
+    manifest: {
+      boring: {
+        agent: {
+          definitionId: agent.definitionId,
+          version: typeof agent.version === "string" ? agent.version : "",
+          ...(typeof agent.label === "string" ? { label: agent.label } : {}),
+          ...(typeof agent.description === "string" ? { description: agent.description } : {}),
+          instructionsRef: typeof agent.instructionsRef === "string" ? agent.instructionsRef : "",
+        },
       },
+      ...(skillsValid && rawSkills ? { pi: { skills: rawSkills as string[] } } : {}),
     },
-    ...(rawSkills ? { pi: { skills: rawSkills as string[] } } : {}),
+    manifestIssues,
   }
 }
 
@@ -346,11 +361,15 @@ export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): Boring
   }
 
   const agentPackages = [...rawPackages].flatMap(([rootDir, raw]) => {
-    const manifest = agentPackageManifest(raw)
-    if (!manifest) return []
-    const packageErrors = errors
-      .filter((error) => resolve(error.pluginDir) === resolve(rootDir))
-      .map((error) => ({ code: error.code, message: error.message }))
+    const projected = agentPackageManifest(raw)
+    if (!projected) return []
+    const { manifest, manifestIssues } = projected
+    const packageErrors = [
+      ...errors
+        .filter((error) => resolve(error.pluginDir) === resolve(rootDir))
+        .map((error) => ({ code: error.code, message: error.message })),
+      ...manifestIssues.map((message) => ({ code: "INVALID_PLUGIN_METADATA" as const, message })),
+    ]
     return [{
       rootDir,
       manifest,

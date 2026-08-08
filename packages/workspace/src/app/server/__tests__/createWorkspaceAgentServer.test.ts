@@ -1602,6 +1602,35 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
+  test("BORING_AGENT_FLEET off: workspace host seam stays on the legacy single default agent and never probes the fleet root", async () => {
+    const workspaceRoot = await makeTempDir("boring-agent-fleet-off-")
+    const previousFlag = process.env.BORING_AGENT_FLEET
+    delete process.env.BORING_AGENT_FLEET
+    let app: Awaited<ReturnType<typeof createWorkspaceAgentServer>> | undefined
+    try {
+      // A fleetRepositoryRoot that does not exist: with the flag off the seam
+      // must not evaluate it (no eager fleet discovery / cwd fallback) — boot
+      // still yields the single legacy default agent (gh-1107 slice 1 fix
+      // round: flag-off purity extended to the workspace host seam).
+      app = await createWorkspaceAgentServer({
+        workspaceRoot,
+        fleetRepositoryRoot: "/does/not/exist/flag-off",
+        logger: false,
+        provisionWorkspace: false,
+        externalPlugins: false,
+      })
+      const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
+        agents: readonly { agentTypeId: string; legacyDefault?: boolean }[]
+      }
+      expect(hostOptions.agents.map((agent) => agent.agentTypeId)).toEqual(["default"])
+      expect(hostOptions.agents[0]?.legacyDefault).toBe(true)
+    } finally {
+      if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
+      else process.env.BORING_AGENT_FLEET = previousFlag
+      if (app) await app.close()
+    }
+  })
+
   test.each([
     {
       name: "unknown plugin ID",
