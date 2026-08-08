@@ -136,7 +136,7 @@ test('createStandaloneAgentHostApp stamps the explicit caller runtime host over 
   })
 
   try {
-    expect(callerBuildBwrapArgs).toHaveBeenCalledWith(workspaceRoot)
+    expect(callerBuildBwrapArgs).toHaveBeenCalledWith(workspaceRoot, { sandboxHome: '/workspace' })
     expect(adapterBuildBwrapArgs).not.toHaveBeenCalled()
   } finally {
     await app.close()
@@ -629,6 +629,7 @@ test('createStandaloneAgentHostApp exposes static filesystem bindings on files a
           delete: false,
           move: false,
           mkdir: false,
+          execute: false,
         },
       },
     ])
