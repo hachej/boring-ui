@@ -336,6 +336,65 @@ export function describeWorkspaceStoreConformance(
     )
 
     it(
+      'persists defaultAgentTypeId at initialization and defaults to null (D28)',
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
+        const { workspaceStore, appId, users } = await setup()
+        const seated = await workspaceStore.create(users.owner.id, 'Seated WS', appId, {
+          defaultAgentTypeId: 'boring-v2',
+        })
+        expect(seated.defaultAgentTypeId).toBe('boring-v2')
+        expect((await workspaceStore.get(seated.id))?.defaultAgentTypeId).toBe('boring-v2')
+        expect((await workspaceStore.list(users.owner.id, appId))[0]?.defaultAgentTypeId).toBe('boring-v2')
+
+        const unseated = await workspaceStore.create(users.owner.id, 'Unseated WS', appId)
+        expect(unseated.defaultAgentTypeId ?? null).toBeNull()
+        expect((await workspaceStore.get(unseated.id))?.defaultAgentTypeId ?? null).toBeNull()
+        assertionPassed('default-agent-type-persisted-at-init')
+      }),
+    )
+
+    it(
+      'never rewrites an existing workspace defaultAgentTypeId implicitly (D28 write-once)',
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
+        const { workspaceStore, appId, users } = await setup()
+        const id = randomUUID()
+        await workspaceStore.create(users.owner.id, 'Write once', appId, {
+          id,
+          defaultAgentTypeId: 'boring-v2',
+        })
+        const recreated = await workspaceStore.create(users.owner.id, 'Write once', appId, {
+          id,
+          defaultAgentTypeId: 'other-seat',
+        })
+        expect(recreated.defaultAgentTypeId).toBe('boring-v2')
+
+        const updated = await workspaceStore.update(id, { name: 'Renamed' })
+        expect(updated).toMatchObject({ name: 'Renamed', defaultAgentTypeId: 'boring-v2' })
+        expect((await workspaceStore.get(id))?.defaultAgentTypeId).toBe('boring-v2')
+        assertionPassed('default-agent-type-write-once')
+      }),
+    )
+
+    it(
+      'rejects invalid defaultAgentTypeId at the trusted create seam with a stable code',
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
+        const { workspaceStore, appId, users } = await setup()
+        const invalidIds: unknown[] = ['', 'Default', '-seat', '0seat', 'seat_a', `a${'0'.repeat(63)}`]
+        for (const [index, defaultAgentTypeId] of invalidIds.entries()) {
+          await expect(workspaceStore.create(
+            users.owner.id,
+            `Invalid seat ${index}`,
+            appId,
+            { defaultAgentTypeId: defaultAgentTypeId as string },
+          )).rejects.toMatchObject({
+            code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID,
+          })
+        }
+        assertionPassed('default-agent-type-invalid-stable-code')
+      }),
+    )
+
+    it(
       'does not create workspaces as a side effect of store list or get',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()

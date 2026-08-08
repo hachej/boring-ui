@@ -96,7 +96,11 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
     }
 
     if (!inviteAccepted && !disableDefaultWorkspaceCreation) {
-      await workspaceStore.create(user.id, 'Default workspace', config.appId, { isDefault: true })
+      await workspaceStore.create(user.id, 'Default workspace', config.appId, {
+        isDefault: true,
+        // Decision 28: stamp the host default seat at initialization only.
+        ...(config.defaultAgentTypeId ? { defaultAgentTypeId: config.defaultAgentTypeId } : {}),
+      })
     }
 
     if (

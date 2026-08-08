@@ -50,6 +50,10 @@ export const coreConfigSchema = z.object({
   databaseUrl: z.string().nullable(),
   stores: z.enum(['postgres', 'local']),
 
+  // Decision 28: boot-time host default Agent seat, stamped onto workspaces
+  // at initialization. Same slug grammar as workspace type ids.
+  defaultAgentTypeId: z.string().regex(/^[a-z][a-z0-9-]{0,62}$/).optional(),
+
   cors: z.object({
     origins: z.array(z.string()),
     credentials: z.literal(true),
