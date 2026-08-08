@@ -82,6 +82,23 @@ export interface AgentHostRuntimeCapabilityBinding {
   readonly mcpGrantDiagnostics?: readonly McpGrantDiagnostic[]
 }
 
+/**
+ * User-facing "what can this agent do?" description, served without acquiring
+ * a runtime binding: everything here comes from the compiled fleet spec plus
+ * the MCP grant seam.
+ */
+export interface AgentHostAgentDescription {
+  readonly agentTypeId: string
+  readonly label: string
+  /** Authored agent instructions; null for the legacy default agent. */
+  readonly systemPrompt: string | null
+  /** Preferred model id from the agent definition, when pinned. */
+  readonly model: string | null
+  readonly plugins: readonly { readonly id: string }[]
+  /** MCP connectors this agent is actually granted (default-deny). */
+  readonly mcpServers: readonly { readonly id: string; readonly tools: readonly string[] }[]
+}
+
 export interface AgentHostRuntimeCapabilityProjection {
   readonly filterModels?: ModelsRoutesOptions['filterModels']
   readonly sessionChangesTracker?: SessionChangesTracker
@@ -96,6 +113,10 @@ export interface AgentHostRuntimeCapabilityProjection {
     readonly agentTypeId: string
     readonly sessionId?: string
   }): Promise<AgentHostRuntimeCapabilityBinding>
+  describeAgent(input: {
+    readonly request: FastifyRequest
+    readonly agentTypeId: string
+  }): Promise<AgentHostAgentDescription>
   reload(input: {
     readonly request: FastifyRequest
     readonly agentTypeId: string
@@ -243,6 +264,40 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
             : {}),
           userEmailVerified: user?.emailVerified === true,
         },
+      }
+    },
+    async describeAgent({ request, agentTypeId }) {
+      const { claim } = await authorize(request)
+      const spec = runtime.compiledById.get(agentTypeId)
+      if (!spec) {
+        throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
+      }
+      const legacy = 'legacyDefault' in spec
+      let mcpServers: AgentHostAgentDescription['mcpServers'] = []
+      if (mcpGrants) {
+        const refs = mcpGrants.getMcpServerRefs(agentTypeId) ?? []
+        if (refs.length > 0) {
+          const listed = await mcpGrants.store.listGrants(claim.workspaceScopeId)
+          const resolved = resolveAgentMcpGrants({
+            workspaceId: claim.workspaceScopeId,
+            agentTypeId,
+            mcpServerRefs: refs,
+            grants: listed.grants,
+            catalog: mcpGrants.catalog,
+          })
+          mcpServers = resolved.connectors.map((connector) => ({
+            id: connector.connectorId,
+            tools: connector.allowedTools,
+          }))
+        }
+      }
+      return {
+        agentTypeId,
+        label: legacy ? 'Agent' : spec.definition.label,
+        systemPrompt: legacy ? null : spec.definition.instructions,
+        model: legacy ? null : spec.model?.preferred ?? null,
+        plugins: legacy ? [] : (spec.plugins ?? []).map((plugin) => ({ id: plugin.name })),
+        mcpServers,
       }
     },
     async executeCommand({ request, agentTypeId, requestId, sessionId, name, args }) {
@@ -551,6 +606,19 @@ export function createAgentHostRuntimeCapabilityRoutes(
       authorizeRequest: async (request) => { await resolve(request, agentId(request)) },
       getTracker: async (request) => (await resolve(request, agentId(request))).readyTracker,
       registerStreamClose: projection.registerSubscription,
+    })
+
+    app.get('/api/v1/agents/:agentTypeId/describe', async (request, reply) => {
+      const value = params(AgentParams, request, reply)
+      if (!value) return
+      try {
+        return reply.code(200).send(await projection.describeAgent({
+          request,
+          agentTypeId: value.agentTypeId,
+        }))
+      } catch (error) {
+        return sendError(reply, error)
+      }
     })
 
     app.get('/api/v1/agents/:agentTypeId/commands', async (request, reply) => {

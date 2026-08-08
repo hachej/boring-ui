@@ -459,6 +459,28 @@
       "slice": 2
     },
     {
+      "id": "agent-describe",
+      "owner": "agent-host",
+      "auth": "authorized-scope",
+      "consumers": [
+        "Workspace AgentDetailsOverlay"
+      ],
+      "proof": [
+        "agent describe route tests",
+        "AgentDetailsOverlay front tests"
+      ],
+      "contract": {
+        "request": "Addressed agentTypeId path parameter; empty body.",
+        "response": "200 {agentTypeId,label,systemPrompt,plugins,mcpServers}; canonical Gateway error envelope for unknown agent or denied scope."
+      },
+      "current": [],
+      "final": [
+        "GET /api/v1/agents/:agentTypeId/describe"
+      ],
+      "disposition": "add",
+      "slice": 2
+    },
+    {
       "id": "session-changes",
       "owner": "agent-host",
       "auth": "authorized-scope",

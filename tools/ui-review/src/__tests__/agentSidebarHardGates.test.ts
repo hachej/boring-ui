@@ -30,7 +30,8 @@ function snapshot(requestFailures: AgentSidebarHardGateSnapshot["requestFailures
       nestedPinnedHasPin: false,
       detailOverlayCount: 0,
       detailTabCount: 0,
-      configurationHeadingCount: 0,
+      capabilityHeadingCount: 0,
+      legacyJargonCount: 0,
       undersizedAgentControls: [],
     },
   }

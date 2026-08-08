@@ -23,6 +23,7 @@ const FALLBACK_EXPECTED_ROUTES = [
   'GET /api/v1/agents/:agentTypeId/models',
   'GET /api/v1/agents/:agentTypeId/sessions/:sessionId/system-prompt',
   'GET /api/v1/agents/:agentTypeId/tools',
+  'GET /api/v1/agents/:agentTypeId/describe',
   'GET /api/v1/agents/:agentTypeId/sessions/:sessionId/changes',
   'GET /api/v1/agents/:agentTypeId/ready-status',
 ] as const

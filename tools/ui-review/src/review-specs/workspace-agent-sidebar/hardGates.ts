@@ -6,7 +6,14 @@ import {
 } from "../../core/contracts"
 import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 
-export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v4"
+// v5 unions two owner-ratified changes:
+// - Agent details became a capability inventory (Instructions / Knowledge /
+//   Skills / Tools / MCP access / Plugins / Defaults / System prompt), so the
+//   old "Configuration" heading gate becomes a capability-heading gate plus a
+//   jargon ban; the no-tabs invariant is kept.
+// - Agent rows expose "New chat" (+), the "..." options trigger holding the
+//   placement variants, and Settings; the action count recognises the trigger.
+export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v5"
 
 const KNOWN_ABORTED_REQUESTS: Array<{
   rationale: string
@@ -58,7 +65,8 @@ export interface AgentSidebarHardGateSnapshot extends UiReviewBrowserErrors {
     nestedPinnedHasPin: boolean
     detailOverlayCount: number
     detailTabCount: number
-    configurationHeadingCount: number
+    capabilityHeadingCount: number
+    legacyJargonCount: number
     undersizedAgentControls: Array<{ label: string; width: number; height: number }>
   }
 }
@@ -87,10 +95,9 @@ export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnap
     && (snapshot.checkpoint !== "hover-actions" || state.visibleActionCount >= 4)
     && (snapshot.checkpoint !== "expanded-sessions" || (state.expandedRegionCount >= 2 && state.guideCount >= 2))
     && (snapshot.checkpoint !== "pinned-chat" || (state.pinnedHeading === "Pinned chats" && state.pinnedCount === 1 && state.pinnedProvenance === "Alpha" && state.pinnedAgentSessionCount >= 1 && state.nestedPinnedHasPin))
-    && (snapshot.checkpoint !== "agent-details" || (state.detailOverlayCount === 1 && state.detailTabCount === 0 && state.configurationHeadingCount === 1))
-    // v4 (owner-ratified): each Agent row exposes "New chat" (+), the "..."
-    // options trigger holding the placement variants, and Settings; coarse
-    // pointers keep all three directly visible.
+    && (snapshot.checkpoint !== "agent-details" || (state.detailOverlayCount === 1 && state.detailTabCount === 0 && state.capabilityHeadingCount >= 5 && state.legacyJargonCount === 0))
+    // Coarse pointers keep "+", the "..." options trigger, and Settings
+    // directly visible per Agent.
     && (!snapshot.viewport.mobile || snapshot.checkpoint !== "agent-list" || (state.visibleActionCount >= 4 && state.visibleAgentCountLabels === 2))
 
   add("fixture-ready", surfaceReady, `agentCount=${state.agentCount};detailOverlayCount=${state.detailOverlayCount}`)

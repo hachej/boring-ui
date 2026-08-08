@@ -129,9 +129,15 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       if (!path) return
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
+      const mode = strParam(cmd.params, "mode")
       const run = (surface: SurfaceShellApi) => {
         try {
-          surface.openFile(path, { filesystem: normalizeUiFilesystem(strParam(cmd.params, "filesystem")) })
+          surface.openFile(path, {
+            filesystem: normalizeUiFilesystem(strParam(cmd.params, "filesystem")),
+            // mode reaches the file panel params; "view" panels (markdown
+            // etc.) render genuinely read-only.
+            ...(mode === "view" || mode === "edit" || mode === "diff" ? { mode } : {}),
+          })
         } catch (err) {
           // eslint-disable-next-line no-console -- intentional dev signal
           console.warn(
@@ -209,9 +215,12 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       return
     }
     case "expandToFile": {
-      const path = strParam(cmd.params, "path")
+      // Path may legitimately be empty: "reveal the root of a filesystem"
+      // (e.g. Agent details Knowledge rows) carries only a filesystem id.
+      // Requiring a non-empty path here used to drop those commands silently.
+      const path = strParam(cmd.params, "path") ?? ""
       const filesystem = strParam(cmd.params, "filesystem")
-      if (!path) return
+      if (!path && !filesystem) return
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
       ctx.openWorkbenchSources?.()
