@@ -15,8 +15,10 @@ export interface VerifiedAutomationActor {
 }
 
 export interface ManualRunExecutorOptions {
-  /** Explicit Agent selected for automation runs. */
+  /** Host-default Agent used by legacy automations without an explicit selection. */
   agentTypeId: string
+  /** Host registry used to reject stale or unknown per-automation selections. */
+  availableAgentTypeIds?: readonly string[]
   store: AutomationStore
   storeForRequest?: (request: FastifyRequest, actor: VerifiedAutomationActor) => Promise<AutomationStore> | AutomationStore
   dispatcherResolver: WorkspaceAgentDispatcherResolver
@@ -67,6 +69,11 @@ export class ManualRunExecutor {
     if (!automation) {
       throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.AUTOMATION_NOT_FOUND, `automation ${input.automationId} not found`)
     }
+    const agentTypeId = resolveAutomationAgentTypeId(
+      automation.agentTypeId,
+      this.options.agentTypeId,
+      this.options.availableAgentTypeIds,
+    )
     const promptSnapshot = await store.getPrompt(input.automationId)
     const modelSnapshot = automation.model
     const model = parseAutomationModel(modelSnapshot)
@@ -131,7 +138,7 @@ export class ManualRunExecutor {
         await this.publishRunChange(actor, current)
       }
       await runWithWorkspaceAgent.call(this.options.dispatcherResolver, {
-        agentTypeId: this.options.agentTypeId,
+        agentTypeId,
         context: actor,
         requestId: run.id,
         ...(input.request ? { request: input.request } : {}),
@@ -147,7 +154,7 @@ export class ManualRunExecutor {
         }, async (event) => {
           const eventSessionId = sessionIdFromEvent(event)
           if (!durableSessionId && eventSessionId) {
-            await persistDispatchIdentity({ agentTypeId: this.options.agentTypeId, sessionId: eventSessionId })
+            await persistDispatchIdentity({ agentTypeId, sessionId: eventSessionId })
           }
           aggregateUsage(usage, event)
           const outcome = terminalOutcomeFromEvent(event)
@@ -273,6 +280,20 @@ function startRunHeartbeat(store: AutomationStore, runId: string): () => Promise
     if (timer !== undefined) clearTimeout(timer)
     await inFlight
   }
+}
+
+export function resolveAutomationAgentTypeId(
+  automationAgentTypeId: string | undefined,
+  hostDefaultAgentTypeId: string,
+  availableAgentTypeIds: readonly string[] | undefined,
+): string {
+  const agentTypeId = automationAgentTypeId ?? hostDefaultAgentTypeId
+  const available = availableAgentTypeIds ?? [hostDefaultAgentTypeId]
+  if (available.includes(agentTypeId)) return agentTypeId
+  throw new AutomationStoreError(
+    BORING_AUTOMATION_ERROR_CODES.AGENT_NOT_FOUND,
+    `automation agent ${agentTypeId} is not available`,
+  )
 }
 
 export function automationSessionTitle(automationTitle: string, prompt: string): string {

@@ -39,6 +39,7 @@ export {
 export { normalizePolicyEmail, validateGovernancePolicy } from './validatePolicy.js'
 export { createGovernanceMeteringSink } from './metering.js'
 export {
+  COMPANY_CONTEXT_FILESYSTEM_ID,
   createDefaultCompanyContextRootResolver,
   createGovernanceFilesystemBindings,
   type CompanyContextRootResolver,

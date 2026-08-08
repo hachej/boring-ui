@@ -194,6 +194,8 @@ export interface WorkspaceAgentServerPluginContext {
   bridge: ReturnType<typeof createInMemoryBridge>
   /** Host-selected Agent owner for package-level server plugin actions. */
   agentTypeId?: string
+  /** Agent addresses registered by the host and available for dispatch. */
+  availableAgentTypeIds?: readonly string[]
   /** Available only to boot-time internal package plugins in standalone/local composition. */
   trusted?: {
     workspaceAgentDispatcherResolver: WorkspaceAgentDispatcherResolver
@@ -860,6 +862,7 @@ export interface ResolveWorkspaceAgentServerPluginCollectionOptions
   plugins?: WorkspacePluginEntry[]
   trustedPluginContext?: WorkspaceAgentServerPluginContext["trusted"]
   agentTypeId?: string
+  availableAgentTypeIds?: readonly string[]
 }
 
 export function buildWorkspaceContextPrompt(options: { pluginAuthoringEnabled?: boolean } = {}): string {
@@ -942,6 +945,7 @@ export async function resolveWorkspaceAgentServerPluginCollection(
     workspaceRoot: opts.workspaceRoot,
     bridge: opts.bridge,
     ...(opts.agentTypeId ? { agentTypeId: opts.agentTypeId } : {}),
+    ...(opts.availableAgentTypeIds ? { availableAgentTypeIds: opts.availableAgentTypeIds } : {}),
   }
   const trustedCtx: WorkspaceAgentServerPluginContext = { ...baseCtx, trusted: opts.trustedPluginContext }
   const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
@@ -1315,6 +1319,7 @@ export async function createWorkspaceAgentServer(
     },
     ...opts,
     agentTypeId: opts.defaultAgentTypeId ?? agents[0]?.agentTypeId ?? "default",
+    availableAgentTypeIds: agents.map((agent) => agent.agentTypeId),
     workspaceRoot,
     bridge,
     installPluginAuthoring: pluginAuthoringEnabled,

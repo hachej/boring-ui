@@ -1020,6 +1020,7 @@ export async function createCoreWorkspaceAgentServer(
   const sessionRoot = normalizeOptionalPath(options.sessionRoot)
     ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
     ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
+  const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot })
   registerTelemetryHooks(app, telemetry)
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
@@ -1081,6 +1082,7 @@ export async function createCoreWorkspaceAgentServer(
     workspaceRoot: pluginWorkspaceRoot,
     bridge: createUnavailableCorePluginBridge(),
     ...(options.defaultAgentTypeId ? { agentTypeId: options.defaultAgentTypeId } : {}),
+    availableAgentTypeIds: agents.map((agent) => agent.agentTypeId),
   }
   const defaultPluginActorResolver = async (request: FastifyRequest) => {
     const workspaceId = await resolveAuthorizedWorkspaceId(request, workspaceStore)
@@ -1252,7 +1254,6 @@ export async function createCoreWorkspaceAgentServer(
   // the deployed core app host (apps/full-app), same helper as
   // createWorkspaceAgentServer and the CLI hub; flag absent preserves the
   // legacy single-default-agent boot byte-identically.
-  const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot })
   const scopeAuthority = createCoreAgentScopeAuthority({
     appId: config.appId,
     workspaceStore,
