@@ -310,7 +310,6 @@ export {
 export type { RuntimeReadonlyFilesystemPolicy } from './runtime/readonlyFilesystemPolicy'
 export { createUserFilesystemBinding } from './runtime/userFilesystemBinding'
 export {
-  createFakeAuthorityVerifierV1,
   createHostSideCredentialResolverV1,
   createInMemoryCredentialBackendV1,
   createInMemoryCredentialVaultPersistenceV1,
@@ -326,7 +325,6 @@ export {
 } from './credentials'
 export type {
   CredentialStoreBackendV1,
-  FakeAuthorityVerifierGrantV1,
   HostSideCredentialResolverOptionsV1,
   InMemoryCredentialBackendEntryV1,
   CredentialVaultPersistenceV1,

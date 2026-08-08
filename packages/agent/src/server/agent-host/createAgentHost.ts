@@ -10,6 +10,8 @@ import {
   type VerifiedAgentScopeClaim,
 } from '../../shared/index'
 import { buildAgentComposition, type BuiltAgentComposition } from './buildAgentComposition'
+import { resolveWorkspaceCredentialVaultCompositionFromEnvV1 } from '../credentials/startupComposition'
+import type { WorkspaceCredentialVaultCompositionV1 } from '../credentials/startupComposition'
 import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
 import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
@@ -283,6 +285,7 @@ function resolveHostLedgerPath(options: CreateAgentHostOptions): string | undefi
 function createRuntime(
   options: CreateAgentHostOptions,
   compiledAgents: readonly CompiledAgentHostAgentSpec[],
+  credentialComposition?: WorkspaceCredentialVaultCompositionV1,
 ): AgentHostRuntime {
   const compiledById = new Map(compiledAgents.map((agent) => [agent.agentTypeId, agent]))
   const environments = new EnvironmentLeaseManager(options.runtimeModeAdapter)
@@ -537,6 +540,7 @@ function createRuntime(
               workspaceScopeId: claim.workspaceScopeId,
               runtimeScope: resolved,
               runtimeBundle,
+              credentialComposition,
               environmentProvisioning: environmentLease.provisioning,
               options,
               observeSessionEvent: (sessionId, event) => {
@@ -792,7 +796,16 @@ export async function createAgentHost(
     )
   }
   if (durableLedgerPath) await mkdir(dirname(durableLedgerPath), { recursive: true })
-  const runtime = createRuntime(options, compiledAgents)
+  // [1082 slice B] BYOK vault composition resolves ONCE per host, here at
+  // startup: misconfigured env fails host creation with a stable
+  // CREDENTIAL_* error, and every runtime binding shares this one vault
+  // composition (a per-binding vault would silently fork credential state).
+  const credentialComposition = resolveWorkspaceCredentialVaultCompositionFromEnvV1({
+    env: options.credentials?.env ?? process.env,
+    persistence: options.credentials?.vaultPersistence,
+    authorityVerifier: options.credentials?.authorityVerifier,
+  })
+  const runtime = createRuntime(options, compiledAgents, credentialComposition)
   if (
     runtime.ledger.durability !== 'durable-transactional'
     && options.inMemoryRequestLedgerMode === undefined

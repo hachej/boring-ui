@@ -40,6 +40,27 @@ export interface CredentialFieldKeyV1 {
 export type CredentialFieldDeletionReasonV1 =
   | 'superseded-version'
   | 'credential-tombstone'
+  | 'crypto-shred'
+
+export interface WorkspaceDekRotationStateV1 {
+  readonly sourceGeneration: number
+  readonly targetGeneration: number
+  readonly phase: 'reencrypting' | 'verified'
+}
+
+export interface WorkspaceCredentialRecordV1 {
+  readonly providerId: ProviderId
+  readonly record: StoredCredentialRecordV1
+}
+
+export interface CommitDekRotationRecordInputV1 {
+  readonly workspaceId: string
+  readonly providerId: ProviderId
+  readonly expectedCredentialVersion: number
+  readonly sourceGeneration: number
+  readonly targetGeneration: number
+  readonly fields: ReadonlyMap<string, CredentialEnvelopeV1>
+}
 
 export interface CredentialFieldTombstoneV1 {
   readonly deletedAt: string
@@ -77,6 +98,20 @@ export interface CredentialVaultPersistenceV1 {
     wrapped: WrappedWorkspaceDekV1,
   ): Promise<void>
   deleteWrappedDek(workspaceId: string, dekGeneration: number): Promise<void>
+  listCredentialRecords(workspaceId: string): Promise<readonly WorkspaceCredentialRecordV1[]>
+  listFields(
+    workspaceId: string,
+    providerId: ProviderId,
+    credentialVersion: number,
+  ): Promise<ReadonlyMap<string, CredentialEnvelopeV1>>
+  /** Atomically replaces one current record's envelopes during DEK rotation. */
+  commitDekRotationRecord(input: CommitDekRotationRecordInputV1): Promise<void>
+  getDekRotationState(workspaceId: string): Promise<WorkspaceDekRotationStateV1 | undefined>
+  putDekRotationState(workspaceId: string, state: WorkspaceDekRotationStateV1): Promise<void>
+  clearDekRotationState(workspaceId: string): Promise<void>
+  isWorkspaceCryptoShredded(workspaceId: string): Promise<boolean>
+  /** Atomically tombstones ciphertext, destroys wrapped DEKs, and records the shred fence. */
+  cryptoShredWorkspace(workspaceId: string, shreddedAt: string): Promise<void>
   getField(key: CredentialFieldKeyV1): Promise<CredentialEnvelopeV1 | undefined>
   putField(
     key: CredentialFieldKeyV1,
