@@ -12,7 +12,7 @@ import {
   listFixtureProjectionFiles,
   seedCompanyContextFixture,
   type CompanyContextFixturePreparedHandle,
-} from "../testing/companyContextFixtureProvider";
+} from "./companyContextFixture";
 import { createReadonlyProjectionOperations } from "../readonlyProjectionOperations";
 import { checkReadonlyProjectionConformance, type ReadonlyProjectionConformanceSubject } from "../testing/readonlyProjectionConformance";
 
@@ -90,12 +90,12 @@ describe("readonly projection conformance", () => {
     const sourceRoot = await mkdtemp(join(tmpdir(), "boring-company-unsafe-source-"));
     await seedCompanyContextFixture(sourceRoot);
     const unsafeHandle: CompanyContextFixturePreparedHandle = {
-      kind: "company-context-fixture-projection",
+      kind: "external-context-fixture-projection",
       filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,
       sourceRoot,
       projectionRoot: sourceRoot,
       visiblePaths: await listFixtureProjectionFiles({
-        kind: "company-context-fixture-projection",
+        kind: "external-context-fixture-projection",
         filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,
         sourceRoot,
         projectionRoot: sourceRoot,
