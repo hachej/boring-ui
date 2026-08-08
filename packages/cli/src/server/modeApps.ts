@@ -490,6 +490,10 @@ export async function createFolderModeApp(opts: {
       logger: false,
       provisionWorkspace: false,
       runtimeProvisioning,
+      // Agent governance lives in `.agents`: readable by agents, never writable
+      // by them. Stated explicitly here so the CLI does not silently inherit a
+      // future change to the library default.
+      readonlyWorkspacePaths: ['.agents'],
       // The standalone CLI runs on the user's own machine, so ambient skill
       // discovery (workspace + user-global ~/.pi skills) is on. The library
       // default is off (withPiHarnessDefaults) to keep hosted agents isolated.
