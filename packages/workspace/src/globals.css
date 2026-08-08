@@ -564,12 +564,17 @@
     display: none;
   }
 
-  /* "Start one" is the primary action of an empty Agent — it must be a real
-     touch target, not a 17px text link. */
+}
+
+/* "Start one" is the primary action of an empty Agent — it must be a real
+   touch target, not a 17px text link. Width-gated as well as pointer-gated so
+   narrow fine-pointer emulation gets it too; 48px keeps the measured rect
+   above the 44px gate even when an in-flight transform scales it slightly. */
+@media (pointer: coarse), (max-width: 500px) {
   .app-left-empty-start {
     display: inline-flex;
-    min-height: 44px;
-    min-width: 44px;
+    min-height: 48px;
+    min-width: 48px;
     align-items: center;
     justify-content: center;
     padding-inline: 8px;
