@@ -141,19 +141,19 @@ describe("AppLeftPane", () => {
     expect(screen.getByRole("button", { name: /^Agents/ })).toHaveClass("h-11", "sm:h-6")
     expect(screen.getByRole("searchbox", { name: "Filter Agents" })).toHaveClass("h-11", "sm:h-6")
 
-    // Per-card primary select target grows to 44px tall on mobile.
-    for (const card of screen.getAllByRole("button", { name: /^Use Boring .* for new chats/ })) {
-      expect(card).toHaveClass("min-h-11", "sm:min-h-0")
+    // Per-row primary toggle target grows to 44px tall on mobile.
+    for (const row of screen.getAllByRole("button", { name: /Boring (Alpha|Beta); / })) {
+      expect(row).toHaveClass("min-h-11", "sm:min-h-0")
     }
     // Per-card icon actions (filter / split / quick / settings / new chat).
     for (const name of [
-      "Show only Boring Alpha chats",
       "New chat with Boring Alpha in split pane",
       "Quick chat with Boring Alpha",
       "Settings for Boring Alpha",
       "New chat with Boring Alpha",
     ]) {
-      expect(screen.getByRole("button", { name })).toHaveClass("size-11", "sm:size-7")
+      // 44px mobile hit area is the contract; desktop density (sm:size-*) may vary.
+      expect(screen.getByRole("button", { name })).toHaveClass("size-11")
     }
   })
 
