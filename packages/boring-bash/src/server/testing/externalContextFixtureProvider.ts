@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
-import { access, chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { access, chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type {
   BoundFilesystemContext,
@@ -12,38 +12,29 @@ import type {
   PreparedFilesystemBinding,
 } from "../../shared/index";
 
-export const COMPANY_CONTEXT_FILESYSTEM_ID = "company_context" satisfies FilesystemId;
-export const COMPANY_CONTEXT_SENTINEL = "FORBIDDEN_FINANCE_SECRET_123";
-
-export interface CompanyContextFixtureFile {
+export interface ExternalContextFixtureFile {
   path: string;
   content: string;
 }
 
-export const DEFAULT_COMPANY_CONTEXT_FIXTURE_FILES: readonly CompanyContextFixtureFile[] = [
-  { path: "/company/hr/policy.md", content: "# HR policy\nVacation and onboarding policies.\n" },
-  { path: "/company/hr/onboarding.md", content: "# Onboarding\nWelcome to the company.\n" },
-  { path: "/company/finance/budget.md", content: `# Finance budget\n${COMPANY_CONTEXT_SENTINEL}\n` },
-  { path: "/company/legal/contract.md", content: "# Legal contract\nStandard terms.\n" },
-];
-
-export interface CompanyContextFixtureProjectionPolicy {
+export interface ExternalContextFixtureProjectionPolicy {
   readonly allowedPathPrefixes: readonly string[];
   readonly grantManagementBinding?: boolean;
 }
 
-export interface CompanyContextFixtureProviderOptions {
+export interface ExternalContextFixtureProviderOptions {
+  readonly filesystemId: FilesystemId;
   readonly sourceRoot: string;
   readonly projectionRootParent?: string;
-  readonly resolvePolicy: (ctx: BoundFilesystemContext) => CompanyContextFixtureProjectionPolicy | Promise<CompanyContextFixtureProjectionPolicy>;
+  readonly resolvePolicy: (ctx: BoundFilesystemContext) => ExternalContextFixtureProjectionPolicy | Promise<ExternalContextFixtureProjectionPolicy>;
 }
 
-export interface CompanyContextFixturePreparedLifecycle {
+export interface ExternalContextFixturePreparedLifecycle {
   active: boolean;
 }
 
-export interface CompanyContextFixturePreparedHandle {
-  readonly kind: "company-context-fixture-projection";
+export interface ExternalContextFixturePreparedHandle {
+  readonly kind: "external-context-fixture-projection";
   /** Logical filesystem identity for this prepared binding; paths are scoped by this id. */
   readonly filesystem: FilesystemId;
   readonly sourceRoot: string;
@@ -51,32 +42,32 @@ export interface CompanyContextFixturePreparedHandle {
   readonly visiblePaths: readonly string[];
   readonly access?: "readonly" | "readwrite";
   readonly projection?: FilesystemProjection;
-  readonly lifecycle?: CompanyContextFixturePreparedLifecycle;
+  readonly lifecycle?: ExternalContextFixturePreparedLifecycle;
 }
 
-export type CompanyContextFixturePreparedBinding = PreparedFilesystemBinding & {
-  handle: CompanyContextFixturePreparedHandle;
+export type ExternalContextFixturePreparedBinding = PreparedFilesystemBinding & {
+  handle: ExternalContextFixturePreparedHandle;
 };
 
-function normalizeCompanyPath(path: string): string {
+function normalizeExternalPath(path: string): string {
   const normalized = path.replace(/\\/g, "/");
   if (!normalized.startsWith("/")) return `/${normalized}`;
   return normalized;
 }
 
-function assertSafeCompanyPath(path: string): string {
-  const normalized = normalizeCompanyPath(path);
-  if (normalized.includes("\0")) throw new Error(`invalid company path: ${path}`);
+function assertSafeExternalPath(path: string): string {
+  const normalized = normalizeExternalPath(path);
+  if (normalized.includes("\0")) throw new Error(`invalid external context path: ${path}`);
   for (const part of normalized.split("/")) {
-    if (part === "..") throw new Error(`invalid company path traversal: ${path}`);
+    if (part === "..") throw new Error(`invalid external context path traversal: ${path}`);
   }
   return normalized.replace(/\/+/g, "/");
 }
 
 function isAllowed(path: string, prefixes: readonly string[]): boolean {
-  const normalized = assertSafeCompanyPath(path);
+  const normalized = assertSafeExternalPath(path);
   return prefixes.some((prefix) => {
-    const normalizedPrefix = assertSafeCompanyPath(prefix).replace(/\/+$/, "");
+    const normalizedPrefix = assertSafeExternalPath(prefix).replace(/\/+$/, "");
     return normalized === normalizedPrefix || normalized.startsWith(`${normalizedPrefix}/`);
   });
 }
@@ -86,7 +77,7 @@ async function assertInsideRoot(root: string, candidate: string): Promise<void> 
   const existing = await realpath(candidate);
   const rel = relative(realRoot, existing);
   if (rel.startsWith("..") || isAbsolute(rel)) {
-    throw new Error(`path escapes company context root: ${candidate}`);
+    throw new Error(`path escapes external context root: ${candidate}`);
   }
 }
 
@@ -116,22 +107,27 @@ async function makeProjectionReadonly(root: string, current = root): Promise<voi
   await chmod(current, 0o555);
 }
 
-export async function seedCompanyContextFixture(root: string): Promise<void> {
-  for (const file of DEFAULT_COMPANY_CONTEXT_FIXTURE_FILES) {
-    const safePath = assertSafeCompanyPath(file.path);
+export async function seedExternalContextFixture(
+  root: string,
+  files: readonly ExternalContextFixtureFile[],
+): Promise<void> {
+  for (const file of files) {
+    const safePath = assertSafeExternalPath(file.path);
     const target = join(root, ...safePath.slice(1).split("/"));
     await mkdir(dirname(target), { recursive: true });
     await access(dirname(target), constants.W_OK);
-    await import("node:fs/promises").then(({ writeFile }) => writeFile(target, file.content));
+    await writeFile(target, file.content);
   }
 }
 
-export class FixtureCompanyContextBindingProvider implements FilesystemBindingProvider {
+export class FixtureExternalContextBindingProvider implements FilesystemBindingProvider {
+  readonly #filesystem: FilesystemId;
   readonly #sourceRoot: string;
   readonly #projectionRootParent: string;
-  readonly #resolvePolicy: CompanyContextFixtureProviderOptions["resolvePolicy"];
+  readonly #resolvePolicy: ExternalContextFixtureProviderOptions["resolvePolicy"];
 
-  constructor(options: CompanyContextFixtureProviderOptions) {
+  constructor(options: ExternalContextFixtureProviderOptions) {
+    this.#filesystem = options.filesystemId;
     this.#sourceRoot = resolve(options.sourceRoot);
     this.#projectionRootParent = resolve(options.projectionRootParent ?? tmpdir());
     this.#resolvePolicy = options.resolvePolicy;
@@ -142,29 +138,29 @@ export class FixtureCompanyContextBindingProvider implements FilesystemBindingPr
   }
 
   async disposeBinding(prepared: PreparedFilesystemBinding): Promise<void> {
-    const handle = prepared.handle as Partial<CompanyContextFixturePreparedHandle>;
+    const handle = prepared.handle as Partial<ExternalContextFixturePreparedHandle>;
     if (handle.lifecycle) handle.lifecycle.active = false;
   }
 
-  async prepareBinding(ctx: BoundFilesystemContext, binding: FilesystemBinding): Promise<CompanyContextFixturePreparedBinding> {
-    if (binding.filesystem !== COMPANY_CONTEXT_FILESYSTEM_ID) {
-      throw new Error(`fixture company provider cannot prepare filesystem ${binding.filesystem}`);
+  async prepareBinding(ctx: BoundFilesystemContext, binding: FilesystemBinding): Promise<ExternalContextFixturePreparedBinding> {
+    if (binding.filesystem !== this.#filesystem) {
+      throw new Error(`fixture external context provider cannot prepare filesystem ${binding.filesystem}`);
     }
     if (binding.access === "readwrite" && binding.projection === "management") {
       const policy = await this.#resolvePolicy(ctx);
       if (!policy.grantManagementBinding) {
-        throw new Error("fixture company provider policy did not grant readwrite management binding");
+        throw new Error("fixture external context provider policy did not grant readwrite management binding");
       }
       const lifecycle = { active: true };
       return {
         binding,
         handle: {
-          kind: "company-context-fixture-projection",
+          kind: "external-context-fixture-projection",
           filesystem: binding.filesystem,
           sourceRoot: this.#sourceRoot,
           projectionRoot: this.#sourceRoot,
           visiblePaths: await listFixtureProjectionFiles({
-            kind: "company-context-fixture-projection",
+            kind: "external-context-fixture-projection",
             filesystem: binding.filesystem,
             sourceRoot: this.#sourceRoot,
             projectionRoot: this.#sourceRoot,
@@ -179,24 +175,24 @@ export class FixtureCompanyContextBindingProvider implements FilesystemBindingPr
       };
     }
     if (binding.access !== "readonly" || binding.projection !== "policy-filtered") {
-      throw new Error("fixture company provider only prepares readonly policy-filtered or readwrite management bindings");
+      throw new Error("fixture external context provider only prepares readonly policy-filtered or readwrite management bindings");
     }
 
     const policy = await this.#resolvePolicy(ctx);
-    const projectionRoot = await mkdtemp(join(this.#projectionRootParent, "boring-company-context-"));
+    const projectionRoot = await mkdtemp(join(this.#projectionRootParent, "boring-external-context-"));
     const visiblePaths: string[] = [];
     const files = await walkFiles(this.#sourceRoot);
 
     for (const sourceFile of files) {
       await assertInsideRoot(this.#sourceRoot, sourceFile);
       const rel = relative(this.#sourceRoot, sourceFile).split(sep).join("/");
-      const companyPath = assertSafeCompanyPath(`/${rel}`);
-      if (!isAllowed(companyPath, policy.allowedPathPrefixes)) continue;
+      const externalPath = assertSafeExternalPath(`/${rel}`);
+      if (!isAllowed(externalPath, policy.allowedPathPrefixes)) continue;
 
-      const destination = join(projectionRoot, ...companyPath.slice(1).split("/"));
+      const destination = join(projectionRoot, ...externalPath.slice(1).split("/"));
       await mkdir(dirname(destination), { recursive: true });
       await copyFile(sourceFile, destination);
-      visiblePaths.push(companyPath);
+      visiblePaths.push(externalPath);
     }
 
     visiblePaths.sort();
@@ -205,7 +201,7 @@ export class FixtureCompanyContextBindingProvider implements FilesystemBindingPr
     return {
       binding,
       handle: {
-        kind: "company-context-fixture-projection",
+        kind: "external-context-fixture-projection",
         filesystem: binding.filesystem,
         sourceRoot: this.#sourceRoot,
         projectionRoot,
@@ -218,14 +214,17 @@ export class FixtureCompanyContextBindingProvider implements FilesystemBindingPr
   }
 }
 
-export async function readFixtureProjectionFile(handle: CompanyContextFixturePreparedHandle, companyPath: string): Promise<string> {
-  const safePath = assertSafeCompanyPath(companyPath);
+export async function readFixtureProjectionFile(
+  handle: ExternalContextFixturePreparedHandle,
+  externalPath: string,
+): Promise<string> {
+  const safePath = assertSafeExternalPath(externalPath);
   const target = join(handle.projectionRoot, ...safePath.slice(1).split("/"));
   await assertInsideRoot(handle.projectionRoot, target);
   return await readFile(target, "utf8");
 }
 
-export async function listFixtureProjectionFiles(handle: CompanyContextFixturePreparedHandle): Promise<string[]> {
+export async function listFixtureProjectionFiles(handle: ExternalContextFixturePreparedHandle): Promise<string[]> {
   const files = await walkFiles(handle.projectionRoot);
   return files
     .map((file) => `/${relative(handle.projectionRoot, file).split(sep).join("/")}`)
