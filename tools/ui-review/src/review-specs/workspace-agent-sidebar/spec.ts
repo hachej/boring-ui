@@ -28,7 +28,7 @@ async function ensureAgentNavigation(page: Page): Promise<void> {
 
 export const workspaceAgentSidebarSpec: UiReviewSpec = {
   id: "workspace-agent-sidebar",
-  specRevision: "workspace-agent-sidebar-v1",
+  specRevision: "workspace-agent-sidebar-v3",
   fixtureResetId: "workspace-agent-sidebar-fixture-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -81,7 +81,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
       await page.locator('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="alpha"] .app-left-agent-row').hover()
       await page.getByRole("button", { name: "Settings for Alpha" }).click()
       await expect(page.locator('[data-boring-workspace-part="agent-details-overlay"]')).toBeVisible()
-      await expect(page.getByText("Configuration", { exact: true })).toBeVisible()
+      await expect(page.getByRole("heading", { name: "System prompt" })).toBeVisible()
     } },
   ],
   criticPrompt: "Review the supplied multi-agent sidebar and Agent detail screenshots against the design context. Demand a compact, calm, editorial, world-class navigation hierarchy. Prioritize pinned-chat provenance, Agent/session information architecture, hover and touch discoverability, expansion rhythm and guide lines, active-session meaning, mobile behavior, and the unified Agent page. Return only UiCriticReportV1 JSON. Scores are advisory; every finding must cite supplied state ids.",
@@ -115,7 +115,9 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
           const provenance = pinnedRow?.querySelector(".app-left-session-trailing")?.textContent?.replace(/\s+/g, " ").trim() || null
           return {
             agentCount: agentTrees.length,
-            agentHeading: text('section[aria-label="Agents"] > div > span:first-child'),
+            // Nested-pane markup: the section heading lives inside the
+            // collapse toggle button ("Agents" span, then the count span).
+            agentHeading: text('section[aria-label="Agents"] > div > button > span:first-of-type'),
             agentSeatSummary: text('section[aria-label="Agents"] > div span:last-child'),
             agentFilterCount: document.querySelectorAll('[aria-label="Filter Agents"]').length,
             legacyFilterCount: document.querySelectorAll('[aria-label="Filter chats by Agent"]').length,
@@ -130,7 +132,8 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
             nestedPinnedHasPin: Boolean(document.querySelector('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="alpha"] [data-boring-workspace-part="app-session-row"] .app-left-session-trailing svg')),
             detailOverlayCount: document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"]').length,
             detailTabCount: document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"] [role="tab"]').length,
-            configurationHeadingCount: [...document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"] h3')].filter((heading) => heading.textContent?.trim() === "Configuration").length,
+            capabilityHeadingCount: [...document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"] h3')].filter((heading) => ["System prompt", "Skills", "Tools", "MCP access", "Plugins"].includes(heading.textContent?.trim() ?? "")).length,
+            legacyJargonCount: [...document.querySelectorAll('[data-boring-workspace-part="agent-details-overlay"]')].filter((overlay) => /Runtime plugins explicitly bound|host fleet definition|Configuration/.test(overlay.textContent ?? "")).length,
             undersizedAgentControls: mobile ? controls.map((control) => {
               const rect = control.getBoundingClientRect()
               return { label: control.getAttribute("aria-label") || control.textContent?.trim() || "button", width: rect.width, height: rect.height }

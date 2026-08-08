@@ -129,9 +129,15 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       if (!path) return
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
+      const mode = strParam(cmd.params, "mode")
       const run = (surface: SurfaceShellApi) => {
         try {
-          surface.openFile(path, { filesystem: normalizeUiFilesystem(strParam(cmd.params, "filesystem")) })
+          surface.openFile(path, {
+            filesystem: normalizeUiFilesystem(strParam(cmd.params, "filesystem")),
+            // mode reaches the file panel params; "view" panels (markdown
+            // etc.) render genuinely read-only.
+            ...(mode === "view" || mode === "edit" || mode === "diff" ? { mode } : {}),
+          })
         } catch (err) {
           // eslint-disable-next-line no-console -- intentional dev signal
           console.warn(

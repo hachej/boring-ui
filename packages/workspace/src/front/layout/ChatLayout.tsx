@@ -497,7 +497,10 @@ export function ChatLayout(props: ChatLayoutProps) {
           aria-label={chatHidden ? "Collapsed chat" : "Chat"}
           aria-hidden={chatHidden}
           className={cn(
-            "relative h-full min-h-0 min-w-0 overflow-hidden bg-background",
+            // `isolate` scopes children's z-indices (dockview sashes are
+            // z-index 999) so the chat-left overlay can stack above them
+            // without escaping into page-level chrome.
+            "relative isolate h-full min-h-0 min-w-0 overflow-hidden bg-background",
             mobileShell && !chatHidden && "flex flex-col",
             // Animate flex-grow (not just width) so the chat slides open/closed
             // like the fixed-width nav/workbench panes instead of snapping.
