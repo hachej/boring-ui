@@ -20,6 +20,15 @@ export {
 } from './defaultAgentType.js'
 export type { ResolveWorkspaceDefaultAgentTypeIdInput } from './defaultAgentType.js'
 
+export {
+  SignupAgentDefaultsConfigError,
+  assertSignupAgentDefaultsInFleet,
+  normalizeSignupHostname,
+  parseSignupAgentDefaults,
+  resolveSignupDefaultAgentTypeId,
+} from './signupAgentDefaults.js'
+export type { SignupAgentDefaults } from './signupAgentDefaults.js'
+
 export { safeRedirect } from './security/index.js'
 
 export { createCoreApp, registerRoutes, withUserSettingsWriteLock } from './app/index.js'

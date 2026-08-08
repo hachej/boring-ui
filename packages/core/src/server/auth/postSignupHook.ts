@@ -4,6 +4,10 @@ import type { WorkspaceStore } from '../app/types.js'
 import type { MailTransport } from '../mail/transport.js'
 import { renderWelcome } from '../mail/templates/index.js'
 import { REQUEST_SCOPE_WORKSPACE_HEADER } from './requestWorkspaceScope.js'
+import {
+  normalizeSignupHostname,
+  resolveSignupDefaultAgentTypeId,
+} from '../signupAgentDefaults.js'
 
 export interface PostSignupUser {
   id: string
@@ -56,6 +60,22 @@ function readRequestWorkspaceId(ctx: PostSignupContext | null): string | null {
   }
 }
 
+/**
+ * Reads the exact request hostname for the signup-domain mapping. The
+ * `x-forwarded-host` value is honored only when the deployment declares a
+ * trusted proxy; otherwise the direct `host` header is used. This is the sole
+ * request-derived input to the mapping — agent ids never come from a body,
+ * query, or arbitrary header.
+ */
+function readSignupHost(ctx: PostSignupContext | null, config: CoreConfig): string | null {
+  const trustsProxy = Boolean(config.security?.trustedProxy)
+  if (trustsProxy) {
+    const forwarded = readHeader(ctx, 'x-forwarded-host')
+    if (forwarded) return forwarded
+  }
+  return readHeader(ctx, 'host')
+}
+
 export function createPostSignupHook(deps: PostSignupHookDeps) {
   const { config, workspaceStore, transport, logger, disableDefaultWorkspaceCreation } = deps
 
@@ -96,10 +116,18 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
     }
 
     if (!inviteAccepted && !disableDefaultWorkspaceCreation) {
+      // Decision 28 hook: an exact trusted signup-domain mapping may
+      // initialize the default seat of this newly created default Workspace.
+      // The hostname is read once, matched exactly against boot-validated
+      // trusted host configuration, then discarded — it is never persisted
+      // and has no routing, membership, selection, or authorization effect.
+      const signupHostname = normalizeSignupHostname(readSignupHost(ctx, config))
+      const signupSeat = resolveSignupDefaultAgentTypeId(config.signupAgentDefaults, signupHostname)
+      const initialSeat = signupSeat ?? config.defaultAgentTypeId
       await workspaceStore.create(user.id, 'Default workspace', config.appId, {
         isDefault: true,
-        // Decision 28: stamp the host default seat at initialization only.
-        ...(config.defaultAgentTypeId ? { defaultAgentTypeId: config.defaultAgentTypeId } : {}),
+        // Decision 28: stamp the initial default seat at initialization only.
+        ...(initialSeat ? { defaultAgentTypeId: initialSeat } : {}),
       })
     }
 

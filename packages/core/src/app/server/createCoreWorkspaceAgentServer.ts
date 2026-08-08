@@ -101,6 +101,7 @@ import {
   type Database,
 } from '../../server/db/index.js'
 import { loadConfig, type LoadConfigOptions } from '../../server/config/index.js'
+import { assertSignupAgentDefaultsInFleet } from '../../server/signupAgentDefaults.js'
 import { resolveWorkspaceDefaultAgentTypeId } from '../../server/defaultAgentType.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
@@ -1022,6 +1023,12 @@ export async function createCoreWorkspaceAgentServer(
     ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
     ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
   const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot })
+  // Decision 28 hook: the trusted signup-domain map must name validated fleet
+  // members. Fail fast at boot — never at signup time — on an unknown seat.
+  assertSignupAgentDefaultsInFleet(
+    config.signupAgentDefaults,
+    agents.map((agent) => agent.agentTypeId),
+  )
   registerTelemetryHooks(app, telemetry)
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })

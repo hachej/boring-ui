@@ -6,6 +6,7 @@ import type { CoreConfig, RuntimeConfig } from '../../shared/types.js'
 import { ConfigValidationError } from '../../shared/errors.js'
 import { resolveConfigFileSecrets } from './fileSecrets.js'
 import { coreConfigSchema } from './schema.js'
+import { parseSignupAgentDefaults } from '../signupAgentDefaults.js'
 
 const THIRTY_DAYS_SECONDS = 60 * 60 * 24 * 30
 const SIXTEEN_MB = 16 * 1024 * 1024
@@ -98,6 +99,31 @@ function parseRateLimitOverrides(
         message:
           'RATE_LIMIT_OVERRIDES_JSON must be valid JSON object: {"<endpoint>":{"max":number,"window":"<duration>"}}',
         path: ['rateLimit'],
+      },
+    ])
+  }
+}
+
+function parseSignupAgentDefaultsEnv(raw: string): Readonly<Record<string, string>> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new ConfigValidationError([
+      {
+        message:
+          'BORING_SIGNUP_AGENT_DEFAULTS_JSON must be a valid JSON object: {"<exact-hostname>":"<agentTypeId>"}',
+        path: ['signupAgentDefaults'],
+      },
+    ])
+  }
+  try {
+    return parseSignupAgentDefaults(parsed)
+  } catch (err) {
+    throw new ConfigValidationError([
+      {
+        message: err instanceof Error ? err.message : 'invalid signupAgentDefaults',
+        path: ['signupAgentDefaults'],
       },
     ])
   }
@@ -270,6 +296,10 @@ export async function loadConfig(
 
     ...(env.BORING_DEFAULT_AGENT_TYPE_ID
       ? { defaultAgentTypeId: env.BORING_DEFAULT_AGENT_TYPE_ID }
+      : {}),
+
+    ...(env.BORING_SIGNUP_AGENT_DEFAULTS_JSON
+      ? { signupAgentDefaults: parseSignupAgentDefaultsEnv(env.BORING_SIGNUP_AGENT_DEFAULTS_JSON) }
       : {}),
 
     cors: {
