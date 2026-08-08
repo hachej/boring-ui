@@ -2622,7 +2622,9 @@ export function WorkspaceAgentFront<
             ...agent,
             sessionsStatus: addressedFleetSessions.statuses.get(agent.agentTypeId) ?? "loading",
           })) : undefined}
-          selectedAgentTypeId={fleetModeEnabled ? addressedAgents.selectedAgentTypeId : undefined}
+          // The resolved selection, not the raw one: with nothing picked yet the
+          // pane must address `defaultAgentTypeId`, never the first catalog entry.
+          selectedAgentTypeId={fleetModeEnabled ? effectiveAgentTypeId : undefined}
           onSelectAgent={fleetModeEnabled ? addressedAgents.selectAgentTypeId : undefined}
           onOpenAgentSettings={fleetModeEnabled ? (ownerAgentTypeId) => setLeftOverlay(agentOverlayId(ownerAgentTypeId)) : undefined}
           sessionsLoading={remoteSessionsTransitioning}
