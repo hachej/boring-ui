@@ -194,6 +194,7 @@ export type {
   AgentRequestLedger,
   AgentRequestLedgerPrepareResult,
   AgentRequestLedgerRecord,
+  AgentInstructionFileRef,
   CompiledAgentHostAgentSpec,
   ConfiguredAgentHostAgentSpec,
   CreateAgentHostOptions,

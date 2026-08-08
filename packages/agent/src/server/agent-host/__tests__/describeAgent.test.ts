@@ -11,6 +11,7 @@ const agents = [
   {
     agentTypeId: 'concierge',
     definition: { instructions: 'You are the concierge.', label: 'Concierge' },
+    instructionFiles: [{ path: '.agents/personas/concierge-seat/instructions.md', name: 'Persona instructions' }],
     plugins: [{ name: 'ask-user' }, { name: 'pr-review', config: { mode: 'strict' } }],
     model: { preferred: 'pi-large' },
   },
@@ -56,6 +57,9 @@ describe('describeAgent', () => {
       model: 'pi-large',
       plugins: [{ id: 'ask-user' }, { id: 'pr-review' }],
       mcpServers: [],
+      // The seat directory is NOT derivable from the agent id; the Host is
+      // the only component that knows it.
+      instructionFiles: [{ path: '.agents/personas/concierge-seat/instructions.md', name: 'Persona instructions' }],
     })
   })
 
@@ -69,6 +73,7 @@ describe('describeAgent', () => {
       model: null,
       plugins: [],
       mcpServers: [],
+      instructionFiles: [],
     })
   })
 

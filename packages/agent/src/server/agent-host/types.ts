@@ -131,6 +131,19 @@ export interface AgentEffectAdmission {
   }): Promise<AgentEffectAdmissionResult>
 }
 
+/**
+ * A workspace-relative authored file that contributes to this agent's
+ * instructions. The Host knows these paths from fleet configuration; clients
+ * must never re-derive them from the agent id (seat and agentTypeId are
+ * unrelated fleet.yaml fields).
+ */
+export interface AgentInstructionFileRef {
+  /** Workspace-relative path, e.g. `.agents/personas/concierge/instructions.md`. */
+  readonly path: string
+  /** Short human label for the row, e.g. "Persona instructions". */
+  readonly name: string
+}
+
 export interface ConfiguredAgentHostAgentSpec {
   readonly agentTypeId: string
   readonly definition: {
@@ -138,6 +151,8 @@ export interface ConfiguredAgentHostAgentSpec {
     readonly label: string
     readonly version?: string
   }
+  /** Authored instruction sources behind `definition.instructions`. */
+  readonly instructionFiles?: readonly AgentInstructionFileRef[]
   readonly plugins?: readonly {
     /** Canonical app-preflighted plugin ID. */
     readonly name: string

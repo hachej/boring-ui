@@ -19,7 +19,7 @@ import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { canonicalDigest } from './canonical'
 import type { AgentHostRuntime, RuntimeBinding } from './createAgentHost'
 import type { EmbeddedAgentGateway } from './embeddedGateway'
-import type { AgentHostDirectProjectionOptions } from './types'
+import type { AgentHostDirectProjectionOptions, AgentInstructionFileRef } from './types'
 import { projectStableServiceError } from './stableServiceError'
 import {
   resolveAgentMcpGrants,
@@ -94,6 +94,13 @@ export interface AgentHostAgentDescription {
   readonly systemPrompt: string | null
   /** Preferred model id from the agent definition, when pinned. */
   readonly model: string | null
+  /**
+   * Workspace-relative authored instruction sources behind `systemPrompt`.
+   * The Host is the only component that knows these paths (seat and
+   * agentTypeId are unrelated fleet.yaml fields), so clients render what they
+   * are given rather than guessing a persona directory.
+   */
+  readonly instructionFiles: readonly AgentInstructionFileRef[]
   readonly plugins: readonly { readonly id: string }[]
   /** MCP connectors this agent is actually granted (default-deny). */
   readonly mcpServers: readonly { readonly id: string; readonly tools: readonly string[] }[]
@@ -296,6 +303,7 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
         label: legacy ? 'Agent' : spec.definition.label,
         systemPrompt: legacy ? null : spec.definition.instructions,
         model: legacy ? null : spec.model?.preferred ?? null,
+        instructionFiles: legacy ? [] : spec.instructionFiles ?? [],
         plugins: legacy ? [] : (spec.plugins ?? []).map((plugin) => ({ id: plugin.name })),
         mcpServers,
       }

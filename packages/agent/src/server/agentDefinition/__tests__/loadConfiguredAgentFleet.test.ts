@@ -41,6 +41,37 @@ describe('loadConfiguredAgentFleet', () => {
     }))
   })
 
+  test('publishes the persona instructions path from the SEAT, not the agent id', async () => {
+    const result = await loadConfiguredAgentFleet({
+      personasDir: PERSONAS_DIR,
+      personasRelativeDir: '.agents/personas',
+      fleetConfigPath: FLEET_CONFIG_PATH,
+      policyPath: POLICY_PATH,
+      env: {},
+    })
+
+    const [alpha] = result.agents
+    if (!alpha || 'legacyDefault' in alpha) throw new Error('expected a configured agent')
+    // seat "alpha" ≠ agentTypeId "fixture-alpha": nothing downstream can
+    // invert this mapping, which is why the loader publishes it.
+    expect(alpha.instructionFiles).toEqual([
+      { path: '.agents/personas/alpha/instructions.md', name: 'Persona instructions' },
+    ])
+  })
+
+  test('omits instructionFiles when no workspace-relative personas dir is supplied', async () => {
+    const result = await loadConfiguredAgentFleet({
+      personasDir: PERSONAS_DIR,
+      fleetConfigPath: FLEET_CONFIG_PATH,
+      policyPath: POLICY_PATH,
+      env: {},
+    })
+
+    const [alpha] = result.agents
+    if (!alpha || 'legacyDefault' in alpha) throw new Error('expected a configured agent')
+    expect(alpha.instructionFiles).toBeUndefined()
+  })
+
   test('omits preferredModel when no candidate API key is present', async () => {
     const result = await loadConfiguredAgentFleet({
       personasDir: PERSONAS_DIR,

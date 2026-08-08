@@ -60,9 +60,19 @@ export interface LoadConfiguredAgentFleetOptions {
    * trees that don't mirror the full `.agents/` shape).
    */
   readonly skillsRoot?: string
+  /**
+   * Workspace-relative form of `personasDir` (e.g. `.agents/personas`). When
+   * supplied, each composed seat carries `instructionFiles` pointing at its
+   * authored `instructions.md`, so clients never have to guess the persona
+   * directory back out of the agent id.
+   */
+  readonly personasRelativeDir?: string
   /** Overridable for tests; defaults to `process.env`. */
   readonly env?: NodeJS.ProcessEnv
 }
+
+/** Seat names that are safe to publish as a workspace-relative path segment. */
+const SAFE_SEAT_SEGMENT_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 export type FleetLoaderDiagnosticCode = Extract<
   AgentErrorCode,
@@ -261,10 +271,19 @@ export async function loadConfiguredAgentFleet(
       }
 
       const preferredModel = resolveSeatModel(seatTiers[binding.seat], env)
+      // The loader is the only place that knows seat → persona directory;
+      // publishing it here keeps clients from inverting the mapping.
+      const instructionFiles = options.personasRelativeDir && SAFE_SEAT_SEGMENT_RE.test(binding.seat)
+        ? [{
+            path: `${options.personasRelativeDir.replace(/\/+$/, '')}/${binding.seat}/instructions.md`,
+            name: 'Persona instructions',
+          }]
+        : undefined
       const spec = await createConfiguredAgentHostAgentSpec({
         source,
         policy: {
           instructionAppendices,
+          ...(instructionFiles ? { instructionFiles } : {}),
           ...(preferredModel ? { preferredModel } : {}),
         },
       })
