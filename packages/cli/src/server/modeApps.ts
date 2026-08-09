@@ -955,10 +955,8 @@ export async function createWorkspacesModeApp(opts: {
   // to duplicate that composition inline).
   const agentHost = await agentServer.createAgentHost({
     // The hub serves a DIFFERENT root per registered workspace, so there is no
-    // single one persona instruction refs could be addressed against; naming
-    // the registry directory makes the loader report them unpublishable
-    // instead of publishing a link that resolves to nothing.
-    agents: await agentServer.resolveDefaultAgentFleet({ workspaceRoot: dirname(registry.path) }),
+    // single one persona instruction refs could be addressed against.
+    agents: await agentServer.resolveDefaultAgentFleet({ workspaceRoot: null }),
     fleetCompiler: { async compile({ agents }) { return agents } },
     hostId: "cli-trusted-local",
     scopeVerifier: trustedLocalScope.scopeVerifier,

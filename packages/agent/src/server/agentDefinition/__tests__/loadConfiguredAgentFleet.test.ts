@@ -65,7 +65,7 @@ describe('loadConfiguredAgentFleet', () => {
     ])
   })
 
-  test('reports a stable diagnostic when a seat name cannot be published as a path segment', async () => {
+  test('reports a stable diagnostic when a seat composes an unsafe workspace path', async () => {
     const result = await loadConfiguredAgentFleet({
       workspaceRoot: UNSAFE_SEAT_ROOT,
       personasDir: UNSAFE_SEAT_PERSONAS_DIR,
@@ -74,14 +74,16 @@ describe('loadConfiguredAgentFleet', () => {
       env: {},
     })
 
-    // The seat still composes — only its instruction link is withheld, and
-    // never silently.
+    // A backslash cannot survive as a workspace-relative path, so the link is
+    // withheld — but the seat still composes, and never silently. An ordinary
+    // seat name with a SPACE is fine: the guard downstream accepts it, so the
+    // loader must too.
     expect(result.agents).toHaveLength(1)
     const [agent] = result.agents
     if (!agent || 'legacyDefault' in agent) throw new Error('expected a configured agent')
     expect(agent.instructionFiles).toBeUndefined()
     expect(result.diagnostics).toContainEqual(expect.objectContaining({
-      seat: 'odd seat',
+      seat: 'odd\\seat',
       code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
     }))
   })
@@ -100,6 +102,30 @@ describe('loadConfiguredAgentFleet', () => {
     })
 
     // The seat still composes and can still chat; only the link is withheld.
+    expect(result.agents).toHaveLength(1)
+    const [alpha] = result.agents
+    if (!alpha || 'legacyDefault' in alpha) throw new Error('expected a configured agent')
+    expect(alpha.instructionFiles).toBeUndefined()
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      seat: 'alpha',
+      code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
+    }))
+  })
+
+  test('publishes nothing when personas sit inside the base but outside the served workspace', async () => {
+    // The multi-tenant shape that a base-root check would wave through: the
+    // personas tree IS inside the root the caller named, but the filesystem
+    // actually serves a subdirectory of it. `isInside` passes, and a path
+    // relative to the wrong root is exactly the well-formed-but-dead link
+    // this guard exists to prevent.
+    const result = await loadConfiguredAgentFleet({
+      workspaceRoot: null,
+      personasDir: PERSONAS_DIR,
+      fleetConfigPath: FLEET_CONFIG_PATH,
+      policyPath: POLICY_PATH,
+      env: {},
+    })
+
     expect(result.agents).toHaveLength(1)
     const [alpha] = result.agents
     if (!alpha || 'legacyDefault' in alpha) throw new Error('expected a configured agent')

@@ -19,14 +19,15 @@ export interface ResolveDefaultAgentFleetOptions {
    */
   readonly repositoryRoot?: string
   /**
-   * Root of the workspace the `user` filesystem serves. Explicit rather than
-   * defaulted, because it is a DIFFERENT root from `repositoryRoot` in every
-   * multi-workspace host — and the two only coincide in the single-root
-   * dogfood/playground case. Personas outside it are not published as
-   * openable instruction refs (see `loadConfiguredAgentFleet`), because a
-   * well-formed path the workbench cannot open is worse than no link.
+   * Root of the workspace the `user` filesystem serves, or `null` when the
+   * host resolves one per request. Explicit rather than defaulted, because it
+   * is a DIFFERENT root from `repositoryRoot` in every multi-workspace host —
+   * the two only coincide in the single-root dogfood/playground case.
+   * Personas outside it are not published as openable instruction refs (see
+   * `loadConfiguredAgentFleet`): a well-formed path the workbench cannot open
+   * is worse than no link.
    */
-  readonly workspaceRoot: string
+  readonly workspaceRoot: string | null
   /** Overridable for tests; defaults to `process.env`. */
   readonly env?: NodeJS.ProcessEnv
 }

@@ -91,10 +91,12 @@ export function parseSkills(payload: unknown): AgentSkillSummary[] {
   // whole object through returned the raw payload: a non-string `description`
   // reached React as a child ("Objects are not valid as a React child" takes
   // the whole overlay down) and a non-string `source` hit `.trim()`.
+  // Parsing is NOT policy: every well-formed skill survives here, including
+  // the non-invocable ones the Skills page renders as management-only rows.
+  // Callers that only want invocable skills filter for themselves.
   return skills
     .filter((skill): skill is Record<string, unknown> => typeof skill === "object" && skill !== null)
     .filter((skill) => typeof skill.name === "string" && skill.name.length > 0)
-    .filter((skill) => skill.invocable !== false)
     .map((skill) => ({
       name: skill.name as string,
       ...(typeof skill.description === "string" && skill.description.trim()
@@ -287,7 +289,12 @@ export async function loadAgentCapabilities(
     status: "ready",
     describeError: describe.status !== "fulfilled",
     ...(description ? { description } : {}),
-    skills: { error: skills.status !== "fulfilled", value: skills.status === "fulfilled" ? parseSkills(skills.value) : [] },
+    skills: {
+      error: skills.status !== "fulfilled",
+      // The panel lists what the agent can be ASKED to do, so policy-hidden
+      // (non-invocable) skills are excluded here — the Skills page keeps them.
+      value: skills.status === "fulfilled" ? parseSkills(skills.value).filter((skill) => skill.invocable !== false) : [],
+    },
     tools: { error: tools.status !== "fulfilled", value: tools.status === "fulfilled" ? parseTools(tools.value) : [] },
     knowledge: {
       error: filesystems.status !== "fulfilled",

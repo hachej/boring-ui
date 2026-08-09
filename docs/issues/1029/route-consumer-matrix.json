@@ -471,7 +471,7 @@
       ],
       "contract": {
         "request": "Addressed agentTypeId path parameter; empty body.",
-        "response": "200 {agentTypeId,label,systemPrompt,model,plugins,mcpServers,instructionFiles}; canonical Gateway error envelope for unknown agent or denied scope."
+        "response": "200 {agentTypeId,systemPrompt,model,instructionFiles,mcpServers}; label and pluginIds come from the fleet list route, not here. Canonical Gateway error envelope for unknown agent or denied scope; denied scope is reported before agent existence."
       },
       "current": [],
       "final": [

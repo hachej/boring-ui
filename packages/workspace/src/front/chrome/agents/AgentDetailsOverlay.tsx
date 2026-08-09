@@ -102,7 +102,12 @@ export function AgentDetailsOverlay({
     // current composition rather than a stale snapshot.
     if (!client || !systemPrompt) return
     const path = `.boring/agent-prompts/${agentTypeId}.md`
+    // Same generation guard as the panel load: the re-read is a round trip, so
+    // switching agents mid-flight would otherwise write and open the PREVIOUS
+    // agent's prompt.
+    const generation = generationRef.current
     const livePrompt = await readLiveSystemPrompt(client, agentTypeId, systemPrompt)
+    if (generationRef.current !== generation) return
     try {
       await client.postJson("/api/v1/files", {
         path,
@@ -258,13 +263,16 @@ export function AgentDetailsOverlay({
               emptyText="No tools."
             >
               <DividedRows>
-                {capabilities.tools.value.map((tool) => {
-                  const expanded = expandedTool === tool.name
+                {capabilities.tools.value.map((tool, index) => {
+                  // The server may report duplicate names; a name-only key
+                  // collides AND makes both rows expand together.
+                  const toolKey = `${tool.name}\u0000${index}`
+                  const expanded = expandedTool === toolKey
                   return (
-                    <li key={tool.name} className="min-w-0">
+                    <li key={toolKey} className="min-w-0">
                       <button
                         type="button"
-                        onClick={() => setExpandedTool((current) => current === tool.name ? null : tool.name)}
+                        onClick={() => setExpandedTool((current) => current === toolKey ? null : toolKey)}
                         aria-expanded={expanded}
                         className="group flex min-h-11 w-full items-start justify-between gap-3 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:min-h-0"
                       >
@@ -294,9 +302,9 @@ export function AgentDetailsOverlay({
               emptyText="No MCP servers connected."
             >
               <DividedRows>
-                {(description?.mcpServers ?? []).map((server) => (
+                {(description?.mcpServers ?? []).map((server, index) => (
                   <MetaRow
-                    key={server.id}
+                    key={`${server.id}\u0000${index}`}
                     title={server.id}
                     meta={server.tools.length === 1 ? "1 tool" : `${server.tools.length} tools`}
                     {...(server.tools.length > 0 ? { detail: server.tools.join(", ") } : {})}
@@ -311,7 +319,7 @@ export function AgentDetailsOverlay({
               emptyText="No plugins."
             >
               <DividedRows>
-                {pluginIds.map((pluginId) => <MetaRow key={pluginId} title={pluginId} meta="Enabled" />)}
+                {pluginIds.map((pluginId, index) => <MetaRow key={`${pluginId}\u0000${index}`} title={pluginId} meta="Enabled" />)}
               </DividedRows>
             </DetailSection>
 

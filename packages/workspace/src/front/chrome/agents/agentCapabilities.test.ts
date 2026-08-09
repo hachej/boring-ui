@@ -56,10 +56,16 @@ describe("parseDescription", () => {
 })
 
 describe("parseSkills / parseTools", () => {
-  it("hides policy-hidden skills and sorts by name", () => {
+  it("sorts by name and KEEPS non-invocable skills (parsing is not policy)", () => {
     expect(parseSkills({ skills: [
       { name: "b" }, { name: "a" }, { name: "hidden", invocable: false }, { name: "" }, {},
-    ] }).map((s) => s.name)).toEqual(["a", "b"])
+    ] }).map((s) => s.name)).toEqual(["a", "b", "hidden"])
+  })
+
+  it("lets the caller apply the invocable policy", () => {
+    const invocable = parseSkills({ skills: [{ name: "a" }, { name: "hidden", invocable: false }] })
+      .filter((skill) => skill.invocable !== false)
+    expect(invocable.map((s) => s.name)).toEqual(["a"])
   })
 
   it("trims tool descriptions and drops empty ones", () => {

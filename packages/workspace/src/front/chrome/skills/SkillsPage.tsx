@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { FileText, RefreshCw, Sparkles, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
@@ -10,6 +10,7 @@ import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
 import type { PaneProps } from "../../registry/types"
 import { uiFileResourceKey, type UiFileResource } from "../../../shared/types/filesystem"
 import { openableFileResource } from "../../../shared/skills/openableFileResource"
+import { parseSkills } from "../agents/agentCapabilities"
 
 interface SkillSummary {
   name: string
@@ -51,17 +52,29 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
   const client = useWorkspacePluginClient()
   const [state, setState] = useState<LoadState>({ status: "loading", skills: [] })
 
+  // Reload and Retry can be triggered from the same error state, and `client`
+  // identity changes on a workspace/agent switch. Every commit is stamped with
+  // the generation that started it so a slow stale response cannot land on top
+  // of a newer one.
+  const generationRef = useRef(0)
+  useEffect(() => () => { generationRef.current += 1 }, [])
+
   const loadSkills = useCallback(async (refresh = false) => {
+    const generation = ++generationRef.current
+    const isStale = () => generationRef.current !== generation
     setState((current) => ({ status: "loading", skills: current.skills }))
     try {
       const payload = await client.getJson<SkillsResponse>(`/api/v1/agents/${encodeURIComponent(client.agentTypeId)}/skills${refresh ? "?refresh=1" : ""}`, {
         missingMessage: "Failed to load workspace skills.",
       })
-      const skills = Array.isArray(payload.skills)
-        ? payload.skills.filter((skill): skill is SkillSummary => typeof skill?.name === "string" && skill.name.length > 0)
-        : []
-      setState({ status: "ready", skills })
+      if (isStale()) return
+      // The SAME hardened parser the Agent details panel uses. This surface
+      // previously kept the raw payload after checking only `name`, so a
+      // non-string `description` reached React as a child — which, with no
+      // error boundary above this pane, blanks the whole app.
+      setState({ status: "ready", skills: parseSkills(payload) })
     } catch (error) {
+      if (isStale()) return
       setState((current) => ({
         status: "error",
         skills: current.skills,

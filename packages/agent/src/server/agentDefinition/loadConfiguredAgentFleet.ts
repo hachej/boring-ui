@@ -48,14 +48,21 @@ export interface FleetSeatBinding {
 
 export interface LoadConfiguredAgentFleetOptions {
   /**
-   * Root of the workspace the `user` filesystem serves. REQUIRED, because
-   * published `instructionFiles` are addressed relative to it — and only the
-   * caller knows it. It is NOT derivable from `personasDir`: a fleet can be
-   * composed from a repository root that is not the workspace root, and
-   * guessing "the last two segments" produced well-formed paths that resolved
-   * to nothing in the workspace.
+   * Root of the workspace the `user` filesystem serves, or `null` when the
+   * host resolves a DIFFERENT root per request (core, the CLI hub) and so has
+   * no single one at fleet-composition time.
+   *
+   * Required, because published `instructionFiles` are addressed relative to
+   * it and only the caller knows it. It is NOT derivable from `personasDir`:
+   * a fleet can be composed from a repository root that is not the workspace
+   * root, and guessing "the last two segments" produced well-formed paths
+   * that resolved to nothing.
+   *
+   * `null` is not a soft option — it makes the host structurally unable to
+   * publish a ref it cannot guarantee, which is the honest answer for
+   * per-workspace roots.
    */
-  readonly workspaceRoot: string
+  readonly workspaceRoot: string | null
   /** Directory containing `<seat>/package.json` persona packages. */
   readonly personasDir: string
   /** Path to `.agents/factory/fleet.yaml`. */
@@ -74,8 +81,24 @@ export interface LoadConfiguredAgentFleetOptions {
   readonly env?: NodeJS.ProcessEnv
 }
 
-/** Seat names that are safe to publish as a workspace-relative path segment. */
-const SAFE_SEAT_SEGMENT_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+/**
+ * Whether a workspace-relative path is safe to publish to a client.
+ *
+ * Deliberately the SAME shape as the browser-side guard every openable
+ * resource passes through (`isSafePluginRelativePath` +
+ * `openableFileResource` in @hachej/boring-workspace): no NUL, no backslash,
+ * not absolute, no `..`/empty/bare-dot segments. An allowlist regex here was
+ * stricter than the guard downstream, so an ordinary seat name containing a
+ * space permanently lost its link for no security reason.
+ */
+function isPublishableWorkspacePath(value: string): boolean {
+  return value.length > 0
+    && !value.includes('\0')
+    && !value.includes('\\')
+    && !value.startsWith('/')
+    && !/^[A-Za-z]:[\\/]/.test(value)
+    && !value.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')
+}
 
 export type FleetLoaderDiagnosticCode = Extract<
   AgentErrorCode,
@@ -249,10 +272,11 @@ export async function loadConfiguredAgentFleet(
   // filesystem actually serves. When they don't, no ref is published at all —
   // a well-formed path to a file the workbench cannot open is worse than no
   // link, because the row looks live and silently opens nothing.
-  const personasAreInsideWorkspace = isInside(options.workspaceRoot, options.personasDir)
-  const workspaceRelativePersonasDir = relative(options.workspaceRoot, options.personasDir)
-    .split(sep)
-    .join('/')
+  const personasAreInsideWorkspace = options.workspaceRoot !== null
+    && isInside(options.workspaceRoot, options.personasDir)
+  const workspaceRelativePersonasDir = options.workspaceRoot === null
+    ? ''
+    : relative(options.workspaceRoot, options.personasDir).split(sep).join('/')
 
   const agents: ConfiguredAgentHostAgentSpec[] = []
   const diagnostics: FleetLoaderDiagnostic[] = []
@@ -287,13 +311,16 @@ export async function loadConfiguredAgentFleet(
       // The loader is the only place that knows seat -> persona directory;
       // publishing it here keeps clients from inverting the mapping.
       let instructionFiles: AgentInstructionFileRef[] | undefined
+      const candidatePath = `${workspaceRelativePersonasDir}/${binding.seat}/instructions.md`
       // ONE honest failure path covering both ways a ref can be unpublishable:
-      // personas outside the served workspace, and a seat name that is not a
-      // safe path segment.
-      const unpublishableReason = !personasAreInsideWorkspace
+      // personas outside the served workspace, and a composed path the
+      // client-side guard would reject anyway.
+      const unpublishableReason = options.workspaceRoot === null
+        ? `this host resolves a workspace root per request, so persona instructions have no single "${AGENT_USER_FILESYSTEM_ID}" path to be addressed against`
+        : !personasAreInsideWorkspace
         ? `personas directory ${JSON.stringify(options.personasDir)} resolves outside the workspace root ${JSON.stringify(options.workspaceRoot)} that the "${AGENT_USER_FILESYSTEM_ID}" filesystem serves`
-        : !SAFE_SEAT_SEGMENT_RE.test(binding.seat)
-          ? `seat "${binding.seat}" is not a safe workspace-relative path segment`
+        : !isPublishableWorkspacePath(candidatePath)
+          ? `seat "${binding.seat}" composes an unsafe workspace-relative path (${JSON.stringify(candidatePath)})`
           : undefined
       if (unpublishableReason) {
         // Fails loud, not silent: the seat still composes, but the overlay
@@ -306,7 +333,7 @@ export async function loadConfiguredAgentFleet(
       } else {
         instructionFiles = [{
           filesystem: AGENT_USER_FILESYSTEM_ID,
-          path: `${workspaceRelativePersonasDir}/${binding.seat}/instructions.md`,
+          path: candidatePath,
           role: 'persona',
         }]
       }

@@ -292,16 +292,15 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       }
     },
     async describeAgent({ request, agentTypeId }) {
+      // Authorize BEFORE looking the agent up, matching `resolve()` and every
+      // sibling route. Checking existence first turns an unauthorized request
+      // into an agent-existence oracle: unknown vs denied are distinguishable
+      // without any right to ask.
+      const { claim } = await authorizeAgentAccess(request, agentTypeId)
       const spec = runtime.compiledById.get(agentTypeId)
       if (!spec) {
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
       }
-      // Same per-agent authorization bar as every sibling route. This response
-      // carries the authored system prompt, the pinned model, instruction file
-      // locations and the granted MCP connectors — workspace-scope
-      // authorization alone must not be enough to read it. The binding itself
-      // is NOT materialized: nothing here drives the harness.
-      const { claim } = await authorizeAgentAccess(request, agentTypeId)
       const legacy = 'legacyDefault' in spec
       let mcpServers: AgentHostAgentDescription['mcpServers'] = []
       if (mcpGrants) {

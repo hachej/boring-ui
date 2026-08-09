@@ -1020,10 +1020,12 @@ export async function createCoreWorkspaceAgentServer(
   const sessionRoot = normalizeOptionalPath(options.sessionRoot)
     ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
     ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
-  // The base root, not a served one: core serves `<workspaceRoot>/<workspaceId>`
-  // per workspace, so a repository-rooted persona tree is correctly reported as
-  // unpublishable rather than linked to a path that resolves to nothing.
-  const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot, workspaceRoot })
+  // `null`, not the base root: core serves `<workspaceRoot>/<workspaceId>` and
+  // NEVER the base itself (resolveWorkspaceRoot rejects it), so no single root
+  // exists at composition time. Passing the base would let a persona tree that
+  // happens to sit inside it publish a path relative to the wrong root — a
+  // live "Open" button that opens nothing.
+  const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot, workspaceRoot: null })
   registerTelemetryHooks(app, telemetry)
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })

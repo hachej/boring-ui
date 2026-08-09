@@ -117,14 +117,25 @@ describe('describeAgent', () => {
     expect(seen).toEqual(['concierge'])
   })
 
-  test('an unknown agent is rejected before the authorization hook is consulted', async () => {
+  test('authorizes BEFORE checking existence, so it is not an agent-existence oracle', async () => {
+    // A denied caller must not be able to distinguish "no such agent" from
+    // "not yours" — both must fail at the authorization hook.
     const seen: string[] = []
     const projection = createProjection({
-      resolveAgentRuntimeScope: async (agentTypeId) => { seen.push(agentTypeId); return {} },
+      resolveAgentRuntimeScope: async (agentTypeId) => {
+        seen.push(agentTypeId)
+        throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SCOPE_DENIED, 'agent access denied')
+      },
     })
     await expect(projection.describeAgent({ request: {} as never, agentTypeId: 'nope' }))
+      .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED })
+    expect(seen).toEqual(['nope'])
+  })
+
+  test('an authorized caller still gets a stable code for an unknown agent', async () => {
+    const projection = createProjection()
+    await expect(projection.describeAgent({ request: {} as never, agentTypeId: 'nope' }))
       .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN })
-    expect(seen).toEqual([])
   })
 
   test('stops serving during drain, like every sibling route', async () => {
