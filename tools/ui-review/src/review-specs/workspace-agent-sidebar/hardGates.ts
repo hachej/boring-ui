@@ -6,14 +6,21 @@ import {
 } from "../../core/contracts"
 import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 
-// v5 unions two owner-ratified changes:
-// - Agent details became a capability inventory (Instructions / Knowledge /
-//   Skills / Tools / MCP access / Plugins / Defaults / System prompt), so the
-//   old "Configuration" heading gate becomes a capability-heading gate plus a
-//   jargon ban; the no-tabs invariant is kept.
+// v8 adds the viewport bands this contract used to be blind to. v5-v7 sampled
+// only 1440-fine and 390-coarse, so any rule keyed to viewport WIDTH agreed
+// with any rule keyed to POINTER TYPE at both sampled points and could
+// disagree everywhere else. The snapshot now reports the pointer explicitly
+// instead of inferring it from a viewport named "mobile", and the touch-target
+// and always-visible-action expectations are keyed to the conditions the CSS
+// actually uses.
+//
+// Carried forward from v5-v7:
+// - Agent details is a capability inventory (Instructions / Knowledge /
+//   Skills / Tools / MCP access / Plugins / Defaults / System prompt): a
+//   capability-heading gate plus a jargon ban, and the no-tabs invariant.
 // - Agent rows expose "New chat" (+), the "..." options trigger holding the
 //   placement variants, and Settings; the action count recognises the trigger.
-export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v7"
+export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v8"
 
 const KNOWN_ABORTED_REQUESTS: Array<{
   rationale: string
@@ -46,7 +53,14 @@ export interface AgentSidebarHardGateSnapshot extends UiReviewBrowserErrors {
   stateId: string
   checkpoint: string
   origin: string
-  viewport: { width: number; height: number; mobile: boolean }
+  /**
+   * The two conditions the sidebar branches on, kept apart on purpose:
+   * `mobileShell` is a WIDTH switch (the JS `viewport < 640` sheet) and
+   * `coarsePointer` is a POINTER media condition. Folding them into one
+   * "mobile" boolean is what let a width-keyed rule and a pointer-keyed rule
+   * disagree unobserved.
+   */
+  viewport: { width: number; height: number; mobileShell: boolean; coarsePointer: boolean }
   documentWidth: { scrollWidth: number; clientWidth: number }
   axeViolations: Array<{ id: string; impact: string; nodes: number }>
   sidebar: {
@@ -79,8 +93,15 @@ const AGENT_ROW_ACTIONS_PER_AGENT = 3
 /** "New chat with X" sits outside the fading strip; the other two do not. */
 const AGENT_ROW_RESTING_ACTIONS_PER_AGENT = 1
 const AGENT_ROW_RESTING_ACTIONS = AGENT_ROW_RESTING_ACTIONS_PER_AGENT * EXPECTED_AGENT_COUNT
-/** Resting everywhere, plus the hovered Agent's two revealed actions. */
-const AGENT_ROW_HOVER_ACTIONS = AGENT_ROW_RESTING_ACTIONS + (AGENT_ROW_ACTIONS_PER_AGENT - AGENT_ROW_RESTING_ACTIONS_PER_AGENT)
+const AGENT_ROW_ACTIONS = AGENT_ROW_ACTIONS_PER_AGENT * EXPECTED_AGENT_COUNT
+/**
+ * One Agent shows all of its actions; every OTHER Agent shows only its resting
+ * one. Written as a whole-fleet sum rather than "the resting total plus a
+ * per-Agent delta", which happened to be right for two Agents and silently
+ * wrong for any other fleet size.
+ */
+const AGENT_ROW_HOVER_ACTIONS = AGENT_ROW_ACTIONS_PER_AGENT
+  + AGENT_ROW_RESTING_ACTIONS_PER_AGENT * (EXPECTED_AGENT_COUNT - 1)
 
 /** Every section the Agent details panel owes the operator, in order. */
 const EXPECTED_CAPABILITY_HEADINGS = [
@@ -107,7 +128,11 @@ export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnap
   })
   const unexpectedFailures = classifiedFailures.filter((failure) => !failure.rationale)
   const state = snapshot.sidebar
-  const agentNavigationExpected = snapshot.checkpoint !== "agent-details" || !snapshot.viewport.mobile
+  const agentNavigationExpected = snapshot.checkpoint !== "agent-details" || !snapshot.viewport.mobileShell
+  // Agent-card actions stop hiding behind hover under EITHER of the two
+  // conditions globals.css uses: `(max-width: 767px), (hover: none)`. Keyed to
+  // the same union the stylesheet is, so the two cannot drift apart.
+  const actionsAlwaysVisible = snapshot.viewport.coarsePointer || snapshot.viewport.width <= 767
   const surfaceReady = snapshot.checkpoint === "agent-details" ? state.detailOverlayCount === 1 : state.agentCount === 2
   const statePassed = surfaceReady
     && (!agentNavigationExpected || (state.agentCount === 2 && state.agentHeading === "Agents" && state.agentFilterCount === 1))
@@ -117,8 +142,8 @@ export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnap
     // 3x2 expectation only held because the counter ignored the container
     // opacity that does the hiding — it proved the buttons exist in the DOM,
     // which is not what discoverability means.
-    && (snapshot.checkpoint !== "hover-actions" || state.visibleActionCount === AGENT_ROW_HOVER_ACTIONS)
-    && (snapshot.viewport.mobile || snapshot.checkpoint !== "agent-list" || state.visibleActionCount === AGENT_ROW_RESTING_ACTIONS)
+    && (snapshot.checkpoint !== "hover-actions" || state.visibleActionCount === (actionsAlwaysVisible ? AGENT_ROW_ACTIONS : AGENT_ROW_HOVER_ACTIONS))
+    && (actionsAlwaysVisible || snapshot.checkpoint !== "agent-list" || state.visibleActionCount === AGENT_ROW_RESTING_ACTIONS)
     && (snapshot.checkpoint !== "expanded-sessions" || (state.expandedRegionCount >= 2 && state.guideCount >= 2))
     && (snapshot.checkpoint !== "pinned-chat" || (state.pinnedHeading === "Pinned chats" && state.pinnedCount === 1 && state.pinnedProvenance === "Alpha" && state.pinnedAgentSessionCount >= 1 && state.nestedPinnedHasPin))
     && (snapshot.checkpoint !== "agent-details" || (
@@ -127,10 +152,10 @@ export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnap
       && sameHeadings(state.capabilityHeadings, EXPECTED_CAPABILITY_HEADINGS)
       && state.legacyJargonCount === 0
     ))
-    // Coarse pointers keep "+", the "..." options trigger, and Settings
-    // directly visible per Agent.
-    && (!snapshot.viewport.mobile || snapshot.checkpoint !== "agent-list" || (
-      state.visibleActionCount === AGENT_ROW_ACTIONS_PER_AGENT * EXPECTED_AGENT_COUNT
+    // Where hover cannot reveal them, "+", the "..." options trigger and
+    // Settings are all directly visible per Agent.
+    && (!actionsAlwaysVisible || snapshot.checkpoint !== "agent-list" || (
+      state.visibleActionCount === AGENT_ROW_ACTIONS
       && state.visibleAgentCountLabels === EXPECTED_AGENT_COUNT
     ))
 
@@ -147,7 +172,9 @@ export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnap
   // reservation regresses, the title and the age silently sit under
   // background-less icon buttons.
   add("session-row-action-overlap", state.actionOverlaps.length === 0, JSON.stringify(state.actionOverlaps))
-  add("agent-touch-targets", !snapshot.viewport.mobile || state.undersizedAgentControls.length === 0, JSON.stringify(state.undersizedAgentControls))
+  // Keyed to the POINTER, like the 44px rules themselves — not to a narrow
+  // viewport, which is neither necessary nor sufficient for a coarse pointer.
+  add("agent-touch-targets", !snapshot.viewport.coarsePointer || state.undersizedAgentControls.length === 0, JSON.stringify(state.undersizedAgentControls))
   return { schemaVersion: UI_REVIEW_SCHEMA_VERSION, contractVersion: AGENT_SIDEBAR_HARD_GATE_CONTRACT, results }
 }
 

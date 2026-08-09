@@ -6,7 +6,7 @@ function snapshot(requestFailures: AgentSidebarHardGateSnapshot["requestFailures
     stateId: "state",
     checkpoint: "agent-list",
     origin: "http://127.0.0.1:5480",
-    viewport: { width: 1440, height: 900, mobile: false },
+    viewport: { width: 1440, height: 900, mobileShell: false, coarsePointer: false },
     documentWidth: { scrollWidth: 1440, clientWidth: 1440 },
     axeViolations: [],
     consoleErrors: [],
@@ -89,6 +89,41 @@ describe("workspace Agent sidebar state contract", () => {
     expect(at("hover-actions", 2)).toMatchObject({ passed: false })
     expect(at("agent-list", 2)).toMatchObject({ passed: true })
     expect(at("agent-list", 6)).toMatchObject({ passed: false })
+  })
+
+  it("expects every control visible where hover cannot reveal them, on either condition that causes it", () => {
+    // The two conditions globals.css unions — `(max-width: 767px)` and
+    // `(hover: none)` — are independent, and the harness now visits a viewport
+    // that satisfies only one of each. Reading either one off a single
+    // "mobile" flag is what made 500-fine and 834-coarse unobservable.
+    const base = snapshot([])
+    const at = (viewport: Partial<AgentSidebarHardGateSnapshot["viewport"]>, visibleActionCount: number) =>
+      evaluateAgentSidebarHardGates({
+        ...base,
+        viewport: { ...base.viewport, ...viewport },
+        sidebar: { ...base.sidebar, visibleActionCount },
+      }).results.find((result) => result.id === "state-contract")
+
+    // Narrow + FINE pointer: revealed by width alone.
+    expect(at({ width: 500 }, 6)).toMatchObject({ passed: true })
+    expect(at({ width: 500 }, 2)).toMatchObject({ passed: false })
+    // Wide + COARSE pointer: revealed by pointer alone.
+    expect(at({ width: 834, coarsePointer: true }, 6)).toMatchObject({ passed: true })
+    expect(at({ width: 834, coarsePointer: true }, 2)).toMatchObject({ passed: false })
+  })
+
+  it("measures touch targets on the pointer, not on a narrow viewport", () => {
+    const base = snapshot([])
+    const gate = (viewport: Partial<AgentSidebarHardGateSnapshot["viewport"]>) => evaluateAgentSidebarHardGates({
+      ...base,
+      viewport: { ...base.viewport, ...viewport },
+      sidebar: { ...base.sidebar, undersizedAgentControls: [{ label: "Chat actions for x", width: 24, height: 24 }] },
+    }).results.find((result) => result.id === "agent-touch-targets")
+    // A wide tablet is still a coarse pointer, and 24px is still too small.
+    expect(gate({ width: 834, coarsePointer: true })).toMatchObject({ passed: false })
+    expect(gate({ width: 390, coarsePointer: true })).toMatchObject({ passed: false })
+    // A narrow desktop window is a fine pointer; 24px is the correct size.
+    expect(gate({ width: 500 })).toMatchObject({ passed: true })
   })
 })
 

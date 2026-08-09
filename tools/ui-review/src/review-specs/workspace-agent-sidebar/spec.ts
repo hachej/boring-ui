@@ -10,12 +10,25 @@ import {
 } from "./hardGates"
 
 const AXE_SCRIPT_PATH = createRequire(import.meta.url).resolve("axe-core/axe.min.js")
+// Width and pointer are INDEPENDENT axes and the sidebar CSS uses both. A
+// two-point sample of (wide, fine) and (narrow, coarse) holds them locked
+// together, so a rule keyed to width and a rule keyed to pointer agree at
+// every sampled point and can disagree everywhere else — which is exactly how
+// a 44px button in a 28px slot and a 24px button in a 44px slot both shipped
+// green. These four viewports cover all four corners of the two axes.
 const viewports: UiReviewViewport[] = [
   { name: "desktop", width: 1440, height: 900, deviceScaleFactor: 1 },
-  // Touch-emulated: the coarse-pointer branch (44px slots, always-visible
-  // actions, the trailing margin swap) only exists under `pointer: coarse`,
-  // and a plain narrow viewport is still a fine-pointer browser.
+  // Wide + fine's opposite corner. Touch-emulated: the coarse-pointer branch
+  // (44px slots, always-visible actions, the trailing margin swap) only exists
+  // under `pointer: coarse`, and a plain narrow viewport is still a
+  // fine-pointer browser.
   { name: "mobile", width: 390, height: 844, deviceScaleFactor: 1, hasTouch: true },
+  // Narrow + FINE: a desktop browser window dragged small. Every `sm:`
+  // utility drops out here while every pointer-keyed rule stays put.
+  { name: "narrow-desktop", width: 500, height: 900, deviceScaleFactor: 1 },
+  // Wide + COARSE: a tablet. Every `sm:` utility applies while every
+  // pointer-keyed rule takes its touch branch.
+  { name: "tablet", width: 834, height: 1112, deviceScaleFactor: 1, hasTouch: true },
 ]
 
 async function ensureAgentNavigation(page: Page): Promise<void> {
@@ -31,7 +44,7 @@ async function ensureAgentNavigation(page: Page): Promise<void> {
 
 export const workspaceAgentSidebarSpec: UiReviewSpec = {
   id: "workspace-agent-sidebar",
-  specRevision: "workspace-agent-sidebar-v3",
+  specRevision: "workspace-agent-sidebar-v4",
   fixtureResetId: "workspace-agent-sidebar-fixture-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -60,7 +73,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
       await ensureAgentNavigation(page)
       await page.mouse.move(1_000, 500)
     } },
-    { id: "hover-actions", viewportNames: ["desktop"], colorScheme: "dark", reach: async (page) => {
+    { id: "hover-actions", viewportNames: ["desktop", "narrow-desktop"], colorScheme: "dark", reach: async (page) => {
       await page.locator('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="beta"] .app-left-agent-row').hover()
       await expect(page.getByRole("button", { name: "New chat with Beta", exact: true })).toBeVisible()
     } },
@@ -111,6 +124,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
   ownerSpotChecks: [
     "Compare Agent list, hover actions, expanded sessions, pinned chat, and Agent details at desktop 1440×900.",
     "Compare Agent list, expanded sessions, pinned chat, and Agent details at mobile 390×844.",
+    "Compare the same states at narrow-desktop 500×900 (fine pointer) and tablet 834×1112 (coarse pointer) — the width/pointer corners a wide-fine plus narrow-coarse pair cannot see.",
     "Confirm pinned chats remain top-level and show their Agent provenance.",
     "Confirm desktop actions appear on hover/focus while touch actions remain directly available.",
     "Confirm Agent rows expand/collapse chats while only the dedicated settings control opens Agent details.",
@@ -122,7 +136,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
     collect: async (page, stateId, checkpoint, viewport, errors): Promise<AgentSidebarHardGateSnapshot> => {
       if (!await page.evaluate(() => "axe" in window)) await page.addScriptTag({ path: AXE_SCRIPT_PATH })
       const [sidebar, axeViolations, documentWidth] = await Promise.all([
-        page.evaluate(({ checkpoint, mobile }) => {
+        page.evaluate(({ checkpoint, coarsePointer }) => {
           // Effective opacity, not the element's own: hover/touch reveal
           // works by fading the CONTAINER, so a control's own opacity of 1
           // says nothing about whether the user can see or hit it.
@@ -207,7 +221,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
                   : []
               })
             }),
-            undersizedAgentControls: mobile ? controls.map((control) => {
+            undersizedAgentControls: coarsePointer ? controls.map((control) => {
               const rect = control.getBoundingClientRect()
               return { label: control.getAttribute("aria-label") || control.textContent?.trim() || "button", width: rect.width, height: rect.height }
             // The coarse-pointer rules TARGET 44px; asserting 24 let a
@@ -215,7 +229,14 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
             }).filter((control) => control.width < 44 || control.height < 44) : [],
             checkpoint,
           }
-        }, { checkpoint, mobile: viewport.name === "mobile" }),
+        }, {
+          checkpoint,
+          // The page is told WHICH CONDITION to measure against, not which
+          // viewport it happens to be. `viewport.name === "mobile"` conflated
+          // "narrow" with "coarse pointer"; every band added since separates
+          // them, and the CSS always did.
+          coarsePointer: viewport.hasTouch === true,
+        }),
         page.evaluate(async () => {
           const result = await (window as typeof window & { axe: { run: (context: Document, options: object) => Promise<{ violations: Array<{ id: string; impact: string | null; nodes: unknown[] }> }> } }).axe.run(document, { resultTypes: ["violations"] })
           return result.violations.filter((violation) => violation.impact === "serious" || violation.impact === "critical").map((violation) => ({ id: violation.id, impact: violation.impact!, nodes: violation.nodes.length }))
@@ -226,7 +247,15 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
         stateId,
         checkpoint,
         origin: new URL(page.url()).origin,
-        viewport: { width: viewport.width, height: viewport.height, mobile: viewport.name === "mobile" },
+        // Both conditions the sidebar branches on, reported separately.
+        // `mobileShell` is the JS width switch in PluginTabsWorkspaceShell
+        // (`viewport < 640`); `coarsePointer` is the CSS media condition.
+        viewport: {
+          width: viewport.width,
+          height: viewport.height,
+          mobileShell: viewport.width < 640,
+          coarsePointer: viewport.hasTouch === true,
+        },
         documentWidth,
         axeViolations,
         sidebar,
