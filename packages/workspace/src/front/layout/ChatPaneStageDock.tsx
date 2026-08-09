@@ -488,6 +488,9 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
 
   // With a single pane there is nothing to move — show a plain title.
   const multiPane = stage.panes.length > 1
+  // Who owns this chat. The host omits it for single-Agent workspaces, so the
+  // header degrades to exactly what it was before.
+  const agentLabel = stage.panes.find((candidate) => candidate.id === api.id)?.agentLabel
   return (
     <div
       data-boring-workspace-part="chat-pane-title"
@@ -495,7 +498,7 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
         "group flex h-full min-w-0 select-none items-center gap-2 px-3 text-[13px] font-medium leading-none tracking-[-0.01em]",
         multiPane && "cursor-grab active:cursor-grabbing",
       )}
-      title={title}
+      title={agentLabel ? `${title} — ${agentLabel}` : title}
     >
       {multiPane ? (
         <GripVertical
@@ -505,9 +508,20 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
           strokeWidth={1.75}
         />
       ) : null}
-      <span className="min-w-0 max-w-[min(340px,45vw)] overflow-hidden text-ellipsis whitespace-nowrap text-foreground/90">
+      <span className="min-w-0 max-w-[min(340px,45vw)] shrink-[2] overflow-hidden text-ellipsis whitespace-nowrap text-foreground/90">
         {title}
       </span>
+      {agentLabel ? (
+        // Secondary, never competing with the title: the same quiet 11px
+        // provenance label the pinned-chat rows use. It shrinks and truncates
+        // so it can never push the split/close controls out of the header.
+        <span
+          data-boring-workspace-part="chat-pane-agent"
+          className="min-w-0 max-w-[45%] shrink overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-medium leading-none text-muted-foreground"
+        >
+          {agentLabel}
+        </span>
+      ) : null}
     </div>
   )
 }

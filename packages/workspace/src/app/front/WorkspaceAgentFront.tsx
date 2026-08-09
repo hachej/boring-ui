@@ -25,6 +25,7 @@ import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AgentDetailsOverlay } from "../../front/chrome/agents/AgentDetailsOverlay"
 import { AppLeftPane, AppLeftRail } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
+import { chatPaneAgentLabels } from "../../front/layout/chatPaneAgentLabels"
 import { useViewportWidth } from "../../front/layout/useViewportWidth"
 import { captureWorkspaceFrontPlugins } from "./workspaceBuiltinPlugins"
 import type { FilesystemId } from "../../shared/types/filesystem"
@@ -2207,10 +2208,20 @@ export function WorkspaceAgentFront<
     () => makeCenterParams(chatSessionKey),
     [chatSessionKey, makeCenterParams],
   )
+  /**
+   * Which Agent owns each chat, for the chat headers. Null with fewer than two
+   * Agents: a lone Agent disambiguates nothing, so the headers stay title-only.
+   */
+  const chatHeaderAgentLabelById = useMemo(
+    () => chatPaneAgentLabels(addressedAgents.agents),
+    [addressedAgents.agents],
+  )
   const chatPanes = useMemo(() => chatPaneIds.map((id) => {
     const sessionRef = workspaceSessionRefFromKey(id)
+    const agentLabel = sessionRef.agentTypeId ? chatHeaderAgentLabelById?.get(sessionRef.agentTypeId) : undefined
     return {
       id,
+      ...(agentLabel ? { agentLabel } : {}),
       // Never expose a raw native UUID while list metadata catches up. New
       // sessions start with the default title and adopt their real title as
       // soon as the authoritative session row arrives. Human-readable custom
@@ -2219,7 +2230,7 @@ export function WorkspaceAgentFront<
       panel: "chat",
       params: makeCenterParams(id),
     }
-  }), [chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
+  }), [chatHeaderAgentLabelById, chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
   const providerChatPaneSessionRefs = useMemo(
     () => chatPaneIds.map(workspaceSessionRefFromKey),
     [chatPaneIds],
@@ -2415,6 +2426,7 @@ export function WorkspaceAgentFront<
     workspaceId,
     effectiveAppLeftPaneWidth,
     sessionTitleById,
+    agentLabelByTypeId: chatHeaderAgentLabelById,
     defaultSessionTitle,
     makeCenterParams,
     createChatSession: createShellChatSession,

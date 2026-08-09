@@ -15,6 +15,7 @@ const READ_ONLY_BLOCKER = {
 export function DetachedChatPopover({
   sessionId,
   title,
+  agentLabel,
   chatParams,
   initialPosition,
   onClose,
@@ -23,6 +24,8 @@ export function DetachedChatPopover({
 }: {
   sessionId: string
   title: string
+  /** Agent that owns the chat; omitted for single-Agent workspaces. */
+  agentLabel?: string
   chatParams: ChatPanelHostProps
   initialPosition: DetachedPanelPosition
   onClose: () => void
@@ -35,10 +38,13 @@ export function DetachedChatPopover({
         ...chatParams,
         composerBlockers: [READ_ONLY_BLOCKER, ...(chatParams.composerBlockers ?? [])],
       }
+  // The popover already carries a quiet subtitle line; the Agent leads it
+  // rather than claiming new chrome next to the dock/close controls.
+  const stateSubtitle = composingEnabled ? "Detached chat" : "Detached chat · dock to reply"
   return (
     <DetachedPanelPopover
       title={title}
-      subtitle={composingEnabled ? "Detached chat" : "Detached chat · dock to reply"}
+      subtitle={agentLabel ? `${agentLabel} · ${stateSubtitle}` : stateSubtitle}
       icon={<MessageSquare className="size-4" strokeWidth={1.75} aria-hidden="true" />}
       ariaLabel={`Chat session ${title || sessionId}`}
       initialPosition={initialPosition}

@@ -99,6 +99,42 @@ describe("mobile chat chrome", () => {
     expect(header?.className).toContain("env(safe-area-inset-top)")
   })
 
+  it("names the owning Agent under the title, alongside the multi-pane notice", () => {
+    render(
+      <MobileSingleChatPane
+        pane={{ id: "pane-a", title: "Planning", agentLabel: "Coder" }}
+        totalPanes={2}
+        renderPane={() => <div>Transcript</div>}
+      />,
+    )
+
+    const subtitle = document.querySelector('[data-boring-workspace-part="mobile-chat-pane-subtitle"]')
+    expect(subtitle?.textContent).toBe("Coder · Showing 1 of 2 chats — split panes are disabled on mobile.")
+    expect(subtitle?.className).toContain("truncate")
+  })
+
+  it("shows only the Agent when it is the sole pane, and nothing without one", () => {
+    const { rerender } = render(
+      <MobileSingleChatPane
+        pane={{ id: "pane-a", title: "Planning", agentLabel: "Coder" }}
+        totalPanes={1}
+        renderPane={() => <div>Transcript</div>}
+      />,
+    )
+    expect(
+      document.querySelector('[data-boring-workspace-part="mobile-chat-pane-subtitle"]')?.textContent,
+    ).toBe("Coder")
+
+    rerender(
+      <MobileSingleChatPane
+        pane={{ id: "pane-a", title: "Planning" }}
+        totalPanes={1}
+        renderPane={() => <div>Transcript</div>}
+      />,
+    )
+    expect(document.querySelector('[data-boring-workspace-part="mobile-chat-pane-subtitle"]')).toBeNull()
+  })
+
   it("gives the close action a reduced-motion-safe hover and a focus ring", () => {
     render(
       <MobileSingleChatPane
