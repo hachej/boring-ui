@@ -627,11 +627,19 @@ export class EmbeddedAgentGateway implements AgentGateway {
             evidenceDigest: candidates[0]!.evidenceDigest,
           })
           if (result === 'mismatch') throw new Error('runtime identity migration compare-and-swap failed')
-        } catch {
-          throw new AgentGatewayError(
+        } catch (error) {
+          // Fail closed, but keep the underlying migration failure diagnosable.
+          const cause = error instanceof Error ? error : new Error(String(error))
+          throw Object.assign(new AgentGatewayError(
             AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
             'session is pinned to a different runtime scope',
-          )
+            {
+              migrationFailure: cause.message,
+              ...(typeof (cause as unknown as { code?: unknown }).code === 'string'
+                ? { migrationFailureCode: (cause as unknown as { code: string }).code }
+                : {}),
+            },
+          ), { cause })
         }
         persistedPin = resolved.identity
         pinned = resolved.identity

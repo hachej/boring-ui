@@ -1,4 +1,4 @@
-import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -160,23 +160,31 @@ describe('runtime scope identity', () => {
 
   it('fails closed on malformed metadata and stale migration locks', async () => {
     const sessionRoot = await temporaryRoot()
+    // Path-derived legacy store: the only store shape that can still resolve a
+    // transcript whose header line no longer parses, reaching the migration body.
     const malformedStore = new PiSessionStore(sessionRoot, {
       sessionRoot,
-      sessionNamespace: 'malformed-cas',
       storageCwd: sessionRoot,
     })
     const malformedSession = await malformedStore.create({
       workspaceId: 'workspace-a',
       runtimeScopeIdentity: 'a'.repeat(64),
     })
-    const malformedPath = await sessionFilePath(join(sessionRoot, 'malformed-cas'), malformedSession.id)
+    const malformedPath = await sessionFilePath(malformedStore.getSessionDir(), malformedSession.id)
     const malformed = '{malformed-header}\n{"tail":"unchanged"}\n'
     await writeFile(malformedPath, malformed, 'utf8')
+    // An empty ctx reaches the migration body (tenancy cannot be read from a
+    // malformed header), where the JSON parse failure itself must fail closed.
     await expect(malformedStore.migrateRuntimeScopeIdentity(
-      { workspaceId: 'workspace-a' },
+      {},
       malformedSession.id,
       { expectedIdentity: 'a'.repeat(64), nextIdentity: 'b'.repeat(64), evidenceDigest: 'c'.repeat(64) },
-    )).rejects.toThrow(/Session (?:metadata is malformed|not found)/)
+    )).rejects.toMatchObject({
+      message: expect.stringMatching(/Session metadata is malformed/),
+      code: 'SESSION_TRANSCRIPT_UNREADABLE',
+      // The original parse failure must survive as the cause, not be swallowed.
+      cause: expect.objectContaining({ message: expect.stringMatching(/JSON/i) }),
+    })
     expect(await readFile(malformedPath, 'utf8')).toBe(malformed)
 
     const lockedStore = new PiSessionStore(sessionRoot, {
@@ -195,8 +203,42 @@ describe('runtime scope identity', () => {
       { workspaceId: 'workspace-a' },
       lockedSession.id,
       { expectedIdentity: 'd'.repeat(64), nextIdentity: 'e'.repeat(64), evidenceDigest: 'f'.repeat(64) },
-    )).rejects.toThrow(/migration is locked/)
+    )).rejects.toMatchObject({
+      message: expect.stringMatching(/migration is locked/),
+      code: 'SESSION_LOCKED',
+      statusCode: 409,
+      retryable: true,
+    })
     expect((await readFile(lockedPath)).equals(before)).toBe(true)
+  })
+
+  it('takes over a stale migration lock abandoned by a crashed holder', async () => {
+    const sessionRoot = await temporaryRoot()
+    const store = new PiSessionStore(sessionRoot, {
+      sessionRoot,
+      sessionNamespace: 'stale-lock-takeover',
+      storageCwd: sessionRoot,
+    })
+    const oldIdentity = 'd'.repeat(64)
+    const created = await store.create({ workspaceId: 'workspace-a', runtimeScopeIdentity: oldIdentity })
+    const transcriptPath = await sessionFilePath(join(sessionRoot, 'stale-lock-takeover'), created.id)
+    const lockPath = `${transcriptPath}.runtime-identity.lock`
+    // A crashed holder leaves its lock file behind. Age it past the stale TTL.
+    await writeFile(lockPath, 'crashed-holder', { flag: 'wx' })
+    const staleTime = new Date(Date.now() - 5 * 60_000)
+    await utimes(lockPath, staleTime, staleTime)
+
+    await expect(store.migrateRuntimeScopeIdentity(
+      { workspaceId: 'workspace-a' },
+      created.id,
+      { expectedIdentity: oldIdentity, nextIdentity: 'e'.repeat(64), evidenceDigest: 'f'.repeat(64) },
+    )).resolves.toBe('migrated')
+    const header = JSON.parse((await readFile(transcriptPath, 'utf8')).split('\n')[0]!) as {
+      boringSessionCtx?: { runtimeScopeIdentity?: string }
+    }
+    expect(header.boringSessionCtx?.runtimeScopeIdentity).toBe('e'.repeat(64))
+    // The takeover releases its own lock too.
+    await expect(readFile(lockPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('serializes conflicting migrations across independent stores', async () => {

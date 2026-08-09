@@ -77,6 +77,12 @@ const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 const TRUSTED_LOCAL_USER_ID = "local";
 const RUNTIME_IDENTITY_LOCK_ATTEMPTS = 40;
 const RUNTIME_IDENTITY_LOCK_WAIT_MS = 25;
+/**
+ * A migration lock older than this is treated as abandoned by a crashed
+ * holder and taken over. Live holders finish in well under a second (the
+ * critical section is a header CAS on one file), so 30s is generous.
+ */
+const RUNTIME_IDENTITY_LOCK_STALE_MS = 30_000;
 
 type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
 type RuntimePinnedSessionCtx = SessionCtx & { runtimeScopeIdentity?: string };
@@ -107,17 +113,33 @@ function sessionDirForNamespace(namespace: string, explicitRoot?: string): strin
   return join(sessionBaseDir(explicitRoot), safeNamespace);
 }
 
+function runtimeIdentityMigrationLockedError(): Error {
+  return Object.assign(new Error("runtime identity migration is locked"), {
+    code: ErrorCode.enum.SESSION_LOCKED,
+    statusCode: 409,
+    retryable: true,
+  });
+}
+
 async function acquireRuntimeIdentityMigrationLock(path: string): Promise<Awaited<ReturnType<typeof open>>> {
   for (let attempt = 0; attempt < RUNTIME_IDENTITY_LOCK_ATTEMPTS; attempt += 1) {
     try {
       return await open(path, "wx");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      if (attempt === RUNTIME_IDENTITY_LOCK_ATTEMPTS - 1) throw new Error("runtime identity migration is locked");
+      // A crashed holder leaves the lock file behind forever. Take over any
+      // lock whose file is older than the stale TTL; a live holder finishes
+      // (and removes its lock) well within it.
+      const lockStat = await fsStat(path).catch(() => undefined);
+      if (lockStat && Date.now() - lockStat.mtimeMs > RUNTIME_IDENTITY_LOCK_STALE_MS) {
+        await rm(path, { force: true }).catch(() => {});
+        continue;
+      }
+      if (attempt === RUNTIME_IDENTITY_LOCK_ATTEMPTS - 1) throw runtimeIdentityMigrationLockedError();
       await new Promise((resolve) => setTimeout(resolve, RUNTIME_IDENTITY_LOCK_WAIT_MS));
     }
   }
-  throw new Error("runtime identity migration is locked");
+  throw runtimeIdentityMigrationLockedError();
 }
 
 function sameFileGeneration(
@@ -240,8 +262,12 @@ export class PiSessionStore implements SessionStore {
             throw new Error("missing session header");
           }
           header = parsed as SessionHeader;
-        } catch {
-          throw new Error(`Session metadata is malformed: ${sessionId}`);
+        } catch (error) {
+          throw Object.assign(new Error(`Session metadata is malformed: ${sessionId}`), {
+            code: ErrorCode.enum.SESSION_TRANSCRIPT_UNREADABLE,
+            statusCode: 500,
+            cause: error,
+          });
         }
         if (!this.headerBelongsToCtx(header, ctx)) throw new Error(`Session not found: ${sessionId}`);
         const current = readHeaderRuntimeScopeIdentity(header);
