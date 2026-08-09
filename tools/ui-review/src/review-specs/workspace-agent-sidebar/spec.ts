@@ -91,6 +91,12 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
       await expect(row).toBeVisible({ timeout: 30_000 })
       await row.hover()
       await expect(row.locator(".app-left-session-actions")).toBeVisible()
+      // KNOWN GAP: the fixture's only chat is its Agent's active one, and the
+      // split / quick-chat shortcuts render exclusively on a chat that is not
+      // on stage. So this state measures a strip holding just the "..."
+      // trigger, and a 24px regression in the other two shortcuts shipped
+      // green past `agent-touch-targets`. Closing it needs a fixture with a
+      // second chat per Agent, not another assertion here.
       // Deliberately NO mouse.move away: the hovered state IS the subject.
     } },
     { id: "agent-details", colorScheme: "dark", reach: async (page) => {
@@ -117,15 +123,33 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
       if (!await page.evaluate(() => "axe" in window)) await page.addScriptTag({ path: AXE_SCRIPT_PATH })
       const [sidebar, axeViolations, documentWidth] = await Promise.all([
         page.evaluate(({ checkpoint, mobile }) => {
+          // Effective opacity, not the element's own: hover/touch reveal
+          // works by fading the CONTAINER, so a control's own opacity of 1
+          // says nothing about whether the user can see or hit it.
+          const shown = (node: Element): boolean => {
+            let opacity = 1
+            for (let el: Element | null = node; el && el !== document.body; el = el.parentElement) {
+              opacity *= Number(getComputedStyle(el).opacity)
+            }
+            return opacity > 0.05
+          }
           const visible = (element: Element): boolean => {
             const rect = element.getBoundingClientRect()
             const style = getComputedStyle(element)
-            return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0.05
+            return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && shown(element)
           }
           const text = (selector: string) => [...document.querySelectorAll(selector)].find(visible)?.textContent?.replace(/\s+/g, " ").trim() ?? null
           const agentTrees = [...document.querySelectorAll('[data-boring-workspace-part="app-left-agent-tree"]')]
           const actionButtons = agentTrees.flatMap((tree) => [...tree.querySelectorAll<HTMLButtonElement>('button[aria-label^="New chat with"], button[aria-label^="New chat options for"], button[aria-label^="Settings for"]')])
-          const controls = agentTrees.flatMap((tree) => [...tree.querySelectorAll<HTMLButtonElement>("button")]).filter(visible)
+          // Scoped to the WHOLE app-left pane, not just the Agent trees: the
+          // pinned-chats section and the pane chrome live outside a tree, and
+          // the 24px row shortcuts that shipped undersized were only ever
+          // measured on a row that happened to be the active session (which
+          // hides them). A touch-target gate that inspects a subtree guards
+          // only that subtree.
+          const controls = [...document.querySelectorAll('[data-boring-workspace-part="app-left-pane"]')]
+            .flatMap((pane) => [...pane.querySelectorAll<HTMLButtonElement>("button")])
+            .filter(visible)
           const pinned = document.querySelector('section[aria-label="Pinned chats"]')
           const pinnedRow = pinned?.querySelector('[data-boring-workspace-part="app-session-row"]')
           const provenance = pinnedRow?.querySelector(".app-left-session-trailing")?.textContent?.replace(/\s+/g, " ").trim() || null
@@ -163,18 +187,11 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
             // underneath them. Measured, because this is invisible to any
             // assertion about markup.
             actionOverlaps: [...document.querySelectorAll('[data-boring-workspace-part="app-session-row"]')].flatMap((row) => {
-              // Effective opacity, not just the element's own: the status slot
+              // `visible` already folds in ancestor opacity: the status slot
               // fades out behind a fading-in action strip on pointer devices,
               // and an invisible element cannot be overlapped.
-              const shown = (node: Element): boolean => {
-                let opacity = 1
-                for (let el: Element | null = node; el && el !== document.body; el = el.parentElement) {
-                  opacity *= Number(getComputedStyle(el).opacity)
-                }
-                return opacity > 0.05
-              }
               const actions = row.querySelector(".app-left-session-actions")
-              if (!actions || !visible(actions) || !shown(actions)) return []
+              if (!actions || !visible(actions)) return []
               const strip = actions.getBoundingClientRect()
               return ([
                 ["title", row.querySelector("span.flex-1")],

@@ -76,6 +76,11 @@ export interface AgentSidebarHardGateSnapshot extends UiReviewBrowserErrors {
 /** The fixture fleet: exactly two Agents, each with three row controls. */
 const EXPECTED_AGENT_COUNT = 2
 const AGENT_ROW_ACTIONS_PER_AGENT = 3
+/** "New chat with X" sits outside the fading strip; the other two do not. */
+const AGENT_ROW_RESTING_ACTIONS_PER_AGENT = 1
+const AGENT_ROW_RESTING_ACTIONS = AGENT_ROW_RESTING_ACTIONS_PER_AGENT * EXPECTED_AGENT_COUNT
+/** Resting everywhere, plus the hovered Agent's two revealed actions. */
+const AGENT_ROW_HOVER_ACTIONS = AGENT_ROW_RESTING_ACTIONS + (AGENT_ROW_ACTIONS_PER_AGENT - AGENT_ROW_RESTING_ACTIONS_PER_AGENT)
 
 /** Every section the Agent details panel owes the operator, in order. */
 const EXPECTED_CAPABILITY_HEADINGS = [
@@ -107,9 +112,13 @@ export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnap
   const statePassed = surfaceReady
     && (!agentNavigationExpected || (state.agentCount === 2 && state.agentHeading === "Agents" && state.agentFilterCount === 1))
     && state.legacyFilterCount === 0
-    // 3 controls ("+", "..." options, Settings) x 2 Agents. Asserting the
-    // real number, not a floor two controls could silently vanish under.
-    && (snapshot.checkpoint !== "hover-actions" || state.visibleActionCount === AGENT_ROW_ACTIONS_PER_AGENT * EXPECTED_AGENT_COUNT)
+    // Hover REVEALS: the resting pane shows one action per Agent, and
+    // hovering one Agent row adds exactly that Agent's other two. The old
+    // 3x2 expectation only held because the counter ignored the container
+    // opacity that does the hiding — it proved the buttons exist in the DOM,
+    // which is not what discoverability means.
+    && (snapshot.checkpoint !== "hover-actions" || state.visibleActionCount === AGENT_ROW_HOVER_ACTIONS)
+    && (snapshot.viewport.mobile || snapshot.checkpoint !== "agent-list" || state.visibleActionCount === AGENT_ROW_RESTING_ACTIONS)
     && (snapshot.checkpoint !== "expanded-sessions" || (state.expandedRegionCount >= 2 && state.guideCount >= 2))
     && (snapshot.checkpoint !== "pinned-chat" || (state.pinnedHeading === "Pinned chats" && state.pinnedCount === 1 && state.pinnedProvenance === "Alpha" && state.pinnedAgentSessionCount >= 1 && state.nestedPinnedHasPin))
     && (snapshot.checkpoint !== "agent-details" || (

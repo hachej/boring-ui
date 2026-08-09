@@ -73,15 +73,22 @@ describe("workspace Agent sidebar state contract", () => {
     }))).toMatchObject({ passed: false })
   })
 
-  it("requires every per-Agent row control, not four of six", () => {
+  it("requires hover to REVEAL the hovered Agent's controls, resting to hide them", () => {
+    // Two Agents, one resting action each, plus the two the hovered Agent
+    // reveals. Six was the DOM count of buttons that exist — the old counter
+    // ignored the container opacity doing the hiding, so it passed whether or
+    // not hover revealed anything.
     const base = snapshot([])
-    const hover = (visibleActionCount: number) => evaluateAgentSidebarHardGates({
+    const at = (checkpoint: "hover-actions" | "agent-list", visibleActionCount: number) => evaluateAgentSidebarHardGates({
       ...base,
-      checkpoint: "hover-actions" as const,
+      checkpoint,
       sidebar: { ...base.sidebar, visibleActionCount },
     }).results.find((result) => result.id === "state-contract")
-    expect(hover(6)).toMatchObject({ passed: true })
-    expect(hover(4)).toMatchObject({ passed: false })
+    expect(at("hover-actions", 4)).toMatchObject({ passed: true })
+    expect(at("hover-actions", 6)).toMatchObject({ passed: false })
+    expect(at("hover-actions", 2)).toMatchObject({ passed: false })
+    expect(at("agent-list", 2)).toMatchObject({ passed: true })
+    expect(at("agent-list", 6)).toMatchObject({ passed: false })
   })
 })
 
