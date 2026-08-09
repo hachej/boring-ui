@@ -312,9 +312,19 @@ export async function loadConfiguredAgentFleet(
       // publishing it here keeps clients from inverting the mapping.
       let instructionFiles: AgentInstructionFileRef[] | undefined
       const candidatePath = `${workspaceRelativePersonasDir}/${binding.seat}/instructions.md`
-      // ONE honest failure path covering both ways a ref can be unpublishable:
-      // personas outside the served workspace, and a composed path the
-      // client-side guard would reject anyway.
+      // EXISTENCE is already proven and is deliberately not re-checked: this
+      // seat only got here because `materializeAgentDirectory` read
+      // `<personasDir>/<seat>/instructions.md` and rejected it if absent or
+      // blank. A `stat` here would re-assert what composition just did.
+      //
+      // REACHABILITY is the only open question, and it is pure path algebra
+      // against the served root — no I/O, no per-request probe. ONE honest
+      // failure path covers both ways a ref can be unreachable: personas
+      // outside the served workspace, and a composed path the client-side
+      // guard would reject anyway.
+      //
+      // Together those two make publication deterministic: a published ref
+      // names a file that exists, under the root the client reads through.
       const unpublishableReason = options.workspaceRoot === null
         ? `this host resolves a workspace root per request, so persona instructions have no single "${AGENT_USER_FILESYSTEM_ID}" path to be addressed against`
         : !personasAreInsideWorkspace

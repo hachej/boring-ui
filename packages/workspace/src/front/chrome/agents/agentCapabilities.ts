@@ -313,12 +313,19 @@ export async function loadAgentCapabilities(
 /**
  * Does this file actually exist where the Host says it does?
  *
- * An instruction or skill ref can be perfectly WELL-FORMED — `openableFileResource`
- * accepts it — and still address nothing. Personas commonly ship inside the app
- * image while the `user` filesystem serves the workspace, which is the whole
- * reason `workspaceRoot` gating exists. Opening such a ref used to 404 inside the
- * viewer with no toast, no row state and no visible change: the user clicked a
- * healthy-looking link and got nothing.
+ * A SAFETY NET, not the mechanism that catches a mis-rooted host. Publication
+ * is deterministic upstream: the fleet loader composes a seat by reading its
+ * `instructions.md`, so the file provably exists on the server, and it only
+ * publishes a ref when that file is also inside the root the `user` filesystem
+ * serves (`AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE` otherwise). A
+ * boot seam that passes the wrong root therefore renders NO row — it can no
+ * longer render a row that 404s, and this probe must never be relied on to
+ * paper over one.
+ *
+ * What remains is genuine drift: a file deleted, renamed or moved AFTER the
+ * fleet composed. Opening such a ref used to 404 inside the viewer with no
+ * toast, no row state and no visible change — the user clicked a healthy-looking
+ * link and got nothing.
  *
  * Verified ON CLICK, deliberately, not for every row at load time. The panel
  * loader resolves everything in ONE `Promise.allSettled`, and it cannot know
