@@ -391,6 +391,25 @@
   --app-session-action-slot: 28px;
 }
 
+/* ONE condition sizes the button and reserves its slot: `pointer: coarse`,
+   below. Sizing these buttons with a Tailwind `size-11 sm:size-6` pair keyed
+   them to VIEWPORT WIDTH while the slot above stayed keyed to POINTER TYPE.
+   The two agreed only at 1440-fine and 390-coarse — the exact pair the review
+   harness sampled — and disagreed in between: a 500px-wide desktop window drew
+   44px buttons into 28px slots and spilled them over the chat title, and a
+   coarse 834px tablet drew a 24px trigger into a 44px slot and let the leftover
+   20px fall through to the row button. So the size lives here, beside the slot
+   it must match, and nowhere else. */
+.app-left-secondary-action,
+.app-left-session-secondary-action {
+  width: 24px;
+  height: 24px;
+}
+
+.app-left-filter-input {
+  height: 24px;
+}
+
 .app-left-session-actions {
   width: calc(var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px));
   /* The strip is WIDER than its icons (it reserves whole slots and aligns them
@@ -452,6 +471,10 @@
   [data-boring-workspace-part="app-left-footer"] button,
   [data-boring-workspace-part="app-left-rail-footer"] button {
     width: 44px;
+    height: 44px;
+  }
+
+  .app-left-filter-input {
     height: 44px;
   }
 
@@ -564,9 +587,16 @@
 }
 
 @media (hover: none) {
+  /* Both new-chat variants hide their split / quick-chat shortcuts behind
+     hover, and reveal them on focus-within as the keyboard path. Touch has
+     neither, so on a hover-less pointer the two shortcuts simply did not
+     exist. The fleet variant additionally parks itself at
+     `pointer-events: none` while collapsed, so it needs the hit area back as
+     well as the width. */
   .app-left-new-chat-secondary {
     width: auto;
     opacity: 1;
+    pointer-events: auto;
   }
 
   .app-left-session-actions {
@@ -608,10 +638,10 @@
   }
 }
 
-/* Touch devices have no hover to gate the per-Agent secondary actions; showing
-   all of them permanently reads as clutter. Only the "+" stays per row; the
-   split/quick chat move behind a coarse-pointer follow-up (overflow menu),
-   but "+" and Settings stay: Agent details must remain reachable on touch. */
+/* Touch devices have no hover to gate the per-Agent secondary actions, so the
+   whole cluster stays visible: "+", the "..." options trigger that holds the
+   placement variants, and Settings. Agent details and new chats must both be
+   reachable without a hover a touch user cannot perform. */
 @media (pointer: coarse) {
   .app-left-agent-card-actions {
     width: auto;

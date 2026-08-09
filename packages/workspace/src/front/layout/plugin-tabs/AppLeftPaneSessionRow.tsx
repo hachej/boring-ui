@@ -15,10 +15,10 @@ export type AppSessionRowState = "normal" | "open" | "active"
 
 /**
  * The split / detach hover shortcuts differ only by icon, words and handler.
- * Coarse pointers get the full 44px slot (`.app-left-session-secondary-action`
- * in globals.css) so real buttons cover the whole reserved strip instead of
- * leaving 24px icons with row-sized gaps between them; fine pointers keep the
- * compact 24px icon, matching `AppSessionActionsMenu` and the agent cards.
+ * Their size carries NO Tailwind size utility on purpose: it comes from
+ * `.app-left-session-secondary-action` in globals.css, which is keyed to the
+ * same `pointer: coarse` condition as the slot the strip reserves for it. One
+ * condition, one place — see the comment beside that rule.
  */
 function SessionHoverAction({ icon, label, title, onClick }: {
   icon: ReactNode
@@ -33,7 +33,7 @@ function SessionHoverAction({ icon, label, title, onClick }: {
       aria-label={label}
       title={title}
       onClick={onClick}
-      className="app-left-session-secondary-action grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-6"
+      className="app-left-session-secondary-action grid shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {icon}
     </button>

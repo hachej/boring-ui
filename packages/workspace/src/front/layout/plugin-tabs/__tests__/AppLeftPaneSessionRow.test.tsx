@@ -41,12 +41,16 @@ describe("AppSessionRow native actions", () => {
     expect(onDelete).toHaveBeenCalledWith("native-1")
   })
 
-  it("sizes every row shortcut for a coarse pointer, not just the menu trigger", () => {
-    // The strip reserves one 44px slot per action under `pointer: coarse`.
-    // When a shortcut stays 24px the reservation still holds, so the leftover
-    // 20px of its slot falls through to the row button underneath and a tap
-    // meant for "split" switches chats instead. Measured in the browser this
-    // was a 36px wrong-action zone; here the class contract stands in for it.
+  it("leaves every row shortcut sized by the one rule that also reserves its slot", () => {
+    // The strip reserves one slot per action, and the slot width switches on
+    // `pointer: coarse`. Sizing the buttons with a Tailwind `size-11 sm:size-6`
+    // pair switched them on viewport WIDTH instead, so the two conditions
+    // agreed only at 1440-fine and 390-coarse: a 500px-wide desktop window got
+    // 44px buttons in 28px slots (spilling over the chat title), and a coarse
+    // 834px tablet got a 24px trigger in a 44px slot (20px of dead strip that
+    // fell through to the row button). Every shortcut now carries
+    // `.app-left-session-secondary-action` and NO size utility, so globals.css
+    // is the single place either number can change.
     row({ onOpenDetached: vi.fn(), onDelete: vi.fn() })
     const shortcuts = [
       screen.getByRole("button", { name: /in a split pane$/ }),
@@ -54,8 +58,8 @@ describe("AppSessionRow native actions", () => {
       screen.getByLabelText("Chat actions for Native chat"),
     ]
     for (const shortcut of shortcuts) {
-      expect(shortcut.className).toContain("size-11")
-      expect(shortcut.className).toContain("sm:size-6")
+      expect(shortcut.className).toContain("app-left-session-secondary-action")
+      expect(shortcut.className).not.toMatch(/(^|\s)(sm:)?size-\d/)
     }
   })
 

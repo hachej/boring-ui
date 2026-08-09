@@ -49,7 +49,10 @@ export interface AppLeftPaneAgentCardProps {
 
 // Coarse pointers get the 44px touch target from main; desktop keeps the
 // compact 24px action of the nested design.
-const cardActionClassName = "app-left-secondary-action grid size-11 shrink-0 place-items-center sm:size-6 rounded-md text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+// No Tailwind size utility: `.app-left-secondary-action` (globals.css) owns
+// the size, keyed to the pointer, so it cannot disagree with the pointer-keyed
+// 44px touch rule the way a width-keyed `size-11 sm:size-6` pair did.
+const cardActionClassName = "app-left-secondary-action grid shrink-0 place-items-center rounded-md text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 
 export function AppLeftPaneAgentCard({
   agentTypeId,
