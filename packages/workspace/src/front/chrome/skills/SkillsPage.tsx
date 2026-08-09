@@ -8,30 +8,21 @@ import { postUiCommand } from "../../bridge"
 import { ManagementOverlaySurface } from "../management/ManagementOverlaySurface"
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
 import type { PaneProps } from "../../registry/types"
-import { uiFileResourceKey, type UiFileResource } from "../../../shared/types/filesystem"
+import { uiFileResourceKey } from "../../../shared/types/filesystem"
 import { openableFileResource } from "../../../shared/skills/openableFileResource"
-import { parseSkills } from "../agents/agentCapabilities"
-
-interface SkillSummary {
-  name: string
-  description?: string
-  source?: string
-  /** False when the row exists for source management but Pi did not retain it as invocable. */
-  invocable?: boolean
-  /** Browser-safe resource identity. */
-  resource?: UiFileResource
-}
-
-interface SkillsResponse {
-  skills?: SkillSummary[]
-}
+import { parseSkills, type AgentSkillSummary } from "../agents/agentCapabilities"
 
 type LoadState =
-  | { status: "loading"; skills: SkillSummary[]; error?: undefined }
-  | { status: "ready"; skills: SkillSummary[]; error?: undefined }
-  | { status: "error"; skills: SkillSummary[]; error: string }
+  | { status: "loading"; skills: AgentSkillSummary[]; error?: undefined }
+  | { status: "ready"; skills: AgentSkillSummary[]; error?: undefined }
+  | { status: "error"; skills: AgentSkillSummary[]; error: string }
 
-function compareSkills(left: SkillSummary, right: SkillSummary): number {
+/**
+ * `parseSkills` already orders by name; this only breaks the ties it leaves —
+ * a name can repeat across sources, and an unstable order there makes the list
+ * reshuffle on every refresh.
+ */
+function compareSkills(left: AgentSkillSummary, right: AgentSkillSummary): number {
   return left.name.localeCompare(right.name)
     || Number(left.invocable === false) - Number(right.invocable === false)
     || (left.resource ? uiFileResourceKey(left.resource) : "")
@@ -64,7 +55,7 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
     const isStale = () => generationRef.current !== generation
     setState((current) => ({ status: "loading", skills: current.skills }))
     try {
-      const payload = await client.getJson<SkillsResponse>(`/api/v1/agents/${encodeURIComponent(client.agentTypeId)}/skills${refresh ? "?refresh=1" : ""}`, {
+      const payload = await client.getJson<unknown>(`/api/v1/agents/${encodeURIComponent(client.agentTypeId)}/skills${refresh ? "?refresh=1" : ""}`, {
         missingMessage: "Failed to load workspace skills.",
       })
       if (isStale()) return
