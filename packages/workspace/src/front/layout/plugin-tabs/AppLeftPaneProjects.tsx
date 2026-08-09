@@ -158,7 +158,7 @@ function ProjectRow({
           switched projects). */}
       <div
         className={cn(
-          "group relative flex min-h-8 w-full items-center gap-2 rounded-md py-1 pl-2 pr-2 transition-colors",
+          "app-left-project-row group relative flex min-h-8 w-full items-center gap-2 rounded-md py-1 pl-2 pr-2 transition-colors",
           active
             // Background-only active state: the accent color is reserved for the
             // deepest selected item (the active session), so the parent project
@@ -193,10 +193,10 @@ function ProjectRow({
         {/* Right slot: session count at rest, swapped for actions on hover/focus
             (or while the menu is open). Reserves width so the name truncates and
             never sits under the icons. */}
-        <span className="relative flex h-6 w-[3.25rem] shrink-0 items-center justify-end">
+        <span className="app-left-project-status-slot relative flex h-6 w-[3.25rem] shrink-0 items-center justify-end">
           {blocked > 0 ? (
             <span className={cn(
-              "pointer-events-none absolute inset-0 flex items-center justify-end transition-opacity",
+              "app-left-project-status pointer-events-none absolute inset-0 flex items-center justify-end transition-opacity",
               hasActions && "group-hover:opacity-0 group-focus-within:opacity-0",
               menuOpen && "opacity-0",
             )}>
@@ -210,7 +210,12 @@ function ProjectRow({
           ) : null}
           {hasActions ? (
             <span className={cn(
-              "flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+              // The size and the touch behaviour of these two live in
+              // globals.css beside the session-row rules, under the same
+              // condition. Carrying a Tailwind `size-6` here instead is what
+              // left them 24px and invisible-but-clickable on touch, with the
+              // "N waiting" badge painted directly over their hit area.
+              "app-left-project-actions flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
               menuOpen && "opacity-100",
             )}>
               {onCreateSession ? (

@@ -408,9 +408,25 @@
    the same hole, which predates all of that: a 24px button in a 28px slot left
    4px per slot owned by nothing, and a click there switched chats. Buttons that
    are exactly one slot wide tile the strip with no seams. */
+/* Width is the slot. HEIGHT is the whole row, deliberately not the slot.
+
+   Round 6 unified the WIDTH of an action with the width the strip reserves,
+   and the same split immediately turned up one axis over: the slot grew on
+   `(pointer: coarse)` while `.app-left-session-row` grew to 44px on
+   `(max-width: 767px), (hover: none)`. A desktop window dragged under 768px
+   matches the second and not the first, so the row stood 44px tall around a
+   28px button and left 16px of strip — 8px above, 8px below — owned by
+   nothing. Measured at 760 fine: a vertical sweep down the "..." column found
+   15px that resolved to the ROW button, and a click 2px inside the strip
+   switched chats instead of opening the menu.
+
+   The conditions are unified below. This rule closes the hole structurally as
+   well: an action fills the strip it lives in, so a future change to the row
+   height cannot reopen a vertical seam the way a future change to a
+   breakpoint reopened this one. The strip is `inset-y-0`, so 100% IS the row. */
 .app-left-session-secondary-action {
   width: var(--app-session-action-slot, 28px);
-  height: var(--app-session-action-slot, 28px);
+  height: 100%;
 }
 
 .app-left-secondary-action {
@@ -449,6 +465,26 @@
    min-width, not width, so the ceilings below can still clamp content. */
 .app-left-session-trailing {
   min-width: calc(var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px));
+
+  /* Every variant ceiling below is capped by what the ROW can actually spare,
+     because a fixed ceiling knows nothing about the row it is in.
+
+     The badge ceiling was a flat 88px. On a coarse pointer the strip stops
+     hiding behind the status slot and reserves its width as a MARGIN beside
+     it instead (see the `(hover: none)` block), so a nested row carrying an
+     attention badge and three actions spent 88px + 132px of a ~228px content
+     box before the title got a pixel. Measured at 834 coarse: `titleW = 0`.
+     The row rendered as a bare "needs you" pill and the operator could not
+     tell WHICH chat needed them — the one thing the badge exists to say.
+
+     So the ceiling is expressed against the row: whatever is left after the
+     title floor and the strip's own reservation. `max()` keeps a genuinely
+     cramped row from erasing the badge instead of the title — at 20px the
+     pill degrades to a coloured dot, which still carries the tone, and the
+     title keeps a readable stub. The floor is 7rem because the leading icon
+     and the two gaps eat ~36px of it before a glyph is drawn. */
+  --app-session-trailing-cap: max(1.25rem, calc(100% - 7rem - var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px)));
+  max-width: var(--app-session-trailing-cap);
 }
 
 /* Ceilings layered on top. min-width wins where they collide, because
@@ -459,7 +495,7 @@
 
 .app-left-session-trailing[data-trailing="owner"] {
   width: auto;
-  max-width: 7rem;
+  max-width: min(7rem, var(--app-session-trailing-cap));
   gap: 0.25rem;
 }
 
@@ -476,8 +512,7 @@
   }
 
   .app-left-primary-action,
-  .app-left-new-chat-action,
-  .app-left-session-row {
+  .app-left-new-chat-action {
     height: 44px;
   }
 
@@ -494,11 +529,66 @@
     height: 44px;
   }
 
-  /* Coarse pointers get 44px slots. */
+}
+
+/* ONE condition sizes a session row and the actions inside it.
+
+   The row height and the action slot are two halves of the same decision — a
+   28px action in a 44px row leaves a seam, a 44px action in a 30px row spills
+   out of it — so they are declared together, under a single condition, in a
+   single block. They were not: the height keyed to `(max-width: 767px),
+   (hover: none)` and the slot to `(pointer: coarse)`, which agree on a phone
+   and on a desktop and disagree on a narrow desktop window and on a tablet.
+
+   The condition is the UNION of every reason the row grows, not just the
+   touch one. Coarse pointer is the honest signal for a touch TARGET, but the
+   row also grows at narrow widths for layout reasons that have nothing to do
+   with the pointer, and whenever it does the slot has to follow or the seam
+   comes back. Sizing the slot up on a narrow fine-pointer window costs a
+   mouse user nothing; leaving it behind costs them a misdirected click.
+   `.app-left-empty-start` below is width-gated as well as pointer-gated for
+   exactly this reason. */
+@media (max-width: 767px), (hover: none), (pointer: coarse) {
   .app-left-session-row {
+    height: 44px;
     --app-session-action-slot: 44px;
   }
 
+  /* The multi-project tree rows carried the same defect a round earlier than
+     anyone looked at them: two 24px actions hidden behind `opacity: 0`, with
+     no touch branch anywhere. Opacity does not disable hit testing, so on a
+     phone they were invisible AND live — and the "N waiting" count badge is
+     absolutely positioned across exactly their hit area, so a tap on the one
+     thing the row makes visible fired "New chat" or opened the menu.
+
+     Same condition, same 44px, same "the badge sits BESIDE the actions once
+     both are permanently visible" rule the session row uses. */
+  .app-left-project-row {
+    min-height: 44px;
+  }
+
+  .app-left-project-actions {
+    opacity: 1;
+  }
+
+  .app-left-project-actions > button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .app-left-project-status-slot {
+    width: auto;
+    height: auto;
+    gap: 0.25rem;
+  }
+
+  .app-left-project-status {
+    position: static;
+    /* It stops being a full-slot overlay, so it stops claiming the actions'
+       width and stops fading — there is no hover here to fade it back. */
+    inset: auto;
+    opacity: 1;
+  }
 }
 
 @media (max-width: 639px) {
@@ -572,10 +662,6 @@
 }
 
 @media (max-width: 767px), (hover: none) {
-  .app-left-session-row {
-    height: 44px;
-  }
-
   /*
    * Agent cards carry three hover-revealed actions on a mouse. Touch has no
    * hover, so every card action is always visible and grows to 44px.
