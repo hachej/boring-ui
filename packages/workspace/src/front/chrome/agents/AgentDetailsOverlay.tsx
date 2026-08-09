@@ -169,15 +169,18 @@ export function AgentDetailsOverlay({
     blurb: `Files this agent can ${source.access === "readonly" ? "read" : "read and edit"}.`,
     blurbTruncate: true,
     icon: "book" as const,
-    onOpen: () => {
-      postUiCommand({
-        kind: "expandToFile",
-        params: { filesystem: source.filesystem, path: source.rootDir && source.rootDir !== "." ? source.rootDir : "" },
-      })
-      onClose()
-    },
-    openAriaLabel: `Browse ${source.label} files`,
-    openTitle: `Browse ${source.label}`,
+    // DELIBERATELY not a button. "Browse" promised a destination the workbench
+    // does not have: no centre-pane surface renders a directory. The surface
+    // resolver maps FILE paths only, and `openFile` on a folder is rewritten to
+    // `expandToFile`, which touches nothing but the left Files pane. So the one
+    // place a knowledge source is ever shown is that pane's root selector —
+    // which already lists every source, permanently, without this click. Two
+    // rounds of making the reveal "work" ended the same way: the wire calls
+    // fired, the tree refetched, and with a single mounted filesystem there was
+    // no root to switch to and no root node to highlight, so the screen was
+    // byte-identical before and after. A row that looks clickable and reliably
+    // changes nothing is a worse lie than a row that is honestly static. If a
+    // real folder surface lands, this becomes a link to THAT.
   }))
 
   const skillRows: DetailRowModel[] = capabilities.skills.value.map((skill, index) => {

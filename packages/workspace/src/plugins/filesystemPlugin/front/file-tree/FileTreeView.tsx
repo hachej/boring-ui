@@ -462,10 +462,13 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
       const normalizedPath = normalizeRevealPath(path)
       const revealSeq = ++revealSeqRef.current
       if (normalizedPath === ".") {
-        // "Reveal this filesystem" carries a filesystem and no path — the Agent
-        // details Knowledge rows send exactly that. An empty path used to fall
-        // out of the `!path` guard above and do nothing at all, so the click
-        // produced no visible change whatsoever. There is no root NODE to
+        // "Reveal this filesystem" carries a filesystem and no path. An empty
+        // path used to fall out of the `!path` guard above and do nothing at
+        // all, so such a reveal produced no visible change whatsoever. It stays
+        // handled for bridge callers (`expandToFile` accepts an empty path by
+        // contract) even though the Agent details Knowledge rows that motivated
+        // it no longer navigate: a root listing is a poor destination, not an
+        // invalid one. There is no root NODE to
         // select, so the honest visible answer is this root's own listing,
         // freshly fetched, with any selection carried over from the previous
         // root cleared rather than left pointing somewhere that no longer is.

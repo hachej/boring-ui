@@ -193,7 +193,7 @@ describe("AgentDetailsOverlay", () => {
     expect(screen.getByText("No plugins.")).toBeInTheDocument()
   })
 
-  it("lists persona instructions, workspace instructions, and knowledge sources as openable rows", async () => {
+  it("lists persona instructions and workspace instructions as openable rows, knowledge as static ones", async () => {
     respond({
       // The seat directory ("desk-7") is deliberately NOT derivable from the
       // agent id ("concierge"): the overlay must render what /describe reports
@@ -224,15 +224,10 @@ describe("AgentDetailsOverlay", () => {
       params: { filesystem: "user", path: "AGENTS.md", mode: "view" },
     }))
     expect(screen.queryByText("CLAUDE.md")).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Browse Docs files" }))
-    expect(mocks.postUiCommand).toHaveBeenCalledWith({
-      kind: "expandToFile",
-      params: { filesystem: "docs", path: "" },
-    })
     expect(screen.getByText("read-only")).toBeInTheDocument()
   })
 
-  it("names the filesystem it reveals and steps aside so the workbench is visible", async () => {
+  it("renders knowledge sources as honestly static rows — no dead 'Browse' link", async () => {
     respond({
       filesystems: { filesystems: [
         { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
@@ -242,18 +237,16 @@ describe("AgentDetailsOverlay", () => {
     const onClose = vi.fn()
     render(<AgentDetailsOverlay agent={agent} onClose={onClose} />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "Browse Docs files" }))
-    expect(mocks.postUiCommand).toHaveBeenCalledWith({
-      kind: "expandToFile",
-      params: { filesystem: "docs", path: "guides" },
-    })
-    expect(onClose).toHaveBeenCalled()
-
-    fireEvent.click(screen.getByRole("button", { name: "Browse Workspace files" }))
-    expect(mocks.postUiCommand).toHaveBeenCalledWith({
-      kind: "expandToFile",
-      params: { filesystem: "user", path: "" },
-    })
+    // The workbench has no centre-pane surface that renders a directory, so a
+    // "Browse" click could only nudge the left Files pane — which already lists
+    // every one of these roots. With one mounted filesystem it changed nothing
+    // at all, which is exactly how a working link and a dead one become
+    // indistinguishable. The row states the fact and stops pretending.
+    expect(await screen.findByText("Docs")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Browse/ })).not.toBeInTheDocument()
+    expect(mocks.postUiCommand).not.toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "expandToFile" }))
+    expect(onClose).not.toHaveBeenCalled()
   })
   it("surfaces a well-formed instruction ref whose file does not exist, instead of 404-ing silently", async () => {
     respond({
