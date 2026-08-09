@@ -2518,10 +2518,7 @@ export function WorkspaceAgentFront<
     : undefined
   const agentLeftOverlayNode = activeAgentOverlay && activeAgentOverlayOption ? (
     <AgentDetailsOverlay
-      agent={{
-        ...activeAgentOverlayOption,
-        sessionsStatus: addressedFleetSessions.statuses.get(activeAgentOverlayOption.agentTypeId) ?? "loading",
-      }}
+      agent={activeAgentOverlayOption}
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={mobileShellActive}
       headerInsetEnd={!surfaceOpen}
@@ -2687,7 +2684,7 @@ export function WorkspaceAgentFront<
           onOpenSessionDetached={(sessionId, ownerAgentTypeId) => {
             setLeftOverlay(null)
             shellCapabilitiesHost.shellCapabilities.openDetachedChat(
-              { sessionId, ...(ownerAgentTypeId ? { agentTypeId: ownerAgentTypeId } : {}) },
+              { sessionId, agentTypeId: ownerAgentTypeId ?? effectiveAgentTypeId },
               { composingEnabled: true },
             )
           }}

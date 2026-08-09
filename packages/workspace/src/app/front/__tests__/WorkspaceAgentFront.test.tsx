@@ -2359,7 +2359,7 @@ describe("WorkspaceAgentFront", () => {
       "boring-workspace:chat-panes:fleet-split-owner",
       JSON.stringify({
         version: 2,
-        refs: [{ kind: "addressed", sessionId: "alpha-one", agentTypeId: "alpha" }],
+        refs: expect.arrayContaining([{ kind: "addressed", sessionId: "alpha-two", agentTypeId: "alpha" }]),
         activeRef: { kind: "addressed", sessionId: "alpha-one", agentTypeId: "alpha" },
       }),
     )
@@ -2409,6 +2409,100 @@ describe("WorkspaceAgentFront", () => {
     await user.click(await screen.findByRole("button", { name: "Split First session chat vertically" }))
 
     await waitFor(() => expect(createOwners).toEqual(["alpha"]))
+  })
+
+  it("opens a quick chat under THAT row's Agent, not the picker target", async () => {
+    // The detached ref is rejected outright when it carries no Agent
+    // (`openDetachedChat` guards on it), so building it from an optional owner
+    // meant the quick-chat shortcut silently did nothing. Only the type
+    // checker in a DEPENDENT package caught that; nothing here exercised it.
+    const user = userEvent.setup()
+    const useFleetSelection = () => ({
+      agents: [
+        { agentTypeId: "alpha", label: "Boring Alpha" },
+        { agentTypeId: "beta", label: "Boring Beta" },
+      ],
+      selectedAgentTypeId: "alpha",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const useFleetSessions: UseWorkspaceAgentSessions = (options) => {
+      const alpha = { id: "alpha-one", agentTypeId: "alpha", title: "First session" }
+      // A SECOND, unopened chat: the row shortcuts only exist on a chat that
+      // is not already on stage.
+      const spare = { id: "alpha-two", agentTypeId: "alpha", title: "Second session" }
+      return {
+        sourceIdentity: options.sourceIdentity,
+        sessions: options.agentTypeId === "alpha" ? [alpha, spare] : [],
+        loading: false,
+        activeSessionId: options.agentTypeId === "alpha" ? alpha.id : null,
+        activeSessionAgentTypeId: options.agentTypeId === "alpha" ? "alpha" : null,
+        activeSession: options.agentTypeId === "alpha" ? alpha : null,
+        switch: vi.fn(),
+        delete: vi.fn(),
+        create: () => Promise.resolve({ id: `new-${options.agentTypeId}`, agentTypeId: options.agentTypeId, title: "New" }),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-quick-chat-owner"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useFleetSelection}
+        useSessions={useFleetSessions}
+      />,
+    )
+
+    // Retarget the NEXT chat to Beta: the row's own Agent must still win.
+    await user.click(await screen.findByRole("button", { name: "Choose Agent for new chat" }))
+    await user.click(await screen.findByRole("menuitem", { name: /Beta/ }))
+
+
+    await user.click(await screen.findByRole("button", { name: "Open Second session as a quick chat" }))
+    // It opened at all — an incomplete ref would have been refused.
+    const popover = await screen.findByLabelText("Chat session Second session")
+    // Docking replays the ref the quick chat was opened with, so the persisted
+    // pane names the owner the shortcut actually carried.
+    await user.click(within(popover).getByRole("button", { name: "Dock panel" }))
+    await waitFor(() => {
+      const stored = JSON.parse(localStorage.getItem("boring-workspace:chat-panes:fleet-quick-chat-owner") ?? "null")
+      expect(stored.refs).toContainEqual(expect.objectContaining({ sessionId: "alpha-two", agentTypeId: "alpha" }))
+    })
+  })
+
+  it("opens a quick chat for a session that names no Agent", async () => {
+    // `openDetachedChat` REFUSES a ref without an Agent, so a shell whose
+    // sessions carry no owner (every single-Agent host) had a quick-chat
+    // shortcut that silently did nothing. The shell's own effective Agent is
+    // the answer, exactly as the split path already resolved it.
+    const user = userEvent.setup()
+    const sessions = [
+      { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+      { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+    ]
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="quick-chat-ownerless"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={sessions}
+        activeSessionId="s1"
+        onSwitchSession={vi.fn()}
+        onCreateSession={vi.fn()}
+      />,
+    )
+
+    await user.click(await screen.findByRole("button", { name: "Open Second session as a quick chat" }))
+    const popover = await screen.findByLabelText("Chat session Second session")
+    await user.click(within(popover).getByRole("button", { name: "Dock panel" }))
+    await waitFor(() => {
+      const stored = JSON.parse(localStorage.getItem("boring-workspace:chat-panes:quick-chat-ownerless") ?? "null")
+      expect(stored.refs).toContainEqual(expect.objectContaining({ sessionId: "s2", agentTypeId: "default" }))
+    })
   })
 
   it("routes the session drawer's New session through the pane transaction, not the raw session API", async () => {
