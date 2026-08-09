@@ -36,8 +36,20 @@ function respond(payloads: {
   models?: unknown
   filesystems?: unknown
   rootTree?: unknown
+  /** Paths that exist for the pre-open probe. `undefined` ⇒ everything exists. */
+  existingFiles?: readonly string[]
 }) {
   mocks.getJson!.mockImplementation(async (path: string) => {
+    // The overlay probes `GET /api/v1/files?path=…` before dispatching an
+    // openFile, so a well-formed ref pointing at nothing degrades visibly
+    // instead of 404-ing silently inside the viewer.
+    if (path.startsWith("/api/v1/files?")) {
+      const requested = new URLSearchParams(path.slice(path.indexOf("?") + 1)).get("path") ?? ""
+      if (payloads.existingFiles && !payloads.existingFiles.includes(requested)) {
+        throw new Error(`404 ${requested}`)
+      }
+      return { path: requested, content: "" }
+    }
     const table: Array<[boolean, unknown, unknown]> = [
       [path.endsWith("/describe"), payloads.describe, {}],
       [path.endsWith("/skills"), payloads.skills, { skills: [] }],
@@ -146,10 +158,10 @@ describe("AgentDetailsOverlay", () => {
     renderOverlay()
 
     fireEvent.click(await screen.findByRole("button", { name: "Open skill triage" }))
-    expect(mocks.postUiCommand).toHaveBeenCalledWith({
+    await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
       kind: "openFile",
       params: { filesystem: "user", path: ".agents/skills/triage/SKILL.md", mode: "view" },
-    })
+    }))
   })
 
   it("never renders non-invocable (policy-hidden) skills", async () => {
@@ -223,15 +235,15 @@ describe("AgentDetailsOverlay", () => {
     renderOverlay()
 
     fireEvent.click(await screen.findByRole("button", { name: "Open Persona instructions" }))
-    expect(mocks.postUiCommand).toHaveBeenCalledWith({
+    await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
       kind: "openFile",
       params: { filesystem: "user", path: ".agents/personas/desk-7/instructions.md", mode: "view" },
-    })
+    }))
     fireEvent.click(screen.getByRole("button", { name: "Open AGENTS.md" }))
-    expect(mocks.postUiCommand).toHaveBeenCalledWith({
+    await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
       kind: "openFile",
       params: { filesystem: "user", path: "AGENTS.md", mode: "view" },
-    })
+    }))
     expect(screen.queryByText("CLAUDE.md")).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Browse Docs files" }))
     expect(mocks.postUiCommand).toHaveBeenCalledWith({
@@ -239,6 +251,65 @@ describe("AgentDetailsOverlay", () => {
       params: { filesystem: "docs", path: "" },
     })
     expect(screen.getByText("read-only")).toBeInTheDocument()
+  })
+
+  it("surfaces a well-formed instruction ref whose file does not exist, instead of 404-ing silently", async () => {
+    respond({
+      describe: {
+        systemPrompt: null,
+        mcpServers: [],
+        // Passes `openableFileResource` cleanly — the failure mode this covers
+        // is a HEALTHY-looking ref addressing a file the served filesystem does
+        // not have (personas ship in the app image; `user` serves the workspace).
+        instructionFiles: [{ filesystem: "user", path: ".agents/personas/triage/instructions.md", role: "persona" }],
+      },
+      existingFiles: [],
+    })
+    renderOverlay()
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open Persona instructions" }))
+
+    // Never a silent no-op: the user is told, by path.
+    await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
+      kind: "showNotification",
+      params: {
+        msg: "Persona instructions isn't in this workspace (.agents/personas/triage/instructions.md).",
+        level: "error",
+      },
+    }))
+    // …and no openFile was dispatched into a viewer that would 404 in silence.
+    expect(mocks.postUiCommand).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "openFile" }))
+    // The row stops pretending to be a healthy link rather than failing
+    // identically on every subsequent click.
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Open Persona instructions" })).not.toBeInTheDocument())
+    expect(screen.getByText("unavailable")).toBeInTheDocument()
+    expect(screen.getByText(/was not found/)).toBeInTheDocument()
+  })
+
+  it("degrades a skill row whose file is missing without touching its siblings", async () => {
+    respond({
+      skills: {
+        skills: [
+          { name: "here", resource: { filesystem: "user", path: "skills/here/SKILL.md" } },
+          { name: "gone", resource: { filesystem: "user", path: "skills/gone/SKILL.md" } },
+        ],
+      },
+      existingFiles: ["skills/here/SKILL.md"],
+    })
+    renderOverlay()
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open skill gone" }))
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Open skill gone" })).not.toBeInTheDocument())
+    expect(mocks.postUiCommand).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "openFile" }))
+
+    // Only the row that failed degrades.
+    fireEvent.click(screen.getByRole("button", { name: "Open skill here" }))
+    await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
+      kind: "openFile",
+      params: { filesystem: "user", path: "skills/here/SKILL.md", mode: "view" },
+    }))
   })
 
   it("materializes the composed prompt and opens it in the workbench", async () => {

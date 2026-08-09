@@ -7,12 +7,13 @@ import { cn } from "../../lib/utils"
 import { postUiCommand } from "../../bridge"
 import { ManagementOverlaySurface } from "../management/ManagementOverlaySurface"
 import { useOptionalWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
-import { uiFileResourceKey } from "../../../shared/types/filesystem"
+import { uiFileResourceKey, type UiFileResource } from "../../../shared/types/filesystem"
 import { openableFileResource } from "../../../shared/skills/openableFileResource"
 import { CardRows, DetailSection, DividedRows, MetaRow, type DetailRowModel } from "./detailSections"
 import {
   INITIAL_CAPABILITIES,
   WORKSPACE_INSTRUCTION_FILES,
+  fileResourceExists,
   formatComposedPromptMarkdown,
   loadAgentCapabilities,
   normalizePromptText,
@@ -53,6 +54,9 @@ export function AgentDetailsOverlay({
   const [capabilities, setCapabilities] = useState<AgentCapabilities>(INITIAL_CAPABILITIES)
   const [promptExpanded, setPromptExpanded] = useState(false)
   const [expandedTool, setExpandedTool] = useState<string | null>(null)
+  // Refs whose file turned out not to exist when the user clicked them. Keyed
+  // by resource so the row that failed — and only that row — degrades.
+  const [missingResourceKeys, setMissingResourceKeys] = useState<ReadonlySet<string>>(() => new Set())
 
   // Every commit is stamped with the generation that started it: switching
   // agents fast must never let a slow response for agent A land on agent B.
@@ -77,6 +81,7 @@ export function AgentDetailsOverlay({
   useEffect(() => {
     setPromptExpanded(false)
     setExpandedTool(null)
+    setMissingResourceKeys(new Set())
     void load()
   }, [load])
 
@@ -89,9 +94,35 @@ export function AgentDetailsOverlay({
   // restate them in a second shape.
   const pluginIds = agent.pluginIds ?? []
 
-  const openFile = useCallback((resource: { filesystem: string; path: string }) => {
+  /**
+   * Open a server-reported file, or say why it can't be opened.
+   *
+   * A ref the path guard ACCEPTS can still address a file that isn't there
+   * (personas ship in the app image; `user` serves the workspace). That used to
+   * 404 inside the viewer with no toast and no state change — the user clicked a
+   * healthy link and nothing at all happened. Probe first, and on failure both
+   * name the missing path AND remember it, so the row stops pretending to be a
+   * link instead of failing the same way on the next click.
+   */
+  const openFile = useCallback(async (resource: UiFileResource, label: string) => {
+    if (client) {
+      // Same generation guard the panel load uses: the probe is a round trip,
+      // so switching agents mid-flight must not open the PREVIOUS agent's file
+      // or mark a row on a panel that is no longer on screen.
+      const generation = generationRef.current
+      const exists = await fileResourceExists(client, resource)
+      if (generationRef.current !== generation) return
+      if (!exists) {
+        setMissingResourceKeys((current) => new Set(current).add(uiFileResourceKey(resource)))
+        postUiCommand({
+          kind: "showNotification",
+          params: { msg: `${label} isn't in this workspace (${resource.path}).`, level: "error" },
+        })
+        return
+      }
+    }
     postUiCommand({ kind: "openFile", params: { ...resource, mode: "view" } })
-  }, [])
+  }, [client])
 
   const openComposedPrompt = useCallback(async () => {
     // The composed prompt is not an authored file; re-read the live
@@ -131,18 +162,28 @@ export function AgentDetailsOverlay({
   // row — a "read-only" mark on a writable knowledge source, for instance.
   const instructionRows: DetailRowModel[] = [
     ...capabilities.instructionFiles.map((file, index) => {
-      const resource = openableFileResource(file.resource)
+      const guarded = openableFileResource(file.resource)
+      // Two different unopenable states, two different truths to tell: the
+      // guard rejected the location, or the location is fine but nothing is
+      // there. Collapsing them into one message sends operators hunting for a
+      // path problem that doesn't exist.
+      const missing = Boolean(guarded && missingResourceKeys.has(uiFileResourceKey(guarded)))
+      const resource = missing ? undefined : guarded
       const copy = INSTRUCTION_ROLE_COPY[file.role]
       return {
         key: `agent\u0000${uiFileResourceKey(file.resource)}\u0000${index}`,
         title: copy.name,
         // An inert card with no explanation reads as a rendering bug. Say
         // what happened instead of showing a row that just doesn't respond.
-        blurb: resource ? copy.blurb : `${copy.blurb} This file can't be opened from here — its recorded location is not a valid workspace path.`,
+        blurb: resource
+          ? copy.blurb
+          : missing
+          ? `${copy.blurb} This file isn't in this workspace — ${file.resource.path} was not found.`
+          : `${copy.blurb} This file can't be opened from here — its recorded location is not a valid workspace path.`,
         ...(resource ? { badge: undefined } : { badge: "unavailable" }),
         icon: "file" as const,
         ...(resource ? {
-          onOpen: () => openFile(resource),
+          onOpen: () => void openFile(resource, copy.name),
           openAriaLabel: `Open ${copy.name}`,
           openTitle: `Open ${resource.path}`,
         } : {}),
@@ -156,7 +197,7 @@ export function AgentDetailsOverlay({
         badge: file.badge,
         blurb: file.blurb,
         icon: "file" as const,
-        onOpen: () => openFile({ filesystem: "user", path: file.path }),
+        onOpen: () => void openFile({ filesystem: "user", path: file.path }, file.path),
         openAriaLabel: `Open ${file.path}`,
         openTitle: `Open ${file.path}`,
       })),
@@ -179,16 +220,22 @@ export function AgentDetailsOverlay({
   }))
 
   const skillRows: DetailRowModel[] = capabilities.skills.value.map((skill, index) => {
-    const resource = openableFileResource(skill.resource)
-    const badge = skillSourceLabel(skill.source)
+    const guarded = openableFileResource(skill.resource)
+    // Skill files are exposed to exactly the same "well-formed ref, absent
+    // file" case as instructions, so they degrade through the same state.
+    const missing = Boolean(guarded && missingResourceKeys.has(uiFileResourceKey(guarded)))
+    const resource = missing ? undefined : guarded
+    const badge = missing ? "unavailable" : skillSourceLabel(skill.source)
     return {
       key: `${skill.resource ? uiFileResourceKey(skill.resource) : skill.name}\u0000${index}`,
       title: `/${skill.name}`,
       ...(badge ? { badge } : {}),
-      ...(skill.description ? { blurb: skill.description } : {}),
+      ...(missing
+        ? { blurb: `${skill.description ? `${skill.description} ` : ""}This skill's file isn't in this workspace — ${skill.resource?.path ?? "its file"} was not found.` }
+        : skill.description ? { blurb: skill.description } : {}),
       icon: "file" as const,
       ...(resource ? {
-        onOpen: () => openFile(resource),
+        onOpen: () => void openFile(resource, `/${skill.name}`),
         openAriaLabel: `Open skill ${skill.name}`,
         openTitle: "Open this skill",
       } : {}),

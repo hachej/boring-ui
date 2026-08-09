@@ -310,6 +310,42 @@ export async function loadAgentCapabilities(
   }
 }
 
+/**
+ * Does this file actually exist where the Host says it does?
+ *
+ * An instruction or skill ref can be perfectly WELL-FORMED — `openableFileResource`
+ * accepts it — and still address nothing. Personas commonly ship inside the app
+ * image while the `user` filesystem serves the workspace, which is the whole
+ * reason `workspaceRoot` gating exists. Opening such a ref used to 404 inside the
+ * viewer with no toast, no row state and no visible change: the user clicked a
+ * healthy-looking link and got nothing.
+ *
+ * Verified ON CLICK, deliberately, not for every row at load time. The panel
+ * loader resolves everything in ONE `Promise.allSettled`, and it cannot know
+ * these paths until `/describe` inside that fan-out has already resolved — so
+ * pre-verification means a second request wave on every panel open, for every
+ * agent, to pre-empt a failure that is rare. One probe per actual click costs
+ * nothing when nothing is clicked, covers skills and instruction files with the
+ * same code, and stays correct when a file disappears AFTER the panel loaded.
+ */
+export async function fileResourceExists(
+  client: AgentCapabilitiesClient,
+  resource: UiFileResource,
+): Promise<boolean> {
+  // Mirrors the filesystem plugin's own read: `user` is the server default and
+  // passing it explicitly is not universally accepted.
+  const params = new URLSearchParams({ path: resource.path })
+  if (resource.filesystem !== "user") params.set("filesystem", resource.filesystem)
+  try {
+    await client.getJson(`/api/v1/files?${params.toString()}`, {
+      missingMessage: `${resource.path} is unavailable.`,
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Re-reads the live composition for the generated read-only prompt file. */
 export async function readLiveSystemPrompt(
   client: AgentCapabilitiesClient,
