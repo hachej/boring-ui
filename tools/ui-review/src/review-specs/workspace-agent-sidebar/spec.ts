@@ -116,12 +116,6 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
       // second chat per Agent, not another assertion here.
       // Deliberately NO mouse.move away: the hovered state IS the subject.
     } },
-    { id: "agent-details", colorScheme: "dark", reach: async (page) => {
-      await page.locator('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="alpha"] .app-left-agent-row').hover()
-      await page.getByRole("button", { name: "Settings for Alpha" }).click()
-      await expect(page.locator('[data-boring-workspace-part="agent-details-overlay"]')).toBeVisible()
-      await expect(page.getByRole("heading", { name: "System prompt" })).toBeVisible()
-    } },
     // The only checkpoint that leaves a portalled menu OPEN at capture time.
     // Three placement actions moved out of the card and into this menu; a
     // touch-target sweep of the pane subtree cannot see them, so without a
@@ -131,6 +125,23 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
       await page.getByRole("button", { name: "New chat options for Alpha" }).click()
       await expect(page.getByRole("menuitem", { name: "New chat in split pane" })).toBeVisible()
       await expect(page.getByRole("menuitem", { name: "Quick chat" })).toBeVisible()
+    } },
+    { id: "agent-details", colorScheme: "dark", reach: async (page) => {
+      // Checkpoints run in order against one page, and the previous one ends
+      // with a modal menu open on the coarse viewports — its overlay swallows
+      // every click into the pane.
+      // A pointer press outside the menu is what Radix's dismissable layer
+      // listens for; a key press does not reach it once capture has moved
+      // focus off the content.
+      const openMenu = page.getByRole("menu")
+      if (await openMenu.count() > 0) {
+        await page.mouse.click(5, 5)
+        await expect(openMenu).toHaveCount(0)
+      }
+      await page.locator('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="alpha"] .app-left-agent-row').hover()
+      await page.getByRole("button", { name: "Settings for Alpha" }).click()
+      await expect(page.locator('[data-boring-workspace-part="agent-details-overlay"]')).toBeVisible()
+      await expect(page.getByRole("heading", { name: "System prompt" })).toBeVisible()
     } },
   ],
   criticPrompt: "Review the supplied multi-agent sidebar and Agent detail screenshots against the design context. Demand a compact, calm, editorial, world-class navigation hierarchy. Prioritize pinned-chat provenance, Agent/session information architecture, hover and touch discoverability, expansion rhythm and guide lines, active-session meaning, mobile behavior, and the unified Agent page. Return only UiCriticReportV1 JSON. Scores are advisory; every finding must cite supplied state ids.",

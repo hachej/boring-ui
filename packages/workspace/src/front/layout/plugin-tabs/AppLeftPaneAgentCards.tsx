@@ -190,7 +190,11 @@ export function AppLeftPaneAgentCard({
           // One "+" creates the default chat; this caret is the single place
           // for the placement variants (owner: three placement icons were too
           // many — compact into one affordance, keep the options).
-          <DropdownMenu>
+          // Non-modal: a modal layer aria-hides the whole pane behind it while
+          // leaving its controls tabbable (axe: aria-hidden-focus, serious),
+          // and nothing about a three-item options menu in a sidebar needs the
+          // rest of the app inert.
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
