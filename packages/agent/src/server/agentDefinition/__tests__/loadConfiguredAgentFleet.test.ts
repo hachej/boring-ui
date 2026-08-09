@@ -75,9 +75,9 @@ describe('loadConfiguredAgentFleet', () => {
     })
 
     // A backslash cannot survive as a workspace-relative path, so the link is
-    // withheld — but the seat still composes, and never silently. An ordinary
-    // seat name with a SPACE is fine: the guard downstream accepts it, so the
-    // loader must too.
+    // withheld — but the seat still composes, and never silently. Only the
+    // backslash seat is fixtured here; ordinary seat names (spaces included)
+    // take the publishing branch covered by the tests above.
     expect(result.agents).toHaveLength(1)
     const [agent] = result.agents
     if (!agent || 'legacyDefault' in agent) throw new Error('expected a configured agent')
@@ -112,12 +112,11 @@ describe('loadConfiguredAgentFleet', () => {
     }))
   })
 
-  test('publishes nothing when personas sit inside the base but outside the served workspace', async () => {
-    // The multi-tenant shape that a base-root check would wave through: the
-    // personas tree IS inside the root the caller named, but the filesystem
-    // actually serves a subdirectory of it. `isInside` passes, and a path
-    // relative to the wrong root is exactly the well-formed-but-dead link
-    // this guard exists to prevent.
+  test('publishes nothing when the host names no served workspace root', async () => {
+    // The per-request shape: the caller composes the fleet without knowing
+    // which workspace root will serve it. There is no root to make the
+    // instructions path relative to, so publishing one would be a guess — and
+    // a well-formed-but-dead link is exactly what this guard prevents.
     const result = await loadConfiguredAgentFleet({
       workspaceRoot: null,
       personasDir: PERSONAS_DIR,
