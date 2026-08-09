@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest"
 import {
   loadAgentCapabilities,
   parseDescription,
-  parseKnowledge,
   parseRootFileNames,
   parseSkills,
   parseTools,
@@ -100,12 +99,7 @@ describe("parseSkills totality (hostile payloads must not reach React)", () => {
   })
 })
 
-describe("parseKnowledge / parseRootFileNames", () => {
-  it("falls back to the filesystem id when the label is blank", () => {
-    expect(parseKnowledge({ filesystems: [{ filesystem: "docs", label: "  " }] }))
-      .toEqual([{ filesystem: "docs", label: "docs" }])
-  })
-
+describe("parseRootFileNames", () => {
   it("keeps only file entries from a tree listing", () => {
     expect(parseRootFileNames({ entries: [
       { name: "AGENTS.md", kind: "file" }, { name: ".agents", kind: "dir" }, { kind: "file" },
@@ -154,7 +148,6 @@ describe("loadAgentCapabilities", () => {
       if (path.endsWith("/skills")) return { skills: [{ name: "s" }] }
       if (path.endsWith("/tools")) return { tools: [{ name: "t" }] }
       if (path.endsWith("/models")) return { models: [] }
-      if (path.startsWith("/api/v1/filesystems")) return { filesystems: [] }
       return { entries: [] }
     }),
   })
@@ -185,10 +178,13 @@ describe("loadAgentCapabilities", () => {
     expect(client.getJson.mock.calls.some(([p]) => (p as string).includes("agents/a%2Fb/describe"))).toBe(true)
   })
 
-  it("asks for exactly six payloads — no per-agent tree probing", async () => {
+  it("asks for exactly five payloads — no filesystems leg, no per-agent tree probing", async () => {
     const client = okClient()
     await loadAgentCapabilities(client, "a")
-    expect(client.getJson.mock.calls).toHaveLength(6)
+    // Five, not six: the workspace-level `/api/v1/filesystems` leg went with
+    // the Knowledge section it fed (agent-blind; see #1186).
+    expect(client.getJson.mock.calls).toHaveLength(5)
+    expect(client.getJson.mock.calls.filter(([p]) => (p as string).startsWith("/api/v1/filesystems"))).toHaveLength(0)
     expect(client.getJson.mock.calls.filter(([p]) => (p as string).startsWith("/api/v1/tree"))).toHaveLength(1)
   })
 })

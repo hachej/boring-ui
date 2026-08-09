@@ -15,8 +15,8 @@ import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 // actually uses.
 //
 // Carried forward from v5-v7:
-// - Agent details is a capability inventory (Instructions / Knowledge /
-//   Skills / Tools / MCP access / Plugins / Defaults; "System prompt" left in
+// - Agent details is a capability inventory (Instructions / Skills / Tools /
+//   MCP access / Plugins / Defaults; "System prompt" and "Knowledge" left in
 //   v12): a capability-heading gate plus a jargon ban, and the no-tabs invariant.
 // - Agent rows expose "New chat" (+), the "..." options trigger holding the
 //   placement variants, and Settings; the action count recognises the trigger.
@@ -41,14 +41,22 @@ import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 // snapshot field means a different thing now. `agentSeatSummary` was collected
 // but never asserted, which is how it drifted onto a bare numeric span once
 // already; v11 asserts it.
-// v12 follows the "System prompt" section leaving the Agent details overlay.
-// The owner judged the generated composed prompt unhelpful — a wall of text no
-// operator could act on — so the section, its preview/expand affordances and
-// its "Open in workbench" materialization were removed, and the `systemPrompt`
-// field left the `/describe` payload with them. `capabilityHeadings` is an
-// ORDERED SET, so a replayed v11 manifest would assert a heading that can no
-// longer exist; the contract must move with it rather than let a stale replay
-// pass against a surface that legitimately changed shape.
+// v12 follows TWO sections leaving the Agent details overlay, both for the
+// same reason: a section that cannot tell the truth about THIS agent does not
+// belong on this agent's page.
+// - "System prompt" showed a generated composed prompt the owner judged
+//   unhelpful — a wall of text no operator could act on. The section, its
+//   preview/expand affordances and its "Open in workbench" materialization are
+//   gone, and `systemPrompt` left the `/describe` payload with them.
+// - "Knowledge" listed `/api/v1/filesystems`, which is WORKSPACE-level and
+//   agent-blind: every agent rendered the identical global entry, so the
+//   section promised agent-scoped knowledge and showed a global fact. Agent-
+//   scoped knowledge is a server modeling change tracked as #1186; the section
+//   returns when the model exists.
+// `capabilityHeadings` is an ORDERED SET, so a replayed v11 manifest would
+// assert two headings that can no longer exist; the contract must move with the
+// surface rather than let a stale replay pass against a page that legitimately
+// changed shape.
 export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v12"
 
 const KNOWN_ABORTED_REQUESTS: Array<{
@@ -138,7 +146,7 @@ const AGENT_ROW_HOVER_ACTIONS = AGENT_ROW_ACTIONS_PER_AGENT
 
 /** Every section the Agent details panel owes the operator, in order. */
 const EXPECTED_CAPABILITY_HEADINGS = [
-  "Instructions", "Knowledge", "Skills", "Tools", "MCP access", "Plugins", "Defaults",
+  "Instructions", "Skills", "Tools", "MCP access", "Plugins", "Defaults",
 ] as const
 
 function sameHeadings(actual: readonly string[], expected: readonly string[]): boolean {

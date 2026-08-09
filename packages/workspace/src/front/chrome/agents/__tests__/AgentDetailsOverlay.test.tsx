@@ -34,7 +34,6 @@ function respond(payloads: {
   skills?: unknown
   tools?: unknown
   models?: unknown
-  filesystems?: unknown
   rootTree?: unknown
   /** Paths that exist for the pre-open probe. `undefined` ⇒ everything exists. */
   existingFiles?: readonly string[]
@@ -55,7 +54,6 @@ function respond(payloads: {
       [path.endsWith("/skills"), payloads.skills, { skills: [] }],
       [path.endsWith("/tools"), payloads.tools, { tools: [] }],
       [path.endsWith("/models"), payloads.models, { models: [] }],
-      [path.startsWith("/api/v1/filesystems"), payloads.filesystems, { filesystems: [] }],
       [path.startsWith("/api/v1/tree"), payloads.rootTree, { entries: [] }],
     ]
     for (const [match, value, fallback] of table) {
@@ -193,7 +191,7 @@ describe("AgentDetailsOverlay", () => {
     expect(screen.getByText("No plugins.")).toBeInTheDocument()
   })
 
-  it("lists persona instructions and workspace instructions as openable rows, knowledge as static ones", async () => {
+  it("lists persona instructions and workspace instructions as openable rows", async () => {
     respond({
       // The seat directory ("desk-7") is deliberately NOT derivable from the
       // agent id ("concierge"): the overlay must render what /describe reports
@@ -205,10 +203,6 @@ describe("AgentDetailsOverlay", () => {
       rootTree: { entries: [
         { name: "AGENTS.md", kind: "file", path: "AGENTS.md" },
         { name: ".agents", kind: "dir", path: ".agents" },
-      ] },
-      filesystems: { filesystems: [
-        { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
-        { filesystem: "docs", label: "Docs", rootDir: ".", access: "readonly" },
       ] },
     })
     renderOverlay()
@@ -224,29 +218,20 @@ describe("AgentDetailsOverlay", () => {
       params: { filesystem: "user", path: "AGENTS.md", mode: "view" },
     }))
     expect(screen.queryByText("CLAUDE.md")).not.toBeInTheDocument()
-    expect(screen.getByText("read-only")).toBeInTheDocument()
   })
 
-  it("renders knowledge sources as honestly static rows — no dead 'Browse' link", async () => {
-    respond({
-      filesystems: { filesystems: [
-        { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
-        { filesystem: "docs", label: "Docs", rootDir: "guides", access: "readonly" },
-      ] },
-    })
-    const onClose = vi.fn()
-    render(<AgentDetailsOverlay agent={agent} onClose={onClose} />)
+  it("has no Knowledge section and never asks for the workspace filesystem catalog", async () => {
+    respond({})
+    renderOverlay()
 
-    // The workbench has no centre-pane surface that renders a directory, so a
-    // "Browse" click could only nudge the left Files pane — which already lists
-    // every one of these roots. With one mounted filesystem it changed nothing
-    // at all, which is exactly how a working link and a dead one become
-    // indistinguishable. The row states the fact and stops pretending.
-    expect(await screen.findByText("Docs")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: /Browse/ })).not.toBeInTheDocument()
-    expect(mocks.postUiCommand).not.toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "expandToFile" }))
-    expect(onClose).not.toHaveBeenCalled()
+    // `/api/v1/filesystems` is workspace-level and agent-blind: every agent got
+    // the identical global entry, so a section headed "Knowledge" on an AGENT's
+    // page could only restate a fact about the workspace. Agent-scoped
+    // knowledge needs a server model that does not exist yet (#1186); the page
+    // says nothing rather than something untrue, and does not pay for the fetch.
+    expect(await screen.findByText("No skills.")).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Knowledge" })).not.toBeInTheDocument()
+    expect(mocks.getJson.mock.calls.some(([path]) => (path as string).startsWith("/api/v1/filesystems"))).toBe(false)
   })
   it("surfaces a well-formed instruction ref whose file does not exist, instead of 404-ing silently", async () => {
     respond({
@@ -333,7 +318,6 @@ describe("AgentDetailsOverlay", () => {
       if (path.endsWith("/skills")) return Promise.resolve({ skills: [{ name: "fast-skill" }] })
       if (path.endsWith("/tools")) return Promise.resolve({ tools: [] })
       if (path.endsWith("/models")) return Promise.resolve({ models: [] })
-      if (path.startsWith("/api/v1/filesystems")) return Promise.resolve({ filesystems: [] })
       return Promise.resolve({ entries: [] })
     })
     const { rerender } = render(

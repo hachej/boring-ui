@@ -77,6 +77,12 @@ export function AgentDetailsOverlay({
     void load()
   }, [load])
 
+  // Knowledge is deliberately ABSENT from this page. It listed
+  // `/api/v1/filesystems`, which is workspace-level and agent-blind: every
+  // agent got the identical global entry, so a section promising "what THIS
+  // agent knows" could only ever restate a fact about the workspace. Agent-
+  // scoped knowledge needs a server model that does not exist yet (#1186);
+  // until it does, the honest page has no Knowledge section at all.
   const loading = capabilities.status === "loading"
   const description = capabilities.description
   // Plugin ids are the fleet list's fact; /describe deliberately does not
@@ -118,7 +124,7 @@ export function AgentDetailsOverlay({
   // Every list in this overlay tiebreaks its key with the row's index, because
   // the host can report the same file, filesystem or skill twice. Without it
   // React reconciles by a key two rows share and a badge lands on the wrong
-  // row — a "read-only" mark on a writable knowledge source, for instance.
+  // row — an "unavailable" mark on a file that is actually there, for instance.
   const instructionRows: DetailRowModel[] = [
     ...capabilities.instructionFiles.map((file, index) => {
       const guarded = openableFileResource(file.resource)
@@ -161,27 +167,6 @@ export function AgentDetailsOverlay({
         openTitle: `Open ${file.path}`,
       })),
   ]
-
-  const knowledgeRows: DetailRowModel[] = capabilities.knowledge.value.map((source, index) => ({
-    key: `${source.filesystem}\u0000${index}`,
-    title: source.label,
-    ...(source.access === "readonly" ? { badge: "read-only" } : {}),
-    blurb: `Files this agent can ${source.access === "readonly" ? "read" : "read and edit"}.`,
-    blurbTruncate: true,
-    icon: "book" as const,
-    // DELIBERATELY not a button. "Browse" promised a destination the workbench
-    // does not have: no centre-pane surface renders a directory. The surface
-    // resolver maps FILE paths only, and `openFile` on a folder is rewritten to
-    // `expandToFile`, which touches nothing but the left Files pane. So the one
-    // place a knowledge source is ever shown is that pane's root selector —
-    // which already lists every source, permanently, without this click. Two
-    // rounds of making the reveal "work" ended the same way: the wire calls
-    // fired, the tree refetched, and with a single mounted filesystem there was
-    // no root to switch to and no root node to highlight, so the screen was
-    // byte-identical before and after. A row that looks clickable and reliably
-    // changes nothing is a worse lie than a row that is honestly static. If a
-    // real folder surface lands, this becomes a link to THAT.
-  }))
 
   const skillRows: DetailRowModel[] = capabilities.skills.value.map((skill, index) => {
     const guarded = openableFileResource(skill.resource)
@@ -247,16 +232,6 @@ export function AgentDetailsOverlay({
               emptyText="No instruction files."
             >
               <CardRows rows={instructionRows} />
-            </DetailSection>
-
-            <DetailSection
-              id="agent-knowledge-heading" title="Knowledge"
-              hint={knowledgeRows.length > 1 ? `${knowledgeRows.length}` : undefined}
-              loading={loading} empty={knowledgeRows.length === 0}
-              error={capabilities.knowledge.error} errorText="Knowledge sources couldn't be loaded."
-              emptyText="No knowledge sources."
-            >
-              <CardRows rows={knowledgeRows} />
             </DetailSection>
 
             <DetailSection

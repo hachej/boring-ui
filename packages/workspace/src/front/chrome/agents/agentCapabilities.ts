@@ -34,13 +34,6 @@ export interface AgentDescription {
   instructionFiles: AgentInstructionFile[]
 }
 
-export interface KnowledgeSource {
-  filesystem: string
-  label: string
-  rootDir?: string
-  access?: string
-}
-
 /**
  * One panel status, not one per section. Every field below is filled by a
  * single `Promise.allSettled` and committed once, so "loading" genuinely is
@@ -57,7 +50,6 @@ export interface AgentCapabilities {
   description?: AgentDescription
   skills: SectionData<AgentSkillSummary>
   tools: SectionData<AgentToolSummary>
-  knowledge: SectionData<KnowledgeSource>
   modelLabel: string | null
   instructionFiles: AgentInstructionFile[]
   /** Workspace-level instruction files that exist in this workspace. */
@@ -71,7 +63,6 @@ export const INITIAL_CAPABILITIES: AgentCapabilities = {
   describeError: false,
   skills: EMPTY_SECTION,
   tools: EMPTY_SECTION,
-  knowledge: EMPTY_SECTION,
   modelLabel: null,
   instructionFiles: [],
   workspaceInstructionFiles: [],
@@ -162,20 +153,6 @@ export function parseDescription(payload: unknown): AgentDescription {
   }
 }
 
-export function parseKnowledge(payload: unknown): KnowledgeSource[] {
-  const filesystems = (payload as { filesystems?: unknown })?.filesystems
-  if (!Array.isArray(filesystems)) return []
-  return filesystems
-    .filter((entry): entry is { filesystem: string; label?: unknown; rootDir?: unknown; access?: unknown } =>
-      typeof (entry as { filesystem?: unknown })?.filesystem === "string")
-    .map((entry) => ({
-      filesystem: entry.filesystem,
-      label: typeof entry.label === "string" && entry.label.trim() ? entry.label : entry.filesystem,
-      ...(typeof entry.rootDir === "string" ? { rootDir: entry.rootDir } : {}),
-      ...(typeof entry.access === "string" ? { access: entry.access } : {}),
-    }))
-}
-
 /** Names of the root-level FILES a `/api/v1/tree` listing reports. */
 export function parseRootFileNames(payload: unknown): string[] {
   const entries = (payload as { entries?: unknown })?.entries
@@ -236,12 +213,11 @@ export async function loadAgentCapabilities(
   // Each route is spelled in full: the #1029 matrix checker classifies literal
   // Agent routes, and a shared base prefix would hide them from it.
   const id = encodeURIComponent(agentTypeId)
-  const [describe, skills, tools, models, filesystems, rootTree] = await Promise.allSettled([
+  const [describe, skills, tools, models, rootTree] = await Promise.allSettled([
     client.getJson(`/api/v1/agents/${id}/describe`, { missingMessage: "This agent's details are unavailable." }),
     client.getJson(`/api/v1/agents/${id}/skills`, { missingMessage: "This agent's skills are unavailable." }),
     client.getJson(`/api/v1/agents/${id}/tools`, { missingMessage: "This agent's tools are unavailable." }),
     client.getJson(`/api/v1/agents/${id}/models`, { missingMessage: "Models are unavailable." }),
-    client.getJson(`/api/v1/filesystems`, { missingMessage: "Knowledge sources are unavailable." }),
     client.getJson(`/api/v1/tree?path=.&filesystem=user`, { missingMessage: "Workspace files are unavailable." }),
   ])
   const description = describe.status === "fulfilled" ? parseDescription(describe.value) : undefined
@@ -256,10 +232,6 @@ export async function loadAgentCapabilities(
       value: skills.status === "fulfilled" ? parseSkills(skills.value).filter((skill) => skill.invocable !== false) : [],
     },
     tools: { error: tools.status !== "fulfilled", value: tools.status === "fulfilled" ? parseTools(tools.value) : [] },
-    knowledge: {
-      error: filesystems.status !== "fulfilled",
-      value: filesystems.status === "fulfilled" ? parseKnowledge(filesystems.value) : [],
-    },
     modelLabel: models.status === "fulfilled"
       ? resolveModelLabel(models.value, description?.model ?? null)
       : description?.model ?? null,
