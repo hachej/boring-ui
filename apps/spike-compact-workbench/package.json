@@ -1,0 +1,9 @@
+{
+  "name": "spike-compact-workbench",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite"
+  }
+}
