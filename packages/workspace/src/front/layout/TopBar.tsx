@@ -37,7 +37,8 @@ export function TopBar({
     <header
       data-boring-workspace-part="topbar"
       className={cn(
-        "relative flex h-11 items-center justify-between gap-2 px-3",
+        "relative flex min-h-11 items-center justify-between gap-2",
+        "pl-[calc(0.75rem+env(safe-area-inset-left))] pr-[calc(0.75rem+env(safe-area-inset-right))] pt-[env(safe-area-inset-top)]",
         "bg-background border-b border-border",
         className,
       )}
@@ -63,13 +64,13 @@ export function TopBar({
         variant="ghost"
         size="sm"
         onClick={onCommandPalette}
-        className="group h-7 gap-1.5 px-2 text-[13px] leading-none text-muted-foreground/75 hover:bg-muted/70 hover:text-foreground focus-visible:text-foreground"
+        className="topbar-search-action group h-7 gap-1.5 px-2 text-[13px] leading-none text-muted-foreground/75 hover:bg-muted/70 hover:text-foreground focus-visible:text-foreground"
         aria-label="Search catalogs and commands"
         title="Command palette (⌘K)"
       >
         <Search className="h-3.5 w-3.5 shrink-0 opacity-80" strokeWidth={1.75} />
         <span className="font-normal tracking-tight">Search</span>
-        <Kbd className="ml-0.5 bg-muted/40 leading-none shadow-none">⌘K</Kbd>
+        <Kbd className="topbar-desktop-hint ml-0.5 bg-muted/40 leading-none shadow-none">⌘K</Kbd>
       </Button>
 
       <div className="flex flex-1 shrink-0 items-center justify-end gap-1">
@@ -78,6 +79,7 @@ export function TopBar({
             type="button"
             variant="ghost"
             size="icon-sm"
+            className="topbar-icon-action"
             onClick={onNewChat}
             aria-label="New chat"
             title="New chat"

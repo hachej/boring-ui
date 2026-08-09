@@ -53,6 +53,14 @@ export const COMMAND_PALETTE_TOUCH_EXEMPTIONS: readonly CommandPaletteTouchExemp
     rationale: `Named existing app-shell control (${name}); outside the command-palette surface and unchanged by this tooling slice.`,
   })),
   {
+    selector: '[data-boring-workspace-part="app-left-fleet-new-chat"] button',
+    rationale: "Compact fleet new-chat action cluster in the app-navigation pane (gh-1117 Agents section); outside the command-palette surface and unchanged by this tooling slice.",
+  },
+  {
+    selector: '[data-boring-workspace-part="app-left-pane-agents"] button, [data-boring-workspace-part="app-left-pane-agents"] input',
+    rationale: "Compact Agents-section header, filter, and per-Agent card controls in the app-navigation pane (gh-1117 Agents section); outside the command-palette surface and unchanged by this tooling slice.",
+  },
+  {
     selector: 'button[aria-label^="Pin "]',
     rationale: "Compact secondary session-row action beside a full-width primary target.",
   },

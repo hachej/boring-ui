@@ -23,7 +23,12 @@ function bwrapSpawnHook(
   if (!runtimeHost) throw new Error('local sandbox runtime requires injected host operations')
   // Honor the strategy's sandboxRoot end to end (gh-1123 slice 1): it now
   // selects the bind target/chdir/HOME inside bwrap, not only the env paths.
-  const args = runtimeHost.buildBwrapArgs(workspaceRoot, { sandboxHome: sandboxRoot })
+  // Shell writes are a distinct capability from Operations writes, so the same
+  // host policy must be re-expressed as readonly binds inside the sandbox.
+  const args = runtimeHost.buildBwrapArgs(workspaceRoot, {
+    sandboxHome: sandboxRoot,
+    readonlyPaths: bundle.readonlyWorkspacePaths,
+  })
   const bwrapPrefix = ['bwrap', ...args].map(shellEscape).join(' ')
   return (context) => ({
     ...context,

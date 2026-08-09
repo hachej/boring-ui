@@ -13,6 +13,7 @@ import { HarnessPiChatService } from '../pi-chat/harnessPiChatService'
 import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from '../runtime/modeReadiness'
 import { getOptionalRuntimeBundleStorageRoot, type RuntimeBundle } from '../runtime/mode'
+import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
 import { openDatabase, type OpenDatabaseResult } from '../events/sqlStorage'
 import { SqliteEventStreamStore, type EventStreamStore } from '../events/eventStreamStore'
 import { safeCapture, type TelemetrySink } from '../../shared/telemetry'
@@ -141,14 +142,17 @@ export async function buildAgentComposition(
       : undefined),
     ...(runtimeScope.includeFilesystemTools === false ? [] : buildFilesystemAgentTools(bashRuntimeBundle, {
       getFilesystemBindings: runtimeScope.getFilesystemBindings
-          ? async (ctx) => [...await runtimeScope.getFilesystemBindings!({
-              scope: {
-                workspaceScopeId: input.workspaceScopeId,
-                authSubjectId: ctx.userId ?? '',
-              },
-              sessionId: ctx.sessionId,
-              requestId: ctx.requestId ?? '',
-            }) ?? []]
+          ? async (ctx) => [...mergeRuntimeFilesystemBindings(
+              runtimeBundle.filesystemBindings,
+              await runtimeScope.getFilesystemBindings!({
+                scope: {
+                  workspaceScopeId: input.workspaceScopeId,
+                  authSubjectId: ctx.userId ?? '',
+                },
+                sessionId: ctx.sessionId,
+                requestId: ctx.requestId ?? '',
+              }),
+            ) ?? []]
           : undefined,
     })),
     ...(runtimeScope.includeUploadTools ? buildUploadAgentTools(bashRuntimeBundle) : []),

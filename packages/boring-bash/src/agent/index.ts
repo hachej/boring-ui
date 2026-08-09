@@ -22,11 +22,14 @@ export type {
   HarnessRuntimeProvisioningOptions,
   HarnessRuntimeProvisioningSnapshot,
 } from './tools/harness'
+export { ReadonlyFilesystemMutationError } from './runtime/types'
 export type {
   BwrapArgsOptions,
   RuntimeBashStrategy,
+  RuntimeFilesystemCapability,
   RuntimeBundle,
   RuntimeEnvironmentMount,
+  RuntimeFilesystemAccessDecision,
   RuntimeFilesystemBinding,
   RuntimeFilesystemBindingOperations,
   RuntimeFilesystemMountKind,

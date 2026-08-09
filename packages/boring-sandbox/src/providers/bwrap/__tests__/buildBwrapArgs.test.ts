@@ -224,3 +224,29 @@ test('honors sandboxHome for bind target, chdir, and HOME', () => {
   expect(findTupleIndex(args, ['--chdir', '/sandbox'])).toBeGreaterThanOrEqual(0)
   expect(findTupleIndex(args, ['--setenv', 'HOME', '/sandbox'])).toBeGreaterThanOrEqual(0)
 })
+
+test('emits readonly binds for protected paths after the writable workspace bind', () => {
+  const args = buildBwrapArgs('/tmp/workspace', { readonlyPaths: ['.agents'] })
+  const workspaceBind = findTupleIndex(args, ['--bind', '/tmp/workspace', '/workspace'])
+  const roBind = findTupleIndex(args, ['--ro-bind-try', '/tmp/workspace/.agents', '/workspace/.agents'])
+  expect(workspaceBind).toBeGreaterThanOrEqual(0)
+  expect(roBind).toBeGreaterThan(workspaceBind)
+})
+
+test('normalizes protected paths and rejects traversal', () => {
+  expect(findTupleIndex(
+    buildBwrapArgs('/tmp/workspace/', { readonlyPaths: ['./nested/dir/'] }),
+    ['--ro-bind-try', '/tmp/workspace/nested/dir', '/workspace/nested/dir'],
+  )).toBeGreaterThanOrEqual(0)
+  expect(() => buildBwrapArgs('/tmp/workspace', { readonlyPaths: ['../escape'] })).toThrow('traversal')
+  expect(() => buildBwrapArgs('/tmp/workspace', { readonlyPaths: ['/abs'] })).toThrow('workspace-relative')
+})
+
+test('readonly binds target the configured sandboxHome', () => {
+  const args = buildBwrapArgs('/tmp/workspace', {
+    sandboxHome: '/sandbox',
+    readonlyPaths: ['.agents'],
+  })
+  expect(findTupleIndex(args, ['--ro-bind-try', '/tmp/workspace/.agents', '/sandbox/.agents']))
+    .toBeGreaterThanOrEqual(0)
+})
