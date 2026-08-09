@@ -81,6 +81,9 @@ export async function startPlaygroundServer(): Promise<void> {
       mode: remoteWorkerModeAdapter ? undefined : localRuntimeMode,
       runtimeModeAdapter: remoteWorkerModeAdapter,
       logger: true,
+      // Explicit so the playground exercises the same `.agents` protection
+      // production hosts get, instead of relying on the library default.
+      readonlyWorkspacePaths: [".agents"],
       ...(factoryAgents ? { agents: factoryAgents, defaultAgentTypeId: "boring-concierge" } : {}),
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
       ...(process.env.BORING_AGENT_E2E_SCRIPTED_PI === "1"
