@@ -400,6 +400,40 @@ describe("FileTreePane", () => {
     expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "")
   })
 
+  it("switches to and re-lists a root for a path-less reveal instead of doing nothing", async () => {
+    // Agent details "Browse <source>" sends a filesystem and NO path — "reveal
+    // this root". That empty path used to fall out of the reveal guard, so the
+    // click produced no fetch, no selection and no visible change at all: the
+    // user reported the link as broken.
+    mockFileList.mockImplementation((dir: string, filesystem?: string) => ({
+      data: filesystem === "company_context"
+        ? [{ name: "handbook.md", kind: "file" as const, path: "handbook.md" }]
+        : sampleFiles,
+      isLoading: false,
+      error: undefined,
+      refetch: mockFileListRefetch,
+    }))
+    render(
+      <FileTreePane
+        params={{ revealFileTreeRequest: { path: "", seq: 1, filesystem: "company_context" } }}
+        roots={[
+          { filesystem: "user", label: "Workspace", rootDir: "." },
+          { filesystem: "company_context", label: "Company", rootDir: "/" },
+        ]}
+      />,
+      { wrapper },
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "File root" })).toHaveTextContent("Company")
+      expect(screen.getByText("handbook.md")).toBeInTheDocument()
+    })
+    // No root NODE exists to select, so the visible answer is this root's own
+    // freshly fetched listing — and no selection carried over from elsewhere.
+    await waitFor(() => expect(mockFileListRefetch).toHaveBeenCalled())
+    expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "")
+  })
+
   it("uses an authoritative prop reveal only once when the matching bridge event also arrives", async () => {
     const expandHandlers: Array<(payload: { filesystem?: string; path: string }) => void> = []
     const bridge = {

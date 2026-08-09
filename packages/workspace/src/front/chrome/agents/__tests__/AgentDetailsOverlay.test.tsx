@@ -253,6 +253,33 @@ describe("AgentDetailsOverlay", () => {
     expect(screen.getByText("read-only")).toBeInTheDocument()
   })
 
+  it("names the filesystem it reveals and steps aside so the workbench is visible", async () => {
+    respond({
+      filesystems: { filesystems: [
+        { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
+        { filesystem: "docs", label: "Docs", rootDir: "guides", access: "readonly" },
+      ] },
+    })
+    const onClose = vi.fn()
+    render(<AgentDetailsOverlay agent={agent} onClose={onClose} />)
+
+    // The reveal always worked at the wire level; what the user never saw was
+    // the result, because the overlay stayed spread over the workbench it had
+    // just changed. Handing off to another surface means yielding the screen.
+    fireEvent.click(await screen.findByRole("button", { name: "Browse Docs files" }))
+    expect(mocks.postUiCommand).toHaveBeenCalledWith({
+      kind: "expandToFile",
+      params: { filesystem: "docs", path: "guides" },
+    })
+    expect(onClose).toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "Browse Workspace files" }))
+    expect(mocks.postUiCommand).toHaveBeenCalledWith({
+      kind: "expandToFile",
+      params: { filesystem: "user", path: "" },
+    })
+  })
+
   it("surfaces a well-formed instruction ref whose file does not exist, instead of 404-ing silently", async () => {
     respond({
       describe: {

@@ -210,11 +210,20 @@ export function AgentDetailsOverlay({
     blurb: `Files this agent can ${source.access === "readonly" ? "read" : "read and edit"}.`,
     blurbTruncate: true,
     icon: "book" as const,
-    // Reveal the mounted filesystem in the workbench file tree.
-    onOpen: () => postUiCommand({
-      kind: "expandToFile",
-      params: { filesystem: source.filesystem, path: source.rootDir && source.rootDir !== "." ? source.rootDir : "" },
-    }),
+    // Reveal the mounted filesystem in the workbench file tree, THEN step
+    // aside. The reveal always worked at the wire level, but the overlay stayed
+    // spread over the workbench it had just changed, so the one visible thing
+    // on screen was the panel the user clicked in — indistinguishable from a
+    // dead link. Handing off to another surface means yielding the screen to
+    // it. File rows deliberately keep the overlay open: they open a tab BESIDE
+    // it, so the user can keep working down the list.
+    onOpen: () => {
+      postUiCommand({
+        kind: "expandToFile",
+        params: { filesystem: source.filesystem, path: source.rootDir && source.rootDir !== "." ? source.rootDir : "" },
+      })
+      onClose()
+    },
     openAriaLabel: `Browse ${source.label} files`,
     openTitle: `Browse ${source.label}`,
   }))
