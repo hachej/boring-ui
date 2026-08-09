@@ -10,6 +10,19 @@ const FLEET_CONFIG_PATH = resolve(REPOSITORY_ROOT, '.agents', 'factory', 'fleet.
 const POLICY_PATH = resolve(REPOSITORY_ROOT, '.agents', 'factory', 'policy.yaml')
 
 export interface LoadBoringFactoryAgentsOptions {
+  /**
+   * The root the playground's `user` filesystem actually serves — i.e. the
+   * exact value `startPlaygroundServer` hands to `createWorkspaceAgentServer`
+   * (`BORING_AGENT_WORKSPACE_ROOT ?? WORKSPACE_DIR`), never the repository
+   * root the fleet is composed FROM.
+   *
+   * Required, and required to be passed in rather than recomputed here,
+   * because the two roots are independent: whoever decides what the client
+   * reads through is the only caller that can honestly answer whether a
+   * persona path is reachable. Getting this wrong does not fail loudly at
+   * boot — it publishes a well-formed ref that 404s on click.
+   */
+  readonly workspaceRoot: string
   readonly preferredModels?: Partial<Record<BoringFactoryRole, string>>
   /** Overridable for tests; defaults to `process.env`. */
   readonly env?: NodeJS.ProcessEnv
@@ -22,12 +35,18 @@ export interface LoadBoringFactoryAgentsOptions {
  * `loadConfiguredAgentFleet` directly behind `BORING_AGENT_FLEET=1`.
  */
 export async function loadBoringFactoryAgents(
-  options: LoadBoringFactoryAgentsOptions = {},
+  options: LoadBoringFactoryAgentsOptions,
 ): Promise<readonly AgentHostAgentSpec[]> {
   const { agents, diagnostics } = await loadConfiguredAgentFleet({
-    // The playground serves this repository as the workspace, so the fleet
-    // repository root and the served workspace root genuinely coincide here.
-    workspaceRoot: REPOSITORY_ROOT,
+    // The SERVED root, not `REPOSITORY_ROOT`. The playground composes the
+    // fleet from this repository's `.agents/` tree but serves
+    // `apps/workspace-playground/workspace` (or
+    // `BORING_AGENT_WORKSPACE_ROOT`) as the `user` filesystem, so the two
+    // roots differ by default and the loader must gate against the one the
+    // client reads through. Run the playground with
+    // `BORING_AGENT_WORKSPACE_ROOT=<repo root>` to make persona instructions
+    // genuinely reachable and their links appear.
+    workspaceRoot: options.workspaceRoot,
     personasDir: PERSONAS_DIR,
     fleetConfigPath: FLEET_CONFIG_PATH,
     policyPath: POLICY_PATH,
@@ -37,6 +56,14 @@ export async function loadBoringFactoryAgents(
   // unpublishable instructions path withholds one link; failing boot over it
   // would be a worse outcome than the missing row it reports.
   const excluding = diagnostics.filter((d) => d.code !== 'AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE')
+  for (const diagnostic of diagnostics) {
+    if (excluding.includes(diagnostic)) continue
+    // Withholding a link is correct but must never be silent: without this the
+    // only evidence of a mis-rooted playground is a row that isn't there.
+    console.warn(
+      `[workspace-playground] ${diagnostic.seat}: ${diagnostic.code}: ${diagnostic.message}`,
+    )
+  }
   if (excluding.length > 0) {
     throw Object.assign(
       new Error(`fleet loader excluded seat(s): ${excluding.map((d) => `${d.seat} (${d.code})`).join(', ')}`),

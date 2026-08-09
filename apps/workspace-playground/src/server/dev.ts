@@ -65,7 +65,10 @@ export async function startPlaygroundServer(): Promise<void> {
       : createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
     const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
     const factoryAgentsEnabled = process.env.VITE_BORING_FACTORY_AGENTS === "1"
-    const factoryAgents = factoryAgentsEnabled ? await loadBoringFactoryAgents() : undefined
+    // Same `workspaceRoot` value that is handed to createWorkspaceAgentServer
+    // below: the fleet's instruction refs are addressed against the filesystem
+    // this server actually serves, so they resolve or are not published.
+    const factoryAgents = factoryAgentsEnabled ? await loadBoringFactoryAgents({ workspaceRoot }) : undefined
     const multiFilesystemPlayground = process.env.BORING_WORKSPACE_PLAYGROUND_MULTI_FS === "1" || process.env.VITE_PLAYGROUND_MULTI_FS === "1"
     const companyContextRoot = resolve(process.env.BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT || workspaceRoot)
     if (multiFilesystemPlayground) mkdirSync(companyContextRoot, { recursive: true })
