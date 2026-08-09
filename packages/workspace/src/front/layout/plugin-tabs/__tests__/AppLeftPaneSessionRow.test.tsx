@@ -41,6 +41,24 @@ describe("AppSessionRow native actions", () => {
     expect(onDelete).toHaveBeenCalledWith("native-1")
   })
 
+  it("sizes every row shortcut for a coarse pointer, not just the menu trigger", () => {
+    // The strip reserves one 44px slot per action under `pointer: coarse`.
+    // When a shortcut stays 24px the reservation still holds, so the leftover
+    // 20px of its slot falls through to the row button underneath and a tap
+    // meant for "split" switches chats instead. Measured in the browser this
+    // was a 36px wrong-action zone; here the class contract stands in for it.
+    row({ onOpenDetached: vi.fn(), onDelete: vi.fn() })
+    const shortcuts = [
+      screen.getByRole("button", { name: /in a split pane$/ }),
+      screen.getByRole("button", { name: /as a quick chat$/ }),
+      screen.getByLabelText("Chat actions for Native chat"),
+    ]
+    for (const shortcut of shortcuts) {
+      expect(shortcut.className).toContain("size-11")
+      expect(shortcut.className).toContain("sm:size-6")
+    }
+  })
+
   it("copies the session id through the legacy fallback on an HTTP dev origin", async () => {
     const secureContextDescriptor = Object.getOwnPropertyDescriptor(globalThis, "isSecureContext")
     const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard")

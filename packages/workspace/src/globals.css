@@ -459,6 +459,13 @@
   .app-left-session-row {
     --app-session-action-slot: 44px;
   }
+
+  /* Each action already fills its whole 44px slot here, so the fine-pointer
+     gap would push the leftmost button outside the reserved strip and back
+     over the row button. Slot-sized buttons ARE the spacing. */
+  .app-left-session-actions {
+    gap: 0;
+  }
 }
 
 @media (max-width: 639px) {

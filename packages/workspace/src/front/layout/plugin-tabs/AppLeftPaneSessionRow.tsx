@@ -13,7 +13,13 @@ import { resolveSessionTrailingSlot, type SessionTrailingBadge, type SessionTrai
 
 export type AppSessionRowState = "normal" | "open" | "active"
 
-/** The split / detach hover shortcuts differ only by icon, words and handler. */
+/**
+ * The split / detach hover shortcuts differ only by icon, words and handler.
+ * Coarse pointers get the full 44px slot (`.app-left-session-secondary-action`
+ * in globals.css) so real buttons cover the whole reserved strip instead of
+ * leaving 24px icons with row-sized gaps between them; fine pointers keep the
+ * compact 24px icon, matching `AppSessionActionsMenu` and the agent cards.
+ */
 function SessionHoverAction({ icon, label, title, onClick }: {
   icon: ReactNode
   label: string
@@ -27,7 +33,7 @@ function SessionHoverAction({ icon, label, title, onClick }: {
       aria-label={label}
       title={title}
       onClick={onClick}
-      className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="app-left-session-secondary-action grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-6"
     >
       {icon}
     </button>
@@ -135,7 +141,9 @@ export function AppSessionRow({
   const canCopy = session.ephemeral !== true
   const splitAvailable = state === "normal" && actionsAvailable && canSplit && Boolean(onOpenAsPane)
   const pinAvailable = canPin && Boolean(onTogglePinned)
-  const showMenu = splitAvailable || pinAvailable || canCopy || renameAvailable || Boolean(onDelete)
+  // Split left the menu for its own hover shortcut, so it no longer justifies
+  // opening one — a menu with only that entry would render empty.
+  const showMenu = pinAvailable || canCopy || renameAvailable || Boolean(onDelete)
   // A chat already on stage has nothing to gain from the quick overlay —
   // placement shortcuts only apply to chats that are not open yet.
   const detachAvailable = state === "normal" && actionsAvailable && Boolean(onOpenDetached)
