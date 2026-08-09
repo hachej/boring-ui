@@ -651,6 +651,38 @@
   }
 
   /*
+   * The top bar is the only always-visible chrome on a phone, and both of its
+   * controls sit under the 44px minimum on a mouse (search pill 28px, new-chat
+   * icon ~32px). They grow to 44px on touch; the bar itself is `min-h-11`
+   * (44px) with no block padding, so the taller targets fill the existing row
+   * rather than reflowing the layout around it. The bar does measure 45px on
+   * touch, not 44: its 1px bottom border sits outside the 44px content box.
+   * That 1px is chrome, not padding, so the touch target is honestly 44px and
+   * the row is left to absorb the border instead of shrinking the target.
+   */
+  .topbar-search-action,
+  .topbar-icon-action {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /*
+   * The mobile bars' pill buttons are the only way between chat, sessions and
+   * workspace. They grow from 40px to the 44px minimum; the bar drops its
+   * block padding in exchange so the row stays ~44px plus the status-bar inset
+   * rather than growing to 60px.
+   */
+  [data-boring-workspace-part="mobile-chat-bar"],
+  [data-boring-workspace-part="mobile-workspace-bar"] {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: 0;
+  }
+
+  .mobile-shell-bar-action {
+    min-height: 44px;
+  }
+
+  /*
    * Management overlay headers (Skills, Plugins, plugin-provided tools) keep
    * 24px icon actions on a mouse. On touch every header action grows to the
    * 44px minimum from the shared surface, so consumers don't each override it.
@@ -683,6 +715,17 @@
 }
 
 @media (hover: none) {
+  /*
+   * `hover: none` means the primary input cannot hover — a touch device. It
+   * does not prove there is no keyboard (a tablet may have one attached), but
+   * it is the same signal `.command-palette-footer-desktop-hints` already uses
+   * to drop desktop shortcut hints, and it beats a width breakpoint because a
+   * touch tablet at 900px is still a device where a ⌘K badge is mostly noise.
+   */
+  .topbar-desktop-hint {
+    display: none;
+  }
+
   /* Both new-chat variants hide their split / quick-chat shortcuts behind
      hover, and reveal them on focus-within as the keyboard path. Touch has
      neither, so on a hover-less pointer the two shortcuts simply did not
