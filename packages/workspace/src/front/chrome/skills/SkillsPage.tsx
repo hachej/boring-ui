@@ -211,9 +211,9 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
               )
               return (
                 <li
-                  key={skill.resource
+                  key={`${skill.resource
                     ? uiFileResourceKey(skill.resource)
-                    : `${skill.name}\0${skill.source ?? ""}\0${skill.description ?? ""}\0${index}`}
+                    : `${skill.name}\u0000${skill.source ?? ""}\u0000${skill.description ?? ""}`}\u0000${index}`}
                   className="min-w-0"
                 >
                   {resource ? (

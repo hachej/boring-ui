@@ -125,12 +125,16 @@ export function AgentDetailsOverlay({
 
   // Server-reported instruction files go through the SAME open guard as
   // skills; a ref the guard rejects renders as a plain, unopenable row.
+  // Every list in this overlay tiebreaks its key with the row's index, because
+  // the host can report the same file, filesystem or skill twice. Without it
+  // React reconciles by a key two rows share and a badge lands on the wrong
+  // row — a "read-only" mark on a writable knowledge source, for instance.
   const instructionRows: DetailRowModel[] = [
-    ...capabilities.instructionFiles.map((file) => {
+    ...capabilities.instructionFiles.map((file, index) => {
       const resource = openableFileResource(file.resource)
       const copy = INSTRUCTION_ROLE_COPY[file.role]
       return {
-        key: uiFileResourceKey(file.resource),
+        key: `agent\u0000${uiFileResourceKey(file.resource)}\u0000${index}`,
         title: copy.name,
         // An inert card with no explanation reads as a rendering bug. Say
         // what happened instead of showing a row that just doesn't respond.
@@ -146,8 +150,8 @@ export function AgentDetailsOverlay({
     }),
     ...WORKSPACE_INSTRUCTION_FILES
       .filter((file) => capabilities.workspaceInstructionFiles.includes(file.path))
-      .map((file) => ({
-        key: file.path,
+      .map((file, index) => ({
+        key: `workspace\u0000${file.path}\u0000${index}`,
         title: file.path,
         badge: file.badge,
         blurb: file.blurb,
@@ -158,8 +162,8 @@ export function AgentDetailsOverlay({
       })),
   ]
 
-  const knowledgeRows: DetailRowModel[] = capabilities.knowledge.value.map((source) => ({
-    key: source.filesystem,
+  const knowledgeRows: DetailRowModel[] = capabilities.knowledge.value.map((source, index) => ({
+    key: `${source.filesystem}\u0000${index}`,
     title: source.label,
     ...(source.access === "readonly" ? { badge: "read-only" } : {}),
     blurb: `Files this agent can ${source.access === "readonly" ? "read" : "read and edit"}.`,
@@ -178,7 +182,7 @@ export function AgentDetailsOverlay({
     const resource = openableFileResource(skill.resource)
     const badge = skillSourceLabel(skill.source)
     return {
-      key: skill.resource ? uiFileResourceKey(skill.resource) : `${skill.name}\0${index}`,
+      key: `${skill.resource ? uiFileResourceKey(skill.resource) : skill.name}\u0000${index}`,
       title: `/${skill.name}`,
       ...(badge ? { badge } : {}),
       ...(skill.description ? { blurb: skill.description } : {}),
