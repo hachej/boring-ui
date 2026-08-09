@@ -33,6 +33,8 @@ function snapshot(requestFailures: AgentSidebarHardGateSnapshot["requestFailures
       capabilityHeadings: [],
       legacyJargonCount: 0,
       actionOverlaps: [],
+      actionFallthrough: [],
+      illegibleTitles: [],
       undersizedAgentControls: [],
     },
   }
@@ -146,6 +148,48 @@ describe("workspace Agent sidebar action-overlap gate", () => {
 
   it("fails on the age label too, not only the title", () => {
     expect(overlapGate([{ kind: "age", label: "9h", overlap: 17 }])).toMatchObject({ passed: false })
+  })
+})
+
+describe("workspace Agent sidebar action-fallthrough gate", () => {
+  const fallthroughGate = (actionFallthrough: AgentSidebarHardGateSnapshot["sidebar"]["actionFallthrough"]) => {
+    const base = snapshot([])
+    return evaluateAgentSidebarHardGates({ ...base, sidebar: { ...base.sidebar, actionFallthrough } })
+      .results.find((result) => result.id === "session-row-action-fallthrough")
+  }
+
+  it("passes when every pixel of the strip belongs to an action", () => {
+    expect(fallthroughGate([])).toMatchObject({ passed: true })
+  })
+
+  it("fails on a vertical seam, and says where it is", () => {
+    // A 44px row around 28px buttons: 8px of live row button above the icon
+    // and 8px below it, in the icon's own column.
+    const gate = fallthroughGate([{ session: "alpha-1", pixels: 15, sample: ["22,0", "22,1", "22,36"] }])
+    expect(gate).toMatchObject({ passed: false })
+    expect(gate?.evidence).toContain("22,36")
+  })
+
+  it("fails on a horizontal seam between two actions as well", () => {
+    expect(fallthroughGate([{ session: "alpha-1", pixels: 4, sample: ["27,22"] }])).toMatchObject({ passed: false })
+  })
+})
+
+describe("workspace Agent sidebar title-legibility gate", () => {
+  const titleGate = (illegibleTitles: AgentSidebarHardGateSnapshot["sidebar"]["illegibleTitles"]) => {
+    const base = snapshot([])
+    return evaluateAgentSidebarHardGates({ ...base, sidebar: { ...base.sidebar, illegibleTitles } })
+      .results.find((result) => result.id === "session-row-title-legible")
+  }
+
+  it("passes when every row still names its chat", () => {
+    expect(titleGate([])).toMatchObject({ passed: true })
+  })
+
+  it("fails when a badge and its action reservation erase the title", () => {
+    const gate = titleGate([{ session: "alpha-1", width: 0, trailing: "badge" }])
+    expect(gate).toMatchObject({ passed: false })
+    expect(gate?.evidence).toContain("badge")
   })
 })
 

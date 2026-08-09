@@ -44,7 +44,11 @@ async function ensureAgentNavigation(page: Page): Promise<void> {
 
 export const workspaceAgentSidebarSpec: UiReviewSpec = {
   id: "workspace-agent-sidebar",
-  specRevision: "workspace-agent-sidebar-v4",
+  // Tracks the hard-gate contract deliberately: this spec's viewport matrix and
+  // `collect` changed in lockstep with v5→v9, and a stale revision keeps a
+  // replayed manifest alive across a scenario that no longer means the same
+  // thing. Two numbers for one scenario is the drift this file keeps finding.
+  specRevision: "workspace-agent-sidebar-v9",
   fixtureResetId: "workspace-agent-sidebar-fixture-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -231,6 +235,69 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
                   ? [{ kind, label: node.textContent?.trim().slice(0, 20) ?? "", overlap: Math.round(overlap) }]
                   : []
               })
+            }),
+            // The overlap sweep above is HORIZONTAL only, and it asks whether
+            // row content is drawn under the strip. It cannot see the mirror
+            // failure: a point INSIDE the strip that belongs to no action and
+            // therefore hits the row button behind it, which switches chats
+            // instead of doing what the icon under the finger says.
+            //
+            // That is what a row height keyed to `(max-width: 767px),
+            // (hover: none)` around a slot keyed to `(pointer: coarse)`
+            // produced — a 44px-tall strip holding 28px buttons, with 16px of
+            // live row button inside it, on every narrow fine-pointer window.
+            // Both axes are swept now, because the defect has now appeared on
+            // each of them once.
+            actionFallthrough: [...document.querySelectorAll('[data-boring-workspace-part="app-session-row"]')].flatMap((row) => {
+              const actions = row.querySelector(".app-left-session-actions")
+              const rowButton = row.querySelector(":scope > button")
+              if (!actions || !rowButton || !visible(actions)) return []
+              if (![...actions.querySelectorAll("button")].some(visible)) return []
+              const strip = actions.getBoundingClientRect()
+              const points: Array<{ x: number; y: number }> = []
+              // Vertical: the full height of the strip, in each action's own
+              // column. A seam above or below a button lives here.
+              for (const button of [...actions.querySelectorAll("button")].filter(visible)) {
+                const box = button.getBoundingClientRect()
+                const x = Math.round(box.left + box.width / 2)
+                for (let y = Math.ceil(strip.top) + 1; y < strip.bottom - 1; y += 1) points.push({ x, y })
+              }
+              // Horizontal: the full width of the strip at its mid-height. A
+              // seam between two actions, or beside the outermost one, lives
+              // here — this is the round-6 defect, kept under measurement.
+              const midY = Math.round(strip.top + strip.height / 2)
+              for (let x = Math.ceil(strip.left) + 1; x < strip.right - 1; x += 1) points.push({ x, y: midY })
+              const misses = points.filter((point) => {
+                const hit = document.elementFromPoint(point.x, point.y)
+                return hit === rowButton || (hit !== null && rowButton.contains(hit))
+              })
+              return misses.length > 0
+                ? [{
+                    session: row.getAttribute("data-boring-session-id") ?? "",
+                    pixels: misses.length,
+                    // Offsets from the strip's own top-left, so the evidence
+                    // says WHERE the seam is without leaking page coordinates.
+                    sample: misses.slice(0, 6).map((point) => `${Math.round(point.x - strip.left)},${Math.round(point.y - strip.top)}`),
+                  }]
+                : []
+            }),
+            // A row whose title has been squeezed to nothing is not a row: it
+            // is a status pill next to an icon, and the operator cannot tell
+            // WHICH chat the status belongs to. Nothing asserted this, so a
+            // fixed 88px badge ceiling plus a 132px action reservation could
+            // consume a 228px nested row entirely and still ship green.
+            illegibleTitles: [...document.querySelectorAll('[data-boring-workspace-part="app-session-row"]')].flatMap((row) => {
+              const title = row.querySelector("span.flex-1")
+              if (!title || !shown(title)) return []
+              const width = title.getBoundingClientRect().width
+              const trailing = row.querySelector(".app-left-session-trailing")
+              return width < 32
+                ? [{
+                    session: row.getAttribute("data-boring-session-id") ?? "",
+                    width: Math.round(width),
+                    trailing: trailing?.getAttribute("data-trailing") ?? "none",
+                  }]
+                : []
             }),
             undersizedAgentControls: coarsePointer ? controls.map((control) => {
               const rect = control.getBoundingClientRect()

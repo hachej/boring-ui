@@ -20,7 +20,12 @@ import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 //   capability-heading gate plus a jargon ban, and the no-tabs invariant.
 // - Agent rows expose "New chat" (+), the "..." options trigger holding the
 //   placement variants, and Settings; the action count recognises the trigger.
-export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v8"
+// v9 adds the two axes v8 was blind to. The overlap gate swept HORIZONTALLY
+// and asked only whether row content sits under the strip; nothing asked
+// whether a pixel inside the strip belongs to an action, and nothing asked
+// whether the row title survived the reservations made around it. Both were
+// broken in bands v8 already sampled.
+export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v9"
 
 const KNOWN_ABORTED_REQUESTS: Array<{
   rationale: string
@@ -46,6 +51,8 @@ const REQUIRED_GATES = [
   "axe-serious-critical",
   "state-contract",
   "session-row-action-overlap",
+  "session-row-action-fallthrough",
+  "session-row-title-legible",
   "agent-touch-targets",
 ] as const
 
@@ -83,6 +90,8 @@ export interface AgentSidebarHardGateSnapshot extends UiReviewBrowserErrors {
     capabilityHeadings: string[]
     legacyJargonCount: number
     actionOverlaps: Array<{ kind: string; label: string; overlap: number }>
+    actionFallthrough: Array<{ session: string; pixels: number; sample: string[] }>
+    illegibleTitles: Array<{ session: string; width: number; trailing: string }>
     undersizedAgentControls: Array<{ label: string; width: number; height: number }>
   }
 }
@@ -172,6 +181,13 @@ export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnap
   // reservation regresses, the title and the age silently sit under
   // background-less icon buttons.
   add("session-row-action-overlap", state.actionOverlaps.length === 0, JSON.stringify(state.actionOverlaps))
+  // The mirror of the overlap gate, on both axes. Every pixel of the action
+  // strip must belong to an action; a pixel that falls through to the row
+  // button switches chats when the user aimed at the icon they can see.
+  add("session-row-action-fallthrough", state.actionFallthrough.length === 0, JSON.stringify(state.actionFallthrough))
+  // The title is what identifies the row. No reservation — badge ceiling,
+  // owner ceiling, action strip — may take all of it.
+  add("session-row-title-legible", state.illegibleTitles.length === 0, JSON.stringify(state.illegibleTitles))
   // Keyed to the POINTER, like the 44px rules themselves — not to a narrow
   // viewport, which is neither necessary nor sufficient for a coarse pointer.
   add("agent-touch-targets", !snapshot.viewport.coarsePointer || state.undersizedAgentControls.length === 0, JSON.stringify(state.undersizedAgentControls))
