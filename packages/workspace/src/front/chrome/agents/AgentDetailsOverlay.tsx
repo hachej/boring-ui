@@ -26,7 +26,6 @@ export interface AgentDetailsOverlayAgent {
   label: string
   description?: string
   pluginIds?: readonly string[]
-  sessionsStatus?: "loading" | "loaded" | "error"
 }
 
 export interface AgentDetailsOverlayProps {

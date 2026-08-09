@@ -27,7 +27,6 @@ const agent = {
   label: "Concierge",
   description: "Routes work to the right agent.",
   pluginIds: ["ask-user"],
-  sessionsStatus: "loaded" as const,
 }
 
 function respond(payloads: {

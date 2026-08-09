@@ -54,7 +54,6 @@ describe("AppLeftPane", () => {
       onCreateSession: vi.fn(),
       onCreateSplitSession: vi.fn(),
       onCreatePopoverSession: vi.fn(),
-      onOpenAgentDetails: vi.fn(),
       onOpenAgentSettings: vi.fn(),
       onSelectAgent: vi.fn(),
     }
@@ -122,7 +121,6 @@ describe("AppLeftPane", () => {
     expect(handlers.onCreatePopoverSession).toHaveBeenCalledWith("beta")
     await user.click(screen.getByRole("button", { name: "Settings for Boring Beta" }))
     expect(handlers.onOpenAgentSettings).toHaveBeenCalledWith("beta")
-    expect(handlers.onOpenAgentDetails).not.toHaveBeenCalled()
   })
 
   it("retargets new chats from the picker without creating one", async () => {

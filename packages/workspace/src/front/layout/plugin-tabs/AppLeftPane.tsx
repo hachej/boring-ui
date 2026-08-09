@@ -99,8 +99,6 @@ export interface AppLeftPaneProps {
    */
   addressedAgentTypeId?: string
   onSelectAgent?: (agentTypeId: string) => void
-  /** @deprecated Agent details open exclusively through onOpenAgentSettings. */
-  onOpenAgentDetails?: (agentTypeId: string) => void
   onOpenAgentSettings?: (agentTypeId: string) => void
   sessionsLoading?: boolean
   /** Raw legacy native session id. */
