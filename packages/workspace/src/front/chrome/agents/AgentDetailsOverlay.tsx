@@ -1,7 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Bot, ChevronDown, ExternalLink, X } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { Bot, ChevronDown, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { postUiCommand } from "../../bridge"
@@ -14,10 +14,7 @@ import {
   INITIAL_CAPABILITIES,
   WORKSPACE_INSTRUCTION_FILES,
   fileResourceExists,
-  formatComposedPromptMarkdown,
   loadAgentCapabilities,
-  normalizePromptText,
-  readLiveSystemPrompt,
   skillSourceLabel,
   type AgentCapabilities,
 } from "./agentCapabilities"
@@ -36,9 +33,6 @@ export interface AgentDetailsOverlayProps {
   headerInsetEnd?: boolean
 }
 
-/** Rough size past which the prompt preview clamps and offers the full text. */
-const SYSTEM_PROMPT_PREVIEW_LIMIT = 280
-
 /** User-facing words for a `role` discriminator the server sends. */
 const INSTRUCTION_ROLE_COPY = {
   persona: { name: "Persona instructions", blurb: "What this agent is asked to be and to do." },
@@ -52,7 +46,6 @@ export function AgentDetailsOverlay({
 }: AgentDetailsOverlayProps) {
   const client = useOptionalWorkspacePluginClient()
   const [capabilities, setCapabilities] = useState<AgentCapabilities>(INITIAL_CAPABILITIES)
-  const [promptExpanded, setPromptExpanded] = useState(false)
   const [expandedTool, setExpandedTool] = useState<string | null>(null)
   // Refs whose file turned out not to exist when the user clicked them. Keyed
   // by resource so the row that failed — and only that row — degrades.
@@ -79,7 +72,6 @@ export function AgentDetailsOverlay({
   }, [agentTypeId, client])
 
   useEffect(() => {
-    setPromptExpanded(false)
     setExpandedTool(null)
     setMissingResourceKeys(new Set())
     void load()
@@ -87,9 +79,6 @@ export function AgentDetailsOverlay({
 
   const loading = capabilities.status === "loading"
   const description = capabilities.description
-  const systemPrompt = description?.systemPrompt ?? null
-  const promptText = useMemo(() => systemPrompt ? normalizePromptText(systemPrompt) : null, [systemPrompt])
-  const promptNeedsToggle = Boolean(promptText && promptText.length > SYSTEM_PROMPT_PREVIEW_LIMIT)
   // Plugin ids are the fleet list's fact; /describe deliberately does not
   // restate them in a second shape.
   const pluginIds = agent.pluginIds ?? []
@@ -123,36 +112,6 @@ export function AgentDetailsOverlay({
     }
     postUiCommand({ kind: "openFile", params: { ...resource, mode: "view" } })
   }, [client])
-
-  const openComposedPrompt = useCallback(async () => {
-    // The composed prompt is not an authored file; re-read the live
-    // composition, materialize it into the workspace scratch area through the
-    // existing files adapter, then open it through the single UI dispatch
-    // path. The file is regenerated on every open so it always reflects the
-    // current composition rather than a stale snapshot.
-    if (!client || !systemPrompt) return
-    const path = `.boring/agent-prompts/${agentTypeId}.md`
-    // Same generation guard as the panel load: the re-read is a round trip, so
-    // switching agents mid-flight would otherwise write and open the PREVIOUS
-    // agent's prompt.
-    const generation = generationRef.current
-    const livePrompt = await readLiveSystemPrompt(client, agentTypeId, systemPrompt)
-    if (generationRef.current !== generation) return
-    try {
-      await client.postJson("/api/v1/files", {
-        path,
-        filesystem: "user",
-        // The files route creates the parent chain itself; a fresh workspace
-        // without `.boring/` must not silently fail the write.
-        createDirs: true,
-        content: `# ${agent.label} — composed system prompt\n\n> Read-only generated view. Regenerated from the live composition each time it is opened from Agent details — edits here have no effect.\n\n${formatComposedPromptMarkdown(livePrompt)}\n`,
-        returnMtimeMs: false,
-      })
-      postUiCommand({ kind: "openFile", params: { filesystem: "user", path, mode: "view" } })
-    } catch {
-      postUiCommand({ kind: "showNotification", params: { msg: "Couldn't open the composed prompt.", level: "error" } })
-    }
-  }, [agent.label, agentTypeId, client, systemPrompt])
 
   // Server-reported instruction files go through the SAME open guard as
   // skills; a ref the guard rejects renders as a plain, unopenable row.
@@ -210,13 +169,6 @@ export function AgentDetailsOverlay({
     blurb: `Files this agent can ${source.access === "readonly" ? "read" : "read and edit"}.`,
     blurbTruncate: true,
     icon: "book" as const,
-    // Reveal the mounted filesystem in the workbench file tree, THEN step
-    // aside. The reveal always worked at the wire level, but the overlay stayed
-    // spread over the workbench it had just changed, so the one visible thing
-    // on screen was the panel the user clicked in — indistinguishable from a
-    // dead link. Handing off to another surface means yielding the screen to
-    // it. File rows deliberately keep the overlay open: they open a tab BESIDE
-    // it, so the user can keep working down the list.
     onOpen: () => {
       postUiCommand({
         kind: "expandToFile",
@@ -380,46 +332,6 @@ export function AgentDetailsOverlay({
               <DividedRows>
                 {pluginIds.map((pluginId, index) => <MetaRow key={`${pluginId}\u0000${index}`} title={pluginId} meta="Enabled" />)}
               </DividedRows>
-            </DetailSection>
-
-            <DetailSection
-              id="agent-system-prompt-heading" title="System prompt"
-              loading={loading} empty={!promptText}
-              error={capabilities.describeError} errorText="The system prompt couldn't be loaded."
-              emptyText="This agent uses the default instructions."
-            >
-              <div className="mt-3">
-                <p className="text-[11px] leading-5 text-muted-foreground/80">
-                  Composed automatically from this page's pieces — instructions, skills, and tools.
-                </p>
-                <p className={cn(
-                  "mt-2 whitespace-pre-line break-words border-l-2 border-border/60 pl-3 text-xs leading-5 text-muted-foreground",
-                  promptNeedsToggle && !promptExpanded && "line-clamp-3",
-                )}>{promptText}</p>
-                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-                  {promptNeedsToggle ? (
-                    <button
-                      type="button"
-                      onClick={() => setPromptExpanded((current) => !current)}
-                      aria-expanded={promptExpanded}
-                      className="inline-flex min-h-11 items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:min-h-0"
-                    >
-                      <ChevronDown className={cn("size-3.5 transition-transform", promptExpanded && "rotate-180")} strokeWidth={1.75} aria-hidden="true" />
-                      {promptExpanded ? "Show less" : "Show more"}
-                    </button>
-                  ) : null}
-                  {client ? (
-                    <button
-                      type="button"
-                      onClick={() => void openComposedPrompt()}
-                      className="inline-flex min-h-11 items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:min-h-0"
-                    >
-                      <ExternalLink className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-                      Open in workbench
-                    </button>
-                  ) : null}
-                </div>
-              </div>
             </DetailSection>
 
             <DetailSection

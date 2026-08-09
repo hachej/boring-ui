@@ -48,7 +48,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
   // `collect` changed in lockstep with v5→v9, and a stale revision keeps a
   // replayed manifest alive across a scenario that no longer means the same
   // thing. Two numbers for one scenario is the drift this file keeps finding.
-  specRevision: "workspace-agent-sidebar-v11",
+  specRevision: "workspace-agent-sidebar-v12",
   fixtureResetId: "workspace-agent-sidebar-fixture-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -141,7 +141,9 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
       await page.locator('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="alpha"] .app-left-agent-row').hover()
       await page.getByRole("button", { name: "Settings for Alpha" }).click()
       await expect(page.locator('[data-boring-workspace-part="agent-details-overlay"]')).toBeVisible()
-      await expect(page.getByRole("heading", { name: "System prompt" })).toBeVisible()
+      // "System prompt" is gone as of v12; "Defaults" is now the last section
+      // the overlay owes, so it is what proves the panel finished rendering.
+      await expect(page.getByRole("heading", { name: "Defaults" })).toBeVisible()
     } },
   ],
   criticPrompt: "Review the supplied multi-agent sidebar and Agent detail screenshots against the design context. Demand a compact, calm, editorial, world-class navigation hierarchy. Prioritize pinned-chat provenance, Agent/session information architecture, hover and touch discoverability, expansion rhythm and guide lines, active-session meaning, mobile behavior, and the unified Agent page. Return only UiCriticReportV1 JSON. Scores are advisory; every finding must cite supplied state ids.",

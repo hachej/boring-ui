@@ -87,7 +87,6 @@ describe("AgentDetailsOverlay", () => {
   it("renders all capability sections from the server projection", async () => {
     respond({
       describe: {
-        systemPrompt: "You are the concierge. Route work carefully.",
         mcpServers: [{ id: "github", tools: ["create_issue", "get_pr"] }],
       },
       skills: {
@@ -105,7 +104,6 @@ describe("AgentDetailsOverlay", () => {
     renderOverlay()
 
     expect(await screen.findByText("/triage")).toBeInTheDocument()
-    expect(screen.getByText("You are the concierge. Route work carefully.")).toBeInTheDocument()
     expect(screen.getByText("read_file")).toBeInTheDocument()
     expect(screen.getByText("github")).toBeInTheDocument()
     expect(screen.getByText("2 tools")).toBeInTheDocument()
@@ -125,7 +123,7 @@ describe("AgentDetailsOverlay", () => {
 
   it("shows the resolved default model in the Defaults section", async () => {
     respond({
-      describe: { systemPrompt: null, model: "claude-fable-5", mcpServers: [] },
+      describe: { model: "claude-fable-5", mcpServers: [] },
       models: { models: [{ id: "claude-fable-5", label: "Fable 5" }], defaultModel: { id: "claude-fable-5" } },
     })
     renderOverlay()
@@ -137,7 +135,7 @@ describe("AgentDetailsOverlay", () => {
 
   it("falls back to the host default model label when the agent pins none", async () => {
     respond({
-      describe: { systemPrompt: null, mcpServers: [] },
+      describe: { mcpServers: [] },
       models: { models: [{ id: "gpt-x", label: "GPT X" }], defaultModel: { id: "gpt-x" } },
     })
     renderOverlay()
@@ -193,24 +191,6 @@ describe("AgentDetailsOverlay", () => {
     expect(screen.getByText("No tools.")).toBeInTheDocument()
     expect(screen.getByText("No MCP servers connected.")).toBeInTheDocument()
     expect(screen.getByText("No plugins.")).toBeInTheDocument()
-    expect(screen.getByText("This agent uses the default instructions.")).toBeInTheDocument()
-  })
-
-  it("expands the long system prompt in place with prose-flowed text", async () => {
-    const prompt = `Opening line\nthat wraps mid-sentence.\n\n${"More instructions. ".repeat(40)}End marker.`
-    respond({ describe: { systemPrompt: prompt, mcpServers: [] } })
-    renderOverlay()
-
-    const toggle = await screen.findByRole("button", { name: "Show more" })
-    // Single newlines flow as prose; paragraph breaks survive.
-    const body = screen.getByText(/Opening line that wraps mid-sentence\./)
-    expect(body.textContent).toContain("\n\nMore instructions.")
-    // Collapsed preview clamps by lines (CSS), never by a mid-word slice.
-    expect(body.className).toContain("line-clamp")
-    expect(toggle).toHaveAttribute("aria-expanded", "false")
-    fireEvent.click(toggle)
-    expect(screen.getByText(/Opening line/).className).not.toContain("line-clamp")
-    expect(screen.getByRole("button", { name: "Show less" })).toBeInTheDocument()
   })
 
   it("lists persona instructions, workspace instructions, and knowledge sources as openable rows", async () => {
@@ -219,7 +199,6 @@ describe("AgentDetailsOverlay", () => {
       // agent id ("concierge"): the overlay must render what /describe reports
       // instead of inverting a mapping only the Host owns.
       describe: {
-        systemPrompt: null,
         mcpServers: [],
         instructionFiles: [{ filesystem: "user", path: ".agents/personas/desk-7/instructions.md", role: "persona" }],
       },
@@ -263,9 +242,6 @@ describe("AgentDetailsOverlay", () => {
     const onClose = vi.fn()
     render(<AgentDetailsOverlay agent={agent} onClose={onClose} />)
 
-    // The reveal always worked at the wire level; what the user never saw was
-    // the result, because the overlay stayed spread over the workbench it had
-    // just changed. Handing off to another surface means yielding the screen.
     fireEvent.click(await screen.findByRole("button", { name: "Browse Docs files" }))
     expect(mocks.postUiCommand).toHaveBeenCalledWith({
       kind: "expandToFile",
@@ -279,11 +255,9 @@ describe("AgentDetailsOverlay", () => {
       params: { filesystem: "user", path: "" },
     })
   })
-
   it("surfaces a well-formed instruction ref whose file does not exist, instead of 404-ing silently", async () => {
     respond({
       describe: {
-        systemPrompt: null,
         mcpServers: [],
         // Passes `openableFileResource` cleanly — the failure mode this covers
         // is a HEALTHY-looking ref addressing a file the served filesystem does
@@ -339,33 +313,9 @@ describe("AgentDetailsOverlay", () => {
     }))
   })
 
-  it("materializes the composed prompt and opens it in the workbench", async () => {
-    const prompt = "Prompt body.\n\n<!-- boring-skill:start name=triage digest=sha256:abc -->\n---\nname: triage\n---\n# Triage\n<!-- boring-skill:end name=triage -->"
-    respond({ describe: { systemPrompt: prompt, mcpServers: [] } })
-    mocks.postJson.mockResolvedValue({})
-    renderOverlay()
-
-    fireEvent.click(await screen.findByRole("button", { name: "Open in workbench" }))
-    await waitFor(() => expect(mocks.postJson).toHaveBeenCalledWith("/api/v1/files", expect.objectContaining({
-      path: ".boring/agent-prompts/concierge.md",
-      filesystem: "user",
-      content: expect.stringContaining("Prompt body."),
-    })))
-    // Generated view only: attached skill blocks render as captioned fences.
-    const written = mocks.postJson.mock.calls.find((call) => call[0] === "/api/v1/files")?.[1] as { content: string }
-    expect(written.content).toContain("**Attached skill: /triage**")
-    expect(written.content).toContain("````text")
-    expect(written.content).not.toContain("boring-skill:start")
-    await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
-      kind: "openFile",
-      params: { filesystem: "user", path: ".boring/agent-prompts/concierge.md", mode: "view" },
-    }))
-  })
-
   it("refuses to open an instruction ref the path guard rejects", async () => {
     respond({
       describe: {
-        systemPrompt: null,
         mcpServers: [],
         // A hostile/malformed ref must not become a clickable openFile.
         instructionFiles: [{ filesystem: "user", path: "../../etc/passwd", role: "persona" }],
@@ -380,84 +330,13 @@ describe("AgentDetailsOverlay", () => {
     expect(mocks.postUiCommand).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "openFile" }))
   })
 
-  it("creates the parent directory through the files route, never a separate mkdir", async () => {
-    respond({ describe: { systemPrompt: "Prompt body.", mcpServers: [] } })
-    mocks.postJson.mockResolvedValue({})
-    renderOverlay()
-
-    fireEvent.click(await screen.findByRole("button", { name: "Open in workbench" }))
-    await waitFor(() => expect(mocks.postJson).toHaveBeenCalledWith("/api/v1/files", expect.objectContaining({
-      createDirs: true,
-    })))
-    // A fresh workspace without `.boring/` used to depend on a swallowed
-    // /api/v1/dirs call; that route is no longer touched at all.
-    expect(mocks.postJson.mock.calls.map((call) => call[0])).toEqual(["/api/v1/files"])
-  })
-
-  it("keeps the cached prompt when the live re-read fails, without a false error toast", async () => {
-    const prompt = "Cached prompt body."
-    let describeCalls = 0
-    mocks.getJson.mockImplementation(async (path: string) => {
-      if (path.endsWith("/describe")) {
-        describeCalls += 1
-        // First call (panel load) succeeds; the re-read on open fails.
-        if (describeCalls > 1) throw new Error("describe unavailable")
-        return { systemPrompt: prompt, mcpServers: [] }
-      }
-      if (path.endsWith("/skills")) return { skills: [] }
-      if (path.endsWith("/tools")) return { tools: [] }
-      if (path.endsWith("/models")) return { models: [] }
-      if (path.startsWith("/api/v1/filesystems")) return { filesystems: [] }
-      return { entries: [] }
-    })
-    mocks.postJson.mockResolvedValue({})
-    renderOverlay()
-
-    fireEvent.click(await screen.findByRole("button", { name: "Open in workbench" }))
-    await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
-      kind: "openFile",
-      params: { filesystem: "user", path: ".boring/agent-prompts/concierge.md", mode: "view" },
-    }))
-    expect(mocks.postJson).toHaveBeenCalledWith("/api/v1/files", expect.objectContaining({
-      content: expect.stringContaining("Cached prompt body."),
-    }))
-    expect(mocks.postUiCommand).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "showNotification" }))
-  })
-
-  it("reports a real failure when the write itself fails", async () => {
-    respond({ describe: { systemPrompt: "Prompt body.", mcpServers: [] } })
-    mocks.postJson.mockRejectedValue(new Error("disk full"))
-    renderOverlay()
-
-    fireEvent.click(await screen.findByRole("button", { name: "Open in workbench" }))
-    await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
-      kind: "showNotification",
-      params: { msg: "Couldn't open the composed prompt.", level: "error" },
-    }))
-  })
-
-  it("fences an attached skill body that itself contains a longer fence", async () => {
-    const skillBody = "# Triage\n\n`````text\nnested fence\n`````"
-    const prompt = `Prompt body.\n\n<!-- boring-skill:start name=triage digest=sha256:abc -->\n${skillBody}\n<!-- boring-skill:end name=triage -->`
-    respond({ describe: { systemPrompt: prompt, mcpServers: [] } })
-    mocks.postJson.mockResolvedValue({})
-    renderOverlay()
-
-    fireEvent.click(await screen.findByRole("button", { name: "Open in workbench" }))
-    await waitFor(() => expect(mocks.postJson).toHaveBeenCalled())
-    const written = mocks.postJson.mock.calls.find((call) => call[0] === "/api/v1/files")?.[1] as { content: string }
-    // A fixed ``` (or ````) fence would be closed early by the nested one.
-    expect(written.content).toContain("``````text")
-    expect(written.content).toContain("nested fence")
-  })
-
   it("does not let a slow response for the previous agent land on the current one", async () => {
     const pending = new Map<string, (value: unknown) => void>()
     mocks.getJson.mockImplementation((path: string) => {
       if (path.includes("/agents/slow/")) {
         return new Promise((resolve) => pending.set(path, resolve))
       }
-      if (path.endsWith("/describe")) return Promise.resolve({ systemPrompt: null, mcpServers: [] })
+      if (path.endsWith("/describe")) return Promise.resolve({ mcpServers: [] })
       if (path.endsWith("/skills")) return Promise.resolve({ skills: [{ name: "fast-skill" }] })
       if (path.endsWith("/tools")) return Promise.resolve({ tools: [] })
       if (path.endsWith("/models")) return Promise.resolve({ models: [] })
@@ -500,13 +379,12 @@ describe("AgentDetailsOverlay", () => {
   it("surfaces per-section errors without breaking the rest of the page", async () => {
     respond({
       skills: new Error("boom"),
-      describe: { systemPrompt: "Prompt.", mcpServers: [] },
+      describe: { mcpServers: [] },
       tools: { tools: [{ name: "run_shell" }] },
     })
     renderOverlay()
 
     expect(await screen.findByText("Skills couldn't be loaded.")).toBeInTheDocument()
-    expect(screen.getByText("Prompt.")).toBeInTheDocument()
     expect(screen.getByText("run_shell")).toBeInTheDocument()
   })
 

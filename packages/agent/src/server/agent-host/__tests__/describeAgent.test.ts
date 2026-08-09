@@ -61,12 +61,11 @@ function createProjection(options: {
 }
 
 describe('describeAgent', () => {
-  test('projects system prompt, model and instruction refs from the compiled spec', async () => {
+  test('projects model and instruction refs from the compiled spec', async () => {
     const projection = createProjection()
     const description = await projection.describeAgent({ request: {} as never, agentTypeId: 'concierge' })
     expect(description).toEqual({
       agentTypeId: 'concierge',
-      systemPrompt: 'You are the concierge.',
       model: 'pi-large',
       mcpServers: [],
       // The seat directory is NOT derivable from the agent id; the Host is
@@ -75,12 +74,11 @@ describe('describeAgent', () => {
     })
   })
 
-  test('legacy default agent describes with no prompt or plugins', async () => {
+  test('legacy default agent describes with no model or instruction refs', async () => {
     const projection = createProjection()
     const description = await projection.describeAgent({ request: {} as never, agentTypeId: 'default' })
     expect(description).toEqual({
       agentTypeId: 'default',
-      systemPrompt: null,
       model: null,
       mcpServers: [],
       instructionFiles: [],
@@ -103,7 +101,7 @@ describe('describeAgent', () => {
 
   test('describe is gated by the SAME per-agent host hook as its sibling routes', async () => {
     // A subject authorized for the workspace but denied this agent must not
-    // read its authored prompt, model, instruction paths or granted MCP
+    // read its model, instruction paths or granted MCP
     // connectors. Workspace-scope authorization alone does not answer this.
     const seen: string[] = []
     const projection = createProjection({
@@ -154,10 +152,12 @@ describe('describeAgent', () => {
     await app.register(createAgentHostRuntimeCapabilityRoutes(createProjection()))
     const ok = await app.inject({ method: 'GET', url: '/api/v1/agents/concierge/describe' })
     expect(ok.statusCode).toBe(200)
-    expect(ok.json()).toMatchObject({ agentTypeId: 'concierge', systemPrompt: 'You are the concierge.' })
-    // Narrow on purpose: identity and plugin ids come from the fleet list.
+    expect(ok.json()).toMatchObject({ agentTypeId: 'concierge', model: 'pi-large' })
+    // Narrow on purpose: identity and plugin ids come from the fleet list, and
+    // the composed prompt left the wire with the details section that read it.
     expect(ok.json()).not.toHaveProperty('label')
     expect(ok.json()).not.toHaveProperty('plugins')
+    expect(ok.json()).not.toHaveProperty('systemPrompt')
     const missing = await app.inject({ method: 'GET', url: '/api/v1/agents/nope/describe' })
     expect(missing.statusCode).toBe(404)
     expect(missing.json()).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN } })

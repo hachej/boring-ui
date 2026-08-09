@@ -16,8 +16,8 @@ import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 //
 // Carried forward from v5-v7:
 // - Agent details is a capability inventory (Instructions / Knowledge /
-//   Skills / Tools / MCP access / Plugins / Defaults / System prompt): a
-//   capability-heading gate plus a jargon ban, and the no-tabs invariant.
+//   Skills / Tools / MCP access / Plugins / Defaults; "System prompt" left in
+//   v12): a capability-heading gate plus a jargon ban, and the no-tabs invariant.
 // - Agent rows expose "New chat" (+), the "..." options trigger holding the
 //   placement variants, and Settings; the action count recognises the trigger.
 // v9 adds the two axes v8 was blind to. The overlap gate swept HORIZONTALLY
@@ -41,7 +41,15 @@ import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 // snapshot field means a different thing now. `agentSeatSummary` was collected
 // but never asserted, which is how it drifted onto a bare numeric span once
 // already; v11 asserts it.
-export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v11"
+// v12 follows the "System prompt" section leaving the Agent details overlay.
+// The owner judged the generated composed prompt unhelpful — a wall of text no
+// operator could act on — so the section, its preview/expand affordances and
+// its "Open in workbench" materialization were removed, and the `systemPrompt`
+// field left the `/describe` payload with them. `capabilityHeadings` is an
+// ORDERED SET, so a replayed v11 manifest would assert a heading that can no
+// longer exist; the contract must move with it rather than let a stale replay
+// pass against a surface that legitimately changed shape.
+export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v12"
 
 const KNOWN_ABORTED_REQUESTS: Array<{
   rationale: string
@@ -130,7 +138,7 @@ const AGENT_ROW_HOVER_ACTIONS = AGENT_ROW_ACTIONS_PER_AGENT
 
 /** Every section the Agent details panel owes the operator, in order. */
 const EXPECTED_CAPABILITY_HEADINGS = [
-  "Instructions", "Knowledge", "Skills", "Tools", "MCP access", "Plugins", "System prompt", "Defaults",
+  "Instructions", "Knowledge", "Skills", "Tools", "MCP access", "Plugins", "Defaults",
 ] as const
 
 function sameHeadings(actual: readonly string[], expected: readonly string[]): boolean {

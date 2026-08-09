@@ -715,9 +715,8 @@ describe("WorkspaceAgentFront", () => {
 
     await user.click(screen.getByRole("button", { name: "Settings for Beta" }))
     const unifiedDetailsOverlay = document.querySelector('[data-boring-workspace-part="agent-details-overlay"]')
-    // One unified capability page: Skills / System prompt / Tools / MCP /
+    // One unified capability page: Skills / Tools / MCP /
     // Plugins sections, no tabs, and none of the old developer jargon.
-    expect(unifiedDetailsOverlay).toHaveTextContent("System prompt")
     expect(unifiedDetailsOverlay).toHaveTextContent("Skills")
     expect(unifiedDetailsOverlay).toHaveTextContent("Tools")
     expect(unifiedDetailsOverlay).toHaveTextContent("MCP access")

@@ -29,7 +29,6 @@ export interface AgentInstructionFile {
 }
 
 export interface AgentDescription {
-  systemPrompt: string | null
   model: string | null
   mcpServers: { id: string; tools: string[] }[]
   instructionFiles: AgentInstructionFile[]
@@ -132,15 +131,11 @@ export function parseTools(payload: unknown): AgentToolSummary[] {
 
 export function parseDescription(payload: unknown): AgentDescription {
   const record = (payload ?? {}) as {
-    systemPrompt?: unknown
     model?: unknown
     mcpServers?: unknown
     instructionFiles?: unknown
   }
   return {
-    systemPrompt: typeof record.systemPrompt === "string" && record.systemPrompt.trim()
-      ? record.systemPrompt
-      : null,
     model: typeof record.model === "string" && record.model.trim() ? record.model.trim() : null,
     mcpServers: Array.isArray(record.mcpServers)
       ? record.mcpServers
@@ -222,43 +217,6 @@ export function skillSourceLabel(source: string | undefined): string | undefined
   if (value.startsWith("shared/")) return "shared"
   if (source.startsWith("@") || source.includes("/")) return "package"
   return undefined
-}
-
-/**
- * Prompt text flows like prose in the preview: single newlines inside a
- * paragraph collapse to spaces, blank lines keep paragraph breaks.
- */
-export function normalizePromptText(prompt: string): string {
-  return prompt
-    .replace(/\r\n?/g, "\n")
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.replace(/\s*\n\s*/g, " ").trim())
-    .filter(Boolean)
-    .join("\n\n")
-}
-
-/** A fence long enough to survive any fence already present in `body`. */
-function codeFenceFor(body: string): string {
-  const longest = [...body.matchAll(/^\s*(`{3,})/gm)]
-    .reduce((max, match) => Math.max(max, match[1]?.length ?? 0), 0)
-  return "`".repeat(Math.max(4, longest + 1))
-}
-
-/**
- * Presentation-only formatting for the GENERATED composed-prompt file: each
- * host-attached skill block (frontmatter + body) renders as a fenced code
- * block under a small caption, so the workbench viewer doesn't typeset raw
- * frontmatter as prose. The actual composition the server uses is untouched.
- */
-export function formatComposedPromptMarkdown(prompt: string): string {
-  return prompt.replace(
-    /<!--\s*boring-skill:start\s+name=([\w./-]+)[^>]*-->\n?([\s\S]*?)<!--\s*boring-skill:end[^>]*-->/g,
-    (_match, name: string, body: string) => {
-      const trimmed = body.trim()
-      const fence = codeFenceFor(trimmed)
-      return `**Attached skill: /${name}**\n\n${fence}text\n${trimmed}\n${fence}`
-    },
-  )
 }
 
 /** The minimum this loader needs from the workspace plugin client. */
@@ -350,25 +308,5 @@ export async function fileResourceExists(
     return true
   } catch {
     return false
-  }
-}
-
-/** Re-reads the live composition for the generated read-only prompt file. */
-export async function readLiveSystemPrompt(
-  client: AgentCapabilitiesClient,
-  agentTypeId: string,
-  fallback: string,
-): Promise<string> {
-  try {
-    const fresh = parseDescription(await client.getJson(
-      `/api/v1/agents/${encodeURIComponent(agentTypeId)}/describe`,
-      { missingMessage: "This agent's details are unavailable." },
-    ))
-    return fresh.systemPrompt ?? fallback
-  } catch {
-    // A failed re-read is NOT a user-facing failure: the cached prompt is a
-    // perfectly good fallback, and reporting it would be a lie about an open
-    // that then succeeds.
-    return fallback
   }
 }

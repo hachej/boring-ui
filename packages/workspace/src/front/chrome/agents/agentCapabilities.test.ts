@@ -1,15 +1,12 @@
 import { describe, expect, it, vi } from "vitest"
 
 import {
-  formatComposedPromptMarkdown,
   loadAgentCapabilities,
-  normalizePromptText,
   parseDescription,
   parseKnowledge,
   parseRootFileNames,
   parseSkills,
   parseTools,
-  readLiveSystemPrompt,
   resolveModelLabel,
   skillSourceLabel,
 } from "./agentCapabilities"
@@ -30,11 +27,6 @@ describe("parseDescription", () => {
     ])
   })
 
-  it("treats a whitespace-only prompt as absent", () => {
-    expect(parseDescription({ systemPrompt: "   \n " }).systemPrompt).toBeNull()
-    expect(parseDescription({ systemPrompt: "hi" }).systemPrompt).toBe("hi")
-  })
-
   it("trims the model and drops non-strings", () => {
     expect(parseDescription({ model: "  m-1 " }).model).toBe("m-1")
     expect(parseDescription({ model: 5 }).model).toBeNull()
@@ -49,7 +41,7 @@ describe("parseDescription", () => {
 
   it("survives a completely absent or hostile payload", () => {
     expect(parseDescription(undefined)).toEqual({
-      systemPrompt: null, model: null, mcpServers: [], instructionFiles: [],
+      model: null, mcpServers: [], instructionFiles: [],
     })
     expect(parseDescription({ mcpServers: "nope", instructionFiles: 4 }).mcpServers).toEqual([])
   })
@@ -149,29 +141,6 @@ describe("skillSourceLabel", () => {
   })
 })
 
-describe("prompt formatting", () => {
-  it("flows single newlines as prose and keeps paragraph breaks", () => {
-    expect(normalizePromptText("a\nb\n\nc")).toBe("a b\n\nc")
-    expect(normalizePromptText("a\r\nb")).toBe("a b")
-  })
-
-  it("computes a fence longer than any fence inside the skill body", () => {
-    const body = "# T\n\n`````text\nnested\n`````"
-    const out = formatComposedPromptMarkdown(
-      `<!-- boring-skill:start name=t digest=sha256:x -->\n${body}\n<!-- boring-skill:end name=t -->`,
-    )
-    expect(out).toContain("``````text")
-    expect(out).not.toContain("boring-skill:start")
-  })
-
-  it("uses a four-backtick fence when the body has none", () => {
-    const out = formatComposedPromptMarkdown(
-      "<!-- boring-skill:start name=t digest=sha256:x -->\nplain\n<!-- boring-skill:end name=t -->",
-    )
-    expect(out).toContain("````text\nplain\n````")
-  })
-})
-
 describe("loadAgentCapabilities", () => {
   const okClient = (overrides: Record<string, unknown> = {}) => ({
     getJson: vi.fn(async (path: string) => {
@@ -181,7 +150,7 @@ describe("loadAgentCapabilities", () => {
           return value
         }
       }
-      if (path.endsWith("/describe")) return { systemPrompt: "p", mcpServers: [] }
+      if (path.endsWith("/describe")) return { mcpServers: [] }
       if (path.endsWith("/skills")) return { skills: [{ name: "s" }] }
       if (path.endsWith("/tools")) return { tools: [{ name: "t" }] }
       if (path.endsWith("/models")) return { models: [] }
@@ -201,7 +170,7 @@ describe("loadAgentCapabilities", () => {
 
   it("still resolves the pinned model when the models catalog fails", async () => {
     const client = okClient({
-      "/describe": { systemPrompt: "p", model: "pinned", mcpServers: [] },
+      "/describe": { model: "pinned", mcpServers: [] },
       "/models": new Error("nope"),
     })
     expect((await loadAgentCapabilities(client, "a")).modelLabel).toBe("pinned")
@@ -221,22 +190,5 @@ describe("loadAgentCapabilities", () => {
     await loadAgentCapabilities(client, "a")
     expect(client.getJson.mock.calls).toHaveLength(6)
     expect(client.getJson.mock.calls.filter(([p]) => (p as string).startsWith("/api/v1/tree"))).toHaveLength(1)
-  })
-})
-
-describe("readLiveSystemPrompt", () => {
-  it("returns the fresh prompt when the re-read succeeds", async () => {
-    const client = { getJson: async () => ({ systemPrompt: "fresh", mcpServers: [] }) }
-    expect(await readLiveSystemPrompt(client, "a", "cached")).toBe("fresh")
-  })
-
-  it("falls back to the cached prompt on failure instead of throwing", async () => {
-    const client = { getJson: async () => { throw new Error("down") } }
-    expect(await readLiveSystemPrompt(client, "a", "cached")).toBe("cached")
-  })
-
-  it("falls back when the fresh description has no prompt at all", async () => {
-    const client = { getJson: async () => ({ mcpServers: [] }) }
-    expect(await readLiveSystemPrompt(client, "a", "cached")).toBe("cached")
   })
 })

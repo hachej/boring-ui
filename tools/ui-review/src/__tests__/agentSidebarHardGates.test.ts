@@ -52,7 +52,7 @@ describe("workspace Agent sidebar state contract", () => {
         ...base.sidebar,
         detailOverlayCount: 1,
         capabilityHeadings: [
-          "Instructions", "Knowledge", "Skills", "Tools", "MCP access", "Plugins", "System prompt", "Defaults",
+          "Instructions", "Knowledge", "Skills", "Tools", "MCP access", "Plugins", "Defaults",
         ],
         ...overrides,
       },
@@ -61,7 +61,7 @@ describe("workspace Agent sidebar state contract", () => {
   const stateGate = (input: AgentSidebarHardGateSnapshot) =>
     evaluateAgentSidebarHardGates(input).results.find((result) => result.id === "state-contract")
 
-  it("accepts exactly the eight capability sections, in order", () => {
+  it("accepts exactly the seven capability sections, in order", () => {
     expect(stateGate(detailsSnapshot({}))).toMatchObject({ passed: true })
   })
 
@@ -73,7 +73,7 @@ describe("workspace Agent sidebar state contract", () => {
 
   it("rejects the right NUMBER of wrong sections", () => {
     expect(stateGate(detailsSnapshot({
-      capabilityHeadings: ["A", "B", "C", "D", "E", "F", "G", "H"],
+      capabilityHeadings: ["A", "B", "C", "D", "E", "F", "G"],
     }))).toMatchObject({ passed: false })
   })
 

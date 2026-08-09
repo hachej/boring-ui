@@ -92,15 +92,20 @@ export interface AgentHostRuntimeCapabilityBinding {
  * Identity (`label`) and `pluginIds` already come from the fleet list route,
  * and duplicating them here forced the client to reconcile two shapes for the
  * same fact.
+ *
+ * The composed `systemPrompt` used to ship here too. Its ONLY consumer was the
+ * Agent details "System prompt" section, which the owner removed as unhelpful:
+ * a wall of composed text nobody could act on. Serving a whole agent's
+ * instructions to every details open with no reader left is pure payload, so
+ * the field went with the section. `instructionFiles` is what survives — the
+ * authored sources, which the operator can actually open and edit.
  */
 export interface AgentHostAgentDescription {
   readonly agentTypeId: string
-  /** Authored agent instructions; null for the legacy default agent. */
-  readonly systemPrompt: string | null
   /** Preferred model id from the agent definition, when pinned. */
   readonly model: string | null
   /**
-   * Authored instruction sources behind `systemPrompt`. The Host is the only
+   * Authored instruction sources behind this agent's instructions. The Host is the only
    * component that knows these locations (seat and agentTypeId are unrelated
    * fleet.yaml fields), so clients render what they are given rather than
    * guessing a persona directory.
@@ -322,7 +327,6 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       }
       return {
         agentTypeId,
-        systemPrompt: legacy ? null : spec.definition.instructions,
         model: legacy ? null : spec.model?.preferred ?? null,
         instructionFiles: legacy ? [] : spec.instructionFiles ?? [],
         mcpServers,
