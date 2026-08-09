@@ -25,7 +25,14 @@ import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 // whether a pixel inside the strip belongs to an action, and nothing asked
 // whether the row title survived the reservations made around it. Both were
 // broken in bands v8 already sampled.
-export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v9"
+// v10 follows the controls that left the pane. `agent-touch-targets` swept the
+// `app-left-pane` SUBTREE, and consolidating the three placement icons behind a
+// "..." trigger moved those three actions into a Radix menu portalled to
+// <body> — out of the subtree, out of the sweep, and back to the 32px desktop
+// menu density on touch, with the gate green throughout. The sweep now also
+// matches the app-left menu part hook, and a coarse-only `agent-card-menu`
+// checkpoint leaves that menu open so there is something to measure.
+export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v10"
 
 const KNOWN_ABORTED_REQUESTS: Array<{
   rationale: string

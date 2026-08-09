@@ -48,7 +48,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
   // `collect` changed in lockstep with v5→v9, and a stale revision keeps a
   // replayed manifest alive across a scenario that no longer means the same
   // thing. Two numbers for one scenario is the drift this file keeps finding.
-  specRevision: "workspace-agent-sidebar-v9",
+  specRevision: "workspace-agent-sidebar-v10",
   fixtureResetId: "workspace-agent-sidebar-fixture-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -122,6 +122,16 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
       await expect(page.locator('[data-boring-workspace-part="agent-details-overlay"]')).toBeVisible()
       await expect(page.getByRole("heading", { name: "System prompt" })).toBeVisible()
     } },
+    // The only checkpoint that leaves a portalled menu OPEN at capture time.
+    // Three placement actions moved out of the card and into this menu; a
+    // touch-target sweep of the pane subtree cannot see them, so without a
+    // state that opens the menu the gate below has nothing to measure.
+    // Coarse viewports only: 44px is a touch rule, and that is what it guards.
+    { id: "agent-card-menu", viewportNames: ["mobile", "tablet"], colorScheme: "dark", reach: async (page) => {
+      await page.getByRole("button", { name: "New chat options for Alpha" }).click()
+      await expect(page.getByRole("menuitem", { name: "New chat in split pane" })).toBeVisible()
+      await expect(page.getByRole("menuitem", { name: "Quick chat" })).toBeVisible()
+    } },
   ],
   criticPrompt: "Review the supplied multi-agent sidebar and Agent detail screenshots against the design context. Demand a compact, calm, editorial, world-class navigation hierarchy. Prioritize pinned-chat provenance, Agent/session information architecture, hover and touch discoverability, expansion rhythm and guide lines, active-session meaning, mobile behavior, and the unified Agent page. Return only UiCriticReportV1 JSON. Scores are advisory; every finding must cite supplied state ids.",
   criticContextPaths: [".impeccable.md", "docs/WORKSPACE_CONTRACT.md"],
@@ -165,9 +175,18 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
           // measured on a row that happened to be the active session (which
           // hides them). A touch-target gate that inspects a subtree guards
           // only that subtree.
-          const controls = [...document.querySelectorAll('[data-boring-workspace-part="app-left-pane"]')]
-            .flatMap((pane) => [...pane.querySelectorAll<HTMLButtonElement>("button")])
-            .filter(visible)
+          const controls = [
+            ...[...document.querySelectorAll('[data-boring-workspace-part="app-left-pane"]')]
+              .flatMap((pane) => [...pane.querySelectorAll<HTMLElement>("button")]),
+            // A control that moved into a menu is still a control. The pane
+            // sweep is a DOM-SUBTREE sweep and Radix portals its menu content
+            // to <body>, so consolidating the placement icons behind a "..."
+            // trigger moved three actions out of everything that measures
+            // them — they sat at the 32px desktop menu density on touch while
+            // this gate stayed green. Matched by the app-left menu part hook
+            // rather than the subtree, because the portal has no subtree here.
+            ...document.querySelectorAll<HTMLElement>('[data-boring-workspace-part="app-left-menu"] [role="menuitem"]'),
+          ].filter(visible)
           const pinned = document.querySelector('section[aria-label="Pinned chats"]')
           const pinnedRow = pinned?.querySelector('[data-boring-workspace-part="app-session-row"]')
           const provenance = pinnedRow?.querySelector(".app-left-session-trailing")?.textContent?.replace(/\s+/g, " ").trim() || null
