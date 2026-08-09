@@ -517,7 +517,13 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
         // so it can never push the split/close controls out of the header.
         <span
           data-boring-workspace-part="chat-pane-agent"
-          className="min-w-0 max-w-[45%] shrink overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-medium leading-none text-muted-foreground"
+          // No hard width cap: a tab is sized to its content, so a percentage
+          // ceiling clipped "Concierge" to "Concier…" beside a four-character
+          // title at 1440px with room to spare. `min-w-0` + `shrink` already
+          // guarantee the label yields under pressure, and the title's
+          // `shrink-[2]` makes it yield twice as fast — so the title still
+          // truncates first and the label can never push the controls out.
+          className="min-w-0 shrink overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-medium leading-none text-muted-foreground"
         >
           {agentLabel}
         </span>

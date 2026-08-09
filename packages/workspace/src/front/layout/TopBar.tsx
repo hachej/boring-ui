@@ -79,7 +79,7 @@ export function TopBar({
               // title, so it can never push the search or avatar controls out.
               <span
                 data-boring-workspace-part="topbar-agent"
-                className="min-w-0 max-w-[45%] shrink truncate text-[11px] font-medium leading-none text-muted-foreground"
+                className="min-w-0 shrink truncate text-[11px] font-medium leading-none text-muted-foreground"
               >
                 {agentLabel}
               </span>
