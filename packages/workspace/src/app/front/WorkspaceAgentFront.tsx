@@ -2718,6 +2718,10 @@ export function WorkspaceAgentFront<
       <TopBar
         appTitle={appTitle}
         sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
+        // The non-plugin-tabs shell shows the active chat's title in its bar,
+        // so it is a chat header too and names its Agent like the others.
+        // Undefined below two Agents, which is when the map itself is null.
+        sessionAgentLabel={chatHeaderAgentLabelById?.get(effectiveActiveSessionAgentTypeId ?? selectedAgentTypeId)}
         onCommandPalette={openCommandPalette}
         topBarLeft={topBarLeftContent}
         topBarRight={topBarRightContent}
