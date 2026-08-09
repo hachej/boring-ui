@@ -2038,10 +2038,13 @@ export function WorkspaceAgentFront<
       afterId,
       placementDirection,
       fleetModeEnabled
-        ? workspaceSessionRefFromKey(afterId).agentTypeId ?? newChatAgentTypeId
+        // Boot-seed and legacy pane keys carry no owner. Falling back to the
+        // picker target there reproduces exactly the surprise this resolves;
+        // the addressed Agent is the honest answer for "this pane".
+        ? workspaceSessionRefFromKey(afterId).agentTypeId ?? effectiveAgentTypeId
         : undefined,
     )
-  ), [createChatPaneAfter, fleetModeEnabled, newChatAgentTypeId])
+  ), [createChatPaneAfter, fleetModeEnabled, effectiveAgentTypeId])
 
   const createChatSessionPreferNewPane = useCallback((ownerAgentTypeId = newChatAgentTypeId) => {
     if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId, undefined, ownerAgentTypeId)
@@ -2299,7 +2302,13 @@ export function WorkspaceAgentFront<
     onTogglePin: toggleSessionPinned,
     onSwitch: switchToChatPane,
     onOpenAsTab: openChatPane,
-    onCreate: resolvedCreate,
+    // The command palette ("New Chat") and the nav drawer's "+" are new-chat
+    // affordances like the rail and the picker, so they go through the same
+    // transactional create. Handing them the raw session API skipped the pane
+    // transaction (no pending pane, no placement, collidable with any other
+    // manual create) AND silently addressed the *read* Agent, not the picker
+    // target.
+    onCreate: () => createChatSession(),
     onDelete: deleteSessionAndPane,
     onLoadMore: sessionApi?.loadMore,
     hasMore: sessionApi?.hasMore,

@@ -12,7 +12,10 @@ import {
 const AXE_SCRIPT_PATH = createRequire(import.meta.url).resolve("axe-core/axe.min.js")
 const viewports: UiReviewViewport[] = [
   { name: "desktop", width: 1440, height: 900, deviceScaleFactor: 1 },
-  { name: "mobile", width: 390, height: 844, deviceScaleFactor: 1 },
+  // Touch-emulated: the coarse-pointer branch (44px slots, always-visible
+  // actions, the trailing margin swap) only exists under `pointer: coarse`,
+  // and a plain narrow viewport is still a fine-pointer browser.
+  { name: "mobile", width: 390, height: 844, deviceScaleFactor: 1, hasTouch: true },
 ]
 
 async function ensureAgentNavigation(page: Page): Promise<void> {
@@ -76,6 +79,19 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
       await page.getByRole("menuitem", { name: "Pin chat" }).click()
       await expect(page.locator('section[aria-label="Pinned chats"]')).toBeVisible()
       await page.mouse.move(1_000, 500)
+    } },
+    // The ONLY checkpoint that leaves a session row hovered at capture time.
+    // Every other one ends with `page.mouse.move(1000, 500)`, so the action
+    // strip is faded out and any gate that measures it sees nothing. On the
+    // touch viewport the strip is permanently visible, so this checkpoint
+    // covers the coarse-pointer branch too.
+    { id: "session-row-hover", colorScheme: "dark", reach: async (page) => {
+      const alphaTree = page.locator('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="alpha"]')
+      const row = alphaTree.locator('[data-boring-workspace-part="app-session-row"]').first()
+      await expect(row).toBeVisible({ timeout: 30_000 })
+      await row.hover()
+      await expect(row.locator(".app-left-session-actions")).toBeVisible()
+      // Deliberately NO mouse.move away: the hovered state IS the subject.
     } },
     { id: "agent-details", colorScheme: "dark", reach: async (page) => {
       await page.locator('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="alpha"] .app-left-agent-row').hover()
@@ -177,7 +193,9 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
             undersizedAgentControls: mobile ? controls.map((control) => {
               const rect = control.getBoundingClientRect()
               return { label: control.getAttribute("aria-label") || control.textContent?.trim() || "button", width: rect.width, height: rect.height }
-            }).filter((control) => control.width < 24 || control.height < 24) : [],
+            // The coarse-pointer rules TARGET 44px; asserting 24 let a
+            // control shrink to 25px while the gate stayed green.
+            }).filter((control) => control.width < 44 || control.height < 44) : [],
             checkpoint,
           }
         }, { checkpoint, mobile: viewport.name === "mobile" }),

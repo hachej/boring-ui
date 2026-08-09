@@ -2352,6 +2352,123 @@ describe("WorkspaceAgentFront", () => {
     expect(createOwners).toEqual(["default"])
   })
 
+  it("splits a pane into a chat owned by THAT pane's Agent, not the picker target", async () => {
+    const user = userEvent.setup()
+    const createOwners: (string | undefined)[] = []
+    localStorage.setItem(
+      "boring-workspace:chat-panes:fleet-split-owner",
+      JSON.stringify({
+        version: 2,
+        refs: [{ kind: "addressed", sessionId: "alpha-one", agentTypeId: "alpha" }],
+        activeRef: { kind: "addressed", sessionId: "alpha-one", agentTypeId: "alpha" },
+      }),
+    )
+    const useFleetSelection = () => ({
+      agents: [
+        { agentTypeId: "alpha", label: "Boring Alpha" },
+        { agentTypeId: "beta", label: "Boring Beta" },
+      ],
+      selectedAgentTypeId: "alpha",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const useFleetSessions: UseWorkspaceAgentSessions = (options) => {
+      const alpha = { id: "alpha-one", agentTypeId: "alpha", title: "First session" }
+      return {
+        sourceIdentity: options.sourceIdentity,
+        sessions: options.agentTypeId === "alpha" ? [alpha] : [],
+        loading: false,
+        activeSessionId: options.agentTypeId === "alpha" ? alpha.id : null,
+        activeSessionAgentTypeId: options.agentTypeId === "alpha" ? "alpha" : null,
+        activeSession: options.agentTypeId === "alpha" ? alpha : null,
+        switch: vi.fn(),
+        delete: vi.fn(),
+        create: () => {
+          createOwners.push(options.agentTypeId)
+          return Promise.resolve({ id: `new-${options.agentTypeId}`, agentTypeId: options.agentTypeId, title: "New" })
+        },
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-split-owner"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useFleetSelection}
+        useSessions={useFleetSessions}
+      />,
+    )
+
+    // Retarget the NEXT chat to Beta, then split the Alpha pane. The split
+    // button names the pane it splits, so its Agent must be Alpha.
+    await user.click(await screen.findByRole("button", { name: "Choose Agent for new chat" }))
+    await user.click(await screen.findByRole("menuitem", { name: /Beta/ }))
+    await user.click(await screen.findByRole("button", { name: "Split First session chat vertically" }))
+
+    await waitFor(() => expect(createOwners).toEqual(["alpha"]))
+  })
+
+  it("routes the session drawer's New session through the pane transaction, not the raw session API", async () => {
+    // Same callback the command palette's "New Chat" runs. Handing it the raw
+    // session API skipped createChatPaneTransaction entirely: the session was
+    // created but never became the active pane, and it could collide with any
+    // other manual create.
+    const user = userEvent.setup()
+    let createCalls = 0
+    let resolveCreate: (() => void) | undefined
+    const useSessions: UseWorkspaceAgentSessions = () => {
+      const [sessions, setSessions] = useState<WorkspaceAgentSession[]>([{ id: "s1", title: "First" }])
+      const [activeSessionId, setActiveSessionId] = useState<string | null>("s1")
+      return {
+        sourceIdentity: "test",
+        sessions,
+        loading: false,
+        activeSessionId,
+        activeSession: sessions.find((session) => session.id === activeSessionId) ?? null,
+        switch: (id: string) => setActiveSessionId(id),
+        delete: vi.fn(),
+        create: () => {
+          createCalls += 1
+          // Stay pending so a second click lands while the transaction is
+          // still open — the raw session API would happily create twice.
+          return new Promise<WorkspaceAgentSession>((resolve) => {
+            resolveCreate = () => {
+              const created = { id: "drawer-created", title: "Drawer created" }
+              setSessions((current) => [created, ...current])
+              setActiveSessionId(created.id)
+              resolve(created)
+            }
+          })
+        },
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="drawer-create-transaction"
+        chatPanel={SessionIdChatPanel}
+        useSessions={useSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await user.click(await screen.findByRole("button", { name: "Sessions" }))
+    const create = await screen.findByRole("button", { name: "New session" })
+    await user.click(create)
+    await waitFor(() => expect(createCalls).toBe(1))
+
+    // Second click while the first is still in flight. The pane transaction
+    // owns the pending create and ignores it; the raw session API this
+    // callback used to be would have created a second session.
+    await user.click(create)
+    expect(createCalls).toBe(1)
+    await act(async () => { resolveCreate?.() })
+    await waitFor(() => expect(createCalls).toBe(1))
+  })
+
   it("routes a no-arg creation entry point (collapsed rail) to the New chat picker target", async () => {
     const user = userEvent.setup()
     const createOwners: (string | undefined)[] = []
