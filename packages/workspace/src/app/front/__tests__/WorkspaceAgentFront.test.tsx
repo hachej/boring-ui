@@ -2473,6 +2473,79 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
+  it("opens a quick chat under the RETARGETED picker Agent without rolling the session back", async () => {
+    // `createAddressedSessionWithoutActivating` guards that the server created
+    // the session under the owner we ASKED for, then rolls back (deletes) on a
+    // mismatch. It compared against the ADDRESSED Agent, which since the New
+    // chat picker became independent is no longer the requested one: asking
+    // Beta while addressing Alpha deleted a perfectly correct session and
+    // returned `{success:false}`, which the popover path swallowed silently.
+    const user = userEvent.setup()
+    const createOwners: (string | undefined)[] = []
+    const deleteCalls: { id: string; agentTypeId?: string }[] = []
+    const useFleetSelection = () => ({
+      agents: [
+        { agentTypeId: "alpha", label: "Boring Alpha" },
+        { agentTypeId: "beta", label: "Boring Beta" },
+      ],
+      selectedAgentTypeId: "alpha",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const useFleetSessions: UseWorkspaceAgentSessions = (options) => {
+      const alpha = { id: "alpha-one", agentTypeId: "alpha", title: "First session" }
+      return {
+        sourceIdentity: options.sourceIdentity,
+        sessions: options.agentTypeId === "alpha" ? [alpha] : [],
+        loading: false,
+        activeSessionId: options.agentTypeId === "alpha" ? alpha.id : null,
+        activeSessionAgentTypeId: options.agentTypeId === "alpha" ? "alpha" : null,
+        activeSession: options.agentTypeId === "alpha" ? alpha : null,
+        switch: vi.fn(),
+        delete: (id: string, agentTypeId?: string) => {
+          deleteCalls.push({ id, agentTypeId })
+          return Promise.resolve()
+        },
+        create: () => {
+          createOwners.push(options.agentTypeId)
+          return Promise.resolve({ id: `new-${options.agentTypeId}`, agentTypeId: options.agentTypeId, title: "Quick" })
+        },
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="fleet-quick-retargeted"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useFleetSelection}
+        useSessions={useFleetSessions}
+      />,
+    )
+
+    // Retarget the NEXT chat to Beta while Alpha stays the addressed Agent.
+    await user.click(await screen.findByRole("button", { name: "Choose Agent for new chat" }))
+    await user.click(await screen.findByRole("menuitem", { name: /Beta/ }))
+    await user.click(await screen.findByRole("button", { name: "Start quick chat with Boring Beta" }))
+
+    // The session was requested from Beta, not from the addressed Alpha.
+    await waitFor(() => expect(createOwners).toContain("beta"))
+    // (a) No rollback: the correct session was never deleted.
+    await waitFor(() => expect(deleteCalls).toEqual([]))
+    // (b) The quick chat SURFACES at all — the silent failure showed nothing.
+    const popover = await screen.findByRole("button", { name: "Dock panel" })
+      .then((dock) => dock.closest('[data-boring-workspace-part="detached-panel-popover"]'))
+    expect(popover).not.toBeNull()
+
+    // The detached chat is mounted against the REQUESTED owner's session, not
+    // the addressed Alpha.
+    const detachedPane = within(popover as HTMLElement).getByTestId("chat-pane")
+    expect(detachedPane.getAttribute("data-session-id")).toBe("new-beta")
+    expect(detachedPane.getAttribute("data-agent-type-id")).toBe("beta")
+  })
+
   it("opens a quick chat for a session that names no Agent", async () => {
     // `openDetachedChat` REFUSES a ref without an Agent, so a shell whose
     // sessions carry no owner (every single-Agent host) had a quick-chat

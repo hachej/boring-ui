@@ -2352,6 +2352,10 @@ export function WorkspaceAgentFront<
     options?: { title?: string; agentTypeId?: string },
   ) => {
     const previous = effectiveActiveSessionRef.current
+    // The guard below asserts the server created the session under the owner we
+    // ASKED for. That is the requested Agent, which since the New chat picker
+    // became independent is no longer always the addressed one.
+    const requestedAgentTypeId = options?.agentTypeId ?? selectedAgentTypeId
     try {
       const session = await coordinateRemoteCreate(dedupeKey, options)
       const sessionId = createdSessionId(session)
@@ -2359,14 +2363,14 @@ export function WorkspaceAgentFront<
       const returnedAgentTypeId = (session as { agentTypeId?: unknown }).agentTypeId
       // The create operation is issued through the selected Agent's attested
       // session source. Custom providers may omit the redundant owner field.
-      const createdAgentTypeId = typeof returnedAgentTypeId === "string" ? returnedAgentTypeId : selectedAgentTypeId
+      const createdAgentTypeId = typeof returnedAgentTypeId === "string" ? returnedAgentTypeId : requestedAgentTypeId
       const activeAfterCreate = effectiveActiveSessionRef.current
       const selectionStillAtCreationBoundary = (
         activeAfterCreate.sessionId === sessionId && activeAfterCreate.agentTypeId === createdAgentTypeId
       ) || (
         activeAfterCreate.sessionId === previous.sessionId && activeAfterCreate.agentTypeId === previous.agentTypeId
       )
-      if (returnedAgentTypeId !== undefined && returnedAgentTypeId !== selectedAgentTypeId) {
+      if (returnedAgentTypeId !== undefined && returnedAgentTypeId !== requestedAgentTypeId) {
         try {
           await rawDelete(sessionId, createdAgentTypeId)
         } catch (rollbackError) {
