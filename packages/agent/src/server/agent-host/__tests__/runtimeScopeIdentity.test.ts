@@ -6,6 +6,7 @@ import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
 import { sessionFilePath } from '../../harness/pi-coding-agent/__tests__/fixtures/sessionFiles'
 import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
+import { ErrorCode } from '../../../shared/error-codes'
 import type { RuntimeModeAdapter } from '../../runtime/mode'
 import { createAgentHost } from '../createAgentHost'
 import { EmbeddedAgentGateway } from '../embeddedGateway'
@@ -181,7 +182,7 @@ describe('runtime scope identity', () => {
       { expectedIdentity: 'a'.repeat(64), nextIdentity: 'b'.repeat(64), evidenceDigest: 'c'.repeat(64) },
     )).rejects.toMatchObject({
       message: expect.stringMatching(/Session metadata is malformed/),
-      code: 'SESSION_TRANSCRIPT_UNREADABLE',
+      code: ErrorCode.enum.SESSION_TRANSCRIPT_UNREADABLE,
       // The original parse failure must survive as the cause, not be swallowed.
       cause: expect.objectContaining({ message: expect.stringMatching(/JSON/i) }),
     })
@@ -205,7 +206,7 @@ describe('runtime scope identity', () => {
       { expectedIdentity: 'd'.repeat(64), nextIdentity: 'e'.repeat(64), evidenceDigest: 'f'.repeat(64) },
     )).rejects.toMatchObject({
       message: expect.stringMatching(/migration is locked/),
-      code: 'SESSION_LOCKED',
+      code: ErrorCode.enum.SESSION_LOCKED,
       statusCode: 409,
       retryable: true,
     })
@@ -238,7 +239,7 @@ describe('runtime scope identity', () => {
     }
     expect(header.boringSessionCtx?.runtimeScopeIdentity).toBe('e'.repeat(64))
     // The takeover releases its own lock too.
-    await expect(readFile(lockPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(lockPath)).rejects.toThrow(/ENOENT/)
   })
 
   it('serializes conflicting migrations across independent stores', async () => {
