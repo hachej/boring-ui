@@ -206,7 +206,18 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
               // and an invisible element cannot be overlapped.
               const actions = row.querySelector(".app-left-session-actions")
               if (!actions || !visible(actions)) return []
-              const strip = actions.getBoundingClientRect()
+              // The union of the container AND its buttons, because a button
+              // is free to be drawn outside the strip that reserves its place:
+              // that is exactly what a viewport-width-keyed size in a
+              // pointer-keyed slot did, and measuring only the container made
+              // the resulting 52px of buttons over the chat title invisible.
+              const boxes = [actions, ...actions.querySelectorAll("button")]
+                .filter((node) => node === actions || visible(node))
+                .map((node) => node.getBoundingClientRect())
+              const strip = {
+                left: Math.min(...boxes.map((box) => box.left)),
+                right: Math.max(...boxes.map((box) => box.right)),
+              }
               return ([
                 ["title", row.querySelector("span.flex-1")],
                 ["age", row.querySelector('[data-boring-workspace-part="app-session-age"]')],
