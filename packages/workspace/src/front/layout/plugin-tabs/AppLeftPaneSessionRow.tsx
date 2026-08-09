@@ -15,10 +15,10 @@ export type AppSessionRowState = "normal" | "open" | "active"
 
 /**
  * The split / detach hover shortcuts differ only by icon, words and handler.
- * Their size carries NO Tailwind size utility on purpose: it comes from
- * `.app-left-session-secondary-action` in globals.css, which is keyed to the
- * same `pointer: coarse` condition as the slot the strip reserves for it. One
- * condition, one place — see the comment beside that rule.
+ * Their size carries NO Tailwind size utility on purpose: it IS the slot the
+ * strip reserves for it, read straight off `--app-session-action-slot` by
+ * `.app-left-session-secondary-action` in globals.css. One number, one place —
+ * see the comment beside that rule.
  */
 function SessionHoverAction({ icon, label, title, onClick }: {
   icon: ReactNode
@@ -284,7 +284,7 @@ export function AppSessionRow({
             // the underlying session button can win the same click. The
             // buttons own that hit area, not this container — see
             // .app-left-session-actions in globals.css.
-            "app-left-session-actions absolute inset-y-0 right-1 z-10 flex items-center justify-end gap-0.5 opacity-0",
+            "app-left-session-actions absolute inset-y-0 right-1 z-10 flex items-center justify-end opacity-0",
             "group-hover:opacity-100 group-focus-within:opacity-100",
           )}
         >

@@ -391,17 +391,29 @@
   --app-session-action-slot: 28px;
 }
 
-/* ONE condition sizes the button and reserves its slot: `pointer: coarse`,
-   below. Sizing these buttons with a Tailwind `size-11 sm:size-6` pair keyed
-   them to VIEWPORT WIDTH while the slot above stayed keyed to POINTER TYPE.
-   The two agreed only at 1440-fine and 390-coarse — the exact pair the review
-   harness sampled — and disagreed in between: a 500px-wide desktop window drew
-   44px buttons into 28px slots and spilled them over the chat title, and a
-   coarse 834px tablet drew a 24px trigger into a 44px slot and let the leftover
-   20px fall through to the row button. So the size lives here, beside the slot
-   it must match, and nowhere else. */
-.app-left-secondary-action,
+/* A row action IS its slot. One number — `--app-session-action-slot` above,
+   which `pointer: coarse` moves 28px → 44px — sizes the button and reserves
+   its place, so the two can never disagree.
+
+   They used to. The buttons carried a Tailwind `size-11 sm:size-6` pair, which
+   keys to VIEWPORT WIDTH, while the slot keys to POINTER TYPE. The two agree at
+   1440-fine and 390-coarse — the exact pair the review harness sampled — and
+   nowhere else. Measured: at 500 fine three 44px buttons plus their gaps came
+   to 136px of content in an 84px strip, spilling ~52px back over the chat
+   title, and a click 5px inside the strip fired "quick chat" from outside its
+   own slot; at 834 coarse the "..." trigger sat at 24px in a 44px slot, and all
+   20 leftover pixels fell through to the row button and switched chats.
+
+   Reading the slot rather than restating it also closes the quieter version of
+   the same hole, which predates all of that: a 24px button in a 28px slot left
+   4px per slot owned by nothing, and a click there switched chats. Buttons that
+   are exactly one slot wide tile the strip with no seams. */
 .app-left-session-secondary-action {
+  width: var(--app-session-action-slot, 28px);
+  height: var(--app-session-action-slot, 28px);
+}
+
+.app-left-secondary-action {
   width: 24px;
   height: 24px;
 }
@@ -418,6 +430,11 @@
      The buttons keep their own hit area, so a click still cannot fall through
      to the row button underneath. */
   pointer-events: none;
+  /* No gap, at any pointer: each button is exactly one slot, so slot-sized
+     buttons ARE the spacing. A gap pushes the leftmost button out of the
+     reserved strip and back over the row button, and opens a sliver inside the
+     strip that belongs to no button at all. */
+  gap: 0;
 }
 
 .app-left-session-actions > * {
@@ -465,7 +482,6 @@
   }
 
   .app-left-secondary-action,
-  .app-left-session-secondary-action,
   .app-left-rail-action,
   .app-left-pane-toggle,
   [data-boring-workspace-part="app-left-footer"] button,
@@ -483,12 +499,6 @@
     --app-session-action-slot: 44px;
   }
 
-  /* Each action already fills its whole 44px slot here, so the fine-pointer
-     gap would push the leftmost button outside the reserved strip and back
-     over the row button. Slot-sized buttons ARE the spacing. */
-  .app-left-session-actions {
-    gap: 0;
-  }
 }
 
 @media (max-width: 639px) {
