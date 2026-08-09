@@ -118,6 +118,8 @@ packages/workspace/src/plugins/eval-*/
 !/.agents/skills/handoff/**
 !/.agents/skills/plan/
 !/.agents/skills/plan/**
+!/.agents/skills/present-pr/
+!/.agents/skills/present-pr/**
 !/.agents/skills/skill-management/
 !/.agents/skills/skill-management/**
 !/.agents/skills/teach/
