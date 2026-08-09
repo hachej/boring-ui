@@ -80,9 +80,13 @@ export function ProjectOverview({
 
   return (
     <div className="space-y-0.5">
-      {projects.map((project) => (
+      {/* Every list on this surface tiebreaks its key with the row index: the
+          host supplies projects and their chats, and nothing upstream promises
+          the ids are unique. A duplicate id makes React reconcile two rows as
+          one, and the expanded/pinned state lands on the wrong project. */}
+      {projects.map((project, index) => (
         <ProjectRow
-          key={project.id}
+          key={`${project.id}\u0000${index}`}
           project={project}
           fallbackName={fallbackName}
           active={project.id === activeId}
@@ -283,8 +287,8 @@ function ProjectRow({
           ) : sessions.length === 0 ? (
             <div className="px-1 py-1.5 text-xs text-muted-foreground">No chats yet.</div>
           ) : (
-            sessions.map((session) => (
-              <div key={session.id}>
+            sessions.map((session, index) => (
+              <div key={`${session.id}\u0000${index}`}>
                 {renderProjectSession ? renderProjectSession(project, session) : (
                   <AppSessionRow
                     session={session}

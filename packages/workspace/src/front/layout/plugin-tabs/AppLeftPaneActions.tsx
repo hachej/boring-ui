@@ -214,8 +214,11 @@ export function FleetNewChatAction({
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={6} className="w-52 border-border/60">
-          {agents.map((agent) => (
-            <DropdownMenuItem key={agent.agentTypeId} onSelect={() => onSelectAgent?.(agent.agentTypeId)} className="gap-2 text-[13px]">
+          {/* Tiebroken with the row index: the fleet arrives from the host and
+              nothing guarantees agentTypeId is unique, so two entries sharing a
+              key would put the checkmark on the wrong Agent. */}
+          {agents.map((agent, index) => (
+            <DropdownMenuItem key={`${agent.agentTypeId}\u0000${index}`} onSelect={() => onSelectAgent?.(agent.agentTypeId)} className="gap-2 text-[13px]">
               <span className="grid size-4 place-items-center" aria-hidden="true">
                 {agent.agentTypeId === selected.agentTypeId ? <Check className="size-3.5" strokeWidth={2} /> : null}
               </span>
