@@ -185,6 +185,7 @@ describe("AppLeftPane", () => {
     // actions sit on the shared secondary-action surface.
     const cards = document.querySelectorAll(".app-left-agent-card")
     expect(cards).toHaveLength(2)
+    expect(screen.getByRole("button", { name: /^Collapse Boring Alpha;/ })).toHaveClass("self-stretch")
     for (const name of [
       "Settings for Boring Alpha",
       "New chat options for Boring Alpha",

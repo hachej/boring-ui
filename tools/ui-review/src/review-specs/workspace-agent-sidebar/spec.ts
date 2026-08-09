@@ -48,7 +48,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
   // `collect` changed in lockstep with v5→v9, and a stale revision keeps a
   // replayed manifest alive across a scenario that no longer means the same
   // thing. Two numbers for one scenario is the drift this file keeps finding.
-  specRevision: "workspace-agent-sidebar-v12",
+  specRevision: "workspace-agent-sidebar-v13",
   fixtureResetId: "workspace-agent-sidebar-fixture-v1",
   rubricVersion: "impeccable-v1",
   target: {

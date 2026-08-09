@@ -108,7 +108,7 @@ export function AppLeftPaneAgentCard({
         title={subtitle ? `${label} — ${subtitle}` : label}
         onClick={onToggle}
         disabled={!onToggle}
-        className="flex min-h-11 sm:min-h-0 sm:h-6 min-w-0 flex-1 items-center gap-1 rounded-md px-0.5 text-left focus-visible:outline-none disabled:cursor-default"
+        className="flex min-w-0 flex-1 self-stretch items-center gap-1 rounded-md px-0.5 text-left focus-visible:outline-none disabled:cursor-default"
       >
         {expandable ? (
           <ChevronRight
