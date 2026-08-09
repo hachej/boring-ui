@@ -1,7 +1,7 @@
 import type { UiFileResource } from "../../../shared/types/filesystem"
 
 /**
- * Transport decoding for the Agent details panel: every `/api/v1/agents/...`
+ * Transport decoding for the Agent details panel: every addressed-Agent
  * payload this page reads, turned into the shapes the view renders.
  *
  * Deliberately separate from the view. These are pure functions over `unknown`,
@@ -275,12 +275,14 @@ export async function loadAgentCapabilities(
   client: AgentCapabilitiesClient,
   agentTypeId: string,
 ): Promise<AgentCapabilities> {
-  const base = `/api/v1/agents/${encodeURIComponent(agentTypeId)}`
+  // Each route is spelled in full: the #1029 matrix checker classifies literal
+  // Agent routes, and a shared base prefix would hide them from it.
+  const id = encodeURIComponent(agentTypeId)
   const [describe, skills, tools, models, filesystems, rootTree] = await Promise.allSettled([
-    client.getJson(`${base}/describe`, { missingMessage: "This agent's details are unavailable." }),
-    client.getJson(`${base}/skills`, { missingMessage: "This agent's skills are unavailable." }),
-    client.getJson(`${base}/tools`, { missingMessage: "This agent's tools are unavailable." }),
-    client.getJson(`${base}/models`, { missingMessage: "Models are unavailable." }),
+    client.getJson(`/api/v1/agents/${id}/describe`, { missingMessage: "This agent's details are unavailable." }),
+    client.getJson(`/api/v1/agents/${id}/skills`, { missingMessage: "This agent's skills are unavailable." }),
+    client.getJson(`/api/v1/agents/${id}/tools`, { missingMessage: "This agent's tools are unavailable." }),
+    client.getJson(`/api/v1/agents/${id}/models`, { missingMessage: "Models are unavailable." }),
     client.getJson(`/api/v1/filesystems`, { missingMessage: "Knowledge sources are unavailable." }),
     client.getJson(`/api/v1/tree?path=.&filesystem=user`, { missingMessage: "Workspace files are unavailable." }),
   ])
