@@ -693,7 +693,13 @@
   }
 }
 
-@media (max-width: 767px), (hover: none) {
+/* Same union as the session-row block above, for the same reason: the card's
+   height and the size of the actions inside it are one decision. This block
+   used to be `(max-width: 767px), (hover: none)` while a SECOND
+   `(pointer: coarse)` block further down re-revealed the very same
+   `.app-left-agent-card-actions`. Two blocks, two conditions, one property —
+   which is the shape that let a card grow without its actions following. */
+@media (max-width: 767px), (hover: none), (pointer: coarse) {
   /*
    * Agent cards carry three hover-revealed actions on a mouse. Touch has no
    * hover, so every card action is always visible and grows to 44px.
@@ -711,6 +717,17 @@
   .app-left-agent-card-create {
     width: 44px;
     height: 44px;
+  }
+
+  /* A control that MOVED INTO A MENU is still a control (issue #1160).
+     Consolidating the three placement icons into one "..." trigger kept the
+     trigger at 44px and left the actions themselves at the 32px desktop menu
+     density — the touch target did not disappear, it just stopped being in
+     the pane where every rule and every gate was looking. The app-left menus
+     carry a stable part hook so this rule, and the review harness, can both
+     reach past the portal. */
+  [data-boring-workspace-part="app-left-menu"] [role="menuitem"] {
+    min-height: 44px;
   }
 }
 
@@ -779,15 +796,8 @@
 
 /* Touch devices have no hover to gate the per-Agent secondary actions, so the
    whole cluster stays visible: "+", the "..." options trigger that holds the
-   placement variants, and Settings. Agent details and new chats must both be
-   reachable without a hover a touch user cannot perform. */
-@media (pointer: coarse) {
-  .app-left-agent-card-actions {
-    width: auto;
-    opacity: 1;
-  }
-
-}
+   placement variants, and Settings. That rule now lives in the unified
+   agent-card block above, next to the sizes it has to agree with. */
 
 /* "Start one" is the primary action of an empty Agent — it must be a real
    touch target, not a 17px text link. Width-gated as well as pointer-gated so

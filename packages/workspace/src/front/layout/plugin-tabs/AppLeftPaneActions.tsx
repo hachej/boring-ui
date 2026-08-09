@@ -213,7 +213,7 @@ export function FleetNewChatAction({
             <ChevronDown className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" sideOffset={6} className="w-52 border-border/60">
+        <DropdownMenuContent data-boring-workspace-part="app-left-menu" align="end" sideOffset={6} className="w-52 border-border/60">
           {/* Tiebroken with the row index: the fleet arrives from the host and
               nothing guarantees agentTypeId is unique, so two entries sharing a
               key would put the checkmark on the wrong Agent. */}

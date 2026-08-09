@@ -201,7 +201,7 @@ export function AppLeftPaneAgentCard({
                 <MoreHorizontal className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-44">
+            <DropdownMenuContent data-boring-workspace-part="app-left-menu" align="end" className="min-w-44">
               <DropdownMenuItem onSelect={() => onCreateSession()}>
                 <Plus className="h-3.5 w-3.5" /> New chat
               </DropdownMenuItem>

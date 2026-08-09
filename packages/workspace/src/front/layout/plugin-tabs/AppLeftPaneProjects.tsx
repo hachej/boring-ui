@@ -247,7 +247,7 @@ function ProjectRow({
                       <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={2} />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" sideOffset={6} className="w-48 border-border/50 shadow-[0_12px_28px_-6px_rgba(0,0,0,0.55)]">
+                  <DropdownMenuContent data-boring-workspace-part="app-left-menu" align="end" sideOffset={6} className="w-48 border-border/50 shadow-[0_12px_28px_-6px_rgba(0,0,0,0.55)]">
                     <DropdownMenuItem onSelect={onTogglePinned} className="gap-2 text-[13px]">
                       {pinned ? <PinOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Pin className="h-3.5 w-3.5" aria-hidden="true" />}
                       {pinned ? "Unpin project" : "Pin project"}

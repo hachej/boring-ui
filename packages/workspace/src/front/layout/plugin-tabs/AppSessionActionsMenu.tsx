@@ -65,6 +65,7 @@ export function AppSessionActionsMenu({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
+        data-boring-workspace-part="app-left-menu"
         align="end"
         sideOffset={6}
         onPointerDownCapture={() => { suppressCloseAutoFocus.current = true }}
