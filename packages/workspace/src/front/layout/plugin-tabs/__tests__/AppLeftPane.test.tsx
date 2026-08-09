@@ -135,40 +135,72 @@ describe("AppLeftPane", () => {
     expect(handlers.onCreateSession).not.toHaveBeenCalled()
   })
 
-  it("keeps 44px mobile touch targets on every Agents-section control (issue #1160)", () => {
+  // Issue #1160's intent — every Agents-section control is a >=44px touch
+  // target on a coarse pointer — is still the contract. What changed is where
+  // that intent can honestly be checked.
+  //
+  // The original test asserted it by CLASS STRING (`size-11 sm:size-7`,
+  // `h-11 sm:h-6`, `min-h-11 sm:min-h-0`). Those width-keyed Tailwind pairs
+  // were the defect, not the guarantee: the button size keyed to VIEWPORT
+  // WIDTH while the space reserved for it keyed to POINTER TYPE, so the two
+  // agreed at the two viewports anyone sampled and disagreed everywhere else.
+  // Sizing now comes from one custom property under one condition in
+  // globals.css, and re-pinning a class string here would pin that bug back in.
+  //
+  // jsdom has no layout, so nothing here can measure 44 of anything; an
+  // assertion that pretended to would be the same lie in a new shape. The
+  // split is deliberate:
+  //   - HERE: the structural contract. Every control sits on the shared
+  //     surface the stylesheet sizes, and the actions that moved into the
+  //     consolidated "..." menu are still REACHABLE rather than quietly gone.
+  //   - REAL PIXELS: the `agent-touch-targets` hard gate in
+  //     tools/ui-review/src/review-specs/workspace-agent-sidebar, which
+  //     measures getBoundingClientRect at four width x pointer corners and
+  //     sweeps the portalled app-left menus as well as the pane.
+  it("keeps every Agents-section control on the touch-sized surfaces (issue #1160)", async () => {
+    const user = userEvent.setup()
     renderFleetPane()
 
-    // Fleet new-chat row: the primary button fills a 44px-tall container that
-    // compacts to the 30px desktop density at the sm breakpoint.
+    // Fleet new-chat row: the row carries the surface CSS grows to 44px, and
+    // the primary button fills it rather than restating a height of its own.
     const fleetRow = document.querySelector('[data-boring-workspace-part="app-left-fleet-new-chat"]')
-    expect(fleetRow).toHaveClass("h-11", "sm:h-[30px]")
+    expect(fleetRow).toHaveClass("app-left-new-chat-action")
     expect(screen.getByRole("button", { name: "Start new chat with Boring Alpha" })).toHaveClass("h-full")
-    // Secondary fleet actions: split / quick / choose-agent icon buttons.
     for (const name of [
       "Start split chat with Boring Alpha",
       "Start quick chat with Boring Alpha",
       "Choose Agent for new chat",
     ]) {
-      expect(screen.getByRole("button", { name })).toHaveClass("size-11", "sm:size-7")
+      expect(screen.getByRole("button", { name })).toHaveClass("app-left-secondary-action")
     }
 
-    // Section header toggle and filter input.
-    expect(screen.getByRole("button", { name: /^Agents/ })).toHaveClass("h-11", "sm:h-6")
-    expect(screen.getByRole("searchbox", { name: "Filter Agents" })).toHaveClass("h-11", "sm:h-6")
+    // Section header toggle and the filter affordance in both of its states.
+    expect(screen.getByRole("button", { name: /^Agents/ })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Filter Agents" }))
+    expect(screen.getByRole("searchbox", { name: "Filter Agents" })).toHaveClass("app-left-filter-input")
 
-    // Per-row primary toggle target grows to 44px tall on mobile.
-    for (const row of screen.getAllByRole("button", { name: /Boring (Alpha|Beta); / })) {
-      expect(row).toHaveClass("min-h-11", "sm:min-h-0")
-    }
-    // Per-card icon actions (filter / split / quick / settings / new chat).
+    // Every Agent card is a sized surface, and its always-visible icon
+    // actions sit on the shared secondary-action surface.
+    const cards = document.querySelectorAll(".app-left-agent-card")
+    expect(cards).toHaveLength(2)
     for (const name of [
-      "New chat with Boring Alpha in split pane",
-      "Quick chat with Boring Alpha",
       "Settings for Boring Alpha",
+      "New chat options for Boring Alpha",
       "New chat with Boring Alpha",
     ]) {
-      // 44px mobile hit area is the contract; desktop density (sm:size-*) may vary.
-      expect(screen.getByRole("button", { name })).toHaveClass("size-11")
+      expect(screen.getByRole("button", { name })).toHaveClass("app-left-secondary-action")
+    }
+
+    // The other half of the intent: split and quick chat did not disappear
+    // when their icons did. They are menu items now, inside a menu tagged with
+    // the part hook that both the 44px rule and the review gate use to reach
+    // past the Radix portal — a control that leaves the pane subtree leaves
+    // every sweep that only looks at the pane subtree.
+    await user.click(screen.getByRole("button", { name: "New chat options for Boring Alpha" }))
+    const menu = screen.getByRole("menu")
+    expect(menu.closest('[data-boring-workspace-part="app-left-menu"]')).not.toBeNull()
+    for (const name of ["New chat", "New chat in split pane", "Quick chat"]) {
+      expect(within(menu).getByRole("menuitem", { name })).toBeInTheDocument()
     }
   })
 
