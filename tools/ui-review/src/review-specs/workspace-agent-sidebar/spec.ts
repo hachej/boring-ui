@@ -48,7 +48,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
   // `collect` changed in lockstep with v5→v9, and a stale revision keeps a
   // replayed manifest alive across a scenario that no longer means the same
   // thing. Two numbers for one scenario is the drift this file keeps finding.
-  specRevision: "workspace-agent-sidebar-v10",
+  specRevision: "workspace-agent-sidebar-v11",
   fixtureResetId: "workspace-agent-sidebar-fixture-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -204,7 +204,8 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
           return {
             agentCount: agentTrees.length,
             // Stable hook: the heading moved inside the collapse toggle in
-            // the nested redesign, so a CSS path here drifts silently.
+            // the nested redesign and back out to a plain title in v11, so a
+            // CSS path here drifts silently.
             agentHeading: text('[data-boring-workspace-part="app-left-agents-heading"]'),
             // Stable hook, like agentHeading above: the previous CSS path
             // drifted onto the numeric count span without anyone noticing.

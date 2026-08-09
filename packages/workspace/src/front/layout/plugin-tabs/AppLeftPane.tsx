@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { ChevronRight, Plus, Search, X } from "lucide-react"
+import { Plus, Search, X } from "lucide-react"
 import { Skeleton } from "@hachej/boring-ui-kit"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
 import { FleetNewChatAction, PrimaryAction, NewChatAction, KbdHint, RailAction } from "./AppLeftPaneActions"
@@ -263,7 +263,6 @@ export function AppLeftPane({
     const query = agentFilter.trim().toLocaleLowerCase()
     return query ? agents.filter((agent) => agent.label.toLocaleLowerCase().includes(query)) : agents
   }, [agentFilter, agents])
-  const [agentsSectionOpen, setAgentsSectionOpen] = useState(true)
   // Per-Agent disclosure of the nested chat list; the addressed Agent starts
   // open so the pane never boots to an all-collapsed, chat-less wall.
   // Disclosure follows the chat the user is actually reading, never the New
@@ -534,24 +533,18 @@ export function AppLeftPane({
   })
 
   const renderAgentsSection = () => (
-    <section data-boring-workspace-part="app-left-pane-agents" aria-label="Agents" className="space-y-1">
-      <div className="flex items-center gap-1.5 px-1 pb-0.5">
-        <button
-          type="button"
-          aria-expanded={agentsSectionOpen}
-          aria-controls="boring-app-left-agents-panel"
-          onClick={() => setAgentsSectionOpen((open) => !open)}
-          className="group/agents flex h-11 min-w-0 shrink-0 items-center sm:h-6 gap-1 rounded-md pl-0.5 pr-1 text-[11px] font-bold uppercase tracking-[0.14em] text-foreground/90 transition-colors motion-reduce:transition-none hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-        >
-          <ChevronRight
-            className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none", agentsSectionOpen && "rotate-90")}
-            strokeWidth={1.75}
-            aria-hidden="true"
-          />
-          <span data-boring-workspace-part="app-left-agents-heading">Agents</span>
-          <span data-boring-workspace-part="app-left-agents-count" className="ml-0.5 shrink-0 text-[10px] font-normal tabular-nums tracking-normal text-muted-foreground/75">{agents.length}</span>
-        </button>
-        {agentsSectionOpen && (agentFilterOpen || agentFilter.trim() !== "") ? (
+    <section data-boring-workspace-part="app-left-pane-agents" aria-label="Agents" className="space-y-1 border-t border-border/50 pt-3">
+      {/*
+        Owner decision: Agents is a plain section title, not a disclosure. It
+        matches the "Pinned chats" heading above it exactly — same element
+        shape, size, weight, tracking and muted tone, same right-aligned
+        summary — so the two sections read as one idiom rather than two.
+        The separator rule that used to hang off the pinned section lives here
+        now, so the block is delimited even when nothing is pinned.
+      */}
+      <div className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
+        <span data-boring-workspace-part="app-left-agents-heading" className="shrink-0">Agents</span>
+        {agentFilterOpen || agentFilter.trim() !== "" ? (
           <label className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-1.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/65" strokeWidth={1.75} aria-hidden="true" />
             <input
@@ -571,8 +564,13 @@ export function AppLeftPane({
               className="app-left-filter-input w-full rounded-md border border-border/60 bg-transparent pl-6 pr-2 text-[11px] font-normal tracking-normal text-foreground outline-none placeholder:text-muted-foreground/55 focus:border-ring/60 focus:ring-1 focus:ring-ring/25"
             />
           </label>
-        ) : agentsSectionOpen ? (
-          <span className="flex min-w-0 flex-1 justify-end">
+        ) : (
+          <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
+            {/* Lowercased against the row's uppercase: "5 SEATS" in the title's
+                tracking shouts louder than the title. */}
+            <span data-boring-workspace-part="app-left-agents-count" className="shrink-0 normal-case font-normal tabular-nums tracking-normal text-muted-foreground">
+              {agents.length} {agents.length === 1 ? "seat" : "seats"}
+            </span>
             <button
               type="button"
               aria-label="Filter Agents"
@@ -586,15 +584,13 @@ export function AppLeftPane({
               <Search className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
             </button>
           </span>
-        ) : null}
+        )}
       </div>
-      {agentsSectionOpen ? (
-        <div id="boring-app-left-agents-panel" className="space-y-0.5 px-0.5">
-          {filteredAgents.length > 0
-            ? renderAgentCards()
-            : <div className="px-2 py-2 text-[11px] text-muted-foreground">No matching Agents.</div>}
-        </div>
-      ) : null}
+      <div className="space-y-0.5 px-0.5">
+        {filteredAgents.length > 0
+          ? renderAgentCards()
+          : <div className="px-2 py-2 text-[11px] text-muted-foreground">No matching Agents.</div>}
+      </div>
     </section>
   )
 
@@ -758,7 +754,7 @@ export function AppLeftPane({
               {agentTreeEnabled ? renderFleetNewChat() : null}
               {pinnedSessions.length > 0 ? (
                 agentTreeEnabled ? (
-                  <section className="mb-3 border-b border-border/50 px-0 pb-3" aria-label="Pinned chats">
+                  <section className="mb-3 px-0" aria-label="Pinned chats">
                     <div className="flex items-center justify-between px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
                       <span>Pinned chats</span>
                       <span className="font-normal tabular-nums text-muted-foreground">{pinnedSessions.length}</span>

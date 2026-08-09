@@ -174,8 +174,10 @@ describe("AppLeftPane", () => {
       expect(screen.getByRole("button", { name })).toHaveClass("app-left-secondary-action")
     }
 
-    // Section header toggle and the filter affordance in both of its states.
-    expect(screen.getByRole("button", { name: /^Agents/ })).toBeInTheDocument()
+    // The filter affordance in both of its states. The Agents section header
+    // is no longer a control at all (owner decision: static title), so there
+    // is nothing there left to size — its assertion is dropped rather than
+    // weakened, and every other control below keeps its own.
     await user.click(screen.getByRole("button", { name: "Filter Agents" }))
     expect(screen.getByRole("searchbox", { name: "Filter Agents" })).toHaveClass("app-left-filter-input")
 
@@ -204,22 +206,27 @@ describe("AppLeftPane", () => {
     }
   })
 
-  it("collapses the Agents section including the nested chats", async () => {
-    const user = userEvent.setup()
+  // Replaces "collapses the Agents section including the nested chats": the
+  // owner removed section-level collapsing, so that behaviour has no contract
+  // left to assert. Its two still-true claims were already covered elsewhere
+  // and are NOT lost — nested chats collapsing with their own Agent and pinned
+  // chats staying top-level are both asserted by "nests each Agent's chats
+  // under its card behind a disclosure" below, which is what they describe.
+  it("renders Agents as a static section title, never a disclosure", () => {
     renderFleetPane()
 
-    const toggle = screen.getByRole("button", { name: /^Agents/ })
-    expect(toggle).toHaveAttribute("aria-expanded", "true")
-    await user.click(toggle)
-    expect(toggle).toHaveAttribute("aria-expanded", "false")
-    expect(screen.queryByRole("button", { name: /Boring Alpha;/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole("searchbox", { name: "Filter Agents" })).not.toBeInTheDocument()
-    // Nested chats collapse with their Agents; pinned chats stay top-level.
-    expect(screen.queryByText("Alpha follow-up")).not.toBeInTheDocument()
-    expect(screen.getByText("Alpha session")).toBeInTheDocument()
-
-    await user.click(toggle)
+    const heading = document.querySelector('[data-boring-workspace-part="app-left-agents-heading"]')
+    expect(heading).toHaveTextContent("Agents")
+    // A title, not a control: nothing to press, nothing to expand.
+    expect(heading?.closest("button")).toBeNull()
+    expect(screen.queryByRole("button", { name: /^Agents/ })).not.toBeInTheDocument()
+    expect(document.querySelector('[aria-controls="boring-app-left-agents-panel"]')).toBeNull()
+    // The seat summary sits with the title, like the pinned section's count.
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("2 seats")
+    // The Agent cards are unconditionally present, as is the filter icon that
+    // used to be gated on the section being open.
     expect(screen.getByRole("button", { name: /Boring Alpha;/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Filter Agents" })).toBeInTheDocument()
   })
 
   it("nests each Agent's chats under its card behind a disclosure", async () => {

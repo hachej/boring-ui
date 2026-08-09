@@ -16,7 +16,9 @@ function snapshot(requestFailures: AgentSidebarHardGateSnapshot["requestFailures
     sidebar: {
       agentCount: 2,
       agentHeading: "Agents",
-      agentSeatSummary: null,
+      // v11: the seat summary is asserted, not just recorded — it is the
+      // right-aligned half of the static Agents title.
+      agentSeatSummary: "2 seats",
       agentFilterCount: 1,
       legacyFilterCount: 0,
       visibleActionCount: 0,

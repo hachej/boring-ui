@@ -32,7 +32,16 @@ import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 // menu density on touch, with the gate green throughout. The sweep now also
 // matches the app-left menu part hook, and a coarse-only `agent-card-menu`
 // checkpoint leaves that menu open so there is something to measure.
-export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v10"
+// v11 follows the Agents section becoming a static title. The heading was the
+// label of a collapse toggle, so `agentHeading` was collected from inside a
+// button and the section could be closed; it is now a plain heading beside a
+// right-aligned seat summary, and the Agent list is unconditionally rendered.
+// The revision bump matters because a replayed v10 manifest was captured
+// against a surface where "Agents" could be absent by user action — the same
+// snapshot field means a different thing now. `agentSeatSummary` was collected
+// but never asserted, which is how it drifted onto a bare numeric span once
+// already; v11 asserts it.
+export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v11"
 
 const KNOWN_ABORTED_REQUESTS: Array<{
   rationale: string
@@ -151,7 +160,7 @@ export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnap
   const actionsAlwaysVisible = snapshot.viewport.coarsePointer || snapshot.viewport.width <= 767
   const surfaceReady = snapshot.checkpoint === "agent-details" ? state.detailOverlayCount === 1 : state.agentCount === 2
   const statePassed = surfaceReady
-    && (!agentNavigationExpected || (state.agentCount === 2 && state.agentHeading === "Agents" && state.agentFilterCount === 1))
+    && (!agentNavigationExpected || (state.agentCount === 2 && state.agentHeading === "Agents" && state.agentSeatSummary === "2 seats" && state.agentFilterCount === 1))
     && state.legacyFilterCount === 0
     // Hover REVEALS: the resting pane shows one action per Agent, and
     // hovering one Agent row adds exactly that Agent's other two. The old
