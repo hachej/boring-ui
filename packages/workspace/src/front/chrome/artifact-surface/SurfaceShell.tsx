@@ -460,7 +460,7 @@ export function SurfaceShell({
     const mode = panel?.params?.mode
     emitFileOpened(resource.path, {
       filesystem: resource.filesystem,
-      ...(parseFileOpenMode(mode) ? { mode: mode as UiFileOpenMode } : {}),
+      ...(((parsed) => parsed ? { mode: parsed } : {})(parseFileOpenMode(mode))),
     })
   }, [emitFileOpened])
 
@@ -555,7 +555,7 @@ export function SurfaceShell({
       const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
       const result = openFileCore(api, normalizedRequest.target, {
         filesystem: normalizedRequest.filesystem,
-        ...(parseFileOpenMode(surfaceMode) ? { mode: surfaceMode as UiFileOpenMode } : {}),
+        ...(((parsed) => parsed ? { mode: parsed } : {})(parseFileOpenMode(surfaceMode))),
         ...(closeWorkbenchOnDone && onCloseRef.current
           ? { extraParams: { __closeWorkbenchOnDone: onCloseRef.current } }
           : {}),

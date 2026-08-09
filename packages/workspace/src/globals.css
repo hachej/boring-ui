@@ -393,6 +393,16 @@
 
 .app-left-session-actions {
   width: calc(var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px));
+  /* The strip is WIDER than its icons (it reserves whole slots and aligns them
+     right), so its container must not eat pointer events in the gap — that
+     gap is 36px of the row on a coarse pointer, and taps there hit nothing.
+     The buttons keep their own hit area, so a click still cannot fall through
+     to the row button underneath. */
+  pointer-events: none;
+}
+
+.app-left-session-actions > * {
+  pointer-events: auto;
 }
 
 /* EVERY variant reserves the action strip's width, not just the empty one.
@@ -553,7 +563,6 @@
   }
 
   .app-left-session-actions {
-    pointer-events: auto;
     opacity: 1;
   }
 
@@ -564,6 +573,10 @@
   .app-left-session-trailing {
     min-width: 0;
     margin-right: calc(var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px));
+    /* The status never hides behind the strip here (it sits beside it), so
+       fading it out on focus only makes the age/badge vanish when a touch
+       user focuses the "..." trigger. */
+    opacity: 1;
   }
 }
 

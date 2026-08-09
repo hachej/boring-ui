@@ -271,10 +271,12 @@ export function AppSessionRow({
           data-boring-workspace-part="app-session-actions"
           style={actionSlotStyle}
           className={cn(
-            // Keep the reserved action hit area above the row button at all
-            // times. Toggling pointer-events only after hover creates a race
-            // where the underlying session button can win the same click.
-            "app-left-session-actions pointer-events-auto absolute inset-y-0 right-1 z-10 flex items-center justify-end gap-0.5 opacity-0",
+            // Keep the action hit area above the row button at all times.
+            // Toggling pointer-events only after hover creates a race where
+            // the underlying session button can win the same click. The
+            // buttons own that hit area, not this container — see
+            // .app-left-session-actions in globals.css.
+            "app-left-session-actions absolute inset-y-0 right-1 z-10 flex items-center justify-end gap-0.5 opacity-0",
             "group-hover:opacity-100 group-focus-within:opacity-100",
           )}
         >
@@ -300,12 +302,8 @@ export function AppSessionRow({
             title={title}
             canCopy={canCopy}
             canRename={renameAvailable}
-            // The split action now lives directly on hover; repeating it in
-            // the menu is the redundancy the owner rejected.
-            canSplit={false}
             canPin={pinAvailable}
             pinned={pinned}
-            onOpenAsPane={onOpenAsPane}
             onTogglePinned={onTogglePinned}
             onRename={rename.begin}
             onDelete={onDelete}

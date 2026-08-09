@@ -219,18 +219,23 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       // (e.g. Agent details Knowledge rows) carries only a filesystem id.
       // Requiring a non-empty path here used to drop those commands silently.
       const path = strParam(cmd.params, "path") ?? ""
-      const requestedFilesystem = strParam(cmd.params, "filesystem")
-      if (!path && !requestedFilesystem) return
-      // Same defaulting rule as openFile above: one function must not carry
-      // two. `requestedFilesystem` stays raw ONLY for the guard, which asks
-      // "did the caller name anything at all?".
-      const filesystem = normalizeUiFilesystem(requestedFilesystem)
+      // Deliberately NOT normalized, unlike openFile: revealing has somewhere
+      // to fall back to and openFile does not. `openFile` must resolve to a
+      // concrete filesystem or it cannot open anything, so an omitted one
+      // means "user". `expandToFile` with no filesystem means "reveal this
+      // path in whatever root the operator is already looking at" — defaulting
+      // it to `user` yanked anyone browsing another root back to Workspace.
+      // This matches the WorkspaceBridge client path (bridge/client.ts), so
+      // one command no longer has two behaviors.
+      const filesystem = strParam(cmd.params, "filesystem")
+      if (!path && !filesystem) return
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
       ctx.openWorkbenchSources?.()
       const run = (surface: SurfaceShellApi) => {
         try {
-          surface.expandToFile(path, { filesystem })
+          if (filesystem) surface.expandToFile(path, { filesystem })
+          else surface.expandToFile(path)
         } catch (err) {
           // eslint-disable-next-line no-console -- intentional dev signal
           console.warn(
