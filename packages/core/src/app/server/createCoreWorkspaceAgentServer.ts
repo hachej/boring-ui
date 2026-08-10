@@ -102,6 +102,7 @@ import {
   type Database,
 } from '../../server/db/index.js'
 import { loadConfig, type LoadConfigOptions } from '../../server/config/index.js'
+import { resolveWorkspaceDefaultAgentTypeId } from '../../server/defaultAgentType.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
 
@@ -1567,6 +1568,20 @@ export async function createCoreWorkspaceAgentServer(
           workspaceId,
           workspaceRoot: workspaceRootForRequest,
           projectName: workspace?.name ?? 'Workspace',
+          // Decision 28: prefer the workspace's persisted default seat when it
+          // names a validated fleet member; fail closed to the boot option,
+          // then the legacy default, with a stable diagnostic code.
+          defaultAgentTypeId: resolveWorkspaceDefaultAgentTypeId({
+            persistedDefaultAgentTypeId: workspace?.defaultAgentTypeId,
+            bootDefaultAgentTypeId: options.defaultAgentTypeId,
+            availableAgentTypeIds: agents.map((agent) => agent.agentTypeId),
+            onUnknownPersistedSeat: (diagnostic) => {
+              request.log.warn(
+                { workspaceId, ...diagnostic },
+                'workspace default agent seat is not in the validated fleet; falling back',
+              )
+            },
+          }),
         }
       } catch (error) {
         if (

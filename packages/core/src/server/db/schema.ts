@@ -53,6 +53,7 @@ export const workspaces = pgTable(
     deletedAt: timestamp('deleted_at'),
     isDefault: boolean('is_default').notNull().default(false),
     managedBy: text('managed_by'),
+    defaultAgentTypeId: text('default_agent_type_id'),
   },
   (table) => [
     index('workspaces_created_by_idx').on(table.createdBy),
@@ -62,6 +63,10 @@ export const workspaces = pgTable(
     check(
       'workspaces_workspace_type_id_check',
       sql`${table.workspaceTypeId} ~ '^[a-z][a-z0-9-]{0,62}$'`,
+    ),
+    check(
+      'workspaces_default_agent_type_id_check',
+      sql`${table.defaultAgentTypeId} IS NULL OR ${table.defaultAgentTypeId} ~ '^[a-z][a-z0-9-]{0,62}$'`,
     ),
   ],
 )
