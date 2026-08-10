@@ -6,6 +6,13 @@ import { ChatPaneStageDock } from "./ChatPaneStageDock"
 export interface ChatPaneDescriptor {
   id: string
   title?: string | null
+  /**
+   * Human label of the Agent that owns this chat, e.g. "Coder". The host
+   * resolves it from the fleet list and omits it when the workspace has fewer
+   * than two Agents — with one Agent there is nothing to disambiguate. Pane
+   * components stay presentational and never read fleet state themselves.
+   */
+  agentLabel?: string
   panel?: string
   params?: Record<string, unknown>
 }

@@ -8,6 +8,14 @@ import { cn } from "../lib/utils"
 export interface TopBarProps {
   appTitle?: string
   sessionTitle?: string
+  /**
+   * Human label of the Agent that owns the chat named by `sessionTitle`, e.g.
+   * "Coder". The host resolves it and omits it when the workspace has fewer
+   * than two Agents — with one Agent there is nothing to disambiguate, so the
+   * bar degrades to exactly its previous title-only form. Presentational: this
+   * component never reads fleet state itself.
+   */
+  sessionAgentLabel?: string
   onCommandPalette?: () => void
   onNewChat?: () => void
   /** Override the brand/title block on the left. Hosts pass workspace
@@ -24,6 +32,7 @@ export interface TopBarProps {
 export function TopBar({
   appTitle = "Boring",
   sessionTitle,
+  sessionAgentLabel,
   onCommandPalette,
   onNewChat,
   topBarLeft,
@@ -32,6 +41,10 @@ export function TopBar({
 }: TopBarProps) {
   const right = topBarRight ?? null
   const primaryTitle = sessionTitle || appTitle
+  // Only a CHAT gets Agent provenance. When there is no session title the bar
+  // is showing the app name, and naming an Agent beside that would attribute
+  // the workspace itself to one persona.
+  const agentLabel = sessionTitle ? sessionAgentLabel : undefined
 
   return (
     <header
@@ -53,7 +66,24 @@ export function TopBar({
             >
               {(primaryTitle?.[0] ?? "B").toUpperCase()}
             </span>
-            <span className="truncate text-[13px] font-medium leading-none tracking-tight text-foreground">{primaryTitle}</span>
+            <span
+              className="min-w-0 shrink-[2] truncate text-[13px] font-medium leading-none tracking-tight text-foreground"
+              title={agentLabel ? `${primaryTitle} — ${agentLabel}` : primaryTitle}
+            >
+              {primaryTitle}
+            </span>
+            {agentLabel ? (
+              // Secondary, never competing with the title: the same quiet 11px
+              // provenance idiom the pinned-chat rows and the docked pane header
+              // use. It shrinks and truncates ahead of nothing and behind the
+              // title, so it can never push the search or avatar controls out.
+              <span
+                data-boring-workspace-part="topbar-agent"
+                className="min-w-0 shrink truncate text-[11px] font-medium leading-none text-muted-foreground"
+              >
+                {agentLabel}
+              </span>
+            ) : null}
           </>
         )}
       </div>

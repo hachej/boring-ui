@@ -1,4 +1,5 @@
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
+import { ErrorCode } from '../../../shared/error-codes'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -24,7 +25,7 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
   })
 
   test('flag absent: byte-identical legacy single-default-agent boot', async () => {
-    const agents = await resolveDefaultAgentFleet({ repositoryRoot: REPOSITORY_ROOT, env: {} })
+    const agents = await resolveDefaultAgentFleet({ repositoryRoot: REPOSITORY_ROOT, workspaceRoot: REPOSITORY_ROOT, env: {} })
     expect(agents).toEqual(LEGACY_DEFAULT_AGENT_FLEET)
     expect(Object.isFrozen(agents)).toBe(true)
   })
@@ -32,6 +33,7 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
   test('flag=1: composes the default agent plus the repository factory seats', async () => {
     const agents = await resolveDefaultAgentFleet({
       repositoryRoot: REPOSITORY_ROOT,
+      workspaceRoot: REPOSITORY_ROOT,
       env: { BORING_AGENT_FLEET: '1', ANTHROPIC_API_KEY: 'test-key' },
     })
     expect(agents[0]).toEqual({ agentTypeId: 'default', legacyDefault: true })
@@ -42,6 +44,39 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
       'boring-worker',
       'boring-reviewer',
     ])
+  })
+
+  test('links persona instructions only when the served workspace IS the fleet repository', async () => {
+    const env = { BORING_AGENT_FLEET: '1', ANTHROPIC_API_KEY: 'test-key' }
+    const sameRoot = await resolveDefaultAgentFleet({
+      repositoryRoot: REPOSITORY_ROOT,
+      workspaceRoot: REPOSITORY_ROOT,
+      env,
+    })
+    const concierge = sameRoot.find((agent) => agent.agentTypeId === 'boring-concierge')
+    if (!concierge || 'legacyDefault' in concierge) throw new Error('expected the concierge seat')
+    expect(concierge.instructionFiles).toEqual([
+      { filesystem: 'user', path: '.agents/personas/concierge/instructions.md', role: 'persona' },
+    ])
+
+    // The multi-workspace shape: personas come from the repository, the
+    // `user` filesystem serves somewhere else entirely. Publishing a
+    // repository-relative path here would render a live "Open" button that
+    // opens nothing, so nothing is published.
+    const otherRoot = await resolveDefaultAgentFleet({
+      repositoryRoot: REPOSITORY_ROOT,
+      workspaceRoot: tmpdir(),
+      env,
+    })
+    const detached = otherRoot.find((agent) => agent.agentTypeId === 'boring-concierge')
+    if (!detached || 'legacyDefault' in detached) throw new Error('expected the concierge seat')
+    expect(detached.instructionFiles).toBeUndefined()
+    // Reported as a missing LINK, not an excluded seat: the seat is right
+    // there in the fleet above.
+    expect(loggerMocks.warn).toHaveBeenCalledWith(
+      'fleet seat instructions not linkable',
+      expect.objectContaining({ code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE }),
+    )
   })
 
   describe('flag=1 with a missing/malformed .agents tree (M4: degrade, do not crash boot)', () => {
@@ -56,6 +91,7 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
       // No .agents/ tree at all under this root.
       const agents = await resolveDefaultAgentFleet({
         repositoryRoot: root,
+        workspaceRoot: root,
         env: { BORING_AGENT_FLEET: '1' },
       })
       expect(agents).toEqual(LEGACY_DEFAULT_AGENT_FLEET)
@@ -69,6 +105,7 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
       await writeFile(join(root, '.agents', 'factory', 'fleet.yaml'), 'not: [valid, seats, shape')
       const agents = await resolveDefaultAgentFleet({
         repositoryRoot: root,
+        workspaceRoot: root,
         env: { BORING_AGENT_FLEET: '1' },
       })
       expect(agents).toEqual(LEGACY_DEFAULT_AGENT_FLEET)
