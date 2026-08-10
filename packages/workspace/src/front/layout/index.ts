@@ -4,6 +4,13 @@ export { TopBar } from "./TopBar"
 export { ThemeToggle } from "./ThemeToggle"
 /** Tier 2 entry: declarative LayoutConfig with stock responsive chrome. */
 export { ResponsiveDockviewShell } from "./ResponsiveDockviewShell"
+export {
+  COMPACT_MAX_WIDTH,
+  WIDE_MIN_WIDTH,
+  WORKSPACE_BREAKPOINTS,
+  isCompactViewport,
+  isBelowWideViewport,
+} from "./breakpoints"
 export type { TopBarProps } from "./TopBar"
 export type { ResponsiveDockviewShellProps } from "./ResponsiveDockviewShell"
 export type { IdeLayoutProps, ChatLayoutProps } from "./types"

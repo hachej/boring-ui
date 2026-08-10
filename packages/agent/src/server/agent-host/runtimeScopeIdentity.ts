@@ -8,10 +8,12 @@ export interface RuntimeScopeIdentityInput {
   }[]
   readonly validatedConfig: JsonValue
   readonly grants: readonly string[]
-  readonly placementIdentity: string
+  /** Stable semantic placement class; never an absolute root or lease key. */
+  readonly placementClassIdentity: string
   readonly isolationMode: string
   readonly toolContractDigests: readonly string[]
-  readonly provisioningGeneration: string
+  /** Stable semantic provisioning contract. */
+  readonly provisioningIdentity: string
   readonly bindingInputs?: JsonValue
 }
 
@@ -45,15 +47,16 @@ export function createResolvedRuntimeScopeIdentity(
   input: RuntimeScopeIdentityInput,
 ): string {
   return digest({
+    schemaVersion: 2,
     artifacts: [...input.artifacts]
       .map((artifact) => ({ pluginId: artifact.pluginId, digest: artifact.digest }))
       .sort((a, b) => a.pluginId.localeCompare(b.pluginId) || a.digest.localeCompare(b.digest)),
     validatedConfig: input.validatedConfig,
     grants: [...input.grants].sort(),
-    placementIdentity: input.placementIdentity,
+    placementClassIdentity: input.placementClassIdentity,
     isolationMode: input.isolationMode,
     toolContractDigests: [...input.toolContractDigests].sort(),
-    provisioningGeneration: input.provisioningGeneration,
+    provisioningIdentity: input.provisioningIdentity,
     ...(input.bindingInputs === undefined ? {} : { bindingInputs: input.bindingInputs }),
   })
 }

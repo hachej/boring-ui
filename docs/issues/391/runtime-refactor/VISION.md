@@ -1,5 +1,9 @@
 # #391 vision — application agent fleet over governed Workspace environments
 
+> **SUPERSEDED as canonical location** — the living vision is
+> [`docs/direction/VISION.md`](../../../direction/VISION.md); this copy is
+> frozen as the #391 plan-pack context.
+
 > Strategic summary under Decision 28. [`../plan.md`](../plan.md) is delivery
 > authority. [`../AGENT-CONSUMPTION-MODES.md`](../AGENT-CONSUMPTION-MODES.md)
 > defines ingress, collaboration, external, and contracted modes.

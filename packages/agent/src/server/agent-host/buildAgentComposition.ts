@@ -14,6 +14,7 @@ import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from '../runtime/modeReadiness'
 import { getOptionalRuntimeBundleStorageRoot, type RuntimeBundle, type RuntimeFilesystemBinding } from '../runtime/mode'
 import { AGENT_KNOWLEDGE_FILESYSTEM_ID } from '../../shared/skill-resource'
+import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
 import { openDatabase, type OpenDatabaseResult } from '../events/sqlStorage'
 import { SqliteEventStreamStore, type EventStreamStore } from '../events/eventStreamStore'
 import { safeCapture, type TelemetrySink } from '../../shared/telemetry'
@@ -52,32 +53,53 @@ export function isDurableStreamEnabled(): boolean {
  * mode that is an IN-SANDBOX (guest) path, and writing the durable store
  * there would either fail invisibly or, worse, silently land the "durable"
  * store inside an ephemeral guest filesystem that vanishes with the sandbox.
- * If neither a session root nor a host storage root is resolvable, this
- * fails closed: no store is opened, a stable-coded diagnostic is reported,
- * and callers fall back to in-memory streaming rather than ever writing to
- * a guest path or crashing boot.
+ * If the store cannot be opened while the durable-stream flag is on —
+ * because neither a session root nor a host storage root is resolvable, or
+ * because `openDatabase` fails at the resolved path — this fails LOUDLY:
+ * a stable-coded telemetry diagnostic is reported and a
+ * {@link DurableStreamUnavailableError} (code `DURABLE_STREAM_UNAVAILABLE`,
+ * carrying the underlying cause) is thrown so boot aborts. The operator
+ * asked for durability; silently degrading to in-memory streaming would
+ * betray that. Flag off = this function is never called and behavior is
+ * byte-identical to pre-durability composition.
  */
 export function openDurableEventStore(input: {
   readonly sessionRoot?: string
   readonly hostStorageRoot?: string
   readonly telemetry?: TelemetrySink
-}): { store: EventStreamStore; close: () => void } | undefined {
+}): { store: EventStreamStore; close: () => void } {
   const root = input.sessionRoot ?? input.hostStorageRoot
   if (!root) {
-    reportEventStoreOpenFailure(input.telemetry, '(no host-resolvable root)', 'No sessionRoot and no host storage root available; refusing to fall back to a sandbox/guest path.')
-    return undefined
+    const reason = 'No sessionRoot and no host storage root available; refusing to fall back to a sandbox/guest path.'
+    reportEventStoreOpenFailure(input.telemetry, '(no host-resolvable root)', reason)
+    throw new DurableStreamUnavailableError('(no host-resolvable root)', reason)
   }
   const path = join(root, EVENT_STORE_FILE_NAME)
   let opened: OpenDatabaseResult
   try {
     opened = openDatabase(path)
   } catch (error) {
-    reportEventStoreOpenFailure(input.telemetry, path, error instanceof Error ? error.message : String(error))
-    return undefined
+    const reason = error instanceof Error ? error.message : String(error)
+    reportEventStoreOpenFailure(input.telemetry, path, reason)
+    throw new DurableStreamUnavailableError(path, reason, error)
   }
   return {
     store: new SqliteEventStreamStore(opened.sql, opened.runTransaction),
     close: () => opened.db.close(),
+  }
+}
+
+/**
+ * Boot-time failure: `BORING_CHAT_DURABLE_STREAM` is enabled but the durable
+ * event-stream store could not be opened. Thrown instead of silently falling
+ * back to in-memory streaming.
+ */
+export class DurableStreamUnavailableError extends Error {
+  readonly code = ErrorCode.enum.DURABLE_STREAM_UNAVAILABLE
+
+  constructor(path: string, reason: string, cause?: unknown) {
+    super(`${DURABLE_STREAM_ENV_FLAG} is enabled but the durable event-stream store could not be opened at ${path}: ${reason}`, cause === undefined ? undefined : { cause })
+    this.name = 'DurableStreamUnavailableError'
   }
 }
 
@@ -158,17 +180,26 @@ export async function buildAgentComposition(
     })
   }
   const scopedKnowledgeBinding = knowledgeBinding
+  // Request-scoped bindings REPLACE the bundle defaults at the tool layer, so
+  // the bundle's own bindings must be merged back in (host policy intersecting
+  // any same-id request binding) before appending the agent-scoped knowledge
+  // filesystem — same merge seam as origin/feat/1107-s1-discovery.
   const getFilesystemBindings = runtimeScope.getFilesystemBindings || scopedKnowledgeBinding
     ? async (ctx: { sessionId?: string; userId?: string; requestId?: string }) => [
-        ...await runtimeScope.getFilesystemBindings?.({
-          scope: {
-            workspaceScopeId: input.workspaceScopeId,
-            authSubjectId: ctx.userId ?? '',
-          },
-          sessionId: ctx.sessionId,
-          requestId: ctx.requestId ?? '',
-        }) ?? [],
-        ...(scopedKnowledgeBinding ? [scopedKnowledgeBinding] : []),
+        ...mergeRuntimeFilesystemBindings(
+          runtimeBundle.filesystemBindings,
+          [
+            ...await runtimeScope.getFilesystemBindings?.({
+              scope: {
+                workspaceScopeId: input.workspaceScopeId,
+                authSubjectId: ctx.userId ?? '',
+              },
+              sessionId: ctx.sessionId,
+              requestId: ctx.requestId ?? '',
+            }) ?? [],
+            ...(scopedKnowledgeBinding ? [scopedKnowledgeBinding] : []),
+          ],
+        ) ?? [],
       ]
     : undefined
   const standardTools: AgentTool[] = [

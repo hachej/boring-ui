@@ -69,4 +69,84 @@ describe("mobile chat chrome", () => {
     expect(screen.getByText("Workspace")).toBeTruthy()
     expect(screen.queryByText("One active panel on mobile")).toBeNull()
   })
+
+  it("tags both chat-bar pills for coarse-pointer target escalation", () => {
+    render(<MobileChatBar canOpenNav canOpenWorkspace onOpenNav={() => {}} onOpenWorkspace={() => {}} />)
+
+    for (const name of ["Sessions", "Workspace"]) {
+      const pill = screen.getByRole("button", { name })
+      expect(pill.className).toContain("mobile-shell-bar-action")
+      expect(pill.className).toContain("motion-reduce:transition-none")
+      expect(pill.className).toContain("focus-visible:ring-2")
+    }
+  })
+
+  it("tags the workspace back pill for coarse-pointer target escalation", () => {
+    render(<MobileWorkspaceBar onBack={() => {}} />)
+
+    const back = screen.getByRole("button", { name: "Chat" })
+    expect(back.className).toContain("mobile-shell-bar-action")
+    expect(back.className).toContain("motion-reduce:transition-none")
+  })
+
+  it("pads the single-pane header for the status-bar inset", () => {
+    render(
+      <MobileSingleChatPane pane={{ id: "pane-a", title: "Planning" }} totalPanes={1} renderPane={() => <div>Transcript</div>} />,
+    )
+
+    const pane = screen.getByText("Planning").closest('[data-boring-workspace-part="mobile-chat-pane"]')
+    const header = pane?.firstElementChild
+    expect(header?.className).toContain("env(safe-area-inset-top)")
+  })
+
+  it("names the owning Agent under the title, alongside the multi-pane notice", () => {
+    render(
+      <MobileSingleChatPane
+        pane={{ id: "pane-a", title: "Planning", agentLabel: "Coder" }}
+        totalPanes={2}
+        renderPane={() => <div>Transcript</div>}
+      />,
+    )
+
+    const subtitle = document.querySelector('[data-boring-workspace-part="mobile-chat-pane-subtitle"]')
+    expect(subtitle?.textContent).toBe("Coder · Showing 1 of 2 chats — split panes are disabled on mobile.")
+    expect(subtitle?.className).toContain("truncate")
+  })
+
+  it("shows only the Agent when it is the sole pane, and nothing without one", () => {
+    const { rerender } = render(
+      <MobileSingleChatPane
+        pane={{ id: "pane-a", title: "Planning", agentLabel: "Coder" }}
+        totalPanes={1}
+        renderPane={() => <div>Transcript</div>}
+      />,
+    )
+    expect(
+      document.querySelector('[data-boring-workspace-part="mobile-chat-pane-subtitle"]')?.textContent,
+    ).toBe("Coder")
+
+    rerender(
+      <MobileSingleChatPane
+        pane={{ id: "pane-a", title: "Planning" }}
+        totalPanes={1}
+        renderPane={() => <div>Transcript</div>}
+      />,
+    )
+    expect(document.querySelector('[data-boring-workspace-part="mobile-chat-pane-subtitle"]')).toBeNull()
+  })
+
+  it("gives the close action a reduced-motion-safe hover and a focus ring", () => {
+    render(
+      <MobileSingleChatPane
+        pane={{ id: "pane-a", title: "Planning" }}
+        totalPanes={2}
+        onClosePane={() => {}}
+        renderPane={() => <div>Transcript</div>}
+      />,
+    )
+
+    const close = screen.getByRole("button", { name: "Close Planning pane" })
+    expect(close.className).toContain("motion-reduce:transition-none")
+    expect(close.className).toContain("focus-visible:ring-2")
+  })
 })
