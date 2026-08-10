@@ -104,7 +104,7 @@ Consumers of #1176 in this plan:
 - **S1** (first lane as a workspace session) — liveliness counts are the proof a
   running lane is visible without opening a transcript.
 - **S2** (direct-to-worker steering) — side-by-side placement is how the owner
-  drops into a worker session next to the planner instead of switching context.
+  drops into a worker session next to the orchestrator instead of switching context.
 - **S4** (owner gates) — the amber "waiting on user" aggregate is the pull signal
   into the Inbox.
 - **S6** (seats become real) — the Agent details overlay is how we verify a seat
@@ -123,9 +123,9 @@ workspace can be its authority, not merely its viewer.**
 
 ### Session topology (ratified)
 
-**One pinned planner session + one worker session per lane/bead.**
+**One pinned orchestrator session + one worker session per lane/bead** (plus a background `triage` seat that holds no lane).
 
-- **The planner session is persistent and pinned** — the owner's standing
+- **The orchestrator session is persistent and pinned** — the owner's standing
   counterpart, held by the `steward` seat. It is never recycled per epic; its
   durable state lives in beads and notes, never in accumulated context
   (VISION decision 17). It is where conversation, planning, and re-planning
@@ -134,8 +134,8 @@ workspace can be its authority, not merely its viewer.**
   (VISION decision 5), each with a lane worktree as its cwd, each addressable
   and openable by the owner.
 - **The owner may steer any worker directly.** This is the ratified feedback
-  model, quoted above. The planner is **outcome-oriented** and does not observe
-  those conversations: see "Steering and the outcome-oriented planner" below.
+  model, quoted above. The orchestrator is **outcome-oriented** and does not observe
+  those conversations: see "Steering and the outcome-oriented orchestrator" below.
 
 Compared with today — one Claude Code session that both plans and spawns opaque
 subagents — the topology change is that *the worker becomes a first-class
@@ -160,7 +160,7 @@ today. Artifact (2) is a real gap — see **G5**.
 
 | Factory activity | Workspace surface | What "moved" means |
 | --- | --- | --- |
-| Planning / owner conversation | **Pinned planner session** (`steward` seat) | The standing counterpart replaces the orchestrating Claude Code session. |
+| Dispatch, planning, owner conversation | **Pinned orchestrator session** | The standing counterpart replaces the orchestrating Claude Code session. |
 | Lane = one epic worktree worked by a session | **Worker session per lane/bead**, seat-addressed | `.worktrees/<lane>` stays the cwd; the transcript lives under `BORING_AGENT_SESSION_ROOT`. |
 | Watching lanes | **Fleet view** (#1102 + #1176) | Liveliness counts replace tailing terminals. |
 | Correcting a worker | **Open that worker's session** | Direct steering; no orchestrator relay. |
@@ -181,15 +181,34 @@ roster sized for an imagined factory is process porn (AGENTS.md hard rule 8),
 and a seat that differs from its neighbour only in which model it calls is not a
 seat at all — it is a dispatch parameter wearing a persona.
 
-**S0 boots three seats.**
+**S0 boots three seats: `triage` · `orchestrator` · `worker`.**
 
 | Seat | `agentTypeId` | Posture | Role |
 | --- | --- | --- | --- |
-| `planner` | `boring-planner` | Full authority; conversational | The pinned session and owner's counterpart: conversation, plan → bead graph, gate-1 intentions. **Triage folded in** — classification is a planner activity, not a seat. |
-| `worker` | `boring-worker` | Full write: edits, commits, pushes | **One** implementation seat. Claims a bead, works it in a lane worktree, hands off. |
-| `reviewer` | `boring-reviewer` | **Read-only tooling, audit skills, no push** | Fresh-eyes review and dispositions. |
+| `triage` | `boring-triage` | Continuous, background, non-interactive | Classification of incoming work: category, state, first blocker, route. Runs on a cadence, not in conversation. |
+| `orchestrator` | `boring-orchestrator` | Full authority; conversational; **pinned** | The owner's standing counterpart. Dispatches work, reads bead end-states, holds the conversation. Planning is one activity within it, not its identity. |
+| `worker` | `boring-worker` | Full write: edits, commits, pushes | **One** implementation seat. Claims a bead, works it in a lane worktree, spawns its own review subagents at gate time, hands off. |
 
-#### Why `worker` is one seat (owner-ratified 2026-08-10)
+#### Why `orchestrator`, not `planner` (owner-ratified 2026-08-10)
+
+The seat dispatches work, reads bead end-states, and holds the owner
+conversation. Planning is one activity inside that, not the whole of it — naming
+the seat `planner` would have described a fraction of its job and clashed with
+the factory's existing vocabulary, where the orchestrator role is already the
+one that decides what gets worked (`docs/procedures/boring-loop.md`). The name
+follows the authority, not the favourite activity.
+
+#### Why `triage` is its own seat again
+
+Earlier revisions folded triage into the pinned seat. It comes back out, and the
+justification is posture, not convenience: triage is **continuous background
+classification of incoming work**, while the orchestrator is **interactive**.
+Those are different operating modes — one runs on a cadence with no human in the
+loop, the other exists to be talked to. A background sweep competing for the
+pinned conversational session is exactly how the owner's counterpart becomes
+unresponsive.
+
+#### Why `worker` is one seat
 
 The previous drafts split the worker into `worker-taste` (Opus, UI/taste beads),
 `worker-exec` (Sol), and `worker-bulk` (Terra/Luna). **That split was only ever
@@ -208,13 +227,36 @@ model is chosen per session or per automation.** A taste-heavy UI bead opens a
 fleet view still shows which model each running session is using — that fact
 comes from the session, which is where it belongs.
 
-#### Why `reviewer` stays a separate seat
+#### No `reviewer` seat — review is a rule, not a chair (owner-ratified 2026-08-10)
 
-Not because it runs a different model. Because it has a **different capability
-posture**: read-only tooling, audit skills, and no push authority. That is a
-real boundary the runtime can enforce and the Agent details overlay can display
-— a reviewer that *cannot* write is a different thing from a worker told not to.
-Capability posture justifies a seat; model choice does not.
+An earlier revision kept `reviewer` as a seat on the grounds that its read-only
+posture justified it. Overruled: **reviews are fresh-context subagents the
+worker spawns at gate time.**
+
+The property that makes a review worth anything is **independence of context**,
+not a separate chair in the fleet. A standing reviewer seat gives the appearance
+of independence while the real risk — a reviewer primed by the author's
+framing — is untouched by whether it has its own `agentTypeId`. So the property
+is encoded directly, as a rule:
+
+- **Clean context.** A review subagent starts from a fresh context. It never
+  inherits or continues the authoring session.
+- **Adversarial mandate.** Its instruction is to *refute*, not to bless. It
+  reports findings; it does not rewrite the work (MODEL-CARD review ladder).
+- **Provenance is recorded.** The present-pr artifact's review-history section
+  records who ran each review — model, mandate, target SHA — so independence is
+  **auditable after the fact** rather than assumed. This is a direct consumer of
+  #1184's convention that every implementation ends with that artifact.
+
+This is also cheaper and more honest than a seat: a subagent per review means
+each gate gets a genuinely new reader, where one long-lived reviewer seat
+accumulates exactly the context we were trying to exclude.
+
+**Deferral trigger — promote `reviewer` to a seat if review provenance shows
+self-grading drift.** The provenance record is what makes that trigger
+measurable: if the history shows reviews clustering on the author's own model,
+inheriting context, or returning blessings without findings, the rule has failed
+and the boundary moves into the runtime as a seat with enforced read-only tools.
 
 #### Grow-on-demand list
 
@@ -222,9 +264,9 @@ Everything else is deferred. Each is added only when a real lane pulls it:
 
 | Deferred seat | Added when |
 | --- | --- |
-| `concierge` | external intake volume exceeds what the planner can front-door conversationally |
-| `triage` | classification sweeps become recurring enough to want their own cadence and cheaper tier |
-| `auditor` (Sol xhigh adversarial) | the review ladder's cross-model pass becomes routine rather than owner-invoked — and only if it needs a posture the `reviewer` seat lacks, not merely a different model |
+| `concierge` | external intake volume exceeds what the orchestrator can front-door conversationally |
+| `reviewer` | review provenance shows self-grading drift — see the trigger above |
+| `auditor` (Sol xhigh adversarial) | the cross-model adversarial pass needs authority a review subagent cannot hold, not merely a different model |
 | `beadle` (T4 supervisor) | **S7** — the supervisor slice; it has no reason to exist before the automations do |
 | any `worker-*` variant | a real lane needs different **tools or authority** from `worker`. A different model is not a trigger. |
 
@@ -237,22 +279,22 @@ seat-addition is a config change and not an architecture change, **starting
 minimal costs nothing later** — which is exactly why starting at nine would have
 bought nothing now.
 
-### Steering and the outcome-oriented planner (owner-ratified 2026-08-10)
+### Steering and the outcome-oriented orchestrator (owner-ratified 2026-08-10)
 
-**The planner reads bead END-STATES only.** Owner↔worker conversations are
+**The orchestrator reads bead END-STATES only.** Owner↔worker conversations are
 invisible to it by design.
 
 > *"the planner does not need to know I chatted with the worker — he must just
 > know about the end state."*
 
-Any scope change produced by steering manifests where the planner already
+Any scope change produced by steering manifests where the orchestrator already
 looks: the bead's final state — status, results, PR links. That is the whole
 contract.
 
 Explicitly **not** built, and not wanted:
 
 - No intervention or steering events.
-- No planner reads of worker transcripts.
+- No orchestrator reads of worker transcripts.
 - No mandatory mid-flight annotations, and no Beadle flag for "session moved
   without notes".
 
@@ -260,11 +302,11 @@ This is a simplification of r1's earlier "steering lands on the bead" rule,
 which required the worker to annotate mid-flight. It does not. The end state is
 the annotation, and it is written when the work is done like any other bead
 closure. Task↔session links (`taskSessionLinkStore.ts`, on main) remain
-available for a human who wants to trace a bead to its session; the planner does
+available for a human who wants to trace a bead to its session; the orchestrator does
 not need them.
 
 The benefit is not only less machinery — it removes the failure mode where a
-planner acts on a half-finished steering exchange it partially observed.
+orchestrator acts on a half-finished steering exchange it partially observed.
 
 ### Seat funding (owner-ratified 2026-08-10)
 
@@ -338,10 +380,14 @@ agent picker, blocks the Beadle).
 5. **Fixed lane pool, not dynamic spawning.** Accept G1's workaround for this
    epic rather than blocking on a product feature.
 6. **Minimal 3-seat roster, grown on demand** (owner-ratified 2026-08-10):
-   `planner`, `worker`, `reviewer`. A seat is justified by capability posture,
-   never by model choice — model routing lives at dispatch time (#1143).
-   Seat-addition is a config change, so starting small costs nothing later.
-7. **The planner is outcome-oriented** (owner-ratified 2026-08-10) — it reads
+   `triage`, `orchestrator`, `worker`. A seat is justified by capability
+   posture, never by model choice — model routing lives at dispatch time
+   (#1143). Seat-addition is a config change, so starting small costs nothing
+   later.
+6b. **Review is a rule, not a seat** (owner-ratified 2026-08-10) — fresh-context
+   subagents with an adversarial mandate, spawned by the worker at gate time,
+   with provenance recorded in the present-pr artifact.
+7. **The orchestrator is outcome-oriented** (owner-ratified 2026-08-10) — it reads
    bead end-states only; owner↔worker steering is invisible to it by design.
 8. **Seats are funded by instance env keys** (owner-ratified 2026-08-10) — the
    host-configured provider credentials the CLI hub already uses. Per-seat
@@ -355,15 +401,15 @@ Each slice is one PR. "Proof" is the real lane it must run, not a test suite.
 ### S0: factory workspace boots the 3-seat roster
 **Delivers:** the CLI hub on this repo with `BORING_AGENT_FLEET=1`; `fleet.yaml`
 + `policy.yaml` + `.agents/personas/*` recut from today's five seats to the three
-ratified above (`planner`, `worker`, `reviewer`); a documented, repeatable start
+ratified above (`triage`, `orchestrator`, `worker`); a documented, repeatable start
 command. No factory work moves yet.
 **Blocked by:** None — can run before #1176.
-**Proof:** **three** seats visible in the hub; the describe endpoint reports each
-seat's resolved model and, for `reviewer`, a tool set with no write/push
-capability — the posture that justifies it being a seat; a `worker` session
-opens on a chosen model, proving model selection lives at dispatch rather than
-in the roster; the grow-on-demand seats are absent and nothing degrades.
-Screenshot.
+**Proof:** **three** seats visible in the hub (`triage`, `orchestrator`,
+`worker`); the describe endpoint reports each seat's resolved model; a `worker`
+session opens on a chosen model, proving model selection lives at dispatch
+rather than in the roster; a review subagent spawned from that worker session
+starts from clean context and its provenance line is recorded; the
+grow-on-demand seats are absent and nothing degrades. Screenshot.
 **Why first:** everything downstream assumes seats exist as addressable agents,
 and nothing has ever verified the composed fleet is correct.
 **Review budget:** inside (config + personas + docs).
@@ -375,10 +421,10 @@ genuinely recurring loop with the lowest blast radius in the queue, and its
 in-flight work (e.g. #1172, #1173) is small and independently revertible.
 Executed by a `worker` session opened on a taste-capable model (dispatch-time
 selection, per decision 6), whose cwd is a pre-created lane
-worktree, with the pinned `planner` session open alongside. Claude Code path
+worktree, with the pinned `orchestrator` session open alongside. Claude Code path
 untouched.
 **Blocked by:** **#1176 merged**, and S0.
-**Proof:** one real #1110 polish change goes automation-free from planner →
+**Proof:** one real #1110 polish change goes automation-free from orchestrator →
 worker session → commit → PR with the owner never opening a terminal; the fleet
 view shows the lane's liveliness throughout; a hub restart leaves the transcript
 intact.
@@ -388,11 +434,11 @@ intact.
 **Delivers:** the ratified feedback model proven on the #1110 lane — the owner
 opens S1's worker session and corrects it directly, with no orchestrator relay.
 Procedure text in `.agents/skills/exec/` and the factory README recording that
-the planner is outcome-oriented: it consumes bead end-states, and steering
+the orchestrator is outcome-oriented: it consumes bead end-states, and steering
 conversations are deliberately invisible to it.
 **Blocked by:** S1.
 **Proof:** a real mid-flight correction that changes what the bead delivers,
-after which the planner — told nothing about the exchange — plans correctly from
+after which the orchestrator — told nothing about the exchange — plans correctly from
 the bead's end state alone.
 **Review budget:** inside (docs/skills; class B, owner-merged).
 **Note:** this slice got *smaller* under the 2026-08-10 ruling. There is no
@@ -537,13 +583,14 @@ critical path.
 ## Acceptance
 
 - The Today table is accepted as accurate, or corrected.
-- The session topology (pinned planner + per-lane workers) is ratified.
+- The session topology (pinned orchestrator + per-lane workers + background
+  triage) is ratified.
 - Each of G1–G9 has an owner-ratified disposition.
 - Slice order S0→S8 is ratified, or recut.
 - The escape-hatch list is ratified as complete.
 
 Ratified 2026-08-10 and no longer open: the 3-seat roster and grow-on-demand
-list, instance-env-key seat funding, the outcome-oriented planner, epic #1110 as
+list, instance-env-key seat funding, the outcome-oriented orchestrator, epic #1110 as
 S1's lane, and S8's one-full-epic exit bar.
 
 ## Proof
@@ -568,14 +615,15 @@ S1's lane, and S8's one-full-epic exit bar.
 
 1. **Lane pool size.** G1's workaround needs a fixed number of pre-created lane
    worktrees. `worker_cap: 3` plus the bugfix lane suggests 4. Confirm?
-2. **Which lane for S1?** The plan picks the UI-polish loop for blast radius;
-   `fix/rolling` is the alternative — more representative, more dangerous.
+2. **Does `triage` need its own cadence in S0**, or does it stay dormant until
+   a real intake stream exists? It is the one seat S0 boots that no early slice
+   exercises.
 3. **Does the factory hub run long-lived or per-session?** Materially changes
    the Postgres/port mitigations and whether the Beadle can tick unattended.
-4. **Does the `reviewer` posture need runtime enforcement in S0**, or is a
-   read-only tool set by convention enough until the trust ladder (G8) exists?
-   The seat's whole justification is its posture, so a posture nothing enforces
-   is worth naming as a known softness.
+4. **What records review provenance before present-pr lands?** The
+   independence rule is only auditable once #1180's review-history section
+   exists. Until then the provenance line has no home — a bead comment is the
+   obvious interim, and it should be named as such or explicitly deferred.
 5. **How far does the preview pane go?** Localhost-only with a port allowlist is
    the proposed bound. Anything wider is an SSRF-shaped surface and needs its
    own gate.
