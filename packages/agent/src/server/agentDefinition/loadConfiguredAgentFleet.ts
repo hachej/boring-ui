@@ -136,9 +136,18 @@ export class FleetConfigError extends Error {
   }
 }
 
-function isInside(root: string, target: string): boolean {
+function isCanonicalPathInside(root: string, target: string): boolean {
   const fromRoot = relative(root, target)
   return fromRoot === '' || (fromRoot !== '..' && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot))
+}
+
+async function admitPersonaSource(personasDir: string, seat: string): Promise<string> {
+  const canonicalRoot = await realpath(resolve(personasDir))
+  const canonicalSource = await realpath(resolve(personasDir, seat))
+  if (!isCanonicalPathInside(canonicalRoot, canonicalSource)) {
+    throw new Error(`seat "${seat}" persona source resolves outside the configured personas directory`)
+  }
+  return canonicalSource
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -226,8 +235,11 @@ async function canonicalSkillContent(skillsRoot: string, skill: FleetSkillBindin
     if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
       throw new Error(`canonical skill "${skill.name}" must be a regular non-symlink file`)
     }
-    const target = await realpath(candidate)
-    if (!isInside(skillsRoot, target)) {
+    const [canonicalSkillsRoot, target] = await Promise.all([
+      realpath(resolve(skillsRoot)),
+      realpath(candidate),
+    ])
+    if (!isCanonicalPathInside(canonicalSkillsRoot, target)) {
       throw new Error(`canonical skill "${skill.name}" resolves outside the admitted skills root`)
     }
     const content = await readFile(target, 'utf8')
@@ -271,15 +283,12 @@ export async function loadConfiguredAgentFleet(
   }
 
   const skillsRoot = options.skillsRoot ?? resolve(dirname(options.personasDir), 'skills')
-  // Personas are only linkable when they live inside the workspace the `user`
-  // filesystem actually serves. When they don't, no ref is published at all —
-  // a well-formed path to a file the workbench cannot open is worse than no
-  // link, because the row looks live and silently opens nothing.
-  const personasAreInsideWorkspace = options.workspaceRoot !== null
-    && isInside(options.workspaceRoot, options.personasDir)
-  const workspaceRelativePersonasDir = options.workspaceRoot === null
-    ? ''
-    : relative(options.workspaceRoot, options.personasDir).split(sep).join('/')
+  // Resolve the served root once, but keep failure per-seat and fail-closed:
+  // composition can still proceed while publication reports the existing
+  // stable unpublishable diagnostic.
+  const canonicalWorkspaceRoot = options.workspaceRoot === null
+    ? null
+    : await realpath(resolve(options.workspaceRoot)).catch(() => null)
 
   const agents: ConfiguredAgentHostAgentSpec[] = []
   const diagnostics: FleetLoaderDiagnostic[] = []
@@ -287,8 +296,13 @@ export async function loadConfiguredAgentFleet(
   for (const binding of seats) {
     let recorded = false
     try {
+      // This is the filesystem-adapter boundary for configured personas. The
+      // raw seat is used only to locate a candidate; everything after this
+      // point consumes the admitted canonical directory. That prevents both
+      // `..` and directory-symlink escapes from becoming composition roots.
+      const personaSource = await admitPersonaSource(options.personasDir, binding.seat)
       const source = await materializeAgentDirectory({
-        directory: resolve(options.personasDir, binding.seat),
+        directory: personaSource,
         expectedAgentTypeId: binding.agentTypeId,
         manifest: 'package.json',
       })
@@ -314,7 +328,11 @@ export async function loadConfiguredAgentFleet(
       // The loader is the only place that knows seat -> persona directory;
       // publishing it here keeps clients from inverting the mapping.
       let instructionFiles: AgentInstructionFileRef[] | undefined
-      const candidatePath = `${workspaceRelativePersonasDir}/${binding.seat}/instructions.md`
+      const personaIsInsideWorkspace = canonicalWorkspaceRoot !== null
+        && isCanonicalPathInside(canonicalWorkspaceRoot, personaSource)
+      const publishedInstructionPath = canonicalWorkspaceRoot === null
+        ? ''
+        : relative(canonicalWorkspaceRoot, resolve(personaSource, 'instructions.md')).split(sep).join('/')
       // EXISTENCE is already proven and is deliberately not re-checked: this
       // seat only got here because `materializeAgentDirectory` read
       // `<personasDir>/<seat>/instructions.md` and rejected it if absent or
@@ -330,10 +348,10 @@ export async function loadConfiguredAgentFleet(
       // names a file that exists, under the root the client reads through.
       const unpublishableReason = options.workspaceRoot === null
         ? `this host resolves a workspace root per request, so persona instructions have no single "${AGENT_USER_FILESYSTEM_ID}" path to be addressed against`
-        : !personasAreInsideWorkspace
-        ? `personas directory ${JSON.stringify(options.personasDir)} resolves outside the workspace root ${JSON.stringify(options.workspaceRoot)} that the "${AGENT_USER_FILESYSTEM_ID}" filesystem serves`
-        : !isPublishableWorkspacePath(candidatePath)
-          ? `seat "${binding.seat}" composes an unsafe workspace-relative path (${JSON.stringify(candidatePath)})`
+        : canonicalWorkspaceRoot === null || !personaIsInsideWorkspace
+        ? `persona source for seat ${JSON.stringify(binding.seat)} resolves outside the workspace root ${JSON.stringify(options.workspaceRoot)} that the "${AGENT_USER_FILESYSTEM_ID}" filesystem serves`
+        : !isPublishableWorkspacePath(publishedInstructionPath)
+          ? `seat "${binding.seat}" composes an unsafe workspace-relative path (${JSON.stringify(publishedInstructionPath)})`
           : undefined
       if (unpublishableReason) {
         // Fails loud, not silent: the seat still composes, but the overlay
@@ -346,7 +364,7 @@ export async function loadConfiguredAgentFleet(
       } else {
         instructionFiles = [{
           filesystem: AGENT_USER_FILESYSTEM_ID,
-          path: candidatePath,
+          path: publishedInstructionPath,
           role: 'persona',
         }]
       }

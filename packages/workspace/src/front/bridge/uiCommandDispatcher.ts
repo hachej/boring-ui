@@ -9,6 +9,7 @@ import type { SurfaceShellApi, OpenPanelConfig } from "../chrome/artifact-surfac
 import type { UiCommand } from "./types"
 import { normalizeUiFilesystem, parseFileOpenMode } from "../../shared/types/filesystem"
 import type { SurfaceOpenRequest } from "../../shared/types/surface"
+import { expandToFileSchema } from "./validation"
 
 /**
  * Browser CustomEvent name dispatched on `window` when a `showNotification`
@@ -215,8 +216,12 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       return
     }
     case "expandToFile": {
-      // An empty path with a filesystem reveals that filesystem's root.
-      const path = strParam(cmd.params, "path") ?? ""
+      // The canonical target is either a safe path or an explicit filesystem
+      // root. Parse the same schema as createBridge so transports cannot
+      // disagree about the empty-path root representation.
+      const parsed = expandToFileSchema.safeParse(cmd.params)
+      if (!parsed.success) return
+      const { path, filesystem } = parsed.data
       // Deliberately NOT normalized, unlike openFile: revealing has somewhere
       // to fall back to and openFile does not. `openFile` must resolve to a
       // concrete filesystem or it cannot open anything, so an omitted one
@@ -225,8 +230,6 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       // it to `user` yanked anyone browsing another root back to Workspace.
       // This matches the WorkspaceBridge client path (bridge/client.ts), so
       // one command no longer has two behaviors.
-      const filesystem = strParam(cmd.params, "filesystem")
-      if (!path && !filesystem) return
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
       ctx.openWorkbenchSources?.()

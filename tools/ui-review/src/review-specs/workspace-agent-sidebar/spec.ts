@@ -48,7 +48,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
   // `collect` changed in lockstep with v5→v9, and a stale revision keeps a
   // replayed manifest alive across a scenario that no longer means the same
   // thing. Two numbers for one scenario is the drift this file keeps finding.
-  specRevision: "workspace-agent-sidebar-v13",
+  specRevision: "workspace-agent-sidebar-v14",
   fixtureResetId: "workspace-agent-sidebar-fixture-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -104,16 +104,16 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
     // covers the coarse-pointer branch too.
     { id: "session-row-hover", colorScheme: "dark", reach: async (page) => {
       const alphaTree = page.locator('[data-boring-workspace-part="app-left-agent-tree"][data-boring-agent-type-id="alpha"]')
+      // KNOWN GAP: the fixture ships one chat per Agent and it is the staged
+      // one, while the split / quick-chat shortcuts render only on a chat that
+      // is NOT on stage — so this state measures a strip holding just the
+      // "..." trigger. Creating the second chat inside the readiness probe was
+      // tried and made the Agent tree render zero rows, so closing this needs
+      // a fixture that ships two chats, not a creation step here.
       const row = alphaTree.locator('[data-boring-workspace-part="app-session-row"]').first()
       await expect(row).toBeVisible({ timeout: 30_000 })
       await row.hover()
       await expect(row.locator(".app-left-session-actions")).toBeVisible()
-      // KNOWN GAP: the fixture's only chat is its Agent's active one, and the
-      // split / quick-chat shortcuts render exclusively on a chat that is not
-      // on stage. So this state measures a strip holding just the "..."
-      // trigger, and a 24px regression in the other two shortcuts shipped
-      // green past `agent-touch-targets`. Closing it needs a fixture with a
-      // second chat per Agent, not another assertion here.
       // Deliberately NO mouse.move away: the hovered state IS the subject.
     } },
     // The only checkpoint that leaves a portalled menu OPEN at capture time.
@@ -271,9 +271,10 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
             }),
             // The overlap sweep above is HORIZONTAL only, and it asks whether
             // row content is drawn under the strip. It cannot see the mirror
-            // failure: a point INSIDE the strip that belongs to no action and
-            // therefore hits the row button behind it, which switches chats
-            // instead of doing what the icon under the finger says.
+            // failure: a point INSIDE the strip that belongs to no action.
+            // Every sampled point must resolve positively to an action button
+            // or one of its descendants; the inert container, row, unrelated
+            // overlays, and null hits are all misses.
             //
             // That is what a row height keyed to `(max-width: 767px),
             // (hover: none)` around a slot keyed to `(pointer: coarse)`
@@ -283,14 +284,14 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
             // each of them once.
             actionFallthrough: [...document.querySelectorAll('[data-boring-workspace-part="app-session-row"]')].flatMap((row) => {
               const actions = row.querySelector(".app-left-session-actions")
-              const rowButton = row.querySelector(":scope > button")
-              if (!actions || !rowButton || !visible(actions)) return []
-              if (![...actions.querySelectorAll("button")].some(visible)) return []
+              if (!actions || !visible(actions)) return []
+              const actionButtons = [...actions.querySelectorAll("button")].filter(visible)
+              if (actionButtons.length === 0) return []
               const strip = actions.getBoundingClientRect()
               const points: Array<{ x: number; y: number }> = []
               // Vertical: the full height of the strip, in each action's own
               // column. A seam above or below a button lives here.
-              for (const button of [...actions.querySelectorAll("button")].filter(visible)) {
+              for (const button of actionButtons) {
                 const box = button.getBoundingClientRect()
                 const x = Math.round(box.left + box.width / 2)
                 for (let y = Math.ceil(strip.top) + 1; y < strip.bottom - 1; y += 1) points.push({ x, y })
@@ -302,7 +303,7 @@ export const workspaceAgentSidebarSpec: UiReviewSpec = {
               for (let x = Math.ceil(strip.left) + 1; x < strip.right - 1; x += 1) points.push({ x, y: midY })
               const misses = points.filter((point) => {
                 const hit = document.elementFromPoint(point.x, point.y)
-                return hit === rowButton || (hit !== null && rowButton.contains(hit))
+                return !actionButtons.some((button) => hit === button || (hit !== null && button.contains(hit)))
               })
               return misses.length > 0
                 ? [{

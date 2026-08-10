@@ -51,7 +51,12 @@ import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 // model tracked by #1186, and the heading may return when that model exists.
 // `capabilityHeadings` is an ORDERED SET. Publishing both removals as v12 gave
 // one version two incompatible heading sets; v13 restores a unique meaning.
-export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v13"
+// v14 makes the row-action hit test positive: every sampled strip pixel must
+// belong to a visible action button, so an inert container or null hit can no
+// longer pass merely because it did not fall through to the row button. Its
+// fixture also includes a non-staged chat, making the split and quick-chat
+// shortcuts mandatory subjects of the touch-target capture.
+export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v14"
 
 const KNOWN_ABORTED_REQUESTS: Array<{
   rationale: string
@@ -208,8 +213,8 @@ export function evaluateAgentSidebarHardGates(snapshot: AgentSidebarHardGateSnap
   // background-less icon buttons.
   add("session-row-action-overlap", state.actionOverlaps.length === 0, JSON.stringify(state.actionOverlaps))
   // The mirror of the overlap gate, on both axes. Every pixel of the action
-  // strip must belong to an action; a pixel that falls through to the row
-  // button switches chats when the user aimed at the icon they can see.
+  // strip must belong to an action; the inert container, an unrelated hit,
+  // or no hit at all is a broken action target.
   add("session-row-action-fallthrough", state.actionFallthrough.length === 0, JSON.stringify(state.actionFallthrough))
   // The title is what identifies the row. No reservation — badge ceiling,
   // owner ceiling, action strip — may take all of it.

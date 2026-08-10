@@ -1,6 +1,8 @@
-import { resolve } from 'node:path'
+import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 
-import { describe, expect, test } from 'vitest'
+import { describe, expect, onTestFinished, test } from 'vitest'
 
 import { loadConfiguredAgentFleet } from '../loadConfiguredAgentFleet'
 import { ErrorCode } from '../../../shared/error-codes'
@@ -12,6 +14,22 @@ const POLICY_PATH = resolve(FIXTURE_ROOT, 'factory', 'policy.yaml')
 const UNSAFE_SEAT_ROOT = resolve(import.meta.dirname, 'fixtures', 'unsafe-seat')
 const UNSAFE_SEAT_PERSONAS_DIR = resolve(UNSAFE_SEAT_ROOT, 'personas')
 const UNSAFE_SEAT_FLEET_CONFIG_PATH = resolve(UNSAFE_SEAT_ROOT, 'factory', 'fleet.yaml')
+
+async function temporaryFleetRoot(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'configured-agent-fleet-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  return root
+}
+
+async function writeSingleSeatFleet(path: string, seat: string): Promise<void> {
+  await writeFile(path, [
+    'seats:',
+    `  - seat: ${JSON.stringify(seat)}`,
+    '    agentTypeId: fixture-alpha',
+    '    skills: []',
+    '',
+  ].join('\n'))
+}
 
 describe('loadConfiguredAgentFleet', () => {
   test('composes valid seats and excludes an invalid seat with a stable diagnostic', async () => {
@@ -141,6 +159,60 @@ describe('loadConfiguredAgentFleet', () => {
       seat: 'alpha',
       code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
     }))
+  })
+
+  test('rejects a seat that escapes the configured personas directory', async () => {
+    const root = await temporaryFleetRoot()
+    const personasDir = join(root, 'personas')
+    const outsidePersona = join(root, 'outside')
+    const fleetConfigPath = join(root, 'fleet.yaml')
+    await mkdir(personasDir)
+    await cp(join(PERSONAS_DIR, 'alpha'), outsidePersona, { recursive: true })
+    await writeSingleSeatFleet(fleetConfigPath, '../outside')
+
+    const result = await loadConfiguredAgentFleet({
+      workspaceRoot: root,
+      personasDir,
+      fleetConfigPath,
+      policyPath: POLICY_PATH,
+      env: {},
+    })
+
+    expect(result.agents).toEqual([])
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        seat: '../outside',
+        code: ErrorCode.enum.AGENT_FLEET_SEAT_PERSONA_INVALID,
+      }),
+    ])
+  })
+
+  test('rejects a personas subdirectory symlink that escapes the workspace', async () => {
+    const root = await temporaryFleetRoot()
+    const workspaceRoot = join(root, 'workspace')
+    const personasDir = join(workspaceRoot, 'personas')
+    const outsidePersona = join(root, 'outside')
+    const fleetConfigPath = join(workspaceRoot, 'fleet.yaml')
+    await mkdir(personasDir, { recursive: true })
+    await cp(join(PERSONAS_DIR, 'alpha'), outsidePersona, { recursive: true })
+    await symlink(outsidePersona, join(personasDir, 'linked'), 'dir')
+    await writeSingleSeatFleet(fleetConfigPath, 'linked')
+
+    const result = await loadConfiguredAgentFleet({
+      workspaceRoot,
+      personasDir,
+      fleetConfigPath,
+      policyPath: POLICY_PATH,
+      env: {},
+    })
+
+    expect(result.agents).toEqual([])
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        seat: 'linked',
+        code: ErrorCode.enum.AGENT_FLEET_SEAT_PERSONA_INVALID,
+      }),
+    ])
   })
 
   test('omits preferredModel when no candidate API key is present', async () => {

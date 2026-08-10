@@ -56,9 +56,20 @@ export const navigateToLineSchema = z.object({
   line: z.number().int().positive(),
 })
 
-export const expandToFileSchema = z.object({
-  path: safePath,
-  filesystem: z.string().min(1).optional(),
-})
+const filesystemId = z.string().min(1)
+
+/** A tree reveal names either a path or one explicit filesystem root. */
+export const expandToFileSchema = z.union([
+  z.object({
+    path: safePath,
+    filesystem: filesystemId.optional(),
+  }),
+  z.object({
+    path: z.literal(""),
+    filesystem: filesystemId,
+  }),
+])
+
+export type ExpandToFileTarget = z.infer<typeof expandToFileSchema>
 
 export { MAX_PANELS }

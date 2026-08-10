@@ -337,6 +337,14 @@ describe("dispatchUiCommand", () => {
     expect(c.__surface.__expandCalls).toEqual([])
   })
 
+  it("expandToFile drops an unsafe path through the canonical target validator", () => {
+    const openWorkbenchSources = vi.fn()
+    const c = ctx({ openWorkbenchSources })
+    dispatchUiCommand({ kind: "expandToFile", params: { path: "../outside" } }, c)
+    expect(openWorkbenchSources).not.toHaveBeenCalled()
+    expect(c.__surface.__expandCalls).toEqual([])
+  })
+
   it("expandToFile opens the workbench and sources when closed", () => {
     const raf = vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => { cb(0); return 0 })
     const surface = fakeSurface()
