@@ -7,6 +7,7 @@ export type { CreateNodeWorkspaceOptions } from './createNodeWorkspace'
 export { DEFAULT_IGNORED_DIR_NAMES, isIgnoredDirName } from './ignore'
 export {
   assertRealPathWithinWorkspace,
+  resolveRealWorkspacePath,
   validatePath,
 } from './paths'
 export {

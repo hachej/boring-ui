@@ -490,6 +490,10 @@ export async function createFolderModeApp(opts: {
       logger: false,
       provisionWorkspace: false,
       runtimeProvisioning,
+      // Agent governance lives in `.agents`: readable by agents, never writable
+      // by them. Stated explicitly here so the CLI does not silently inherit a
+      // future change to the library default.
+      readonlyWorkspacePaths: ['.agents'],
       // The standalone CLI runs on the user's own machine, so ambient skill
       // discovery (workspace + user-global ~/.pi skills) is on. The library
       // default is off (withPiHarnessDefaults) to keep hosted agents isolated.
@@ -954,7 +958,9 @@ export async function createWorkspacesModeApp(opts: {
   // canonical @hachej/boring-agent/server helper (M9 fix round 1: this used
   // to duplicate that composition inline).
   const agentHost = await agentServer.createAgentHost({
-    agents: await agentServer.resolveDefaultAgentFleet(),
+    // The hub serves a DIFFERENT root per registered workspace, so there is no
+    // single one persona instruction refs could be addressed against.
+    agents: await agentServer.resolveDefaultAgentFleet({ workspaceRoot: null }),
     fleetCompiler: { async compile({ agents }) { return agents } },
     hostId: "cli-trusted-local",
     scopeVerifier: trustedLocalScope.scopeVerifier,

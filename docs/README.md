@@ -10,6 +10,10 @@ Agent hard rules and routing live in [`AGENTS.md`](../AGENTS.md) (imported by
 `CLAUDE.md`). Agent workflow, coding process, review history, and proof
 procedures live in [`kanzen/`](kanzen/).
 
+| Need | Read |
+| --- | --- |
+| Direction & vision (sequencing authority, living vision, completion tracker) | [`direction/`](direction/README.md) — [`DIRECTION.md`](direction/DIRECTION.md) · [`VISION.md`](direction/VISION.md) · [`STATE.md`](direction/STATE.md) |
+
 ## What this is
 
 A pnpm monorepo of publishable packages for building agent-powered workspace
