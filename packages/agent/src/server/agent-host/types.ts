@@ -215,7 +215,7 @@ export interface ResolvedEnvironmentScope {
 }
 
 export interface ResolvedAgentRuntimeScope {
-  /** Complete app-canonicalized PL1 composition identity. */
+  /** Persisted semantic compatibility identity. */
   readonly identity: string
   /** Stable physical binding slot, independent of semantic resource revisions. */
   readonly physicalBindingIdentity?: string

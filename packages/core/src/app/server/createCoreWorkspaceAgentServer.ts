@@ -1,5 +1,6 @@
 import { access, mkdir, readFile, stat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import {
@@ -1382,16 +1383,27 @@ export async function createCoreWorkspaceAgentServer(
       provisioningGeneration: JSON.stringify([root, templatePath ?? null]),
     })
     const piIdentity = JSON.stringify(pi, (_key, value) => typeof value === 'function' ? '[function]' : value)
+    const semanticProvisioningIdentity = createHash('sha256').update(JSON.stringify({
+      runtimeMode: runtimeModeAdapter.id,
+      runtimeContributionIds: runtimeEnvContributions.map((entry) => entry.id).sort(),
+      runtimePluginIds: runtimePlugins.map((plugin) => plugin.id).sort(),
+      provisionWorkspace: options.provisionWorkspace !== false,
+    })).digest('hex')
     const identity = createResolvedRuntimeScopeIdentity({
       artifacts: pluginArtifacts,
       validatedConfig: piIdentity,
       grants: options.getExtraTools ? [userId] : [],
-      placementIdentity,
+      placementClassIdentity: runtimeModeAdapter.id,
       isolationMode: runtimeModeAdapter.id,
       toolContractDigests: extraTools.map((tool) => tool.name),
-      provisioningGeneration: provisioningFingerprint,
+      provisioningIdentity: semanticProvisioningIdentity,
       bindingInputs: [sessionNamespace, contribution?.identity ?? null],
     })
+    const physicalBindingIdentity = createHash('sha256').update(JSON.stringify({
+      identity,
+      placementIdentity,
+      provisioningFingerprint,
+    })).digest('hex')
     const buildResourceDigestInput = async () => {
       const hotResources = pi.getHotReloadableResources?.()
       return createPiResourceDigestInput({
@@ -1484,7 +1496,7 @@ export async function createCoreWorkspaceAgentServer(
     }
     const agentRuntime: Omit<ResolvedAgentRuntimeScope, 'environment'> = {
       identity,
-      physicalBindingIdentity: identity,
+      physicalBindingIdentity,
       resourceInputDigest,
       revalidateResourceInputs,
       sessionNamespace,
