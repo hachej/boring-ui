@@ -36,6 +36,8 @@ const workspace: LocalWorkspace = {
   name: "Workspace",
   path: "/srv/ws-1",
   available: true,
+  createdAt: "2026-08-10T00:00:00.000Z",
+  updatedAt: "2026-08-10T00:00:00.000Z",
   plugins: { tasks: { providers: [{ provider: "beads" }] } },
 } as LocalWorkspace
 
