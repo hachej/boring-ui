@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react"
-import { Columns3, List } from "lucide-react"
+import { Columns3, Layers, List } from "lucide-react"
 import { useWorkspacePluginClient } from "@hachej/boring-workspace"
 import type { BoringTaskAdapter, BoringTaskBoardConfig, BoringTaskCard, BoringTaskColumn, BoringTaskErrorCode, BoringTaskSourceError } from "../shared"
 import { groupTasksByColumn } from "./taskBoardModel"
+import { epicGroupKey, groupTasksByEpic, selectVisibleEpicGroups } from "./taskEpicsModel"
 import { TaskCard } from "./TaskCard"
 import { TaskDetailDialog, type TaskDetailSelection } from "./TaskDetailDialog"
+import { TaskEpicsView } from "./TaskEpicsView"
 import { TaskKanbanColumn } from "./TaskKanbanColumn"
 import { taskAttentionKey, useTaskAttention } from "./useTaskAttention"
 import { taskSessionLinkKey, useTaskSessionLinks } from "./taskSessionLinkStream"
@@ -34,7 +36,8 @@ interface EpicOption {
 
 const TASK_BOARD_CACHE_TTL_MS = 2 * 60 * 1000
 const EMPTY_TASKS: readonly BoringTaskCard[] = []
-type TaskBoardViewMode = "kanban" | "list"
+type TaskBoardViewMode = "kanban" | "list" | "epics"
+const TASK_BOARD_VIEW_MODES: readonly TaskBoardViewMode[] = ["kanban", "list", "epics"]
 
 function adapterSummary(adapters: readonly BoringTaskAdapter[], selectedCount: number): string {
   if (selectedCount === adapters.length) return "All sources"
@@ -49,15 +52,11 @@ function uniqueTags(tasks: readonly BoringTaskCard[]): string[] {
 function uniqueEpics(tasks: readonly BoringTaskCard[]): EpicOption[] {
   const byId = new Map<string, EpicOption>()
   for (const task of tasks) {
-    if (!task.epic) continue
-    const id = `${task.adapterId}:${task.epic.id}`
-    if (!byId.has(id)) byId.set(id, { id, title: task.epic.title })
+    const id = epicGroupKey(task)
+    if (!id || !task.epic || byId.has(id)) continue
+    byId.set(id, { id, title: task.epic.title })
   }
   return [...byId.values()].sort((a, b) => a.title.localeCompare(b.title))
-}
-
-function epicFilterId(task: BoringTaskCard): string | undefined {
-  return task.epic ? `${task.adapterId}:${task.epic.id}` : undefined
 }
 
 function mergeColumns(configs: readonly BoringTaskBoardConfig[], visibleColumnIds: ReadonlySet<string>): BoringTaskColumn[] {
@@ -110,7 +109,8 @@ function writeCachedBoardState(cacheKey: string, state: BoardState): void {
 function readViewMode(cacheKey: string): TaskBoardViewMode {
   if (typeof window === "undefined") return "kanban"
   try {
-    return window.localStorage.getItem(`${cacheKey}:view`) === "list" ? "list" : "kanban"
+    const stored = window.localStorage.getItem(`${cacheKey}:view`)
+    return TASK_BOARD_VIEW_MODES.find((mode) => mode === stored) ?? "kanban"
   } catch {
     return "kanban"
   }
@@ -163,6 +163,8 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const [openMenu, setOpenMenu] = useState<"sources" | "columns" | null>(null)
   const [viewMode, setViewModeState] = useState<TaskBoardViewMode>(() => readViewMode(cacheKey))
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<ReadonlySet<string>>(new Set())
+  const [expandedEpicKeys, setExpandedEpicKeys] = useState<ReadonlySet<string>>(new Set())
+  const [showClosedEpics, setShowClosedEpics] = useState(false)
   const [detailSelection, setDetailSelection] = useState<TaskDetailSelection | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const detailTriggerRef = useRef<HTMLButtonElement | null>(null)
@@ -198,6 +200,8 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     setDeletingTaskId(null)
     setDetailSelection(null)
     setDetailOpen(false)
+    setExpandedEpicKeys(new Set())
+    setShowClosedEpics(false)
   }, [cacheKey, cachedColumnIds, cachedState])
 
   const setViewMode = (mode: TaskBoardViewMode) => {
@@ -337,7 +341,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     const configuredStatusIds = new Set(allColumns.map((column) => column.id))
     return selectedTasks.filter((task) => {
       if (tagFilter !== "all" && !(task.tags ?? []).includes(tagFilter)) return false
-      if (epicFilter !== "all" && epicFilterId(task) !== epicFilter) return false
+      if (epicFilter !== "all" && epicGroupKey(task) !== epicFilter) return false
       if (!configuredStatusIds.has(task.statusId)) return true
       return visibleColumnIds.has(task.statusId)
     })
@@ -355,6 +359,12 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     () => visibleConfig ? groupTasksByColumn(visibleConfig, filteredTasks) : [],
     [filteredTasks, visibleConfig],
   )
+
+  const epicGroups = useMemo(
+    () => groupTasksByEpic(filteredTasks, visibleConfig?.columns ?? []),
+    [filteredTasks, visibleConfig],
+  )
+  const epicVisibility = useMemo(() => selectVisibleEpicGroups(epicGroups, showClosedEpics), [epicGroups, showClosedEpics])
 
   const handleTaskDragStart = (event: DragEvent<HTMLElement>, task: BoringTaskCard) => {
     setActiveTaskRef({ taskId: task.id, adapterId: task.adapterId })
@@ -545,6 +555,15 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     setSelectedAdapterIds(new Set(allAdapterIds))
   }
 
+  const toggleEpic = (key: string) => {
+    setExpandedEpicKeys((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   const toggleSection = (sectionId: string) => {
     setCollapsedSectionIds((current) => {
       const next = new Set(current)
@@ -553,6 +572,24 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
       return next
     })
   }
+
+  const renderTaskCard = (task: BoringTaskCard, options: { unmapped?: boolean } = {}) => (
+    <TaskCard
+      key={`${task.adapterId}:${task.id}`}
+      task={task}
+      draggable={false}
+      unmapped={options.unmapped ?? false}
+      compact
+      attention={attentionByTask.get(taskAttentionKey(task))}
+      sessionLinks={sessionLinksByTask ? sessionLinksByTask.get(taskSessionLinkKey(task.adapterId, task.id)) ?? [] : undefined}
+      deleteEnabled={deletingTaskId === null && Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
+      deleteEffect={adaptersById.get(task.adapterId)?.capabilities.deleteEffect ?? "delete"}
+      onDelete={(task) => void deleteTask(task)}
+      onOpenDetail={canOpenTaskDetail(task) ? openTaskDetail : undefined}
+      onDragStart={handleTaskDragStart}
+      onDragEnd={() => setActiveTaskRef(null)}
+    />
+  )
 
   const selectedCount = selectedAdapterIds.size
   const visibleCount = visibleColumnIds.size
@@ -664,6 +701,15 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
           >
             <List className="size-3.5" strokeWidth={1.75} />
           </button>
+          <button
+            type="button"
+            className={["grid w-8 place-items-center", viewMode === "epics" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"].join(" ")}
+            onClick={() => setViewMode("epics")}
+            aria-label="Show epics view"
+            title="Epics view"
+          >
+            <Layers className="size-3.5" strokeWidth={1.75} />
+          </button>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
           <span className="rounded-full border border-border bg-muted/40 px-2 py-1">{adapterSummary(adapters, selectedCount)}</span>
@@ -709,6 +755,17 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
           <div className="grid h-full place-items-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground">Loading task board…</div>
         ) : columns.length === 0 ? (
           <div className="grid h-full place-items-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground">No tasks match the current filters.</div>
+        ) : viewMode === "epics" ? (
+          <TaskEpicsView
+            groups={epicVisibility.visible}
+            hiddenEpicCount={epicVisibility.hiddenEpicCount}
+            hiddenTaskCount={epicVisibility.hiddenTaskCount}
+            showClosed={showClosedEpics}
+            onShowClosedChange={setShowClosedEpics}
+            expandedEpicKeys={expandedEpicKeys}
+            onToggleEpic={toggleEpic}
+            renderTask={(task) => renderTaskCard(task)}
+          />
         ) : viewMode === "list" ? (
           <div className="boring-scrollbar-discreet flex h-full flex-col gap-3 overflow-y-auto pr-1">
             {columns.map((column) => {
@@ -741,23 +798,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                         <div className="rounded-xl border border-dashed border-border/80 p-3 text-center text-xs text-muted-foreground">
                           No tasks
                         </div>
-                      ) : column.tasks.map((task) => (
-                        <TaskCard
-                          key={`${task.adapterId}:${task.id}`}
-                          task={task}
-                          draggable={false}
-                          unmapped={column.unmapped}
-                          compact
-                          attention={attentionByTask.get(taskAttentionKey(task))}
-                          sessionLinks={sessionLinksByTask ? sessionLinksByTask.get(taskSessionLinkKey(task.adapterId, task.id)) ?? [] : undefined}
-                          deleteEnabled={deletingTaskId === null && Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
-                          deleteEffect={adaptersById.get(task.adapterId)?.capabilities.deleteEffect ?? "delete"}
-                          onDelete={(task) => void deleteTask(task)}
-                          onOpenDetail={canOpenTaskDetail(task) ? openTaskDetail : undefined}
-                          onDragStart={handleTaskDragStart}
-                          onDragEnd={() => setActiveTaskRef(null)}
-                        />
-                      ))}
+                      ) : column.tasks.map((task) => renderTaskCard(task, { unmapped: column.unmapped ?? false }))}
                     </div>
                   ) : null}
                 </section>
