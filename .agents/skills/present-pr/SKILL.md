@@ -80,8 +80,30 @@ already reviewed, and state the open questions.
    thermo review, pi/code review, fix round, re-verify, UI review, merge. Verdicts are free
    text, tone-matched on `PASS` / `PASS with findings` / `FAIL` / `FAIL -> fixed`.
 
-   **Reconstruct it from the PR's actual audit trail** — commits, review comments, CI runs,
-   worker reports — never from memory or optimism. Every finding gets its resolution state:
+   **Reconstruct it from the PR's actual audit trail**, and reconstruct it from *all four*
+   sources — never from memory or optimism:
+
+   ```bash
+   gh pr view <n> --json commits,reviews,comments,mergedAt,mergedBy
+   gh run list --branch <head-branch> --limit 30 \
+     --json databaseId,name,conclusion,createdAt,headSha            # ← the one agents skip
+   gh run view <failing-run-id> --json jobs --jq '.jobs[]|select(.conclusion=="failure")|.name'
+   gh run view --job <job-id> --log-failed
+   ```
+
+   **The run history is mandatory, not optional.** Reviews and comments alone will make you
+   miss the most valuable events on the page: a gate that failed, got diagnosed, and was
+   fixed. Those are precisely what the owner wants preserved — a PR whose CI went green on
+   the first try and one that went green after a hard gate caught a real regression are
+   very different objects, and only the run history tells them apart. Walk the runs on the
+   head branch, find every `conclusion: failure`, open the failing job's log, and record
+   what failed, what the diagnosis was, and which commit fixed it. Note reruns too: a
+   failure that reproduces on rerun is a real defect, not a flake, and that distinction
+   belongs in the summary. Cite run ids and fix commit shas so the claim is checkable.
+
+   Do not write `SKIPPED` for a job you did not actually look up. A job that was skipped
+   because a path filter excluded it and a job that failed twice then passed after a fix
+   look identical from the reviews-and-comments view — and opposite from the run history. Every finding gets its resolution state:
    closed, deferred with stated risk, or open. If a review *did not happen*, record that as
    an event with verdict `NOT RECORDED` and say so; the header badge reads "thermo review:
    NOT recorded" and will not count a `NOT RECORDED`/`SKIPPED` thermo entry as evidence of
