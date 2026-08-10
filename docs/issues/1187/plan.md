@@ -534,6 +534,24 @@ overlay reflects it without a repo edit.
 **Review budget:** inside — but **entirely dependent on an external chain**. If
 #1107 stalls, this slice waits; nothing downstream depends on it.
 
+> **Owner amendment 2026-08-10 — S6 is sequenced, not deferred.** S0's roster is
+> **interim: config-composed**, read out of `.agents/personas` + `fleet.yaml` by
+> `loadConfiguredAgentFleet` under `BORING_AGENT_FLEET=1`. That is accepted as
+> the interim host, and it is explicitly *not* the target: the roster converts to
+> **discovered persona packages** the moment the #1107 chain
+> (#1150 discovery / #1168 `knowledge/` fs / #1175 workspace install via
+> `.pi/settings.json#packages`) merges. **S6 therefore runs immediately after
+> that chain lands, ahead of whatever slice is otherwise next — it is not
+> deferred to the end of the queue.** The reason is that every slice between
+> here and there accrues seats and skill pins against a repo-edit roster, and the
+> longer that runs the more there is to convert. The earlier "nothing downstream
+> depends on it" line describes correctness, not cost.
+>
+> Corollary, ratified with it: **no seat roster may be hardcoded in source.**
+> A seat list written as a TypeScript literal is a second copy of the config that
+> drifts on the next seat change. Seats come from configuration now and from
+> discovery after S6 — never from a union type or an array in a server file.
+
 ### S7: the Beadle, as automations, over the fixed lane pool
 **Delivers:** G7's pull (the automation agent picker) plus the supervisor as
 cron automations on `beadle.tick_minutes` running as the `beadle` seat — **this
