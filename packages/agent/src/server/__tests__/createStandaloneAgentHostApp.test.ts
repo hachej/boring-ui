@@ -136,7 +136,7 @@ test('createStandaloneAgentHostApp stamps the explicit caller runtime host over 
   })
 
   try {
-    expect(callerBuildBwrapArgs).toHaveBeenCalledWith(workspaceRoot)
+    expect(callerBuildBwrapArgs).toHaveBeenCalledWith(workspaceRoot, { readonlyPaths: undefined })
     expect(adapterBuildBwrapArgs).not.toHaveBeenCalled()
   } finally {
     await app.close()
