@@ -134,6 +134,7 @@ export const ErrorCode = z.enum([
 
   // Event stream durability
   'EVENT_STORE_OPEN_FAILED',
+  'DURABLE_STREAM_UNAVAILABLE',
 
   // Internal
   'ERR_NOT_IMPLEMENTED_UNTIL_T1',
