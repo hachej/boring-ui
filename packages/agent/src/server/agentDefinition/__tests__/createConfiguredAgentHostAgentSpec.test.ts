@@ -10,12 +10,17 @@ import { materializeAgentDirectory } from '../materializeAgentDirectory'
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../../../../..')
 const FACTORY_ROOT = resolve(REPO_ROOT, '.agents/personas')
+// [directory, agentTypeId, label, persona package version]. Every persona
+// package on disk is covered, including the deferred grow-on-demand seats that
+// hold no fleet.yaml entry today — an unbooted persona still has to be a valid,
+// materializable definition the moment a lane pulls it back into the roster.
 const ROLES = [
-  ['concierge', 'boring-concierge', 'Boring Concierge'],
-  ['triage', 'boring-triage', 'Boring Triage'],
-  ['steward', 'boring-steward', 'Boring Steward'],
-  ['worker', 'boring-worker', 'Boring Worker'],
-  ['reviewer', 'boring-reviewer', 'Boring Reviewer'],
+  ['concierge', 'boring-concierge', 'Boring Concierge', '2026.08.04'],
+  ['triage', 'boring-triage', 'Boring Triage', '2026.08.04'],
+  ['steward', 'boring-steward', 'Boring Steward', '2026.08.04'],
+  ['orchestrator', 'boring-orchestrator', 'Boring Orchestrator', '2026.08.10'],
+  ['worker', 'boring-worker', 'Boring Worker', '2026.08.04'],
+  ['reviewer', 'boring-reviewer', 'Boring Reviewer', '2026.08.04'],
 ] as const
 
 async function source(role = 'triage', expectedAgentTypeId = 'boring-triage') {
@@ -27,7 +32,7 @@ async function source(role = 'triage', expectedAgentTypeId = 'boring-triage') {
 }
 
 describe('Boring factory authored agents', () => {
-  test.each(ROLES)('materializes identity-only %s definition', async (role, agentTypeId, label) => {
+  test.each(ROLES)('materializes identity-only %s definition', async (role, agentTypeId, label, version) => {
     const manifestPath = resolve(FACTORY_ROOT, role, 'package.json')
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>
     const boringAgent = (manifest.boring as Record<string, unknown>).agent as Record<string, unknown>
@@ -43,7 +48,7 @@ describe('Boring factory authored agents', () => {
       schemaVersion: 1,
       agentTypeId,
       label,
-      version: '2026.08.04',
+      version,
     })
   })
 })
