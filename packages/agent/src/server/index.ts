@@ -291,7 +291,6 @@ export {
 export type { RuntimeReadonlyFilesystemPolicy } from './runtime/readonlyFilesystemPolicy'
 export { createUserFilesystemBinding } from './runtime/userFilesystemBinding'
 export {
-  createFakeAuthorityVerifierV1,
   createHostSideCredentialResolverV1,
   createInMemoryCredentialBackendV1,
   createInMemoryCredentialVaultPersistenceV1,
