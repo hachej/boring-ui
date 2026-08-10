@@ -254,6 +254,24 @@ describe("AppLeftPane", () => {
     expect(screen.getByText("Beta session")).toBeInTheDocument()
   })
 
+  it("keeps nested session-row chat actions a genuine 44px+ mobile touch target", () => {
+    renderFleetPane()
+
+    // Regression for the ui-review mobile touch gate (#1110 / #1162 lineage):
+    // the per-session chat-actions trigger on rows nested under agent rows is
+    // sized by `.app-left-session-secondary-action` (globals.css), which reads
+    // `--app-session-action-slot` (28px fine / 44px coarse-or-narrow) so the
+    // button always fills exactly the slot the strip reserves for it. It must
+    // carry that class and NO Tailwind size utility that could disagree with
+    // the slot (post-#1176 contract; same as AppLeftPaneSessionRow shortcuts).
+    const triggers = screen.getAllByRole("button", { name: /^Chat actions for / })
+    expect(triggers.length).toBeGreaterThan(0)
+    for (const trigger of triggers) {
+      expect(trigger).toHaveClass("app-left-session-secondary-action", "shrink-0")
+      expect(trigger.className).not.toMatch(/(?:^|[\s:])size-\d/)
+    }
+  })
+
   it("drops the per-Agent lens in nested mode: disclosure is the only scoping", () => {
     renderFleetPane()
 
