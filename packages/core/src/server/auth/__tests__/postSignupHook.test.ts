@@ -11,6 +11,10 @@ import { runMigrations } from '../../db/migrate'
 import { PostgresWorkspaceStore } from '../../db/stores/PostgresWorkspaceStore'
 import { PostgresUserStore } from '../../db/stores/PostgresUserStore'
 import type { CoreConfig } from '../../../shared/types'
+import {
+  compileSignupAgentDefaults,
+  TRUSTED_SIGNUP_HOSTNAME_HEADER,
+} from '../../signupAgentDefaults'
 
 const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const MAIL_CAPTURE_PATH = `/tmp/post-signup-test-mail-${process.pid}.log`
@@ -72,6 +76,11 @@ function buildApp(config: CoreConfig, telemetry?: { capture: (e: TelemetryEvent)
   const db = drizzle(rawSql)
   const auth = createAuth(config, db, {
     workspaceStore,
+    signupAgentDefaults: compileSignupAgentDefaults(
+      config.signupAgentDefaults,
+      ['boring-v2', 'legal'],
+      config.security?.trustedProxy,
+    ),
     logger: { warn: () => {} },
     telemetry,
   })
@@ -134,6 +143,58 @@ describe('post-signup hook — default workspace', () => {
     expect(workspaces[0].name).toBe('Default workspace')
     expect(workspaces[0].isDefault).toBe(true)
     expect(workspaces[0].workspaceTypeId).toBe('default')
+  })
+})
+
+describe('post-signup hook — domain mapping is initialization-only', () => {
+  let app: FastifyInstance
+  const email = 'domain-login@post-signup-test.dev'
+  const password = 'Zk8$mN!qR2xFgWpJ'
+
+  beforeAll(async () => {
+    const base = makeConfig()
+    const config = makeConfig({
+      defaultAgentTypeId: 'boring-v2',
+      signupAgentDefaults: { 'legal.example': 'legal' },
+      auth: { ...base.auth, mail: undefined },
+      features: { ...base.features, sendWelcomeEmail: false },
+    })
+    app = buildApp(config).app
+    await app.ready()
+  })
+
+  afterAll(async () => {
+    await app.close()
+  })
+
+  it('keeps listing and selection unchanged on later login through another hostname', async () => {
+    const signup = await app.inject({
+      method: 'POST',
+      url: '/auth/sign-up/email',
+      headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'legal.example' },
+      payload: { name: 'Domain Login User', email, password },
+    })
+    expect(signup.statusCode).toBe(200)
+    const userId = JSON.parse(signup.body)?.user?.id
+    const initialized = await workspaceStore.list(userId, 'test-app')
+    expect(initialized).toHaveLength(1)
+    expect(initialized[0]).toMatchObject({ defaultAgentTypeId: 'legal', isDefault: true })
+
+    const login = await app.inject({
+      method: 'POST',
+      url: '/auth/sign-in/email',
+      headers: { [TRUSTED_SIGNUP_HOSTNAME_HEADER]: 'other.example' },
+      payload: { email, password },
+    })
+    expect(login.statusCode).toBe(200)
+
+    const afterLogin = await workspaceStore.list(userId, 'test-app')
+    expect(afterLogin).toHaveLength(1)
+    expect(afterLogin[0]).toMatchObject({
+      id: initialized[0].id,
+      defaultAgentTypeId: 'legal',
+      isDefault: true,
+    })
   })
 })
 

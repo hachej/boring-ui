@@ -54,6 +54,11 @@ export const coreConfigSchema = z.object({
   // at initialization. Same slug grammar as workspace type ids.
   defaultAgentTypeId: z.string().regex(/^[a-z][a-z0-9-]{0,62}$/).optional(),
 
+  // Decision 28 hook: exact trusted signup hostname -> fleet agentTypeId.
+  // Trusted host configuration only; consumed once at new-default-workspace
+  // initialization. Strict shape validation lives in parseSignupAgentDefaults.
+  signupAgentDefaults: z.record(z.string(), z.string()).optional(),
+
   cors: z.object({
     origins: z.array(z.string()),
     credentials: z.literal(true),
