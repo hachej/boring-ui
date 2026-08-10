@@ -65,7 +65,9 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
   await expect(alphaNew).toBeVisible({ timeout: 120_000 })
   await expect(betaNew).toBeVisible()
   await expect(page.getByRole("combobox", { name: "Filter chats by Agent" })).toHaveCount(0)
-  await page.getByRole("button", { name: "Expand Beta sessions" }).click()
+  // The disclosure toggle's accessible name is stable ("Beta; 1 chat");
+  // expanded state is exposed via aria-expanded, not the label.
+  await page.getByRole("button", { name: /^Expand Beta;/ }).click()
 
   const betaRow = page.locator(
     `[data-boring-workspace-part="app-session-row"][data-boring-agent-type-id="beta"][data-boring-session-id="${betaSessionId}"]`,
@@ -100,7 +102,17 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
 
   // Replacing the sole pane must never strand Dockview's chat renderer in its
   // hidden overlay. Exercise the real browser path repeatedly; each click must
-  // leave exactly one visible chat owned by the selected session.
+  // show intentional loading feedback and leave exactly one visible chat owned
+  // by the selected session.
+  await page.evaluate(() => {
+    const trackedWindow = window as Window & { __boringChatLoadingTransitions?: number }
+    trackedWindow.__boringChatLoadingTransitions = 0
+    new MutationObserver(() => {
+      if (document.querySelector('[data-boring-workspace-part="chat-pane-loading-surface"]')) {
+        trackedWindow.__boringChatLoadingTransitions = (trackedWindow.__boringChatLoadingTransitions ?? 0) + 1
+      }
+    }).observe(document.body, { childList: true, subtree: true })
+  })
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await betaRow.locator("button").first().click()
     await expect(page.locator('[data-boring-agent-part="chat"]')).toHaveCount(1)
@@ -109,6 +121,9 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
     await expect(page.locator('[data-boring-agent-part="chat"]')).toHaveCount(1)
     await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="alpha"]')).toHaveAttribute("data-pi-chat-session-id", alphaSessionId)
   }
+  expect(await page.evaluate(() => (
+    window as Window & { __boringChatLoadingTransitions?: number }
+  ).__boringChatLoadingTransitions ?? 0)).toBeGreaterThan(0)
 
   await betaRow.hover()
   await betaRow.getByRole("button", { name: "Chat actions for Scripted baseline" }).click()
@@ -117,10 +132,13 @@ test("discovers two Agents and keeps colliding sessions, capabilities, replaceme
   await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="alpha"]')).toHaveAttribute("data-pi-chat-session-id", alphaSessionId!)
   await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="beta"]')).toHaveAttribute("data-pi-chat-session-id", betaSessionId!)
 
-  await page.getByRole("button", { name: /Collapse Alpha;/ }).click()
+  const alphaToggle = page.getByRole("button", { name: /(Expand|Collapse) Alpha;/ })
+  await expect(alphaToggle).toHaveAttribute("aria-expanded", "true")
+  await alphaToggle.click()
   await expect(betaRow).toBeVisible()
   await expect(alphaRow).toHaveCount(0)
-  await page.getByRole("button", { name: /Expand Alpha;/ }).click()
+  await expect(alphaToggle).toHaveAttribute("aria-expanded", "false")
+  await alphaToggle.click()
   await expect(alphaRow).toBeVisible()
 
   expect(addressedPaths.some((path) => path.startsWith(`${addressedPrefix}alpha/`))).toBe(true)

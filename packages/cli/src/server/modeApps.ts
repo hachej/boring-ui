@@ -490,6 +490,10 @@ export async function createFolderModeApp(opts: {
       logger: false,
       provisionWorkspace: false,
       runtimeProvisioning,
+      // Agent governance lives in `.agents`: readable by agents, never writable
+      // by them. Stated explicitly here so the CLI does not silently inherit a
+      // future change to the library default.
+      readonlyWorkspacePaths: ['.agents'],
       // The standalone CLI runs on the user's own machine, so ambient skill
       // discovery (workspace + user-global ~/.pi skills) is on. The library
       // default is off (withPiHarnessDefaults) to keep hosted agents isolated.
@@ -958,8 +962,11 @@ export async function createWorkspacesModeApp(opts: {
     ? await workspaceServer.discoverRepositoryAgentPackages(fleetRepositoryRoot)
     : undefined
   const agentHost = await agentServer.createAgentHost({
+    // The hub serves a DIFFERENT root per registered workspace, so there is no
+    // single one persona instruction refs could be addressed against.
     agents: await agentServer.resolveDefaultAgentFleet({
       repositoryRoot: fleetRepositoryRoot,
+      workspaceRoot: null,
       ...(discoveredAgentPackages ? { discoveredPackages: discoveredAgentPackages } : {}),
     }),
     fleetCompiler: { async compile({ agents }) { return agents } },

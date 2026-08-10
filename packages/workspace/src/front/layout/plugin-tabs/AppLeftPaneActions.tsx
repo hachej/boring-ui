@@ -1,7 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { Check, ChevronDown, Columns2, MoreHorizontal, Plus, Settings, Zap } from "lucide-react"
+import { Check, ChevronDown, Columns2, MoreHorizontal, Plus, Zap } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ControlTooltip } from "../../components/ControlTooltip"
@@ -125,7 +125,7 @@ export function NewChatAction({
               onCreateSplitSession()
               event.currentTarget.blur()
             }}
-            className="app-left-secondary-action grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="app-left-secondary-action grid place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Columns2 className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
           </button>
@@ -141,7 +141,7 @@ export function NewChatAction({
               onCreatePopoverSession()
               event.currentTarget.blur()
             }}
-            className="app-left-secondary-action grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="app-left-secondary-action grid place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Zap className="h-3.5 w-3.5" strokeWidth={1.85} aria-hidden="true" />
           </button>
@@ -154,12 +154,15 @@ export function NewChatAction({
 export function FleetNewChatAction({
   agents,
   selectedAgentTypeId,
+  onSelectAgent,
   onCreateSession,
   onCreateSplitSession,
   onCreatePopoverSession,
 }: {
   agents: readonly { agentTypeId: string; label: string }[]
   selectedAgentTypeId?: string
+  /** Retargets new chats without creating one; creation stays explicit. */
+  onSelectAgent?: (agentTypeId: string) => void
   onCreateSession: (agentTypeId: string) => void
   onCreateSplitSession?: (agentTypeId: string) => void
   onCreatePopoverSession?: (agentTypeId: string) => void
@@ -169,7 +172,7 @@ export function FleetNewChatAction({
   const shortLabel = selected.label.replace(/^Boring\s+/i, "") || selected.label
 
   return (
-    <div data-boring-workspace-part="app-left-fleet-new-chat" className="group/fleet-create flex h-[30px] w-full items-center rounded-md text-[13px] font-medium text-foreground hover:bg-foreground/[0.045] focus-within:ring-2 focus-within:ring-ring/40">
+    <div data-boring-workspace-part="app-left-fleet-new-chat" className="app-left-new-chat-action group/fleet-create flex h-[30px] w-full items-center rounded-md text-[13px] font-medium text-foreground hover:bg-foreground/[0.045] focus-within:ring-2 focus-within:ring-ring/40">
       <button
         type="button"
         onClick={() => onCreateSession(selected.agentTypeId)}
@@ -180,14 +183,14 @@ export function FleetNewChatAction({
         <span className="shrink-0">New chat</span>
         <span className="min-w-0 flex-1 truncate text-right text-[11px] font-normal text-muted-foreground">{shortLabel}</span>
       </button>
-      <span className="pointer-events-none flex w-0 shrink-0 items-center overflow-hidden opacity-0 transition-[width,opacity] group-hover/fleet-create:pointer-events-auto group-hover/fleet-create:w-14 group-hover/fleet-create:opacity-100 group-focus-within/fleet-create:pointer-events-auto group-focus-within/fleet-create:w-14 group-focus-within/fleet-create:opacity-100 motion-reduce:transition-none">
+      <span className="app-left-new-chat-secondary pointer-events-none flex w-0 shrink-0 items-center overflow-hidden opacity-0 transition-[width,opacity] group-hover/fleet-create:pointer-events-auto group-hover/fleet-create:w-auto group-hover/fleet-create:opacity-100 group-focus-within/fleet-create:pointer-events-auto group-focus-within/fleet-create:w-auto group-focus-within/fleet-create:opacity-100 motion-reduce:transition-none">
         {onCreateSplitSession ? (
           <button
             type="button"
             aria-label={`Start split chat with ${selected.label}`}
             title="New chat in split pane"
             onClick={() => onCreateSplitSession(selected.agentTypeId)}
-            className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="app-left-secondary-action grid shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Columns2 className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
           </button>
@@ -198,7 +201,7 @@ export function FleetNewChatAction({
             aria-label={`Start quick chat with ${selected.label}`}
             title="Quick chat"
             onClick={() => onCreatePopoverSession(selected.agentTypeId)}
-            className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="app-left-secondary-action grid shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Zap className="size-3.5" strokeWidth={1.85} aria-hidden="true" />
           </button>
@@ -206,13 +209,16 @@ export function FleetNewChatAction({
       </span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button type="button" aria-label="Choose Agent for new chat" title="Choose Agent" className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <button type="button" aria-label="Choose Agent for new chat" title="Choose Agent" className="app-left-secondary-action grid shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <ChevronDown className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" sideOffset={6} className="w-52 border-border/60">
-          {agents.map((agent) => (
-            <DropdownMenuItem key={agent.agentTypeId} onSelect={() => onCreateSession(agent.agentTypeId)} className="gap-2 text-[13px]">
+        <DropdownMenuContent data-boring-workspace-part="app-left-menu" align="end" sideOffset={6} className="w-52 border-border/60">
+          {/* Tiebroken with the row index: the fleet arrives from the host and
+              nothing guarantees agentTypeId is unique, so two entries sharing a
+              key would put the checkmark on the wrong Agent. */}
+          {agents.map((agent, index) => (
+            <DropdownMenuItem key={`${agent.agentTypeId}\u0000${index}`} onSelect={() => onSelectAgent?.(agent.agentTypeId)} className="gap-2 text-[13px]">
               <span className="grid size-4 place-items-center" aria-hidden="true">
                 {agent.agentTypeId === selected.agentTypeId ? <Check className="size-3.5" strokeWidth={2} /> : null}
               </span>
@@ -222,45 +228,6 @@ export function FleetNewChatAction({
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
-  )
-}
-
-export function AgentChatActions({
-  agentLabel,
-  onCreateSession,
-  onCreateSplitSession,
-  onCreatePopoverSession,
-  onOpenSettings,
-}: {
-  agentLabel: string
-  onCreateSession: () => void
-  onCreateSplitSession?: () => void
-  onCreatePopoverSession?: () => void
-  onOpenSettings?: () => void
-}) {
-  const actions = [
-    onCreateSplitSession ? { label: `New chat with ${agentLabel} in split pane`, title: "New chat in split pane", icon: <Columns2 className="size-3.5" strokeWidth={1.75} />, onClick: onCreateSplitSession } : null,
-    onCreatePopoverSession ? { label: `Quick chat with ${agentLabel}`, title: "Quick chat", icon: <Zap className="size-3.5" strokeWidth={1.85} />, onClick: onCreatePopoverSession } : null,
-    { label: `New chat with ${agentLabel}`, title: "New chat", icon: <Plus className="size-4" strokeWidth={2} />, onClick: onCreateSession },
-    onOpenSettings ? { label: `Settings for ${agentLabel}`, title: "Agent settings", icon: <Settings className="size-3.5" strokeWidth={1.75} />, onClick: onOpenSettings } : null,
-  ].filter((action): action is NonNullable<typeof action> => Boolean(action))
-
-  return (
-    <span className="app-left-agent-actions pointer-events-none flex w-0 shrink-0 items-center overflow-hidden opacity-0">
-      {actions.map((action) => (
-        <button
-          key={action.label}
-          type="button"
-          aria-label={action.label}
-          title={action.title}
-          data-boring-mobile-dismiss="true"
-          onClick={() => action.onClick()}
-          className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <span aria-hidden="true">{action.icon}</span>
-        </button>
-      ))}
-    </span>
   )
 }
 

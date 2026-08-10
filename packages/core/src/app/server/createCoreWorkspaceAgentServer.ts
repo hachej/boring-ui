@@ -1,5 +1,6 @@
 import { access, mkdir, readFile, stat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import {
@@ -1022,16 +1023,24 @@ export async function createCoreWorkspaceAgentServer(
     ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
     ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
   // BORING_AGENT_FLEET=1 composes the config-driven production fleet
-  // (gh-1106 slice 3, B2 fix round 1) from .agents/{personas,factory} for
-  // the deployed core app host (apps/full-app), same helper as
-  // createWorkspaceAgentServer and the CLI hub; flag absent preserves the
-  // legacy single-default-agent boot byte-identically.
+  // (gh-1106 slice 3, B2 fix round 1) from discovered agent packages plus
+  // .agents/factory for the deployed core app host (apps/full-app), same
+  // helper as createWorkspaceAgentServer and the CLI hub; flag absent
+  // preserves the legacy single-default-agent boot byte-identically.
+  //
+  // workspaceRoot is `null`, not the base root: core serves
+  // `<workspaceRoot>/<workspaceId>` and NEVER the base itself
+  // (resolveWorkspaceRoot rejects it), so no single root exists at
+  // composition time. Passing the base would let a persona tree that happens
+  // to sit inside it publish a path relative to the wrong root — a live
+  // "Open" button that opens nothing.
   const fleetRepositoryRoot = options.fleetRepositoryRoot ?? process.cwd()
   const discoveredPackages = !options.agents && process.env.BORING_AGENT_FLEET === '1'
     ? await discoverRepositoryAgentPackages(fleetRepositoryRoot)
     : undefined
   const agents = options.agents ?? await resolveDefaultAgentFleet({
     repositoryRoot: fleetRepositoryRoot,
+    workspaceRoot: null,
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
   registerTelemetryHooks(app, telemetry)
@@ -1385,16 +1394,27 @@ export async function createCoreWorkspaceAgentServer(
       provisioningGeneration: JSON.stringify([root, templatePath ?? null]),
     })
     const piIdentity = JSON.stringify(pi, (_key, value) => typeof value === 'function' ? '[function]' : value)
+    const semanticProvisioningIdentity = createHash('sha256').update(JSON.stringify({
+      runtimeMode: runtimeModeAdapter.id,
+      runtimeContributionIds: runtimeEnvContributions.map((entry) => entry.id).sort(),
+      runtimePluginIds: runtimePlugins.map((plugin) => plugin.id).sort(),
+      provisionWorkspace: options.provisionWorkspace !== false,
+    })).digest('hex')
     const identity = createResolvedRuntimeScopeIdentity({
       artifacts: pluginArtifacts,
       validatedConfig: piIdentity,
       grants: options.getExtraTools ? [userId] : [],
-      placementIdentity,
+      placementClassIdentity: runtimeModeAdapter.id,
       isolationMode: runtimeModeAdapter.id,
       toolContractDigests: extraTools.map((tool) => tool.name),
-      provisioningGeneration: provisioningFingerprint,
+      provisioningIdentity: semanticProvisioningIdentity,
       bindingInputs: [sessionNamespace, contribution?.identity ?? null],
     })
+    const physicalBindingIdentity = createHash('sha256').update(JSON.stringify({
+      identity,
+      placementIdentity,
+      provisioningFingerprint,
+    })).digest('hex')
     const buildResourceDigestInput = async () => {
       const hotResources = pi.getHotReloadableResources?.()
       return createPiResourceDigestInput({
@@ -1487,7 +1507,7 @@ export async function createCoreWorkspaceAgentServer(
     }
     const agentRuntime: Omit<ResolvedAgentRuntimeScope, 'environment'> = {
       identity,
-      physicalBindingIdentity: identity,
+      physicalBindingIdentity,
       resourceInputDigest,
       revalidateResourceInputs,
       sessionNamespace,

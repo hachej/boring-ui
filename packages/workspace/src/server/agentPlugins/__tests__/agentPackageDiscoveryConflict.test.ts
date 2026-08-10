@@ -51,6 +51,7 @@ async function loadFleet() {
   const discoveredPackages = await discoverRepositoryAgentPackages(root)
   const result = await loadConfiguredAgentFleet({
     discoveredPackages,
+    workspaceRoot: root,
     fleetConfigPath: join(root, ".agents", "factory", "fleet.yaml"),
     policyPath: join(root, ".agents", "factory", "policy.yaml"),
     skillsRoot: join(root, ".agents", "skills"),

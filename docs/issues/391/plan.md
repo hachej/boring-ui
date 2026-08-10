@@ -12,7 +12,7 @@ track: owner
 ## Authority
 
 > **Amended 2026-07-31.** This file no longer holds sequencing authority.
-> [`docs/DIRECTION.md`](../../DIRECTION.md) (owner-ratified 2026-07-27) decides
+> [`docs/direction/DIRECTION.md`](../../direction/DIRECTION.md) (owner-ratified 2026-07-27) decides
 > what happens next and in what order; where this file and DIRECTION disagree,
 > DIRECTION wins. In particular the F-graph ordering below places a visible
 > second agent downstream of F3b-ii/F7, and names a public agent selector as a
