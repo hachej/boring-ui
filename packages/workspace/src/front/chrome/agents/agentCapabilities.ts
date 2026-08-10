@@ -49,8 +49,6 @@ export interface AgentCapabilities {
   skills: SourceResult<AgentSkillSummary[]>
   tools: SourceResult<AgentToolSummary[]>
   modelLabel: SourceResult<string | null>
-  /** Root-tree result used to discover workspace-level instruction files. */
-  workspaceInstructionFiles: SourceResult<string[]>
 }
 
 /** A loaded-but-empty list. Generic so each field keeps its own element type. */
@@ -62,7 +60,6 @@ export const INITIAL_CAPABILITIES: AgentCapabilities = {
   skills: loadedEmpty<AgentSkillSummary>(),
   tools: loadedEmpty<AgentToolSummary>(),
   modelLabel: { status: "loaded", value: null },
-  workspaceInstructionFiles: loadedEmpty<string>(),
 }
 
 export const UNAVAILABLE_CAPABILITIES: AgentCapabilities = {
@@ -71,14 +68,7 @@ export const UNAVAILABLE_CAPABILITIES: AgentCapabilities = {
   skills: { status: "error" },
   tools: { status: "error" },
   modelLabel: { status: "error" },
-  workspaceInstructionFiles: { status: "error" },
 }
-
-/** Workspace-level instruction files that participate in every agent's context. */
-export const WORKSPACE_INSTRUCTION_FILES = [
-  { path: "AGENTS.md", blurb: "Workspace instructions every agent reads before working.", badge: "workspace" },
-  { path: "CLAUDE.md", blurb: "Additional workspace instructions some agents also read.", badge: "workspace" },
-] as const
 
 export function parseSkills(payload: unknown): AgentSkillSummary[] {
   const skills = (payload as { skills?: unknown })?.skills
@@ -159,15 +149,6 @@ export function parseDescription(payload: unknown): AgentDescription {
   }
 }
 
-/** Names of the root-level FILES a `/api/v1/tree` listing reports. */
-export function parseRootFileNames(payload: unknown): string[] {
-  const entries = (payload as { entries?: unknown })?.entries
-  if (!Array.isArray(entries)) return []
-  return entries
-    .filter((entry) => (entry as { kind?: unknown })?.kind === "file" && typeof (entry as { name?: unknown }).name === "string")
-    .map((entry) => (entry as { name: string }).name)
-}
-
 /**
  * Resolve the model shown in the Defaults section: the agent's pinned model when
  * set, else the host default, labeled through the models catalog.
@@ -219,12 +200,11 @@ export async function loadAgentCapabilities(
   // Each route is spelled in full: the #1029 matrix checker classifies literal
   // Agent routes, and a shared base prefix would hide them from it.
   const id = encodeURIComponent(agentTypeId)
-  const [describe, skills, tools, models, rootTree] = await Promise.allSettled([
+  const [describe, skills, tools, models] = await Promise.allSettled([
     client.getJson(`/api/v1/agents/${id}/describe`, { missingMessage: "This agent's details are unavailable." }),
     client.getJson(`/api/v1/agents/${id}/skills`, { missingMessage: "This agent's skills are unavailable." }),
     client.getJson(`/api/v1/agents/${id}/tools`, { missingMessage: "This agent's tools are unavailable." }),
     client.getJson(`/api/v1/agents/${id}/models`, { missingMessage: "Models are unavailable." }),
-    client.getJson(`/api/v1/tree?path=.&filesystem=user`, { missingMessage: "Workspace files are unavailable." }),
   ])
   const description = describe.status === "fulfilled" ? parseDescription(describe.value) : undefined
   return {
@@ -248,9 +228,6 @@ export async function loadAgentCapabilities(
       : description?.model
         ? { status: "loaded", value: description.model }
         : { status: "error" },
-    workspaceInstructionFiles: rootTree.status === "fulfilled"
-      ? { status: "loaded", value: parseRootFileNames(rootTree.value) }
-      : { status: "error" },
   }
 }
 

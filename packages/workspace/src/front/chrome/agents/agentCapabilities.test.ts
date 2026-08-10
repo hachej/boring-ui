@@ -4,7 +4,6 @@ import {
   fileResourceExists,
   loadAgentCapabilities,
   parseDescription,
-  parseRootFileNames,
   parseSkills,
   parseTools,
   resolveModelLabel,
@@ -121,14 +120,6 @@ describe("parseSkills totality (hostile payloads must not reach React)", () => {
   })
 })
 
-describe("parseRootFileNames", () => {
-  it("keeps only file entries from a tree listing", () => {
-    expect(parseRootFileNames({ entries: [
-      { name: "AGENTS.md", kind: "file" }, { name: ".agents", kind: "dir" }, { kind: "file" },
-    ] })).toEqual(["AGENTS.md"])
-    expect(parseRootFileNames({})).toEqual([])
-  })
-})
 
 describe("resolveModelLabel", () => {
   it("prefers the pinned model, labeled through the catalog", () => {
@@ -183,11 +174,6 @@ describe("loadAgentCapabilities", () => {
     expect(result.description.status).toBe("loaded")
   })
 
-  it("keeps a failed workspace-root listing distinct from a loaded empty listing", async () => {
-    const result = await loadAgentCapabilities(okClient({ "/api/v1/tree": new Error("boom") }), "a")
-    expect(result.workspaceInstructionFiles).toEqual({ status: "error" })
-  })
-
   it("still resolves the pinned model when the models catalog fails", async () => {
     const client = okClient({
       "/describe": { model: "pinned", mcpServers: [] },
@@ -205,12 +191,14 @@ describe("loadAgentCapabilities", () => {
     expect(client.getJson.mock.calls.some(([p]) => (p as string).includes("agents/a%2Fb/describe"))).toBe(true)
   })
 
-  it("asks for exactly five payloads — no filesystems leg, no per-agent tree probing", async () => {
+  it("asks only for this Agent's own payloads — no workspace-level legs", async () => {
     const client = okClient()
     await loadAgentCapabilities(client, "a")
-    // Five, not six: the workspace-level filesystem catalog is not needed.
-    expect(client.getJson.mock.calls).toHaveLength(5)
+    // Four: describe, skills, tools, models. The workspace filesystem catalog
+    // and the root-tree listing both described the WORKSPACE, not this Agent,
+    // so the page no longer asks for either.
+    expect(client.getJson.mock.calls).toHaveLength(4)
     expect(client.getJson.mock.calls.filter(([p]) => (p as string).startsWith("/api/v1/filesystems"))).toHaveLength(0)
-    expect(client.getJson.mock.calls.filter(([p]) => (p as string).startsWith("/api/v1/tree"))).toHaveLength(1)
+    expect(client.getJson.mock.calls.filter(([p]) => (p as string).startsWith("/api/v1/tree"))).toHaveLength(0)
   })
 })

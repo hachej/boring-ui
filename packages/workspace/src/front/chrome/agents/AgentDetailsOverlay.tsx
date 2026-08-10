@@ -13,7 +13,6 @@ import { CardRows, DetailSection, DividedRows, MetaRow, type DetailRowModel } fr
 import {
   INITIAL_CAPABILITIES,
   UNAVAILABLE_CAPABILITIES,
-  WORKSPACE_INSTRUCTION_FILES,
   fileResourceExists,
   loadAgentCapabilities,
   skillSourceLabel,
@@ -156,28 +155,6 @@ export function AgentDetailsOverlay({
         } : {}),
       }
     }),
-    ...WORKSPACE_INSTRUCTION_FILES
-      .filter((file) => capabilities.workspaceInstructionFiles.status === "loaded"
-        && capabilities.workspaceInstructionFiles.value.includes(file.path))
-      .map((file, index) => {
-        // Same missing-state rule as the Agent-owned rows above: a file that
-        // was listed at load but has since gone must stop looking openable,
-        // instead of probing and toasting on every click.
-        const resource = { filesystem: "user", path: file.path } as const
-        const missing = missingResourceKeys.has(uiFileResourceKey(resource))
-        return {
-          key: `workspace\u0000${file.path}\u0000${index}`,
-          title: file.path,
-          badge: missing ? "unavailable" : file.badge,
-          blurb: missing ? `${file.path} isn't in this workspace any more.` : file.blurb,
-          icon: "file" as const,
-          ...(missing ? {} : {
-            onOpen: () => void openFile(resource, file.path),
-            openAriaLabel: `Open ${file.path}`,
-            openTitle: `Open ${file.path}`,
-          }),
-        }
-      }),
   ]
 
   const skills = capabilities.skills.status === "loaded" ? capabilities.skills.value : []
@@ -242,7 +219,7 @@ export function AgentDetailsOverlay({
               loading={loading} empty={instructionRows.length === 0}
               // Without this the section claims the agent HAS no instructions
               // when the truth is that we failed to ask.
-              error={capabilities.description.status === "error" || capabilities.workspaceInstructionFiles.status === "error"}
+              error={capabilities.description.status === "error"}
               errorText="Instructions couldn't be fully loaded."
               emptyText="No instruction files."
             >

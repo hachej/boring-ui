@@ -196,7 +196,7 @@ describe("AgentDetailsOverlay", () => {
     expect(screen.getByText("No plugins.")).toBeInTheDocument()
   })
 
-  it("lists persona instructions and workspace instructions as openable rows", async () => {
+  it("lists this Agent's persona instructions as openable rows", async () => {
     respond({
       // The seat directory ("desk-7") is deliberately NOT derivable from the
       // agent id ("concierge"): the overlay must render what /describe reports
@@ -205,10 +205,6 @@ describe("AgentDetailsOverlay", () => {
         mcpServers: [],
         instructionFiles: [{ filesystem: "user", path: ".agents/personas/desk-7/instructions.md", role: "persona" }],
       },
-      rootTree: { entries: [
-        { name: "AGENTS.md", kind: "file", path: "AGENTS.md" },
-        { name: ".agents", kind: "dir", path: ".agents" },
-      ] },
     })
     renderOverlay()
 
@@ -217,11 +213,11 @@ describe("AgentDetailsOverlay", () => {
       kind: "openFile",
       params: { filesystem: "user", path: ".agents/personas/desk-7/instructions.md", mode: "view" },
     }))
-    fireEvent.click(screen.getByRole("button", { name: "Open AGENTS.md" }))
-    await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
-      kind: "openFile",
-      params: { filesystem: "user", path: "AGENTS.md", mode: "view" },
-    }))
+    // AGENTS.md / CLAUDE.md are workspace conventions, not this Agent's
+    // instructions: the harness defaults `noContextFiles: true`, so hosted
+    // agents never read them. See the ambient-context question in the issue
+    // tracker; the page only claims what composes THIS agent.
+    expect(screen.queryByText("AGENTS.md")).not.toBeInTheDocument()
     expect(screen.queryByText("CLAUDE.md")).not.toBeInTheDocument()
   })
 
@@ -233,20 +229,6 @@ describe("AgentDetailsOverlay", () => {
     expect(mocks.getJson.mock.calls.some(([path]) => (path as string).startsWith("/api/v1/filesystems"))).toBe(false)
   })
 
-  it("renders a failed workspace-root listing as an error, not as no instruction files", async () => {
-    respond({
-      describe: {
-        mcpServers: [],
-        instructionFiles: [{ filesystem: "user", path: "personas/a/instructions.md", role: "persona" }],
-      },
-      rootTree: new Error("network failed"),
-    })
-    renderOverlay()
-
-    expect(await screen.findByText("Instructions couldn't be fully loaded.")).toBeInTheDocument()
-    expect(screen.queryByText("No instruction files.")).not.toBeInTheDocument()
-    expect(screen.getByText("Persona instructions")).toBeInTheDocument()
-  })
   it("surfaces a well-formed instruction ref whose file does not exist, instead of 404-ing silently", async () => {
     respond({
       describe: {
