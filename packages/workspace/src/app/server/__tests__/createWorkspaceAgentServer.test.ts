@@ -1602,6 +1602,165 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
+  test("workspace-local agent package boot covers install, seat, update, unseat, mismatch, and removal", async () => {
+    const workspaceRoot = await makeTempDir("boring-agent-local-install-")
+    const fleetRoot = await makeTempDir("boring-agent-local-install-repo-")
+    const packageRoot = join(workspaceRoot, "agents", "local-worker")
+    const settingsPath = join(workspaceRoot, ".pi", "settings.json")
+    const fleetPath = join(fleetRoot, ".agents", "factory", "fleet.yaml")
+    await mkdir(packageRoot, { recursive: true })
+    await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
+    await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
+    await writeFile(join(packageRoot, "instructions.md"), "Local worker instructions.\n", "utf8")
+
+    const writeManifest = async (version: string, skills: string[] = []) => {
+      await writeFile(join(packageRoot, "package.json"), JSON.stringify({
+        name: "@fixture/local-worker",
+        version,
+        boring: {
+          agent: {
+            definitionId: "fixture-local-worker",
+            version,
+            label: "Local Worker",
+            instructionsRef: "instructions.md",
+          },
+        },
+        pi: { skills },
+      }), "utf8")
+    }
+    const writeFleet = async (seats: string) => {
+      await writeFile(fleetPath, seats ? `seats:\n${seats}` : "seats: []\n", "utf8")
+    }
+    const bootAgentIds = async () => {
+      const app = await createWorkspaceAgentServer({
+        workspaceRoot,
+        fleetRepositoryRoot: fleetRoot,
+        logger: false,
+        provisionWorkspace: false,
+        fleetCompiler: { async compile({ agents }) { return agents } },
+      })
+      try {
+        const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
+          agents: readonly { agentTypeId: string; definition?: { version?: string } }[]
+        }
+        return hostOptions.agents.map((agent) => ({
+          agentTypeId: agent.agentTypeId,
+          version: agent.definition?.version,
+        }))
+      } finally {
+        await app.close()
+      }
+    }
+
+    const previousFlag = process.env.BORING_AGENT_FLEET
+    process.env.BORING_AGENT_FLEET = "1"
+    try {
+      await writeManifest("1.0.0")
+      await writeFile(settingsPath, JSON.stringify({ packages: ["../agents/local-worker"] }), "utf8")
+
+      // Installed means discoverable, not active: an empty roster keeps it inert.
+      await writeFleet("")
+      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+
+      // Seating the definition activates the same local package on the next boot.
+      await writeFleet("  - seat: local-worker\n    agentTypeId: fixture-local-worker\n    skills: []\n")
+      expect(await bootAgentIds()).toEqual([
+        { agentTypeId: "default", version: undefined },
+        { agentTypeId: "fixture-local-worker", version: "1.0.0" },
+      ])
+
+      // A package bump is observed only after reboot; no copied cache is involved.
+      await writeManifest("1.1.0")
+      expect(await bootAgentIds()).toEqual([
+        { agentTypeId: "default", version: undefined },
+        { agentTypeId: "fixture-local-worker", version: "1.1.0" },
+      ])
+
+      // A stale seat-scoped digest excludes this agent while the rest boots.
+      await mkdir(join(packageRoot, "skills", "local"), { recursive: true })
+      await writeFile(join(packageRoot, "skills", "local", "SKILL.md"), "# Local skill\n", "utf8")
+      await writeManifest("1.2.0", ["skills/local/SKILL.md"])
+      await writeFleet(
+        "  - seat: local-worker\n" +
+        "    agentTypeId: fixture-local-worker\n" +
+        "    skills:\n" +
+        `      - name: skills/local/SKILL.md\n        digest: sha256:${"0".repeat(64)}\n`,
+      )
+      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+
+      // Unseating and removing the settings registration are both inert on boot.
+      await writeFleet("")
+      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+      await writeFleet("  - seat: local-worker\n    agentTypeId: fixture-local-worker\n    skills: []\n")
+      await writeFile(settingsPath, JSON.stringify({ packages: [] }), "utf8")
+      expect(await bootAgentIds()).toEqual([{ agentTypeId: "default", version: undefined }])
+    } finally {
+      if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
+      else process.env.BORING_AGENT_FLEET = previousFlag
+    }
+  }, 15_000)
+
+  test("remote git/npm package roots cannot contribute agents before their distribution gate", async () => {
+    const workspaceRoot = await makeTempDir("boring-agent-remote-gate-")
+    const fleetRoot = await makeTempDir("boring-agent-remote-gate-repo-")
+    const remotePackageRoot = join(workspaceRoot, ".pi", "npm", "remote-worker")
+    await mkdir(remotePackageRoot, { recursive: true })
+    await mkdir(join(workspaceRoot, "agents"), { recursive: true })
+    await symlink(remotePackageRoot, join(workspaceRoot, "agents", "remote-alias"))
+    await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
+    await writeFile(join(remotePackageRoot, "instructions.md"), "Remote worker instructions.\n", "utf8")
+    await writeFile(join(remotePackageRoot, "package.json"), JSON.stringify({
+      name: "@fixture/remote-worker",
+      version: "1.0.0",
+      boring: {
+        agent: {
+          definitionId: "fixture-remote-worker",
+          version: "1.0.0",
+          instructionsRef: "instructions.md",
+        },
+      },
+      pi: { skills: [] },
+    }), "utf8")
+    await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
+    await writeFile(
+      join(workspaceRoot, ".pi", "settings.json"),
+      JSON.stringify({
+        packages: [
+          "./npm/remote-worker",
+          "../agents/remote-alias",
+          "git:https://example.test/remote-worker.git",
+        ],
+      }),
+      "utf8",
+    )
+    await writeFile(
+      join(fleetRoot, ".agents", "factory", "fleet.yaml"),
+      "seats:\n  - seat: remote-worker\n    agentTypeId: fixture-remote-worker\n    skills: []\n",
+      "utf8",
+    )
+
+    const previousFlag = process.env.BORING_AGENT_FLEET
+    process.env.BORING_AGENT_FLEET = "1"
+    let app: Awaited<ReturnType<typeof createWorkspaceAgentServer>> | undefined
+    try {
+      app = await createWorkspaceAgentServer({
+        workspaceRoot,
+        fleetRepositoryRoot: fleetRoot,
+        logger: false,
+        provisionWorkspace: false,
+        fleetCompiler: { async compile({ agents }) { return agents } },
+      })
+      const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
+        agents: readonly { agentTypeId: string }[]
+      }
+      expect(hostOptions.agents.map((agent) => agent.agentTypeId)).toEqual(["default"])
+    } finally {
+      if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
+      else process.env.BORING_AGENT_FLEET = previousFlag
+      if (app) await app.close()
+    }
+  })
+
   test("BORING_AGENT_FLEET off: workspace host seam stays on the legacy single default agent and never probes the fleet root", async () => {
     const workspaceRoot = await makeTempDir("boring-agent-fleet-off-")
     const previousFlag = process.env.BORING_AGENT_FLEET
