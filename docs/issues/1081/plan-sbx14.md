@@ -34,9 +34,9 @@ and which can be returned to `vercel-sandbox` by one environment rollback.
 ```text
 seneca production (agent/control plane)
         |
-        | HTTPS + one pre-shared bearer secret
+        | HTTPS over Tailscale + one pre-shared bearer secret
         v
-one rented EU KVM VM (OVH for v1)
+one rented EU KVM VM (OVH for v1; no public listener)
         |  provider hypervisor = boundary 1
         v
 minimal V1 worker daemon -> Docker -> one runsc/systrap sandbox per session
@@ -62,6 +62,39 @@ minimal V1 worker daemon -> Docker -> one runsc/systrap sandbox per session
   sign binding receipts. There is no user database, RBAC service, tenant
   credential table, or second token class.
 
+## Daemon exposure and threat model
+
+The v1 daemon deliberately runs as root and can invoke Docker and the root
+quota helper. Its static secret is therefore **host-root-equivalent**: an
+attacker who obtains that secret can mint accepted capabilities, drive the
+root/Docker-authorized service, and should be assumed able to compromise the
+whole worker VM. Runsc remains the tenant boundary for admitted workloads; it
+does not reduce the consequence of compromising the trusted daemon or secret.
+
+The transport decision is **Tailscale-only ingress with HTTPS**:
+
+- Seneca and the worker join one operator-owned tailnet. The provider firewall
+  denies public ingress to the worker; a tailnet ACL allows only the named
+  seneca node/service identity to reach the worker HTTPS port.
+- Caddy on the worker terminates TLS on the worker's `tailscale0` address using
+  the tailnet DNS name and a certificate obtained and renewed with
+  `tailscale cert`. Caddy proxies to the daemon's loopback-only HTTP listener.
+  The public interface has no HTTP or HTTPS listener.
+- Plaintext is allowed only on loopback between Caddy and the daemon. Plaintext
+  on a provider-private network or across the tailnet is explicitly forbidden.
+  Seneca continues to pin the expected CA/server name as defense in depth.
+- Tailscale-only ingress is preferred over a provider firewall allowlist
+  because v1 must not assume stable seneca egress IPs. Provisioning must prove
+  both the interface bind and firewall/ACL policy before admission.
+
+mTLS was considered and deferred for this single operator-controlled canary:
+Tailscale already authenticates node identity and encrypts the overlay, HTTPS
+authenticates the service, and request-bound HMAC capabilities authenticate
+application requests. Adding a second certificate issuance and rotation plane
+would increase failure modes without replacing the static-secret rotation
+requirement. Reconsider mTLS before accepting ingress outside the tailnet or
+adding independently administered clients.
+
 ## Today / target delta
 
 | Area | Today on `origin/main` | SBX1.4 delta |
@@ -75,15 +108,16 @@ minimal V1 worker daemon -> Docker -> one runsc/systrap sandbox per session
 
 ## Decisions that constrain every slice
 
-1. One epic branch may carry the plan, but implementation is five ordered,
+1. One epic branch may carry the plan, but implementation is six ordered,
    independently reviewed PRs. Each PR remains within the normal review budget
    (about 1,500 added production lines); if it cannot, the implementer returns
    to the owner instead of silently widening a slice.
 2. The daemon owns trusted filesystem roots. No HTTP request may supply a host
    path, Docker socket, image override, or qualification override.
-3. Production uses HTTPS. Plain HTTP is allowed only for in-process/loopback
-   tests. TLS termination and the server certificate are box configuration;
-   the V1 fleet config continues to pin CA and server name.
+3. Production uses HTTPS over the Tailscale-only path defined in the threat
+   model. Caddy terminates TLS with a Tailscale-issued certificate; plain HTTP
+   is allowed only for in-process tests and Caddy-to-daemon loopback. The V1
+   fleet config continues to pin CA and server name.
 4. Stable V1 schemas, request-size ceilings, capability lifetime, binding
    checks, error codes, retry semantics, startup sweep, and hard expiry are
    reused. The daemon does not invent a parallel wire protocol.
@@ -140,14 +174,16 @@ for this disposable gate; S4 must close them on the production box.
 ```text
 S1 daemon + V1 transport
   -> S2 durable nonces
-  -> S3 admitted image pin
+  -> S3a admitted image pin
+  -> S3b real V3 harness upgrade
   -> S4 rented-VM provisioning + manual qualification
   -> S5 seneca canary flip
 ```
 
-S4 infrastructure preparation may start while S1-S3 are reviewed, but its
-admission run must use the exact artifacts produced after S3, including S3's
-real V3 harness mode. S5 is blocked on all prior slices.
+S4 infrastructure preparation may start while S1-S3b are reviewed, but its
+admission run is blocked on S3b and must use the exact artifacts produced after
+it. S3a alone establishes the fail-closed admitted-image posture; it does not
+make the S4 transcript runnable. S5 is blocked on all prior slices.
 
 ## S1 — minimal daemon, static-secret auth, and runtime proxy
 
@@ -190,6 +226,18 @@ for the existing V1 provider.
 - Enforce the existing 8 MiB protocol body bound before JSON parsing, strict
   content type/schema, request abort/timeout propagation, bounded SSE lifetime,
   stable redacted `RemoteWorkerErrorPayloadV1`, and 404/hard-expiry behavior.
+- Bound connection volume before runtime access: set a server-wide maximum of
+  128 concurrent connections, a configured maximum of 32 active sessions, a
+  10-second header timeout, and a 15-second idle keep-alive timeout. Reaching a
+  cap fails closed with a stable retryable busy response and does not call the
+  runtime; the operator may lower, but not silently raise, these v1 ceilings.
+- Rate-limit failed authentication both server-wide and by the tailnet source
+  address Caddy forwards over the trusted loopback hop, using bounded in-memory
+  token buckets (10 failures per minute, burst 10) and exponential retry
+  backoff from one second to 30 seconds. Reject forwarded-source headers on any
+  non-loopback connection. Apply the limiter before token decoding beyond the
+  work needed for constant-time verification and before any runtime call; bound
+  its key count and expiry so random sources cannot create unbounded state.
 - Authorize before touching a workspace, watcher, credential resolver, quota
   helper, or Docker. Derive the workspace mount from the daemon-owned data root
   plus the authorized workspace UUID; never accept a host path on the wire.
@@ -230,8 +278,11 @@ for the existing V1 provider.
 - Missing/wrong bearer material is 401 with the stable unauthenticated code;
   malformed/oversize requests fail before runtime/Docker calls; workspace and
   sandbox mismatches are rejected before runtime calls.
+- Repeated bad-bearer requests are throttled before runtime calls; connection,
+  active-session, idle, and header bounds fail closed under saturation and
+  slowloris-style tests without leaking authentication detail.
 - The daemon cannot listen until startup sweep and static qualification facts
-  load successfully (S3 replaces fixture facts with admitted facts).
+  load successfully (S3a replaces fixture facts with admitted facts).
 
 ```bash
 pnpm --filter @hachej/boring-sandbox exec vitest run \
@@ -251,6 +302,27 @@ delta is composition and one small codec. Before implementation the worker must
 estimate production additions. If it exceeds the normal review budget, it
 returns to the owner for an explicit S1a/S1b split rather than hiding an
 oversized PR.
+
+### Secret rotation
+
+The daemon accepts one primary and, only during rotation, one secondary static
+secret from separate root-owned credential files. Both derive the same
+domain-separated verification key classes; the daemon signs new receipts with
+the configured primary and accepts valid capabilities/receipts from either
+secret during the overlap. Startup fails if both files contain the same value
+or if an overlap lacks an explicit expiry. The overlap is bounded to one
+maximum capability/receipt lifetime plus clock skew; it may not become a
+permanent two-secret mode.
+
+Rotate in this order: (1) install the new secret on the daemon as secondary and
+restart/drain-check it so both old and new verify; (2) switch seneca's issuer
+and verifier to the new secret and confirm a fresh health/create/delete canary;
+(3) wait out the bounded lifetime, promote the new secret to daemon primary,
+drop the old secret, and restart/drain-check again. On suspected compromise,
+stop new admission and retire active sessions before this sequence; overlap
+prevents an availability gap, not continued trust in a stolen secret. S2/S3a
+rollback uses this procedure whenever a rollback crosses an authentication or
+replay-protection boundary.
 
 ## S2 — persistent nonce store and #1167 atomicity
 
@@ -287,9 +359,19 @@ per-workspace sub-budget; no binding persistence.
   global nonce collision as replay, enforce the global maximum, enforce a lower
   per-workspace active-nonce maximum, insert, and commit. Two daemon processes
   or SQLite connections must never both return `accepted` for one nonce.
+- Pin `PRAGMA journal_mode=WAL` and `PRAGMA synchronous=FULL` on every
+  production connection before use; startup fails if SQLite does not report
+  the requested journal mode. The nonce database must live on a local,
+  non-network filesystem whose locking semantics SQLite supports. NFS, SMB,
+  distributed/network block gateways without local-filesystem locking, and
+  unverified mounts are forbidden; S4 `--check` asserts the resolved database
+  path and filesystem type before the daemon starts.
 - Preserve the existing stable replay/global-exhaustion error codes. A tenant
   sub-budget exhaustion uses the same fail-closed exhaustion code with no
   tenant counts or identifiers in the response.
+- The per-workspace active-nonce sub-budget is a deliberate availability
+  addition over the scoping document's minimal path: #1167 finding 1 previously
+  treated it as deferrable. It does not expand the single-tenant canary claim.
 - Open/migrate the nonce database before the daemon listens; an unreadable,
   corrupt, locked beyond the bounded busy timeout, or unmigratable database
   prevents startup. No volatile production fallback exists.
@@ -329,12 +411,13 @@ pnpm --filter @hachej/boring-sandbox run typecheck
 
 **Slice rollback:** never roll a traffic-bearing worker back to the volatile
 store. Stop/drain the daemon and retain the nonce database. If an older binary
-must be restored, rotate the static secret and retire all old sessions first so
-old capabilities cannot be replayed; otherwise restore the S2 binary.
+must be restored, retire all old sessions and follow S1's bounded-overlap
+secret-rotation procedure so old capabilities cannot be replayed; otherwise
+restore the S2 binary.
 
-## S3 — qualification-bound image digest pinning
+## S3a — admitted-cohort load and `startContainer` digest pin
 
-**Size:** M (2-3 days, including real-harness V3 binding).  
+**Size:** S-M (1-2 days; independently capped at the normal review budget).
 **Blocked by:** S1; lands after S2.  
 **Delivers:** no `docker run` or replacement unless the workload image exactly
 matches the manually admitted cohort.
@@ -371,6 +454,52 @@ matches the manually admitted cohort.
   class.
 - Verify the root quota helper and other bundle entry bytes at daemon startup;
   v1 has one workload image, not a speculative second helper container image.
+- When forming daemon health/admission facts, require the bundle cohort pin's
+  `expectedWorkloadImageManifestDigest` and the fleet/create field
+  `expectedImageDigest` to identify the same admitted manifest; test both field
+  names so a locally valid but cross-layer-mismatched digest fails closed.
+
+### Acceptance and proof
+
+```bash
+pnpm --filter @hachej/boring-sandbox exec vitest run \
+  src/worker/__tests__/qualificationAdmission.test.ts \
+  src/providers/runsc/runtime/__tests__/sessionRuntime.test.ts \
+  src/providers/runsc/runtime/__tests__/dockerArgv.test.ts \
+  src/providers/runsc/__tests__/fleetAdmission.test.ts
+pnpm --filter @hachej/boring-sandbox run typecheck
+pnpm --filter @hachej/boring-sandbox run check:invariants
+```
+
+The negative tests must name the security properties: `rejects malformed or
+unpinned image before docker run` and `rejects pinned but non-admitted image
+before docker run`, covering initial creation and container replacement. S3a
+alone unblocks the fail-closed admitted-image posture; S4 remains blocked on
+S3b's runnable real-evidence contract.
+
+**Slice rollback:** the gate is not bypassable. A bad admitted artifact is
+fixed by reinstalling the last known-good bundle/evidence/image as a unit and
+restarting while traffic is drained. If rollback crosses a secret or
+replay-protection boundary, use S1's bounded-overlap secret-rotation procedure.
+Do not revert to code that accepts tags.
+
+## S3b — real V3 qualification harness upgrade
+
+**Size:** M (2-3 days; independently capped at the normal review budget).
+**Blocked by:** S3a.
+**Delivers:** a real observe/bound V3 evidence path for the exact external image,
+quota helper, and workspace root that S4 admits.
+
+### Today
+
+- `qualify-docker-runsc-isolation.mjs` emits the current V2 envelope and has no
+  real observe/bound admission modes.
+- `integrate-docker-runsc-runtime.mjs` builds a throwaway image, uses a no-op
+  quota stub, and defaults qualification workspaces beneath `/tmp`.
+- `qualify-runsc-v3-reference.mjs` is fixture-only and cannot qualify a box.
+
+### Delta
+
 - Upgrade the **real** `qualify-docker-runsc-isolation.mjs` path from its
   current V2 envelope to the existing production V3 schema. Add an explicit
   observe-only mode that emits the real profile/cohort-pin inputs without
@@ -406,36 +535,48 @@ matches the manually admitted cohort.
 - External-image mode still starts an isolated sibling container for the
   egress-sibling negative even when it skips the throwaway registry. The probe
   may not disappear merely because image publication moved outside the script.
-- When forming daemon health/admission facts, require the bundle cohort pin's
-  `expectedWorkloadImageManifestDigest` and the fleet/create field
-  `expectedImageDigest` to identify the same admitted manifest; test both field
-  names so a locally valid but cross-layer-mismatched digest fails closed.
+
+#### CLI and environment contract
+
+S3b owns these exact names so S4's privileged transcript is committed and
+cannot be improvised during admission:
+
+- `--observe-only`
+- `--cohort-spec-out=<path>`
+- `--workload-image=<repo@sha256:…>`
+- `--qualification-bundle=<path>`
+- `BORING_RUNSC_WORKLOAD_IMAGE`
+- `BORING_RUNSC_WORKSPACE_ROOT`
+- `BORING_RUNSC_USE_INSTALLED_QUOTA_HELPER`
+- `BORING_BUSYBOX_BINARY`
+
+`build-qualification-bundle.mjs <cohort-spec.json>` is the positional consumer
+of the file written by `--cohort-spec-out`; that positional interface already
+exists and S3b preserves it. The existing `RUN_RUNSC_INTEGRATION=1` gate also
+remains required for the integration-script invocation.
 
 ### Acceptance and proof
 
 ```bash
 pnpm --filter @hachej/boring-sandbox exec vitest run \
-  src/worker/__tests__/qualificationAdmission.test.ts \
-  src/providers/runsc/runtime/__tests__/sessionRuntime.test.ts \
-  src/providers/runsc/runtime/__tests__/dockerArgv.test.ts \
-  src/providers/runsc/__tests__/isolationEvidenceDocker.test.ts \
-  src/providers/runsc/__tests__/fleetAdmission.test.ts
+  src/providers/runsc/__tests__/isolationEvidenceDocker.test.ts
 pnpm --filter @hachej/boring-sandbox run typecheck
 pnpm --filter @hachej/boring-sandbox run check:invariants
 ```
 
-The negative tests must name the security properties: `rejects malformed or
-unpinned image before docker run` and `rejects pinned but non-admitted image
-before docker run`, covering initial creation and container replacement.
+Tests exercise observe mode, bound mode, deterministic cohort-spec output, the
+external-image sibling negative, real quota-helper opt-in, workspace-root
+validation, and refusal of placeholder/reference values. They prove the
+ordered observe -> build bundle -> bound V3 run -> strict verify flow.
 
-**Slice rollback:** the gate is not bypassable. A bad admitted artifact is
-fixed by reinstalling the last known-good bundle/evidence/image as a unit and
-restarting while traffic is drained. Do not revert to code that accepts tags.
+**Slice rollback:** S3a's fail-closed image gate remains in place. Revert only
+the unapplied harness upgrade and keep the box unadmitted; S4 cannot run until
+the S3b contract is restored and green.
 
 ## S4 — rented-VM provisioning script and manual qualification
 
 **Size:** M (2-4 days plus provider provisioning time).  
-**Blocked by:** exact S1-S3 release/artifact cohort.  
+**Blocked by:** exact S1-S3b release/artifact cohort.
 **Delivers:** one reproducibly configured OVH EU KVM VM and the manual
 admission record for that box.
 
@@ -467,7 +608,11 @@ admission record for that box.
   `/usr/bin/busybox`, Node/pnpm, a C compiler, non-interactive sudo where the
   harness calls it, and Docker access. It also proves the exact qualification
   workspace root resolves beneath `/var/lib/boring-worker` on the `prjquota`
-  mount.
+  mount, and that the resolved nonce database path is on a supported local
+  ext4/XFS filesystem rather than NFS, SMB, or another network filesystem.
+  It also proves Caddy listens only on `tailscale0`, its current certificate
+  matches the configured tailnet DNS name, the tailnet ACL admits only seneca,
+  and the provider firewall exposes no public daemon/HTTP/HTTPS port.
 - Pin Docker/runsc versions and downloaded checksums; register runsc with the
   observable `--platform=systrap` runtime arg. Assert KVM virtualization but do
   **not** require `/dev/kvm`.
@@ -478,16 +623,19 @@ admission record for that box.
 - Build/install `/usr/local/libexec/boring-workspace-quota` as root-owned,
   non-writable by the daemon's callers, with its digest in the qualification
   bundle. Configure the worker service, nonce-state directory, workspace root,
-  TLS termination, secret credential file, and bounded systemd restart policy.
+  Caddy TLS termination, Tailscale interface/ACL policy, primary/optional
+  secondary secret credential files, and bounded systemd restart policy.
 - Run the v1 worker service as root: its existing Docker CLI runner and quota
   helper require root-equivalent host authority. Install the helper
-  `root:root` mode `0755` (never setuid and never writable outside root), keep
-  the HTTP listener loopback-only behind TLS termination, and apply systemd
-  hardening that does not block Docker, the admitted workspace volume, nonce
-  DB, or helper. An unprivileged/more granular service account is a later
-  hardening change, not an unproven v1 claim.
+  `root:root` mode `0755` (never setuid and never writable outside root). Keep
+  the daemon HTTP listener loopback-only; bind Caddy's HTTPS listener only to
+  the `tailscale0` address with its Tailscale-issued certificate, no public
+  listener, and a tailnet ACL limited to seneca. Apply systemd hardening that
+  does not block Docker, the admitted workspace volume, nonce DB, or helper.
+  An unprivileged/more granular service account is a later hardening change,
+  not an unproven v1 claim.
 - Build the workload image from the committed
-  `src/providers/runsc/runtime/workload/Dockerfile` at the frozen S1-S3 head,
+  `src/providers/runsc/runtime/workload/Dockerfile` at the frozen S1-S3b head,
   push it to the operator-selected private registry, record its canonical
   `repository@manifestDigest`, and pre-pull that exact reference on the worker.
   Registry credentials are root-owned and unreadable by daemon callers; the
@@ -495,10 +643,10 @@ admission record for that box.
 - Prove host and gVisor `openat2`, project-quota fill/sibling isolation/host
   reserve, root helper `apply`/`check`, runsc sentinel, egress denial, cleanup,
   and the committed hostile probe suite on the exact rented VM.
-- Use S3's real observe/bound V3 harness mode; do not use
+- Use S3b's real observe/bound V3 harness mode; do not use
   `qualify-runsc-v3-reference.mjs`, which is explicitly a non-admitting fixture.
   Admission has four ordered phases: (1) observe real profile/pins, (2) build
-  the immutable bundle from those observations plus the exact S1-S3 files and
+  the immutable bundle from those observations plus the exact S1-S3b files and
   image, (3) rerun the real harness bound to that bundle digest, and (4) require
   `verify-fleet-admission-evidence.mjs` to accept the pair.
 - Store the redacted evidence, bundle, exact git SHA, image reference, command
@@ -513,40 +661,40 @@ Run the entire block from an audited root login shell on the rented OVH KVM VM,
 against the release checkout and an explicit data device chosen by the
 operator. The root shell is required because `--apply` intentionally makes the
 admission directory root-owned and shell redirections open evidence files
-before child commands execute. The retained `sudo` prefixes are harmless and
-keep the destructive/privileged operations obvious in copied transcripts.
+before child commands execute. After `sudo -i`, every command runs uniformly as
+root; no per-command `sudo` is mixed into the retained transcript.
 
 ```bash
 sudo -i
 cd <release-checkout>
-sudo packages/boring-sandbox/scripts/provision-runsc-worker.sh --apply \
+packages/boring-sandbox/scripts/provision-runsc-worker.sh --apply \
   --data-device /dev/disk/by-id/<operator-selected-id> \
   --mount /var/lib/boring-worker
-sudo packages/boring-sandbox/scripts/provision-runsc-worker.sh --check \
+packages/boring-sandbox/scripts/provision-runsc-worker.sh --check \
   --mount /var/lib/boring-worker
 pnpm --filter @hachej/boring-agent run build
 pnpm --filter @hachej/boring-sandbox run build
-sudo cat /run/credentials/boring-registry-token | \
-  sudo docker login <operator-registry> \
+cat /run/credentials/boring-registry-token | \
+  docker login <operator-registry> \
   --username <robot-account> --password-stdin
-sudo docker buildx build --platform linux/amd64 --push \
+docker buildx build --platform linux/amd64 --push \
   --file packages/boring-sandbox/src/providers/runsc/runtime/workload/Dockerfile \
   --tag <operator-registry>/boring-runtime:<frozen-git-sha> \
   --metadata-file /var/lib/boring-worker/admission/image-metadata.json \
   packages/boring-sandbox/src/providers/runsc/runtime/workload
-sudo docker buildx imagetools inspect \
+docker buildx imagetools inspect \
   <operator-registry>/boring-runtime:<frozen-git-sha>
-sudo docker pull <operator-registry>/boring-runtime@sha256:<manifest-digest>
-sudo docker image inspect \
+docker pull <operator-registry>/boring-runtime@sha256:<manifest-digest>
+docker image inspect \
   <operator-registry>/boring-runtime@sha256:<manifest-digest>
-sudo env BORING_BUSYBOX_BINARY=/usr/bin/busybox \
+env BORING_BUSYBOX_BINARY=/usr/bin/busybox \
   BORING_RUNSC_WORKSPACE_ROOT=/var/lib/boring-worker/qualification-workspaces \
   node packages/boring-sandbox/scripts/qualify-docker-runsc-isolation.mjs \
   --observe-only \
   --workload-image=<operator-registry>/boring-runtime@sha256:<manifest-digest> \
   --cohort-spec-out=/var/lib/boring-worker/admission/cohort-spec.json \
   > /var/lib/boring-worker/admission/observation.json
-sudo env RUN_RUNSC_INTEGRATION=1 \
+env RUN_RUNSC_INTEGRATION=1 \
   BORING_RUNSC_WORKLOAD_IMAGE=<operator-registry>/boring-runtime@sha256:<manifest-digest> \
   BORING_RUNSC_WORKSPACE_ROOT=/var/lib/boring-worker/qualification-workspaces \
   BORING_RUNSC_USE_INSTALLED_QUOTA_HELPER=1 \
@@ -555,7 +703,7 @@ sudo env RUN_RUNSC_INTEGRATION=1 \
 node packages/boring-sandbox/scripts/build-qualification-bundle.mjs \
   /var/lib/boring-worker/admission/cohort-spec.json \
   > /var/lib/boring-worker/admission/bundle.json
-sudo env BORING_BUSYBOX_BINARY=/usr/bin/busybox \
+env BORING_BUSYBOX_BINARY=/usr/bin/busybox \
   BORING_RUNSC_WORKSPACE_ROOT=/var/lib/boring-worker/qualification-workspaces \
   node packages/boring-sandbox/scripts/qualify-docker-runsc-isolation.mjs \
   --qualification-bundle=/var/lib/boring-worker/admission/bundle.json \
@@ -621,6 +769,10 @@ production canary.
 - Set `qualificationMaxAgeMs` explicitly to seven days for this internal-first
   box. The operator re-runs S4 qualification at least every six days and after
   any kernel, Docker, runsc, daemon/provider, helper, policy, or image change.
+  The named owner is the seneca production operator; provisioning creates a
+  recurring six-day operations-calendar reminder assigned to that owner and
+  links it to the current admission record and runbook. Missing the reminder
+  is not a waiver: expiry still fails create closed.
   Installing refreshed immutable evidence requires draining the worker and
   restarting the daemon; old evidence remains the rollback artifact. New
   session creation must fail closed after seven days rather than silently
@@ -640,9 +792,20 @@ production canary.
   secret mounted. Start one owner-selected canary session, verify filesystem
   write/read, exec, gVisor sentinel, renewal, delete, and daemon cleanup, then
   observe normal agent work for the owner-approved window.
-- Roll back by restoring the captured environment revision to
-  `BORING_AGENT_MODE=vercel-sandbox` and redeploying. Leave the EU worker and
-  volume untouched until seneca health and a Vercel-sandbox canary are green.
+- Before any planned environment flip, stop new canary admission, drain and
+  close every canary session, and confirm the daemon reports no active canary
+  sessions or `boring-sbx-*` containers. If rollback must retain workspace
+  data, a root operator copies the resolved daemon-owned bind-mount source
+  `/var/lib/boring-worker/workspaces/<authorized-workspace-uuid>/` into a
+  timestamped root-owned archive under
+  `/var/lib/boring-worker/rollback-exports/`; the operator verifies the source
+  remains beneath the trusted workspace root and records the archive digest.
+- Only after drain/close and any required root-side export, restore the captured
+  environment revision to `BORING_AGENT_MODE=vercel-sandbox` and redeploy, so
+  no session remains in flight across the provider flip. For an emergency that
+  cannot drain naturally, explicitly terminate the canary sessions and confirm
+  daemon cleanup before restoring the revision. Leave the EU worker and volume
+  untouched until seneca health and a Vercel-sandbox canary are green.
 
 ### Acceptance and proof
 
@@ -679,24 +842,29 @@ Manual production proof, with secrets redacted:
 4. Confirm the agent transcript/session history remains on seneca's durable
    host volume, per `BORING_AGENT_SESSION_ROOT`; it is never placed in the
    sandbox workspace.
-5. Rollback drill: restore `BORING_AGENT_MODE=vercel-sandbox`, redeploy, and
-   prove a new canary exec is healthy. Then reapply remote-worker only with
-   explicit owner approval.
+5. Rollback drill: stop admission; drain/close all canary sessions and confirm
+   no active canary/container remains; create and digest the root-side archive
+   from the daemon-owned bind-mount source when data retention is required;
+   then restore `BORING_AGENT_MODE=vercel-sandbox`, redeploy, and prove a new
+   canary exec is healthy. Reapply remote-worker only with explicit owner
+   approval.
 6. Requalification drill with fake time in automated proof and real evidence
    install in staging: new create is rejected after the seven-day boundary,
    the worker is drained/restarted with fresh S4 evidence, and create succeeds
    with the same or newly admitted exact image digest.
 
 **Slice rollback:** the environment revision is the primary rollback. Do not
-destroy the remote workspace volume during rollback. Any canary-only workspace
-changes that must be retained are exported before the owner declares rollback
+destroy the remote workspace volume during rollback. Stop admission and
+drain/close or explicitly terminate all canary sessions before the flip; no
+session may be in flight across it. Export required data with the named
+root-side bind-mount archive mechanism before the owner declares rollback
 complete; the untouched VM remains available for forensics or resumption.
 
 ## Per-slice review protocol
 
-Every S1-S5 implementation PR is reviewed independently on its exact head SHA.
-The two lines are sequential; neither is a substitute for deterministic proof
-or owner approval.
+Every implementation PR—S1, S2, S3a, S3b, S4, and S5—is reviewed independently
+on its exact head SHA. The two lines are sequential; neither is a substitute
+for deterministic proof or owner approval.
 
 1. **Line 1 — Opus 4.8 (T2) adversarial review.** Fresh read-only session,
    given the issue, this plan, the slice diff, and proof output. It checks slice
@@ -720,7 +888,7 @@ or owner approval.
 
 Any Fable finding returns the slice to implementation, reruns proof, and
 restarts at line 1 on the new SHA. Only `clean` from both lines on the same SHA
-may reach the owner gate. S1-S3 and S5 are code/security changes; S4 is
+may reach the owner gate. S1-S3b and S5 are code/security changes; S4 is
 ops/security. None may use the docs/config thermo exemption to skip these two
 owner-required lines. No slice merges without explicit owner approval.
 
@@ -728,19 +896,25 @@ owner-required lines. No slice merges without explicit owner approval.
 
 1. **Before S5:** rollback is simply no admission/no routing. Stop the daemon
    or remove the box from the unpublished config; seneca remains on Vercel.
-2. **During/after S5:** restore the captured seneca environment revision with
-   `BORING_AGENT_MODE=vercel-sandbox` and redeploy. Verify application health
-   and a fresh Vercel-sandbox canary before declaring recovery.
-3. Stop new worker admission, allow bounded in-flight work to drain, then stop
-   the daemon. Keep the VM, nonce database, evidence, and workspaces intact.
+2. **During/after S5:** stop new worker admission; drain/close every canary
+   session (or explicitly terminate it during an emergency) and confirm daemon
+   cleanup before restoring the captured seneca environment revision with
+   `BORING_AGENT_MODE=vercel-sandbox`. No session may be in flight across the
+   flip. Redeploy, then verify application health and a fresh Vercel-sandbox
+   canary before declaring recovery.
+3. Before the flip, retain required canary data with the S5 root-side copy from
+   the resolved daemon-owned bind-mount source into a timestamped, root-owned,
+   digested archive under `/var/lib/boring-worker/rollback-exports/`. Then stop
+   the daemon. Keep the VM, nonce database, evidence, workspaces, and exports
+   intact.
 4. Never downgrade a live worker to volatile nonces or tag-based images. If a
-   binary rollback crosses S2, rotate the static secret and retire old sessions
-   first. If it crosses S3, restore a previously admitted bundle/image as a
-   unit; never bypass the pin.
+   binary rollback crosses S2, retire old sessions and follow S1's
+   bounded-overlap secret-rotation procedure. If it crosses S3a, restore a
+   previously admitted bundle/image as a unit; never bypass the pin.
 5. The agent transcript/session list remains host-owned on seneca's durable
    `BORING_AGENT_SESSION_ROOT`, independent of either sandbox provider. Remote
    workspace-only writes are not claimed to appear magically in a new Vercel
-   sandbox; export required canary data before finalizing rollback.
+   sandbox; only the named root-side archive carries required canary data.
 
 ## Explicit non-goals
 
@@ -774,7 +948,9 @@ owner-required lines. No slice merges without explicit owner approval.
 
 ## Owner gate / next action
 
-Owner approval of this r1 plan authorizes materializing S1-S5 as five ready
-Beads/implementation PRs with the file scopes and proof paths above. No Beads
-are created by this docs-only PR, and no production configuration changes occur
-before that gate.
+Owner approval of this r1 plan authorizes materializing S1, S2, S3a, S3b, S4,
+and S5 as six ready Beads/implementation PRs with the file scopes and proof
+paths above. Approving r1 also explicitly ratifies replacing #918 gate (b)'s
+boot-epoch requirement with transactional cross-connection nonce uniqueness.
+No Beads are created by this docs-only PR, and no production configuration
+changes occur before that gate.
