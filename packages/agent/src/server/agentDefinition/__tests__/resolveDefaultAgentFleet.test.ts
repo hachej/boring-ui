@@ -63,12 +63,13 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
       env: { BORING_AGENT_FLEET: '1', ANTHROPIC_API_KEY: 'test-key' },
     })
     expect(agents[0]).toEqual({ agentTypeId: 'default', legacyDefault: true })
+    // The ratified 3-seat roster (gh-1187 S0). Deferred grow-on-demand seats
+    // (concierge, reviewer, ...) still have persona packages on disk but hold
+    // no fleet.yaml entry, so they must NOT compose.
     expect(agents.slice(1).map((agent) => agent.agentTypeId)).toEqual([
-      'boring-concierge',
       'boring-triage',
-      'boring-steward',
+      'boring-orchestrator',
       'boring-worker',
-      'boring-reviewer',
     ])
   })
 
@@ -80,10 +81,10 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
       workspaceRoot: REPOSITORY_ROOT,
       env,
     })
-    const concierge = sameRoot.find((agent) => agent.agentTypeId === 'boring-concierge')
-    if (!concierge || 'legacyDefault' in concierge) throw new Error('expected the concierge seat')
-    expect(concierge.instructionFiles).toEqual([
-      { filesystem: 'user', path: '.agents/personas/concierge/instructions.md', role: 'persona' },
+    const orchestrator = sameRoot.find((agent) => agent.agentTypeId === 'boring-orchestrator')
+    if (!orchestrator || 'legacyDefault' in orchestrator) throw new Error('expected the orchestrator seat')
+    expect(orchestrator.instructionFiles).toEqual([
+      { filesystem: 'user', path: '.agents/personas/orchestrator/instructions.md', role: 'persona' },
     ])
 
     // The multi-workspace shape: personas come from the repository, the
@@ -96,8 +97,8 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
       workspaceRoot: tmpdir(),
       env,
     })
-    const detached = otherRoot.find((agent) => agent.agentTypeId === 'boring-concierge')
-    if (!detached || 'legacyDefault' in detached) throw new Error('expected the concierge seat')
+    const detached = otherRoot.find((agent) => agent.agentTypeId === 'boring-orchestrator')
+    if (!detached || 'legacyDefault' in detached) throw new Error('expected the orchestrator seat')
     expect(detached.instructionFiles).toBeUndefined()
     // Reported as a missing LINK, not an excluded seat: the seat is right
     // there in the fleet above.

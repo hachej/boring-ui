@@ -1,0 +1,15 @@
+{
+  "name": "@hachej/boring-persona-orchestrator",
+  "version": "2026.08.10",
+  "private": true,
+  "description": "The owner's standing counterpart: dispatches work and reads bead end-states.",
+  "boring": {
+    "agent": {
+      "definitionId": "boring-orchestrator",
+      "version": "2026.08.10",
+      "label": "Boring Orchestrator",
+      "description": "The owner's standing counterpart: dispatches work and reads bead end-states.",
+      "instructionsRef": "instructions.md"
+    }
+  }
+}
