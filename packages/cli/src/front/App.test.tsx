@@ -111,6 +111,9 @@ describe("CliWorkspaceShell", () => {
       workspaceId: "target",
       workspaceLayout: "plugin-tabs",
       workspaceSectionTitle: "Projects",
+      // Fleet-addressed sessions (Inbox opening fleet-seat chats) require the
+      // shipped hub front to opt in — gh-1207.
+      addressedAgentSelection: true,
     })
     expect(window.location.pathname).toBe("/workspace/target")
   })
