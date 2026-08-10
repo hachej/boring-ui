@@ -55,6 +55,7 @@ test.describe("UI review", () => {
       const context = await browser.newContext({
         viewport: { width: viewport.width, height: viewport.height },
         deviceScaleFactor: viewport.deviceScaleFactor,
+        ...(viewport.hasTouch ? { hasTouch: true } : {}),
         colorScheme: "dark",
         locale: "en-US",
         timezoneId: "UTC",

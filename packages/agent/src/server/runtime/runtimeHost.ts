@@ -31,6 +31,7 @@ export interface AgentRuntimeHostOperations extends RuntimeHostOperations {
   }>
   validatePath(root: string, requestedPath: string): string
   assertRealPathWithinWorkspace(root: string, targetPath: string): Promise<void>
+  resolveRealWorkspacePath(root: string, targetPath: string): Promise<string>
   isIgnoredDirName(name: string): boolean
   /** Host-owned confined projection for package resources outside the workspace. */
   createAgentResourceFilesystemBinding(

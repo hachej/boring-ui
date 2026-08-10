@@ -38,6 +38,25 @@ class ReadinessTests(unittest.TestCase):
 
 
 class ExoscaleProviderTests(unittest.TestCase):
+    def test_uses_raw_least_privilege_operations(self):
+        provider = MODULE.ExoscaleProvider("exo", "instance", "zone")
+        completed = MODULE.subprocess.CompletedProcess([], 0, stdout='{"state":"stopped"}', stderr="")
+        with mock.patch.object(MODULE.subprocess, "run", return_value=completed) as run:
+            self.assertEqual(provider.state(), "stopped")
+            provider.start()
+            provider.stop()
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertEqual(commands[0], ["exo", "x", "get-instance", "instance", "--zone", "zone", "-o", "json"])
+        self.assertEqual(commands[1], ["exo", "x", "start-instance", "instance", "--zone", "zone", "-o", "json"])
+        self.assertEqual(commands[2], ["exo", "x", "stop-instance", "instance", "--zone", "zone", "-o", "json"])
+
+    def test_rejects_failed_transition_operation(self):
+        provider = MODULE.ExoscaleProvider("exo", "instance", "zone")
+        completed = MODULE.subprocess.CompletedProcess([], 0, stdout='{"state":"failure"}', stderr="")
+        with mock.patch.object(MODULE.subprocess, "run", return_value=completed):
+            with self.assertRaises(RuntimeError):
+                provider.start()
+
     def test_transition_timeout_means_request_was_accepted(self):
         provider = MODULE.ExoscaleProvider("exo", "instance", "zone")
         with mock.patch.object(MODULE.subprocess, "run", side_effect=MODULE.subprocess.TimeoutExpired("exo", 20)):
