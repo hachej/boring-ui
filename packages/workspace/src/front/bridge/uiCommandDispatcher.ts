@@ -215,9 +215,7 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       return
     }
     case "expandToFile": {
-      // Path may legitimately be empty: "reveal the root of a filesystem"
-      // (e.g. Agent details Knowledge rows) carries only a filesystem id.
-      // Requiring a non-empty path here used to drop those commands silently.
+      // An empty path with a filesystem reveals that filesystem's root.
       const path = strParam(cmd.params, "path") ?? ""
       // Deliberately NOT normalized, unlike openFile: revealing has somewhere
       // to fall back to and openFile does not. `openFile` must resolve to a

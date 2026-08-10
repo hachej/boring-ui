@@ -2,3 +2,6 @@ seats:
   - seat: "odd\\seat"
     agentTypeId: fixture-odd
     skills: []
+  - seat: encoded%2eseat
+    agentTypeId: fixture-encoded
+    skills: []

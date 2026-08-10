@@ -1,8 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { BookOpen, FileText } from "lucide-react"
-import { cn } from "../../lib/utils"
+import { FileText } from "lucide-react"
 
 /**
  * The presentational vocabulary of the Agent details panel: one section
@@ -27,6 +26,8 @@ export function DetailSection({ id, title, hint, loading, empty, error, errorTex
   emptyText: string
   children: ReactNode
 }) {
+  const showError = Boolean(error && errorText)
+  const showEmpty = empty && !showError
   return (
     <section aria-labelledby={id}>
       <div className="flex items-baseline justify-between gap-3">
@@ -38,11 +39,17 @@ export function DetailSection({ id, title, hint, loading, empty, error, errorTex
           <div className="h-3.5 w-1/3 rounded bg-foreground/[0.08]" />
           <div className="mt-2 h-3 w-3/5 rounded bg-foreground/[0.06]" />
         </div>
-      ) : empty ? (
-        <p className="mt-3 border-y border-border/60 py-3 text-sm text-muted-foreground">
-          {error && errorText ? errorText : emptyText}
-        </p>
-      ) : children}
+      ) : (
+        <>
+          {showError ? (
+            <p className="mt-3 border-y border-border/60 py-3 text-sm text-muted-foreground">{errorText}</p>
+          ) : null}
+          {showEmpty ? (
+            <p className="mt-3 border-y border-border/60 py-3 text-sm text-muted-foreground">{emptyText}</p>
+          ) : null}
+          {!empty ? children : null}
+        </>
+      )}
     </section>
   )
 }
@@ -52,9 +59,7 @@ export interface DetailRowModel {
   title: string
   badge?: string
   blurb?: string
-  /** Knowledge blurbs are single-line; instruction/skill blurbs wrap to two. */
-  blurbTruncate?: boolean
-  icon?: "file" | "book"
+  icon?: "file"
   /** Present ⇒ the row is a button that opens something. */
   onOpen?: () => void
   openAriaLabel?: string
@@ -62,12 +67,11 @@ export interface DetailRowModel {
 }
 
 /**
- * The single card row used by Instructions, Knowledge and Skills. Owns
+ * The single card row used by Instructions and Skills. Owns
  * card-vs-div, the badge, the blurb and the trailing icon — the three
  * byte-identical copies this replaces had already started drifting apart.
  */
 function DetailRow({ row }: { row: DetailRowModel }) {
-  const Icon = row.icon === "book" ? BookOpen : FileText
   const body = (
     <div className="flex min-h-11 w-full items-start justify-between gap-3 px-3 py-2.5 sm:min-h-0">
       <div className="min-w-0">
@@ -78,14 +82,11 @@ function DetailRow({ row }: { row: DetailRowModel }) {
           ) : null}
         </div>
         {row.blurb ? (
-          <p className={cn(
-            "mt-1 text-xs leading-5 text-muted-foreground",
-            row.blurbTruncate ? "truncate" : "line-clamp-2",
-          )}>{row.blurb}</p>
+          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{row.blurb}</p>
         ) : null}
       </div>
       {row.icon && row.onOpen ? (
-        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground" strokeWidth={1.75} aria-hidden="true" />
+        <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground" strokeWidth={1.75} aria-hidden="true" />
       ) : null}
     </div>
   )
@@ -108,7 +109,7 @@ function DetailRow({ row }: { row: DetailRowModel }) {
   )
 }
 
-/** Card list shared by Instructions / Knowledge / Skills. */
+/** Card list shared by Instructions / Skills. */
 export function CardRows({ rows }: { rows: readonly DetailRowModel[] }) {
   return <ul role="list" className="mt-3 grid gap-2">{rows.map((row) => <DetailRow key={row.key} row={row} />)}</ul>
 }

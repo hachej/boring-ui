@@ -76,14 +76,22 @@ describe('loadConfiguredAgentFleet', () => {
 
     // A backslash cannot survive as a workspace-relative path, so the link is
     // withheld — but the seat still composes, and never silently. Only the
-    // backslash seat is fixtured here; ordinary seat names (spaces included)
-    // take the publishing branch covered by the tests above.
-    expect(result.agents).toHaveLength(1)
-    const [agent] = result.agents
-    if (!agent || 'legacyDefault' in agent) throw new Error('expected a configured agent')
+    // backslash and percent-encoded seats are fixtured here; ordinary seat
+    // names (spaces included) take the publishing branch covered above.
+    expect(result.agents).toHaveLength(2)
+    const agent = result.agents.find((candidate) => candidate.agentTypeId === 'fixture-odd')
+    if (!agent || 'legacyDefault' in agent) throw new Error('expected the odd configured agent')
     expect(agent.instructionFiles).toBeUndefined()
     expect(result.diagnostics).toContainEqual(expect.objectContaining({
       seat: 'odd\\seat',
+      code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
+    }))
+
+    const encoded = result.agents.find((candidate) => candidate.agentTypeId === 'fixture-encoded')
+    if (!encoded || 'legacyDefault' in encoded) throw new Error('expected the encoded configured agent')
+    expect(encoded.instructionFiles).toBeUndefined()
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      seat: 'encoded%2eseat',
       code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
     }))
   })

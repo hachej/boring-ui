@@ -37,15 +37,20 @@ function respond(payloads: {
   rootTree?: unknown
   /** Paths that exist for the pre-open probe. `undefined` ⇒ everything exists. */
   existingFiles?: readonly string[]
+  /** Transient probe failures to return before normal existence handling. */
+  probeErrors?: readonly Error[]
 }) {
+  let probeIndex = 0
   mocks.getJson!.mockImplementation(async (path: string) => {
     // The overlay probes `GET /api/v1/files?path=…` before dispatching an
     // openFile, so a well-formed ref pointing at nothing degrades visibly
     // instead of 404-ing silently inside the viewer.
     if (path.startsWith("/api/v1/files?")) {
       const requested = new URLSearchParams(path.slice(path.indexOf("?") + 1)).get("path") ?? ""
+      const probeError = payloads.probeErrors?.[probeIndex++]
+      if (probeError) throw probeError
       if (payloads.existingFiles && !payloads.existingFiles.includes(requested)) {
-        throw new Error(`404 ${requested}`)
+        throw Object.assign(new Error(`404 ${requested}`), { status: 404 })
       }
       return { path: requested, content: "" }
     }
@@ -220,18 +225,27 @@ describe("AgentDetailsOverlay", () => {
     expect(screen.queryByText("CLAUDE.md")).not.toBeInTheDocument()
   })
 
-  it("has no Knowledge section and never asks for the workspace filesystem catalog", async () => {
+  it("never asks for the workspace filesystem catalog", async () => {
     respond({})
     renderOverlay()
 
-    // `/api/v1/filesystems` is workspace-level and agent-blind: every agent got
-    // the identical global entry, so a section headed "Knowledge" on an AGENT's
-    // page could only restate a fact about the workspace. Agent-scoped
-    // knowledge needs a server model that does not exist yet (#1186); the page
-    // says nothing rather than something untrue, and does not pay for the fetch.
     expect(await screen.findByText("No skills.")).toBeInTheDocument()
-    expect(screen.queryByRole("heading", { name: "Knowledge" })).not.toBeInTheDocument()
     expect(mocks.getJson.mock.calls.some(([path]) => (path as string).startsWith("/api/v1/filesystems"))).toBe(false)
+  })
+
+  it("renders a failed workspace-root listing as an error, not as no instruction files", async () => {
+    respond({
+      describe: {
+        mcpServers: [],
+        instructionFiles: [{ filesystem: "user", path: "personas/a/instructions.md", role: "persona" }],
+      },
+      rootTree: new Error("network failed"),
+    })
+    renderOverlay()
+
+    expect(await screen.findByText("Instructions couldn't be fully loaded.")).toBeInTheDocument()
+    expect(screen.queryByText("No instruction files.")).not.toBeInTheDocument()
+    expect(screen.getByText("Persona instructions")).toBeInTheDocument()
   })
   it("surfaces a well-formed instruction ref whose file does not exist, instead of 404-ing silently", async () => {
     respond({
@@ -288,6 +302,34 @@ describe("AgentDetailsOverlay", () => {
     await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
       kind: "openFile",
       params: { filesystem: "user", path: "skills/here/SKILL.md", mode: "view" },
+    }))
+  })
+
+  it("does not permanently degrade a row when its existence probe has a transient failure", async () => {
+    respond({
+      skills: {
+        skills: [{ name: "retry", resource: { filesystem: "user", path: "skills/retry/SKILL.md" } }],
+      },
+      probeErrors: [Object.assign(new Error("server failed"), { status: 500 })],
+    })
+    renderOverlay()
+
+    const row = await screen.findByRole("button", { name: "Open skill retry" })
+    fireEvent.click(row)
+    await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
+      kind: "showNotification",
+      params: {
+        msg: "/retry couldn't be checked right now (skills/retry/SKILL.md). Try again.",
+        level: "error",
+      },
+    }))
+    expect(screen.getByRole("button", { name: "Open skill retry" })).toBeInTheDocument()
+    expect(screen.queryByText("unavailable")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open skill retry" }))
+    await waitFor(() => expect(mocks.postUiCommand).toHaveBeenCalledWith({
+      kind: "openFile",
+      params: { filesystem: "user", path: "skills/retry/SKILL.md", mode: "view" },
     }))
   })
 
@@ -365,11 +407,12 @@ describe("AgentDetailsOverlay", () => {
     expect(screen.getByText("run_shell")).toBeInTheDocument()
   })
 
-  it("degrades to quiet states without an API client, keeping list plugin ids", async () => {
+  it("reports unavailable sources without an API client, keeping list plugin ids", async () => {
     mocks.client = null
     renderOverlay()
 
-    expect(await screen.findByText("No skills.")).toBeInTheDocument()
+    expect(await screen.findByText("Skills couldn't be loaded.")).toBeInTheDocument()
+    expect(screen.getByText("Instructions couldn't be fully loaded.")).toBeInTheDocument()
     expect(screen.getByText("ask-user")).toBeInTheDocument()
     await waitFor(() => expect(mocks.getJson).not.toHaveBeenCalled())
   })

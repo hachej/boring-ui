@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 
 import {
+  fileResourceExists,
   loadAgentCapabilities,
   parseDescription,
   parseRootFileNames,
@@ -9,6 +10,27 @@ import {
   resolveModelLabel,
   skillSourceLabel,
 } from "./agentCapabilities"
+
+describe("fileResourceExists", () => {
+  const resource = { filesystem: "user", path: "AGENTS.md" }
+
+  it("distinguishes an existing file, a 404, and other failures", async () => {
+    await expect(fileResourceExists({ getJson: vi.fn().mockResolvedValue({}) }, resource))
+      .resolves.toEqual({ status: "exists" })
+    await expect(fileResourceExists({
+      getJson: vi.fn().mockRejectedValue(Object.assign(new Error("missing"), { status: 404 })),
+    }, resource)).resolves.toEqual({ status: "missing" })
+
+    for (const error of [
+      Object.assign(new Error("forbidden"), { status: 403 }),
+      Object.assign(new Error("server error"), { status: 500 }),
+      new TypeError("network failed"),
+    ]) {
+      await expect(fileResourceExists({ getJson: vi.fn().mockRejectedValue(error) }, resource))
+        .resolves.toEqual({ status: "error" })
+    }
+  })
+})
 
 describe("parseDescription", () => {
   it("keeps only well-formed instruction refs", () => {
@@ -156,9 +178,14 @@ describe("loadAgentCapabilities", () => {
     const client = okClient({ "/skills": new Error("boom") })
     const result = await loadAgentCapabilities(client, "a")
     expect(result.status).toBe("ready")
-    expect(result.skills).toEqual({ error: true, value: [] })
-    expect(result.tools).toEqual({ error: false, value: [{ name: "t" }] })
-    expect(result.describeError).toBe(false)
+    expect(result.skills).toEqual({ status: "error" })
+    expect(result.tools).toEqual({ status: "loaded", value: [{ name: "t" }] })
+    expect(result.description.status).toBe("loaded")
+  })
+
+  it("keeps a failed workspace-root listing distinct from a loaded empty listing", async () => {
+    const result = await loadAgentCapabilities(okClient({ "/api/v1/tree": new Error("boom") }), "a")
+    expect(result.workspaceInstructionFiles).toEqual({ status: "error" })
   })
 
   it("still resolves the pinned model when the models catalog fails", async () => {
@@ -166,7 +193,7 @@ describe("loadAgentCapabilities", () => {
       "/describe": { model: "pinned", mcpServers: [] },
       "/models": new Error("nope"),
     })
-    expect((await loadAgentCapabilities(client, "a")).modelLabel).toBe("pinned")
+    expect((await loadAgentCapabilities(client, "a")).modelLabel).toEqual({ status: "loaded", value: "pinned" })
   })
 
   it("encodes the agent id into every per-agent path", async () => {
@@ -181,8 +208,7 @@ describe("loadAgentCapabilities", () => {
   it("asks for exactly five payloads — no filesystems leg, no per-agent tree probing", async () => {
     const client = okClient()
     await loadAgentCapabilities(client, "a")
-    // Five, not six: the workspace-level `/api/v1/filesystems` leg went with
-    // the Knowledge section it fed (agent-blind; see #1186).
+    // Five, not six: the workspace-level filesystem catalog is not needed.
     expect(client.getJson.mock.calls).toHaveLength(5)
     expect(client.getJson.mock.calls.filter(([p]) => (p as string).startsWith("/api/v1/filesystems"))).toHaveLength(0)
     expect(client.getJson.mock.calls.filter(([p]) => (p as string).startsWith("/api/v1/tree"))).toHaveLength(1)

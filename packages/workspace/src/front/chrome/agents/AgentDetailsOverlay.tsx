@@ -12,6 +12,7 @@ import { openableFileResource } from "../../../shared/skills/openableFileResourc
 import { CardRows, DetailSection, DividedRows, MetaRow, type DetailRowModel } from "./detailSections"
 import {
   INITIAL_CAPABILITIES,
+  UNAVAILABLE_CAPABILITIES,
   WORKSPACE_INSTRUCTION_FILES,
   fileResourceExists,
   loadAgentCapabilities,
@@ -60,9 +61,7 @@ export function AgentDetailsOverlay({
   const load = useCallback(async () => {
     const generation = ++generationRef.current
     if (!client) {
-      // No API client in this embedding: sections fall back to quiet
-      // empty states rather than spinners that never resolve.
-      setCapabilities({ ...INITIAL_CAPABILITIES, status: "ready" })
+      setCapabilities(UNAVAILABLE_CAPABILITIES)
       return
     }
     setCapabilities(INITIAL_CAPABILITIES)
@@ -77,14 +76,10 @@ export function AgentDetailsOverlay({
     void load()
   }, [load])
 
-  // Knowledge is deliberately ABSENT from this page. It listed
-  // `/api/v1/filesystems`, which is workspace-level and agent-blind: every
-  // agent got the identical global entry, so a section promising "what THIS
-  // agent knows" could only ever restate a fact about the workspace. Agent-
-  // scoped knowledge needs a server model that does not exist yet (#1186);
-  // until it does, the honest page has no Knowledge section at all.
   const loading = capabilities.status === "loading"
-  const description = capabilities.description
+  const description = capabilities.description.status === "loaded"
+    ? capabilities.description.value
+    : undefined
   // Plugin ids are the fleet list's fact; /describe deliberately does not
   // restate them in a second shape.
   const pluginIds = agent.pluginIds ?? []
@@ -105,13 +100,20 @@ export function AgentDetailsOverlay({
       // so switching agents mid-flight must not open the PREVIOUS agent's file
       // or mark a row on a panel that is no longer on screen.
       const generation = generationRef.current
-      const exists = await fileResourceExists(client, resource)
+      const probe = await fileResourceExists(client, resource)
       if (generationRef.current !== generation) return
-      if (!exists) {
+      if (probe.status === "missing") {
         setMissingResourceKeys((current) => new Set(current).add(uiFileResourceKey(resource)))
         postUiCommand({
           kind: "showNotification",
           params: { msg: `${label} isn't in this workspace (${resource.path}).`, level: "error" },
+        })
+        return
+      }
+      if (probe.status === "error") {
+        postUiCommand({
+          kind: "showNotification",
+          params: { msg: `${label} couldn't be checked right now (${resource.path}). Try again.`, level: "error" },
         })
         return
       }
@@ -126,7 +128,7 @@ export function AgentDetailsOverlay({
   // React reconciles by a key two rows share and a badge lands on the wrong
   // row — an "unavailable" mark on a file that is actually there, for instance.
   const instructionRows: DetailRowModel[] = [
-    ...capabilities.instructionFiles.map((file, index) => {
+    ...(description?.instructionFiles ?? []).map((file, index) => {
       const guarded = openableFileResource(file.resource)
       // Two different unopenable states, two different truths to tell: the
       // guard rejected the location, or the location is fine but nothing is
@@ -155,7 +157,8 @@ export function AgentDetailsOverlay({
       }
     }),
     ...WORKSPACE_INSTRUCTION_FILES
-      .filter((file) => capabilities.workspaceInstructionFiles.includes(file.path))
+      .filter((file) => capabilities.workspaceInstructionFiles.status === "loaded"
+        && capabilities.workspaceInstructionFiles.value.includes(file.path))
       .map((file, index) => ({
         key: `workspace\u0000${file.path}\u0000${index}`,
         title: file.path,
@@ -168,7 +171,9 @@ export function AgentDetailsOverlay({
       })),
   ]
 
-  const skillRows: DetailRowModel[] = capabilities.skills.value.map((skill, index) => {
+  const skills = capabilities.skills.status === "loaded" ? capabilities.skills.value : []
+  const tools = capabilities.tools.status === "loaded" ? capabilities.tools.value : []
+  const skillRows: DetailRowModel[] = skills.map((skill, index) => {
     const guarded = openableFileResource(skill.resource)
     // Skill files are exposed to exactly the same "well-formed ref, absent
     // file" case as instructions, so they degrade through the same state.
@@ -191,8 +196,8 @@ export function AgentDetailsOverlay({
     }
   })
 
-  const skillCount = loading ? undefined : capabilities.skills.value.length
-  const toolCount = loading ? undefined : capabilities.tools.value.length
+  const skillCount = loading ? undefined : skills.length
+  const toolCount = loading ? undefined : tools.length
 
   return (
     <div role="region" aria-label={`${agent.label} details`} className="h-full min-h-0">
@@ -228,7 +233,8 @@ export function AgentDetailsOverlay({
               loading={loading} empty={instructionRows.length === 0}
               // Without this the section claims the agent HAS no instructions
               // when the truth is that we failed to ask.
-              error={capabilities.describeError} errorText="Instructions couldn't be loaded."
+              error={capabilities.description.status === "error" || capabilities.workspaceInstructionFiles.status === "error"}
+              errorText="Instructions couldn't be fully loaded."
               emptyText="No instruction files."
             >
               <CardRows rows={instructionRows} />
@@ -238,7 +244,7 @@ export function AgentDetailsOverlay({
               id="agent-skills-heading" title="Skills"
               hint={skillCount ? `${skillCount}` : undefined}
               loading={loading} empty={skillRows.length === 0}
-              error={capabilities.skills.error} errorText="Skills couldn't be loaded."
+              error={capabilities.skills.status === "error"} errorText="Skills couldn't be loaded."
               emptyText="No skills."
             >
               <CardRows rows={skillRows} />
@@ -247,12 +253,12 @@ export function AgentDetailsOverlay({
             <DetailSection
               id="agent-tools-heading" title="Tools"
               hint={toolCount ? `${toolCount}` : undefined}
-              loading={loading} empty={capabilities.tools.value.length === 0}
-              error={capabilities.tools.error} errorText="Tools couldn't be loaded."
+              loading={loading} empty={tools.length === 0}
+              error={capabilities.tools.status === "error"} errorText="Tools couldn't be loaded."
               emptyText="No tools."
             >
               <DividedRows>
-                {capabilities.tools.value.map((tool, index) => {
+                {tools.map((tool, index) => {
                   // The server may report duplicate names; a name-only key
                   // collides AND makes both rows expand together.
                   const toolKey = `${tool.name}\u0000${index}`
@@ -287,7 +293,7 @@ export function AgentDetailsOverlay({
             <DetailSection
               id="agent-mcp-heading" title="MCP access"
               loading={loading} empty={!description || description.mcpServers.length === 0}
-              error={capabilities.describeError} errorText="MCP access couldn't be loaded."
+              error={capabilities.description.status === "error"} errorText="MCP access couldn't be loaded."
               emptyText="No MCP servers connected."
             >
               <DividedRows>
@@ -314,13 +320,17 @@ export function AgentDetailsOverlay({
 
             <DetailSection
               id="agent-defaults-heading" title="Defaults"
-              loading={loading} empty={!capabilities.modelLabel}
+              loading={loading}
+              empty={capabilities.modelLabel.status === "error" || !capabilities.modelLabel.value}
+              error={capabilities.modelLabel.status === "error"} errorText="Defaults couldn't be loaded."
               emptyText="Uses the host default model."
             >
               <dl className="mt-3 divide-y divide-border/50 border-y border-border/60">
                 <div className="flex min-h-11 items-baseline justify-between gap-3 py-2.5 sm:min-h-0">
                   <dt className="text-sm text-muted-foreground">Default model</dt>
-                  <dd className="min-w-0 truncate text-sm font-medium text-foreground">{capabilities.modelLabel}</dd>
+                  <dd className="min-w-0 truncate text-sm font-medium text-foreground">
+                    {capabilities.modelLabel.status === "loaded" ? capabilities.modelLabel.value : null}
+                  </dd>
                 </div>
               </dl>
             </DetailSection>

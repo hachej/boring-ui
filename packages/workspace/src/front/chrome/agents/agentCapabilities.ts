@@ -39,33 +39,39 @@ export interface AgentDescription {
  * single `Promise.allSettled` and committed once, so "loading" genuinely is
  * global. Failure genuinely is per-request, so only that stays per-section.
  */
-export interface SectionData<T> {
-  error: boolean
-  value: T[]
-}
+export type SourceResult<T> =
+  | { status: "loaded"; value: T }
+  | { status: "error" }
 
 export interface AgentCapabilities {
   status: "loading" | "ready"
-  describeError: boolean
-  description?: AgentDescription
-  skills: SectionData<AgentSkillSummary>
-  tools: SectionData<AgentToolSummary>
-  modelLabel: string | null
-  instructionFiles: AgentInstructionFile[]
-  /** Workspace-level instruction files that exist in this workspace. */
-  workspaceInstructionFiles: string[]
+  description: SourceResult<AgentDescription>
+  skills: SourceResult<AgentSkillSummary[]>
+  tools: SourceResult<AgentToolSummary[]>
+  modelLabel: SourceResult<string | null>
+  /** Root-tree result used to discover workspace-level instruction files. */
+  workspaceInstructionFiles: SourceResult<string[]>
 }
 
-const EMPTY_SECTION = { error: false, value: [] }
+/** A loaded-but-empty list. Generic so each field keeps its own element type. */
+const loadedEmpty = <T>(): SourceResult<T[]> => ({ status: "loaded", value: [] })
 
 export const INITIAL_CAPABILITIES: AgentCapabilities = {
   status: "loading",
-  describeError: false,
-  skills: EMPTY_SECTION,
-  tools: EMPTY_SECTION,
-  modelLabel: null,
-  instructionFiles: [],
-  workspaceInstructionFiles: [],
+  description: { status: "loaded", value: { model: null, mcpServers: [], instructionFiles: [] } },
+  skills: loadedEmpty<AgentSkillSummary>(),
+  tools: loadedEmpty<AgentToolSummary>(),
+  modelLabel: { status: "loaded", value: null },
+  workspaceInstructionFiles: loadedEmpty<string>(),
+}
+
+export const UNAVAILABLE_CAPABILITIES: AgentCapabilities = {
+  status: "ready",
+  description: { status: "error" },
+  skills: { status: "error" },
+  tools: { status: "error" },
+  modelLabel: { status: "error" },
+  workspaceInstructionFiles: { status: "error" },
 }
 
 /** Workspace-level instruction files that participate in every agent's context. */
@@ -223,20 +229,28 @@ export async function loadAgentCapabilities(
   const description = describe.status === "fulfilled" ? parseDescription(describe.value) : undefined
   return {
     status: "ready",
-    describeError: describe.status !== "fulfilled",
-    ...(description ? { description } : {}),
-    skills: {
-      error: skills.status !== "fulfilled",
+    description: description
+      ? { status: "loaded", value: description }
+      : { status: "error" },
+    skills: skills.status === "fulfilled"
+      ? {
+        status: "loaded",
       // The panel lists what the agent can be ASKED to do, so policy-hidden
       // (non-invocable) skills are excluded here — the Skills page keeps them.
-      value: skills.status === "fulfilled" ? parseSkills(skills.value).filter((skill) => skill.invocable !== false) : [],
-    },
-    tools: { error: tools.status !== "fulfilled", value: tools.status === "fulfilled" ? parseTools(tools.value) : [] },
+        value: parseSkills(skills.value).filter((skill) => skill.invocable !== false),
+      }
+      : { status: "error" },
+    tools: tools.status === "fulfilled"
+      ? { status: "loaded", value: parseTools(tools.value) }
+      : { status: "error" },
     modelLabel: models.status === "fulfilled"
-      ? resolveModelLabel(models.value, description?.model ?? null)
-      : description?.model ?? null,
-    instructionFiles: description?.instructionFiles ?? [],
-    workspaceInstructionFiles: rootTree.status === "fulfilled" ? parseRootFileNames(rootTree.value) : [],
+      ? { status: "loaded", value: resolveModelLabel(models.value, description?.model ?? null) }
+      : description?.model
+        ? { status: "loaded", value: description.model }
+        : { status: "error" },
+    workspaceInstructionFiles: rootTree.status === "fulfilled"
+      ? { status: "loaded", value: parseRootFileNames(rootTree.value) }
+      : { status: "error" },
   }
 }
 
@@ -265,10 +279,15 @@ export async function loadAgentCapabilities(
  * nothing when nothing is clicked, covers skills and instruction files with the
  * same code, and stays correct when a file disappears AFTER the panel loaded.
  */
+export type FileResourceProbeResult =
+  | { status: "exists" }
+  | { status: "missing" }
+  | { status: "error" }
+
 export async function fileResourceExists(
   client: AgentCapabilitiesClient,
   resource: UiFileResource,
-): Promise<boolean> {
+): Promise<FileResourceProbeResult> {
   // Mirrors the filesystem plugin's own read: `user` is the server default and
   // passing it explicitly is not universally accepted.
   const params = new URLSearchParams({ path: resource.path })
@@ -277,8 +296,13 @@ export async function fileResourceExists(
     await client.getJson(`/api/v1/files?${params.toString()}`, {
       missingMessage: `${resource.path} is unavailable.`,
     })
-    return true
-  } catch {
-    return false
+    return { status: "exists" }
+  } catch (error) {
+    const status = typeof error === "object" && error !== null && "status" in error
+      ? (error as { status?: unknown }).status
+      : undefined
+    return status === 404
+      ? { status: "missing" }
+      : { status: "error" }
   }
 }

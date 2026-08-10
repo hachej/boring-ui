@@ -87,9 +87,10 @@ export interface LoadConfiguredAgentFleetOptions {
  * Deliberately the SAME shape as the browser-side guard every openable
  * resource passes through (`isSafePluginRelativePath` +
  * `openableFileResource` in @hachej/boring-workspace): no NUL, no backslash,
- * not absolute, no `..`/empty/bare-dot segments. An allowlist regex here was
- * stricter than the guard downstream, so an ordinary seat name containing a
- * space permanently lost its link for no security reason.
+ * percent-encoded dot/slash/backslash, scheme prefix, absolute path, or
+ * `..`/empty/bare-dot segment. An allowlist regex here was stricter than the
+ * guard downstream, so an ordinary seat name containing a space permanently
+ * lost its link for no security reason.
  */
 function isPublishableWorkspacePath(value: string): boolean {
   return value.length > 0
@@ -97,6 +98,8 @@ function isPublishableWorkspacePath(value: string): boolean {
     && !value.includes('\\')
     && !value.startsWith('/')
     && !/^[A-Za-z]:[\\/]/.test(value)
+    && !/%(?:2e|2f|5c)/i.test(value)
+    && !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)
     && !value.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')
 }
 
