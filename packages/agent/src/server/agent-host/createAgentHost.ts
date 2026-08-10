@@ -8,6 +8,7 @@ import type { WorkspaceCredentialVaultCompositionV1 } from '../credentials/start
 import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
 import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
+import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
 import { createAgentHostRoutes } from './httpProjection'
 import { InMemoryAgentRequestLedger } from './requestLedger'
 import { SqliteAgentRequestLedger } from './sqliteRequestLedger'
@@ -805,12 +806,16 @@ export async function createAgentHost(
     }
     try {
       unregister = runtime.registerSubscription(release)
-      const filesystemBindings = environment.resolveFilesystemBindings
+      const requestedFilesystemBindings = environment.resolveFilesystemBindings
         ? await environment.resolveFilesystemBindings({
             verifiedClaim: claim,
             requestId: input.intent.requestId,
           })
-        : providerLease.bundle.filesystemBindings
+        : undefined
+      const filesystemBindings = mergeRuntimeFilesystemBindings(
+        providerLease.bundle.filesystemBindings,
+        requestedFilesystemBindings,
+      )
       if (!active) throw bindingDisposedError()
       const assertActive = () => {
         if (!active) throw bindingDisposedError()

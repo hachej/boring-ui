@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { createLogger } from '@hachej/boring-bash/server'
 
 import { loadConfiguredAgentFleet } from './loadConfiguredAgentFleet'
+import { ErrorCode } from '../../shared/error-codes'
 import type { AgentHostAgentSpec } from '../agent-host/types'
 
 const logger = createLogger('agent-fleet-loader')
@@ -17,6 +18,16 @@ export interface ResolveDefaultAgentFleetOptions {
    * `BORING_AGENT_FLEET=1` composes the fleet. Defaults to `process.cwd()`.
    */
   readonly repositoryRoot?: string
+  /**
+   * Root of the workspace the `user` filesystem serves, or `null` when the
+   * host resolves one per request. Explicit rather than defaulted, because it
+   * is a DIFFERENT root from `repositoryRoot` in every multi-workspace host —
+   * the two only coincide in the single-root dogfood/playground case.
+   * Personas outside it are not published as openable instruction refs (see
+   * `loadConfiguredAgentFleet`): a well-formed path the workbench cannot open
+   * is worse than no link.
+   */
+  readonly workspaceRoot: string | null
   /** Overridable for tests; defaults to `process.env`. */
   readonly env?: NodeJS.ProcessEnv
 }
@@ -42,20 +53,28 @@ export interface ResolveDefaultAgentFleetOptions {
  *    still boot.
  */
 export async function resolveDefaultAgentFleet(
-  options: ResolveDefaultAgentFleetOptions = {},
+  options: ResolveDefaultAgentFleetOptions,
 ): Promise<readonly AgentHostAgentSpec[]> {
   const env = options.env ?? process.env
   if (env.BORING_AGENT_FLEET !== '1') return LEGACY_DEFAULT_AGENT_FLEET
   const root = options.repositoryRoot ?? process.cwd()
   try {
     const { agents: configuredAgents, diagnostics } = await loadConfiguredAgentFleet({
+      workspaceRoot: options.workspaceRoot,
       personasDir: resolve(root, '.agents', 'personas'),
       fleetConfigPath: resolve(root, '.agents', 'factory', 'fleet.yaml'),
       policyPath: resolve(root, '.agents', 'factory', 'policy.yaml'),
       env,
     })
     for (const diagnostic of diagnostics) {
-      logger.warn('fleet seat excluded', { seat: diagnostic.seat, code: diagnostic.code, message: diagnostic.message })
+      // Not every diagnostic excludes a seat: an unpublishable instructions
+      // path withholds one link while the seat boots and chats normally.
+      const excluded = diagnostic.code !== ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE
+      logger.warn(excluded ? 'fleet seat excluded' : 'fleet seat instructions not linkable', {
+        seat: diagnostic.seat,
+        code: diagnostic.code,
+        message: diagnostic.message,
+      })
     }
     return Object.freeze([...LEGACY_DEFAULT_AGENT_FLEET, ...configuredAgents])
   } catch (error) {

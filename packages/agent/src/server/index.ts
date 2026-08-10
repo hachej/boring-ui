@@ -194,6 +194,7 @@ export type {
   AgentRequestLedger,
   AgentRequestLedgerPrepareResult,
   AgentRequestLedgerRecord,
+  AgentInstructionFileRef,
   CompiledAgentHostAgentSpec,
   ConfiguredAgentHostAgentSpec,
   CreateAgentHostOptions,
@@ -268,8 +269,10 @@ export type {
   BuiltinRuntimeModeId,
   ModeContext,
   RuntimeBundle,
+  RuntimeFilesystemAccessDecision,
   RuntimeFilesystemBinding,
   RuntimeFilesystemBindingOperations,
+  RuntimeFilesystemCapability,
   RuntimeModeAdapter,
   RuntimeModeId,
 } from './runtime/mode'
@@ -279,6 +282,16 @@ export {
   mergeRuntimeFilesystemBindings,
 } from './runtime/filesystemBindings'
 export {
+  DEFAULT_READONLY_WORKSPACE_PATHS,
+  RUNTIME_READONLY_FILESYSTEM_POLICY_INVALID_CODE,
+  RuntimeReadonlyFilesystemPolicyError,
+  normalizeRuntimeReadonlyFilesystemPolicy,
+  resolveRuntimeReadonlyFilesystemAccess,
+} from './runtime/readonlyFilesystemPolicy'
+export type { RuntimeReadonlyFilesystemPolicy } from './runtime/readonlyFilesystemPolicy'
+export { createUserFilesystemBinding } from './runtime/userFilesystemBinding'
+export {
+  createFakeAuthorityVerifierV1,
   createHostSideCredentialResolverV1,
   createInMemoryCredentialBackendV1,
   createInMemoryCredentialVaultPersistenceV1,
