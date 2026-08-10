@@ -21,6 +21,14 @@ import type { Sha256Digest } from '../../shared/digest'
  * Sol (codex-exec cross-model pass) and Terra/Luna (codex bulk/mechanical)
  * are explicitly out — the card states they "cannot hold a seat" / "cannot
  * hold a pi session".
+ *
+ * Each tier is PRIORITY-ORDERED and resolution takes the first candidate whose
+ * `envVar` is present in the host process, so the fallback is a funding
+ * fallback: a host with no Anthropic key still seats every tier on the
+ * provider it can actually pay for. Before gh-1187 S0 this map was
+ * Anthropic-only, which meant a Google-funded instance composed every seat
+ * with NO resolved model and silently fell through to the host default — the
+ * tier ladder in policy.yaml was decorative there (#1195).
  */
 export interface ModelTierCandidate {
   readonly provider: string
@@ -29,10 +37,22 @@ export interface ModelTierCandidate {
 }
 
 export const MODEL_TIER_CANDIDATES: Readonly<Record<string, readonly ModelTierCandidate[]>> = Object.freeze({
-  T1: [{ provider: 'anthropic', id: 'claude-fable-5', envVar: 'ANTHROPIC_API_KEY' }],
-  T2: [{ provider: 'anthropic', id: 'claude-opus-4-8', envVar: 'ANTHROPIC_API_KEY' }],
-  T3: [{ provider: 'anthropic', id: 'claude-sonnet-4-6', envVar: 'ANTHROPIC_API_KEY' }],
-  T4: [{ provider: 'anthropic', id: 'claude-haiku-4-5-20251001', envVar: 'ANTHROPIC_API_KEY' }],
+  T1: [
+    { provider: 'anthropic', id: 'claude-fable-5', envVar: 'ANTHROPIC_API_KEY' },
+    { provider: 'google', id: 'gemini-3.1-pro-preview', envVar: 'GEMINI_API_KEY' },
+  ],
+  T2: [
+    { provider: 'anthropic', id: 'claude-opus-4-8', envVar: 'ANTHROPIC_API_KEY' },
+    { provider: 'google', id: 'gemini-3.1-pro-preview', envVar: 'GEMINI_API_KEY' },
+  ],
+  T3: [
+    { provider: 'anthropic', id: 'claude-sonnet-4-6', envVar: 'ANTHROPIC_API_KEY' },
+    { provider: 'google', id: 'gemini-3-pro-preview', envVar: 'GEMINI_API_KEY' },
+  ],
+  T4: [
+    { provider: 'anthropic', id: 'claude-haiku-4-5-20251001', envVar: 'ANTHROPIC_API_KEY' },
+    { provider: 'google', id: 'gemini-3.5-flash', envVar: 'GEMINI_API_KEY' },
+  ],
 })
 
 export interface FleetSkillBinding {
