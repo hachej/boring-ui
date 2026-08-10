@@ -11,5 +11,8 @@
       "description": "The owner's standing counterpart: dispatches work and reads bead end-states.",
       "instructionsRef": "instructions.md"
     }
+  },
+  "pi": {
+    "skills": ["plan", "feedback", "handoff"]
   }
 }

@@ -1,8 +1,8 @@
 # Plan quality checklist
 
-Reference knowledge for stewarding a boring-ui issue plan. Read via the
+Reference knowledge for working a boring-ui issue plan. Read via the
 `agent_knowledge` filesystem; this folder is readonly and scoped to the
-steward seat only.
+worker seat only.
 
 ## Every plan must carry
 

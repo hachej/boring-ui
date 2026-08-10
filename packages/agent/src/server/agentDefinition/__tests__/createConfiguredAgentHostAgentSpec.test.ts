@@ -10,17 +10,20 @@ import { materializeAgentDirectory } from '../materializeAgentDirectory'
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../../../../..')
 const FACTORY_ROOT = resolve(REPO_ROOT, '.agents/personas')
-// [directory, agentTypeId, label, persona package version]. Every persona
-// package on disk is covered, including the deferred grow-on-demand seats that
-// hold no fleet.yaml entry today — an unbooted persona still has to be a valid,
+// Deferred grow-on-demand persona material lives as test fixtures, not live
+// personas (gh-1187 S0: the ratified roster is triage/orchestrator/worker).
+const DEFERRED_ROOT = resolve(import.meta.dirname, 'fixtures/deferred-personas')
+// [root, directory, agentTypeId, label, persona package version]. Every
+// ratified persona package on disk is covered, plus the deferred
+// grow-on-demand fixtures — an unbooted persona still has to be a valid,
 // materializable definition the moment a lane pulls it back into the roster.
 const ROLES = [
-  ['concierge', 'boring-concierge', 'Boring Concierge', '2026.08.04'],
-  ['triage', 'boring-triage', 'Boring Triage', '2026.08.04'],
-  ['steward', 'boring-steward', 'Boring Steward', '2026.08.04'],
-  ['orchestrator', 'boring-orchestrator', 'Boring Orchestrator', '2026.08.10'],
-  ['worker', 'boring-worker', 'Boring Worker', '2026.08.04'],
-  ['reviewer', 'boring-reviewer', 'Boring Reviewer', '2026.08.04'],
+  [DEFERRED_ROOT, 'concierge', 'boring-concierge', 'Boring Concierge', '2026.08.04'],
+  [FACTORY_ROOT, 'triage', 'boring-triage', 'Boring Triage', '2026.08.04'],
+  [DEFERRED_ROOT, 'steward', 'boring-steward', 'Boring Steward', '2026.08.04'],
+  [FACTORY_ROOT, 'orchestrator', 'boring-orchestrator', 'Boring Orchestrator', '2026.08.10'],
+  [FACTORY_ROOT, 'worker', 'boring-worker', 'Boring Worker', '2026.08.04'],
+  [DEFERRED_ROOT, 'reviewer', 'boring-reviewer', 'Boring Reviewer', '2026.08.04'],
 ] as const
 
 async function source(role = 'triage', expectedAgentTypeId = 'boring-triage') {
@@ -32,8 +35,8 @@ async function source(role = 'triage', expectedAgentTypeId = 'boring-triage') {
 }
 
 describe('Boring factory authored agents', () => {
-  test.each(ROLES)('materializes identity-only %s definition', async (role, agentTypeId, label, version) => {
-    const manifestPath = resolve(FACTORY_ROOT, role, 'package.json')
+  test.each(ROLES)('materializes identity-only persona definition (case %#)', async (root, role, agentTypeId, label, version) => {
+    const manifestPath = resolve(root, role, 'package.json')
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>
     const boringAgent = (manifest.boring as Record<string, unknown>).agent as Record<string, unknown>
 
@@ -44,7 +47,13 @@ describe('Boring factory authored agents', () => {
       'label',
       'version',
     ])
-    await expect(source(role, agentTypeId)).resolves.toMatchObject({
+    await expect(
+      materializeAgentDirectory({
+        directory: resolve(root, role),
+        expectedAgentTypeId: agentTypeId,
+        manifest: 'package.json',
+      }),
+    ).resolves.toMatchObject({
       schemaVersion: 1,
       agentTypeId,
       label,

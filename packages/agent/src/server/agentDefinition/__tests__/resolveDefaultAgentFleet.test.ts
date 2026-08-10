@@ -10,11 +10,12 @@ import type { DiscoveredAgentPackageDescriptor } from '../loadConfiguredAgentFle
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../../../..')
 const FACTORY_PACKAGES: readonly DiscoveredAgentPackageDescriptor[] = [
+  // Ratified roster (gh-1187 S0) plus a discovered-but-deferred seat
+  // (concierge) that holds no fleet.yaml entry and must not compose.
   ['concierge', 'boring-concierge', ['feedback', 'triage', 'handoff']],
   ['triage', 'boring-triage', ['triage', 'handoff']],
-  ['steward', 'boring-steward', ['plan', 'handoff']],
-  ['worker', 'boring-worker', ['exec', 'handoff']],
-  ['reviewer', 'boring-reviewer', ['fresh-eyes', 'handoff']],
+  ['orchestrator', 'boring-orchestrator', ['plan', 'feedback', 'handoff']],
+  ['worker', 'boring-worker', ['exec', 'fresh-eyes', 'handoff']],
 ].map(([seat, definitionId, skills]) => ({
   rootDir: resolve(REPOSITORY_ROOT, '.agents', 'personas', seat as string),
   manifest: {
@@ -64,7 +65,7 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
     })
     expect(agents[0]).toEqual({ agentTypeId: 'default', legacyDefault: true })
     // The ratified 3-seat roster (gh-1187 S0). Deferred grow-on-demand seats
-    // (concierge, reviewer, ...) still have persona packages on disk but hold
+    // (concierge, reviewer, ...) may still be discovered as packages but hold
     // no fleet.yaml entry, so they must NOT compose.
     expect(agents.slice(1).map((agent) => agent.agentTypeId)).toEqual([
       'boring-triage',
