@@ -316,7 +316,11 @@ permanent two-secret mode.
 
 Rotate in this order: (1) install the new secret on the daemon as secondary and
 restart/drain-check it so both old and new verify; (2) switch seneca's issuer
-and verifier to the new secret and confirm a fresh health/create/delete canary;
+to the new secret while its verifier accepts receipts from EITHER secret for
+the duration of the overlap (the daemon keeps signing with its configured
+primary — the old secret — until step 3, so a new-secret-only verifier would
+reject every receipt mid-rotation), and confirm a fresh health/create/delete
+canary;
 (3) wait out the bounded lifetime, promote the new secret to daemon primary,
 drop the old secret, and restart/drain-check again. On suspected compromise,
 stop new admission and retire active sessions before this sequence; overlap
@@ -619,7 +623,12 @@ admission record for that box.
 - Format/mount a dedicated operator-selected data volume as ext4 or XFS with
   project quotas, persist the mount, and make `--check` prove `prjquota` is
   active. The script must require an explicit block device/mount target and
-  refuse `/`, the repository, or an unresolved variable.
+  refuse `/`, the repository, or an unresolved variable. Procurement
+  constraint (Gate 0): the VM SKU must offer an attachable second block
+  volume — verify before purchase on the chosen provider (OVH/Infomaniak/
+  Hikube all sell attachable volumes, but not on every SKU) — and, for the
+  Tailscale cert path, MagicDNS + HTTPS certificates must be enabled on the
+  tailnet.
 - Build/install `/usr/local/libexec/boring-workspace-quota` as root-owned,
   non-writable by the daemon's callers, with its digest in the qualification
   bundle. Configure the worker service, nonce-state directory, workspace root,
@@ -769,9 +778,11 @@ production canary.
 - Set `qualificationMaxAgeMs` explicitly to seven days for this internal-first
   box. The operator re-runs S4 qualification at least every six days and after
   any kernel, Docker, runsc, daemon/provider, helper, policy, or image change.
-  The named owner is the seneca production operator; provisioning creates a
-  recurring six-day operations-calendar reminder assigned to that owner and
-  links it to the current admission record and runbook. Missing the reminder
+  The named owner is the seneca production operator. Creating the recurring
+  six-day requalification reminder is a MANUAL admission-record step the
+  operator performs at first admission (the provisioning script prints the
+  exact reminder text and the admission-record/runbook links to include; it
+  does not pretend to reach a calendar). Missing the reminder
   is not a waiver: expiry still fails create closed.
   Installing refreshed immutable evidence requires draining the worker and
   restarting the daemon; old evidence remains the rollback artifact. New
