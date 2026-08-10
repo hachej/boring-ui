@@ -39,7 +39,9 @@ or gate taxonomies.
   `expand → migrate batches → contract`.
 - **Exec:** current proof, required review dispositions, thermo for code, and a
   human-ready artifact/test playbook. Follow `procedures/proof-of-work.md` and
-  `procedures/owner-review-card.md`.
+  `procedures/owner-review-card.md`. The owner-facing deliverable of every
+  implementation PR is a present-pr artifact (`.agents/skills/present-pr/`):
+  context diagram, area→package flow, and importance-ordered diffs.
 
 The default is one issue per PR. When the owner explicitly requests one branch
 and one deferred review for multiple small fixes, follow the guarded

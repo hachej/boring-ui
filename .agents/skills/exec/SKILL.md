@@ -41,8 +41,10 @@ a wasted owner test is a factory defect.
 Implement the smallest bounded slice with behavior tests, record current proof,
 apply the Model Card review ladder and mandatory code-thermo gate, and integrate
 or disposition every material finding. Re-prove and re-review non-trivial fixes.
-Then open/update the PR and send the owner card through `ask_user` (PR comment
-fallback), attaching the best runnable UI or file/proof artifact. Use commit
+Then open/update the PR, present it for validation — run the present-pr
+generator (`.agents/skills/present-pr/`) and deliver its artifact as the
+owner-facing deliverable — and send the owner card through `ask_user` (PR
+comment fallback), attaching that artifact plus the best runnable UI or proof. Use commit
 subjects `[br-###] description` and push after every commit.
 
 For a UI packet, validate it first and follow the complete round, stop, baseline,

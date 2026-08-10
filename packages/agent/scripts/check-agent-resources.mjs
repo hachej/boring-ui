@@ -18,6 +18,7 @@ const expectedSkills = [
   "grill-for-unknowns",
   "handoff",
   "plan",
+  "present-pr",
   "skill-management",
   "teach",
   "triage",
