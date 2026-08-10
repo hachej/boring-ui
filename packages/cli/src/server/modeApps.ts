@@ -958,9 +958,18 @@ export async function createWorkspacesModeApp(opts: {
   // canonical @hachej/boring-agent/server helper (M9 fix round 1: this used
   // to duplicate that composition inline).
   const fleetRepositoryRoot = process.cwd()
-  const discoveredAgentPackages = process.env.BORING_AGENT_FLEET === "1"
-    ? await workspaceServer.discoverRepositoryAgentPackages(fleetRepositoryRoot)
-    : undefined
+  let discoveredAgentPackages: Awaited<ReturnType<typeof workspaceServer.discoverRepositoryAgentPackages>> | undefined
+  if (process.env.BORING_AGENT_FLEET === "1") {
+    const registeredWorkspaceRoots = (await registry.list())
+      .filter((workspace) => workspace.available)
+      .map((workspace) => workspace.path)
+    const packageWorkspaceRoots = [...new Set([fleetRepositoryRoot, ...registeredWorkspaceRoots])]
+    discoveredAgentPackages = await workspaceServer.discoverRepositoryAgentPackages(fleetRepositoryRoot, {
+      localPackageSources: packageWorkspaceRoots.flatMap((root) => (
+        pluginDiscovery.resolveCliLocalAgentPackageDirs(root)
+      )),
+    })
+  }
   const agentHost = await agentServer.createAgentHost({
     // The hub serves a DIFFERENT root per registered workspace, so there is no
     // single one persona instruction refs could be addressed against.
