@@ -22,6 +22,11 @@ export type Workspace = {
   deletedAt: string | null
   isDefault: boolean
   managedBy?: string | null
+  /**
+   * Durably persisted default Agent seat for this workspace (Decision 28).
+   * Written once at workspace initialization; never rewritten implicitly.
+   */
+  readonly defaultAgentTypeId?: string | null
 }
 
 export type WorkspaceMember = {
@@ -148,6 +153,13 @@ export interface CoreConfig {
 
   databaseUrl: string | null
   stores: 'postgres' | 'local'
+
+  /**
+   * Boot-time host default Agent seat. Stamped onto workspaces at
+   * initialization (Decision 28) and used as the resolution fallback when a
+   * workspace has no persisted `defaultAgentTypeId`.
+   */
+  defaultAgentTypeId?: string
 
   cors: {
     origins: string[]

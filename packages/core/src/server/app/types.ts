@@ -43,6 +43,11 @@ export interface WorkspaceStoreCreateOptions {
   isDefault?: boolean
   id?: string
   managedBy?: string
+  /**
+   * Persisted default Agent seat (Decision 28). Applied only at workspace
+   * initialization; an existing workspace's value is never rewritten.
+   */
+  readonly defaultAgentTypeId?: string
 }
 
 export interface WorkspaceStore {

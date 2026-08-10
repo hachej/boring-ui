@@ -17,6 +17,7 @@ import {
   assertWorkspaceTypeIdNotMutable,
   parseTrustedWorkspaceTypeId,
 } from '../../workspaceType.js'
+import { parseTrustedDefaultAgentTypeId } from '../../defaultAgentType.js'
 import type { LocalUserStore } from './LocalUserStore.js'
 
 function toWorkspace(workspace: Workspace): Workspace {
@@ -36,6 +37,7 @@ export class LocalWorkspaceStore implements WorkspaceStore {
 
   async create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace> {
     const workspaceTypeId = parseTrustedWorkspaceTypeId(opts?.workspaceTypeId)
+    const defaultAgentTypeId = parseTrustedDefaultAgentTypeId(opts?.defaultAgentTypeId)
     const id = opts?.id ?? randomUUID()
     const existing = opts?.id ? this.workspaces.get(id) : undefined
     if (existing) {
@@ -54,6 +56,7 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       deletedAt: null,
       isDefault: opts?.isDefault ?? false,
       managedBy: opts?.managedBy ?? null,
+      defaultAgentTypeId,
     }
     this.workspaces.set(ws.id, ws)
     const memberKey = `${ws.id}:${userId}`
