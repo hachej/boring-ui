@@ -1,6 +1,6 @@
 ---
 name: present-pr
-description: Present a PR to the owner for validation as one self-contained artifact — a context diagram, an area→package→file sankey, and importance-ordered diffs. Use as the final step of every implementation PR, before requesting owner validation.
+description: Present a PR to the owner for validation as one self-contained artifact — a context diagram, a review-history audit trail, an area→package→file sankey, and importance-ordered diffs. Use as the final step of every implementation PR, before requesting owner validation.
 ---
 
 # Present PR
@@ -11,10 +11,12 @@ importance-ordered diffs) and publish/hand the artifact to the owner.**
 
 The review flow it encodes, in the owner's own order:
 
-1. **What areas/packages are touched** — `packages/` vs `apps/` vs the rest.
-2. **Per-package scope check** — a PR reaching into a package it has no business in is
+1. **What review already happened** — was this deep-audited? thermo-reviewed? what failed
+   and did it get fixed? Answerable yes/no without reading a single comment thread.
+2. **What areas/packages are touched** — `packages/` vs `apps/` vs the rest.
+3. **Per-package scope check** — a PR reaching into a package it has no business in is
    visible at a glance, with that package's ±line counts on the node.
-3. **Most important diffs first** — not alphabetical, not whatever GitHub shows first.
+4. **Most important diffs first** — not alphabetical, not whatever GitHub shows first.
 
 A GitHub PR page answers none of these: it opens on a path-sorted file list with
 lockfiles and snapshots competing with the one file that decides the review.
@@ -61,7 +63,34 @@ already reviewed, and state the open questions.
    importance heuristic. Use it whenever you know which two or three diffs decide the
    review — you almost always do.
 
-3. **Generate the page:**
+3. **Fill the review history — this is mandatory, not optional.** Add a
+   `## Review history` block to the same sidecar, one bullet per event, fields separated
+   by `|`:
+
+   ~~~markdown
+   ## Review history
+
+   - 2026-08-08 | deep audit | FAIL -> fixed | Opus worker | 6 findings, 4 blocking: <one line each>. Closed by <commit>.
+   - 2026-08-08 | thermo review | PASS with findings | Claude Fable 5 | Two buildBwrapArgs copies kept in sync rather than deduplicated; accepted with rationale.
+   - 2026-08-09 | CI re-verify | PASS | GitHub Actions | Full matrix green on the merge commit.
+   ~~~
+
+   `date | type | verdict | who ran it | 1-line summary with resolution state`. Trailing
+   fields may be omitted. Recognised types colour their badge: deep audit, security audit,
+   thermo review, pi/code review, fix round, re-verify, UI review, merge. Verdicts are free
+   text, tone-matched on `PASS` / `PASS with findings` / `FAIL` / `FAIL -> fixed`.
+
+   **Reconstruct it from the PR's actual audit trail** — commits, review comments, CI runs,
+   worker reports — never from memory or optimism. Every finding gets its resolution state:
+   closed, deferred with stated risk, or open. If a review *did not happen*, record that as
+   an event with verdict `NOT RECORDED` and say so; the header badge reads "thermo review:
+   NOT recorded" and will not count a `NOT RECORDED`/`SKIPPED` thermo entry as evidence of
+   review. Recording an absence honestly is the point of the section.
+
+   Omitting the block entirely does not hide the gap: the artifact renders a red
+   "No review history recorded — treat as unreviewed" panel in its place.
+
+4. **Generate the page:**
 
    ```bash
    node scripts/present-pr.mjs <pr-number> \
@@ -75,14 +104,18 @@ already reviewed, and state the open questions.
    file with no external requests — safe for the artifact viewer's strict CSP. Mermaid is
    emitted as `<pre class="mermaid">`, which artifacts render natively.
 
-4. **Publish it as an artifact** and hand the owner the URL with a two-line message: the
+5. **Publish it as an artifact** and hand the owner the URL with a two-line message: the
    decision you want, and the open questions.
 
 ## What the page gives the reviewer
 
 - **Header** — title, author, branch pair, churn, live CI check tally, audit status.
 - **Section 1 — what this touches.** The intro diagram and the context summary.
-- **Section 2 — changes.**
+- **Section 2 — review history.** A chronological audit trail with type badges, per-event
+  verdict, who ran it, and a 1-line finding summary with resolution state. A headline badge
+  answers "thermo review: recorded / NOT recorded" at a glance. Absent history renders as an
+  explicit warning, never as an omitted section.
+- **Section 3 — changes.**
   - **Sankey navigation** (inline SVG, hand-rolled, no libraries): area → package → file.
     Ribbon width is changed lines, colour is the dominant file category, node bars split
     green/red by additions/deletions. Package nodes carry their own ±counts. Hovering

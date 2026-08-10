@@ -4,8 +4,12 @@
 //   node scripts/present-pr.mjs <pr-number> [options]
 //
 //   --repo <owner/name>   default: current repo (gh resolves it)
-//   --context <path>      sidecar .md (first ```mermaid fence = intro diagram, rest = context
-//                         summary) or .json ({ mermaid, summary, audit, ci, verdict })
+//   --context <path>      sidecar .md or .json. In markdown: the first ```mermaid fence is
+//                         the intro diagram, `## Key files` pins reading order,
+//                         `## Review history` is the audit trail (one `date | type |
+//                         verdict | who | summary` bullet per event), the rest is prose.
+//                         JSON keys: { mermaid, summary, audit, ci, verdict, keyFiles,
+//                         reviewHistory }
 //   --audit "<text>"      audit status line (overrides sidecar)
 //   --out <path>          output HTML (default: pr-<n>-presentation.html)
 //
@@ -63,30 +67,36 @@ const rawDiff = gh(['pr', 'diff', prNumber, ...repoArgs])
 
 /* ------------------------------------------------------- sidecar context */
 
-const context = { mermaid: '', summary: '', audit: '', verdict: '', keyFiles: [] }
+const context = { mermaid: '', summary: '', audit: '', verdict: '', keyFiles: [], reviewHistory: [] }
 if (args.context) {
   const raw = readFileSync(args.context, 'utf8')
   if (args.context.endsWith('.json')) Object.assign(context, JSON.parse(raw))
   else {
     const fence = raw.match(/```mermaid\n([\s\S]*?)```/)
     context.mermaid = fence ? fence[1].trim() : ''
-    // `## Key files` pins the reading order explicitly, overriding the heuristic.
-    // Sectioning is done by splitting rather than one greedy regex: `$` under
-    // /m/ ends at the first newline, so a lazy "until the next heading" match
-    // silently captures nothing.
+    // `## Key files` pins the reading order; `## Review history` carries the
+    // audit trail. Sectioning is done by splitting rather than one greedy
+    // regex: `$` under /m/ ends at the first newline, so a lazy "until the next
+    // heading" match silently captures nothing.
     const lines = raw.replace(/```mermaid\n[\s\S]*?```/, '').split('\n')
     const keep = []
-    let inKeyFiles = false
+    let section = ''
     for (const line of lines) {
-      if (/^##+\s/.test(line)) inKeyFiles = /^##+\s*key files\s*$/i.test(line.trim())
-      if (!inKeyFiles) { keep.push(line); continue }
-      const item = line.match(/^\s*[-*]\s+`?([^`\s]+)`?/)
-      if (item) context.keyFiles.push(item[1])
+      if (/^##+\s/.test(line)) {
+        const heading = line.replace(/^#+\s*/, '').trim().toLowerCase()
+        section = heading === 'key files' ? 'keyFiles' : heading === 'review history' ? 'reviewHistory' : ''
+      }
+      if (!section) { keep.push(line); continue }
+      const item = line.match(/^\s*[-*]\s+(.*)$/)
+      if (!item) continue
+      if (section === 'keyFiles') context.keyFiles.push(item[1].replace(/`/g, '').trim())
+      else context.reviewHistory.push(item[1].trim())
     }
     context.summary = keep.join('\n').replace(/^#.*\n/, '').trim()
   }
 }
 context.keyFiles = Array.isArray(context.keyFiles) ? context.keyFiles : []
+context.reviewHistory = Array.isArray(context.reviewHistory) ? context.reviewHistory : []
 if (typeof args.audit === 'string') context.audit = args.audit
 
 /* -------------------------------------------------------- categorization */
@@ -305,6 +315,78 @@ const ciLabel = checks.length === 0
   : `${checkSummary.pass} passed · ${checkSummary.fail} failed · ${checkSummary.pending} pending${checkSummary.skip ? ` · ${checkSummary.skip} skipped` : ''}`
 const ciTone = checkSummary.fail > 0 ? 'bad' : checkSummary.pending > 0 ? 'warn' : checks.length ? 'good' : 'neutral'
 
+/* ---------------------------------------------------------- review trail */
+
+/** Badge slug per event type, so "was this thermo-reviewed?" is answerable by eye. */
+function eventType(label) {
+  const value = label.toLowerCase()
+  if (/thermo/.test(value)) return { id: 'thermo', label: label }
+  if (/security/.test(value)) return { id: 'security', label: label }
+  if (/audit/.test(value)) return { id: 'audit', label: label }
+  if (/fix/.test(value)) return { id: 'fix', label: label }
+  if (/re-?verif|retest|smoke/.test(value)) return { id: 'verify', label: label }
+  if (/ui/.test(value)) return { id: 'ui', label: label }
+  if (/merge|ship|land/.test(value)) return { id: 'merge', label: label }
+  if (/review/.test(value)) return { id: 'review', label: label }
+  return { id: 'other', label: label }
+}
+
+function verdictTone(verdict) {
+  const value = verdict.toLowerCase()
+  if (/fixed|resolved/.test(value)) return 'fixed'
+  if (/^fail|blocked|reject/.test(value)) return 'bad'
+  if (/finding|partial|waiv|defer/.test(value)) return 'warn'
+  if (/^pass|^ok|^green|^approved/.test(value)) return 'good'
+  return 'neutral'
+}
+
+/** `date | type | verdict | who | summary`, tolerant of missing trailing fields. */
+function parseReviewEvent(line) {
+  const parts = line.split('|').map((part) => part.trim())
+  return {
+    when: parts[0] ?? '',
+    type: eventType(parts[1] ?? 'review'),
+    verdict: parts[2] ?? '',
+    actor: /^[-–—]?$/.test(parts[3] ?? '') ? '' : parts[3],
+    summary: parts.slice(4).join(' | '),
+  }
+}
+
+const reviewEvents = context.reviewHistory.map(parseReviewEvent)
+// A thermo event that says "not recorded" or "skipped" is evidence of absence,
+// not evidence of review — the headline badge must not read it as a pass.
+const hasThermo = reviewEvents.some((event) =>
+  event.type.id === 'thermo' && !/not recorded|skipped|none|n\/a|missing|pending/i.test(event.verdict))
+
+function renderReviewHistory() {
+  // Absence is a finding, not a reason to drop the section.
+  if (reviewEvents.length === 0) {
+    return `<div class="card norecord">
+      <strong>No review history recorded.</strong>
+      <p>The context sidecar has no <code>## Review history</code> block, so this PR carries no evidence of audit, thermo review, or fix rounds. Treat it as unreviewed until the presenting agent fills it in.</p>
+    </div>`
+  }
+  const rows = reviewEvents.map((event) => `<li class="ev ev-${event.type.id}">
+    <span class="evdot" aria-hidden="true"></span>
+    <div class="evbody">
+      <div class="evline">
+        <span class="evtype evtype-${event.type.id}">${esc(event.type.label)}</span>
+        ${event.verdict ? `<span class="evverdict v-${verdictTone(event.verdict)}">${esc(event.verdict)}</span>` : ''}
+        ${event.actor ? `<span class="evactor">${esc(event.actor)}</span>` : ''}
+        ${event.when ? `<span class="evwhen">${esc(event.when)}</span>` : ''}
+      </div>
+      ${event.summary ? `<p class="evsummary">${esc(event.summary).replace(/`([^`]+)`/g, '<code>$1</code>')}</p>` : ''}
+    </div>
+  </li>`).join('\n')
+  return `<div class="card">
+    <div class="evhead">
+      <span class="badge"><span class="dot ${hasThermo ? 'good' : 'bad'}"></span>thermo review: ${hasThermo ? 'recorded' : 'NOT recorded'}</span>
+      <span class="muted">${reviewEvents.length} recorded event${reviewEvents.length === 1 ? '' : 's'}</span>
+    </div>
+    <ol class="evlist">${rows}</ol>
+  </div>`
+}
+
 function paragraphs(text) {
   if (!text) return '<p class="muted">No context summary supplied. Pass <code>--context &lt;file.md&gt;</code>.</p>'
   return String(text).split(/\n{2,}/).map((p) => `<p>${esc(p.trim()).replace(/\n/g, ' ').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')}</p>`).join('\n')
@@ -412,6 +494,33 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
 .empty { padding: 14px; color: var(--muted); font-family: inherit; white-space: normal; }
 .t-kw { color: var(--t-kw); } .t-str { color: var(--t-str); } .t-num { color: var(--t-num); } .t-com { color: var(--t-com); font-style: italic; }
 
+/* --- review history --- */
+.norecord { border-color: var(--bad); }
+.norecord strong { color: var(--bad); }
+.norecord p { margin: 6px 0 0; color: var(--muted); font-size: 13.5px; }
+.evhead { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; font-size: 12.5px; }
+.evhead .muted { margin-left: auto; }
+.evlist { list-style: none; margin: 0; padding: 0 0 0 4px; }
+.ev { position: relative; padding: 0 0 16px 22px; border-left: 2px solid var(--border); }
+.ev:last-child { padding-bottom: 0; border-left-color: transparent; }
+.evdot { position: absolute; left: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); border: 2px solid var(--panel); }
+.ev-thermo .evdot { background: var(--cat-config); } .ev-audit .evdot { background: var(--cat-prod); }
+.ev-security .evdot { background: var(--bad); } .ev-fix .evdot { background: var(--warn); }
+.ev-verify .evdot { background: var(--good); } .ev-ui .evdot { background: var(--cat-docs); }
+.ev-merge .evdot { background: var(--accent); }
+.evline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.evtype { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; padding: 2px 9px; border-radius: 999px; color: var(--bg); background: var(--muted); }
+.evtype-thermo { background: var(--cat-config); } .evtype-audit { background: var(--cat-prod); }
+.evtype-security { background: var(--bad); } .evtype-fix { background: var(--warn); }
+.evtype-verify { background: var(--good); } .evtype-ui { background: var(--cat-docs); }
+.evtype-review { background: var(--cat-test); } .evtype-merge { background: var(--accent); }
+.evverdict { font-size: 11.5px; font-weight: 600; padding: 1px 9px; border-radius: 999px; border: 1px solid currentColor; }
+.v-good { color: var(--good); } .v-warn { color: var(--warn); } .v-bad { color: var(--bad); }
+.v-fixed { color: var(--good); } .v-neutral { color: var(--muted); }
+.evactor { font-size: 12px; color: var(--muted); }
+.evwhen { font-size: 12px; color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
+.evsummary { margin: 5px 0 0; font-size: 13.5px; }
+
 /* --- sankey navigation --- */
 .sankey { padding: 12px 6px 6px; margin-bottom: 14px; }
 .sankeyhead { display: flex; align-items: center; gap: 12px; margin: 0 10px 8px; }
@@ -461,7 +570,10 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
   </div>
   <div class="card" style="margin-top:12px">${paragraphs(context.summary)}</div>
 
-  <h2>2 · Changes</h2>
+  <h2>2 · Review history</h2>
+  ${renderReviewHistory()}
+
+  <h2>3 · Changes</h2>
   <div class="filters">
     ${filterChips}
     <div class="tools">
