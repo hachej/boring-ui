@@ -1,10 +1,10 @@
 import type { MouseEvent, ReactElement, ReactNode } from "react"
-import type { FilesystemId } from "../../shared/types/filesystem"
+import type { FilesystemId, UiFileOpenMode } from "../../shared/types/filesystem"
 import type { UiCommand } from "./types"
 import { postUiCommand } from "./uiCommandBus"
 
 export type WorkspaceLinkTarget =
-  | { kind: "openFile"; path: string; mode?: "view" | "edit" | "diff"; filesystem?: FilesystemId }
+  | { kind: "openFile"; path: string; mode?: UiFileOpenMode; filesystem?: FilesystemId }
   | { kind: "openSurface"; surfaceKind: string; target: string; filesystem?: FilesystemId; meta?: Record<string, unknown> }
   | { kind: "openPanel"; id: string; component: string; title?: string; params?: Record<string, unknown> }
   | { kind: "expandToFile"; path: string; filesystem?: FilesystemId }

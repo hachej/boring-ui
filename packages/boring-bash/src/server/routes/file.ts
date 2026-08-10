@@ -19,6 +19,7 @@ import {
   buildFileRecordsResult,
   parseFileRecordsRequest,
 } from './fileRecords'
+import { accessProjection, requireBindingCapability, resolveBindingAccess } from './bindingAccess'
 import { isReadonlySkillFilePath, readReadonlySkillFile, statReadonlySkillFile } from './readonlySkillFiles'
 
 const log = createLogger('boring/workspace-settings')
@@ -111,6 +112,11 @@ function classifyError(
 
   const statusCode = (err as { statusCode?: unknown })?.statusCode
   const stableCode = (err as { code?: unknown })?.code
+  if (statusCode === 403 && stableCode === ERROR_CODE_READONLY) {
+    return reply.code(403).send({
+      error: { code: ERROR_CODE_READONLY, message },
+    })
+  }
   if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 600) {
     const details = (err as { details?: unknown })?.details
     const conflictDetails = stableCode === ERROR_CODE_CONFLICT && details && typeof details === 'object' && !Array.isArray(details)
@@ -139,13 +145,6 @@ function requestedFilesystem(value: unknown): string {
   return typeof value === 'string' && value.length > 0 ? value : USER_FILESYSTEM_ID
 }
 
-/**
- * Roots the read-only skill-file bypass is allowed to reach: the caller's own
- * workspace root, plus pi's shared global agent dir (the read-only global
- * skills location the skills route discovers). Anything else — notably another
- * tenant's workspace root — is rejected, keeping the bypass from becoming a
- * cross-workspace host-filesystem read.
- */
 function readonlySkillRoots(workspace: Workspace): string[] {
   return [workspace.root, getAgentDir()]
 }
@@ -153,6 +152,16 @@ function readonlySkillRoots(workspace: Workspace): string[] {
 function sendNotFoundOrDenied(reply: FastifyReply): FastifyReply {
   return reply.code(404).send({
     error: { code: ERROR_CODE_NOT_FOUND_OR_DENIED, message: 'not found or denied' },
+  })
+}
+
+function sendFilesystemBindingMutationDenied(
+  reply: FastifyReply,
+  filesystem: string,
+  access: RuntimeFilesystemBinding['access'],
+): FastifyReply {
+  return reply.code(403).send({
+    error: { code: ERROR_CODE_READONLY, message: `${filesystem} binding is ${access}` },
   })
 }
 
@@ -203,14 +212,33 @@ function parseWorkspaceSettings(raw: string): BoringWorkspaceSettings {
   }
 }
 
-async function readWorkspaceSettings(workspace: Workspace): Promise<BoringWorkspaceSettings> {
+async function readWorkspaceSettings(
+  workspace: Workspace,
+  binding?: RuntimeFilesystemBinding,
+): Promise<BoringWorkspaceSettings> {
   try {
-    return parseWorkspaceSettings(await workspace.readFile(BORING_SETTINGS_PATH))
+    const raw = binding
+      ? (await binding.operations.read({ filesystem: binding.filesystem, path: BORING_SETTINGS_PATH })).content
+      : await workspace.readFile(BORING_SETTINGS_PATH)
+    return parseWorkspaceSettings(raw)
   } catch (error) {
     const code = (error as NodeJS.ErrnoException)?.code
     if (code === 'ENOENT') return defaultWorkspaceSettings()
     throw error
   }
+}
+
+async function ensureBindingDirectory(binding: RuntimeFilesystemBinding, path: string): Promise<void> {
+  try {
+    const stat = await binding.operations.stat({ filesystem: binding.filesystem, path })
+    if (stat.isDirectory) return
+    throw Object.assign(new Error('path already exists and is not a directory'), { code: 'EEXIST' })
+  } catch (error: unknown) {
+    if ((error as { code?: string }).code !== 'ENOENT') throw error
+  }
+  await requireBindingCapability(binding, path, 'create-child')
+  if (!binding.operations.mkdir) binding.operations.rejectMutation('create-child', { filesystem: binding.filesystem, path })
+  await binding.operations.mkdir?.({ filesystem: binding.filesystem, path, recursive: true })
 }
 
 function normalizeUploadDir(value: unknown): string | null {
@@ -291,16 +319,6 @@ function requirePrimaryFilesystem(value: unknown, reply: FastifyReply): boolean 
   return false
 }
 
-function sendFilesystemBindingMutationDenied(
-  reply: FastifyReply,
-  filesystem: string,
-  access: RuntimeFilesystemBinding['access'],
-): FastifyReply {
-  return reply.code(403).send({
-    error: { code: ERROR_CODE_READONLY, message: `${filesystem} binding is ${access}` },
-  })
-}
-
 export function fileRoutes(
   app: FastifyInstance,
   opts: {
@@ -324,7 +342,13 @@ export function fileRoutes(
   }
 
   async function resolveFilesystemBinding(request: FastifyRequest, filesystem: string): Promise<RuntimeFilesystemBinding | undefined> {
-    return (await resolveFilesystemBindings(request)).find((binding) => binding.filesystem === filesystem)
+    const matches = (await resolveFilesystemBindings(request)).filter((binding) => binding.filesystem === filesystem)
+    if (matches.length > 1) throw new Error(`duplicate filesystem binding: ${filesystem}`)
+    return matches[0]
+  }
+
+  async function resolvePrimaryBinding(request: FastifyRequest): Promise<RuntimeFilesystemBinding | undefined> {
+    return resolveFilesystemBinding(request, USER_FILESYSTEM_ID)
   }
 
   app.get('/api/v1/files/raw', async (request, reply) => {
@@ -339,11 +363,13 @@ export function fileRoutes(
         if (!binding) return sendNotFoundOrDenied(reply)
         const result = await binding.operations.read({ filesystem, path })
         const bytes = Buffer.from(result.content, 'utf8')
+        const decision = await resolveBindingAccess(binding, path)
         return reply
           .header('content-type', contentTypeForPath(path))
           .header('content-length', String(bytes.byteLength))
           .header('cache-control', 'no-store')
           .header('x-content-type-options', 'nosniff')
+          .header('X-Boring-Filesystem-Access', decision.access)
           .send(bytes)
       } catch {
         return sendNotFoundOrDenied(reply)
@@ -352,6 +378,8 @@ export function fileRoutes(
 
     try {
       const workspace = await resolveWorkspace(request)
+      const binding = await resolvePrimaryBinding(request)
+      const decision = binding ? await resolveBindingAccess(binding, path) : undefined
       if (!workspace.readBinaryFile) {
         return reply.code(501).send({
           error: { code: ERROR_CODE_INTERNAL, message: 'workspace does not support binary reads' },
@@ -369,6 +397,7 @@ export function fileRoutes(
         .header('content-length', String(bytes.byteLength))
         .header('cache-control', 'no-store')
         .header('x-content-type-options', 'nosniff')
+        .header('X-Boring-Filesystem-Access', decision?.access ?? 'readwrite')
         .send(Buffer.from(bytes))
     } catch (err) {
       return classifyError(err, reply, 'file')
@@ -381,6 +410,7 @@ export function fileRoutes(
       if (!requirePrimaryFilesystem(query.filesystem, reply)) return
       const parsed = parseFileRecordsRequest(query)
       const workspace = await resolveWorkspace(request)
+      const binding = await resolvePrimaryBinding(request)
       const stat = await workspace.stat(parsed.path)
       if (stat.kind !== 'file') {
         return sendValidationError(reply, 'path is not a file', 'path')
@@ -388,18 +418,23 @@ export function fileRoutes(
       if (stat.size > MAX_RECORD_FILE_BYTES) {
         return sendValidationError(reply, 'records file is too large', 'path')
       }
-      const content = await workspace.readFile(parsed.path)
+      const content = binding
+        ? (await binding.operations.read({ filesystem: binding.filesystem, path: parsed.path })).content
+        : await workspace.readFile(parsed.path)
       if (Buffer.byteLength(content, 'utf8') > MAX_RECORD_FILE_BYTES) {
         return sendValidationError(reply, 'records file is too large', 'path')
       }
-      return buildFileRecordsResult({
-        path: parsed.path,
-        content,
-        mtimeMs: stat.mtimeMs,
-        offset: parsed.offset,
-        limit: parsed.limit,
-        q: parsed.q,
-      })
+      return {
+        ...buildFileRecordsResult({
+          path: parsed.path,
+          content,
+          mtimeMs: stat.mtimeMs,
+          offset: parsed.offset,
+          limit: parsed.limit,
+          q: parsed.q,
+        }),
+        ...(binding ? accessProjection(await resolveBindingAccess(binding, parsed.path)) : { access: 'readwrite' as const }),
+      }
     } catch (err) {
       if (err instanceof FileRecordsValidationError) {
         return sendValidationError(reply, err.message, err.field)
@@ -436,6 +471,11 @@ export function fileRoutes(
         }
         return { content, mtimeMs: stat.mtimeMs }
       }
+      const binding = await resolvePrimaryBinding(request)
+      if (binding) {
+        const result = await binding.operations.read({ filesystem, path })
+        return { content: result.content, mtimeMs: result.mtimeMs, ...accessProjection(await resolveBindingAccess(binding, path)) }
+      }
       if (workspace.readFileWithStat) {
         const { content, stat } = await workspace.readFileWithStat(path)
         return { content, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined, access: 'readwrite' }
@@ -464,7 +504,7 @@ export function fileRoutes(
     // 409 with the current mtime so the client can decide whether to
     // reload or force-overwrite.
     const filesystem = requestedFilesystem(body.filesystem)
-const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
+    const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
       ? body.expectedMtimeMs
       : null
     const shouldReturnMtimeMs = body.returnMtimeMs !== false || expectedMtimeMs !== null
@@ -490,6 +530,17 @@ const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
     }
 
     try {
+      const binding = await resolvePrimaryBinding(request)
+      if (binding) {
+        await requireBindingCapability(binding, path, 'write')
+        if (!binding.operations.write) return reply.code(501).send({ error: { code: ERROR_CODE_INTERNAL, message: 'user write operation is unavailable' } })
+        if (body.createDirs) {
+          const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : undefined
+          if (dir) await ensureBindingDirectory(binding, dir)
+        }
+        const result = await binding.operations.write({ filesystem, path, content: body.content, ...(expectedMtimeMs !== null ? { expectedMtimeMs } : {}) })
+        return shouldReturnMtimeMs ? { ok: true, mtimeMs: result.mtimeMs } : { ok: true }
+      }
       const workspace = await resolveWorkspace(request)
       if (expectedMtimeMs !== null) {
         try {
@@ -556,7 +607,8 @@ const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
 
     try {
       const workspace = await resolveWorkspace(request)
-      const settings = await readWorkspaceSettings(workspace)
+      const binding = await resolvePrimaryBinding(request)
+      const settings = await readWorkspaceSettings(workspace, binding)
       const isImage = contentType.startsWith('image/')
       const dir = isImage
         ? normalizeUploadDir(body.directory) ?? normalizeUploadDir(settings.markdown?.imageUploadDir) ?? DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR
@@ -565,6 +617,7 @@ const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
       const base = basenameForUpload(filename)
       const unique = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
       const path = `${dir}/${base}-${unique}.${ext}`
+      if (binding) await requireBindingCapability(binding, path, 'write')
       // Check base64 length before allocating — base64 is ~4/3 the size of raw bytes.
       const estimatedBytes = Math.ceil(contentBase64.length * 0.75)
       if (estimatedBytes === 0 || estimatedBytes > MAX_UPLOAD_BYTES) {
@@ -574,13 +627,19 @@ const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
       }
       const bytes = Buffer.from(contentBase64, 'base64')
 
-      await workspace.mkdir(dir, { recursive: true })
-      const stat = workspace.writeBinaryFileWithStat
-        ? await workspace.writeBinaryFileWithStat(path, bytes)
-        : await (async () => {
-            if (!workspace.writeBinaryFile) {
-              throw new Error('workspace does not support binary uploads')
+      const stat = binding
+        ? await (async () => {
+            await ensureBindingDirectory(binding, dir)
+            if (!binding.operations.writeBinary) {
+              throw Object.assign(new Error('user binary write operation is unavailable'), { statusCode: 501, code: ERROR_CODE_INTERNAL })
             }
+            const result = await binding.operations.writeBinary({ filesystem: binding.filesystem, path, content: bytes })
+            return { kind: 'file' as const, mtimeMs: result.mtimeMs }
+          })()
+        : await (async () => {
+            await workspace.mkdir(dir, { recursive: true })
+            if (workspace.writeBinaryFileWithStat) return await workspace.writeBinaryFileWithStat(path, bytes)
+            if (!workspace.writeBinaryFile) throw new Error('workspace does not support binary uploads')
             await workspace.writeBinaryFile(path, bytes)
             return await workspace.stat(path)
           })()
@@ -611,7 +670,11 @@ const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
   app.get('/api/v1/workspace-settings', async (request, reply) => {
     try {
       const workspace = await resolveWorkspace(request)
-      return { settings: await readWorkspaceSettings(workspace) }
+      const binding = await resolvePrimaryBinding(request)
+      return {
+        settings: await readWorkspaceSettings(workspace, binding),
+        ...(binding ? accessProjection(await resolveBindingAccess(binding, BORING_SETTINGS_PATH)) : { access: 'readwrite' as const }),
+      }
     } catch (err) {
       return classifyError(err, reply, 'settings')
     }
@@ -630,7 +693,9 @@ const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
 
     try {
       const workspace = await resolveWorkspace(request)
-      const current = await readWorkspaceSettings(workspace)
+      const binding = await resolvePrimaryBinding(request)
+      if (binding) await requireBindingCapability(binding, BORING_SETTINGS_PATH, 'write')
+      const current = await readWorkspaceSettings(workspace, binding)
       const next: BoringWorkspaceSettings = {
         ...current,
         markdown: {
@@ -638,8 +703,15 @@ const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
           imageUploadDir,
         },
       }
-      await workspace.mkdir('.boring', { recursive: true })
-      await workspace.writeFile(BORING_SETTINGS_PATH, `${JSON.stringify(next, null, 2)}\n`)
+      const content = `${JSON.stringify(next, null, 2)}\n`
+      if (binding) {
+        await ensureBindingDirectory(binding, '.boring')
+        if (!binding.operations.write) binding.operations.rejectMutation('write', { filesystem: binding.filesystem, path: BORING_SETTINGS_PATH })
+        await binding.operations.write?.({ filesystem: binding.filesystem, path: BORING_SETTINGS_PATH, content })
+      } else {
+        await workspace.mkdir('.boring', { recursive: true })
+        await workspace.writeFile(BORING_SETTINGS_PATH, content)
+      }
       return { settings: next }
     } catch (err) {
       return classifyError(err, reply, 'settings')
@@ -651,7 +723,7 @@ const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
     const path = requireStringParam(query.path, 'path', reply)
     if (path === null) return
     const filesystem = requestedFilesystem(query.filesystem)
-if (filesystem !== USER_FILESYSTEM_ID) {
+    if (filesystem !== USER_FILESYSTEM_ID) {
       try {
         const binding = await resolveFilesystemBinding(request, filesystem)
         if (!binding) return sendNotFoundOrDenied(reply)
@@ -667,8 +739,14 @@ if (filesystem !== USER_FILESYSTEM_ID) {
     }
 
     try {
-      const workspace = await resolveWorkspace(request)
-      await workspace.unlink(path)
+      const binding = await resolvePrimaryBinding(request)
+      if (binding) {
+        await requireBindingCapability(binding, path, 'delete')
+        if (!binding.operations.delete) return reply.code(501).send({ error: { code: ERROR_CODE_INTERNAL, message: 'user delete operation is unavailable' } })
+        await binding.operations.delete({ filesystem, path })
+      } else {
+        await (await resolveWorkspace(request)).unlink(path)
+      }
       return { ok: true }
     } catch (err) {
       return classifyError(err, reply, 'file')
@@ -686,7 +764,8 @@ if (filesystem !== USER_FILESYSTEM_ID) {
       try {
         const binding = await resolveFilesystemBinding(request, filesystem)
         if (!binding) return sendNotFoundOrDenied(reply)
-        if (binding.access !== 'readwrite') return sendFilesystemBindingMutationDenied(reply, filesystem, binding.access)
+        await requireBindingCapability(binding, from, 'move-from')
+        await requireBindingCapability(binding, to, 'create-child')
         if (!binding.operations.move) {
           return reply.code(501).send({ error: { code: ERROR_CODE_INTERNAL, message: `${filesystem} move operation is unavailable` } })
         }
@@ -698,8 +777,15 @@ if (filesystem !== USER_FILESYSTEM_ID) {
     }
 
     try {
-      const workspace = await resolveWorkspace(request)
-      await workspace.rename(from, to)
+      const binding = await resolvePrimaryBinding(request)
+      if (binding) {
+        await requireBindingCapability(binding, from, 'move-from')
+        await requireBindingCapability(binding, to, 'create-child')
+        if (!binding.operations.move) return reply.code(501).send({ error: { code: ERROR_CODE_INTERNAL, message: 'user move operation is unavailable' } })
+        await binding.operations.move({ filesystem, from, to })
+      } else {
+        await (await resolveWorkspace(request)).rename(from, to)
+      }
       return { ok: true }
     } catch (err) {
       return classifyError(err, reply, 'file')
@@ -717,7 +803,7 @@ if (filesystem !== USER_FILESYSTEM_ID) {
       try {
         const binding = await resolveFilesystemBinding(request, filesystem)
         if (!binding) return sendNotFoundOrDenied(reply)
-        if (binding.access !== 'readwrite') return sendFilesystemBindingMutationDenied(reply, filesystem, binding.access)
+        await requireBindingCapability(binding, path, 'create-child')
         if (!binding.operations.mkdir) {
           return reply.code(501).send({ error: { code: ERROR_CODE_INTERNAL, message: `${filesystem} mkdir operation is unavailable` } })
         }
@@ -729,8 +815,14 @@ if (filesystem !== USER_FILESYSTEM_ID) {
     }
 
     try {
-      const workspace = await resolveWorkspace(request)
-      await workspace.mkdir(path, { recursive })
+      const binding = await resolvePrimaryBinding(request)
+      if (binding) {
+        await requireBindingCapability(binding, path, 'create-child')
+        if (!binding.operations.mkdir) return reply.code(501).send({ error: { code: ERROR_CODE_INTERNAL, message: 'user mkdir operation is unavailable' } })
+        await binding.operations.mkdir({ filesystem, path, recursive })
+      } else {
+        await (await resolveWorkspace(request)).mkdir(path, { recursive })
+      }
       return { ok: true }
     } catch (err) {
       return classifyError(err, reply, 'directory')
@@ -759,8 +851,13 @@ if (filesystem !== USER_FILESYSTEM_ID) {
       if (isReadonlySkillFilePath(path)) {
         return await statReadonlySkillFile(path, readonlySkillRoots(workspace))
       }
+      const binding = await resolvePrimaryBinding(request)
+      if (binding) {
+        const stat = await workspace.stat(path)
+        return { ...stat, ...accessProjection(await resolveBindingAccess(binding, path)) }
+      }
       const stat = await workspace.stat(path)
-      return stat
+      return { ...stat, access: 'readwrite' as const }
     } catch (err) {
       return classifyError(err, reply, 'path')
     }

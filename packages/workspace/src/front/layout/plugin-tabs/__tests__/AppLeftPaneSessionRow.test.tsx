@@ -30,13 +30,37 @@ describe("AppSessionRow native actions", () => {
   it("keeps session mutations in one actions menu", () => {
     const onDelete = vi.fn()
     row({ onDelete, onRename: vi.fn() })
+    // Split moved to a direct hover action; the menu must not repeat it.
+    expect(screen.getByRole("button", { name: /in a split pane$/ })).toBeInTheDocument()
     openMenu()
-    expect(screen.getByText("Open in new chat pane")).toBeInTheDocument()
+    expect(screen.queryByText("Open in new chat pane")).not.toBeInTheDocument()
     expect(screen.getByText("Pin chat")).toBeInTheDocument()
     expect(screen.getByText("Copy session ID")).toBeInTheDocument()
     expect(screen.getByText("Rename")).toBeInTheDocument()
     fireEvent.click(screen.getByText("Delete"))
     expect(onDelete).toHaveBeenCalledWith("native-1")
+  })
+
+  it("leaves every row shortcut sized by the one rule that also reserves its slot", () => {
+    // The strip reserves one slot per action, and the slot width switches on
+    // `pointer: coarse`. Sizing the buttons with a Tailwind `size-11 sm:size-6`
+    // pair switched them on viewport WIDTH instead, so the two conditions
+    // agreed only at 1440-fine and 390-coarse: a 500px-wide desktop window got
+    // 44px buttons in 28px slots (spilling over the chat title), and a coarse
+    // 834px tablet got a 24px trigger in a 44px slot (20px of dead strip that
+    // fell through to the row button). Every shortcut now carries
+    // `.app-left-session-secondary-action` and NO size utility, so globals.css
+    // is the single place either number can change.
+    row({ onOpenDetached: vi.fn(), onDelete: vi.fn() })
+    const shortcuts = [
+      screen.getByRole("button", { name: /in a split pane$/ }),
+      screen.getByRole("button", { name: /as a quick chat$/ }),
+      screen.getByLabelText("Chat actions for Native chat"),
+    ]
+    for (const shortcut of shortcuts) {
+      expect(shortcut.className).toContain("app-left-session-secondary-action")
+      expect(shortcut.className).not.toMatch(/(^|\s)(sm:)?size-\d/)
+    }
   })
 
   it("copies the session id through the legacy fallback on an HTTP dev origin", async () => {

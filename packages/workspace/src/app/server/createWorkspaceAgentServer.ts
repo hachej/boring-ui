@@ -12,8 +12,12 @@ import {
   createPiResourceDigestInput,
   createResolvedRuntimeScopeIdentity,
   createSandboxRuntimeModeAdapter,
+  createUserFilesystemBinding,
+  DEFAULT_READONLY_WORKSPACE_PATHS,
   createValidatingAgentFleetCompiler,
   digestPiResourceInputs,
+  mergeRuntimeFilesystemBindings,
+  normalizeRuntimeReadonlyFilesystemPolicy,
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
   projectAuthorizedSessionRunDetails,
@@ -35,6 +39,7 @@ import {
   type RuntimeBundle,
   type RuntimeEnvContribution,
   type RuntimeFilesystemBinding,
+  RuntimeReadonlyFilesystemPolicyError,
   type RuntimeModeAdapter,
   type RuntimeModeId,
   type VerifiedAgentScopeClaim,
@@ -169,6 +174,12 @@ export interface WorkspaceAgentCreateOptions {
   runtimeProvisioning?: WorkspaceProvisioningResult
   telemetry?: TelemetrySink
   metering?: AgentMeteringSink
+  /**
+   * Workspace-relative prefixes in the primary user filesystem that cannot be
+   * mutated. Defaults to {@link DEFAULT_READONLY_WORKSPACE_PATHS} (`['.agents']`);
+   * pass an explicit empty array to opt out entirely.
+   */
+  readonlyWorkspacePaths?: readonly string[]
   getFilesystemBindings?: (ctx: {
     request?: FastifyRequest
     workspaceId: string
@@ -1205,6 +1216,12 @@ export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
+  // Protection is on by default: an omitted option must not silently disable
+  // `.agents` enforcement. Only an explicit empty array opts out.
+  const resolvedReadonlyWorkspacePaths = opts.readonlyWorkspacePaths ?? DEFAULT_READONLY_WORKSPACE_PATHS
+  const readonlyWorkspacePolicy = resolvedReadonlyWorkspacePaths.length > 0
+    ? normalizeRuntimeReadonlyFilesystemPolicy(resolvedReadonlyWorkspacePaths)
+    : undefined
   // Resolved early: `legacyGlobalPluginAgentContributions` below must key off
   // the RESOLVED fleet, not `opts.agents`'s presence — with BORING_AGENT_FLEET=1
   // and no explicit `opts.agents`, the resolved fleet has 6 agents even though
@@ -1225,6 +1242,7 @@ export async function createWorkspaceAgentServer(
     : undefined
   const agents = opts.agents ?? await resolveDefaultAgentFleet({
     ...(fleetRepositoryRoot ? { repositoryRoot: fleetRepositoryRoot } : {}),
+    workspaceRoot,
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
   const isLegacyDefaultFleet = agents.length === 1 && "legacyDefault" in agents[0]!
@@ -1614,10 +1632,17 @@ export async function createWorkspaceAgentServer(
     runtimeMode: resolvedMode,
     workspaceScopeId,
     workspaceRoot,
+    readonlyWorkspacePolicyRevision: readonlyWorkspacePolicy?.revision ?? null,
   }))
   const environmentProvisioningFingerprint = identityDigest(canonicalIdentityJson({
     runtimeMode: resolvedMode,
     workspaceRoot,
+    runtimeContributionIds: runtimeEnvContributions.map((entry) => entry.id),
+    runtimePluginIds: buildRuntimeProvisioningInputs().map((entry) => entry.id),
+    provisionWorkspace: opts.provisionWorkspace !== false,
+  }))
+  const semanticProvisioningIdentity = identityDigest(canonicalIdentityJson({
+    runtimeMode: resolvedMode,
     runtimeContributionIds: runtimeEnvContributions.map((entry) => entry.id),
     runtimePluginIds: buildRuntimeProvisioningInputs().map((entry) => entry.id),
     provisionWorkspace: opts.provisionWorkspace !== false,
@@ -1661,13 +1686,37 @@ export async function createWorkspaceAgentServer(
         placementIdentity: environmentPlacementIdentity,
         workspaceRoot,
         provisioningFingerprint: environmentProvisioningFingerprint,
-        transformRuntimeBundle: runtimeEnvContributions.length > 0
-          ? (runtimeBundle) => withRuntimeEnvContributions(runtimeBundle, {
-              workspaceId: verifiedClaim.workspaceScopeId,
-              workspaceRoot,
-              runtimeMode: resolvedMode,
-              runtimeBundle,
-            }, runtimeEnvContributions, opts.telemetry)
+        transformRuntimeBundle: runtimeEnvContributions.length > 0 || readonlyWorkspacePolicy
+          ? async (runtimeBundle) => {
+              const transformed = runtimeEnvContributions.length > 0
+                ? await withRuntimeEnvContributions(runtimeBundle, {
+                    workspaceId: verifiedClaim.workspaceScopeId,
+                    workspaceRoot,
+                    runtimeMode: resolvedMode,
+                    runtimeBundle,
+                  }, runtimeEnvContributions, opts.telemetry)
+                : runtimeBundle
+              if (!readonlyWorkspacePolicy) return transformed
+              return {
+                ...transformed,
+                // Consumed by the bash tool builder for sandbox readonly binds
+                // and by provisioning guards; same policy, other enforcement points.
+                readonlyWorkspacePaths: readonlyWorkspacePolicy.readonlyPaths,
+                filesystemBindings: [...mergeRuntimeFilesystemBindings(
+                  [createUserFilesystemBinding(transformed.workspace, readonlyWorkspacePolicy, async (path) => {
+                    // Local/sandboxed bundles expose a confined workspace (root
+                    // `/workspace`) that is not a registered node workspace, so
+                    // prefer the mode adapter's host storage root before the
+                    // node-workspace registry lookup.
+                    const root = transformed.storageRoot
+                      ?? runtimeHost.getNodeWorkspaceHostRoot(transformed.workspace)
+                    if (!root) throw new RuntimeReadonlyFilesystemPolicyError()
+                    return await runtimeHost.resolveRealWorkspacePath(root, path)
+                  })],
+                  transformed.filesystemBindings,
+                ) ?? []],
+              }
+            }
           : undefined,
         provisionRuntime: async ({ runtimeBundle }) => await runRuntimeProvisioning(runtimeBundle),
         resolveFilesystemBindings: async ({ requestId }) => {
@@ -1763,22 +1812,26 @@ export async function createWorkspaceAgentServer(
           ])
         : undefined
 
-      const identity = createResolvedRuntimeScopeIdentity({
-          artifacts: contribution.artifacts,
-          validatedConfig: contribution.validatedConfig,
-          grants: contribution.grants,
-          placementIdentity: environment.placementIdentity,
-          isolationMode: resolvedMode,
-          toolContractDigests: contribution.toolContractDigests,
-          provisioningGeneration: environment.provisioningFingerprint,
-          bindingInputs: {
-            workspaceScopeId: verifiedClaim.workspaceScopeId,
-            environmentProvisioningFingerprint: environment.provisioningFingerprint,
-            sessionNamespace: "",
-            base: baseBindingInputs,
-            contribution: contribution.bindingInputs,
-          },
-        })
+      const semanticIdentityInput = {
+        artifacts: contribution.artifacts,
+        validatedConfig: contribution.validatedConfig,
+        grants: contribution.grants,
+        placementClassIdentity: resolvedMode,
+        isolationMode: resolvedMode,
+        toolContractDigests: contribution.toolContractDigests,
+        provisioningIdentity: semanticProvisioningIdentity,
+        bindingInputs: {
+          sessionNamespace: "",
+          base: baseBindingInputs,
+          contribution: contribution.bindingInputs,
+        },
+      } as const
+      const identity = createResolvedRuntimeScopeIdentity(semanticIdentityInput)
+      const physicalBindingIdentity = identityDigest(canonicalIdentityJson({
+        identity,
+        placementIdentity: environment.placementIdentity,
+        provisioningFingerprint: environment.provisioningFingerprint,
+      }))
       const staticSystemPromptAppend = [baseSystemPromptAppend, contribution.agentOptions.systemPromptAppend]
         .filter((part): part is string => Boolean(part))
         .join("\n\n") || undefined
@@ -1828,7 +1881,7 @@ export async function createWorkspaceAgentServer(
       const { resourceInputDigest, revalidateResourceInputs } = await createPiResourceDigestFence(buildResourceDigestInput)
       return {
         identity,
-        physicalBindingIdentity: identity,
+        physicalBindingIdentity,
         resourceInputDigest,
         ...(intent.operation === "reload" ? {
           async revalidateResourceInputs() {

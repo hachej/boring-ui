@@ -238,3 +238,12 @@ export function useWorkspacePluginClient(): WorkspacePluginClient {
   if (!client) throw new Error("useWorkspacePluginClient must be used within a WorkspaceProvider")
   return client
 }
+
+/**
+ * Same as `useWorkspacePluginClient` but tolerates rendering outside a
+ * WorkspaceProvider (embedding hosts/tests): surfaces that can degrade
+ * gracefully use this instead of throwing.
+ */
+export function useOptionalWorkspacePluginClient(): WorkspacePluginClient | null {
+  return useContext(WorkspacePluginClientContext)
+}
