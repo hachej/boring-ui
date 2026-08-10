@@ -13,10 +13,12 @@ import {
   type RemoteWorkerOperationV1,
 } from "../../shared/remoteWorkerProtocolV1";
 import { SandboxProviderError } from "../../shared/providerV1";
-import { remoteWorkerRequestDigestV1 } from "./requestDigest";
+import { canonicalJson, remoteWorkerRequestDigestV1 } from "./requestDigest";
+import { SingleUseNonceStoreV1 } from "./singleUseNonceStore";
 
 const MAX_BOUND_REQUEST_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_LEASE_LIFETIME_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_MAX_ACCEPTED_CAPABILITY_NONCES = 100_000;
 
 interface RemoteWorkerSandboxBindingRecordV1 {
   readonly sandboxId: string;
@@ -54,6 +56,7 @@ export interface RemoteWorkerSandboxBindingRegistryOptionsV1 {
   receiptAuthenticator: RemoteWorkerBindingReceiptAuthenticatorV1;
   eventStreamLifetimeMs?: number;
   maxLeaseLifetimeMs?: number;
+  maxAcceptedCapabilityNonces?: number;
   now?: () => number;
   onSecurityViolation?: (event: RemoteWorkerBindingSecurityEventV1) => void;
 }
@@ -113,7 +116,7 @@ function parseBindingInput<T>(
 
 function bindingRequestDigest(value: unknown): `sha256:${string}` {
   try {
-    const encoded = new TextEncoder().encode(JSON.stringify(value));
+    const encoded = new TextEncoder().encode(canonicalJson(value));
     if (encoded.byteLength > MAX_BOUND_REQUEST_BYTES) {
       throw bindingError(
         REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
@@ -148,10 +151,12 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
     Set<RemoteWorkerAuthorizedEventStreamV1>
   >();
   private readonly workerId: string;
+  private readonly acceptedCapabilityNonces: SingleUseNonceStoreV1;
   private readonly capabilityAuthenticator: RemoteWorkerCapabilityAuthenticatorV1;
   private readonly receiptAuthenticator: RemoteWorkerBindingReceiptAuthenticatorV1;
   private readonly eventStreamLifetimeMs: number;
   private readonly maxLeaseLifetimeMs: number;
+  private readonly maxAcceptedCapabilityNonces: number;
   private readonly now: () => number;
   private readonly onSecurityViolation?: (
     event: RemoteWorkerBindingSecurityEventV1,
@@ -165,6 +170,9 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
       options.eventStreamLifetimeMs ?? REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS;
     this.maxLeaseLifetimeMs =
       options.maxLeaseLifetimeMs ?? DEFAULT_MAX_LEASE_LIFETIME_MS;
+    this.maxAcceptedCapabilityNonces =
+      options.maxAcceptedCapabilityNonces ??
+      DEFAULT_MAX_ACCEPTED_CAPABILITY_NONCES;
     if (
       !Number.isInteger(this.eventStreamLifetimeMs) ||
       this.eventStreamLifetimeMs <= 0 ||
@@ -184,8 +192,43 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
         "remote-worker maximum lease lifetime is invalid",
       );
     }
+    if (
+      !Number.isSafeInteger(this.maxAcceptedCapabilityNonces) ||
+      this.maxAcceptedCapabilityNonces <= 0
+    ) {
+      throw bindingError(
+        REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+        "remote-worker capability nonce bound is invalid",
+      );
+    }
+    this.acceptedCapabilityNonces = new SingleUseNonceStoreV1(
+      this.maxAcceptedCapabilityNonces,
+    );
     this.now = options.now ?? Date.now;
     this.onSecurityViolation = options.onSecurityViolation;
+  }
+
+  private consumeCapabilityNonce(
+    capability: RemoteWorkerCapabilityClaimsV1,
+  ): void {
+    const nowMs = this.now();
+    const result = this.acceptedCapabilityNonces.consume(
+      capability.nonce,
+      capability.expiresAtMs,
+      nowMs,
+    );
+    if (result === "replay") {
+      throw new SandboxProviderError(
+        REMOTE_WORKER_ERROR_CODES_V1.capabilityReplay,
+        "remote-worker capability was already used",
+      );
+    }
+    if (result === "exhausted") {
+      throw new SandboxProviderError(
+        REMOTE_WORKER_ERROR_CODES_V1.capabilityNonceStoreExhausted,
+        "remote-worker capability nonce capacity is exhausted",
+      );
+    }
   }
 
   private async authenticateCapability(
@@ -217,6 +260,7 @@ export class RemoteWorkerSandboxBindingRegistryV1 {
           "remote-worker capability lifetime is invalid",
         );
       }
+      this.consumeCapabilityNonce(capability);
       return capability;
     } catch (error) {
       if (error instanceof SandboxProviderError) throw error;

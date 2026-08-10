@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ErrorCode } from "@hachej/boring-agent/shared";
 
 import { PROVIDER_CONTRACT_VERSION } from "./providerMatrix";
+import { ProviderCredentialRefSchemaV1 } from "./invocationSecretsV1";
 
 export const REMOTE_WORKER_PROTOCOL_VERSION = "boring.remote-worker.v1";
 export const REMOTE_WORKER_RUNTIME_CWD = "/workspace";
@@ -23,6 +24,9 @@ export const REMOTE_WORKER_ERROR_CODES_V1 = Object.freeze({
   requestInvalid: "REMOTE_WORKER_REQUEST_INVALID",
   responseInvalid: "REMOTE_WORKER_RESPONSE_INVALID",
   capabilityExpired: "REMOTE_WORKER_CAPABILITY_EXPIRED",
+  capabilityReplay: "REMOTE_WORKER_CAPABILITY_REPLAY",
+  capabilityNonceStoreExhausted:
+    "REMOTE_WORKER_CAPABILITY_NONCE_STORE_EXHAUSTED",
   authorizedWorkspaceRequired: "REMOTE_WORKER_AUTHORIZED_WORKSPACE_REQUIRED",
   bindingReceiptInvalid: "REMOTE_WORKER_BINDING_RECEIPT_INVALID",
   sandboxWorkspaceMismatch: "REMOTE_WORKER_SANDBOX_WORKSPACE_MISMATCH",
@@ -38,6 +42,12 @@ export const REMOTE_WORKER_ERROR_CODES_V1 = Object.freeze({
   outcomeUnknown: "REMOTE_WORKER_OUTCOME_UNKNOWN",
   incompleteCleanup: "REMOTE_WORKER_INCOMPLETE_CLEANUP",
   dockerCommandFailed: "REMOTE_WORKER_DOCKER_COMMAND_FAILED",
+  pathUnsafe: "REMOTE_WORKER_PATH_UNSAFE",
+  pathPrimitiveUnavailable: "REMOTE_WORKER_PATH_PRIMITIVE_UNAVAILABLE",
+  quotaExceeded: "REMOTE_WORKER_QUOTA_EXCEEDED",
+  secretReferenceRejected: "REMOTE_WORKER_SECRET_REFERENCE_REJECTED",
+  execAborted: "REMOTE_WORKER_EXEC_ABORTED",
+  outputLimit: "REMOTE_WORKER_OUTPUT_LIMIT",
   timeout: "REMOTE_WORKER_TIMEOUT",
   streamClosed: "REMOTE_WORKER_STREAM_CLOSED",
 } as const satisfies Record<string, ErrorCode>);
@@ -285,16 +295,33 @@ export type RemoteWorkerWorkspaceResultV1 = z.infer<
   typeof RemoteWorkerWorkspaceResultSchemaV1
 >;
 
-const RemoteWorkerEnvSchemaV1 = z
-  .record(z.string().regex(envNamePattern), z.string().max(64 * 1024))
-  .superRefine((env, context) => {
-    if (Object.keys(env).length > 128) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "too many env entries",
-      });
-    }
-  });
+export const REMOTE_WORKER_CREDENTIAL_NAME_MAX_BYTES_V1 = 256;
+
+const RemoteWorkerCredentialFieldMappingSchemaV1 = z
+  .object({
+    name: z
+      .string()
+      .max(REMOTE_WORKER_CREDENTIAL_NAME_MAX_BYTES_V1)
+      .regex(envNamePattern),
+    fieldId: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z0-9][a-z0-9._-]{0,63}$/),
+  })
+  .strict();
+
+export const RemoteWorkerCredentialReferenceSchemaV1 = z
+  .object({
+    deliveryAttemptId: RemoteWorkerOpaqueIdSchemaV1,
+    ref: ProviderCredentialRefSchemaV1,
+    fields: z.array(RemoteWorkerCredentialFieldMappingSchemaV1).min(1).max(16),
+  })
+  .strict();
+
+export type RemoteWorkerCredentialReferenceV1 = z.infer<
+  typeof RemoteWorkerCredentialReferenceSchemaV1
+>;
 
 export const RemoteWorkerExecRequestSchemaV1 = z
   .object({
@@ -304,7 +331,10 @@ export const RemoteWorkerExecRequestSchemaV1 = z
       .min(1)
       .max(64 * 1024),
     cwd: z.string().min(1).max(4096).optional(),
-    env: RemoteWorkerEnvSchemaV1.optional(),
+    credentialRefs: z
+      .array(RemoteWorkerCredentialReferenceSchemaV1)
+      .max(16)
+      .optional(),
     timeoutMs: z.number().int().positive().max(maxInvocationTimeoutMs),
     maxOutputBytes: z.number().int().positive().max(maxOutputBytes),
   })
@@ -371,7 +401,12 @@ export const RemoteWorkerErrorPayloadSchemaV1 = z
   .object({
     error: z
       .object({
-        code: z.string().min(1),
+        code: z.enum(
+          Object.values(REMOTE_WORKER_ERROR_CODES_V1) as [
+            ErrorCode,
+            ...ErrorCode[],
+          ],
+        ),
         message: z.string().min(1).max(1024),
         retryable: z.boolean().optional(),
       })
