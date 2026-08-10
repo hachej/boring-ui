@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react"
 
+import { WIDE_MIN_WIDTH } from "../layout/breakpoints"
+
 function readMatches(maxWidth: number): boolean {
   if (typeof window === "undefined") return false
   return window.innerWidth < maxWidth
 }
 
-export function useViewportBreakpoint(maxWidth = 1024): boolean {
+export function useViewportBreakpoint(maxWidth: number = WIDE_MIN_WIDTH): boolean {
   const [matches, setMatches] = useState(() => readMatches(maxWidth))
 
   useEffect(() => {

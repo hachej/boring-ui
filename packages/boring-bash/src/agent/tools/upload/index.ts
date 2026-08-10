@@ -42,6 +42,7 @@ function basenameForUpload(filename: string): string {
 
 export function buildUploadAgentTools(bundle: RuntimeBundle): AgentTool[] {
   const { workspace } = bundle
+  const primaryBinding = bundle.filesystemBindings?.find((binding) => binding.filesystem === 'user')
 
   return [
     {
@@ -99,8 +100,20 @@ export function buildUploadAgentTools(bundle: RuntimeBundle): AgentTool[] {
           const unique = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
           const destPath = `${dir}/${base}-${unique}.${ext}`
 
-          await workspace.mkdir(dir, { recursive: true })
-          if (workspace.writeBinaryFile) {
+          if (primaryBinding) {
+            for (const [path, capability] of [[dir, 'create-child'], [destPath, 'write']] as const) {
+              const decision = await primaryBinding.operations.resolveAccess?.({ filesystem: 'user', path })
+              if (decision && !decision.capabilities[capability]) {
+                primaryBinding.operations.rejectMutation(capability, { filesystem: 'user', path })
+              }
+            }
+            if (!primaryBinding.operations.mkdir || !primaryBinding.operations.writeBinary) {
+              throw new Error('workspace does not support binary file writes')
+            }
+            await primaryBinding.operations.mkdir({ filesystem: 'user', path: dir, recursive: true })
+            await primaryBinding.operations.writeBinary({ filesystem: 'user', path: destPath, content: bytes })
+          } else if (workspace.writeBinaryFile) {
+            await workspace.mkdir(dir, { recursive: true })
             await workspace.writeBinaryFile(destPath, bytes)
           } else {
             return {

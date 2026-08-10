@@ -273,7 +273,11 @@ export class HarnessPiChatService implements PiChatSessionService {
     const adapter = await this.getAdapter(ctx, sessionId, '')
     if (this.canRefreshFromPersistedState(sessionKey, adapter)) {
       const persisted = await this.readPersistedState(ctx, sessionId)
-      if (persisted && this.canRefreshFromPersistedState(sessionKey, adapter)) {
+      if (
+        persisted
+        && this.canRefreshFromPersistedState(sessionKey, adapter)
+        && !this.persistedStateDropsLiveMessages(persisted, adapter, sessionId)
+      ) {
         const liveSeq = this.channels.get(sessionKey)?.buffer.latestSeq ?? 0
         return this.enrichSyntheticPromptFailures(
           sessionKey,
@@ -296,6 +300,24 @@ export class HarnessPiChatService implements PiChatSessionService {
       attachmentUrl: this.attachmentUrlFor(sessionId),
     }))
     return this.enrichSyntheticPromptFailures(sessionKey, snapshot)
+  }
+
+  /**
+   * The persisted transcript can lag the live adapter: transcript writes are
+   * asynchronous, and some harnesses never persist transcripts at all. A
+   * persisted refresh whose seq fences the live replay buffer while its
+   * messages are missing would permanently hide those turns from a hydrating
+   * client (it starts "caught up" at that seq with an empty timeline), so
+   * refresh from persisted state only when it carries at least as much
+   * rendered history as the live adapter.
+   */
+  private persistedStateDropsLiveMessages(
+    persisted: PiChatSnapshot,
+    adapter: PiAgentSessionAdapter,
+    sessionId: string,
+  ): boolean {
+    const liveCount = buildPiChatHistory(adapter.readSnapshot().messages, { sessionId }).length
+    return persisted.messages.length < liveCount
   }
 
   private canRefreshFromPersistedState(sessionKey: string, adapter: PiAgentSessionAdapter): boolean {

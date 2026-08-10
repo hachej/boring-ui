@@ -58,6 +58,30 @@ export interface BwrapArgsOptions {
   network?: 'shared' | 'isolated'
   newSession?: boolean
   dropAllCapabilities?: boolean
+  /**
+   * Workspace-relative prefixes re-bound readonly on top of the writable
+   * workspace mount, so spawned shells cannot mutate protected paths that the
+   * Operations layer already refuses to mutate.
+   */
+  readonlyPaths?: readonly string[]
+}
+
+function normalizeReadonlyPath(input: string): string {
+  if (typeof input !== 'string' || input.length === 0) {
+    throw new Error('readonly path must be a non-empty workspace-relative path')
+  }
+  if (input.includes('\0') || input.includes('\n') || input.includes('\r')) {
+    throw new Error('readonly path must not contain null bytes or newlines')
+  }
+  const normalized = input.replace(/\\/g, '/')
+  if (normalized.startsWith('/')) {
+    throw new Error('readonly path must be workspace-relative')
+  }
+  const segments = normalized.split('/').filter((segment) => segment !== '' && segment !== '.')
+  if (segments.length === 0 || segments.includes('..')) {
+    throw new Error('readonly path must not be empty or contain traversal segments')
+  }
+  return segments.join('/')
 }
 
 export function buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions): string[] {
@@ -98,6 +122,14 @@ export function buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions
     'HOME',
     SANDBOX_HOME,
   )
+
+  // Order matters: bwrap applies binds sequentially, so these must follow the
+  // writable workspace bind to shadow it. `--ro-bind-try` keeps a policy entry
+  // that does not exist yet from failing the whole spawn.
+  for (const path of options?.readonlyPaths ?? []) {
+    const relative = normalizeReadonlyPath(path)
+    args.push('--ro-bind-try', `${workspaceRoot.replace(/\/$/, '')}/${relative}`, `${SANDBOX_HOME}/${relative}`)
+  }
 
   if (options?.postWorkspaceArgs) {
     args.push(...options.postWorkspaceArgs)

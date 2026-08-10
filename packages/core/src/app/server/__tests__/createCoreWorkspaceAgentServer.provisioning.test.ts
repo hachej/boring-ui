@@ -521,6 +521,43 @@ test('core/full-app defaults an internal session namespace to workspace id', asy
   }
 })
 
+test('core/full-app keeps semantic identity stable across physical workspace roots', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [], packages: [] },
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const resolveRuntime = async (root: string) => {
+    const app = await createCoreWorkspaceAgentServer({
+      config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+      workspaceRoot: root,
+      getWorkspaceRoot: async () => root,
+      serveFrontend: false,
+    })
+    try {
+      const hostOptions = (mocks.createAgentHost as any).mock.calls.at(-1)?.[0]
+      const projection = (mocks.hostRegisterDirectRoutes as any).mock.calls.at(-1)?.[0]
+      const scope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a'))
+      return await hostOptions.resolveAuthorizedAgentRuntimeScope({ authorizedScope: scope })
+    } finally {
+      await app.close()
+    }
+  }
+
+  const first = await resolveRuntime('/tmp/core-runtime-physical-a')
+  const second = await resolveRuntime('/tmp/core-runtime-physical-b')
+  expect(first.identity).toBe(second.identity)
+  expect(first.physicalBindingIdentity).not.toBe(second.physicalBindingIdentity)
+})
+
 test('core/full-app fences Pi extension and prompt content through reload revalidation', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [],

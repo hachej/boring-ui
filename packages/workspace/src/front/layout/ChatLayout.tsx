@@ -19,6 +19,7 @@ import { CornerChromeButton } from "./cornerChrome"
 import { MobileChatBar, MobileSingleChatPane, MobileWorkspaceBar } from "./mobileShell"
 import { WorkbenchOverlayFrame } from "./WorkbenchOverlayFrame"
 import { useViewportWidth } from "./useViewportWidth"
+import { isCompactViewport } from "./breakpoints"
 import { workspaceSessionRef, workspaceSessionRefFromKey, workspaceSessionRefsEqual } from "../sessionIdentity"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
@@ -82,6 +83,12 @@ export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   return { version: "2.0", groups }
 }
 
+/**
+ * Not a shell breakpoint tier (see ./breakpoints.ts): below this width an
+ * open workbench takes over one pane instead of squeezing chat beside it.
+ */
+const CHAT_AUTOCOLLAPSE_MAX_WIDTH = 1180
+
 export function ChatLayout(props: ChatLayoutProps) {
   const navOpen = props.nav !== null
   const surfaceConfigured = props.surface !== undefined
@@ -130,7 +137,7 @@ export function ChatLayout(props: ChatLayoutProps) {
     [blockers],
   )
   const commandRegistry = useCommandRegistry()
-  const mobileShell = props.mobileShellEnabled === true && viewport < 640
+  const mobileShell = props.mobileShellEnabled === true && isCompactViewport(viewport)
   const effectiveNavWidth = mobileShell ? Math.min(Math.max(280, Math.floor(viewport * 0.86)), 360) : clamp(navWidth, 200, 360)
   const effectiveSidebarWidth = mobileShell ? viewport : clamp(sidebarWidth, 200, Math.max(240, Math.floor(viewport * 0.5)))
   const surfaceMax = mobileShell ? viewport : Math.max(480, Math.floor(viewport * 0.72))
@@ -151,6 +158,11 @@ export function ChatLayout(props: ChatLayoutProps) {
     ? chatPanes.find((pane) => pane.id === props.activeChatPaneId) ?? chatPanes[0]
     : undefined
   const sidebarOpen = Boolean(props.sidebar)
+  const navDrawerRef = useRef<HTMLElement | null>(null)
+  const sidebarDrawerRef = useRef<HTMLElement | null>(null)
+  useDrawerFocusTrap(navOpen, navDrawerRef)
+  useDrawerFocusTrap(sidebarOpen, sidebarDrawerRef)
+  useBodyScrollLock(navOpen || sidebarOpen)
   const canControlNav = navOpen ? Boolean(closeNav) : Boolean(props.onOpenNav)
   const canControlSurface = surfaceOpen ? Boolean(closeSurface) : Boolean(props.onOpenSurface)
   const canControlSidebar = sidebarOpen ? Boolean(closeSidebar) : Boolean(props.onOpenSidebar)
@@ -220,12 +232,15 @@ export function ChatLayout(props: ChatLayoutProps) {
       if (canControlSidebar) {
         shortcuts.push({ key: "3", mod: true, allowInEditable: true, handler: toggleSidebar })
       }
+      if (sidebarOpen && closeSidebar) {
+        shortcuts.push({ key: "Escape", allowInEditable: true, handler: () => closeSidebar() })
+      }
       if (centerId === "chat") {
         shortcuts.push({ key: "Escape", allowInEditable: true, handler: focusChat })
         shortcuts.push({ key: "\\", mod: true, allowInEditable: true, handler: toggleChatCollapsed })
       }
       return shortcuts
-    }, [canControlNav, canControlSidebar, canControlSurface, centerId, focusChat, toggleChatCollapsed, toggleNav, toggleSidebar, toggleSurface]),
+    }, [canControlNav, canControlSidebar, canControlSurface, centerId, closeSidebar, focusChat, sidebarOpen, toggleChatCollapsed, toggleNav, toggleSidebar, toggleSurface]),
   })
 
   useEffect(() => {
@@ -362,7 +377,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   // On compact widths, prefer a one-pane workbench takeover instead of squeezing chat.
   useEffect(() => {
     if (mobileShell || !surfaceOpen || chatCollapsed || props.chatOverlay) return
-    if (viewport < 1180) setChatCollapsed(true)
+    if (viewport < CHAT_AUTOCOLLAPSE_MAX_WIDTH) setChatCollapsed(true)
   }, [chatCollapsed, mobileShell, props.chatOverlay, setChatCollapsed, surfaceOpen, viewport])
 
   // Chat-hosted overlays (Skills/Plugins) must remain visible while workbench
@@ -417,14 +432,18 @@ export function ChatLayout(props: ChatLayoutProps) {
         />
       ) : null}
       <aside
+        ref={navDrawerRef}
         data-boring-workspace-part="session-drawer"
         data-boring-state={navOpen ? "expanded" : "collapsed"}
         aria-label="Session browser"
         aria-hidden={!navOpen}
+        role="dialog"
+        aria-modal={navOpen}
+        tabIndex={-1}
         className={cn(
           mobileShell ? "absolute inset-y-0 left-0 z-50 h-full shadow-2xl" : "relative h-full shrink-0",
           "min-h-0 overflow-hidden bg-background",
-          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
           navOpen
             ? "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]"
             : "pointer-events-none z-0",
@@ -439,7 +458,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         <div
           className={cn(
             "h-full min-h-0 overflow-hidden",
-            "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+            "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
             navOpen ? "opacity-100" : "invisible pointer-events-none opacity-0",
           )}
         >
@@ -455,14 +474,18 @@ export function ChatLayout(props: ChatLayoutProps) {
       </aside>
 
       <aside
+        ref={sidebarDrawerRef}
         data-boring-workspace-part="workbench-left-shell"
         data-boring-state={sidebarOpen ? "expanded" : "collapsed"}
         aria-label={sidebarOpen ? "Workbench left panel" : undefined}
         aria-hidden={!sidebarOpen}
+        role="dialog"
+        aria-modal={sidebarOpen}
+        tabIndex={-1}
         className={cn(
           mobileShell ? "absolute inset-0 z-40 h-full" : "relative h-full shrink-0",
           "min-h-0 overflow-hidden bg-background",
-          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
           sidebarOpen && "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
         )}
         style={{
@@ -475,7 +498,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         <div
           className={cn(
             "h-full min-h-0 overflow-hidden",
-            "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+            "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
             sidebarOpen ? "opacity-100" : "opacity-0",
           )}
         >
@@ -497,11 +520,14 @@ export function ChatLayout(props: ChatLayoutProps) {
           aria-label={chatHidden ? "Collapsed chat" : "Chat"}
           aria-hidden={chatHidden}
           className={cn(
-            "relative h-full min-h-0 min-w-0 overflow-hidden bg-background",
+            // `isolate` scopes children's z-indices (dockview sashes are
+            // z-index 999) so the chat-left overlay can stack above them
+            // without escaping into page-level chrome.
+            "relative isolate h-full min-h-0 min-w-0 overflow-hidden bg-background",
             mobileShell && !chatHidden && "flex flex-col",
             // Animate flex-grow (not just width) so the chat slides open/closed
             // like the fixed-width nav/workbench panes instead of snapping.
-            "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+            "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
             chatHidden
               ? "min-w-0 flex-[0_0_0px]"
               : "flex-1 border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
@@ -518,7 +544,7 @@ export function ChatLayout(props: ChatLayoutProps) {
           <div
             className={cn(
               mobileShell && !chatHidden ? "min-h-0 flex-1 overflow-hidden" : "h-full min-h-0 overflow-hidden",
-              "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+              "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
               chatHidden ? "opacity-0" : "opacity-100",
             )}
           >
@@ -575,7 +601,7 @@ export function ChatLayout(props: ChatLayoutProps) {
               "h-full min-h-0 overflow-hidden bg-background",
               // Collapsed/mobile workbench fills available width; otherwise it is a side panel.
               (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen ? "min-w-0 flex-1" : "shrink-0",
-              "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+              "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
               !mobileShell && "border-l border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
             )}
             style={
@@ -592,7 +618,7 @@ export function ChatLayout(props: ChatLayoutProps) {
             <div
               className={cn(
                 "h-full min-h-0 overflow-hidden",
-                "transition-[opacity,padding] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+                "transition-[opacity,padding] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
                 surfaceOpen || !mobileShell ? "opacity-100" : "opacity-0",
               )}
             >
@@ -687,6 +713,78 @@ export function ChatLayout(props: ChatLayoutProps) {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n))
+}
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * Lightweight Radix-free dialog behavior for a persistently-mounted drawer
+ * `<aside>` that toggles open/closed via CSS width (see the session/workbench
+ * drawers below). On open: moves focus into the drawer and traps Tab/Shift+Tab
+ * within it. On close: restores focus to whatever was focused before opening.
+ * Escape is left to the caller (drawers here are closed via the shell's
+ * existing Escape shortcut wiring so focus-trap scope and shortcut precedence
+ * stay centralized in one place).
+ */
+function useDrawerFocusTrap(open: boolean, containerRef: { current: HTMLElement | null }): void {
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const container = containerRef.current
+    const firstFocusable = container?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
+    ;(firstFocusable ?? container)?.focus({ preventScroll: true })
+
+    return () => {
+      const target = previouslyFocusedRef.current
+      if (target && document.contains(target)) target.focus({ preventScroll: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const container = containerRef.current
+    if (!container) return
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Tab") return
+      const focusables = Array.from(container!.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+        (el) => el.offsetParent !== null,
+      )
+      if (focusables.length === 0) {
+        e.preventDefault()
+        container!.focus({ preventScroll: true })
+        return
+      }
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus({ preventScroll: true })
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus({ preventScroll: true })
+      }
+    }
+
+    container.addEventListener("keydown", handleKeyDown)
+    return () => container.removeEventListener("keydown", handleKeyDown)
+  }, [open])
+}
+
+/** Locks document body scroll while any of the given drawers is open. */
+function useBodyScrollLock(locked: boolean): void {
+  useEffect(() => {
+    if (!locked) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [locked])
 }
 
 type StoredNumberUpdate = number | ((previous: number) => number)

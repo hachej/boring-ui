@@ -469,7 +469,13 @@ export function PiChatPanel<
   const queuePreview = selectedChatState ? selectQueuePreview(selectedChatState) : []
   const messages = canonicalMessages
   const userHistory = useMemo(() => selectComposerHistoryFromCanonicalUsers(canonicalMessages), [canonicalMessages])
-  const emptyStateHydrating = statusForState(selectedChatState, sessionsLoading || chatStatePending || selectedSessionPending) === 'hydrating'
+  // A session attached with autoStart:false (external sessionId hosts) reports
+  // status 'idle' with hydrated:false until the /state snapshot lands. Treat that
+  // pre-hydration window as hydrating so the empty-state hero never flashes while
+  // an existing transcript is still loading. hydrateMessages:false hosts never
+  // hydrate, so they keep showing the hero as before.
+  const awaitingHydration = Boolean(hydrateMessages && selectedChatState && !selectedChatState.hydrated)
+  const emptyStateHydrating = statusForState(selectedChatState, sessionsLoading || chatStatePending || selectedSessionPending) === 'hydrating' || awaitingHydration
   const emptyHero = emptyPlacement === 'hero' && messages.length === 0 && queuePreview.length === 0 && !emptyStateHydrating
   const debugState = selectedPiSession?.getDebugState()
   const composerBlocked = workspaceWarmupBlocked || activeBlockers.length > 0

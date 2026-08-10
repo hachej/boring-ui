@@ -11,7 +11,7 @@ parent: 905
 
 > **Kind: historical record.** This plan executed and closed. It governs
 > nothing today.
-> - **Sequencing** is owned by [`docs/DIRECTION.md`](../../DIRECTION.md).
+> - **Sequencing** is owned by [`docs/direction/DIRECTION.md`](../../direction/DIRECTION.md).
 > - **The gateway contract** is owned by
 >   [`packages/agent/docs/AGENT_GATEWAY_V0.md`](../../../packages/agent/docs/AGENT_GATEWAY_V0.md),
 >   colocated with its types. **§6 below drifted from the shipped code** (input
