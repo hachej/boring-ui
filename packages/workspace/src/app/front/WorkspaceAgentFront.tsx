@@ -26,6 +26,7 @@ import { AgentDetailsOverlay } from "../../front/chrome/agents/AgentDetailsOverl
 import { AppLeftPane, AppLeftRail } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { useViewportWidth } from "../../front/layout/useViewportWidth"
+import { isCompactViewport } from "../../front/layout/breakpoints"
 import { captureWorkspaceFrontPlugins } from "./workspaceBuiltinPlugins"
 import type { FilesystemId } from "../../shared/types/filesystem"
 import { dispatchUiCommand, registerUiCommandConsumer, startUiCommandStream } from "../../front/bridge"
@@ -763,7 +764,7 @@ export function WorkspaceAgentFront<
   className,
 }: WorkspaceAgentFrontProps<TSession>) {
   const viewport = useViewportWidth()
-  const mobileShellActive = mobileShellEnabled && viewport < 640
+  const mobileShellActive = mobileShellEnabled && isCompactViewport(viewport)
   const externalPluginsEnabled = externalPlugins !== false
   const resolvedFrontPluginHotReload = externalPluginsEnabled ? frontPluginHotReload : false
   const resolvedHotReloadEnabled = externalPluginsEnabled ? hotReloadEnabled : false

@@ -19,6 +19,7 @@ import { CornerChromeButton } from "./cornerChrome"
 import { MobileChatBar, MobileSingleChatPane, MobileWorkspaceBar } from "./mobileShell"
 import { WorkbenchOverlayFrame } from "./WorkbenchOverlayFrame"
 import { useViewportWidth } from "./useViewportWidth"
+import { isCompactViewport } from "./breakpoints"
 import { workspaceSessionRef, workspaceSessionRefFromKey, workspaceSessionRefsEqual } from "../sessionIdentity"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
@@ -82,6 +83,12 @@ export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   return { version: "2.0", groups }
 }
 
+/**
+ * Not a shell breakpoint tier (see ./breakpoints.ts): below this width an
+ * open workbench takes over one pane instead of squeezing chat beside it.
+ */
+const CHAT_AUTOCOLLAPSE_MAX_WIDTH = 1180
+
 export function ChatLayout(props: ChatLayoutProps) {
   const navOpen = props.nav !== null
   const surfaceConfigured = props.surface !== undefined
@@ -130,7 +137,7 @@ export function ChatLayout(props: ChatLayoutProps) {
     [blockers],
   )
   const commandRegistry = useCommandRegistry()
-  const mobileShell = props.mobileShellEnabled === true && viewport < 640
+  const mobileShell = props.mobileShellEnabled === true && isCompactViewport(viewport)
   const effectiveNavWidth = mobileShell ? Math.min(Math.max(280, Math.floor(viewport * 0.86)), 360) : clamp(navWidth, 200, 360)
   const effectiveSidebarWidth = mobileShell ? viewport : clamp(sidebarWidth, 200, Math.max(240, Math.floor(viewport * 0.5)))
   const surfaceMax = mobileShell ? viewport : Math.max(480, Math.floor(viewport * 0.72))
@@ -362,7 +369,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   // On compact widths, prefer a one-pane workbench takeover instead of squeezing chat.
   useEffect(() => {
     if (mobileShell || !surfaceOpen || chatCollapsed || props.chatOverlay) return
-    if (viewport < 1180) setChatCollapsed(true)
+    if (viewport < CHAT_AUTOCOLLAPSE_MAX_WIDTH) setChatCollapsed(true)
   }, [chatCollapsed, mobileShell, props.chatOverlay, setChatCollapsed, surfaceOpen, viewport])
 
   // Chat-hosted overlays (Skills/Plugins) must remain visible while workbench
