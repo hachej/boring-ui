@@ -39,7 +39,7 @@ async function writePiOnlyPackage(workspaceRoot: string): Promise<string> {
   await writeFile(join(pluginDir, "package.json"), JSON.stringify({
     name: "pi-smoke",
     version: "0.0.0",
-    pi: { extensions: ["index.ts"], skills: ["skills"] },
+    pi: { extensions: ["index.ts"], skills: ["./skills"] },
   }), "utf8")
   await writeFile(join(pluginDir, "index.ts"), "export default function piSmoke() {}\n", "utf8")
   await writeFile(join(pluginDir, "skills", "pi-smoke", "SKILL.md"), [

@@ -692,7 +692,7 @@ describe("workspace app-server plugin package helpers", () => {
     await mkdir(join(explicitPluginRoot, "agent"), { recursive: true })
     await writeFile(join(manifestPluginRoot, "package.json"), JSON.stringify({
       name: "manifest-plugin",
-      pi: { skills: ["skills"], packages: ["npm:manifest-pi"] },
+      pi: { skills: ["./skills"], packages: ["npm:manifest-pi"] },
     }), "utf8")
     await writeFile(join(explicitPluginRoot, "package.json"), JSON.stringify({
       name: "explicit-plugin",
@@ -738,7 +738,7 @@ describe("workspace app-server plugin package helpers", () => {
       name: "valid-snapshot-plugin",
       pi: {
         systemPrompt: "VALID_SNAPSHOT_PROMPT",
-        skills: ["skills"],
+        skills: ["./skills"],
         extensions: ["agent/index.ts"],
         packages: ["npm:valid-snapshot-pi"],
       },
@@ -1175,7 +1175,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       name: "foo",
       version: "1.0.0",
       boring: { front: "front/index.tsx" },
-      pi: { systemPrompt: "FOO_PLUGIN_PROMPT", skills: ["skills"] },
+      pi: { systemPrompt: "FOO_PLUGIN_PROMPT", skills: ["./skills"] },
     }), "utf8")
     agentServerMock.captureResolvedRuntimeScope.mockImplementationOnce(async () => Fastify({ logger: false }) as never)
     const app = await createWorkspaceAgentServer({
@@ -1544,6 +1544,86 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       const seatScope = await hostOptions.resolveDirectRuntimeScopeForTest({ agentTypeId: "fixture-one", scope })
       expect(seatScope.extraTools?.map((tool) => tool.name) ?? []).not.toContain("global_tool")
       expect(seatScope.systemPromptAppend ?? "").not.toContain("GLOBAL_PLUGIN_PROMPT")
+    } finally {
+      if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
+      else process.env.BORING_AGENT_FLEET = previousFlag
+      if (app) await app.close()
+    }
+  })
+
+  test("BORING_AGENT_FLEET boot excludes both valid and preflight-invalid packages that claim one definitionId", async () => {
+    const workspaceRoot = await makeTempDir("boring-agent-fleet-conflict-")
+    const fleetRoot = await makeTempDir("boring-agent-fleet-conflict-repo-")
+    const personasRoot = join(fleetRoot, ".agents", "personas")
+    await mkdir(join(personasRoot, "valid"), { recursive: true })
+    await mkdir(join(personasRoot, "invalid"), { recursive: true })
+    await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
+    const packageJson = (name: string) => JSON.stringify({
+      name,
+      version: "1.0.0",
+      boring: {
+        agent: {
+          definitionId: "fixture-conflict",
+          version: "1.0.0",
+          instructionsRef: "instructions.md",
+        },
+      },
+      pi: { skills: [] },
+    })
+    await writeFile(join(personasRoot, "valid", "package.json"), packageJson("@fixture/valid"), "utf8")
+    await writeFile(join(personasRoot, "valid", "instructions.md"), "Valid claimant.\n", "utf8")
+    await writeFile(join(personasRoot, "invalid", "package.json"), packageJson("@fixture/invalid"), "utf8")
+    await writeFile(
+      join(fleetRoot, ".agents", "factory", "fleet.yaml"),
+      "seats:\n  - seat: conflict\n    agentTypeId: fixture-conflict\n    skills: []\n",
+      "utf8",
+    )
+
+    const previousFlag = process.env.BORING_AGENT_FLEET
+    process.env.BORING_AGENT_FLEET = "1"
+    let app: Awaited<ReturnType<typeof createWorkspaceAgentServer>> | undefined
+    try {
+      app = await createWorkspaceAgentServer({
+        workspaceRoot,
+        fleetRepositoryRoot: fleetRoot,
+        logger: false,
+        provisionWorkspace: false,
+        externalPlugins: false,
+        fleetCompiler: { async compile({ agents }) { return agents } },
+      })
+      const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
+        agents: readonly { agentTypeId: string }[]
+      }
+      expect(hostOptions.agents.map((agent) => agent.agentTypeId)).toEqual(["default"])
+    } finally {
+      if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
+      else process.env.BORING_AGENT_FLEET = previousFlag
+      if (app) await app.close()
+    }
+  })
+
+  test("BORING_AGENT_FLEET off: workspace host seam stays on the legacy single default agent and never probes the fleet root", async () => {
+    const workspaceRoot = await makeTempDir("boring-agent-fleet-off-")
+    const previousFlag = process.env.BORING_AGENT_FLEET
+    delete process.env.BORING_AGENT_FLEET
+    let app: Awaited<ReturnType<typeof createWorkspaceAgentServer>> | undefined
+    try {
+      // A fleetRepositoryRoot that does not exist: with the flag off the seam
+      // must not evaluate it (no eager fleet discovery / cwd fallback) — boot
+      // still yields the single legacy default agent (gh-1107 slice 1 fix
+      // round: flag-off purity extended to the workspace host seam).
+      app = await createWorkspaceAgentServer({
+        workspaceRoot,
+        fleetRepositoryRoot: "/does/not/exist/flag-off",
+        logger: false,
+        provisionWorkspace: false,
+        externalPlugins: false,
+      })
+      const hostOptions = agentServerMock.createAgentHost.mock.calls.at(-1)![0] as {
+        agents: readonly { agentTypeId: string; legacyDefault?: boolean }[]
+      }
+      expect(hostOptions.agents.map((agent) => agent.agentTypeId)).toEqual(["default"])
+      expect(hostOptions.agents[0]?.legacyDefault).toBe(true)
     } finally {
       if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
       else process.env.BORING_AGENT_FLEET = previousFlag
