@@ -170,7 +170,14 @@ interface FakeStoreState {
 }
 
 function makeFakeStore(state: FakeStoreState = {}) {
-  const create = vi.fn(async () => ({ id: 'ws-1' }))
+  const create = vi.fn(
+    async (
+      _userId: string,
+      _name: string,
+      _appId: string,
+      _options?: Record<string, unknown>,
+    ) => ({ id: 'ws-1' }),
+  )
   const acceptInvite = vi.fn(async () => {})
   const store = {
     create,

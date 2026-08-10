@@ -168,6 +168,32 @@ async function createBuiltFrontendRoot(): Promise<string> {
   return appRoot
 }
 
+function makeBootConfig(overrides: Partial<CoreConfig> = {}): CoreConfig {
+  return {
+    appId: 'test-app',
+    appName: 'Test App',
+    appLogo: null,
+    port: 0,
+    host: '127.0.0.1',
+    staticDir: null,
+    databaseUrl: null,
+    stores: 'postgres',
+    cors: { origins: ['http://localhost:3000'], credentials: true },
+    bodyLimit: 16 * 1024 * 1024,
+    logLevel: 'silent' as CoreConfig['logLevel'],
+    security: { csp: { enabled: true } },
+    encryption: { workspaceSettingsKey: 'test-key' },
+    auth: {
+      secret: 's'.repeat(64),
+      url: 'http://localhost:3000',
+      sessionTtlSeconds: 3600,
+      sessionCookieSecure: false,
+    },
+    features: { githubOauth: false, googleOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
+    ...overrides,
+  }
+}
+
 describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
   beforeEach(() => {
     resetTelemetryEnv()
@@ -186,14 +212,7 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
   it('fails boot when a trusted signup mapping names an unknown fleet member', async () => {
     await expect(createCoreWorkspaceAgentServer({
       serveFrontend: false,
-      config: {
-        appId: 'test-app',
-        cors: { origins: ['http://localhost:3000'], credentials: true },
-        auth: { url: 'http://localhost:3000' },
-        encryption: { workspaceSettingsKey: 'test-key' },
-        stores: 'postgres',
-        signupAgentDefaults: { 'legal.example': 'ghost-agent' },
-      } as CoreConfig,
+      config: makeBootConfig({ signupAgentDefaults: { 'legal.example': 'ghost-agent' } }),
       agents: [{ agentTypeId: 'default', legacyDefault: true }],
     })).rejects.toMatchObject({
       code: ERROR_CODES.INVALID_SIGNUP_AGENT_DEFAULTS,
@@ -204,14 +223,7 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
   it('fails boot for malformed programmatic signup-host config', async () => {
     await expect(createCoreWorkspaceAgentServer({
       serveFrontend: false,
-      config: {
-        appId: 'test-app',
-        cors: { origins: ['http://localhost:3000'], credentials: true },
-        auth: { url: 'http://localhost:3000' },
-        encryption: { workspaceSettingsKey: 'test-key' },
-        stores: 'postgres',
-        signupAgentDefaults: { '*.example': 'default' },
-      } as CoreConfig,
+      config: makeBootConfig({ signupAgentDefaults: { '*.example': 'default' } }),
       agents: [{ agentTypeId: 'default', legacyDefault: true }],
     })).rejects.toMatchObject({
       code: ERROR_CODES.INVALID_SIGNUP_AGENT_DEFAULTS,
@@ -222,15 +234,10 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
   it('fails boot when signup mapping is combined with legacy unsafe proxy trust', async () => {
     await expect(createCoreWorkspaceAgentServer({
       serveFrontend: false,
-      config: {
-        appId: 'test-app',
-        cors: { origins: ['http://localhost:3000'], credentials: true },
-        auth: { url: 'http://localhost:3000' },
-        encryption: { workspaceSettingsKey: 'test-key' },
-        stores: 'postgres',
+      config: makeBootConfig({
         security: { csp: { enabled: false }, trustedProxy: 'legacy-unsafe' },
         signupAgentDefaults: { 'legal.example': 'default' },
-      } as CoreConfig,
+      }),
       agents: [{ agentTypeId: 'default', legacyDefault: true }],
     })).rejects.toMatchObject({
       code: ERROR_CODES.INVALID_SIGNUP_AGENT_DEFAULTS,
