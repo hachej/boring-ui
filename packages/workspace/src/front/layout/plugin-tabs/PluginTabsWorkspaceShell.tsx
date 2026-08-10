@@ -6,6 +6,7 @@ import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@
 import { cn } from "../../lib/utils"
 import { PaneCollapseButton } from "../paneCollapseButton"
 import { useViewportWidth } from "../useViewportWidth"
+import { isCompactViewport } from "../breakpoints"
 
 function AppLeftPaneResizeHandle({
   width,
@@ -108,7 +109,7 @@ export function PluginTabsWorkspaceShell({
 }: PluginTabsWorkspaceShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const viewport = useViewportWidth()
-  const mobileShell = mobileShellEnabled === true && viewport < 640
+  const mobileShell = mobileShellEnabled === true && isCompactViewport(viewport)
   const effectiveCollapsed = mobileShell ? !mobileOpen : collapsed
   useEffect(() => {
     if (!mobileShell) setMobileOpen(false)

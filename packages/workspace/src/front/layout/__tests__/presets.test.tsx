@@ -281,7 +281,7 @@ describe("IdeLayout responsive behavior", () => {
     setViewport(1280)
   })
 
-  it("shows mobile hamburger under 768px and opens sheet sidebar", async () => {
+  it("shows mobile hamburger in the compact tier and opens sheet sidebar", async () => {
     setViewport(375)
     const user = userEvent.setup()
 
@@ -348,6 +348,39 @@ describe("IdeLayout responsive behavior", () => {
       expect(screen.getAllByTestId("dummy-panel")).toHaveLength(2)
     })
     expect(screen.getByLabelText("Collapse sidebar")).toBeInTheDocument()
+  })
+
+  it("uses the medium (rail) tier, not mobile sheet, between 640 and 1023px", async () => {
+    renderWithRegistry(
+      <IdeLayout />,
+      ["filetree", "empty"],
+    )
+
+    // 700px sat in the old mobile band (<768); it is now medium tier.
+    for (const width of [640, 700, 1023]) {
+      act(() => {
+        setViewport(width)
+      })
+      await waitFor(() => {
+        expect(screen.getByLabelText("Open collapsed sidebar")).toBeInTheDocument()
+        expect(screen.queryByLabelText("Open sidebar menu")).not.toBeInTheDocument()
+      })
+    }
+
+    act(() => {
+      setViewport(639)
+    })
+    await waitFor(() => {
+      expect(screen.getByLabelText("Open sidebar menu")).toBeInTheDocument()
+    })
+
+    act(() => {
+      setViewport(1024)
+    })
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Open sidebar menu")).not.toBeInTheDocument()
+      expect(screen.queryByLabelText("Open collapsed sidebar")).not.toBeInTheDocument()
+    })
   })
 
   it("transitions desktop → tablet → mobile → desktop modes", async () => {
