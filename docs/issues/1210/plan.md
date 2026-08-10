@@ -3,7 +3,7 @@ github: https://github.com/hachej/boring-ui/issues/1210
 issue: 1210
 state: needs-owner-approval
 updated: 2026-08-10
-revision: r2
+revision: r3
 flag: BORING_AGENT_CHANNELS (reused, from gh-1127); new tenant app repo
 ---
 
@@ -146,6 +146,18 @@ post-job review request produces.
 Every figure traces to AI-receptionist vendors. Instrument these in the pilot
 rather than marketing them.
 
+**Two source conflicts, recorded rather than resolved.** Independent research
+passes disagreed on two facts, and both should be re-verified before anyone
+relies on them. **(1) simap's API**: one pass verified `GET
+/api/publications/v2/project/project-search` by direct anonymous call, with the
+OpenAPI spec at `https://www.simap.ch/api/specifications/simap.yaml`; another
+reported "no public API, email subscriptions only". The direct call is the
+stronger evidence and this plan follows it, but confirm before scheduling work
+against it. **(2) Buildigo**: one pass found it dissolved in October 2025 with
+the domain redirecting to mobiliar.ch; another cited it as a live
+Mobiliar-backed dispatch network. The liquidation record is more specific and
+more recent, so this plan treats it as dead.
+
 **Switzerland specifically: no credible data exists** on trade response rates.
 Swiss figures in circulation ("62% of trade calls unanswered", "CHF 125 per
 missed call") are reskinned US vendor content. Cite HBR/Oldroyd for the
@@ -242,18 +254,46 @@ economics that dwarf a bathroom. All three are **outbound-prospecting shaped**,
 which puts them inside the legal constraint in risk 4 — and that, not the
 economics, should decide their sequencing.
 
-**Real estate (courtiers, régies).** A 2-3% commission on a CHF 1-2M sale is
-CHF 30-60k; one incremental deal pays for the product for years. The four
-verbs map cleanly — FIND is mandate prospecting (private-seller listings,
-stale listings), RESPOND is portal leads from Homegate/ImmoScout24 where speed
-is decisive, FOLLOW UP is buyer databases matched against new listings. Two
-cautions. First, mandate prospecting means contacting private individuals who
-did not ask to hear from us — the most legally exposed form of FIND, under both
-UWG and revDSG, and worse than the B2B case because it is B2C. Second, worth
-flagging as a genuine strategic observation: **régies dispatch maintenance to
-trades firms**, so a régie product and a trades product feed each other. That
-network effect is real but it is a reason to sequence them adjacently later,
-not a reason to start with the harder one.
+**Real estate (courtiers, régies) — on the research, the strongest challenger
+to the pilot.** Commission is confirmed at **2-3%**, typically 3% in Romandie,
+against a median single-family house near **CHF 1.27M** — so **CHF 25-40k
+gross per closed deal**. The market is large and fragmented: SVIT/BFS count
+**~22,400 brokerage and management firms**, 43% of them with 5-9 staff, and
+~85% of sales still go through a broker. All four verbs map, and there is a
+genuine hole to fill: **no Swiss incumbent was found doing instant
+auto-response, SLA routing, or buyer-book matching** — Immomig, Casasoft,
+RealAdvisor and PriceHubble own the plumbing but not the orchestration. Portal
+leads arrive by email, which is exactly our ingest shape, and brokers are
+publicly angry about SMG's portal price rises, which makes "raise the yield on
+the listing you already paid for" an easy opening line.
+
+**But the obvious FIND design is the one thing that is criminally sanctioned.**
+Mandate prospecting means contacting private sellers who never asked to hear
+from us — B2C, and squarely inside UWG art. 3(1)(o) and the 2021 art. 3(1)(u)
+regime (risk 4). The listing supply is also concentrated: homegate,
+ImmoScout24, anibis and tutti are all Swiss Marketplace Group, whose terms ban
+scraping and the use of ad contact data for one's own advertising. So a real
+estate v1 would have to be human-sends, postal, or inbound-opt-in **by
+design** — which is buildable, but it is a different product from the one this
+plan scopes. Clean targeting signals do exist without touching restricted
+data: time-on-market is publicly derivable from listing age, and averages ~84
+days for condos and ~79 for houses.
+
+The **régie network effect** is real — régies dispatch maintenance to trades
+firms — but that position is already contested by casavi/relay and by
+Mobiliar-backed dispatch. The open slice is Romandie and the small-firm tail.
+A reason to sequence the two adjacently later, not to start with the harder one.
+
+**Architects: assessed and rejected for v1.** Two decisive findings. Bidding is
+**week-of-work shaped, not quick-quote shaped** — a prequalification dossier
+runs 20-60 senior hours and a full competition entry 300-800, all explicitly
+unpaid — which is our stated weakness rather than our strength. And
+response *speed is simply not a lever*: deadlines are multi-month and award
+criteria are majority-qualitative. Worth noting for a different day: the SIA
+102 percentage-of-construction-cost fee formula was withdrawn after a WEKO
+intervention and the 2026 edition publishes no calculation method at all,
+explicitly inviting third-party fee tools — a vacuum nobody has filled, and a
+separate product rather than a vertical of this one.
 
 **Insurance brokers.** A won corporate mandate is recurring commission for
 years. The FIND thesis is the sharpest of any vertical: **Zefix/SHAB publish
@@ -424,12 +464,69 @@ Properties that make this the right first rung:
 The clean implication: **we own and host the destination mailbox in
 Switzerland, and poll it by IMAP with our own credentials.** No customer
 credential exists anywhere in the system at rung 1, and the residency story is
-intact because the mailbox is ours and Swiss. Two provider caveats to handle
-in the guided setup: Gmail requires a **confirmation code** at the forwarding
-address before a rule activates (so the flow must surface that code back to
-the customer), and Microsoft 365 **blocks external auto-forwarding by
-default** via outbound anti-spam policy, so M365 customers need an admin to
-allow it — that is the one provider where "under 30 minutes" is at risk.
+intact because the mailbox is ours and Swiss.
+
+**Receiving it is not free, and no SaaS solves it.** SendGrid Inbound Parse
+uses one global MX with no region control; Cloudflare Email Routing runs on an
+anycast edge with no documented processing location; Mailgun Routes are
+region-bound but EU, not CH. **Every inbound-parse service breaks the
+residency claim.** So: for the pilot, one Swiss mailbox with catch-all on
+`in.<domain>.ch` polled by IMAP, with the customer extracted from
+`To`/`Delivered-To`; at scale, Postfix on a CH VM delivering by LMTP straight
+into the parser. Two facts to confirm with one email each before committing:
+inbound port 25 reachability on the chosen CH provider, and Infomaniak's
+catch-all support and alias limits.
+
+**Provider reality, and it is the biggest threat to the 30-minute promise.**
+There is no authoritative survey of Swiss SMB mail hosting; the best proxy
+([BuiltWith MX detections for Switzerland](https://trends.builtwith.com/mx/country/Switzerland))
+puts Microsoft first, **Infomaniak a strong second (~180k detections)**, then
+Google. Roughly: M365 30-38%, Infomaniak 18-25%, Hostpoint 8-12%, Google
+7-11%, cyon 3-6%. Note Swisscom is mostly a channel *for* M365, and Infomaniak
+likely leads micro-business in Romandie — our recommended pilot region.
+
+Forwarding difficulty runs in almost exactly the wrong order:
+
+- **Infomaniak and cyon: trivial.** Webmail → Redirections → Add, with a
+  keep-a-copy toggle and no verification.
+- **Hostpoint: awkward** — needs the *hosting* login, which in many SMBs sits
+  with their web agency.
+- **Gmail: a confirmation code.** Google emails a code to the destination
+  before a rule activates, and the Gmail API does not skip it
+  (`forwardingAddresses.create` returns `pending`). Our ingest mailbox must
+  watch for `forwarding-noreply@google.com`, extract the code and post it back
+  — a 1-2 minute async step we should automate rather than ask the customer to
+  relay. Workspace admins can bypass it entirely via Gmail routing rules.
+- **Microsoft 365: blocked by default, and it fails silently.** Per
+  [Microsoft Learn](https://learn.microsoft.com/en-us/defender-office-365/outbound-spam-policies-external-email-forwarding),
+  the outbound spam policy's default "Automatic — System-controlled" now
+  behaves as **off**. The owner sets forwarding in Outlook, sees "Saved", and
+  mail bounces with `5.7.520 Access denied`. Fixing it means the *Defender*
+  portal — a different admin surface — and where one control allows while
+  another blocks, **block wins**, so relaxing Remote domains alone still
+  fails.
+
+**The strategic consequence is uncomfortable and worth stating: our largest
+segment has the worst rung-1 experience, and it fails in the most confusing
+possible way.** Detect the provider from the domain's MX during signup and
+route M365 customers into a purpose-built admin script rather than letting
+them stall. That script deserves more product investment than the other four
+providers combined.
+
+**And the ladder's rungs do not line up with the market either.** The Swiss
+hosters that make rung 1 easiest — Infomaniak, cyon, Hostpoint — have **no
+OAuth and no message API at all**, so rung 2 there means asking a Swiss SMB
+for a raw mailbox password that can also *send* and whose only revocation is a
+password reset that breaks all their other clients. Infomaniak is the one
+Swiss hoster offering **app-specific passwords**, which is the sole civilised
+option in that group. Google and Microsoft do have proper OAuth read scopes,
+but Google's restricted scopes require verification plus annual CASA Tier-2
+review (weeks and real money).
+
+**Therefore, a sharper position than r2 took:** treat rung 1 as the
+**permanent default**, not a stepping stone, and offer rung 2 only to Google
+and Microsoft tenants where OAuth makes it defensible. That is a better
+product *and* a better privacy story than the ladder implied.
 
 Replies at rung 1 are **drafts delivered to WhatsApp**; the owner sends from
 their own client, or approves and we send from a clearly-labelled assistant
@@ -442,10 +539,33 @@ follow-ups catch threads the forward rule missed. State the risk honestly: an
 IMAP app password is broader than an OAuth read scope, and we should say so
 rather than pretend they are equivalent.
 
-**Rung 3 — send-as their own domain.** SPF include, DKIM records, DMARC
-alignment. Naturally bundled with the landing-page onboarding, because that is
-already the moment we touch their DNS. Without DKIM alignment, sending as
-their domain fails DMARC — so this rung is all-or-nothing, never partial.
+**Rung 3 — send-as their own domain.** Naturally bundled with landing-page
+onboarding, since that is when we touch their DNS anyway. Three findings that
+change how to build it:
+
+- **Never touch their apex SPF.** [RFC 7208 §4.6.4](https://datatracker.ietf.org/doc/html/rfc7208#section-4.6.4)
+  caps SPF at 10 DNS lookups and mandates `permerror` beyond it. A typical
+  Swiss SMB is already at 7-9 (`spf.protection.outlook.com` ≈2-3, hoster ≈1-3,
+  plus booking and newsletter tools). Worse, the failure can be
+  **intermittent**, because evaluation stops at the first match — so adding our
+  include can break *their existing mail* for *some* receivers in a way that
+  looks unrelated to us. **Rely on aligned DKIM alone**: DMARC needs only one
+  aligned identifier. Delegate DKIM by CNAME so key rotation never touches
+  their zone again.
+- **Aligned DKIM is mandatory, not optional**, and for a specifically Swiss
+  reason: **DKIM survives forwarding and SPF does not**, and this market
+  forwards constantly. Check `_dmarc` for `aspf=s`/`adkim=s` before designing
+  each customer's sending identity, and remember subdomains inherit the apex
+  policy via `sp`.
+- **Rung 1 sending is good enough to keep permanently.** Sending from our own
+  domain with `Reply-To` set to the customer needs zero customer DNS and
+  aligns automatically. Its real costs: `Reply-To` is advisory, so budget for
+  stray replies (especially Reply All); **do not put the customer's company
+  name as the display name over our address** — that is precisely the pattern
+  Defender impersonation protection and Gmail display-name checks target; and
+  aggregating many customers onto one domain means one bad actor damages
+  everyone's reputation. Use **per-customer subdomains** on our domain, and
+  enrol in Postmaster Tools and the Yahoo FBL on day one.
 
 **Composio Gmail is explicitly not the default.** It would route a Swiss
 customer's client correspondence through a US managed connector, contradicting
@@ -676,10 +796,14 @@ Everything else is progressive and post-value: OAuth (rung 2), send-as
 within days, not during signup). The 30-minute clock stops at "live", not at
 "fully configured".
 
-The known risk to the number is Microsoft 365's default block on external
-auto-forwarding, which needs an admin action. Detect the provider from the
-customer's domain MX during signup and route M365 customers to a different
-script rather than letting them stall on step 3.
+**Step 3 is the whole risk.** Detect the provider from the domain's MX at
+signup and branch: Infomaniak and cyon customers finish in two minutes; Gmail
+customers hit the confirmation code, which our ingest mailbox consumes
+automatically; **M365 customers cannot complete step 3 at all** without a
+Defender-portal change, and will otherwise believe they have succeeded while
+mail silently bounces. For them, either walk their admin through it live, or
+be honest that onboarding takes a day. Do not let the 30-minute promise turn
+into a broken first impression for the largest segment of the market.
 
 ## The per-vertical kit and its content pipeline
 
@@ -823,32 +947,60 @@ share of leads arriving outside business hours.
    standing rules, which must be demonstrable rather than asserted:
    **read-only by default; leads-scope only, never the whole mailbox; CH
    storage; deletion on request; and never auto-send.** Rung 1 is designed so
-   that at the moment of maximum customer suspicion — signup — we are asking
-   for a forwarding rule rather than a password. A processor agreement (DPA /
-   Auftragsverarbeitungsvertrag) under revDSG should be ready before the first
-   customer, not after.
+   that at the moment of maximum customer suspicion — signup — we ask for a
+   forwarding rule rather than a password.
+   **The DPA is a sales accelerator, not a blocker.** Under revDSG art. 9 we
+   are an *Auftragsbearbeiter*: a contractual basis is required in substance,
+   but Swiss law imposes no written-form requirement and no mandatory clause
+   catalogue; sub-processors need prior authorisation, which can be general.
+   GDPR's fuller art. 28(3) set applies whenever the customer targets EU
+   prospects, which is common — so publish one GDPR-shaped DPA with a Swiss
+   annex, bilingual DE/FR, plus a sub-processor list and a TOM annex. Flag in
+   Annex 1 that inbound email is *uncontrolled input* and may contain sensitive
+   data.
+   **The one clause that decides deals is the LLM sub-processor** — sending a
+   customer's client correspondence to a US model is an art. 16 disclosure
+   abroad and an art. 9(3) sub-processor needing their authorisation. Our
+   Infomaniak choice **moots the entire objection**, which is worth
+   recognising as a commercial asset and not merely a residency preference.
+   Have a Swiss data-protection lawyer sign off the template.
 3. **Quote liability.** A wrong number in a quote is real financial exposure.
    Everything is a **draft**; a human sends. The agent proposes inside the
    owner's own price bands and flags anything outside them rather than
    guessing. Terms must state the customer is responsible for what they send.
-4. **The legal split between the four verbs — the most important item here.**
-   RESPOND and FOLLOW UP operate inside an existing or customer-initiated
-   relationship and are legally unremarkable. **Cold outbound is a different
-   regime.** Swiss **UWG art. 3(1)(o)** makes mass electronic advertising
-   unfair unless prior consent, correct sender identification, and a free
-   opt-out are *all* present, it **applies to B2B as well as B2C**, and
-   breaches are criminal on complaint under UWG art. 23 (up to three years).
-   The live question is whether individualised, signal-triggered outreach
-   counts as *Massenwerbung* at all — arguably not, but that is a grey zone
-   and not one to resolve by assumption.
-   Consequences: **(a)** the marketplace-bidding form of FIND is clean, because
-   the customer is invited to quote; **(b)** register-driven prospecting
-   (Zefix/SHAB → a company that never asked to hear from us) is the loaded
+4. **The legal split between the four verbs — the most important item here,
+   and worse than r2 assumed.** RESPOND and FOLLOW UP operate inside an
+   existing or customer-initiated relationship and are legally unremarkable.
+   **Automated cold outbound is close to prohibited.**
+   - **UWG art. 3(1)(o)** makes mass electronic advertising unfair unless
+     prior consent, correct sender identification and a free opt-out are *all*
+     present; it **applies to B2B**; breaches are criminal on complaint under
+     art. 23, up to three years.
+   - **The hoped-for escape does not work.** r2 speculated that individualised,
+     signal-triggered outreach might not count as *Massenwerbung*. Swiss
+     doctrine and case law key the test on **automation, not volume** —
+     advertising sent *"ohne nennenswerten menschlichen Aufwand"*
+     ([OGer ZH UE160194](https://www.gerichte-zh.ch/fileadmin/user_upload/entscheide/oeffentlich/UE160194-O4.pdf)).
+     An AI outreach pipeline is, by construction, exactly the thing the norm
+     targets. **Assume it is caught.**
+   - **art. 3(1)(u)**, revised in 2021, compounds it: addresses *not* published
+     in a directory — a mobile number or email in a classified ad — are
+     protected like star entries, and doctrine extends this to email and to
+     B2B ([Walder Wyss, sic! 11/2021](https://www.walderwyss.com/assets/content/publications/Lauterkeitsrechtliche-Aspekte-des-revidierten-Rechts-zum-Telemarketing_Anthamattan_Altmann_sic_2021-11.pdf)).
+     Effectively an opt-in regime.
+   - Enforcement is complaint-driven and patchy, which is cold comfort: a
+     competing broker or tradesman has both standing and motive.
+
+   Consequences: **(a)** marketplace bidding is clean — the customer is invited
+   to quote; **(b)** register- and listing-driven prospecting is the loaded
    form, and it is exactly what the insurance-broker and real-estate-mandate
-   ideas depend on; **(c)** get written Swiss legal advice before building
-   (b), and until then the agent may *research and draft*, with the customer
-   sending — which also matches the FINMA position that a registered
-   intermediary owns the client contact.
+   ideas depend on; **(c)** the compliant designs are narrow and known —
+   the agent scores, targets and *drafts* while **a human sends the
+   individualised first contact**; postal mail (only Robinson-list
+   suppression); or inbound opt-in funnels such as a valuation widget. Build
+   those shapes, not a send pipeline. **(d)** Get written Swiss advice before
+   any of it; for insurance, FINMA's registered-intermediary duties point the
+   same way — the registered broker owns the contact.
 5. **Source-access constraints on FIND, now concrete.** Ofri's AGB §8.1 bans
    automated access in terms; Olmero and buildup disallow ClaudeBot and peers
    in robots.txt with an EU-DSM Art. 4 reservation and Cloudflare enforcement;
@@ -1036,3 +1188,24 @@ people who have not contacted the customer.
 10. **Does renovero email its members on new matching requests?** A single
     factual unknown that materially changes the pilot's channel mix and the
     value of the MVP. Resolve with one paid account before slice 1 finishes.
+11. **Accept that rung 1 is permanent, not transitional?** The provider
+    research argues for it: the Swiss hosters with the easiest forwarding have
+    no OAuth at all, so rung 2 there means a raw mailbox password. Ratifying
+    "forwarding is the product, OAuth is a Google/Microsoft-only extra" would
+    simplify the roadmap and strengthen the privacy story.
+12. **Three cheap facts to close before slice 1:** inbound port 25
+    reachability on the chosen CH provider; Infomaniak catch-all support,
+    alias limits and price; and re-verification of the simap API and Buildigo
+    status (§ source conflicts). One email or one call each.
+
+## Revision note
+
+r3 folds in the platform, tooling, mail-provider and real-estate research.
+Four things changed materially from r2, all of them corrections rather than
+additions: automated cold outbound is **closer to prohibited** than r2's grey
+zone (the test is automation, not volume); **M365 blocks forwarding by
+default and fails silently**, putting the largest market segment at odds with
+the 30-minute onboarding promise; **rung 1 should be permanent** rather than a
+stepping stone, because the easiest Swiss hosters have no OAuth; and **we own
+no web tooling at all**, which turns deferring automated FIND/BID from a
+judgement call into a near-necessity.
