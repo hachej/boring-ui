@@ -26,7 +26,7 @@ Use PR #1027 only as an audited behavior reference. Build four reviewable stacke
 6. The UI does not restore browser-local draft/native-first adoption. `session.create` is immediately durable and ledger-owned.
 7. Addressed deletion tombstones hide a deleted session across stale list responses until authoritative absence; failed deletion restores a retryable row without switching unrelated panes.
 8. Runtime semantic identity excludes physical placement/generation. Physical identity remains a cache/binding discriminator.
-9. Runtime migration authorizes only an exact deterministic predecessor in a verified workspace/storage scope, prepares the target before CAS, preserves transcript bytes, and serializes writers. Identity `33293674ddb7f24bcc036f4b5bedbf2457ac3a639e2969353ccb0175d385d7fe` remains unauthorized.
+9. Runtime identity uses a hard cut: sessions pinned to any predecessor identity remain read-only and fail closed. No migration authorization or transcript rewrite path exists.
 10. Dev login is loopback/development-only and must create or sign in a verified local user without relying on mail delivery.
 11. Release publication binds RC/full-CI proof to the exact SHA and updates tags atomically, including safe same-target replacement.
 
@@ -59,9 +59,8 @@ Use PR #1027 only as an audited behavior reference. Build four reviewable stacke
 
 - Equivalent physical placement changes remain writable.
 - Semantic runtime changes remain fail-closed.
-- Exact predecessor migration is scoped, byte-preserving, serialized, and target-before-CAS.
-- Malformed headers, stale locks, target preparation failure, CAS/write failure, and wrong scope fail closed.
-- No historical guessed identity is authorized.
+- Every predecessor identity remains fail-closed and its transcript stays byte-unchanged.
+- No legacy identity reconstruction, migration authorization, lock, CAS, evidence, or transcript rewrite API exists.
 
 ### Onboarding
 
@@ -94,9 +93,9 @@ Use PR #1027 only as an audited behavior reference. Build four reviewable stacke
 
 **Review budget:** exceeds one small PR but remains one vertical user-facing slice; port only behavior-bearing Wave paths recorded in a source ledger.
 
-### Slice 2: semantic/physical runtime identity and exact migration
+### Slice 2: semantic/physical runtime identity hard cut
 
-**Delivers:** v2 semantic identity, physical binding separation, exact authorized migration, transcript/lock/CAS safety.
+**Delivers:** v2 semantic identity, physical binding separation, and fail-closed read-only predecessor sessions without migration machinery.
 
 **Blocked by:** Slice 1 for stack order only.
 
