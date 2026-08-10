@@ -9,7 +9,6 @@ export interface ReadinessState {
 export interface HealthRouteOptions {
   version: string
   getReadiness: () => ReadinessState
-  getDurableStreamReadiness?: () => import('../../agent-host/buildAgentComposition').DurableStreamReadinessSnapshot | undefined
 }
 
 export function healthRoutes(
@@ -20,12 +19,10 @@ export function healthRoutes(
   const startTime = Date.now()
 
   app.get('/health', async () => {
-    const durableStream = opts.getDurableStreamReadiness?.()
     return {
       status: 'ok',
       version: opts.version,
       uptime: Math.floor((Date.now() - startTime) / 1000),
-      ...(durableStream ? { durableStream } : {}),
     }
   })
 

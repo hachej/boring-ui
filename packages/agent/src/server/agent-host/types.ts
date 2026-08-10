@@ -375,5 +375,4 @@ export interface CreatedAgentHost {
     input: AgentHostDispatcherRunInput,
     run: (binding: LeaseBoundWorkspaceAgent) => Promise<void>,
   ): Promise<void>
-  getDurableStreamReadiness(): import('./buildAgentComposition').DurableStreamReadinessSnapshot | undefined
 }

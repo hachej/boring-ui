@@ -4,7 +4,6 @@ import {
   buildHarnessAgentTools,
   buildUploadAgentTools,
 } from '@hachej/boring-bash/agent'
-import { createLogger } from '@hachej/boring-bash/server'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../../shared/harness'
 import type { AgentTool } from '../../shared/tool'
 import type { SessionStore } from '../../shared/session'
@@ -37,23 +36,6 @@ import { sessionNamespaceForAgent } from './sessionInventory'
 export const DURABLE_STREAM_ENV_FLAG = 'BORING_CHAT_DURABLE_STREAM'
 export const EVENT_STORE_FILE_NAME = '.agent-event-stream.sqlite'
 
-const logger = createLogger('agent-durable-stream')
-
-export interface DurableStreamReadinessSnapshot {
-  readonly mode: 'disabled' | 'active' | 'failed'
-  readonly reason: string | null
-  readonly storagePath: string | null
-  readonly counts: {
-    readonly streams: number
-    readonly events: number
-  }
-}
-
-export interface DurableEventStoreDecision {
-  readonly opened?: { store: EventStreamStore; close: () => void }
-  snapshot(): DurableStreamReadinessSnapshot
-}
-
 export function isDurableStreamEnabled(): boolean {
   const raw = process.env[DURABLE_STREAM_ENV_FLAG]
   return raw === '1' || raw === 'true'
@@ -70,122 +52,53 @@ export function isDurableStreamEnabled(): boolean {
  * mode that is an IN-SANDBOX (guest) path, and writing the durable store
  * there would either fail invisibly or, worse, silently land the "durable"
  * store inside an ephemeral guest filesystem that vanishes with the sandbox.
- * If neither a session root nor a host storage root is resolvable, this
- * fails closed: no store is opened, a stable-coded diagnostic is reported,
- * and callers fall back to in-memory streaming rather than ever writing to
- * a guest path or crashing boot.
+ * If the store cannot be opened while the durable-stream flag is on —
+ * because neither a session root nor a host storage root is resolvable, or
+ * because `openDatabase` fails at the resolved path — this fails LOUDLY:
+ * a stable-coded telemetry diagnostic is reported and a
+ * {@link DurableStreamUnavailableError} (code `DURABLE_STREAM_UNAVAILABLE`,
+ * carrying the underlying cause) is thrown so boot aborts. The operator
+ * asked for durability; silently degrading to in-memory streaming would
+ * betray that. Flag off = this function is never called and behavior is
+ * byte-identical to pre-durability composition.
  */
 export function openDurableEventStore(input: {
   readonly sessionRoot?: string
   readonly hostStorageRoot?: string
   readonly telemetry?: TelemetrySink
-}): { store: EventStreamStore; close: () => void } | undefined {
-  return decideDurableEventStore({ ...input, enabled: true }).opened
-}
-
-export function decideDurableEventStore(input: {
-  readonly enabled: boolean
-  readonly sessionRoot?: string
-  readonly hostStorageRoot?: string
-  readonly telemetry?: TelemetrySink
-}): DurableEventStoreDecision {
-  if (!input.enabled) {
-    return {
-      snapshot: () => ({
-        mode: 'disabled',
-        reason: `${DURABLE_STREAM_ENV_FLAG} is not enabled`,
-        storagePath: null,
-        counts: { streams: 0, events: 0 },
-      }),
-    }
-  }
-
+}): { store: EventStreamStore; close: () => void } {
   const root = input.sessionRoot ?? input.hostStorageRoot
   if (!root) {
     const reason = 'No sessionRoot and no host storage root available; refusing to fall back to a sandbox/guest path.'
     reportEventStoreOpenFailure(input.telemetry, '(no host-resolvable root)', reason)
-    return failedDurableEventStoreDecision(null, reason)
+    throw new DurableStreamUnavailableError('(no host-resolvable root)', reason)
   }
   const path = join(root, EVENT_STORE_FILE_NAME)
-  let opened: OpenDatabaseResult | undefined
+  let opened: OpenDatabaseResult
   try {
     opened = openDatabase(path)
-    let operationFailure: string | undefined
-    const store = observeEventStoreFailures(
-      new SqliteEventStreamStore(opened.sql, opened.runTransaction),
-      (error) => { operationFailure ??= error instanceof Error ? error.message : String(error) },
-    )
-    return {
-      opened: { store, close: () => opened!.db.close() },
-      snapshot() {
-        try {
-          const streamRow = opened!.sql.exec('SELECT COUNT(*) AS count FROM boring_event_streams').toArray()[0]
-          const eventRow = opened!.sql.exec('SELECT COUNT(*) AS count FROM boring_event_stream_entries').toArray()[0]
-          return {
-            mode: operationFailure ? 'failed' : 'active',
-            reason: operationFailure ?? null,
-            storagePath: path,
-            counts: {
-              streams: Number(streamRow?.count ?? 0),
-              events: Number(eventRow?.count ?? 0),
-            },
-          }
-        } catch (error) {
-          return {
-            mode: 'failed',
-            reason: operationFailure ?? (error instanceof Error ? error.message : String(error)),
-            storagePath: path,
-            counts: { streams: 0, events: 0 },
-          }
-        }
-      },
-    }
   } catch (error) {
-    try { opened?.db.close() } catch {}
     const reason = error instanceof Error ? error.message : String(error)
     reportEventStoreOpenFailure(input.telemetry, path, reason)
-    return failedDurableEventStoreDecision(path, reason)
+    throw new DurableStreamUnavailableError(path, reason, error)
+  }
+  return {
+    store: new SqliteEventStreamStore(opened.sql, opened.runTransaction),
+    close: () => opened.db.close(),
   }
 }
 
-function observeEventStoreFailures(
-  store: EventStreamStore,
-  onFailure: (error: unknown) => void,
-): EventStreamStore {
-  return new Proxy(store, {
-    get(target, property, receiver) {
-      const member = Reflect.get(target, property, receiver) as unknown
-      if (typeof member !== 'function') return member
-      return (...args: unknown[]) => {
-        try {
-          const result = Reflect.apply(member, target, args) as unknown
-          if (result && typeof (result as { then?: unknown }).then === 'function') {
-            return Promise.resolve(result).catch((error) => {
-              onFailure(error)
-              throw error
-            })
-          }
-          return result
-        } catch (error) {
-          onFailure(error)
-          throw error
-        }
-      }
-    },
-  })
-}
+/**
+ * Boot-time failure: `BORING_CHAT_DURABLE_STREAM` is enabled but the durable
+ * event-stream store could not be opened. Thrown instead of silently falling
+ * back to in-memory streaming.
+ */
+export class DurableStreamUnavailableError extends Error {
+  readonly code = ErrorCode.enum.DURABLE_STREAM_UNAVAILABLE
 
-function failedDurableEventStoreDecision(
-  storagePath: string | null,
-  reason: string,
-): DurableEventStoreDecision {
-  return {
-    snapshot: () => ({
-      mode: 'failed',
-      reason,
-      storagePath,
-      counts: { streams: 0, events: 0 },
-    }),
+  constructor(path: string, reason: string, cause?: unknown) {
+    super(`${DURABLE_STREAM_ENV_FLAG} is enabled but the durable event-stream store could not be opened at ${path}: ${reason}`, cause === undefined ? undefined : { cause })
+    this.name = 'DurableStreamUnavailableError'
   }
 }
 
@@ -221,7 +134,6 @@ export interface BuiltAgentComposition {
   readonly tools: readonly AgentTool[]
   readonly runtimeBundle: RuntimeBundle
   readonly readyTracker: ReadyStatusTracker
-  readonly durableStreamReadiness: DurableStreamReadinessSnapshot
   readonly runtimeScopeIdentity: string
   dispose(): Promise<void>
 }
@@ -324,13 +236,13 @@ export async function buildAgentComposition(
     telemetry: options.telemetry,
   })
   const sessionStore = harness.sessions
-  const durableEventStore = decideDurableEventStore({
-    enabled: isDurableStreamEnabled(),
-    sessionRoot: options.sessionRoot,
-    hostStorageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
-    telemetry: options.telemetry,
-  })
-  logger.info('durable stream boot decision', { ...durableEventStore.snapshot() })
+  const durableEventStore = isDurableStreamEnabled()
+    ? openDurableEventStore({
+        sessionRoot: options.sessionRoot,
+        hostStorageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
+        telemetry: options.telemetry,
+      })
+    : undefined
   const service = new HarnessPiChatService({
     harness,
     sessionStore,
@@ -340,7 +252,7 @@ export async function buildAgentComposition(
     attachmentUrl: ({ sessionId, messageId, index }) =>
       `/api/v1/agents/${encodeURIComponent(input.agent.agentTypeId)}/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(messageId)}/${index}`,
     metering: options.metering,
-    eventStore: durableEventStore.opened?.store,
+    eventStore: durableEventStore?.store,
   })
   let disposed: Promise<void> | undefined
 
@@ -351,12 +263,9 @@ export async function buildAgentComposition(
     tools,
     runtimeBundle,
     readyTracker,
-    get durableStreamReadiness() {
-      return durableEventStore.snapshot()
-    },
     runtimeScopeIdentity: runtimeScope.identity,
     dispose() {
-      disposed ??= service.dispose().finally(() => durableEventStore.opened?.close())
+      disposed ??= service.dispose().finally(() => durableEventStore?.close())
       return disposed
     },
   }

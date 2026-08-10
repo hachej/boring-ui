@@ -5,15 +5,7 @@ import { createAuthMiddleware } from '../../middleware'
 
 function buildApp(
   readiness: ReadinessState = { sandboxReady: true, harnessReady: true },
-  opts: {
-    authToken?: string
-    durableStream?: {
-      mode: 'disabled' | 'active' | 'failed'
-      reason: string | null
-      storagePath: string | null
-      counts: { streams: number; events: number }
-    }
-  } = {},
+  opts: { authToken?: string } = {},
 ) {
   const app = Fastify({ logger: false })
   if (opts.authToken) {
@@ -28,7 +20,6 @@ function buildApp(
   app.register(healthRoutes, {
     version: '0.1.0-test',
     getReadiness: () => readiness,
-    getDurableStreamReadiness: () => opts.durableStream,
   })
   return app.ready().then(() => app)
 }
@@ -46,22 +37,6 @@ describe('GET /health', () => {
     expect(typeof body.uptime).toBe('number')
     expect(body.uptime).toBeGreaterThanOrEqual(0)
 
-    await app.close()
-  })
-
-  test('exposes durable stream readiness without changing health status', async () => {
-    const durableStream = {
-      mode: 'failed' as const,
-      reason: 'storage unavailable',
-      storagePath: '/data/pi-sessions/.agent-event-stream.sqlite',
-      counts: { streams: 0, events: 0 },
-    }
-    const app = await buildApp(undefined, { durableStream })
-
-    const res = await app.inject({ method: 'GET', url: '/health' })
-
-    expect(res.statusCode).toBe(200)
-    expect(res.json()).toMatchObject({ status: 'ok', durableStream })
     await app.close()
   })
 

@@ -7,11 +7,6 @@ import type { AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
 import type { AgentTool } from '../shared/tool'
 import { createAgentHost } from './agent-host/createAgentHost'
-import {
-  DURABLE_STREAM_ENV_FLAG,
-  EVENT_STORE_FILE_NAME,
-  isDurableStreamEnabled,
-} from './agent-host/buildAgentComposition'
 import { registerAgentHostEnvironmentRoutes } from './agent-host/environmentHttpProjection'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { getEnv } from './config/env'
@@ -341,14 +336,6 @@ export async function createStandaloneAgentHostApp(
     await app.register(healthRoutes, {
       version: options.version ?? DEFAULT_VERSION,
       getReadiness: () => ({ sandboxReady: true, harnessReady: true }),
-      getDurableStreamReadiness: () => created?.getDurableStreamReadiness() ?? {
-        mode: isDurableStreamEnabled() ? 'failed' : 'disabled',
-        reason: isDurableStreamEnabled()
-          ? 'durable stream composition is not initialized'
-          : `${DURABLE_STREAM_ENV_FLAG} is not enabled`,
-        storagePath: options.sessionRoot ? join(options.sessionRoot, EVENT_STORE_FILE_NAME) : null,
-        counts: { streams: 0, events: 0 },
-      },
     })
     await registerAgentHostEnvironmentRoutes(app, {
       created,
