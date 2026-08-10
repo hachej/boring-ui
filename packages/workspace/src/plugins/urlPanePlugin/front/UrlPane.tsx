@@ -22,6 +22,28 @@ type PolicyState =
 
 const POLICY_PATH = "/api/v1/ui/url-pane/policy"
 
+const BASE_SANDBOX = "allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+
+function workspaceOrigin(): string | null {
+  if (typeof window === "undefined") return null
+  return window.location?.origin ?? null
+}
+
+/**
+ * `allow-same-origin` is what makes a real app work in here: without it the
+ * frame runs on an opaque origin, and every module script the demo loads is
+ * fetched in CORS mode from `origin: null` — a plain Vite dev server then
+ * renders blank. It is only dangerous when the framed document is same-origin
+ * with the *workspace*, because then `allow-scripts allow-same-origin` lets the
+ * frame reach into the parent's origin and remove its own sandbox. Different
+ * port means different origin, which covers every real worker demo; a workspace
+ * embedding itself keeps the strict sandbox.
+ */
+export function urlPaneSandbox(targetOrigin: string, hostOrigin: string | null): string {
+  if (hostOrigin && targetOrigin.toLowerCase() === hostOrigin.toLowerCase()) return BASE_SANDBOX
+  return `${BASE_SANDBOX} allow-same-origin`
+}
+
 export function UrlPane({ url, title, className, policyOverride }: UrlPaneProps) {
   const client = useOptionalWorkspacePluginClient()
   const [policyState, setPolicyState] = useState<PolicyState>(
@@ -71,6 +93,11 @@ export function UrlPane({ url, title, className, policyOverride }: UrlPaneProps)
   const resolution = useMemo(
     () => (policyState.status === "ready" ? resolveUrlPaneTarget(url, policyState.policy) : null),
     [policyState, url],
+  )
+
+  const sandbox = useMemo(
+    () => (resolution?.ok ? urlPaneSandbox(resolution.origin, workspaceOrigin()) : BASE_SANDBOX),
+    [resolution],
   )
 
   return (
@@ -126,9 +153,7 @@ export function UrlPane({ url, title, className, policyOverride }: UrlPaneProps)
             src={resolution.url}
             title={title ?? resolution.url}
             className="h-full w-full border-0 bg-white"
-            // No allow-same-origin: the framed demo must never reach the
-            // workspace origin's storage or DOM.
-            sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+            sandbox={sandbox}
             referrerPolicy="no-referrer"
           />
         ) : (

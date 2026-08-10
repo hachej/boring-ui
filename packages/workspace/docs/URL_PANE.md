@@ -49,9 +49,14 @@ sandbox:
   `POST /api/v1/ui/commands` route rejects a disallowed URL with a 400 so an
   agent gets a reason instead of an invisible blocked pane.
 - **Sandbox.** `allow-scripts allow-forms allow-popups
-  allow-popups-to-escape-sandbox` — never `allow-same-origin`, so the framed app
-  cannot touch the workspace origin's storage or DOM. `referrerPolicy` is
-  `no-referrer`.
+  allow-popups-to-escape-sandbox`, plus `allow-same-origin` **only when the
+  target origin differs from the workspace's own origin**. That conditional
+  matters both ways: without `allow-same-origin` the frame runs on an opaque
+  origin and a plain dev server's module scripts are CORS-blocked (a real hub
+  demo renders blank); with it on a *same-origin* document, `allow-scripts
+  allow-same-origin` would let the frame remove its own sandbox and reach the
+  workspace. A different port is a different origin, which covers every real
+  worker demo. `referrerPolicy` is `no-referrer`.
 
 Sites that send `X-Frame-Options: DENY` or a restrictive `frame-ancestors` CSP
 will refuse to render; that is the remote site's choice, not a pane bug. The
