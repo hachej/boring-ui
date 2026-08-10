@@ -2,7 +2,17 @@ import { resolve } from 'node:path'
 
 import { loadConfiguredAgentFleet, type AgentHostAgentSpec } from '@hachej/boring-agent/server'
 
-export type BoringFactoryRole = 'triage' | 'orchestrator' | 'worker'
+/**
+ * A seat name as it appears in `.agents/factory/fleet.yaml` — the composed
+ * `agentTypeId` minus its `boring-` prefix.
+ *
+ * Deliberately NOT a union of seat literals. The roster is configuration,
+ * composed at boot by `loadConfiguredAgentFleet` from `.agents/personas` +
+ * `fleet.yaml`; a hand-maintained union here would be a second copy of it that
+ * silently drifts every time a seat is added or renamed. This file must never
+ * be able to disagree with the config about who the seats are (gh-1187 S0).
+ */
+export type BoringFactoryRole = string
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../..')
 const PERSONAS_DIR = resolve(REPOSITORY_ROOT, '.agents', 'personas')
@@ -73,7 +83,7 @@ export async function loadBoringFactoryAgents(
   if (!options.preferredModels) return agents
   return agents.map((agent) => {
     if ('legacyDefault' in agent) return agent
-    const role = agent.agentTypeId.replace(/^boring-/, '') as BoringFactoryRole
+    const role = agent.agentTypeId.replace(/^boring-/, '')
     const preferred = options.preferredModels?.[role]
     return preferred ? { ...agent, model: { ...agent.model, preferred } } : agent
   })
