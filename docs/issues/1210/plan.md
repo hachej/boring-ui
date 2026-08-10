@@ -3,677 +3,1036 @@ github: https://github.com/hachej/boring-ui/issues/1210
 issue: 1210
 state: needs-owner-approval
 updated: 2026-08-10
-revision: r1
-flag: BORING_AGENT_CHANNELS (reused, from gh-1127), plus BORING_MAIL_INGEST (new)
+revision: r2
+flag: BORING_AGENT_CHANNELS (reused, from gh-1127); new tenant app repo
 ---
 
-# gh-1210 — CH trades agent: WhatsApp + email-drafting vertical
+# gh-1210 — CH revenue agent for Swiss SMBs
 
-Vertical product plan. Owner gate: nothing here is built until the owner
-ratifies the MVP cut (§4), the pricing (§6), and the residency claims we are
-willing to put in a contract (§5e, §7).
+**r2 supersedes r1.** r1 planned a secretary that saves admin time. The owner
+reframed it: the product makes customers *more money*. That inverts the value
+story, changes the pricing anchor, adds two verbs (FIND, BID) ahead of the two
+r1 had (RESPOND, FOLLOW UP), and — once the vertical research came back — moves
+the recommended pilot away from fiduciaries.
+
+Owner gate. Nothing is built until the owner ratifies the pilot vertical (§4),
+the legal position on outbound (§9), and the pricing (§10).
 
 ## Problem
 
-Swiss SMB trades — fiduciaires/Treuhand, artisans/Handwerker, storage
-companies, paysagistes/Gartenbau — bill more than 1000 CHF per invoice and
-run their commercial correspondence out of one inbox, answered by the owner
-between jobs, in French or German. Every inbound "what would this cost?"
-costs them an evening. They will not open a workspace, they will not learn a
-CRM, and they buy on two things: the thing answers their email, and their
-data stays in Switzerland.
+A Swiss tradesman with a CHF 28,000 bathroom renovation on offer loses it
+because he was on a roof when the request arrived and answered on Thursday.
+The German mystery-shop numbers are brutal and they are the best European
+evidence available: of 100 standardised enquiries per trade, **roofers replied
+to 37, drywallers 54, solar installers 56, heating engineers 57, window
+fitters 76** ([Deutsche Handwerks Zeitung, May 2026](https://www.deutsche-handwerks-zeitung.de/100-anfragen-pro-gewerk-wer-antwortet-wer-nicht-378421/)).
+Roofers named a concrete appointment in **7 of 100** enquiries.
 
-We have a workspace-shaped agent platform. They want a phone-shaped one.
+That is not an admin problem. It is revenue on the floor. The pitch is not
+"save four hours a week", it is **"you will win jobs you are currently
+losing"** — and the price is anchored against one won job, not against hours
+saved.
+
+## The offer — five elements
+
+Sold as one thing. Elements 2-5 are the agent; element 1 is what makes it feel
+like *we get you clients* rather than *we sell you software*.
+
+1. **A new landing page for the customer** — delivered at onboarding, on their
+   brand and domain, FR or DE, mobile-first, with services, photos, Google
+   reviews, a quote-request form and a WhatsApp click-to-chat button. Swiss SMB
+   trade sites are typically absent or a decade old. Crucially this is not a
+   gift: **the form and the WhatsApp button feed straight into RESPOND**, so
+   their own site becomes a lead source the agent owns end to end.
+2. **FIND** — the agent hunts opportunities daily: marketplace requests
+   matching their trade, region and capacity, plus (per vertical) public
+   signal sources. Nobody's secretary does this. It is the differentiator —
+   and, per §(a2), the element where our tooling is weakest and the legal and
+   ToS constraints sharpest, which is why the MVP implements its defensible
+   form (the customer's own alert emails) and defers the rest.
+3. **BID** — for each found opportunity the agent drafts the offer from the
+   customer's own price book and past quotes, and on approval submits it.
+4. **RESPOND** — every inbound lead gets a credible draft answer in minutes,
+   FR/DE, owner-approved, including evenings and weekends.
+5. **FOLLOW UP** — unanswered quotes chased on a cadence until decided; a
+   review request after each completed job; dormant-client reactivation and
+   seasonal campaigns.
+
+## Architecture thesis: one engine, verticals are configuration
+
+The strongest structural claim in this plan, and the one to attack first if
+it is wrong: **there is one product, not five.**
+
+```txt
+                 ┌──────────────────────────────────┐
+   signals  ───▶ │  opportunity intake              │ ───┐
+   (marketplace  │  normalise → dedupe → filter     │    │
+    alerts,      └──────────────────────────────────┘    │
+    public                                               ▼
+    registers,                                  ┌─────────────────┐
+    inbound      ┌──────────────────────────────│  draft engine   │
+    email,       │  price book + knowledge      │  (FR/DE)        │
+    site form)   └──────────────────────────────└─────────────────┘
+                                                          │
+                                                          ▼
+                                            ┌───────────────────────────┐
+                                            │ human intention (ask_user)│
+                                            │  approve / edit / reject  │
+                                            └───────────────────────────┘
+                                                          │
+                                    WhatsApp notify ◀──────┴──────▶ send / submit
+```
+
+A vertical is then a **configuration bundle**, not a codebase:
+
+| Per-vertical kit | What it is |
+| --- | --- |
+| Persona | `instructions.md` prose, FR or DE, trade vocabulary |
+| Knowledge corpus | curated `knowledge/` files on winning work in that trade |
+| Signal filters | which sources, which keywords, which region/capacity rules |
+| Quote templates | line items, units, price bands, standard clauses |
+| Vertical LP | *our* marketing page, one hostname per vertical |
+| Customer-LP template | the site we build for each customer in that trade |
+
+**Falsification test, and it is decision 1:** if the pilot vertical needs a
+code branch, verticals are not configurations and this is five products. Stop
+and re-plan rather than branch.
+
+## Evidence base
+
+Cited honestly, because two of the most-quoted statistics in this product
+category do not survive checking.
+
+**Speed to lead — strong mechanism, old studies.**
+[HBR, "The Short Life of Online Sales Leads" (Mar 2011)](https://hbr.org/2011/03/the-short-life-of-online-sales-leads),
+auditing 2,241 US companies plus 1.25M leads: firms responding within an hour
+were **~7x more likely to qualify** a lead than those waiting two hours and
+**60x more likely** than those waiting 24h+. **23% never responded at all**;
+average response time among those who did was **42 hours**. The
+[Oldroyd/InsideSales Lead Response Management study (2007)](https://www.leadresponsemanagement.org/lrm_study/)
+adds the sharper figures: contact odds drop **100x** and qualification odds
+**21x** between a 5-minute and a 30-minute response. Note for anyone repeating
+it: this is routinely called "the MIT study" — it is vendor data analysed by a
+researcher then at MIT Sloan, not an MIT publication. Modern replication:
+[XANT 2021](https://www.prnewswire.com/news-releases/xant-releases-lead-response-report-with-data-from-55-million-sales-interactions-301230001.html)
+across 5.7M leads found conversion **8x higher** inside 5 minutes, while
+**57.1%** of first attempts happen more than a week after the lead arrives.
+
+**Do not use "35-50% of sales go to the first responder", nor "78% buy from
+the first responder".** Neither has a traceable primary source; every citation
+chain ends in blogs citing blogs. Using them is a real credibility risk in
+front of a sharp prospect, and the HBR/Oldroyd numbers carry the same argument
+with actual methodology behind them.
+
+**Follow-up cadence — medium.**
+[Velocify's secret-shopper study (2014)](https://www.prnewswire.com/news-releases/velocify-study-reveals-sales-crm-users-fall-short-in-online-lead-response-270891471.html)
+found sales teams averaging **1.45 calls and 1.56 emails per lead** against an
+optimum nearer 6 calls and 5 emails; 13% of enquirers never heard from anyone.
+XANT adds that attempts beyond ~20 hours start *reducing* odds — persistence
+must be front-loaded. The German trade-press claims that 30-60% of quotes go
+unanswered for want of follow-up are unsourced; treat as hypothesis.
+
+**Reviews — the best-evidenced lever.**
+[Whitespark's Local Search Ranking Factors](https://whitespark.ca/local-search-ranking-factors/)
+puts review signals at **20% of local-pack ranking weight**, the second-largest
+factor, and review **recency** jumped into
+[the top five factors for 2025 from #20 in 2023](https://whitespark.ca/blog/the-most-underrated-local-ranking-factor-in-2025/).
+[Sterling Sky's controlled tests](https://www.sterlingsky.ca/number-of-reviews-impact-ranking/)
+found a ranking step at the **10-review threshold** and then a plateau. A
+steady monthly trickle beats a large stagnant total — which is exactly what a
+post-job review request produces.
+
+**After-hours share and reactivation ROI: no usable data in any market.**
+Every figure traces to AI-receptionist vendors. Instrument these in the pilot
+rather than marketing them.
+
+**Switzerland specifically: no credible data exists** on trade response rates.
+Swiss figures in circulation ("62% of trade calls unanswered", "CHF 125 per
+missed call") are reskinned US vendor content. Cite HBR/Oldroyd for the
+mechanism and Aroundhome for the DACH proof — and treat the Swiss evidence
+vacuum as a thing the pilot fills, because first-party Swiss numbers would be a
+genuine marketing asset nobody else has.
+
+## Vertical ranking — the research overturns the assumed pilot
+
+The brief assumed fiduciaries. **The evidence says fiduciaries are the worst
+fit of the set**, and that a renovation trade is the right pilot.
+
+Cross-cutting market structure first, because it decides everything:
+
+- **renovero.ch** (owned by localsearch) is the only real lead firehose in
+  Switzerland: **~65,000 quote requests/year**, >4,000 executed jobs/month.
+  Pricing is a **flat subscription** (CHF 499-2,099/yr, or ~CHF 209/month),
+  **not cost-per-lead, with unlimited quotes**
+  ([localsearch](https://www.localsearch.ch/en/renovero-bidding-subscription-for-tradespeople/)).
+  That single fact is the wedge: when leads are unmetered, **speed wins the
+  job, not ad spend**.
+- **ofri.ch** is #2, caps a request at **5 quotes**, and its 2019 figures imply
+  an **average job value around CHF 1,650**
+  ([ofri](https://www.ofri.ch/ratgeber/handwerkerplattformen-in-der-schweiz-im-vergleich)).
+- **buildigo.ch is dead** — Mobiliar exited, dissolved October 2025, in
+  liquidation ([handwerker.ch](https://handwerker.ch/news/mobiliar-zieht-sich-aus-bauplattform-geschaft-zuruck-buildigo-wird-liquidiert/1856)).
+  Do not model it, and note the orphaned demand it left behind.
+- **Yarowa is the incumbent to position against**, not Buildigo: >1,000 vetted
+  firms receiving insurer- and property-manager-originated jobs with in-platform
+  quoting ([yarowa.com](https://www.yarowa.com/deutsch-ch/home/)). Our
+  defensible territory is the **homeowner-originated web-form/email lead**
+  Yarowa does not route.
+- **local.ch / search.ch are directories**, not lead marketplaces.
+
+Ranked:
+
+**1. Kitchen & bath renovation (with Schreiner / Maler / Plattenleger).** Best
+overall fit. Average ticket **CHF 22,000-28,000**
+([daibau](https://www.daibau.ch/baukostenrechner/badsanierung),
+[handwerker-kosten](https://www.handwerker-kosten.ch/kueche/)); the
+highest-volume category on renovero and ofri; leads arrive by web form; scope
+is templatable from photos plus m² for a credible draft that earns the site
+visit; ~1,900 VSSM member firms averaging **12.3 employees**
+([VSSM](https://www.vssm.ch/de/verband/zahlen-fakten)) plus ~1,900 SMGV
+painter/plasterer firms; and Buildigo's death just removed a competitor.
+
+**2. Heating & solar (heat pump, PV).** Highest ticket by an order of
+magnitude — heat pumps **CHF 30,000-42,000**, PV **CHF 23,000-29,000** for a
+typical 8-10 kWp system. Uniquely, **PV is already quoted remotely from roof
+and location data** ([Helion's Solarrechner](https://www.helion.ch/de/solarrechner/)),
+so "credible draft quote in minutes" is proven behaviour rather than a new
+ask. Subsidy deadlines create natural follow-up hooks. Caveat: the top of the
+market is industrialised — target the installer tail, not Helion.
+
+**3. Movers.** The standout on *low digital maturity*. Tickets CHF
+1,100-3,500; **video/WhatsApp surveys are already the norm** in place of a site
+visit; Movu sends 5 quotes within 24 hours so minutes decide; and Movu's
+reported **~30% commission** is a publicly aired grievance
+([Tages-Anzeiger](https://www.tagesanzeiger.ch/preisdumping-wegen-movu-zuercher-umzugsfirmen-kritisieren-vermittlerin-488239022218))
+that a direct-response agent sells against. Weakness: no reliable firm count,
+and some jobs fall below CHF 1,000.
+
+**4. Plumbers and electricians** as a combined installer wedge — good rates,
+price-list-templatable small jobs, but bimodal tickets, much phone-based
+emergency demand, and the lucrative property-manager channel already belongs
+to Yarowa.
+
+**Not recommended, with reasons:**
+
+- **Fiduciaries — the assumed pilot, and the worst fit.** No marketplace and
+  therefore almost no inbound lead volume, which starves an agent whose core
+  value is response speed; the **highest digital maturity** of any vertical
+  here (Bexio ~80,000 SMEs, Abacus ~40,000); and at least three funded AI
+  incumbents already in the space (Accounto, Findea, Kontera). Their
+  acquisition is referral and local SEO — a different product.
+- **Garden maintenance** — CHF 80-120/h visits are far below the CHF 1,000
+  bar. Only the design/build slice qualifies.
+- **Self-storage** — **CHF 32/month average**. Recurring low-ticket rental,
+  not quotable work. Wrong product shape entirely.
+- **Roofers** — excellent ticket, but quoting effectively requires physical or
+  drone inspection, and lead flow routes through insurers and property
+  managers, i.e. Yarowa.
+
+**Recommended pilot: kitchen & bath renovation, Romandie.** The FR platform
+layer is smaller and more local than the DE one, so an FR-native agent meets
+less incumbent competition — though no quantified FR/DE split exists for any
+vertical, and obtaining one needs a direct BFS STATENT canton pull. That gap
+is the biggest hole in the research and worth closing before scaling.
+
+### The high-value verticals: economics beat the trades, fit does not
+
+Three were raised as high-interest additions. All three have per-deal
+economics that dwarf a bathroom. All three are **outbound-prospecting shaped**,
+which puts them inside the legal constraint in risk 4 — and that, not the
+economics, should decide their sequencing.
+
+**Real estate (courtiers, régies).** A 2-3% commission on a CHF 1-2M sale is
+CHF 30-60k; one incremental deal pays for the product for years. The four
+verbs map cleanly — FIND is mandate prospecting (private-seller listings,
+stale listings), RESPOND is portal leads from Homegate/ImmoScout24 where speed
+is decisive, FOLLOW UP is buyer databases matched against new listings. Two
+cautions. First, mandate prospecting means contacting private individuals who
+did not ask to hear from us — the most legally exposed form of FIND, under both
+UWG and revDSG, and worse than the B2B case because it is B2C. Second, worth
+flagging as a genuine strategic observation: **régies dispatch maintenance to
+trades firms**, so a régie product and a trades product feed each other. That
+network effect is real but it is a reason to sequence them adjacently later,
+not a reason to start with the harder one.
+
+**Insurance brokers.** A won corporate mandate is recurring commission for
+years. The FIND thesis is the sharpest of any vertical: **Zefix/SHAB publish
+new company registrations daily** — up to ~1,500 registry items a day — and a
+new Swiss company with employees *must* buy occupational pension and accident
+cover. That is a structurally excellent signal, and Zefix does offer a free
+REST API (account by request to `zefix@bj.admin.ch`, listed on
+[opendata.swiss](https://opendata.swiss/en/dataset/zefix-zentraler-firmenindex)).
+But: its terms disallow systematic bulk extraction to build a competing
+register, using registry data for unsolicited marketing collides with revDSG,
+and the resulting outreach is precisely the UWG art. 3(1)(o) case. Add FINMA
+registration duties for intermediaries. **The mechanism is beautiful and the
+legal wrapper is the whole project** — it cannot be the pilot.
+
+**IT consulting / consultant placement (Vaud, Léman arc).** Added last and, on
+structure, the most interesting challenger to the recommended pilot:
+
+- **The four verbs map unusually well.** FIND = open mandates matched against
+  the firm's own consultant bench; BID = a tailored profile and pitch per
+  mandate, where the first credible CV in front of the client wins — the same
+  speed mechanic as trades, on a much larger ticket; RESPOND = inbound client
+  enquiries; FOLLOW UP = bench-availability alerts to past clients ("X frees
+  up 1 March"), contract-renewal timing, dormant reactivation. FOLLOW UP here
+  is arguably stronger than in any other vertical, because bench availability
+  is a *recurring, dated, naturally-occurring reason to make contact* — which
+  is exactly what the legally clean form of outbound looks like.
+- **B2B, not B2C**, which is a materially better legal position than real
+  estate mandate prospecting, and existing-client bench alerts fall closest to
+  the existing-relationship exception.
+- **simap's IT lots are genuinely in scope** — placement contracts clear the
+  CHF 250k threshold routinely, so the one platform with a sanctioned public
+  API is actually useful here, unlike for a bathroom renovator.
+- **Warm network.** The owner's home market has real placement-firm density,
+  and a pilot customer reachable through a warm introduction removes the item
+  that risk 9 names as the true critical path.
+
+**Honesty flag: the placement economics in this section are unresearched.**
+The web-research budget was exhausted before this vertical was added. The
+claims that Swiss placement margins run 15-25% of day rate, that a placement
+is worth tens of thousands, and that Vaud has meaningful firm density are
+**plausible and unverified**. The structural argument above stands on its own,
+but **before this vertical could displace the recommended pilot it needs the
+same research pass the trades got** — mandate-flow channels, firm count, day
+rates and margins, and what Swiss placement firms use today. That is open
+question 9, and it is cheap to close.
 
 ## Today / Delta
 
-Verified against `origin/main` at 0d44b3b5b + merged PRs #1128/#1130/#1135/#1140.
+Verified against `origin/main` plus merged PRs #1128/#1130/#1135/#1140/#1156.
 
-**Today — what already exists and is load-bearing here:**
+### What the platform already gives us
 
-- **Swiss models are already wired.** `infomaniak` is a first-class provider
-  (`packages/agent/src/server/models/modelConfig.ts`), OpenAI-compatible,
-  `https://api.infomaniak.com/2/ai/<productId>/openai/v1`, with concrete
-  registered models (`Qwen/Qwen3.5-122B-A10B-FP8`, `moonshotai/Kimi-K2.6`,
-  `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8`), keyed by
-  `INFOMANIAK_API_TOKEN`. Inference in Switzerland is a config choice today,
-  not a project.
-- **The app is already portable, and Postgres-only.** `apps/full-app` ships a
-  reference Dockerfile (`web-runtime` + `worker-runtime`, drops to uid 10001,
-  chowns `/data/workspaces` and `/data/pi-sessions`) and takes `DATABASE_URL`
-  / `DATABASE_URL_FILE`. Persistence is drizzle + postgres-js in
-  `packages/core/src/server/db/`, 25 migrations, advisory-locked, with an
-  `additionalMigrations` seam for app-owned tables. A CH-resident instance is
-  a deployment, not a port.
-- **But this repo no longer owns a deployment.** #853 deliberately deleted
-  `fly.toml`, the self-host image workflow, `config/self-host/`, and
-  `docs/deployment/**`; `hachej/seneca` is the canonical live deployment, and
-  the runbook now lives in
-  `.agents/skills/boring-app-setup/manuals/providers/PROVIDER_SNIPPETS.md`
-  ("generic hosted baseline" = Vercel + managed Postgres; "our custom
-  always-on setup" = Fly + managed Postgres). CI has no deploy job. A CH
-  deployment is therefore a *new* provider entry in that runbook, not a
-  resurrection of deleted config — and note the Dockerfile's production
-  default is `BORING_AGENT_MODE=vercel-sandbox`, which is emphatically not
-  Swiss (see §6).
-- **Exoscale is already operated** (#1126): `plugins/live-transcription/services/lifecycle/daemon.py`
-  drives `exo` from a root-owned loopback daemon behind a default-deny IAM
-  role scoped to one instance UUID, with credentials that never reach Boring
-  UI. The app-side boundary (`computeLifecycle.ts`) is provider-neutral, so
-  swapping providers means a new daemon, not app changes. **Correction worth
-  making early: that instance is in `at-vie-2` — Vienna, Austria, not
-  Switzerland.** Exoscale does have CH zones (`ch-gva-2`, `ch-dk-2`); we have
-  simply never used one. What we have is the operational pattern, not a CH
-  footprint.
-- **The channel design is done and merged.** `docs/issues/1127/plan.md`
-  (owner-gated, `needs-owner-approval`) specifies `ChannelAdapter`,
-  `ChannelBindingStore`, durable inbound dedupe in one sqlite transaction,
-  async webhook ack, durable-store tail with leased cursor CAS, turn
-  assembly, WhatsApp dialect rendering + 4096-char chunking, and the 24h
-  template fallback. Decisions: Meta Cloud API direct (no Twilio),
-  contract-first with a fake-channel conformance harness, v1 in-process.
-- **The durable substrate landed.** `SqliteEventStreamStore`
-  (`packages/agent/src/server/events/eventStreamStore.ts`) with idempotent
-  append and opaque offsets; every pi-chat event is durably appended before
-  fan-out (`harnessPiChatService.publishChannelEvents`), and cold opens
-  rehydrate from it (`hydrateDurableReplayBuffer`).
-- **Approval machinery exists, carries artifacts, and is already
-  channel-agnostic at the seam that matters.** `plugins/ask-user`:
-  `AskUserQuestion {questionId, sessionId, status:
-  ready|answered|cancelled|abandoned, title, context, schema, artifacts,
-  answerToken, ownerPrincipalId}` with a 7-arm `AskUserField` union and an
-  append-only per-session transcript. Artifacts are
-  `HumanArtifact[] = {id, surfaceKind, target, title, description?}`, hoisted
-  out of the plugin to `packages/workspace/src/shared/artifacts/humanArtifact.ts`
-  with a handover-projection layer (100 artifacts/run, 256KB, duplicate-id
-  rejection). Creation is the `ask_user` tool → `AskUserRuntime.ask()`, which
-  registers the waiter *before* persisting and then blocks the tool call.
-- **The out-of-band answering seam already exists.**
-  `plugins/ask-user/src/server/questionsBridge.ts` exposes
-  `handle(command)` with a pluggable `getAuthContext()` and zero
-  HTTP/React/Fastify dependency; `answer`/`cancel` already declare
-  `callerClassesAllowed: ["browser", "server"]`, and authorization is a
-  constant-time compare against a 32-byte `answerToken` — a **capability, not
-  an identity**. That is precisely the shape a signed link sent to a
-  non-member's phone needs. `AskUserStore.subscribe()` is the
-  delivery-notification seam and `AskUserCoordinator` abstracts the waiter for
-  a cross-process implementation.
-- **The Inbox item model already anticipates non-agent sources.**
-  `inboxItemModel.ts`: `InboxItemKind = question|review|approval|notice` and
-  `WorkspaceInboxItemSource` includes an `external-hook {externalId}` arm.
-- **Managed connectors exist.** `plugins/boring-mcp` has a full Composio
-  integration (`composioManagedConnector.ts`, ~23KB) with hosted OAuth,
-  server-only key resolution, read-only allowlisting (`readonlyCall.ts`), a
-  rate budget gate, and a 9-check security preflight
-  (`docs/composio-security-preflight.md`). User-registered MCP endpoints are
-  SSRF-hardened at connect time (#1135: resolve-then-pin via undici, redirects
-  refused).
-- **A share seam exists.** `shareResourceUri(id) => "share:///<id>"` and
-  `registerShareEntryResources()`
-  (`packages/agent/src/server/mcp/shareEntryResources.ts`), over
-  `ShareEntryV1` (`packages/agent/src/shared/share-entry.ts`) — an opaque id
-  bound to `{workspaceId, path}`, resolved live (never a blob snapshot), with
-  membership checked before any stat so a non-member cannot use it as an
-  existence oracle. Deep link route `GET /a/:id`.
-- **Per-hostname landing pages are a solved pattern** — seneca PR #48
-  (unmerged, tree at `~/projects/seneca/.worktrees/agent-lps/`):
-  `AGENT_LANDING_ROUTES: [{slug, hostnames[], htmlEntry}]` plus a copy block,
-  a prerendered `<slug>.html`, and a Caddy site block. Adding a vertical LP is
-  five mechanical steps, documented in that repo's `DEPLOY.md`.
-- **A1 agent authoring is a directory**: `agents/<name>/{agent.json,
-  instructions.md, tools/}`, strict schema, persona entirely in
-  `instructions.md` prose, tools bound host-side. Convention:
-  `definitionId == landing slug == directory name`.
+- **Vertical agents are a ratified, costed recipe.**
+  `docs/direction/DIRECTION.md` makes "vertical agent" the one product noun:
+  **fleet seat + persona/knowledge package + its own landing page**. A
+  *private* vertical agent (invite-only, hand-provisioned workspace) is
+  **"fully operational today"** once the landing validation queue merges, and
+  the first-agent gap list is costed at **3-8 PRs**, with the binding
+  constraint named as "content and ops, not platform code". Each pilot
+  customer is exactly one private vertical agent.
+- **Knowledge packaging exists and is bounded.** #1168 (gh-1107 slice 2) puts
+  `knowledge/` in the definition package: digest-covered, mounted as an
+  agent-scoped readonly filesystem `agent_knowledge` with
+  `provenance: 'agent-definition'`, at **256KB per file and 128 files**, with
+  symlink and non-UTF-8 refusal. That is the vertical corpus mechanism, and
+  its 128-file ceiling is a useful discipline (§8).
+- **Fleet + landings + default agent**: `BORING_AGENT_FLEET` (#1114, merged),
+  config-driven hostname landings (#1154, closed), per-workspace
+  `default_agent_type_id` (#1156, merged), per-agent MCP grants (#1131).
+- **Swiss models are wired.** `infomaniak` is a first-class OpenAI-compatible
+  provider (`packages/agent/src/server/models/modelConfig.ts`), base URL
+  `https://api.infomaniak.com/2/ai/<productId>/openai/v1`, registered models
+  including `Qwen/Qwen3.5-122B-A10B-FP8` and `moonshotai/Kimi-K2.6`, keyed by
+  `INFOMANIAK_API_TOKEN`. Verified CHF rates already recorded: Qwen3.5-122B at
+  **0.40 in / 3.20 out CHF per MTok**, and because Stripe charges CHF and
+  Infomaniak bills CHF, 1 credit-unit = 1 CHF with no FX.
+- **The approval primitive is right, and already channel-agnostic where it
+  counts.** `plugins/ask-user`: `AskUserQuestion` with lifecycle
+  `ready|answered|cancelled|abandoned`, a 7-arm `AskUserField` union, and
+  `HumanArtifact[] {id, surfaceKind, target, title}` hoisted to
+  `packages/workspace/src/shared/artifacts/humanArtifact.ts`. Critically,
+  `plugins/ask-user/src/server/questionsBridge.ts` exposes `handle(command)`
+  with pluggable `getAuthContext`, allows `callerClassesAllowed:
+  ["browser","server"]`, and authorizes by constant-time compare against a
+  32-byte `answerToken` — **a capability, not an identity**. That is precisely
+  what a signed link to a non-member's phone needs.
+- **The channel design is ratified.** `docs/issues/1127/plan.md` (#1140)
+  specifies `ChannelAdapter`, `ChannelBindingStore`, durable inbound dedupe
+  and queue insert **in one sqlite transaction**, async webhook ack,
+  per-binding serialized workers, durable-store tail with leased cursor CAS,
+  WhatsApp dialect rendering with 4096-char splits, the 24h template fallback,
+  and a fake-channel conformance harness. Decisions: **Meta Cloud API direct,
+  no Twilio**; v1 in-process.
+- **Durable substrate landed** — `SqliteEventStreamStore` with idempotent
+  append, wired behind a flag (#1128).
+- **Headless scheduled agent runs already work.** `plugins/boring-automation`
+  is a shipped cron→agent pipeline on Postgres: croner scheduler, durable run
+  receipts, idempotency by `invocationId`, claim/lease with heartbeat and stale
+  reconcile, HTTP CRUD plus SSE, and an agent-callable `boring_automation`
+  tool. In hosted mode an agent runs daily with nobody in the workspace. This
+  is the backbone for FOLLOW UP and, later, for scheduled FIND.
+- **A share seam exists** — `shareResourceUri(id) => "share:///<id>"` over
+  `ShareEntryV1`, resolved live with membership checked before any stat so
+  there is no existence oracle; deep-link route `GET /a/:id`.
+- **The app is portable and Postgres-backed** — reference Dockerfile
+  (`web-runtime`/`worker-runtime`, uid 10001), drizzle + postgres-js, 25
+  migrations, advisory-locked, with an `additionalMigrations` seam.
+- **The Exoscale operational pattern is proven** (#1126): a root-owned
+  loopback daemon shelling to `exo` under a default-deny IAM role scoped to
+  one instance UUID, credentials never reaching the app, behind a
+  provider-neutral `LifecycleClient`.
 
-**Delta — what does not exist:**
+### What does not exist
 
-- **No email reading, anywhere.** `packages/core/src/server/mail/transport.ts`
+- **No email reading of any kind.** `packages/core/src/server/mail/transport.ts`
   is outbound SMTP/Resend for auth mail only. No IMAP, no MIME parsing, no
-  threading, no sync cursor, no OAuth. `~/projects/boring-mail` is a *mock*:
-  hardcoded threads and `.mail.md` draft files; `src/storage/sqlite.ts`
-  returns not-implemented. Salvageable from it: the draft-file format, the
-  domain types (`MailThread`/`MailMessage`/`DraftMail` — lacking
-  `messageId`/`inReplyTo`/`references`, so real threading needs extension),
-  pure filter/sort helpers, and `mailAgentTool.ts` with its path-traversal
-  guard. The entire protocol half is new work. Its own plan
-  (`docs/plans/boring-mail-chief-of-staff-workbench-plan.md`) leaves
-  "Gmail OAuth or IMAP?" explicitly open at line 513.
-- **No Gmail toolkit configured.** Composio is wired to `notion` and
-  `airtable` only (`apps/full-app/src/server/boringMcp.ts`). The full-catalog
-  backend (#937) was reverted and #946 keeps it reverted.
-- **No channel code at all.** #1127 is design-only: no `ChannelAdapter`, no
-  `ChannelBindingStore`, no webhook, no outbound worker, no
-  `BORING_AGENT_CHANNELS` plumbing. Its planning bead is still in progress.
+  threading, no sync cursor. `~/projects/boring-mail` is a **mock** —
+  hardcoded threads, `.mail.md` draft files, `src/storage/sqlite.ts` returns
+  not-implemented. Salvageable: the draft-file format, domain types (missing
+  `messageId`/`inReplyTo`/`references`, so threading needs extension), pure
+  filter helpers, and `mailAgentTool.ts` with its path-traversal guard. The
+  protocol half is entirely new.
+- **No inbound mail receiving.** Rung 1 of the trust ladder (§7) needs an MX.
+  We have never received an email.
+- **No channel code at all.** #1127 is design-only and, per the 2026-08-08
+  direction ruling, **deprioritized**. This plan is the named consumer that
+  would revive it.
 - **The share seam is not shareable.** No expiry, no signature, no capability
-  token, no anonymous access, and `InMemoryShareEntryStore` is the only
-  implementation — nothing durable. Access is same-workspace membership only.
-  A link a business owner can open on their phone is a new layer.
-- **ask_user has no notification/delivery abstraction.** The seam for
-  *answering* out-of-band is there (above); what is missing is anything that
-  *tells a human somewhere else* that a question is waiting.
-  `AskUserStatePublisher` targets a workspace `UiBridge` only; grepping
-  `plugins/ask-user` and `packages/workspace/src` for
-  `slack|notifier|notificationChannel` returns zero hits. This — not the
-  answering path — is the gap. (#1127 separately demoted *channel* answering
-  to its slice 3.)
-- **`FileAskUserStore` is a JSON file** at
-  `<workspaceRoot>/.boring/ask-user.json` (atomic tmp+rename). Fine for one
-  pilot, not a durable multi-customer store.
-- **One pending question per session** (`PENDING_EXISTS`), plus rate limits of
-  6/session/min and 30/principal/hr. Load-bearing for us: see §4 — a morning
-  batch of eight emails cannot become eight concurrent intentions on one
-  session.
-- **Signup-to-agent binding by hostname is unimplemented.**
-  `BORING_SIGNUP_AGENT_DEFAULTS_JSON` is documented in seneca's `.env.example`
-  as the target shape; core does not read it yet (awaits core #1165/0.1.96).
-- **No French/German agent presets, no quote templates, no CH deployment.**
+  token, and `InMemoryShareEntryStore` is the only implementation. Access is
+  same-workspace membership only.
+- **No notification delivery abstraction.** `AskUserStatePublisher` targets a
+  workspace `UiBridge`; grepping `plugins/ask-user` and
+  `packages/workspace/src` for `slack|notifier|notificationChannel` returns
+  zero hits. This, not the answering path, is the real ask_user gap.
+- **`FileAskUserStore` is a JSON file** at `<workspaceRoot>/.boring/ask-user.json`.
+- **One pending question per session** (`PENDING_EXISTS`), plus 6/session/min
+  and 30/principal/hr rate limits — load-bearing, see §6.
+- **No Gmail toolkit configured.** Composio (`plugins/boring-mcp`,
+  `composioManagedConnector.ts`) is wired to Notion and Airtable only.
+- **No web tooling and no browser automation** — see §(a2). No fetch tool, no
+  search tool, no HTML parser, no SSRF guard, no way to store or deliver a
+  customer's third-party site credentials.
+- **No CH deployment, no FR/DE presets, no quote templates, no price book.**
 
-## Solution
+## The five capability slices
 
-### 1. Product shape: one template, four presets
+### (a) Email ingestion — the trust ladder
 
-**One** agent template — "reads the mailbox, drafts the reply, drafts the
-quote, asks the owner to approve" — instantiated four times. Verticals differ
-only in prose and data, never in code. This is the whole bet: if a vertical
-needs a code branch, we have mis-scoped it.
+**Today:** nothing (above).
 
-A preset is a directory following the A1 convention already proven in seneca:
+**Delta:** deliberately *not* "ask for the mailbox". Email access is the
+touchiest step in the entire product, so it is a ladder, and rung 1 asks for
+no credentials at all.
 
-```txt
-agents/
-  fiduciaire/            # Treuhand / accounting-trustee
-    agent.json           # definitionId "fiduciaire", label, instructionsRef
-    instructions.md      # persona + trade vocabulary, FR primary / DE variant
-    quote-templates/     # line-item skeletons, price bands, standard clauses
-  artisan/               # Handwerker
-  stockage/              # storage
-  paysagiste/            # Gartenbau
-```
+**Rung 1 — forwarding, zero credentials. The v1 default.** The customer adds
+one auto-forward rule for their *lead* addresses only (`info@`, `devis@`,
+`offerten@`, or the address their marketplace alerts arrive at) pointing to a
+dedicated ingest address we own, e.g. `mueller-gartenbau@in.example.ch`.
+Properties that make this the right first rung:
 
-Locked conventions:
+- **nothing to install, no password ever handed over**;
+- **revocable by deleting one rule** — the customer keeps control visibly;
+- **scoped to leads, never the whole mailbox** — and that scoping *is* the
+  privacy story, especially for any vertical handling client-confidential mail;
+- it works identically across every mail provider, which matters because Swiss
+  SMBs are not concentrated on Google or Microsoft the way US SMBs are.
 
-- `definitionId == landing slug == directory name`, as seneca established.
-- **Language is per-preset content, not a runtime flag.** A Romandie
-  fiduciary gets a French `instructions.md` with French quote templates; the
-  Swiss-German artisan preset gets German. Two presets may share a
-  `definitionId` stem with a locale suffix (`artisan-fr`, `artisan-de`) rather
-  than one bilingual prompt trying to guess. Reply language is mirrored from
-  the inbound email; the *drafting* vocabulary and templates are fixed per
-  preset. Do not machine-translate quote templates — trade vocabulary
-  (*métré*, *régie*, *Regiearbeit*, *Akontozahlung*) is where a wrong word
-  loses the sale.
-- Quote templates are **data the agent fills**, not prose it invents: line
-  items, units, price bands, and the standard clauses (validity period, VAT
-  treatment, payment terms). The agent proposes numbers inside the owner's own
-  bands; it never invents a price schedule.
-- Per-vertical hostname LP via seneca's `AGENT_LANDING_ROUTES` mechanism —
-  route entry + copy block + `<slug>.html` + Caddy block + DNS. Four LPs is
-  four repetitions of a five-step recipe, not four projects. Note the honest
-  gap: hostname→seat binding on signup is not implemented yet, so v1 either
-  ships one seat per deployment (fine for a pilot) or waits on core #1165.
+The clean implication: **we own and host the destination mailbox in
+Switzerland, and poll it by IMAP with our own credentials.** No customer
+credential exists anywhere in the system at rung 1, and the residency story is
+intact because the mailbox is ours and Swiss. Two provider caveats to handle
+in the guided setup: Gmail requires a **confirmation code** at the forwarding
+address before a rule activates (so the flow must surface that code back to
+the customer), and Microsoft 365 **blocks external auto-forwarding by
+default** via outbound anti-spam policy, so M365 customers need an admin to
+allow it — that is the one provider where "under 30 minutes" is at risk.
 
-### 2. Capability slice (a): email ingestion
+Replies at rung 1 are **drafts delivered to WhatsApp**; the owner sends from
+their own client, or approves and we send from a clearly-labelled assistant
+address with `Reply-To` set to them.
 
-**Today:** nothing. Outbound SMTP only; boring-mail is a mock; no Gmail
-toolkit configured.
+**Rung 2 — read-only mailbox access, after trust is earned.** OAuth read scope
+where it exists (Google, Microsoft); IMAP with an app-specific password where
+it does not (Infomaniak, Hostpoint, cyon). This buys full-inbox awareness so
+follow-ups catch threads the forward rule missed. State the risk honestly: an
+IMAP app password is broader than an OAuth read scope, and we should say so
+rather than pretend they are equivalent.
 
-**Delta:** a read-only mailbox sync producing threaded messages in a local
-store, with an idempotent cursor.
+**Rung 3 — send-as their own domain.** SPF include, DKIM records, DMARC
+alignment. Naturally bundled with the landing-page onboarding, because that is
+already the moment we touch their DNS. Without DKIM alignment, sending as
+their domain fails DMARC — so this rung is all-or-nothing, never partial.
 
-**Recommendation: IMAP read-only, direct. Not Composio Gmail.** Three
-reasons, in order of weight:
+**Composio Gmail is explicitly not the default.** It would route a Swiss
+customer's client correspondence through a US managed connector, contradicting
+the one thing we sell; our own preflight
+(`plugins/boring-mcp/docs/composio-security-preflight.md`) has a residency and
+subprocessor line item we would have to mark "accepted gap" in front of the
+exact buyer who cares. It stays an opt-in accelerator for prospects who do not
+care about residency.
 
-1. **Residency.** Composio is a US-hosted managed connector: the OAuth broker
-   and the tool-execution path both see message content. Routing a Swiss
-   fiduciary's client correspondence through `backend.composio.dev`
-   contradicts the one thing we are selling. Our own preflight checklist has
-   a "data residency, subprocessors, DPA" line item
-   (`plugins/boring-mcp/docs/composio-security-preflight.md`) that we would
-   have to check "accepted gap" against — in front of the exact buyer who
-   cares. That is not a trade we should make.
-2. **Fit.** Swiss SMBs are not on Gmail at the rate US SMBs are — Infomaniak,
-   Hostpoint, local providers, and Microsoft 365 dominate. IMAP is the one
-   protocol all of them speak. A Gmail-only ingest would disqualify most of
-   the pipeline.
-3. **Cost symmetry.** Composio Gmail is not free work either — it is a
-   `connectorConfigs` entry *plus* full preflight evidence. We are choosing
-   between two pieces of new work, not between free and expensive.
+### (a2) FIND and BID — the differentiator, and the honest constraints
 
-Shape: `imapflow` (or equivalent) against one mailbox, app-specific password
-or OAuth where the provider requires it, **read-only — never a mailbox
-mutation**, no flag setting, no delete, no label writes. Idempotent upsert
-keyed on `Message-ID`; threading via `In-Reply-To`/`References` (extend
-boring-mail's types, which lack all three). Sync cursor persisted per account.
-Fetch bodies for the last N days only; the agent never needs the archive.
+**Today, on our side: worse than expected.**
 
-Composio Gmail stays available as an **opt-in accelerator** for a prospect who
-is on Google Workspace and does not care about residency — behind the
-existing connector config, with the preflight actually run. It is a second
-provider under the same internal interface, not the default.
+- **There is no web tool at all.** No `web_fetch`, no `web_search`, no HTML
+  parser (`cheerio`/`jsdom`/`readability` all absent). The pi SDK ships
+  `bash, edit, find, grep, ls, read, write` and nothing else. The only route to
+  the internet is `bash` → `curl`, with the model parsing raw HTML. **There is
+  also no SSRF guard, no allowlist, no private-IP block** — the only network
+  control is sandbox-level, and `local` (bwrap) runs with `--share-net` by
+  default. A host-proxy web tool is *designed* (Tavily/Firecrawl in
+  `docs/issues/820/byok-secret-vault-plan.md`, bead `16f.5`) and unbuilt.
+- **There is no browser automation of any kind.** All Playwright in the repo
+  is CI/e2e tooling. The only agent↔browser surface is the UI bridge, which
+  posts commands into the user's already-open workspace — it cannot launch a
+  browser, navigate, or fill a form on an external site.
+- **We cannot hold a customer's site credentials.** The credentials vault is
+  partly built (`packages/agent/src/server/credentials/`, real AES-256-GCM
+  envelope crypto) but has **no non-test caller, no route, no UI, no table**,
+  and `sandboxDelivery.ts` is an explicit stub that throws `DELIVERY_FORBIDDEN`
+  — by design, no secret can reach the sandbox today. The BYOK plan also
+  **bars tenant-authored providers and arbitrary egress**.
 
-### 3. Capability slice (b): WhatsApp channel
+**Today, one genuine asset:** `plugins/boring-automation` is a **real, shipped,
+Postgres-backed cron→agent-run pipeline** — croner scheduler, durable run
+receipts, idempotency by `invocationId`, claim/lease with 30s heartbeat, stale
+reconcile, and an agent-callable `boring_automation` tool. An agent can run
+daily with nobody in the workspace. **The scheduling half of "hunt for jobs
+every morning" is done; the web-touching half is entirely absent.**
 
-**Today:** design complete and merged (`docs/issues/1127/plan.md`), zero code.
-Substrate (`SqliteEventStreamStore`) on main.
+**Today, on the platforms: the research is unusually clear.**
 
-**Delta:** build #1127 slices 1a/1b/2 — but this product needs materially
-less of them than #1127 assumed, because **the identity model inverts.**
+- **simap.ch (public procurement) has a live, public, unauthenticated REST
+  API** — verified by direct call, returning today's tenders.
+  `GET /api/publications/v2/project/project-search`, spec at
+  `https://www.simap.ch/api/specifications/simap.yaml`, with exactly the
+  filters this product needs: `bkpCodes`, `npkCodes`, `cpvCodes`,
+  `orderAddressCantons`, `newestPublicationFrom`. Official "Suchabo" email
+  alerts exist, historically with an **XML variant for professional
+  providers**. Electronic bid submission has existed since Release 1.2 but was
+  only **~35% of offers as of April 2026**, and whether third parties may
+  submit via API is unverified.
+  **The strategic caveat matters more than the API:** Swiss thresholds mean
+  work below CHF 150-300k (Baunebengewerbe/Bauhauptgewerbe) goes *freihändig*
+  or by invitation and **is generally not published on simap at all**. So
+  simap covers the large-contract slice — real for placement, architects and
+  larger installers; mostly irrelevant to a bathroom renovator.
+- **No private Swiss lead marketplace publishes an API.** None. Across roughly
+  thirty platforms checked.
+- **Several explicitly forbid automation.** Ofri's AGB §8.1: *"Der
+  automatisierte Zugriff auf die Plattform, beispielsweise mit Bots, Skripten
+  oder vergleichbaren Mitteln, ist untersagt."* localsearch/search.ch bans
+  crawler and scraper use and commercial data extraction. **Olmero and buildup
+  go further** — robots.txt explicitly disallows ClaudeBot, GPTBot, CCBot,
+  Google-Extended and others, with an EU-DSM Art. 4 rights reservation, and
+  Cloudflare enforces it with 403s.
+- **But the platforms email the tradesperson.** Ofri: *"Wir benachrichtigen
+  Sie per E-Mail über neue Aufträge."* Houzy mails leads directly. Olmero
+  ships "Push-Mail" as a product feature. **That is the answer:** the agent
+  reads the customer's own notification inbox — unambiguously the customer's
+  own mail, covered by no scraping prohibition, and already built as rung 1.
+- **Renovero is the highest-value open question.** Best economics of any
+  platform (flat fee, unlimited bids, ~5,000 requests/month, DE/FR/IT), but
+  whether it emails on new matching requests is unverified. **Resolve it with
+  a real paid account before committing to the pilot vertical's channel mix.**
+- **No platform accepts a quote by email.** Every private marketplace requires
+  submission in a logged-in dashboard. So BID against them means authenticated
+  browser automation acting as the customer — a subsystem we do not have, using
+  credentials we cannot yet store.
 
-In #1127 the external sender is a client's team member talking to a deployed
-agent: many unknown senders, per-agent grants, unknown-sender rejection UX,
-fail-closed policy, session rotation. Here the external sender is **the
-business owner, approving their own drafts**. One phone number, one
-workspace, one agent, provisioned by us at onboarding. That deletes or
-trivialises:
+**Delta, and the resulting architecture:** two connectors, no scraping.
 
-- unknown-sender UX (§2 of the 1127 plan) → any non-bound number is dropped
-  silently at the webhook; no rejection template, no per-sender rate limit,
-  no reply-loop risk;
-- per-agent grants (#1087 seam) → not needed, the binding *is* the grant;
-- multi-agent routing per sender → one agent per binding, by construction;
-- the trusted-caller seam's blast radius → still a new seam, still needs the
-  guardrails 1127 specifies (mint only when the scope resolves and
-  `binding.status === active`, revocable, flag-gated), but it mints a scope
-  for a customer against their own workspace, not for a stranger.
+1. **One API connector for simap** — sanctioned, filterable, free.
+2. **One email-ingestion pipeline** parsing the customer's own alert mails
+   from ofri/houzy/olmero/renovero, reusing the rung-1 forwarding pipe already
+   built for RESPOND. A new marketplace becomes a parser, not a project.
+3. **Scheduled by `boring_automation`**, which already exists.
+4. **BID stays human-completed in v1**: the agent drafts the offer, the owner
+   approves it in WhatsApp, and the owner pastes and submits. Unsatisfying,
+   but it ships, it breaks no ToS, and it needs neither browser automation nor
+   credential storage. Automated submission is a later, separately-gated
+   decision — and simap's `digital-submissions` endpoint is the only path
+   where it might ever be sanctioned rather than tolerated.
 
-What we adopt verbatim from #1127, because it is right and hard-won:
+### (b) WhatsApp channel
 
-- webhook signature verify (`X-Hub-Signature-256`) + verify handshake before
-  any parsing;
-- **durable inbound dedupe and queue insert in one sqlite transaction** —
-  Meta retries for hours, and a crash between two separate writes eats the
-  message forever;
-- ack 200 immediately, drain asynchronously, per-binding serialized worker;
-- outbound is at-least-once — send precedes cursor CAS, and WhatsApp offers
-  no send idempotency key;
-- WhatsApp dialect rendering (`*bold*`, `_italic_`, no headings/tables) and
-  4096-char splits on paragraph boundaries;
-- the single pre-approved template for the lapsed 24h window;
-- fake-channel conformance harness so the loop is CI-provable without Meta
-  credentials.
+**Today:** ratified design (#1140), zero code, deprioritized. Substrate on main.
 
-What changes: see §4 — the MVP does not need the durable-tail turn assembler
-(1127 slice 1b) at all, because MVP WhatsApp traffic is notification-out plus
-short command-in, not a streamed agent conversation.
+**Delta:** build #1127 slices 1a and 2 — but this product needs materially
+less of them, because **the identity model inverts**. In #1127 the external
+sender is a client's team member: many unknown senders, per-agent grants,
+rejection UX, session rotation. Here the sender is **the business owner,
+approving their own drafts** — one number, one workspace, one agent,
+provisioned at onboarding. That deletes unknown-sender UX (any unbound number
+is dropped silently at the webhook), per-agent grants (the binding *is* the
+grant), and multi-agent routing.
 
-### 4. Capability slice (c): the draft-quote loop
+Adopted verbatim because it is right and hard-won: signature verify
+(`X-Hub-Signature-256`) plus handshake before any parsing; **durable dedupe
+and queue insert in one transaction** (Meta retries for hours; a crash between
+two writes eats the message forever); ack 200 immediately and drain
+asynchronously; at-least-once outbound, since send precedes cursor CAS and
+WhatsApp has no send idempotency key; dialect rendering and 4096-char splits;
+the single pre-approved template for the lapsed 24h window; the fake-channel
+harness so CI proves the loop without Meta credentials.
 
-**Today:** `AskUserQuestion` + `AskUserFormSchema` + `HumanArtifact[]` give us
-exactly the right primitive — an intention that carries the artifact under
-review, with a lifecycle and a store. Better than expected: the answering
-path is already channel-agnostic (`questionsBridge.handle`, server callers
-allowed, capability-token authorization), so an out-of-band approval is a
-*consumer* of an existing seam rather than a new one.
+**Not needed for the MVP: #1127 slice 1b** (the durable-tail turn assembler),
+which that plan's own review isolated as the risk centre — because MVP
+WhatsApp traffic is notification-out plus a tap, not a streamed conversation.
 
-**Delta:** the approver changes identity. Everywhere in the platform so far,
-the human answering an ask_user is *the operator of the workspace* — us, or a
-technical user. Here it is **the business owner**, who has never seen the
-workspace and is holding a phone at a job site. That reframing, not the
-plumbing, is the design work:
+### (c) The draft loop — approval by the business owner
 
-- an intention must be legible in three lines of WhatsApp: who wrote in, what
-  they want, what we propose to answer, how much we propose to charge;
-- the affordances collapse to **approve / edit / reject** — a
-  `AskUserFormSchema` with a select and an optional textarea, not a form;
-- **nothing is auto-sent, ever.** The agent produces a draft; a human tap
-  sends it. This is a product guarantee, not a default (§7).
-- the artifact link on the intention points at the source email thread, so
-  "let me see the actual email" is one tap.
+**Today:** the primitive and the answering seam both exist (above).
 
-**A constraint that shapes the whole loop:** `AskUserRuntime` enforces **one
-pending question per session** (`PENDING_EXISTS`) and rate-limits to
-6/session/min. A fiduciary's Monday morning is fifteen emails, not one. Two
-options, and this is a real design decision the owner should see:
+**Delta:** the approver changes identity. Everywhere so far, the human
+answering an ask_user is the workspace operator — us, or a technical user.
+Here it is a tradesman holding a phone on a building site. That reframing is
+the design work:
 
-- **(i) one session per email thread** — each thread gets its own agent
-  session, so each can hold its own pending intention. Natural fit, matches
-  the artifact model, and it is how the platform already thinks (sessions are
-  cheap). Cost: many sessions per customer per day.
-- **(ii) a queue in front of one session** — the agent drafts a batch and
-  presents them one at a time, the next intention opening as the previous
-  resolves. Fewer sessions, but it serialises the owner's morning and adds a
-  queue we would have to build.
+- an intention must be legible in three lines: who wrote in, what they want,
+  what we propose to answer, what we propose to charge;
+- affordances collapse to **approve / edit / reject**;
+- the artifact points at the source thread, so "show me the actual email" is
+  one tap;
+- **nothing is ever auto-sent.**
 
-**Recommendation: (i), one session per thread.** It requires no new
-machinery, and the serialisation in (ii) is exactly the friction we are
-selling against. Note the notification side must then batch — one WhatsApp
-message saying "8 drafts ready", not eight messages.
+**A constraint that shapes the loop:** `AskUserRuntime` enforces **one pending
+question per session**. A Monday morning is fifteen leads, not one. Two
+options: **(i) one session per lead thread**, so each holds its own intention;
+or **(ii) a queue in front of one session**, presenting drafts one at a time.
+**Recommendation: (i)** — it needs no new machinery, and (ii)'s serialisation
+is exactly the friction we sell against. The notification side must then
+batch: one message saying "8 drafts ready", never eight messages.
 
-The MVP shortcut that makes this tractable: **approval happens in a link-opened
-approval view, not in WhatsApp.** WhatsApp carries the notification and the
-link; the tap opens a mobile-legible approval view authorized by the
-question's own `answerToken`; the send happens there. The token model makes
-this clean — the business owner needs no workspace account and no session,
-because the capability *is* the URL.
+MVP shortcut: **approval happens in a link-opened view, not inside WhatsApp.**
+WhatsApp carries the notification and the link; the tap opens a mobile-legible
+approval view authorized by the question's own `answerToken`; the send happens
+there. The owner needs no account and no session, because the capability *is*
+the URL. This routes around both #1127 slice 3 (channel answering) and slice
+1b. Two-way WhatsApp approval is a good v2, not a blocker.
 
-This needs zero channel-side ask_user answering (#1127's demoted slice 3) and
-zero durable-turn assembly (#1127's slice 1b, the component its own review
-isolated as the risk centre). Two-way WhatsApp approval ("reply OK to send")
-is a genuinely nice v2, but it is not what stands between us and a paying
-fiduciary.
+What is genuinely new is small: a **notification delivery abstraction** off
+`AskUserStore.subscribe()`, with WhatsApp as its first implementation.
 
-What is genuinely new here is small and well-shaped: a **notification
-delivery abstraction** hanging off `AskUserStore.subscribe()` — the one thing
-§3's Today section identifies as absent — with WhatsApp as its first
-implementation.
+### (d) Artifact drop
 
-### 5. Capability slice (d): artifact drop
+**Today:** `shareResourceUri` + `ShareEntryV1` + `GET /a/:id`, deliberately
+minimal.
 
-**Today:** `shareResourceUri` + `ShareEntryV1` + `GET /a/:id` give an opaque
-id bound to `{workspaceId, path}`, resolved live, with membership checked
-before any stat. Well-built, and deliberately minimal — its own header says
-so.
+**Delta:** everything that makes a link openable by a non-member — a durable
+share entry store; a **capability token** carrying entry id and expiry; expiry
+and revocation (the `ok | not_found | tombstoned` shape already exists, the
+lifecycle does not); and an unauthenticated read path returning byte-identical
+responses for expired, revoked and never-existed, preserving the existing
+no-existence-oracle discipline.
 
-**Delta:** everything that makes a link openable by someone who is not a
-workspace member. Concretely:
+**Share link first, PDF second.** A link is one signed URL and a mobile render;
+a PDF is a rendering pipeline, a fonts problem, a storage problem and a Meta
+media-upload problem, and it yields a document the owner cannot act on. Caveat
+to state plainly: a capability URL in a WhatsApp thread is forwardable, so
+expiries are hours not weeks, and anything genuinely confidential stays behind
+workspace auth.
 
-1. a **durable** share entry store (today: `InMemoryShareEntryStore` only);
-2. a **capability token** — signed, single-purpose, carrying the entry id and
-   an expiry — so possession of the URL is the authorization, since the
-   business owner has no workspace membership;
-3. **expiry and revocation**, with a tombstoned outcome already modelled in
-   `resolveShareEntry()` (`ok | not_found | tombstoned`) — the shape is
-   there, the lifecycle is not;
-4. an unauthenticated read path that returns byte-identical responses for
-   expired, revoked, and never-existed, preserving the existing
-   no-existence-oracle discipline.
+### (e) CH deployment
 
-Order: **share link first, PDF attachment second.** A link is one signed URL
-and a mobile-legible render; a PDF is a rendering pipeline, a fonts problem, a
-storage problem, and a Meta media-upload problem, and it buys us a document
-the owner cannot act on. Quotes in the MVP are links; when the owner approves,
-the *email* carries whatever formal document the trade expects.
+**Today:** Infomaniak models wired and CHF-billed; app Dockerized on Postgres;
+Exoscale pattern proven — **but in `at-vie-2`, Vienna, Austria, not
+Switzerland.** Exoscale has CH zones (`ch-gva-2`, `ch-dk-2`); we have simply
+never used one. And since #853 this repo owns **no deployment config** at all
+— Fly files, self-host image workflow and `docs/deployment/**` were
+deliberately deleted, `hachej/seneca` is the canonical deployment, and the
+runbook now lives in
+`.agents/skills/boring-app-setup/manuals/providers/PROVIDER_SNIPPETS.md`.
 
-Caveat to state plainly: a capability-token URL in a WhatsApp thread is
-forwardable. Expiries must be short (hours, not weeks), tokens single-entry,
-and anything genuinely confidential stays behind workspace auth.
-
-### 6. Capability slice (e): CH deployment
-
-**Today:** Infomaniak models wired and already billed in CHF; full-app
-Dockerized with Postgres; the Exoscale operational pattern proven (in Vienna);
-no deployment config in this repo since #853.
-
-**Delta:** a deployment topology we can put in writing. What runs where:
+**Delta** — a topology we can put in writing:
 
 | Component | Where | Status |
 | --- | --- | --- |
-| App (full-app container) | Exoscale `ch-gva-2`/`ch-dk-2` or Infomaniak Public Cloud | new deploy; new provider entry in `PROVIDER_SNIPPETS.md` |
-| Postgres (core, 25 migrations) | CH-resident managed Postgres, same zone | new |
-| Event store / channel bindings / share entries | app volume, CH | new; sqlite-shaped, see risk 6 |
-| Session transcripts (`/data/pi-sessions`) | app volume, CH | pattern exists (`BORING_AGENT_SESSION_ROOT`) |
-| Mailbox content | fetched into the CH app store; never leaves | new |
-| LLM inference | Infomaniak AI (CH), OpenAI-compatible | **already wired** |
-| Agent sandbox | **must not be `vercel-sandbox`** — see below | deferred: no sandbox |
-| WhatsApp transport | Meta (non-CH) | see §7.1 |
-| Email transport | customer's existing provider | unchanged |
+| App container | Exoscale `ch-gva-2` or Infomaniak Public Cloud | new provider entry in the runbook |
+| Postgres (25 migrations) | CH managed Postgres, same zone | new |
+| Ingest mailboxes | CH mail hosting we own | new |
+| Event store / bindings / share entries | app volume, CH | new; sqlite-shaped, see risk 7 |
+| Session transcripts | `/data/pi-sessions`, CH | pattern exists |
+| LLM inference | Infomaniak (CH) | **already wired** |
+| Agent sandbox | **must not be `vercel-sandbox`** | see below |
+| WhatsApp transport | Meta (non-CH) | see risk 1 |
 
 **The `vercel-sandbox` landmine.** The reference Dockerfile's production
-default is `BORING_AGENT_MODE=vercel-sandbox` — US-operated compute that would
-silently see workspace content, in the one deployment where that is a selling
-failure. A CH deployment must explicitly set a non-Vercel mode. This is
-cheap to get right and expensive to discover late, so it belongs in the
-deployment checklist as a hard gate, not a note.
+default is `BORING_AGENT_MODE=vercel-sandbox` — US-operated compute, in the one
+deployment where that is a selling failure. A CH deployment must explicitly set
+a non-Vercel mode, as a hard gate in the checklist rather than a note.
 
-Two Infomaniak deployment notes, both already learned the hard way and worth
-carrying into the runbook: pi resolves the API key via `process.env[name]`
-without stripping `$`, so a `$`-prefixed value becomes the literal bearer
-token and 401s; and `supportsDeveloperRole` / `supportsReasoningEffort` are
-both `false` because the endpoint 400s on the `developer` role.
+Two Infomaniak gotchas for the runbook, both already learned painfully: pi
+resolves the API key via `process.env[name]` **without stripping `$`**, so a
+`$`-prefixed value becomes the literal bearer token and 401s; and
+`supportsDeveloperRole`/`supportsReasoningEffort` are both `false` because the
+endpoint 400s on the `developer` role.
 
-The honest statement we can defend: *storage, processing, and model inference
-are in Switzerland; the WhatsApp channel transits Meta.* Not "everything is in
-Switzerland."
+**Sandbox deferred deliberately:** this agent drafts text and fills templates.
+It does not execute code. Ship without agent sandboxing; revisit only if a
+vertical needs it.
 
-**Deferred, deliberately: the sandbox question.** The trades agent drafts text
-and fills templates — it does not need code execution. A CH-resident sandbox
-(gVisor on our own hardware, per the SBX1 direction) is a real question for
-the platform and an irrelevant one for this product. Ship without agent
-sandboxing; revisit if a preset ever needs to run code.
+## Onboarding — under 30 minutes, nothing installed
 
-## Decisions (proposed, not yet ratified)
+A product requirement, and the onboarding slice is designed to this number.
 
-1. **One template, four content presets.** A vertical that needs a code branch
-   is a mis-scope, and we stop and re-plan rather than branch.
-2. **IMAP read-only is the default email path**; Composio Gmail is an opt-in
-   accelerator for non-residency-sensitive prospects, never the default.
-3. **Never auto-send.** Every outbound email and every quote is human-tapped.
-   This is a contractual product guarantee, not a configurable default.
-4. **MVP approval happens in the workspace via a WhatsApp link.** Two-way
-   WhatsApp answering (#1127 slice 3) is v2.
-5. **Reuse #1127's transport design verbatim**; invert only the identity
-   model. We do not re-plan channels in this epic.
-6. **Share links before PDFs.**
-7. **One pilot customer, one fiduciary, before any second vertical is built.**
-   The four presets are the product thesis; one paying user is the test of it.
+```txt
+ 1. sign up                                    ~2 min
+ 2. connect WhatsApp (verify their number)     ~3 min
+ 3. add ONE forwarding rule                   ~10 min   guided, per-provider,
+                                                        with screenshots
+ 4. paste price list / last 3 quotes           ~8 min   becomes the price book
+ 5. confirm trade, region, capacity            ~2 min   the signal filter
+ 6. live — first draft on the next lead
+```
 
-## MVP cut — one Swiss fiduciary, 2-3 weeks
+Everything else is progressive and post-value: OAuth (rung 2), send-as
+(rung 3), marketplace accounts for BID, the customer landing page (delivered
+within days, not during signup). The 30-minute clock stops at "live", not at
+"fully configured".
 
-Scoped so that a real fiduciary uses it daily, and so that nothing on the
-critical path is a component #1127 itself flagged as "the risk centre."
+The known risk to the number is Microsoft 365's default block on external
+auto-forwarding, which needs an admin action. Detect the provider from the
+customer's domain MX during signup and route M365 customers to a different
+script rather than letting them stall on step 3.
+
+## The per-vertical kit and its content pipeline
+
+Each vertical ships as a package, produced by the factory, not by engineering.
+
+**Knowledge corpus.** A curated set of `knowledge/` files on how to win work in
+that trade: quoting norms and CH price bands, speed-to-lead and follow-up
+cadence, platform-specific tactics, review-generation playbooks, seasonal
+patterns, objection handling, FR/DE terminology. This rides #1168's mechanism
+exactly — digest-covered, agent-scoped, readonly — and inherits its **128-file,
+256KB-per-file ceiling**, which is a feature: it forces curation and forbids
+dumping a scrape into the package.
+
+**The pipeline, as a repeatable factory process:**
+
+1. **Harvest** — research workers per vertical gather sources.
+2. **Filter for Swiss reality** — the single most important step. Most
+   "get more clients" content online is US-centric and actively wrong here:
+   different platforms, different price levels, different consumer norms, and
+   a legal regime (§9) that forbids tactics that are routine in the US. A
+   distillation that imports US sales-blog advice would make the agent sound
+   foreign to the buyer, which in these trades is disqualifying.
+3. **Distil with mandatory source citations** — every normative claim in a
+   knowledge file carries its source. No invented price norms, ever: a
+   fabricated price band would flow straight into a customer's quote.
+4. **Editorial pass by a native FR or DE speaker** — trade vocabulary
+   (*métré*, *régie*, *Regiearbeit*, *Akontozahlung*) is where a wrong word
+   loses the sale.
+5. **Refresh quarterly**, with the digest making staleness visible.
+
+**Effort estimate: roughly 3-5 factory days per vertical** for the first
+corpus, less on refresh — dominated by steps 2 and 4, which are judgement, not
+generation. Budget the editorial pass explicitly; it is the step most likely to
+be skipped and the most expensive to skip.
+
+**Two landing pages per vertical, and they are different things.** The
+**vertical LP** is ours, one hostname per trade, selling the offer — built with
+the `AGENT_LANDING_ROUTES` recipe. The **customer LP template** is the family
+we instantiate per customer at onboarding, on their brand and domain. Confusing
+them would be an expensive mistake in the roadmap.
+
+## MVP — one pilot customer
+
+Scoped so a real Swiss renovation firm uses it daily, and so nothing on the
+critical path is a component #1127 flagged as its risk centre.
 
 **In:**
 
-1. **IMAP read-only sync** of one mailbox, threaded, cursored, last 30 days.
-2. **The `fiduciaire` preset** — French `instructions.md`, real quote
-   templates taken from the pilot customer's own past quotes, their own price
-   bands.
-3. **Draft generation into an ask_user intention** carrying the source thread
-   as `AskUserArtifact`. Approve / edit / reject.
-4. **A mobile-legible approval view** in the workspace, reachable by link.
-5. **WhatsApp outbound only** — "3 new emails need you" plus the link. This
-   needs #1127 slice 1a (webhook infra, bindings, credentials) and the
-   provider edge from slice 2 (send + template), and **not** slice 1b (the
-   durable-tail turn assembler), because we are not streaming agent turns to
-   the phone.
-6. **Durable, expiring share links** for the approval view.
-7. **One CH deployment**: Exoscale CH zone, CH Postgres, Infomaniak models.
-8. **One hostname LP** for `fiduciaire`.
+1. **Rung-1 email ingest**: a CH mailbox we own, forwarding rule, IMAP poll
+   with our own credentials, threading, idempotent upsert.
+2. **The renovation preset** — FR `instructions.md`, quote templates and price
+   bands taken from the pilot customer's own past quotes, first knowledge
+   corpus.
+3. **RESPOND**: draft reply plus draft quote per lead, one session per thread,
+   as an ask_user intention carrying the source thread as a `HumanArtifact`.
+   Leads arrive from three sources through one pipe — direct enquiries, the new
+   landing page's form, and **marketplace alert emails** the customer already
+   receives from Ofri/Houzy/Olmero (and renovero, pending open question 10).
+4. **Approval view** reachable by an expiring capability link, submitting
+   through `questionsBridge.handle` as a server caller.
+5. **WhatsApp outbound notification**, batched — #1127 slice 1a narrowed to a
+   single provisioned binding, plus the send half of slice 2, plus the
+   notification abstraction.
+6. **FOLLOW UP v1**: a cadence on unanswered quotes and a post-job review
+   request. Cheap, and it carries the best-evidenced lever we have.
+7. **CH deployment**: Exoscale CH zone, CH Postgres, Infomaniak models,
+   non-Vercel sandbox mode.
+8. **The customer's landing page**, with its form wired into RESPOND.
 
-**Out of the MVP, explicitly:** inbound WhatsApp commands, ask_user answering
-from the channel, PDF generation, the other three presets, German variants,
-multi-mailbox, calendar, accounting-system integration, sandboxing, per-agent
-grants, session rotation, multi-tenant CH hosting.
+**Deliberately out of the MVP: automated FIND and BID.** This is the plan's
+sharpest recommendation and the research hardened it into a near-certainty.
+Automated FIND would need a web-fetch tool, an HTML parser and an SSRF guard —
+none of which exist. Automated BID would additionally need browser automation
+(absent) driving a customer's marketplace login (unstorable: the sandbox
+credential delivery path throws by design). Meanwhile Ofri's AGB bans bots
+outright and Olmero blocks our crawler at the edge.
 
-**Why this is 2-3 weeks and the obvious version is not:** the obvious version
-("chat with your agent on WhatsApp") requires #1127 slice 1b turn assembly —
-which that plan's own review kept alone in its own slice as the risk centre —
-plus slice 3 answering, which is parked. Outbound-notification-plus-link
-routes around both. The agent's actual value (reading the mail, drafting the
-quote) is untouched by that cut; only the approval gesture moves from a
-WhatsApp reply to a tap.
+**But the MVP gets most of FIND's value for free anyway**, because the
+marketplaces email the customer. Ofri, Houzy and Olmero all send lead
+notifications to the tradesperson, and rung-1 forwarding already carries them
+into the same pipeline as their direct enquiries. So the MVP does not "skip
+FIND" so much as implement its defensible 80%: **every lead that reaches the
+customer's inbox — direct, from their new landing page, or from a marketplace
+alert — gets the same minutes-fast draft.** What waits for v2 is *proactive*
+hunting on sources the customer is not already subscribed to, plus automated
+submission.
 
-## Unit economics
+Also out: inbound WhatsApp commands, channel-side answering, PDF generation,
+other verticals, German variants, multi-mailbox, accounting integrations,
+sandboxing, per-agent grants.
 
-Rough, and stated as a hypothesis to test in the pilot, not a model.
+## Unit economics — price against one won job
 
-**Value side.** A Swiss fiduciary's loaded hourly cost is ~90-130 CHF; the
-owner's own time is worth more than that at the margin because it is the
-constraint on taking new clients. Quote-and-correspondence admin plausibly
-runs 5-12 hours/month for a small firm. At 100 CHF/h that is **500-1200 CHF/mo
-of recoverable time**, and the second-order value is larger: quotes that go
-out the same evening instead of the following week convert better on >1000 CHF
-tickets. One extra won job per quarter pays for the year.
+**Value.** The pilot vertical's average ticket is **CHF 22,000-28,000**. Swiss
+gross margins on renovation work of 15-25% put contribution per job in the
+**CHF 3,500-7,000** range. So the question is not "how many hours does this
+save" but **"does this win one extra job per year?"** — and on the HBR
+mechanism, applied to a firm currently answering some leads on Thursday, one
+extra job a year is a low bar. One extra job a *quarter* is the realistic
+target and it is 15-25x the annual price.
 
-**Cost side, per customer per month:**
+**Cost per customer per month.** Inference is the surprise: at Infomaniak's
+verified 0.40/3.20 CHF per MTok, a drafting turn of ~10k in / 2k out is about
+**0.01 CHF**, so 300 drafts/month is **~3 CHF**. WhatsApp utility templates in
+Europe are cents and service replies inside the 24h window are free — single
+digits. Hosting amortises to tens of CHF shared, ~100 CHF single-tenant. **The
+dominant cost is human: onboarding, the landing page, and the corpus.**
 
-- Infomaniak inference, and we have verified CHF rates rather than guesses
-  (`docs/credits-prod-deployment.md`): Qwen3.5-122B at **0.40 in / 3.20 out
-  CHF per MTok**, Kimi-K2 at 0.60/3.00. A drafting turn that reads a thread
-  and writes a reply plus a quote is on the order of 10k in / 2k out, so
-  ~0.01 CHF per draft. **300 drafts/month is roughly 3 CHF.** Even at 10x the
-  token estimate this is noise. Convenient billing property already
-  established: Stripe charges CHF and Infomaniak bills CHF, so 1 credit-unit
-  = 1 CHF with no FX;
-- WhatsApp: post-July-2025 Meta bills per message; utility templates in
-  Europe are cents and service replies inside the 24h window are free — at
-  notification volumes this is negligible, single-digit CHF;
-- hosting: a shared CH VM + managed Postgres amortises to tens of CHF while
-  single-tenant-per-customer would be ~100 CHF;
-- support: the real cost, and front-loaded at onboarding.
+**Price.** Anchor on the won job, not on hours. **CHF 500-600/month** is the
+defensible list price: against a CHF 3,500-7,000 contribution per job, it pays
+for itself if it wins **one extra job every 12 months**, which is an easy
+sentence to say and an easy one to believe. Below CHF 300 we cannot afford
+onboarding; above CHF 800 we are competing with hiring a part-time
+administrator, a fight not worth picking.
 
-**Price.** 300-800 CHF/mo is the right band, and the defensible list price is
-**500-600 CHF/mo** — roughly half of the low end of the value estimate, which
-is the ratio that makes the decision easy for an owner who is not modelling
-anything. Below 300 CHF/mo we cannot afford the onboarding; above 800 CHF/mo
-we are competing with hiring a part-time administrator, which is a fight we
-should not pick.
+**Setup fee: CHF 500-1,500**, covering the landing page — and the landing page
+is what makes the setup fee feel like a purchase rather than a toll. It also
+covers CAC honestly.
 
-**Pilot recommendation: 500 CHF/mo from month one, setup waived, 3-month
-term, cancel anytime, in exchange for a reference and the right to use their
-anonymised quote templates as the preset baseline.** Charge from day one —
-a free pilot is not used, and an unused pilot teaches nothing. The waived
-setup (worth 1500-2500 CHF) is the concession; the monthly is not.
+**Pilot recommendation: CHF 500/month from month one, setup waived, 3-month
+term, cancel anytime**, in exchange for a reference and the right to use their
+anonymised quote templates as the vertical baseline. **Charge from day one** —
+a free pilot is not used, and an unused pilot teaches nothing. The waived setup
+is the concession; the monthly is not.
 
-## Risks / honesty
+**Instrument from day one**, because the Swiss evidence vacuum is fillable and
+first-party numbers would be a marketing asset nobody else has: leads received,
+time-to-first-draft, time-to-sent, quotes sent, quotes won, value won, and the
+share of leads arriving outside business hours.
+
+## Risks and honesty
 
 1. **WhatsApp transits Meta.** The channel is not Swiss and cannot be made
-   Swiss. Say it first, in the sales conversation, before the buyer finds it:
-   *storage, processing, and inference are in Switzerland; WhatsApp messages
-   themselves pass through Meta, which is why we only ever send
-   notifications and links over WhatsApp, never client data or documents.*
-   That constraint is also a design rule — it is why §5's MVP puts content
-   behind a link instead of in the message body. Buyers who cannot accept it
-   get an email-and-web-only variant.
-2. **Mailbox access is the real trust ask.** We are asking for read access to
-   a fiduciary's client correspondence — the most confidential mail in Swiss
-   SMB life. Mitigations that must be true and demonstrable, not asserted:
-   read-only credentials, never a mailbox mutation, a scoped app password
-   they can revoke without changing their own password, a short retention
-   window, no content in logs, and a written statement of exactly which
-   subprocessors see message content (with IMAP-direct, the answer is: none
-   — which is the whole reason for decision 2).
-3. **Quote liability.** A wrong number in a quote is a real financial
-   exposure for the customer. Every artefact is a **draft**; a human sends.
-   The agent proposes within the owner's own price bands and flags anything
-   outside them rather than guessing. Terms must state that the customer is
-   responsible for what they send.
-4. **Meta Business API timeline — correcting the assumption.** This was
-   framed as "weeks, the critical path." Current reality: standard onboarding
-   is roughly **3-10 business days** — 2-4 days for Meta Business
-   Verification, hours for WABA and phone-number setup, 24-48 hours for first
-   template approval. The 2-8 week figure is the **green-tick Official
-   Business Account badge, which we do not need** for a bot the customer
-   already expects to hear from. Start verification on day one anyway — it is
-   free, it is owner-side, and it parallelises — but do not sequence the
-   engineering behind it, and do not tell the pilot customer it is the
-   blocker. #1127's open question 4 (Twilio sandbox as fallback) can stay
-   closed unless verification actually stalls.
-5. **The real critical path is the pilot customer's mailbox credentials.**
-   Engineering is bounded and parallel; a fiduciary's decision to hand over
-   inbox access is not, and it is the only unbounded item on the list. Secure
-   a named design partner and their written agreement to grant read-only
-   access *before* slice 1 starts. If that conversation takes a month, the
-   engineering was never the constraint.
-6. **A real storage split, not a vague one.** `packages/core` is
-   **Postgres-only** (drizzle + postgres-js, 25 migrations, no sqlite
-   anywhere). But `SqliteEventStreamStore` is sqlite, #1127 puts the channel
-   binding store on that same `SqlStorage` seam, and `FileAskUserStore` is a
-   JSON file on the workspace volume. A CH instance therefore has three
-   persistence regimes: Postgres for identity and workspaces, sqlite on a
-   volume for events and bindings, a JSON file for pending intentions. Each
-   is fine for one pilot on one VM; all three are a cliff at the third or
-   fourth customer — including for backup, which #853 left
-   provider-independent-and-unbuilt (#877). Name it now, pay for it after the
-   pilot, and do not let "it worked for the fiduciary" become the
-   multi-tenant architecture by default.
-7. **Vertical dilution.** Four presets is a thesis about content reuse. If the
-   fiduciary pilot needs bespoke code, the other three verticals are not
-   presets and the product is four products. Decision 7 exists to catch this
-   before we build the second one.
-8. **Language quality is a sales risk, not a technical one.** A French quote
-   with Belgian or Québécois vocabulary, or German that reads as German
-   rather than Swiss, is disqualifying to this buyer. Trade vocabulary comes
-   from the pilot customer's own documents, reviewed by a native speaker,
-   never machine-translated.
+   Swiss. Say it first, before the buyer finds it: *storage, processing and
+   inference are in Switzerland; WhatsApp messages pass through Meta, which is
+   why we send only notifications and links over WhatsApp, never client data or
+   documents.* That constraint is also a design rule — it is why §(d) puts
+   content behind a link. Buyers who cannot accept it get an email-and-web
+   variant.
+2. **Email mishandling is the existential trust risk of this product.** The
+   standing rules, which must be demonstrable rather than asserted:
+   **read-only by default; leads-scope only, never the whole mailbox; CH
+   storage; deletion on request; and never auto-send.** Rung 1 is designed so
+   that at the moment of maximum customer suspicion — signup — we are asking
+   for a forwarding rule rather than a password. A processor agreement (DPA /
+   Auftragsverarbeitungsvertrag) under revDSG should be ready before the first
+   customer, not after.
+3. **Quote liability.** A wrong number in a quote is real financial exposure.
+   Everything is a **draft**; a human sends. The agent proposes inside the
+   owner's own price bands and flags anything outside them rather than
+   guessing. Terms must state the customer is responsible for what they send.
+4. **The legal split between the four verbs — the most important item here.**
+   RESPOND and FOLLOW UP operate inside an existing or customer-initiated
+   relationship and are legally unremarkable. **Cold outbound is a different
+   regime.** Swiss **UWG art. 3(1)(o)** makes mass electronic advertising
+   unfair unless prior consent, correct sender identification, and a free
+   opt-out are *all* present, it **applies to B2B as well as B2C**, and
+   breaches are criminal on complaint under UWG art. 23 (up to three years).
+   The live question is whether individualised, signal-triggered outreach
+   counts as *Massenwerbung* at all — arguably not, but that is a grey zone
+   and not one to resolve by assumption.
+   Consequences: **(a)** the marketplace-bidding form of FIND is clean, because
+   the customer is invited to quote; **(b)** register-driven prospecting
+   (Zefix/SHAB → a company that never asked to hear from us) is the loaded
+   form, and it is exactly what the insurance-broker and real-estate-mandate
+   ideas depend on; **(c)** get written Swiss legal advice before building
+   (b), and until then the agent may *research and draft*, with the customer
+   sending — which also matches the FINMA position that a registered
+   intermediary owns the client contact.
+5. **Source-access constraints on FIND, now concrete.** Ofri's AGB §8.1 bans
+   automated access in terms; Olmero and buildup disallow ClaudeBot and peers
+   in robots.txt with an EU-DSM Art. 4 reservation and Cloudflare enforcement;
+   localsearch/search.ch bans crawlers and commercial extraction, and its
+   directory API caps at 1,000 queries/month and forbids redistribution. Zefix
+   terms disallow bulk extraction into a competing register, and registry-driven
+   marketing collides with revDSG. **LinkedIn scraping violates its user
+   agreement** — the compliant shape is the customer working their own network
+   with agent-drafted messages. The one clean API is **simap**. Everything else
+   goes through the customer's own inbox, which no scraping clause reaches.
+6. **Platform dependency and channel conflict.** renovero is owned by
+   localsearch, which also sells the local-SEO products these firms buy. A
+   product that helps firms win renovero leads faster is tolerated; one that
+   automates against the platform may not be. Prefer email-alert ingestion and
+   human-approved submission, and do not build anything that breaks if one
+   platform closes a door — Buildigo's liquidation is a reminder that Swiss
+   platforms do disappear.
+7. **Three persistence regimes.** `packages/core` is Postgres-only, but
+   `SqliteEventStreamStore` is sqlite, #1127 puts bindings on the same seam,
+   and `FileAskUserStore` is a JSON file. Each is fine for one pilot on one
+   VM; all three are a cliff at the third or fourth customer, including for
+   backup, which #853 left provider-independent and unbuilt (#877). Do not let
+   "it worked for the pilot" become the multi-tenant architecture by default.
+8. **Meta Business API timeline — correcting a common assumption.** Standard
+   onboarding is roughly **3-10 business days**: 2-4 days for Business
+   Verification, hours for WABA and number setup, 24-48 hours for first
+   template approval. The 2-8 week figure is the **green-tick Official Business
+   Account badge, which we do not need** for a bot the customer expects to hear
+   from. Start verification on day one — it is free and parallel — but do not
+   sequence engineering behind it or tell the customer it is the blocker.
+9. **The real critical path is the pilot customer.** Engineering is bounded and
+   parallelisable; a firm's decision to route its leads through us is not.
+   Secure a named design partner, in the recommended vertical, with written
+   agreement to add the forwarding rule, **before slice 1 starts**.
+10. **Vertical dilution.** Four presets is a thesis about content reuse. If the
+    pilot needs bespoke code, they are not configurations and this is several
+    products. Decision 1 exists to catch that before the second vertical.
+11. **Language quality is a sales risk, not a technical one.** French with
+    Belgian or Québécois vocabulary, or German that reads as German rather than
+    Swiss, is disqualifying. Vocabulary comes from the customer's own
+    documents, reviewed by a native speaker, never machine-translated.
+12. **The speed-to-lead canon is old.** Its two pillars are from 2007 and 2011
+    and one is vendor data wearing an MIT badge. Strong enough to sell with,
+    but a sharp prospect can pick at it — which is another reason to generate
+    Swiss first-party numbers early.
+
+## Decisions (proposed, not ratified)
+
+1. **One engine; verticals are configuration bundles.** A vertical needing a
+   code branch falsifies the thesis and triggers a re-plan.
+2. **Pilot vertical = kitchen & bath renovation, Romandie** — not fiduciaries.
+   The evidence is unambiguous and it contradicts the original brief.
+3. **MVP ships RESPOND + FOLLOW UP + the customer landing page. FIND and BID
+   are v2**, gated on a ratified legal position and per-platform ToS review.
+4. **Rung-1 forwarding into a CH mailbox we own is the default email path.**
+   No customer credential in v1. Composio Gmail is never the default.
+5. **Never auto-send.** A contractual product guarantee, not a setting.
+6. **Reuse #1127's transport design verbatim**, inverting only the identity
+   model. Channels are not re-planned here.
+7. **Share links before PDFs; approval in a link-opened view, not in WhatsApp.**
+8. **This ships as a tenant app repo, not in boring-ui.** Per the ratified
+   commercial-premises position, the platform provides premises and never
+   pricing; each tenant app adapts the offer. Only genuinely platform-level
+   pieces land upstream: #1127 slices, the share capability-token layer, and
+   the notification abstraction.
+9. **One paying customer before the second vertical is built.**
 
 ## Test seams
 
-- **Highest public seam:** fixture mailbox → sync → agent drafts → ask_user
-  intention with artifact → approval view renders → approve → outbound email
-  queued (never sent without the tap). Runs with no Meta credentials, no live
-  IMAP.
-- IMAP sync: run the same fetch twice, assert zero duplicate threads and a
-  monotonic cursor; assert no mailbox mutation is ever issued (spy the client
-  and fail on any non-read command).
-- Share links: expired, revoked, and never-existed produce byte-identical
-  responses; a token outlives nothing.
-- WhatsApp edge: recorded fixtures per #1127's slice 2 approach; signature
-  verify and template fallback unit-tested. Meta itself is mocked at the
-  transport edge.
-- Presets: an assertion that the four presets differ only in content — no
-  vertical-specific code path exists.
-- **Avoid testing:** Meta API behaviour, IMAP server behaviour, pi runtime
-  internals, LLM output quality (that is pilot feedback, not CI).
+- **Highest public seam:** fixture mailbox → ingest → draft → intention with
+  artifact → approval view renders → approve → outbound queued (never sent
+  without the tap). No Meta credentials, no live IMAP.
+- Ingest: run the same fetch twice, assert zero duplicate threads and a
+  monotonic cursor; spy the IMAP client and fail on any non-read command.
+- Share links: expired, revoked and never-existed return byte-identical
+  responses.
+- WhatsApp edge: recorded fixtures; signature verify and template fallback
+  unit-tested; Meta mocked at the transport edge.
+- Verticals: assert the presets differ only in content — no vertical-specific
+  code path exists. This is decision 1's automated guard.
+- **Avoid testing:** Meta and IMAP server behaviour, pi internals, and LLM
+  output quality — the last is pilot feedback, not CI.
 
 ## Slices
 
-### Slice 1: mail ingest (IMAP read-only) + fiduciaire preset
-**Delivers:** IMAP sync with idempotent upsert and cursor, threading via
-`Message-ID`/`In-Reply-To`/`References`, read-only enforcement, the
-`fiduciaire` A1 preset with real French quote templates, drafting into an
-ask_user intention carrying the source thread as a `HumanArtifact`,
-one session per thread (per §4).
-**Blocked by:** pilot customer's mailbox credentials (owner-side, §7.5).
-**Proof:** fixture-mailbox seam end-to-end; double-sync idempotence; no-mutation spy.
+### Slice 1: rung-1 ingest + renovation preset + draft loop
+**Delivers:** CH ingest mailbox, forwarding onboarding script, IMAP poll,
+threading, idempotent upsert, the FR renovation persona with price book and
+first knowledge corpus, drafting into an ask_user intention with the thread as
+`HumanArtifact`, one session per thread.
+**Blocked by:** named pilot customer (owner-side, risk 9).
+**Proof:** fixture-mailbox seam end-to-end; double-ingest idempotence;
+no-mutation spy.
 
-### Slice 2: approval view + durable expiring share links
+### Slice 2: approval view + durable expiring capability links
 **Delivers:** durable share entry store, capability token with expiry and
-revocation, unauthenticated read path with uniform not-found semantics,
-mobile-legible approval view authorized by the question's existing
-`answerToken` and submitting through `questionsBridge.handle` as a server
-caller, approve/edit/reject → outbound email on tap.
+revocation, uniform not-found semantics, mobile-legible approval view
+authorized by `answerToken` through `questionsBridge.handle`, approve/edit/
+reject → send on tap.
 **Blocked by:** slice 1.
-**Proof:** expiry/revocation uniformity; approve-sends, no-tap-never-sends.
+**Proof:** expiry/revocation uniformity; approve-sends and no-tap-never-sends.
 
 ### Slice 3: WhatsApp outbound notification
-**Delivers:** #1127 slice 1a (webhook core, `ChannelBindingStore` with the
-single-transaction dedupe insert, credentials, flag plumbing, trusted-caller
-seam with guardrails) narrowed to a single provisioned owner binding, plus
-the send half of #1127 slice 2 (Meta Cloud API client, template fallback),
-plus the missing piece named in §3's Today: a **notification delivery
-abstraction** off `AskUserStore.subscribe()`, batching a set of pending
-intentions into one message. **Explicitly not** #1127 slice 1b turn assembly
-and not channel-side answering.
-**Blocked by:** slice 2; Meta Business verification (owner-side, parallel).
-**Proof:** fake-channel notification loop in CI; live demo to a test number.
+**Delivers:** #1127 slice 1a narrowed to one provisioned binding (webhook core,
+binding store with the single-transaction dedupe insert, credentials, flag,
+trusted-caller seam with guardrails), the send half of slice 2, and the
+notification delivery abstraction off `AskUserStore.subscribe()` with batching.
+**Explicitly not** slice 1b turn assembly or channel-side answering.
+**Blocked by:** slice 2; Meta verification (owner-side, parallel).
+**Proof:** fake-channel loop in CI; live demo to a test number.
 
-### Slice 4: CH deployment + fiduciaire LP
-**Delivers:** Exoscale CH-zone (`ch-gva-2`) or Infomaniak Public Cloud deploy
-as a new provider entry in `PROVIDER_SNIPPETS.md`, CH managed Postgres,
-Infomaniak model config, a hard gate asserting `BORING_AGENT_MODE` is not
-`vercel-sandbox`, hostname LP via seneca's `AGENT_LANDING_ROUTES` recipe, and
-the written residency statement of §6.
+### Slice 4: FOLLOW UP + customer landing page
+**Delivers:** follow-up cadence on unanswered quotes, post-job review request,
+the customer-LP template family and the per-customer content pass, with the
+form wired into RESPOND.
 **Blocked by:** slice 3.
-**Proof:** pilot customer using it against their real mailbox for one week.
+**Proof:** a cadence fires and stops correctly on reply; a real customer page
+live with a form submission producing a draft.
 
-### Slice 5 (post-pilot, separate gate): presets 2-4, German variants,
-inbound WhatsApp commands (#1127 slices 1b + 3), PDF generation.
-Gated on decision 7 — one paying fiduciary first.
+### Slice 5: CH deployment
+**Delivers:** Exoscale CH-zone or Infomaniak deploy as a new runbook provider
+entry, CH Postgres, Infomaniak models, the non-`vercel-sandbox` hard gate, the
+vertical LP, and the written residency statement.
+**Blocked by:** slice 4.
+**Proof:** the pilot customer running on it against real leads for one week,
+with the instrumentation of §10 reporting.
+
+### Slice 6 (separate gate, post-pilot): proactive FIND, then BID
+Gated on a written Swiss legal position (risk 4) and per-platform ToS review.
+Order, cheapest and safest first:
+1. **Marketplace alert parsers** — already carried by rung 1; this slice only
+   adds per-platform parsing and dedupe against direct enquiries.
+2. **simap connector** — the one sanctioned API, scheduled by the existing
+   `boring_automation` cron. Useful for placement, architects and larger
+   installers; largely irrelevant below the CHF 150-300k thresholds.
+3. **A host-proxy web tool** (the shape already designed in the BYOK plan,
+   bead `16f.5`) with the SSRF guard that does not exist today — a prerequisite
+   for anything else, and a platform-level contribution.
+4. **Automated BID** — browser automation plus credential storage, both new
+   subsystems, both needing their own gate. Not before a customer asks for it.
+
+### Slice 7 (research, not code): placement vertical validation
+Close open question 9 before considering a pivot: mandate-flow channels, firm
+count, day rates and margins for Swiss IT placement, Vaud density. One research
+pass, no engineering.
 
 ## Out of scope
 
-Accounting-system and calendar integration, invoicing, payments, CRM,
-multi-mailbox and shared-inbox semantics, agent sandboxing, per-agent grants
-(#1087), multi-tenant CH hosting at scale, proactive agent-initiated outreach
-beyond the notification template, group chats, inbound media, billing/metering
-of channel traffic, SMS and Slack channels.
+Accounting, calendar, invoicing, payments, CRM, shared-inbox semantics, agent
+sandboxing, per-agent grants (#1087), multi-tenant CH hosting at scale, group
+chats, inbound media, SMS and Slack channels, and any automated outreach to
+people who have not contacted the customer.
 
 ## Open questions — owner decisions required
 
-1. **Pilot customer.** Who is the named fiduciary, and will they grant
-   read-only mailbox access in writing before slice 1 starts? This is the
-   critical path (§7.5), not the engineering.
-2. **Pricing.** Ratify 500 CHF/mo from month one with setup waived, or choose
-   a different point in the 300-800 band. Recommendation: 500, charged.
-3. **Residency wording.** Approve the exact sentence in §6/§7.1 that we will
-   put in front of buyers and in the contract.
-4. **Composio Gmail.** Confirm it stays an opt-in accelerator and never the
-   default, accepting that this costs us Google Workspace prospects who want
-   zero-config onboarding.
-5. **Hostname seat binding.** Ship the pilot as one-seat-per-deployment now,
-   or wait for core #1165/0.1.96 to land
-   `BORING_SIGNUP_AGENT_DEFAULTS_JSON`? Recommendation: one seat per
-   deployment — a pilot does not need multi-tenant signup.
-6. **Which second vertical**, and on what evidence from the pilot? Do not
-   answer this before slice 4.
+1. **Ratify the pilot vertical.** The research contradicts the brief:
+   fiduciaries rank worst (no marketplace, highest digital maturity, funded AI
+   incumbents), storage is the wrong product shape (CHF 32/month), and garden
+   *maintenance* is below the ticket bar. Recommendation: **kitchen & bath
+   renovation, Romandie**. This is the decision everything else hangs on.
+2. **Named pilot customer**, and their written agreement to add the forwarding
+   rule before slice 1 starts. The genuine critical path.
+3. **Legal position on outbound.** Commission Swiss counsel on UWG art. 3(1)(o)
+   as applied to individualised, signal-triggered B2B outreach. Until it
+   returns, FIND stays inside marketplace bidding and the customer's own mail.
+4. **Pricing.** Ratify CHF 500/month from month one with setup waived, or pick
+   another point in the 300-800 band.
+5. **Residency wording.** Approve the exact sentence used in sales and in the
+   contract, including the WhatsApp caveat.
+6. **Repo placement.** Confirm this ships as a tenant app repo (decision 8),
+   and which pieces are allowed to land upstream in boring-ui.
+7. **Does this revive #1127?** Channels were deprioritized on 2026-08-08 for
+   want of a named consumer. This plan is one. Confirm that slice 1a + the send
+   half of slice 2 may be pulled forward on that basis.
+8. **Real estate and insurance brokers** — better per-deal economics, both
+   outbound-shaped, so their sequencing depends entirely on question 3.
+   Revisit after the pilot, not before.
+9. **Does the placement vertical displace the pilot?** It has the best verb-fit
+   of the high-value set, a B2B legal position, real simap coverage, and a warm
+   network in Vaud — but its economics are **unresearched** (the research
+   budget ran out). Commission one research pass (slice 7) before deciding. If
+   it confirms, placement plausibly beats kitchen & bath on ticket size while
+   matching it on legality, and the warm introduction removes the true critical
+   path.
+10. **Does renovero email its members on new matching requests?** A single
+    factual unknown that materially changes the pilot's channel mix and the
+    value of the MVP. Resolve with one paid account before slice 1 finishes.
