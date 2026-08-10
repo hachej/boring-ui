@@ -8,6 +8,14 @@
  * - `boring`: workspace/UI package discovery (front/server entrypoints and labels)
  */
 
+export interface BoringPackageAgentField {
+  definitionId: string
+  version: string
+  label?: string
+  description?: string
+  instructionsRef: string
+}
+
 export interface BoringPackageBoringField {
   /** Optional stable plugin id. Defaults to package.json#name normalized for package discovery. */
   id?: string
@@ -16,6 +24,8 @@ export interface BoringPackageBoringField {
   /** Workspace/UI support server entry. Set false to disable convention lookup. */
   server?: string | false
   label?: string
+  /** Optional roster-gated agent definition shipped by this plugin package. */
+  agent?: BoringPackageAgentField
 }
 
 export interface BoringPackagePiSourceObject {
@@ -31,7 +41,7 @@ export type BoringPackagePiSource = string | BoringPackagePiSourceObject
 export interface BoringPackagePiField {
   /** Native Pi extension entrypoints, relative to the package root. */
   extensions?: string[]
-  /** Skill directories/files, relative to the package root. */
+  /** Bare shared-library skill names or package-relative paths (paths contain `/`). */
   skills?: string[]
   /** Additional Pi package sources to inject into Pi settings. */
   packages?: BoringPackagePiSource[]
@@ -156,11 +166,48 @@ function validateBoringField(
   if (boring.label !== undefined && typeof boring.label !== "string") {
     issues.push(issue("INVALID_FIELD", "boring.label", "boring.label must be a string when provided"))
   }
+  let agent: BoringPackageAgentField | undefined
+  if (boring.agent !== undefined) {
+    if (!isRecord(boring.agent)) {
+      issues.push(issue("INVALID_FIELD", "boring.agent", "boring.agent must be an object when provided"))
+    } else {
+      const rawAgent = boring.agent
+      if (typeof rawAgent.definitionId !== "string" || !/^[a-z][a-z0-9-]{0,62}$/.test(rawAgent.definitionId)) {
+        issues.push(issue("INVALID_ID", "boring.agent.definitionId", "boring.agent.definitionId must be a lowercase agent id"))
+      }
+      if (typeof rawAgent.version !== "string" || rawAgent.version.length === 0) {
+        issues.push(issue("INVALID_VERSION", "boring.agent.version", "boring.agent.version must be a non-empty string"))
+      }
+      if (rawAgent.label !== undefined && typeof rawAgent.label !== "string") {
+        issues.push(issue("INVALID_FIELD", "boring.agent.label", "boring.agent.label must be a string when provided"))
+      }
+      if (rawAgent.description !== undefined && typeof rawAgent.description !== "string") {
+        issues.push(issue("INVALID_FIELD", "boring.agent.description", "boring.agent.description must be a string when provided"))
+      }
+      if (typeof rawAgent.instructionsRef !== "string" || !isSafePluginRelativePath(rawAgent.instructionsRef)) {
+        issues.push(issue("INVALID_PATH", "boring.agent.instructionsRef", "boring.agent.instructionsRef must be a safe relative path"))
+      }
+      if (
+        typeof rawAgent.definitionId === "string" &&
+        typeof rawAgent.version === "string" &&
+        typeof rawAgent.instructionsRef === "string"
+      ) {
+        agent = {
+          definitionId: rawAgent.definitionId,
+          version: rawAgent.version,
+          ...(typeof rawAgent.label === "string" ? { label: rawAgent.label } : {}),
+          ...(typeof rawAgent.description === "string" ? { description: rawAgent.description } : {}),
+          instructionsRef: rawAgent.instructionsRef,
+        }
+      }
+    }
+  }
   return {
     ...(typeof boring.id === "string" ? { id: boring.id } : {}),
     ...(typeof boring.front === "string" ? { front: boring.front } : {}),
     ...(typeof boring.server === "string" || boring.server === false ? { server: boring.server } : {}),
     ...(typeof boring.label === "string" ? { label: boring.label } : {}),
+    ...(agent ? { agent } : {}),
   }
 }
 
@@ -221,7 +268,20 @@ function validatePiField(
     return undefined
   }
   validateStringArray(issues, pi.extensions, "pi.extensions", true)
-  validateStringArray(issues, pi.skills, "pi.skills", true)
+  validateStringArray(issues, pi.skills, "pi.skills", false)
+  if (Array.isArray(pi.skills)) {
+    pi.skills.forEach((entry, index) => {
+      if (typeof entry !== "string" || entry.length === 0) return
+      const field = `pi.skills[${index}]`
+      if (entry.includes("/")) {
+        if (!isSafePluginRelativePath(entry)) {
+          issues.push(issue("INVALID_PATH", field, `${field} must be a safe package-relative path`))
+        }
+      } else if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(entry)) {
+        issues.push(issue("INVALID_FIELD", field, `${field} must be a shared skill name or package-relative path`))
+      }
+    })
+  }
   validatePiPackages(issues, pi.packages)
   if (pi.systemPrompt !== undefined && typeof pi.systemPrompt !== "string") {
     issues.push(issue("INVALID_FIELD", "pi.systemPrompt", "pi.systemPrompt must be a string when provided"))

@@ -11,5 +11,8 @@
       "description": "Issue-bound planner and integration supervisor.",
       "instructionsRef": "instructions.md"
     }
+  },
+  "pi": {
+    "skills": ["plan", "handoff"]
   }
 }

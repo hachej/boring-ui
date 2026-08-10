@@ -6,8 +6,23 @@ import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import { LEGACY_DEFAULT_AGENT_FLEET, resolveDefaultAgentFleet } from '../resolveDefaultAgentFleet'
+import type { DiscoveredAgentPackageDescriptor } from '../loadConfiguredAgentFleet'
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../../../..')
+const FACTORY_PACKAGES: readonly DiscoveredAgentPackageDescriptor[] = [
+  ['concierge', 'boring-concierge', ['feedback', 'triage', 'handoff']],
+  ['triage', 'boring-triage', ['triage', 'handoff']],
+  ['steward', 'boring-steward', ['plan', 'handoff']],
+  ['worker', 'boring-worker', ['exec', 'handoff']],
+  ['reviewer', 'boring-reviewer', ['fresh-eyes', 'handoff']],
+].map(([seat, definitionId, skills]) => ({
+  rootDir: resolve(REPOSITORY_ROOT, '.agents', 'personas', seat as string),
+  manifest: {
+    boring: { agent: { definitionId: definitionId as string, version: '2026.08.04', instructionsRef: 'instructions.md' } },
+    pi: { skills: skills as string[] },
+  },
+  preflight: { ok: true },
+}))
 
 const loggerMocks = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn() }))
 vi.mock('@hachej/boring-bash/server', async (importOriginal) => {
@@ -30,9 +45,20 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
     expect(Object.isFrozen(agents)).toBe(true)
   })
 
+  test('flag absent does not access injected discovery descriptors', async () => {
+    const options = new Proxy({ repositoryRoot: REPOSITORY_ROOT, workspaceRoot: REPOSITORY_ROOT, env: {} }, {
+      get(target, property, receiver) {
+        if (property === 'discoveredPackages') throw new Error('flag-off must not inspect discovery')
+        return Reflect.get(target, property, receiver)
+      },
+    })
+    await expect(resolveDefaultAgentFleet(options)).resolves.toBe(LEGACY_DEFAULT_AGENT_FLEET)
+  })
+
   test('flag=1: composes the default agent plus the repository factory seats', async () => {
     const agents = await resolveDefaultAgentFleet({
       repositoryRoot: REPOSITORY_ROOT,
+      discoveredPackages: FACTORY_PACKAGES,
       workspaceRoot: REPOSITORY_ROOT,
       env: { BORING_AGENT_FLEET: '1', ANTHROPIC_API_KEY: 'test-key' },
     })
@@ -50,6 +76,7 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
     const env = { BORING_AGENT_FLEET: '1', ANTHROPIC_API_KEY: 'test-key' }
     const sameRoot = await resolveDefaultAgentFleet({
       repositoryRoot: REPOSITORY_ROOT,
+      discoveredPackages: FACTORY_PACKAGES,
       workspaceRoot: REPOSITORY_ROOT,
       env,
     })
@@ -65,6 +92,7 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
     // opens nothing, so nothing is published.
     const otherRoot = await resolveDefaultAgentFleet({
       repositoryRoot: REPOSITORY_ROOT,
+      discoveredPackages: FACTORY_PACKAGES,
       workspaceRoot: tmpdir(),
       env,
     })
@@ -91,6 +119,7 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
       // No .agents/ tree at all under this root.
       const agents = await resolveDefaultAgentFleet({
         repositoryRoot: root,
+        discoveredPackages: [],
         workspaceRoot: root,
         env: { BORING_AGENT_FLEET: '1' },
       })
@@ -105,6 +134,7 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
       await writeFile(join(root, '.agents', 'factory', 'fleet.yaml'), 'not: [valid, seats, shape')
       const agents = await resolveDefaultAgentFleet({
         repositoryRoot: root,
+        discoveredPackages: [],
         workspaceRoot: root,
         env: { BORING_AGENT_FLEET: '1' },
       })
