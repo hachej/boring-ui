@@ -6,7 +6,7 @@ function snapshot(requestFailures: AgentSidebarHardGateSnapshot["requestFailures
     stateId: "state",
     checkpoint: "agent-list",
     origin: "http://127.0.0.1:5480",
-    viewport: { width: 1440, height: 900, mobile: false },
+    viewport: { width: 1440, height: 900, mobileShell: false, coarsePointer: false },
     documentWidth: { scrollWidth: 1440, clientWidth: 1440 },
     axeViolations: [],
     consoleErrors: [],
@@ -16,7 +16,9 @@ function snapshot(requestFailures: AgentSidebarHardGateSnapshot["requestFailures
     sidebar: {
       agentCount: 2,
       agentHeading: "Agents",
-      agentSeatSummary: null,
+      // v11: the seat summary is asserted, not just recorded — it is the
+      // right-aligned half of the static Agents title.
+      agentSeatSummary: "2 seats",
       agentFilterCount: 1,
       legacyFilterCount: 0,
       visibleActionCount: 0,
@@ -30,11 +32,168 @@ function snapshot(requestFailures: AgentSidebarHardGateSnapshot["requestFailures
       nestedPinnedHasPin: false,
       detailOverlayCount: 0,
       detailTabCount: 0,
-      configurationHeadingCount: 0,
+      capabilityHeadings: [],
+      legacyJargonCount: 0,
+      actionOverlaps: [],
+      actionFallthrough: [],
+      illegibleTitles: [],
       undersizedAgentControls: [],
     },
   }
 }
+
+describe("workspace Agent sidebar state contract", () => {
+  const detailsSnapshot = (overrides: Partial<AgentSidebarHardGateSnapshot["sidebar"]>) => {
+    const base = snapshot([])
+    return {
+      ...base,
+      checkpoint: "agent-details" as const,
+      sidebar: {
+        ...base.sidebar,
+        detailOverlayCount: 1,
+        capabilityHeadings: [
+          "Instructions", "Skills", "Tools", "MCP access", "Plugins", "Defaults",
+        ],
+        ...overrides,
+      },
+    }
+  }
+  const stateGate = (input: AgentSidebarHardGateSnapshot) =>
+    evaluateAgentSidebarHardGates(input).results.find((result) => result.id === "state-contract")
+
+  it("accepts exactly the six capability sections, in order", () => {
+    expect(stateGate(detailsSnapshot({}))).toMatchObject({ passed: true })
+  })
+
+  it("rejects a missing section instead of passing on a count floor", () => {
+    expect(stateGate(detailsSnapshot({
+      capabilityHeadings: ["Instructions", "Skills", "Tools", "MCP access"],
+    }))).toMatchObject({ passed: false })
+  })
+
+  it("rejects the right NUMBER of wrong sections", () => {
+    expect(stateGate(detailsSnapshot({
+      capabilityHeadings: ["A", "B", "C", "D", "E", "F"],
+    }))).toMatchObject({ passed: false })
+  })
+
+  it("requires hover to REVEAL the hovered Agent's controls, resting to hide them", () => {
+    // Two Agents, one resting action each, plus the two the hovered Agent
+    // reveals. Six was the DOM count of buttons that exist — the old counter
+    // ignored the container opacity doing the hiding, so it passed whether or
+    // not hover revealed anything.
+    const base = snapshot([])
+    const at = (checkpoint: "hover-actions" | "agent-list", visibleActionCount: number) => evaluateAgentSidebarHardGates({
+      ...base,
+      checkpoint,
+      sidebar: { ...base.sidebar, visibleActionCount },
+    }).results.find((result) => result.id === "state-contract")
+    expect(at("hover-actions", 4)).toMatchObject({ passed: true })
+    expect(at("hover-actions", 6)).toMatchObject({ passed: false })
+    expect(at("hover-actions", 2)).toMatchObject({ passed: false })
+    expect(at("agent-list", 2)).toMatchObject({ passed: true })
+    expect(at("agent-list", 6)).toMatchObject({ passed: false })
+  })
+
+  it("expects every control visible where hover cannot reveal them, on either condition that causes it", () => {
+    // The two conditions globals.css unions — `(max-width: 767px)` and
+    // `(hover: none)` — are independent, and the harness now visits a viewport
+    // that satisfies only one of each. Reading either one off a single
+    // "mobile" flag is what made 500-fine and 834-coarse unobservable.
+    const base = snapshot([])
+    const at = (viewport: Partial<AgentSidebarHardGateSnapshot["viewport"]>, visibleActionCount: number) =>
+      evaluateAgentSidebarHardGates({
+        ...base,
+        viewport: { ...base.viewport, ...viewport },
+        sidebar: { ...base.sidebar, visibleActionCount },
+      }).results.find((result) => result.id === "state-contract")
+
+    // Narrow + FINE pointer: revealed by width alone.
+    expect(at({ width: 500 }, 6)).toMatchObject({ passed: true })
+    expect(at({ width: 500 }, 2)).toMatchObject({ passed: false })
+    // Wide + COARSE pointer: revealed by pointer alone.
+    expect(at({ width: 834, coarsePointer: true }, 6)).toMatchObject({ passed: true })
+    expect(at({ width: 834, coarsePointer: true }, 2)).toMatchObject({ passed: false })
+  })
+
+  it("measures touch targets on the pointer, not on a narrow viewport", () => {
+    const base = snapshot([])
+    const gate = (viewport: Partial<AgentSidebarHardGateSnapshot["viewport"]>) => evaluateAgentSidebarHardGates({
+      ...base,
+      viewport: { ...base.viewport, ...viewport },
+      sidebar: { ...base.sidebar, undersizedAgentControls: [{ label: "Chat actions for x", width: 24, height: 24 }] },
+    }).results.find((result) => result.id === "agent-touch-targets")
+    // A wide tablet is still a coarse pointer, and 24px is still too small.
+    expect(gate({ width: 834, coarsePointer: true })).toMatchObject({ passed: false })
+    expect(gate({ width: 390, coarsePointer: true })).toMatchObject({ passed: false })
+    // A narrow desktop window is a fine pointer; 24px is the correct size.
+    expect(gate({ width: 500 })).toMatchObject({ passed: true })
+  })
+})
+
+describe("workspace Agent sidebar action-overlap gate", () => {
+  const overlapGate = (actionOverlaps: AgentSidebarHardGateSnapshot["sidebar"]["actionOverlaps"]) => {
+    const base = snapshot([])
+    return evaluateAgentSidebarHardGates({ ...base, sidebar: { ...base.sidebar, actionOverlaps } })
+      .results.find((result) => result.id === "session-row-action-overlap")
+  }
+
+  it("passes when nothing renders under the hover actions", () => {
+    expect(overlapGate([])).toMatchObject({ passed: true })
+  })
+
+  it("fails on a title running under the action strip, with the measurement as evidence", () => {
+    const gate = overlapGate([{ kind: "title", label: "hi", overlap: 59 }])
+    expect(gate).toMatchObject({ passed: false })
+    expect(gate?.evidence).toContain("59")
+  })
+
+  it("fails on the age label too, not only the title", () => {
+    expect(overlapGate([{ kind: "age", label: "9h", overlap: 17 }])).toMatchObject({ passed: false })
+  })
+})
+
+describe("workspace Agent sidebar action-fallthrough gate", () => {
+  const fallthroughGate = (actionFallthrough: AgentSidebarHardGateSnapshot["sidebar"]["actionFallthrough"]) => {
+    const base = snapshot([])
+    return evaluateAgentSidebarHardGates({ ...base, sidebar: { ...base.sidebar, actionFallthrough } })
+      .results.find((result) => result.id === "session-row-action-fallthrough")
+  }
+
+  it("passes when every pixel of the strip belongs to an action", () => {
+    expect(fallthroughGate([])).toMatchObject({ passed: true })
+  })
+
+  it("fails on a vertical seam, and says where it is", () => {
+    // A 44px row around 28px buttons: 8px of live row button above the icon
+    // and 8px below it, in the icon's own column.
+    const gate = fallthroughGate([{ session: "alpha-1", pixels: 15, sample: ["22,0", "22,1", "22,36"] }])
+    expect(gate).toMatchObject({ passed: false })
+    expect(gate?.evidence).toContain("22,36")
+  })
+
+  it("fails on a horizontal seam between two actions as well", () => {
+    expect(fallthroughGate([{ session: "alpha-1", pixels: 4, sample: ["27,22"] }])).toMatchObject({ passed: false })
+  })
+})
+
+describe("workspace Agent sidebar title-legibility gate", () => {
+  const titleGate = (illegibleTitles: AgentSidebarHardGateSnapshot["sidebar"]["illegibleTitles"]) => {
+    const base = snapshot([])
+    return evaluateAgentSidebarHardGates({ ...base, sidebar: { ...base.sidebar, illegibleTitles } })
+      .results.find((result) => result.id === "session-row-title-legible")
+  }
+
+  it("passes when every row still names its chat", () => {
+    expect(titleGate([])).toMatchObject({ passed: true })
+  })
+
+  it("fails when a badge and its action reservation erase the title", () => {
+    const gate = titleGate([{ session: "alpha-1", width: 0, trailing: "badge" }])
+    expect(gate).toMatchObject({ passed: false })
+    expect(gate?.evidence).toContain("badge")
+  })
+})
 
 describe("workspace Agent sidebar request-failure gate", () => {
   it("accepts an exact known hydration abort and records its rationale", () => {

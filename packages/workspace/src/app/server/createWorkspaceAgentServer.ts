@@ -1272,7 +1272,7 @@ export async function createWorkspaceAgentServer(
   // and no explicit `opts.agents`, the resolved fleet has 6 agents even though
   // the option was omitted, and must not inherit the legacy global-contribution
   // route shape (gh-1106 slice 3 fix round 1, M3).
-  const agents = opts.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: opts.fleetRepositoryRoot })
+  const agents = opts.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: opts.fleetRepositoryRoot, workspaceRoot })
   const isLegacyDefaultFleet = agents.length === 1 && "legacyDefault" in agents[0]!
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()

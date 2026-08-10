@@ -9,10 +9,10 @@ function fakeSurface(): SurfaceShellApi & {
   __expanded: string[]
   __expandCalls: Array<{ path: string; filesystem?: string }>
   __leftClosed: number
-  __openFileCalls: Array<{ path: string; filesystem?: string }>
+  __openFileCalls: Array<{ path: string; filesystem?: string; mode?: string }>
 } {
   const opened: string[] = []
-  const openFileCalls: Array<{ path: string; filesystem?: string }> = []
+  const openFileCalls: Array<{ path: string; filesystem?: string; mode?: string }> = []
   const surfaces: unknown[] = []
   const panels: unknown[] = []
   const expanded: string[] = []
@@ -24,11 +24,11 @@ function fakeSurface(): SurfaceShellApi & {
     __expanded: string[]
     __expandCalls: Array<{ path: string; filesystem?: string }>
     __leftClosed: number
-    __openFileCalls: Array<{ path: string; filesystem?: string }>
+    __openFileCalls: Array<{ path: string; filesystem?: string; mode?: string }>
   } = {
-    openFile: (path: string, options?: { filesystem?: string }) => {
+    openFile: (path: string, options?: { filesystem?: string; mode?: string }) => {
       opened.push(path)
-      openFileCalls.push({ path, filesystem: options?.filesystem })
+      openFileCalls.push({ path, filesystem: options?.filesystem, mode: options?.mode })
     },
     openSurface: (request: unknown) => surfaces.push(request),
     openPanel: (cfg: unknown) => panels.push(cfg),
@@ -70,6 +70,14 @@ describe("dispatchUiCommand", () => {
     dispatchUiCommand({ kind: "openFile", params: { path: "greeter.ts" } }, c)
     expect(c.__surface.__opened).toEqual(["greeter.ts"])
     expect(c.__surface.__openFileCalls).toEqual([{ path: "greeter.ts", filesystem: "user" }])
+  })
+
+  it("openFile forwards mode so view panels open genuinely read-only", () => {
+    const c = ctx()
+    dispatchUiCommand({ kind: "openFile", params: { path: "prompt.md", mode: "view" } }, c)
+    expect(c.__surface.__openFileCalls).toEqual([{ path: "prompt.md", filesystem: "user", mode: "view" }])
+    dispatchUiCommand({ kind: "openFile", params: { path: "prompt.md", mode: "bogus" } }, c)
+    expect(c.__surface.__openFileCalls[1]).toEqual({ path: "prompt.md", filesystem: "user" })
   })
 
   it("openFile forwards explicit company_context filesystem", () => {
@@ -311,6 +319,30 @@ describe("dispatchUiCommand", () => {
       path: "/company/policy.md",
       filesystem: "company_context",
     }])
+  })
+
+  it("expandToFile with an empty path reveals a filesystem root", () => {
+    const openWorkbenchSources = vi.fn()
+    const c = ctx({ openWorkbenchSources })
+    dispatchUiCommand({ kind: "expandToFile", params: { path: "", filesystem: "docs" } }, c)
+    expect(openWorkbenchSources).toHaveBeenCalledOnce()
+    expect(c.__surface.__expandCalls).toEqual([{ path: "", filesystem: "docs" }])
+  })
+
+  it("expandToFile without path or filesystem is dropped", () => {
+    const openWorkbenchSources = vi.fn()
+    const c = ctx({ openWorkbenchSources })
+    dispatchUiCommand({ kind: "expandToFile", params: {} }, c)
+    expect(openWorkbenchSources).not.toHaveBeenCalled()
+    expect(c.__surface.__expandCalls).toEqual([])
+  })
+
+  it("expandToFile drops an unsafe path through the canonical target validator", () => {
+    const openWorkbenchSources = vi.fn()
+    const c = ctx({ openWorkbenchSources })
+    dispatchUiCommand({ kind: "expandToFile", params: { path: "../outside" } }, c)
+    expect(openWorkbenchSources).not.toHaveBeenCalled()
+    expect(c.__surface.__expandCalls).toEqual([])
   })
 
   it("expandToFile opens the workbench and sources when closed", () => {

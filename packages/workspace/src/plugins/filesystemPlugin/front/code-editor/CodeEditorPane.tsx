@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback } from "react"
-import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
+import { normalizeUiFilesystem, type FilesystemId, type UiFileOpenMode } from "../../../../shared/types/filesystem"
 import type { PaneProps } from "../../../../front/registry/types"
 import { useDataClient } from "../data"
 import { useFilePane } from "../useFilePane"
@@ -34,7 +34,7 @@ function extToLanguage(path: string): string {
   }
 }
 
-export type CodeEditorPaneProps = PaneProps<{ path?: string; filesystem?: FilesystemId; mode?: "view" | "edit" | "diff" }>
+export type CodeEditorPaneProps = PaneProps<{ path?: string; filesystem?: FilesystemId; mode?: UiFileOpenMode }>
 
 function filename(path: string): string {
   return path.split("/").pop() || "file"
