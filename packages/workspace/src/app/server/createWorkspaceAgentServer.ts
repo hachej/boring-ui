@@ -1666,6 +1666,12 @@ export async function createWorkspaceAgentServer(
     runtimePluginIds: buildRuntimeProvisioningInputs().map((entry) => entry.id),
     provisionWorkspace: opts.provisionWorkspace !== false,
   }))
+  const semanticProvisioningIdentity = identityDigest(canonicalIdentityJson({
+    runtimeMode: resolvedMode,
+    runtimeContributionIds: runtimeEnvContributions.map((entry) => entry.id),
+    runtimePluginIds: buildRuntimeProvisioningInputs().map((entry) => entry.id),
+    provisionWorkspace: opts.provisionWorkspace !== false,
+  }))
   const scopeIssuer = createWorkspaceAgentScopeIssuer(workspaceScopeId)
   const agentHost = await createAgentHost({
     agents,
@@ -1831,22 +1837,26 @@ export async function createWorkspaceAgentServer(
           ])
         : undefined
 
-      const identity = createResolvedRuntimeScopeIdentity({
-          artifacts: contribution.artifacts,
-          validatedConfig: contribution.validatedConfig,
-          grants: contribution.grants,
-          placementIdentity: environment.placementIdentity,
-          isolationMode: resolvedMode,
-          toolContractDigests: contribution.toolContractDigests,
-          provisioningGeneration: environment.provisioningFingerprint,
-          bindingInputs: {
-            workspaceScopeId: verifiedClaim.workspaceScopeId,
-            environmentProvisioningFingerprint: environment.provisioningFingerprint,
-            sessionNamespace: "",
-            base: baseBindingInputs,
-            contribution: contribution.bindingInputs,
-          },
-        })
+      const semanticIdentityInput = {
+        artifacts: contribution.artifacts,
+        validatedConfig: contribution.validatedConfig,
+        grants: contribution.grants,
+        placementClassIdentity: resolvedMode,
+        isolationMode: resolvedMode,
+        toolContractDigests: contribution.toolContractDigests,
+        provisioningIdentity: semanticProvisioningIdentity,
+        bindingInputs: {
+          sessionNamespace: "",
+          base: baseBindingInputs,
+          contribution: contribution.bindingInputs,
+        },
+      } as const
+      const identity = createResolvedRuntimeScopeIdentity(semanticIdentityInput)
+      const physicalBindingIdentity = identityDigest(canonicalIdentityJson({
+        identity,
+        placementIdentity: environment.placementIdentity,
+        provisioningFingerprint: environment.provisioningFingerprint,
+      }))
       const staticSystemPromptAppend = [baseSystemPromptAppend, contribution.agentOptions.systemPromptAppend]
         .filter((part): part is string => Boolean(part))
         .join("\n\n") || undefined
@@ -1896,7 +1906,7 @@ export async function createWorkspaceAgentServer(
       const { resourceInputDigest, revalidateResourceInputs } = await createPiResourceDigestFence(buildResourceDigestInput)
       return {
         identity,
-        physicalBindingIdentity: identity,
+        physicalBindingIdentity,
         resourceInputDigest,
         ...(intent.operation === "reload" ? {
           async revalidateResourceInputs() {
