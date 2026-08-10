@@ -247,13 +247,18 @@ export function AppLeftPane({
   const openSet = useMemo(() => new Set(normalizedOpenSessionIds), [normalizedOpenSessionIds])
   const pinnedSet = useMemo(() => new Set(normalizedPinnedSessionIds), [normalizedPinnedSessionIds])
   const workingSessionIds = useWorkingSessionIds(sessions)
-  // Any addressed fleet gets cards, including a fleet of one: "one card per
-  // Agent" is what exposes per-Agent settings and scoped chat creation. Hosts
-  // that want the plain single-Agent shell omit `agents` entirely.
-  const agentTreeEnabled = agents.length > 0
+  // Fleet row idiom (accent dot, compact rows, owner labels): any addressed
+  // fleet gets it, including a fleet of one, so chat cards look identical in
+  // both cardinalities. Hosts wanting the plain shell omit `agents` entirely.
+  const agentRowsEnabled = agents.length > 0
+  // Fleet CHROME — per-Agent sections and the New chat Agent picker — only
+  // earns its keep once there is more than one Agent to choose between. With a
+  // single Agent (the default seat) the pane is a flat "Chats" list, owner
+  // spec; the fleet hub (many seats) keeps the full tree.
+  const fleetChromeEnabled = agents.length > 1
   // Ratified layout: each Agent's chats nest under its card in single-project
   // mode; multi-project keeps chats inside the project tree instead.
-  const nestedAgentChats = agentTreeEnabled && layoutMode !== "multi-project"
+  const nestedAgentChats = fleetChromeEnabled && layoutMode !== "multi-project"
   const [agentFilter, setAgentFilter] = useState("")
   // The filter input hides behind its icon until asked for (owner spec); it
   // stays open while it holds a query so active filtering is never invisible.
@@ -419,10 +424,10 @@ export function AppLeftPane({
         canPin={isActiveProjectSession}
         working={working}
         attentionBadge={isActiveProjectSession ? sessionBadges.get(sessionKey) : undefined}
-        activeDot={agentTreeEnabled}
+        activeDot={agentRowsEnabled}
         // The accent dot marks the active chat (spike idiom) and any working one.
         activeDotActive={working || state === "active"}
-        compact={agentTreeEnabled && (nested || !pinned)}
+        compact={agentRowsEnabled && (nested || !pinned)}
         ownerLabel={showOwnerLabel && session.agentTypeId ? agentLabelById.get(session.agentTypeId) : undefined}
         onSwitch={isActiveProjectSession
           ? session.agentTypeId
@@ -660,7 +665,7 @@ export function AppLeftPane({
         agentTypeId: session.agentTypeId,
         title: session.title,
         updatedAt: session.updatedAt,
-      }, pinnedSet.has(workspaceSessionKeyFor(session)), project.id, agentTreeEnabled)}
+      }, pinnedSet.has(workspaceSessionKeyFor(session)), project.id, agentRowsEnabled)}
     />
   )
 
@@ -702,15 +707,15 @@ export function AppLeftPane({
 
       <section
         className="flex min-h-24 flex-1 flex-col border-t border-border/40 pt-3"
-        aria-labelledby={agentTreeEnabled ? undefined : "app-left-chats-heading"}
-        aria-label={agentTreeEnabled ? "Agent navigation" : undefined}
+        aria-labelledby={fleetChromeEnabled ? undefined : "app-left-chats-heading"}
+        aria-label={fleetChromeEnabled ? "Agent navigation" : undefined}
       >
-        {!agentTreeEnabled ? (
+        {!fleetChromeEnabled ? (
           <h2 id="app-left-chats-heading" className="shrink-0 px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
             Chats
           </h2>
         ) : null}
-        {!agentTreeEnabled ? (
+        {!fleetChromeEnabled ? (
           <div data-boring-workspace-part="app-left-new-chat" className="shrink-0 px-2 pb-2">
             <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
           </div>
@@ -722,14 +727,14 @@ export function AppLeftPane({
           {/* Multi-project (PR2): projects remain inside the Chats region. */}
           {layoutMode === "multi-project" ? (
             <div className="space-y-3 py-1">
-              {agentTreeEnabled ? renderFleetNewChat() : null}
+              {fleetChromeEnabled ? renderFleetNewChat() : null}
               {pinnedSessions.length > 0 || pinnedProjects.length > 0 ? (
                 <SessionSubSection title="Pinned">
                   {pinnedSessions.map((session) => renderSession(session, true))}
                   {pinnedProjects.length > 0 ? renderProjectTree(pinnedProjects) : null}
                 </SessionSubSection>
               ) : null}
-              {agentTreeEnabled ? renderAgentsSection() : null}
+              {fleetChromeEnabled ? renderAgentsSection() : null}
               <section data-boring-workspace-part="app-left-pane-section" className="space-y-1">
                 <div className="flex items-center justify-between gap-1 px-2 pb-0.5">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/65">{workspaceSectionTitle}</span>
@@ -750,10 +755,10 @@ export function AppLeftPane({
               </section>
             </div>
           ) : (
-            <div className={agentTreeEnabled ? "space-y-3 py-1" : "space-y-4 py-1"}>
-              {agentTreeEnabled ? renderFleetNewChat() : null}
+            <div className={fleetChromeEnabled ? "space-y-3 py-1" : "space-y-4 py-1"}>
+              {fleetChromeEnabled ? renderFleetNewChat() : null}
               {pinnedSessions.length > 0 ? (
-                agentTreeEnabled ? (
+                fleetChromeEnabled ? (
                   <section className="mb-3 px-0" aria-label="Pinned chats">
                     <div className="flex items-center justify-between px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
                       <span>Pinned chats</span>
@@ -768,7 +773,7 @@ export function AppLeftPane({
                 )
               ) : null}
               {/* Nested layout: each Agent's chats live under its card. */}
-              {agentTreeEnabled ? (
+              {fleetChromeEnabled ? (
                 renderAgentsSection()
               ) : (
                 <SessionSubSection title={pinnedSessions.length > 0 ? "Recent" : undefined} empty={sessionsLoading ? "Loading chats…" : "No chats yet."}>
