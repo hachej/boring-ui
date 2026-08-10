@@ -13,6 +13,7 @@ procedures live in [`kanzen/`](kanzen/).
 | Need | Read |
 | --- | --- |
 | Direction & vision (sequencing authority, living vision, completion tracker) | [`direction/`](direction/README.md) — [`DIRECTION.md`](direction/DIRECTION.md) · [`VISION.md`](direction/VISION.md) · [`STATE.md`](direction/STATE.md) |
+| Visual architecture (package map and runtime layers) | [`visual/`](visual/README.md) |
 
 ## What this is
 
