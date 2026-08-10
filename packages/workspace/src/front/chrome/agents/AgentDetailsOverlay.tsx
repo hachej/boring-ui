@@ -159,16 +159,25 @@ export function AgentDetailsOverlay({
     ...WORKSPACE_INSTRUCTION_FILES
       .filter((file) => capabilities.workspaceInstructionFiles.status === "loaded"
         && capabilities.workspaceInstructionFiles.value.includes(file.path))
-      .map((file, index) => ({
-        key: `workspace\u0000${file.path}\u0000${index}`,
-        title: file.path,
-        badge: file.badge,
-        blurb: file.blurb,
-        icon: "file" as const,
-        onOpen: () => void openFile({ filesystem: "user", path: file.path }, file.path),
-        openAriaLabel: `Open ${file.path}`,
-        openTitle: `Open ${file.path}`,
-      })),
+      .map((file, index) => {
+        // Same missing-state rule as the Agent-owned rows above: a file that
+        // was listed at load but has since gone must stop looking openable,
+        // instead of probing and toasting on every click.
+        const resource = { filesystem: "user", path: file.path } as const
+        const missing = missingResourceKeys.has(uiFileResourceKey(resource))
+        return {
+          key: `workspace\u0000${file.path}\u0000${index}`,
+          title: file.path,
+          badge: missing ? "unavailable" : file.badge,
+          blurb: missing ? `${file.path} isn't in this workspace any more.` : file.blurb,
+          icon: "file" as const,
+          ...(missing ? {} : {
+            onOpen: () => void openFile(resource, file.path),
+            openAriaLabel: `Open ${file.path}`,
+            openTitle: `Open ${file.path}`,
+          }),
+        }
+      }),
   ]
 
   const skills = capabilities.skills.status === "loaded" ? capabilities.skills.value : []

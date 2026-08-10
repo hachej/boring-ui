@@ -53,9 +53,12 @@ import type { UiReviewBrowserErrors } from "../../core/reviewSpec"
 // one version two incompatible heading sets; v13 restores a unique meaning.
 // v14 makes the row-action hit test positive: every sampled strip pixel must
 // belong to a visible action button, so an inert container or null hit can no
-// longer pass merely because it did not fall through to the row button. Its
-// fixture also includes a non-staged chat, making the split and quick-chat
-// shortcuts mandatory subjects of the touch-target capture.
+// longer pass merely because it did not fall through to the row button.
+// It does NOT extend coverage to the split and quick-chat shortcuts: those
+// render only on a chat that is not on stage, and the fixture ships one chat
+// per Agent, which is the staged one. Seeding a second chat inside the
+// readiness probe was tried and left the Agent tree with zero rows, so the
+// gap is recorded in `spec.ts` rather than claimed closed here.
 export const AGENT_SIDEBAR_HARD_GATE_CONTRACT = "workspace-agent-sidebar-v14"
 
 const KNOWN_ABORTED_REQUESTS: Array<{
