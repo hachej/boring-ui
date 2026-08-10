@@ -17,9 +17,10 @@
 # Roster: THREE seats, owner-ratified 2026-08-10 (gh-1187 S0). A seat is
 # justified by capability posture, never by model choice. Deferred,
 # grow-on-demand seats (`concierge`, `reviewer`, `auditor`, `beadle`, any
-# `worker-*` variant) keep their persona packages under .agents/personas/ but
-# hold no seat here until a real lane pulls them; adding one back is an entry
-# in this list.
+# `worker-*` variant) hold no seat and no live persona package; their persona
+# material is preserved as test fixtures under packages/agent
+# .../agentDefinition/__tests__/fixtures/deferred-personas/. Adding one back =
+# restore the package under .agents/personas/ plus an entry in this list.
 
 seats:
   # Continuous background classification of incoming work. Runs on a cadence,
