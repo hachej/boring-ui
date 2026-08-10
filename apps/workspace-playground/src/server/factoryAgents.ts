@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 
 import { loadConfiguredAgentFleet, type AgentHostAgentSpec } from '@hachej/boring-agent/server'
 
-export type BoringFactoryRole = 'concierge' | 'triage' | 'steward' | 'worker' | 'reviewer'
+export type BoringFactoryRole = 'triage' | 'orchestrator' | 'worker'
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../..')
 const PERSONAS_DIR = resolve(REPOSITORY_ROOT, '.agents', 'personas')
