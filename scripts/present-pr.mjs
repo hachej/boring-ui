@@ -7,9 +7,10 @@
 //   --context <path>      sidecar .md or .json. In markdown: the first ```mermaid fence is
 //                         the intro diagram, `## Key files` pins reading order,
 //                         `## Review history` is the audit trail (one `date | type |
-//                         verdict | who | summary` bullet per event), the rest is prose.
+//                         verdict | who | summary` bullet per event), `## Why` carries
+//                         ~10 `glob | one line` rationale entries, the rest is prose.
 //                         JSON keys: { mermaid, summary, audit, ci, verdict, keyFiles,
-//                         reviewHistory }
+//                         reviewHistory, why }
 //   --audit "<text>"      audit status line (overrides sidecar)
 //   --out <path>          output HTML (default: pr-<n>-presentation.html)
 //
@@ -67,7 +68,7 @@ const rawDiff = gh(['pr', 'diff', prNumber, ...repoArgs])
 
 /* ------------------------------------------------------- sidecar context */
 
-const context = { mermaid: '', summary: '', audit: '', verdict: '', keyFiles: [], reviewHistory: [] }
+const context = { mermaid: '', summary: '', audit: '', verdict: '', keyFiles: [], reviewHistory: [], why: [] }
 if (args.context) {
   const raw = readFileSync(args.context, 'utf8')
   if (args.context.endsWith('.json')) Object.assign(context, JSON.parse(raw))
@@ -84,12 +85,15 @@ if (args.context) {
     for (const line of lines) {
       if (/^##+\s/.test(line)) {
         const heading = line.replace(/^#+\s*/, '').trim().toLowerCase()
-        section = heading === 'key files' ? 'keyFiles' : heading === 'review history' ? 'reviewHistory' : ''
+        section = heading === 'key files' ? 'keyFiles'
+          : heading === 'review history' ? 'reviewHistory'
+          : heading === 'why' ? 'why' : ''
       }
       if (!section) { keep.push(line); continue }
       const item = line.match(/^\s*[-*]\s+(.*)$/)
       if (!item) continue
       if (section === 'keyFiles') context.keyFiles.push(item[1].replace(/`/g, '').trim())
+      else if (section === 'why') context.why.push(item[1].replace(/`/g, '').trim())
       else context.reviewHistory.push(item[1].trim())
     }
     context.summary = keep.join('\n').replace(/^#.*\n/, '').trim()
@@ -97,6 +101,7 @@ if (args.context) {
 }
 context.keyFiles = Array.isArray(context.keyFiles) ? context.keyFiles : []
 context.reviewHistory = Array.isArray(context.reviewHistory) ? context.reviewHistory : []
+context.why = Array.isArray(context.why) ? context.why : []
 if (typeof args.audit === 'string') context.audit = args.audit
 
 /* -------------------------------------------------------- categorization */
@@ -226,6 +231,7 @@ function renderFile(file, index) {
     <span class="pill pill-${cat}">${esc(cat)}</span>
     <span class="status">${esc(file.status)}</span>
     <span class="counts"><span class="add">+${file.additions}</span> <span class="del">−${file.deletions}</span></span>
+    ${file.why ? `<span class="why">${esc(file.why)}</span>` : ''}
   </summary>
   <div class="diffwrap"><table class="diff">${body || '<tr><td colspan="4" class="empty">No hunks (mode/rename only).</td></tr>'}</table></div>
 </details>`
@@ -280,9 +286,74 @@ function importance(file, keyFiles) {
   return { score: churn * (CATEGORY_IMPORTANCE[file.cat] ?? 0.5) * surfaceBoost(file.path) * isNew, pinned: false }
 }
 
+/* -------------------------------------------------------------- why lines */
+
+/**
+ * `## Why` entries are `glob | one line`. Group-level globs are the norm — the
+ * whole point is ~10 lines of rationale for a whole PR, not one per file — so
+ * matching picks the *most specific* entry: the one with the most literal path
+ * characters before its first wildcard, tie-broken by overall literal length.
+ */
+function globToRegExp(glob) {
+  // Scanned rather than chained-replaced: expanding `**` to `.*` first would
+  // leave a `*` for the single-star pass to corrupt.
+  let out = ''
+  for (let i = 0; i < glob.length; i += 1) {
+    const c = glob[i]
+    if (c === '*') {
+      if (glob[i + 1] === '*') {
+        if (i + 2 === glob.length && out.endsWith('/')) {
+          out = `${out.slice(0, -1)}(?:/.*)?`   // trailing `/**`: this dir and all below
+          i += 1
+        } else if (glob[i + 2] === '/') {
+          out += '(?:.*/)?'                      // leading `**/`: any depth above
+          i += 2
+        } else {
+          out += '.*'
+          i += 1
+        }
+      } else {
+        out += '[^/]*'
+      }
+      continue
+    }
+    out += /[.+^${}()|[\]\\]/.test(c) ? `\\${c}` : c
+  }
+  return new RegExp(`^${out}$`)
+}
+
+const whyRules = context.why.map((line) => {
+  const cut = line.indexOf('|')
+  if (cut < 0) return null
+  const glob = line.slice(0, cut).trim()
+  const text = line.slice(cut + 1).trim()
+  if (!glob || !text) return null
+  const literalPrefix = glob.split(/[*?]/)[0]
+  return {
+    glob,
+    text,
+    dir: glob.replace(/\/?\*\*.*$/, '').replace(/\/[^/]*\*.*$/, ''),
+    test: globToRegExp(glob),
+    specificity: literalPrefix.length * 1000 + glob.replace(/[*?]/g, '').length,
+  }
+}).filter(Boolean).sort((a, b) => b.specificity - a.specificity)
+
+/** Most specific matching rule, or '' — an unmatched file is silent, not an error. */
+function whyFor(filePath) {
+  const hit = whyRules.find((rule) => rule.test.test(filePath) || filePath === rule.glob)
+  return hit ? hit.text : ''
+}
+
+/** Directory rows borrow the rule whose group they *are*, so the tree carries rationale too. */
+function whyForDir(dirPath) {
+  const hit = whyRules.find((rule) => rule.dir && rule.dir === dirPath)
+  return hit ? hit.text : ''
+}
+
 const files = parseDiff(rawDiff)
 files.forEach((f) => {
   f.cat = categorize(f.path)
+  f.why = whyFor(f.path)
   f.area = areaOf(f.path)
   f.pkg = packageOf(f.path)
   const rank = importance(f, context.keyFiles ?? [])
@@ -292,7 +363,63 @@ files.forEach((f) => {
 // Default order is importance, not path: the reviewer should land on the diff
 // that decides the review, not on whatever sorts first alphabetically.
 files.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
-files.forEach((f, i) => { f.rank = i + 1 })
+files.forEach((f, i) => { f.rank = i + 1; f.index = i })
+
+/* --------------------------------------------------------------- file tree */
+
+/**
+ * Spatial view of the change. Single-child directory chains are collapsed into
+ * one row (`src/server/runtime`), which is what makes a monorepo tree readable
+ * — without it every package is six nested rows of nothing.
+ */
+function buildTree(list) {
+  const root = { name: '', path: '', dirs: new Map(), files: [] }
+  for (const file of list) {
+    const parts = file.path.split('/')
+    let node = root
+    for (const segment of parts.slice(0, -1)) {
+      if (!node.dirs.has(segment)) {
+        node.dirs.set(segment, { name: segment, path: node.path ? `${node.path}/${segment}` : segment, dirs: new Map(), files: [] })
+      }
+      node = node.dirs.get(segment)
+    }
+    node.files.push(file)
+  }
+  const compress = (node) => {
+    for (const [key, child] of node.dirs) {
+      let merged = child
+      while (merged.files.length === 0 && merged.dirs.size === 1) {
+        const only = merged.dirs.values().next().value
+        merged = { name: `${merged.name}/${only.name}`, path: only.path, dirs: only.dirs, files: only.files }
+      }
+      node.dirs.set(key, merged)
+      compress(merged)
+    }
+  }
+  compress(root)
+  return root
+}
+
+function renderTreeNode(node, depth) {
+  const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name))
+  const nodeFiles = node.files.slice().sort((a, b) => a.path.localeCompare(b.path))
+  const dirRows = dirs.map((dir) => {
+    const why = whyForDir(dir.path)
+    return `<details class="tdir" open data-dir="${esc(dir.path)}">
+  <summary style="padding-left:${depth * 11}px"${why ? ` title="${esc(why)}"` : ''}>
+    <span class="chev" aria-hidden="true">▸</span><span class="tname">${esc(dir.name)}</span>
+    <span class="tcount"></span>
+  </summary>
+  ${why ? `<p class="twhy" style="padding-left:${depth * 11 + 20}px">${esc(why)}</p>` : ''}
+  ${renderTreeNode(dir, depth + 1)}
+</details>`
+  }).join('\n')
+  const fileRows = nodeFiles.map((file) => `<a class="tfile" href="#f${file.index}" data-target="f${file.index}" data-cat="${file.cat}" data-add="${file.additions}" data-del="${file.deletions}" style="padding-left:${depth * 11 + 16}px" title="${esc(file.path)}${file.why ? ` — ${esc(file.why)}` : ''}">
+  <span class="tdot tdot-${file.cat}"></span><span class="tname">${esc(file.path.split('/').pop())}</span>
+  <span class="tcount"><span class="add">+${file.additions}</span> <span class="del">−${file.deletions}</span></span>
+</a>`).join('\n')
+  return dirRows + '\n' + fileRows
+}
 
 const totals = {}
 for (const c of CATEGORIES) totals[c.id] = { files: 0, additions: 0, deletions: 0 }
@@ -494,6 +621,31 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
 .empty { padding: 14px; color: var(--muted); font-family: inherit; white-space: normal; }
 .t-kw { color: var(--t-kw); } .t-str { color: var(--t-str); } .t-num { color: var(--t-num); } .t-com { color: var(--t-com); font-style: italic; }
 
+/* --- file tree + panel --- */
+.changes { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 940px) { .changes { grid-template-columns: 1fr; } }
+.tree { padding: 10px 8px 10px 10px; position: sticky; top: 12px; max-height: 82vh; display: flex; flex-direction: column; }
+@media (max-width: 940px) { .tree { position: static; max-height: 340px; } }
+.treehead { display: flex; align-items: center; margin: 0 4px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+.treehead .btn { margin-left: auto; }
+.btn.xs { padding: 3px 9px; font-size: 11px; }
+.treescroll { overflow: auto; min-height: 0; }
+.tdir > summary, .tfile { display: flex; align-items: center; gap: 6px; padding-top: 3px; padding-bottom: 3px; padding-right: 6px; font-size: 12px; border-radius: 6px; cursor: pointer; list-style: none; }
+.tdir > summary::-webkit-details-marker { display: none; }
+.tdir > summary:hover, .tfile:hover { background: var(--panel-2); }
+.tfile { text-decoration: none; color: var(--fg); }
+.tfile.on { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
+.tfile[hidden], .tdir[hidden] { display: none; }
+.tname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tdir > summary .tname { color: var(--muted); }
+.tcount { margin-left: auto; font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap; opacity: 0.85; }
+.tdot { width: 7px; height: 7px; border-radius: 2px; flex: none; }
+.tdot-prod { background: var(--cat-prod); } .tdot-test { background: var(--cat-test); }
+.tdot-docs { background: var(--cat-docs); } .tdot-config { background: var(--cat-config); }
+.tdot-generated { background: var(--cat-generated); }
+.twhy { margin: 0 0 3px; font-size: 11px; color: var(--muted); line-height: 1.45; padding-right: 6px; }
+.why { flex-basis: 100%; margin-left: 26px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+
 /* --- review history --- */
 .norecord { border-color: var(--bad); }
 .norecord strong { color: var(--bad); }
@@ -595,8 +747,16 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
       <button class="btn seg on" id="sort-importance">importance</button><button class="btn seg" id="sort-path">path</button>
     </div>
   </div>
-  <div id="files">
+  <div class="changes">
+    <aside class="tree card" id="tree">
+      <div class="treehead"><span class="muted">files</span><button class="btn xs" id="tree-collapse">collapse</button></div>
+      <div class="treescroll">${renderTreeNode(buildTree(files), 0)}</div>
+    </aside>
+    <div class="panel-col">
+      <div id="files">
 ${files.map(renderFile).join('\n')}
+      </div>
+    </div>
   </div>
 
   <p class="footer">Generated by <code>scripts/present-pr.mjs</code> · ${new Date().toISOString().replace('T', ' ').slice(0, 16)} UTC · diff fetched via <code>gh pr diff ${pr.number}</code>.</p>
@@ -802,9 +962,10 @@ var SANKEY_DATA = ${JSON.stringify(files.map((f, i) => ({
         });
         text.textContent = trunc(n.label, maxChars);
         group.appendChild(text);
-        if (n.kind === 'pkg') {
-          var counts = el('text', { x: n.x + bar + 6, y: n.y + n.h / 2 + (twoLine ? 11 : 3.5) + (twoLine ? 0 : 0), class: 'sk-label sub' });
-          if (!twoLine) counts.setAttribute('x', n.x + bar + 12 + trunc(n.label, maxChars).length * 6.1);
+        // Only the two-line form gets counts: side-by-side on a short bar the
+        // estimated label width collides with them.
+        if (n.kind === 'pkg' && twoLine) {
+          var counts = el('text', { x: n.x + bar + 6, y: n.y + n.h / 2 + 11, class: 'sk-label sub' });
           var addSpan = el('tspan', {}); addSpan.style.fill = 'var(--add-fg)'; addSpan.textContent = '+' + n.add;
           var delSpan = el('tspan', {}); delSpan.style.fill = 'var(--del-fg)'; delSpan.textContent = ' −' + n.del;
           var fileSpan = el('tspan', {}); fileSpan.textContent = '  ' + n.files + 'f';
@@ -829,11 +990,53 @@ var SANKEY_DATA = ${JSON.stringify(files.map((f, i) => ({
     }
   }
 
+  var treeFiles = Array.prototype.slice.call(document.querySelectorAll('.tfile'));
+  var treeDirs = Array.prototype.slice.call(document.querySelectorAll('.tdir'));
+
   function openFile(id) {
     var target = document.getElementById(id);
     if (!target || target.hidden) return;
     target.open = true;
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    treeFiles.forEach(function (row) { row.classList.toggle('on', row.dataset.target === id); });
+  }
+
+  /* The tree is the spatial view and the panel keeps importance order, so the
+     link between them is by id, never by position. Counts roll up from whatever
+     is currently visible — a filtered tree that still showed totals would lie. */
+  function syncTree() {
+    var on = {};
+    boxes.forEach(function (b) { on[b.dataset.cat] = b.checked; });
+    treeFiles.forEach(function (row) { row.hidden = !on[row.dataset.cat]; });
+    for (var i = treeDirs.length - 1; i >= 0; i -= 1) {
+      var dir = treeDirs[i];
+      var rows = dir.querySelectorAll('.tfile');
+      var files = 0, add = 0, del = 0;
+      for (var j = 0; j < rows.length; j += 1) {
+        if (rows[j].hidden) continue;
+        files += 1;
+        add += +rows[j].dataset.add;
+        del += +rows[j].dataset.del;
+      }
+      dir.hidden = files === 0;
+      var count = dir.querySelector(':scope > summary > .tcount');
+      if (count) count.innerHTML = files + '  <span class="add">+' + add + '</span> <span class="del">−' + del + '</span>';
+    }
+  }
+
+  treeFiles.forEach(function (row) {
+    row.addEventListener('click', function (event) {
+      event.preventDefault();
+      openFile(row.dataset.target);
+    });
+  });
+  var treeCollapse = document.getElementById('tree-collapse');
+  if (treeCollapse) {
+    treeCollapse.addEventListener('click', function () {
+      var anyOpen = treeDirs.some(function (dir) { return dir.open; });
+      treeDirs.forEach(function (dir) { dir.open = !anyOpen; });
+      treeCollapse.textContent = anyOpen ? 'expand' : 'collapse';
+    });
   }
 
   if (svg) {
@@ -884,6 +1087,7 @@ var SANKEY_DATA = ${JSON.stringify(files.map((f, i) => ({
       if (show) n += 1;
     });
     summary.textContent = n + ' of ' + fileEls.length + ' files shown';
+    syncTree();
     render();
   }
   boxes.forEach(function (b) { b.addEventListener('change', apply); });

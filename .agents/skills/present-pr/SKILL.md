@@ -1,6 +1,6 @@
 ---
 name: present-pr
-description: Present a PR to the owner for validation as one self-contained artifact — a context diagram, a review-history audit trail, an area→package→file sankey, and importance-ordered diffs. Use as the final step of every implementation PR, before requesting owner validation.
+description: Present a PR to the owner for validation as one self-contained artifact — a context diagram, a review-history audit trail, an area→package→file sankey, a file tree, and importance-ordered diffs each carrying a one-line rationale. Use as the final step of every implementation PR, before requesting owner validation.
 ---
 
 # Present PR
@@ -16,7 +16,9 @@ The review flow it encodes, in the owner's own order:
 2. **What areas/packages are touched** — `packages/` vs `apps/` vs the rest.
 3. **Per-package scope check** — a PR reaching into a package it has no business in is
    visible at a glance, with that package's ±line counts on the node.
-4. **Most important diffs first** — not alphabetical, not whatever GitHub shows first.
+4. **Why is each file in this PR at all** — one line per file or group, readable by
+   skimming headers without opening a single diff.
+5. **Most important diffs first** — not alphabetical, not whatever GitHub shows first.
 
 A GitHub PR page answers none of these: it opens on a path-sorted file list with
 lockfiles and snapshots competing with the one file that decides the review.
@@ -63,7 +65,30 @@ already reviewed, and state the open questions.
    importance heuristic. Use it whenever you know which two or three diffs decide the
    review — you almost always do.
 
-3. **Fill the review history — this is mandatory, not optional.** Add a
+3. **Write the `## Why` block — required, and deliberately cheap.** One line per file
+   *group*, matched by glob, budget **~10-15 lines for the whole PR**:
+
+   ~~~markdown
+   ## Why
+
+   - packages/boring-sandbox/src/providers/bwrap/** | emit --ro-bind-try per protected prefix after the writable mount
+   - packages/boring-bash/src/server/routes/** | 403 mutations of protected paths at the HTTP edge
+   - packages/agent/src/server/runtime/userFilesystemBinding.ts | intersect lexical path with realpath so symlinks cannot alias around the policy
+   - **/__tests__/** | lock the deny/allow matrix
+   ~~~
+
+   **Group-first is the rule, not a shortcut.** Reach for a per-file line only where the
+   file carries a mechanism a group line cannot state — in practice, roughly the same
+   files as `## Key files`. Globs support `*`, `**/` and a trailing `/**`; the *most
+   specific* match wins, so a per-file line always beats the group line covering it.
+   Files matching nothing render nothing — that is fine, not an error, and cheaper than
+   padding the block with filler.
+
+   Each line answers "why is this file in this PR", in one clause. Not what the diff
+   does line-by-line (the diff is right there), not a summary of the PR (section 1 has
+   that).
+
+4. **Fill the review history — this is mandatory, not optional.** Add a
    `## Review history` block to the same sidecar, one bullet per event, fields separated
    by `|`:
 
@@ -112,7 +137,7 @@ already reviewed, and state the open questions.
    Omitting the block entirely does not hide the gap: the artifact renders a red
    "No review history recorded — treat as unreviewed" panel in its place.
 
-4. **Generate the page:**
+5. **Generate the page:**
 
    ```bash
    node scripts/present-pr.mjs <pr-number> \
@@ -126,7 +151,7 @@ already reviewed, and state the open questions.
    file with no external requests — safe for the artifact viewer's strict CSP. Mermaid is
    emitted as `<pre class="mermaid">`, which artifacts render natively.
 
-5. **Publish it as an artifact** and hand the owner the URL with a two-line message: the
+6. **Publish it as an artifact** and hand the owner the URL with a two-line message: the
    decision you want, and the open questions.
 
 ## What the page gives the reviewer
@@ -137,7 +162,12 @@ already reviewed, and state the open questions.
   verdict, who ran it, and a 1-line finding summary with resolution state. A headline badge
   answers "thermo review: recorded / NOT recorded" at a glance. Absent history renders as an
   explicit warning, never as an omitted section.
-- **Section 3 — changes.**
+- **Section 3 — changes.** A file **tree** on the left (directories nested with
+  single-child chains collapsed, counts rolled up, a category dot per file, group
+  rationale on directory rows) linked to the diff panel on the right: clicking a tree row
+  scrolls to and expands that diff. The tree is the spatial view; the panel keeps
+  importance order.
+  Within that:
   - **Sankey navigation** (inline SVG, hand-rolled, no libraries): area → package → file.
     Ribbon width is changed lines, colour is the dominant file category, node bars split
     green/red by additions/deletions. Package nodes carry their own ±counts. Hovering
@@ -148,6 +178,9 @@ already reviewed, and state the open questions.
     per-category counts. Generated files start off.
   - **Diffs in importance order.** The top file is marked `start here` and the top two are
     pre-expanded; every header shows its rank. A `path` toggle restores tree order.
+  - **One line of rationale inside every file header**, visible while the diff is
+    collapsed — skimming the headers is skimming the rationale. The same line is the tree
+    row's hover title.
 
 ## Importance heuristic
 
