@@ -165,3 +165,20 @@ test('uses optional read-only binds only for resolver runtime dirs', () => {
     expect(findTupleIndex(args, ['--ro-bind-try', dir, dir])).toBeGreaterThanOrEqual(0)
   }
 })
+
+test('emits readonly binds for protected paths after the writable workspace bind', () => {
+  const args = buildBwrapArgs('/tmp/workspace', { readonlyPaths: ['.agents'] })
+  const workspaceBind = findTupleIndex(args, ['--bind', '/tmp/workspace', '/workspace'])
+  const roBind = findTupleIndex(args, ['--ro-bind-try', '/tmp/workspace/.agents', '/workspace/.agents'])
+  expect(workspaceBind).toBeGreaterThanOrEqual(0)
+  expect(roBind).toBeGreaterThan(workspaceBind)
+})
+
+test('normalizes protected paths and rejects traversal', () => {
+  expect(findTupleIndex(
+    buildBwrapArgs('/tmp/workspace/', { readonlyPaths: ['./nested/dir/'] }),
+    ['--ro-bind-try', '/tmp/workspace/nested/dir', '/workspace/nested/dir'],
+  )).toBeGreaterThanOrEqual(0)
+  expect(() => buildBwrapArgs('/tmp/workspace', { readonlyPaths: ['../escape'] })).toThrow('traversal')
+  expect(() => buildBwrapArgs('/tmp/workspace', { readonlyPaths: ['/abs'] })).toThrow('workspace-relative')
+})

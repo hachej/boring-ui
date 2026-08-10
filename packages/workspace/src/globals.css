@@ -383,6 +383,127 @@
   background-color: oklch(from var(--foreground) l c h / 0.3);
 }
 
+/* The hover-action strip and the status slot it hides behind are the SAME
+   width, derived from one slot count set by the row and one slot size set
+   here per breakpoint. The previous hardcoded ladders had already drifted
+   (136px for three 44px slots), which is exactly what one source prevents. */
+.app-left-session-row {
+  --app-session-action-slot: 28px;
+}
+
+/* A row action IS its slot. One number — `--app-session-action-slot` above,
+   which `pointer: coarse` moves 28px → 44px — sizes the button and reserves
+   its place, so the two can never disagree.
+
+   They used to. The buttons carried a Tailwind `size-11 sm:size-6` pair, which
+   keys to VIEWPORT WIDTH, while the slot keys to POINTER TYPE. The two agree at
+   1440-fine and 390-coarse — the exact pair the review harness sampled — and
+   nowhere else. Measured: at 500 fine three 44px buttons plus their gaps came
+   to 136px of content in an 84px strip, spilling ~52px back over the chat
+   title, and a click 5px inside the strip fired "quick chat" from outside its
+   own slot; at 834 coarse the "..." trigger sat at 24px in a 44px slot, and all
+   20 leftover pixels fell through to the row button and switched chats.
+
+   Reading the slot rather than restating it also closes the quieter version of
+   the same hole, which predates all of that: a 24px button in a 28px slot left
+   4px per slot owned by nothing, and a click there switched chats. Buttons that
+   are exactly one slot wide tile the strip with no seams. */
+/* Width is the slot. HEIGHT is the whole row, deliberately not the slot.
+
+   Round 6 unified the WIDTH of an action with the width the strip reserves,
+   and the same split immediately turned up one axis over: the slot grew on
+   `(pointer: coarse)` while `.app-left-session-row` grew to 44px on
+   `(max-width: 767px), (hover: none)`. A desktop window dragged under 768px
+   matches the second and not the first, so the row stood 44px tall around a
+   28px button and left 16px of strip — 8px above, 8px below — owned by
+   nothing. Measured at 760 fine: a vertical sweep down the "..." column found
+   15px that resolved to the ROW button, and a click 2px inside the strip
+   switched chats instead of opening the menu.
+
+   The conditions are unified below. This rule closes the hole structurally as
+   well: an action fills the strip it lives in, so a future change to the row
+   height cannot reopen a vertical seam the way a future change to a
+   breakpoint reopened this one. The strip is `inset-y-0`, so 100% IS the row. */
+.app-left-session-secondary-action {
+  width: var(--app-session-action-slot, 28px);
+  height: 100%;
+}
+
+.app-left-secondary-action {
+  width: 24px;
+  height: 24px;
+}
+
+.app-left-filter-input {
+  height: 24px;
+}
+
+.app-left-session-actions {
+  width: calc(var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px));
+  /* The strip is WIDER than its icons (it reserves whole slots and aligns them
+     right), so its container must not eat pointer events in the gap — that
+     gap is 36px of the row on a coarse pointer, and taps there hit nothing.
+     The buttons keep their own hit area, so a click still cannot fall through
+     to the row button underneath. */
+  pointer-events: none;
+  /* No gap, at any pointer: each button is exactly one slot, so slot-sized
+     buttons ARE the spacing. A gap pushes the leftmost button out of the
+     reserved strip and back over the row button, and opens a sliver inside the
+     strip that belongs to no button at all. */
+  gap: 0;
+}
+
+.app-left-session-actions > * {
+  pointer-events: auto;
+}
+
+/* EVERY variant reserves the action strip's width, not just the empty one.
+   The actions are absolutely positioned and have no background, so whatever
+   the trailing slot fails to reserve is drawn underneath them: the title, and
+   the age label itself. Reserving only on "empty" reserved almost nowhere,
+   because any session with a timestamp resolves to "marker".
+   min-width, not width, so the ceilings below can still clamp content. */
+.app-left-session-trailing {
+  min-width: calc(var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px));
+
+  /* Every variant ceiling below is capped by what the ROW can actually spare,
+     because a fixed ceiling knows nothing about the row it is in.
+
+     The badge ceiling was a flat 88px. On a coarse pointer the strip stops
+     hiding behind the status slot and reserves its width as a MARGIN beside
+     it instead (see the `(hover: none)` block), so a nested row carrying an
+     attention badge and three actions spent 88px + 132px of a ~228px content
+     box before the title got a pixel. Measured at 834 coarse: `titleW = 0`.
+     The row rendered as a bare "needs you" pill and the operator could not
+     tell WHICH chat needed them — the one thing the badge exists to say.
+
+     So the ceiling is expressed against the row: whatever is left after the
+     title floor and the strip's own reservation. `max()` keeps a genuinely
+     cramped row from erasing the badge instead of the title — at 20px the
+     pill degrades to a coloured dot, which still carries the tone, and the
+     title keeps a readable stub. The floor is 7rem because the leading icon
+     and the two gaps eat ~36px of it before a glyph is drawn. */
+  --app-session-trailing-cap: max(1.25rem, calc(100% - 7rem - var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px)));
+  max-width: var(--app-session-trailing-cap);
+}
+
+/* Ceilings layered on top. min-width wins where they collide, because
+   overlapping the actions is never the better trade. */
+.app-left-session-trailing[data-trailing="badge"] {
+  width: 88px;
+}
+
+.app-left-session-trailing[data-trailing="owner"] {
+  width: auto;
+  max-width: min(7rem, var(--app-session-trailing-cap));
+  gap: 0.25rem;
+}
+
+.app-left-session-trailing[data-trailing="marker"],
+.app-left-session-trailing[data-trailing="empty"] {
+  width: auto;
+}
+
 /* App-left chrome stays compact for fine pointers while meeting 44px touch
    targets and keeping secondary actions discoverable on touch-only devices. */
 @media (pointer: coarse) {
@@ -391,13 +512,11 @@
   }
 
   .app-left-primary-action,
-  .app-left-new-chat-action,
-  .app-left-session-row {
+  .app-left-new-chat-action {
     height: 44px;
   }
 
   .app-left-secondary-action,
-  .app-left-session-secondary-action,
   .app-left-rail-action,
   .app-left-pane-toggle,
   [data-boring-workspace-part="app-left-footer"] button,
@@ -406,19 +525,69 @@
     height: 44px;
   }
 
-  .app-left-session-trailing[data-action-count="1"][data-has-status="false"],
-  .app-left-session-actions[data-action-count="1"] {
+  .app-left-filter-input {
+    height: 44px;
+  }
+
+}
+
+/* ONE condition sizes a session row and the actions inside it.
+
+   The row height and the action slot are two halves of the same decision — a
+   28px action in a 44px row leaves a seam, a 44px action in a 30px row spills
+   out of it — so they are declared together, under a single condition, in a
+   single block. They were not: the height keyed to `(max-width: 767px),
+   (hover: none)` and the slot to `(pointer: coarse)`, which agree on a phone
+   and on a desktop and disagree on a narrow desktop window and on a tablet.
+
+   The condition is the UNION of every reason the row grows, not just the
+   touch one. Coarse pointer is the honest signal for a touch TARGET, but the
+   row also grows at narrow widths for layout reasons that have nothing to do
+   with the pointer, and whenever it does the slot has to follow or the seam
+   comes back. Sizing the slot up on a narrow fine-pointer window costs a
+   mouse user nothing; leaving it behind costs them a misdirected click.
+   `.app-left-empty-start` below is width-gated as well as pointer-gated for
+   exactly this reason. */
+@media (max-width: 767px), (hover: none), (pointer: coarse) {
+  .app-left-session-row {
+    height: 44px;
+    --app-session-action-slot: 44px;
+  }
+
+  /* The multi-project tree rows carried the same defect a round earlier than
+     anyone looked at them: two 24px actions hidden behind `opacity: 0`, with
+     no touch branch anywhere. Opacity does not disable hit testing, so on a
+     phone they were invisible AND live — and the "N waiting" count badge is
+     absolutely positioned across exactly their hit area, so a tap on the one
+     thing the row makes visible fired "New chat" or opened the menu.
+
+     Same condition, same 44px, same "the badge sits BESIDE the actions once
+     both are permanently visible" rule the session row uses. */
+  .app-left-project-row {
+    min-height: 44px;
+  }
+
+  .app-left-project-actions {
+    opacity: 1;
+  }
+
+  .app-left-project-actions > button {
     width: 44px;
+    height: 44px;
   }
 
-  .app-left-session-trailing[data-action-count="2"][data-has-status="false"],
-  .app-left-session-actions[data-action-count="2"] {
-    width: 90px;
+  .app-left-project-status-slot {
+    width: auto;
+    height: auto;
+    gap: 0.25rem;
   }
 
-  .app-left-session-trailing[data-action-count="3"][data-has-status="false"],
-  .app-left-session-actions[data-action-count="3"] {
-    width: 136px;
+  .app-left-project-status {
+    position: static;
+    /* It stops being a full-slot overlay, so it stops claiming the actions'
+       width and stops fading — there is no hover here to fade it back. */
+    inset: auto;
+    opacity: 1;
   }
 }
 
@@ -482,6 +651,38 @@
   }
 
   /*
+   * The top bar is the only always-visible chrome on a phone, and both of its
+   * controls sit under the 44px minimum on a mouse (search pill 28px, new-chat
+   * icon ~32px). They grow to 44px on touch; the bar itself is `min-h-11`
+   * (44px) with no block padding, so the taller targets fill the existing row
+   * rather than reflowing the layout around it. The bar does measure 45px on
+   * touch, not 44: its 1px bottom border sits outside the 44px content box.
+   * That 1px is chrome, not padding, so the touch target is honestly 44px and
+   * the row is left to absorb the border instead of shrinking the target.
+   */
+  .topbar-search-action,
+  .topbar-icon-action {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /*
+   * The mobile bars' pill buttons are the only way between chat, sessions and
+   * workspace. They grow from 40px to the 44px minimum; the bar drops its
+   * block padding in exchange so the row stays ~44px plus the status-bar inset
+   * rather than growing to 60px.
+   */
+  [data-boring-workspace-part="mobile-chat-bar"],
+  [data-boring-workspace-part="mobile-workspace-bar"] {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: 0;
+  }
+
+  .mobile-shell-bar-action {
+    min-height: 44px;
+  }
+
+  /*
    * Management overlay headers (Skills, Plugins, plugin-provided tools) keep
    * 24px icon actions on a mouse. On touch every header action grows to the
    * 44px minimum from the shared surface, so consumers don't each override it.
@@ -492,45 +693,123 @@
   }
 }
 
-.app-left-agent-row:hover .app-left-agent-actions,
-.app-left-agent-row:focus-within .app-left-agent-actions {
-  pointer-events: auto;
-  width: auto;
-  opacity: 1;
-}
-
-.app-left-agent-row:hover [data-boring-agent-session-count="true"],
-.app-left-agent-row:focus-within [data-boring-agent-session-count="true"] {
-  display: none;
-}
-
-@media (max-width: 767px), (hover: none) {
-  .app-left-agent-row,
-  .app-left-session-row {
-    height: 44px;
+/* Same union as the session-row block above, for the same reason: the card's
+   height and the size of the actions inside it are one decision. This block
+   used to be `(max-width: 767px), (hover: none)` while a SECOND
+   `(pointer: coarse)` block further down re-revealed the very same
+   `.app-left-agent-card-actions`. Two blocks, two conditions, one property —
+   which is the shape that let a card grow without its actions following. */
+@media (max-width: 767px), (hover: none), (pointer: coarse) {
+  /*
+   * Agent cards carry three hover-revealed actions on a mouse. Touch has no
+   * hover, so every card action is always visible and grows to 44px.
+   */
+  .app-left-agent-card {
+    min-height: 44px;
   }
 
-  .app-left-agent-actions {
-    position: static;
-    z-index: auto;
-    pointer-events: auto;
+  .app-left-agent-card-actions {
     width: auto;
     opacity: 1;
   }
 
-  .app-left-agent-row [data-boring-agent-session-count="true"] {
-    display: inline !important;
+  .app-left-agent-card-actions > button,
+  .app-left-agent-card-create {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* A control that MOVED INTO A MENU is still a control (issue #1160).
+     Consolidating the three placement icons into one "..." trigger kept the
+     trigger at 44px and left the actions themselves at the 32px desktop menu
+     density — the touch target did not disappear, it just stopped being in
+     the pane where every rule and every gate was looking. The app-left menus
+     carry a stable part hook so this rule, and the review harness, can both
+     reach past the portal. */
+  [data-boring-workspace-part="app-left-menu"] [role="menuitem"] {
+    min-height: 44px;
   }
 }
 
 @media (hover: none) {
+  /*
+   * `hover: none` means the primary input cannot hover — a touch device. It
+   * does not prove there is no keyboard (a tablet may have one attached), but
+   * it is the same signal `.command-palette-footer-desktop-hints` already uses
+   * to drop desktop shortcut hints, and it beats a width breakpoint because a
+   * touch tablet at 900px is still a device where a ⌘K badge is mostly noise.
+   */
+  .topbar-desktop-hint {
+    display: none;
+  }
+
+  /* Both new-chat variants hide their split / quick-chat shortcuts behind
+     hover, and reveal them on focus-within as the keyboard path. Touch has
+     neither, so on a hover-less pointer the two shortcuts simply did not
+     exist. The fleet variant additionally parks itself at
+     `pointer-events: none` while collapsed, so it needs the hit area back as
+     well as the width. */
   .app-left-new-chat-secondary {
     width: auto;
     opacity: 1;
+    pointer-events: auto;
   }
 
   .app-left-session-actions {
-    pointer-events: auto;
     opacity: 1;
+  }
+
+  /* With no hover there is no fade: the actions are permanently visible AND
+     the status slot never goes transparent, so reserving space UNDER them is
+     not enough — the age would be drawn beneath the icons. Here the slot sits
+     beside the strip instead. */
+  .app-left-session-trailing {
+    min-width: 0;
+    margin-right: calc(var(--app-session-action-slots, 0) * var(--app-session-action-slot, 28px));
+    /* The status never hides behind the strip here (it sits beside it), so
+       fading it out on focus only makes the age/badge vanish when a touch
+       user focuses the "..." trigger. */
+    opacity: 1;
+  }
+}
+
+/* Nested per-Agent chat disclosure: a brief settle so expand/collapse gives an
+   unmistakable response without a heavyweight height animation. */
+@keyframes boring-app-left-disclose {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+[data-boring-workspace-part="app-left-agent-sessions"] {
+  animation: boring-app-left-disclose 140ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-boring-workspace-part="app-left-agent-sessions"] {
+    animation: none;
+  }
+}
+
+/* Touch devices have no hover to gate the per-Agent secondary actions, so the
+   whole cluster stays visible: "+", the "..." options trigger that holds the
+   placement variants, and Settings. That rule now lives in the unified
+   agent-card block above, next to the sizes it has to agree with. */
+
+/* "Start one" is the primary action of an empty Agent — it must be a real
+   touch target, not a 17px text link. Width-gated as well as pointer-gated so
+   narrow fine-pointer emulation gets it too; 48px keeps the measured rect
+   above the 44px gate even when an in-flight transform scales it slightly. */
+@media (pointer: coarse), (max-width: 500px) {
+  .app-left-empty-start {
+    display: inline-flex;
+    min-height: 48px;
+    min-width: 48px;
+    align-items: center;
+    justify-content: center;
+    padding-inline: 8px;
   }
 }

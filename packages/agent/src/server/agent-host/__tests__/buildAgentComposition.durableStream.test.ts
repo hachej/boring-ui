@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DURABLE_STREAM_ENV_FLAG,
+  DurableStreamUnavailableError,
   EVENT_STORE_FILE_NAME,
   isDurableStreamEnabled,
   openDurableEventStore,
@@ -70,12 +71,18 @@ describe('openDurableEventStore', () => {
     expect(existsSync(join(hostStorageRoot, EVENT_STORE_FILE_NAME))).toBe(true)
   })
 
-  it('fails closed with EVENT_STORE_OPEN_FAILED when neither sessionRoot nor hostStorageRoot resolve — never falls back to a sandbox/guest path', () => {
+  it('fails LOUDLY with DURABLE_STREAM_UNAVAILABLE when neither sessionRoot nor hostStorageRoot resolve — never falls back to a sandbox/guest path or to in-memory', () => {
     const capture = vi.fn()
 
-    const opened = openDurableEventStore({ telemetry: { capture } })
+    let thrown: unknown
+    try {
+      openDurableEventStore({ telemetry: { capture } })
+    } catch (error) {
+      thrown = error
+    }
 
-    expect(opened).toBeUndefined()
+    expect(thrown).toBeInstanceOf(DurableStreamUnavailableError)
+    expect((thrown as DurableStreamUnavailableError).code).toBe(ErrorCode.enum.DURABLE_STREAM_UNAVAILABLE)
     expect(capture).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'agent.event-store.open-failed',
@@ -84,16 +91,25 @@ describe('openDurableEventStore', () => {
     )
   })
 
-  it('reports EVENT_STORE_OPEN_FAILED via telemetry and returns undefined instead of throwing when the resolved path is unusable', () => {
+  it('throws DURABLE_STREAM_UNAVAILABLE carrying the underlying cause when the resolved path is unusable (flag on = boot must abort, no silent in-memory fallback)', () => {
     // A path segment that is actually a file (not a directory) cannot be mkdir'd into.
     const blockerPath = join(dir, 'blocker-file')
     writeFileSync(blockerPath, 'not a directory')
     const unusableRoot = join(blockerPath, 'nested')
     const capture = vi.fn()
 
-    const opened = openDurableEventStore({ hostStorageRoot: unusableRoot, telemetry: { capture } })
+    let thrown: unknown
+    try {
+      openDurableEventStore({ hostStorageRoot: unusableRoot, telemetry: { capture } })
+    } catch (error) {
+      thrown = error
+    }
 
-    expect(opened).toBeUndefined()
+    expect(thrown).toBeInstanceOf(DurableStreamUnavailableError)
+    const error = thrown as DurableStreamUnavailableError
+    expect(error.code).toBe(ErrorCode.enum.DURABLE_STREAM_UNAVAILABLE)
+    expect(error.message).toContain(join(unusableRoot, EVENT_STORE_FILE_NAME))
+    expect(error.cause).toBeDefined()
     expect(capture).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'agent.event-store.open-failed',

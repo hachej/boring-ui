@@ -1,5 +1,46 @@
 import type { WorkspaceRuntimeContext } from './runtime'
 
+export type RuntimeFilesystemCapability =
+  | 'read'
+  | 'write'
+  | 'create-child'
+  | 'delete'
+  | 'move-from'
+
+export const READONLY_FILESYSTEM_MUTATION_CODE = 'readonly' as const
+export const RUNTIME_FILESYSTEM_CAPABILITIES = Object.freeze([
+  'read',
+  'write',
+  'create-child',
+  'delete',
+  'move-from',
+] as const satisfies readonly RuntimeFilesystemCapability[])
+
+export class ReadonlyFilesystemMutationError extends Error {
+  readonly code = READONLY_FILESYSTEM_MUTATION_CODE
+  readonly statusCode = 403 as const
+  readonly filesystem: string
+  readonly operation: RuntimeFilesystemCapability
+
+  constructor(filesystem: string, operation: RuntimeFilesystemCapability) {
+    super(`${filesystem} binding is readonly`)
+    this.name = 'ReadonlyFilesystemMutationError'
+    this.filesystem = filesystem
+    this.operation = operation
+  }
+}
+
+export function isReadonlyFilesystemMutationError(
+  value: unknown,
+): value is ReadonlyFilesystemMutationError {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Record<string, unknown>
+  return candidate.code === READONLY_FILESYSTEM_MUTATION_CODE
+    && candidate.statusCode === 403
+    && typeof candidate.filesystem === 'string'
+    && RUNTIME_FILESYSTEM_CAPABILITIES.includes(candidate.operation as RuntimeFilesystemCapability)
+}
+
 export interface Workspace {
   /** Agent-visible workspace root; must match runtimeContext.runtimeCwd. */
   readonly root: string

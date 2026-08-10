@@ -48,7 +48,10 @@ export function ChatLeftOverlay({ overlay, hidden }: { overlay: ReactNode; hidde
       data-boring-state={open ? "open" : "closed"}
       aria-hidden={hidden}
       className={cn(
-        "absolute inset-0 z-40 flex bg-background",
+        // Above dockview sashes (z-index 999) and pane chrome so nothing from
+        // the chat stage shows through or stays draggable while the overlay
+        // is open. The parent stage `isolate`s, so this stays local.
+        "absolute inset-0 z-[1000] flex bg-background",
         "transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
         open ? "translate-x-0 opacity-100" : "-translate-x-1 opacity-0",
       )}
