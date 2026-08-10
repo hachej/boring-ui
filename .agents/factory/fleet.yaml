@@ -7,20 +7,23 @@
 #
 # Skill digests are authority pins, refreshed via `pnpm check:skill-digests`
 # / `scripts/refresh-skill-digests.mjs --write` (gh-1106 slice 1, #1109).
+# A stale pin silently DROPS that seat and keeps the fleet — repin in the same
+# commit as any .agents/skills/<name>/SKILL.md edit.
+#
 # Model per seat is NOT set here — it resolves at boot from policy.yaml's
-# `models.seats` tier through the MODEL-CARD priority table.
+# `models.seats` tier through the MODEL-CARD priority table. Per-session and
+# per-automation model choice happens at dispatch (#1143), never here.
+#
+# Roster: THREE seats, owner-ratified 2026-08-10 (gh-1187 S0). A seat is
+# justified by capability posture, never by model choice. Deferred,
+# grow-on-demand seats (`concierge`, `reviewer`, `auditor`, `beadle`, any
+# `worker-*` variant) keep their persona packages under .agents/personas/ but
+# hold no seat here until a real lane pulls them; adding one back is an entry
+# in this list.
 
 seats:
-  - seat: concierge
-    agentTypeId: boring-concierge
-    skills:
-      - name: feedback
-        digest: sha256:707ae8fd12ace225be7d6de8c345c7d73cf9aa07763f138419f6d6b26b92a9af
-      - name: triage
-        digest: sha256:c9931f981b0d2d55415026c25bc27dec3e24fd310bee405360eba57d6cf58766
-      - name: handoff
-        digest: sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17
-
+  # Continuous background classification of incoming work. Runs on a cadence,
+  # never in conversation.
   - seat: triage
     agentTypeId: boring-triage
     skills:
@@ -29,25 +32,26 @@ seats:
       - name: handoff
         digest: sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17
 
-  - seat: steward
-    agentTypeId: boring-steward
+  # The owner's standing counterpart: pinned, conversational, full authority.
+  # Dispatches work and reads bead END-STATES only.
+  - seat: orchestrator
+    agentTypeId: boring-orchestrator
     skills:
       - name: plan
         digest: sha256:c348aabea4210bba37068e20cffc0a0cb600dcde8e21f3826ee3ee36cf1c0108
+      - name: feedback
+        digest: sha256:707ae8fd12ace225be7d6de8c345c7d73cf9aa07763f138419f6d6b26b92a9af
       - name: handoff
         digest: sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17
 
+  # The single implementation seat. Claims a bead, works it in a lane worktree,
+  # spawns its own fresh-context review subagents at gate time (`fresh-eyes`),
+  # hands off.
   - seat: worker
     agentTypeId: boring-worker
     skills:
       - name: exec
         digest: sha256:ca46d42f7cd5cd918a9bd7d2105078b895142b978062949594b8da9b6642c2a9
-      - name: handoff
-        digest: sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17
-
-  - seat: reviewer
-    agentTypeId: boring-reviewer
-    skills:
       - name: fresh-eyes
         digest: sha256:58f6cfb66cc2a31238e5c033f42b69b7fbd6089d06c9f6d5108caa7035e5f565
       - name: handoff
