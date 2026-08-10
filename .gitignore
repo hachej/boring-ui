@@ -116,6 +116,8 @@ packages/workspace/src/plugins/eval-*/
 !/.agents/skills/grill-for-unknowns/**
 !/.agents/skills/handoff/
 !/.agents/skills/handoff/**
+!/.agents/skills/owner-gate/
+!/.agents/skills/owner-gate/**
 !/.agents/skills/plan/
 !/.agents/skills/plan/**
 !/.agents/skills/present-pr/
