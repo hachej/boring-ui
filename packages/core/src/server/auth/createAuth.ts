@@ -18,6 +18,7 @@ import {
 import { createPostSignupHook } from './postSignupHook.js'
 import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
+import type { ValidatedSignupAgentDefaults } from '../signupAgentDefaults.js'
 
 const MIN_ZXCVBN_SCORE = 2
 
@@ -58,6 +59,8 @@ function buildMailTransport(config: CoreConfig): MailTransport | null {
 
 export interface CreateAuthOptions {
   workspaceStore?: WorkspaceStore
+  /** Boot-compiled, fleet-validated signup map from the full server composer. */
+  signupAgentDefaults?: ValidatedSignupAgentDefaults
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
   /** Telemetry sink for auth.signed_up / auth.session_started (defaults to noop). */
   telemetry?: TelemetrySink
@@ -139,8 +142,9 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
     : []
 
   const postSignupHook = opts?.workspaceStore
-    ? createPostSignupHook({
+      ? createPostSignupHook({
         config,
+        signupAgentDefaults: opts.signupAgentDefaults,
         workspaceStore: opts.workspaceStore,
         transport,
         logger: opts.logger,

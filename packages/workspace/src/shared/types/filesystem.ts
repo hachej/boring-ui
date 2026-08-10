@@ -1,7 +1,6 @@
-export type FilesystemId = "user" | "company_context" | (string & {})
+export type FilesystemId = "user" | (string & {})
 
 export const USER_FILESYSTEM_ID = "user" satisfies FilesystemId
-export const COMPANY_CONTEXT_FILESYSTEM_ID = "company_context" satisfies FilesystemId
 
 export interface UiFileResource {
   readonly filesystem: FilesystemId

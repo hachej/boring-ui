@@ -103,6 +103,11 @@ import {
   type Database,
 } from '../../server/db/index.js'
 import { loadConfig, type LoadConfigOptions } from '../../server/config/index.js'
+import {
+  compileSignupAgentDefaults,
+  TRUSTED_SIGNUP_HOSTNAME_HEADER,
+  type ValidatedSignupAgentDefaults,
+} from '../../server/signupAgentDefaults.js'
 import { resolveWorkspaceDefaultAgentTypeId } from '../../server/defaultAgentType.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
@@ -802,6 +807,9 @@ async function registerAuthProxy(
 
     const authHeaders = toHeaders(request.headers)
     authHeaders.delete(REQUEST_SCOPE_WORKSPACE_HEADER)
+    // This is a private in-process handoff, not caller-controlled config. Always
+    // replace any presented value with Fastify's trust-proxy-aware hostname.
+    authHeaders.set(TRUSTED_SIGNUP_HOSTNAME_HEADER, request.hostname)
     if (request.requestScope) {
       authHeaders.set(REQUEST_SCOPE_WORKSPACE_HEADER, encodeURIComponent(request.requestScope.workspaceId))
     }
@@ -926,7 +934,12 @@ export async function registerFrontendFallback(
   })
 }
 
-async function createCoreRuntime(config: CoreConfig, customTelemetry?: TelemetrySink, requestScopeResolver?: CoreRequestScopeResolver): Promise<{
+async function createCoreRuntime(
+  config: CoreConfig,
+  signupAgentDefaults: ValidatedSignupAgentDefaults,
+  customTelemetry?: TelemetrySink,
+  requestScopeResolver?: CoreRequestScopeResolver,
+): Promise<{
   app: CoreWorkspaceAgentServer
   sql: postgres.Sql
   db: Database
@@ -957,6 +970,7 @@ async function createCoreRuntime(config: CoreConfig, customTelemetry?: Telemetry
   app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
   const auth = createAuth(config, db, {
     workspaceStore,
+    signupAgentDefaults,
     logger: app.log,
     telemetry,
     disableDefaultWorkspaceCreation: requestScopeResolver !== undefined,
@@ -1012,17 +1026,7 @@ export async function createCoreWorkspaceAgentServer(
   }
   assertCoreStaticPluginEntries(options.plugins)
 
-  const config = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
-  const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(config, options.telemetry, options.requestScopeResolver)
-  const appRoot = options.appRoot
-  const serveFrontend =
-    options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
-  const pluginWorkspaceRoot = process.cwd()
-  const workspaceRoot = options.workspaceRoot ?? process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
-  const agentRuntimeMode = options.runtimeModeAdapter?.id ?? options.mode ?? process.env.BORING_AGENT_MODE
-  const sessionRoot = normalizeOptionalPath(options.sessionRoot)
-    ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
-    ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
+  const rawConfig = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
   // BORING_AGENT_FLEET=1 composes the config-driven production fleet
   // (gh-1106 slice 3, B2 fix round 1) from discovered agent packages plus
   // .agents/factory for the deployed core app host (apps/full-app), same
@@ -1044,6 +1048,29 @@ export async function createCoreWorkspaceAgentServer(
     workspaceRoot: null,
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
+  const signupAgentDefaults = compileSignupAgentDefaults(
+    rawConfig.signupAgentDefaults,
+    agents.map((agent) => agent.agentTypeId),
+    rawConfig.security?.trustedProxy,
+  )
+  // Decision 28 hook: validate all trusted signup config before allocating DB
+  // or HTTP resources. Unknown seats and malformed server options fail boot.
+  const config: CoreConfig = { ...rawConfig, signupAgentDefaults }
+  const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(
+    config,
+    signupAgentDefaults,
+    options.telemetry,
+    options.requestScopeResolver,
+  )
+  const appRoot = options.appRoot
+  const serveFrontend =
+    options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
+  const pluginWorkspaceRoot = process.cwd()
+  const workspaceRoot = options.workspaceRoot ?? process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
+  const agentRuntimeMode = options.runtimeModeAdapter?.id ?? options.mode ?? process.env.BORING_AGENT_MODE
+  const sessionRoot = normalizeOptionalPath(options.sessionRoot)
+    ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
+    ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
   registerTelemetryHooks(app, telemetry)
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
