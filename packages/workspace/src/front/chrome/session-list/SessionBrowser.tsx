@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import { ChevronLeft, ChevronRight, ExternalLink, Pin, Plus } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
+import { formatRelativeAge } from "../../lib/relativeTime"
 import { ControlTooltip } from "../../components/ControlTooltip"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import { CHAT_SESSION_DRAG_TYPE } from "../../layout/ChatPaneStage"
@@ -111,24 +112,6 @@ function sessionBadgeDotClassName(tone: WorkspaceAttentionSessionBadge["tone"]):
   }
 }
 
-function relativeTime(value: SessionItem["updatedAt"]): string {
-  const d = toDate(value)
-  if (!d) return ""
-  const diff = Date.now() - d.getTime()
-  if (diff < 60_000) return "now"
-  const m = Math.floor(diff / 60_000)
-  if (m < 60) return `${m}m`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h`
-  const days = Math.floor(h / 24)
-  if (days < 7) return `${days}d`
-  const w = Math.floor(days / 7)
-  if (w < 5) return `${w}w`
-  const mo = Math.floor(days / 30)
-  if (mo < 12) return `${mo}mo`
-  const y = Math.floor(days / 365)
-  return `${y}y`
-}
 
 export function SessionBrowser({
   sessions,
@@ -453,7 +436,7 @@ function SessionRow({
   onTogglePin?: (id: string, agentTypeId?: string) => void
   onDelete?: (id: string, agentTypeId?: string) => void
 }) {
-  const time = relativeTime(session.updatedAt)
+  const time = formatRelativeAge(toDate(session.updatedAt)) ?? ""
   const hasSessionStatus = Boolean(attentionBadge || working || time)
   return (
     <li

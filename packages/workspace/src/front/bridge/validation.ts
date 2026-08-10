@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { UI_FILE_OPEN_MODES } from "../../shared/types/filesystem"
 
 const PATH_MAX = 1024
 const MSG_MAX = 500
@@ -16,7 +17,7 @@ const safePath = z
 
 export const openFileSchema = z.object({
   path: safePath,
-  mode: z.enum(["view", "edit", "diff"]).optional(),
+  mode: z.enum(UI_FILE_OPEN_MODES).optional(),
   filesystem: z.string().min(1).optional(),
 })
 
@@ -55,9 +56,20 @@ export const navigateToLineSchema = z.object({
   line: z.number().int().positive(),
 })
 
-export const expandToFileSchema = z.object({
-  path: safePath,
-  filesystem: z.string().min(1).optional(),
-})
+const filesystemId = z.string().min(1)
+
+/** A tree reveal names either a path or one explicit filesystem root. */
+export const expandToFileSchema = z.union([
+  z.object({
+    path: safePath,
+    filesystem: filesystemId.optional(),
+  }),
+  z.object({
+    path: z.literal(""),
+    filesystem: filesystemId,
+  }),
+])
+
+export type ExpandToFileTarget = z.infer<typeof expandToFileSchema>
 
 export { MAX_PANELS }

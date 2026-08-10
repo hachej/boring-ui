@@ -18,8 +18,7 @@ import {
   useViewportBreakpoint,
 } from "../hooks"
 
-const MOBILE_BREAKPOINT = 768
-const TABLET_BREAKPOINT = 1024
+import { COMPACT_MAX_WIDTH, WIDE_MIN_WIDTH } from "./breakpoints"
 
 export interface ResponsiveDockviewShellProps {
   layout: LayoutConfig
@@ -40,8 +39,8 @@ export function ResponsiveDockviewShell({
   const registry = useRegistry()
   const sidebarState = useSidebarState()
   const setSidebar = useSetSidebar()
-  const isMobile = useViewportBreakpoint(MOBILE_BREAKPOINT)
-  const isTablet = useViewportBreakpoint(TABLET_BREAKPOINT)
+  const isMobile = useViewportBreakpoint(COMPACT_MAX_WIDTH)
+  const isTablet = useViewportBreakpoint(WIDE_MIN_WIDTH)
   const isTabletOnly = isTablet && !isMobile
 
   const sidebarGroup = useMemo(

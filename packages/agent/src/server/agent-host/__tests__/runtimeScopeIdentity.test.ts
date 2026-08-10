@@ -74,10 +74,10 @@ const base: RuntimeScopeIdentityInput = {
   artifacts: [{ pluginId: 'macro', digest: 'artifact-a' }],
   validatedConfig: { currency: 'USD' },
   grants: ['data.read'],
-  placementIdentity: 'direct:workspace',
+  placementClassIdentity: 'direct',
   isolationMode: 'shared',
   toolContractDigests: ['tool-a'],
-  provisioningGeneration: 'generation-a',
+  provisioningIdentity: 'provider-contract-a',
 }
 
 describe('runtime scope identity', () => {
@@ -85,10 +85,10 @@ describe('runtime scope identity', () => {
     ['artifact digest', { artifacts: [{ pluginId: 'macro', digest: 'artifact-b' }] }],
     ['validated config', { validatedConfig: { currency: 'EUR' } }],
     ['grant', { grants: ['data.read', 'data.write'] }],
-    ['placement', { placementIdentity: 'sandbox:workspace' }],
+    ['placement class', { placementClassIdentity: 'sandbox' }],
     ['isolation', { isolationMode: 'dedicated' }],
     ['tool contract', { toolContractDigests: ['tool-b'] }],
-    ['provisioning generation', { provisioningGeneration: 'generation-b' }],
+    ['provisioning contract', { provisioningIdentity: 'provider-contract-b' }],
   ] satisfies readonly [string, Partial<RuntimeScopeIdentityInput>][])('changes for %s', (_name, change) => {
     expect(createResolvedRuntimeScopeIdentity({ ...base, ...change }))
       .not.toBe(createResolvedRuntimeScopeIdentity(base))
@@ -147,6 +147,43 @@ describe('runtime scope identity', () => {
     })
     expect(createRuntime).toHaveBeenCalledOnce()
     await restarted.host.close()
+  })
+
+  it('rejects a mismatched persisted pin even when its old binding is still published', async () => {
+    const sessionRoot = await temporaryRoot()
+    const oldIdentity = 'a'.repeat(64)
+    const currentIdentity = 'b'.repeat(64)
+    const creator = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
+    const currentActor = { workspaceScopeId: 'workspace-a', authSubjectId: 'current' } as AuthorizedAgentScope
+    const createRuntime = vi.fn(createTestRuntimeModeAdapter('direct').create)
+    const admit = vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'accepted' }))
+    const created = await createAgentHost(hostOptions({
+      sessionRoot,
+      runtimeIdentity: (scope) => scope.authSubjectId === 'creator' ? oldIdentity : currentIdentity,
+      createRuntime,
+      effectAdmission: { admit },
+    }))
+    const ref = await created.gateway.createSession({
+      scope: creator,
+      agentTypeId: 'alpha',
+      requestId: 'create-old-binding',
+    })
+    const namespace = sessionNamespaceForAgent(agent, 'workspace-a', 'sessions')!
+    const transcriptPath = await sessionFilePath(join(sessionRoot, namespace), ref.sessionId)
+    const before = await readFile(transcriptPath)
+    createRuntime.mockClear()
+    admit.mockClear()
+
+    await expect(created.gateway.renameSession({
+      scope: currentActor,
+      ref,
+      requestId: 'published-old-binding-must-not-bypass-cut',
+      title: 'Must not change',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH })
+    expect(createRuntime).not.toHaveBeenCalled()
+    expect(admit).not.toHaveBeenCalled()
+    expect((await readFile(transcriptPath)).equals(before)).toBe(true)
+    await created.host.close()
   })
 
   it('fails a restarted mismatching actor closed before a second runtime binding or transcript effect', async () => {

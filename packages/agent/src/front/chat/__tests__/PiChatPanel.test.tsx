@@ -676,6 +676,35 @@ describe('PiChatPanel sandbox shell', () => {
     expect(screen.queryByText('What should we work on?')).toBeNull()
   })
 
+  test('shows loading, not the empty hero, while an attached session is still unhydrated', async () => {
+    // External-sessionId hosts attach with autoStart:false, so the session
+    // reports status 'idle' with hydrated:false until the /state snapshot
+    // lands. That window must render the history loader, never the hero.
+    const remote = new FakeRemotePiSession(remoteState({
+      committedMessages: [],
+      sessionId: 'pi-1',
+      status: 'idle',
+      hydrated: false,
+      connection: { state: 'disconnected' },
+    }))
+
+    render(
+      <PiChatPanel
+        sessionId="pi-1"
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    expect((await screen.findByRole('status', { name: 'Loading chat history' })).getAttribute('aria-busy')).toBe('true')
+    expect(screen.queryByText('What should we work on?')).toBeNull()
+
+    remote.setState(remoteState({ committedMessages: [], sessionId: 'pi-1', hydrated: true }))
+    await screen.findByText('What should we work on?')
+    expect(screen.queryByRole('status', { name: 'Loading chat history' })).toBeNull()
+  })
+
   test('orders the empty hero as title, composer, then quick actions', async () => {
     const remote = new FakeRemotePiSession(remoteState({ committedMessages: [], sessionId: 'pi-empty' }))
 
