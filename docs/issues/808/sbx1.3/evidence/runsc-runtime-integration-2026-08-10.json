@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "domain": "boring-sbx1.3-runsc-runtime-integration:non-admitting",
+  "nonAdmitting": true,
+  "exactProductionCohortClaimed": false,
+  "fleetAdmissionClaimed": false,
+  "runId": "201728b12d0e1b62",
+  "timestamp": "2026-08-10T13:35:18.903Z",
+  "safeFacts": {
+    "dockerServerVersion": "28.2.2",
+    "runscVersion": "runsc version release-20260706.0",
+    "guestKernel": "4.19.0-gvisor",
+    "workloadImageDigest": "127.0.0.1:32812/boring-sbx13-runtime@sha256:5d3b9912487661e1816e6ada9c11581e6cfc8497cff82ad80e325c8301222d6e"
+  },
+  "results": [
+    {
+      "probe": "runsc-sentinel",
+      "status": "passed",
+      "guestKernel": "4.19.0-gvisor"
+    },
+    {
+      "probe": "workload-image",
+      "status": "passed",
+      "pinnedByDigest": true,
+      "supervisorUid": 0,
+      "tenantUid": 65532
+    },
+    {
+      "probe": "project-quota-fill",
+      "status": "operator-follow-up",
+      "reason": "host ext4 lacks project-quota mount support; enabling it would mutate host filesystem policy"
+    },
+    {
+      "probe": "session-create-fail-closed",
+      "status": "passed",
+      "unsupportedPrimitive": "openat2",
+      "containerRemoved": true
+    },
+    {
+      "probe": "workspace-openat2-fs",
+      "status": "operator-follow-up",
+      "reason": "runsc returns ENOSYS for openat2 syscall 437; the runtime correctly rejects creation without a fallback"
+    },
+    {
+      "probe": "symlink-swap-race",
+      "status": "operator-follow-up",
+      "reason": "the required openat2 primitive is unavailable in this runsc profile, so a mutating helper race cannot be admitted or side-door tested"
+    },
+    {
+      "probe": "workload-container-create",
+      "status": "passed",
+      "network": "none",
+      "runtime": "runsc",
+      "nonAdmittingPathHelperBypass": true
+    },
+    {
+      "probe": "workload-workspace-write",
+      "status": "passed",
+      "helperPathAdmitted": false
+    },
+    {
+      "probe": "background-double-fork-reaping",
+      "status": "passed",
+      "cleanBaseline": true
+    },
+    {
+      "probe": "tenant-control-socket-negative",
+      "status": "passed",
+      "tenantConnectRejected": true,
+      "queuedDeadPeerRejected": true
+    },
+    {
+      "probe": "non-model-secret",
+      "status": "passed",
+      "delivered": true,
+      "inheritedCredentialChannel": "fd-3",
+      "commonJsonAndEnvironmentDelivery": false,
+      "workspaceReadOnlyDuringDelivery": true,
+      "absentAfterContainerReplacement": true,
+      "absentFromContainerEnvArgvInspectLabelsAndImage": true
+    },
+    {
+      "probe": "model-provider-credential-negative",
+      "status": "passed",
+      "rejectedBeforeDockerExec": true
+    },
+    {
+      "probe": "timeout-process-group-kill",
+      "status": "passed",
+      "cleanBaseline": true
+    },
+    {
+      "probe": "egress-default-deny",
+      "status": "passed",
+      "externalDenied": true,
+      "externalIpv6Denied": true,
+      "metadataDenied": true,
+      "metadataIpv6Denied": true,
+      "siblingDenied": true,
+      "workerPrivateInterfaceDenied": true,
+      "dnsDenied": true,
+      "dockerSocketAbsent": true,
+      "loopbackPositiveControl": true
+    },
+    {
+      "probe": "teardown",
+      "status": "passed",
+      "allSessionContainersRemoved": true
+    }
+  ],
+  "summary": {
+    "passed": 12,
+    "operatorFollowup": 3,
+    "failed": 0
+  }
+}
