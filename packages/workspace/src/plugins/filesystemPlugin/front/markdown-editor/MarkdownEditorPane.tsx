@@ -1,7 +1,7 @@
 "use client"
 
 import { lazy } from "react"
-import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
+import { normalizeUiFilesystem, type FilesystemId, type UiFileOpenMode } from "../../../../shared/types/filesystem"
 import type { PaneProps } from "../../../../front/registry/types"
 import { useFilePane } from "../useFilePane"
 import { FilePaneShell } from "../FilePaneShell"
@@ -13,7 +13,7 @@ const MarkdownEditor = lazy(() =>
 // `path` is optional: dockview can restore a panel from serialized
 // layout where params got lost. Read defensively, render a placeholder
 // rather than crash when path isn't there.
-export type MarkdownEditorPaneProps = PaneProps<{ path?: string; filesystem?: FilesystemId; mode?: "view" | "edit" | "diff" }>
+export type MarkdownEditorPaneProps = PaneProps<{ path?: string; filesystem?: FilesystemId; mode?: UiFileOpenMode }>
 
 export function MarkdownEditorPane({ params, api, className }: MarkdownEditorPaneProps) {
   const path = typeof params?.path === "string" ? params.path : ""

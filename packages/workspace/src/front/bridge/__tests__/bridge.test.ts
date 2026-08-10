@@ -306,6 +306,23 @@ describe("createBridge", () => {
       })
     })
 
+    it("reveals an explicit filesystem root", async () => {
+      const bridge = createBridge(store)
+      const handler = vi.fn()
+      bridge.subscribe("tree:expand", handler)
+
+      const result = await bridge.expandToFile("", { filesystem: "docs" })
+
+      expect(result.status).toBe("ok")
+      expect(handler).toHaveBeenCalledWith({ path: "", filesystem: "docs" })
+    })
+
+    it("rejects an empty path without an explicit filesystem", async () => {
+      const bridge = createBridge(store)
+      const result = await bridge.expandToFile("")
+      expect(result.status).toBe("error")
+    })
+
     it("uncollapses sidebar when collapsed", async () => {
       store.state.sidebar.collapsed = true
       const bridge = createBridge(store)

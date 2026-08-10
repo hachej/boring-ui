@@ -13,7 +13,7 @@ import {
   FixtureCompanyContextBindingProvider,
   listFixtureProjectionFiles,
   seedCompanyContextFixture,
-} from "../testing/companyContextFixtureProvider";
+} from "./companyContextFixture";
 import { ReadonlyProjectionOperationError, createReadonlyProjectionOperations } from "../readonlyProjectionOperations";
 
 const execFileAsync = promisify(execFile);

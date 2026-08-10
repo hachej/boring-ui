@@ -11,6 +11,8 @@ describe("automation schemas", () => {
     expect(() => AutomationPatchSchema.parse({})).toThrow()
     expect(AutomationPatchSchema.parse({ enabled: false })).toEqual({ enabled: false })
     expect(AutomationPatchSchema.parse({ timezone: "America/New_York" })).toEqual({ timezone: "America/New_York" })
+    expect(AutomationCreateSchema.parse({ title: "Daily", cron: "0 9 * * *", timezone: "UTC", model: "model-a", agentTypeId: "researcher" })).toMatchObject({ agentTypeId: "researcher" })
+    expect(AutomationPatchSchema.parse({ agentTypeId: " reviewer " })).toEqual({ agentTypeId: "reviewer" })
     expect(() => AutomationCreateSchema.parse({ title: "Bad", cron: "0 0 9 * * *", timezone: "UTC", model: "model-a" })).toThrow("Invalid cron schedule")
     expect(() => AutomationCreateSchema.parse({ title: "Bad", cron: "0 9 * * *", timezone: "Mars/Base", model: "model-a" })).toThrow("Invalid timezone")
   })

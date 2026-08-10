@@ -1,5 +1,6 @@
 import { access, mkdir, readFile, stat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import {
@@ -101,6 +102,12 @@ import {
   type Database,
 } from '../../server/db/index.js'
 import { loadConfig, type LoadConfigOptions } from '../../server/config/index.js'
+import {
+  compileSignupAgentDefaults,
+  TRUSTED_SIGNUP_HOSTNAME_HEADER,
+  type ValidatedSignupAgentDefaults,
+} from '../../server/signupAgentDefaults.js'
+import { resolveWorkspaceDefaultAgentTypeId } from '../../server/defaultAgentType.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
 
@@ -799,6 +806,9 @@ async function registerAuthProxy(
 
     const authHeaders = toHeaders(request.headers)
     authHeaders.delete(REQUEST_SCOPE_WORKSPACE_HEADER)
+    // This is a private in-process handoff, not caller-controlled config. Always
+    // replace any presented value with Fastify's trust-proxy-aware hostname.
+    authHeaders.set(TRUSTED_SIGNUP_HOSTNAME_HEADER, request.hostname)
     if (request.requestScope) {
       authHeaders.set(REQUEST_SCOPE_WORKSPACE_HEADER, encodeURIComponent(request.requestScope.workspaceId))
     }
@@ -923,7 +933,12 @@ export async function registerFrontendFallback(
   })
 }
 
-async function createCoreRuntime(config: CoreConfig, customTelemetry?: TelemetrySink, requestScopeResolver?: CoreRequestScopeResolver): Promise<{
+async function createCoreRuntime(
+  config: CoreConfig,
+  signupAgentDefaults: ValidatedSignupAgentDefaults,
+  customTelemetry?: TelemetrySink,
+  requestScopeResolver?: CoreRequestScopeResolver,
+): Promise<{
   app: CoreWorkspaceAgentServer
   sql: postgres.Sql
   db: Database
@@ -954,6 +969,7 @@ async function createCoreRuntime(config: CoreConfig, customTelemetry?: Telemetry
   app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
   const auth = createAuth(config, db, {
     workspaceStore,
+    signupAgentDefaults,
     logger: app.log,
     telemetry,
     disableDefaultWorkspaceCreation: requestScopeResolver !== undefined,
@@ -1009,8 +1025,27 @@ export async function createCoreWorkspaceAgentServer(
   }
   assertCoreStaticPluginEntries(options.plugins)
 
-  const config = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
-  const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(config, options.telemetry, options.requestScopeResolver)
+  const rawConfig = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
+  // `null`, not the base root: core serves `<workspaceRoot>/<workspaceId>` and
+  // NEVER the base itself (resolveWorkspaceRoot rejects it), so no single root
+  // exists at composition time. Passing the base would let a persona tree that
+  // happens to sit inside it publish a path relative to the wrong root — a
+  // live "Open" button that opens nothing.
+  const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot, workspaceRoot: null })
+  const signupAgentDefaults = compileSignupAgentDefaults(
+    rawConfig.signupAgentDefaults,
+    agents.map((agent) => agent.agentTypeId),
+    rawConfig.security?.trustedProxy,
+  )
+  // Decision 28 hook: validate all trusted signup config before allocating DB
+  // or HTTP resources. Unknown seats and malformed server options fail boot.
+  const config: CoreConfig = { ...rawConfig, signupAgentDefaults }
+  const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(
+    config,
+    signupAgentDefaults,
+    options.telemetry,
+    options.requestScopeResolver,
+  )
   const appRoot = options.appRoot
   const serveFrontend =
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
@@ -1081,6 +1116,7 @@ export async function createCoreWorkspaceAgentServer(
     workspaceRoot: pluginWorkspaceRoot,
     bridge: createUnavailableCorePluginBridge(),
     ...(options.defaultAgentTypeId ? { agentTypeId: options.defaultAgentTypeId } : {}),
+    availableAgentTypeIds: agents.map((agent) => agent.agentTypeId),
   }
   const defaultPluginActorResolver = async (request: FastifyRequest) => {
     const workspaceId = await resolveAuthorizedWorkspaceId(request, workspaceStore)
@@ -1252,7 +1288,6 @@ export async function createCoreWorkspaceAgentServer(
   // the deployed core app host (apps/full-app), same helper as
   // createWorkspaceAgentServer and the CLI hub; flag absent preserves the
   // legacy single-default-agent boot byte-identically.
-  const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot })
   const scopeAuthority = createCoreAgentScopeAuthority({
     appId: config.appId,
     workspaceStore,
@@ -1376,16 +1411,27 @@ export async function createCoreWorkspaceAgentServer(
       provisioningGeneration: JSON.stringify([root, templatePath ?? null]),
     })
     const piIdentity = JSON.stringify(pi, (_key, value) => typeof value === 'function' ? '[function]' : value)
+    const semanticProvisioningIdentity = createHash('sha256').update(JSON.stringify({
+      runtimeMode: runtimeModeAdapter.id,
+      runtimeContributionIds: runtimeEnvContributions.map((entry) => entry.id).sort(),
+      runtimePluginIds: runtimePlugins.map((plugin) => plugin.id).sort(),
+      provisionWorkspace: options.provisionWorkspace !== false,
+    })).digest('hex')
     const identity = createResolvedRuntimeScopeIdentity({
       artifacts: pluginArtifacts,
       validatedConfig: piIdentity,
       grants: options.getExtraTools ? [userId] : [],
-      placementIdentity,
+      placementClassIdentity: runtimeModeAdapter.id,
       isolationMode: runtimeModeAdapter.id,
       toolContractDigests: extraTools.map((tool) => tool.name),
-      provisioningGeneration: provisioningFingerprint,
+      provisioningIdentity: semanticProvisioningIdentity,
       bindingInputs: [sessionNamespace, contribution?.identity ?? null],
     })
+    const physicalBindingIdentity = createHash('sha256').update(JSON.stringify({
+      identity,
+      placementIdentity,
+      provisioningFingerprint,
+    })).digest('hex')
     const buildResourceDigestInput = async () => {
       const hotResources = pi.getHotReloadableResources?.()
       return createPiResourceDigestInput({
@@ -1478,7 +1524,7 @@ export async function createCoreWorkspaceAgentServer(
     }
     const agentRuntime: Omit<ResolvedAgentRuntimeScope, 'environment'> = {
       identity,
-      physicalBindingIdentity: identity,
+      physicalBindingIdentity,
       resourceInputDigest,
       revalidateResourceInputs,
       sessionNamespace,
@@ -1549,6 +1595,20 @@ export async function createCoreWorkspaceAgentServer(
           workspaceId,
           workspaceRoot: workspaceRootForRequest,
           projectName: workspace?.name ?? 'Workspace',
+          // Decision 28: prefer the workspace's persisted default seat when it
+          // names a validated fleet member; fail closed to the boot option,
+          // then the legacy default, with a stable diagnostic code.
+          defaultAgentTypeId: resolveWorkspaceDefaultAgentTypeId({
+            persistedDefaultAgentTypeId: workspace?.defaultAgentTypeId,
+            bootDefaultAgentTypeId: options.defaultAgentTypeId,
+            availableAgentTypeIds: agents.map((agent) => agent.agentTypeId),
+            onUnknownPersistedSeat: (diagnostic) => {
+              request.log.warn(
+                { workspaceId, ...diagnostic },
+                'workspace default agent seat is not in the validated fleet; falling back',
+              )
+            },
+          }),
         }
       } catch (error) {
         if (

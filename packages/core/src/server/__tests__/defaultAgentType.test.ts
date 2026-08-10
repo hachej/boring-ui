@@ -1,0 +1,92 @@
+import { describe, expect, it, vi } from 'vitest'
+import { ERROR_CODES } from '../../shared/errors.js'
+import {
+  LEGACY_DEFAULT_AGENT_TYPE_ID,
+  isAgentTypeId,
+  parseTrustedDefaultAgentTypeId,
+  resolveWorkspaceDefaultAgentTypeId,
+} from '../defaultAgentType.js'
+
+describe('parseTrustedDefaultAgentTypeId', () => {
+  it('maps absent values to null (no persisted default)', () => {
+    expect(parseTrustedDefaultAgentTypeId(undefined)).toBeNull()
+    expect(parseTrustedDefaultAgentTypeId(null)).toBeNull()
+  })
+
+  it('accepts the slug grammar and rejects everything else with a stable code', () => {
+    expect(parseTrustedDefaultAgentTypeId('boring-v2')).toBe('boring-v2')
+    expect(parseTrustedDefaultAgentTypeId('a')).toBe('a')
+    for (const invalid of ['', 'Default', '-seat', '0seat', 'seat_a', `a${'0'.repeat(63)}`, 42]) {
+      expect(() => parseTrustedDefaultAgentTypeId(invalid)).toThrowError(
+        expect.objectContaining({ code: ERROR_CODES.INVALID_DEFAULT_AGENT_TYPE_ID }),
+      )
+    }
+  })
+
+  it('exposes the grammar predicate', () => {
+    expect(isAgentTypeId('boring-v2')).toBe(true)
+    expect(isAgentTypeId('Boring')).toBe(false)
+  })
+})
+
+describe('resolveWorkspaceDefaultAgentTypeId', () => {
+  const fleet = ['default', 'boring-v2', 'reviewer']
+
+  it('prefers the persisted seat when it names a validated fleet member', () => {
+    expect(resolveWorkspaceDefaultAgentTypeId({
+      persistedDefaultAgentTypeId: 'reviewer',
+      bootDefaultAgentTypeId: 'boring-v2',
+      availableAgentTypeIds: fleet,
+    })).toBe('reviewer')
+  })
+
+  it('falls back to the boot option when nothing is persisted', () => {
+    expect(resolveWorkspaceDefaultAgentTypeId({
+      persistedDefaultAgentTypeId: null,
+      bootDefaultAgentTypeId: 'boring-v2',
+      availableAgentTypeIds: fleet,
+    })).toBe('boring-v2')
+    expect(resolveWorkspaceDefaultAgentTypeId({
+      persistedDefaultAgentTypeId: undefined,
+      bootDefaultAgentTypeId: 'boring-v2',
+      availableAgentTypeIds: fleet,
+    })).toBe('boring-v2')
+  })
+
+  it('falls back to the first fleet seat, then the legacy default', () => {
+    expect(resolveWorkspaceDefaultAgentTypeId({
+      persistedDefaultAgentTypeId: null,
+      bootDefaultAgentTypeId: undefined,
+      availableAgentTypeIds: fleet,
+    })).toBe('default')
+    expect(resolveWorkspaceDefaultAgentTypeId({
+      persistedDefaultAgentTypeId: null,
+      bootDefaultAgentTypeId: undefined,
+      availableAgentTypeIds: [],
+    })).toBe(LEGACY_DEFAULT_AGENT_TYPE_ID)
+  })
+
+  it('fails closed to the fallback with a stable diagnostic when the persisted seat is unknown', () => {
+    const onUnknownPersistedSeat = vi.fn()
+    expect(resolveWorkspaceDefaultAgentTypeId({
+      persistedDefaultAgentTypeId: 'retired-seat',
+      bootDefaultAgentTypeId: 'boring-v2',
+      availableAgentTypeIds: fleet,
+      onUnknownPersistedSeat,
+    })).toBe('boring-v2')
+    expect(onUnknownPersistedSeat).toHaveBeenCalledTimes(1)
+    expect(onUnknownPersistedSeat).toHaveBeenCalledWith({
+      code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+      persistedDefaultAgentTypeId: 'retired-seat',
+      fallbackAgentTypeId: 'boring-v2',
+    })
+  })
+
+  it('never throws on an unknown persisted seat even without a diagnostic sink', () => {
+    expect(resolveWorkspaceDefaultAgentTypeId({
+      persistedDefaultAgentTypeId: 'retired-seat',
+      bootDefaultAgentTypeId: undefined,
+      availableAgentTypeIds: [],
+    })).toBe(LEGACY_DEFAULT_AGENT_TYPE_ID)
+  })
+})

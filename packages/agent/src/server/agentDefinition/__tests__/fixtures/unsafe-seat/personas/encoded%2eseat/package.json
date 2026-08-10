@@ -1,0 +1,14 @@
+{
+  "name": "@fixture/encoded-seat",
+  "version": "1.0.0",
+  "private": true,
+  "boring": {
+    "agent": {
+      "definitionId": "fixture-encoded",
+      "version": "1.0.0",
+      "label": "Fixture Encoded",
+      "description": "Seat whose directory name contains a percent-encoded path sequence.",
+      "instructionsRef": "instructions.md"
+    }
+  }
+}

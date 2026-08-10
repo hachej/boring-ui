@@ -42,7 +42,15 @@ function filesystemBindings(bundle: RuntimeBundle) {
 }
 
 function filesystemIds(bundle: RuntimeBundle): string[] {
-  return filesystemBindings(bundle).map((binding) => binding.filesystem)
+  return filesystemBindings(bundle)
+    .filter((binding) => binding.filesystem !== 'user')
+    .map((binding) => binding.filesystem)
+}
+
+function uniqueFilesystemBinding(bindings: readonly RuntimeFilesystemBinding[], filesystem: string): RuntimeFilesystemBinding | undefined {
+  const matches = bindings.filter((entry) => entry.filesystem === filesystem)
+  if (matches.length > 1) throw new Error(`duplicate filesystem binding: ${filesystem}`)
+  return matches[0]
 }
 
 function withFilesystemParameter(parameters: unknown, filesystemIds: readonly string[], dynamicBindings = false): Record<string, unknown> {
@@ -90,7 +98,7 @@ function assertNotFilesystemPathSpoof(path: string, filesystemIds: readonly stri
 }
 
 function filesystemBinding(bindings: readonly RuntimeFilesystemBinding[], filesystem: string): RuntimeFilesystemBinding {
-  const binding = bindings.find((entry) => entry.filesystem === filesystem)
+  const binding = uniqueFilesystemBinding(bindings, filesystem)
   if (!binding) throw new Error(`No filesystem binding is available for ${filesystem}`)
   return binding
 }
@@ -140,6 +148,17 @@ function applyExactEdits(original: string, edits: readonly ExactEdit[]): string 
   return output
 }
 
+async function requireToolCapability(
+  binding: RuntimeFilesystemBinding,
+  path: string,
+  capability: 'write' | 'create-child' | 'delete' | 'move-from',
+): Promise<void> {
+  const decision = await binding.operations.resolveAccess?.({ filesystem: binding.filesystem, path })
+  if (decision ? !decision.capabilities[capability] : binding.access !== 'readwrite') {
+    binding.operations.rejectMutation(capability, { filesystem: binding.filesystem, path })
+  }
+}
+
 async function executeBoundFilesystemTool(
   toolName: string,
   filesystem: string,
@@ -172,17 +191,28 @@ async function executeBoundFilesystemTool(
     return { ...formatBoundGrep(result.matches), details: { metadata: result.metadata } }
   }
   if (toolName === 'write') {
-    if (binding.access !== 'readwrite' || !operations.write) operations.rejectMutation(toolName, { filesystem, path })
+    await requireToolCapability(binding, path, 'write')
+    if (!operations.write) operations.rejectMutation('write', { filesystem, path })
     const write = operations.write
     if (!write) throw new Error(`Tool ${toolName} does not support filesystem ${filesystem}`)
     const content = typeof params.content === 'string' ? params.content : ''
     const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) || '/' : null
-    if (parent && operations.mkdir) await operations.mkdir({ filesystem, path: parent, recursive: true })
+    if (parent && operations.mkdir) {
+      let exists = false
+      try { exists = (await operations.stat({ filesystem, path: parent })).isDirectory } catch (error: unknown) {
+        if ((error as { code?: string }).code !== 'ENOENT') throw error
+      }
+      if (!exists) {
+        await requireToolCapability(binding, parent, 'create-child')
+        await operations.mkdir({ filesystem, path: parent, recursive: true })
+      }
+    }
     const result = await write({ filesystem, path, content })
     return { content: [{ type: 'text', text: `Wrote ${path}` }], details: { metadata: result.metadata, mtimeMs: result.mtimeMs } }
   }
   if (toolName === 'edit') {
-    if (binding.access !== 'readwrite' || !operations.write) operations.rejectMutation(toolName, { filesystem, path })
+    await requireToolCapability(binding, path, 'write')
+    if (!operations.write) operations.rejectMutation('write', { filesystem, path })
     const write = operations.write
     if (!write) throw new Error(`Tool ${toolName} does not support filesystem ${filesystem}`)
     const edits = Array.isArray(params.edits)
@@ -223,7 +253,12 @@ export interface BuildFilesystemAgentToolsOptions {
   getFilesystemBindings?: (ctx: ToolExecContext) => Promise<RuntimeBundle['filesystemBindings'] | undefined> | RuntimeBundle['filesystemBindings'] | undefined
 }
 
-function withFilesystemRouting(tool: AgentTool, bundle: RuntimeBundle, options: BuildFilesystemAgentToolsOptions = {}): AgentTool {
+function withFilesystemRouting(
+  tool: AgentTool,
+  bundle: RuntimeBundle,
+  options: BuildFilesystemAgentToolsOptions = {},
+  createPrimaryTool?: (toolName: string, binding: RuntimeFilesystemBinding | undefined) => AgentTool,
+): AgentTool {
   const ids = filesystemIds(bundle)
   const dynamicBindings = Boolean(options.getFilesystemBindings)
   return {
@@ -232,12 +267,29 @@ function withFilesystemRouting(tool: AgentTool, bundle: RuntimeBundle, options: 
     parameters: withFilesystemParameter(tool.parameters, ids, dynamicBindings),
     async execute(params, ctx) {
       const filesystem = requestedFilesystem(params)
+      const bindings = filesystem === 'user'
+        ? filesystemBindings(bundle)
+        : options.getFilesystemBindings ? await options.getFilesystemBindings(ctx) ?? [] : filesystemBindings(bundle)
       if (filesystem !== 'user') {
-        const bindings = options.getFilesystemBindings ? await options.getFilesystemBindings(ctx) ?? [] : filesystemBindings(bundle)
         const result = await executeBoundFilesystemTool(tool.name, filesystem, params, bindings)
         const textContent = (result.content ?? [])
           .filter(isTextContent)
           .map((c) => ({ type: 'text' as const, text: c.text }))
+        return {
+          content: textContent.length > 0 ? textContent : [{ type: 'text', text: '' }],
+          isError: false,
+          details: result.details,
+        }
+      }
+      const primaryBinding = uniqueFilesystemBinding(bindings, 'user')
+      if (createPrimaryTool && primaryBinding) {
+        return await createPrimaryTool(tool.name, primaryBinding).execute(withoutFilesystem(params), ctx)
+      }
+      if (primaryBinding && (tool.name === 'write' || tool.name === 'edit')) {
+        const result = await executeBoundFilesystemTool(tool.name, 'user', params, [primaryBinding])
+        const textContent = (result.content ?? [])
+          .filter(isTextContent)
+          .map((content) => ({ type: 'text' as const, text: content.text }))
         return {
           content: textContent.length > 0 ? textContent : [{ type: 'text', text: '' }],
           isError: false,
@@ -292,17 +344,13 @@ function defaultFilesystemStrategyForBundle(bundle: RuntimeBundle): RuntimeFiles
     : { kind: 'host' }
 }
 
-export function buildFilesystemAgentTools(bundle: RuntimeBundle, options: BuildFilesystemAgentToolsOptions = {}): AgentTool[] {
+function buildHostFilesystemTools(
+  bundle: RuntimeBundle,
+  primaryBinding?: RuntimeFilesystemBinding,
+): AgentTool[] {
   const cwd = bundle.workspace.root
-  const strategy = bundle.filesystem ?? defaultFilesystemStrategyForBundle(bundle)
-
-  if (strategy.kind === 'remote-workspace') {
-    return buildRemoteWorkspaceFilesystemAgentTools(bundle, strategy.pathOptions)
-      .map((tool) => withFilesystemRouting(tool, bundle, options))
-  }
-
   const storageRoot = getRuntimeBundleStorageRoot(bundle)
-  const ops = boundFs(storageRoot, { runtimeRoot: cwd })
+  const ops = boundFs(storageRoot, { runtimeRoot: cwd, ...(primaryBinding ? { primaryBinding } : {}) })
   return [
     adaptPiTool(createReadToolDefinition(cwd, { operations: ops.read })),
     adaptPiTool(createWriteToolDefinition(cwd, { operations: ops.write })),
@@ -310,5 +358,23 @@ export function buildFilesystemAgentTools(bundle: RuntimeBundle, options: BuildF
     adaptPiTool(createFindToolDefinition(cwd, { operations: ops.find })),
     adaptPiTool(createGrepToolDefinition(cwd, { operations: ops.grep })),
     adaptPiTool(createLsToolDefinition(cwd, { operations: ops.ls })),
-  ].map((tool) => withFilesystemRouting(tool, bundle, options))
+  ]
+}
+
+export function buildFilesystemAgentTools(bundle: RuntimeBundle, options: BuildFilesystemAgentToolsOptions = {}): AgentTool[] {
+  const strategy = bundle.filesystem ?? defaultFilesystemStrategyForBundle(bundle)
+
+  if (strategy.kind === 'remote-workspace') {
+    return buildRemoteWorkspaceFilesystemAgentTools(bundle, strategy.pathOptions)
+      .map((tool) => withFilesystemRouting(tool, bundle, options))
+  }
+
+  const primaryBinding = uniqueFilesystemBinding(filesystemBindings(bundle), 'user')
+  const tools = buildHostFilesystemTools(bundle, primaryBinding)
+  const createPrimaryTool = (toolName: string, binding: RuntimeFilesystemBinding | undefined): AgentTool => {
+    const rebound = buildHostFilesystemTools(bundle, binding).find((tool) => tool.name === toolName)
+    if (!rebound) throw new Error(`Unknown primary filesystem tool: ${toolName}`)
+    return rebound
+  }
+  return tools.map((tool) => withFilesystemRouting(tool, bundle, options, createPrimaryTool))
 }

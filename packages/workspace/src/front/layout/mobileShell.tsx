@@ -17,20 +17,32 @@ export function MobileSingleChatPane({
   renderPane: (pane: ChatPaneDescriptor) => ReactNode
 }) {
   const title = readablePaneTitle(paneTitle(pane), pane.id)
+  const agentLabel = pane.agentLabel
+  // Mobile has one full-width bar and an existing secondary line, so the Agent
+  // is spelled out rather than hidden behind a tooltip a touch user cannot open.
+  const subtitle = [
+    agentLabel,
+    totalPanes > 1 ? `Showing 1 of ${totalPanes} chats — split panes are disabled on mobile.` : undefined,
+  ].filter(Boolean).join(" · ")
   return (
     <div data-boring-workspace-part="mobile-chat-pane" className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex min-h-11 items-center gap-2 border-b border-border pb-2 pl-[calc(0.75rem+env(safe-area-inset-left))] pr-[calc(0.75rem+env(safe-area-inset-right))] pt-2">
+      <div className="flex min-h-11 items-center gap-2 border-b border-border pb-2 pl-[calc(0.75rem+env(safe-area-inset-left))] pr-[calc(0.75rem+env(safe-area-inset-right))] pt-[calc(0.5rem+env(safe-area-inset-top))]">
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold">{title}</div>
-          {totalPanes > 1 ? (
-            <div className="text-[11px] font-medium text-muted-foreground">Showing 1 of {totalPanes} chats — split panes are disabled on mobile.</div>
+          {subtitle ? (
+            <div
+              data-boring-workspace-part="mobile-chat-pane-subtitle"
+              className="truncate text-[11px] font-medium text-muted-foreground"
+            >
+              {subtitle}
+            </div>
           ) : null}
         </div>
         {topActions ? <div className="flex shrink-0 items-center gap-1">{topActions}</div> : null}
         {onClosePane && totalPanes > 1 ? (
           <button
             type="button"
-            className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             onClick={() => onClosePane(pane.id)}
             aria-label={`Close ${title} pane`}
           >
@@ -64,7 +76,7 @@ export function MobileChatBar({
       {canOpenNav ? (
         <button
           type="button"
-          className="inline-flex min-h-10 items-center rounded-full border border-border px-3 text-sm font-semibold text-foreground"
+          className="mobile-shell-bar-action inline-flex min-h-10 items-center rounded-full border border-border px-3 text-sm font-semibold text-foreground transition-colors motion-reduce:transition-none hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           onClick={onOpenNav}
         >
           Sessions
@@ -76,7 +88,7 @@ export function MobileChatBar({
       {canOpenWorkspace ? (
         <button
           type="button"
-          className="inline-flex min-h-10 items-center rounded-full border border-border px-3 text-sm font-semibold text-foreground"
+          className="mobile-shell-bar-action inline-flex min-h-10 items-center rounded-full border border-border px-3 text-sm font-semibold text-foreground transition-colors motion-reduce:transition-none hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           onClick={onOpenWorkspace}
         >
           Workspace
@@ -94,7 +106,7 @@ export function MobileWorkspaceBar({ onBack }: { onBack: () => void }) {
     >
       <button
         type="button"
-        className="inline-flex min-h-10 items-center gap-1 rounded-full border border-border px-3 text-sm font-semibold text-foreground"
+        className="mobile-shell-bar-action inline-flex min-h-10 items-center gap-1 rounded-full border border-border px-3 text-sm font-semibold text-foreground transition-colors motion-reduce:transition-none hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         onClick={onBack}
       >
         <ArrowLeft className="size-4" aria-hidden="true" />

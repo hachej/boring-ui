@@ -4,12 +4,19 @@ import type { CoreWorkspaceAgentServer } from '@hachej/boring-core/app/server'
 import {
   createBoringMcpAppBindings,
   createManagedConnectorSecretResolver,
+  createUserSettingsMcpSourceRegistry,
   readBoringMcpServerConfig,
   registerBoringMcpRoutes,
   type BoringMcpAppBindingsConfig,
   type BoringMcpBindingConfig,
 } from '../appServerBinding'
-import { BORING_MCP_PLUGIN_ID } from '../../shared'
+import {
+  BORING_MCP_PLUGIN_ID,
+  createUserRegisteredMcpSource,
+  isUserRegisteredMcpSource,
+  type McpActor,
+  type McpSource,
+} from '../../shared'
 import type { ManagedConnectorConfig } from '../managedConnectorAdapter'
 
 const CONFIGS: readonly ManagedConnectorConfig[] = [
@@ -76,6 +83,70 @@ describe('registerBoringMcpRoutes disabled behavior', () => {
     const res = await app.inject({ method: 'GET', url: '/api/v1/boring-mcp/sources', headers: { 'x-boring-workspace-id': 'w1' } })
     expect(res.statusCode).toBe(503)
     await app.close()
+  })
+})
+
+describe('user-registered source persistence provenance', () => {
+  const actor: McpActor = { userId: 'user-1', workspaceId: 'w1' }
+  const baseSource: Omit<McpSource, 'provider'> = {
+    id: 'source-user',
+    workspaceId: actor.workspaceId,
+    userId: actor.userId,
+    displayName: 'User MCP',
+    status: 'connected',
+    ownerKind: 'user',
+    credentialProvider: 'user-managed',
+  }
+
+  function appWithSettings(initial: Record<string, unknown>) {
+    let settings = initial
+    return {
+      app: {
+        config: { appId: 'app-test' },
+        userStore: {
+          async getUserSettings() { return { displayName: '', email: '', settings } },
+          async putUserSettings(_userId: string, _appId: string, update: { settings?: Record<string, unknown> }) {
+            settings = update.settings ?? {}
+            return { displayName: '', email: '', settings }
+          },
+        },
+      } as never,
+    }
+  }
+
+  it('rehydrates persisted registration metadata through the factory', async () => {
+    const persisted = {
+      __serverBoringMcpSourcesV1: {
+        [actor.workspaceId]: {
+          [baseSource.id]: {
+            ...baseSource,
+            provider: 'user-registered',
+            userRegistration: { endpoint: 'https://mcp.example/stream', transport: 'streamable-http' },
+          },
+        },
+      },
+    }
+    const { app } = appWithSettings(persisted)
+    const [source] = await createUserSettingsMcpSourceRegistry(app, actor).listSources(actor)
+    expect(isUserRegisteredMcpSource(source)).toBe(true)
+    expect(source).toMatchObject({ userRegistration: { endpoint: 'https://mcp.example/stream' } })
+  })
+
+  it('rejects forged writes and preserves provenance across a branded round trip', async () => {
+    const { app } = appWithSettings({})
+    const registry = createUserSettingsMcpSourceRegistry(app, actor)
+    await expect(registry.upsertSource(actor, { ...baseSource, provider: 'user-registered' })).rejects.toMatchObject({
+      code: 'MCP_PROVIDER_CONFIG_INVALID',
+      details: { reason: 'invalid_user_registration_provenance' },
+    })
+
+    const registered = createUserRegisteredMcpSource(baseSource, {
+      enabled: true,
+      endpoint: 'https://mcp.example/stream',
+      displayName: baseSource.displayName,
+    })
+    await registry.upsertSource(actor, registered)
+    expect(isUserRegisteredMcpSource(await registry.getSource(registered.id) as McpSource)).toBe(true)
   })
 })
 

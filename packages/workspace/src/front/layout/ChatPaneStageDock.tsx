@@ -22,6 +22,7 @@ import { GripVertical, MoreHorizontal, Pencil, Pin, PinOff, Trash2, X } from "lu
 import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, IconButton, Input } from "@hachej/boring-ui-kit"
 import { cn } from "../lib/utils"
 import { CornerChromeButton } from "./cornerChrome"
+import { WorkspaceTranscriptLoadingSurface } from "../components/WorkspaceLoadingState"
 import { CHAT_SESSION_DRAG_TYPE, dispatchChatSessionDragPayload, PaneFocusRing, paneTitle, type ChatPaneDescriptor, type ChatPaneStageProps } from "./ChatPaneStage"
 import { workspaceSessionKey } from "../sessionIdentity"
 
@@ -30,6 +31,7 @@ type ChatPaneStageDockProps = ChatPaneStageProps
 const CHAT_PANE_COMPONENT = "chat-pane"
 const PANE_MIN_WIDTH = 280
 const PERSIST_DEBOUNCE_MS = 300
+const SINGLE_PANE_LOADING_MIN_MS = 120
 
 export function readablePaneTitle(title: string | undefined, id: string | undefined): string {
   const trimmed = title?.trim()
@@ -205,6 +207,8 @@ export function ChatPaneStageDock({
   onDropSession,
 }: ChatPaneStageDockProps) {
   const apiRef = useRef<DockviewApi | null>(null)
+  const [readySinglePaneId, setReadySinglePaneId] = useState<string | null>(null)
+  const singlePaneReadyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // True while this component mutates dockview itself; dockview activation
   // events fired during programmatic sync must not echo back to the parent.
   const syncingRef = useRef(false)
@@ -256,6 +260,17 @@ export function ChatPaneStageDock({
       syncPanesToDock(api, currentPanes, currentActive, pendingPlacementsRef.current)
       if (currentPendingPlacement && api.getPanel(currentPendingPlacement.paneId)) {
         latestRef.current.onPendingPanePlacementConsumed?.(currentPendingPlacement.paneId)
+      }
+      if (singlePaneReadyTimerRef.current) clearTimeout(singlePaneReadyTimerRef.current)
+      if (currentPanes.length === 1) {
+        const readyPaneId = currentPanes[0].id
+        singlePaneReadyTimerRef.current = setTimeout(() => {
+          singlePaneReadyTimerRef.current = null
+          setReadySinglePaneId(readyPaneId)
+        }, SINGLE_PANE_LOADING_MIN_MS)
+      } else {
+        singlePaneReadyTimerRef.current = null
+        setReadySinglePaneId(null)
       }
     } finally {
       syncingRef.current = false
@@ -319,7 +334,10 @@ export function ChatPaneStageDock({
     }
   }, [])
 
-  useEffect(() => () => disposeRef.current?.(), [])
+  useEffect(() => () => {
+    disposeRef.current?.()
+    if (singlePaneReadyTimerRef.current) clearTimeout(singlePaneReadyTimerRef.current)
+  }, [])
 
   useEffect(() => {
     if (!pendingPanePlacement) return
@@ -344,6 +362,7 @@ export function ChatPaneStageDock({
   }, [panes, resolvedActiveId, pendingPanePlacement, onPendingPanePlacementConsumed])
 
   if (panes.length === 0) return null
+  const singlePaneTransitioning = panes.length === 1 && readySinglePaneId !== panes[0].id
 
   return (
     <StageContext.Provider value={contextValue}>
@@ -353,24 +372,33 @@ export function ChatPaneStageDock({
         className="relative h-full min-h-0 w-full bg-background"
       >
         <DockviewReact
+          key={panes.length === 1 ? panes[0].id : "multi-pane"}
           className="dv-shell dv-chat-stage h-full"
           components={STAGE_COMPONENTS}
           defaultTabComponent={ChatPaneHeader as React.FunctionComponent<IDockviewPanelHeaderProps>}
           rightHeaderActionsComponent={ChatPaneHeaderActions}
-          // Keep every pane's content element permanently mounted in the
-          // overlay render container instead of the default "onlyWhenVisible"
-          // renderer, which detaches and re-appends a group's content element
-          // each time the group is activated. That detach/reattach resets the
-          // scroll container's scrollTop to 0, so switching panes used to jank
-          // the newly-active chat transcript back to the top (#276). "always"
-          // toggles visibility in place and preserves scroll position.
-          defaultRenderer="always"
+          // Render the active chat directly in its visible group. Dockview's
+          // overlay renderer can strand a replacement panel hidden after a
+          // one-pane session switch, leaving the titled stage empty.
+          defaultRenderer="onlyWhenVisible"
           // Groups always hold exactly one pane (center drops are vetoed),
           // so the single header stretches across the full group width and
           // reads as a flat pane header, not a tab.
           singleTabMode="fullwidth"
           onReady={handleReady}
         />
+        {singlePaneTransitioning ? (
+          <div
+            className="absolute inset-0 z-20 flex min-h-0 flex-col overflow-hidden bg-background"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+            aria-label="Loading chat"
+            data-boring-workspace-part="chat-pane-loading-surface"
+          >
+            <WorkspaceTranscriptLoadingSurface />
+          </div>
+        ) : null}
       </div>
     </StageContext.Provider>
   )
@@ -460,6 +488,9 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
 
   // With a single pane there is nothing to move — show a plain title.
   const multiPane = stage.panes.length > 1
+  // Who owns this chat. The host omits it for single-Agent workspaces, so the
+  // header degrades to exactly what it was before.
+  const agentLabel = stage.panes.find((candidate) => candidate.id === api.id)?.agentLabel
   return (
     <div
       data-boring-workspace-part="chat-pane-title"
@@ -467,7 +498,7 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
         "group flex h-full min-w-0 select-none items-center gap-2 px-3 text-[13px] font-medium leading-none tracking-[-0.01em]",
         multiPane && "cursor-grab active:cursor-grabbing",
       )}
-      title={title}
+      title={agentLabel ? `${title} — ${agentLabel}` : title}
     >
       {multiPane ? (
         <GripVertical
@@ -477,9 +508,26 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
           strokeWidth={1.75}
         />
       ) : null}
-      <span className="min-w-0 max-w-[min(340px,45vw)] overflow-hidden text-ellipsis whitespace-nowrap text-foreground/90">
+      <span className="min-w-0 max-w-[min(340px,45vw)] shrink-[2] overflow-hidden text-ellipsis whitespace-nowrap text-foreground/90">
         {title}
       </span>
+      {agentLabel ? (
+        // Secondary, never competing with the title: the same quiet 11px
+        // provenance label the pinned-chat rows use. It shrinks and truncates
+        // so it can never push the split/close controls out of the header.
+        <span
+          data-boring-workspace-part="chat-pane-agent"
+          // No hard width cap: a tab is sized to its content, so a percentage
+          // ceiling clipped "Concierge" to "Concier…" beside a four-character
+          // title at 1440px with room to spare. `min-w-0` + `shrink` already
+          // guarantee the label yields under pressure, and the title's
+          // `shrink-[2]` makes it yield twice as fast — so the title still
+          // truncates first and the label can never push the controls out.
+          className="min-w-0 shrink overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-medium leading-none text-muted-foreground"
+        >
+          {agentLabel}
+        </span>
+      ) : null}
     </div>
   )
 }

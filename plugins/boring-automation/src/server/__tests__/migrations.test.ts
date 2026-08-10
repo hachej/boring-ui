@@ -15,6 +15,7 @@ describe("runBoringAutomationMigrations", () => {
     expect(statements.some((statement) => statement.includes("CREATE TABLE IF NOT EXISTS boring_automation_automations"))).toBe(true)
     expect(statements.some((statement) => statement.includes("owner_user_id text NOT NULL"))).toBe(true)
     expect(statements.some((statement) => statement.includes("prompt text"))).toBe(false)
+    expect(statements.some((statement) => statement.includes("ADD COLUMN IF NOT EXISTS agent_type_id text"))).toBe(true)
     expect(statements.some((statement) => statement.includes("ADD COLUMN IF NOT EXISTS deleted_at timestamptz"))).toBe(true)
     expect(statements.some((statement) => statement.includes("DROP COLUMN IF EXISTS prompt"))).toBe(true)
     expect(statements.some((statement) => statement.includes("DROP COLUMN IF EXISTS prompt_file_ready"))).toBe(true)

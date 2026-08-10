@@ -10,7 +10,7 @@ import {
   COMPANY_CONTEXT_SENTINEL,
   FixtureCompanyContextBindingProvider,
   seedCompanyContextFixture,
-} from "../testing/companyContextFixtureProvider";
+} from "./companyContextFixture";
 import {
   READONLY_PROJECTION_INVALID_PATH_CODE,
   READONLY_PROJECTION_MUTATION_CODE,

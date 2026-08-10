@@ -458,9 +458,23 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
 
   const revealTreePath = useCallback(
     async (path: string | null, options?: { refreshTargetDir?: boolean }) => {
-      if (!path) return
+      if (path === null || path === undefined) return
       const normalizedPath = normalizeRevealPath(path)
       const revealSeq = ++revealSeqRef.current
+      if (normalizedPath === ".") {
+        // "Reveal this filesystem" carries a filesystem and no path. An empty
+        // path used to fall out of the `!path` guard above and do nothing at
+        // all, so such a reveal produced no visible change whatsoever. It stays
+        // handled for bridge callers (`expandToFile` accepts an empty path by
+        // contract): a root listing is a valid destination. There is no root NODE to
+        // select, so the honest visible answer is this root's own listing,
+        // freshly fetched, with any selection carried over from the previous
+        // root cleared rather than left pointing somewhere that no longer is.
+        setSelectedPath(null)
+        setRevealPath(null)
+        await refetchFileList()
+        return
+      }
       setSelectedPath(normalizedPath)
       const dirsToRefresh = options?.refreshTargetDir
         ? [...parentDirsForReveal(normalizedPath), normalizedPath]
@@ -469,7 +483,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
       if (revealSeqRef.current !== revealSeq) return
       setRevealPath(normalizedPath)
     },
-    [refreshDirs],
+    [refetchFileList, refreshDirs],
   )
 
   const handleRevealHandled = useCallback((path: string) => {

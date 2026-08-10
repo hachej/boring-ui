@@ -60,6 +60,8 @@ export interface AgentSummary {
   readonly agentTypeId: string
   readonly label: string
   readonly description?: string
+  /** Runtime plugins explicitly bound to this Agent definition. */
+  readonly pluginIds?: readonly string[]
   readonly definition?: {
     readonly version: string
     readonly digest: string
