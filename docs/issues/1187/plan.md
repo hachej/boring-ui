@@ -308,6 +308,32 @@ not need them.
 The benefit is not only less machinery — it removes the failure mode where a
 orchestrator acts on a half-finished steering exchange it partially observed.
 
+### Cross-repo lanes: the factory-wide workspace (owner-ratified 2026-08-10)
+
+Interim shape, owner's own proposal: **register one additional hub workspace
+rooted at `/home/ubuntu/projects/`.** Cross-repo lanes — seneca, boring-content,
+constellation — run there, and agents `cd` into the target repo. Nothing about
+the per-repo factory changes; boring-ui keeps its own workspace, its own
+`.beads/`, its own `fleet.yaml`.
+
+Accepted caveats, named so nobody rediscovers them:
+
+- **File-tree and search performance** over a root that wide needs ignore
+  configuration up front. A projects-root workspace that indexes every
+  `node_modules` in every repo is unusable on the first open, and that reads as
+  "the product is slow" rather than "the root was misconfigured".
+- **#1146 readonly-paths policy is the guardrail.** It is what protects
+  unrelated repos from a lane that wanders. At minimum, protect the **primary
+  `boring-ui-v2` checkout** (the coordination anchor, AGENTS.md hard rule 6) and
+  **every repo's `.git` internals**, per the policy's capability model.
+- **Coarse session and task scoping is accepted.** Sessions and tasks in that
+  workspace are scoped to the root, not the repo, so a seneca lane and a
+  boring-content lane share a namespace. That is the price of the interim.
+
+**Deferred: true multi-repo workspaces** — per-repo authority and multi-root
+bindings via #1123. **Trigger:** when the projects-root workspace's coarseness
+causes a real incident, or blocks a per-repo policy we actually need.
+
 ### Seat funding (owner-ratified 2026-08-10)
 
 **Seats are funded by instance env keys** — the host-configured provider
@@ -333,7 +359,9 @@ Explicit, so nobody quietly re-migrates them and nobody quietly keeps everything
    `.agents/factory/**`, `AGENTS.md`, `.github/workflows/**` (permanently
    trust-class B). A workspace editing its own authority files is the exact
    failure the trust ladder exists to prevent.
-2. **Cross-repo work** (seneca, boring-content, infra) — see G2.
+2. **True multi-repo work with per-repo authority** — see G2. Cross-repo
+   *lanes* move into the factory-wide workspace; what stays out is anything
+   needing per-repo policy or multi-root bindings.
 3. **Ad-hoc exploration and grilling** — `grill-me`, `grill-for-unknowns`,
    conversational thermo passes.
 4. **Anything while the product is broken.** The migration must never make the
@@ -352,10 +380,10 @@ decision).
 | # | Gap | Detail (verified against `main`) | Disposition |
 | --- | --- | --- | --- |
 | **G1** | **Ad-hoc worktree worker spawning** | The unit of work is "create `.worktrees/<lane>`, run a session with that cwd". Verified: no worktree-creation capability exists in any package — it is a bash procedure only; the bash tool is a synchronous `exec` fenced to one `workspaceRoot` with no background/detach; a session's fs root is fixed at composition. The Beadle's core job (spawn workers while ready > active) is unbuildable as specified. | **pull** — the largest gap. Interim **adopt-now**: a **fixed lane pool** — pre-create N lane worktrees, register each as a workspace in the hub registry (`workspaces add`), and have the Beadle *wake* an idle lane rather than spawn one. `worker_cap: 3` plus the bugfix lane means the pool is ~4; bounded concurrency was already policy, so this is not a real loss at this stage. |
-| **G2** | **Cross-repo work** | Procedures assume one repo. The hub serves N workspaces, but each agent turn is fenced to one `workspaceRoot` — there is no cross-workspace turn — and `fleet.yaml`/`policy.yaml`/`.beads/` are repo-local by design. | **external** for this epic. Do not generalize the factory to N repos before it works for one. |
+| **G2** | **Cross-repo lanes** | Procedures assume one repo. Each agent turn is fenced to one `workspaceRoot` — there is no cross-workspace turn — and `fleet.yaml`/`policy.yaml`/`.beads/` are repo-local by design. | **adopt-now** (owner-ratified 2026-08-10) — register **one additional hub workspace rooted at `/home/ubuntu/projects/`**, the "factory-wide" workspace. Cross-repo lanes (seneca, boring-content, constellation) run there and agents `cd` into the target repo. True multi-repo workspaces are **deferred** — see "Cross-repo lanes" below. |
 | **G3** | **GitHub PR orchestration** | `gh` is a CLI a session shells out to; the tasks plugin already does exactly this (`createGhCliGitHubIssueExecutor`). No first-party PR surface. | **adopt-now** — seats keep shelling `gh`. It works, it is auditable, GitHub is already the declared authority for human intake. Not on this epic's path. |
 | **G4** | **Long CI polls** | Automation triggers are `manual \| scheduled` only — no event/webhook trigger. A session waiting on CI stops heartbeating and gets its lease broken (the documented stall failure). | **pull (small)** — a cron automation polling `gh pr checks` for open factory PRs and raising results, so no session ever blocks on CI. Sessions keep the standing rule: poll synchronously, never end a turn on a wait you did not schedule. Webhook triggers: **external**. |
-| **G5** | **Live demo as a workspace pane** | Half of the ratified two-artifact handover. Verified: the filesystem plugin's HTML viewer renders sanitized HTML via sandboxed-iframe `srcDoc` — so a **self-contained present-pr page opens as a pane today, no product change** (this downgrades the present-pr half of the gap to adopt-now). But there is **no URL/preview pane**: `generated-pane` is a declarative element-spec renderer, not a URL embed, and no pane type points an iframe at a running dev server. | **pull** — a bounded local-URL preview pane (localhost + port allowlist) so a worker can expose its running demo. This is the one new UI surface the epic needs. |
+| **G5** | **Live demo as a workspace pane** | Half of the ratified two-artifact handover. Verified: the filesystem plugin's HTML viewer renders sanitized HTML via sandboxed-iframe `srcDoc` — so a **self-contained present-pr page opens as a pane today, no product change** (this downgrades the present-pr half of the gap to adopt-now). But there is **no URL/preview pane**: `generated-pane` is a declarative element-spec renderer, not a URL embed, and no pane type points an iframe at a running dev server. | **pull**, built in **S3** (owner-ratified 2026-08-10) — a bounded local-URL preview pane (localhost + port allowlist) so a worker can expose its running demo. UI-loop-sized. This is the one new UI surface the epic needs. |
 | **G6** | **Tasks two-level hierarchy: epics → beads** | Owner believes it does not exist. **Partly wrong, and worth knowing**: `BoringTaskCard.epic?: BoringTaskEpicRef` exists, the Beads adapter *does* map a bead's parent to `epic` (`beadsSource.ts:178`), and `TaskKanbanBoard` has an epic **filter** dropdown. What is missing is the requested shape: an **epics-first view** listing all active epics with drill-down into their beads. Today it is one flat board you narrow by filter. | **pull (small)** — an epic-level grouping/drill-down over data that already exists. Cheap because no adapter or schema work is needed. |
 | **G7** | **Per-automation agent picker in the UI** | #1143 landed the server half; `AutomationForm.tsx` still reads a single ambient `agentTypeId` and has no selector. With nine seats, the Beadle automations cannot be configured to the right seat from the UI. | **pull (small)** — finish #1143's UI half. Blocks S7. |
 | **G8** | **Trust-ladder merge gate** | class-A predicate (allowlist ∧ reviewer-pass ∧ size-cap) unimplemented; every merge manual. | **external to this epic** — factory TODO step 5, orthogonal to *where* the factory runs. Migrating and building it at once conflates two failures. |
@@ -373,8 +401,10 @@ agent picker, blocks the Beadle).
 2. **The old path keeps working until its replacement is proven.** Every slice is
    additive; nothing is removed from `.agents/` or `docs/procedures/` until the
    workspace path has done the same job for real.
-3. **Beads stays the single write authority for work state.** Tasks stays
-   read-only for the whole epic.
+3. **Beads stays the canonical work-item truth, with single-writer discipline**
+   (owner-ratified 2026-08-10). The Tasks panel is a **read-only mirror until
+   S8**; write authority flips only at exit, and only once the loop has closed
+   once. Until then there is exactly one way a work item changes: `br`.
 4. **Escape hatches are a list, not a mood.** The four items above are the whole
    list; adding to it requires an owner decision recorded here.
 5. **Fixed lane pool, not dynamic spawning.** Accept G1's workaround for this
@@ -399,7 +429,8 @@ agent picker, blocks the Beadle).
 Each slice is one PR. "Proof" is the real lane it must run, not a test suite.
 
 ### S0: factory workspace boots the 3-seat roster
-**Delivers:** the CLI hub on this repo with `BORING_AGENT_FLEET=1`; `fleet.yaml`
+**Delivers:** the CLI hub on this repo with `BORING_AGENT_FLEET=1` and
+`BORING_AGENT_SESSION_ROOT=/home/ubuntu/factory-sessions`; `fleet.yaml`
 + `policy.yaml` + `.agents/personas/*` recut from today's five seats to the three
 ratified above (`triage`, `orchestrator`, `worker`); a documented, repeatable start
 command. No factory work moves yet.
@@ -478,6 +509,8 @@ with drill-down to beads and an easy filter, pointed at the canonical
 lease state without opening a terminal; the ready list matches
 `br ready --json` from the canonical checkout during an active lease.
 **Review budget:** inside.
+**Note:** read-only mirror, per decision 3. Board-side writes are an S8 exit
+question, not a slice here.
 
 ### S6: seats carry their own definitions
 **Delivers:** the three seats as `.agents/personas` packages installed through
@@ -523,6 +556,12 @@ does.
 stays canonical. Exiting the migration means the workspace is the default path,
 not that the hatch is welded shut.
 
+**Exit also flips work-item write authority** (decision 3): the Tasks panel is a
+read-only mirror for the whole migration, and board-side writes become
+admissible only once the loop has closed one full epic. Adding a second writer
+to the work graph before then would mean debugging the migration and a
+split-brain graph at the same time.
+
 **Proof:** the named epic, closed, with its gate decisions traceable in the
 Inbox; plus a fresh session, primed only from `AGENTS.md` + the factory README,
 running a lane the new way without being told how.
@@ -544,6 +583,10 @@ before its logs are.
 **Session-history durability.** AGENTS.md hard rule 9: Pi transcripts and
 session lists are host-app user data, stored on the host's durable volume via
 `BORING_AGENT_SESSION_ROOT` (typically `/data/pi-sessions`), not container home.
+**On this VM the factory hub uses a dedicated directory:
+`BORING_AGENT_SESSION_ROOT=/home/ubuntu/factory-sessions`** (owner-ratified
+2026-08-10), revisited if the hub containerizes — at which point it moves to a
+mounted volume per the hard rule.
 Once lanes are workspace sessions, **the transcript is the only record of an
 unattended worker's reasoning** — losing it on restart is worse than the
 terminal we left. Related: ask-user pendings are abandoned across restart, so a
@@ -602,7 +645,9 @@ S1's lane, and S8's one-full-epic exit bar.
 
 ## Out of scope
 
-- Cross-repo factory operation (G2).
+- True multi-repo workspaces: per-repo authority and multi-root bindings via
+  #1123 (G2). **Trigger to build:** when the projects-root workspace's
+  coarseness causes a real incident, or blocks per-repo policy.
 - Trust-ladder merge gate and class-A auto-merge (G8, factory TODO step 5).
 - Webhook/event automation triggers (G4's second half).
 - Swarm Console, dashboards, metrics (VISION: deferred until the loop runs
