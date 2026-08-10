@@ -161,6 +161,15 @@ export interface CoreConfig {
    */
   defaultAgentTypeId?: string
 
+  /**
+   * Decision 28 hook: exact trusted signup hostname -> fleet agentTypeId.
+   * Trusted host configuration (env/server option) validated against the
+   * fleet at boot; consumed only when initializing a newly created default
+   * Workspace at signup. The hostname has no continuing routing, membership,
+   * selection, or authorization effect and is never persisted.
+   */
+  signupAgentDefaults?: Readonly<Record<string, string>>
+
   cors: {
     origins: string[]
     credentials: true
