@@ -26,3 +26,4 @@ export {
   expandToFileSchema,
   MAX_PANELS,
 } from "./validation"
+export type { ExpandToFileTarget } from "./validation"

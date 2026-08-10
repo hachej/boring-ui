@@ -20,6 +20,7 @@ export function useWorkspaceShellCapabilitiesHost({
   workspaceId,
   effectiveAppLeftPaneWidth,
   sessionTitleById,
+  agentLabelByTypeId,
   defaultSessionTitle,
   makeCenterParams,
   createChatSession,
@@ -34,6 +35,11 @@ export function useWorkspaceShellCapabilitiesHost({
   workspaceId: string
   effectiveAppLeftPaneWidth: number
   sessionTitleById: Map<string, string | null | undefined>
+  /**
+   * Agent labels keyed by agentTypeId. Null when the workspace has fewer than
+   * two Agents — the detached header then stays exactly as it was.
+   */
+  agentLabelByTypeId?: Map<string, string> | null
   defaultSessionTitle: string
   makeCenterParams: (sessionKey: string, options?: { bridgeEnabled?: boolean }) => unknown
   createChatSession: (options?: { title?: string }) => Promise<WorkspaceShellCreatedSessionResult>
@@ -84,11 +90,15 @@ export function useWorkspaceShellCapabilitiesHost({
         ...(floatingChatSession?.initialDraft !== undefined ? { initialDraft: floatingChatSession.initialDraft } : {}),
       }
     : null
+  const floatingChatAgentLabel = floatingChatRef?.agentTypeId
+    ? agentLabelByTypeId?.get(floatingChatRef.agentTypeId)
+    : undefined
   const floatingChatNode = floatingChatRef && floatingChatSessionKey && floatingChatParams ? (
     <DetachedChatPopover
       key={floatingChatSessionKey}
       sessionId={floatingChatRef.sessionId}
       title={floatingChatTitle ?? floatingChatRef.sessionId}
+      {...(floatingChatAgentLabel ? { agentLabel: floatingChatAgentLabel } : {})}
       chatParams={floatingChatParams}
       initialPosition={{ left: appLeftPaneCollapsed ? 24 : effectiveAppLeftPaneWidth + 24, top: 72 }}
       composingEnabled={floatingChatSession?.composingEnabled ?? false}

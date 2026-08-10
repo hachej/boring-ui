@@ -1,7 +1,7 @@
 import { createAgentAssetDigest, type Sha256Digest } from '../../shared/agent-definition'
 import { ErrorCode } from '../../shared/error-codes'
 import type { JsonValue } from '../../shared/gateway/types'
-import type { ConfiguredAgentHostAgentSpec } from '../agent-host/types'
+import type { AgentInstructionFileRef, ConfiguredAgentHostAgentSpec } from '../agent-host/types'
 import type { AuthoredAgentSourceV1 } from './materializeAgentDirectory'
 
 const APPENDIX_NAME_RE = /^[a-z][a-z0-9-]{0,63}$/
@@ -14,6 +14,11 @@ export interface TrustedAgentInstructionAppendix {
 
 export interface TrustedAuthoredAgentPolicy {
   readonly fallbackLabel?: string
+  /**
+   * Workspace-relative authored instruction sources for this agent, supplied
+   * by the trusted composer that actually knows where they live.
+   */
+  readonly instructionFiles?: readonly AgentInstructionFileRef[]
   readonly instructionAppendices?: readonly TrustedAgentInstructionAppendix[]
   readonly plugins?: readonly {
     readonly name: string
@@ -108,6 +113,9 @@ export async function createConfiguredAgentHostAgentSpec(
     ...(plugin.config === undefined ? {} : { config: frozenJson(plugin.config) }),
   }))
   const preferredModel = nonEmpty(policy.preferredModel)
+  const instructionFiles = policy.instructionFiles?.length
+    ? Object.freeze(policy.instructionFiles.map((file) => Object.freeze({ ...file })))
+    : undefined
 
   return Object.freeze({
     agentTypeId: input.source.agentTypeId,
@@ -116,6 +124,7 @@ export async function createConfiguredAgentHostAgentSpec(
       label,
       version: input.source.version,
     }),
+    ...(instructionFiles ? { instructionFiles } : {}),
     ...(plugins?.length ? { plugins: Object.freeze(plugins) } : {}),
     ...(preferredModel ? { model: Object.freeze({ preferred: preferredModel }) } : {}),
   })

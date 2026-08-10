@@ -7,7 +7,8 @@ import { materializeAgentDirectory } from './materializeAgentDirectory'
 import { createConfiguredAgentHostAgentSpec } from './createConfiguredAgentHostAgentSpec'
 import { sha256 } from '../../shared/digest'
 import { ErrorCode, type ErrorCode as AgentErrorCode } from '../../shared/error-codes'
-import type { ConfiguredAgentHostAgentSpec } from '../agent-host/types'
+import { AGENT_USER_FILESYSTEM_ID } from '../agent-host/types'
+import type { AgentInstructionFileRef, ConfiguredAgentHostAgentSpec } from '../agent-host/types'
 import type { Sha256Digest } from '../../shared/digest'
 
 /**
@@ -68,6 +69,22 @@ export interface DiscoveredAgentPackageDescriptor {
 export interface LoadConfiguredAgentFleetOptions {
   /** Plugin-manager scan descriptors injected by the workspace/CLI boot layer. */
   readonly discoveredPackages: readonly DiscoveredAgentPackageDescriptor[]
+  /**
+   * Root of the workspace the `user` filesystem serves, or `null` when the
+   * host resolves a DIFFERENT root per request (core, the CLI hub) and so has
+   * no single one at fleet-composition time.
+   *
+   * Required, because published `instructionFiles` are addressed relative to
+   * it and only the caller knows it. It is NOT derivable from the discovered
+   * package roots: a fleet can be composed from packages that live outside
+   * the workspace root, and guessing produced well-formed paths that
+   * resolved to nothing.
+   *
+   * `null` is not a soft option — it makes the host structurally unable to
+   * publish a ref it cannot guarantee, which is the honest answer for
+   * per-workspace roots.
+   */
+  readonly workspaceRoot: string | null
   /** Path to `.agents/factory/fleet.yaml`. */
   readonly fleetConfigPath: string
   /** Path to `.agents/factory/policy.yaml` (read for `models.seats` tiers). */
@@ -81,12 +98,35 @@ export interface LoadConfiguredAgentFleetOptions {
   readonly env?: NodeJS.ProcessEnv
 }
 
+/**
+ * Whether a workspace-relative path is safe to publish to a client.
+ *
+ * Deliberately the SAME shape as the browser-side guard every openable
+ * resource passes through (`isSafePluginRelativePath` +
+ * `openableFileResource` in @hachej/boring-workspace): no NUL, no backslash,
+ * percent-encoded dot/slash/backslash, scheme prefix, absolute path, or
+ * `..`/empty/bare-dot segment. An allowlist regex here was stricter than the
+ * guard downstream, so an ordinary seat name containing a space permanently
+ * lost its link for no security reason.
+ */
+function isPublishableWorkspacePath(value: string): boolean {
+  return value.length > 0
+    && !value.includes('\0')
+    && !value.includes('\\')
+    && !value.startsWith('/')
+    && !/^[A-Za-z]:[\\/]/.test(value)
+    && !/%(?:2e|2f|5c)/i.test(value)
+    && !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)
+    && !value.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')
+}
+
 export type FleetLoaderDiagnosticCode = Extract<
   AgentErrorCode,
   | 'AGENT_FLEET_SEAT_PERSONA_INVALID'
   | 'AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH'
   | 'AGENT_DEFINITION_ID_CONFLICT'
   | 'AGENT_DEFINITION_UNSEATED'
+  | 'AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE'
 >
 
 export interface FleetLoaderDiagnostic {
@@ -116,7 +156,7 @@ export class FleetConfigError extends Error {
   }
 }
 
-function isInside(root: string, target: string): boolean {
+function isCanonicalPathInside(root: string, target: string): boolean {
   const fromRoot = relative(root, target)
   return fromRoot === '' || (fromRoot !== '..' && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot))
 }
@@ -211,7 +251,7 @@ async function readVerifiedSkillContent(
   const fileStat = await lstat(candidate)
   if (!fileStat.isFile() || fileStat.isSymbolicLink()) throw new Error('skill source is not a regular file')
   const target = await realpath(candidate)
-  if (!isInside(rootTarget, target)) throw new Error('skill source resolves outside its admitted root')
+  if (!isCanonicalPathInside(rootTarget, target)) throw new Error('skill source resolves outside its admitted root')
   const content = await readFile(target, 'utf8')
   if (await sha256(content) !== skill.digest) throw new Error('skill digest mismatch')
   return content
@@ -261,6 +301,13 @@ export async function loadConfiguredAgentFleet(
     seatTiers = Object.freeze({})
   }
 
+  // Resolve the served root once, but keep failure per-seat and fail-closed:
+  // composition can still proceed while publication reports the existing
+  // stable unpublishable diagnostic.
+  const canonicalWorkspaceRoot = options.workspaceRoot === null
+    ? null
+    : await realpath(resolve(options.workspaceRoot)).catch(() => null)
+
   const agents: ConfiguredAgentHostAgentSpec[] = []
   const diagnostics: FleetLoaderDiagnostic[] = []
   const packagesByDefinitionId = new Map<string, DiscoveredAgentPackageDescriptor[]>()
@@ -303,8 +350,13 @@ export async function loadConfiguredAgentFleet(
       if (conflictedDefinitionIds.has(binding.agentTypeId)) continue
       const descriptor = descriptors[0]
       if (!descriptor || !descriptor.preflight.ok) throw new Error(`seat "${binding.seat}" has no valid discovered agent package`)
+      // Canonicalize the discovered package root once: everything after this
+      // point (composition, skill reads, publication path algebra) consumes
+      // the admitted canonical directory, so directory symlinks cannot make a
+      // published ref point somewhere the served root does not cover.
+      const personaSource = await realpath(resolve(descriptor.rootDir))
       const source = await materializeAgentDirectory({
-        directory: descriptor.rootDir,
+        directory: personaSource,
         expectedAgentTypeId: binding.agentTypeId,
         manifest: 'package.json',
       })
@@ -333,7 +385,7 @@ export async function loadConfiguredAgentFleet(
         let content: string
         try {
           content = skill.name.includes('/')
-            ? await packageSkillContent(descriptor.rootDir, skill)
+            ? await packageSkillContent(personaSource, skill)
             : await canonicalSkillContent(options.skillsRoot, skill)
         } catch (error) {
           recorded = true
@@ -352,10 +404,55 @@ export async function loadConfiguredAgentFleet(
       }
 
       const preferredModel = resolveSeatModel(seatTiers[binding.seat], env)
+      // The loader is the only place that knows seat -> persona directory;
+      // publishing it here keeps clients from inverting the mapping.
+      let instructionFiles: AgentInstructionFileRef[] | undefined
+      const personaIsInsideWorkspace = canonicalWorkspaceRoot !== null
+        && isCanonicalPathInside(canonicalWorkspaceRoot, personaSource)
+      const publishedInstructionPath = canonicalWorkspaceRoot === null
+        ? ''
+        : relative(canonicalWorkspaceRoot, resolve(personaSource, 'instructions.md')).split(sep).join('/')
+      // EXISTENCE is already proven and is deliberately not re-checked: this
+      // seat only got here because `materializeAgentDirectory` read
+      // `<personasDir>/<seat>/instructions.md` and rejected it if absent or
+      // blank. A `stat` here would re-assert what composition just did.
+      //
+      // REACHABILITY is the only open question, and it is pure path algebra
+      // against the served root — no I/O, no per-request probe. ONE honest
+      // failure path covers both ways a ref can be unreachable: personas
+      // outside the served workspace, and a composed path the client-side
+      // guard would reject anyway.
+      //
+      // Together those two make publication deterministic: a published ref
+      // names a file that exists, under the root the client reads through.
+      const unpublishableReason = options.workspaceRoot === null
+        ? `this host resolves a workspace root per request, so persona instructions have no single "${AGENT_USER_FILESYSTEM_ID}" path to be addressed against`
+        : canonicalWorkspaceRoot === null || !personaIsInsideWorkspace
+        ? `persona source for seat ${JSON.stringify(binding.seat)} resolves outside the workspace root ${JSON.stringify(options.workspaceRoot)} that the "${AGENT_USER_FILESYSTEM_ID}" filesystem serves`
+        : !isPublishableWorkspacePath(publishedInstructionPath)
+          ? `seat "${binding.seat}" composes an unsafe workspace-relative path (${JSON.stringify(publishedInstructionPath)})`
+          : undefined
+      if (unpublishableReason) {
+        // Fails loud, not silent: the seat still composes, but the overlay
+        // gets no instruction row and the operator gets a stable code.
+        diagnostics.push({
+          seat: binding.seat,
+          agentTypeId: binding.agentTypeId,
+          code: ErrorCode.enum.AGENT_FLEET_SEAT_INSTRUCTIONS_PATH_UNPUBLISHABLE,
+          message: `${unpublishableReason}; its persona instructions will not be linkable`,
+        })
+      } else {
+        instructionFiles = [{
+          filesystem: AGENT_USER_FILESYSTEM_ID,
+          path: publishedInstructionPath,
+          role: 'persona',
+        }]
+      }
       const spec = await createConfiguredAgentHostAgentSpec({
         source,
         policy: {
           instructionAppendices,
+          ...(instructionFiles ? { instructionFiles } : {}),
           ...(preferredModel ? { preferredModel } : {}),
         },
       })

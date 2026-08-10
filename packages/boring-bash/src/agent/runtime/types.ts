@@ -22,6 +22,26 @@ export type RuntimeFilesystemStrategy =
   | { kind: 'host' }
   | { kind: 'remote-workspace'; pathOptions?: RuntimeRemoteWorkspacePathOptions }
 
+export type RuntimeFilesystemCapability = 'read' | 'write' | 'create-child' | 'delete' | 'move-from'
+
+export const READONLY_FILESYSTEM_MUTATION_CODE = 'readonly' as const
+
+export class ReadonlyFilesystemMutationError extends Error {
+  readonly code = READONLY_FILESYSTEM_MUTATION_CODE
+  readonly statusCode = 403 as const
+  constructor(readonly filesystem: string, readonly operation: RuntimeFilesystemCapability) {
+    super(`${filesystem} binding is readonly`)
+    this.name = 'ReadonlyFilesystemMutationError'
+  }
+}
+
+export interface RuntimeFilesystemAccessDecision {
+  readonly filesystem: string
+  readonly normalizedPath: string
+  readonly access: 'readonly' | 'readwrite'
+  readonly capabilities: Readonly<Record<RuntimeFilesystemCapability, boolean>>
+}
+
 export interface RuntimeFilesystemBindingOperations {
   read(descriptor: { filesystem: string; path: string }): Promise<{ content: string; mtimeMs?: number; metadata?: unknown }>
   list(descriptor: { filesystem: string; path: string }): Promise<{ entries: string[]; metadata?: unknown }>
@@ -29,9 +49,11 @@ export interface RuntimeFilesystemBindingOperations {
   grep(descriptor: { filesystem: string; path: string }, pattern: string, options?: { limit?: number; offset?: number }): Promise<{ matches: Array<{ path: string; line: number; text: string }>; metadata?: unknown }>
   stat(descriptor: { filesystem: string; path: string }): Promise<{ isDirectory: boolean; metadata?: unknown }>
   write?(descriptor: { filesystem: string; path: string; content: string; expectedMtimeMs?: number }): Promise<{ mtimeMs?: number; metadata?: unknown }>
+  writeBinary?(descriptor: { filesystem: string; path: string; content: Uint8Array }): Promise<{ mtimeMs?: number; metadata?: unknown }>
   delete?(descriptor: { filesystem: string; path: string }): Promise<{ metadata?: unknown }>
   move?(descriptor: { filesystem: string; from: string; to: string }): Promise<{ metadata?: unknown }>
   mkdir?(descriptor: { filesystem: string; path: string; recursive?: boolean }): Promise<{ metadata?: unknown }>
+  resolveAccess?(descriptor: { filesystem: string; path: string }): Promise<RuntimeFilesystemAccessDecision>
   rejectMutation(operation: string, descriptor: { filesystem: string; path: string }): never
 }
 
@@ -57,6 +79,8 @@ export interface RuntimeBundle {
   bash?: RuntimeBashStrategy
   filesystem?: RuntimeFilesystemStrategy
   filesystemBindings?: RuntimeFilesystemBinding[]
+  /** Workspace-relative prefixes the host protects from mutation, including by spawned shells. */
+  readonlyWorkspacePaths?: readonly string[]
 }
 
 export function getRuntimeBundleStorageRoot(bundle: RuntimeBundle): string {
