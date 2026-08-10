@@ -19,6 +19,7 @@ import { CornerChromeButton } from "./cornerChrome"
 import { MobileChatBar, MobileSingleChatPane, MobileWorkspaceBar } from "./mobileShell"
 import { WorkbenchOverlayFrame } from "./WorkbenchOverlayFrame"
 import { useViewportWidth } from "./useViewportWidth"
+import { isCompactViewport } from "./breakpoints"
 import { workspaceSessionRef, workspaceSessionRefFromKey, workspaceSessionRefsEqual } from "../sessionIdentity"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
@@ -82,6 +83,12 @@ export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   return { version: "2.0", groups }
 }
 
+/**
+ * Not a shell breakpoint tier (see ./breakpoints.ts): below this width an
+ * open workbench takes over one pane instead of squeezing chat beside it.
+ */
+const CHAT_AUTOCOLLAPSE_MAX_WIDTH = 1180
+
 export function ChatLayout(props: ChatLayoutProps) {
   const navOpen = props.nav !== null
   const surfaceConfigured = props.surface !== undefined
@@ -130,7 +137,7 @@ export function ChatLayout(props: ChatLayoutProps) {
     [blockers],
   )
   const commandRegistry = useCommandRegistry()
-  const mobileShell = props.mobileShellEnabled === true && viewport < 640
+  const mobileShell = props.mobileShellEnabled === true && isCompactViewport(viewport)
   const effectiveNavWidth = mobileShell ? Math.min(Math.max(280, Math.floor(viewport * 0.86)), 360) : clamp(navWidth, 200, 360)
   const effectiveSidebarWidth = mobileShell ? viewport : clamp(sidebarWidth, 200, Math.max(240, Math.floor(viewport * 0.5)))
   const surfaceMax = mobileShell ? viewport : Math.max(480, Math.floor(viewport * 0.72))
@@ -362,7 +369,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   // On compact widths, prefer a one-pane workbench takeover instead of squeezing chat.
   useEffect(() => {
     if (mobileShell || !surfaceOpen || chatCollapsed || props.chatOverlay) return
-    if (viewport < 1180) setChatCollapsed(true)
+    if (viewport < CHAT_AUTOCOLLAPSE_MAX_WIDTH) setChatCollapsed(true)
   }, [chatCollapsed, mobileShell, props.chatOverlay, setChatCollapsed, surfaceOpen, viewport])
 
   // Chat-hosted overlays (Skills/Plugins) must remain visible while workbench
@@ -424,7 +431,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         className={cn(
           mobileShell ? "absolute inset-y-0 left-0 z-50 h-full shadow-2xl" : "relative h-full shrink-0",
           "min-h-0 overflow-hidden bg-background",
-          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
           navOpen
             ? "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]"
             : "pointer-events-none z-0",
@@ -439,7 +446,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         <div
           className={cn(
             "h-full min-h-0 overflow-hidden",
-            "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+            "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
             navOpen ? "opacity-100" : "invisible pointer-events-none opacity-0",
           )}
         >
@@ -462,7 +469,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         className={cn(
           mobileShell ? "absolute inset-0 z-40 h-full" : "relative h-full shrink-0",
           "min-h-0 overflow-hidden bg-background",
-          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
           sidebarOpen && "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
         )}
         style={{
@@ -475,7 +482,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         <div
           className={cn(
             "h-full min-h-0 overflow-hidden",
-            "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+            "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
             sidebarOpen ? "opacity-100" : "opacity-0",
           )}
         >
@@ -497,11 +504,14 @@ export function ChatLayout(props: ChatLayoutProps) {
           aria-label={chatHidden ? "Collapsed chat" : "Chat"}
           aria-hidden={chatHidden}
           className={cn(
-            "relative h-full min-h-0 min-w-0 overflow-hidden bg-background",
+            // `isolate` scopes children's z-indices (dockview sashes are
+            // z-index 999) so the chat-left overlay can stack above them
+            // without escaping into page-level chrome.
+            "relative isolate h-full min-h-0 min-w-0 overflow-hidden bg-background",
             mobileShell && !chatHidden && "flex flex-col",
             // Animate flex-grow (not just width) so the chat slides open/closed
             // like the fixed-width nav/workbench panes instead of snapping.
-            "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+            "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
             chatHidden
               ? "min-w-0 flex-[0_0_0px]"
               : "flex-1 border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
@@ -518,7 +528,7 @@ export function ChatLayout(props: ChatLayoutProps) {
           <div
             className={cn(
               mobileShell && !chatHidden ? "min-h-0 flex-1 overflow-hidden" : "h-full min-h-0 overflow-hidden",
-              "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+              "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
               chatHidden ? "opacity-0" : "opacity-100",
             )}
           >
@@ -575,7 +585,7 @@ export function ChatLayout(props: ChatLayoutProps) {
               "h-full min-h-0 overflow-hidden bg-background",
               // Collapsed/mobile workbench fills available width; otherwise it is a side panel.
               (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen ? "min-w-0 flex-1" : "shrink-0",
-              "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+              "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
               !mobileShell && "border-l border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
             )}
             style={
@@ -592,7 +602,7 @@ export function ChatLayout(props: ChatLayoutProps) {
             <div
               className={cn(
                 "h-full min-h-0 overflow-hidden",
-                "transition-[opacity,padding] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+                "transition-[opacity,padding] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
                 surfaceOpen || !mobileShell ? "opacity-100" : "opacity-0",
               )}
             >

@@ -131,6 +131,30 @@ export interface AgentEffectAdmission {
   }): Promise<AgentEffectAdmissionResult>
 }
 
+/**
+ * The workspace filesystem the Host serves its own configuration tree from,
+ * matching `GET /api/v1/filesystems`. Instruction refs are addressed the same
+ * way as every other openable file so clients never special-case them.
+ */
+export const AGENT_USER_FILESYSTEM_ID = 'user'
+
+/**
+ * An authored file that contributes to this agent's instructions, addressed
+ * exactly like every other openable resource (`{filesystem, path}`) so the
+ * client can route it through the same safety guard as skills.
+ *
+ * The Host knows these locations from fleet configuration; clients must never
+ * re-derive them from the agent id (seat and agentTypeId are unrelated
+ * fleet.yaml fields). `role` is a DISCRIMINATOR, not a display string — the
+ * words shown to the user are the client's business.
+ */
+export interface AgentInstructionFileRef {
+  readonly filesystem: string
+  /** Workspace-relative path, e.g. `.agents/personas/concierge/instructions.md`. */
+  readonly path: string
+  readonly role: 'persona'
+}
+
 export interface ConfiguredAgentHostAgentSpec {
   readonly agentTypeId: string
   readonly definition: {
@@ -138,6 +162,8 @@ export interface ConfiguredAgentHostAgentSpec {
     readonly label: string
     readonly version?: string
   }
+  /** Authored instruction sources behind `definition.instructions`. */
+  readonly instructionFiles?: readonly AgentInstructionFileRef[]
   readonly plugins?: readonly {
     /** Canonical app-preflighted plugin ID. */
     readonly name: string

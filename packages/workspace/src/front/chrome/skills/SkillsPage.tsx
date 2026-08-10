@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { FileText, RefreshCw, Sparkles, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
@@ -8,47 +8,21 @@ import { postUiCommand } from "../../bridge"
 import { ManagementOverlaySurface } from "../management/ManagementOverlaySurface"
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
 import type { PaneProps } from "../../registry/types"
-import { uiFileResourceKey, type UiFileResource } from "../../../shared/types/filesystem"
-import { isSafePluginRelativePath } from "../../../shared/plugins/manifest"
-
-interface SkillSummary {
-  name: string
-  description?: string
-  source?: string
-  /** False when the row exists for source management but Pi did not retain it as invocable. */
-  invocable?: boolean
-  /** Browser-safe resource identity. */
-  resource?: UiFileResource
-}
-
-interface SkillsResponse {
-  skills?: SkillSummary[]
-}
+import { uiFileResourceKey } from "../../../shared/types/filesystem"
+import { openableFileResource } from "../../../shared/skills/openableFileResource"
+import { parseSkills, type AgentSkillSummary } from "../agents/agentCapabilities"
 
 type LoadState =
-  | { status: "loading"; skills: SkillSummary[]; error?: undefined }
-  | { status: "ready"; skills: SkillSummary[]; error?: undefined }
-  | { status: "error"; skills: SkillSummary[]; error: string }
+  | { status: "loading"; skills: AgentSkillSummary[]; error?: undefined }
+  | { status: "ready"; skills: AgentSkillSummary[]; error?: undefined }
+  | { status: "error"; skills: AgentSkillSummary[]; error: string }
 
-function isSafeRelativeSkillPath(value: unknown): value is string {
-  return typeof value === "string"
-    && isSafePluginRelativePath(value)
-    && !/%(?:2e|2f|5c)/i.test(value)
-    && !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)
-    && !value.split("/").some((segment) => segment === "" || segment === ".")
-}
-
-function openableResource(skill: SkillSummary): UiFileResource | undefined {
-  const resource = skill.resource
-  return resource
-    && typeof resource.filesystem === "string"
-    && resource.filesystem.length > 0
-    && isSafeRelativeSkillPath(resource.path)
-    ? resource
-    : undefined
-}
-
-function compareSkills(left: SkillSummary, right: SkillSummary): number {
+/**
+ * `parseSkills` already orders by name; this only breaks the ties it leaves —
+ * a name can repeat across sources, and an unstable order there makes the list
+ * reshuffle on every refresh.
+ */
+function compareSkills(left: AgentSkillSummary, right: AgentSkillSummary): number {
   return left.name.localeCompare(right.name)
     || Number(left.invocable === false) - Number(right.invocable === false)
     || (left.resource ? uiFileResourceKey(left.resource) : "")
@@ -69,17 +43,29 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
   const client = useWorkspacePluginClient()
   const [state, setState] = useState<LoadState>({ status: "loading", skills: [] })
 
+  // Reload and Retry can be triggered from the same error state, and `client`
+  // identity changes on a workspace/agent switch. Every commit is stamped with
+  // the generation that started it so a slow stale response cannot land on top
+  // of a newer one.
+  const generationRef = useRef(0)
+  useEffect(() => () => { generationRef.current += 1 }, [])
+
   const loadSkills = useCallback(async (refresh = false) => {
+    const generation = ++generationRef.current
+    const isStale = () => generationRef.current !== generation
     setState((current) => ({ status: "loading", skills: current.skills }))
     try {
-      const payload = await client.getJson<SkillsResponse>(`/api/v1/agents/${encodeURIComponent(client.agentTypeId)}/skills${refresh ? "?refresh=1" : ""}`, {
+      const payload = await client.getJson<unknown>(`/api/v1/agents/${encodeURIComponent(client.agentTypeId)}/skills${refresh ? "?refresh=1" : ""}`, {
         missingMessage: "Failed to load workspace skills.",
       })
-      const skills = Array.isArray(payload.skills)
-        ? payload.skills.filter((skill): skill is SkillSummary => typeof skill?.name === "string" && skill.name.length > 0)
-        : []
-      setState({ status: "ready", skills })
+      if (isStale()) return
+      // The SAME hardened parser the Agent details panel uses. This surface
+      // previously kept the raw payload after checking only `name`, so a
+      // non-string `description` reached React as a child — which, with no
+      // error boundary above this pane, blanks the whole app.
+      setState({ status: "ready", skills: parseSkills(payload) })
     } catch (error) {
+      if (isStale()) return
       setState((current) => ({
         status: "error",
         skills: current.skills,
@@ -186,7 +172,7 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
         ) : (
           <ul role="list" className="grid gap-2">
             {sortedSkills.map((skill, index) => {
-              const resource = openableResource(skill)
+              const resource = openableFileResource(skill.resource)
               const managementOnly = skill.invocable === false
               const body = (
                 <div className="flex min-h-11 w-full items-start justify-between gap-3 px-3 py-2.5">
@@ -225,9 +211,9 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
               )
               return (
                 <li
-                  key={skill.resource
+                  key={`${skill.resource
                     ? uiFileResourceKey(skill.resource)
-                    : `${skill.name}\0${skill.source ?? ""}\0${skill.description ?? ""}\0${index}`}
+                    : `${skill.name}\u0000${skill.source ?? ""}\u0000${skill.description ?? ""}`}\u0000${index}`}
                   className="min-w-0"
                 >
                   {resource ? (

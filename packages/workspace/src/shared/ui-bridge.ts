@@ -1,4 +1,4 @@
-import type { FilesystemId } from "./types/filesystem"
+import type { FilesystemId, UiFileOpenMode } from "./types/filesystem"
 
 export interface UiBridge {
   getState(): Promise<UiState | null>
@@ -17,7 +17,7 @@ export type WorkspaceBridge = UiBridge & {
 export type UiState = Record<string, unknown>
 
 export type UiCommand =
-  | { kind: 'openFile'; params: { path: string; mode?: 'view' | 'edit' | 'diff'; filesystem?: FilesystemId } }
+  | { kind: 'openFile'; params: { path: string; mode?: UiFileOpenMode; filesystem?: FilesystemId } }
   | { kind: 'openSurface'; params: { kind: string; target: string; filesystem?: FilesystemId; meta?: Record<string, unknown> } }
   | { kind: 'openPanel'; params: { id: string; component: string; params?: Record<string, unknown> } }
   | { kind: 'closePanel'; params: { id: string } }

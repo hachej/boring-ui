@@ -260,11 +260,15 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
           </div>
         ) : sorted.length > 0 ? (
           <ul role="list" className="grid gap-2">
-            {sorted.map((plugin) => {
+            {/* Tiebroken with the row index, like every other host-supplied
+                list: a host that reports the same plugin id twice otherwise
+                gives two rows one key, and the pending spinner lands on the
+                wrong plugin. */}
+            {sorted.map((plugin, index) => {
               const pending = pendingIds.has(plugin.id)
               return (
                 <li
-                  key={plugin.id}
+                  key={`${plugin.id}\u0000${index}`}
                   className="min-h-11 min-w-0 rounded-xl border border-border/60 bg-card/70 px-3 py-2.5"
                 >
                   <div className="flex min-w-0 items-start justify-between gap-3">

@@ -54,7 +54,6 @@ describe("AppLeftPane", () => {
       onCreateSession: vi.fn(),
       onCreateSplitSession: vi.fn(),
       onCreatePopoverSession: vi.fn(),
-      onOpenAgentDetails: vi.fn(),
       onOpenAgentSettings: vi.fn(),
       onSelectAgent: vi.fn(),
     }
@@ -111,31 +110,124 @@ describe("AppLeftPane", () => {
 
     await user.click(screen.getByRole("button", { name: "New chat with Boring Beta" }))
     expect(handlers.onCreateSession).toHaveBeenCalledWith("beta")
-    await user.click(screen.getByRole("button", { name: "New chat with Boring Beta in split pane" }))
+    // Placement variants live behind the single caret menu (owner: three
+    // creation icons were too many).
+    expect(screen.queryByRole("button", { name: "New chat with Boring Beta in split pane" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "New chat options for Boring Beta" }))
+    await user.click(screen.getByText("New chat in split pane"))
     expect(handlers.onCreateSplitSession).toHaveBeenCalledWith("beta")
-    await user.click(screen.getByRole("button", { name: "Quick chat with Boring Beta" }))
+    await user.click(screen.getByRole("button", { name: "New chat options for Boring Beta" }))
+    await user.click(screen.getByText("Quick chat"))
     expect(handlers.onCreatePopoverSession).toHaveBeenCalledWith("beta")
     await user.click(screen.getByRole("button", { name: "Settings for Boring Beta" }))
     expect(handlers.onOpenAgentSettings).toHaveBeenCalledWith("beta")
-    expect(handlers.onOpenAgentDetails).not.toHaveBeenCalled()
   })
 
-  it("collapses the Agents section including the nested chats", async () => {
+  it("retargets new chats from the picker without creating one", async () => {
+    const user = userEvent.setup()
+    const handlers = renderFleetPane()
+
+    await user.click(screen.getByRole("button", { name: "Choose Agent for new chat" }))
+    await user.click(screen.getByRole("menuitem", { name: /Beta/ }))
+    // Picking an Agent only changes the target; the user still decides when
+    // to start the chat.
+    expect(handlers.onSelectAgent).toHaveBeenCalledWith("beta")
+    expect(handlers.onCreateSession).not.toHaveBeenCalled()
+  })
+
+  // Issue #1160's intent — every Agents-section control is a >=44px touch
+  // target on a coarse pointer — is still the contract. What changed is where
+  // that intent can honestly be checked.
+  //
+  // The original test asserted it by CLASS STRING (`size-11 sm:size-7`,
+  // `h-11 sm:h-6`, `min-h-11 sm:min-h-0`). Those width-keyed Tailwind pairs
+  // were the defect, not the guarantee: the button size keyed to VIEWPORT
+  // WIDTH while the space reserved for it keyed to POINTER TYPE, so the two
+  // agreed at the two viewports anyone sampled and disagreed everywhere else.
+  // Sizing now comes from one custom property under one condition in
+  // globals.css, and re-pinning a class string here would pin that bug back in.
+  //
+  // jsdom has no layout, so nothing here can measure 44 of anything; an
+  // assertion that pretended to would be the same lie in a new shape. The
+  // split is deliberate:
+  //   - HERE: the structural contract. Every control sits on the shared
+  //     surface the stylesheet sizes, and the actions that moved into the
+  //     consolidated "..." menu are still REACHABLE rather than quietly gone.
+  //   - REAL PIXELS: the `agent-touch-targets` hard gate in
+  //     tools/ui-review/src/review-specs/workspace-agent-sidebar, which
+  //     measures getBoundingClientRect at four width x pointer corners and
+  //     sweeps the portalled app-left menus as well as the pane.
+  it("keeps every Agents-section control on the touch-sized surfaces (issue #1160)", async () => {
     const user = userEvent.setup()
     renderFleetPane()
 
-    const toggle = screen.getByRole("button", { name: /^Agents/ })
-    expect(toggle).toHaveAttribute("aria-expanded", "true")
-    await user.click(toggle)
-    expect(toggle).toHaveAttribute("aria-expanded", "false")
-    expect(screen.queryByRole("button", { name: /Boring Alpha;/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole("searchbox", { name: "Filter Agents" })).not.toBeInTheDocument()
-    // Nested chats collapse with their Agents; pinned chats stay top-level.
-    expect(screen.queryByText("Alpha follow-up")).not.toBeInTheDocument()
-    expect(screen.getByText("Alpha session")).toBeInTheDocument()
+    // Fleet new-chat row: the row carries the surface CSS grows to 44px, and
+    // the primary button fills it rather than restating a height of its own.
+    const fleetRow = document.querySelector('[data-boring-workspace-part="app-left-fleet-new-chat"]')
+    expect(fleetRow).toHaveClass("app-left-new-chat-action")
+    expect(screen.getByRole("button", { name: "Start new chat with Boring Alpha" })).toHaveClass("h-full")
+    for (const name of [
+      "Start split chat with Boring Alpha",
+      "Start quick chat with Boring Alpha",
+      "Choose Agent for new chat",
+    ]) {
+      expect(screen.getByRole("button", { name })).toHaveClass("app-left-secondary-action")
+    }
 
-    await user.click(toggle)
+    // The filter affordance in both of its states. The Agents section header
+    // is no longer a control at all (owner decision: static title), so there
+    // is nothing there left to size — its assertion is dropped rather than
+    // weakened, and every other control below keeps its own.
+    await user.click(screen.getByRole("button", { name: "Filter Agents" }))
+    expect(screen.getByRole("searchbox", { name: "Filter Agents" })).toHaveClass("app-left-filter-input")
+
+    // Every Agent card is a sized surface, and its always-visible icon
+    // actions sit on the shared secondary-action surface.
+    const cards = document.querySelectorAll(".app-left-agent-card")
+    expect(cards).toHaveLength(2)
+    expect(screen.getByRole("button", { name: /^Collapse Boring Alpha;/ })).toHaveClass("self-stretch")
+    for (const name of [
+      "Settings for Boring Alpha",
+      "New chat options for Boring Alpha",
+      "New chat with Boring Alpha",
+    ]) {
+      expect(screen.getByRole("button", { name })).toHaveClass("app-left-secondary-action")
+    }
+
+    // The other half of the intent: split and quick chat did not disappear
+    // when their icons did. They are menu items now, inside a menu tagged with
+    // the part hook that both the 44px rule and the review gate use to reach
+    // past the Radix portal — a control that leaves the pane subtree leaves
+    // every sweep that only looks at the pane subtree.
+    await user.click(screen.getByRole("button", { name: "New chat options for Boring Alpha" }))
+    const menu = screen.getByRole("menu")
+    expect(menu.closest('[data-boring-workspace-part="app-left-menu"]')).not.toBeNull()
+    for (const name of ["New chat", "New chat in split pane", "Quick chat"]) {
+      expect(within(menu).getByRole("menuitem", { name })).toBeInTheDocument()
+    }
+  })
+
+  // Replaces "collapses the Agents section including the nested chats": the
+  // owner removed section-level collapsing, so that behaviour has no contract
+  // left to assert. Its two still-true claims were already covered elsewhere
+  // and are NOT lost — nested chats collapsing with their own Agent and pinned
+  // chats staying top-level are both asserted by "nests each Agent's chats
+  // under its card behind a disclosure" below, which is what they describe.
+  it("renders Agents as a static section title, never a disclosure", () => {
+    renderFleetPane()
+
+    const heading = document.querySelector('[data-boring-workspace-part="app-left-agents-heading"]')
+    expect(heading).toHaveTextContent("Agents")
+    // A title, not a control: nothing to press, nothing to expand.
+    expect(heading?.closest("button")).toBeNull()
+    expect(screen.queryByRole("button", { name: /^Agents/ })).not.toBeInTheDocument()
+    expect(document.querySelector('[aria-controls="boring-app-left-agents-panel"]')).toBeNull()
+    // The seat summary sits with the title, like the pinned section's count.
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("2 seats")
+    // The Agent cards are unconditionally present, as is the filter icon that
+    // used to be gated on the section being open.
     expect(screen.getByRole("button", { name: /Boring Alpha;/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Filter Agents" })).toBeInTheDocument()
   })
 
   it("nests each Agent's chats under its card behind a disclosure", async () => {
@@ -166,14 +258,17 @@ describe("AppLeftPane", () => {
     renderFleetPane()
 
     // Regression for the ui-review mobile touch gate (#1110 / #1162 lineage):
-    // the per-session chat-actions trigger on rows nested under agent rows
-    // must use integer px sizing past the 44px minimum (size-12 = 48px) so
-    // the measured rect stays >= 44 even when an in-flight sheet/dialog
-    // transform scales it fractionally. Desktop density returns at sm.
+    // the per-session chat-actions trigger on rows nested under agent rows is
+    // sized by `.app-left-session-secondary-action` (globals.css), which reads
+    // `--app-session-action-slot` (28px fine / 44px coarse-or-narrow) so the
+    // button always fills exactly the slot the strip reserves for it. It must
+    // carry that class and NO Tailwind size utility that could disagree with
+    // the slot (post-#1176 contract; same as AppLeftPaneSessionRow shortcuts).
     const triggers = screen.getAllByRole("button", { name: /^Chat actions for / })
     expect(triggers.length).toBeGreaterThan(0)
     for (const trigger of triggers) {
-      expect(trigger).toHaveClass("size-12", "shrink-0", "sm:size-6")
+      expect(trigger).toHaveClass("app-left-session-secondary-action", "shrink-0")
+      expect(trigger.className).not.toMatch(/(?:^|[\s:])size-\d/)
     }
   })
 
@@ -196,6 +291,35 @@ describe("AppLeftPane", () => {
     expect(screen.queryByTitle("Active session")).not.toBeInTheDocument()
   })
 
+  it("aggregates working and attention counts on the Agent card", async () => {
+    renderFleetPane()
+
+    expect(document.querySelector('[data-boring-workspace-part="agent-card-working-count"]')).toBeNull()
+    act(() => window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+      detail: { sessionId: "alpha-two", agentTypeId: "alpha", working: true },
+    })))
+    await waitFor(() => {
+      const workingCount = document.querySelector('[data-boring-workspace-part="agent-card-working-count"]')
+      expect(workingCount?.textContent).toContain("1")
+    })
+  })
+
+  it("shows a quiet relative age on idle session rows with the exact time on hover", () => {
+    const twoHoursAgo = Date.now() - 2 * 3_600_000
+    renderFleetPane({
+      sessions: [
+        { id: "alpha-one", agentTypeId: "alpha", title: "Alpha session", updatedAt: twoHoursAgo },
+        { id: "alpha-two", agentTypeId: "alpha", title: "Alpha follow-up", updatedAt: twoHoursAgo },
+        { id: "beta-one", agentTypeId: "beta", title: "Beta session" },
+      ],
+    })
+
+    const age = document.querySelector('[data-boring-workspace-part="app-session-age"]')
+    expect(age?.textContent).toBe("2h")
+    const row = age?.closest("button")
+    expect(row?.getAttribute("title")).toContain("Last activity:")
+  })
+
   it("shows working state on fleet rows and filters cards by name", async () => {
     const user = userEvent.setup()
     renderFleetPane()
@@ -207,6 +331,9 @@ describe("AppLeftPane", () => {
     // The working (pulsing) dot appears on the pinned row and its nested twin.
     await waitFor(() => expect(screen.getAllByTitle("Working")).toHaveLength(2))
 
+    // The filter hides behind its icon until asked for.
+    expect(screen.queryByRole("searchbox", { name: "Filter Agents" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Filter Agents" }))
     await user.type(screen.getByRole("searchbox", { name: "Filter Agents" }), "beta")
     expect(screen.queryByRole("button", { name: /Boring Alpha;/ })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Boring Beta;/ })).toBeInTheDocument()
@@ -218,9 +345,11 @@ describe("AppLeftPane", () => {
 
     await user.click(screen.getByRole("button", { name: "Start new chat with Boring Alpha" }))
     expect(handlers.onCreateSession).toHaveBeenCalledWith("alpha")
+    // Picking another Agent retargets the button; it does not start a chat.
     await user.click(screen.getByRole("button", { name: "Choose Agent for new chat" }))
     await user.click(screen.getByRole("menuitem", { name: "Beta" }))
-    expect(handlers.onCreateSession).toHaveBeenCalledWith("beta")
+    expect(handlers.onSelectAgent).toHaveBeenCalledWith("beta")
+    expect(handlers.onCreateSession).toHaveBeenCalledTimes(1)
   })
 
   it("keeps the flat Chats shell when no addressed fleet is supplied", () => {

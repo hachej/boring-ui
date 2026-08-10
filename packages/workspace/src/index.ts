@@ -274,6 +274,7 @@ export type {
   BridgeEventMap,
   CommandResult,
   DynamicPaneConfig,
+  ExpandToFileTarget,
   Unsubscribe,
   CausedBy,
 } from "./front/bridge"

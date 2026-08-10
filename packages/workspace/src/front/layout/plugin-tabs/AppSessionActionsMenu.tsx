@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { Copy, MessageSquarePlus, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from "lucide-react"
+import { Copy, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,10 +16,8 @@ export function AppSessionActionsMenu({
   title,
   canCopy,
   canRename,
-  canSplit = false,
   canPin = false,
   pinned = false,
-  onOpenAsPane,
   onTogglePinned,
   onRename,
   onDelete,
@@ -29,10 +27,8 @@ export function AppSessionActionsMenu({
   title: string
   canCopy: boolean
   canRename: boolean
-  canSplit?: boolean
   canPin?: boolean
   pinned?: boolean
-  onOpenAsPane?: (id: string) => void
   onTogglePinned?: (id: string) => void
   onRename: () => void
   onDelete?: (id: string) => unknown
@@ -60,16 +56,16 @@ export function AppSessionActionsMenu({
           onKeyDown={() => { suppressCloseAutoFocus.current = false }}
           onClick={(event) => event.stopPropagation()}
           onDragStart={(event) => { event.preventDefault(); event.stopPropagation() }}
-          // 48px (size-12) mobile-first: integer px past the 44px gate so the
-          // measured rect stays >= 44 even when an in-flight sheet/dialog
-          // transform scales it fractionally (same rationale as
-          // .app-left-empty-start). Desktop density returns at sm.
-          className="grid size-12 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:size-6"
+          // Sized by `.app-left-session-secondary-action` (globals.css) from
+          // the same `--app-session-action-slot` that reserves this button's
+          // place in the strip, exactly like the split / quick-chat shortcuts.
+          className="app-left-session-secondary-action grid shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         >
           <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.75} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
+        data-boring-workspace-part="app-left-menu"
         align="end"
         sideOffset={6}
         onPointerDownCapture={() => { suppressCloseAutoFocus.current = true }}
@@ -79,18 +75,13 @@ export function AppSessionActionsMenu({
         onClick={(event) => event.stopPropagation()}
         className="w-48 border-border/50"
       >
-        {canSplit && onOpenAsPane ? (
-          <DropdownMenuItem onSelect={() => onOpenAsPane(sessionId)} className="gap-2 text-[13px]">
-            <MessageSquarePlus className="h-3.5 w-3.5" /> Open in new chat pane
-          </DropdownMenuItem>
-        ) : null}
         {canPin && onTogglePinned ? (
           <DropdownMenuItem onSelect={() => onTogglePinned(sessionId)} className="gap-2 text-[13px]">
             {pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
             {pinned ? "Unpin chat" : "Pin chat"}
           </DropdownMenuItem>
         ) : null}
-        {((canSplit && onOpenAsPane) || (canPin && onTogglePinned)) && (canCopy || canRename || onDelete)
+        {canPin && onTogglePinned && (canCopy || canRename || onDelete)
           ? <DropdownMenuSeparator />
           : null}
         {canCopy ? (

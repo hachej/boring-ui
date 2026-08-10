@@ -16,6 +16,7 @@ import {
   getBoringAgentRuntimePaths,
   getNodeWorkspaceHostRoot,
   isIgnoredDirName,
+  resolveRealWorkspacePath,
   validatePath,
   withWorkspacePythonEnv,
 } from '@hachej/boring-sandbox/providers/node-workspace'
@@ -63,6 +64,7 @@ export const agentSandboxRuntimeHostOperations: AgentRuntimeHostOperations = {
   },
   validatePath,
   assertRealPathWithinWorkspace,
+  resolveRealWorkspacePath,
   isIgnoredDirName,
   createAgentResourceFilesystemBinding,
   buildBwrapArgs,
