@@ -137,22 +137,45 @@ already reviewed, and state the open questions.
    Omitting the block entirely does not hide the gap: the artifact renders a red
    "No review history recorded — treat as unreviewed" panel in its place.
 
-5. **Generate the page:**
+5. **Generate the page — into the lane worktree, not a scratchpad:**
 
    ```bash
+   mkdir -p .handoff
    node scripts/present-pr.mjs <pr-number> \
      --repo hachej/boring-ui \
      --context <scratchpad>/pr-<n>-context.md \
      --audit "deep audit <date>: N findings closed, M deferred" \
-     --out <scratchpad>/pr-<n>-presentation.html
+     --out .handoff/pr-<n>-presentation.html
    ```
+
+   `.handoff/` is gitignored and lives **inside the workspace root**, which is
+   what makes the next step possible: the workspace file API is relative-only,
+   so a page written to a scratchpad outside the worktree cannot be opened as a
+   pane.
 
    The script pulls metadata, checks, and the combined diff via `gh` and renders one HTML
    file with no external requests — safe for the artifact viewer's strict CSP. Mermaid is
    emitted as `<pre class="mermaid">`, which artifacts render natively.
 
-6. **Publish it as an artifact** and hand the owner the URL with a two-line message: the
-   decision you want, and the open questions.
+6. **Hand it over as two panes — the standard handoff.** Working inside a
+   workspace session, the artifact is not a link, it is a pane:
+
+   ```jsonc
+   // the review artifact
+   { "kind": "openFile",  "params": { "path": ".handoff/pr-<n>-presentation.html" } }
+   // the live demo, if the change has a running surface
+   { "kind": "openPanel", "params": { "id": "demo:br-<id>", "component": "url-pane.panel",
+                                      "params": { "url": "http://127.0.0.1:<port>/", "title": "br-<id> demo" } } }
+   ```
+
+   Both via `exec_ui`. The `.html` path resolves to the sandboxed HTML viewer;
+   `url-pane.panel` embeds the running server (loopback origins are allowed by
+   default — see `packages/workspace/docs/URL_PANE.md`). Then send the owner
+   card through `ask_user`, naming both panes, with the decision you want and
+   the open questions.
+
+   Outside a workspace session, fall back to publishing the page as an artifact
+   and handing over the URL.
 
 ## What the page gives the reviewer
 
