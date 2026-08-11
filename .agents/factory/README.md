@@ -25,6 +25,15 @@ Build order: `docs/factory/TODO.md`.
 
 One line per stage. The gate column is what must be true before work leaves it.
 
+**Seat column vs. the booted roster.** The booted fleet
+(`.agents/factory/fleet.yaml`) is three seats — `triage`, `orchestrator`,
+`worker` — owner-ratified 2026-08-10 (gh-1187 S0). The stage names below are
+still the pre-migration five: `concierge` and `steward` stages are held by
+`orchestrator`, and `reviewer` is not a seat at all — review is a rule, run as
+fresh-context subagents the worker spawns at gate time. This table is rewritten
+per activity in gh-1187 S8, once the workspace path has done each job for real;
+until then nothing is retired.
+
 | Stage | Seat | Skill | Procedure | In → Out | Gate |
 | --- | --- | --- | --- | --- | --- |
 | intake | — | `feedback` | boring-loop | raw report → canonical GH issue | deduplicated, redacted |

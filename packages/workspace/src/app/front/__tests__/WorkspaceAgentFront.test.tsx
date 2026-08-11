@@ -820,7 +820,7 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).getAllByRole("button", { name: "New chat" })).toHaveLength(1)
     expect(within(appNav).getByRole("button", { name: "Search" })).toBeInTheDocument()
     expect(within(appNav).queryByRole("button", { name: "Plugins" })).not.toBeInTheDocument()
-    expect(within(appNav).getByRole("button", { name: "Skills" })).toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Agent" })).toBeInTheDocument()
     await user.click(within(appNav).getByRole("button", { name: "New chat" }))
     expect(onCreateSession).toHaveBeenCalledOnce()
     expect(screen.queryByRole("button", { name: "Sessions" })).not.toBeInTheDocument()
@@ -856,12 +856,35 @@ describe("WorkspaceAgentFront", () => {
     expect(collapsedRail).toHaveClass("w-11")
     expect(within(collapsedRail).getByRole("button", { name: "Search" })).toBeInTheDocument()
     expect(within(collapsedRail).queryByRole("button", { name: "Plugins" })).not.toBeInTheDocument()
-    expect(within(collapsedRail).getByRole("button", { name: "Skills" })).toBeInTheDocument()
+    expect(within(collapsedRail).getByRole("button", { name: "Agent" })).toBeInTheDocument()
+    expect(within(collapsedRail).getByRole("button", { name: "Chats" })).toBeInTheDocument()
     expect(within(collapsedRail).getByRole("button", { name: "New chat" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
   })
 
-  it("keeps only the current app-left overlay action selected", async () => {
+  it("selects Chats from the collapsed app rail without expanding it", async () => {
+    const user = userEvent.setup()
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-open-chats"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session" }]}
+        activeSessionId="s1"
+        defaultAppLeftPaneCollapsed
+        persistenceEnabled={false}
+      />,
+    )
+
+    const collapsedRail = screen.getByLabelText("Collapsed app navigation")
+    await user.click(within(collapsedRail).getByRole("button", { name: "Chats" }))
+
+    expect(screen.getByLabelText("Collapsed app navigation")).toBeInTheDocument()
+    expect(screen.queryByLabelText("App navigation")).not.toBeInTheDocument()
+    expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "s1")
+  })
+
+  it("keeps only the current app-left overlay action selected and returns to Chats from the rail", async () => {
     const user = userEvent.setup()
     const automationPlugin = definePlugin({
       id: "automation-action",
@@ -880,7 +903,7 @@ describe("WorkspaceAgentFront", () => {
 
     const appNav = screen.getByLabelText("App navigation")
     const automations = within(appNav).getByRole("button", { name: "Automations" })
-    const skills = within(appNav).getByRole("button", { name: "Skills" })
+    const skills = within(appNav).getByRole("button", { name: "Agent" })
 
     await user.click(automations)
     expect(automations).toHaveAttribute("data-active", "true")
@@ -894,10 +917,18 @@ describe("WorkspaceAgentFront", () => {
     await user.click(automations)
     expect(automations).toHaveAttribute("data-active", "true")
     expect(skills).not.toHaveAttribute("data-active")
+    expect(screen.getByText("Automation overlay")).toBeInTheDocument()
 
-    await user.click(automations)
-    expect(automations).not.toHaveAttribute("data-active")
-    expect(skills).not.toHaveAttribute("data-active")
+    await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
+    const collapsedRail = screen.getByLabelText("Collapsed app navigation")
+    expect(within(collapsedRail).getByRole("button", { name: "Automations" })).toHaveAttribute("data-active", "true")
+
+    await user.click(within(collapsedRail).getByRole("button", { name: "Chats" }))
+
+    await waitFor(() => expect(screen.queryByText("Automation overlay")).not.toBeInTheDocument())
+    expect(screen.getByLabelText("Collapsed app navigation")).toBeInTheDocument()
+    expect(screen.queryByLabelText("App navigation")).not.toBeInTheDocument()
+    await waitFor(() => expect(within(collapsedRail).getByRole("button", { name: "Automations" })).not.toHaveAttribute("data-active"))
   })
 
   it("never mounts a different plugin overlay with stale request params", async () => {
@@ -977,7 +1008,7 @@ describe("WorkspaceAgentFront", () => {
     const appNav = screen.getByLabelText("App navigation")
     expect(within(appNav).getByRole("button", { name: "New chat" })).toBeInTheDocument()
     expect(within(appNav).getByRole("button", { name: "Search" })).toBeInTheDocument()
-    expect(within(appNav).queryByRole("button", { name: "Skills" })).not.toBeInTheDocument()
+    expect(within(appNav).queryByRole("button", { name: "Agent" })).not.toBeInTheDocument()
     expect(within(appNav).queryByRole("button", { name: "Plugins" })).not.toBeInTheDocument()
   })
 
@@ -1153,17 +1184,17 @@ describe("WorkspaceAgentFront", () => {
     }
     const { unmount } = render(<WorkspaceAgentFront {...props} />)
 
-    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
-    await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="skills-page"]')).not.toBeNull())
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Agent" }))
+    await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="agent-page"]')).not.toBeNull())
 
     unmount()
     render(<WorkspaceAgentFront {...props} />)
 
-    await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="skills-page"]')).not.toBeNull())
+    await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="agent-page"]')).not.toBeNull())
   })
 
   it.each([
-    { action: "Skills", part: "skills-page" },
+    { action: "Agent", part: "agent-page" },
   ])("closes the $action overlay when switching sessions from app navigation", async ({ action, part }) => {
     const user = userEvent.setup()
     const onSwitchSession = vi.fn()
@@ -1236,13 +1267,13 @@ describe("WorkspaceAgentFront", () => {
     )
 
     const appNav = screen.getByLabelText("App navigation")
-    await user.click(within(appNav).getByRole("button", { name: "Skills" }))
-    await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="skills-page"]')).not.toBeNull())
+    await user.click(within(appNav).getByRole("button", { name: "Agent" }))
+    await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="agent-page"]')).not.toBeNull())
 
     await user.click(within(appNav).getByText("First session"))
 
     expect(onSwitchSession).toHaveBeenCalledWith("s1", "default")
-    await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="skills-page"]')).toBeNull())
+    await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="agent-page"]')).toBeNull())
   })
 
   it("opens Skills as a chat overlay and uses the UI bridge to open a skill", async () => {
@@ -1297,7 +1328,7 @@ describe("WorkspaceAgentFront", () => {
         />,
       )
 
-      await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
+      await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Agent" }))
       await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
       expect(screen.getByText("Review the current diff")).toBeInTheDocument()
 
@@ -1309,12 +1340,12 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByText("/review")).toBeInTheDocument()
 
       await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
-      expect(screen.getByText("Skills").closest("header")?.className).not.toContain("pl-12")
+      expect(document.querySelector('[data-boring-workspace-part="agent-page"] header')?.className).not.toContain("pl-12")
 
-      await user.click(screen.getByRole("button", { name: "Close skills" }))
+      await user.click(screen.getByRole("button", { name: "Close agent" }))
       await waitFor(() => expect(screen.queryByText("/review")).not.toBeInTheDocument())
       await user.click(screen.getByRole("button", { name: "Open app navigation" }))
-      await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
+      await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Agent" }))
       await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
       await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
       await waitFor(() => expect(screen.queryByText("/review")).not.toBeInTheDocument())
@@ -1460,14 +1491,19 @@ describe("WorkspaceAgentFront", () => {
       }
     }
     const useFleetSessions: UseWorkspaceAgentSessions = (options) => {
+      const [loading, setLoading] = useState(true)
+      useEffect(() => {
+        const timer = setTimeout(() => setLoading(false), 10)
+        return () => clearTimeout(timer)
+      }, [])
       const session = { id: `${options.agentTypeId}-one`, agentTypeId: options.agentTypeId, title: options.agentTypeId }
       return {
         sourceIdentity: options.sourceIdentity,
-        sessions: [session],
-        loading: false,
-        activeSessionId: session.id,
+        sessions: loading ? [] : [session],
+        loading,
+        activeSessionId: loading ? null : session.id,
         activeSessionAgentTypeId: options.agentTypeId,
-        activeSession: session,
+        activeSession: loading ? null : session,
         switch: vi.fn(),
         create: vi.fn(),
         delete: vi.fn(),
@@ -1479,15 +1515,20 @@ describe("WorkspaceAgentFront", () => {
         workspaceId="async-fleet-restore"
         workspaceLayout="plugin-tabs"
         chatPanel={SessionIdChatPanel}
+        sessions={[]}
         addressedAgentSelection
         useAddressedAgentSelection={useAsyncFleetSelection}
         useSessions={useFleetSessions}
       />,
     )
 
+    expect(screen.getByRole("status", { name: "Loading chats" })).toBeInTheDocument()
+    expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "New chat with Alpha" })).toBeInTheDocument()
       expect(screen.getByRole("button", { name: "New chat with Beta" })).toBeInTheDocument()
+      expect(screen.queryByRole("status", { name: "Loading chats" })).not.toBeInTheDocument()
     })
     expect(visibleChatSessionIds()).toEqual(["alpha-one", "beta-one"])
     expect(JSON.parse(localStorage.getItem("boring-workspace:chat-panes:async-fleet-restore") ?? "null")).toMatchObject({

@@ -11,5 +11,8 @@
       "description": "Classifies tracked work and advances one verified transition.",
       "instructionsRef": "instructions.md"
     }
+  },
+  "pi": {
+    "skills": ["triage", "owner-gate", "handoff"]
   }
 }

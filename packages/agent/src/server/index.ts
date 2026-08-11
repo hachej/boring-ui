@@ -102,6 +102,7 @@ export {
   MODEL_TIER_CANDIDATES,
 } from './agentDefinition/loadConfiguredAgentFleet'
 export type {
+  DiscoveredAgentPackageDescriptor,
   FleetConfigErrorCode,
   FleetLoaderDiagnostic,
   FleetLoaderDiagnosticCode,

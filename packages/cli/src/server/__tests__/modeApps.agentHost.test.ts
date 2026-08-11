@@ -143,6 +143,67 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
 }
 
 describe.sequential("CLI Agent Host composition", () => {
+  it("workspaces hub boots a seated agent from a registered workspace-local package", async () => {
+    const fleetRoot = await temporaryRoot("boring-cli-local-agent-fleet-")
+    const workspaceRoot = await temporaryRoot("boring-cli-local-agent-workspace-")
+    const registryRoot = await temporaryRoot("boring-cli-local-agent-registry-")
+    const packageRoot = join(workspaceRoot, "agents", "local-worker")
+    const registryPath = join(registryRoot, "workspaces.yaml")
+    await createLocalWorkspaceRegistry(registryPath).add(workspaceRoot)
+    await mkdir(packageRoot, { recursive: true })
+    await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
+    await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
+    await writeFile(join(packageRoot, "instructions.md"), "CLI local worker.\n", "utf8")
+    await writeFile(join(packageRoot, "package.json"), JSON.stringify({
+      name: "@fixture/cli-local-worker",
+      version: "1.0.0",
+      boring: {
+        agent: {
+          definitionId: "fixture-cli-local-worker",
+          version: "1.0.0",
+          label: "CLI Local Worker",
+          instructionsRef: "instructions.md",
+        },
+      },
+      pi: { skills: [] },
+    }), "utf8")
+    await writeFile(
+      join(workspaceRoot, ".pi", "settings.json"),
+      JSON.stringify({ packages: ["../agents/local-worker"] }),
+      "utf8",
+    )
+    await writeFile(
+      join(fleetRoot, ".agents", "factory", "fleet.yaml"),
+      "seats:\n  - seat: local-worker\n    agentTypeId: fixture-cli-local-worker\n    skills: []\n",
+      "utf8",
+    )
+
+    const previousCwd = process.cwd()
+    const previousFlag = process.env.BORING_AGENT_FLEET
+    process.chdir(fleetRoot)
+    process.env.BORING_AGENT_FLEET = "1"
+    const createAgentHost = vi.spyOn(agentServer, "createAgentHost")
+    let app: FastifyInstance | undefined
+    try {
+      app = await createWorkspacesModeApp({
+        mode: "direct",
+        registryPath,
+        provisionWorkspace: false,
+      })
+      expect(createAgentHost).toHaveBeenCalledWith(expect.objectContaining({
+        agents: expect.arrayContaining([
+          expect.objectContaining({ agentTypeId: "default" }),
+          expect.objectContaining({ agentTypeId: "fixture-cli-local-worker" }),
+        ]),
+      }))
+    } finally {
+      if (app) await app.close()
+      process.chdir(previousCwd)
+      if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
+      else process.env.BORING_AGENT_FLEET = previousFlag
+    }
+  })
+
   it("closes folder-mode Host and front runtime when post-mount runtime route init fails", async () => {
     const workspaceRoot = await temporaryRoot("boring-cli-folder-post-mount-cleanup-")
     pluginFrontFailure.enabled = true

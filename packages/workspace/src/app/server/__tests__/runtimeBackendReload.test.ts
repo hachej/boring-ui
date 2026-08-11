@@ -39,7 +39,7 @@ async function writePiOnlyPackage(workspaceRoot: string): Promise<string> {
   await writeFile(join(pluginDir, "package.json"), JSON.stringify({
     name: "pi-smoke",
     version: "0.0.0",
-    pi: { extensions: ["index.ts"], skills: ["skills"] },
+    pi: { extensions: ["index.ts"], skills: ["./skills"] },
   }), "utf8")
   await writeFile(join(pluginDir, "index.ts"), "export default function piSmoke() {}\n", "utf8")
   await writeFile(join(pluginDir, "skills", "pi-smoke", "SKILL.md"), [
@@ -82,6 +82,22 @@ async function writeProjectPiSettings(workspaceRoot: string, packages: string[])
 }
 
 describe("Pi settings plugin-source discovery", () => {
+  test("materialized remote roots remain ordinary plugin sources", async () => {
+    const workspaceRoot = await tempRoot("boring-runtime-remote-plugin-source-")
+    const remotePlugin = join(workspaceRoot, ".pi", "npm", "remote-plugin")
+    await mkdir(remotePlugin, { recursive: true })
+    await writeProjectPiSettings(workspaceRoot, ["./npm/remote-plugin"])
+
+    expect(readPiSettingsBoringPluginSources(
+      join(workspaceRoot, ".pi", "settings.json"),
+      workspaceRoot,
+    )).toEqual([{
+      rootDir: remotePlugin,
+      kind: "external",
+      workspaceId: workspaceRoot,
+    }])
+  })
+
   test("workspace-local settings sources carry workspaceId so they shadow global externals", async () => {
     const root = await tempRoot("boring-runtime-settings-shadow-")
     const workspaceRoot = join(root, "workspace")

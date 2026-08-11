@@ -602,7 +602,7 @@ export function ChatLayout(props: ChatLayoutProps) {
               // Collapsed/mobile workbench fills available width; otherwise it is a side panel.
               (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen ? "min-w-0 flex-1" : "shrink-0",
               "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-              !mobileShell && "border-l border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+              !mobileShell && surfaceOpen && "border-l border-border",
             )}
             style={
               (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen

@@ -17,6 +17,7 @@ import type {
   BoringPluginSourceInput,
   BoringServerPluginManifest,
   PluginRestartSurface,
+  DiscoveredBoringAgentPackage,
 } from "./types"
 import { normalizeBoringPluginPiPackages } from "./piPackages"
 import { compactPiPackages, type WorkspacePiPackageSource } from "../plugins/bootstrapServer"
@@ -227,6 +228,7 @@ export class BoringPluginAssetManager {
   private readonly revisions = new Map<string, number>()
   private readonly listeners = new Set<Listener>()
   private readonly lastErrors = new Map<string, LoadBoringAssetsError>()
+  private agentPackages: DiscoveredBoringAgentPackage[] = []
   private loading: Promise<LoadBoringAssetsResult> | null = null
   private reloadQueued = false
 
@@ -292,6 +294,14 @@ export class BoringPluginAssetManager {
     }))
   }
 
+  /** Valid agent-package descriptors for injection into the agent fleet loader. */
+  inspectAgentPackages(): DiscoveredBoringAgentPackage[] {
+    return this.agentPackages.map((descriptor) => ({
+      ...descriptor,
+      preflight: { ...descriptor.preflight, errors: [...descriptor.preflight.errors] },
+    }))
+  }
+
   inspectLoadedPiSnapshot(): LoadedBoringPluginPiSnapshot {
     const plugins = [...this.loaded.values()]
     const prompts = plugins
@@ -333,6 +343,7 @@ export class BoringPluginAssetManager {
   private async doLoadOnce(): Promise<LoadBoringAssetsResult> {
     this.lastErrors.clear()
     const scan = scanBoringPlugins(this.pluginDirs)
+    this.agentPackages = scan.agentPackages
     const nextPlugins = scan.plugins.filter((plugin) => plugin.hasBoring)
     const nextIds = new Set(nextPlugins.map((plugin) => plugin.id))
     const invalidPluginDirs = new Set(scan.preflight.errors.map((error) => resolve(error.pluginDir)))

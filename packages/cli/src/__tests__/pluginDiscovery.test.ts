@@ -5,8 +5,9 @@ import {
   getGlobalPiExtensionsRoot,
   readCliPluginPiSnapshot,
   resolveCliBoringPluginDirs,
+  resolveCliLocalAgentPackageDirs,
 } from "../server/pluginDiscovery.js"
-import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, writeFile, rm, symlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
 
 async function makeTempDir(prefix: string): Promise<string> {
@@ -179,6 +180,45 @@ describe("plugin discovery helpers", () => {
     try {
       const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot: join(root, "global-extensions"), includeDefaultPackages: false })
       expect(snapshot.systemPromptAppend).toContain("File prompt")
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("agent fleet sources include workspace-local paths but exclude remote package specs", async () => {
+    const root = await makeTempDir("boring-cli-agent-package-sources-")
+    const workspaceRoot = join(root, "host-workspace")
+    const localAgent = join(workspaceRoot, "agents", "local-agent")
+    await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
+    const remoteAgent = join(workspaceRoot, ".pi", "npm", "materialized-remote-agent")
+    await mkdir(remoteAgent, { recursive: true })
+    await mkdir(join(workspaceRoot, "agents"), { recursive: true })
+    await symlink(remoteAgent, join(workspaceRoot, "agents", "remote-alias"))
+    await writePiSettings(join(workspaceRoot, ".pi", "settings.json"), [
+      "../agents/local-agent",
+      "file:../agents/file-agent",
+      "../agents/remote-alias",
+      "npm:@fixture/remote-agent",
+      "git:https://example.test/remote-agent.git",
+      "./npm/materialized-remote-agent",
+      "./git/materialized-remote-agent",
+    ])
+
+    try {
+      expect(resolveCliLocalAgentPackageDirs(workspaceRoot)).toEqual([
+        {
+          rootDir: resolve(localAgent),
+          kind: "external",
+          registered: true,
+          workspaceId: resolve(workspaceRoot),
+        },
+        {
+          rootDir: resolve(workspaceRoot, "agents", "file-agent"),
+          kind: "external",
+          registered: true,
+          workspaceId: resolve(workspaceRoot),
+        },
+      ])
     } finally {
       await rm(root, { recursive: true, force: true })
     }

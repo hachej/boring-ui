@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
-import { Sparkles } from "lucide-react"
+import { Bot } from "lucide-react"
 import {
   PiChatPanel as DefaultPiChatPanel,
   usePiSessions as useDefaultPiSessions,
@@ -18,12 +18,12 @@ import type {
   SurfaceShellProps,
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
-import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
+import { AgentPage } from "../../front/chrome/skills/AgentPage"
 import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AgentDetailsOverlay } from "../../front/chrome/agents/AgentDetailsOverlay"
-import { AppLeftPane, AppLeftRail } from "../../front/layout/plugin-tabs/AppLeftPane"
+import { AppLeftPane, AppLeftRail, createAppLeftNavigationEntries } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { chatPaneAgentLabels } from "../../front/layout/chatPaneAgentLabels"
 import { useViewportWidth } from "../../front/layout/useViewportWidth"
@@ -1132,6 +1132,14 @@ export function WorkspaceAgentFront<
       && !pendingRemoteActiveSessionId,
   )
   const remoteSessionsTransitioning = remoteSessionsInitialLoading || remoteEmptySessionsSettling || remoteInitialSessionCreating || remoteInitialSessionNeeded
+  // A persisted chat pane can render while its list inventory is still
+  // resolving. Keep that shell available, but do not mistake the temporary
+  // empty inventory for an authoritative empty list in app-left navigation.
+  const remoteSessionInventoryLoading = remoteSessionsTransitioning || Boolean(
+    remoteSessionsPending
+      && !remoteSessionsHaveStaleData
+      && !remoteSessionApi.error,
+  )
 
   useEffect(() => {
     if (!remoteEmptySessionsSettling) {
@@ -2501,8 +2509,8 @@ export function WorkspaceAgentFront<
     if (skillsActionEnabled) {
       actions.push({
         id: "skills",
-        label: "Skills",
-        icon: <Sparkles className="h-4 w-4" strokeWidth={1.75} />,
+        label: "Agent",
+        icon: <Bot className="h-4 w-4" strokeWidth={1.75} />,
         active: leftOverlay === "skills",
         onClick: () => setLeftOverlay((cur) => cur === "skills" ? null : "skills"),
       })
@@ -2510,6 +2518,14 @@ export function WorkspaceAgentFront<
     assertUniqueAppLeftActionIds(actions)
     return actions
   }, [appLeftActions, appLeftOverlayActions, leftOverlay, pluginAppLeftActions, skillsActionEnabled])
+  const openAppLeftChats = useCallback(() => {
+    setLeftOverlay(null)
+  }, [])
+  const appLeftNavigationEntries = useMemo(() => createAppLeftNavigationEntries({
+    actions: managementActions,
+    onOpenChats: openAppLeftChats,
+    onOpenCommandPalette: openCommandPalette,
+  }), [managementActions, openAppLeftChats, openCommandPalette])
 
   const pluginLeftOverlayNode = PluginAppLeftOverlayHost({
     plugins: capturedPlugins,
@@ -2542,7 +2558,7 @@ export function WorkspaceAgentFront<
     />
   ) : null
   const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? agentLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
-    <SkillsPage
+    <AgentPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={mobileShellActive}
       headerInsetEnd={!surfaceOpen}
@@ -2630,9 +2646,8 @@ export function WorkspaceAgentFront<
       mobileShellEnabled={mobileShellEnabled}
       collapsedRail={(
         <AppLeftRail
-          actions={managementActions}
+          navigationEntries={appLeftNavigationEntries}
           footerSlot={showThemeToggle ? <ThemeToggle /> : undefined}
-          onOpenCommandPalette={openCommandPalette}
           onCreateSession={() => {
             setLeftOverlay(null)
             void createChatSession()
@@ -2681,7 +2696,7 @@ export function WorkspaceAgentFront<
           addressedAgentTypeId={fleetModeEnabled ? effectiveAgentTypeId : undefined}
           onSelectAgent={fleetModeEnabled ? setNewChatAgentTypeIdOverride : undefined}
           onOpenAgentSettings={fleetModeEnabled ? (ownerAgentTypeId) => setLeftOverlay(agentOverlayId(ownerAgentTypeId)) : undefined}
-          sessionsLoading={remoteSessionsTransitioning}
+          sessionsLoading={remoteSessionInventoryLoading}
           activeSessionRef={activeChatPaneRef}
           muteActiveSession={Boolean(leftOverlay)}
           openSessionRefs={openChatPaneRefs}
@@ -2695,7 +2710,7 @@ export function WorkspaceAgentFront<
             void createChatPaneAfter(activeChatPaneId, undefined, ownerAgentTypeId)
           }}
           onCreatePopoverSession={createChatSessionInPopover}
-          onOpenCommandPalette={openCommandPalette}
+          navigationEntries={appLeftNavigationEntries}
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}
           onOpenSessionDetached={(sessionId, ownerAgentTypeId) => {
@@ -2708,7 +2723,6 @@ export function WorkspaceAgentFront<
           onToggleSessionPinned={toggleSessionPinned}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
           onRenameSession={sessionApi?.rename ? resolvedRename : undefined}
-          actions={managementActions}
         />
       )}
     >

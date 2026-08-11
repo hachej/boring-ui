@@ -123,7 +123,11 @@ export async function createConfiguredAgentHostAgentSpec(
       instructions,
       label,
       version: input.source.version,
+      ...(input.source.definitionDigest === undefined ? {} : { digest: input.source.definitionDigest }),
     }),
+    ...(input.source.knowledgeDir === undefined
+      ? {}
+      : { knowledge: Object.freeze({ rootDir: input.source.knowledgeDir }) }),
     ...(instructionFiles ? { instructionFiles } : {}),
     ...(plugins?.length ? { plugins: Object.freeze(plugins) } : {}),
     ...(preferredModel ? { model: Object.freeze({ preferred: preferredModel }) } : {}),

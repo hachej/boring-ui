@@ -72,6 +72,7 @@ describe('direct Agent Host Environment HTTP projection', () => {
     const binding: RuntimeFilesystemBinding = {
       filesystem: 'company_context',
       access: 'readonly',
+      provenance: 'agent-definition',
       operations: {
         async read() { return { content: 'company' } },
         async list() { return { entries: ['duplicate.md'] } },
@@ -104,6 +105,7 @@ describe('direct Agent Host Environment HTTP projection', () => {
         label: 'company_context',
         rootDir: '/',
         access: 'readonly',
+        provenance: 'agent-definition',
         capabilities: expect.objectContaining({ read: true, list: true, search: true, write: false }),
       }),
     ])

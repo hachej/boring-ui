@@ -60,6 +60,7 @@ import {
 } from '@hachej/boring-workspace/app/server'
 import {
   createWorkspaceUiTools,
+  discoverRepositoryAgentPackages,
   uiRoutes,
   type WorkspaceBridge,
   type WorkspaceBridgeCallRequest,
@@ -1026,12 +1027,27 @@ export async function createCoreWorkspaceAgentServer(
   assertCoreStaticPluginEntries(options.plugins)
 
   const rawConfig = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
-  // `null`, not the base root: core serves `<workspaceRoot>/<workspaceId>` and
-  // NEVER the base itself (resolveWorkspaceRoot rejects it), so no single root
-  // exists at composition time. Passing the base would let a persona tree that
-  // happens to sit inside it publish a path relative to the wrong root — a
-  // live "Open" button that opens nothing.
-  const agents = options.agents ?? await resolveDefaultAgentFleet({ repositoryRoot: options.fleetRepositoryRoot, workspaceRoot: null })
+  // BORING_AGENT_FLEET=1 composes the config-driven production fleet
+  // (gh-1106 slice 3, B2 fix round 1) from discovered agent packages plus
+  // .agents/factory for the deployed core app host (apps/full-app), same
+  // helper as createWorkspaceAgentServer and the CLI hub; flag absent
+  // preserves the legacy single-default-agent boot byte-identically.
+  //
+  // workspaceRoot is `null`, not the base root: core serves
+  // `<workspaceRoot>/<workspaceId>` and NEVER the base itself
+  // (resolveWorkspaceRoot rejects it), so no single root exists at
+  // composition time. Passing the base would let a persona tree that happens
+  // to sit inside it publish a path relative to the wrong root — a live
+  // "Open" button that opens nothing.
+  const fleetRepositoryRoot = options.fleetRepositoryRoot ?? process.cwd()
+  const discoveredPackages = !options.agents && process.env.BORING_AGENT_FLEET === '1'
+    ? await discoverRepositoryAgentPackages(fleetRepositoryRoot)
+    : undefined
+  const agents = options.agents ?? await resolveDefaultAgentFleet({
+    repositoryRoot: fleetRepositoryRoot,
+    workspaceRoot: null,
+    ...(discoveredPackages ? { discoveredPackages } : {}),
+  })
   const signupAgentDefaults = compileSignupAgentDefaults(
     rawConfig.signupAgentDefaults,
     agents.map((agent) => agent.agentTypeId),
@@ -1283,11 +1299,6 @@ export async function createCoreWorkspaceAgentServer(
     return authorizeStorageScope(ctx.request, ctx.workspaceId, canonicalScope ?? ctx.workspaceId)
   }
 
-  // BORING_AGENT_FLEET=1 composes the config-driven production fleet
-  // (gh-1106 slice 3, B2 fix round 1) from .agents/{personas,factory} for
-  // the deployed core app host (apps/full-app), same helper as
-  // createWorkspaceAgentServer and the CLI hub; flag absent preserves the
-  // legacy single-default-agent boot byte-identically.
   const scopeAuthority = createCoreAgentScopeAuthority({
     appId: config.appId,
     workspaceStore,
