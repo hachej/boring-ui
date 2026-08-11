@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
-import { Sparkles } from "lucide-react"
+import { Bot } from "lucide-react"
 import {
   PiChatPanel as DefaultPiChatPanel,
   usePiSessions as useDefaultPiSessions,
@@ -18,7 +18,7 @@ import type {
   SurfaceShellProps,
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
-import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
+import { AgentPage } from "../../front/chrome/skills/AgentPage"
 import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
@@ -2509,8 +2509,8 @@ export function WorkspaceAgentFront<
     if (skillsActionEnabled) {
       actions.push({
         id: "skills",
-        label: "Skills",
-        icon: <Sparkles className="h-4 w-4" strokeWidth={1.75} />,
+        label: "Agent",
+        icon: <Bot className="h-4 w-4" strokeWidth={1.75} />,
         active: leftOverlay === "skills",
         onClick: () => setLeftOverlay((cur) => cur === "skills" ? null : "skills"),
       })
@@ -2550,7 +2550,7 @@ export function WorkspaceAgentFront<
     />
   ) : null
   const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? agentLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
-    <SkillsPage
+    <AgentPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={mobileShellActive}
       headerInsetEnd={!surfaceOpen}
