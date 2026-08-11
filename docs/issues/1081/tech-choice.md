@@ -200,14 +200,28 @@ Sandboxes" — https://vercel.com/docs/sandbox/concepts):
 > a dedicated kernel. This provides stronger isolation than container-based
 > solutions, which makes sandboxes ideal for running untrusted code."
 
-**V8 isolates — Cloudflare** (source: Zack Bloom, "Cloud Computing without
-Containers," The Cloudflare Blog, Nov 2018 —
-https://blog.cloudflare.com/cloud-computing-without-containers/) — the weakest
-boundary, explicitly language-restricted:
+**V8 isolates — Cloudflare (the isolates era)** (source: Zack Bloom, "Cloud
+Computing without Containers," The Cloudflare Blog, Nov 2018 —
+https://blog.cloudflare.com/cloud-computing-without-containers/). This 2018 quote
+characterizes Cloudflare's *original* Workers model — V8 isolates only — the
+weakest boundary, explicitly language-restricted:
 
 > "An Isolate-based system can't run arbitrary compiled code ... you have to
 > either write your code in Javascript (we use a lot of TypeScript), or a language
 > which targets WebAssembly like Go or Rust."
+
+**Currency note — Cloudflare is now a two-era story.** Cloudflare has since
+shipped **Cloudflare Containers** (announced Developer Week 2025, open beta late
+June 2025; sources: https://blog.cloudflare.com/cloudflare-containers-coming-2025/
+and https://developers.cloudflare.com/containers/), a Linux container compute
+model that runs "code written in any programming language, built for any runtime"
+alongside Workers, with each container instance paired to a Durable Object
+sidecar for lifecycle/state. So "Cloudflare = isolates only" is no longer
+accurate. What we are rejecting is the **isolates primitive specifically**
+(language-restricted JS/Wasm, software-only boundary resting on V8) — not
+Cloudflare's current overall capabilities. The isolation-ladder conclusion
+(isolates < gVisor < Firecracker) is about isolates *as a primitive* and remains
+valid.
 
 **The isolation ladder** the sources line up into (a fair synthesis; no single
 source states the rubric verbatim): `containers < gVisor < Firecracker/microVM`

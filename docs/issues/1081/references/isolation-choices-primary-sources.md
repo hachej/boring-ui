@@ -90,12 +90,25 @@ per-guest kernel memory overhead vs isolates; more moving parts than a single co
 
 ---
 
-## 3. Cloudflare — V8 Isolates
+## 3. Cloudflare — V8 Isolates (the isolates era)
 
 **Tech:** V8 Isolates (JS-engine-level software isolation; no container/VM per tenant).
 
-**Quoted rationale (source: Zack Bloom, "Cloud Computing without Containers," The Cloudflare Blog,
-Nov 2018 — https://blog.cloudflare.com/cloud-computing-without-containers/):**
+> **Currency note (two-era story):** The Nov 2018 quotes below characterize
+> Cloudflare's *original* Workers model — V8 isolates only. Cloudflare has since
+> shipped **Cloudflare Containers** (announced Developer Week 2025, open beta late
+> June 2025 — https://blog.cloudflare.com/cloudflare-containers-coming-2025/ ;
+> docs: https://developers.cloudflare.com/containers/ ), a Linux container compute
+> model that runs "code written in any programming language, built for any runtime"
+> alongside Workers, each container instance paired with a Durable Object sidecar
+> for lifecycle/state. So "Cloudflare = isolates only" is no longer accurate. The
+> isolates data point below stands as the **isolates primitive** (the boundary we
+> are *not* taking — language-restricted, software-only), not a claim about
+> Cloudflare's current overall capabilities. The isolation ladder
+> (isolates < gVisor < Firecracker) is about isolates-as-a-primitive and is unaffected.
+
+**Quoted rationale — original isolates model (source: Zack Bloom, "Cloud Computing without
+Containers," The Cloudflare Blog, Nov 2018 — https://blog.cloudflare.com/cloud-computing-without-containers/):**
 
 Why not containers/VMs:
 
