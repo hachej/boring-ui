@@ -1148,6 +1148,126 @@ Flow 1's OTP if the WhatsApp-OTP window claim above does not hold.
 
 ---
 
+#### Signup flows + reconciliation (diagram)
+
+This is the authoritative picture of the WhatsApp channel's identity-provider
+capability (`canOriginateIdentity: true`, §0.5.1/§0.5.3). Two entry doors, one
+better-auth account. The diagram traces both signup paths, the link-into-session
+rule, the collision/merge case, and the point where the phone-native placeholder
+email is replaced by the real one at first payment (§7.6 ladder). Read
+`LP` = landing page (web), `WA` = `wa.me/<seneca-number>` (WhatsApp).
+
+```mermaid
+flowchart TD
+    subgraph doors["Two entry doors"]
+        LP["Door A: Landing page (web)"]
+        WA["Door B: wa.me/&lt;seneca-number&gt; (WhatsApp)"]
+    end
+
+    %% ---- Door A: web-first (EXISTING better-auth) ----
+    LP --> A1["Email / password or Google signup<br/>(EXISTING better-auth: emailAndPassword + socialProviders)"]
+    A1 --> A2["better-auth account created<br/>identity: email (+ optional google)"]
+    A2 --> A3{"Link WhatsApp later?"}
+    A3 -->|"yes"| A4["Show regenerable linking code<br/>(nao pattern; reusable, NOT a magic link)"]
+    A4 --> A5["Customer sends linking code from WhatsApp"]
+    A5 --> LINK
+
+    %% ---- Door B: WhatsApp-first ----
+    WA --> B0["Seneca bot: inbound proves number control<br/>(channel = verifier, WhatsApp OTP available)"]
+    B0 --> BQ{"Signup path"}
+
+    %% b1: phone-native
+    BQ -->|"b1: phone-native (Flow 1)"| B1a["phoneNumber plugin signup<br/>(NEW plugin) + WhatsApp OTP"]
+    B1a --> B1b["getTempEmail() placeholder fills<br/>required email schema field"]
+    B1b --> B1c["better-auth account created<br/>identity: phone (+ placeholder email)"]
+    B1c --> CONV
+
+    %% b2: round-trip to LP for email signup
+    BQ -->|"b2: redirect to LP (Flow 2b)"| B2a["Bot sends LP link with SIGNED round-trip token<br/>(binds this WhatsApp identity)"]
+    B2a --> B2b["Email / Google signup on LP (EXISTING better-auth)"]
+    B2b --> B2c["Round-trip token returns to WhatsApp<br/>-> phone linked to the email account"]
+    B2c --> LINK
+
+    %% ---- Reconciliation ----
+    LINK["Link-into-session rule:<br/>authenticated session + 2nd identity presented<br/>=> LINK to current user, NEVER create a new account<br/>(requires account.accountLinking - NEW)"]
+    LINK --> CONV
+
+    CONV(["ONE better-auth account<br/>internal user id + linked identities:<br/>email + phone + google"])
+
+    %% ---- Collision case ----
+    COL["Collision: same person made TWO independent accounts<br/>(phone account AND email account, never in one session)"]
+    COL --> MERGE["v1 claim/verify-to-merge<br/>(detect + verify ownership of both, no fuzzy matching)"]
+    MERGE --> CONV
+
+    %% ---- Placeholder email replacement ----
+    CONV --> PAY{"First payment?<br/>(invoice / receipt / CH records)"}
+    PAY -->|"yes"| REPL["getTempEmail() placeholder REPLACED<br/>by the customer's REAL email<br/>(progressive email becomes effectively required)"]
+    REPL --> CONV
+    PAY -->|"not yet"| CONV
+```
+
+Door B/b1 is Flow 1 (phone-native); Door B/b2 is Flow 2b (WhatsApp-discovered
+round-trip); Door A + linking code is Flow 2a (web-discovered). All three open
+`canOriginateIdentity` for WhatsApp; they differ only in whether the minted
+account is phone-anchored (b1, temp email) or email-anchored (b2 / A).
+
+#### Auth additions required — existing vs to-add
+
+**Does the existing default sign-in / sign-up need changes to support WhatsApp
+auth? Yes.** The two web-first paths (Door A, and Door b2's LP hop) reuse the
+current better-auth stack verbatim. But WhatsApp-native signup (Door b1),
+cross-door linking, and merge each require a concrete addition. All are
+extensions of the existing provider-agnostic user model — no new auth engine.
+None is a "config line": each is a **moderate build** (consistent with the
+tier-(b) framing and honest caveats above; this section supersedes any "just a
+delivery adapter / provider #4 is one config line" shorthand). "Identity
+provider #4" here means *phone/WhatsApp on the same provider-agnostic account
+model*, not a claim of triviality.
+
+**What exists today (verified 2026-08-11,
+`packages/core/src/server/auth/createAuth.ts`):** email/password
+(`emailAndPassword.enabled`), Google + GitHub OAuth (`socialProviders`), and the
+magic-link plugin whose `sendMagicLink` currently **renders an email and sends
+it over the email `transport`** (`renderMagicLink` → `transport.send`). It is
+**email-wired, not a no-op stub** — but it is keyed to email, not to phone, so
+it does not by itself provide WhatsApp/phone delivery. There is **no
+`account.accountLinking`** configured (`grep accountLinking packages/core/src` →
+zero hits; the `account` block sets field mappings only) and **no `phoneNumber`
+plugin** in the `plugins` array (magic-link is the only plugin).
+
+| Concern | Exists today | To add for WhatsApp auth |
+| --- | --- | --- |
+| Email/password sign-up | ✅ `emailAndPassword.enabled` | — (reused as-is by Door A / b2) |
+| Google + GitHub OAuth | ✅ `socialProviders` | — (reused as-is) |
+| Magic-link plugin | ✅ mounted; `sendMagicLink` **renders + sends over the email transport** (email-wired, NOT a stub) | **(3)** add a **WhatsApp delivery adapter** so `sendMagicLink` can emit the *same* better-auth token URL over WhatsApp (web-session-over-WhatsApp); reuses the token/redeem/session code, adds the delivery leg |
+| Cross-door identity linking | ❌ **no** `account.accountLinking` (zero grep hits) | **(1)** enable `account.accountLinking` so "add email later" and link-into-session are native (no migration) |
+| Phone as an identity | ❌ **no** `phoneNumber` plugin | **(2)** install + configure better-auth `phoneNumber` plugin, with `getTempEmail` to fill the required-email schema field for phone-native (Door b1) accounts, and `sendOTP` for WhatsApp OTP |
+| OTP delivery over WhatsApp | ❌ (channel unused for auth) | **(3)** wire the WhatsApp delivery adapter to the `phoneNumber` plugin's `sendOTP` (phone OTP) and/or the magic-link `sendMagicLink` |
+| Web-first → WhatsApp round-trip (Door b2) | ❌ | **(4)** a **signed round-trip token** flow: LP-signup link carries a signed token binding the WhatsApp identity, and returns to bind phone ↔ email account |
+| Collision merge | ❌ | v1 claim/verify-to-merge (rides on **(1)** `accountLinking`; no better-auth merge primitive, so custom glue) |
+
+**Net:** four additions — (1) `accountLinking`, (2) `phoneNumber` plugin +
+`getTempEmail`, (3) a WhatsApp delivery adapter for `sendOTP` / `sendMagicLink`,
+(4) the Door-b2 signed round-trip token. Nothing in the existing email/OAuth/
+magic-link paths is removed or rewritten; WhatsApp/phone becomes an identity
+provider on the same account model. Each addition is moderate, not a config line.
+
+#### Consumers of this identity mechanism
+
+The identity **mechanism** — the two-door signup, the reconciliation/merge rule,
+the four auth additions, and the progressive-email ladder — **lives here**, in
+the single WhatsApp plan, as the WhatsApp channel's identity-provider capability.
+Vertical **product** plans do not re-specify it; they **consume** it and
+reference this section:
+
+- **Trades / CH revenue agent (#1210)** consumes this mechanism for its
+  WhatsApp-native onboarding (its onboarding section references this §6.6 for
+  signup/identity rather than duplicating the model).
+- **Future verticals** likewise reference this §6.6; the mechanism is
+  channel/consumer infrastructure, the products are configuration on top.
+
+---
+
 ## 7. Risks
 
 ### 7.1 The 24-hour customer service window — MUST be in the plan
