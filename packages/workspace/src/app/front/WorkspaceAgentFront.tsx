@@ -2520,7 +2520,6 @@ export function WorkspaceAgentFront<
   }, [appLeftActions, appLeftOverlayActions, leftOverlay, pluginAppLeftActions, skillsActionEnabled])
   const openAppLeftChats = useCallback(() => {
     setLeftOverlay(null)
-    setAppLeftPaneCollapsed(false)
   }, [])
   const appLeftNavigationEntries = useMemo(() => createAppLeftNavigationEntries({
     actions: managementActions,
