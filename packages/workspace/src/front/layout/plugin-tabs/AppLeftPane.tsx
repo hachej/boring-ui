@@ -65,6 +65,50 @@ export interface AppLeftPaneAction {
   active?: boolean
 }
 
+export interface AppLeftNavigationEntry extends AppLeftPaneAction {
+  key: string
+  kind: "primary" | "chats"
+  collapsedTrailing?: ReactNode
+  expandedTrailing?: ReactNode
+}
+
+export function createAppLeftNavigationEntries({
+  actions,
+  onOpenChats,
+  onOpenCommandPalette,
+}: {
+  actions: readonly AppLeftPaneAction[]
+  onOpenChats: () => void
+  onOpenCommandPalette: () => void
+}): AppLeftNavigationEntry[] {
+  return [
+    {
+      key: "search",
+      id: "search",
+      kind: "primary",
+      icon: <Search className="h-4 w-4" strokeWidth={1.75} />,
+      label: "Search",
+      onClick: onOpenCommandPalette,
+      expandedTrailing: <KbdHint keys="⌘K" />,
+    },
+    ...actions.map((action) => ({
+      ...action,
+      key: `action:${action.id}`,
+      kind: "primary" as const,
+      collapsedTrailing: action.trailing,
+      expandedTrailing: action.trailing,
+    })),
+    {
+      key: "chats",
+      id: "chats",
+      kind: "chats",
+      icon: <MessageSquare className="size-4" strokeWidth={1.75} />,
+      label: "Chats",
+      onClick: onOpenChats,
+    },
+  ]
+}
+
 export interface AppLeftPaneProps {
   width?: number
   appTitle?: string
@@ -118,7 +162,7 @@ export interface AppLeftPaneProps {
   onCreateSession: (agentTypeId?: string) => void
   onCreateSplitSession?: (agentTypeId?: string) => void
   onCreatePopoverSession?: (agentTypeId?: string) => void
-  onOpenCommandPalette: () => void
+  navigationEntries: readonly AppLeftNavigationEntry[]
   onSwitchSession: (id: string, agentTypeId?: string) => void
   onOpenSessionAsPane: (id: string, agentTypeId?: string) => void
   /** Opens an existing chat in the detached quick-chat overlay. */
@@ -126,8 +170,6 @@ export interface AppLeftPaneProps {
   onToggleSessionPinned: (id: string, agentTypeId?: string) => void
   onDeleteSession?: (id: string, agentTypeId?: string) => unknown
   onRenameSession?: (id: string, title: string, agentTypeId?: string) => void | Promise<unknown>
-  /** Primary app-left actions supplied by the host/app/plugin shell after New chat/Search. */
-  actions?: readonly AppLeftPaneAction[]
   /**
    * single-project: workspace shown below the app-title logo, no Workspaces
    * section — just the session list. multi-project: the Workspaces/projects
@@ -139,14 +181,11 @@ export interface AppLeftPaneProps {
 type SessionRowState = AppSessionRowState
 
 export function AppLeftRail({
-  actions = [],
+  navigationEntries,
   footerSlot,
-  onOpenChats,
   onCreateSession,
-  onOpenCommandPalette,
-}: Pick<AppLeftPaneProps, "actions" | "onCreateSession" | "onOpenCommandPalette"> & {
+}: Pick<AppLeftPaneProps, "navigationEntries" | "onCreateSession"> & {
   footerSlot?: ReactNode
-  onOpenChats: () => void
 }) {
   return (
     <aside
@@ -155,24 +194,15 @@ export function AppLeftRail({
       aria-label="Collapsed app navigation"
     >
       <nav className="boring-scrollbar-discreet flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto overflow-x-hidden" aria-label="Workspace shortcuts">
-        <RailAction
-          icon={<MessageSquare className="size-4" strokeWidth={1.75} />}
-          label="Chats"
-          onClick={onOpenChats}
-        />
-        <RailAction
-          icon={<Search className="h-4 w-4" strokeWidth={1.75} />}
-          label="Search"
-          onClick={onOpenCommandPalette}
-        />
-        {actions.map((action) => (
+        {navigationEntries.map((entry) => (
           <RailAction
-            key={action.id}
-            icon={action.icon}
-            label={action.label}
-            onClick={action.onClick}
-            active={action.active}
-            trailing={action.trailing}
+            key={entry.key}
+            entryKey={entry.key}
+            icon={entry.icon}
+            label={entry.label}
+            onClick={entry.onClick}
+            active={entry.active}
+            trailing={entry.collapsedTrailing}
           />
         ))}
       </nav>
@@ -228,16 +258,17 @@ export function AppLeftPane({
   onCreateSession,
   onCreateSplitSession,
   onCreatePopoverSession,
-  onOpenCommandPalette,
+  navigationEntries,
   onSwitchSession,
   onOpenSessionAsPane,
   onOpenSessionDetached,
   onToggleSessionPinned,
   onDeleteSession,
   onRenameSession,
-  actions = [],
   layoutMode = "single-project",
 }: AppLeftPaneProps) {
+  const primaryNavigationEntries = navigationEntries.filter((entry) => entry.kind === "primary")
+  const chatsNavigationEntry = navigationEntries.find((entry) => entry.kind === "chats")
   const normalizedActiveSessionId = activeSessionRef
     ? workspaceSessionKey(activeSessionRef.sessionId, activeSessionRef.agentTypeId)
     : activeSessionId ? workspaceSessionKey(activeSessionId) : activeSessionId
@@ -711,29 +742,30 @@ export function AppLeftPane({
       <section className="boring-scrollbar-discreet min-h-0 max-h-[45%] shrink overflow-y-auto px-2 py-2.5" aria-labelledby="app-left-workspace-heading">
         <h2 id="app-left-workspace-heading" className="sr-only">Workspace</h2>
         <nav aria-label="Workspace actions">
-          <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
-          {actions.map((action) => (
+          {primaryNavigationEntries.map((entry) => (
             <PrimaryAction
-              key={action.id}
-              icon={action.icon}
-              label={action.label}
-              onClick={action.onClick}
-              trailing={action.trailing}
-              emphasis={action.emphasis}
-              active={action.active}
+              key={entry.key}
+              entryKey={entry.key}
+              icon={entry.icon}
+              label={entry.label}
+              onClick={entry.onClick}
+              trailing={entry.expandedTrailing}
+              emphasis={entry.emphasis}
+              active={entry.active}
             />
           ))}
         </nav>
       </section>
 
       <section
+        data-boring-app-left-nav-key={chatsNavigationEntry?.key}
         className="flex min-h-24 flex-1 flex-col border-t border-border/40 pt-3"
         aria-labelledby={fleetChromeEnabled ? undefined : "app-left-chats-heading"}
         aria-label={fleetChromeEnabled ? "Agent navigation" : undefined}
       >
         {!fleetChromeEnabled ? (
           <h2 id="app-left-chats-heading" className="shrink-0 px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
-            Chats
+            {chatsNavigationEntry?.label}
           </h2>
         ) : null}
         {!fleetChromeEnabled ? (
