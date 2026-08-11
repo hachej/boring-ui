@@ -2640,6 +2640,10 @@ export function WorkspaceAgentFront<
         <AppLeftRail
           actions={managementActions}
           footerSlot={showThemeToggle ? <ThemeToggle /> : undefined}
+          onOpenChats={() => {
+            setLeftOverlay(null)
+            setAppLeftPaneCollapsed(false)
+          }}
           onOpenCommandPalette={openCommandPalette}
           onCreateSession={() => {
             setLeftOverlay(null)

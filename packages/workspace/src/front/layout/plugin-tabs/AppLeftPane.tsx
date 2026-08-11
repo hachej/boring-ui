@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Plus, Search, X } from "lucide-react"
+import { MessageSquare, Plus, Search, X } from "lucide-react"
 import { Skeleton } from "@hachej/boring-ui-kit"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
 import { FleetNewChatAction, PrimaryAction, NewChatAction, KbdHint, RailAction } from "./AppLeftPaneActions"
@@ -141,9 +141,13 @@ type SessionRowState = AppSessionRowState
 export function AppLeftRail({
   actions = [],
   footerSlot,
+  onOpenChats,
   onCreateSession,
   onOpenCommandPalette,
-}: Pick<AppLeftPaneProps, "actions" | "onCreateSession" | "onOpenCommandPalette"> & { footerSlot?: ReactNode }) {
+}: Pick<AppLeftPaneProps, "actions" | "onCreateSession" | "onOpenCommandPalette"> & {
+  footerSlot?: ReactNode
+  onOpenChats: () => void
+}) {
   return (
     <aside
       data-boring-workspace-part="app-left-rail"
@@ -151,6 +155,11 @@ export function AppLeftRail({
       aria-label="Collapsed app navigation"
     >
       <nav className="boring-scrollbar-discreet flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto overflow-x-hidden" aria-label="Workspace shortcuts">
+        <RailAction
+          icon={<MessageSquare className="size-4" strokeWidth={1.75} />}
+          label="Chats"
+          onClick={onOpenChats}
+        />
         <RailAction
           icon={<Search className="h-4 w-4" strokeWidth={1.75} />}
           label="Search"

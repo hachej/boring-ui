@@ -857,11 +857,34 @@ describe("WorkspaceAgentFront", () => {
     expect(within(collapsedRail).getByRole("button", { name: "Search" })).toBeInTheDocument()
     expect(within(collapsedRail).queryByRole("button", { name: "Plugins" })).not.toBeInTheDocument()
     expect(within(collapsedRail).getByRole("button", { name: "Skills" })).toBeInTheDocument()
+    expect(within(collapsedRail).getByRole("button", { name: "Chats" })).toBeInTheDocument()
     expect(within(collapsedRail).getByRole("button", { name: "New chat" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
   })
 
-  it("keeps only the current app-left overlay action selected", async () => {
+  it("opens the Chats session list from the collapsed app rail", async () => {
+    const user = userEvent.setup()
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-open-chats"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session" }]}
+        activeSessionId="s1"
+        defaultAppLeftPaneCollapsed
+        persistenceEnabled={false}
+      />,
+    )
+
+    const collapsedRail = screen.getByLabelText("Collapsed app navigation")
+    await user.click(within(collapsedRail).getByRole("button", { name: "Chats" }))
+
+    const reopenedAppNav = screen.getByLabelText("App navigation")
+    expect(screen.queryByLabelText("Collapsed app navigation")).not.toBeInTheDocument()
+    expect(within(reopenedAppNav).getByText("First session")).toBeInTheDocument()
+  })
+
+  it("keeps only the current app-left overlay action selected and returns to Chats from the rail", async () => {
     const user = userEvent.setup()
     const automationPlugin = definePlugin({
       id: "automation-action",
@@ -894,10 +917,17 @@ describe("WorkspaceAgentFront", () => {
     await user.click(automations)
     expect(automations).toHaveAttribute("data-active", "true")
     expect(skills).not.toHaveAttribute("data-active")
+    expect(screen.getByText("Automation overlay")).toBeInTheDocument()
 
-    await user.click(automations)
-    expect(automations).not.toHaveAttribute("data-active")
-    expect(skills).not.toHaveAttribute("data-active")
+    await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
+    const collapsedRail = screen.getByLabelText("Collapsed app navigation")
+    expect(within(collapsedRail).getByRole("button", { name: "Automations" })).toHaveAttribute("data-active", "true")
+
+    await user.click(within(collapsedRail).getByRole("button", { name: "Chats" }))
+
+    const reopenedAppNav = screen.getByLabelText("App navigation")
+    await waitFor(() => expect(screen.queryByText("Automation overlay")).not.toBeInTheDocument())
+    await waitFor(() => expect(within(reopenedAppNav).getByRole("button", { name: "Automations" })).not.toHaveAttribute("data-active"))
   })
 
   it("never mounts a different plugin overlay with stale request params", async () => {
