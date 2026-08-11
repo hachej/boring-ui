@@ -113,12 +113,12 @@ describe("command palette hard gates", () => {
 
   it("allows only origin-bound exact startup aborts", () => {
     const allowed = evaluateCommandPaletteHardGates(snapshot({
-      requestFailures: [{ url: "http://127.0.0.1:5380/api/v1/agents/default/ready-status", errorText: "net::ERR_ABORTED" }],
+      requestFailures: [{ url: "http://127.0.0.1:5380/api/v1/agents/alpha/ready-status", errorText: "net::ERR_ABORTED" }],
     }))
     expect(allowed.results.find((result) => result.id === "request-failures")?.passed).toBe(true)
 
     const external = evaluateCommandPaletteHardGates(snapshot({
-      requestFailures: [{ url: "https://example.com/api/v1/agents/default/ready-status", errorText: "net::ERR_ABORTED" }],
+      requestFailures: [{ url: "https://example.com/api/v1/agents/alpha/ready-status", errorText: "net::ERR_ABORTED" }],
     }))
     expect(external.results.find((result) => result.id === "request-failures")?.passed).toBe(false)
   })
