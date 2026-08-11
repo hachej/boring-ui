@@ -46,3 +46,6 @@ export const SCRIPTED_TWO_AGENT_FLEET = [
 ] as const satisfies readonly AgentHostAgentSpec[]
 
 export const SCRIPTED_TWO_AGENT_DEFAULT = "alpha"
+
+export const SCRIPTED_ONE_AGENT = [SCRIPTED_TWO_AGENT_FLEET[0]] as const satisfies readonly AgentHostAgentSpec[]
+export const SCRIPTED_ONE_AGENT_CAPABILITY_PLUGINS = [SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS[0]] as const

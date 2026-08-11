@@ -153,8 +153,13 @@ describe("SurfaceShell", () => {
     expect(body).toHaveStyle({ height: "100%" })
     expect(rail).toHaveStyle({ height: "calc(100% - 44px)" })
     expect(rail).toHaveAttribute("data-boring-state", "host-collapsed")
+    expect(rail).toHaveClass("border-border")
     expect(rail?.parentElement).toBe(body)
-    fireEvent.click(screen.getByRole("button", { name: "Open workbench" }))
+    expect(header).toHaveClass("border-border")
+    expect(header).toHaveClass("bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)]")
+    const openWorkbench = screen.getByRole("button", { name: "Open workbench" })
+    expect(openWorkbench.querySelector("svg")).toHaveClass("lucide-panel-right-open")
+    fireEvent.click(openWorkbench)
     expect(onHostExpand).toHaveBeenCalledOnce()
   })
 
@@ -547,6 +552,7 @@ describe("SurfaceShell", () => {
 
     const headerActions = screen.getByRole("button", { name: "Fullscreen workbench" }).closest('[data-boring-workspace-part="workbench-header-actions"]')
     expect(headerActions).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Close workbench" }).querySelector("svg")).toHaveClass("lucide-panel-right-close")
     fireEvent.click(screen.getByRole("button", { name: "Fullscreen workbench" }))
     fireEvent.click(screen.getByRole("button", { name: "Close workbench" }))
     expect(onToggleFullscreen).toHaveBeenCalledOnce()
