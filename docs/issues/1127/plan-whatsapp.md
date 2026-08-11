@@ -1,8 +1,8 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/1127
 issue: 1127
-state: needs-owner-approval
-updated: 2026-08-10
+state: owner-rulings-applied — 2026-08-11 rulings folded in; ready for owner gate merge
+updated: 2026-08-11
 supersedes: docs/issues/1127/plan.md (r2.1) — for the WhatsApp lane only
 flag: BORING_AGENT_CHANNELS (from r2.1; adapter host is dead code when off)
 ---
@@ -28,6 +28,24 @@ Do not duplicate; reference.
 | **v1 = outbound drafts with OWNER APPROVAL IN WHATSAPP before send** | **Reverses r2.1's demotion of `ask_user` to slice 3.** The ask-user machinery becomes v1-critical. New slice 3. |
 | **v1 = artifact drop into chat (expiring links + PDF)** | **New scope.** r2.1 had nothing here. New slice 4. |
 | **v1 = inbound media (photos, voice notes → transcribed)** | **Reverses r2.1's "Out of Scope: inbound media→agent attachments".** New slice 5. |
+
+## Owner rulings folded in (2026-08-11, PR #1211 comments)
+
+| Ruling | Effect on this plan |
+| --- | --- |
+| **Bindings target WORKSPACE sessions on the app host** (the customer's signup→default-agent workspace), not the standalone host | **Reverses §4.1's standalone-host recommendation.** §4 rewritten. Channel CORE placement in `packages/agent` (§3.2) and the in-process server-class caller requirement (§6.1) stand unchanged. Standalone host stays documented as the future headless tier; its §5 verification covers the shared substrate. Slice 2 retargeted. |
+| **Channel = first-class typed session property** (`'whatsapp'` now; `'web'` default; slack/email later reuse the field) | New §6.4. Badge in session list, filterable, drives per-session dialect shaping. Binding schema's session linkage made explicit as this typed property (slice 1a). |
+| **Reopen-in-workspace v1 = READ-ONLY** (existing read-only session idiom, channel-badged, full transcript; workspace-side interaction limited to Inbox approvals) | New §6.5. Cuts reopen to near-zero new UI → small slice 7. |
+| **Two-way human-takeover = v2** | Named v2 slice 8, carrying the parked design sheet (24h-window behavior — the send API itself is symmetric, same send path; visible labeling; agent yields on takeover, resumes on explicit handback). Not v1 scope. |
+
+**Net slice-scope changes from these rulings:** slice 4 SHRINKS (channel-side
+artifact store and public unauthenticated viewer origin dropped — artifact drop
+collapses to share-resource links rendered by the product's own viewers, since
+the recipient is an authenticated workspace member); slice 2 is retargeted from
+standalone-host deployment to app-host wiring; new small slice 7 (read-only
+reopen surfacing); new v2 slice 8 (human-takeover). §7.3's
+one-workspace-scope tenancy limitation dissolves (separation is now
+per-workspace).
 
 Everything in r2.1 §1–§4 that these rulings do not touch is **revived verbatim**
 and is not restated here. Read `plan.md` first; this document is the delta plus
@@ -326,37 +344,62 @@ first. The Hono→Fastify shim lives inside `packages/channels/whatsapp`.
 
 ## 4. Session routing: which host?
 
-### 4.1 Recommendation: the standalone single-agent host
+### 4.1 Owner ruling (2026-08-11): WORKSPACE sessions on the app host
 
-`createStandaloneAgentHostApp` (`packages/agent/src/server/createStandaloneAgentHostApp.ts`)
-is the ingress target for the WhatsApp deployment. Reasons, all evidenced in §5:
+Channel bindings target **workspace sessions on the app host** — the customer's
+own workspace, the one created at signup with the default agent — **not** the
+standalone single-agent host. This reverses the r3-draft recommendation below
+(kept in §4.2 for the record, now describing the future headless tier).
 
-1. **It is the natural runtime for a headless bot.** No workspace UI, no
-   browser, no `x-boring-workspace-id` header, no cookie auth. It hardcodes
-   `workspaceId: 'default'` and mints its own scope via
-   `createStandaloneScopeAuthority` — which is *precisely* the trusted-caller
-   shape r2.1 §2 says the channel needs, already existing rather than invented.
-2. **The whole loop is proven working today** (§5): session create → prompt →
-   ordered event stream → `agent-end status: ok`, with durable persistence and
-   restart survival.
-3. **Its prompt route already has the dedupe primitive.** `requestId` is
-   *required* and returns `duplicate: true` on replay (§5.4) — a second,
-   independent line of defence behind the channel's own durable dedupe.
-4. It is a single process, satisfying r2.1 decision 5 for free.
+The owner's rationale is architectural, not incidental: **same session through
+two doors.**
 
-### 4.2 Not the workspace hub, for v1
+1. **Deep-link continuity.** When the medium runs out (long quotes, document
+   review, panes), WhatsApp can deep-link into the *running workspace session* —
+   the customer opens the very session the channel is driving, rather than a
+   copy in a separate headless deployment.
+2. **Artifact drop collapses.** Because the recipient is an authenticated
+   workspace member, artifact drop becomes *sharing links to workspace files
+   rendered by the product's own viewers* — reuse the share-resource seam, no
+   channel-side artifact store. See the shrunk slice 4.
+3. **One approval intention, two surfaces.** Approvals surface in both WhatsApp
+   and the workspace Inbox as a single intention (§6.1), not as a channel-local
+   copy.
 
-The workspace hub adds multi-workspace routing, browser auth, plugin gateways
-and the `x-boring-workspace-id` header — none of which a webhook has or wants.
-It is also where the known **connection-starvation** problem lives (Chrome's
-6-connections-per-origin limit vs held ndjson streams). A channel holding N
-per-binding tails would make that worse.
+**What this does NOT change.** Channel CORE placement in
+`packages/agent/src/server/channels/` (§3.2) stands — the core is host-agnostic
+and composes wherever the agent stack composes. The in-process **server-class
+caller** requirement (§6.1) is likewise unaffected: the app host runs the same
+`HarnessPiChatService`/`agent-host` composition in one process, so the channel
+core mounts there exactly as it would have on the standalone host. The binding
+row gains an explicit `workspaceId` alongside the session key, and sessions it
+creates carry the typed `channel: 'whatsapp'` property (§6.4).
 
-**Consequence for tenancy:** one standalone host = one workspace scope. With ONE
-Seneca number serving multiple tenants, tenant separation in v1 is **per-session
-within one workspace scope**, not per-workspace. This is a real limitation, it
-is what the owner's "one number, multi-tenant, for the pilot" ruling buys, and
-it is stated as a risk in §7.3 rather than hidden.
+*Why the old §4.2 objections no longer bind:*
+- The channel's N per-binding tails are **in-process event-store listeners**
+  (r2.1 decision 1), not browser HTTP streams — the hub's known
+  connection-starvation problem (Chrome's 6-per-origin limit) is a browser-side
+  phenomenon and does not apply to server-side subscribers.
+- The webhook needs no browser auth or `x-boring-workspace-id` header: the
+  channel core is a trusted in-process caller minting `AuthorizedAgentScope`
+  from the binding row (r2.1 §2), resolving the workspace from the binding —
+  the hub's browser machinery is bypassed, not fought.
+
+### 4.2 The standalone host: future headless tier (was the r3-draft pick)
+
+`createStandaloneAgentHostApp` remains **documented as the target for a future
+headless tier** — deployments with no product workspace at all. It is not the
+v1 ingress. Its §5 verification is *not* wasted: durable replay, cursor resume,
+terminal events, prompt idempotency, and restart survival are properties of the
+**shared substrate** (`HarnessPiChatService` + `SqliteEventStreamStore`) that
+the app host composes identically, so §5 stands as the substrate proof for the
+workspace-session routing too.
+
+**Tenancy consequence (supersedes the old one-workspace-scope caveat):** the
+binding maps `(channel, externalId)` → `(workspaceId, sessionKey)`. Tenant
+separation is **per-workspace** — each customer's own signup workspace — not
+per-session inside one shared scope. §7.3 item 4 is updated accordingly; the
+one-number identity risks (items 1–3, 5) remain.
 
 ### 4.3 Flag interaction — unspecified in r2.1, specified here
 
@@ -370,7 +413,7 @@ on but store unavailable").
 
 ---
 
-## 5. Substrate verification — the standalone host works
+## 5. Substrate verification — the shared substrate works (run on the standalone host)
 
 Run on this VM, 2026-08-10, against **gemini-2.5-flash** through the repo's
 existing custom-provider seam. Not a mock: real HTTP, real model, real sqlite.
@@ -445,7 +488,10 @@ against the same store:
 
 ### 5.6 Verdict
 
-**The standalone single-agent host is healthy and is the right substrate.** The
+**The substrate is healthy.** (Run against the standalone host; per §4.2 the
+properties proven here — durable replay, cursor resume, terminal events,
+idempotent prompt, restart survival — belong to the shared
+`HarnessPiChatService`/event-store stack the app host composes identically.) The
 disconnected-and-asynchronous property that motivates this entire epic — a
 consumer absent across a process restart resuming from a cursor with history
 intact — is demonstrably already true.
@@ -494,8 +540,13 @@ HTTP (`POST /api/v1/workspace-bridge/call`) only two classes are reachable:
 
 **Design.** The channel is an **in-process `"server"`-class caller** holding the
 same `AskUserStore`/`AskUserRuntime` instance. This is why §3.2 puts the core
-inside `packages/agent` and §4.1 picks the single-process standalone host — the
-approval lane is the requirement that makes both non-negotiable. No new public
+inside `packages/agent`, running in-process with whichever host composes the
+agent stack — under the 2026-08-11 ruling, the app host (§4.1), which the owner
+confirmed leaves this requirement unaffected. The approval lane is the
+requirement that makes the in-process placement non-negotiable. Per §4.1, the
+same approval also surfaces as one intention in the workspace Inbox — WhatsApp
+buttons and Inbox answer the same question, whichever lands first wins the
+`askUserPending` CAS. No new public
 HTTP surface, no `answerToken` on the wire, no second approval channel
 (`08:284`: "Existing permission prompts and the ask-user plugin migrate onto
 this path; no second approval channel").
@@ -538,7 +589,18 @@ of slice 3 and gets its own review budget.
 Slice 3 is sequenced after it merges; if it slips, slice 3 slips, and slices
 1/2/4/5 are unaffected.
 
-### 6.2 Artifact drop (expiring links + PDF)
+### 6.2 Artifact drop (SHRUNK by the 2026-08-11 routing ruling)
+
+**Ruling effect first:** with bindings targeting the customer's own workspace
+(§4.1), the WhatsApp recipient **is an authenticated workspace member**. The
+owner's ruling collapses artifact drop to **sharing links to workspace files
+rendered by the product's own viewers — reuse the share-resource seam, no
+channel-side artifact store.** The r3-draft's "genuinely new public,
+unauthenticated, expiring viewer origin" is therefore **out of v1 scope**; the
+analysis below is retained because it documents why that surface was thought
+necessary (it assumed a recipient with no account) and what still applies
+(snapshot-on-publish for quotes, PDF rendering, WhatsApp document-message
+delivery).
 
 **What exists — less than the name suggests.** `packages/agent/src/shared/share-entry.ts`:
 
@@ -560,7 +622,9 @@ the repo. The only byte-serving routes are authenticated. And the AR1 lane
 explicitly rules the other way: "The returned human link contains neither a
 capability secret nor a workspace path; the authenticated member lands on the
 destination-local copy" — i.e. AR1 links **require an authenticated session at
-the destination**. A WhatsApp recipient has no account. AR1 is not our answer.
+the destination**. *(r3-draft conclusion: "a WhatsApp recipient has no account,
+AR1 is not our answer" — now inverted by §4.1: the recipient DOES have an
+account, so the authenticated share-resource seam IS the answer.)*
 
 **So this lane builds a genuinely new surface.** Design constraints, taken from
 the ratified artifact security posture in `08`:
@@ -631,6 +695,55 @@ whichever is chosen.
 Transcription is **attached as text**, with the original audio retained as a
 stored artifact so a human can re-listen when the transcript is wrong.
 
+### 6.4 Channel as a first-class typed session property (owner addition, 2026-08-11)
+
+Sessions carry a **typed channel identity**: `channel: 'whatsapp'` for
+channel-originated sessions, `'web'` as the default for everything existing;
+future channels (slack, email) reuse the same field rather than adding new
+mechanisms. This is a session property in the shared session schema, not
+channel-local metadata. It drives three behaviors:
+
+1. **Badge** — the workspace session list shows a channel badge on
+   channel-originated sessions.
+2. **Filter** — the session list is filterable by channel.
+3. **Dialect shaping** — the §3-shaping dialect (WhatsApp markdown, 4096
+   chunking) is selected per session from this property, not hardcoded per
+   deployment.
+
+**Binding schema linkage, made explicit:** the `ChannelBindingStore` row links
+`(channel, externalId)` → `(workspaceId, sessionKey)`, and the session that the
+binding creates (via the CAS create-race machine, §1.2b) is created **with**
+`channel: 'whatsapp'` set. The binding's `channel` column and the session's
+`channel` property are the same typed value — the binding is the addressing map
+(two-handles rule, §1.2c); the session property is the identity the workspace
+UI and the dialect shaper read. Slice 1a delivers both.
+
+### 6.5 Reopen-in-workspace — v1 READ-ONLY (owner ruling, 2026-08-11)
+
+A WhatsApp-originated session **appears in the customer's workspace session
+list** (channel-badged, filterable per §6.4) and **opens as a read-only
+transcript** using the existing read-only session idiom: full observability —
+WA inbounds as user turns, agent replies, tool runs — with **no send path from
+the workspace in v1**. The only workspace-side interaction is answering
+approval intentions via the Inbox (already planned, §6.1).
+
+This cuts the reopen requirement to **near-zero new UI**: the transcript
+renderer, session list, and read-only idiom all exist; slice 7 adds only the
+badge/filter surfacing and the read-only gating for `channel !== 'web'`
+sessions.
+
+**Two-way human-takeover is v2** (slice 8). Its ready-made design sheet — the
+previously-flagged questions, parked not discarded:
+
+- **24h-window behavior:** the send API itself is symmetric (a human-typed
+  outbound uses the same send path and the same §7.1 window check/template
+  fallback as agent output); specify exact behavior inside vs outside the
+  window.
+- **Visible labeling:** human-typed messages are visibly distinguished from
+  agent output on both ends.
+- **Takeover semantics:** recommend the agent **yields while a human is
+  active** and **resumes on explicit handback**, not on a timer.
+
 ---
 
 ## 7. Risks
@@ -687,9 +800,10 @@ The owner's pilot ruling has consequences worth stating rather than discovering:
 3. **Number loss / SIM reuse.** A recycled number silently inherits a binding.
    Bindings need an expiry/re-confirmation policy; v1 mitigates with revocable
    status and the age alert from r2.1 open question 5.
-4. **Tenant separation is per-session inside one workspace scope** (§4.2), not
-   per-workspace. Acceptable for a pilot; it is the item to revisit before any
-   non-pilot customer.
+4. ~~Tenant separation is per-session inside one workspace scope~~ **Resolved
+   by the 2026-08-11 routing ruling:** bindings target each customer's own
+   signup workspace, so tenant separation is **per-workspace** (§4.2). The
+   former pilot limitation no longer exists.
 5. **The owner-approval flow assumes we know who the owner is.** With one
    number, the approver is identified by *their own* binding, not by the
    number — so approval routing needs an explicit `approverExternalId` on the
@@ -709,7 +823,14 @@ The owner's pilot ruling has consequences worth stating rather than discovering:
 
 ## 8. Slices
 
-Each is one PR. `1a → 1b → {3, 4, 5} → 6`; slices 3/4/5 are parallel after 1b.
+Each is one PR. `1a → 1b → {3, 4, 5, 7} → 6`; slices 3/4/5/7 are parallel after
+1b. Slice 8 is **v2**, not sequenced in this lane.
+
+**Delta from the 2026-08-11 rulings:** slice 1a gains the `workspaceId` binding
+column and the typed `channel` session property; slice 2 is retargeted from the
+standalone host to the app host; slice 4 **shrinks** (channel-side store and
+public viewer origin dropped); slice 7 (read-only reopen, near-zero UI) is new;
+slice 8 (two-way takeover) is new and v2.
 
 ### Slice 1a — channel core: contract, bindings, inbound path
 **Delivers:** `ChannelAdapter` contract; `ChannelBindingStore` (bindings +
@@ -717,7 +838,9 @@ durable dedupe + inbound queue, **dedupe-row and queue insert in one sqlite
 transaction**, with CHAN-A's owner-token CAS create-race machine); the
 `DrainCoordinator` + `followUp` fix (§1.2a); inbound park policy; async-ack
 webhook core; trusted-caller seam with guardrails; provisioning CLI op; flag
-plumbing + the durable-stream boot assertion (§4.3); fake-channel inbound tests.
+plumbing + the durable-stream boot assertion (§4.3); fake-channel inbound tests;
+**(2026-08-11)** the binding row's explicit `workspaceId` (§4.2) and the typed
+`channel` session property with `'web'` default (§6.4), set at session create.
 **Blocked by:** none — substrate proven in §5.
 **Proof:** replayed `providerMessageId` (including across a restart) produces
 exactly one turn; a crash between dedupe insert and queue insert loses nothing
@@ -742,13 +865,16 @@ parks without wedging the binding; a reply attempted outside a simulated 24h
 window sends the template and delivers the held content after the window
 reopens.
 
-### Slice 2 — deployment shape
-**Delivers:** the standalone-host deployment for the channel (§4): host wiring,
-`BORING_AGENT_SESSION_ROOT` on the durable volume, `BORING_CHAT_DURABLE_STREAM=1`,
-credentials via `server/credentials/`, public HTTPS webhook endpoint answering
-the `hub.challenge` handshake (unblocks step 0.1's endpoint verification).
-**Blocked by:** 1a. **Proof:** the §5 loop reproduced against the deployed host;
-Meta's webhook verification succeeds against the public URL.
+### Slice 2 — deployment shape (retargeted 2026-08-11)
+**Delivers:** the channel core mounted on the **app host** (§4.1) — wiring into
+the deployed workspace host's composition, binding-resolved `workspaceId`
+routing, `BORING_AGENT_SESSION_ROOT` on the durable volume,
+`BORING_CHAT_DURABLE_STREAM=1`, credentials via `server/credentials/`, public
+HTTPS webhook endpoint answering the `hub.challenge` handshake (unblocks step
+0.1's endpoint verification).
+**Blocked by:** 1a. **Proof:** the §5 substrate loop reproduced against the
+deployed app host into a real customer workspace session; Meta's webhook
+verification succeeds against the public URL.
 
 ### Slice 3 — approval in WhatsApp (ask-user over WA)
 **Delivers:** in-process `"server"`-class ask-user caller; ask-user detection in
@@ -764,16 +890,21 @@ continues; double-tap answers once; a stale button gets an expiry notice; an
 outbound payload (guard test); no phone number reaches an agent API (two-handles
 guard).
 
-### Slice 4 — artifact drop: expiring links + PDF
-**Delivers:** sqlite-backed `ShareEntryStore`; a **new public, unauthenticated,
-expiring, revocable** share route on a separate viewer origin, addressing
-`artifactId + version + capability` and never a workspace path;
-snapshot-on-publish; HTML→PDF rendering; WhatsApp document-message send.
+### Slice 4 — artifact drop (SHRUNK 2026-08-11): share-resource links + PDF
+**Delivers:** artifact drop via the **existing share-resource seam** (§6.2) —
+links to workspace files rendered by the product's own viewers, opened by the
+authenticated workspace member the binding maps to. **Dropped from v1:** the
+channel-side `ShareEntryStore` durability work, the new public unauthenticated
+viewer origin, and the expiry/revocation link machinery — the recipient has an
+account, so authenticated links suffice. **Retained:** snapshot-on-publish for
+quotes (a later workspace edit must not change what a client was quoted);
+HTML→PDF rendering (headless Chromium, CH-trades lane owns the template);
+WhatsApp document-message send of the PDF alongside the link.
 **Blocked by:** 1b. Coordinates with the CH-trades lane for the quote template.
-**Proof:** a quote artifact produces a link that opens with no account; the link
-404s after expiry and after revocation; the served PDF is the snapshot, unchanged
-by a later workspace edit; no workspace path or capability secret appears in the
-URL; store survives restart.
+**Proof:** a quote artifact produces a workspace share link that opens in the
+product viewer for the bound customer; the sent PDF is the snapshot, unchanged
+by a later workspace edit; no workspace path or capability secret appears in
+the URL or the document filename.
 
 ### Slice 5 — inbound media
 **Delivers:** Meta media-ID download; CH/EU-side storage; photos → prompt
@@ -801,6 +932,26 @@ outcome leaves the conformance suite and acceptance unchanged.
 **Proof:** fixture tests for verify/parse/chunk/template; live demo against the
 Seneca number — a multi-message conversation spanning a server restart, with one
 approval answered in WhatsApp and one quote PDF delivered.
+
+### Slice 7 — read-only reopen in workspace (new, 2026-08-11)
+**Delivers:** §6.5 — channel badge + channel filter in the session list (§6.4);
+WhatsApp-originated sessions open as **read-only** transcripts via the existing
+read-only session idiom (send path gated off for `channel !== 'web'`); full
+transcript renders (WA inbounds as user turns, agent replies, tool runs).
+Near-zero new UI by owner design.
+**Blocked by:** 1b (needs the channel property + real transcripts). Parallel
+with 3/4/5.
+**Proof:** a WA session appears badged in the customer's session list, filters
+by channel, opens read-only with the full transcript; the composer is absent/
+disabled with no send route reachable (guard test); Inbox approvals for that
+session still work (§6.1).
+
+### Slice 8 (v2) — two-way human-takeover
+**Not v1.** Typing into a channel session from the workspace delivers to the
+WhatsApp counterpart — human-takeover as a feature. Carries §6.5's design sheet
+as its input: symmetric send path with §7.1 window/template handling, visible
+labeling of human vs agent messages on both ends, agent yields on takeover and
+resumes on explicit handback. Scoped and sequenced when v1 has shipped.
 
 ---
 
@@ -853,15 +1004,18 @@ return and the next prompt continues the stream.
 
 ## 10. Open questions — owner decisions required
 
-1. **Placement split (§3.2)**: core in `packages/agent/src/server/channels/`,
-   provider edge in `packages/channels/whatsapp`. This narrows ratified
-   DECISIONS.md decision 3 and needs an explicit owner ratification.
+1. **Placement split (§3.2)** — **RESOLVED 2026-08-11**: the owner's routing
+   ruling states "Channel CORE placement in packages/agent stands unchanged
+   (host-agnostic)". Core in `packages/agent/src/server/channels/`, provider
+   edge in `packages/channels/whatsapp`; DECISIONS.md decision 3 is narrowed
+   accordingly on merge.
 2. **Transcription provider (§6.3)**: self-hosted Whisper (recommended) vs
    Infomaniak, pending confirmation that Infomaniak offers speech-to-text. Names
    a sub-processor in the step-0 privacy policy, so it must be decided before
    step 0 is submitted.
-3. **Share-link expiry default (§6.2)**: proposed 7 days. Quotes may warrant
-   longer; longer means a bearer link lives longer.
+3. ~~Share-link expiry default~~ — **MOOT 2026-08-11**: the public expiring
+   bearer link is out of v1 (§6.2 shrink); share-resource links are
+   authenticated workspace links with no bearer-expiry question.
 4. **Approver identity (§7.3 item 5)**: confirm `approverExternalId` per tenant
    is the right v1 model for "owner approves in WhatsApp".
 5. **Slice 3 sequencing**: confirm slice 3 waits for `fix/786`, and that slices
@@ -874,6 +1028,7 @@ return and the next prompt continues the stream.
 
 Email/SMS channels; group chats; per-agent grant policy (#1087); proactive
 outreach beyond the single fallback template; multi-agent routing per sender;
-horizontal adapter scale-out; billing/metering of channel traffic; per-workspace
-tenant isolation (§4.2); model-readable inbound PDFs (§6.3); the CH-trades
-product surface (separate lane).
+horizontal adapter scale-out; billing/metering of channel traffic;
+two-way human-takeover from the workspace (v2, slice 8); the standalone
+headless-tier deployment (§4.2); model-readable inbound PDFs (§6.3); the
+CH-trades product surface (separate lane).
