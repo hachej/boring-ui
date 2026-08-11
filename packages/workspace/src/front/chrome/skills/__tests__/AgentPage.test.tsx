@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { SkillsPage } from "../SkillsPage"
+import { AgentPage } from "../AgentPage"
 
 const mocks = vi.hoisted(() => {
   const getJson = vi.fn()
@@ -43,15 +43,26 @@ const skills = [
   },
 ]
 
-describe("SkillsPage resource rows", () => {
+/** Route the two fan-out requests to their own payloads. */
+function respondWith({ skills: skillsPayload, tools: toolsPayload }: {
+  skills?: unknown
+  tools?: unknown
+}) {
+  mocks.getJson.mockImplementation(async (path: string) => {
+    if (path.includes("/tools")) return toolsPayload ?? { tools: [] }
+    return skillsPayload ?? { skills: [] }
+  })
+}
+
+describe("AgentPage skills section", () => {
   beforeEach(() => {
     mocks.getJson.mockReset()
     mocks.postUiCommand.mockReset()
-    mocks.getJson.mockResolvedValue({ skills })
+    respondWith({ skills: { skills } })
   })
 
   it("preserves filesystem identity when opening workspace, package, and shared sources", async () => {
-    render(<SkillsPage />)
+    render(<AgentPage />)
 
     await screen.findByText("/workspace-skill")
     expect(await screen.findAllByText("Management source")).toHaveLength(2)
@@ -81,11 +92,11 @@ describe("SkillsPage resource rows", () => {
 
   it("keeps resource-less same-name rows reconciliation-safe", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
-    mocks.getJson.mockResolvedValue({ skills: [
+    respondWith({ skills: { skills: [
       { name: "duplicate", source: "first", description: "First." },
       { name: "duplicate", source: "second", description: "Second." },
-    ] })
-    render(<SkillsPage />)
+    ] } })
+    render(<AgentPage />)
     expect(await screen.findAllByText("/duplicate")).toHaveLength(2)
     expect(consoleError.mock.calls.flat().join(" ")).not.toMatch(/same key/i)
     consoleError.mockRestore()
@@ -97,13 +108,11 @@ describe("SkillsPage resource rows", () => {
       "../secret/SKILL.md",
       "skills/%2e%2e/secret/SKILL.md",
     ]
-    mocks.getJson.mockResolvedValue({
-      skills: invalidPaths.map((path, index) => ({
-        name: `invalid-${index}`,
-        resource: { filesystem: "agent_resources", path },
-      })),
-    })
-    const { container } = render(<SkillsPage />)
+    respondWith({ skills: { skills: invalidPaths.map((path, index) => ({
+      name: `invalid-${index}`,
+      resource: { filesystem: "agent_resources", path },
+    })) } })
+    const { container } = render(<AgentPage />)
 
     await screen.findByText("/invalid-0")
     for (let index = 0; index < invalidPaths.length; index++) {
@@ -113,47 +122,105 @@ describe("SkillsPage resource rows", () => {
     expect(mocks.postUiCommand).not.toHaveBeenCalled()
   })
 
-  it("exposes clear accessible labels and refreshes through the guarded endpoint", async () => {
-    render(<SkillsPage onClose={vi.fn()} />)
+  it("exposes clear accessible labels and refreshes both sections through the guarded endpoints", async () => {
+    render(<AgentPage onClose={vi.fn()} />)
     await screen.findByText("/workspace-skill")
 
     expect(screen.getByRole("button", { name: "Open skill workspace-skill from project" })).toBeEnabled()
-    expect(screen.getByRole("button", { name: "Open management source duplicate from @example/package" })).toBeEnabled()
-    expect(screen.getByRole("button", { name: "Refresh skills" })).toBeEnabled()
-    expect(screen.getByRole("button", { name: "Close skills" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Refresh agent" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Close agent" })).toBeEnabled()
 
-    fireEvent.click(screen.getByRole("button", { name: "Refresh skills" }))
+    fireEvent.click(screen.getByRole("button", { name: "Refresh agent" }))
     await waitFor(() => expect(mocks.getJson).toHaveBeenCalledWith(
       "/api/v1/agents/default/skills?refresh=1",
       expect.objectContaining({ missingMessage: expect.any(String) }),
     ))
+    expect(mocks.getJson).toHaveBeenCalledWith(
+      "/api/v1/agents/default/tools?refresh=1",
+      expect.objectContaining({ missingMessage: expect.any(String) }),
+    )
   })
 
-  it("summarises the skill count in the header description", async () => {
-    mocks.getJson.mockResolvedValue({ skills: [{ name: "alpha" }] })
-    render(<SkillsPage />)
-    await screen.findByText("1 skill available to slash commands")
+  it("describes the surface as skills and tools in the header", async () => {
+    respondWith({ skills: { skills: [{ name: "alpha" }] } })
+    render(<AgentPage />)
+    await screen.findByText("Skills and tools available to this agent")
   })
 
-  it("shows an alert with a retry action and no empty state when loading fails", async () => {
+  it("shows a skills alert with a retry action and no empty state when skills fail to load", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
-    mocks.getJson.mockRejectedValue(new Error("boom"))
-    render(<SkillsPage />)
+    mocks.getJson.mockImplementation(async (path: string) => {
+      if (path.includes("/tools")) return { tools: [] }
+      throw new Error("boom")
+    })
+    render(<AgentPage />)
 
     const alert = await screen.findByRole("alert")
     expect(alert.textContent).toContain("boom")
-    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy()
-    expect(screen.queryByText("No skills found")).toBeNull()
+    expect(within(alert).getByRole("button", { name: "Retry" })).toBeTruthy()
+    expect(screen.queryByText(/No skills\./)).toBeNull()
 
-    mocks.getJson.mockResolvedValue({ skills: [{ name: "alpha" }] })
-    screen.getByRole("button", { name: "Retry" }).click()
+    respondWith({ skills: { skills: [{ name: "alpha" }] } })
+    within(alert).getByRole("button", { name: "Retry" }).click()
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull())
     consoleError.mockRestore()
   })
 
   it("shows the empty state when there are no skills", async () => {
-    mocks.getJson.mockResolvedValue({ skills: [] })
-    render(<SkillsPage />)
-    await screen.findByText("No skills found")
+    respondWith({ skills: { skills: [] } })
+    render(<AgentPage />)
+    await screen.findByText(/No skills\./)
+  })
+})
+
+describe("AgentPage tools section", () => {
+  beforeEach(() => {
+    mocks.getJson.mockReset()
+    mocks.postUiCommand.mockReset()
+  })
+
+  it("lists the agent's tools from the per-agent tools route", async () => {
+    respondWith({
+      skills: { skills: [] },
+      tools: { tools: [
+        { name: "read_file", description: "Read a file from the workspace." },
+        { name: "write_file" },
+      ] },
+    })
+    render(<AgentPage />)
+
+    await screen.findByText("read_file")
+    expect(screen.getByText("write_file")).toBeInTheDocument()
+    expect(mocks.getJson).toHaveBeenCalledWith(
+      "/api/v1/agents/default/tools",
+      expect.objectContaining({ missingMessage: expect.any(String) }),
+    )
+  })
+
+  it("expands a tool description on click", async () => {
+    respondWith({
+      skills: { skills: [] },
+      tools: { tools: [{ name: "read_file", description: "Read a file from the workspace." }] },
+    })
+    render(<AgentPage />)
+
+    const toggle = await screen.findByRole("button", { name: /read_file/ })
+    expect(toggle).toHaveAttribute("aria-expanded", "false")
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute("aria-expanded", "true")
+  })
+
+  it("shows a tools alert when the tools route fails, without hiding skills", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    mocks.getJson.mockImplementation(async (path: string) => {
+      if (path.includes("/tools")) throw new Error("tools down")
+      return { skills: [{ name: "alpha" }] }
+    })
+    render(<AgentPage />)
+
+    await screen.findByText("/alpha")
+    const alert = await screen.findByRole("alert")
+    expect(alert.textContent).toContain("tools down")
+    consoleError.mockRestore()
   })
 })
