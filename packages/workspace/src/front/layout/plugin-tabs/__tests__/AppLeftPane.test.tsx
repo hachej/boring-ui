@@ -378,7 +378,13 @@ describe("AppLeftPane", () => {
     expect(screen.getByText("Project")).toBeInTheDocument()
   })
 
-  it("gives a one-Agent addressed fleet its own card", async () => {
+  // Supersedes "gives a one-Agent addressed fleet its own card". Owner ruling:
+  // a fleet of one is not a fleet — the per-Agent section, its card and the New
+  // chat Agent picker all describe a choice that does not exist, so the pane
+  // falls back to the plain "Chats" list. Known consequence, accepted by the
+  // owner: the card was the pane's route to that Agent's settings, so with one
+  // Agent those settings are reached from the Agent surfaces outside the pane.
+  it("renders a flat Chats list with no fleet chrome for a one-Agent fleet", async () => {
     const user = userEvent.setup()
     const onOpenAgentSettings = vi.fn()
     const onCreateSession = vi.fn()
@@ -389,6 +395,7 @@ describe("AppLeftPane", () => {
           agents={[{ agentTypeId: "solo", label: "Boring Solo", sessionsStatus: "loaded" }]}
           selectedAgentTypeId="solo"
           sessions={[{ id: "s1", agentTypeId: "solo", title: "Solo session" }]}
+          activeSessionRef={{ agentTypeId: "solo", sessionId: "s1" }}
           onCreateSession={onCreateSession}
           onOpenAgentSettings={onOpenAgentSettings}
           onOpenCommandPalette={vi.fn()}
@@ -399,13 +406,38 @@ describe("AppLeftPane", () => {
       </WorkspaceAttentionProvider>,
     )
 
-    // A fleet of one still gets a card, which is the only route to per-Agent
-    // settings now that they no longer live on a generic control.
-    expect(screen.getByRole("button", { name: /Boring Solo; 1 chat$/ })).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "New chat with Boring Solo" }))
-    expect(onCreateSession).toHaveBeenCalledWith("solo")
-    await user.click(screen.getByRole("button", { name: "Settings for Boring Solo" }))
-    expect(onOpenAgentSettings).toHaveBeenCalledWith("solo")
+    // Header + flat list, exactly like the no-fleet shell.
+    expect(screen.getByRole("heading", { name: "Chats" })).toBeInTheDocument()
+    expect(screen.getByText("Solo session")).toBeInTheDocument()
+    // No grouping chrome: no Agents section, no Agent card, no seat count.
+    expect(document.querySelector('[data-boring-workspace-part="app-left-pane-agents"]')).toBeNull()
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agent-tree"]')).toBeNull()
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toBeNull()
+    expect(screen.queryByRole("button", { name: /Boring Solo; 1 chat$/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Settings for Boring Solo" })).not.toBeInTheDocument()
+    expect(onOpenAgentSettings).not.toHaveBeenCalled()
+    // New chat is a plain button: no Agent dropdown, no per-Agent variant.
+    expect(document.querySelector('[data-boring-workspace-part="app-left-new-chat"]')).not.toBeNull()
+    expect(screen.queryByRole("button", { name: /^Start new chat with / })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Choose Agent for new chat" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "New chat with Boring Solo" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "New chat" }))
+    expect(onCreateSession).toHaveBeenCalled()
+    // Session cards keep the fleet row idiom: the active rail only renders when
+    // the row is in fleet (accent-dot) mode, so its presence proves the cards
+    // are untouched by dropping the surrounding chrome.
+    expect(document.querySelector('[data-boring-workspace-part="app-session-active-rail"]')).not.toBeNull()
+  })
+
+  it("keeps the fleet sections and the New chat Agent picker for two or more Agents", () => {
+    renderFleetPane()
+
+    expect(document.querySelector('[data-boring-workspace-part="app-left-pane-agents"]')).not.toBeNull()
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agents-count"]')).toHaveTextContent("2 seats")
+    expect(screen.getByRole("button", { name: /Boring Alpha;/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Boring Beta;/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Start new chat with Boring Alpha" })).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Chats" })).not.toBeInTheDocument()
   })
 
   it("unifies the multi-project fleet: labeled project rows, a lens that filters them, and a global new chat", async () => {
@@ -489,6 +521,8 @@ describe("AppLeftPane", () => {
     )
 
     const rail = screen.getByLabelText("Collapsed app navigation")
+    expect(rail).toHaveClass("border-border")
+    expect(rail).toHaveClass("bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)]")
     fireEvent.click(within(rail).getByRole("button", { name: "Search" }))
     fireEvent.click(within(rail).getByRole("button", { name: "Tasks" }))
     fireEvent.click(within(rail).getByRole("button", { name: "New chat" }))
@@ -537,24 +571,80 @@ describe("AppLeftPane", () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth })
   })
 
-  it("distinguishes a loading chat list from an empty one", () => {
-    render(
+  it("shows loading, then a resolved empty state, then loaded chats without flashing empty", () => {
+    const baseProps = {
+      appTitle: "Test",
+      onCreateSession: vi.fn(),
+      onOpenCommandPalette: vi.fn(),
+      onSwitchSession: vi.fn(),
+      onOpenSessionAsPane: vi.fn(),
+      onToggleSessionPinned: vi.fn(),
+    }
+    const { rerender } = render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
-          appTitle="Test"
+          {...baseProps}
           sessions={[]}
           sessionsLoading
-          onCreateSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
-          onSwitchSession={vi.fn()}
-          onOpenSessionAsPane={vi.fn()}
-          onToggleSessionPinned={vi.fn()}
         />
       </WorkspaceAttentionProvider>,
     )
 
-    expect(screen.getByText("Loading chats…")).toBeInTheDocument()
+    expect(screen.getByRole("status", { name: "Loading chats" })).toBeInTheDocument()
     expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading={false} />
+      </WorkspaceAttentionProvider>,
+    )
+    expect(screen.getByText("No chats yet.")).toBeInTheDocument()
+    expect(screen.queryByRole("status", { name: "Loading chats" })).not.toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...baseProps} sessions={[{ id: "loaded", title: "Loaded chat" }]} sessionsLoading={false} />
+      </WorkspaceAttentionProvider>,
+    )
+    expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+    expect(screen.getByText("Loaded chat")).toBeInTheDocument()
+  })
+
+  it("keeps multi-project chats loading until the active project inventory resolves", () => {
+    const baseProps = {
+      appTitle: "Test",
+      layoutMode: "multi-project" as const,
+      projects: [{ id: "project", name: "Project" }],
+      activeProjectId: "project",
+      onCreateSession: vi.fn(),
+      onOpenCommandPalette: vi.fn(),
+      onSwitchSession: vi.fn(),
+      onOpenSessionAsPane: vi.fn(),
+      onToggleSessionPinned: vi.fn(),
+    }
+    const { rerender } = render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.getByRole("status", { name: "Loading chats" })).toBeInTheDocument()
+    expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading={false} />
+      </WorkspaceAttentionProvider>,
+    )
+    expect(screen.getByText("No chats yet.")).toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...baseProps} sessions={[{ id: "loaded-project", title: "Loaded project chat" }]} sessionsLoading={false} />
+      </WorkspaceAttentionProvider>,
+    )
+    expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+    expect(screen.getByText("Loaded project chat")).toBeInTheDocument()
   })
 
   it("shows working state beside session names", () => {

@@ -938,7 +938,9 @@ export function SurfaceShell({
         data-boring-state={hostRailOnly ? "collapsed" : "expanded"}
         className={cn(
           "pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center",
-          hostRailOnly ? "justify-center border-b border-border/60 bg-background" : "justify-end px-3",
+          hostRailOnly
+            ? "justify-center border-b border-border bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)]"
+            : "justify-end px-3",
         )}
         style={{ height: workbenchHeaderHeight }}
       >
@@ -1019,7 +1021,7 @@ export function SurfaceShell({
           data-boring-workspace-part="surface-sidebar"
           data-boring-state={hostRailOnly ? "host-collapsed" : sourcePaneOpen ? "expanded" : "rail"}
           className={cn(
-            "relative z-10 flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-border/60",
+            "relative z-10 flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-border",
             !hideLevelOneHeader && "mt-11",
           )}
           style={{

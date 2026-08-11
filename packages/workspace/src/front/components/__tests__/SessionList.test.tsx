@@ -126,9 +126,19 @@ describe("SessionList", () => {
     expect(onSwitch).not.toHaveBeenCalled()
   })
 
-  it("shows empty state when no sessions", () => {
-    render(<SessionList sessions={[]} />)
+  it("shows loading, then a resolved empty state, then loaded sessions without flashing empty", () => {
+    const { rerender } = render(<SessionList sessions={[]} loading />)
+
+    expect(screen.getByRole("status", { name: "Loading sessions" })).toBeInTheDocument()
+    expect(screen.queryByText("No sessions")).not.toBeInTheDocument()
+
+    rerender(<SessionList sessions={[]} loading={false} />)
     expect(screen.getByText("No sessions")).toBeInTheDocument()
+    expect(screen.queryByRole("status", { name: "Loading sessions" })).not.toBeInTheDocument()
+
+    rerender(<SessionList sessions={sessions} loading={false} />)
+    expect(screen.queryByText("No sessions")).not.toBeInTheDocument()
+    expect(screen.getByText("First session")).toBeInTheDocument()
   })
 
   it("renders with navigation role and accessible label", () => {
