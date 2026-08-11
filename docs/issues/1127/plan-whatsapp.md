@@ -123,7 +123,10 @@ same pass (template approval is separate from App Review and also ~24h):
 - One UTILITY template approved.
 - Webhook handshake verified by Meta against our public endpoint.
 
-**Gate:** slices 1–5 do not block on this. Only slice 6's live demo does.
+**Gate:** slices 1–5 do not block on this. Only slice 6's live **production**
+demo does — and even that has a dev-loop escape hatch: hermes-agent's Baileys
+bridge (§2.5) can demo the channel end-to-end before verification completes,
+under the never-for-customer-numbers caveat.
 
 ---
 
@@ -278,6 +281,33 @@ The r2.1 caveat applies to both candidates and is the acceptance bar for either:
 webhook/send path yourself, exactly as on any VPS"; and "Cloudflare Inc is US
 (CLOUD Act exposure regardless of data location) … Incompatible with Seneca's
 'no US data path' positioning for message content."
+
+### 2.5 hermes-agent (NousResearch) — third bake-off candidate + dev-loop bridge
+
+`NousResearch/hermes-agent` (MIT, `github.com/NousResearch/hermes-agent`; WhatsApp
+docs at `hermes-agent.nousresearch.com/docs/user-guide/messaging/whatsapp`),
+surfaced by the owner 2026-08-11. Four takes:
+
+1. **Bake-off candidate.** Its WhatsApp **Cloud API adapter** joins slice 6's
+   bake-off as the THIRD candidate alongside `@flue/whatsapp` and
+   `@chat-adapter/whatsapp`. Same acceptance bar (§2.3): it must stand alone
+   behind our contract without dragging in its framework's state model.
+2. **Dev-loop option: the Baileys bridge.** hermes-agent also ships a
+   **Baileys** bridge — unofficial WhatsApp-Web protocol emulation with QR
+   pairing, no Meta Business account needed. Recorded as a **development-loop
+   option only**: it lets us build and demo the channel end-to-end before
+   Business verification (step 0's real long pole) completes. **Hard caveat:
+   ban risk, unofficial protocol — NEVER for customer numbers or pilot
+   production traffic.** Meta Cloud API direct remains the ratified production
+   path (owner ruling, unchanged).
+3. **Patterns worth lifting regardless of bake-off outcome:** their
+   markdown→WhatsApp formatting converter (input to §3-shaping/slice 1b's
+   dialect work) and their streaming-response **message-edit** pattern
+   (progressively editing a sent message as the turn streams — to be evaluated
+   against our completed-turns-only rule rather than assumed).
+4. **Runtime verdict: same as Flue (§2.1).** Cherry-pick adapters and patterns;
+   do **not** adopt the agent frame — no seam for our harness loop, no
+   tenancy/authorization story, no approval gating.
 
 ---
 
@@ -922,9 +952,10 @@ transit a US processor (documented data path).
 **Delivers:** `packages/channels/whatsapp` behind the contract — signature
 verify + handshake, payload parse (text/media/interactive), chunked send,
 template send, retry; recorded-fixture unit tests; host wiring.
-**Opens with a bounded one-day bake-off (§2.3):** `@flue/whatsapp` (Apache-2.0,
-the *ratified* ingress choice, never evaluated by r2.1) vs
-`@chat-adapter/whatsapp` (MIT, r2.1's pick). **Acceptance for either: it must
+**Opens with a bounded one-day bake-off (§2.3, §2.5), three candidates:**
+`@flue/whatsapp` (Apache-2.0, the *ratified* ingress choice, never evaluated by
+r2.1), `@chat-adapter/whatsapp` (MIT, r2.1's pick), and hermes-agent's Cloud
+API adapter (MIT, owner-surfaced 2026-08-11). **Acceptance for any: it must
 stand alone behind our contract without dragging in its bot framework's
 state/dedupe model.** Hand-rolled Meta client is the named fallback. Either
 outcome leaves the conformance suite and acceptance unchanged.
