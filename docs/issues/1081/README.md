@@ -24,9 +24,16 @@ content and review lineage are preserved here (see below).
    auth handshake, the E2B-shaped-subset coverage map, and the `SandboxProviderV1`
    mapping. The plan and the architecture doc reference it; it is the single
    authority on the wire contract.
-4. **Grounding — the EVIDENCE.** [`references/`](references/) — version-controlled
+4. **Decision record — the WHY.** [`tech-choice.md`](tech-choice.md) — the
+   standalone "why we chose what we chose" narrative: for each of the ten major
+   tech choices (build-vs-adopt, gVisor-vs-microVM, systrap-vs-KVM, daemon-vs-managed
+   -k8s, orchestration, harvest-E2B, CH/EU sovereign hosting, Node/TS daemon,
+   Tailscale+capability auth, product path) it states the Question, Options,
+   Evidence (verbatim primary-source quotes + citations), Decision, and Reasoning.
+   Synthesizes the grounding in (5); readable end-to-end by an engineer or investor.
+5. **Grounding — the EVIDENCE.** [`references/`](references/) — version-controlled
    research artifacts (raw E2B API research, E2B internals, isolation primary
-   sources, build-vs-adopt survey, scoping). Every decision in (1), (2), and (3)
+   sources, build-vs-adopt survey, scoping). Every decision in (1)–(4)
    cites a file here. Index: [`references/README.md`](references/README.md).
 
 ## Grounding rule
