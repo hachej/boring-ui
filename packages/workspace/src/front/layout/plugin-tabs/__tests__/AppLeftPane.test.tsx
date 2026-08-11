@@ -506,6 +506,7 @@ describe("AppLeftPane", () => {
   })
 
   it("renders icon-only collapsed shortcuts with accessible labels", () => {
+    const onOpenChats = vi.fn()
     const onCreateSession = vi.fn()
     const onOpenCommandPalette = vi.fn()
     const onOpenTasks = vi.fn()
@@ -515,6 +516,7 @@ describe("AppLeftPane", () => {
           { id: "tasks", label: "Tasks", icon: <span>T</span>, onClick: onOpenTasks, active: true },
           { id: "inbox", label: "Inbox", icon: null, trailing: "3", onClick: vi.fn() },
         ]}
+        onOpenChats={onOpenChats}
         onCreateSession={onCreateSession}
         onOpenCommandPalette={onOpenCommandPalette}
       />,
@@ -523,10 +525,12 @@ describe("AppLeftPane", () => {
     const rail = screen.getByLabelText("Collapsed app navigation")
     expect(rail).toHaveClass("border-border")
     expect(rail).toHaveClass("bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)]")
+    fireEvent.click(within(rail).getByRole("button", { name: "Chats" }))
     fireEvent.click(within(rail).getByRole("button", { name: "Search" }))
     fireEvent.click(within(rail).getByRole("button", { name: "Tasks" }))
     fireEvent.click(within(rail).getByRole("button", { name: "New chat" }))
 
+    expect(onOpenChats).toHaveBeenCalledOnce()
     expect(onOpenCommandPalette).toHaveBeenCalledOnce()
     expect(onOpenTasks).toHaveBeenCalledOnce()
     expect(onCreateSession).toHaveBeenCalledOnce()
@@ -534,6 +538,7 @@ describe("AppLeftPane", () => {
     expect(within(rail).getByRole("button", { name: "Inbox" }).querySelector("svg")).toBeInTheDocument()
     expect(within(rail).getByText("3")).toBeInTheDocument()
     expect(within(rail).queryByText("Search")).not.toBeInTheDocument()
+    expect(within(rail).queryByText("Chats")).not.toBeInTheDocument()
     expect(within(rail).queryByText("New chat")).not.toBeInTheDocument()
   })
 
