@@ -13,6 +13,7 @@ import { createFolderModeApp, createWorkspacesModeApp } from "../modeApps.js"
 
 const automationFailure = vi.hoisted(() => ({ enabled: false }))
 const pluginFrontFailure = vi.hoisted(() => ({ enabled: false, closeCalls: 0 }))
+const MODEL_TIERS_YAML = "models:\n  tiers:\n    T3:\n      - provider: anthropic\n        id: claude-sonnet-4-6\n        envVar: ANTHROPIC_API_KEY\n"
 
 vi.mock("../pluginFrontRuntime.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../pluginFrontRuntime.js")>()
@@ -174,7 +175,7 @@ describe.sequential("CLI Agent Host composition", () => {
     )
     await writeFile(
       join(fleetRoot, ".agents", "factory", "fleet.yaml"),
-      "seats:\n  - seat: local-worker\n    agentTypeId: fixture-cli-local-worker\n    skills: []\n",
+      `${MODEL_TIERS_YAML}seats:\n  - seat: local-worker\n    agentTypeId: fixture-cli-local-worker\n    skills: []\n`,
       "utf8",
     )
 

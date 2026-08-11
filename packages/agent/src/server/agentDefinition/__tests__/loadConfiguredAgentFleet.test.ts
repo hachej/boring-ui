@@ -60,6 +60,12 @@ async function temporaryFleetRoot(): Promise<string> {
 
 async function writeSingleSeatFleet(path: string, seat: string): Promise<void> {
   await writeFile(path, [
+    'models:',
+    '  tiers:',
+    '    T3:',
+    '      - provider: anthropic',
+    '        id: claude-sonnet-4-6',
+    '        envVar: ANTHROPIC_API_KEY',
     'seats:',
     `  - seat: ${JSON.stringify(seat)}`,
     '    agentTypeId: fixture-alpha',
@@ -242,6 +248,63 @@ describe('loadConfiguredAgentFleet', () => {
       fleetConfigPath: resolve(FIXTURE_ROOT, 'factory', 'does-not-exist.yaml'),
       env: {},
     })).rejects.toMatchObject({ name: 'FleetConfigError', code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID })
+  })
+
+  test('throws FleetConfigError when fleet.yaml omits the model tier table', async () => {
+    const root = await temporaryFleetRoot()
+    const fleetConfigPath = join(root, 'fleet.yaml')
+    await writeFile(fleetConfigPath, 'seats: []\n')
+
+    await expect(loadConfiguredAgentFleet({
+      ...options(),
+      fleetConfigPath,
+      env: {},
+    })).rejects.toMatchObject({
+      name: 'FleetConfigError',
+      code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
+      field: 'models.tiers',
+    })
+  })
+
+  test('throws FleetConfigError when a configured model candidate is malformed', async () => {
+    const root = await temporaryFleetRoot()
+    const fleetConfigPath = join(root, 'fleet.yaml')
+    await writeFile(fleetConfigPath, [
+      'models:',
+      '  tiers:',
+      '    T3:',
+      "      - provider: '   '",
+      '        id: claude-sonnet-4-6',
+      '        envVar: ANTHROPIC_API_KEY',
+      'seats: []',
+      '',
+    ].join('\n'))
+
+    await expect(loadConfiguredAgentFleet({
+      ...options(),
+      fleetConfigPath,
+      env: {},
+    })).rejects.toMatchObject({
+      name: 'FleetConfigError',
+      code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
+      field: 'models.tiers.T3[0]',
+    })
+  })
+
+  test('throws FleetConfigError when policy references a missing model tier', async () => {
+    const root = await temporaryFleetRoot()
+    const policyPath = join(root, 'policy.yaml')
+    await writeFile(policyPath, 'models:\n  seats:\n    alpha: T9\n')
+
+    await expect(loadConfiguredAgentFleet({
+      ...options(),
+      policyPath,
+      env: {},
+    })).rejects.toMatchObject({
+      name: 'FleetConfigError',
+      code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
+      field: 'models.tiers.T9',
+    })
   })
 
   test('keeps discovered but unseated packages inert and visible in diagnostics', async () => {

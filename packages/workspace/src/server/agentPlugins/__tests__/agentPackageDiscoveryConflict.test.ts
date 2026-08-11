@@ -40,7 +40,7 @@ async function writeFactory(seats: { seat: string; agentTypeId: string }[]): Pro
   await mkdir(dir, { recursive: true })
   await writeFile(
     join(dir, "fleet.yaml"),
-    `seats:\n${seats.map((s) => `  - seat: ${s.seat}\n    agentTypeId: ${s.agentTypeId}\n    skills: []\n`).join("")}`,
+    `models:\n  tiers:\n    T3:\n      - provider: anthropic\n        id: claude-sonnet-4-6\n        envVar: ANTHROPIC_API_KEY\nseats:\n${seats.map((s) => `  - seat: ${s.seat}\n    agentTypeId: ${s.agentTypeId}\n    skills: []\n`).join("")}`,
     "utf8",
   )
   await writeFile(join(dir, "policy.yaml"), "models:\n  seats: {}\n", "utf8")
