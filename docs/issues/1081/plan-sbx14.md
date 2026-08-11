@@ -100,6 +100,14 @@ minimal V1 worker daemon -> Docker -> one runsc/systrap sandbox per session
   probes, so v1 does not provision, require, or pass through `/dev/kvm`.
   (`/dev/kvm` and bare-metal/nested-virt are v2 microVM/Firecracker concerns,
   not v1 ones.)
+- **Security validation:** gVisor's Sentry security model is identical across
+  systrap and KVM; platform choice is a performance decision, and KVM adds no
+  hardening or side-channel defense for this threat model. Systrap is the
+  current default, is suited to running inside a VM, and avoids slower nested
+  virtualization, so v1's choice is not a security compromise and does not
+  justify provisioning a KVM VM. ([report](references/gvisor-platform-security.md);
+  [gVisor platforms](https://gvisor.dev/docs/architecture_guide/platforms/);
+  [gVisor security](https://gvisor.dev/docs/architecture_guide/security/))
 - One runsc sandbox is created per agent session. For the internal-first
   deployment, that is the tenant boundary. VM-per-tenant is a later enterprise
   placement option, not a v1 requirement.

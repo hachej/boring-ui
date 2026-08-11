@@ -200,6 +200,10 @@ demand a dedicated boundary, **plus** the **SBX1.5 evidence-admission gates**
 running continuously (a box is only in the fleet while it proves its isolation
 evidence; drift or a critical CVE fences it).
 
+**Platform-security note:** within gVisor, systrap and KVM provide the same
+Sentry security boundary; the platform difference is performance-only
+([validation report](../issues/1081/references/gvisor-platform-security.md)).
+
 So the isolation escalation maps cleanly onto the layer-3 swap:
 **gVisor-v1 → microVM-v2** is a second `SandboxProviderV1` implementation
 behind the frozen contract, selected per isolation tier by the Layer-1 API and
