@@ -537,6 +537,24 @@ describe("AppLeftPane", () => {
     expect(within(rail).queryByText("New chat")).not.toBeInTheDocument()
   })
 
+  it("uses the rail icon and hit-area tokens for the app-navigation toggle", () => {
+    render(
+      <PluginTabsWorkspaceShell
+        collapsed
+        leftPane={<div>App navigation</div>}
+        collapsedRail={<div>Rail</div>}
+        onExpand={vi.fn()}
+        onCollapse={vi.fn()}
+      >
+        <div>Content</div>
+      </PluginTabsWorkspaceShell>,
+    )
+
+    const toggle = screen.getByRole("button", { name: "Open app navigation" })
+    expect(toggle).toHaveClass("h-8", "w-8")
+    expect(toggle.querySelector("svg")).toHaveClass("size-4")
+  })
+
   it("keeps mobile drawer controls open for multi-step interactions", () => {
     const originalWidth = window.innerWidth
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 500 })

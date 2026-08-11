@@ -83,12 +83,12 @@ export function WorkbenchHeaderActions({
         <IconButton
           type="button"
           variant="ghost"
-          size="icon-xs"
+          size="icon-sm"
           onClick={onClose}
           aria-label="Close workbench"
           title="Close workbench (⌘2)"
         >
-          <PanelRightClose className="h-4 w-4" strokeWidth={1.75} />
+          <PanelRightClose className="size-4" strokeWidth={1.75} />
         </IconButton>
       ) : null}
     </div>

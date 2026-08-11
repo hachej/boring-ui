@@ -948,13 +948,13 @@ export function SurfaceShell({
           <IconButton
             type="button"
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             className="workbench-open-button pointer-events-auto"
             onClick={toggleHostWorkbench}
             aria-label="Open workbench"
             title="Open workbench (⌘2)"
           >
-            <PanelRightOpen className="h-4 w-4" strokeWidth={1.75} />
+            <PanelRightOpen className="size-4" strokeWidth={1.75} />
           </IconButton>
         ) : (
           <WorkbenchHeaderActions
