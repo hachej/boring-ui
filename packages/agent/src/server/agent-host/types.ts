@@ -169,8 +169,8 @@ export interface ConfiguredAgentHostAgentSpec {
   }
   /**
    * Optional agent-carried knowledge shipped inside the definition package.
-   * Composition mounts it as a readonly, agent-scoped filesystem binding
-   * with provenance `agent-definition`; absent = no binding.
+   * Composition mounts it as a readonly, agent-scoped filesystem binding;
+   * absent = no binding.
    */
   readonly knowledge?: {
     /** Host path of the package's `knowledge/` folder. */
