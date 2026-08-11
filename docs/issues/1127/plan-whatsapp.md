@@ -1,22 +1,42 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/1127
 issue: 1127
-state: owner-rulings-applied + slice-6 bake-off RESOLVED — 2026-08-11 rulings folded in; slice 6 verdict = build thin (seed Flue edge + Hermes reference), reject @chat-adapter/whatsapp; ready for owner gate merge
+state: external-channels reframe (r4) — generic channel registry + descriptor mechanism, WhatsApp as v1 consumer; 2026-08-11 identity/routing/bake-off rulings folded in; slice 6 verdict = build thin (seed Flue edge + Hermes reference); ready for owner gate merge
 updated: 2026-08-11
-supersedes: docs/issues/1127/plan.md (r2.1) — for the WhatsApp lane only
-flag: BORING_AGENT_CHANNELS (from r2.1; adapter host is dead code when off)
+supersedes: docs/issues/1127/plan.md (r2.1) — for the channels lane only
+flag: BORING_AGENT_CHANNELS (from r2.1; channel registry + adapter host are dead code when off)
 ---
 
-# gh-1127 — WhatsApp channel execution plan (r3)
+# gh-1127 — External Channels — execution plan (WhatsApp as v1 consumer) (r4)
 
-Revives the epic under the owner rulings of **2026-08-10**, which reverse the
-2026-08-08 deprioritization recorded in `docs/direction/STATE.md:33`
-("Plan ratified (#1140); zero implementation; **deprioritized**").
+The #1127 channels epic, matured from a WhatsApp-specific lane into a **generic
+channel registry**. A "channel" is any external surface that drives an agent
+session; WhatsApp is the **one fully-built consumer** for v1. Everything that is
+actually WhatsApp-specific is labeled as such; everything generic lives in the
+registry + descriptor mechanism (§0.5) so the next consumer (Slack, email,
+pi-excel) is a descriptor + adapter, not a UI project.
+
+Revives the epic under the owner rulings of **2026-08-10** (which reverse the
+2026-08-08 deprioritization recorded in `docs/direction/STATE.md:33`) and the
+**generalization ruling of 2026-08-11** (owner-ratified): channels become a
+registry of descriptors with two orthogonal capabilities, and WhatsApp is
+consumer #1.
 
 **This plan is the CHANNEL MECHANISM only.** A parallel Opus lane is planning
 the CH-trades PRODUCT side (quotes, verticals, the actual agent behaviour).
 Where this document says "the agent replies", that lane owns what it replies.
 Do not duplicate; reference.
+
+## Reading order (r4 structure)
+
+1. **§0.5 — the generic mechanism** (registry + descriptor + the two orthogonal
+   capabilities + session-pane rendering). Read this first: it is what the epic
+   now is.
+2. **WhatsApp as consumer #1** — §0 through §7 are the WhatsApp consumer's
+   step-0/slices/risks. Each is tagged **[GENERIC]** (belongs to the mechanism)
+   or **[WA-SPECIFIC]** (the WhatsApp consumer's own detail) where it matters.
+3. **§0.6 — future consumers** (Slack, email, pi-excel) — noted only, zero v1
+   implementation scope; they prove the mechanism is generic.
 
 ## Owner rulings folded in (2026-08-10)
 
@@ -51,9 +71,107 @@ Everything in r2.1 §1–§4 that these rulings do not touch is **revived verbat
 and is not restated here. Read `plan.md` first; this document is the delta plus
 the four new lanes.
 
+## Generalization ruling folded in (2026-08-11, owner-ratified)
+
+| Ruling | Effect on this plan |
+| --- | --- |
+| **Channels are a REGISTRY of typed descriptors**, not WhatsApp-specific code | New §0.5. A channel descriptor `{ id, label, icon, sessionsReadOnlyInWorkspace, dialect/formatting, isIdentityProvider }` drives all per-channel workspace behavior; sessions carry an `originChannel` (this **is** the implementation of the already-planned "channel = typed session property", §6.4). |
+| **A channel has TWO ORTHOGONAL capabilities:** (a) interaction surface (chat with the agent — ALL channels); (b) identity provider (sign up / auth — only some) | New §0.5. WhatsApp = both; Slack/email/pi-excel = interaction only. This split is the core design insight — made explicit so identity work (§6.6, slice 1c) is understood as the *identity-provider capability of the WhatsApp consumer*, not a channel-universal requirement. |
+| **Session pane renders icon + read-only badge PURELY from the descriptor** | Re-anchors §6.4/§6.5: no per-channel UI code. `sessionsReadOnlyInWorkspace` and `icon` are descriptor fields the pane reads; the read-only reopen (§6.5) is a **generic descriptor property**, not WhatsApp UI. |
+| **WhatsApp = the ONE fully-built consumer for v1; Slack/email/pi-excel = future consumers, NOTED ONLY, zero implementation scope** | New §0.6. No work items/slices for future consumers. `demo/pi-excel-coupling` exists as a prior demo branch validating the pattern. |
+
 ---
 
-## Step 0 — Meta App Review submission (FIRST ACTION OF THE LANE)
+## 0.5 The generic mechanism — channel registry + descriptor [GENERIC]
+
+This is what the #1127 epic now is. WhatsApp (§0–§8) is the first consumer of
+this mechanism; the mechanism itself is channel-agnostic.
+
+### 0.5.1 A channel is a typed descriptor in a registry
+
+A **channel** is any external surface that drives an agent session (WhatsApp,
+Slack, email, a spreadsheet add-in). The registry holds one **descriptor** per
+channel:
+
+```ts
+interface ChannelDescriptor {
+  id: string                          // 'whatsapp' | 'web' | 'slack' | 'email' | 'excel' | …
+  label: string                       // human label for the badge/filter
+  icon: string                        // rendered in the session pane; NO per-channel UI code
+  sessionsReadOnlyInWorkspace: boolean// true → workspace reopen is read-only (§6.5)
+  dialect: ChannelDialect             // formatting/chunking rules (§3-shaping); 'web' = passthrough
+  isIdentityProvider: boolean         // can users sign up / authenticate from here? (§0.5.3)
+}
+```
+
+`'web'` is a descriptor too — the default for everything that exists today
+(`sessionsReadOnlyInWorkspace: false`, `dialect: passthrough`,
+`isIdentityProvider: false`). Adding a channel is **registering a descriptor +
+building an adapter**, never editing session-pane UI.
+
+### 0.5.2 Sessions carry `originChannel`
+
+Every session carries a typed **`originChannel`** property (the descriptor `id`).
+This **is** the implementation of the already-planned "channel = first-class
+typed session property" (§6.4): `'whatsapp'` for WhatsApp-originated sessions,
+`'web'` for everything existing, future channels reuse the field. The workspace
+reads `originChannel`, looks up the descriptor, and renders from it — badge,
+filter, read-only gating, dialect selection all flow from `descriptor =
+registry[session.originChannel]`. No code branches on a hardcoded channel name.
+
+### 0.5.3 Two orthogonal capabilities a channel MAY have
+
+The core design insight. A channel may have either, both, or (in principle)
+neither of two **independent** capabilities:
+
+| Capability | What it means | Descriptor field |
+| --- | --- | --- |
+| **(a) Interaction surface** | Chat with the agent from here — inbound → session, outbound replies. **ALL channels have this** (it is what makes something a channel). | implicit (every descriptor + its adapter) |
+| **(b) Identity provider** | Sign up / authenticate from here — the surface can *create and prove* an account identity. **Only some channels.** | `isIdentityProvider` |
+
+- **WhatsApp = both.** Interaction surface (the whole inbound/outbound path) AND
+  identity provider (phone-number-as-identity, channel-as-verifier signup, the
+  magic-link/OTP web-auth — §6.6, slice 1c). All the auth/billing work in this
+  plan is WhatsApp exercising capability (b).
+- **Slack / email / pi-excel = interaction only.** They chat with the agent but
+  do **not** mint account identities (a user is already authenticated in the host
+  product); `isIdentityProvider: false`.
+
+Keeping these orthogonal is what stops "channel" from collapsing into "auth
+provider": the identity work (§6.6/§7.5/slice 1c) is the WhatsApp consumer's
+capability (b), not a tax every channel pays.
+
+### 0.5.4 Session pane renders purely from the descriptor [GENERIC]
+
+The workspace session pane renders **channel icon + read-only-in-workspace
+badge** by reading `registry[session.originChannel]` — `icon` and
+`sessionsReadOnlyInWorkspace`. There is **no per-channel UI code**: a new channel
+appears in the pane the moment its descriptor is registered. This is the generic
+form of the earlier "mark WhatsApp sessions read-only with an icon" ask (§6.5),
+done once for all channels. Slice 7 delivers this descriptor-driven rendering
+using WhatsApp as its first descriptor.
+
+---
+
+## 0.6 Registry-ready future consumers — NOTED ONLY, zero v1 scope [GENERIC]
+
+These prove the mechanism is generic. **None carries a work item or slice in this
+plan; there is zero implementation scope for any of them in v1.** They are listed
+only to show a new consumer is "register a descriptor + build an adapter":
+
+| Future consumer | Capabilities | Descriptor sketch | Status |
+| --- | --- | --- | --- |
+| **pi-excel** (spreadsheet add-in) | interaction only | `{ id:'excel', isIdentityProvider:false, sessionsReadOnlyInWorkspace:true, dialect: excel/cell }` | **Noted only.** A prior demo branch **`demo/pi-excel-coupling`** already validates the channel-coupling pattern end-to-end. Owner ruling: *ignore pi-excel implementation, just note as future consumer.* |
+| **Slack** | interaction only | `{ id:'slack', isIdentityProvider:false, sessionsReadOnlyInWorkspace:true, dialect: slack/mrkdwn }` | Noted only. `@flue/slack` ingress exists (§2.3) if/when built. |
+| **email** | interaction only | `{ id:'email', isIdentityProvider:false, sessionsReadOnlyInWorkspace:true, dialect: email/html }` | Noted only. Distinct from the #1165 email *identity* path (which is an identity provider on the web side, not a channel). |
+
+Each is a descriptor + an adapter behind the same `ChannelAdapter` contract
+(§3.2) the WhatsApp consumer defines; none needs new session-pane UI, new
+identity machinery, or a new mechanism. **Do not scope them here.**
+
+---
+
+## Step 0 — Meta App Review submission (FIRST ACTION OF THE WHATSAPP CONSUMER) [WA-SPECIFIC]
 
 This is step 0 because Slice 6 (the provider edge) cannot be demoed without it
 and the owner cites ~24h turnaround. It is owner-side, not engineering-side, and
@@ -125,7 +243,7 @@ same pass (template approval is separate from App Review and also ~24h):
 - Body: a re-engagement notice with no promotional content, e.g. "Your Seneca
   assistant has an update on your request. Reply to continue."
 
-### 0.5 Step 0 exit criteria
+### Step 0 exit criteria
 
 - App Review approved for both permissions.
 - Business verification cleared.
@@ -756,13 +874,16 @@ whichever is chosen.
 Transcription is **attached as text**, with the original audio retained as a
 stored artifact so a human can re-listen when the transcript is wrong.
 
-### 6.4 Channel as a first-class typed session property (owner addition, 2026-08-11)
+### 6.4 Channel as a first-class typed session property [GENERIC — see §0.5.2]
 
-Sessions carry a **typed channel identity**: `channel: 'whatsapp'` for
-channel-originated sessions, `'web'` as the default for everything existing;
-future channels (slack, email) reuse the same field rather than adding new
-mechanisms. This is a session property in the shared session schema, not
-channel-local metadata. It drives three behaviors:
+**This is the generic `originChannel` mechanism (§0.5.2), described here in its
+original WhatsApp framing.** Sessions carry a **typed channel identity**:
+`originChannel: 'whatsapp'` for channel-originated sessions, `'web'` as the
+default for everything existing; future channels (slack, email, excel) reuse the
+same field rather than adding new mechanisms. This is a session property in the
+shared session schema, not channel-local metadata. All three behaviors below are
+driven by looking up `registry[session.originChannel]` — the descriptor — not by
+branching on a channel name:
 
 1. **Badge** — the workspace session list shows a channel badge on
    channel-originated sessions.
@@ -779,10 +900,13 @@ binding creates (via the CAS create-race machine, §1.2b) is created **with**
 (two-handles rule, §1.2c); the session property is the identity the workspace
 UI and the dialect shaper read. Slice 1a delivers both.
 
-### 6.5 Reopen-in-workspace — v1 READ-ONLY (owner ruling, 2026-08-11)
+### 6.5 Reopen-in-workspace — v1 READ-ONLY [GENERIC descriptor property — see §0.5.4]
 
-A WhatsApp-originated session **appears in the customer's workspace session
-list** (channel-badged, filterable per §6.4) and **opens as a read-only
+**Read-only-in-workspace is the descriptor field `sessionsReadOnlyInWorkspace`
+(§0.5.1), not WhatsApp UI code.** A channel-originated session **appears in the
+customer's workspace session list** (channel-badged from `descriptor.icon`,
+filterable per §6.4) and, when its descriptor has
+`sessionsReadOnlyInWorkspace: true` (WhatsApp does), **opens as a read-only
 transcript** using the existing read-only session idiom: full observability —
 WA inbounds as user turns, agent replies, tool runs — with **no send path from
 the workspace in v1**. The only workspace-side interaction is answering
@@ -790,8 +914,10 @@ approval intentions via the Inbox (already planned, §6.1).
 
 This cuts the reopen requirement to **near-zero new UI**: the transcript
 renderer, session list, and read-only idiom all exist; slice 7 adds only the
-badge/filter surfacing and the read-only gating for `channel !== 'web'`
-sessions.
+descriptor-driven badge/filter surfacing and the read-only gating for sessions
+whose descriptor sets `sessionsReadOnlyInWorkspace` (WhatsApp is the first such
+descriptor; the gate is `descriptor.sessionsReadOnlyInWorkspace`, not
+`channel === 'whatsapp'`).
 
 **Two-way human-takeover is v2** (slice 8). Its ready-made design sheet — the
 previously-flagged questions, parked not discarded:
@@ -805,7 +931,13 @@ previously-flagged questions, parked not discarded:
 - **Takeover semantics:** recommend the agent **yields while a human is
   active** and **resumes on explicit handback**, not on a timer.
 
-### 6.6 Onboarding & identity — WhatsApp-native signup (owner ruling, 2026-08-11)
+### 6.6 Onboarding & identity — WhatsApp-native signup [WA-SPECIFIC — capability (b), §0.5.3]
+
+**This section is the WhatsApp consumer exercising the identity-provider
+capability (§0.5.3 capability (b)).** WhatsApp's descriptor has
+`isIdentityProvider: true`; Slack/email/pi-excel do not (§0.6), so none of this
+applies to them. Identity is not a channel-universal requirement — it is a
+capability only some channels have, and WhatsApp is the one that has it in v1.
 
 **The phone number is the account identity.** This reframes the inbound path: a
 first inbound from an unknown number is not merely "session-start", it is
@@ -846,6 +978,23 @@ full web UI:
 - **phone OTP is the documented fallback**, but magic-link-over-WhatsApp is the
   **primary** path — lower friction, because the user is already in WhatsApp.
 
+**OTP fallback does NOT need the 24h window** (auth-billing research,
+`references/whatsapp-auth-billing-research.md` §1). Meta's **authentication-category
+templates** (OTP) are business-initiated and window-independent, so the reverse
+"get login link/code on WhatsApp" path works even for a number that has never
+messaged us. Use the **copy-code** button type and a **10-minute TTL** — matching
+better-auth's magic-link/verification-token expiry (§7.5), so the delivery adapter
+and the auth layer agree on lifetime. The channel-as-verifier path (first inbound
+proves possession) stays the zero-template primary; OTP is the
+business-initiated fallback.
+
+**SMS fallback during the WABA ramp** (research §2). A newly-verified number is
+capped at ~2,000 business-initiated conversations/day until the quality tier
+climbs. If a WhatsApp auth send is throttled or the number is not on WhatsApp,
+fall back to an SMS OTP through a CH/EU SMS provider — **auth-path only**, never
+for agent conversation content. Tracked in the billing/ramp note (§7.6), out of
+v1 build scope unless the pilot hits the cap.
+
 **boring-ui fit — this EXTENDS existing better-auth; it does not build auth.**
 Verified in code (2026-08-11):
 
@@ -877,7 +1026,7 @@ Verified in code (2026-08-11):
   alternative:** better-auth's `phoneNumber` plugin (OTP-based). Recommend the
   channel-as-verifier path.
 
-**External validation (getnao/nao study, `scratchpad/getnao-auth-study.md`).**
+**External validation (getnao/nao study, `references/getnao-auth-study.md`).**
 nao runs the same stack we propose to extend: better-auth `^1.6.3` with the
 internal-id + `account(providerId → userId)` linked-identities model and
 `accountLinking.enabled`. This is external confirmation that the
@@ -1049,6 +1198,37 @@ forwardable, so keep the link hardened accordingly:
   credential. Phone OTP is the documented fallback with the same possession
   basis.
 
+### 7.6 Billing & WABA ramp [WA-SPECIFIC] (owner addition, 2026-08-11; research-grounded)
+
+Billing is **not v1 build scope** — it is captured here so the identity
+trust-ladder (§6.6 progressive email) has a defined destination and the pilot
+does not discover these constraints late. Grounded in
+`references/whatsapp-auth-billing-research.md` §2–§3.
+
+- **Stripe Checkout at first payment.** Do not collect card details at signup.
+  The first-payment value moment (the same moment email becomes effectively
+  required, §6.6 ladder) triggers a **Stripe Checkout** session, which collects
+  the billing email and — for business customers — the **VAT/UID** number. This
+  keeps signup zero-friction and defers PII to when the customer chooses to pay.
+- **Swiss QR-bill is mandatory for CH invoicing.** Swiss invoices must carry a
+  **QR-bill** (standardized payment slip). Use the **`swissqrbill`** library;
+  it embeds the QR-IBAN, creditor reference, and amount.
+- **Swiss VAT = 8.1%** (standard rate, 2024+); invoices display the **UID**
+  (`CHE-###.###.###`, VAT-registered form). Stripe Tax / Checkout collects and
+  validates the VAT number at payment.
+- **Two data paths, kept separate.** Stripe is a US processor, acceptable for
+  payment PII the customer knowingly enters into a payment form — **distinct from
+  WhatsApp message content**, which stays CH/EU-side under the no-US-data-path
+  posture (§2.4, §6.3). The step-0 privacy policy states both paths.
+- **WABA messaging ramp** (research §2): the ~2,000 business-initiated
+  conversations/day cap on a fresh number, with the SMS-fallback mitigation for
+  the auth path (§6.6). Template messages are conversation-billed (§7.1); an
+  auth/OTP-heavy or out-of-window-chatty deployment is a cost line, not just UX.
+
+**Out of v1 build scope** (listed in §11): invoice generation, Stripe wiring, the
+QR-bill renderer, and SMS-provider integration. This note fixes the target shape
+so slice 1c's progressive-email collection lands on the right ladder.
+
 ---
 
 ## 8. Slices
@@ -1076,8 +1256,10 @@ transaction**, with CHAN-A's owner-token CAS create-race machine); the
 `DrainCoordinator` + `followUp` fix (§1.2a); inbound park policy; async-ack
 webhook core; trusted-caller seam with guardrails; provisioning CLI op; flag
 plumbing + the durable-stream boot assertion (§4.3); fake-channel inbound tests;
-**(2026-08-11)** the binding row's explicit `workspaceId` (§4.2) and the typed
-`channel` session property with `'web'` default (§6.4), set at session create.
+**(2026-08-11)** the binding row's explicit `workspaceId` (§4.2), the
+**channel registry + `ChannelDescriptor`** (§0.5.1) with the `'web'` and
+`'whatsapp'` descriptors registered, and the typed **`originChannel`** session
+property with `'web'` default (§0.5.2/§6.4), set at session create.
 **Blocked by:** none — substrate proven in §5.
 **Proof:** replayed `providerMessageId` (including across a restart) produces
 exactly one turn; a crash between dedupe insert and queue insert loses nothing
@@ -1252,11 +1434,15 @@ against the Seneca number — a multi-message conversation spanning a server
 restart, with one approval answered in WhatsApp and one quote PDF delivered.
 
 ### Slice 7 — read-only reopen in workspace (new, 2026-08-11)
-**Delivers:** §6.5 — channel badge + channel filter in the session list (§6.4);
-WhatsApp-originated sessions open as **read-only** transcripts via the existing
-read-only session idiom (send path gated off for `channel !== 'web'`); full
+**Delivers:** §6.5/§0.5.4 — **descriptor-driven** session-pane rendering: channel
+icon badge + channel filter read from `registry[session.originChannel]` (§6.4),
+no per-channel UI code; sessions whose descriptor sets
+`sessionsReadOnlyInWorkspace` (WhatsApp is the first) open as **read-only**
+transcripts via the existing read-only session idiom (send path gated on
+`descriptor.sessionsReadOnlyInWorkspace`, not a channel-name check); full
 transcript renders (WA inbounds as user turns, agent replies, tool runs).
-Near-zero new UI by owner design.
+Near-zero new UI by owner design. This slice delivers the generic mechanism's
+pane rendering with WhatsApp as its first descriptor.
 **Blocked by:** 1b (needs the channel property + real transcripts). Parallel
 with 3/4/5.
 **Proof:** a WA session appears badged in the customer's session list, filters
@@ -1344,10 +1530,17 @@ return and the next prompt continues the stream.
 
 ## 11. Out of scope
 
-Email/SMS channels; group chats; per-agent grant policy (#1087); proactive
-outreach beyond the single fallback template; multi-agent routing per sender;
-horizontal adapter scale-out; billing/metering of channel traffic;
-two-way human-takeover from the workspace (v2, slice 8); the standalone
-headless-tier deployment (§4.2); model-readable inbound PDFs (§6.3);
-per-customer Embedded Signup / replies-on-customer's-own-number (§0, §6.6 —
-separate future capability); the CH-trades product surface (separate lane).
+**Any future consumer's implementation** — Slack, email, and pi-excel channels
+are **registry-ready future consumers, noted only** (§0.6); this plan builds
+**zero** of them (the mechanism proves generic without them, and
+`demo/pi-excel-coupling` already demos the coupling). Also out: SMS as a
+conversation channel (SMS appears only as the auth-OTP fallback, §6.6/§7.6);
+group chats; per-agent grant policy (#1087); proactive outreach beyond the single
+fallback template; multi-agent routing per sender; horizontal adapter scale-out;
+**billing build-out** (Stripe Checkout wiring, invoice/QR-bill generation, VAT
+handling, SMS-provider integration — §7.6 fixes the target shape only);
+billing/metering of channel traffic; two-way human-takeover from the workspace
+(v2, slice 8); the standalone headless-tier deployment (§4.2); model-readable
+inbound PDFs (§6.3); per-customer Embedded Signup /
+replies-on-customer's-own-number (§0, §6.6 — separate future capability); the
+CH-trades product surface (separate lane).
