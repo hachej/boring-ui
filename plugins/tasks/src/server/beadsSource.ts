@@ -7,7 +7,7 @@ import {
   type BoringTaskMetadataItem,
   type BoringTaskRelation,
 } from "../shared"
-import { BeadsOperationError, isValidBeadId, type BeadsOperations } from "./beadsOperations"
+import { BEADS_SHOW_BATCH_LIMIT, BeadsOperationError, isValidBeadId, type BeadsOperations } from "./beadsOperations"
 import type { BoringTaskSourceRuntime } from "./sourceRuntime"
 import { TaskDetailValidationError, validateTaskDetail } from "./taskDtoValidation"
 import { TaskSourceServiceError } from "./taskSourceService"
@@ -260,6 +260,42 @@ function mapDetail(raw: unknown): BoringTaskDetail {
   }
 }
 
+/**
+ * `br list --json` carries only `dependency_count` — never the dependency
+ * edges themselves — so parent/epic assignment (`nativeParent`) would always
+ * be empty from the list call alone. Hydrate the edges with batched pinned
+ * `br show` calls, restricted to issues that report at least one dependency
+ * and that the list call did not already ship edges for.
+ */
+async function fetchDependencyEdges(
+  operations: BeadsOperations | undefined,
+  issues: readonly Record<string, unknown>[],
+): Promise<Map<string, unknown>> {
+  const edges = new Map<string, unknown>()
+  const ids = issues
+    .filter((issue) =>
+      issue.dependencies === undefined
+      && typeof issue.id === "string"
+      && isValidBeadId(issue.id)
+      && Number.isSafeInteger(issue.dependency_count)
+      && (issue.dependency_count as number) > 0)
+    .map((issue) => issue.id as string)
+  for (let start = 0; start < ids.length; start += BEADS_SHOW_BATCH_LIMIT) {
+    const chunk = ids.slice(start, start + BEADS_SHOW_BATCH_LIMIT)
+    const parsed = parseJson(
+      await read(operations, ["show", "--json", "--no-auto-flush", "--no-auto-import", "--no-db", "--", ...chunk], LIST_LIMITS),
+      LIST_LIMITS.maxOutputBytes,
+    )
+    if (!Array.isArray(parsed)) throw serviceError("TASK_BEADS_INVALID_RESPONSE", "Beads returned an invalid show response.")
+    for (const raw of parsed) {
+      const issue = record(raw, "issue")
+      const id = requiredString(issue.id, "issue.id", 256)
+      if (issue.dependencies !== undefined && issue.dependencies !== null) edges.set(id, issue.dependencies)
+    }
+  }
+  return edges
+}
+
 async function read(operations: BeadsOperations | undefined, args: readonly string[], limits: typeof VERSION_LIMITS | typeof LIST_LIMITS | typeof DETAIL_LIMITS): Promise<string> {
   if (!operations) throw serviceError("TASK_BEADS_RUNTIME_UNAVAILABLE", "Beads is unavailable in this Workspace runtime.")
   try {
@@ -300,9 +336,12 @@ export function createBeadsTaskSource(options: { operations?: BeadsOperations; s
       const parsed = parseJson(await read(options.operations, ["list", "--all", "--json", "--no-auto-flush", "--no-auto-import", "--no-db"], LIST_LIMITS), LIST_LIMITS.maxOutputBytes)
       const root = record(parsed, "list response")
       if (!Array.isArray(root.issues)) throw serviceError("TASK_BEADS_INVALID_RESPONSE", "Beads returned an invalid list response.")
+      const issues = root.issues.map((issue) => record(issue, "issue"))
+      const edges = await fetchDependencyEdges(options.operations, issues)
       const seen = new Set<string>()
-      return root.issues.map((issue) => {
-        const card = mapCard(issue)
+      return issues.map((issue) => {
+        const dependencies = typeof issue.id === "string" ? edges.get(issue.id) : undefined
+        const card = mapCard(issue.dependencies === undefined && dependencies !== undefined ? { ...issue, dependencies } : issue)
         if (seen.has(card.id)) throw serviceError("TASK_BEADS_DUPLICATE_ID", "Beads returned duplicate issue IDs.")
         seen.add(card.id)
         return { ...card, adapterId: sourceId }
