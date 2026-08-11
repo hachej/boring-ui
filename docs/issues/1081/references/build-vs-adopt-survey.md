@@ -191,6 +191,36 @@ enterprise-licensed premium tier; workspaces on Docker/K8s/VMs; huge active proj
 | agent-sandbox+k3s | PASS | PASS | PASS | PARTIAL | PASS | FAIL | PASS |
 | Coder | PASS | PARTIAL | PARTIAL | FAIL | PASS | FAIL | PARTIAL(AGPL) |
 
+## Security lesson — the Docker-AuthZ CVE class (grounds "own your security edge")
+
+The recurring failure mode across the adopt candidates above (docker-socket-proxy,
+containerd API, faasd, Portainer CE) is the same: they bolt an **external
+authorization layer** onto a privileged runtime socket, and the authorization
+layer is where the isolation boundary breaks. Primary source, Docker's own
+runtime:
+
+- **CVE-2024-41110** (Docker Engine, AuthZ plugin bypass; CVSS 10.0 / critical).
+  A specially crafted API request with `Content-Length: 0` caused the Docker
+  daemon to **forward the request to an authorization (AuthZ) plugin without its
+  body**, so the plugin approved a request whose real (empty-body) effect it never
+  saw — bypassing the plugin's access-control decision. It was a regression of an
+  earlier 2018 bypass (CVE-2018-15664 class) that had been fixed and reintroduced.
+  Sources: Docker Security Advisory GHSA-v23v-6jw2-98fq; Moby commit series fixing
+  the AuthZ request-forwarding path in Engine 23.0.14 / 27.1.0.
+
+The lesson for this build: **an authorization plugin/proxy in front of a
+root-equivalent runtime socket is a security boundary you do not fully control** —
+its correctness depends on the daemon faithfully presenting every request to it,
+which the CVE shows the daemon did not. Every "adopt" candidate that scored PASS
+on R1 (auth) still routes a privileged socket behind a bolt-on authz layer of
+exactly this shape. Our S1 daemon instead **is** the authorization layer and
+**never exposes a raw Docker/containerd socket or a "run this spec" verb** — it
+exposes only narrow session verbs it constructs server-side. That is the OWN
+disposition in the TAKE/ADAPT/OWN/RE-HOST split: own your security edge, never
+inherit someone else's authz on your isolation boundary. This is a design
+judgment grounded in the CVE class above, not a claim that any surveyed tool
+carries the specific CVE.
+
 ## Final verdict: **BUILD — the plan stands.**
 
 Nothing covers R1-R3+R5-R6 with a clean R4 seam. The only candidate passing

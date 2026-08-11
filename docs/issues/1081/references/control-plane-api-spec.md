@@ -6,8 +6,9 @@ Author context: SBX1.4 daemon (PR #1219) is the v1 slice of Layer-1 control plan
 public API shape rather than invent one, mapped onto what we already have
 (`packages/boring-sandbox`, `packages/boring-bash`).
 
-> E2B-surface section (§1) pending the E2B research pass. Everything else is
-> grounded in code we already ship.
+> §1 (E2B public surface) is verified against the official E2B JS SDK v2.38.2 /
+> Python v2.37.1 and the public OpenAPI reference; everything else is grounded in
+> code we already ship.
 
 ---
 
@@ -174,7 +175,11 @@ E2B authenticates every SDK request with a **long-lived reusable API key**
 - Max capability lifetime is **5 minutes** (`REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS`).
 - The `nonce` is recorded in a **persistent, append-only nonce store**; replay is
   rejected (`REMOTE_WORKER_CAPABILITY_REPLAY`), and consumed nonces survive a
-  daemon restart via boot-epoch fencing (SBX1.4-C / #1167).
+  daemon restart via **transactional global nonce uniqueness across
+  processes/connections** (SBX1.4-C / #1167). The earlier boot-epoch proposal is
+  intentionally subsumed by transactional uniqueness (plan S2); V1 stores no
+  epoch column, and the concurrent-connection "exactly one accepted, one replay"
+  test is the fencing proof.
 - The capability is scoped to **one operation on one workspace/sandbox** and
   bound to the request digest — it cannot be lifted and replayed against a
   different call.

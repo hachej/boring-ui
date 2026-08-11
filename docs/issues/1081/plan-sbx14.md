@@ -787,7 +787,12 @@ production canary.
   mode is combined with legacy V0 env/config; no precedence rule may silently
   select V0.
 - Load one server-only single-worker config path from env. The config assigns
-  all 256 placement buckets to the admitted EU worker and references absolute
+  all 256 placement buckets to the admitted EU worker — this is the **placement
+  seam's single-box implementation** (architecture §2 Layer 2), a constant
+  placement realized as config, NOT a hardcoded assumption baked inline into the
+  request path. It is deliberately the degenerate one-box case of the v2
+  scheduler seam; the named `placeSession(request)→box` code interface is a
+  v2-entry refactor and is not built here. The config references absolute
   token/CA files plus the exact evidence, bundle, cohort, and workload digests
   from S4. Raw secret values never enter JSON, logs, client bundles, or PRs.
 - Set `qualificationMaxAgeMs` explicitly to seven days for this internal-first
