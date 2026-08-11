@@ -1065,6 +1065,23 @@ workspace. **Everything below this line is Phase 2, not pilot.**
 
 #### Phase 2 (product self-serve): TWO feasible signup flows — both buildable now
 
+> **Spike findings (2026-08-11) — read before this subsection.** An isolated
+> better-auth composition SPIKE
+> (`references/betterauth-spike-report.md`) ran better-auth **1.6.26** (npm
+> resolves `^1.6.3`→`1.6.26`) through all five identity flows against a real
+> SQLite database. It **corrects several assumptions that earlier drafts of this
+> section got wrong**, and its verdicts are folded in below. The headline
+> corrections: (a) `account.accountLinking` does **NOT** link phone to email —
+> it is social/OAuth-only, and phone lives on the `user` row, not as an account
+> provider; (b) there is **no user-merge primitive**; (c) placeholder replacement
+> is a stateful `changeEmail` workflow, **not** `updateUser`; (d) stock
+> magic-link delivered over WhatsApp is **not** safe phone proof — it asserts
+> email ownership and has destructive side effects. Phone identity is **feasible
+> but requires more custom orchestration than "enable a plugin".** Version caveat:
+> the magic-link single-use/revocation behaviors described are **1.6.26** and must
+> not be back-projected onto exact `1.6.3` — the deployed version must be
+> pinned/verified.
+
 Self-serve signup is **off the pilot critical path** but is **feasible now** in
 **two** forms — the product can offer whichever fits the discovery path. This
 supersedes the r4 draft's false "provider #4 / just a delivery adapter" framing
@@ -1085,18 +1102,38 @@ up.*
   code })` callback is bring-your-own delivery (SMS today, WhatsApp is a different
   transport). Delivering the OTP over WhatsApp is where the channel plugs in.
   (Docs warn: do **not** `await` `sendOTP` — timing-attack risk.)
-- **The one friction — the placeholder email — has a built-in mechanism.** Core
-  `user.email` is `required: true, unique: true` (verified verbatim in
-  `db/get-tables.ts`; there is a maintainer `TODO(#9124)` to drop this in v2, but
-  our `^1.6.x` pin still requires it). The `phoneNumber` plugin handles this with
-  its documented **`getTempEmail(phoneNumber)`** option — it synthesizes a
-  deterministic placeholder (e.g. `+15551234@seneca…`), unique because it derives
-  from the unique number. This is a documented plugin feature, not a hack.
-- **The placeholder is REPLACED by the real email at first payment** — which the
-  plan already collects there (§7.6 ladder / progressive-email). So the full
-  phone-native flow is: WhatsApp signup → phone account + placeholder email →
-  real email collected at first payment → placeholder **replaced by a simple
-  user-update** (not a merge). Clean, and it reuses a decision already in the plan.
+- **The one friction — the placeholder email — has a built-in mechanism, but it
+  needs guarding.** Core `user.email` is `required: true, unique: true` (verified
+  verbatim in `db/get-tables.ts`; there is a maintainer `TODO(#9124)` to drop this
+  in v2, but our `^1.6.x` pin still requires it). The `phoneNumber` plugin fills it
+  via `signUpOnVerification.getTempEmail(phoneNumber)` — a deterministic
+  placeholder (e.g. `+15551234@placeholder.local`) derived from the unique number.
+  The spike confirmed the happy path (HTTP 200, one user + session, zero account
+  rows, `phoneNumberVerified=1`, `emailVerified=0`). **But the placeholder
+  namespace is NOT protected by better-auth**: the spike pre-claimed a predictable
+  placeholder via ordinary public email signup, and the later phone OTP
+  verification then failed HTTP **500 `SQLITE_CONSTRAINT_UNIQUE`** with no phone
+  user created — a **phone-signup denial of service**
+  (`references/betterauth-spike-report.md`, Flow 1). **REQUIRED glue for
+  phone-native signup** (all confirmed by the spike):
+  1. **Reserve the placeholder namespace/domain** so only the trusted
+     phone-derived flow may write it — fail-closed against user-controlled email
+     signup, email change, admin/import, and public magic-link initiation.
+  2. **Canonical E.164 phone normalization** before lookup and placeholder
+     derivation, plus a phone validator.
+  3. **Map a placeholder collision to a stable, recoverable application error**,
+     never a raw 500.
+  4. Note: a phone-only user has **no credential account** and **cannot
+     password-login until enriched** (`changeEmail` + server-only `setPassword`).
+- **The placeholder is REPLACED by the real email at first payment** — collected
+  there already (§7.6 ladder / progressive-email). The mechanism is the
+  **`changeEmail` route, NOT `updateUser`** (`updateUser` returns HTTP 400
+  `EMAIL_CAN_NOT_BE_UPDATED` — spike Flow 2). The no-verification swap works
+  **only while the row is still unverified and `changeEmail.updateEmailWithoutVerification`
+  is enabled**; once the email is verified, real verification is required. And
+  because better-auth **hides collision to prevent enumeration** (`{status:true}`
+  can be a silent no-op), the caller MUST re-read user state after the call. This
+  is a small, stateful workflow — **not a merge, and not a plain `updateUser`.**
 
 **Flow 2 — Email-anchored (LP-discovered). Also feasible; cleaner on linking.**
 Identity keys on **email** (better-auth-native today) and WhatsApp is a linked
@@ -1115,24 +1152,36 @@ users and email-anchored (Flow 2) for LP-discovered users.** `canOriginateIdenti
 is opened for WhatsApp in both — the difference is only whether the minted account
 is phone-anchored (Flow 1, with a temp email) or email-anchored (Flow 2).
 
-**Honest caveats (from the verification — keep these):**
-- **`accountLinking` matches on verified EMAIL, not phone.** It is enabled by
-  default in core but **not configured** in our stack (`grep accountLinking
-  packages/core/src` → zero hits; absent from `createAuth.ts`) — enabling +
-  configuring it (`trustedProviders`, `allowDifferentEmails`) is required for the
-  **email-side linking** in Flow 2. There is **no built-in "match/link on phone"
-  primitive**, so *linking an email/social identity onto a phone-first (temp-email)
-  account* and *merging two independent accounts* are **custom glue (moderate)**,
-  not built-in.
-- **But "replace placeholder email with real email" is a plain user-update, not a
-  merge** — this is the common Flow-1 path and is simple. The hard merge case
-  (two genuinely-independent accounts) stays a narrow tail: detect +
-  support-assisted, never automated (no better-auth merge primitive).
-- **magic-link is a SEPARATE, email-keyed plugin** (`sendMagicLink({ email, url,
-  token })`, mounted only with a mail transport, `createAuth.ts:125`). It does
-  **not** block phone-only auth (independent plugins). Use it for web access
-  **after** a real email exists; for earlier web access from a phone-native
-  account, a custom phone-keyed token is needed (moderate).
+**Honest caveats (spike-corrected — `references/betterauth-spike-report.md`):**
+- **`account.accountLinking` does NOT link phone ↔ email — it is social/OAuth
+  ONLY.** The spike's `link-social {provider:'phone-number'}` returned HTTP 404
+  `PROVIDER_NOT_FOUND`; **phone is stored directly on the `user` row, not as an
+  `account` provider** (spike Flow 3). Enabling `accountLinking` supplies **zero**
+  phone composition. Phone attachment must be MANUALLY orchestrated by the plan:
+  the **dedicated phone-attach route** (verify phone OTP with
+  `updatePhoneNumber=true` on an authenticated session) for the email-first
+  direction, and **`changeEmail` + server-only `setPassword`** for the phone-first
+  direction. `accountLinking` still governs **social-provider** linking on the
+  email side (Flow 2), and it is unconfigured today (`grep accountLinking
+  packages/core/src` → zero hits) — but it is **not** the phone mechanism.
+- **There is NO better-auth user-merge primitive (confirmed).** `Object.keys(auth.api)`
+  exposed no merge; two independent users stayed independent; attaching an
+  already-owned phone returned HTTP 400 `PHONE_NUMBER_EXIST` (and burned the OTP).
+  **Detach/reattach can TRANSFER a phone** (`updateUser({phoneNumber:null})` on the
+  source, fresh OTP on the target) **but does NOT merge users** — both rows survive
+  (spike Flow 4). A real merge is **custom transactional glue** (consolidate
+  users/accounts/sessions and every trades-domain FK, conflict rules, rollback).
+  It stays a **narrow tail: detect + support-assisted, never automated**, and is
+  kept **OFF the pilot/v1 path** — provisioned bindings (§0.7) avoid it entirely.
+- **Stock magic-link over WhatsApp is NOT safe phone proof.** `sendMagicLink`'s
+  transport is arbitrary, so WhatsApp delivery technically redeems — but
+  semantically stock `magicLink` treats **token possession as proof of the EMAIL**
+  even when no email was delivered. Worse, on an existing **unverified phone-first
+  user**, redemption on 1.6.26 set `emailVerified` false→true, **revoked prior
+  sessions**, and **DELETED the credential account** (spike Flow 5). So for
+  phone/WhatsApp proof the plan needs a **custom out-of-band challenge /
+  session-mint flow** — NOT stock magic-link delivered over WhatsApp. Stock
+  magic-link remains fine for web access **after** a real, verified email exists.
 
 **[UNVERIFIED — load-bearing] OTP templates skip the 24h window.** For a
 *business-initiated* WhatsApp OTP to a cold number (Flow 1's `sendOTP` over
@@ -1185,23 +1234,23 @@ flowchart TD
     %% b2: round-trip to LP for email signup
     BQ -->|"b2: redirect to LP (Flow 2b)"| B2a["Bot sends LP link with SIGNED round-trip token<br/>(binds this WhatsApp identity)"]
     B2a --> B2b["Email / Google signup on LP (EXISTING better-auth)"]
-    B2b --> B2c["Round-trip token returns to WhatsApp<br/>-> phone linked to the email account"]
+    B2b --> B2c["Round-trip token returns to WhatsApp<br/>-> attach phone to the email account"]
     B2c --> LINK
 
     %% ---- Reconciliation ----
-    LINK["Link-into-session rule:<br/>authenticated session + 2nd identity presented<br/>=> LINK to current user, NEVER create a new account<br/>(requires account.accountLinking - NEW)"]
+    LINK["Attach-into-session rule (authenticated session + 2nd identity):<br/>MANUAL orchestration, NOT account.accountLinking<br/>- email-first + phone: dedicated phone-attach route<br/>&nbsp;&nbsp;(verify OTP, updatePhoneNumber=true)<br/>- phone-first + email: changeEmail + server-only setPassword<br/>NEVER create a new account"]
     LINK --> CONV
 
-    CONV(["ONE better-auth account<br/>internal user id + linked identities:<br/>email + phone + google"])
+    CONV(["ONE better-auth account<br/>user id + phone on the user row<br/>+ email / google credential/social accounts"])
 
-    %% ---- Collision case ----
-    COL["Collision: same person made TWO independent accounts<br/>(phone account AND email account, never in one session)"]
-    COL --> MERGE["v1 claim/verify-to-merge<br/>(detect + verify ownership of both, no fuzzy matching)"]
+    %% ---- Collision case (NO better-auth primitive) ----
+    COL["Collision: same person made TWO independent accounts<br/>(phone-first AND email-first, never in one session)"]
+    COL --> MERGE["CUSTOM transactional merge (no better-auth primitive):<br/>consolidate users/accounts/sessions + domain FKs,<br/>conflict rules + rollback; detect + support-assisted,<br/>NEVER automated. OFF pilot/v1 (provisioned bindings avoid it)"]
     MERGE --> CONV
 
     %% ---- Placeholder email replacement ----
     CONV --> PAY{"First payment?<br/>(invoice / receipt / CH records)"}
-    PAY -->|"yes"| REPL["getTempEmail() placeholder REPLACED<br/>by the customer's REAL email<br/>(progressive email becomes effectively required)"]
+    PAY -->|"yes"| REPL["Placeholder email REPLACED by the REAL email<br/>via changeEmail route (NOT updateUser);<br/>no-verify swap only while unverified +<br/>updateEmailWithoutVerification; re-read state (hidden collision)"]
     REPL --> CONV
     PAY -->|"not yet"| CONV
 ```
@@ -1214,43 +1263,52 @@ account is phone-anchored (b1, temp email) or email-anchored (b2 / A).
 #### Auth additions required — existing vs to-add
 
 **Does the existing default sign-in / sign-up need changes to support WhatsApp
-auth? Yes.** The two web-first paths (Door A, and Door b2's LP hop) reuse the
-current better-auth stack verbatim. But WhatsApp-native signup (Door b1),
-cross-door linking, and merge each require a concrete addition. All are
-extensions of the existing provider-agnostic user model — no new auth engine.
-None is a "config line": each is a **moderate build** (consistent with the
-tier-(b) framing and honest caveats above; this section supersedes any "just a
-delivery adapter / provider #4 is one config line" shorthand). "Identity
-provider #4" here means *phone/WhatsApp on the same provider-agnostic account
-model*, not a claim of triviality.
+auth? Yes — and MORE custom orchestration than "enable a plugin".** The two
+web-first paths (Door A, and Door b2's LP hop) reuse the current better-auth stack
+verbatim. But WhatsApp-native signup (Door b1), cross-door phone/email
+composition, and merge each require concrete **custom** work. The spike
+(`references/betterauth-spike-report.md`) proved phone identity is **feasible** —
+phone-first accounts CAN be created and enriched into full email/password accounts
+on a single user id — but **not by flipping `accountLinking` on**. Honest effort
+framing: each addition below is a **moderate custom build**, and two of them
+(placeholder-namespace guarding, the OOB challenge) are custom glue better-auth
+gives no primitive for. This section **supersedes** any "just a delivery adapter /
+provider #4 is one config line" shorthand.
 
 **What exists today (verified 2026-08-11,
 `packages/core/src/server/auth/createAuth.ts`):** email/password
 (`emailAndPassword.enabled`), Google + GitHub OAuth (`socialProviders`), and the
 magic-link plugin whose `sendMagicLink` currently **renders an email and sends
-it over the email `transport`** (`renderMagicLink` → `transport.send`). It is
-**email-wired, not a no-op stub** — but it is keyed to email, not to phone, so
-it does not by itself provide WhatsApp/phone delivery. There is **no
-`account.accountLinking`** configured (`grep accountLinking packages/core/src` →
-zero hits; the `account` block sets field mappings only) and **no `phoneNumber`
-plugin** in the `plugins` array (magic-link is the only plugin).
+it over the email `transport`** (`renderMagicLink` → `transport.send`) — email-wired,
+keyed to email, not phone. There is **no `account.accountLinking`** configured
+(`grep accountLinking packages/core/src` → zero hits) and **no `phoneNumber`
+plugin** in the `plugins` array. **Spike-confirmed limits of the existing stack:**
+`accountLinking` is social/OAuth-only and cannot compose phone (Flow 3); there is
+no user-merge primitive (Flow 4); and stock magic-link over WhatsApp asserts email
+ownership with destructive side effects, so it is **not** a phone-proof mechanism
+(Flow 5).
 
-| Concern | Exists today | To add for WhatsApp auth |
+| Concern | Exists today | To add for WhatsApp auth (spike-corrected) |
 | --- | --- | --- |
 | Email/password sign-up | ✅ `emailAndPassword.enabled` | — (reused as-is by Door A / b2) |
 | Google + GitHub OAuth | ✅ `socialProviders` | — (reused as-is) |
-| Magic-link plugin | ✅ mounted; `sendMagicLink` **renders + sends over the email transport** (email-wired, NOT a stub) | **(3)** add a **WhatsApp delivery adapter** so `sendMagicLink` can emit the *same* better-auth token URL over WhatsApp (web-session-over-WhatsApp); reuses the token/redeem/session code, adds the delivery leg |
-| Cross-door identity linking | ❌ **no** `account.accountLinking` (zero grep hits) | **(1)** enable `account.accountLinking` so "add email later" and link-into-session are native (no migration) |
-| Phone as an identity | ❌ **no** `phoneNumber` plugin | **(2)** install + configure better-auth `phoneNumber` plugin, with `getTempEmail` to fill the required-email schema field for phone-native (Door b1) accounts, and `sendOTP` for WhatsApp OTP |
-| OTP delivery over WhatsApp | ❌ (channel unused for auth) | **(3)** wire the WhatsApp delivery adapter to the `phoneNumber` plugin's `sendOTP` (phone OTP) and/or the magic-link `sendMagicLink` |
-| Web-first → WhatsApp round-trip (Door b2) | ❌ | **(4)** a **signed round-trip token** flow: LP-signup link carries a signed token binding the WhatsApp identity, and returns to bind phone ↔ email account |
-| Collision merge | ❌ | v1 claim/verify-to-merge (rides on **(1)** `accountLinking`; no better-auth merge primitive, so custom glue) |
+| Phone as an identity | ❌ **no** `phoneNumber` plugin | **(1)** install + configure the `phoneNumber` plugin; phone lands **on the `user` row**, not as an `account` provider. Includes `signUpOnVerification.getTempEmail` for the required-email field and `sendOTP` for WhatsApp OTP |
+| Placeholder-namespace guard | ❌ (unprotected → DoS, spike Flow 1) | **(2)** REQUIRED custom glue: reserve the placeholder domain (only the trusted phone flow may write it), E.164 normalization + phone validator, and map placeholder collisions to a stable recoverable error (never a raw 500) |
+| Phone↔email composition on one user | ❌ (NOT `accountLinking`) | **(3)** MANUAL orchestration, spike Flow 3: email-first → dedicated phone-attach route (verify OTP, `updatePhoneNumber=true`); phone-first → `changeEmail` + server-only `setPassword`. `accountLinking` does **not** do this |
+| Placeholder → real email | ❌ | **(4)** the **`changeEmail`** route (NOT `updateUser`); no-verify swap only while unverified + `updateEmailWithoutVerification`; re-read state (hidden collision). Small stateful workflow |
+| Web session from a phone account | ⚠️ magic-link is email-keyed & unsafe over WA (spike Flow 5) | **(5)** a **custom out-of-band challenge / session-mint** flow for phone/WhatsApp proof — do NOT deliver stock magic-link over WhatsApp (false email-verify + revokes sessions + deletes credential account). Stock magic-link stays for web access after a real verified email exists |
+| Social-side linking (Door b2) | ❌ `accountLinking` unconfigured | **(6)** enable/configure `account.accountLinking` (`trustedProviders`, `allowDifferentEmails`) for **email/social-side** linking only, plus a **signed round-trip token** binding the pending WhatsApp identity across the web hop |
+| Collision merge | ❌ **no primitive** | CUSTOM transactional merge (users/accounts/sessions + domain FKs, conflict rules, rollback). Detect + support-assisted, **never automated**; **OFF pilot/v1** (provisioned bindings avoid it) |
 
-**Net:** four additions — (1) `accountLinking`, (2) `phoneNumber` plugin +
-`getTempEmail`, (3) a WhatsApp delivery adapter for `sendOTP` / `sendMagicLink`,
-(4) the Door-b2 signed round-trip token. Nothing in the existing email/OAuth/
-magic-link paths is removed or rewritten; WhatsApp/phone becomes an identity
-provider on the same account model. Each addition is moderate, not a config line.
+**Net:** phone identity is feasible but is **six moderate custom additions**, not a
+config line — (1) `phoneNumber` plugin, (2) placeholder-namespace guard + E.164,
+(3) manual phone↔email composition, (4) `changeEmail`-based placeholder
+replacement, (5) a custom OOB challenge for phone-proof web sessions, (6)
+`accountLinking` for email/social-side linking + the Door-b2 signed round-trip
+token. The genuine account **merge** is a further custom, support-assisted tail
+with no better-auth primitive, kept off the pilot/v1 path. Nothing in the existing
+email/OAuth/magic-link paths is removed; WhatsApp/phone becomes an identity source
+on the same account model, at honest effort cost.
 
 #### Consumers of this identity mechanism
 
