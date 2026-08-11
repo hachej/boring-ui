@@ -8,6 +8,7 @@ import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 import { LoadingStatesShowcase, type LoadingStateMode } from "./LoadingStatesShowcase"
+import { SCRIPTED_DEFAULT_AGENT_TYPE_ID } from "../shared/playgroundAgents"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -151,7 +152,7 @@ function WorkspaceFullPageShell() {
 
   return (
     <WorkspaceProvider
-      agentTypeId="default"
+      agentTypeId={factoryAgentsEnabled() ? "boring-concierge" : SCRIPTED_DEFAULT_AGENT_TYPE_ID}
       apiBaseUrl=""
       plugins={workspacePlugins}
       persistenceEnabled
@@ -171,7 +172,7 @@ export function WorkspaceShell() {
   const fullPage = useMemo(isFullPageRoute, [])
   const multiFilesystem = useMemo(isMultiFilesystemPlaygroundRoute, [])
   const factoryAgents = useMemo(factoryAgentsEnabled, [])
-  const defaultAgentTypeId = factoryAgents ? "boring-concierge" : "default"
+  const defaultAgentTypeId = factoryAgents ? "boring-concierge" : SCRIPTED_DEFAULT_AGENT_TYPE_ID
   const [projectName, setProjectName] = useState("Workspace")
   const [workspaceId, setWorkspaceId] = useState("Workspace")
   const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
@@ -180,7 +181,7 @@ export function WorkspaceShell() {
   const sessions = showcase ? showcaseSessions : undefined
   const liveShowcaseSessionIds = useRef(new Set<string>())
   const createShowcaseSession = useCallback(async () => {
-    const response = await fetch("/api/v1/agents/default/sessions", {
+    const response = await fetch(`/api/v1/agents/${encodeURIComponent(defaultAgentTypeId)}/sessions`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -193,7 +194,7 @@ export function WorkspaceShell() {
     if (!payload.sessionId) throw new Error("showcase session create returned no session id")
     const session = {
       id: payload.sessionId,
-      agentTypeId: payload.agentTypeId ?? "default",
+      agentTypeId: payload.agentTypeId ?? defaultAgentTypeId,
       title: "New chat",
       updatedAt: Date.now(),
     }
@@ -201,7 +202,7 @@ export function WorkspaceShell() {
     setShowcaseSessions((current) => [...current, session])
     setShowcaseActiveSessionId(session.id)
     return session
-  }, [])
+  }, [defaultAgentTypeId])
   const renameShowcaseSession = useCallback((sessionId: string, title: string) => {
     setShowcaseSessions((current) => current.map((session) => (
       session.id === sessionId ? { ...session, title, updatedAt: Date.now() } : session

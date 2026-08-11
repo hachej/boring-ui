@@ -99,6 +99,9 @@ packages/workspace/src/plugins/eval-*/
 !/.agents/factory/**
 !/.agents/personas/
 !/.agents/personas/**
+# Generated per-persona signatures are never tracked (re-ignored after the
+# broad personas re-include above).
+/.agents/personas/**/.boring-signature.json
 !/.agents/skills/
 /.agents/skills/*
 !/.agents/skills/ask-boring/

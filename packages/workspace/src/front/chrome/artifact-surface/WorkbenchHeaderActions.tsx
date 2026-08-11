@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronDown, ChevronRight, Maximize2, Minimize2 } from "lucide-react"
+import { ChevronDown, Maximize2, Minimize2, PanelRightClose } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -83,12 +83,12 @@ export function WorkbenchHeaderActions({
         <IconButton
           type="button"
           variant="ghost"
-          size="icon-xs"
+          size="icon-sm"
           onClick={onClose}
           aria-label="Close workbench"
           title="Close workbench (⌘2)"
         >
-          <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
+          <PanelRightClose className="size-4" strokeWidth={1.75} />
         </IconButton>
       ) : null}
     </div>

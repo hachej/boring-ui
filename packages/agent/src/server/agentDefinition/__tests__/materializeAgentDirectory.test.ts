@@ -35,17 +35,22 @@ describe('materializeAgentDirectory', () => {
       label: 'Claims assistant',
       description: 'Helps process insurance claims.',
       instructions: 'Exact authored prompt.',
+      // gh-1107 slice 2: the compiled definition digest is derived by the
+      // trusted compiler (never authored) and rides the source as identity.
+      definitionDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     })
     expect(Object.keys(source).sort()).toEqual([
       'agentTypeId',
+      'definitionDigest',
       'description',
       'instructions',
       'label',
       'schemaVersion',
       'version',
     ])
+    // Behavior-selecting references still never leak out of authored data.
     expect(JSON.stringify(source)).not.toMatch(
-      /definitionDigest|digest|assets|path|root|catalog|runtime|tool|skill|mcp|capabilit/i,
+      /assets|catalog|runtime|tool|skill|mcp|capabilit/i,
     )
     expect(Object.isFrozen(source)).toBe(true)
     expect(() => ((source as { version: string }).version = 'changed')).toThrow(TypeError)
@@ -71,6 +76,7 @@ describe('materializeAgentDirectory', () => {
       agentTypeId: 'claims-assistant',
       version: '2026.07.18',
       instructions: 'Handle claims with care.',
+      definitionDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     })
   })
 
