@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z, type ZodSchema } from "zod";
 import type { UiBridge, UiCommand } from "../../../shared/ui-bridge";
+import { resolveUrlPaneTarget, URL_PANE_PANEL_ID, type UrlPanePolicy } from "../../../shared/urlPane";
+import { resolveUrlPanePolicyFromEnv } from "../urlPanePolicy";
 import { createPaneRenderStatusStore, type PaneRenderStatusStore } from "../panelStatus/paneRenderStatusStore";
 import { paneRenderStatusRoutes, resolvePaneStatusWorkspaceId } from "./paneRenderStatusRoutes";
 
@@ -52,6 +54,26 @@ export interface UiRoutesOptions {
   preserveStateKeys?: string[];
   getPreserveStateKeys?: (request: FastifyRequest) => string[] | Promise<string[]>;
   paneStatusStore?: PaneRenderStatusStore;
+  /**
+   * Origin allowlist the URL pane may embed. Defaults to the env-resolved
+   * policy (loopback only unless the host opts in).
+   */
+  urlPanePolicy?: UrlPanePolicy;
+}
+
+/**
+ * The URL pane's origin rule is enforced in the front, which is the only thing
+ * that renders an iframe. Rejecting the command here as well is defence in
+ * depth *and* ergonomics: an agent that asks for a disallowed origin gets a 400
+ * with the reason instead of a silently blocked pane it cannot see.
+ */
+function urlPaneCommandRejection(cmd: UiCommand, policy: UrlPanePolicy): string | undefined {
+  if (cmd.kind !== "openPanel") return undefined;
+  const params = cmd.params as { component?: unknown; params?: { url?: unknown } } | undefined;
+  if (params?.component !== URL_PANE_PANEL_ID) return undefined;
+  const url = params.params?.url;
+  const resolved = resolveUrlPaneTarget(typeof url === "string" ? url : "", policy);
+  return resolved.ok ? undefined : resolved.message;
 }
 
 export function uiRoutes(
@@ -60,6 +82,7 @@ export function uiRoutes(
   done: (err?: Error) => void,
 ): void {
   const fallbackBridge = opts.bridge;
+  const urlPanePolicy = opts.urlPanePolicy ?? resolveUrlPanePolicyFromEnv();
   const paneStatusStore = opts.paneStatusStore ?? createPaneRenderStatusStore();
   const getPaneWorkspaceId = async (request: FastifyRequest, presentedWorkspaceId?: unknown) => (await opts.getWorkspaceId?.(request, presentedWorkspaceId)) ?? resolvePaneStatusWorkspaceId(request);
   const touchUi = async (request: FastifyRequest) => {
@@ -111,13 +134,21 @@ export function uiRoutes(
   app.post(
     "/api/v1/ui/commands",
     { preHandler: validatePostCommand },
-    async (request) => {
+    async (request, reply) => {
       const body = request.body as z.infer<typeof postCommandBodySchema>;
       const bridge = await resolveBridge(request);
       const cmd: UiCommand = { kind: body.kind, params: body.params };
+      const rejection = urlPaneCommandRejection(cmd, urlPanePolicy);
+      if (rejection) {
+        return reply.code(400).send({ error: "url_pane_origin_not_allowed", message: rejection });
+      }
       return await bridge.postCommand(cmd);
     },
   );
+
+  // The front fetches this to enforce the same rule before it sets an iframe
+  // src, and to render an actionable "blocked" state naming the allowlist.
+  app.get("/api/v1/ui/url-pane/policy", async () => ({ origins: urlPanePolicy.origins }));
 
   app.get("/api/v1/ui/commands/next", async (request, reply) => {
     await touchUi(request);

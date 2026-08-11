@@ -41,11 +41,15 @@ a wasted owner test is a factory defect.
 Implement the smallest bounded slice with behavior tests, record current proof,
 apply the Model Card review ladder and mandatory code-thermo gate, and integrate
 or disposition every material finding. Re-prove and re-review non-trivial fixes.
-Then open/update the PR, present it for validation — run the present-pr
-generator (`.agents/skills/present-pr/`) and deliver its artifact as the
-owner-facing deliverable — and send the owner card through `ask_user` (PR
-comment fallback), attaching that artifact plus the best runnable UI or proof. Use commit
-subjects `[br-###] description` and push after every commit.
+Then open/update the PR and hand it over as **two artifacts, both in the
+workspace**: run the present-pr generator (`.agents/skills/present-pr/`) with
+`--out .handoff/pr-<n>-presentation.html`, then `exec_ui openFile` that page
+(HTML viewer pane) and, whenever the change has a running surface, `exec_ui
+openPanel` component `url-pane.panel` with `params.url` pointing at your live
+demo. Send the owner card through `ask_user` (PR comment fallback) naming both
+panes; never hand the owner a bare localhost URL in chat. Use commit subjects
+`[br-###] description` and push after every commit. Marking the bead is the last
+act, after both panes are open.
 
 For a UI packet, validate it first and follow the complete round, stop, baseline,
 and Inbox rules in `visual-review.md`; the packet grants no edit or merge

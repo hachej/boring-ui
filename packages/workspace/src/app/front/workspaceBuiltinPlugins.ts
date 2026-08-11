@@ -1,4 +1,5 @@
 import { filesystemPlugin } from "../../plugins/filesystemPlugin/front"
+import { urlPanePlugin } from "../../plugins/urlPanePlugin/front"
 import { captureBootstrapPlugins } from "../../shared/plugins/bootstrap"
 import { PluginError } from "../../shared/plugins/errors"
 import type { BoringFrontFactoryWithId, CapturedFrontPlugin } from "../../shared/plugins/frontFactory"
@@ -14,7 +15,8 @@ export function captureWorkspaceFrontPlugins({
   plugins,
   excludeDefaults,
 }: CaptureWorkspaceFrontPluginsOptions): CapturedFrontPlugin[] {
-  const defaultPlugins = (excludeDefaults ?? []).includes(filesystemPlugin.pluginId) ? [] : [filesystemPlugin]
+  const excluded = new Set(excludeDefaults ?? [])
+  const defaultPlugins = [filesystemPlugin, urlPanePlugin].filter((plugin) => !excluded.has(plugin.pluginId))
   const captured = captureBootstrapPlugins({ plugins: plugins ?? [], defaults: defaultPlugins, excludeDefaults })
 
   for (const plugin of captured) {
