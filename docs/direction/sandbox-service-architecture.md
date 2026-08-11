@@ -12,7 +12,7 @@ Precedence: owner > `DIRECTION.md` > this file > issue plan folders.
 Grounding: every API/architecture/isolation decision here cites version-controlled
 evidence in [`../issues/1081/references/`](../issues/1081/references/) (index:
 [`references/README.md`](../issues/1081/references/README.md)). The concrete v1
-control-plane API shape is §9.
+control-plane API shape is in [`../issues/1081/api-spec.md`](../issues/1081/api-spec.md).
 
 ---
 
@@ -26,7 +26,7 @@ service opens to the public as a sellable product.
 
 The service is architected **as a public product from day one**. "Seneca is a
 normal consumer of the public surface, not a privileged internal integration"
-is the **target framing** — §3 states the honest v1 status: until the §9.4
+is the **target framing** — §3 states the honest v1 status: until the api-spec §3.4
 edge compat shim ships, Seneca holds the static secret and IS a privileged
 first-party consumer in the capability-issuance dimension.
 
@@ -37,7 +37,8 @@ first-party consumer in the capability-issuance dimension.
 ### v1 — Seneca on own infra (dogfood)
 
 - **Isolation:** gVisor / `runsc` (already built and proven in SBX1.3).
-- **Topology:** single rented KVM VM, single tenant (Seneca), single box.
+- **Topology:** single rented Linux VM (provider-virtualized, no `/dev/kvm` —
+  gVisor/systrap is user-space), single tenant (Seneca), single box.
 - **Control plane:** the SBX1.4 daemon (PR #1219) — the *v1 slice of the
   product's control-plane API*, minimal but shaped correctly.
 - **Consumer:** Seneca's agent runtime, via `SandboxProviderV1`
@@ -56,44 +57,16 @@ first-party consumer in the capability-issuance dimension.
 - **Admission:** SBX1.5 fleet-admission automation (evidence-bound box
   qualification, drift policy, CVE game-day) running continuously.
 
-### v1-complete / start-v2 gate — what "v1 is done" means concretely
+### v1-complete / start-v2 gate → see the plan
 
-These are **v1-hygiene criteria**: meeting them means v1 is complete and the v2
-productization backlog (§5) may start. **They are NOT the gate to open the
-service to untrusted public strangers** — that is a separate, higher bar in §4a.
-Each is owner-gated and a claim we can point at, not a vibe:
-
-1. **Seneca has run production agent traffic on the remote runsc worker for a
-   sustained soak** (target: ≥ 4 weeks of real workspaces, no owner-visible
-   sandbox regression, no manual daemon babysitting between deploys).
-2. **The admission gate is admitting, not just refusing.** A real
-   `openat2`-passing runsc cohort exists and a fleet-admission evidence run
-   binds the frozen SBX1.4 digests (`fleetAdmissionClaimed: true`) — today it
-   is refusal-only (the single biggest v1 blocker; see `sbx14-scoping.md`).
-3. **Replay defense survives restart.** Persistent nonce store shipped with
-   **transactional global nonce uniqueness across processes/connections**
-   (SBX1.4-C / #1167 atomicity — the earlier boot-epoch proposal is subsumed by
-   this; V1 stores no epoch column, per plan S2), with both the "consumed nonce
-   survives simulated restart" and the concurrent-connection ("exactly one
-   accepted, one replay") regressions green.
-4. **Image pinning is enforced.** No container starts unless workload + helper
-   digests equal the admitted evidence digests (SBX1.4-B), fail-closed with a
-   stable code.
-5. **The control-plane API is the only path Seneca uses.** No `Seneca-special`
-   bypass exists in the codebase, enforced by the concrete invariant in §3: (a)
-   no production code path branches on caller identity, and (b) V1-mode combined
-   with legacy `BORING_WORKER_BASE_URL` env fails closed (delivered by plan S5).
-   Part (b) ships today; part (a)'s automated `check:invariants` rule is **not
-   yet implemented by any slice** — until it lands, this criterion is not
-   mechanically evaluable and cannot be claimed met (owed work, named in §3).
-6. **A qualified-box runbook exists and has been rehearsed once** — provision,
-   register, admit, drain, restore — so a second box can be stood up without
-   the owner in the loop for every step.
-
-Until 1–6 hold, the service stays single-tenant Seneca-only. Meeting them is
-the gate to **start** the v2 productization backlog (§5), **not** a signal to
-have built any of it early (§6), and **not** authorization to admit untrusted
-public strangers — that requires the separate public-opening gate in **§4a**.
+The concrete, owner-gated **v1-complete exit criteria** (the six hygiene claims
+that graduate v1 and authorize *starting* the v2 backlog in §5) live in the
+execution plan:
+[`../issues/1081/plan-sbx14.md`](../issues/1081/plan-sbx14.md) → "v1-complete exit
+criteria." They are *not* the gate to open the service to untrusted public
+strangers — that is the separate, higher **public-opening gate**, also in the plan
+(and summarized at §4a below). Both gates are owner-gated claims we can point at,
+not vibes; this doc keeps the *why*, the plan keeps the *checklist*.
 
 ---
 
@@ -150,12 +123,12 @@ handshake mechanics, the same admission gate, the same network daemon. It does
 daemon's static shared secret** (which the plan's threat model calls
 host-root-equivalent) and **mints its own capabilities client-side**; a public
 customer would instead present an API key to an edge **compat shim that mints
-capabilities server-side** (§9.4). That shim does not exist in v1, so **in v1
+capabilities server-side** (api-spec §3.4). That shim does not exist in v1, so **in v1
 Seneca IS a privileged first-party consumer** in exactly the capability-issuance
-dimension §9.4 sells as the differentiator. "Seneca is just a normal public
+dimension api-spec §3.4 sells as the differentiator. "Seneca is just a normal public
 consumer" is therefore a **v2 target, not a v1 fact** — it becomes true only when
 the compat shim (or an internal issuer/verifier split that simulates it) ships
-(§4a, §5, §9.4). What v1 *does* guarantee: no code path branches on caller
+(§4a, §5, api-spec §3.4, plan). What v1 *does* guarantee: no code path branches on caller
 identity, and V1-mode combined with legacy env fails closed (below).
 
 Dogfooding hardens the *product's execution path* because the dogfooder drives
@@ -184,10 +157,10 @@ generic phrase alone is not evaluable):
 
 1. **No production code path branches on caller identity.** No `if (isSeneca)` /
    tenant-name special-casing in the daemon request path. This is the property
-   criterion 5 (§1) points at; it is checkable by review + a `check:invariants`
+   v1-complete criterion 5 (plan) points at; it is checkable by review + a `check:invariants`
    grep for identity-named branches in the Layer-1 request path (the grep pattern
    and its `check:invariants` rule are owed by the slice that adds the check —
-   see §1 criterion 5, currently unimplemented and flagged as such).
+   see plan v1-complete criterion 5, currently unimplemented and flagged as such).
 2. **V1-mode + legacy env fails closed.** The one real bypass in the code today is
    *not* a named `Seneca` flag but a **config-precedence privilege**: Core
    selected the legacy V0 adapter when `BORING_WORKER_BASE_URL` was present
@@ -200,7 +173,7 @@ generic phrase alone is not evaluable):
 
 Half of this invariant (item 2) is delivered by S5 today; item 1's automated
 `check:invariants` rule is **not yet implemented by any slice** — until it is,
-criterion 5 (§1) cannot be mechanically evaluated and must not be claimed as met.
+v1-complete criterion 5 (plan) cannot be mechanically evaluated and must not be claimed as met.
 
 The payoff: the day we flip on the first public tenant, the only new code is
 *multi-tenancy* (§5), not *the execution path* — because Seneca already proved
@@ -243,40 +216,24 @@ says we want our own metal for the microVM tier.
 
 ### 4a. The public-opening gate — a SEPARATE, higher bar than v1-complete
 
-The §1 criteria make v1 *complete*; they say **nothing** about the
-isolation/tenancy escalation that opening to untrusted strangers requires. Before
-the **first untrusted self-serve stranger** is admitted, all of the following
-must hold — this is a distinct gate, evaluated *after* the §1 gate, not implied
-by it:
+The v1-complete criteria make v1 *complete*; they say **nothing** about the
+isolation/tenancy escalation that opening to untrusted strangers requires. The
+**firm isolation-tier position** (resolving the §4 hedge): **untrusted public
+self-serve requires the microVM / Firecracker tier plus the continuously-running
+SBX1.5 evidence-admission gates. Shared gVisor is authorized only for trusted /
+first-party tenants** (Seneca and named design partners) until an **explicit,
+written owner risk-acceptance** for shared gVisor lands. "Likely needs the microVM
+tier" (§4) is hereby resolved to "requires it, absent that written acceptance,"
+and the v2 "gVisor (shared, dense)" tier (§1) is **not** a self-serve-untrusted
+default until that acceptance exists.
 
-1. **Isolation-tier decision (resolving the §4 hedge — now a firm position).**
-   **Untrusted public self-serve requires the microVM / Firecracker tier plus the
-   continuously-running SBX1.5 evidence-admission gates. Shared gVisor is
-   authorized only for trusted / first-party tenants** (Seneca and named design
-   partners) until an **explicit, written owner risk-acceptance** for shared
-   gVisor lands — and that acceptance is contingent on the operational
-   preconditions Modal's dense-gVisor product implies but our v2 backlog does not
-   yet carry: a gVisor CVE-response SLO, continuously-running escape canaries
-   (today scoped only inside SBX1.5), and an abuse pipeline (item 2). "Likely
-   needs the microVM tier" (§4) is hereby resolved to "requires it, absent that
-   written acceptance." The v2 "gVisor (shared, dense)" tier in §1 is therefore
-   **not** a self-serve-untrusted default until that acceptance exists.
-2. **Egress + abuse controls (currently absent from the §5 backlog — added
-   here).** v1's posture is egress-denial (probed in S4). A public product cannot
-   be egress-deny-only (E2B offers `allow_internet_access`), and the moment
-   egress opens, abuse handling is a launch blocker: a network **egress policy**
-   (default-deny with per-plan allowlisting), **rate limits / concurrency and
-   spend caps per tenant**, and an **abuse-detection story** (anti-crypto-mining,
-   outbound port-scanning / spam detection, takedown path). These are added to
-   the v2 backlog (§5) explicitly as public-opening blockers, not nice-to-haves.
-3. **Multi-tenant auth actually exists.** Per-tenant identity, the edge compat
-   shim / server-side capability issuer (§9.4) so no tenant holds the
-   host-root-equivalent secret, per-tenant DoS quotas, and tenant-isolation
-   testing must all exist and be tested before the first stranger arrives. §1
-   criterion 5 asserts a single-path property but requires none of this.
-
-Only when §1 (1–6) **and** §4a (1–3) both hold is the service authorized to open
-to untrusted public self-serve. §5 is the build backlog that gets us there.
+The full three-part **public-opening gate** — this isolation-tier decision, the
+egress + abuse controls, and multi-tenant auth (each a hard blocker) — is
+specified in the execution plan:
+[`../issues/1081/plan-sbx14.md`](../issues/1081/plan-sbx14.md) → "The
+public-opening gate." Only when the v1-complete criteria **and** the
+public-opening gate both hold is the service authorized to open to untrusted
+public self-serve. §5 is the build backlog that gets us there.
 
 ---
 
@@ -300,7 +257,7 @@ required for the Seneca dogfood.
   (§4a-2): v1 is egress-deny-only and a public product cannot be. (v1 = egress
   denied, single trusted tenant.)
 - **Multi-tenant edge auth / compat shim** — the edge API-key → server-side
-  capability issuer/verifier split (§9.4) so no tenant ever holds the
+  capability issuer/verifier split (api-spec §3.4) so no tenant ever holds the
   host-root-equivalent secret, plus per-tenant DoS quotas and tenant-isolation
   tests. **Hard public-opening blocker** (§4a-3). (v1 = Seneca holds the static
   secret and mints capabilities client-side.)
@@ -422,12 +379,12 @@ implementation of the public control-plane API.
 - Its five slices (S1 daemon + auth, S2 persistent nonce, S3 image pinning, S4
   box provisioning, S5 Seneca flip) build Layer 1's v1 implementation and wire
   Seneca to it through Layer 3 (`SandboxProviderV1` `remote-worker`).
-- Its "internal-first, one-rented-KVM-VM" topology is exactly the v1 row of §1
+- Its "internal-first, one-rented-Linux-VM" topology is exactly the v1 row of §1
   — single box, single tenant, gVisor.
 - The governing rule (§3) is the constraint on how S5 (the Seneca flip) is
   allowed to land: Seneca must connect **as a consumer of the daemon's public
   API**, not via any bypass.
-- Meeting the plan's proof + the §1 exit criteria is what graduates v1 to the
+- Meeting the plan's proof + the plan v1-complete exit criteria is what graduates v1 to the
   v2 productization backlog (§5) and the E2B extraction spike.
 
 The plan stays the authority on *what ships first*. This document is the
@@ -435,240 +392,15 @@ authority on *what those slices are slices of*.
 
 ---
 
-## 9. The v1 control-plane API shape (grounded)
+## 9. The v1 control-plane API shape → see `api-spec.md`
 
-This section specifies the Layer-1 (§2) control-plane API concretely. It is
-**modeled on E2B's public SDK/API surface** as an **E2B-shaped subset**: it
-matches E2B's lifecycle/exec/fs **verb shape**, so an E2B-familiar agent's
-minimal loop (create → run command → read/write files → kill) ports with a thin
-client — but it is **not a drop-in** for full E2B SDK usage (see the honest
-gap list in §9.0). The auth handshake deliberately diverges for our sovereign
-security model. GTM framing (§7): *E2B-familiar surface, subset coverage,
-migration needs adaptation* — not "drop-in."
+The concrete Layer-1 (§2) control-plane API — the E2B-shaped-subset posture, the
+v1 endpoint set, the have/partial/new coverage map, the capability + single-use-
+nonce auth handshake, the `SandboxProviderV1` mapping, and the E2B-compatibility
+verdict — now lives in its own contract document:
+[`../issues/1081/api-spec.md`](../issues/1081/api-spec.md).
 
-**Grounding discipline:** every decision below carries a citation. `[SPEC]`
-points at [`../issues/1081/references/control-plane-api-spec.md`](../issues/1081/references/control-plane-api-spec.md)
-(the E2B-modeled spec, verified against E2B JS SDK v2.38.2 / Python v2.37.1 and
-the public OpenAPI reference); `[E2B-INT]` at
-[`../issues/1081/references/e2b-internals-architecture.md`](../issues/1081/references/e2b-internals-architecture.md)
-(E2B `infra` source tree); `[SURVEY]` at
-[`../issues/1081/references/build-vs-adopt-survey.md`](../issues/1081/references/build-vs-adopt-survey.md)
-(Docker-AuthZ CVE / build-vs-adopt); `[ISO]` at
-[`../issues/1081/references/isolation-choices-primary-sources.md`](../issues/1081/references/isolation-choices-primary-sources.md)
-(competitor isolation quotes). No decision here is ungrounded.
-
-### 9.0 E2B-compatibility posture
-
-- **Posture:** *E2B-SHAPED SUBSET, sovereign infra, stronger auth.* The
-  lifecycle/exec/fs verbs match E2B's SDK shape so an E2B-familiar agent's
-  minimal loop (create → run command → read/write files → kill) targets our
-  surface with a thin client (modeled on E2B `Sandbox`/`commands`/`files`; ref:
-  `[SPEC]` §1, §4). The execution then runs on EU bare metal under isolation we
-  own — the sovereignty delta E2B structurally cannot offer (ref: §7; `[SPEC]`
-  §4 GTM note).
-- **What is covered vs. the real gaps (honest, not "drop-in").** Covered in v1:
-  the create/exec/fs/renew/kill minimal loop (§9.1–§9.3). **Not** covered — the
-  gaps a real E2B migration hits:
-  - **Streaming stdout/stderr on the wire** (`onStdout`/`onStderr`, E2B's most-used
-    ergonomic) — buffered blob only in v1; streaming is a v1.1 target (§9.2).
-  - **Background commands / `sendStdin` / PTY** — no equivalent; v2 (§9.2).
-  - **`connect()` / `list()` / `getInfo` / metadata / labels** — no distinct verb;
-    v1.1+ (§9.1).
-  - **Create-time / per-command `envs` value pass-through** — replaced by
-    value-free `credentialRefs` (stronger, but a client code change; v1
-    fail-closes non-empty `credentialRefs`) (§9.2).
-  - **`getHost(port)` public URLs** — nothing in the protocol; kills dev-server /
-    preview use cases in v1; v2 (§9.3).
-  - **6 MiB fs transfer cap, no signed-URL bulk path** — streamed bulk is v1.1
-    (§9.3).
-  - **`@e2b/code-interpreter` `runCode`** — the surface most published E2B agent
-    examples use; **not modeled** (v1: never; a `runCode`-style convenience would
-    layer over `exec` in a client, not the wire). See §9.2.
-  - The **edge API-key compat shim** that makes the E2B SDK's own auth model work
-    at all is **unscheduled until v2** (§9.4, §5) — without it, an unmodified E2B
-    SDK cannot authenticate against our surface.
-  Net: **E2B-familiar verb shape, subset coverage; migration needs adaptation**,
-  and full SDK compatibility (streaming + list + shim) is a v1.1→v2 deliverable,
-  not a v1 fact.
-- **Backend-neutral surface, by design.** E2B's public surface names no
-  Firecracker/microVM/KVM terms — all abstractions are neutral
-  (`template`/`sandboxID`/`envd`/public URL) even though E2B runs Firecracker
-  underneath (ref: `[SPEC]` §1.7; `[E2B-INT]` §1, where microVM lives only in the
-  data-plane `orchestrator`, never the `api` contract). We adopt the same
-  discipline: our public verbs name no gVisor/Docker/runsc specifics. The one
-  leak today is the `isolation: "docker-runsc-systrap"` string in the **health**
-  response — the *public* health response should report a *tier*, not the runtime
-  (ref: `[SPEC]` §4 backend-neutrality note).
-- **Public prefix.** Verbs stay identical to what SBX1.4 built. Every v1 slice
-  (and S5's manual proof) ships the internal-daemon `/internal/v1/...` prefix; the
-  rename to a stable public `/v1/...` is a **v1.1** routing/naming decision (no
-  schema change), owned by the same v1.1 that promotes `fs/events` and streaming
-  (§9.6). The architecture describes the target public routes; the internal
-  prefix is what exists today (ref: `[SPEC]` §2.1).
-
-### 9.1 Lifecycle endpoints
-
-| Verb + path | Status | Decision & grounding |
-| --- | --- | --- |
-| `POST /v1/sandboxes` — **create** | HAVE | Modeled on E2B `Sandbox.create()` (ref: `[SPEC]` §1.1, §4). Implemented today as `POST /internal/v1/sandboxes` → `RemoteWorkerCreateResponseSchemaV1` returning `sandboxId`, `runtimeCwd=/workspace`, `leaseExpiresAtMs`, and an authenticated `bindingReceipt` (ref: `[SPEC]` §2.1, §2.4). **Differs from E2B:** the daemon **constructs** the create request server-side from an already-authorized `workspaceId`; it never accepts a caller-supplied workspace identity or a raw container spec (ref: `[SPEC]` §2.4, §3.2 — daemon threat model, `sbx1-own-cloud-provider-plan.md` §H1). E2B accepts a client `templateID`; we accept a template *reference* validated against pinned digests, never raw container params (ref: `[SPEC]` §4). |
-| `DELETE /v1/sandboxes/{id}` — **kill** | HAVE | Modeled on E2B `Sandbox.kill()` (ref: `[SPEC]` §1.1). Implemented as `DELETE /internal/v1/sandboxes/{id}` → `{ disposed: true }` (ref: `[SPEC]` §2.1, §2.4). |
-| `POST /v1/sandboxes/{id}/renew` — **TTL keepalive** | HAVE | Our equivalent of E2B `setTimeout` / the idle-timeout window (ref: `[SPEC]` §1.1 `setTimeout`, coverage map). `idleTimeoutMs` (≤ 30 min) → new `leaseExpiresAtMs` (ref: `[SPEC]` §2.4). |
-| **connect / reconnect** | PARTIAL | E2B has an explicit `Sandbox.connect()` with pause/auto-resume (ref: `[SPEC]` §1.1). We have no distinct verb: a fresh capability is minted per operation against an existing `sandboxId`, and the stored binding record is the source of truth (ref: `[SPEC]` §2.4). Reconnecting an events stream after expiry needs a fresh capability. **Divergence is intentional** — no long-lived connection handle on the isolation boundary. |
-| `GET /v1/sandboxes` — **list** | NEW (v1.1+) | E2B `Sandbox.list()` (ref: `[SPEC]` §1.1). Not present in `RemoteWorkerOperationSchemaV1`; deferred so v1 does not become product-complete (guardrail §6; ref: `[SPEC]` §2.4, §5). |
-| **getInfo / metadata / labels** | NEW (v1.1+) | E2B `getInfo`/create-time `metadata` (ref: `[SPEC]` §1.1). Not modeled on our create today (create carries `sessionId`, `clientLeaseId`, digests); deferred (ref: `[SPEC]` §2.4). |
-| **pause / resume / snapshot / fork** | NEW (v2) | E2B `pause`/`createSnapshot`/`fork` back their UFFD snapshot/restore fast-start (ref: `[SPEC]` §1.1; `[E2B-INT]` §1 orchestrator "UFFD snapshot restore"). v2 only — harvest E2B's proven snapshot plumbing (§5 TAKE row), never build in v1 (guardrail §6). |
-
-### 9.2 Exec / run + streaming
-
-- `POST /v1/sandboxes/{id}/exec` — **HAVE.** Modeled on E2B `commands.run()` →
-  exit code + stdout/stderr (ref: `[SPEC]` §1.2, §4). Request (`RemoteWorkerExecRequestV1`):
-  `invocationId`, single-string `command` (≤ 64 KiB), optional `cwd`,
-  `timeoutMs` (≤ 15 min), `maxOutputBytes` (≤ 4 MiB); response carries
-  `stdoutBase64`/`stderrBase64`, `exitCode`, `durationMs`, `truncated` (ref:
-  `[SPEC]` §2.2). The in-guest contract is `Sandbox.exec(cmd, opts)` in
-  `packages/agent/src/shared/sandbox.ts` (ref: `[SPEC]` §2.2).
-- **Streaming stdout/stderr** — PARTIAL, v1.1 target. The in-guest layer already
-  has incremental `onStdout`/`onStderr` byte-stream callbacks (`ExecOptions`),
-  but the wire `exec` response is a buffered base64 blob — no per-chunk HTTP
-  stream yet. Matching E2B's streaming `CommandHandle` needs a streaming exec
-  response (ref: `[SPEC]` §1.2, §2.2, coverage map, §5 v1.1).
-- **Secret injection differs (stronger).** E2B passes plain create-time `envs`
-  and per-command `envs` (ref: `[SPEC]` §1.5). Ours carries **value-free
-  `credentialRefs`** resolved host-side, so secret *values* never cross the wire
-  or reach the box in the request (ref: `[SPEC]` §2.2, coverage map "envs"). Plain
-  `env` in `ExecOptions` is still supported for non-secret vars.
-- **background handle / `sendStdin` / PTY** — NEW. E2B `commands.run({background})`,
-  `sendStdin`, and `pty.*` have no equivalent in the protocol; deferred to v2
-  (ref: `[SPEC]` §1.2, coverage map, §5 v2).
-- **`@e2b/code-interpreter` `runCode`** — NOT MODELED (the surface most published
-  E2B agent examples actually use). We expose `exec` (a shell command), not a
-  language-kernel `runCode`; a `runCode`-style convenience would be a **client-side
-  wrapper over `exec`**, never a distinct wire verb. Explicitly out of scope for
-  v1/v1.1; revisit only if a concrete customer needs kernel semantics (ref:
-  `[SPEC]` coverage map).
-
-### 9.3 Filesystem read/write/list
-
-- `POST /v1/sandboxes/{id}/fs` — **HAVE.** Modeled on E2B `sandbox.files.*`
-  (`read`/`write`/`list`/`getInfo`/`exists`/`makeDir`/`rename`/`remove`; ref:
-  `[SPEC]` §1.3, §4). Implemented as `RemoteWorkerWorkspaceOperationSchemaV1`, a
-  discriminated union on `op`: `readFile`, `readBinaryFile`, `writeFile`,
-  `writeBinaryFile`, `readFileWithStat`, `writeFileWithStat`,
-  `writeBinaryFileWithStat`, `unlink`, `readdir`, `stat`, `mkdir` (`recursive?`),
-  `rename` (`from`/`to`). Text ≤ 6 MiB per transfer; binary carried base64 (ref:
-  `[SPEC]` §2.3). E2B `exists` maps to our `stat` (ref: `[SPEC]` coverage map).
-- This is a **1:1 map** onto the `Workspace` interface
-  (`packages/agent/src/shared/workspace.ts`); paths are workspace-relative and
-  **path validation is an adapter concern** (coding-invariant 4; ref: `[SPEC]`
-  §2.3).
-- `GET /v1/sandboxes/{id}/fs/events` — **HAVE** (SSE), promote to public in v1.1.
-  Modeled on E2B `files.watchDir` (ref: `[SPEC]` §1.3). Backed by `Workspace.watch()`
-  over an SSE stream of `RemoteWorkerFsEventEnvelopeSchemaV1` (ref: `[SPEC]` §2.1,
-  §2.3, §5 v1.1).
-- **Bulk / signed-URL upload/download** — PARTIAL. E2B offers signed-URL
-  upload/download; we carry binary via base64 ≤ 6 MiB with no streamed multi-MB
-  path. Streamed bulk transfer is a v1.1 item (ref: `[SPEC]` §1.3, coverage map,
-  §5 v1.1).
-- **Ports / `getHost(port)` public URLs** — NEW (v2). E2B exposes per-port public
-  URLs (ref: `[SPEC]` §1.4). Nothing in our protocol; a deliberate v1 gap (ref:
-  `[SPEC]` §4, §5 v2).
-
-### 9.4 The auth handshake — capability token + single-use nonce (the deliberate divergence)
-
-This is where we **must** differ from E2B, and the divergence is the security
-selling point, not a gap.
-
-- **E2B model:** every SDK request carries a **long-lived reusable API key**
-  (`E2B_API_KEY`, header `X-API-Key`) (ref: `[SPEC]` §1.6, §3.1).
-- **Our model:** every operation is authorized by a **short-lived capability** in
-  `x-boring-internal-token` whose claims (`RemoteWorkerCapabilityClaimsSchemaV1`)
-  bind `protocolVersion`, `workerId`, `workspaceId`, `operation`, `sandboxId`,
-  `requestDigest` (SHA-256 of the exact request), `issuedAtMs`/`expiresAtMs`, and
-  a **single-use `nonce`** (ref: `[SPEC]` §3.1). Max lifetime 5 min
-  (`REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS`); the nonce lives in a persistent
-  append-only store, replay is rejected (`REMOTE_WORKER_CAPABILITY_REPLAY`), and
-  consumed nonces survive a daemon restart via **transactional global nonce
-  uniqueness across processes/connections** (SBX1.4-C / #1167; the boot-epoch
-  proposal is intentionally subsumed by transactional uniqueness per plan S2 —
-  V1 stores no epoch column; ref: `[SPEC]` §3.1, §1 exit-criteria 3).
-- **Why we diverge — a design judgment grounded in the Docker-AuthZ CVE class:**
-  *own your security edge; never inherit someone else's reusable-key or bolt-on
-  authz on your isolation boundary.* The primary source is CVE-2024-41110 (Docker
-  Engine AuthZ-plugin bypass, CVSS 10.0) — an authorization layer bolted in front
-  of a root-equivalent runtime socket failed because the daemon forwarded a
-  body-less request past it; see `[SURVEY]` "Security lesson — the Docker-AuthZ
-  CVE class" for the citation. A leaked E2B key grants standing access until
-  rotated; a leaked boring capability is already expired and already consumed
-  (ref: `[SURVEY]`; `[SPEC]` §3.1; §5 OWN row). This is the OWN disposition of the
-  TAKE/ADAPT/OWN/RE-HOST split (§5) made concrete.
-- **v1 auth caveat (stated plainly):** the capability/nonce model is genuinely
-  stronger *per request* — but in v1 both the issuer (Seneca) and the verifier
-  (the daemon) derive from **one static shared secret the plan's threat model
-  calls host-root-equivalent**. A leaked capability is already dead; a leaked
-  *secret* is the whole box. The per-request strength is real; the v1 key
-  material is not yet multi-tenant. (See §3 and the plan's threat model.)
-- **`sandboxId` alone never authorizes.** Every request loads the stored binding
-  record by `sandboxId` and compares all binding claims to the independently
-  authorized capability *before* touching Workspace, Docker, the invocation
-  cache, or the lease timer; no request body or box-reported identity may replace
-  the stored binding (ref: `[SPEC]` §3.2, `sbx1-own-cloud-provider-plan.md` §H1).
-  Cross-workspace combinations return one stable, non-revealing code
-  (`REMOTE_WORKER_SANDBOX_WORKSPACE_MISMATCH`) with zero Docker effect (ref:
-  `[SPEC]` §3.2) — satisfying coding-invariant 8 (every error has a stable code).
-- **The daemon exposes exec/fs verbs, never a raw Docker/containerd socket** —
-  there is no "run this container spec" endpoint (ref: `[SPEC]` §3.2). This is the
-  structural opposite of "proxy Docker," and is what makes owning the thin auth
-  layer tractable (small surface; ref: §5 OWN row).
-- **E2B-compat shim (edge) — the component that equalizes Seneca and a public
-  customer, and it is NOT in v1.** A public SDK user cannot present one static
-  key at the boundary. The compat shim accepts a public API key **at the edge**
-  and **mints per-operation capabilities server-side**; the key never reaches the
-  isolation boundary (ref: `[SPEC]` §3.1 trade-off, §4). Until it exists, Seneca
-  (holding the static secret and minting capabilities client-side) **is** the
-  privileged first-party path in the capability-issuance dimension — see §3. The
-  shim is scheduled as a named **v2** deliverable in the productization backlog
-  (§5, "Multi-tenant auth & API keys" — the edge issuer/verifier split is part of
-  that bead) and is a hard precondition of the public-opening gate (§4a). It
-  preserves the E2B-familiar GTM posture (§9.0) without weakening the boundary.
-
-### 9.5 Isolation/tenancy grounding for the API tiers
-
-The API surface is isolation-tier-neutral (§9.0), but the *tier selection* the
-Layer-1 API performs is grounded in primary sources:
-
-- **v1 = gVisor / runsc, single-tenant, semi-trusted.** Modal runs *dense
-  multi-tenant* production on gVisor: "Sandboxes are built on top of gVisor … that
-  provides strong isolation properties" and "stronger isolation than most other
-  container runtimes" (ref: `[ISO]` §1 Modal quotes). gVisor is a syscall-
-  interception boundary — appropriate for our own agents on our own box (§4).
-- **v2 dedicated tier = microVM / Firecracker, untrusted strangers.** Fly.io
-  frames Firecracker as hardware-grade isolation for untrusted multi-tenant
-  workloads (ref: `[ISO]` — Fly.io Firecracker quotes). Selected per trust level
-  by the Layer-1 API, placed by Layer-2, implemented as a second
-  `SandboxProviderV1` behind the frozen contract (§4, §2 Layer-3 row).
-- The API contract does **not** change across this escalation — only the tier
-  string the create call resolves does. `gVisor-v1 → microVM-v2` is a Layer-3
-  provider swap, not an API reshape (§4; ref: `[SPEC]` §1.7 backend-neutrality).
-
-### 9.6 The minimal v1 cut (what ships in SBX1.4)
-
-Smallest set to prove the sovereign execution path; everything else is explicitly
-deferred so v1 does not become product-complete (guardrail §6; ref: `[SPEC]` §5):
-
-1. `GET  /v1/health` — evidence/qualification/image-digest admission gate.
-2. `POST /v1/sandboxes` — create (server-constructed, capability+nonce, binding receipt).
-3. `POST /v1/sandboxes/{id}/exec` — run command, exit code, buffered stdout/stderr.
-4. `POST /v1/sandboxes/{id}/fs` — read/write/list/stat/mkdir/rename/unlink (+binary).
-5. `POST /v1/sandboxes/{id}/renew` — TTL keepalive (idle timeout).
-6. `DELETE /v1/sandboxes/{id}` — kill/dispose.
-7. Capability + single-use-nonce auth on every call (`x-boring-internal-token`).
-
-**v1.1 near-term:** promote SSE `fs/events` to public; streaming exec response;
-`GET /v1/sandboxes` list + create-time `metadata`; streamed bulk transfer.
-**v2:** ports/public URLs, background/PTY, multi-tenant keys/quotas/metering,
-microVM tier. (All ref: `[SPEC]` §5.)
-
-> **Grounding-coverage note:** every row/bullet in §9 carries a `[SPEC]`/`[E2B-INT]`/
-> `[SURVEY]`/`[ISO]` citation. The full E2B-modeled spec (with the verified E2B
-> §1 surface and the have/partial/new coverage map) is the driving reference:
-> [`../issues/1081/references/control-plane-api-spec.md`](../issues/1081/references/control-plane-api-spec.md).
+That document is the authority on the API surface; the raw research it consolidates
+is [`../issues/1081/references/control-plane-api-spec.md`](../issues/1081/references/control-plane-api-spec.md).
+This architecture doc stays the authority on *why Layer 1 is the product* (§2, §3);
+api-spec.md is the authority on *what the wire contract is*.

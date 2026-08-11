@@ -10,31 +10,25 @@ track: owner
 
 # gh-1081 — SBX1.4 internal-first sandbox service execution plan r1
 
-> **Unified into PR #1220.** This execution plan and the sandbox architecture/
-> vision ([`../../direction/sandbox-service-architecture.md`](../../direction/sandbox-service-architecture.md))
-> are the same product at two altitudes and are reviewed as one owner-gate. This
-> plan originated as PR #1219 (branch `agent/docs-sbx14-plan`); PR #1219 is
-> superseded by #1220.
+> **This is the execution plan** — *what ships first*, and how. It is one of the
+> three documents in the unified owner-gate **PR #1220**:
 >
-> **Review lineage preserved (do not lose):** this plan was adversarially
-> reviewed before unification — **L1 (Opus)** required changes applied in commit
-> `e17242958`, **L2 (Fable)** findings applied in commit `0aedd1a9d` (rotation
-> dual-verify overlap, SKU/MagicDNS procurement constraints, honest manual
-> reminder step). See PR #1219 history for the full review record.
+> - [`../../direction/sandbox-service-architecture.md`](../../direction/sandbox-service-architecture.md)
+>   — the architecture/vision (*why*, and *what a layer is*).
+> - **this file** — the S1–S5 execution plan (*how, and when*).
+> - [`api-spec.md`](api-spec.md) — the control-plane API contract (*the wire
+>   surface*). Where this plan needs an endpoint, schema, or auth detail, it
+>   **references** api-spec.md rather than restating it.
 >
-> This is the authority on *what ships first*; the architecture doc is the
-> authority on *what those slices are slices of*.
->
-> **Implementation-grade deepening (2026-08-11):** each slice now carries a
-> "Files and modules touched," concrete API/RPC/schema/DDL shapes, and a
-> "Grounded in E2B" note citing the specific E2B pattern being mirrored
-> (`references/e2b-internals-architecture.md`,
-> `references/control-plane-api-spec.md`). A new "v1 structure recommendation"
-> section applies e2b-internals §8's structure-rec as the actual package/module
-> layout. This pass **deepens** the plan; it does not undo any L1/L2/adversarial
-> fix (transactional nonce uniqueness, public-opening gate, honest dogfood
-> framing, E2B-shaped-subset, honest Layer-2/Layer-4 "measured not built"
-> caveats all preserved).
+> This plan originated as PR #1219 (branch `agent/docs-sbx14-plan`), now
+> superseded by #1220. It was adversarially reviewed before unification —
+> **L1 (Opus)**, commit `e17242958`, and **L2 (Fable)**, commit `0aedd1a9d`
+> (rotation dual-verify overlap, SKU/MagicDNS procurement constraints, honest
+> manual reminder step). See PR #1219 history for the full review record. Every
+> L1/L2/adversarial fix is preserved: transactional nonce uniqueness (no
+> boot-epoch), the public-opening gate, honest dogfood framing (v1 Seneca
+> privileged), the E2B-shaped subset, and the honest Layer-2/Layer-4
+> "measured not built" caveats.
 
 ## Plan methodology & template crosswalk
 
@@ -68,7 +62,7 @@ session). No beads are created by this docs-only PR.
 Ship one owner-operated EU sandbox worker for seneca production. Seneca keeps
 the agent/control plane; `BORING_AGENT_MODE=remote-worker` sends each agent
 session to a Docker container running under gVisor `runsc --platform=systrap`
-on one rented KVM VM. The worker exposes the already-merged remote-worker V1
+on one rented Linux VM. The worker exposes the already-merged remote-worker V1
 protocol through a minimal HTTP daemon authenticated by one static shared
 bearer secret.
 
@@ -89,19 +83,23 @@ seneca production (agent/control plane)
         |
         | HTTPS over Tailscale + one pre-shared bearer secret
         v
-one rented EU KVM VM (OVH for v1; no public listener)
+one rented EU Linux VM (OVH for v1; no public listener)
         |  provider hypervisor = boundary 1
         v
 minimal V1 worker daemon -> Docker -> one runsc/systrap sandbox per session
                                       runsc sandbox = tenant boundary
 ```
 
-- The VM is rented from a provider. It is **not** a self-hosted nested VM on
-  bare metal. Infomaniak or Hikube are acceptable future CH placements; OVH is
-  the ratified EU placement and seneca target for v1.
+- The v1 host is a standard rented Linux VM. The provider virtualizes it
+  (typically with KVM), but v1 itself uses **no** `/dev/kvm` — gVisor is
+  user-space. It is **not** a self-hosted nested VM on bare metal. Infomaniak or
+  Hikube are acceptable future CH placements; OVH is the ratified EU placement
+  and seneca target for v1.
 - `runsc --platform=systrap` needs no `/dev/kvm`. The 2026-08-10 proof ran the
   same Docker+runsc shape inside a nested KVM guest and passed all 11 hostile
   probes, so v1 does not provision, require, or pass through `/dev/kvm`.
+  (`/dev/kvm` and bare-metal/nested-virt are v2 microVM/Firecracker concerns,
+  not v1 ones.)
 - One runsc sandbox is created per agent session. For the internal-first
   deployment, that is the tenant boundary. VM-per-tenant is a later enterprise
   placement option, not a v1 requirement.
@@ -193,7 +191,7 @@ the workspace helper's mandatory `openat2` call. The older host run proved that
 `release-20260706.0` returns `ENOSYS`; no supplied evidence yet proves a runsc
 release that admits the real workspace path.
 
-Before S1 begins, provision a disposable rented KVM VM, start with
+Before S1 begins, provision a disposable rented Linux VM, start with
 `release-20260803.0`, and run the existing SBX1.3 integration preflight against
 candidate releases until the `workspace-openat2-fs` and `symlink-swap-race`
 follow-ups are absent and both `workspace-fs` (with `openat2Probe: true`) and
@@ -249,7 +247,7 @@ Grounded one-for-one in e2b-internals §8 "Collapse (v1)" and "Skip":
 
 - **No `client-proxy`** (E2B `packages/client-proxy`): sandbox routing folds into
   the single daemon. There is no `<port>-<sandboxId>.domain` ingress in v1;
-  `getHost(port)` public URLs are a v2 gap (control-plane-api-spec §1.4, §5 v2).
+  `getHost(port)` public URLs are a v2 gap (api-spec §3.3, §4 v2).
 - **No Redis tier** (E2B cache/locks): routing/locks fold into the SQL table +
   in-process state. The nonce store is the only durable coordination primitive
   and it is SQLite (S2), matching e2b-internals §5 "Redis-tier state can start as
@@ -407,51 +405,30 @@ New, all under the already-shipped `packages/boring-sandbox`:
   `RemoteWorkerTransportV1` (`transport.ts` interface): `fetch` for unary verbs,
   a bounded SSE reader for `openEventStream`. This is the client half S5 reuses.
 
-### HTTP surface — the minimal v1 endpoint list
+### HTTP surface
 
-The daemon's API surface is exactly the "minimal v1 API cut" of
-`references/control-plane-api-spec.md` §5 / §2.1, at the internal-daemon
-`/internal/v1/...` prefix that exists today (the public `/v1/...` rename is a
-v1.1 no-schema-change decision, architecture §9.0):
-
-| Verb + path | Op | Guards before runtime | Binds to E2B `SandboxService` RPC |
-| --- | --- | --- | --- |
-| `GET /internal/v1/health` | health | none (public admission facts only) | (no direct RPC — E2B exposes cluster health via Consul; ours is a single-box evidence/digest gate) |
-| `POST /internal/v1/sandboxes` | create | body-bound → schema → limiter → capability(create) → deterministic `sandboxId` → digest pin (S3a) | `SandboxService.Create` |
-| `POST /internal/v1/sandboxes/:id/exec` | exec | + binding authorize by `sandboxId` | (envd `Process.Start`, proxied) |
-| `POST /internal/v1/sandboxes/:id/fs` | fs | + binding authorize | (envd `Filesystem.*` + HTTP up/download) |
-| `GET /internal/v1/sandboxes/:id/fs/events` | events | + binding authorize, bounded SSE | (envd `Filesystem.WatchDir`) |
-| `POST /internal/v1/sandboxes/:id/renew` | renew | + binding authorize | `SandboxService.Update` (TTL) |
-| `DELETE /internal/v1/sandboxes/:id` | delete | + binding authorize | `SandboxService.Delete` |
-
-`list`, `pause`, `checkpoint` from E2B's RPC set (e2b-internals §1 appendix) are
-deliberately absent in v1: `list` is v1.1, `pause`/`checkpoint` are the v2 UFFD
-snapshot/restore tier (control-plane-api-spec §5; architecture §9.1). The daemon
-does not invent verbs beyond this fixed set — Decision 4.
+The daemon implements exactly the seven-route v1 endpoint set defined in
+[`api-spec.md`](api-spec.md) §2 — the unauthenticated `health` gate plus the six
+capability-guarded sandbox routes (`create`/`exec`/`fs`/`fs/events`/`renew`/
+`delete`), at the internal-daemon `/internal/v1/...` prefix that exists today (the
+public `/v1/...` rename is a v1.1 no-schema-change decision, api-spec §1). Each
+guarded route runs the ordered guard chain — body-bound → schema → limiter →
+capability decode/verify → binding authorize → runtime proxy → redacted response —
+before any runtime access, and the daemon invents no verb beyond this fixed set
+(Decision 4). The wire schemas, coverage map, and E2B `SandboxService` RPC mapping
+are the contract in api-spec.md, not restated here.
 
 ### Grounded in E2B
 
-- **Mirrors E2B's `SandboxService` RPC set, not its transport.** e2b-internals §1
-  appendix confirms `service SandboxService { Create, Update, List, Delete,
-  Pause, Checkpoint }`, and §2 shows `api` never touches a VM directly — it
-  speaks gRPC to the orchestrator's `SandboxService`. Our six sandbox routes
-(health aside) are the same
-  lifecycle verbs (Create/Update=renew/Delete + the exec/fs data path envd
-  serves), but over HTTP+SSE instead of gRPC, because v1 **collapses the
-  api↔orchestrator boundary onto one box** (e2b-internals §8 v1). The
-  control-plane/data-plane split E2B makes physical across `api` and `client`
-  node pools (e2b-internals §1 "Node pools", §2) is, in v1, an in-process
-  function call from the router to `RunscSessionRuntimeV1`.
-- **Our auth is deliberately NOT E2B's team API-key.** e2b-internals §6: E2B uses
-  (1) a long-lived team API key at the edge (`api/internal/middleware`, Postgres
-  + Redis cache) and (2) a single long-lived per-sandbox bearer `secure_token`
-  minted by envd. There is no per-request nonce. Our daemon replaces both with
-  the capability-token + single-use-nonce codec at the same choke point
-  (e2b-internals §6 "we'd swap its single `secure_token` for our nonce-scoped
-  capability check at the same choke point, `internal/api/auth.go` equivalent").
-  The trade-off — a public SDK cannot present one static key — is why the edge
-  compat shim exists (control-plane-api-spec §3.1), and that shim is explicitly
-  v2, not this slice.
+- **Collapses E2B's api↔orchestrator boundary onto one box.** e2b-internals §2
+  shows `api` never touches a VM directly — it speaks gRPC to the orchestrator's
+  `SandboxService` (Create/Update/List/Delete/Pause/Checkpoint, §1 appendix). Our
+  routes serve the same lifecycle verbs (Create/Update=renew/Delete + the exec/fs
+  data path) over HTTP+SSE instead of gRPC, because v1 **collapses that boundary**
+  (e2b-internals §8 v1): the control-plane/data-plane split E2B makes physical
+  across `api` and `client` node pools is, in v1, an in-process function call from
+  the router to `RunscSessionRuntimeV1`. The capability+nonce auth that replaces
+  E2B's team API-key and per-sandbox `secure_token` is specified in api-spec §3.4.
 - **Tailscale-only bind mirrors E2B's private data-plane assumption.** E2B's
   orchestrator/envd are never public; only `client-proxy` faces inbound sandbox
   traffic (e2b-internals §1). v1 has no client-proxy, so the daemon has no public
@@ -479,22 +456,22 @@ mirror that split:
    `Filesystem` service streams `Stat`/`MakeDir`/`Move`/`ListDir`/`Remove` and
    `WatchDir` (e2b-internals §3). Our in-guest `Sandbox.exec` already carries the
    streaming primitives (`onStdout`/`onStderr`/`onHeartbeat` byte callbacks,
-   `signal`, `timeoutMs` — control-plane-api-spec §2.2), and `Workspace.watch()`
+   `signal`, `timeoutMs` — api-spec §2.2), and `Workspace.watch()`
    backs `fs/events`. The alignment gap is that the *wire* `exec` response is a
    buffered base64 blob today (streaming stdout/stderr is the v1.1 target,
-   architecture §9.2); the daemon's exec route is shaped so a streaming response
+   api-spec §2.2); the daemon's exec route is shaped so a streaming response
    is an additive change, not a verb reshape.
 2. **Plain HTTP for bulk file content.** envd keeps file *content* read/write
    **out of the proto** and serves it over HTTP (`internal/api/{upload,download}.go`),
    reserving gRPC for metadata (e2b-internals §3 "File content read/write is NOT
    in the proto"). v1's `fs` op carries binary as base64 ≤ 6 MiB inline — the
    honest v1 limit; the streamed/signed-URL bulk path is the v1.1 item
-   (control-plane-api-spec §2.3, §5). Mirroring envd means bulk content should
+   (api-spec §2.3, §4). Mirroring envd means bulk content should
    graduate to a dedicated HTTP transfer surface, not grow the JSON `fs` union.
 3. **Port scanner.** envd's `internal/port` (`scan.go`, `scan_subscriber.go`)
    autonomously detects guest listeners and surfaces them to the proxy
    (e2b-internals §3). v1 has no `getHost(port)` and no client-proxy, so the
-   port-scanner concept is a **v2 deliverable** (control-plane-api-spec §5 v2);
+   port-scanner concept is a **v2 deliverable** (api-spec §4 v2);
    it is named here only so boring-bash's guest surface reserves the seam.
 
 envd mints a per-sandbox `secure_token` at init to authenticate all guest calls
@@ -822,13 +799,14 @@ The immutable, content-addressed identity of *what runs* is E2B's template/build
 digest. S3a is the v1 analog reduced to a single pinned OCI manifest digest: v1
 has one workload image, admitted once by the S4 evidence run, and the daemon
 constructs the create call from that pinned digest — never a client-supplied
-spec (control-plane-api-spec §3.2 "we accept a template *reference* validated
+spec (api-spec §3.3 "we accept a template *reference* validated
 against pinned digests, never raw container params"). E2B's richer
 **template/snapshot model** — `create-build`/`resume-build`, UFFD snapshot
 restore, `Pause`/`Checkpoint` (e2b-internals §4) — is the **v2 evolution** of
 this pin: a v2 provider swaps the single-digest gate for template/snapshot
-selection behind the same `SandboxProviderV1` contract (architecture §9.1
-pause/resume/snapshot = v2, §5 TAKE row "UFFD snapshot/restore fast-start").
+selection behind the same `SandboxProviderV1` contract (api-spec §2.1, §4
+pause/resume/snapshot = v2; architecture §5 TAKE row "UFFD snapshot/restore
+fast-start").
 
 ### Acceptance and proof
 
@@ -973,7 +951,7 @@ docs/config exemption from the two review lines.
 **Review budget:** inside for the committed script + runbook; the admission run
 itself is an operator action on the box, not reviewed LOC.  
 **Blocked by:** exact S1-S3b release/artifact cohort.
-**Delivers:** one reproducibly configured OVH EU KVM VM and the manual
+**Delivers:** one reproducibly configured rented Linux VM (OVH EU) and the manual
 admission record for that box.
 
 ### Today
@@ -1010,8 +988,9 @@ admission record for that box.
   matches the configured tailnet DNS name, the tailnet ACL admits only seneca,
   and the provider firewall exposes no public daemon/HTTP/HTTPS port.
 - Pin Docker/runsc versions and downloaded checksums; register runsc with the
-  observable `--platform=systrap` runtime arg. Assert KVM virtualization but do
-  **not** require `/dev/kvm`.
+  observable `--platform=systrap` runtime arg. Assert the host is a
+  provider-virtualized guest but do **not** require or pass through `/dev/kvm`
+  (systrap is user-space; `/dev/kvm` is a v2 microVM concern).
 - Format/mount a dedicated operator-selected data volume as ext4 or XFS with
   project quotas, persist the mount, and make `--check` prove `prjquota` is
   active. The script must require an explicit block device/mount target and
@@ -1063,7 +1042,7 @@ E2B runs three ops machines that S4 **collapses into one runbook on one box**:
 | E2B ops concept (e2b-internals) | E2B mechanism | S4 single-box mapping |
 | --- | --- | --- |
 | **Image/template build** (§4) | `template-manager` on the `build` node pool builds the VM artifact; artifacts are content-addressed, chunked, stored in GCS/S3 | S4 builds the workload image from the committed `src/providers/runsc/runtime/workload/Dockerfile`, pushes to an operator-selected **private registry**, and pins the canonical `repository@manifestDigest` read from BuildKit's `image-metadata.json` (cross-checked with `docker buildx imagetools inspect`). No build *service* runs — one build, one pinned digest (§S3a). |
-| **Node provisioning** (§1 node pools; §7 Nomad/Consul/Terraform weld) | `iac/` Terraform stands up `control`/`api`/`client`/`build`/`clickhouse` pools; Nomad schedules onto `client` (Firecracker, nested-virt) nodes | S4's `provision-runsc-worker.sh --apply` provisions **one** rented KVM VM: pinned Docker/runsc with `--platform=systrap`, the `prjquota` data volume, the root quota helper, Caddy/Tailscale ingress, systemd unit. This replaces E2B's entire `iac` + Nomad node-pool machinery — e2b-internals §7 names Nomad/Consul/Terraform as "the biggest weld … replace wholesale with our own." |
+| **Node provisioning** (§1 node pools; §7 Nomad/Consul/Terraform weld) | `iac/` Terraform stands up `control`/`api`/`client`/`build`/`clickhouse` pools; Nomad schedules onto `client` (Firecracker, nested-virt) nodes | S4's `provision-runsc-worker.sh --apply` provisions **one** rented Linux VM (provider-virtualized, no `/dev/kvm`): pinned Docker/runsc with `--platform=systrap`, the `prjquota` data volume, the root quota helper, Caddy/Tailscale ingress, systemd unit. This replaces E2B's entire `iac` + Nomad node-pool machinery — e2b-internals §7 names Nomad/Consul/Terraform as "the biggest weld … replace wholesale with our own." |
 | **Service discovery / health catalog** (§1 Consul) | Consul is the live catalog of which node runs which sandbox + node health | S4 has no catalog: the single-worker config *is* the registry, and `--check` is the health gate (openat2, prjquota, Caddy bind, tailnet ACL, firewall). Admission = installing evidence into config, not registering with a catalog. |
 | **Continuous admission** (architecture §5 SBX1.5) | (E2B assumes healthy nodes stay in the Nomad pool; drift handling is fleet-level) | Deliberately **manual per box** (Decision 6): one green evidence run on the exact box, digests copied into config. Continuous evidence-bound admission, drift fence, and CVE game-day are the SBX1.5 v2 target, explicit non-goals here. |
 
@@ -1074,7 +1053,7 @@ aggressively" instruction applied to ops.
 
 ### Acceptance and proof
 
-Run the entire block from an audited root login shell on the rented OVH KVM VM,
+Run the entire block from an audited root login shell on the rented OVH Linux VM,
 against the release checkout and an explicit data device chosen by the
 operator. The root shell is required because `--apply` intentionally makes the
 admission directory root-owned and shell redirections open evidence files
@@ -1336,6 +1315,80 @@ session may be in flight across it. Export required data with the named
 root-side bind-mount archive mechanism before the owner declares rollback
 complete; the untouched VM remains available for forensics or resumption.
 
+## v1-complete exit criteria (the gate to START v2)
+
+These are **v1-hygiene criteria**: meeting them means v1 is complete and the v2
+productization backlog (architecture §5) may start. They are **NOT** the gate to
+open the service to untrusted public strangers — that is the separate, higher bar
+below. Each is owner-gated and a claim we can point at, not a vibe:
+
+1. **Seneca has run production agent traffic on the remote runsc worker for a
+   sustained soak** (target: ≥ 4 weeks of real workspaces, no owner-visible
+   sandbox regression, no manual daemon babysitting between deploys).
+2. **The admission gate is admitting, not just refusing.** A real
+   `openat2`-passing runsc cohort exists and a fleet-admission evidence run binds
+   the frozen SBX1.4 digests (`fleetAdmissionClaimed: true`) — today it is
+   refusal-only (the single biggest v1 blocker; see
+   `references/sbx14-scoping.md`). Delivered by Gate 0 + S3b + S4.
+3. **Replay defense survives restart.** Persistent nonce store shipped with
+   **transactional global nonce uniqueness across processes/connections** (S2 /
+   #1167 — the earlier boot-epoch proposal is subsumed by this; V1 stores no epoch
+   column), with both the "consumed nonce survives simulated restart" and the
+   concurrent-connection "exactly one accepted, one replay" regressions green.
+4. **Image pinning is enforced.** No container starts unless workload + helper
+   digests equal the admitted evidence digests (S3a), fail-closed with a stable
+   code.
+5. **The control-plane API is the only path Seneca uses.** No `Seneca-special`
+   bypass exists in the codebase, enforced by two concrete invariants (architecture
+   §3): (a) no production code path branches on caller identity, and (b) V1-mode
+   combined with legacy `BORING_WORKER_BASE_URL` env fails closed (delivered by
+   S5). Part (b) ships in S5; **part (a)'s automated `check:invariants` rule is NOT
+   yet implemented by any slice** — until it lands, this criterion is not
+   mechanically evaluable and cannot be claimed met (owed work, named in
+   architecture §3).
+6. **A qualified-box runbook exists and has been rehearsed once** — provision,
+   register, admit, drain, restore — so a second box can be stood up without the
+   owner in the loop for every step (S4 + S5 rollback drill).
+
+Until 1–6 hold, the service stays single-tenant Seneca-only. Meeting them is the
+gate to **start** the v2 productization backlog (architecture §5), **not** a signal
+to have built any of it early (architecture §6), and **not** authorization to admit
+untrusted public strangers — that requires the separate public-opening gate below.
+
+## The public-opening gate — a SEPARATE, higher bar
+
+The v1-complete criteria make v1 *complete*; they say **nothing** about the
+isolation/tenancy escalation that opening to untrusted strangers requires. Before
+the **first untrusted self-serve stranger** is admitted, all of the following must
+hold — a distinct gate, evaluated *after* the v1-complete gate, not implied by it:
+
+1. **Isolation-tier decision (firm position).** Untrusted public self-serve
+   **requires the microVM / Firecracker tier plus the continuously-running SBX1.5
+   evidence-admission gates.** Shared gVisor is authorized only for trusted /
+   first-party tenants (Seneca and named design partners) until an **explicit,
+   written owner risk-acceptance** for shared gVisor lands — contingent on the
+   operational preconditions Modal's dense-gVisor product implies but our v2
+   backlog does not yet carry: a gVisor CVE-response SLO, continuously-running
+   escape canaries (today scoped only inside SBX1.5), and an abuse pipeline (item
+   2). The v2 "gVisor (shared, dense)" tier is **not** a self-serve-untrusted
+   default until that acceptance exists (architecture §4).
+2. **Egress + abuse controls.** v1's posture is egress-denial (probed in S4). A
+   public product cannot be egress-deny-only (E2B offers `allow_internet_access`),
+   and the moment egress opens, abuse handling is a launch blocker: a network
+   **egress policy** (default-deny with per-plan allowlisting), **rate limits /
+   concurrency and spend caps per tenant**, and an **abuse-detection story**
+   (anti-crypto-mining, outbound port-scanning / spam detection, takedown path).
+   These are v2 backlog items and explicit public-opening blockers (architecture
+   §5).
+3. **Multi-tenant auth actually exists.** Per-tenant identity, the edge compat shim
+   / server-side capability issuer (api-spec §3.4) so no tenant holds the
+   host-root-equivalent secret, per-tenant DoS quotas, and tenant-isolation testing
+   must all exist and be tested before the first stranger arrives.
+
+Only when the v1-complete criteria (1–6) **and** this gate (1–3) both hold is the
+service authorized to open to untrusted public self-serve. Architecture §5 is the
+build backlog that gets us there.
+
 ## Per-slice review protocol
 
 Every implementation PR—S1, S2, S3a, S3b, S4, and S5—is reviewed independently
@@ -1402,8 +1455,8 @@ owner-required lines. No slice merges without explicit owner approval.
   CI job. Qualification is run manually on the one box.
 - VM-per-tenant. That remains a later enterprise placement configuration.
 - Self-nested bare metal, creating a QEMU guest, requiring `/dev/kvm`, or
-  qualifying runsc's KVM platform. V1 is one provider-rented KVM VM using
-  systrap.
+  qualifying runsc's KVM platform. V1 is one provider-rented Linux VM using
+  systrap with no `/dev/kvm`; nested-virt/bare-metal/microVM are v2 concerns.
 - A CH production worker in this slice. Infomaniak/Hikube remain valid future
   CH placement providers; the first target is OVH EU.
 - Metering, billing, usage accounting, admin console, fleet console, or
