@@ -1,4 +1,5 @@
 import type { AgentHostAgentSpec } from "@hachej/boring-agent/server"
+import { SCRIPTED_DEFAULT_AGENT_TYPE_ID } from "../../shared/playgroundAgents"
 
 function capabilityTool(name: string) {
   return {
@@ -26,7 +27,7 @@ export const SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS = [
 
 export const SCRIPTED_TWO_AGENT_FLEET = [
   {
-    agentTypeId: "alpha",
+    agentTypeId: SCRIPTED_DEFAULT_AGENT_TYPE_ID,
     definition: {
       label: "Alpha",
       instructions: "You are the Alpha scripted workspace-playground agent.",
@@ -45,7 +46,7 @@ export const SCRIPTED_TWO_AGENT_FLEET = [
   },
 ] as const satisfies readonly AgentHostAgentSpec[]
 
-export const SCRIPTED_TWO_AGENT_DEFAULT = "alpha"
+export const SCRIPTED_TWO_AGENT_DEFAULT = SCRIPTED_DEFAULT_AGENT_TYPE_ID
 
 export const SCRIPTED_ONE_AGENT = [SCRIPTED_TWO_AGENT_FLEET[0]] as const satisfies readonly AgentHostAgentSpec[]
 export const SCRIPTED_ONE_AGENT_CAPABILITY_PLUGINS = [SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS[0]] as const
