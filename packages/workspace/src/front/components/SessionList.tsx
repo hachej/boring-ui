@@ -9,7 +9,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from "react"
-import { IconButton, Skeleton } from "@hachej/boring-ui-kit"
+import { IconButton } from "@hachej/boring-ui-kit"
 import { CheckIcon, CopyIcon } from "lucide-react"
 import { cn } from "../lib/utils"
 import { workspaceSessionKeyFor, workspaceSessionKeyFromBoundaryValue } from "../sessionIdentity"
@@ -25,7 +25,6 @@ export interface SessionItem {
 
 export interface SessionListProps {
   sessions: SessionItem[]
-  loading?: boolean
   activeId?: string | null
   onSwitch?: (id: string, agentTypeId?: string) => void
   onCreate?: () => void
@@ -36,7 +35,6 @@ export interface SessionListProps {
 
 export function SessionList({
   sessions,
-  loading = false,
   activeId,
   onSwitch,
   onCreate,
@@ -135,16 +133,8 @@ export function SessionList({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto" role="list" aria-label="Session list" aria-busy={loading || undefined}>
-        {sessions.length === 0 && loading ? (
-          <div className="space-y-2 px-3 py-3" role="status" aria-live="polite" aria-label="Loading sessions">
-            <div className="space-y-2" aria-hidden="true">
-              <Skeleton className="h-9 w-full rounded-md" />
-              <Skeleton className="h-9 w-4/5 rounded-md" />
-            </div>
-          </div>
-        ) : null}
-        {sessions.length === 0 && !loading && (
+      <div className="flex-1 overflow-y-auto" role="list" aria-label="Session list">
+        {sessions.length === 0 && (
           <div className="px-3 py-6 text-center text-sm text-muted-foreground">
             No sessions
           </div>

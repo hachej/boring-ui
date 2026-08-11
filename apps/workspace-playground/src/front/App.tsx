@@ -8,7 +8,6 @@ import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 import { LoadingStatesShowcase, type LoadingStateMode } from "./LoadingStatesShowcase"
-import { SCRIPTED_DEFAULT_AGENT_TYPE_ID } from "../shared/playgroundAgents"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -81,13 +80,10 @@ function isMultiFilesystemPlaygroundRoute(): boolean {
   return new URLSearchParams(window.location.search).get("multiFilesystem") === "1"
 }
 
-function factoryAgentsEnabled(): boolean {
-  return (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_FACTORY_AGENTS === "1"
-}
-
 interface WorkspaceMeta {
   projectName?: string
   workspaceId?: string
+  defaultAgentTypeId?: string
 }
 
 const playgroundDeckWidgets: DeckWidgetDefinition[] = [
@@ -134,7 +130,7 @@ function resetPlaygroundStorageIfRequested(): void {
   window.history.replaceState(null, "", `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`)
 }
 
-function WorkspaceFullPageShell() {
+function WorkspaceFullPageShell({ agentTypeId }: { agentTypeId: string }) {
   const parsed = parseFullPagePanelLocation(window.location.search)
 
   if (!parsed.componentId || parsed.error) {
@@ -152,7 +148,7 @@ function WorkspaceFullPageShell() {
 
   return (
     <WorkspaceProvider
-      agentTypeId={factoryAgentsEnabled() ? "boring-concierge" : SCRIPTED_DEFAULT_AGENT_TYPE_ID}
+      agentTypeId={agentTypeId}
       apiBaseUrl=""
       plugins={workspacePlugins}
       persistenceEnabled
@@ -171,11 +167,11 @@ export function WorkspaceShell() {
   const loadingShowcase = useMemo(loadingStateMode, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const multiFilesystem = useMemo(isMultiFilesystemPlaygroundRoute, [])
-  const factoryAgents = useMemo(factoryAgentsEnabled, [])
-  const defaultAgentTypeId = factoryAgents ? "boring-concierge" : SCRIPTED_DEFAULT_AGENT_TYPE_ID
+  const [defaultAgentTypeId, setDefaultAgentTypeId] = useState("")
   const [projectName, setProjectName] = useState("Workspace")
   const [workspaceId, setWorkspaceId] = useState("Workspace")
-  const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
+  const [metaLoaded, setMetaLoaded] = useState(Boolean(loadingShowcase))
+  const [metaError, setMetaError] = useState<string | null>(null)
   const [showcaseActiveSessionId, setShowcaseActiveSessionId] = useState(SHOWCASE_SESSION_ID)
   const [showcaseSessions, setShowcaseSessions] = useState(createInitialShowcaseSessions)
   const sessions = showcase ? showcaseSessions : undefined
@@ -219,27 +215,33 @@ export function WorkspaceShell() {
   )
 
   useEffect(() => {
-    if (showcase || loadingShowcase || fullPage) return
+    if (loadingShowcase) return
     let cancelled = false
     void fetch("/api/v1/workspace/meta")
-      .then(async (res) => res.ok ? await res.json() as WorkspaceMeta : null)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`workspace metadata request failed (${res.status})`)
+        return await res.json() as WorkspaceMeta
+      })
       .then((meta) => {
         if (cancelled) return
         const next = meta?.projectName?.trim()
         const nextWorkspaceId = meta?.workspaceId?.trim() || next
-        if (next) {
+        const nextDefaultAgentTypeId = meta?.defaultAgentTypeId?.trim()
+        if (!nextDefaultAgentTypeId) throw new Error("workspace metadata did not include a default agent")
+        if (next && !showcase) {
           setProjectName(next)
         }
-        if (nextWorkspaceId) {
+        if (nextWorkspaceId && !showcase) {
           setWorkspaceId(nextWorkspaceId)
         }
+        if (nextDefaultAgentTypeId) setDefaultAgentTypeId(nextDefaultAgentTypeId)
         setMetaLoaded(true)
       })
       .catch(() => {
-        if (!cancelled) setMetaLoaded(true)
+        if (!cancelled) setMetaError("The playground could not load its agent roster. Reload to try again.")
       })
     return () => { cancelled = true }
-  }, [showcase, loadingShowcase, fullPage])
+  }, [showcase, loadingShowcase])
 
   if (showcase) seedShowcase(SHOWCASE_SESSION_ID)
 
@@ -247,12 +249,19 @@ export function WorkspaceShell() {
     return <LoadingStatesShowcase mode={loadingShowcase} />
   }
 
-  if (fullPage) {
-    return <WorkspaceFullPageShell />
+  if (!metaLoaded || !defaultAgentTypeId) {
+    if (metaError) {
+      return (
+        <div className="flex h-screen w-screen items-center justify-center bg-background p-6">
+          <p role="alert" className="max-w-md text-center text-sm text-destructive">{metaError}</p>
+        </div>
+      )
+    }
+    return <div className="h-screen w-screen bg-background" />
   }
 
-  if (!metaLoaded) {
-    return <div className="h-screen w-screen bg-background" />
+  if (fullPage) {
+    return <WorkspaceFullPageShell agentTypeId={defaultAgentTypeId} />
   }
 
   return (

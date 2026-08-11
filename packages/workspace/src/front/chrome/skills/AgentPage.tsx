@@ -11,32 +11,12 @@ import type { PaneProps } from "../../registry/types"
 import { uiFileResourceKey } from "../../../shared/types/filesystem"
 import { openableFileResource } from "../../../shared/skills/openableFileResource"
 import {
-  parseSkills,
-  parseTools,
+  INITIAL_CAPABILITIES,
+  loadAgentCapabilitySections,
+  type AgentCapabilities,
   type AgentSkillSummary,
   type AgentToolSummary,
 } from "../agents/agentCapabilities"
-
-/**
- * One request per section, committed together but failing apart: a slow or
- * broken tools route must not blank the skills the user came to see, and vice
- * versa. `status` is the whole-page phase; each section keeps its own outcome.
- */
-type SectionResult<T> =
-  | { status: "loaded"; value: T[] }
-  | { status: "error"; error: string }
-
-interface AgentPageState {
-  status: "loading" | "ready"
-  skills: SectionResult<AgentSkillSummary>
-  tools: SectionResult<AgentToolSummary>
-}
-
-const INITIAL_STATE: AgentPageState = {
-  status: "loading",
-  skills: { status: "loaded", value: [] },
-  tools: { status: "loaded", value: [] },
-}
 
 /**
  * `parseSkills` already orders by name; this only breaks the ties it leaves —
@@ -50,7 +30,7 @@ function compareSkills(left: AgentSkillSummary, right: AgentSkillSummary): numbe
       .localeCompare(right.resource ? uiFileResourceKey(right.resource) : "")
 }
 
-export type AgentPageProps = Partial<PaneProps> & {
+type AgentPageProps = Partial<PaneProps> & {
   /** When provided, renders a close control in the header — used when the Agent
    *  page is hosted as a chat left overlay rather than a workspace panel. */
   onClose?: () => void
@@ -72,7 +52,7 @@ export type AgentPageProps = Partial<PaneProps> & {
  */
 export function AgentPage({ onClose, headerInsetStart = false, headerInsetEnd = false }: AgentPageProps) {
   const client = useWorkspacePluginClient()
-  const [state, setState] = useState<AgentPageState>(INITIAL_STATE)
+  const [state, setState] = useState<AgentCapabilities>(INITIAL_CAPABILITIES)
   const [expandedTool, setExpandedTool] = useState<string | null>(null)
 
   // Reload and Retry can be triggered from the same error state, and `client`
@@ -85,31 +65,13 @@ export function AgentPage({ onClose, headerInsetStart = false, headerInsetEnd = 
   const load = useCallback(async (refresh = false) => {
     const generation = ++generationRef.current
     const isStale = () => generationRef.current !== generation
-    const id = encodeURIComponent(client.agentTypeId)
-    const query = refresh ? "?refresh=1" : ""
     setState((current) => ({ ...current, status: "loading" }))
-    // Each route is spelled in full — a shared base prefix would hide these
-    // literal Agent routes from the route-matrix checker.
-    const [skills, tools] = await Promise.allSettled([
-      client.getJson<unknown>(`/api/v1/agents/${id}/skills${query}`, {
-        missingMessage: "Failed to load this agent's skills.",
-      }),
-      client.getJson<unknown>(`/api/v1/agents/${id}/tools${query}`, {
-        missingMessage: "Failed to load this agent's tools.",
-      }),
-    ])
-    if (isStale()) return
-    setState({
-      status: "ready",
-      // Parse-then-rebuild (see agentCapabilities): a hostile `description`
-      // reaching React as a child blanks the whole pane with no boundary above.
-      skills: skills.status === "fulfilled"
-        ? { status: "loaded", value: parseSkills(skills.value) }
-        : { status: "error", error: errorMessage(skills.reason, "Failed to load this agent's skills.") },
-      tools: tools.status === "fulfilled"
-        ? { status: "loaded", value: parseTools(tools.value) }
-        : { status: "error", error: errorMessage(tools.reason, "Failed to load this agent's tools.") },
+    const sections = await loadAgentCapabilitySections(client, client.agentTypeId, {
+      refresh,
+      includeNonInvocableSkills: true,
     })
+    if (isStale()) return
+    setState((current) => ({ ...current, ...sections, status: "ready" }))
   }, [client])
 
   useEffect(() => {
@@ -184,10 +146,6 @@ export function AgentPage({ onClose, headerInsetStart = false, headerInsetEnd = 
       </div>
     </ManagementOverlaySurface>
   )
-}
-
-function errorMessage(reason: unknown, fallback: string): string {
-  return reason instanceof Error ? reason.message : fallback
 }
 
 function SectionHeading({ id, title, count }: { id: string; title: string; count?: number }) {
