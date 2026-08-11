@@ -2,7 +2,7 @@
 github: https://github.com/hachej/boring-ui/issues/1081
 issue: 1081
 state: needs-owner-approval
-updated: 2026-08-10
+updated: 2026-08-11
 revision: r1
 flag: BORING_AGENT_MODE=remote-worker
 track: owner
@@ -24,6 +24,44 @@ track: owner
 >
 > This is the authority on *what ships first*; the architecture doc is the
 > authority on *what those slices are slices of*.
+>
+> **Implementation-grade deepening (2026-08-11):** each slice now carries a
+> "Files and modules touched," concrete API/RPC/schema/DDL shapes, and a
+> "Grounded in E2B" note citing the specific E2B pattern being mirrored
+> (`references/e2b-internals-architecture.md`,
+> `references/control-plane-api-spec.md`). A new "v1 structure recommendation"
+> section applies e2b-internals §8's structure-rec as the actual package/module
+> layout. This pass **deepens** the plan; it does not undo any L1/L2/adversarial
+> fix (transactional nonce uniqueness, public-opening gate, honest dogfood
+> framing, E2B-shaped-subset, honest Layer-2/Layer-4 "measured not built"
+> caveats all preserved).
+
+## Plan methodology & template crosswalk
+
+This plan is authored to the repository's iterative-planning standard
+(`.agents/skills/plan/SKILL.md` → `docs/procedures/issue-plans.md`,
+`docs/procedures/bead-ready.md`). It uses the issue-plan body sections under
+epic-specific names, keeps **one slice where possible** but splits into six
+because the work exceeds a single review budget and is stacked/ordered, frames
+every slice **Today → Delta**, attaches a **proof path per slice**, and runs the
+mandated **adversarial cross-model review before the owner gate** (never
+self-certified — Model Card L1 Opus → L2 Fable, recorded in the header lineage).
+
+| `issue-plans.md` body section | Where it lives here |
+| --- | --- |
+| Problem / Solution | **Outcome**, **Today / target delta** |
+| Decisions | **Decisions that constrain every slice** |
+| Flag / Abstraction | frontmatter `flag: BORING_AGENT_MODE=remote-worker`; rollback in each slice's **Slice rollback** and **End-to-end rollback story** |
+| Test Seams | each slice's **Today** (existing prior art / highest public seam) + **Acceptance and proof** (what to assert, what not to fake) |
+| Acceptance / Proof | each slice's **Acceptance and proof** (exact commands) |
+| Slices | **S1–S5** (S3 split S3a/S3b), each with Size, **Review budget** verdict, **Bead** (materialized at the owner gate), Blocked by, Delivers, Proof |
+| Out of Scope | **Explicit non-goals** |
+| Open Questions / gate | **Gate 0**, **Owner gate / next action** |
+
+Per `issue-plans.md`, the **bead graph — not this markdown — is what the Beadle
+dispatches from**; this doc's owner gate authorizes materializing the six slices
+as six Definition-of-Ready beads (WHAT, proof path, file scope, fits one
+session). No beads are created by this docs-only PR.
 
 ## Outcome
 
@@ -184,6 +222,61 @@ JSON document, `results` contains no `operator-follow-up` entry for
 `session-create-fail-closed`) is `passed`. Project-quota follow-ups may remain
 for this disposable gate; S4 must close them on the production box.
 
+## v1 structure recommendation (E2B-grounded module layout)
+
+This section applies `references/e2b-internals-architecture.md` §8 ("Structure
+recommendation for OUR sandbox product") directly to the packages/modules this
+plan builds. E2B's shape is three tiers — control-plane `api` (placement +
+state) → per-node `orchestrator` (VM mechanics) → in-VM `envd` (guest agent)
+(e2b-internals §1, §2). v1 mirrors those tiers but **collapses the pool sprawl
+onto one box**, exactly as e2b-internals §8 "v1 (minimal — collapse
+aggressively)" prescribes. No new package is created: everything lands in the
+already-shipped `packages/boring-sandbox` behind the frozen `SandboxProviderV1`
+contract, plus the in-guest agent in `packages/boring-bash`.
+
+### Tier → module map
+
+| E2B tier (e2b-internals) | E2B component | Our v1 module | Collapsed from E2B how |
+| --- | --- | --- | --- |
+| Control-plane API + placement (§1 `api`, §2, §8) | `packages/api` gRPC front door + `internal/orchestrator` scheduling, minus Nomad/Consul | **`packages/boring-sandbox/src/worker/**`** — the S1 daemon: HTTP/SSE server, the six V1 routes, capability+nonce auth, admitted-cohort load, single-worker placement config | E2B splits `api` (control plane) from `orchestrator` (data plane) across node pools; v1 **collapses both onto one process on one box** (e2b-internals §8 "One control-plane daemon = `api` + placement, minus Nomad/Consul"). No Nomad, no Consul catalog, no separate `client-proxy`. |
+| Per-node orchestrator (§1 `orchestrator`, §2 data plane) | `packages/orchestrator` microVM lifecycle (`pkg/sandbox`, Firecracker, UFFD, NBD, portmap/proxy/dns) | **`packages/boring-sandbox/src/providers/runsc/**`** — `RunscSessionRuntimeV1` (`runtime/sessionRuntime.ts`) driving Docker+runsc via `dockerRunner.ts`/`dockerArgv.ts` | E2B's orchestrator owns Firecracker; v1's node agent wraps whatever `SandboxProviderV1` abstracts — **container-under-runsc first, Firecracker later** (e2b-internals §8 "One node agent = E2B's `orchestrator`, but wrap whatever isolation `SandboxProviderV1` already abstracts"). The daemon calls the runtime **in-process**, not over gRPC, because control plane and data plane are the same box in v1. |
+| Provider seam (§8 "keep the provider seam") | `orchestrator` gRPC `SandboxService` — `Create/Update/List/Delete/Pause/Checkpoint` (e2b-internals §1 appendix, §8) | **`SandboxProviderV1`** (`packages/boring-sandbox/src/shared/providerV1.ts`) — the already-frozen contract; the daemon's routes proxy to it | E2B keeps `api`↔`orchestrator` as a gRPC boundary so a Firecracker backend swaps in without touching the control plane. Ours is the same seam realized as a **TS interface**, not gRPC; `SandboxProviderV1` deliberately mirrors that RPC set so a microVM provider is a v2 swap (architecture §2 Layer 3). |
+| In-VM guest agent (§1 `envd`, §3) | `packages/envd` — Process gRPC + Filesystem gRPC + HTTP bulk file I/O + port scanner + per-sandbox secure token | **`packages/boring-bash`** — the in-guest exec/fs process (architecture §2 Layer 4) | E2B's `envd` is "the analog of our boring-bash" (e2b-internals §1, §3). v1 ships boring-bash as-is; the envd-shaped interface split is the **Layer-4 alignment target** detailed below (measured at v2 entry, not rebuilt in v1 — architecture §2 Layer 4, §6). |
+
+### What v1 deliberately does NOT create (collapse decisions)
+
+Grounded one-for-one in e2b-internals §8 "Collapse (v1)" and "Skip":
+
+- **No `client-proxy`** (E2B `packages/client-proxy`): sandbox routing folds into
+  the single daemon. There is no `<port>-<sandboxId>.domain` ingress in v1;
+  `getHost(port)` public URLs are a v2 gap (control-plane-api-spec §1.4, §5 v2).
+- **No Redis tier** (E2B cache/locks): routing/locks fold into the SQL table +
+  in-process state. The nonce store is the only durable coordination primitive
+  and it is SQLite (S2), matching e2b-internals §5 "Redis-tier state can start as
+  an in-process/SQLite table at our scale."
+- **No ClickHouse** (E2B analytics/metrics): explicitly off the orchestration
+  hot path; no metrics store ships (e2b-internals §5, §8 "drop Redis/ClickHouse
+  tiers").
+- **No Nomad/Consul/Terraform placement** (e2b-internals §7 "biggest weld"): the
+  single-worker config replaces the scheduler + node registry + health catalog
+  wholesale. This is the §2 Layer-2 "constant placer as config" decision.
+- **No separate `auth`/Ory or `dashboard-api`** (e2b-internals §6, §8 "Skip"):
+  the one static secret + capability/nonce codec is the entire auth surface.
+- **No separate template-manager/build pool** (e2b-internals §4): the workload
+  image is built and pinned by the S4 runbook, not a running build service.
+
+### The one SQL store
+
+e2b-internals §5 names Postgres as E2B's orchestration source-of-truth and §8
+folds it to "one SQL store (Postgres or even SQLite to start)." v1 takes the
+SQLite floor: the **only** durable state is the consumed-nonce table (S2,
+`/var/lib/boring-worker/security/nonces.sqlite`). Sandbox records, bindings,
+receipts, and routing stay **in-process and volatile** (recreated on restart via
+`startupSweep()`), which is the honest v1 minimum — E2B persists sandbox records
+because it survives control-plane restarts across a fleet; v1 has one box and
+recreates sessions, so only replay-defense state must be durable (plan Decision 5,
+§S2).
+
 ## Slice order
 
 ```text
@@ -204,6 +297,11 @@ make the S4 transcript runnable. S5 is blocked on all prior slices.
 
 **Size:** M, upper edge (2-4 days; explicit owner review-budget check before
 implementation).  
+**Bead:** materialized at owner gate (S1).  
+**Review budget:** inside, contingent — composition + one small codec over
+already-shipped protocol/registry/runtime; the pre-implementation estimate MUST
+confirm ≤ ~1,500 added prod LOC or return to the owner for an explicit S1a/S1b
+split (Decision 1). Never hide an oversized PR.  
 **Blocked by:** merged SBX1.3 only.  
 **Delivers:** a systemd-friendly server-only process and real HTTP transport
 for the existing V1 provider.
@@ -274,6 +372,135 @@ for the existing V1 provider.
   non-zero exit when cleanup cannot be proven.
 - Export a package entry/bin suitable for a systemd `ExecStart`. Do not add
   admin, metrics, console, discovery, or fleet endpoints.
+
+### Files and modules touched
+
+New, all under the already-shipped `packages/boring-sandbox`:
+
+- `src/worker/createWorkerDaemon.ts` — composition root. Wires the loaded static
+  secret + token codec, the admitted-cohort value (S3a), one
+  `RunscSessionRuntimeV1`, one `RemoteWorkerSandboxBindingRegistryV1`
+  (`src/providers/remote-worker/bindingRegistry.ts`), the daemon-owned host
+  watcher, and the HTTP router into one `http.Server`. This is the v1 analog of
+  E2B `packages/api`'s composition (e2b-internals §2 request-flow), minus the
+  Nomad/Consul cluster wiring in E2B `internal/clusters`.
+- `src/worker/router.ts` — the six V1 routes below, each: body-bound → content
+  type/schema check → limiter → capability decode/verify → binding authorize →
+  runtime proxy → redacted response. No route reaches the runtime before all
+  guards pass.
+- `src/worker/tokenCodec.ts` — the versioned shared codec (capability
+  issuer/authenticator + binding-receipt signer/verifier), the only production
+  implementation of the abstract `RemoteWorkerCapabilityAuthenticatorV1` /
+  `RemoteWorkerBindingReceiptAuthenticatorV1` interfaces already declared in
+  `bindingRegistry.ts` (lines 34/40). Derives domain-separated HMAC-SHA-256
+  subkeys `boring.remote-worker.v1/capability` and
+  `boring.remote-worker.v1/binding-receipt` from the single static secret.
+- `src/worker/authRateLimiter.ts` — bounded in-memory token buckets keyed by the
+  Caddy-forwarded tailnet source (rejected on any non-loopback hop).
+- `src/worker/hostWatcher.ts` — daemon-owned chokidar watch over the trusted
+  bind-mount source, reusing the `node-workspace` primitive
+  (`src/providers/node-workspace/**`); backs the SSE `fs/events` stream.
+- `src/worker/bin.ts` — the systemd `ExecStart` entrypoint (startup sweep →
+  cohort load → nonce DB open → listen).
+- `src/providers/remote-worker/httpTransport.ts` — the production
+  `RemoteWorkerTransportV1` (`transport.ts` interface): `fetch` for unary verbs,
+  a bounded SSE reader for `openEventStream`. This is the client half S5 reuses.
+
+### HTTP surface — the minimal v1 endpoint list
+
+The daemon's API surface is exactly the "minimal v1 API cut" of
+`references/control-plane-api-spec.md` §5 / §2.1, at the internal-daemon
+`/internal/v1/...` prefix that exists today (the public `/v1/...` rename is a
+v1.1 no-schema-change decision, architecture §9.0):
+
+| Verb + path | Op | Guards before runtime | Binds to E2B `SandboxService` RPC |
+| --- | --- | --- | --- |
+| `GET /internal/v1/health` | health | none (public admission facts only) | (no direct RPC — E2B exposes cluster health via Consul; ours is a single-box evidence/digest gate) |
+| `POST /internal/v1/sandboxes` | create | body-bound → schema → limiter → capability(create) → deterministic `sandboxId` → digest pin (S3a) | `SandboxService.Create` |
+| `POST /internal/v1/sandboxes/:id/exec` | exec | + binding authorize by `sandboxId` | (envd `Process.Start`, proxied) |
+| `POST /internal/v1/sandboxes/:id/fs` | fs | + binding authorize | (envd `Filesystem.*` + HTTP up/download) |
+| `GET /internal/v1/sandboxes/:id/fs/events` | events | + binding authorize, bounded SSE | (envd `Filesystem.WatchDir`) |
+| `POST /internal/v1/sandboxes/:id/renew` | renew | + binding authorize | `SandboxService.Update` (TTL) |
+| `DELETE /internal/v1/sandboxes/:id` | delete | + binding authorize | `SandboxService.Delete` |
+
+`list`, `pause`, `checkpoint` from E2B's RPC set (e2b-internals §1 appendix) are
+deliberately absent in v1: `list` is v1.1, `pause`/`checkpoint` are the v2 UFFD
+snapshot/restore tier (control-plane-api-spec §5; architecture §9.1). The daemon
+does not invent verbs beyond this fixed set — Decision 4.
+
+### Grounded in E2B
+
+- **Mirrors E2B's `SandboxService` RPC set, not its transport.** e2b-internals §1
+  appendix confirms `service SandboxService { Create, Update, List, Delete,
+  Pause, Checkpoint }`, and §2 shows `api` never touches a VM directly — it
+  speaks gRPC to the orchestrator's `SandboxService`. Our six routes are the same
+  lifecycle verbs (Create/Update=renew/Delete + the exec/fs data path envd
+  serves), but over HTTP+SSE instead of gRPC, because v1 **collapses the
+  api↔orchestrator boundary onto one box** (e2b-internals §8 v1). The
+  control-plane/data-plane split E2B makes physical across `api` and `client`
+  node pools (e2b-internals §1 "Node pools", §2) is, in v1, an in-process
+  function call from the router to `RunscSessionRuntimeV1`.
+- **Our auth is deliberately NOT E2B's team API-key.** e2b-internals §6: E2B uses
+  (1) a long-lived team API key at the edge (`api/internal/middleware`, Postgres
+  + Redis cache) and (2) a single long-lived per-sandbox bearer `secure_token`
+  minted by envd. There is no per-request nonce. Our daemon replaces both with
+  the capability-token + single-use-nonce codec at the same choke point
+  (e2b-internals §6 "we'd swap its single `secure_token` for our nonce-scoped
+  capability check at the same choke point, `internal/api/auth.go` equivalent").
+  The trade-off — a public SDK cannot present one static key — is why the edge
+  compat shim exists (control-plane-api-spec §3.1), and that shim is explicitly
+  v2, not this slice.
+- **Tailscale-only bind mirrors E2B's private data-plane assumption.** E2B's
+  orchestrator/envd are never public; only `client-proxy` faces inbound sandbox
+  traffic (e2b-internals §1). v1 has no client-proxy, so the daemon has no public
+  listener at all — Caddy on `tailscale0` is the only ingress (threat model
+  above), which is the honest single-box degenerate of E2B's "api pool faces the
+  internet, client pool does not" topology.
+
+### Layer-4 alignment target — boring-bash mirrors envd's split (measured, not rebuilt in v1)
+
+**Honest status (architecture §2 Layer 4, §6):** no S1–S5 slice performs the
+boring-bash↔envd alignment; v1 ships boring-bash as-is and the gap is only
+*measured* by the v2 extraction spike (architecture §5 step 4). This subsection
+specifies the **target shape** the in-sandbox exec/fs interface must converge to,
+so S1's daemon-side verbs are shaped to accept it without a later reshape — the
+"interface that must be right now" in the sense of *not foreclosing the split*,
+not in the sense of building it.
+
+E2B's `envd` (e2b-internals §3, the stated analog of boring-bash) splits the
+guest agent into three surfaces, and boring-bash's exec/fs interface should
+mirror that split:
+
+1. **Streaming RPC for exec + fs-metadata.** envd's `Process` service
+   (`spec/process/process.proto`) is streaming: `Start` streams output events,
+   plus `Connect`/`List`/`Update`/`StreamInput`/`SendSignal`/`CloseStdin`; its
+   `Filesystem` service streams `Stat`/`MakeDir`/`Move`/`ListDir`/`Remove` and
+   `WatchDir` (e2b-internals §3). Our in-guest `Sandbox.exec` already carries the
+   streaming primitives (`onStdout`/`onStderr`/`onHeartbeat` byte callbacks,
+   `signal`, `timeoutMs` — control-plane-api-spec §2.2), and `Workspace.watch()`
+   backs `fs/events`. The alignment gap is that the *wire* `exec` response is a
+   buffered base64 blob today (streaming stdout/stderr is the v1.1 target,
+   architecture §9.2); the daemon's exec route is shaped so a streaming response
+   is an additive change, not a verb reshape.
+2. **Plain HTTP for bulk file content.** envd keeps file *content* read/write
+   **out of the proto** and serves it over HTTP (`internal/api/{upload,download}.go`),
+   reserving gRPC for metadata (e2b-internals §3 "File content read/write is NOT
+   in the proto"). v1's `fs` op carries binary as base64 ≤ 6 MiB inline — the
+   honest v1 limit; the streamed/signed-URL bulk path is the v1.1 item
+   (control-plane-api-spec §2.3, §5). Mirroring envd means bulk content should
+   graduate to a dedicated HTTP transfer surface, not grow the JSON `fs` union.
+3. **Port scanner.** envd's `internal/port` (`scan.go`, `scan_subscriber.go`)
+   autonomously detects guest listeners and surfaces them to the proxy
+   (e2b-internals §3). v1 has no `getHost(port)` and no client-proxy, so the
+   port-scanner concept is a **v2 deliverable** (control-plane-api-spec §5 v2);
+   it is named here only so boring-bash's guest surface reserves the seam.
+
+envd mints a per-sandbox `secure_token` at init to authenticate all guest calls
+(e2b-internals §3, §6). v1 does **not** adopt a guest-minted bearer: the daemon
+is the trust root and the runsc workspace is reached over the daemon-owned
+bind-mount, not an authenticated guest RPC. Adopting envd's init handshake +
+token is part of the same v2 alignment, swapping envd's single `secure_token`
+for our capability check (e2b-internals §6).
 
 ### Acceptance and proof
 
@@ -346,6 +573,9 @@ replay-protection boundary.
 ## S2 — persistent nonce store and #1167 atomicity
 
 **Size:** M (1-3 days).  
+**Bead:** materialized at owner gate (S2).  
+**Review budget:** inside — one SQLite store + a four-arg port change and one
+injection seam; no binding persistence keeps it small.  
 **Blocked by:** S1 composition seam.  
 **Delivers:** persistent, transactional, bounded replay protection with a
 per-workspace sub-budget; no binding persistence.
@@ -408,6 +638,69 @@ per-workspace sub-budget; no binding persistence.
   global nonce uniqueness across processes/connections. V1 stores no epoch
   column; the concurrent-connection test is the fencing proof.
 
+### Files and modules touched
+
+- `src/providers/remote-worker/singleUseNonceStore.ts` — extend the port to the
+  four-argument `consume(nonce, workspaceId, expiresAtMs, nowMs)` signature (today
+  it is `consume(nonce, expiresAtMs, nowMs)` on the in-memory `Map`, per the read
+  source) and keep the in-memory implementation as the unit-test double.
+- `src/providers/remote-worker/persistentNonceStore.ts` — new production SQLite
+  implementation of the same port using Node's built-in `node:sqlite`
+  (`DatabaseSync`).
+- `src/providers/remote-worker/bindingRegistry.ts` — add the synchronous
+  injectable nonce-store constructor option to
+  `RemoteWorkerSandboxBindingRegistryOptionsV1` (line 53); the registry
+  constructs `SingleUseNonceStoreV1` inline today (line 204), so the seam is a
+  narrow injection point. No binding/receipt persistence is added.
+
+### Concrete SQLite schema and transaction
+
+```sql
+-- /var/lib/boring-worker/security/nonces.sqlite  (root-owned, 0600)
+PRAGMA journal_mode = WAL;      -- asserted to report 'wal' at startup or fail
+PRAGMA synchronous  = FULL;     -- durability across power loss
+PRAGMA busy_timeout = <bounded ms>;  -- set via DatabaseSync; exceed => fail closed
+
+CREATE TABLE IF NOT EXISTS consumed_nonces (
+  nonce         TEXT PRIMARY KEY,      -- global uniqueness = replay fence
+  workspace_id  TEXT NOT NULL,         -- authenticated workspace owns the sub-budget
+  expires_at_ms INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_nonce_ws     ON consumed_nonces(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_nonce_expiry ON consumed_nonces(expires_at_ms);
+```
+
+`consume` runs one `BEGIN IMMEDIATE` transaction (write lock taken at statement
+start, so two connections cannot both read-then-insert): (1) `DELETE ... WHERE
+expires_at_ms <= nowMs` to evict expired rows and release both budgets; (2)
+`INSERT` the nonce — a `PRIMARY KEY` collision is caught and returned as `replay`
+without any runtime effect; (3) enforce the global maximum
+(`SELECT COUNT(*)`) and the lower per-workspace maximum
+(`SELECT COUNT(*) WHERE workspace_id = ?`) before commit, returning `exhausted`
+(the existing stable code, no tenant counts leaked) if either is exceeded;
+(4) `COMMIT`. Because the lock is held for the whole read-check-insert, two
+daemon processes or two `DatabaseSync` connections can **never** both return
+`accepted` for one nonce — the `PRIMARY KEY` + `BEGIN IMMEDIATE` pair is the
+fencing proof that replaces #918 gate (b)'s boot-epoch column (Decision, owner
+gate).
+
+### Grounded in E2B
+
+E2B uses **Postgres as the orchestration source-of-truth** — teams, keys,
+templates, sandbox records, quotas (e2b-internals §5 "the state a control plane
+MUST hold"). S2 uses **SQLite in the identical role for the single-box v1**:
+e2b-internals §8 explicitly folds E2B's SQL store to "Postgres or even SQLite to
+start," and §5 says "Redis-tier state (routing/locks) can start as an
+in-process/SQLite table at our scale." The narrow but deliberate difference:
+E2B persists the *sandbox records themselves* because its control plane survives
+restarts across a multi-node fleet and must re-find running VMs; v1 has one box
+and **recreates** sessions on restart (`startupSweep()` retires stale
+containers), so the *only* state that must be durable is the replay-defense
+nonce — bindings/receipts stay volatile (Decision 5). This is the honest minimal
+subset of E2B's persistence, not a reduced clone of it. The WAL + local-fs-only
+requirement (no NFS/SMB) is the SQLite analog of E2B's assumption that Postgres
+runs on a real disk with working locking, not a network filesystem.
+
 ### Acceptance and proof
 
 - `consumed nonce survives simulated restart`: consume, close the store, open a
@@ -437,6 +730,9 @@ restore the S2 binary.
 ## S3a — admitted-cohort load and `startContainer` digest pin
 
 **Size:** S-M (1-2 days; independently capped at the normal review budget).
+**Bead:** materialized at owner gate (S3a).  
+**Review budget:** inside — a startup loader + one equality gate at
+`startContainer()`; independently capped at the normal review budget.  
 **Blocked by:** S1; lands after S2.  
 **Delivers:** no `docker run` or replacement unless the workload image exactly
 matches the manually admitted cohort.
@@ -478,6 +774,58 @@ matches the manually admitted cohort.
   `expectedImageDigest` to identify the same admitted manifest; test both field
   names so a locally valid but cross-layer-mismatched digest fails closed.
 
+### Files and modules touched
+
+- `src/providers/runsc/runtime/sessionRuntime.ts` — the pin-gate lands at the top
+  of `startContainer()` (line 656 in the read source), which both the initial
+  `await this.startContainer(record)` (line 308) and the clean-replacement
+  `await this.startContainer(record, workspaceReadOnly)` (line 684) flow through,
+  so one gate covers create and replacement. The check runs **before**
+  `buildDockerRunArgv({...})` (line 661) constructs any argv.
+- `src/providers/runsc/runtime/config.ts` — the admitted image digest is passed
+  into the runtime as frozen configuration, not read from request input.
+- `src/worker/qualificationAdmission.ts` (new) — daemon-startup loader that runs
+  the existing strict validators over the operator-installed bundle/evidence
+  (`src/providers/runsc/qualificationBundle.ts`,
+  `src/providers/runsc/fleetAdmission.ts`,
+  `src/shared/qualificationBundle.ts`) and constructs the one frozen
+  admitted-cohort value; startup fails closed on missing/malformed/stale/mismatch.
+- `src/providers/runsc/runtime/dockerArgv.ts` — unchanged behavior reused:
+  `buildDockerRunArgv()` already rejects tags and malformed references
+  (`REMOTE_WORKER_REQUEST_INVALID`); S3a adds the *admitted-equality* layer on
+  top (`REMOTE_WORKER_UNQUALIFIED`).
+
+### The pin-gate (two rejection classes, both before `docker run`)
+
+1. **Malformed / unpinned reference** → `REMOTE_WORKER_REQUEST_INVALID`, from the
+   existing `dockerArgv` tag/format rejection. Test asserts the Docker runner
+   (`dockerRunner.ts`) was never invoked.
+2. **Validly pinned but non-admitted** `repository@sha256:...` (or a drifted
+   bundle) → `REMOTE_WORKER_UNQUALIFIED`. The only allowed reference is derived
+   as `<qualified repository>@<expectedWorkloadImageManifestDigest>`; request
+   input never selects another repository or digest. Test asserts no Docker
+   effect. Cross-layer check: the bundle cohort pin's
+   `expectedWorkloadImageManifestDigest` and the fleet/create field
+   `expectedImageDigest` must identify the same manifest, tested under both
+   field names.
+
+### Grounded in E2B
+
+E2B admits a workload by **template**: `api` accepts a client `templateID`, the
+orchestrator fetches the corresponding **build artifact** (chunked, from GCS/S3)
+and boots a Firecracker VM from it (e2b-internals §2 request-flow, §4 templates).
+The immutable, content-addressed identity of *what runs* is E2B's template/build
+digest. S3a is the v1 analog reduced to a single pinned OCI manifest digest: v1
+has one workload image, admitted once by the S4 evidence run, and the daemon
+constructs the create call from that pinned digest — never a client-supplied
+spec (control-plane-api-spec §3.2 "we accept a template *reference* validated
+against pinned digests, never raw container params"). E2B's richer
+**template/snapshot model** — `create-build`/`resume-build`, UFFD snapshot
+restore, `Pause`/`Checkpoint` (e2b-internals §4) — is the **v2 evolution** of
+this pin: a v2 provider swaps the single-digest gate for template/snapshot
+selection behind the same `SandboxProviderV1` contract (architecture §9.1
+pause/resume/snapshot = v2, §5 TAKE row "UFFD snapshot/restore fast-start").
+
 ### Acceptance and proof
 
 ```bash
@@ -505,6 +853,9 @@ Do not revert to code that accepts tags.
 ## S3b — real V3 qualification harness upgrade
 
 **Size:** M (2-3 days; independently capped at the normal review budget).
+**Bead:** materialized at owner gate (S3b).  
+**Review budget:** inside — harness-script upgrade (V2→V3 real path + CLI/env
+contract); independently capped at the normal review budget.  
 **Blocked by:** S3a.
 **Delivers:** a real observe/bound V3 evidence path for the exact external image,
 quota helper, and workspace root that S4 admits.
@@ -574,6 +925,24 @@ of the file written by `--cohort-spec-out`; that positional interface already
 exists and S3b preserves it. The existing `RUN_RUNSC_INTEGRATION=1` gate also
 remains required for the integration-script invocation.
 
+### Grounded in E2B
+
+E2B's build path is the **template-manager inside `orchestrator`** on a dedicated
+`build` node pool: `cmd/create-build` makes the VM artifact, and the artifact is
+content-addressed and chunked before the orchestrator will boot from it
+(e2b-internals §1, §4). The discipline S3b mirrors is that **the thing that runs
+must be an observed, immutable artifact, not an ad-hoc build**: E2B never boots a
+VM from an unbuilt template. S3b's `observe → build bundle → bound V3 run →
+strict verify` ordering is the single-box analog — the harness must *observe* the
+real host/runtime/quota facts, *build* the immutable qualification bundle from
+those observations plus the exact pinned workload image, and only then emit
+admission evidence bound to that bundle digest. It refuses placeholder/reference
+values for the same reason E2B refuses to boot an unbuilt template. The
+difference from E2B: E2B's build service runs continuously on the `build` pool,
+whereas v1 runs this as a **manual per-box qualification** (Decision 6), because
+v1 admits one box by hand — continuous evidence-bound admission is the SBX1.5 v2
+target (architecture §5 "SBX1.5 fleet-admission automation").
+
 ### Acceptance and proof
 
 ```bash
@@ -595,6 +964,10 @@ the S3b contract is restored and green.
 ## S4 — rented-VM provisioning script and manual qualification
 
 **Size:** M (2-4 days plus provider provisioning time).  
+**Bead:** materialized at owner gate (S4). Ops/security slice — no thermo
+docs/config exemption from the two review lines.  
+**Review budget:** inside for the committed script + runbook; the admission run
+itself is an operator action on the box, not reviewed LOC.  
 **Blocked by:** exact S1-S3b release/artifact cohort.
 **Delivers:** one reproducibly configured OVH EU KVM VM and the manual
 admission record for that box.
@@ -679,6 +1052,22 @@ admission record for that box.
   box; there is no scheduled/protected fleet job or automatic candidate-box
   registration.
 
+### Grounded in E2B — which ops concepts map, and which are deliberately manual
+
+E2B runs three ops machines that S4 **collapses into one runbook on one box**:
+
+| E2B ops concept (e2b-internals) | E2B mechanism | S4 single-box mapping |
+| --- | --- | --- |
+| **Image/template build** (§4) | `template-manager` on the `build` node pool builds the VM artifact; artifacts are content-addressed, chunked, stored in GCS/S3 | S4 builds the workload image from the committed `src/providers/runsc/runtime/workload/Dockerfile`, pushes to an operator-selected **private registry**, and pins the canonical `repository@manifestDigest` read from BuildKit's `image-metadata.json` (cross-checked with `docker buildx imagetools inspect`). No build *service* runs — one build, one pinned digest (§S3a). |
+| **Node provisioning** (§1 node pools; §7 Nomad/Consul/Terraform weld) | `iac/` Terraform stands up `control`/`api`/`client`/`build`/`clickhouse` pools; Nomad schedules onto `client` (Firecracker, nested-virt) nodes | S4's `provision-runsc-worker.sh --apply` provisions **one** rented KVM VM: pinned Docker/runsc with `--platform=systrap`, the `prjquota` data volume, the root quota helper, Caddy/Tailscale ingress, systemd unit. This replaces E2B's entire `iac` + Nomad node-pool machinery — e2b-internals §7 names Nomad/Consul/Terraform as "the biggest weld … replace wholesale with our own." |
+| **Service discovery / health catalog** (§1 Consul) | Consul is the live catalog of which node runs which sandbox + node health | S4 has no catalog: the single-worker config *is* the registry, and `--check` is the health gate (openat2, prjquota, Caddy bind, tailnet ACL, firewall). Admission = installing evidence into config, not registering with a catalog. |
+| **Continuous admission** (architecture §5 SBX1.5) | (E2B assumes healthy nodes stay in the Nomad pool; drift handling is fleet-level) | Deliberately **manual per box** (Decision 6): one green evidence run on the exact box, digests copied into config. Continuous evidence-bound admission, drift fence, and CVE game-day are the SBX1.5 v2 target, explicit non-goals here. |
+
+The net: S4 is the honest single-box degenerate of E2B's `build` + `client` pool
+provisioning, with Terraform/Nomad/Consul replaced by one idempotent shell script
+and one manual evidence install — exactly the e2b-internals §8 "collapse
+aggressively" instruction applied to ops.
+
 ### Acceptance and proof
 
 Run the entire block from an audited root login shell on the rented OVH KVM VM,
@@ -755,6 +1144,9 @@ action and is not part of an automated rollback.
 ## S5 — seneca production flip with rollback
 
 **Size:** M (1-3 days plus deployment observation).  
+**Bead:** materialized at owner gate (S5).  
+**Review budget:** inside — mode/config widening + fail-closed precedence fix +
+single-worker config loader; reuses the existing provider adapter.  
 **Blocked by:** S1-S4 merged and exact S4 evidence accepted.  
 **Delivers:** V1 remote-worker as a built-in agent mode and one observed seneca
 production canary.
@@ -837,6 +1229,55 @@ production canary.
   cannot drain naturally, explicitly terminate the canary sessions and confirm
   daemon cleanup before restoring the revision. Leave the EU worker and volume
   untouched until seneca health and a Vercel-sandbox canary are green.
+
+### Files and modules touched
+
+- `packages/agent/src/server/runtime/mode.ts`, `runtime/resolveMode.ts`,
+  `runtime/modes/providerAdapter.ts`, `host/sandbox.ts` — widen the built-in
+  mode id to include `remote-worker` and compose
+  `createRemoteWorkerSandboxProviderV1`
+  (`packages/boring-sandbox/src/providers/remote-worker/createRemoteWorkerProvider.ts`)
+  through the generic `createProviderRuntimeModeAdapter`. Do **not** extend the
+  legacy V0 client under `packages/agent/src/server/**`.
+- `packages/agent` shared config schema + full-app production-safety allowlist —
+  add `remote-worker` as a production-permitted mode.
+- `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts` — fail closed
+  when `BORING_AGENT_MODE=remote-worker` is combined with legacy
+  `BORING_WORKER_BASE_URL`; no precedence rule may silently select V0 (this is
+  architecture §3 invariant item 2, the one real code bypass, closed here).
+- The single-worker config loader (server-only, from env) — the placement seam
+  described next.
+
+### The placement seam (Layer 2) — config, not a scheduler
+
+The single-worker config assigns **all 256 placement buckets to the one admitted
+EU worker**. This is the architecture §2 Layer-2 "constant placer as config,"
+realized as data, **not** a hardcoded assumption baked inline into the request
+path and **not** a `placeSession(request) → box` code interface — no S1–S5 slice
+ships that function. The config references absolute token/CA files plus the exact
+S4 evidence/bundle/cohort/workload digests; raw secret values never enter JSON,
+logs, client bundles, or PRs.
+
+### Grounded in E2B
+
+E2B's placement is the crown-jewel weld: `api` picks a node via
+`internal/orchestrator` scheduling against the **Nomad/Consul** catalog, then
+speaks `SandboxService.Create` to the chosen orchestrator (e2b-internals §2
+"placement/scheduling lives in `api` (control plane)"; §7 "Nomad+Consul do
+scheduling, discovery, and health … replace wholesale"). v1's 256-bucket→one-box
+config is the **degenerate one-box case** of that scheduler: the constant
+function `∀ request → the one EU worker`. Extracting a real
+`placeSession(request) → box` interface and putting fleet/warm-pool/bin-packing
+logic behind it is the **v2 evolution target** — the surgery the architecture
+doc predicts (architecture §2 Layer-2 row, §5 "Introduce a real
+placement/scheduler in the control-plane daemon to replace what Nomad+Consul give
+E2B"). e2b-internals §8 v2 names the same step: "Introduce a real
+placement/scheduler in the control-plane daemon." v1 deliberately does not build
+it (guardrail architecture §6, plan non-goals). Likewise the standalone-host
+scope rule (authenticated `sessionId` = workspace scope, UUID required before
+provider create) is the single-box analog of E2B binding a sandbox to one
+orchestrator node in its Consul catalog — v1 has one node, so the scope is the
+authorized session, not a catalog lookup.
 
 ### Acceptance and proof
 
