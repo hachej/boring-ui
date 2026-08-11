@@ -31,7 +31,7 @@ const pinSiteUrl = new URL('../.agents/factory/fleet.yaml', import.meta.url)
 // The full set of skills the pin site is expected to reference today. Anything parsed outside
 // this set, or any skill in this set that fails to parse at all, is a hard error rather than a
 // silent skip — a partially-matching pattern must be loud, not quietly report "all clear".
-const EXPECTED_SKILLS = ['feedback', 'triage', 'handoff', 'plan', 'exec', 'fresh-eyes']
+const EXPECTED_SKILLS = ['feedback', 'triage', 'handoff', 'plan', 'exec', 'fresh-eyes', 'owner-gate']
 
 async function sha256(content) {
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content))

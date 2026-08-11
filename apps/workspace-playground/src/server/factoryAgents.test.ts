@@ -23,11 +23,11 @@ import { loadBoringFactoryAgents, type BoringFactoryRole } from './factoryAgents
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../..')
 const EXPECTED = [
-  { role: 'concierge', id: 'boring-concierge', skills: ['feedback', 'triage', 'handoff'] },
-  { role: 'triage', id: 'boring-triage', skills: ['triage', 'handoff'] },
-  { role: 'steward', id: 'boring-steward', skills: ['plan', 'handoff'] },
-  { role: 'worker', id: 'boring-worker', skills: ['exec', 'handoff'] },
-  { role: 'reviewer', id: 'boring-reviewer', skills: ['fresh-eyes', 'handoff'] },
+  { role: 'concierge', id: 'boring-concierge', skills: ['feedback', 'triage', 'owner-gate', 'handoff'] },
+  { role: 'triage', id: 'boring-triage', skills: ['triage', 'owner-gate', 'handoff'] },
+  { role: 'steward', id: 'boring-steward', skills: ['plan', 'owner-gate', 'handoff'] },
+  { role: 'worker', id: 'boring-worker', skills: ['exec', 'owner-gate', 'handoff'] },
+  { role: 'reviewer', id: 'boring-reviewer', skills: ['fresh-eyes', 'owner-gate', 'handoff'] },
 ] as const
 
 async function expectedInstructions(role: string, skills: readonly string[]): Promise<string> {
