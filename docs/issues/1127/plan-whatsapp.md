@@ -1,7 +1,7 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/1127
 issue: 1127
-state: external-channels reframe (r4) — generic channel registry + descriptor mechanism, WhatsApp as v1 consumer; 2026-08-11 identity/routing/bake-off rulings folded in; slice 6 verdict = build thin (seed Flue edge + Hermes reference); ready for owner gate merge
+state: external-channels reframe (r4.1) — generic channel registry + descriptor mechanism, WhatsApp as v1 consumer; adversarial-review reframe folded in (2026-08-11): PILOT = provisioned bindings / fail-closed, open self-serve WhatsApp signup + phone identity + account merge DEMOTED to Phase 2; better-auth phone-first claims corrected against code; descriptor = rendering-only + adapter-owned opaque conversation key; slice 6 verdict = build thin (seed Flue edge + Hermes reference); ready for owner gate merge
 updated: 2026-08-11
 supersedes: docs/issues/1127/plan.md (r2.1) — for the channels lane only
 flag: BORING_AGENT_CHANNELS (from r2.1; channel registry + adapter host are dead code when off)
@@ -80,6 +80,22 @@ the four new lanes.
 | **Session pane renders icon + read-only badge PURELY from the descriptor** | Re-anchors §6.4/§6.5: no per-channel UI code. `sessionsReadOnlyInWorkspace` and `icon` are descriptor fields the pane reads; the read-only reopen (§6.5) is a **generic descriptor property**, not WhatsApp UI. |
 | **WhatsApp = the ONE fully-built consumer for v1; Slack/email/pi-excel = future consumers, NOTED ONLY, zero implementation scope** | New §0.6. No work items/slices for future consumers. `demo/pi-excel-coupling` exists as a prior demo branch validating the pattern. |
 
+## Adversarial-review reframe folded in (2026-08-11, r4→r4.1)
+
+The Fable adversarial review FAILED r4 on the identity lane (not on the
+pipeline/binding core, which passed). r4.1 applies the reviewer's path-to-PASS.
+These are honesty/architecture fixes, not cosmetic.
+
+| Finding | Fix applied |
+| --- | --- |
+| **R1** — pilot's "unknown sender = signup" (old slice 1c) contradicts 1a's fail-closed | **Pilot = provisioned bindings, fail-closed** (new §0.7). Open signup demoted to Phase 2 (§6.6). |
+| **R2/R3** — false "just a magic-link delivery adapter / provider #4 is a config line" claims | Corrected against code (§6.6): better-auth magic-link is **email-keyed**, mounted only with a mail transport, gated on `emailVerificationEnabled`; `accountLinking` and a `phoneNumber` plugin are **NOT installed**. Phone-first identity is **real Phase-2 work**. |
+| **R4** — v1 merge flow asserted, not specified | **Demoted to Phase 2**, marked unspecified/hard — no account-merge primitive exists (§6.6). Pilot's single provisioned binding needs no merge. |
+| **R5** — open signup is an unpriced abuse surface | Abuse controls moved to a **Phase-2** §7.2 subsection; the pilot's fail-closed posture (§0.7) avoids the surface entirely. |
+| **R6** — descriptor doesn't distinguish channels; binding key is WhatsApp-shaped | Descriptor reframed as **rendering-only** contract; delivery/threading/credentials are **adapter-owned**; binding key is an **opaque adapter-owned conversation key** (§0.5.1, §0.5.5). |
+| **R7** — `isIdentityProvider` boolean does no work, `web:false` self-contradicts | Renamed `canOriginateIdentity`, given **teeth** (gates whether inbound may reach an identity route), **web=true** (§0.5.1/§0.5.3). |
+| C1/C3/C4 (recommended) | read-only = per-deployment policy (§6.5); OTP-window claim flagged `[UNVERIFIED]` (§6.6); slice 1a split registry-first (§8). |
+
 ---
 
 ## 0.5 The generic mechanism — channel registry + descriptor [GENERIC]
@@ -93,21 +109,40 @@ A **channel** is any external surface that drives an agent session (WhatsApp,
 Slack, email, a spreadsheet add-in). The registry holds one **descriptor** per
 channel:
 
+**The descriptor is the WORKSPACE-RENDERING contract — nothing more.** It carries
+only what the workspace UI needs to render a channel-originated session: icon,
+read-only badge, dialect/formatting. It deliberately does **not** carry
+delivery, threading, credentials, webhook, or media semantics — **those are
+adapter-owned** (§3.2, §0.5.5). The descriptor generalizes the *rendering*; the
+adapter owns *delivery/threading/credentials*.
+
 ```ts
 interface ChannelDescriptor {
   id: string                          // 'whatsapp' | 'web' | 'slack' | 'email' | 'excel' | …
   label: string                       // human label for the badge/filter
   icon: string                        // rendered in the session pane; NO per-channel UI code
-  sessionsReadOnlyInWorkspace: boolean// true → workspace reopen is read-only (§6.5)
-  dialect: ChannelDialect             // formatting/chunking rules (§3-shaping); 'web' = passthrough
-  isIdentityProvider: boolean         // can users sign up / authenticate from here? (§0.5.3)
+  sessionsReadOnlyInWorkspace: boolean// true → workspace reopen is read-only (§6.5); per-deployment
+                                      //   POLICY default, not channel nature (see §0.5.4, C1)
+  dialect: ChannelDialect             // OPEN-ENDED formatting/chunking tag (NOT a frozen enum);
+                                      //   §3-shaping; 'web' = passthrough
+  // capability FLAG only — documents whether this channel's inbound can create/authenticate
+  // an identity. It does NOT drive a generic mechanism; identity wiring is consumer-specific
+  // (§0.5.3, §6.6). It gates ONE thing: whether the adapter's inbound path is ALLOWED to reach
+  // an identity-minting route at all. web=true (web IS where signup happens), whatsapp=true
+  // (phase 2 only), slack/email/excel=false.
+  canOriginateIdentity: boolean
 }
 ```
 
+`ChannelDialect` is an **open string tag**, not an enum frozen at
+`web|whatsapp` — future descriptors (e.g. `excel/cell`, `slack/mrkdwn`) add tags
+without a registry change.
+
 `'web'` is a descriptor too — the default for everything that exists today
-(`sessionsReadOnlyInWorkspace: false`, `dialect: passthrough`,
-`isIdentityProvider: false`). Adding a channel is **registering a descriptor +
-building an adapter**, never editing session-pane UI.
+(`sessionsReadOnlyInWorkspace: false`, `dialect: passthrough`). Its
+`canOriginateIdentity` is **`true`**: web is where every existing signup happens
+(email/password, Google, GitHub). Adding a channel is **registering a descriptor
++ building an adapter**, never editing session-pane UI.
 
 ### 0.5.2 Sessions carry `originChannel`
 
@@ -127,19 +162,48 @@ neither of two **independent** capabilities:
 | Capability | What it means | Descriptor field |
 | --- | --- | --- |
 | **(a) Interaction surface** | Chat with the agent from here — inbound → session, outbound replies. **ALL channels have this** (it is what makes something a channel). | implicit (every descriptor + its adapter) |
-| **(b) Identity provider** | Sign up / authenticate from here — the surface can *create and prove* an account identity. **Only some channels.** | `isIdentityProvider` |
+| **(b) Can originate identity** | The channel's inbound is *permitted* to reach an identity-minting/authenticating route. **Only some channels.** This is a **gate**, not a mechanism: `true` means "inbound MAY create/authenticate"; `false` means the adapter's inbound path is fail-closed against identity routes. The identity *mechanism* itself is consumer-specific wiring (§6.6), never generic. | `canOriginateIdentity` |
 
-- **WhatsApp = both.** Interaction surface (the whole inbound/outbound path) AND
-  identity provider (phone-number-as-identity, channel-as-verifier signup, the
-  magic-link/OTP web-auth — §6.6, slice 1c). All the auth/billing work in this
-  plan is WhatsApp exercising capability (b).
-- **Slack / email / pi-excel = interaction only.** They chat with the agent but
-  do **not** mint account identities (a user is already authenticated in the host
-  product); `isIdentityProvider: false`.
+- **web = true.** Web is where every existing signup happens today
+  (email/password, Google, GitHub). The flag exists precisely so web is not a
+  special case.
+- **WhatsApp = both — but capability (b) is PHASE 2, not pilot.** The pilot uses
+  **provisioned bindings** (§0.7): a customer's number is known/allowlisted
+  ahead of time, so pilot inbound never mints identity — `canOriginateIdentity`
+  is a gate that stays **closed on the pilot path**. Open WhatsApp-native signup
+  (minting identity from an unknown inbound) is **Phase 2** (§6.6), where this
+  flag is opened and the real phone-identity work lands.
+- **Slack / email / pi-excel = interaction only.** `canOriginateIdentity:
+  false` — a user is already authenticated in the host product.
 
 Keeping these orthogonal is what stops "channel" from collapsing into "auth
-provider": the identity work (§6.6/§7.5/slice 1c) is the WhatsApp consumer's
-capability (b), not a tax every channel pays.
+provider": the identity work (§6.6/§7.5) is a **Phase-2** capability of the
+WhatsApp consumer, not a tax every channel pays and **not on the pilot critical
+path**.
+
+### 0.5.5 The adapter owns delivery, threading, and credentials [GENERIC]
+
+The descriptor is rendering-only (§0.5.1); **everything that makes a channel a
+channel at the wire level is adapter-owned**, behind the `ChannelAdapter`
+contract (§3.2):
+
+- **Threading model.** WhatsApp = session-per-sender; Slack = per-thread
+  (`team:channel:thread_ts`); email = per-subject-thread; excel = per-workbook.
+  The store does **not** encode this — see the opaque conversation key below.
+- **Delivery constraints.** WhatsApp's 24h-window + template fallback (§7.1)
+  lives entirely in the WhatsApp adapter + slices 1a/1b, **not** the descriptor.
+- **Webhook / credential / media model, delivery semantics (at-least-once).**
+  All adapter-owned.
+
+**Binding key is an OPAQUE, adapter-owned conversation key — not a fixed
+`(channel, externalId)` tuple.** The `ChannelBindingStore` maps
+`(channel, conversationKey[, agentTypeId]) → (workspaceId, sessionKey)` where
+`conversationKey` is an **opaque string the adapter mints and interprets**.
+WhatsApp's is the sender number; Slack's is `team:channel:thread`; email's is a
+normalized thread id. This is what lets consumer #2 (Slack/email) fit **without
+a store schema change** — the store never parses the key. Documented honestly:
+the store layer is generic because it treats the key as opaque; the *meaning* of
+the key is the adapter's.
 
 ### 0.5.4 Session pane renders purely from the descriptor [GENERIC]
 
@@ -161,13 +225,51 @@ only to show a new consumer is "register a descriptor + build an adapter":
 
 | Future consumer | Capabilities | Descriptor sketch | Status |
 | --- | --- | --- | --- |
-| **pi-excel** (spreadsheet add-in) | interaction only | `{ id:'excel', isIdentityProvider:false, sessionsReadOnlyInWorkspace:true, dialect: excel/cell }` | **Noted only.** A prior demo branch **`demo/pi-excel-coupling`** already validates the channel-coupling pattern end-to-end. Owner ruling: *ignore pi-excel implementation, just note as future consumer.* |
-| **Slack** | interaction only | `{ id:'slack', isIdentityProvider:false, sessionsReadOnlyInWorkspace:true, dialect: slack/mrkdwn }` | Noted only. `@flue/slack` ingress exists (§2.3) if/when built. |
-| **email** | interaction only | `{ id:'email', isIdentityProvider:false, sessionsReadOnlyInWorkspace:true, dialect: email/html }` | Noted only. Distinct from the #1165 email *identity* path (which is an identity provider on the web side, not a channel). |
+| **pi-excel** (spreadsheet add-in) | interaction only | `{ id:'excel', canOriginateIdentity:false, sessionsReadOnlyInWorkspace:true, dialect:'excel/cell' }` (opaque conversationKey = per-workbook) | **Noted only.** A prior demo branch **`demo/pi-excel-coupling`** already validates the channel-coupling pattern end-to-end. Owner ruling: *ignore pi-excel implementation, just note as future consumer.* |
+| **Slack** | interaction only | `{ id:'slack', canOriginateIdentity:false, sessionsReadOnlyInWorkspace:true, dialect:'slack/mrkdwn' }` (opaque conversationKey = `team:channel:thread`) | Noted only. `@flue/slack` ingress exists (§2.3) if/when built. Slack threading needs **no store schema change** — the key is opaque (§0.5.5). A future Slack deployment with two-way reply would set `sessionsReadOnlyInWorkspace:false` — it is a policy default, not channel nature (C1). |
+| **email** | interaction only | `{ id:'email', canOriginateIdentity:false, sessionsReadOnlyInWorkspace:true, dialect:'email/html' }` (opaque conversationKey = normalized subject-thread) | Noted only. Distinct from the #1165 email *identity* path (which is an identity provider on the web side, not a channel). |
 
 Each is a descriptor + an adapter behind the same `ChannelAdapter` contract
 (§3.2) the WhatsApp consumer defines; none needs new session-pane UI, new
 identity machinery, or a new mechanism. **Do not scope them here.**
+
+---
+
+## 0.7 Pilot trust posture — PROVISIONED BINDINGS (fail-closed) [WA-SPECIFIC]
+
+**The pilot inbound model is provisioned bindings, not open signup.** This is the
+single load-bearing trust decision, resolving the 1a-vs-1c contradiction the
+adversarial review flagged (R1). It reinstates the ratified r2.1 §7.3 posture and
+removes the "unknown sender = signup" ruling from the **pilot** path.
+
+- **Known/allowlisted senders only.** A customer's phone number is
+  **provisioned by us during onboarding** (CLI/admin op, r2.1) and bound ahead of
+  time to their pre-created workspace/session. The binding table is the entire
+  trust decision.
+- **Unknown sender = fail-closed.** An inbound from a number with no binding gets
+  **no session, no account, no signup** — a rate-limited polite rejection with a
+  stable code (§7.2). There is exactly one inbound trust rule in the pilot, and
+  it is deny-by-default.
+- **Why this shape.** The pilot needs zero identity build: no phone-keyed
+  better-auth work, no account-minting abuse surface, no merge flow. It ships
+  fast and safe. Onboarding is a provisioning step we run, not a self-serve
+  funnel.
+
+**Open self-serve WhatsApp signup is Phase 2, honestly scoped as real work.**
+Minting an identity from an unknown inbound (the old slice 1c) is moved **off the
+pilot critical path** into an explicit later phase (§6.6). It carries the real
+phone-identity build (better-auth is email-keyed today — §6.6), the abuse
+controls (§7.2 Phase-2 subsection), and the account-merge flow (§6.6) — none of
+which the pilot needs. **Pilot = provisioned bindings (fast, no identity build);
+open phone-first signup = Phase 2 (real work).**
+
+| | **Pilot (v1)** | **Phase 2** |
+| --- | --- | --- |
+| Inbound from unknown number | fail-closed, no session | SIGNUP (mint identity) |
+| Identity build | none (bindings only) | real: phone-keyed better-auth path (§6.6) |
+| Abuse controls | rate-limited rejection | account-minting caps (§7.2 Phase 2) |
+| Account merge | n/a (one provisioned binding) | required, unspecified/hard (§6.6) |
+| `canOriginateIdentity` gate (WhatsApp) | **closed** | opened |
 
 ---
 
@@ -575,7 +677,8 @@ the app host composes identically, so §5 stands as the substrate proof for the
 workspace-session routing too.
 
 **Tenancy consequence (supersedes the old one-workspace-scope caveat):** the
-binding maps `(channel, externalId)` → `(workspaceId, sessionKey)`. Tenant
+binding maps `(channel, conversationKey)` → `(workspaceId, sessionKey)` (opaque
+key, §0.5.5). Tenant
 separation is **per-workspace** — each customer's own signup workspace — not
 per-session inside one shared scope. §7.3 item 4 is updated accordingly; the
 one-number identity risks (items 1–3, 5) remain.
@@ -893,7 +996,8 @@ branching on a channel name:
    deployment.
 
 **Binding schema linkage, made explicit:** the `ChannelBindingStore` row links
-`(channel, externalId)` → `(workspaceId, sessionKey)`, and the session that the
+`(channel, conversationKey)` → `(workspaceId, sessionKey)` — where
+`conversationKey` is the opaque adapter-owned key (§0.5.5) — and the session that the
 binding creates (via the CAS create-race machine, §1.2b) is created **with**
 `channel: 'whatsapp'` set. The binding's `channel` column and the session's
 `channel` property are the same typed value — the binding is the addressing map
@@ -919,6 +1023,14 @@ whose descriptor sets `sessionsReadOnlyInWorkspace` (WhatsApp is the first such
 descriptor; the gate is `descriptor.sessionsReadOnlyInWorkspace`, not
 `channel === 'whatsapp'`).
 
+**Read-only is a per-deployment POLICY default, not channel nature (C1).** WhatsApp
+reopen is read-only in v1 because of the 24h-window/send-path asymmetry and the
+deferral of two-way takeover to v2 — not because a channel is intrinsically
+read-only. `sessionsReadOnlyInWorkspace` is a descriptor **default** a deployment
+can flip (a Slack channel with two-way reply is entirely plausible in v2). The
+plan states this as policy so the descriptor field is not mistaken for an
+intrinsic property.
+
 **Two-way human-takeover is v2** (slice 8). Its ready-made design sheet — the
 previously-flagged questions, parked not discarded:
 
@@ -931,44 +1043,76 @@ previously-flagged questions, parked not discarded:
 - **Takeover semantics:** recommend the agent **yields while a human is
   active** and **resumes on explicit handback**, not on a timer.
 
-### 6.6 Onboarding & identity — WhatsApp-native signup [WA-SPECIFIC — capability (b), §0.5.3]
+### 6.6 Onboarding & identity [WA-SPECIFIC]
 
-**This section is the WhatsApp consumer exercising the identity-provider
-capability (§0.5.3 capability (b)).** WhatsApp's descriptor has
-`isIdentityProvider: true`; Slack/email/pi-excel do not (§0.6), so none of this
-applies to them. Identity is not a channel-universal requirement — it is a
-capability only some channels have, and WhatsApp is the one that has it in v1.
+#### Pilot (v1): provisioned bindings — NO identity build
 
-**The phone number is the account identity.** This reframes the inbound path: a
-first inbound from an unknown number is not merely "session-start", it is
-**SIGNUP** — account creation. The whole model:
+Under the pilot posture (§0.7), **identity is not built in v1.** A customer's
+number is provisioned during onboarding and bound to their pre-created
+workspace/session; an unknown inbound is fail-closed. There is no account
+minting, no phone-as-identity, no magic-link-over-WhatsApp on the pilot path.
+The customer's better-auth account already exists (created the normal way when we
+onboard them); the binding row simply points the channel at that account's
+workspace. **Everything below this line is Phase 2, not pilot.**
 
-- **Discovery → click-to-chat → conversational signup.** The user finds the
-  product (landing page, ad, business card) and taps a `wa.me/<seneca-number>`
-  link, which opens WhatsApp pre-addressed to our number. Their first message
-  from a new number **creates the account + workspace + default agent**, keyed
-  to that phone number. Onboarding happens **in the WhatsApp conversation** —
-  the bot onboards conversationally. **No email, no password, no web form.**
-- **One Seneca (or per-vertical) number, multi-tenant by sender.** The inbound
-  `from` number partitions tenants — this **reuses the already-decided pilot
-  number model** (§4, §7.3). The number is *ours*; the user's number is their
-  identity.
-- **This needs NO Embedded Signup and NO per-customer OAuth.** Embedded Signup
-  exists only to send **as a customer's own number**. Here users text OUR
-  number and their number is just their identity, so the weeks-long
-  per-customer-verification gate is **removed from this path**. Still required:
-  one verified Seneca WABA + Meta business verification for that number
-  (§0). Per-customer Embedded Signup is a **separate future capability**, in
-  scope only if a customer wants replies sent on THEIR own number.
-- **Auth factor = control of the WhatsApp number**, proven by messaging from
-  it. Possession of the number is the credential.
+---
+
+#### Phase 2: open self-serve WhatsApp signup — REAL WORK, honestly scoped
+
+This is the WhatsApp consumer exercising the "can originate identity" capability
+(§0.5.3). It is **off the pilot critical path.** When built, WhatsApp's
+descriptor `canOriginateIdentity` gate is opened. It is **not** "extend
+better-auth with a config line" — the review verified against the code that
+phone-first identity is genuinely new work. Scoped here so it is not
+under-estimated later.
+
+**The intended model (Phase 2).** The phone number becomes the account identity:
+a first inbound from an unknown number is **SIGNUP** — account + workspace +
+default agent, keyed to the number, onboarded conversationally in the thread
+(no email, no password, no web form). One Seneca number, multi-tenant by sender
+(§4, §7.3). This needs **no Embedded Signup / per-customer OAuth** (those exist
+only to send as a *customer's own* number; here the user texts OUR number).
+
+**Why this is real work, not a config line (corrected against code,
+2026-08-11).** The r4 draft claimed phone identity is "provider #4, a config line
+at ~L151" and "just a magic-link delivery adapter". **Both are false**:
+
+- **better-auth's magic-link is EMAIL-KEYED.** `createAuth.ts:127`:
+  `magicLink({ sendMagicLink: async (data: { email; url; token }) => … })`;
+  issuance is `signIn.magicLink(email)`. A phone-only user **has no email to key
+  the token to**, so the existing magic-link path **cannot be invoked for the
+  exact users it is meant for**. Wiring `sendMagicLink` to deliver over WhatsApp
+  does not create a phone-keyed identity — it only changes the delivery channel
+  of an already-email-keyed token.
+- **The magic-link plugin only mounts WITH a mail transport.**
+  `createAuth.ts:125`: `transport ? [magicLink(...)] : []`. A WhatsApp-first
+  deployment with no SMTP has **no magic-link machinery at all**. And
+  `capabilities.ts:74` gates the capability on `emailVerificationEnabled` —
+  coupling it to email policy.
+- **`phoneNumber` plugin is NOT installed** (no grep hit) and there is no phone
+  entry in `socialProviders`. Phone-first identity requires **either** adding
+  better-auth's `phoneNumber` plugin + a phone-keyed token/session path, **or** a
+  custom identity path. Both are real code.
+- **better-auth users require an email.** Phone-only account creation must
+  **fabricate a placeholder email** (a `getTempEmail(phone)` pattern) or change
+  the schema — with its own collision/linking mess. The r4 draft never named
+  this; it is a required Phase-2 work item.
+
+So Phase 2's phone-identity build = { pick phoneNumber-plugin **or** custom path;
+solve the placeholder-email problem; add a phone-keyed verification-token mint +
+redeem + session-establishment route if not using the plugin }. Token
+mint/redeem is **not** "already done" for phone users.
+
+- **Auth factor = control of the WhatsApp number**, proven by messaging from it
+  (channel-as-verifier) — this remains a genuine advantage, but it feeds a
+  *custom* phone-identity path, not the email-keyed magic-link plugin.
 - **Contrast with email-based signup (#1165 signup-domain hook).** That path
-  keys identity on a verified email domain. Phone-identity is a **new identity
-  provider on the existing better-auth stack** (see below) — provider #4
-  alongside Google, GitHub and email/password, not a new auth system.
+  keys identity on a verified email domain and works today. Phone-first does not
+  work today.
 
-**Web workspace access = magic link over WhatsApp.** When the user needs the
-full web UI:
+**Web workspace access = magic link over WhatsApp (Phase 2).** Once a phone user
+has a placeholder or real email on their account, the existing magic-link token
+can be delivered over WhatsApp. When the user needs the full web UI:
 
 - the bot sends a **one-time, short-TTL (minutes), signed** login link bound to
   their phone-account; tapping it establishes a web session (cookie,
@@ -978,15 +1122,17 @@ full web UI:
 - **phone OTP is the documented fallback**, but magic-link-over-WhatsApp is the
   **primary** path — lower friction, because the user is already in WhatsApp.
 
-**OTP fallback does NOT need the 24h window** (auth-billing research,
-`references/whatsapp-auth-billing-research.md` §1). Meta's **authentication-category
-templates** (OTP) are business-initiated and window-independent, so the reverse
-"get login link/code on WhatsApp" path works even for a number that has never
-messaged us. Use the **copy-code** button type and a **10-minute TTL** — matching
-better-auth's magic-link/verification-token expiry (§7.5), so the delivery adapter
-and the auth layer agree on lifetime. The channel-as-verifier path (first inbound
-proves possession) stays the zero-template primary; OTP is the
-business-initiated fallback.
+**[UNVERIFIED — load-bearing] OTP templates skip the 24h window.** The claim
+that Meta's **authentication-category** templates (OTP) are window-independent
+underpins the entire reverse "get login link/code on WhatsApp" path for cold
+numbers. The research file (`references/whatsapp-auth-billing-research.md` §1)
+marks only the *pricing* as unverified; **the window-independence itself carries
+no primary Meta-docs citation** and is load-bearing. If wrong, the reverse flow
+is impossible for a number that has never messaged us. **A primary Meta
+documentation citation is a required gate before any Phase-2 reverse-flow build.**
+If verified: use the **copy-code** button type and a **10-minute TTL** (matching
+better-auth's token expiry, §7.5). The channel-as-verifier path (first inbound
+proves possession) stays the zero-template primary; OTP is the fallback.
 
 **SMS fallback during the WABA ramp** (research §2). A newly-verified number is
 capped at ~2,000 business-initiated conversations/day until the quality tier
@@ -995,113 +1141,102 @@ fall back to an SMS OTP through a CH/EU SMS provider — **auth-path only**, nev
 for agent conversation content. Tracked in the billing/ramp note (§7.6), out of
 v1 build scope unless the pilot hits the cap.
 
-**boring-ui fit — this EXTENDS existing better-auth; it does not build auth.**
-Verified in code (2026-08-11):
+**SMS fallback during the WABA ramp** (research §2). A newly-verified number is
+capped at ~2,000 business-initiated conversations/day until the quality tier
+climbs (**[UNVERIFIED]** — the ~2,000 figure drives SMS-fallback scope and needs
+a Meta-docs citation). SMS OTP through a CH/EU provider is **auth-path only**,
+never conversation content. Phase-2 scope, tracked in §7.6.
 
-- **Multi-provider identity already exists.** `createAuth.ts` (lines ~151–164)
-  wires `socialProviders` (GitHub, Google) plus `emailAndPassword` — better-auth
-  gives a provider-agnostic `user` with linked account identities out of the
-  box (Google and email already coexist). WhatsApp/phone becomes **another
-  linked identity provider (#4)**, not a generalization project. No
-  single-provider model needs generalizing.
-- **The magic-link machinery already exists and is fully wired.**
-  `packages/core/src/server/auth/createAuth.ts:127` mounts
-  `magicLink({ sendMagicLink })` from `better-auth/plugins/magic-link`;
-  `schema-config.ts:5,109` carries the schema (its `sendMagicLink` is a
-  generation-only no-op stub); the front client
-  `src/front/auth/authClient.ts:2,17` registers `magicLinkClient()`; and
-  `src/server/app/capabilities.ts:74` already exposes the `magicLink`
-  capability. Token mint / redeem / session establishment are **better-auth's
-  job — already done.** The runtime `sendMagicLink` today renders the link into
-  an email and hands it to `transport.send` (10-minute expiry).
-- **Our magic-link-over-WhatsApp work is a DELIVERY adapter, not new auth.**
-  Wire `sendMagicLink` to send the *existing* better-auth token URL over
-  WhatsApp (instead of / alongside email). No new token, redeem, or session
-  code. The §7.5 security properties (short TTL, one-time-use) are better-auth's
-  existing token behavior; we only choose the delivery channel.
-- **Phone identity: two options.** **Recommended — the WhatsApp channel itself
-  is the phone verifier:** an inbound message from a number proves control of
-  it, so first-inbound signup mints the linked phone identity with no separate
-  verification step (we are building the channel anyway). **Documented
-  alternative:** better-auth's `phoneNumber` plugin (OTP-based). Recommend the
-  channel-as-verifier path.
+**boring-ui fit — what already exists vs. what is NEW (corrected 2026-08-11).**
+Verified against code. The r4 draft's "extends better-auth; does not build auth"
+framing was **wrong for phone-first users**; here is the honest split:
 
-**External validation (getnao/nao study, `references/getnao-auth-study.md`).**
-nao runs the same stack we propose to extend: better-auth `^1.6.3` with the
-internal-id + `account(providerId → userId)` linked-identities model and
-`accountLinking.enabled`. This is external confirmation that the
-multi-provider, one-user / N-linked-identities model is the standard shape —
-not something we invent. Where nao helps and where it does not is captured in
-the two flows below.
+- **What DOES exist (usable as-is for EMAIL-keyed users):** `socialProviders`
+  (GitHub, Google) + `emailAndPassword` in `createAuth.ts`; the `magicLink`
+  plugin (`createAuth.ts:127`), its schema (`schema-config.ts`), front client
+  (`authClient.ts`), and capability flag (`capabilities.ts:74`). For a user who
+  **has an email**, magic-link token mint/redeem/session is done and we only
+  choose the delivery channel (email today; WhatsApp is a delivery swap).
+- **What is NEW Phase-2 work (phone-first users have NO email):**
+  - a **phone identity path** — either better-auth's `phoneNumber` plugin (NOT
+    installed) wired in, or a custom phone-keyed verification-token +
+    session-establishment route;
+  - the **placeholder-email problem** — better-auth users require an email;
+    phone-only creation must fabricate one (`getTempEmail(phone)`) or change the
+    schema. Named and owned, not hand-waved;
+  - **`accountLinking` is NOT configured** (`grep accountLinking
+    packages/core/src` → zero hits). Enabling it is real config **and** it
+    matches on a shared verified **email** — a phone-first user has no email to
+    match on, so "add email later" is **not** accountLinking's native flow; it is
+    "add a credential to an already-authenticated user", a different path.
+- **The magic-link-over-WhatsApp DELIVERY swap is genuinely small** — but it is
+  only reachable **after** a phone user has an email on their account (real or
+  placeholder). It is not the identity mechanism; it is the delivery of an
+  already-email-keyed token.
 
-#### Two complementary identity flows (both first-class)
+**External reference (getnao/nao study, `references/getnao-auth-study.md`).**
+nao runs better-auth with the internal-id + `account(providerId → userId)` model
+and enables `accountLinking`. It confirms the one-user/N-identities *shape* is
+standard — but note nao's linking is **email-anchored**, so it validates Flow A
+(web-first, has email), **not** the phone-first placeholder-email problem, which
+nao does not solve.
 
-The product must support entry from **either door**, and both must **converge
-on ONE better-auth account**:
+#### Two complementary identity flows (Phase 2)
+
+Entry from **either door**, both converging on ONE better-auth account:
 
 **Flow A — web-first → link WhatsApp (nao's linking-code pattern).** An
-already-authenticated *web* user gets a short regenerable **linking code**,
-opens WhatsApp and sends `/login <code>`; the backend links
-`whatsappUserId → userId` via better-auth `accountLinking`. This is nao's
-verified pattern and is the right flow for web-first products / users
-connecting WhatsApp to an existing account.
+already-authenticated *web* user (already has an email) gets a short regenerable
+**linking code**, opens WhatsApp and sends `/login <code>`; the backend links
+`whatsappUserId → userId`. This needs `accountLinking` **enabled** (currently not
+— real config) and is the cleaner flow because the user already has an
+email-anchored account.
 
-**Flow B — WhatsApp-first signup → magic-link web (our build).** First inbound
-from a new number creates the account (channel-as-verifier, above); when the
-user needs the web UI, the bot delivers a magic link. This is **not** in nao —
-we build it from better-auth primitives, and the security shape matters:
+**Flow B — WhatsApp-first signup → magic-link web (NEW build, the hard one).**
+First inbound from a new number creates the account (custom phone path +
+placeholder email, above); when the user needs the web UI, deliver a magic link
+over WhatsApp. Security shape:
 
-- **Use better-auth's `verification(identifier, value, expiresAt)` table** for
-  the web-session magic link — short TTL, **single-use**, exactly as
-  password-reset already does — delivered over the WhatsApp delivery adapter.
-- **Do NOT reuse nao's linking-code shape for web sessions.** The linking code
-  is long-lived and reusable — fine for a one-time identity *link*, but as a
-  *session* credential it is a session-token security bug. Sessions go through
-  the single-use `verification` token; the linking code never mints a session.
+- **Web-session link uses better-auth's single-use `verification(identifier,
+  value, expiresAt)` token** — short TTL, single-use, as password-reset does.
+- **Never reuse a reusable linking code as a session credential** — that is a
+  session-token bug. Sessions go through the single-use token.
 
-Flow B is the trades/SMB path (the CH-trades product); Flow A serves web-first
-products.
+Flow B is the trades/SMB path; Flow A serves web-first products. **Both are
+Phase 2.**
 
-#### Progressive email — the identity trust-ladder (owner ruling, ratified default)
+#### Progressive email — the identity trust-ladder (Phase 2)
 
-**Do not require email at WhatsApp signup** — it kills zero-friction signup.
-Phone-only signup, then collect email **progressively in-conversation at
-natural value moments** (first quote, first web access, first payment). Email
-becomes **effectively required at first payment** (invoices / receipts / Swiss
-business records). Email and phone then sit as **linked identities on one
-better-auth account** — `accountLinking` makes "add email later" native, with
-**no migration**. Email's roles: **recovery** (number-recycling risk, §7.3 item
-3 — nudge collection soon after first value), **billing**, and cross-channel
-notices. This is an **identity trust-ladder**, parallel to the email-*access*
-trust-ladder in the CH-trades plan.
+**Do not require email at WhatsApp signup** — phone-only, then collect email
+**progressively in-conversation** at value moments; effectively required at first
+payment (invoices / Swiss business records). Email + phone then sit as linked
+identities on one account. **This depends on the Phase-2 phone-identity build +
+`accountLinking` being configured + the placeholder-email problem being solved**
+— it is **not** free ("no migration" was overstated: enabling accountLinking and
+reconciling the fabricated placeholder email against a real email later is real
+work). Email's roles: recovery (number-recycling, §7.3 item 3), billing,
+cross-channel notices.
 
-#### Account convergence & dedup — one account, N identities
+#### Account convergence, dedup & MERGE — Phase 2, unspecified/hard
 
-The two directions create a real convergence problem; specify it, do not leave
-it implicit. **Invariant: one better-auth user, N linked identities (email +
-phone + Google), reachable via either door.**
+**The pilot does not need this** — a provisioned binding points at one existing
+account, so there is no second-door collision to merge (R4). It is documented
+here as Phase-2 work and honestly flagged as **hard and unspecified**:
 
-- **Preferred rule — always LINK into the current session.** If a user is
-  authenticated on *either* channel and presents a second identity (adds email,
-  connects WhatsApp, links Google), it **links to the existing account** via
-  better-auth `accountLinking` — never creates a second account. Flow A and
-  progressive-email collection both work this way. This avoids the collision by
-  construction wherever the user is already logged in.
-- **The unavoidable collision case** — two *independently-created* accounts that
-  are the same person (signed up via WhatsApp with a phone on Monday, then
-  signed up on web with an email later while not logged in). better-auth
-  `accountLinking` does **not** auto-merge two separate accounts. **v1 CLAIM /
-  MERGE flow:** detect the identity collision at the second signup ("this
-  email/phone already belongs to an account"), offer **verify-to-link** (prove
-  control of both identities via their own channels), then merge/link. Keep v1
-  **simple** — detect + offer verify-to-merge; **no automatic fuzzy matching**.
-- Net: **no duplicate accounts for the same person by construction where
-  possible; explicit, consented merge where not.**
-
-Both the WhatsApp session and the web session **bind to the SAME workspace
-session** — the #1211 workspace-binding ruling (§4.1) applied to identity: two
-doors, one workspace. The binding row's `workspaceId` (§4.2) is the account
-created at first-inbound signup, resolved through the same better-auth user.
+- **Invariant (intended):** one better-auth user, N linked identities, reachable
+  via either door.
+- **Link-into-current-session** where the user is already authenticated (needs
+  `accountLinking` enabled) avoids the collision by construction.
+- **The merge case is NOT specified and there is no primitive for it.**
+  better-auth has **no account-merge primitive**. Two independently-created
+  accounts (phone Monday, email later) are two **workspaces** (each got one at
+  post-signup), two session sets, two settings, eventually two billing records —
+  the repo's own `deleteUserCompletely.ts` shows how entangled a user is.
+  **Unanswered, required before any merge build:** which account survives? what
+  happens to the loser's workspace and its agent sessions? audit trail? Until
+  answered, "v1 claim/merge" is a label, not a design. **Demoted to Phase 2;** if
+  a lightweight interim is needed, it is "detect collision + block second signup
+  + support-assisted merge", stated as such — **not** an automated merge.
 
 ---
 
@@ -1139,10 +1274,26 @@ the window is an expense, not just a UX problem.
 - Quality rating is per-number and degrades on user blocks/reports; a low rating
   throttles then bans the number. **With ONE number for all tenants, one
   tenant's users can degrade delivery for every tenant.**
-- Mitigations: the fail-closed unknown-sender policy (r2.1 §2,
+- Mitigations: the fail-closed unknown-sender policy (r2.1 §2 / §0.7,
   rate-limited to once per sender — an unrate-limited auto-reply is itself a
   ban risk), an explicit opt-out keyword (STOP) honoured before any agent
   invocation, and monitoring of the quality rating as an operational alert.
+
+**Pilot avoids the account-minting abuse surface entirely.** Because the pilot is
+provisioned-bindings/fail-closed (§0.7), an unknown sender gets a rate-limited
+rejection and **nothing is minted** — no account, no workspace, no free LLM
+turns. The rate-limit above covers exactly the polite-rejection auto-reply.
+
+**Phase-2 abuse controls — REQUIRED before open signup ships (R5).** Open
+self-serve WhatsApp signup (§6.6 Phase 2) turns the Seneca number into a surface
+where **anyone of ~2B WhatsApp numbers** can mint a better-auth account +
+workspace + default agent + LLM turns, unauthenticated and free. The §7.2
+rate-limit above does **not** cover account-minting velocity. Before Phase-2
+signup is built, this section must gain: **per-number and GLOBAL signup caps**,
+**disposable/virtual-number-farm detection**, **cost caps on unpaid signup
+workspaces** (LLM-turn budget per un-converted account), and **signup-velocity
+alerting**. This is a required security section for Phase 2, not a v2 note — and
+it is one of the reasons the pilot deliberately stays fail-closed.
 
 ### 7.3 One-number multi-tenant identity limits
 
@@ -1154,8 +1305,8 @@ The owner's pilot ruling has consequences worth stating rather than discovering:
    Someone who knows the number and is not provisioned gets the polite rejection.
 2. **One person = one binding = one session.** A user who works with two tenants
    from one phone cannot be disambiguated. v1 accepts this; the binding is
-   `(channel, externalId, agentTypeId)` and the pilot must not assign one human
-   to two tenants.
+   `(channel, conversationKey, agentTypeId)` (opaque key, §0.5.5) and the pilot
+   must not assign one human to two tenants.
 3. **Number loss / SIM reuse.** A recycled number silently inherits a binding.
    Bindings need an expiry/re-confirmation policy; v1 mitigates with revocable
    status and the age alert from r2.1 open question 5.
@@ -1227,94 +1378,105 @@ does not discover these constraints late. Grounded in
 
 **Out of v1 build scope** (listed in §11): invoice generation, Stripe wiring, the
 QR-bill renderer, and SMS-provider integration. This note fixes the target shape
-so slice 1c's progressive-email collection lands on the right ladder.
+so Phase-2 progressive-email collection (§6.6) lands on the right ladder.
 
 ---
 
 ## 8. Slices
 
-Each is one PR. `1a → 1c → 1b → {3, 4, 5, 7} → 6`; slices 3/4/5/7 are parallel
-after 1b. Slice 8 is **v2**, not sequenced in this lane.
+**Pilot pipeline:** `1a-i → 1a-ii → 1a-iii → 1b → {3, 4, 5, 7} → 6`; slices
+3/4/5/7 are parallel after 1b. **Slice 1c (identity) is Phase 2**, off the pilot
+critical path. Slice 8 is **v2**.
 
-**Signup is the channel's first job.** Under the 2026-08-11 WhatsApp-native
-identity ruling (§6.6), a first inbound from an unknown number is **account
-creation**, not just session-start — so identity (slice 1c) sits immediately
-after the inbound path (1a) and before outbound turn assembly (1b). Without it
-there is no account/workspace for the binding to target.
+**No signup on the pilot path.** Under the provisioned-bindings posture (§0.7),
+the pilot has **no account creation from inbound** — bindings are provisioned
+during onboarding to pre-created workspaces, and an unknown sender is fail-closed.
+So the pilot needs **no identity slice**; the binding row already targets an
+existing `workspaceId`. The old "slice 1c sits between 1a and 1b" sequencing is
+removed — it welded identity onto the outbound path as a hard prerequisite (C5),
+which only existed because of the open-signup ruling that §0.7 reverses.
 
-**Delta from the 2026-08-11 rulings:** slice 1a gains the `workspaceId` binding
-column and the typed `channel` session property; **new slice 1c** (phone-identity
-provider + magic-link web-auth); slice 2 is retargeted from the standalone host
-to the app host; slice 4 **shrinks** (channel-side store and public viewer
-origin dropped); slice 7 (read-only reopen, near-zero UI) is new; slice 8
-(two-way takeover) is new and v2.
+**Slice 1a is split into three PRs (C4).** The r4 monolithic 1a was three PRs in
+a trenchcoat (registry + descriptors + binding store + CAS create-race +
+DrainCoordinator + webhook core + CLI + boot assertion). Split:
 
-### Slice 1a — channel core: contract, bindings, inbound path
-**Delivers:** `ChannelAdapter` contract; `ChannelBindingStore` (bindings +
-durable dedupe + inbound queue, **dedupe-row and queue insert in one sqlite
-transaction**, with CHAN-A's owner-token CAS create-race machine); the
-`DrainCoordinator` + `followUp` fix (§1.2a); inbound park policy; async-ack
-webhook core; trusted-caller seam with guardrails; provisioning CLI op; flag
-plumbing + the durable-stream boot assertion (§4.3); fake-channel inbound tests;
-**(2026-08-11)** the binding row's explicit `workspaceId` (§4.2), the
-**channel registry + `ChannelDescriptor`** (§0.5.1) with the `'web'` and
-`'whatsapp'` descriptors registered, and the typed **`originChannel`** session
-property with `'web'` default (§0.5.2/§6.4), set at session create.
-**Blocked by:** none — substrate proven in §5.
+- **Slice 1a-i — `DrainCoordinator` + `followUp` fix (§1.2a).** Touches
+  `HarnessPiChatService` turn phases; **failing test first**. Zero WhatsApp
+  dependency. Lands standalone.
+- **Slice 1a-ii — channel registry + `ChannelDescriptor` + `originChannel`.** The
+  registry (§0.5.1) with `'web'` and `'whatsapp'` descriptors, the typed
+  `originChannel` session property (`'web'` default), set at session create. **Zero
+  WhatsApp/binding dependency — the registry lands FIRST, standalone**, answering
+  "does the registry need to exist before any consumer": yes.
+- **Slice 1a-iii — binding store + inbound path.** `ChannelBindingStore` (opaque
+  `conversationKey`, §0.5.5; dedupe-row + queue insert in one sqlite transaction;
+  owner-token CAS create-race), the explicit `workspaceId` binding column,
+  fail-closed unknown-sender policy (§0.7), inbound park policy, async-ack webhook
+  core, trusted-caller seam, provisioning CLI op, flag plumbing + durable-stream
+  boot assertion (§4.3), fake-channel inbound tests.
+
+**Delta from the rulings:** binding rows gain `workspaceId` and an **opaque
+conversationKey**; **slice 1c demoted to Phase 2**; slice 2 retargeted to the app
+host; slice 4 **shrinks**; slice 7 (read-only reopen) is new; slice 8 (two-way
+takeover) is new and v2.
+
+### Slice 1a-i — DrainCoordinator + followUp fix
+**Delivers:** the `DrainCoordinator` + `followUp` stranding fix (§1.2a) in
+`HarnessPiChatService` turn phases. **Failing test first.** No WhatsApp/channel
+dependency — pure turn-phase correctness.
+**Blocked by:** none.
+**Proof:** three rapid inbounds mid-turn all reach the agent in order — the
+`followUp` regression test, red before the fix, green after.
+
+### Slice 1a-ii — channel registry + descriptor + originChannel (registry lands FIRST)
+**Delivers:** the **channel registry + `ChannelDescriptor`** (§0.5.1, rendering-only
+contract with `canOriginateIdentity` and open-ended `dialect`) with the `'web'`
+(canOriginateIdentity **true**) and `'whatsapp'` descriptors registered; the typed
+**`originChannel`** session property with `'web'` default (§0.5.2/§6.4), set at
+session create. **Zero WhatsApp/binding dependency — this is the generic mechanism
+landing standalone, ahead of any consumer.**
+**Blocked by:** none.
+**Proof:** the registry resolves a descriptor by `originChannel`; a session created
+with no channel defaults to `'web'`; descriptor lookup drives badge/read-only/dialect
+with no code branching on a hardcoded channel name; flag off → byte-identical host.
+
+### Slice 1a-iii — binding store + inbound path (fail-closed)
+**Delivers:** `ChannelAdapter` contract; `ChannelBindingStore` keyed by the
+**opaque adapter-owned `conversationKey`** (§0.5.5) with the explicit
+`workspaceId` column (bindings + durable dedupe + inbound queue, **dedupe-row and
+queue insert in one sqlite transaction**, owner-token CAS create-race machine);
+**fail-closed unknown-sender policy** (§0.7 — no session, no minting); inbound
+park policy; async-ack webhook core; trusted-caller seam with guardrails;
+provisioning CLI op; flag plumbing + the durable-stream boot assertion (§4.3);
+fake-channel inbound tests.
+**Blocked by:** 1a-i, 1a-ii — substrate proven in §5.
 **Proof:** replayed `providerMessageId` (including across a restart) produces
 exactly one turn; a crash between dedupe insert and queue insert loses nothing
-(crash-tested); unknown sender fail-closed with a stable code and no session;
-three rapid inbounds mid-turn all reach the agent in order (the `followUp`
-regression test, red before the fix); flag off → byte-identical host.
+(crash-tested); **unknown/un-provisioned sender fail-closed with a stable code
+and no session, no account** (§0.7); a provisioned binding resolves to its
+existing `workspaceId`; flag off → byte-identical host.
 
-### Slice 1c — WhatsApp/phone identity on better-auth + magic-link WA delivery (new, 2026-08-11)
-**Scope is deliberately small — extend existing better-auth, do not build auth
-(§6.6, verified in code).** Delivers three thin pieces:
-1. **WhatsApp/phone as better-auth identity provider #4.** Add the phone
-   identity alongside the existing `socialProviders` (Google, GitHub) +
-   `emailAndPassword` in `createAuth.ts` (~L151). First inbound from an
-   unknown, un-provisioned number is treated as **SIGNUP** — mint the linked
-   phone identity (WhatsApp-channel-as-verifier: the inbound proves control of
-   the number, no separate OTP step) and run the existing post-signup hook to
-   create account + workspace + default agent, keyed to the sender number, with
-   conversational onboarding in the thread. better-auth's `phoneNumber` plugin
-   (OTP) is the documented alternative.
-2. **Magic-link WhatsApp delivery adapter.** Wire the runtime `sendMagicLink`
-   (`createAuth.ts:127`) to deliver the *existing* better-auth token URL over
-   WhatsApp instead of / alongside email (today it renders to email via
-   `transport.send`). No new token / redeem / session code — better-auth owns
-   that (schema-config.ts:5,109; authClient.ts:2,17; capabilities.ts:74).
-3. **Reverse "get login link on WhatsApp"** entry from the web login page
-   (enter number → existing magic-link issuance → delivered via the adapter).
-   The web-session magic link uses better-auth's single-use
-   `verification(identifier, value, expiresAt)` token (as password-reset does),
-   **not** a reusable linking code (§6.6 security note).
-4. **Both identity flows, converging on one account (§6.6):** Flow A
-   (web-first → link WhatsApp via nao's regenerable linking-code `/login
-   <code>`, `whatsappUserId → userId`); Flow B (WhatsApp-first → magic-link
-   web, above). Convergence rule: **always link into the current session** via
-   `accountLinking`; a **v1 claim/merge flow** handles the independently-created
-   collision (detect + verify-to-link, no fuzzy matching).
-5. **Progressive email (owner default):** phone-only at signup; collect email
-   in-conversation at value moments; email + phone as linked identities on one
-   better-auth account (no migration). Email required by first payment.
-Both the WhatsApp and web sessions bind to the **same** workspace session (the
-1a `workspaceId`) through the same better-auth user. Embedded Signup /
-per-customer OAuth explicitly **out of scope** (§0, §6.6).
-**Blocked by:** 1a (needs the binding row + `workspaceId`). Sequenced before
-1b.
-**Proof:** a first inbound from a new number provisions exactly one
-better-auth user + account + workspace (idempotent on repeat, no double-create
-under the CAS create-race, §1.2b); a provisioned number resolves to its
-existing user/workspace; the magic-link delivery adapter sends the better-auth
-token URL to the number's thread and a first tap establishes a web session
-while a **second tap fails closed** (better-auth one-time-use) and an expired
-token is rejected; the web "link on WhatsApp" reverse flow issues and delivers
-a link; no magic-link token appears in any log (secret-in-logs guard);
-Flow A links a WhatsApp identity onto an existing web user via the linking code
-(no second account); a second-door collision (independent phone+email accounts)
-is **detected** and offered verify-to-merge, never silently duplicated;
-progressive email added later links onto the same account with no migration.
+### Slice 1c — phone identity + open WhatsApp signup [PHASE 2 — NOT pilot]
+**Not on the pilot critical path.** The pilot uses provisioned bindings (§0.7),
+so this slice is **deferred to Phase 2** and is genuinely new auth work, not a
+config line (§6.6, corrected against code). It ships only when open self-serve
+WhatsApp signup is greenlit, and it is **gated on**: the Phase-2 abuse controls
+(§7.2 Phase 2) landing first, and the `[UNVERIFIED]` OTP-window claim (§6.6)
+getting a primary Meta citation. Scope when built:
+1. **A phone-identity path** — better-auth's `phoneNumber` plugin (NOT installed)
+   wired in, **or** a custom phone-keyed verification-token + session route.
+2. **The placeholder-email problem solved** — better-auth users require an email;
+   phone-only creation fabricates one (`getTempEmail(phone)`) or changes schema.
+3. **`accountLinking` enabled + configured** (currently zero config) for Flow A.
+4. **Magic-link-over-WhatsApp delivery swap** — reachable only after a phone user
+   has an email on their account; delivers the existing single-use token.
+5. **Open-signup path** — first inbound from an unknown number mints identity +
+   workspace (opening the `canOriginateIdentity` gate), under the §7.2 Phase-2
+   caps.
+**Merge flow is separately Phase 2 and unspecified/hard** (§6.6 — no better-auth
+merge primitive; workspace-disposition/survivor rules unanswered). **Blocked by:**
+the whole pilot shipping first, plus its own gates above.
+**Proof (when built):** deferred — specified at Phase-2 planning, not v1.
 
 ### Slice 1b — durable tail, turn assembly, outbound
 **Delivers:** the exported stream-path resolver on the pi-chat service; the
@@ -1324,7 +1486,7 @@ notice; stall timeout → notice + park); markdown→dialect shaping with 4096
 chunking and fence reopen; send-failure/park policy; gone-session recovery;
 **the 24h-window check and template fallback (§7.1)**; full fake-channel
 conformance suite.
-**Blocked by:** 1a. **Risk centre — own review budget** (turn assembly).
+**Blocked by:** 1a-iii. **Risk centre — own review budget** (turn assembly).
 **Proof:** conformance loop green in CI surviving graceful restart mid-conversation
 with cursor resume and zero duplicate sends; on hard crash between send and CAS,
 a duplicate is possible and asserted **not to be loss**; error/aborted/stalled
@@ -1340,7 +1502,7 @@ routing, `BORING_AGENT_SESSION_ROOT` on the durable volume,
 `BORING_CHAT_DURABLE_STREAM=1`, credentials via `server/credentials/`, public
 HTTPS webhook endpoint answering the `hub.challenge` handshake (unblocks step
 0.1's endpoint verification).
-**Blocked by:** 1a. **Proof:** the §5 substrate loop reproduced against the
+**Blocked by:** 1a-iii. **Proof:** the §5 substrate loop reproduced against the
 deployed app host into a real customer workspace session; Meta's webhook
 verification succeeds against the public URL.
 
@@ -1529,6 +1691,14 @@ return and the next prompt continues the stream.
    `docs/direction/STATE.md`. That file needs updating on approval.
 
 ## 11. Out of scope
+
+**Open self-serve WhatsApp signup + phone-first identity + account merge** —
+these are **Phase 2**, not v1 (§0.7, §6.6, slice 1c). The pilot uses provisioned
+bindings (fail-closed); it mints no identity, so it needs no phone-keyed
+better-auth path, no placeholder-email handling, no `accountLinking` config, no
+merge flow, and no account-minting abuse controls. All of that is real,
+honestly-sized Phase-2 work, gated on the §7.2 Phase-2 caps and a primary
+Meta-docs citation for the OTP-window claim.
 
 **Any future consumer's implementation** — Slack, email, and pi-excel channels
 are **registry-ready future consumers, noted only** (§0.6); this plan builds
