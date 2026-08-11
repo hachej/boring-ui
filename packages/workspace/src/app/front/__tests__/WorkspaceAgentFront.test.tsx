@@ -1460,14 +1460,19 @@ describe("WorkspaceAgentFront", () => {
       }
     }
     const useFleetSessions: UseWorkspaceAgentSessions = (options) => {
+      const [loading, setLoading] = useState(true)
+      useEffect(() => {
+        const timer = setTimeout(() => setLoading(false), 10)
+        return () => clearTimeout(timer)
+      }, [])
       const session = { id: `${options.agentTypeId}-one`, agentTypeId: options.agentTypeId, title: options.agentTypeId }
       return {
         sourceIdentity: options.sourceIdentity,
-        sessions: [session],
-        loading: false,
-        activeSessionId: session.id,
+        sessions: loading ? [] : [session],
+        loading,
+        activeSessionId: loading ? null : session.id,
         activeSessionAgentTypeId: options.agentTypeId,
-        activeSession: session,
+        activeSession: loading ? null : session,
         switch: vi.fn(),
         create: vi.fn(),
         delete: vi.fn(),
@@ -1479,15 +1484,20 @@ describe("WorkspaceAgentFront", () => {
         workspaceId="async-fleet-restore"
         workspaceLayout="plugin-tabs"
         chatPanel={SessionIdChatPanel}
+        sessions={[]}
         addressedAgentSelection
         useAddressedAgentSelection={useAsyncFleetSelection}
         useSessions={useFleetSessions}
       />,
     )
 
+    expect(screen.getByRole("status", { name: "Loading chats" })).toBeInTheDocument()
+    expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "New chat with Alpha" })).toBeInTheDocument()
       expect(screen.getByRole("button", { name: "New chat with Beta" })).toBeInTheDocument()
+      expect(screen.queryByRole("status", { name: "Loading chats" })).not.toBeInTheDocument()
     })
     expect(visibleChatSessionIds()).toEqual(["alpha-one", "beta-one"])
     expect(JSON.parse(localStorage.getItem("boring-workspace:chat-panes:async-fleet-restore") ?? "null")).toMatchObject({
