@@ -6,6 +6,8 @@ import { createReadonlyProjectionOperations } from "@hachej/boring-bash/server"
 import { createNodeWorkspace } from "@hachej/boring-sandbox/providers/node-workspace"
 import { createPersistedScriptedPiHarness } from "./testing/scriptedPiHarness"
 import {
+  SCRIPTED_ONE_AGENT,
+  SCRIPTED_ONE_AGENT_CAPABILITY_PLUGINS,
   SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS,
   SCRIPTED_TWO_AGENT_DEFAULT,
   SCRIPTED_TWO_AGENT_FLEET,
@@ -13,6 +15,7 @@ import {
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 import { createWorkspaceBeadsOperations } from "@hachej/boring-tasks/server"
 import { loadBoringFactoryAgents } from "./factoryAgents"
+import { resolvePlaygroundAgentMode } from "./playgroundAgentMode"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
 export const VITE_PORT = Number(process.env.PORT) || 5200
@@ -64,11 +67,16 @@ export async function startPlaygroundServer(): Promise<void> {
       ? undefined
       : createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
     const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
-    const factoryAgentsEnabled = process.env.VITE_BORING_FACTORY_AGENTS === "1"
+    const agentMode = resolvePlaygroundAgentMode(process.env)
     // Same `workspaceRoot` value that is handed to createWorkspaceAgentServer
     // below: the fleet's instruction refs are addressed against the filesystem
     // this server actually serves, so they resolve or are not published.
-    const factoryAgents = factoryAgentsEnabled ? await loadBoringFactoryAgents({ workspaceRoot }) : undefined
+    const factoryAgents = agentMode === "factory" ? await loadBoringFactoryAgents({ workspaceRoot }) : undefined
+    const scriptedAgents = agentMode === "scripted-multi" ? SCRIPTED_TWO_AGENT_FLEET : SCRIPTED_ONE_AGENT
+    const agents = factoryAgents ?? scriptedAgents
+    const scriptedCapabilityPlugins = agentMode === "scripted-multi"
+      ? SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS
+      : agentMode === "scripted-single" ? SCRIPTED_ONE_AGENT_CAPABILITY_PLUGINS : []
     const multiFilesystemPlayground = process.env.BORING_WORKSPACE_PLAYGROUND_MULTI_FS === "1" || process.env.VITE_PLAYGROUND_MULTI_FS === "1"
     const companyContextRoot = resolve(process.env.BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT || workspaceRoot)
     if (multiFilesystemPlayground) mkdirSync(companyContextRoot, { recursive: true })
@@ -87,15 +95,10 @@ export async function startPlaygroundServer(): Promise<void> {
       // Explicit so the playground exercises the same `.agents` protection
       // production hosts get, instead of relying on the library default.
       readonlyWorkspacePaths: [".agents"],
-      ...(factoryAgents ? { agents: factoryAgents, defaultAgentTypeId: "boring-concierge" } : {}),
+      agents,
+      defaultAgentTypeId: agentMode === "factory" ? "boring-concierge" : SCRIPTED_TWO_AGENT_DEFAULT,
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
-      ...(process.env.BORING_AGENT_E2E_SCRIPTED_PI === "1"
-        ? {
-            harnessFactory: createPersistedScriptedPiHarness,
-            agents: SCRIPTED_TWO_AGENT_FLEET,
-            defaultAgentTypeId: SCRIPTED_TWO_AGENT_DEFAULT,
-          }
-        : {}),
+      ...(agentMode === "factory" ? {} : { harnessFactory: createPersistedScriptedPiHarness }),
       plugins: [
         {
           dir: resolve(APP_ROOT, "../../plugins/tasks"),
@@ -105,9 +108,7 @@ export async function startPlaygroundServer(): Promise<void> {
           },
           trust: "internal",
         },
-        ...(process.env.BORING_AGENT_E2E_SCRIPTED_PI === "1"
-          ? SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS
-          : []),
+        ...scriptedCapabilityPlugins,
       ],
       defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
       getFilesystemBindings: multiFilesystemPlayground
