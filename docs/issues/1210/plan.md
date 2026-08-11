@@ -2,8 +2,8 @@
 github: https://github.com/hachej/boring-ui/issues/1210
 issue: 1210
 state: needs-owner-approval
-updated: 2026-08-10
-revision: r3
+updated: 2026-08-11
+revision: r3 (+ 2026-08-11 WhatsApp-native signup/identity ruling)
 flag: BORING_AGENT_CHANNELS (reused, from gh-1127); new tenant app repo
 ---
 
@@ -663,14 +663,20 @@ every morning" is done; the web-touching half is entirely absent.**
 
 **Today:** ratified design (#1140), zero code, deprioritized. Substrate on main.
 
-**Delta:** build #1127 slices 1a and 2 — but this product needs materially
-less of them, because **the identity model inverts**. In #1127 the external
-sender is a client's team member: many unknown senders, per-agent grants,
-rejection UX, session rotation. Here the sender is **the business owner,
-approving their own drafts** — one number, one workspace, one agent,
-provisioned at onboarding. That deletes unknown-sender UX (any unbound number
-is dropped silently at the webhook), per-agent grants (the binding *is* the
-grant), and multi-agent routing.
+**Delta:** build #1127 slices 1a, **1c** and 2 — but this product needs
+materially less of the conversational surface, because **the identity model
+inverts**. In #1127's client-channel framing the external sender is a client's
+team member: many unknown senders, per-agent grants, rejection UX, session
+rotation. Here the sender is **the business owner**, and under the 2026-08-11
+WhatsApp-native identity ruling (§ Onboarding, and #1127 §6.6) **the owner's
+phone number IS their account** — a first inbound from a new number is
+**SIGNUP** (creates account + workspace + agent), not a silent drop. So this
+product **needs #1127 slice 1c** (phone-identity provider + magic-link
+web-auth) as a first-class dependency, not just the outbound notification path.
+What still deletes: per-agent grants (the binding *is* the grant) and
+multi-agent routing (one owner, one workspace, one agent). The
+"drop unbound numbers silently" posture applies only *after* signup — i.e. to
+numbers we choose not to onboard, not to first-contact.
 
 Adopted verbatim because it is right and hard-won: signature verify
 (`X-Hub-Signature-256`) plus handshake before any parsing; **durable dedupe
@@ -777,19 +783,56 @@ endpoint 400s on the `developer` role.
 It does not execute code. Ship without agent sandboxing; revisit only if a
 vertical needs it.
 
-## Onboarding — under 30 minutes, nothing installed
+## Onboarding — WhatsApp-native, under 30 minutes, nothing installed
 
 A product requirement, and the onboarding slice is designed to this number.
 
+**Signup is WhatsApp-native (owner ruling, 2026-08-11).** The funnel is: the
+vertical landing page → a **`wa.me/<seneca-number>` click-to-chat button** →
+**conversational signup inside WhatsApp**. The customer's **phone number is
+their account identity**: their first message from a new number creates the
+account + workspace + agent, keyed to that number, and the bot onboards
+conversationally. **No email, no password, no web form.** Auth factor = control
+of the WhatsApp number (proven by messaging from it). When the full web
+workspace is needed, the bot sends a **magic link over WhatsApp** (one-time,
+short-TTL, signed, bound to the phone-account) that establishes a web session;
+phone OTP is the documented fallback. This reuses the #1211 WhatsApp-native
+identity model verbatim (see `docs/issues/1127/plan-whatsapp.md` §6.6) —
+**one Seneca number, multi-tenant by sender, no Embedded Signup, no
+per-customer OAuth**.
+
+**This is a small extension of existing better-auth, not new auth code
+(verified 2026-08-11).** boring-ui core already runs better-auth with Google +
+GitHub OAuth + email/password and the **magic-link plugin already wired**
+(`packages/core/src/server/auth/createAuth.ts:127` mounts
+`magicLink({ sendMagicLink })`; `src/front/auth/authClient.ts:2,17` registers
+`magicLinkClient()`; `src/server/app/capabilities.ts:74` exposes the
+`magicLink` capability). So: (1) WhatsApp/phone is **identity provider #4** on
+the existing provider-agnostic user model — not a new system; (2) "magic link
+over WhatsApp" = wiring the existing `sendMagicLink` (today it renders to email
+via `transport.send`) to a **WhatsApp delivery adapter** that sends the *same*
+better-auth token URL over WhatsApp — no new token/redeem/session code; (3)
+phone verification comes free from the channel itself (an inbound proves number
+control), with better-auth's `phoneNumber` OTP plugin as the alternative.
+
 ```txt
- 1. sign up                                    ~2 min
- 2. connect WhatsApp (verify their number)     ~3 min
- 3. add ONE forwarding rule                   ~10 min   guided, per-provider,
-                                                        with screenshots
- 4. paste price list / last 3 quotes           ~8 min   becomes the price book
- 5. confirm trade, region, capacity            ~2 min   the signal filter
+ 1. tap wa.me link, send first message         ~1 min   phone = account identity
+                                                         (creates account+workspace)
+ 2. conversational signup in WhatsApp           ~3 min   no email, no password, no form
+ 3. add ONE forwarding rule                    ~10 min   guided, per-provider,
+                                                         with screenshots
+ 4. paste price list / last 3 quotes            ~8 min   becomes the price book
+ 5. confirm trade, region, capacity             ~2 min   the signal filter
  6. live — first draft on the next lead
 ```
+
+**This REPLACES the email-forward-rule as the OWNER onboarding path.** The
+owner no longer signs up via email; they sign up by texting our number. Email
+forwarding (step 3, rung 1) is **not** how the owner establishes identity — it
+stays relevant only for **ingesting the owner's own inbound LEADS** later (the
+RESPOND/FIND pipe, §(a)). Keep that distinction explicit: *owner identity =
+WhatsApp; lead ingestion = forwarding.* Two different concerns that happen to
+both touch email/WhatsApp.
 
 Everything else is progressive and post-value: OAuth (rung 2), send-as
 (rung 3), marketplace accounts for BID, the customer landing page (delivered
@@ -867,6 +910,11 @@ critical path is a component #1127 flagged as its risk centre.
 5. **WhatsApp outbound notification**, batched — #1127 slice 1a narrowed to a
    single provisioned binding, plus the send half of slice 2, plus the
    notification abstraction.
+5b. **WhatsApp-native signup** — #1127 slice 1c: the owner's first inbound to
+   the Seneca number creates their account + workspace + agent (phone = account
+   identity), conversational onboarding in the thread, and a magic link over
+   WhatsApp for web workspace access. This REPLACES email-based owner signup;
+   there is no email-forward fallback for establishing identity.
 6. **FOLLOW UP v1**: a cadence on unanswered quotes and a post-job review
    request. Cheap, and it carries the best-evidenced lever we have.
 7. **CH deployment**: Exoscale CH zone, CH Postgres, Infomaniak models,
@@ -1024,13 +1072,24 @@ share of leads arriving outside business hours.
    VM; all three are a cliff at the third or fourth customer, including for
    backup, which #853 left provider-independent and unbuilt (#877). Do not let
    "it worked for the pilot" become the multi-tenant architecture by default.
-8. **Meta Business API timeline — correcting a common assumption.** Standard
-   onboarding is roughly **3-10 business days**: 2-4 days for Business
-   Verification, hours for WABA and number setup, 24-48 hours for first
-   template approval. The 2-8 week figure is the **green-tick Official Business
-   Account badge, which we do not need** for a bot the customer expects to hear
-   from. Start verification on day one — it is free and parallel — but do not
-   sequence engineering behind it or tell the customer it is the blocker.
+8. **Meta Business API timeline — and it is now the true single technical
+   critical path (2026-08-11 identity ruling).** Standard onboarding is roughly
+   **3-10 business days**: 2-4 days for Business Verification, hours for WABA
+   and number setup, 24-48 hours for first template approval. The 2-8 week
+   figure is the **green-tick Official Business Account badge, which we do not
+   need** for a bot the customer expects to hear from. Start verification on
+   day one — it is free and parallel.
+   **What changed:** because signup is now WhatsApp-native (§ Onboarding), the
+   verified Seneca WABA is the gate through which every customer enters —
+   **there is no email-forward fallback for establishing identity**. So Meta
+   WABA verification, previously "do not sequence engineering behind it", is now
+   the **single technical critical path for onboarding at all**. It is still
+   only ~3-10 days and still parallelisable with engineering — but it can no
+   longer be treated as optional or deferrable. **Note the scope stays small:**
+   one Seneca WABA + business verification, **no Embedded Signup, no
+   per-customer OAuth** (users text OUR number; their number is just their
+   identity). The genuine *business* critical path remains the named pilot
+   customer (risk 9); these are two different gates.
 9. **The real critical path is the pilot customer.** Engineering is bounded and
    parallelisable; a firm's decision to route its leads through us is not.
    Secure a named design partner, in the recommended vertical, with written
@@ -1067,6 +1126,16 @@ share of leads arriving outside business hours.
    pieces land upstream: #1127 slices, the share capability-token layer, and
    the notification abstraction.
 9. **One paying customer before the second vertical is built.**
+10. **Owner onboarding is WhatsApp-native (2026-08-11 ruling):** phone number =
+    account identity, conversational signup via a `wa.me` click-to-chat link, no
+    email/password/web form; web access by magic link over WhatsApp. Reuses
+    #1211 §6.6 verbatim (one Seneca number, multi-tenant by sender, no Embedded
+    Signup, no per-customer OAuth). This REPLACES email-based owner signup;
+    email forwarding stays only for lead ingestion. Consequence: the verified
+    Seneca WABA becomes the single technical onboarding gate (risk 8).
+    **Implementation is a small extension of existing better-auth** — phone as
+    identity provider #4 + a WhatsApp delivery adapter for the already-wired
+    magic-link plugin — not a new auth system.
 
 ## Test seams
 
@@ -1103,14 +1172,23 @@ reject → send on tap.
 **Blocked by:** slice 1.
 **Proof:** expiry/revocation uniformity; approve-sends and no-tap-never-sends.
 
-### Slice 3: WhatsApp outbound notification
+### Slice 3: WhatsApp-native signup + outbound notification
 **Delivers:** #1127 slice 1a narrowed to one provisioned binding (webhook core,
 binding store with the single-transaction dedupe insert, credentials, flag,
-trusted-caller seam with guardrails), the send half of slice 2, and the
-notification delivery abstraction off `AskUserStore.subscribe()` with batching.
-**Explicitly not** slice 1b turn assembly or channel-side answering.
-**Blocked by:** slice 2; Meta verification (owner-side, parallel).
-**Proof:** fake-channel loop in CI; live demo to a test number.
+trusted-caller seam with guardrails); **#1127 slice 1c** — WhatsApp/phone as
+better-auth identity provider #4 (first inbound = account+workspace creation
+keyed on the sender number, channel-as-verifier, conversational onboarding) and
+the **magic-link WhatsApp delivery adapter** wiring the existing better-auth
+`sendMagicLink` to WhatsApp (no new token/session code; phone OTP fallback);
+the send half of slice 2;
+and the notification delivery abstraction off `AskUserStore.subscribe()` with
+batching. **Explicitly not** slice 1b turn assembly or in-channel answering.
+**Blocked by:** slice 2; Meta WABA verification (owner-side, now the single
+technical onboarding gate — risk 8).
+**Proof:** fake-channel loop in CI; a first inbound from a new number
+provisions exactly one account+workspace (idempotent on repeat); a magic link
+establishes a web session on first tap and fails closed on second tap; live
+demo to a test number.
 
 ### Slice 4: FOLLOW UP + customer landing page
 **Delivers:** follow-up cadence on unanswered quotes, post-job review request,
@@ -1199,6 +1277,14 @@ people who have not contacted the customer.
     status (§ source conflicts). One email or one call each.
 
 ## Revision note
+
+**2026-08-11 addendum:** owner ratified a WhatsApp-native signup/identity model
+— phone number = account identity, conversational signup via `wa.me`
+click-to-chat, magic-link-over-WhatsApp for web access. This replaces
+email-based owner onboarding (email forwarding is retained only for lead
+ingestion), pulls in #1127 slice 1c, and makes the verified Seneca WABA the
+single technical onboarding gate. Folded into § Onboarding, §(b), MVP, risk 8,
+slice 3, and decision 10.
 
 r3 folds in the platform, tooling, mail-provider and real-estate research.
 Four things changed materially from r2, all of them corrections rather than
