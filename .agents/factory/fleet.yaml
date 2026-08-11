@@ -52,7 +52,7 @@ seats:
     agentTypeId: boring-worker
     skills:
       - name: exec
-        digest: sha256:ca46d42f7cd5cd918a9bd7d2105078b895142b978062949594b8da9b6642c2a9
+        digest: sha256:d4c358d6c93de99e8158c15e3960ac8eb0fa3486bf8d9688bf8ec59ce2158025
       - name: fresh-eyes
         digest: sha256:58f6cfb66cc2a31238e5c033f42b69b7fbd6089d06c9f6d5108caa7035e5f565
       - name: handoff
