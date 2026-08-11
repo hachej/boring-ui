@@ -1,14 +1,14 @@
-import { Sparkles } from "lucide-react"
+import { Bot } from "lucide-react"
 import type { PanelConfig } from "../../registry/types"
-import { SkillsPage } from "./SkillsPage"
+import { AgentPage } from "./AgentPage"
 
-export const WORKSPACE_SKILLS_PANEL_ID = "workspace:skills"
+export const WORKSPACE_AGENT_PANEL_ID = "workspace:agent"
 
-export const workspaceSkillsPanel: PanelConfig = {
-  id: WORKSPACE_SKILLS_PANEL_ID,
-  title: "Skills",
-  icon: Sparkles,
+export const workspaceAgentPanel: PanelConfig = {
+  id: WORKSPACE_AGENT_PANEL_ID,
+  title: "Agent",
+  icon: Bot,
   placement: "workspace-page",
   source: "core",
-  component: SkillsPage,
+  component: AgentPage,
 }
