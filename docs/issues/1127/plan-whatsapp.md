@@ -59,6 +59,16 @@ This is step 0 because Slice 6 (the provider edge) cannot be demoed without it
 and the owner cites ~24h turnaround. It is owner-side, not engineering-side, and
 it runs in parallel with slices 1–5.
 
+**Scope of the Meta setup (2026-08-11 identity ruling, §6.6):** this is
+**one verified Seneca WABA + Meta business verification** for our own number —
+the number users text. That is all this model needs. **Embedded Signup and
+per-customer OAuth are explicitly OUT of scope**: they exist only to send *as a
+customer's own number*, whereas here users text OUR number and their number is
+merely their identity. The weeks-long per-customer-verification gate does not
+exist on this path. Per-customer Embedded Signup remains a **separate future
+capability**, in scope only if a specific customer later wants replies sent on
+their own number.
+
 ### 0.1 Prerequisites to have in hand before opening the form
 
 - **Meta Business Account**, with Business Verification started (legal entity
@@ -795,6 +805,83 @@ previously-flagged questions, parked not discarded:
 - **Takeover semantics:** recommend the agent **yields while a human is
   active** and **resumes on explicit handback**, not on a timer.
 
+### 6.6 Onboarding & identity — WhatsApp-native signup (owner ruling, 2026-08-11)
+
+**The phone number is the account identity.** This reframes the inbound path: a
+first inbound from an unknown number is not merely "session-start", it is
+**SIGNUP** — account creation. The whole model:
+
+- **Discovery → click-to-chat → conversational signup.** The user finds the
+  product (landing page, ad, business card) and taps a `wa.me/<seneca-number>`
+  link, which opens WhatsApp pre-addressed to our number. Their first message
+  from a new number **creates the account + workspace + default agent**, keyed
+  to that phone number. Onboarding happens **in the WhatsApp conversation** —
+  the bot onboards conversationally. **No email, no password, no web form.**
+- **One Seneca (or per-vertical) number, multi-tenant by sender.** The inbound
+  `from` number partitions tenants — this **reuses the already-decided pilot
+  number model** (§4, §7.3). The number is *ours*; the user's number is their
+  identity.
+- **This needs NO Embedded Signup and NO per-customer OAuth.** Embedded Signup
+  exists only to send **as a customer's own number**. Here users text OUR
+  number and their number is just their identity, so the weeks-long
+  per-customer-verification gate is **removed from this path**. Still required:
+  one verified Seneca WABA + Meta business verification for that number
+  (§0). Per-customer Embedded Signup is a **separate future capability**, in
+  scope only if a customer wants replies sent on THEIR own number.
+- **Auth factor = control of the WhatsApp number**, proven by messaging from
+  it. Possession of the number is the credential.
+- **Contrast with email-based signup (#1165 signup-domain hook).** That path
+  keys identity on a verified email domain. Phone-identity is a **new identity
+  provider on the existing better-auth stack** (see below) — provider #4
+  alongside Google, GitHub and email/password, not a new auth system.
+
+**Web workspace access = magic link over WhatsApp.** When the user needs the
+full web UI:
+
+- the bot sends a **one-time, short-TTL (minutes), signed** login link bound to
+  their phone-account; tapping it establishes a web session (cookie,
+  remember-me);
+- **reverse path:** the web login page offers "get login link on WhatsApp" →
+  user enters their number → link is sent to that WhatsApp thread;
+- **phone OTP is the documented fallback**, but magic-link-over-WhatsApp is the
+  **primary** path — lower friction, because the user is already in WhatsApp.
+
+**boring-ui fit — this EXTENDS existing better-auth; it does not build auth.**
+Verified in code (2026-08-11):
+
+- **Multi-provider identity already exists.** `createAuth.ts` (lines ~151–164)
+  wires `socialProviders` (GitHub, Google) plus `emailAndPassword` — better-auth
+  gives a provider-agnostic `user` with linked account identities out of the
+  box (Google and email already coexist). WhatsApp/phone becomes **another
+  linked identity provider (#4)**, not a generalization project. No
+  single-provider model needs generalizing.
+- **The magic-link machinery already exists and is fully wired.**
+  `packages/core/src/server/auth/createAuth.ts:127` mounts
+  `magicLink({ sendMagicLink })` from `better-auth/plugins/magic-link`;
+  `schema-config.ts:5,109` carries the schema (its `sendMagicLink` is a
+  generation-only no-op stub); the front client
+  `src/front/auth/authClient.ts:2,17` registers `magicLinkClient()`; and
+  `src/server/app/capabilities.ts:74` already exposes the `magicLink`
+  capability. Token mint / redeem / session establishment are **better-auth's
+  job — already done.** The runtime `sendMagicLink` today renders the link into
+  an email and hands it to `transport.send` (10-minute expiry).
+- **Our magic-link-over-WhatsApp work is a DELIVERY adapter, not new auth.**
+  Wire `sendMagicLink` to send the *existing* better-auth token URL over
+  WhatsApp (instead of / alongside email). No new token, redeem, or session
+  code. The §7.5 security properties (short TTL, one-time-use) are better-auth's
+  existing token behavior; we only choose the delivery channel.
+- **Phone identity: two options.** **Recommended — the WhatsApp channel itself
+  is the phone verifier:** an inbound message from a number proves control of
+  it, so first-inbound signup mints the linked phone identity with no separate
+  verification step (we are building the channel anyway). **Documented
+  alternative:** better-auth's `phoneNumber` plugin (OTP-based). Recommend the
+  channel-as-verifier path.
+
+Both the WhatsApp session and the web session **bind to the SAME workspace
+session** — the #1211 workspace-binding ruling (§4.1) applied to identity: two
+doors, one workspace. The binding row's `workspaceId` (§4.2) is the account
+created at first-inbound signup, resolved through the same better-auth user.
+
 ---
 
 ## 7. Risks
@@ -870,18 +957,45 @@ The owner's pilot ruling has consequences worth stating rather than discovering:
 | Durable-stream flag off in prod | Boot assertion (§4.3) |
 | Any candidate library drags in a bot framework's state/dedupe model | RESOLVED (§2.3): build a thin in-house adapter (~600–750 LOC), seed the edge from `@flue/whatsapp`, port correctness from hermes-agent; reject `@chat-adapter/whatsapp` (runtime coupling + `node:crypto`/`Buffer`) |
 
+### 7.5 Magic-link web-auth security (owner addition, 2026-08-11)
+
+The magic-link (§6.6) is a **bearer token** — whoever holds the URL can
+establish the web session. It is **better-auth's magic-link token** (already
+wired, §6.6), so short-TTL and one-time-use are existing plugin behavior, not
+new code — we only choose the delivery channel. WhatsApp threads are
+forwardable, so keep the link hardened accordingly:
+
+- **Short TTL** — better-auth's magic link is minted at 10-minute expiry
+  (`createAuth.ts`); keep it minutes, not hours.
+- **One-time-use** — better-auth consumes the token on first successful
+  exchange; a second tap fails closed.
+- **Optional device/IP binding** — bind the token to the requesting device/IP
+  where feasible, so a forwarded link opened elsewhere is rejected.
+- **The auth basis is WhatsApp-as-possession-factor** — control of the number
+  is what authorizes minting the link in the first place; the link is a
+  short-lived hand-off of that already-proven possession, not an independent
+  credential. Phone OTP is the documented fallback with the same possession
+  basis.
+
 ---
 
 ## 8. Slices
 
-Each is one PR. `1a → 1b → {3, 4, 5, 7} → 6`; slices 3/4/5/7 are parallel after
-1b. Slice 8 is **v2**, not sequenced in this lane.
+Each is one PR. `1a → 1c → 1b → {3, 4, 5, 7} → 6`; slices 3/4/5/7 are parallel
+after 1b. Slice 8 is **v2**, not sequenced in this lane.
+
+**Signup is the channel's first job.** Under the 2026-08-11 WhatsApp-native
+identity ruling (§6.6), a first inbound from an unknown number is **account
+creation**, not just session-start — so identity (slice 1c) sits immediately
+after the inbound path (1a) and before outbound turn assembly (1b). Without it
+there is no account/workspace for the binding to target.
 
 **Delta from the 2026-08-11 rulings:** slice 1a gains the `workspaceId` binding
-column and the typed `channel` session property; slice 2 is retargeted from the
-standalone host to the app host; slice 4 **shrinks** (channel-side store and
-public viewer origin dropped); slice 7 (read-only reopen, near-zero UI) is new;
-slice 8 (two-way takeover) is new and v2.
+column and the typed `channel` session property; **new slice 1c** (phone-identity
+provider + magic-link web-auth); slice 2 is retargeted from the standalone host
+to the app host; slice 4 **shrinks** (channel-side store and public viewer
+origin dropped); slice 7 (read-only reopen, near-zero UI) is new; slice 8
+(two-way takeover) is new and v2.
 
 ### Slice 1a — channel core: contract, bindings, inbound path
 **Delivers:** `ChannelAdapter` contract; `ChannelBindingStore` (bindings +
@@ -898,6 +1012,39 @@ exactly one turn; a crash between dedupe insert and queue insert loses nothing
 (crash-tested); unknown sender fail-closed with a stable code and no session;
 three rapid inbounds mid-turn all reach the agent in order (the `followUp`
 regression test, red before the fix); flag off → byte-identical host.
+
+### Slice 1c — WhatsApp/phone identity on better-auth + magic-link WA delivery (new, 2026-08-11)
+**Scope is deliberately small — extend existing better-auth, do not build auth
+(§6.6, verified in code).** Delivers three thin pieces:
+1. **WhatsApp/phone as better-auth identity provider #4.** Add the phone
+   identity alongside the existing `socialProviders` (Google, GitHub) +
+   `emailAndPassword` in `createAuth.ts` (~L151). First inbound from an
+   unknown, un-provisioned number is treated as **SIGNUP** — mint the linked
+   phone identity (WhatsApp-channel-as-verifier: the inbound proves control of
+   the number, no separate OTP step) and run the existing post-signup hook to
+   create account + workspace + default agent, keyed to the sender number, with
+   conversational onboarding in the thread. better-auth's `phoneNumber` plugin
+   (OTP) is the documented alternative.
+2. **Magic-link WhatsApp delivery adapter.** Wire the runtime `sendMagicLink`
+   (`createAuth.ts:127`) to deliver the *existing* better-auth token URL over
+   WhatsApp instead of / alongside email (today it renders to email via
+   `transport.send`). No new token / redeem / session code — better-auth owns
+   that (schema-config.ts:5,109; authClient.ts:2,17; capabilities.ts:74).
+3. **Reverse "get login link on WhatsApp"** entry from the web login page
+   (enter number → existing magic-link issuance → delivered via the adapter).
+Both the WhatsApp and web sessions bind to the **same** workspace session (the
+1a `workspaceId`) through the same better-auth user. Embedded Signup /
+per-customer OAuth explicitly **out of scope** (§0, §6.6).
+**Blocked by:** 1a (needs the binding row + `workspaceId`). Sequenced before
+1b.
+**Proof:** a first inbound from a new number provisions exactly one
+better-auth user + account + workspace (idempotent on repeat, no double-create
+under the CAS create-race, §1.2b); a provisioned number resolves to its
+existing user/workspace; the magic-link delivery adapter sends the better-auth
+token URL to the number's thread and a first tap establishes a web session
+while a **second tap fails closed** (better-auth one-time-use) and an expired
+token is rejected; the web "link on WhatsApp" reverse flow issues and delivers
+a link; no magic-link token appears in any log (secret-in-logs guard).
 
 ### Slice 1b — durable tail, turn assembly, outbound
 **Delivers:** the exported stream-path resolver on the pi-chat service; the
@@ -1113,5 +1260,6 @@ Email/SMS channels; group chats; per-agent grant policy (#1087); proactive
 outreach beyond the single fallback template; multi-agent routing per sender;
 horizontal adapter scale-out; billing/metering of channel traffic;
 two-way human-takeover from the workspace (v2, slice 8); the standalone
-headless-tier deployment (§4.2); model-readable inbound PDFs (§6.3); the
-CH-trades product surface (separate lane).
+headless-tier deployment (§4.2); model-readable inbound PDFs (§6.3);
+per-customer Embedded Signup / replies-on-customer's-own-number (§0, §6.6 —
+separate future capability); the CH-trades product surface (separate lane).
