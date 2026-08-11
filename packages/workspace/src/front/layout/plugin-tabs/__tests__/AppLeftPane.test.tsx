@@ -569,24 +569,80 @@ describe("AppLeftPane", () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth })
   })
 
-  it("distinguishes a loading chat list from an empty one", () => {
-    render(
+  it("shows loading, then a resolved empty state, then loaded chats without flashing empty", () => {
+    const baseProps = {
+      appTitle: "Test",
+      onCreateSession: vi.fn(),
+      onOpenCommandPalette: vi.fn(),
+      onSwitchSession: vi.fn(),
+      onOpenSessionAsPane: vi.fn(),
+      onToggleSessionPinned: vi.fn(),
+    }
+    const { rerender } = render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
-          appTitle="Test"
+          {...baseProps}
           sessions={[]}
           sessionsLoading
-          onCreateSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
-          onSwitchSession={vi.fn()}
-          onOpenSessionAsPane={vi.fn()}
-          onToggleSessionPinned={vi.fn()}
         />
       </WorkspaceAttentionProvider>,
     )
 
-    expect(screen.getByText("Loading chats…")).toBeInTheDocument()
+    expect(screen.getByRole("status", { name: "Loading chats" })).toBeInTheDocument()
     expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading={false} />
+      </WorkspaceAttentionProvider>,
+    )
+    expect(screen.getByText("No chats yet.")).toBeInTheDocument()
+    expect(screen.queryByRole("status", { name: "Loading chats" })).not.toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...baseProps} sessions={[{ id: "loaded", title: "Loaded chat" }]} sessionsLoading={false} />
+      </WorkspaceAttentionProvider>,
+    )
+    expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+    expect(screen.getByText("Loaded chat")).toBeInTheDocument()
+  })
+
+  it("keeps multi-project chats loading until the active project inventory resolves", () => {
+    const baseProps = {
+      appTitle: "Test",
+      layoutMode: "multi-project" as const,
+      projects: [{ id: "project", name: "Project" }],
+      activeProjectId: "project",
+      onCreateSession: vi.fn(),
+      onOpenCommandPalette: vi.fn(),
+      onSwitchSession: vi.fn(),
+      onOpenSessionAsPane: vi.fn(),
+      onToggleSessionPinned: vi.fn(),
+    }
+    const { rerender } = render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.getByRole("status", { name: "Loading chats" })).toBeInTheDocument()
+    expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...baseProps} sessions={[]} sessionsLoading={false} />
+      </WorkspaceAttentionProvider>,
+    )
+    expect(screen.getByText("No chats yet.")).toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane {...baseProps} sessions={[{ id: "loaded-project", title: "Loaded project chat" }]} sessionsLoading={false} />
+      </WorkspaceAttentionProvider>,
+    )
+    expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+    expect(screen.getByText("Loaded project chat")).toBeInTheDocument()
   })
 
   it("shows working state beside session names", () => {

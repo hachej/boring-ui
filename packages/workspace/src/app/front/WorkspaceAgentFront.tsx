@@ -1132,6 +1132,14 @@ export function WorkspaceAgentFront<
       && !pendingRemoteActiveSessionId,
   )
   const remoteSessionsTransitioning = remoteSessionsInitialLoading || remoteEmptySessionsSettling || remoteInitialSessionCreating || remoteInitialSessionNeeded
+  // A persisted chat pane can render while its list inventory is still
+  // resolving. Keep that shell available, but do not mistake the temporary
+  // empty inventory for an authoritative empty list in app-left navigation.
+  const remoteSessionInventoryLoading = remoteSessionsTransitioning || Boolean(
+    remoteSessionsPending
+      && !remoteSessionsHaveStaleData
+      && !remoteSessionApi.error,
+  )
 
   useEffect(() => {
     if (!remoteEmptySessionsSettling) {
@@ -2681,7 +2689,7 @@ export function WorkspaceAgentFront<
           addressedAgentTypeId={fleetModeEnabled ? effectiveAgentTypeId : undefined}
           onSelectAgent={fleetModeEnabled ? setNewChatAgentTypeIdOverride : undefined}
           onOpenAgentSettings={fleetModeEnabled ? (ownerAgentTypeId) => setLeftOverlay(agentOverlayId(ownerAgentTypeId)) : undefined}
-          sessionsLoading={remoteSessionsTransitioning}
+          sessionsLoading={remoteSessionInventoryLoading}
           activeSessionRef={activeChatPaneRef}
           muteActiveSession={Boolean(leftOverlay)}
           openSessionRefs={openChatPaneRefs}

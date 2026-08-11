@@ -368,12 +368,13 @@ export function AppLeftPane({
       return {
         ...project,
         sessions: [...lensed],
+        loadingSessions: project.loadingSessions ?? (project.id === activeProjectId && sessionsLoading),
         // The count stays the true owned total; the lens narrows the rows, not
         // the workspace's real size.
         sessionCount: project.sessionCount ?? (project.id === activeProjectId ? regularSessions.length : injected.length),
       }
     })
-  }, [activeProjectId, chatsAgentLens, layoutMode, projects, regularSessions])
+  }, [activeProjectId, chatsAgentLens, layoutMode, projects, regularSessions, sessionsLoading])
   // Expansion is owned here (lifted from the tree) so pinned-project rows in the
   // Pinned section can expand their project in the tree on click.
   const [expandedProjectIds, setExpandedProjectIds] = useState<ReadonlySet<string>>(() => {
@@ -509,12 +510,7 @@ export function AppLeftPane({
             {agentSessions.length > 0
               ? agentSessions.map((session) => renderSession(session, pinnedSet.has(workspaceSessionKeyFor(session)), activeProjectId ?? undefined, false, true))
               : (agent.sessionsStatus ?? "loading") === "loading"
-                ? (
-                  <div data-boring-workspace-part="app-left-chats-loading-surface" className="space-y-1 px-1 py-1" aria-label="Loading chats">
-                    <Skeleton className="h-6 w-full rounded-md" />
-                    <Skeleton className="h-6 w-3/4 rounded-md" />
-                  </div>
-                )
+                ? renderChatsLoading()
                 : (
                   <div className="flex min-h-[26px] items-center gap-1.5 pl-6 pr-1.5 text-[12px] text-muted-foreground/80">
                     <span>No chats yet.</span>
@@ -536,6 +532,22 @@ export function AppLeftPane({
       </div>
     )
   })
+
+  const renderChatsLoading = () => (
+    <div
+      data-boring-workspace-part="app-left-chats-loading-surface"
+      className="space-y-1 px-1 py-1"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label="Loading chats"
+    >
+      <div className="space-y-1" aria-hidden="true">
+        <Skeleton className="h-6 w-full rounded-md" />
+        <Skeleton className="h-6 w-3/4 rounded-md" />
+      </div>
+    </div>
+  )
 
   const renderAgentsSection = () => (
     <section data-boring-workspace-part="app-left-pane-agents" aria-label="Agents" className="space-y-1 border-t border-border/50 pt-3">
@@ -725,7 +737,9 @@ export function AppLeftPane({
           className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 pb-2 [mask-image:linear-gradient(to_bottom,transparent_0,black_8px,black_calc(100%_-_8px),transparent_100%)] motion-reduce:[mask-image:none]"
         >
           {/* Multi-project (PR2): projects remain inside the Chats region. */}
-          {layoutMode === "multi-project" ? (
+          {layoutMode === "multi-project" ? sessionsLoading && !fleetChromeEnabled ? (
+            renderChatsLoading()
+          ) : (
             <div className="space-y-3 py-1">
               {fleetChromeEnabled ? renderFleetNewChat() : null}
               {pinnedSessions.length > 0 || pinnedProjects.length > 0 ? (
@@ -757,28 +771,32 @@ export function AppLeftPane({
           ) : (
             <div className={fleetChromeEnabled ? "space-y-3 py-1" : "space-y-4 py-1"}>
               {fleetChromeEnabled ? renderFleetNewChat() : null}
-              {pinnedSessions.length > 0 ? (
-                fleetChromeEnabled ? (
-                  <section className="mb-3 px-0" aria-label="Pinned chats">
-                    <div className="flex items-center justify-between px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
-                      <span>Pinned chats</span>
-                      <span className="font-normal tabular-nums text-muted-foreground">{pinnedSessions.length}</span>
-                    </div>
-                    <div className="space-y-0.5">{pinnedSessions.map((session) => renderSession(session, true))}</div>
-                  </section>
-                ) : (
-                  <SessionSubSection title="Pinned">
-                    {pinnedSessions.map((session) => renderSession(session, true))}
-                  </SessionSubSection>
-                )
-              ) : null}
-              {/* Nested layout: each Agent's chats live under its card. */}
-              {fleetChromeEnabled ? (
-                renderAgentsSection()
-              ) : (
-                <SessionSubSection title={pinnedSessions.length > 0 ? "Recent" : undefined} empty={sessionsLoading ? "Loading chats…" : "No chats yet."}>
-                  {regularSessions.map((session) => renderSession(session, false))}
-                </SessionSubSection>
+              {sessionsLoading && !fleetChromeEnabled ? renderChatsLoading() : (
+                <>
+                  {pinnedSessions.length > 0 ? (
+                    fleetChromeEnabled ? (
+                      <section className="mb-3 px-0" aria-label="Pinned chats">
+                        <div className="flex items-center justify-between px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
+                          <span>Pinned chats</span>
+                          <span className="font-normal tabular-nums text-muted-foreground">{pinnedSessions.length}</span>
+                        </div>
+                        <div className="space-y-0.5">{pinnedSessions.map((session) => renderSession(session, true))}</div>
+                      </section>
+                    ) : (
+                      <SessionSubSection title="Pinned">
+                        {pinnedSessions.map((session) => renderSession(session, true))}
+                      </SessionSubSection>
+                    )
+                  ) : null}
+                  {/* Nested layout: each Agent's chats live under its card. */}
+                  {fleetChromeEnabled ? (
+                    renderAgentsSection()
+                  ) : (
+                    <SessionSubSection title={pinnedSessions.length > 0 ? "Recent" : undefined} empty="No chats yet.">
+                      {regularSessions.map((session) => renderSession(session, false))}
+                    </SessionSubSection>
+                  )}
+                </>
               )}
             </div>
           )}
