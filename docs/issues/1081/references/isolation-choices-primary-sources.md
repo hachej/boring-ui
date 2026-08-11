@@ -1,5 +1,9 @@
 # Sandbox Isolation Technology Choices — Primary-Source Evidence
 
+> **Superseded recommendation:** this source collection was assembled for the
+> earlier single-tenant model. Its gVisor-v1 recommendation is not authoritative
+> for public multi-tenant Seneca; see `sandbox-engine-security-eval.md`.
+
 For decision record PR #1219 (hachej/boring-ui): gVisor-container for v1 vs Firecracker/microVM
 for a v2 sovereign service. All quotes below are transcribed verbatim from the cited primary
 sources; anything unverifiable is flagged `[UNVERIFIED]`.

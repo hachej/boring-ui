@@ -1,5 +1,10 @@
 # gVisor Platform Security: systrap vs KVM (for sandbox plan #1220)
 
+> **Superseded outer-boundary recommendation:** this report compares platforms
+> *within gVisor* under the old single-tenant premise. Corrected v1 uses a
+> Firecracker/KVM microVM boundary. It remains relevant only to an optional
+> gVisor-inside-microVM experiment.
+
 **Question:** We run `runsc --platform=systrap` on a rented Linux VM with no `/dev/kvm`. Is that a security compromise vs the KVM platform for untrusted multi-tenant code?
 
 **Bottom line (verdict):** **Systrap is fine. Keep it for v1.** gVisor's own documentation treats the platform choice as a **performance and hardware-compatibility decision, not a security-boundary decision.** The security model — the Sentry intercepts *every* application syscall and re-implements the Linux ABON itself, plus a restrictive seccomp filter around the Sentry — is **identical across ptrace, systrap, and KVM**. The KVM platform does **not** give a stronger isolation guarantee against untrusted guest code; it primarily improves address-space-switch and page-fault performance on bare metal. There is therefore **no security argument to provision a `/dev/kvm`-capable VM for v1** — only a potential performance argument, and systrap is explicitly the modern high-performance default. See caveats in §3/§5.

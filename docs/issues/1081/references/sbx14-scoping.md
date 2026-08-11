@@ -1,5 +1,9 @@
 # SBX1.4 / SBX1.5 scoping — GO/NO-GO input (2026-08-10)
 
+> **Superseded execution scope:** this document sizes the prior runsc worker.
+> Corrected v1 is the E2B + Firecracker adoption plan in `../plan-sbx14.md`.
+> Keep this file only as historical evidence about the shipped runsc backend.
+
 Sources: bead `wt-391-forward-6gd.4`/`.5` as amended by PR #918 (merged, `bb6e328d3`), the
 d3a1bd393 V0-retirement gate, issue #1167 audit hand-offs, merged slices 1-3 code at
 origin/main `637999391` (worktree `.worktrees/sbx13-proof`), and today's proof run

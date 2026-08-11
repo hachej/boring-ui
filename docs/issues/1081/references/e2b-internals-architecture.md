@@ -1,5 +1,15 @@
 # E2B `infra` Internals — Architecture Study
 
+> **Historical repository study, not the current v1 blueprint.** The component
+> inventory and envd/orchestrator mechanics remain useful. Its §7–§8 extraction
+> recommendations (container-first, remove Redis/Nomad/Consul, collapse
+> client-proxy) are superseded by [`../plan-sbx14.md`](../plan-sbx14.md) and
+> [`../tech-choice.md`](../tech-choice.md). Corrected v1 adopts E2B's supported
+> public surface with Firecracker, client-proxy, Redis, Postgres, object storage,
+> and Nomad/Consul. In E2B's current official architecture, client-proxy reads
+> the Redis sandbox-to-node routing catalog; Consul discovers services but is
+> not that routing catalog.
+
 Source: `github.com/e2b-dev/infra` (Apache-2.0), branch `main`. All service/dir
 names below were read from the actual repo tree (gh API + GitHub tree views),
 not guessed. Items I could not confirm from source are marked **[UNVERIFIED]**.
@@ -22,7 +32,7 @@ jobs** across **Consul**-discovered node pools. Confirmed `packages/` children:
 | `packages/api` | Public control-plane REST API. Sandbox CRUD, templates, teams, auth middleware, quotas, analytics. The front door. | Go | Postgres (`db`), Redis (cache/locks), orchestrator (gRPC via `internal/orchestrator` client), ClickHouse (metrics), analytics collector | **Mostly liftable.** Business logic is portable; the Nomad/Consul cluster discovery in `internal/clusters` is infra-welded. |
 | `packages/orchestrator` | Data-plane node agent. Runs on each `client` (Firecracker) host. Owns microVM lifecycle: create/pause/resume/checkpoint/delete, UFFD snapshot restore, rootfs/NBD mounts, per-sandbox proxy, DNS, port mapping. **Also hosts template-manager** (build service). | Go | Firecracker (local), envd (in-VM), GCS/S3 (build storage), api (as gRPC server) | **Core is liftable but heavy.** Firecracker/UFFD/NBD/cgroups logic is the crown jewel; married to Linux+KVM but NOT to a specific cloud. Storage backend is pluggable (local or GCS). |
 | `packages/envd` | In-microVM guest daemon. Exposes exec/process, filesystem, port-forward, init/auth over the VM's vsock/HTTP+gRPC. **This is E2B's analog of our boring-bash.** | Go | Runs inside guest; served to orchestrator/client-proxy | **Highly liftable.** Self-contained guest agent; only assumes a Linux guest. Best single component to study/harvest. |
-| `packages/client-proxy` | Edge/data-plane reverse proxy. Routes inbound sandbox traffic (`<port>-<sandboxID>.domain`) to the right orchestrator node + envd port. Session/host routing. | Go | Consul/service catalog for sandbox→node lookup, orchestrator nodes | **Concept liftable, code cloud-welded** to their DNS/host scheme + service discovery. |
+| `packages/client-proxy` | Edge/data-plane reverse proxy. Routes inbound sandbox traffic (`<port>-<sandboxID>.domain`) to the right orchestrator node + envd port. Session/host routing. | Go | Redis sandbox→node routing catalog, orchestrator nodes, API auto-resume | **Concept liftable, code cloud-welded** to their DNS/host scheme + service discovery. |
 | `packages/auth` | Authentication service (Ory-based; `fixtures/ory` in repo). | Go | Postgres, api/dashboard | **[UNVERIFIED]** internals; likely replaceable by our own token model — not worth lifting. |
 | `packages/dashboard-api` | Backend for the web dashboard (teams, keys, usage views). | Go | Postgres, ClickHouse | Product-specific; skip. |
 | `packages/db` | Shared DB layer / migrations / generated queries (Postgres schema owner). | Go | Postgres | Schema is instructive; code skip. |
@@ -152,17 +162,21 @@ E2B's is a single bearer token, not a nonce-per-call scheme.
 - **Postgres** (`packages/db`, `packages/api/internal/db`): the **source of
   truth for orchestration** — teams, users, API keys, templates/build metadata,
   sandbox records, quotas. This is the state a control plane MUST hold.
-- **Redis**: cache + coordination — API-key/auth cache, locks, ephemeral
-  sandbox routing/state (`api/internal/cache`). Optional (ElastiCache on AWS).
+- **Redis**: source of truth for running-sandbox state and the sandbox→node
+  routing catalog read by client-proxy, plus caches, locks, and rate limits.
+  The deployment may use a managed service, but the Redis role is required by
+  the adopted E2B public path.
 - **ClickHouse** (`packages/clickhouse`): **analytics + sandbox metrics only** —
   not orchestration state. Skippable for a minimal control plane.
-- **Consul**: live service catalog — which node runs which sandbox (data-plane
-  discovery, not durable business state).
+- **Consul**: live service catalog for available services/orchestrator nodes and
+  their health. It does not replace Redis's running-sandbox or sandbox→node
+  routing catalog.
 
 **What OUR control plane must persist (minimal):** teams/tenancy, capability
 tokens/keys, template/image refs, live sandbox records (id → node/endpoint →
-status → owner), quotas. Everything ClickHouse does is optional. Redis-tier
-state (routing/locks) can start as an in-process/SQLite table at our scale.
+status → owner), quotas. Everything ClickHouse does is optional. The earlier
+idea of replacing Redis routing/locks with in-process/SQLite state is
+superseded for the adopted E2B v1 path.
 
 ---
 
@@ -190,17 +204,23 @@ state (routing/locks) can start as an in-process/SQLite table at our scale.
 | `envd` | **Harvest first.** Nearly standalone; only assumes a Linux guest. Best ROI. |
 | `orchestrator` microVM core (`pkg/sandbox`, UFFD, NBD, `cmd/*build`) | **Harvest, high value, high effort.** Cloud-neutral (Linux+KVM+Firecracker); storage backend pluggable. The hard-to-rebuild IP. |
 | `orchestrator` networking (`pkg/{proxy,dns,portmap,tcpfirewall}`) | Liftable but tied to their host/DNS scheme; adapt. |
-| `api` business logic | Liftable; rip out `internal/clusters` (Nomad/Consul) placement. |
-| `client-proxy` | Concept liftable; code welded to Consul discovery + `<port>-<id>.domain`. |
-| Scheduling/placement (Nomad + Consul + `iac` Terraform) | **Cloud/infra-welded.** Replace wholesale with our own control-plane daemon. |
+| `api` business logic | Historical extraction idea only; corrected v1 adopts its placement path. |
+| `client-proxy` | Concept liftable; code welded to the Redis routing catalog + `<port>-<id>.domain`. |
+| Scheduling/placement (E2B API placement + Nomad/Consul + `iac` Terraform) | **Cloud/infra-welded.** Historical extraction candidate; corrected v1 adopts it with one eligible sandbox host. |
 | ClickHouse / otel / nomad-apm / dashboard-api / auth(Ory) | Skip — replaceable or optional. |
 
-Biggest weld: **Nomad+Consul do scheduling, discovery, and health.** Any
-extraction must supply our own placement + node registry to replace them.
+Biggest weld: **the E2B API places sandboxes while Nomad/Consul schedule and
+discover services.** Any future extraction must supply both placement and a
+node/service registry.
 
 ---
 
 ## 8. Structure recommendation for OUR sandbox product
+
+> **Superseded recommendation.** This section records the earlier BUILD-shaped,
+> single-tenant proposal. Do not implement it for v1. The controlling plan
+> adopts the full required E2B path, including client-proxy, Redis, and
+> Nomad/Consul, with Firecracker from day one.
 
 E2B's shape is **3 tiers**: control-plane API (placement + state) → per-node
 orchestrator (microVM mechanics) → in-VM guest agent (envd). Mirror the tiers,

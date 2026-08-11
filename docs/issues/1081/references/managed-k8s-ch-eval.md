@@ -1,5 +1,9 @@
 # Managed Kubernetes (CH/EU) evaluation for SBX1.4 sandbox — PR #1219
 
+> **Historical scope:** the original hard requirement below was gVisor/runsc.
+> Corrected v1 requires a Firecracker microVM per sandbox on self-controlled
+> bare-metal KVM; only the self-controlled-node evidence carries forward.
+
 Question: can we run the per-session AI-agent sandbox on a **managed** Kubernetes
 from a Swiss/EU provider instead of self-hosting a bespoke daemon or k3s?
 Hard requirement: **gVisor/runsc as the per-session tenant isolation boundary**

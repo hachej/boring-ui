@@ -1,5 +1,11 @@
 # Sandbox Control-Plane API v1 — Spec (E2B-shaped, sovereign auth)
 
+> **Historical research; not the current v1 contract.** The E2B public-surface
+> inventory remains useful, but this document's single-tenant assumptions,
+> nonce/auth design, PR references, and snapshot deferrals are superseded by
+> [`../api-spec.md`](../api-spec.md), [`../plan-sbx14.md`](../plan-sbx14.md),
+> and [`../tech-choice.md`](../tech-choice.md).
+
 Status: DRAFT — read-only research + spec, no implementation.
 Author context: SBX1.4 daemon (PR #1219) is the v1 slice of Layer-1 control plane
 (`docs/direction/sandbox-service-architecture.md`). Goal: adopt E2B's proven

@@ -3,297 +3,255 @@ github: https://github.com/hachej/boring-ui/issues/1081
 issue: 1081
 state: deferred-triggered
 updated: 2026-08-11
-revision: r2-lean-v1
+revision: r3-microvm-fleet
 track: owner
 ---
 
-# gh-1081 — SBX1.4 v2 hardening plan (deferred, triggered)
+# gh-1081 — SBX v2 owned-fleet and hardening plan
 
-> Companion to [`plan-sbx14.md`](plan-sbx14.md) (LEAN V1). This document holds the
-> machinery the thermo simplification review (Fable) cut from v1, **not as a junk
-> drawer** but as a real, triggered v2 plan: each item states *what it is*, *why
-> v1 does not need it*, and an explicit **RE-ENTRY TRIGGER** — the concrete
-> condition that turns it back on. Nothing here is speculative gold-plating; every
-> item was fully specified in plan r1 and is deferred only because v1's threat
-> model (single-tenant Seneca, Tailscale-only ingress, client-is-issuer,
-> host-root-equivalent secret) makes it defend a boundary that does not yet exist.
+> Companion to [plan-sbx14.md](plan-sbx14.md). v1 already uses one hardware
+> microVM per sandbox through an adopted Firecracker vehicle. v2 owns and scales
+> that architecture; it does not introduce the tenant boundary for the first
+> time.
 
-## Why these are deferred, not deleted
+## Boundary carried forward from v1
 
-v1's key structural fact: **Seneca holds the static secret and mints its own
-capabilities client-side** (architecture §3). So in v1 the capability/nonce/
-receipt edifice is cryptographically equivalent to `Authorization: Bearer
-<secret>`: replaying a capability requires either capturing it on the
-WireGuard-encrypted tailnet/loopback (attacker already host-root-equivalent per
-the plan's own threat model) or holding the secret (game over). Durable,
-transactional, per-tenant-budgeted, dual-secret, rate-limited machinery defends
-attacker classes that **cannot exist until the public-opening gate** or a second
-tenant/operator. Each item below re-enters exactly when its defended boundary
-becomes real.
+The invariant remains:
 
-Cross-link map (v1 §ref ↔ v2 item):
+> **Share the host, never the boundary.**
 
-| v1 cut (plan-sbx14.md) | v2 item below | Re-entry trigger |
-| --- | --- | --- |
-| In-memory nonces; #1167 N/A (Decision 5, "Why in-memory nonces are correct") | [1. Persistent nonce store + #1167 atomicity](#1-persistent-nonce-store--1167-atomicity) | Any durable binding/record persistence **OR** pre-multi-tenant |
-| No per-workspace sub-budget (non-goals) | [2. Per-workspace nonce sub-budget](#2-per-workspace-nonce-sub-budget) | 2nd tenant |
-| Coordinated-restart rotation (Decision 8) | [3. Dual-secret zero-downtime rotation](#3-dual-secret-zero-downtime-rotation) | Multi-operator / compliance policy |
-| No `authRateLimiter.ts` (S1-lite) | [4. Auth rate limiter](#4-auth-rate-limiter) | Any non-Tailscale / public ingress |
-| S4-lite manual transcript (no 4-phase formalism) | [5. S3b evidence formalism + fleet-admission automation](#5-s3b-evidence-formalism--fleet-admission-automation) | Public-opening gate / SBX1.5 |
-| Single worker URL, no bucket map (S5) | [6. Multi-box placement scheduler](#6-multi-box-placement-scheduler) | Box #2 |
-| Requalify-on-change (S5) | [7. Requalification automation](#7-requalification-automation) | Fleet scale |
+Many sandboxes share bare-metal hosts. Each sandbox has its own KVM microVM and
+guest kernel. v2 never regresses to gVisor, runc, namespaces, or process
+isolation as the outer tenant boundary, and it never turns into one standing VM
+per workspace/tenant.
 
----
+SandboxProviderV1 remains the application seam. The v1-to-v2 change replaces the
+adopted E2B single-sandbox-host backend with an owned fleet backend. The public
+wire contract, guest-agent shape, hardware isolation class, and block/copy
+workspace semantics remain stable.
 
-## 1. Persistent nonce store + #1167 atomicity
+If v2 chooses Cloud Hypervisor, the VMM binary changes from Firecracker, but the
+security architecture does not: one hardware-isolated microVM per sandbox on
+shared metal. That VMM change has its own qualification and rollback gate.
 
-**What it is.** A production SQLite consumed-nonce store
-(`persistentNonceStore.ts`, `/var/lib/boring-worker/security/nonces.sqlite`,
-root-owned `0600`) using Node's built-in `node:sqlite` (`DatabaseSync`), replacing
-the in-memory `SingleUseNonceStoreV1`. Global-unique nonce PRIMARY KEY as the
-replay fence; `PRAGMA journal_mode=WAL` + `synchronous=FULL` asserted at startup;
-`busy_timeout` set via `DatabaseSync`, exceed => fail closed; local-fs-only (NFS/
-SMB/network block forbidden, `--check` asserts the resolved path + filesystem
-type). `consume(nonce, workspaceId, expiresAtMs, nowMs)` runs one `BEGIN
-IMMEDIATE` transaction — evict expired, insert (PRIMARY KEY collision = replay),
-enforce budgets, commit — so two processes/connections can never both return
-`accepted`. This replaces #918 gate (b)'s boot-epoch column with transactional
-cross-connection uniqueness. Node pinned `>=22.19.0` with flagless `DatabaseSync`
-proven on CI Node and the VM.
+## Why this work is v2
 
-**#1167 atomicity.** The day the daemon persists **any** durable state (binding
-records or receipts), that persistence and the nonce store must be committed in
-**one atomic change** with the restart regression retained — nonce and binding
-state share one transaction, and the change cannot be split across PRs. In v1
-this is N/A because nothing persists (nothing to make atomic).
+Raw VMM fleet engineering is a weeks-to-months program: snapshot formats,
+memory restore, block overlays, host lifecycle, placement, locality, draining,
+admission, and recovery all interact. None is required to establish a correct
+hardware boundary on one host. v1 therefore adopts; v2 builds only after real
+load supplies capacity and latency targets.
 
-**Why v1 doesn't need it.** Durability defends replay of a *captured* capability
-across a daemon restart. The only party who can capture one is already on the
-encrypted tailnet/loopback (host-root-equivalent) or holds the secret. Single
-tenant + client-is-issuer means nonce durability protects nothing real; the
-in-memory store dying on restart is fail-closed by construction.
+The production reference is OpenAI's [From fork() to Fleet: Designing an Agent
+Sandbox Cloud](https://www.youtube.com/watch?v=OqM67QG_Ikk) ([conference
+listing](https://aie-wf.sentry.dev/talks/aiewf-201-from-fork-to-fleet-designing-an-agent-sandbox-cl)):
+start from a hardware-isolated runtime, use Rust VMMs including Cloud Hypervisor,
+add block-level incremental persistence, and schedule a fleet with snapshot
+locality. The local security baseline remains
+[arXiv:2606.08433](https://arxiv.org/abs/2606.08433), re-weighted for Seneca's
+multi-tenant threat model.
 
-**RE-ENTRY TRIGGER:** **any durable binding/record persistence** (which drags in
-#1167 atomicity as one change) **OR the pre-multi-tenant step** (the first move
-off single-tenant Seneca, where a captured capability from one tenant must not
-survive to replay). Ships with both regressions green: "consumed nonce survives
-simulated restart" and concurrent-connection "exactly one accepted, one replay".
+## v2.1 — VMM and fleet control-plane spike
 
-**Acceptance when triggered.**
+**Trigger:** Gate 0 and v1 production soak are green; a second host or measured
+start/density target justifies owned orchestration.
 
-```sql
--- /var/lib/boring-worker/security/nonces.sqlite  (root-owned, 0600)
-PRAGMA journal_mode = WAL;      -- asserted 'wal' at startup or fail
-PRAGMA synchronous  = FULL;
-PRAGMA busy_timeout = <bounded ms>;  -- exceed => fail closed
-CREATE TABLE IF NOT EXISTS consumed_nonces (
-  nonce         TEXT PRIMARY KEY,      -- replay fence
-  workspace_id  TEXT NOT NULL,
-  expires_at_ms INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_nonce_ws     ON consumed_nonces(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_nonce_expiry ON consumed_nonces(expires_at_ms);
-```
+Evaluate Firecracker and Cloud Hypervisor on the exact intended hardware:
 
-Tests: consumed nonce survives simulated restart (reopen same DB → replay);
-concurrent independent connections consuming one nonce yield exactly one
-`accepted` + one `replay`; open/migrate before listen (unreadable/corrupt/locked
-beyond busy-timeout/unmigratable prevents startup; no volatile fallback). Files:
-new `persistentNonceStore.ts`; extend
-`src/providers/remote-worker/singleUseNonceStore.ts` to the four-arg
-`consume(...)` port (in-memory stays as the unit-test double); add the
-synchronous injectable nonce-store option to
-`RemoteWorkerSandboxBindingRegistryOptionsV1` (line 53), constructed inline today
-at line 204 (narrow injection seam). S4 `--check` gains the resolved-DB-path +
-filesystem-type assertion.
+- guest-to-host attack surface and per-thread seccomp;
+- current escape CVEs and patch cadence;
+- fuzz harnesses and whether they execute continuously;
+- boot/restore latency and idle memory;
+- block overlay and memory snapshot formats;
+- vsock guest-agent behavior;
+- virtio-fs only if a new requirement justifies host sharing;
+- host service/jailer boundaries and no guest /dev/kvm;
+- upgrade, drain, rollback, and snapshot compatibility.
 
-**E2B grounding.** E2B persists sandbox records in Postgres because its control
-plane survives restarts across a fleet; v1 recreates sessions on one box, so the
-*only* durable state is the replay nonce (e2b-internals §5, §8 "Postgres or even
-SQLite to start"; §5 "Redis-tier state can start as an in-process/SQLite table").
-WAL + local-fs-only is the SQLite analog of E2B's real-disk-with-locking
-assumption.
+**Likely decision:** Cloud Hypervisor for the owned v2 fleet. It has the device
+model and in-tree fuzz workspace we want when building orchestration, but it is
+not pre-approved. Its first escape-class advisory, the measured leader-thread
+seccomp gap, and any product-specific nested-KVM exposure must be resolved in the
+candidate configuration.
 
----
+Output is a go/no-go ADR with an exact version, threat analysis, measured
+benchmarks, and rollback plan. No production VMM switch happens in the spike.
 
-## 2. Per-workspace nonce sub-budget
+## v2.2 — block and memory snapshot-fork
 
-**What it is.** A per-workspace active-nonce sub-budget layered on the nonce
-store: `consume(nonce, workspaceId, expiresAtMs, nowMs)` enforces a lower
-per-workspace maximum under the global maximum, in the same held write lock, so
-tenant A cannot exhaust the whole worker maximum and cause
-`REMOTE_WORKER_CAPABILITY_NONCE_STORE_EXHAUSTED` for tenant B. Sub-budget
-exhaustion reuses the existing stable exhaustion code with no tenant counts or
-identifiers leaked.
+**Trigger:** cold-create latency or repeated environment setup materially limits
+capacity or user experience.
 
-**Why v1 doesn't need it.** r1's own acceptance test was "tenant A can exhaust
-only its sub-budget; tenant B remains accepted" — **there is no tenant B.** This
-is multi-tenant fairness engineering in a one-tenant system. It also depends on
-item 1's store existing.
+Build immutable golden guest images, then fork sandbox state with copy-on-write
+storage:
 
-**RE-ENTRY TRIGGER:** **the 2nd tenant.** The moment a second workspace/tenant
-shares the worker, fairness becomes real and the sub-budget re-enters (with item
-1). Acceptance: tenant A exhausts only its sub-budget; tenant B accepted until the
-global limit; expired rows release both budgets.
+1. Boot and qualify a golden kernel/rootfs/guest-agent cohort.
+2. Capture a versioned base block snapshot.
+3. Create a per-sandbox copy-on-write block overlay.
+4. Optionally capture/restore guest memory after the image is quiesced.
+5. Bind every snapshot to the exact VMM, kernel, guest agent, policy, and base
+   block digest.
+6. Reject restore across incompatible cohort versions.
+7. Destroy overlays and memory state on lease expiry unless an explicit
+   persistence policy retains them.
 
----
+Security requirements:
 
-## 3. Dual-secret zero-downtime rotation
+- no snapshot may contain control-plane or other-tenant secrets;
+- snapshot IDs are opaque and tenant-bound;
+- copy-on-write backing paths are never guest-selectable;
+- a sandbox cannot attach a sibling tenant's base or overlay;
+- snapshot parsing/restore runs inside the same admitted VMM/service boundary;
+- rollback can disable restore and cold-boot the last known-good cohort.
 
-**What it is.** The daemon accepts one primary and, during rotation, one secondary
-static secret from separate root-owned credential files; both derive the same
-domain-separated verification key classes; the daemon signs with the configured
-primary and accepts valid capabilities/receipts from either during a bounded
-overlap (one max capability/receipt lifetime + clock skew). Startup fails if both
-files hold the same value or an overlap lacks an explicit expiry. Three-step
-choreography: (1) install new as secondary on daemon, restart/drain-check;
-(2) switch seneca's issuer to new while its verifier accepts either (daemon still
-signs with old primary until step 3), canary; (3) wait out the lifetime, promote
-new to primary, drop old, restart/drain-check. Zero canary downtime across a
-rotation.
+This is block-level snapshot-fork, not host-directory cloning.
 
-**Why v1 doesn't need it.** One operator, one client, one box: rotation = update
-two config values, restart both ends, ~seconds of canary downtime, with
-`vercel-sandbox` always available as fallback. On suspected compromise the plan
-stops admission first, at which point overlap buys nothing. Zero-downtime overlap
-is a real requirement only when a second, independently-administered client
-exists.
+## v2.3 — warm pools
 
-**RE-ENTRY TRIGGER:** **a multi-operator / compliance policy** (a second,
-independently administered client where a coordinated-restart availability gap is
-unacceptable, or a compliance regime mandating zero-downtime credential
-rotation). ~100–200 LOC + tests + the rollback references that cross an
-auth/replay boundary.
+**Trigger:** snapshot restore alone does not meet measured p95 create latency.
 
----
+Maintain a bounded pool of already-booted, unassigned microVMs per admitted
+cohort. Warm instances contain only public/base image state—never prior tenant
+workspace data, credentials, memory, or network identity.
 
-## 4. Auth rate limiter
+Allocation must atomically assign fresh:
 
-**What it is.** `authRateLimiter.ts` — bounded in-memory token buckets for failed
-authentication, keyed server-wide and by the forwarded source address (10
-failures/min, burst 10) with exponential backoff (1s→30s), applied before token
-decoding beyond constant-time verification and before any runtime call; bounded
-key count/expiry so random sources cannot create unbounded state. Includes the
-forwarded-source-header parsing that rejects the header on any non-loopback hop
-(it exists solely to feed this limiter).
+- sandbox and tenant identity;
+- copy-on-write block overlay;
+- network namespace/address and egress policy;
+- quota/lease;
+- guest-agent session secret.
 
-**Why v1 doesn't need it.** The tailnet ACL admits exactly one node — Seneca,
-which *holds the secret*. There is no public edge to brute-force. Constant-time
-comparison (kept in v1) already defeats timing probes, and the connection/session
-caps (kept in v1) bound resource abuse from a buggy client. The limiter defends a
-public edge the daemon deliberately does not have.
+Sanitization failure destroys the microVM. No warm instance returns to the pool
+after tenant code executes.
 
-**RE-ENTRY TRIGGER:** **any non-Tailscale / public ingress** (an edge compat shim,
-a public listener, or any path where an unauthenticated stranger can reach the
-auth check). Belongs at that public edge (api-spec §3.4). ~150–250 LOC + the
-slowloris/saturation test surface, plus the forwarded-header trust logic.
+## v2.4 — snapshot-locality-aware scheduling
 
----
+**Trigger:** box #2 or remote snapshot fetch becomes a meaningful latency/cost
+driver.
 
-## 5. S3b evidence formalism + fleet-admission automation
+Introduce the real placement interface behind SandboxProviderV1. Candidate hosts
+are filtered by hard security/admission requirements first, then ranked by:
 
-**What it is.** The full r1 S3b harness upgrade and the 4-phase admission ceremony:
+1. compatible admitted cohort;
+2. local base block snapshot and memory image;
+3. available CPU, memory, disk IOPS, network, and sandbox slots;
+4. tenant anti-affinity and failure-domain policy;
+5. drain/maintenance state.
 
-- Upgrade the **real** `qualify-docker-runsc-isolation.mjs` from the V2 envelope
-  to the production V3 schema, with an explicit `--observe-only` mode (emits real
-  profile/cohort-pin inputs + deterministic cohort-spec) and a bound mode
-  (`--qualification-bundle=<path>`, `--workload-image=<repo@sha256>`) emitting the
-  final V3 evidence with the four V3 controls (own-workspace write, persistence
-  across recreate, byte quota, inode quota), refusing placeholder/reference values.
-- The CLI/env contract S4's committed transcript depends on: `--observe-only`,
-  `--cohort-spec-out=<path>`, `--workload-image=`, `--qualification-bundle=`,
-  `BORING_RUNSC_WORKLOAD_IMAGE`, `BORING_RUNSC_WORKSPACE_ROOT`,
-  `BORING_RUNSC_USE_INSTALLED_QUOTA_HELPER`, `BORING_BUSYBOX_BINARY`;
-  `build-qualification-bundle.mjs <cohort-spec.json>` positional consumer;
-  `RUN_RUNSC_INTEGRATION=1` gate.
-- The 4-phase admission: (1) observe real profile/pins, (2) build the immutable
-  bundle from observations + exact files + image, (3) rerun the harness bound to
-  that bundle digest, (4) `verify-fleet-admission-evidence.mjs` accepts the pair.
-  Plus the cross-layer dual-field digest-equality choreography
-  (`expectedWorkloadImageManifestDigest` ↔ `expectedImageDigest` tested under both
-  names) and the deterministic cohort-spec.
-- Continuously-running fleet-admission automation: unattended evidence-bound
-  admission, drift fence, escape canaries, CVE game-day — SBX1.5.
+Snapshot locality is an optimization, never authorization. A host without the
+right security cohort is ineligible even if it has the snapshot. Scheduling must
+not leak snapshot presence or another tenant's activity to callers.
 
-**Why v1 doesn't need it.** The load-bearing property is *the exact box passed the
-committed hostile probe suite (11/11) on the exact pinned image, and the daemon
-only ever starts the one pinned digest (S3a)* — deliverable with the existing
-integration harness pointed at the external pinned image + real quota helper (two
-narrow opt-ins) and a manually reviewed transcript + digests. The
-immutable-bundle digest-binding, deterministic cohort-spec, cross-layer
-digest-equality tests, and strict verifier choreography are fleet-admission
-machinery pulled forward: they exist so *unattended automation* can trust
-evidence. v1's admission is one human on one box reading one transcript.
-Mechanical drift is still caught by S3a's startup pin + `--check` (fail closed on
-digest mismatch).
+The v1 constant one-host config is removed only when this interface lands.
 
-**RE-ENTRY TRIGGER:** **the public-opening gate / SBX1.5 fleet-admission
-automation** — the point where admission must be trusted by unattended machines
-instead of a human reading a transcript, or where a second/third box is admitted
-without an operator reading each one. Saves most of an M slice (the r1 S3b) + the
-4-phase S4 transcript ceremony in v1.
+## v2.5 — multi-host lifecycle
 
-**E2B grounding.** E2B never boots a VM from an unbuilt template; the content-
-addressed `create-build` artifact is the trusted identity (e2b-internals §1, §4).
-The observe→build→bound→verify ordering is the single-box analog of that
-discipline, and continuous evidence-bound admission is E2B's build-pool model
-(architecture §5 "SBX1.5 fleet-admission automation").
+**Trigger:** box #2.
 
----
+Add:
 
-## 6. Multi-box placement scheduler
+- host registration with attested/admitted cohort facts;
+- placement, bin packing, anti-affinity, drain, eviction, and retry;
+- idempotent create across control-plane failover;
+- orphan and leaked-block reconciliation;
+- bounded retry that cannot create duplicate live sandboxes;
+- explicit host fencing on drift or critical VMM/kernel advisories;
+- disaster recovery that never restores a tenant onto an incompatible cohort.
 
-**What it is.** A real `placeSession(request) → box` interface in the
-control-plane daemon with fleet/warm-pool/bin-packing logic, replacing v1's
-single worker URL. r1's 256-bucket placement config becomes a bucket map with
-more than one distinct value; the v2-entry refactor introduces real buckets and
-the scheduler behind the frozen `SandboxProviderV1` seam. This is E2B's
-crown-jewel placement weld (`api` scheduling against the Nomad/Consul catalog,
-e2b-internals §2, §7) realized as our own control-plane scheduler.
+Nomad/E2B remains reference material, not an inherited security authority.
+Upstream tracking and maintenance cost are explicit outputs of the v1 adoption
+retro before fleet code is written.
 
-**Why v1 doesn't need it.** 256 buckets → one box is not "the degenerate case of a
-scheduler," it's a data structure with exactly one distinct value plus
-bucket-assignment validation nobody exercises. The architecture doc already
-concedes no `placeSession` interface ships in v1. The seam is the *config file's
-existence*, not its cardinality — v1 uses a single worker URL + digests.
+## v2.6 — automated qualification and version ownership
 
-**RE-ENTRY TRIGGER:** **box #2** — the first time a second production worker
-exists and a request must be *placed* rather than sent to the one box. Likely
-delivered via Nomad or the `agent-sandbox` scheduler (architecture §2 Layer-2,
-§5; e2b-internals §8 v2 "introduce a real placement/scheduler in the
-control-plane daemon"). The bucket map and validation code re-enter with it.
+**Trigger:** more than one host, unattended admission, or a VMM/kernel security
+update.
 
----
+Promote the manual v1 admission into protected CI:
 
-## 7. Requalification automation
+- build the immutable VMM/jailer/kernel/rootfs/guest-agent/policy cohort;
+- run all 11 logical hostile assertions through the owned-fleet driver on
+  candidate hardware;
+- run two-tenant isolation and no-host-path/no-secret negatives;
+- verify egress deny, quota/host reserve, cleanup, and partial-failure behavior;
+- record microcode and the separate side-channel cohort posture;
+- sign/admit the exact evidence and fence stale hosts;
+- rehearse rollback to the last known-good cohort.
 
-**What it is.** Automated, scheduled requalification of admitted boxes: a
-protected admission CI/cron job that re-runs the full S4 admission on a cadence
-(r1 set a 7-day `qualificationMaxAgeMs` + a 6-day manual requal reminder), a drift
-fence, and automatic candidate-box registration — so freshness is enforced by
-machine, not by an operator's calendar discipline.
+The operator owns Firecracker/Cloud Hypervisor version bumps. Vendor defaults
+are inputs, never policy. CI must catch a stale inherited pin; the 399-day E2B
+default freeze documented in the security evaluation is the failure mode.
 
-**Why v1 doesn't need it.** Re-running full admission weekly forever, on a box
-whose kernel/runsc/image change only when the operator changes them, is calendar
-ceremony. v1 requalifies **on change** (kernel, Docker, runsc, daemon/provider,
-helper, policy, image — the triggers the box actually has) plus `--check` at every
-daemon start. If the owner wants a freshness bound, 30 days matches the real risk
-better than 7. Undetected in-place drift on an unattended box is the only residual
-risk, and there is one box, changed only by the operator.
+## v2.7 — optional gVisor inside the microVM
 
-**RE-ENTRY TRIGGER:** **fleet scale** — enough boxes that per-box operator-driven
-requalify-on-change no longer scales and freshness must be machine-enforced across
-the fleet (pairs naturally with items 5 and 6). Re-introduces
-`qualificationMaxAgeMs` as a fleet policy, the recurring requal job, and automatic
-candidate registration.
+**Trigger:** the outer microVM fleet is stable and measurement shows the
+compatibility/performance cost is acceptable.
 
----
+Evaluate gVisor inside each microVM as defense-in-depth. The motivation is
+Firecracker's lack of an observable upstream fuzzer and gVisor's continuous
+public syzkaller coverage. KVM remains the tenant boundary; disabling the inner
+layer cannot silently downgrade isolation.
 
-## Relationship to the public-opening gate
+Qualification must cover workload compatibility, I/O overhead, nested failure
+modes, patch ownership, and the same 11 probes. This is optional hardening, not a
+substitute for VMM CVE response.
 
-Items 1–2 (multi-tenant replay/fairness), 3 (multi-operator rotation), 4 (public
-edge limiter), and part of 5 (multi-tenant-trusted admission) are the concrete
-build backlog behind the [`plan-sbx14.md`](plan-sbx14.md) **public-opening gate**
-(the three-part higher bar) and architecture §5. Items 5–7 (fleet admission,
-placement, requal automation) are the SBX1.5 fleet-productization backlog. None
-may be built early (architecture §6): each waits for its trigger.
+## Separate side-channel workstream
+
+Spectre/MDS-class cross-tenant leakage is not solved by the VMM and was out of
+scope for arXiv:2606.08433. Track separately:
+
+- supported CPU cohorts and current microcode;
+- core scheduling or SMT sibling isolation;
+- host kernel mitigations and measurable performance cost;
+- placement constraints for higher-risk tenants;
+- regression measurement and incident response.
+
+This work may fence hardware from the fleet. It is not folded into a claim that
+“KVM solved side channels.”
+
+## Multi-tenant control-plane baseline already owned by v1
+
+The previous plan deferred durable replay defense, per-tenant fairness, edge
+rate limiting, and public auth because it assumed a single tenant. That premise
+is invalid. Corrected v1 S1 and its launch gate already require:
+
+- Seneca's public edge to own user authentication, authorization, rate limits,
+  abuse controls, key rotation, and incident response;
+- the private management gateway to durably and atomically bind
+  tenant/workspace identity, consume replay nonces, and enforce per-tenant and
+  global budgets before effect;
+- signing roots and reusable customer secrets to stay off the sandbox node;
+- two-tenant isolation tests to pass through the real wire path.
+
+This document retains only fleet-scale automation and optimizations that are
+honestly deferrable after a safe single-host microVM v1. v2 may scale or replace
+those implementations, but it cannot defer or weaken their properties.
+
+## Migration and rollback
+
+1. Add the owned fleet as a new backend behind SandboxProviderV1.
+2. Qualify it independently while v1 E2B/Firecracker remains active.
+3. Route owner canaries, then a bounded tenant cohort; never move a live
+   sandbox across backends.
+4. Copy workspace artifacts through the existing bounded API or restore a
+   cohort-compatible snapshot; do not mount v1 host paths.
+5. On failure, stop new v2 admission, drain/destroy v2 microVMs, and route new
+   sessions to the admitted v1 backend.
+6. Retire v1 only after capacity, isolation, cleanup, patch, and rollback
+   evidence are green for the owner-approved soak.
+
+## v2 exit criteria
+
+- The owned fleet preserves one microVM per sandbox and passes the exact
+  cross-tenant/11-probe qualification on every admitted cohort.
+- Snapshot-fork cannot attach or reveal another tenant's block or memory state.
+- Warm pools contain no tenant state before assignment and never recycle a
+  tenant-used VM.
+- Placement enforces cohort admission before locality/cost.
+- Critical VMM/kernel advisories automatically fence affected hosts.
+- Rollback to the adopted v1 provider is rehearsed and leaves no live orphan or
+  unowned block state.
+- Side-channel posture is documented per hardware cohort without being
+  misrepresented as a KVM guarantee.

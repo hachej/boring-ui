@@ -1,5 +1,10 @@
 # Remote container-start daemon survey (SBX1.4 build-vs-adopt)
 
+> **Historical scope:** this survey required candidates to preserve Docker +
+> runsc and therefore cannot decide the corrected Firecracker adoption question.
+> See `sandbox-engine-security-eval.md` and `../tech-choice.md` for the v1
+> E2B-vs-Kata decision.
+
 Date: 2026-08-11. Context: `docs/issues/1081/plan-sbx14.md` (branch `docs/sbx14-plan`),
 PR #1219. The planned S1 daemon is a ~1-1.5k-LOC HTTP/SSE server that reuses an
 **already-merged** V1 protocol client, binding registry, nonce store, and
