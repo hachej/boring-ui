@@ -24,8 +24,11 @@ agents isolated, disposable execution environments on infrastructure we own
 service on the owner's own product and own infra first; once stable, the same
 service opens to the public as a sellable product.
 
-The service is architected **as a public product from day one**. Seneca is a
-normal consumer of the public surface, not a privileged internal integration.
+The service is architected **as a public product from day one**. "Seneca is a
+normal consumer of the public surface, not a privileged internal integration"
+is the **target framing** — §3 states the honest v1 status: until the §9.4
+edge compat shim ships, Seneca holds the static secret and IS a privileged
+first-party consumer in the capability-issuance dimension.
 
 ---
 

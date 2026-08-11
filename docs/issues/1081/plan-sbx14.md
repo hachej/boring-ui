@@ -238,9 +238,9 @@ contract, plus the in-guest agent in `packages/boring-bash`.
 
 | E2B tier (e2b-internals) | E2B component | Our v1 module | Collapsed from E2B how |
 | --- | --- | --- | --- |
-| Control-plane API + placement (§1 `api`, §2, §8) | `packages/api` gRPC front door + `internal/orchestrator` scheduling, minus Nomad/Consul | **`packages/boring-sandbox/src/worker/**`** — the S1 daemon: HTTP/SSE server, the six V1 routes, capability+nonce auth, admitted-cohort load, single-worker placement config | E2B splits `api` (control plane) from `orchestrator` (data plane) across node pools; v1 **collapses both onto one process on one box** (e2b-internals §8 "One control-plane daemon = `api` + placement, minus Nomad/Consul"). No Nomad, no Consul catalog, no separate `client-proxy`. |
+| Control-plane API + placement (§1 `api`, §2, §8) | `packages/api` gRPC front door + `internal/orchestrator` scheduling, minus Nomad/Consul | **`packages/boring-sandbox/src/worker/**`** — the S1 daemon: HTTP/SSE server, the seven V1 routes, capability+nonce auth, admitted-cohort load, single-worker placement config | E2B splits `api` (control plane) from `orchestrator` (data plane) across node pools; v1 **collapses both onto one process on one box** (e2b-internals §8 "One control-plane daemon = `api` + placement, minus Nomad/Consul"). No Nomad, no Consul catalog, no separate `client-proxy`. |
 | Per-node orchestrator (§1 `orchestrator`, §2 data plane) | `packages/orchestrator` microVM lifecycle (`pkg/sandbox`, Firecracker, UFFD, NBD, portmap/proxy/dns) | **`packages/boring-sandbox/src/providers/runsc/**`** — `RunscSessionRuntimeV1` (`runtime/sessionRuntime.ts`) driving Docker+runsc via `dockerRunner.ts`/`dockerArgv.ts` | E2B's orchestrator owns Firecracker; v1's node agent wraps whatever `SandboxProviderV1` abstracts — **container-under-runsc first, Firecracker later** (e2b-internals §8 "One node agent = E2B's `orchestrator`, but wrap whatever isolation `SandboxProviderV1` already abstracts"). The daemon calls the runtime **in-process**, not over gRPC, because control plane and data plane are the same box in v1. |
-| Provider seam (§8 "keep the provider seam") | `orchestrator` gRPC `SandboxService` — `Create/Update/List/Delete/Pause/Checkpoint` (e2b-internals §1 appendix, §8) | **`SandboxProviderV1`** (`packages/boring-sandbox/src/shared/providerV1.ts`) — the already-frozen contract; the daemon's routes proxy to it | E2B keeps `api`↔`orchestrator` as a gRPC boundary so a Firecracker backend swaps in without touching the control plane. Ours is the same seam realized as a **TS interface**, not gRPC; `SandboxProviderV1` deliberately mirrors that RPC set so a microVM provider is a v2 swap (architecture §2 Layer 3). |
+| Provider seam (§8 "keep the provider seam") | `orchestrator` gRPC `SandboxService` — `Create/Update/List/Delete/Pause/Checkpoint` (e2b-internals §1 appendix, §8) | **`SandboxProviderV1`** (`packages/boring-sandbox/src/shared/providerV1.ts`) — the already-frozen contract, sitting on the **consumer side of the wire**: Seneca composes the `remote-worker` provider through it (S5). The daemon's routes proxy **in-process to `RunscSessionRuntimeV1`**, not to this interface. | E2B keeps `api`↔`orchestrator` as a gRPC boundary so a Firecracker backend swaps in without touching the control plane. Ours is the analogous swap seam realized as a **TS interface**, not gRPC — but honestly: today's `SandboxProviderV1` surface is `create`/`invalidate?`/`close?` plus the returned pair's `Sandbox`/`Workspace`/`dispose()`; it does **NOT** currently mirror the six-RPC set (`Update`/`List`/`Pause`/`Checkpoint` have no direct methods; renew/exec/fs live on the pair). e2b-internals §8's "should mirror exactly that RPC set" is a **recommendation**, a v2-entry alignment to do when the microVM provider lands behind the frozen contract — not a v1 fact. |
 | In-VM guest agent (§1 `envd`, §3) | `packages/envd` — Process gRPC + Filesystem gRPC + HTTP bulk file I/O + port scanner + per-sandbox secure token | **`packages/boring-bash`** — the in-guest exec/fs process (architecture §2 Layer 4) | E2B's `envd` is "the analog of our boring-bash" (e2b-internals §1, §3). v1 ships boring-bash as-is; the envd-shaped interface split is the **Layer-4 alignment target** detailed below (measured at v2 entry, not rebuilt in v1 — architecture §2 Layer 4, §6). |
 
 ### What v1 deliberately does NOT create (collapse decisions)
@@ -384,7 +384,8 @@ New, all under the already-shipped `packages/boring-sandbox`:
   watcher, and the HTTP router into one `http.Server`. This is the v1 analog of
   E2B `packages/api`'s composition (e2b-internals §2 request-flow), minus the
   Nomad/Consul cluster wiring in E2B `internal/clusters`.
-- `src/worker/router.ts` — the six V1 routes below, each: body-bound → content
+- `src/worker/router.ts` — the seven V1 routes below (unauthenticated `health`
+  plus six capability-guarded sandbox routes), each: body-bound → content
   type/schema check → limiter → capability decode/verify → binding authorize →
   runtime proxy → redacted response. No route reaches the runtime before all
   guards pass.
@@ -433,7 +434,8 @@ does not invent verbs beyond this fixed set — Decision 4.
 - **Mirrors E2B's `SandboxService` RPC set, not its transport.** e2b-internals §1
   appendix confirms `service SandboxService { Create, Update, List, Delete,
   Pause, Checkpoint }`, and §2 shows `api` never touches a VM directly — it
-  speaks gRPC to the orchestrator's `SandboxService`. Our six routes are the same
+  speaks gRPC to the orchestrator's `SandboxService`. Our six sandbox routes
+(health aside) are the same
   lifecycle verbs (Create/Update=renew/Delete + the exec/fs data path envd
   serves), but over HTTP+SSE instead of gRPC, because v1 **collapses the
   api↔orchestrator boundary onto one box** (e2b-internals §8 v1). The
@@ -605,8 +607,10 @@ per-workspace sub-budget; no binding persistence.
   The provisioning slice creates the parent directory root-owned and not
   group/world-readable.
 - Consume in one `BEGIN IMMEDIATE` transaction: evict expired rows, reject a
-  global nonce collision as replay, enforce the global maximum, enforce a lower
-  per-workspace active-nonce maximum, insert, and commit. Two daemon processes
+  global nonce collision as replay, insert, enforce the global maximum and the
+  lower per-workspace active-nonce maximum, and commit (the concrete
+  transaction below runs the budget checks after the insert under the same
+  held write lock; a failed check aborts the whole transaction). Two daemon processes
   or SQLite connections must never both return `accepted` for one nonce.
 - Pin `PRAGMA journal_mode=WAL` and `PRAGMA synchronous=FULL` on every
   production connection before use; startup fails if SQLite does not report
