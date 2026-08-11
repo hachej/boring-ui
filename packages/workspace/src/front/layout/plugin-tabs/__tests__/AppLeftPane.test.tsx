@@ -521,6 +521,8 @@ describe("AppLeftPane", () => {
     )
 
     const rail = screen.getByLabelText("Collapsed app navigation")
+    expect(rail).toHaveClass("border-border")
+    expect(rail).toHaveClass("bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)]")
     fireEvent.click(within(rail).getByRole("button", { name: "Search" }))
     fireEvent.click(within(rail).getByRole("button", { name: "Tasks" }))
     fireEvent.click(within(rail).getByRole("button", { name: "New chat" }))
