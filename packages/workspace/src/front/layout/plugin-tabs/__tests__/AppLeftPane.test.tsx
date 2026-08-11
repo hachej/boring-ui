@@ -4,13 +4,24 @@ import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
 import { workspaceSessionKey } from "../../../sessionIdentity"
-import { AppLeftPane, AppLeftRail } from "../AppLeftPane"
+import { AppLeftPane, AppLeftRail, createAppLeftNavigationEntries, type AppLeftPaneAction } from "../AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../PluginTabsWorkspaceShell"
 
 const sessions = [
   { id: "s1", title: "First session" },
   { id: "s2", title: "Second session" },
 ]
+
+function testNavigationEntries(
+  actions: readonly AppLeftPaneAction[] = [],
+  callbacks: { onOpenChats?: () => void; onOpenCommandPalette?: () => void } = {},
+) {
+  return createAppLeftNavigationEntries({
+    actions,
+    onOpenChats: callbacks.onOpenChats ?? vi.fn(),
+    onOpenCommandPalette: callbacks.onOpenCommandPalette ?? vi.fn(),
+  })
+}
 
 function renderPane() {
   return render(
@@ -22,7 +33,7 @@ function renderPane() {
         openSessionIds={["s1"]}
         pinnedSessionIds={[]}
         onCreateSession={vi.fn()}
-        onOpenCommandPalette={vi.fn()}
+        navigationEntries={testNavigationEntries()}
         onSwitchSession={vi.fn()}
         onOpenSessionAsPane={vi.fn()}
         onToggleSessionPinned={vi.fn()}
@@ -72,7 +83,7 @@ describe("AppLeftPane", () => {
             { id: "alpha-two", agentTypeId: "alpha", title: "Alpha follow-up" },
             { id: "beta-one", agentTypeId: "beta", title: "Beta session" },
           ]}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -364,7 +375,7 @@ describe("AppLeftPane", () => {
           onCreateSession={vi.fn()}
           onCreateSplitSession={vi.fn()}
           onCreatePopoverSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -398,7 +409,7 @@ describe("AppLeftPane", () => {
           activeSessionRef={{ agentTypeId: "solo", sessionId: "s1" }}
           onCreateSession={onCreateSession}
           onOpenAgentSettings={onOpenAgentSettings}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -463,7 +474,7 @@ describe("AppLeftPane", () => {
           onCreateSplitSession={vi.fn()}
           onCreatePopoverSession={vi.fn()}
           onOpenAgentSettings={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -510,15 +521,14 @@ describe("AppLeftPane", () => {
     const onCreateSession = vi.fn()
     const onOpenCommandPalette = vi.fn()
     const onOpenTasks = vi.fn()
+    const navigationEntries = testNavigationEntries([
+      { id: "tasks", label: "Tasks", icon: <span>T</span>, onClick: onOpenTasks, active: true },
+      { id: "inbox", label: "Inbox", icon: null, trailing: "3", onClick: vi.fn() },
+    ], { onOpenChats, onOpenCommandPalette })
     render(
       <AppLeftRail
-        actions={[
-          { id: "tasks", label: "Tasks", icon: <span>T</span>, onClick: onOpenTasks, active: true },
-          { id: "inbox", label: "Inbox", icon: null, trailing: "3", onClick: vi.fn() },
-        ]}
-        onOpenChats={onOpenChats}
+        navigationEntries={navigationEntries}
         onCreateSession={onCreateSession}
-        onOpenCommandPalette={onOpenCommandPalette}
       />,
     )
 
@@ -540,6 +550,47 @@ describe("AppLeftPane", () => {
     expect(within(rail).queryByText("Search")).not.toBeInTheDocument()
     expect(within(rail).queryByText("Chats")).not.toBeInTheDocument()
     expect(within(rail).queryByText("New chat")).not.toBeInTheDocument()
+  })
+
+  it("keeps collapsed and expanded navigation entries in the same order", () => {
+    const actions = [
+      { id: "inbox", label: "Inbox", icon: <span>I</span>, onClick: vi.fn() },
+      { id: "tasks", label: "Tasks", icon: <span>T</span>, onClick: vi.fn() },
+      { id: "automations", label: "Automations", icon: <span>A</span>, onClick: vi.fn() },
+      { id: "skills", label: "Agent", icon: <span>S</span>, onClick: vi.fn() },
+    ]
+    const navigationEntries = testNavigationEntries(actions)
+    render(
+      <WorkspaceAttentionProvider>
+        <div data-testid="expanded-navigation">
+          <AppLeftPane
+            appTitle="Test"
+            sessions={sessions}
+            navigationEntries={navigationEntries}
+            onCreateSession={vi.fn()}
+            onSwitchSession={vi.fn()}
+            onOpenSessionAsPane={vi.fn()}
+            onToggleSessionPinned={vi.fn()}
+          />
+        </div>
+        <div data-testid="collapsed-navigation">
+          <AppLeftRail
+            navigationEntries={navigationEntries}
+            onCreateSession={vi.fn()}
+          />
+        </div>
+      </WorkspaceAttentionProvider>,
+    )
+
+    const orderWithin = (root: HTMLElement) => Array.from(
+      root.querySelectorAll<HTMLElement>("[data-boring-app-left-nav-key]"),
+      (entry) => entry.dataset.boringAppLeftNavKey,
+    )
+
+    const expandedOrder = orderWithin(screen.getByTestId("expanded-navigation"))
+    const collapsedOrder = orderWithin(screen.getByTestId("collapsed-navigation"))
+    expect(expandedOrder).toEqual(navigationEntries.map((entry) => entry.key))
+    expect(collapsedOrder).toEqual(expandedOrder)
   })
 
   it("uses the rail icon and hit-area tokens for the app-navigation toggle", () => {
@@ -598,7 +649,7 @@ describe("AppLeftPane", () => {
     const baseProps = {
       appTitle: "Test",
       onCreateSession: vi.fn(),
-      onOpenCommandPalette: vi.fn(),
+      navigationEntries: testNavigationEntries(),
       onSwitchSession: vi.fn(),
       onOpenSessionAsPane: vi.fn(),
       onToggleSessionPinned: vi.fn(),
@@ -640,7 +691,7 @@ describe("AppLeftPane", () => {
       projects: [{ id: "project", name: "Project" }],
       activeProjectId: "project",
       onCreateSession: vi.fn(),
-      onOpenCommandPalette: vi.fn(),
+      navigationEntries: testNavigationEntries(),
       onSwitchSession: vi.fn(),
       onOpenSessionAsPane: vi.fn(),
       onToggleSessionPinned: vi.fn(),
@@ -707,7 +758,7 @@ describe("AppLeftPane", () => {
       openSessionIds: ["s1"],
       pinnedSessionIds: [],
       onCreateSession: vi.fn(),
-      onOpenCommandPalette: vi.fn(),
+      navigationEntries: testNavigationEntries(),
       onSwitchSession: vi.fn(),
       onOpenSessionAsPane: vi.fn(),
       onToggleSessionPinned: vi.fn(),
@@ -744,7 +795,7 @@ describe("AppLeftPane", () => {
           pinnedSessionIds={[]}
           onCreateSession={onCreateSession}
           onCreatePopoverSession={onCreatePopoverSession}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -771,7 +822,7 @@ describe("AppLeftPane", () => {
           pinnedSessionIds={[]}
           onCreateSession={onCreateSession}
           onCreatePopoverSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -795,7 +846,7 @@ describe("AppLeftPane", () => {
           openSessionIds={["s1"]}
           pinnedSessionIds={[]}
           onCreateSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -817,7 +868,7 @@ describe("AppLeftPane", () => {
           openSessionIds={["s1"]}
           pinnedSessionIds={[]}
           onCreateSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={onSwitchSession}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -840,7 +891,7 @@ describe("AppLeftPane", () => {
           openSessionIds={["s1"]}
           pinnedSessionIds={[]}
           onCreateSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={onSwitchSession}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -877,7 +928,7 @@ describe("AppLeftPane", () => {
           openSessionIds={[addressedKey]}
           pinnedSessionRefs={[{ sessionId: "shared", agentTypeId: "alpha" }]}
           onCreateSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={onSwitchSession}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={onToggleSessionPinned}
@@ -920,7 +971,7 @@ describe("AppLeftPane", () => {
           openSessionIds={["s1"]}
           pinnedSessionIds={[]}
           onCreateSession={vi.fn()}
-          onOpenCommandPalette={vi.fn()}
+          navigationEntries={testNavigationEntries()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}

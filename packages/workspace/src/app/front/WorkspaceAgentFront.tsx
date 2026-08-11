@@ -23,7 +23,7 @@ import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceS
 import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AgentDetailsOverlay } from "../../front/chrome/agents/AgentDetailsOverlay"
-import { AppLeftPane, AppLeftRail } from "../../front/layout/plugin-tabs/AppLeftPane"
+import { AppLeftPane, AppLeftRail, createAppLeftNavigationEntries } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { chatPaneAgentLabels } from "../../front/layout/chatPaneAgentLabels"
 import { useViewportWidth } from "../../front/layout/useViewportWidth"
@@ -2518,6 +2518,15 @@ export function WorkspaceAgentFront<
     assertUniqueAppLeftActionIds(actions)
     return actions
   }, [appLeftActions, appLeftOverlayActions, leftOverlay, pluginAppLeftActions, skillsActionEnabled])
+  const openAppLeftChats = useCallback(() => {
+    setLeftOverlay(null)
+    setAppLeftPaneCollapsed(false)
+  }, [])
+  const appLeftNavigationEntries = useMemo(() => createAppLeftNavigationEntries({
+    actions: managementActions,
+    onOpenChats: openAppLeftChats,
+    onOpenCommandPalette: openCommandPalette,
+  }), [managementActions, openAppLeftChats, openCommandPalette])
 
   const pluginLeftOverlayNode = PluginAppLeftOverlayHost({
     plugins: capturedPlugins,
@@ -2638,13 +2647,8 @@ export function WorkspaceAgentFront<
       mobileShellEnabled={mobileShellEnabled}
       collapsedRail={(
         <AppLeftRail
-          actions={managementActions}
+          navigationEntries={appLeftNavigationEntries}
           footerSlot={showThemeToggle ? <ThemeToggle /> : undefined}
-          onOpenChats={() => {
-            setLeftOverlay(null)
-            setAppLeftPaneCollapsed(false)
-          }}
-          onOpenCommandPalette={openCommandPalette}
           onCreateSession={() => {
             setLeftOverlay(null)
             void createChatSession()
@@ -2707,7 +2711,7 @@ export function WorkspaceAgentFront<
             void createChatPaneAfter(activeChatPaneId, undefined, ownerAgentTypeId)
           }}
           onCreatePopoverSession={createChatSessionInPopover}
-          onOpenCommandPalette={openCommandPalette}
+          navigationEntries={appLeftNavigationEntries}
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}
           onOpenSessionDetached={(sessionId, ownerAgentTypeId) => {
@@ -2720,7 +2724,6 @@ export function WorkspaceAgentFront<
           onToggleSessionPinned={toggleSessionPinned}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
           onRenameSession={sessionApi?.rename ? resolvedRename : undefined}
-          actions={managementActions}
         />
       )}
     >
