@@ -877,6 +877,78 @@ Verified in code (2026-08-11):
   alternative:** better-auth's `phoneNumber` plugin (OTP-based). Recommend the
   channel-as-verifier path.
 
+**External validation (getnao/nao study, `scratchpad/getnao-auth-study.md`).**
+nao runs the same stack we propose to extend: better-auth `^1.6.3` with the
+internal-id + `account(providerId → userId)` linked-identities model and
+`accountLinking.enabled`. This is external confirmation that the
+multi-provider, one-user / N-linked-identities model is the standard shape —
+not something we invent. Where nao helps and where it does not is captured in
+the two flows below.
+
+#### Two complementary identity flows (both first-class)
+
+The product must support entry from **either door**, and both must **converge
+on ONE better-auth account**:
+
+**Flow A — web-first → link WhatsApp (nao's linking-code pattern).** An
+already-authenticated *web* user gets a short regenerable **linking code**,
+opens WhatsApp and sends `/login <code>`; the backend links
+`whatsappUserId → userId` via better-auth `accountLinking`. This is nao's
+verified pattern and is the right flow for web-first products / users
+connecting WhatsApp to an existing account.
+
+**Flow B — WhatsApp-first signup → magic-link web (our build).** First inbound
+from a new number creates the account (channel-as-verifier, above); when the
+user needs the web UI, the bot delivers a magic link. This is **not** in nao —
+we build it from better-auth primitives, and the security shape matters:
+
+- **Use better-auth's `verification(identifier, value, expiresAt)` table** for
+  the web-session magic link — short TTL, **single-use**, exactly as
+  password-reset already does — delivered over the WhatsApp delivery adapter.
+- **Do NOT reuse nao's linking-code shape for web sessions.** The linking code
+  is long-lived and reusable — fine for a one-time identity *link*, but as a
+  *session* credential it is a session-token security bug. Sessions go through
+  the single-use `verification` token; the linking code never mints a session.
+
+Flow B is the trades/SMB path (the CH-trades product); Flow A serves web-first
+products.
+
+#### Progressive email — the identity trust-ladder (owner ruling, ratified default)
+
+**Do not require email at WhatsApp signup** — it kills zero-friction signup.
+Phone-only signup, then collect email **progressively in-conversation at
+natural value moments** (first quote, first web access, first payment). Email
+becomes **effectively required at first payment** (invoices / receipts / Swiss
+business records). Email and phone then sit as **linked identities on one
+better-auth account** — `accountLinking` makes "add email later" native, with
+**no migration**. Email's roles: **recovery** (number-recycling risk, §7.3 item
+3 — nudge collection soon after first value), **billing**, and cross-channel
+notices. This is an **identity trust-ladder**, parallel to the email-*access*
+trust-ladder in the CH-trades plan.
+
+#### Account convergence & dedup — one account, N identities
+
+The two directions create a real convergence problem; specify it, do not leave
+it implicit. **Invariant: one better-auth user, N linked identities (email +
+phone + Google), reachable via either door.**
+
+- **Preferred rule — always LINK into the current session.** If a user is
+  authenticated on *either* channel and presents a second identity (adds email,
+  connects WhatsApp, links Google), it **links to the existing account** via
+  better-auth `accountLinking` — never creates a second account. Flow A and
+  progressive-email collection both work this way. This avoids the collision by
+  construction wherever the user is already logged in.
+- **The unavoidable collision case** — two *independently-created* accounts that
+  are the same person (signed up via WhatsApp with a phone on Monday, then
+  signed up on web with an email later while not logged in). better-auth
+  `accountLinking` does **not** auto-merge two separate accounts. **v1 CLAIM /
+  MERGE flow:** detect the identity collision at the second signup ("this
+  email/phone already belongs to an account"), offer **verify-to-link** (prove
+  control of both identities via their own channels), then merge/link. Keep v1
+  **simple** — detect + offer verify-to-merge; **no automatic fuzzy matching**.
+- Net: **no duplicate accounts for the same person by construction where
+  possible; explicit, consented merge where not.**
+
 Both the WhatsApp session and the web session **bind to the SAME workspace
 session** — the #1211 workspace-binding ruling (§4.1) applied to identity: two
 doors, one workspace. The binding row's `workspaceId` (§4.2) is the account
@@ -1032,6 +1104,18 @@ regression test, red before the fix); flag off → byte-identical host.
    that (schema-config.ts:5,109; authClient.ts:2,17; capabilities.ts:74).
 3. **Reverse "get login link on WhatsApp"** entry from the web login page
    (enter number → existing magic-link issuance → delivered via the adapter).
+   The web-session magic link uses better-auth's single-use
+   `verification(identifier, value, expiresAt)` token (as password-reset does),
+   **not** a reusable linking code (§6.6 security note).
+4. **Both identity flows, converging on one account (§6.6):** Flow A
+   (web-first → link WhatsApp via nao's regenerable linking-code `/login
+   <code>`, `whatsappUserId → userId`); Flow B (WhatsApp-first → magic-link
+   web, above). Convergence rule: **always link into the current session** via
+   `accountLinking`; a **v1 claim/merge flow** handles the independently-created
+   collision (detect + verify-to-link, no fuzzy matching).
+5. **Progressive email (owner default):** phone-only at signup; collect email
+   in-conversation at value moments; email + phone as linked identities on one
+   better-auth account (no migration). Email required by first payment.
 Both the WhatsApp and web sessions bind to the **same** workspace session (the
 1a `workspaceId`) through the same better-auth user. Embedded Signup /
 per-customer OAuth explicitly **out of scope** (§0, §6.6).
@@ -1044,7 +1128,11 @@ existing user/workspace; the magic-link delivery adapter sends the better-auth
 token URL to the number's thread and a first tap establishes a web session
 while a **second tap fails closed** (better-auth one-time-use) and an expired
 token is rejected; the web "link on WhatsApp" reverse flow issues and delivers
-a link; no magic-link token appears in any log (secret-in-logs guard).
+a link; no magic-link token appears in any log (secret-in-logs guard);
+Flow A links a WhatsApp identity onto an existing web user via the linking code
+(no second account); a second-door collision (independent phone+email accounts)
+is **detected** and offered verify-to-merge, never silently duplicated;
+progressive email added later links onto the same account with no migration.
 
 ### Slice 1b — durable tail, turn assembly, outbound
 **Delivers:** the exported stream-path resolver on the pi-chat service; the
