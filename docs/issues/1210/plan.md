@@ -814,6 +814,28 @@ via `transport.send`) to a **WhatsApp delivery adapter** that sends the *same*
 better-auth token URL over WhatsApp — no new token/redeem/session code; (3)
 phone verification comes free from the channel itself (an inbound proves number
 control), with better-auth's `phoneNumber` OTP plugin as the alternative.
+(External validation: getnao/nao runs the same better-auth linked-identity model
+with `accountLinking` — `scratchpad/getnao-auth-study.md`.)
+
+**Progressive email — do not require email at signup (owner ruling).** Phone is
+the only identity at signup; email is collected **progressively
+in-conversation** at natural value moments (first quote, first web access) and
+is **effectively required at first payment** (invoices, receipts, Swiss
+business records). Email + phone become **linked identities on one better-auth
+account** — `accountLinking` makes "add email later" native, no migration.
+Email's roles: recovery (number-recycling risk), billing, cross-channel
+notices. This is an identity trust-ladder, parallel to the email-*access*
+trust-ladder in §(a).
+
+**Two doors, one account.** Support both **Flow B** (WhatsApp-first signup →
+magic-link web, the trades default) and **Flow A** (web-first → link WhatsApp
+via a regenerable linking code, nao's pattern). Convergence rule: always link
+into the current session; a simple **v1 claim/merge** flow (detect + verify-to-
+link, no fuzzy matching) handles the case where the same person independently
+created a phone account and an email account. Invariant: one better-auth user,
+N linked identities, reachable via either door. Web-session magic links use
+better-auth's single-use `verification` token, never the reusable linking code.
+Full model in #1211 §6.6.
 
 ```txt
  1. tap wa.me link, send first message         ~1 min   phone = account identity
