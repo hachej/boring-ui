@@ -862,7 +862,7 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
   })
 
-  it("opens the Chats session list from the collapsed app rail", async () => {
+  it("selects Chats from the collapsed app rail without expanding it", async () => {
     const user = userEvent.setup()
     render(
       <WorkspaceAgentFront
@@ -879,9 +879,9 @@ describe("WorkspaceAgentFront", () => {
     const collapsedRail = screen.getByLabelText("Collapsed app navigation")
     await user.click(within(collapsedRail).getByRole("button", { name: "Chats" }))
 
-    const reopenedAppNav = screen.getByLabelText("App navigation")
-    expect(screen.queryByLabelText("Collapsed app navigation")).not.toBeInTheDocument()
-    expect(within(reopenedAppNav).getByText("First session")).toBeInTheDocument()
+    expect(screen.getByLabelText("Collapsed app navigation")).toBeInTheDocument()
+    expect(screen.queryByLabelText("App navigation")).not.toBeInTheDocument()
+    expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "s1")
   })
 
   it("keeps only the current app-left overlay action selected and returns to Chats from the rail", async () => {
@@ -925,9 +925,10 @@ describe("WorkspaceAgentFront", () => {
 
     await user.click(within(collapsedRail).getByRole("button", { name: "Chats" }))
 
-    const reopenedAppNav = screen.getByLabelText("App navigation")
     await waitFor(() => expect(screen.queryByText("Automation overlay")).not.toBeInTheDocument())
-    await waitFor(() => expect(within(reopenedAppNav).getByRole("button", { name: "Automations" })).not.toHaveAttribute("data-active"))
+    expect(screen.getByLabelText("Collapsed app navigation")).toBeInTheDocument()
+    expect(screen.queryByLabelText("App navigation")).not.toBeInTheDocument()
+    await waitFor(() => expect(within(collapsedRail).getByRole("button", { name: "Automations" })).not.toHaveAttribute("data-active"))
   })
 
   it("never mounts a different plugin overlay with stale request params", async () => {
