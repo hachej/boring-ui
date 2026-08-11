@@ -12,10 +12,10 @@ const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../../../..')
 const FACTORY_PACKAGES: readonly DiscoveredAgentPackageDescriptor[] = [
   // Ratified roster (gh-1187 S0) plus a discovered-but-deferred seat
   // (concierge) that holds no fleet.yaml entry and must not compose.
-  ['concierge', 'boring-concierge', ['feedback', 'triage', 'handoff']],
-  ['triage', 'boring-triage', ['triage', 'handoff']],
-  ['orchestrator', 'boring-orchestrator', ['plan', 'feedback', 'handoff']],
-  ['worker', 'boring-worker', ['exec', 'fresh-eyes', 'handoff']],
+  ['concierge', 'boring-concierge', ['feedback', 'triage', 'owner-gate', 'handoff']],
+  ['triage', 'boring-triage', ['triage', 'owner-gate', 'handoff']],
+  ['orchestrator', 'boring-orchestrator', ['plan', 'feedback', 'owner-gate', 'handoff']],
+  ['worker', 'boring-worker', ['exec', 'fresh-eyes', 'owner-gate', 'handoff']],
 ].map(([seat, definitionId, skills]) => ({
   rootDir: resolve(REPOSITORY_ROOT, '.agents', 'personas', seat as string),
   manifest: {

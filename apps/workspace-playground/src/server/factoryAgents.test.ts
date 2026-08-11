@@ -24,9 +24,9 @@ import { loadBoringFactoryAgents, type BoringFactoryRole } from './factoryAgents
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../..')
 // The ratified 3-seat roster (gh-1187 S0), in fleet.yaml order.
 const EXPECTED = [
-  { role: 'triage', id: 'boring-triage', skills: ['triage', 'handoff'] },
-  { role: 'orchestrator', id: 'boring-orchestrator', skills: ['plan', 'feedback', 'handoff'] },
-  { role: 'worker', id: 'boring-worker', skills: ['exec', 'fresh-eyes', 'handoff'] },
+  { role: 'triage', id: 'boring-triage', skills: ['triage', 'owner-gate', 'handoff'] },
+  { role: 'orchestrator', id: 'boring-orchestrator', skills: ['plan', 'feedback', 'owner-gate', 'handoff'] },
+  { role: 'worker', id: 'boring-worker', skills: ['exec', 'fresh-eyes', 'owner-gate', 'handoff'] },
 ] as const
 
 async function expectedInstructions(role: string, skills: readonly string[]): Promise<string> {
