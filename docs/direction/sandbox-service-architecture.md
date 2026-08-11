@@ -9,6 +9,11 @@ and `DIRECTION.md` win.
 
 Precedence: owner > `DIRECTION.md` > this file > issue plan folders.
 
+Grounding: every API/architecture/isolation decision here cites version-controlled
+evidence in [`../issues/1081/references/`](../issues/1081/references/) (index:
+[`references/README.md`](../issues/1081/references/README.md)). The concrete v1
+control-plane API shape is §9.
+
 ---
 
 ## 0. The one-sentence thesis
@@ -319,3 +324,187 @@ implementation of the public control-plane API.
 
 The plan stays the authority on *what ships first*. This document is the
 authority on *what those slices are slices of*.
+
+---
+
+## 9. The v1 control-plane API shape (grounded)
+
+This section specifies the Layer-1 (§2) control-plane API concretely. It is
+**modeled on E2B's public SDK/API surface** so a public customer's E2B-shaped
+agent code is a near-drop-in — the GTM angle in §7 — while the auth handshake
+deliberately diverges for our sovereign security model.
+
+**Grounding discipline:** every decision below carries a citation. `[SPEC]`
+points at [`../issues/1081/references/control-plane-api-spec.md`](../issues/1081/references/control-plane-api-spec.md)
+(the E2B-modeled spec, verified against E2B JS SDK v2.38.2 / Python v2.37.1 and
+the public OpenAPI reference); `[E2B-INT]` at
+[`../issues/1081/references/e2b-internals-architecture.md`](../issues/1081/references/e2b-internals-architecture.md)
+(E2B `infra` source tree); `[SURVEY]` at
+[`../issues/1081/references/build-vs-adopt-survey.md`](../issues/1081/references/build-vs-adopt-survey.md)
+(Docker-AuthZ CVE / build-vs-adopt); `[ISO]` at
+[`../issues/1081/references/isolation-choices-primary-sources.md`](../issues/1081/references/isolation-choices-primary-sources.md)
+(competitor isolation quotes). No decision here is ungrounded.
+
+### 9.0 E2B-compatibility posture
+
+- **Posture:** *E2B-compatible surface, sovereign infra, stronger auth.* The
+  lifecycle/exec/fs verbs match E2B's SDK shape so an E2B-shaped agent (create →
+  run command → read/write files → kill) targets our surface with a thin client
+  (modeled on E2B `Sandbox`/`commands`/`files`; ref: `[SPEC]` §1, §4). The
+  execution then runs on EU bare metal under isolation we own — the sovereignty
+  delta E2B structurally cannot offer (ref: §7; `[SPEC]` §4 GTM note).
+- **Backend-neutral surface, by design.** E2B's public surface names no
+  Firecracker/microVM/KVM terms — all abstractions are neutral
+  (`template`/`sandboxID`/`envd`/public URL) even though E2B runs Firecracker
+  underneath (ref: `[SPEC]` §1.7; `[E2B-INT]` §1, where microVM lives only in the
+  data-plane `orchestrator`, never the `api` contract). We adopt the same
+  discipline: our public verbs name no gVisor/Docker/runsc specifics. The one
+  leak today is the `isolation: "docker-runsc-systrap"` string in the **health**
+  response — the *public* health response should report a *tier*, not the runtime
+  (ref: `[SPEC]` §4 backend-neutrality note).
+- **Public prefix.** Verbs stay identical to what SBX1.4 built, but the path
+  prefix moves from the internal-daemon `/internal/v1/...` to a stable public
+  `/v1/...` (ref: `[SPEC]` §2.1). No schema change — a routing/naming decision.
+
+### 9.1 Lifecycle endpoints
+
+| Verb + path | Status | Decision & grounding |
+| --- | --- | --- |
+| `POST /v1/sandboxes` — **create** | HAVE | Modeled on E2B `Sandbox.create()` (ref: `[SPEC]` §1.1, §4). Implemented today as `POST /internal/v1/sandboxes` → `RemoteWorkerCreateResponseSchemaV1` returning `sandboxId`, `runtimeCwd=/workspace`, `leaseExpiresAtMs`, and an authenticated `bindingReceipt` (ref: `[SPEC]` §2.1, §2.4). **Differs from E2B:** the daemon **constructs** the create request server-side from an already-authorized `workspaceId`; it never accepts a caller-supplied workspace identity or a raw container spec (ref: `[SPEC]` §2.4, §3.2 — daemon threat model, `sbx1-own-cloud-provider-plan.md` §H1). E2B accepts a client `templateID`; we accept a template *reference* validated against pinned digests, never raw container params (ref: `[SPEC]` §4). |
+| `DELETE /v1/sandboxes/{id}` — **kill** | HAVE | Modeled on E2B `Sandbox.kill()` (ref: `[SPEC]` §1.1). Implemented as `DELETE /internal/v1/sandboxes/{id}` → `{ disposed: true }` (ref: `[SPEC]` §2.1, §2.4). |
+| `POST /v1/sandboxes/{id}/renew` — **TTL keepalive** | HAVE | Our equivalent of E2B `setTimeout` / the idle-timeout window (ref: `[SPEC]` §1.1 `setTimeout`, coverage map). `idleTimeoutMs` (≤ 30 min) → new `leaseExpiresAtMs` (ref: `[SPEC]` §2.4). |
+| **connect / reconnect** | PARTIAL | E2B has an explicit `Sandbox.connect()` with pause/auto-resume (ref: `[SPEC]` §1.1). We have no distinct verb: a fresh capability is minted per operation against an existing `sandboxId`, and the stored binding record is the source of truth (ref: `[SPEC]` §2.4). Reconnecting an events stream after expiry needs a fresh capability. **Divergence is intentional** — no long-lived connection handle on the isolation boundary. |
+| `GET /v1/sandboxes` — **list** | NEW (v1.1+) | E2B `Sandbox.list()` (ref: `[SPEC]` §1.1). Not present in `RemoteWorkerOperationSchemaV1`; deferred so v1 does not become product-complete (guardrail §6; ref: `[SPEC]` §2.4, §5). |
+| **getInfo / metadata / labels** | NEW (v1.1+) | E2B `getInfo`/create-time `metadata` (ref: `[SPEC]` §1.1). Not modeled on our create today (create carries `sessionId`, `clientLeaseId`, digests); deferred (ref: `[SPEC]` §2.4). |
+| **pause / resume / snapshot / fork** | NEW (v2) | E2B `pause`/`createSnapshot`/`fork` back their UFFD snapshot/restore fast-start (ref: `[SPEC]` §1.1; `[E2B-INT]` §1 orchestrator "UFFD snapshot restore"). v2 only — harvest E2B's proven snapshot plumbing (§5 TAKE row), never build in v1 (guardrail §6). |
+
+### 9.2 Exec / run + streaming
+
+- `POST /v1/sandboxes/{id}/exec` — **HAVE.** Modeled on E2B `commands.run()` →
+  exit code + stdout/stderr (ref: `[SPEC]` §1.2, §4). Request (`RemoteWorkerExecRequestV1`):
+  `invocationId`, single-string `command` (≤ 64 KiB), optional `cwd`,
+  `timeoutMs` (≤ 15 min), `maxOutputBytes` (≤ 4 MiB); response carries
+  `stdoutBase64`/`stderrBase64`, `exitCode`, `durationMs`, `truncated` (ref:
+  `[SPEC]` §2.2). The in-guest contract is `Sandbox.exec(cmd, opts)` in
+  `packages/agent/src/shared/sandbox.ts` (ref: `[SPEC]` §2.2).
+- **Streaming stdout/stderr** — PARTIAL, v1.1 target. The in-guest layer already
+  has incremental `onStdout`/`onStderr` byte-stream callbacks (`ExecOptions`),
+  but the wire `exec` response is a buffered base64 blob — no per-chunk HTTP
+  stream yet. Matching E2B's streaming `CommandHandle` needs a streaming exec
+  response (ref: `[SPEC]` §1.2, §2.2, coverage map, §5 v1.1).
+- **Secret injection differs (stronger).** E2B passes plain create-time `envs`
+  and per-command `envs` (ref: `[SPEC]` §1.5). Ours carries **value-free
+  `credentialRefs`** resolved host-side, so secret *values* never cross the wire
+  or reach the box in the request (ref: `[SPEC]` §2.2, coverage map "envs"). Plain
+  `env` in `ExecOptions` is still supported for non-secret vars.
+- **background handle / `sendStdin` / PTY** — NEW. E2B `commands.run({background})`,
+  `sendStdin`, and `pty.*` have no equivalent in the protocol; deferred to v2
+  (ref: `[SPEC]` §1.2, coverage map, §5 v2).
+
+### 9.3 Filesystem read/write/list
+
+- `POST /v1/sandboxes/{id}/fs` — **HAVE.** Modeled on E2B `sandbox.files.*`
+  (`read`/`write`/`list`/`getInfo`/`exists`/`makeDir`/`rename`/`remove`; ref:
+  `[SPEC]` §1.3, §4). Implemented as `RemoteWorkerWorkspaceOperationSchemaV1`, a
+  discriminated union on `op`: `readFile`, `readBinaryFile`, `writeFile`,
+  `writeBinaryFile`, `readFileWithStat`, `writeFileWithStat`,
+  `writeBinaryFileWithStat`, `unlink`, `readdir`, `stat`, `mkdir` (`recursive?`),
+  `rename` (`from`/`to`). Text ≤ 6 MiB per transfer; binary carried base64 (ref:
+  `[SPEC]` §2.3). E2B `exists` maps to our `stat` (ref: `[SPEC]` coverage map).
+- This is a **1:1 map** onto the `Workspace` interface
+  (`packages/agent/src/shared/workspace.ts`); paths are workspace-relative and
+  **path validation is an adapter concern** (coding-invariant 4; ref: `[SPEC]`
+  §2.3).
+- `GET /v1/sandboxes/{id}/fs/events` — **HAVE** (SSE), promote to public in v1.1.
+  Modeled on E2B `files.watchDir` (ref: `[SPEC]` §1.3). Backed by `Workspace.watch()`
+  over an SSE stream of `RemoteWorkerFsEventEnvelopeSchemaV1` (ref: `[SPEC]` §2.1,
+  §2.3, §5 v1.1).
+- **Bulk / signed-URL upload/download** — PARTIAL. E2B offers signed-URL
+  upload/download; we carry binary via base64 ≤ 6 MiB with no streamed multi-MB
+  path. Streamed bulk transfer is a v1.1 item (ref: `[SPEC]` §1.3, coverage map,
+  §5 v1.1).
+- **Ports / `getHost(port)` public URLs** — NEW (v2). E2B exposes per-port public
+  URLs (ref: `[SPEC]` §1.4). Nothing in our protocol; a deliberate v1 gap (ref:
+  `[SPEC]` §4, §5 v2).
+
+### 9.4 The auth handshake — capability token + single-use nonce (the deliberate divergence)
+
+This is where we **must** differ from E2B, and the divergence is the security
+selling point, not a gap.
+
+- **E2B model:** every SDK request carries a **long-lived reusable API key**
+  (`E2B_API_KEY`, header `X-API-Key`) (ref: `[SPEC]` §1.6, §3.1).
+- **Our model:** every operation is authorized by a **short-lived capability** in
+  `x-boring-internal-token` whose claims (`RemoteWorkerCapabilityClaimsSchemaV1`)
+  bind `protocolVersion`, `workerId`, `workspaceId`, `operation`, `sandboxId`,
+  `requestDigest` (SHA-256 of the exact request), `issuedAtMs`/`expiresAtMs`, and
+  a **single-use `nonce`** (ref: `[SPEC]` §3.1). Max lifetime 5 min
+  (`REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS`); the nonce lives in a persistent
+  append-only store, replay is rejected (`REMOTE_WORKER_CAPABILITY_REPLAY`), and
+  consumed nonces survive a daemon restart via boot-epoch fencing (SBX1.4-C /
+  #1167; ref: `[SPEC]` §3.1, §1 exit-criteria 3).
+- **Why we diverge — grounded in the CVE lesson:** *own your security edge; never
+  inherit someone else's reusable-key auth on your isolation boundary.* A leaked
+  E2B key grants standing access until rotated; a leaked boring capability is
+  already expired and already consumed (ref: `[SURVEY]` — Docker-AuthZ CVE
+  finding; `[SPEC]` §3.1; §5 OWN row). This is the OWN disposition of the
+  TAKE/ADAPT/OWN/RE-HOST split (§5) made concrete.
+- **`sandboxId` alone never authorizes.** Every request loads the stored binding
+  record by `sandboxId` and compares all binding claims to the independently
+  authorized capability *before* touching Workspace, Docker, the invocation
+  cache, or the lease timer; no request body or box-reported identity may replace
+  the stored binding (ref: `[SPEC]` §3.2, `sbx1-own-cloud-provider-plan.md` §H1).
+  Cross-workspace combinations return one stable, non-revealing code
+  (`REMOTE_WORKER_SANDBOX_WORKSPACE_MISMATCH`) with zero Docker effect (ref:
+  `[SPEC]` §3.2) — satisfying coding-invariant 8 (every error has a stable code).
+- **The daemon exposes exec/fs verbs, never a raw Docker/containerd socket** —
+  there is no "run this container spec" endpoint (ref: `[SPEC]` §3.2). This is the
+  structural opposite of "proxy Docker," and is what makes owning the thin auth
+  layer tractable (small surface; ref: §5 OWN row).
+- **E2B-compat shim (edge):** a public SDK user cannot present one static key at
+  the boundary. The compat shim accepts a public API key **at the edge** and
+  **mints per-operation capabilities server-side**; the key never reaches the
+  isolation boundary (ref: `[SPEC]` §3.1 trade-off, §4). This preserves the
+  drop-in GTM posture (§9.0) without weakening the boundary.
+
+### 9.5 Isolation/tenancy grounding for the API tiers
+
+The API surface is isolation-tier-neutral (§9.0), but the *tier selection* the
+Layer-1 API performs is grounded in primary sources:
+
+- **v1 = gVisor / runsc, single-tenant, semi-trusted.** Modal runs *dense
+  multi-tenant* production on gVisor: "Sandboxes are built on top of gVisor … that
+  provides strong isolation properties" and "stronger isolation than most other
+  container runtimes" (ref: `[ISO]` §1 Modal quotes). gVisor is a syscall-
+  interception boundary — appropriate for our own agents on our own box (§4).
+- **v2 dedicated tier = microVM / Firecracker, untrusted strangers.** Fly.io
+  frames Firecracker as hardware-grade isolation for untrusted multi-tenant
+  workloads (ref: `[ISO]` — Fly.io Firecracker quotes). Selected per trust level
+  by the Layer-1 API, placed by Layer-2, implemented as a second
+  `SandboxProviderV1` behind the frozen contract (§4, §2 Layer-3 row).
+- The API contract does **not** change across this escalation — only the tier
+  string the create call resolves does. `gVisor-v1 → microVM-v2` is a Layer-3
+  provider swap, not an API reshape (§4; ref: `[SPEC]` §1.7 backend-neutrality).
+
+### 9.6 The minimal v1 cut (what ships in SBX1.4)
+
+Smallest set to prove the sovereign execution path; everything else is explicitly
+deferred so v1 does not become product-complete (guardrail §6; ref: `[SPEC]` §5):
+
+1. `GET  /v1/health` — evidence/qualification/image-digest admission gate.
+2. `POST /v1/sandboxes` — create (server-constructed, capability+nonce, binding receipt).
+3. `POST /v1/sandboxes/{id}/exec` — run command, exit code, buffered stdout/stderr.
+4. `POST /v1/sandboxes/{id}/fs` — read/write/list/stat/mkdir/rename/unlink (+binary).
+5. `POST /v1/sandboxes/{id}/renew` — TTL keepalive (idle timeout).
+6. `DELETE /v1/sandboxes/{id}` — kill/dispose.
+7. Capability + single-use-nonce auth on every call (`x-boring-internal-token`).
+
+**v1.1 near-term:** promote SSE `fs/events` to public; streaming exec response;
+`GET /v1/sandboxes` list + create-time `metadata`; streamed bulk transfer.
+**v2:** ports/public URLs, background/PTY, multi-tenant keys/quotas/metering,
+microVM tier. (All ref: `[SPEC]` §5.)
+
+> **Grounding-coverage note:** every row/bullet in §9 carries a `[SPEC]`/`[E2B-INT]`/
+> `[SURVEY]`/`[ISO]` citation. The full E2B-modeled spec (with the verified E2B
+> §1 surface and the have/partial/new coverage map) is the driving reference:
+> [`../issues/1081/references/control-plane-api-spec.md`](../issues/1081/references/control-plane-api-spec.md).
