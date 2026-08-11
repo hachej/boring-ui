@@ -1,7 +1,7 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/1127
 issue: 1127
-state: external-channels reframe (r4.1) — generic channel registry + descriptor mechanism, WhatsApp as v1 consumer; adversarial-review reframe folded in (2026-08-11): PILOT = provisioned bindings / fail-closed, open self-serve WhatsApp signup + phone identity + account merge DEMOTED to Phase 2; better-auth phone-first claims corrected against code; descriptor = rendering-only + adapter-owned opaque conversation key; slice 6 verdict = build thin (seed Flue edge + Hermes reference); ready for owner gate merge
+state: external-channels reframe (r4.1) — generic channel registry + descriptor mechanism, WhatsApp as v1 consumer; adversarial-review reframe folded in (2026-08-11): PILOT = provisioned bindings / fail-closed; self-serve signup DEMOTED to Phase 2 but FEASIBLE NOW in two forms (phone-native via better-auth phoneNumber plugin tier-b; email-anchored via accountLinking) per authoritative capability check; better-auth claims corrected against code; descriptor = rendering-only + adapter-owned opaque conversation key; slice 6 verdict = build thin (seed Flue edge + Hermes reference); ready for owner gate merge
 updated: 2026-08-11
 supersedes: docs/issues/1127/plan.md (r2.1) — for the channels lane only
 flag: BORING_AGENT_CHANNELS (from r2.1; channel registry + adapter host are dead code when off)
@@ -89,8 +89,8 @@ These are honesty/architecture fixes, not cosmetic.
 | Finding | Fix applied |
 | --- | --- |
 | **R1** — pilot's "unknown sender = signup" (old slice 1c) contradicts 1a's fail-closed | **Pilot = provisioned bindings, fail-closed** (new §0.7). Open signup demoted to Phase 2 (§6.6). |
-| **R2/R3** — false "just a magic-link delivery adapter / provider #4 is a config line" claims | Corrected against code (§6.6): better-auth magic-link is **email-keyed**, mounted only with a mail transport, gated on `emailVerificationEnabled`; `accountLinking` and a `phoneNumber` plugin are **NOT installed**. Phone-first identity is **real Phase-2 work**. |
-| **R4** — v1 merge flow asserted, not specified | **Demoted to Phase 2**, marked unspecified/hard — no account-merge primitive exists (§6.6). Pilot's single provisioned binding needs no merge. |
+| **R2/R3** — false "just a magic-link delivery adapter / provider #4 is a config line" claims | Corrected against code + an authoritative better-auth capability check (§6.6, `scratchpad/better-auth-phone-capability.md`). Two **feasible** self-serve flows, neither a config line: **phone-native** via the `phoneNumber` plugin (`signUpOnVerification` + `sendOTP`→WhatsApp + `getTempEmail` placeholder; tier (b), moderate — NOT hard/deferred), and **email-anchored** via `accountLinking` (currently unconfigured — `grep accountLinking packages/core/src` → zero hits). magic-link is a separate email-keyed plugin and does not block phone-only auth. |
+| **R4** — v1 merge flow asserted, not specified | "Replace placeholder email with real email" (phone-native, at first payment) is a plain **user-update, not a merge**. The genuine merge case (two independent accounts) is a narrow tail with no better-auth primitive — detect + support-assisted, never automated; linking email onto a phone-first account is custom glue (accountLinking matches on email, not phone). Pilot needs none of it. |
 | **R5** — open signup is an unpriced abuse surface | Abuse controls moved to a **Phase-2** §7.2 subsection; the pilot's fail-closed posture (§0.7) avoids the surface entirely. |
 | **R6** — descriptor doesn't distinguish channels; binding key is WhatsApp-shaped | Descriptor reframed as **rendering-only** contract; delivery/threading/credentials are **adapter-owned**; binding key is an **opaque adapter-owned conversation key** (§0.5.1, §0.5.5). |
 | **R7** — `isIdentityProvider` boolean does no work, `web:false` self-contradicts | Renamed `canOriginateIdentity`, given **teeth** (gates whether inbound may reach an identity route), **web=true** (§0.5.1/§0.5.3). |
@@ -170,9 +170,9 @@ neither of two **independent** capabilities:
 - **WhatsApp = both — but capability (b) is PHASE 2, not pilot.** The pilot uses
   **provisioned bindings** (§0.7): a customer's number is known/allowlisted
   ahead of time, so pilot inbound never mints identity — `canOriginateIdentity`
-  is a gate that stays **closed on the pilot path**. Open WhatsApp-native signup
-  (minting identity from an unknown inbound) is **Phase 2** (§6.6), where this
-  flag is opened and the real phone-identity work lands.
+  is a gate that stays **closed on the pilot path**. Self-serve signup (Phase 2)
+  opens the gate via **two feasible flows** — phone-native (`phoneNumber` plugin,
+  tier (b) moderate) or email-anchored (§6.6). Both buildable now.
 - **Slack / email / pi-excel = interaction only.** `canOriginateIdentity:
   false` — a user is already authenticated in the host product.
 
@@ -255,21 +255,27 @@ removes the "unknown sender = signup" ruling from the **pilot** path.
   fast and safe. Onboarding is a provisioning step we run, not a self-serve
   funnel.
 
-**Open self-serve WhatsApp signup is Phase 2, honestly scoped as real work.**
-Minting an identity from an unknown inbound (the old slice 1c) is moved **off the
-pilot critical path** into an explicit later phase (§6.6). It carries the real
-phone-identity build (better-auth is email-keyed today — §6.6), the abuse
-controls (§7.2 Phase-2 subsection), and the account-merge flow (§6.6) — none of
-which the pilot needs. **Pilot = provisioned bindings (fast, no identity build);
-open phone-first signup = Phase 2 (real work).**
+**Self-serve product signup is Phase 2 — and it is FEASIBLE NOW in two forms.**
+Self-serve signup is moved **off the pilot critical path**, but it is not a hard
+build. The authoritative better-auth capability check
+(`scratchpad/better-auth-phone-capability.md`, verified against docs +
+`@better-auth/core` source) establishes **two feasible flows** (§6.6):
+**Flow 1 — phone-native** (WhatsApp-first) signup via better-auth's `phoneNumber`
+plugin (`signUpOnVerification` + `sendOTP` over WhatsApp + `getTempEmail`
+placeholder, replaced by the real email at first payment) — **tier (b),
+moderate**; and **Flow 2 — email-anchored** (LP signup / signed-round-trip-token)
+with WhatsApp linked via `accountLinking`. Both carry the abuse controls (§7.2
+Phase-2 subsection). **Pilot = provisioned bindings (simplest, one customer);
+product signup = phone-native OR email-anchored, both feasible now (Phase 2).**
 
-| | **Pilot (v1)** | **Phase 2** |
-| --- | --- | --- |
-| Inbound from unknown number | fail-closed, no session | SIGNUP (mint identity) |
-| Identity build | none (bindings only) | real: phone-keyed better-auth path (§6.6) |
-| Abuse controls | rate-limited rejection | account-minting caps (§7.2 Phase 2) |
-| Account merge | n/a (one provisioned binding) | required, unspecified/hard (§6.6) |
-| `canOriginateIdentity` gate (WhatsApp) | **closed** | opened |
+| | **Pilot (v1)** | **Phase 2 — Flow 1 (phone-native)** | **Phase 2 — Flow 2 (email-anchored)** |
+| --- | --- | --- | --- |
+| Inbound from unknown number | fail-closed, no session | phone-OTP signup from thread (`phoneNumber` plugin) | signed-token → web email signup, link WhatsApp |
+| Identity anchor | pre-provisioned account | **phone** + `getTempEmail` placeholder | **email** (native today) |
+| Enabling work | bindings only | add `phoneNumber` plugin + `sendOTP`→WhatsApp (tier b, moderate) | turn on `accountLinking` (§6.6) |
+| Real email | at first payment (replaces placeholder — plain user-update) | day one | at first payment |
+| Abuse controls | rate-limited rejection | account-minting caps (§7.2 Phase 2) | account-minting caps (§7.2 Phase 2) |
+| `canOriginateIdentity` (WhatsApp) | **closed** | opened (mints phone account) | opened (mints email account) |
 
 ---
 
@@ -1057,186 +1063,88 @@ workspace. **Everything below this line is Phase 2, not pilot.**
 
 ---
 
-#### Phase 2: open self-serve WhatsApp signup — REAL WORK, honestly scoped
+#### Phase 2 (product self-serve): TWO feasible signup flows — both buildable now
 
-This is the WhatsApp consumer exercising the "can originate identity" capability
-(§0.5.3). It is **off the pilot critical path.** When built, WhatsApp's
-descriptor `canOriginateIdentity` gate is opened. It is **not** "extend
-better-auth with a config line" — the review verified against the code that
-phone-first identity is genuinely new work. Scoped here so it is not
-under-estimated later.
+Self-serve signup is **off the pilot critical path** but is **feasible now** in
+**two** forms — the product can offer whichever fits the discovery path. This
+supersedes the r4 draft's false "provider #4 / just a delivery adapter" framing
+**and** an earlier over-correction that called phone-first "genuinely hard, maybe
+never". The authoritative better-auth capability check
+(`scratchpad/better-auth-phone-capability.md`, verified against docs +
+`@better-auth/core` source `db/get-tables.ts`) settles it: **phone-native signup
+is a tier-(b), moderate build via the `phoneNumber` plugin** — not hard, not
+deferred.
 
-**The intended model (Phase 2).** The phone number becomes the account identity:
-a first inbound from an unknown number is **SIGNUP** — account + workspace +
-default agent, keyed to the number, onboarded conversationally in the thread
-(no email, no password, no web form). One Seneca number, multi-tenant by sender
-(§4, §7.3). This needs **no Embedded Signup / per-customer OAuth** (those exist
-only to send as a *customer's own* number; here the user texts OUR number).
+**Flow 1 — Phone-native (WhatsApp-first) signup. Tier (b), moderate. Feasible.**
+This is the WhatsApp-native vision: *message us with your number → you're signed
+up.*
+- better-auth's **`phoneNumber` plugin** natively creates an account on phone-OTP
+  verification (`signUpOnVerification`). It is **not installed today** (adding it
+  is the build), but it is a first-class supported flow, not custom auth.
+- **WhatsApp is just the OTP transport.** The plugin's `sendOTP({ phoneNumber,
+  code })` callback is bring-your-own delivery (SMS today, WhatsApp is a different
+  transport). Delivering the OTP over WhatsApp is where the channel plugs in.
+  (Docs warn: do **not** `await` `sendOTP` — timing-attack risk.)
+- **The one friction — the placeholder email — has a built-in mechanism.** Core
+  `user.email` is `required: true, unique: true` (verified verbatim in
+  `db/get-tables.ts`; there is a maintainer `TODO(#9124)` to drop this in v2, but
+  our `^1.6.x` pin still requires it). The `phoneNumber` plugin handles this with
+  its documented **`getTempEmail(phoneNumber)`** option — it synthesizes a
+  deterministic placeholder (e.g. `+15551234@seneca…`), unique because it derives
+  from the unique number. This is a documented plugin feature, not a hack.
+- **The placeholder is REPLACED by the real email at first payment** — which the
+  plan already collects there (§7.6 ladder / progressive-email). So the full
+  phone-native flow is: WhatsApp signup → phone account + placeholder email →
+  real email collected at first payment → placeholder **replaced by a simple
+  user-update** (not a merge). Clean, and it reuses a decision already in the plan.
 
-**Why this is real work, not a config line (corrected against code,
-2026-08-11).** The r4 draft claimed phone identity is "provider #4, a config line
-at ~L151" and "just a magic-link delivery adapter". **Both are false**:
+**Flow 2 — Email-anchored (LP-discovered). Also feasible; cleaner on linking.**
+Identity keys on **email** (better-auth-native today) and WhatsApp is a linked
+channel:
+- **Flow 2a — web-discovered:** LP → email signup+verification (exists) → menu
+  offering "chat in web" or "link WhatsApp"; linking uses nao's **linking-code**
+  pattern (`/login <code>` from WhatsApp → link `whatsappNumber → userId`).
+- **Flow 2b — WhatsApp-discovered via signed round-trip token:** unknown-sender
+  bot replies with a web signup link carrying a **signed token encoding the
+  pending number** → user completes **email signup on web** → the token links the
+  number to the new account → success page returns to WhatsApp. The signed token
+  is the mechanism; it carries the number across the web hop.
 
-- **better-auth's magic-link is EMAIL-KEYED.** `createAuth.ts:127`:
-  `magicLink({ sendMagicLink: async (data: { email; url; token }) => … })`;
-  issuance is `signIn.magicLink(email)`. A phone-only user **has no email to key
-  the token to**, so the existing magic-link path **cannot be invoked for the
-  exact users it is meant for**. Wiring `sendMagicLink` to deliver over WhatsApp
-  does not create a phone-keyed identity — it only changes the delivery channel
-  of an already-email-keyed token.
-- **The magic-link plugin only mounts WITH a mail transport.**
-  `createAuth.ts:125`: `transport ? [magicLink(...)] : []`. A WhatsApp-first
-  deployment with no SMTP has **no magic-link machinery at all**. And
-  `capabilities.ts:74` gates the capability on `emailVerificationEnabled` —
-  coupling it to email policy.
-- **`phoneNumber` plugin is NOT installed** (no grep hit) and there is no phone
-  entry in `socialProviders`. Phone-first identity requires **either** adding
-  better-auth's `phoneNumber` plugin + a phone-keyed token/session path, **or** a
-  custom identity path. Both are real code.
-- **better-auth users require an email.** Phone-only account creation must
-  **fabricate a placeholder email** (a `getTempEmail(phone)` pattern) or change
-  the schema — with its own collision/linking mess. The r4 draft never named
-  this; it is a required Phase-2 work item.
+**Both valid; the product can offer phone-native (Flow 1) for `wa.me`-discovered
+users and email-anchored (Flow 2) for LP-discovered users.** `canOriginateIdentity`
+is opened for WhatsApp in both — the difference is only whether the minted account
+is phone-anchored (Flow 1, with a temp email) or email-anchored (Flow 2).
 
-So Phase 2's phone-identity build = { pick phoneNumber-plugin **or** custom path;
-solve the placeholder-email problem; add a phone-keyed verification-token mint +
-redeem + session-establishment route if not using the plugin }. Token
-mint/redeem is **not** "already done" for phone users.
+**Honest caveats (from the verification — keep these):**
+- **`accountLinking` matches on verified EMAIL, not phone.** It is enabled by
+  default in core but **not configured** in our stack (`grep accountLinking
+  packages/core/src` → zero hits; absent from `createAuth.ts`) — enabling +
+  configuring it (`trustedProviders`, `allowDifferentEmails`) is required for the
+  **email-side linking** in Flow 2. There is **no built-in "match/link on phone"
+  primitive**, so *linking an email/social identity onto a phone-first (temp-email)
+  account* and *merging two independent accounts* are **custom glue (moderate)**,
+  not built-in.
+- **But "replace placeholder email with real email" is a plain user-update, not a
+  merge** — this is the common Flow-1 path and is simple. The hard merge case
+  (two genuinely-independent accounts) stays a narrow tail: detect +
+  support-assisted, never automated (no better-auth merge primitive).
+- **magic-link is a SEPARATE, email-keyed plugin** (`sendMagicLink({ email, url,
+  token })`, mounted only with a mail transport, `createAuth.ts:125`). It does
+  **not** block phone-only auth (independent plugins). Use it for web access
+  **after** a real email exists; for earlier web access from a phone-native
+  account, a custom phone-keyed token is needed (moderate).
 
-- **Auth factor = control of the WhatsApp number**, proven by messaging from it
-  (channel-as-verifier) — this remains a genuine advantage, but it feeds a
-  *custom* phone-identity path, not the email-keyed magic-link plugin.
-- **Contrast with email-based signup (#1165 signup-domain hook).** That path
-  keys identity on a verified email domain and works today. Phone-first does not
-  work today.
+**[UNVERIFIED — load-bearing] OTP templates skip the 24h window.** For a
+*business-initiated* WhatsApp OTP to a cold number (Flow 1's `sendOTP` over
+WhatsApp when the user has not messaged in-window), the send relies on Meta's
+**authentication-category** templates being window-independent — a claim that
+carries **no primary Meta-docs citation** (research file marks only pricing
+unverified). **Required gate before Flow 1's WhatsApp-OTP path is built.** If it
+does not hold, Flow 1 falls back to SMS OTP, or to Flow 2's web hop.
 
-**Web workspace access = magic link over WhatsApp (Phase 2).** Once a phone user
-has a placeholder or real email on their account, the existing magic-link token
-can be delivered over WhatsApp. When the user needs the full web UI:
-
-- the bot sends a **one-time, short-TTL (minutes), signed** login link bound to
-  their phone-account; tapping it establishes a web session (cookie,
-  remember-me);
-- **reverse path:** the web login page offers "get login link on WhatsApp" →
-  user enters their number → link is sent to that WhatsApp thread;
-- **phone OTP is the documented fallback**, but magic-link-over-WhatsApp is the
-  **primary** path — lower friction, because the user is already in WhatsApp.
-
-**[UNVERIFIED — load-bearing] OTP templates skip the 24h window.** The claim
-that Meta's **authentication-category** templates (OTP) are window-independent
-underpins the entire reverse "get login link/code on WhatsApp" path for cold
-numbers. The research file (`references/whatsapp-auth-billing-research.md` §1)
-marks only the *pricing* as unverified; **the window-independence itself carries
-no primary Meta-docs citation** and is load-bearing. If wrong, the reverse flow
-is impossible for a number that has never messaged us. **A primary Meta
-documentation citation is a required gate before any Phase-2 reverse-flow build.**
-If verified: use the **copy-code** button type and a **10-minute TTL** (matching
-better-auth's token expiry, §7.5). The channel-as-verifier path (first inbound
-proves possession) stays the zero-template primary; OTP is the fallback.
-
-**SMS fallback during the WABA ramp** (research §2). A newly-verified number is
-capped at ~2,000 business-initiated conversations/day until the quality tier
-climbs. If a WhatsApp auth send is throttled or the number is not on WhatsApp,
-fall back to an SMS OTP through a CH/EU SMS provider — **auth-path only**, never
-for agent conversation content. Tracked in the billing/ramp note (§7.6), out of
-v1 build scope unless the pilot hits the cap.
-
-**SMS fallback during the WABA ramp** (research §2). A newly-verified number is
-capped at ~2,000 business-initiated conversations/day until the quality tier
-climbs (**[UNVERIFIED]** — the ~2,000 figure drives SMS-fallback scope and needs
-a Meta-docs citation). SMS OTP through a CH/EU provider is **auth-path only**,
-never conversation content. Phase-2 scope, tracked in §7.6.
-
-**boring-ui fit — what already exists vs. what is NEW (corrected 2026-08-11).**
-Verified against code. The r4 draft's "extends better-auth; does not build auth"
-framing was **wrong for phone-first users**; here is the honest split:
-
-- **What DOES exist (usable as-is for EMAIL-keyed users):** `socialProviders`
-  (GitHub, Google) + `emailAndPassword` in `createAuth.ts`; the `magicLink`
-  plugin (`createAuth.ts:127`), its schema (`schema-config.ts`), front client
-  (`authClient.ts`), and capability flag (`capabilities.ts:74`). For a user who
-  **has an email**, magic-link token mint/redeem/session is done and we only
-  choose the delivery channel (email today; WhatsApp is a delivery swap).
-- **What is NEW Phase-2 work (phone-first users have NO email):**
-  - a **phone identity path** — either better-auth's `phoneNumber` plugin (NOT
-    installed) wired in, or a custom phone-keyed verification-token +
-    session-establishment route;
-  - the **placeholder-email problem** — better-auth users require an email;
-    phone-only creation must fabricate one (`getTempEmail(phone)`) or change the
-    schema. Named and owned, not hand-waved;
-  - **`accountLinking` is NOT configured** (`grep accountLinking
-    packages/core/src` → zero hits). Enabling it is real config **and** it
-    matches on a shared verified **email** — a phone-first user has no email to
-    match on, so "add email later" is **not** accountLinking's native flow; it is
-    "add a credential to an already-authenticated user", a different path.
-- **The magic-link-over-WhatsApp DELIVERY swap is genuinely small** — but it is
-  only reachable **after** a phone user has an email on their account (real or
-  placeholder). It is not the identity mechanism; it is the delivery of an
-  already-email-keyed token.
-
-**External reference (getnao/nao study, `references/getnao-auth-study.md`).**
-nao runs better-auth with the internal-id + `account(providerId → userId)` model
-and enables `accountLinking`. It confirms the one-user/N-identities *shape* is
-standard — but note nao's linking is **email-anchored**, so it validates Flow A
-(web-first, has email), **not** the phone-first placeholder-email problem, which
-nao does not solve.
-
-#### Two complementary identity flows (Phase 2)
-
-Entry from **either door**, both converging on ONE better-auth account:
-
-**Flow A — web-first → link WhatsApp (nao's linking-code pattern).** An
-already-authenticated *web* user (already has an email) gets a short regenerable
-**linking code**, opens WhatsApp and sends `/login <code>`; the backend links
-`whatsappUserId → userId`. This needs `accountLinking` **enabled** (currently not
-— real config) and is the cleaner flow because the user already has an
-email-anchored account.
-
-**Flow B — WhatsApp-first signup → magic-link web (NEW build, the hard one).**
-First inbound from a new number creates the account (custom phone path +
-placeholder email, above); when the user needs the web UI, deliver a magic link
-over WhatsApp. Security shape:
-
-- **Web-session link uses better-auth's single-use `verification(identifier,
-  value, expiresAt)` token** — short TTL, single-use, as password-reset does.
-- **Never reuse a reusable linking code as a session credential** — that is a
-  session-token bug. Sessions go through the single-use token.
-
-Flow B is the trades/SMB path; Flow A serves web-first products. **Both are
-Phase 2.**
-
-#### Progressive email — the identity trust-ladder (Phase 2)
-
-**Do not require email at WhatsApp signup** — phone-only, then collect email
-**progressively in-conversation** at value moments; effectively required at first
-payment (invoices / Swiss business records). Email + phone then sit as linked
-identities on one account. **This depends on the Phase-2 phone-identity build +
-`accountLinking` being configured + the placeholder-email problem being solved**
-— it is **not** free ("no migration" was overstated: enabling accountLinking and
-reconciling the fabricated placeholder email against a real email later is real
-work). Email's roles: recovery (number-recycling, §7.3 item 3), billing,
-cross-channel notices.
-
-#### Account convergence, dedup & MERGE — Phase 2, unspecified/hard
-
-**The pilot does not need this** — a provisioned binding points at one existing
-account, so there is no second-door collision to merge (R4). It is documented
-here as Phase-2 work and honestly flagged as **hard and unspecified**:
-
-- **Invariant (intended):** one better-auth user, N linked identities, reachable
-  via either door.
-- **Link-into-current-session** where the user is already authenticated (needs
-  `accountLinking` enabled) avoids the collision by construction.
-- **The merge case is NOT specified and there is no primitive for it.**
-  better-auth has **no account-merge primitive**. Two independently-created
-  accounts (phone Monday, email later) are two **workspaces** (each got one at
-  post-signup), two session sets, two settings, eventually two billing records —
-  the repo's own `deleteUserCompletely.ts` shows how entangled a user is.
-  **Unanswered, required before any merge build:** which account survives? what
-  happens to the loser's workspace and its agent sessions? audit trail? Until
-  answered, "v1 claim/merge" is a label, not a design. **Demoted to Phase 2;** if
-  a lightweight interim is needed, it is "detect collision + block second signup
-  + support-assisted merge", stated as such — **not** an automated merge.
+**SMS fallback during the WABA ramp** (research §2, **[UNVERIFIED]** ~2,000/day
+figure). Auth-path only, never conversation content; a natural fallback for
+Flow 1's OTP if the WhatsApp-OTP window claim above does not hold.
 
 ---
 
@@ -1456,27 +1364,32 @@ exactly one turn; a crash between dedupe insert and queue insert loses nothing
 and no session, no account** (§0.7); a provisioned binding resolves to its
 existing `workspaceId`; flag off → byte-identical host.
 
-### Slice 1c — phone identity + open WhatsApp signup [PHASE 2 — NOT pilot]
-**Not on the pilot critical path.** The pilot uses provisioned bindings (§0.7),
-so this slice is **deferred to Phase 2** and is genuinely new auth work, not a
-config line (§6.6, corrected against code). It ships only when open self-serve
-WhatsApp signup is greenlit, and it is **gated on**: the Phase-2 abuse controls
-(§7.2 Phase 2) landing first, and the `[UNVERIFIED]` OTP-window claim (§6.6)
-getting a primary Meta citation. Scope when built:
-1. **A phone-identity path** — better-auth's `phoneNumber` plugin (NOT installed)
-   wired in, **or** a custom phone-keyed verification-token + session route.
-2. **The placeholder-email problem solved** — better-auth users require an email;
-   phone-only creation fabricates one (`getTempEmail(phone)`) or changes schema.
-3. **`accountLinking` enabled + configured** (currently zero config) for Flow A.
-4. **Magic-link-over-WhatsApp delivery swap** — reachable only after a phone user
-   has an email on their account; delivers the existing single-use token.
-5. **Open-signup path** — first inbound from an unknown number mints identity +
-   workspace (opening the `canOriginateIdentity` gate), under the §7.2 Phase-2
-   caps.
-**Merge flow is separately Phase 2 and unspecified/hard** (§6.6 — no better-auth
-merge primitive; workspace-disposition/survivor rules unanswered). **Blocked by:**
-the whole pilot shipping first, plus its own gates above.
-**Proof (when built):** deferred — specified at Phase-2 planning, not v1.
+### Slice 1c — self-serve signup: phone-native and/or email-anchored [PHASE 2 — NOT pilot]
+**Not on the pilot critical path** (pilot = provisioned bindings, §0.7). Two
+**feasible** flows (§6.6), pick per discovery path; both buildable now:
+- **Flow 1 — phone-native (tier b, moderate):** add better-auth's `phoneNumber`
+  plugin (`signUpOnVerification`); deliver OTP via `sendOTP`→WhatsApp; use
+  `getTempEmail(phoneNumber)` for the placeholder email (core `user.email` is
+  required+unique per `db/get-tables.ts`); the placeholder is **replaced by the
+  real email at first payment** (plain user-update, §7.6 ladder).
+- **Flow 2 — email-anchored:** enable + configure `account.accountLinking`
+  (currently absent from `createAuth.ts`); Flow 2a = LP email signup → link
+  WhatsApp via nao's linking-code; Flow 2b = unknown-sender bot → **signed
+  round-trip token** → web email signup → link number.
+- **Web access:** email-keyed magic-link (separate plugin) after a real email
+  exists; a custom phone-keyed token for earlier web access from a phone-native
+  account (moderate).
+**Custom glue (moderate, honest):** `accountLinking` matches on email not phone,
+so linking email/social onto a phone-first account and merging two independent
+accounts are custom (not built-in); the genuine merge is a narrow tail —
+detect + support-assisted, never automated. **Gated on** the Phase-2 abuse
+controls (§7.2 Phase 2) and (for Flow 1's cold-number WhatsApp-OTP) the
+`[UNVERIFIED]` OTP-window claim (§6.6) getting a Meta citation, else SMS fallback.
+**Blocked by:** the pilot shipping first, plus the abuse-control gate.
+**Proof (when built):** Flow 1 — an unknown number completing phone-OTP is signed
+up with a temp email, replaced by a real email at payment; Flow 2 — a WhatsApp
+number links onto an email account (no second account) and a tampered/expired
+signed token is rejected; no duplicate account for a returning linked user.
 
 ### Slice 1b — durable tail, turn assembly, outbound
 **Delivers:** the exported stream-path resolver on the pi-chat service; the
@@ -1692,13 +1605,15 @@ return and the next prompt continues the stream.
 
 ## 11. Out of scope
 
-**Open self-serve WhatsApp signup + phone-first identity + account merge** —
-these are **Phase 2**, not v1 (§0.7, §6.6, slice 1c). The pilot uses provisioned
-bindings (fail-closed); it mints no identity, so it needs no phone-keyed
-better-auth path, no placeholder-email handling, no `accountLinking` config, no
-merge flow, and no account-minting abuse controls. All of that is real,
-honestly-sized Phase-2 work, gated on the §7.2 Phase-2 caps and a primary
-Meta-docs citation for the OTP-window claim.
+**Self-serve WhatsApp signup (phone-native and email-anchored) + account merge** —
+these are **Phase 2**, not v1 (§0.7, §6.6, slice 1c). Both signup flows are
+feasible now (phone-native = `phoneNumber` plugin, tier (b) moderate;
+email-anchored = `accountLinking`), but the pilot uses provisioned bindings
+(fail-closed) and mints no identity, so it needs none of them, no
+account-minting abuse controls, and no merge. Phase-2 signup is gated on the §7.2
+Phase-2 caps and (for Flow 1's cold-number WhatsApp-OTP) a primary Meta-docs
+citation for the OTP-window claim. Automated account merge stays out of scope
+(no better-auth primitive; support-assisted only).
 
 **Any future consumer's implementation** — Slack, email, and pi-excel channels
 are **registry-ready future consumers, noted only** (§0.6); this plan builds
