@@ -1,7 +1,7 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/1127
 issue: 1127
-state: owner-rulings-applied — 2026-08-11 rulings folded in; ready for owner gate merge
+state: owner-rulings-applied + slice-6 bake-off RESOLVED — 2026-08-11 rulings folded in; slice 6 verdict = build thin (seed Flue edge + Hermes reference), reject @chat-adapter/whatsapp; ready for owner gate merge
 updated: 2026-08-11
 supersedes: docs/issues/1127/plan.md (r2.1) — for the WhatsApp lane only
 flag: BORING_AGENT_CHANNELS (from r2.1; adapter host is dead code when off)
@@ -262,13 +262,28 @@ This is **ratified as `docs/DECISIONS.md:302` decision 6**: "Use pinned
 `@flue/*` ingress packages with thin adapters; vendoring is only the fallback
 and hosting inside Flue's runtime is not adopted."
 
-**The gap:** r2.1 chose Vercel's `@chat-adapter/whatsapp` for the provider edge
-(via `cloudflare-channels-assessment.md`) and **never evaluated `@flue/whatsapp`
-at all** — despite `@flue/*` being the *ratified* choice and `@flue/whatsapp`
-being in the verified list. Slice 6 therefore opens with a **bounded one-day
-bake-off** between the two, not a foregone conclusion (§6.6).
+**The gap (r2.1):** r2.1 chose Vercel's `@chat-adapter/whatsapp` for the
+provider edge (via `cloudflare-channels-assessment.md`) and **never evaluated
+`@flue/whatsapp` at all** — despite `@flue/*` being the *ratified* choice and
+`@flue/whatsapp` being in the verified list.
 
-The r2.1 caveat applies to both candidates and is the acceptance bar for either:
+**Bake-off RESOLVED (2026-08-11).** The bake-off ran across all three
+candidates. **Outcome: BUILD THIN, do not adopt any candidate wholesale.**
+`@flue/whatsapp` gives only the inbound signature/webhook **edge** (~250
+reusable LOC, Web-Crypto, invariant-clean) — near drop-in as a **seed**, but no
+send/media/template/interactive. hermes-agent's `whatsapp_cloud.py` is the
+best **correctness reference** (wamid dedup, 24h-window/template fallback, media
+caps, formatting, conformance vectors) but is Python — a **port source**, not a
+dependency. `@chat-adapter/whatsapp` is **rejected**: it is an adapter to
+Vercel's `chat` runtime (Thread/`onNewMention`), so it drags in the very
+thread-ownership model the ratified "pi owns the conversation brain" decision
+rejected, and it uses `node:crypto`/`Buffer` (violates invariants #1/#2). The
+saveable delta from any library is small (~600–750 LOC) and sits at the edge —
+exactly what Flue seeds cleanly and Hermes documents. Slice 6 therefore builds
+a ~600–750 LOC in-house adapter seeded from Flue (edge) + Hermes (reference).
+
+The r2.1 caveat is why no candidate is adopted wholesale — it is the acceptance
+bar the in-house adapter still honors:
 
 > "we want the adapter package standalone behind our contract, **not** their
 > Redis-state bot framework (their state/dedupe model would duplicate and fight
@@ -288,10 +303,15 @@ webhook/send path yourself, exactly as on any VPS"; and "Cloudflare Inc is US
 docs at `hermes-agent.nousresearch.com/docs/user-guide/messaging/whatsapp`),
 surfaced by the owner 2026-08-11. Four takes:
 
-1. **Bake-off candidate.** Its WhatsApp **Cloud API adapter** joins slice 6's
-   bake-off as the THIRD candidate alongside `@flue/whatsapp` and
-   `@chat-adapter/whatsapp`. Same acceptance bar (§2.3): it must stand alone
-   behind our contract without dragging in its framework's state model.
+1. **Bake-off outcome — correctness reference / port source (RESOLVED
+   2026-08-11).** Its WhatsApp **Cloud API adapter** (`whatsapp_cloud.py`, MIT,
+   ~2,100 LOC Python) was evaluated as the third candidate and is the **most
+   complete Cloud API reference** of the three — but it is Python, so it is not
+   importable. Verdict: **port its correctness logic and conformance vectors**
+   (wamid dedup, 24h-window/template fallback, media up/download + size caps,
+   markdown→WhatsApp formatting) into slice 6's in-house TS adapter; use its
+   `tests/conformance/vectors/whatsapp.json` as our test oracle. Not adopted as
+   a dependency.
 2. **Dev-loop option: the Baileys bridge.** hermes-agent also ships a
    **Baileys** bridge — unofficial WhatsApp-Web protocol emulation with QR
    pairing, no Meta Business account needed. Recorded as a **development-loop
@@ -351,8 +371,9 @@ The split is not a compromise; it follows from evidence:
 2. `cloudflare-channels-assessment.md` §4 already draws exactly this line:
    "slices 1a and 1b are invariant. **Only Slice 2's provider-transport edge is
    substitutable.**" Substitutable things go behind a package boundary.
-3. The `@flue/whatsapp` vs `@chat-adapter/whatsapp` bake-off (§2.3) is only
-   cheap if the loser can be swapped without touching the core.
+3. The provider edge is **substitutable behind the contract** — the bake-off
+   (§2.3, RESOLVED to build-thin) and any future provider swap must not touch
+   the core.
 
 *Dependency rule* (from `08:312`): the provider-edge package depends on
 `@hachej/boring-agent`'s **channel contract types only** — never on
@@ -847,7 +868,7 @@ The owner's pilot ruling has consequences worth stating rather than discovering:
 | Duplicate outbound sends | Accepted and documented: at-least-once; no send idempotency key exists at Meta |
 | Turn assembler leaking tool chatter while detecting ask-user | Isolated in slice 3 with its own review budget |
 | Durable-stream flag off in prod | Boot assertion (§4.3) |
-| `@flue/whatsapp` and `@chat-adapter/whatsapp` both drag in a bot framework | Hand-rolled Meta client is the named fallback; contract unchanged either way |
+| Any candidate library drags in a bot framework's state/dedupe model | RESOLVED (§2.3): build a thin in-house adapter (~600–750 LOC), seed the edge from `@flue/whatsapp`, port correctness from hermes-agent; reject `@chat-adapter/whatsapp` (runtime coupling + `node:crypto`/`Buffer`) |
 
 ---
 
@@ -948,21 +969,52 @@ described back; a voice note is transcribed and answered; a sent PDF gets the
 honest "I can't read documents yet" reply rather than silence; no media bytes
 transit a US processor (documented data path).
 
-### Slice 6 — WhatsApp provider edge (Meta Cloud API)
-**Delivers:** `packages/channels/whatsapp` behind the contract — signature
-verify + handshake, payload parse (text/media/interactive), chunked send,
-template send, retry; recorded-fixture unit tests; host wiring.
-**Opens with a bounded one-day bake-off (§2.3, §2.5), three candidates:**
-`@flue/whatsapp` (Apache-2.0, the *ratified* ingress choice, never evaluated by
-r2.1), `@chat-adapter/whatsapp` (MIT, r2.1's pick), and hermes-agent's Cloud
-API adapter (MIT, owner-surfaced 2026-08-11). **Acceptance for any: it must
-stand alone behind our contract without dragging in its bot framework's
-state/dedupe model.** Hand-rolled Meta client is the named fallback. Either
-outcome leaves the conformance suite and acceptance unchanged.
-**Blocked by:** 1b for the contract; **step 0** for the live demo only.
-**Proof:** fixture tests for verify/parse/chunk/template; live demo against the
-Seneca number — a multi-message conversation spanning a server restart, with one
-approval answered in WhatsApp and one quote PDF delivered.
+### Slice 6 — WhatsApp provider edge (Meta Cloud API) — BUILD THIN (bake-off RESOLVED 2026-08-11)
+**Verdict (was "evaluate 3 candidates"):** the bake-off ran and resolved to
+**build a thin in-house Cloud API adapter (~600–750 LOC)** seeded from two
+sources, **not** adopt any candidate wholesale. Full analysis in §2.3/§2.5.
+
+**Today (bake-off result):**
+- `@chat-adapter/whatsapp` (Vercel Chat SDK, MIT) is **REJECTED** — reasons all
+  architectural, none about quality (it is in fact the most actively maintained
+  candidate). It is an adapter to Vercel's `chat` **runtime** (the
+  Thread/`onNewMention` conversation model), not a standalone Cloud client, so
+  adopting it means adopting that thread-ownership model — a direct collision
+  with the ratified **"pi owns the conversation brain"** decision (the pi-native
+  cutover already rejected `useChat`-style thread ownership). It also uses
+  `node:crypto` + `Buffer`, violating shared invariants #1/#2, and its most
+  "mature" features (24h-window awareness, threading) are exactly the logic
+  **our plan deliberately owns** — pure coupling cost for behavior we override.
+- `@flue/whatsapp` (Apache-2.0, ~430 LOC) provides **only the inbound webhook /
+  signature edge** (~250 reusable LOC) — Web-Crypto based (**no `node:*`, no
+  `Buffer`**, workerd-safe), matching `src/shared` invariants #1/#2 near
+  drop-in. It has **no** outbound send, media, templates, or interactive.
+- hermes-agent's `whatsapp_cloud.py` (MIT, Python, ~2,100 LOC) is the **most
+  complete Cloud API correctness reference** but not importable — value is as a
+  port source and correctness oracle (it ships conformance test vectors).
+
+**Delta — what slice 6 now builds:** `packages/channels/whatsapp` behind the
+contract, hand-built in TypeScript against `@whatsapp-cloudapi/types`:
+- **Seed the inbound webhook/signature edge from `@flue/whatsapp`** (Apache-2.0,
+  keep the NOTICE attribution) — `x-hub-signature-256` HMAC via Web Crypto,
+  `hub.verify_token` constant-time compare, `hub.challenge` handshake,
+  body-limit + envelope guard.
+- **Port the Cloud API correctness logic + conformance test vectors from
+  hermes-agent's `whatsapp_cloud.py`** (MIT, Python→TS): wamid dedup, the
+  24h-window / template-fallback shape, media upload + 2-step download with
+  per-type Meta size caps, markdown→WhatsApp formatting, text batching. Its
+  `tests/conformance/vectors/whatsapp.json` becomes our test oracle.
+- Write our own ~250 LOC of Graph-API send + media helpers.
+- Reliability-critical state (binding dedup, cursor semantics, turn assembly,
+  the authoritative 24h-window enforcement) stays in **our** plan (slices
+  1a/1b), never in the adapter — this is why no candidate's bot-framework
+  state/dedupe model is adopted.
+**Blocked by:** 1b for the contract; **step 0** for the live demo only. The
+build feeds 1a/1b (it realizes the `ChannelAdapter` provider edge they define).
+**Proof:** ported conformance vectors green for verify/parse/chunk/template/
+media; no `node:*` or `Buffer` in the package (invariant guard); live demo
+against the Seneca number — a multi-message conversation spanning a server
+restart, with one approval answered in WhatsApp and one quote PDF delivered.
 
 ### Slice 7 — read-only reopen in workspace (new, 2026-08-11)
 **Delivers:** §6.5 — channel badge + channel filter in the session list (§6.4);
