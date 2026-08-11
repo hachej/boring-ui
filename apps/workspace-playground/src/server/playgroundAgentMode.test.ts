@@ -2,13 +2,20 @@ import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { describe, expect, it } from "vitest"
 import { resolvePlaygroundAgentMode } from "./playgroundAgentMode"
-import { SCRIPTED_ONE_AGENT, SCRIPTED_TWO_AGENT_FLEET } from "./testing/twoAgentFleet"
+import { SCRIPTED_DEFAULT_AGENT_TYPE_ID } from "../shared/playgroundAgents"
+import {
+  SCRIPTED_ONE_AGENT,
+  SCRIPTED_TWO_AGENT_DEFAULT,
+  SCRIPTED_TWO_AGENT_FLEET,
+} from "./testing/twoAgentFleet"
 
 describe("workspace playground agent mode", () => {
   it("defaults to exactly one scripted agent", () => {
     expect(resolvePlaygroundAgentMode({})).toBe("scripted-single")
     expect(SCRIPTED_ONE_AGENT).toEqual([SCRIPTED_TWO_AGENT_FLEET[0]])
     expect(SCRIPTED_ONE_AGENT).toHaveLength(1)
+    expect(SCRIPTED_ONE_AGENT[0].agentTypeId).toBe(SCRIPTED_DEFAULT_AGENT_TYPE_ID)
+    expect(SCRIPTED_TWO_AGENT_DEFAULT).toBe(SCRIPTED_DEFAULT_AGENT_TYPE_ID)
   })
 
   it("keeps the two-agent scripted fleet available for e2e coverage", () => {
