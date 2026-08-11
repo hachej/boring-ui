@@ -13,6 +13,6 @@
     }
   },
   "pi": {
-    "skills": ["triage", "handoff"]
+    "skills": ["triage", "owner-gate", "handoff"]
   }
 }
