@@ -250,6 +250,13 @@ export interface CreateWorkspaceAgentServerOptions
   fleetCompiler?: AgentFleetCompiler
   /** Default Agent selected for package-level server plugin ownership. */
   defaultAgentTypeId?: string
+  /**
+   * Compose app-declared default plugin Agent contributions into every Agent
+   * in the workspace. This is intentionally limited to `defaultPluginPackages`:
+   * arbitrary host plugins and workspace-local packages still require an
+   * explicit per-Agent binding.
+   */
+  workspaceScopedDefaultPluginAgentContributions?: boolean
   /** Optional host admission called immediately before each Agent effect. */
   admitEffect?: AgentEffectAdmission
   /**
@@ -769,6 +776,7 @@ export class AgentSpecPluginProjectionError extends Error {
 export function projectAgentSpecPluginArtifacts(
   agent: AgentHostAgentSpec,
   artifacts: readonly ResolvedWorkspacePluginArtifact[],
+  workspaceScopedArtifacts: readonly ResolvedWorkspacePluginArtifact[] = [],
 ): AgentSpecPluginArtifactProjection {
   const byId = new Map<string, ResolvedWorkspacePluginArtifact>()
   for (const artifact of artifacts) {
@@ -781,12 +789,25 @@ export function projectAgentSpecPluginArtifacts(
   const requested = "legacyDefault" in agent ? [] : (agent.plugins ?? [])
   const selected: ResolvedWorkspacePluginArtifact[] = []
   const selectedIds = new Set<string>()
-  for (const binding of requested) {
-    if (selectedIds.has(binding.name)) {
+  const workspaceScopedIds = new Set(workspaceScopedArtifacts.map((artifact) => artifact.id))
+  const requestedIds = new Set<string>()
+  for (const artifact of workspaceScopedArtifacts) {
+    if (selectedIds.has(artifact.id)) continue
+    const canonical = byId.get(artifact.id)
+    if (!canonical) {
       throw new AgentSpecPluginProjectionError(
-        `agent "${agent.agentTypeId}" selects plugin "${binding.name}" more than once`,
+        `agent "${agent.agentTypeId}" receives workspace-scoped plugin "${artifact.id}" without a preflighted artifact`,
       )
     }
+    selectedIds.add(artifact.id)
+    selected.push(canonical)
+  }
+  for (const binding of requested) {
+    if (requestedIds.has(binding.name)) {
+      throw new AgentSpecPluginProjectionError(`agent "${agent.agentTypeId}" selects plugin "${binding.name}" more than once`)
+    }
+    requestedIds.add(binding.name)
+    if (workspaceScopedIds.has(binding.name)) continue
     selectedIds.add(binding.name)
     const artifact = byId.get(binding.name)
     if (!artifact) {
@@ -1469,6 +1490,13 @@ export async function createWorkspaceAgentServer(
     plugins: pluginCollection.resolvedPluginArtifacts.map((artifact) => artifact.plugin),
     excludeDefaults: opts.excludeDefaults,
   })
+  const canonicalDefaultPluginPackagePaths = new Set(defaultPluginPackagePaths.map((path) => resolve(path)))
+  const workspaceScopedDefaultArtifacts = opts.workspaceScopedDefaultPluginAgentContributions
+    ? pluginCollection.resolvedPluginArtifacts.filter((artifact) =>
+        "dir" in artifact.entry
+        && canonicalDefaultPluginPackagePaths.has(resolve(artifact.entry.dir)),
+      )
+    : []
   const rebuildPackageResourceRegistry = async (): Promise<void> => {
     const ambientSkillsEnabled = (legacyGlobalPluginAgentContributions
       ? pluginCollection.agentOptions.pi?.noSkills
@@ -1513,7 +1541,11 @@ export async function createWorkspaceAgentServer(
                     },
                   },
             }
-          : projectAgentSpecPluginArtifacts(agent, pluginCollection.resolvedPluginArtifacts)
+          : projectAgentSpecPluginArtifacts(
+              agent,
+              pluginCollection.resolvedPluginArtifacts,
+              workspaceScopedDefaultArtifacts,
+            )
         const pluginIds = projection.artifacts.map((artifact) => artifact.id)
         const resolvedPolicy = {
           ...("resolvedPolicy" in agent && agent.resolvedPolicy && typeof agent.resolvedPolicy === "object"

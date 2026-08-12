@@ -502,6 +502,11 @@ export async function createFolderModeApp(opts: {
       // drives the server-side install array (boot-time routes/agentTools);
       // additionalBoringPluginDirs only feeds the asset-manager scan.
       defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true }),
+      // CLI-bundled internal plugins are workspace capabilities (ask_user,
+      // manage_tasks, boring_automation), not persona grants. Share their
+      // complete Agent contribution across repository-owned fleet seats while
+      // leaving arbitrary/workspace-local plugins on the explicit binding path.
+      workspaceScopedDefaultPluginAgentContributions: true,
       plugins: liveTranscriptPlugin ? [liveTranscriptPlugin] : undefined,
       additionalBoringPluginDirs: pluginDirs,
       workspaceBridge: { allowInsecureLocalCliBrowserAuth: opts.allowInsecureLocalBridgeAuth === true },
