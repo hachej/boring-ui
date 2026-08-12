@@ -2102,11 +2102,7 @@ describe("WorkspaceAgentFront", () => {
     expandHistory()
 
     await user.click(screen.getByLabelText("Open Second session in chat pane"))
-    document.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "Escape",
-      bubbles: true,
-      cancelable: true,
-    }))
+    await user.keyboard("{Escape}")
 
     await waitFor(() => {
       expect(screen.getByTestId("composer-s2")).toHaveFocus()
