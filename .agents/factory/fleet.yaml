@@ -24,9 +24,17 @@
 # restore the package under .agents/personas/ plus an entry in this list.
 
 
+# Owner ruling 2026-08-12: gpt-5.6-sol (pi openai-codex provider) is the
+# DEFAULT model for T1/T2 wherever codex is available. Availability is gated
+# by the CODEX_SOL_ENABLED marker env var (codex auths via its own login, not
+# an API-key env) — set it on hosts with a logged-in codex; unset, tiers fall
+# through to anthropic/google exactly as before.
 models:
   tiers:
     T1:
+      - provider: openai-codex
+        id: gpt-5.6-sol
+        envVar: CODEX_SOL_ENABLED
       - provider: anthropic
         id: claude-fable-5
         envVar: ANTHROPIC_API_KEY
@@ -34,6 +42,9 @@ models:
         id: gemini-3.1-pro-preview
         envVar: GEMINI_API_KEY
     T2:
+      - provider: openai-codex
+        id: gpt-5.6-sol
+        envVar: CODEX_SOL_ENABLED
       - provider: anthropic
         id: claude-opus-4-8
         envVar: ANTHROPIC_API_KEY

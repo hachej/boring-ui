@@ -1361,7 +1361,12 @@ export async function createWorkspacesModeApp(opts: {
       for (const workspace of byRecency) {
         if (!workspace.available) continue
         try {
-          await getLoadedPluginRuntime(workspace)
+          // The snapshot above can go stale while an earlier workspace warms.
+          // Do not let a removed workspace's queued prewarm reactivate runtime
+          // targets after the DELETE path has disposed them.
+          const registeredWorkspace = await registry.get(workspace.id)
+          if (!registeredWorkspace?.available) continue
+          await getLoadedPluginRuntime(registeredWorkspace)
         } catch (error) {
           app.log.warn({ err: error, workspaceId: workspace.id }, "[cli] workspace plugin prewarm failed")
         }
