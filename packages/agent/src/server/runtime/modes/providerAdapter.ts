@@ -5,6 +5,7 @@ import type {
 
 import { createServerFileSearch } from '../createServerFileSearch'
 import type {
+  BuiltinRuntimeModeId,
   ModeContext,
   RuntimeBashStrategy,
   RuntimeBundle,
@@ -15,7 +16,7 @@ import type { WorkspaceProvisioningAdapter } from '../../workspace/provisioning'
 import type { AgentRuntimeHostOperations } from '../runtimeHost'
 
 interface ProviderRuntimeModeAdapterOptions {
-  id: 'direct' | 'local' | 'vercel-sandbox'
+  id: BuiltinRuntimeModeId
   provider: SandboxProviderV1
   runtimeHost: AgentRuntimeHostOperations
   workspaceFsCapability: 'strong' | 'best-effort'

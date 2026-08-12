@@ -26,6 +26,7 @@ All API failures must use the response envelope:
 | `INVALID_API_KEY` | Provider rejects API key as malformed/invalid | 401 | re-auth | warn | stable (public API) |
 | `OIDC_REFRESH_FAILED` | OIDC refresh token exchange fails | 401 | re-auth | warn | stable (public API) |
 | `VERCEL_AUTH_FAILED` | Vercel sandbox auth/token request fails | 401 | re-auth | warn | stable (public API) |
+| `BLAXEL_AUTH_FAILED` | Blaxel sandbox auth/workspace request fails | 401 | re-auth | warn | stable (public API) |
 | `CONFIG_INVALID` | Runtime config fails schema validation | 500 | report-bug | error | stable (public API) |
 | `PATH_ESCAPE` | Relative path escapes workspace root | 403 | user-fix | warn | stable (public API) |
 | `PATH_ABSOLUTE` | Absolute path rejected where relative path is required | 400 | user-fix | warn | stable (public API) |
@@ -56,6 +57,10 @@ All API failures must use the response envelope:
 | `SANDBOX_NOT_READY` | Remote sandbox cold start / provisioning | 503 | retry | warn | stable (public API) |
 | `SANDBOX_EXPIRED` | Remote sandbox TTL elapsed | 410 | retry | warn | stable (public API) |
 | `VERCEL_API_ERROR` | Generic upstream Vercel SDK/API failure | 502 | retry | error | stable (public API) |
+| `BLAXEL_API_ERROR` | Generic upstream Blaxel SDK/API failure | 502 | retry | error | stable (public API) |
+| `BLAXEL_CONFIG_DRIFT` | Existing Blaxel sandbox or Volume differs from requested immutable configuration | 409 | operator action | error | stable (public API) |
+| `BLAXEL_RUNTIME_UNQUALIFIED` | Blaxel runtime image lacks required workspace tools | 503 | replace image | error | stable (public API) |
+| `BLAXEL_VOLUME_BUSY` | Durable Blaxel Volume remains attached to another sandbox | 409 | retry | warn | stable (public API) |
 | `REMOTE_WORKER_CONFIG_INVALID` | Static remote-worker fleet configuration is invalid or incomplete | 500 | report-bug | error | stable (trusted API) |
 | `REMOTE_WORKER_PROTOCOL_MISMATCH` | Worker protocol or provider-contract version differs from the configured V1 cohort | 502 | operator-fix | error | stable (trusted API) |
 | `REMOTE_WORKER_UNAUTHENTICATED` | Worker rejected the per-box capability or authenticated receipt | 401 | operator-fix | warn | stable (trusted API) |

@@ -61,6 +61,7 @@ export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createDirectModeAdapter } from './runtime/modes/direct'
 export { createLocalModeAdapter } from './runtime/modes/local'
 export { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
+export { createBlaxelSandboxModeAdapter } from './runtime/modes/blaxel'
 export { createProviderRuntimeModeAdapter } from './runtime/modes/providerAdapter'
 export {
   createSandboxRuntimeModeAdapter,

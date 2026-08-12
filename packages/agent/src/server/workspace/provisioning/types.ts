@@ -58,7 +58,7 @@ export interface ResolveInstallSourceOpts {
 }
 
 export interface WorkspaceProvisioningAdapter {
-  mode: 'direct' | 'local' | 'vercel-sandbox'
+  mode: 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
 
   exec(command: string, args: string[], opts?: {
     cwd?: string
