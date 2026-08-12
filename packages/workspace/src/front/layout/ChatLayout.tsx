@@ -235,12 +235,15 @@ export function ChatLayout(props: ChatLayoutProps) {
       if (sidebarOpen && closeSidebar) {
         shortcuts.push({ key: "Escape", allowInEditable: true, handler: () => closeSidebar() })
       }
+      if (navOpen && closeNav && centerId !== "chat") {
+        shortcuts.push({ key: "Escape", allowInEditable: true, handler: () => closeNav() })
+      }
       if (centerId === "chat") {
         shortcuts.push({ key: "Escape", allowInEditable: true, handler: focusChat })
         shortcuts.push({ key: "\\", mod: true, allowInEditable: true, handler: toggleChatCollapsed })
       }
       return shortcuts
-    }, [canControlNav, canControlSidebar, canControlSurface, centerId, closeSidebar, focusChat, sidebarOpen, toggleChatCollapsed, toggleNav, toggleSidebar, toggleSurface]),
+    }, [canControlNav, canControlSidebar, canControlSurface, centerId, closeNav, closeSidebar, focusChat, navOpen, sidebarOpen, toggleChatCollapsed, toggleNav, toggleSidebar, toggleSurface]),
   })
 
   useEffect(() => {

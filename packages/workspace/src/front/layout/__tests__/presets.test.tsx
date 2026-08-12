@@ -30,6 +30,16 @@ function DummyPanel() {
   return <div data-testid="dummy-panel">panel</div>
 }
 
+function DrawerFocusPanel({ params }: { params?: Record<string, unknown> }) {
+  const drawer = String(params?.drawer)
+  return (
+    <div>
+      <button type="button">{drawer} first action</button>
+      <button type="button">{drawer} last action</button>
+    </div>
+  )
+}
+
 function WorkbenchHostControlProbe({ params }: { params?: Record<string, unknown> }) {
   const expand = params?.onHostExpand as (() => void) | undefined
   const collapse = params?.onClose as (() => void) | undefined
@@ -1148,5 +1158,110 @@ describe("ChatLayout component", () => {
     expect(workbenchLeft).toHaveAttribute("role", "dialog")
     expect(workbenchLeft).toHaveAttribute("aria-modal", "true")
     expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(2)
+  })
+
+  it.each([
+    {
+      drawer: "session",
+      dialogName: "Session browser",
+      openButtonName: "Open session drawer",
+    },
+    {
+      drawer: "workbench",
+      dialogName: "Workbench left panel",
+      openButtonName: "Open workbench drawer",
+    },
+  ])("traps focus, closes with Escape, and restores the $drawer drawer trigger", async ({ drawer, dialogName, openButtonName }) => {
+    const user = userEvent.setup()
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("empty", { title: "empty", lazy: false, component: DummyPanel })
+    panelRegistry.register("drawer-focus", { title: "drawer-focus", lazy: false, component: DrawerFocusPanel })
+    const commandRegistry = new CommandRegistry()
+
+    function Host() {
+      const [open, setOpen] = useState(false)
+      const isSession = drawer === "session"
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>{openButtonName}</button>
+          <ChatLayout
+            center="empty"
+            nav={isSession && open ? "drawer-focus" : null}
+            onOpenNav={isSession ? () => setOpen(true) : undefined}
+            navParams={isSession ? { drawer, onClose: () => setOpen(false) } : undefined}
+            sidebar={!isSession && open ? "drawer-focus" : null}
+            onOpenSidebar={!isSession ? () => setOpen(true) : undefined}
+            sidebarParams={!isSession ? { drawer, onClose: () => setOpen(false) } : undefined}
+          />
+        </>
+      )
+    }
+
+    render(
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+          <Host />
+        </RegistryProvider>
+      </WorkspaceProvider>,
+    )
+
+    const trigger = screen.getByRole("button", { name: openButtonName })
+    await user.click(trigger)
+
+    const dialog = screen.getByRole("dialog", { name: dialogName })
+    expect(dialog).toHaveAttribute("aria-modal", "true")
+    const first = screen.getByRole("button", { name: `${drawer} first action` })
+    const last = screen.getByRole("button", { name: `${drawer} last action` })
+    Object.defineProperty(first, "offsetParent", { configurable: true, value: dialog })
+    Object.defineProperty(last, "offsetParent", { configurable: true, value: dialog })
+    expect(first).toHaveFocus()
+
+    fireEvent.keyDown(first, { key: "Tab", shiftKey: true })
+    expect(last).toHaveFocus()
+    fireEvent.keyDown(last, { key: "Tab" })
+    expect(first).toHaveFocus()
+
+    fireEvent.keyDown(first, { key: "Escape" })
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: dialogName })).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
+  })
+
+  it("keeps body scrolling locked until both modal drawers close", async () => {
+    const user = userEvent.setup()
+    const previousOverflow = "clip"
+    document.body.style.overflow = previousOverflow
+
+    function Host() {
+      const [navOpen, setNavOpen] = useState(false)
+      const [sidebarOpen, setSidebarOpen] = useState(false)
+      return (
+        <>
+          <button type="button" onClick={() => setNavOpen(true)}>Open sessions</button>
+          <button type="button" onClick={() => setSidebarOpen(true)}>Open workbench left</button>
+          <button type="button" onClick={() => setNavOpen(false)}>Close sessions</button>
+          <button type="button" onClick={() => setSidebarOpen(false)}>Close workbench left</button>
+          <ChatLayout
+            center="empty"
+            nav={navOpen ? "session-list" : null}
+            navParams={{ onClose: () => setNavOpen(false) }}
+            sidebar={sidebarOpen ? "workbench-left" : null}
+            sidebarParams={{ onClose: () => setSidebarOpen(false) }}
+          />
+        </>
+      )
+    }
+
+    const result = renderWithRegistry(<Host />, ["session-list", "empty", "workbench-left"])
+    await user.click(screen.getByRole("button", { name: "Open sessions" }))
+    expect(document.body.style.overflow).toBe("hidden")
+    await user.click(screen.getByRole("button", { name: "Open workbench left" }))
+    expect(document.body.style.overflow).toBe("hidden")
+    await user.click(screen.getByRole("button", { name: "Close sessions" }))
+    expect(document.body.style.overflow).toBe("hidden")
+    await user.click(screen.getByRole("button", { name: "Close workbench left" }))
+    expect(document.body.style.overflow).toBe(previousOverflow)
+
+    result.unmount()
+    document.body.style.overflow = ""
   })
 })
