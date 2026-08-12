@@ -754,6 +754,8 @@ function useDrawerFocusTrap(
       if (target && target !== document.body && document.contains(target)) {
         target.focus({ preventScroll: true })
       } else {
+        const activeElement = document.activeElement
+        if (activeElement instanceof HTMLElement && container?.contains(activeElement)) activeElement.blur()
         focusFallback?.()
       }
     }
