@@ -1152,12 +1152,13 @@ describe("ChatLayout component", () => {
 
     const sessionBrowser = screen.getByLabelText("Session browser")
     expect(sessionBrowser).toHaveAttribute("role", "dialog")
-    expect(sessionBrowser).toHaveAttribute("aria-modal", "true")
+    expect(sessionBrowser).toHaveAttribute("aria-modal", "false")
 
     const workbenchLeft = screen.getByLabelText("Workbench left panel")
     expect(workbenchLeft).toHaveAttribute("role", "dialog")
     expect(workbenchLeft).toHaveAttribute("aria-modal", "true")
     expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(2)
+    expect(container.querySelectorAll('[aria-modal="true"]')).toHaveLength(1)
   })
 
   it("closes the topmost workbench drawer first when both drawers are open", () => {
@@ -1309,6 +1310,20 @@ describe("ChatLayout component", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: dialogName })).not.toBeInTheDocument())
     expect(closeSurface).not.toHaveBeenCalled()
     expect(trigger).toHaveFocus()
+  })
+
+  it("Escape only closes the drawer that owns focus across multiple ChatLayout shells", () => {
+    const closeFirst = vi.fn()
+    const closeSecond = vi.fn()
+    renderWithRegistry(<ChatLayout center="empty" navParams={{ onClose: closeFirst }} />, ["session-list", "empty"])
+    renderWithRegistry(<ChatLayout center="empty" navParams={{ onClose: closeSecond }} />, ["session-list", "empty"])
+    const dialogs = screen.getAllByRole("dialog", { name: "Session browser" })
+    dialogs[1].focus()
+
+    fireShortcut("Escape")
+
+    expect(closeFirst).not.toHaveBeenCalled()
+    expect(closeSecond).toHaveBeenCalledOnce()
   })
 
   it("keeps body scrolling locked across multiple ChatLayout shells", () => {

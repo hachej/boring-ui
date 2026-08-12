@@ -207,6 +207,8 @@ export function ChatLayout(props: ChatLayoutProps) {
     scheduleLocalComposerFocus()
   }, [chatCollapsed, closeNav, closeSurface, navOpen, scheduleLocalComposerFocus, setChatCollapsed, surfaceOpen])
   const closeActiveDrawer = useCallback(() => {
+    const activeDrawer = sidebarIsTopDrawer ? sidebarDrawerRef.current : navDrawerRef.current
+    if (!activeDrawer || activeDrawerStack[activeDrawerStack.length - 1] !== activeDrawer) return
     if (sidebarIsTopDrawer) {
       closeSidebar?.()
       return
@@ -451,7 +453,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         aria-label="Session browser"
         aria-hidden={!navOpen}
         role="dialog"
-        aria-modal={navOpen}
+        aria-modal={navIsTopDrawer}
         tabIndex={-1}
         className={cn(
           mobileShell ? "absolute inset-y-0 left-0 z-50 h-full shadow-2xl" : "relative h-full shrink-0",
@@ -493,7 +495,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         aria-label={sidebarOpen ? "Workbench left panel" : undefined}
         aria-hidden={!sidebarOpen}
         role="dialog"
-        aria-modal={sidebarOpen}
+        aria-modal={sidebarIsTopDrawer}
         tabIndex={-1}
         className={cn(
           mobileShell ? "absolute inset-0 z-40 h-full" : "relative h-full shrink-0",
@@ -740,6 +742,8 @@ const FOCUSABLE_SELECTOR =
  * existing Escape shortcut wiring so focus-trap scope and shortcut precedence
  * stay centralized in one place).
  */
+const activeDrawerStack: HTMLElement[] = []
+
 function useDrawerFocusTrap(
   open: boolean,
   containerRef: { current: HTMLElement | null },
@@ -751,10 +755,15 @@ function useDrawerFocusTrap(
     if (!open) return
     previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const container = containerRef.current
+    if (container) activeDrawerStack.push(container)
     const firstFocusable = container?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
     ;(firstFocusable ?? container)?.focus({ preventScroll: true })
 
     return () => {
+      if (container) {
+        const stackIndex = activeDrawerStack.lastIndexOf(container)
+        if (stackIndex >= 0) activeDrawerStack.splice(stackIndex, 1)
+      }
       const target = previouslyFocusedRef.current
       if (target && target !== document.body && document.contains(target)) {
         target.focus({ preventScroll: true })
@@ -793,10 +802,12 @@ function useDrawerFocusTrap(
       }
     }
 
+    let focusRedirectFrame: number | null = null
     function handleFocusIn(e: FocusEvent) {
       if (e.target instanceof Node && container!.contains(e.target)) return
-      window.requestAnimationFrame(() => {
-        if (!document.contains(container)) return
+      if (focusRedirectFrame !== null) window.cancelAnimationFrame(focusRedirectFrame)
+      focusRedirectFrame = window.requestAnimationFrame(() => {
+        focusRedirectFrame = null
         const firstFocusable = Array.from(container!.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).find(
           (el) => el.offsetParent !== null,
         )
@@ -807,6 +818,7 @@ function useDrawerFocusTrap(
     container.addEventListener("keydown", handleKeyDown)
     document.addEventListener("focusin", handleFocusIn)
     return () => {
+      if (focusRedirectFrame !== null) window.cancelAnimationFrame(focusRedirectFrame)
       container.removeEventListener("keydown", handleKeyDown)
       document.removeEventListener("focusin", handleFocusIn)
     }
