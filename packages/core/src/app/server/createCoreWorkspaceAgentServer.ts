@@ -1373,7 +1373,10 @@ export async function createCoreWorkspaceAgentServer(
     const templatePath = options.getTemplatePath
       ? await options.getTemplatePath({ workspaceId, workspaceRoot: root, request })
       : options.templatePath ?? normalizeOptionalPath(process.env.BORING_AGENT_TEMPLATE_PATH)
-    const pi = await resolvePiOptions({ workspaceId, workspaceRoot: root, request }) ?? {}
+    const resolvedPi = await resolvePiOptions({ workspaceId, workspaceRoot: root, request }) ?? {}
+    const pi: PiHarnessOptions = runtimeModeAdapter.id === 'blaxel' || runtimeModeAdapter.id === 'vercel-sandbox'
+      ? { ...resolvedPi, noExtensions: true }
+      : resolvedPi
     const sessionNamespace = await resolveSessionNamespace({
       workspaceId,
       workspaceRoot: root,
@@ -1500,6 +1503,7 @@ export async function createCoreWorkspaceAgentServer(
     const environment: AgentHostEnvironmentScope = {
       placementIdentity,
       provisioningFingerprint,
+      runtimeWorkspaceId: workspaceId,
       workspaceRoot: root,
       templatePath,
       resolveFilesystemBindings: resolveFilesystemBindings
