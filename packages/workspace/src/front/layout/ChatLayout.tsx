@@ -937,8 +937,9 @@ function getCallback(params: Record<string, unknown> | undefined, key: string): 
   return getFunction<() => void>(params, key)
 }
 
-function focusAgentComposer(): void {
+function focusAgentComposer(options: { onlyFromBody?: boolean } = {}): void {
   if (typeof document === "undefined") return
+  if (options.onlyFromBody && document.activeElement !== document.body) return
   const activePane = document.querySelector<HTMLElement>(
     '[data-boring-workspace-part="chat-pane"][data-boring-state="active"]',
   )
@@ -952,8 +953,8 @@ function focusAgentComposer(): void {
 function scheduleComposerFocus(): void {
   if (typeof window === "undefined") return
   window.requestAnimationFrame(() => {
-    focusAgentComposer()
-    window.setTimeout(focusAgentComposer, 320)
+    focusAgentComposer({ onlyFromBody: true })
+    window.setTimeout(() => focusAgentComposer({ onlyFromBody: true }), 320)
   })
 }
 
