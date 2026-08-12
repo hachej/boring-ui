@@ -11,12 +11,14 @@ import { PROVIDER_CONTRACT_VERSION } from "./providerMatrix";
 export type ExtractedSandboxProviderIdV1 =
   | "direct"
   | "bwrap"
+  | "blaxel"
   | "vercel-sandbox"
   | "remote-worker";
 
 export type SandboxRuntimeModeIdV1 =
   | "direct"
   | "local"
+  | "blaxel"
   | "vercel-sandbox"
   | "remote-worker";
 

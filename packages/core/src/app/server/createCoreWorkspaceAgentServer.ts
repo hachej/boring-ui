@@ -393,7 +393,7 @@ function createCoreAgentScopeAuthority(input: {
 }
 
 function inferSessionRootForWorkspaceRoot(workspaceRoot: string, runtimeMode: string | undefined): string | undefined {
-  if (runtimeMode !== 'vercel-sandbox') return undefined
+  if (runtimeMode !== 'vercel-sandbox' && runtimeMode !== 'blaxel') return undefined
   const resolvedRoot = path.resolve(workspaceRoot)
   if (path.basename(resolvedRoot) !== 'workspaces') return undefined
   return path.join(path.dirname(resolvedRoot), 'pi-sessions')
@@ -1240,14 +1240,19 @@ export async function createCoreWorkspaceAgentServer(
   })
 
   const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
-  const sandboxHandleStore = options.sandboxHandleStore ?? new WorkspaceRuntimeSandboxHandleStore(workspaceStore)
+  const selectedMode = options.mode ?? process.env.BORING_AGENT_MODE ?? autoDetectMode()
+  const handleProvider = selectedMode === 'blaxel'
+    ? 'blaxel'
+    : selectedMode === 'vercel-sandbox' ? 'vercel' : undefined
+  const sandboxHandleStore = options.sandboxHandleStore
+    ?? (handleProvider ? new WorkspaceRuntimeSandboxHandleStore(workspaceStore, handleProvider) : undefined)
   const remoteWorkerModeAdapter = workerBaseUrl
     ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
     : undefined
   const runtimeModeAdapter = options.runtimeModeAdapter
     ?? remoteWorkerModeAdapter
     ?? createSandboxRuntimeModeAdapter(
-      (options.mode ?? process.env.BORING_AGENT_MODE ?? autoDetectMode()) as 'direct' | 'local' | 'vercel-sandbox',
+      selectedMode as 'direct' | 'local' | 'blaxel' | 'vercel-sandbox',
       { sandboxHandleStore },
     )
   const runtimeHost = options.runtimeHost ?? runtimeModeAdapter.runtimeHost ?? sandboxRuntimeHostOperations

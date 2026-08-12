@@ -252,7 +252,7 @@ export type CoreCapabilities = {
 export type CapabilitiesResponse = {
   core: CoreCapabilities
   agent?: {
-    runtimeMode: 'direct' | 'local' | 'vercel-sandbox'
+    runtimeMode: 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
     tools: string[]
     modelProviders: string[]
   }
