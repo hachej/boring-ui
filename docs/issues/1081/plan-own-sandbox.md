@@ -98,9 +98,12 @@ from that branch before closing the gate.
   gateway; write a file through the FUSE/POSIX view and read the same bytes and
   size through S3, then write a second version through S3 and observe it through
   POSIX.
-- [ ] **[SPIKE] SeaweedFS durability features:** prove bucket versioning,
-  version enumeration/recovery, a scoped cross-prefix denial, and an event
-  notification for the S3-side write.
+- [ ] **[SPIKE] SeaweedFS access-control and events:** prove a scoped
+  cross-prefix denial and an event notification for the S3-side write.
+  Bucket versioning is explicitly **out of scope for v1** (owner ruling
+  2026-08-12): v1 storage is plain durable S3 with dual POSIX access, no
+  version history. Versioning returns only as a scoped deferred feature gated
+  on a compliance or undo-agent-changes requirement.
 - [ ] Record whether the intended Kata release supports the selected
   Firecracker backend and host kernel without a downstream patch. A required
   patch is a named go/no-go decision, not an implicit local modification.
@@ -255,8 +258,9 @@ not an equivalent cohort.
   workspace prefix, required actions, sandbox lease, and the admitted endpoint.
   Deny bucket/IAM/versioning/retention mutation, historical-version deletion,
   listing outside the prefix, and all cross-tenant access.
-- [ ] Enable and verify S3 versioning, object/access events, retention where
-  selected, backup, restore, and take-your-data-out for tenant buckets.
+- [ ] Enable and verify object/access events, backup, restore, and
+  take-your-data-out for tenant buckets. (S3 versioning and retention are
+  deferred features, gated on a compliance/undo requirement — not v1.)
 - [ ] Mount the tenant's SeaweedFS namespace inside the guest at `/workspace`
   through the admitted FUSE path. Any guest `/dev/fuse` access remains inside
   the micro-VM boundary; no host workspace directory is bind-mounted.
@@ -544,7 +548,8 @@ M0 is done only when every item below is true on one exact, immutable AX102
 cohort:
 
 - [ ] Gate 0 has committed, reproducible KVM, Firecracker boot, and SeaweedFS
-  dual-access/versioning/notification evidence.
+  dual-access/notification evidence (versioning evidence not required — v1
+  ships without versioning).
 - [ ] Containerd launches the admitted OCI image through Kata's `kata-fc`
   handler and the observed VMM is the pinned Firecracker binary.
 - [ ] Two concurrent tenant identities receive distinct micro-VMs, guest
