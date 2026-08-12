@@ -60,8 +60,6 @@ export interface RuntimeFilesystemBindingOperations {
 export interface RuntimeFilesystemBinding {
   readonly filesystem: string
   readonly access: 'readonly' | 'readwrite'
-  /** Origin of the binding when it was contributed by a definition-shaped source (e.g. an agent package's knowledge/). */
-  readonly provenance?: 'agent-definition'
   readonly operations: RuntimeFilesystemBindingOperations
 }
 

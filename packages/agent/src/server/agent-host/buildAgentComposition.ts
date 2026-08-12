@@ -154,11 +154,11 @@ export async function buildAgentComposition(
     storageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
   }
   // Agent-carried knowledge (`knowledge/` inside the definition package)
-  // becomes a readonly, agent-scoped filesystem binding with provenance
-  // `agent-definition`. Built here — the one Agent-owned assembly funnel —
-  // so every host (workspace, core, CLI hub) gets it without per-host
-  // wiring, and sibling agents never see it. A declared-but-unmountable
-  // knowledge folder fails this agent's composition closed.
+  // becomes a readonly, agent-scoped filesystem binding. Built here — the
+  // one Agent-owned assembly funnel — so every host (workspace, core, CLI hub)
+  // gets it without per-host wiring, and sibling agents never see it. A
+  // declared-but-unmountable knowledge folder fails this agent's composition
+  // closed.
   const knowledgeRootDir = 'legacyDefault' in input.agent
     ? undefined
     : input.agent.knowledge?.rootDir
@@ -176,7 +176,6 @@ export async function buildAgentComposition(
         AGENT_KNOWLEDGE_FILESYSTEM_ID,
         [{ logicalRoot: '/', sourceRoot: knowledgeRootDir }],
       ),
-      provenance: 'agent-definition' as const,
     })
   }
   const scopedKnowledgeBinding = knowledgeBinding
