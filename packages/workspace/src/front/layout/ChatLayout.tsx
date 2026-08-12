@@ -158,10 +158,14 @@ export function ChatLayout(props: ChatLayoutProps) {
     ? chatPanes.find((pane) => pane.id === props.activeChatPaneId) ?? chatPanes[0]
     : undefined
   const sidebarOpen = Boolean(props.sidebar)
+  const shellRef = useRef<HTMLDivElement | null>(null)
   const navDrawerRef = useRef<HTMLElement | null>(null)
   const sidebarDrawerRef = useRef<HTMLElement | null>(null)
-  useDrawerFocusTrap(navOpen && !sidebarOpen, navDrawerRef, scheduleComposerFocus)
-  useDrawerFocusTrap(sidebarOpen, sidebarDrawerRef, scheduleComposerFocus)
+  const scheduleLocalComposerFocus = useCallback(() => scheduleComposerFocus(shellRef.current), [])
+  const navIsTopDrawer = navOpen && (mobileShell || !sidebarOpen)
+  const sidebarIsTopDrawer = sidebarOpen && !navIsTopDrawer
+  useDrawerFocusTrap(navIsTopDrawer, navDrawerRef, scheduleLocalComposerFocus)
+  useDrawerFocusTrap(sidebarIsTopDrawer, sidebarDrawerRef, scheduleLocalComposerFocus)
   useBodyScrollLock(navOpen || sidebarOpen)
   const canControlNav = navOpen ? Boolean(closeNav) : Boolean(props.onOpenNav)
   const canControlSurface = surfaceOpen ? Boolean(closeSurface) : Boolean(props.onOpenSurface)
@@ -199,16 +203,16 @@ export function ChatLayout(props: ChatLayoutProps) {
     if (chatCollapsed) setChatCollapsed(false)
     if (navOpen) closeNav?.()
     if (surfaceOpen) closeSurface?.()
-    focusAgentComposer()
-    scheduleComposerFocus()
-  }, [chatCollapsed, closeNav, closeSurface, navOpen, setChatCollapsed, surfaceOpen])
+    focusAgentComposer(shellRef.current)
+    scheduleLocalComposerFocus()
+  }, [chatCollapsed, closeNav, closeSurface, navOpen, scheduleLocalComposerFocus, setChatCollapsed, surfaceOpen])
   const closeActiveDrawer = useCallback(() => {
-    if (sidebarOpen) {
+    if (sidebarIsTopDrawer) {
       closeSidebar?.()
       return
     }
     closeNav?.()
-  }, [closeNav, closeSidebar, sidebarOpen])
+  }, [closeNav, closeSidebar, sidebarIsTopDrawer])
 
   const suppressOverlayAutoExpandRef = useRef(false)
   const toggleChatCollapsed = useCallback(() => {
@@ -366,9 +370,9 @@ export function ChatLayout(props: ChatLayoutProps) {
     if (activeBlockers.length > 0) {
       setChatCollapsed(false)
       setChatRailPulse(false)
-      scheduleComposerFocus()
+      scheduleLocalComposerFocus()
     }
-  }, [activeBlockers.length, chatCollapsed, setChatCollapsed])
+  }, [activeBlockers.length, chatCollapsed, scheduleLocalComposerFocus, setChatCollapsed])
 
   // Switching to a different session re-opens the chat if it was collapsed, so
   // the newly selected conversation is visible. Skips the initial mount (only
@@ -417,6 +421,7 @@ export function ChatLayout(props: ChatLayoutProps) {
 
   return (
     <div
+      ref={shellRef}
       data-boring-workspace=""
       data-boring-workspace-part="shell"
       data-boring-mobile-shell={props.mobileShellEnabled === true ? "" : undefined}
@@ -939,24 +944,28 @@ function getCallback(params: Record<string, unknown> | undefined, key: string): 
   return getFunction<() => void>(params, key)
 }
 
-function focusAgentComposer(options: { onlyFromBody?: boolean } = {}): void {
+function focusAgentComposer(
+  root: HTMLElement | null = null,
+  options: { onlyFromBody?: boolean } = {},
+): void {
   if (typeof document === "undefined") return
   if (options.onlyFromBody && document.activeElement !== document.body) return
-  const activePane = document.querySelector<HTMLElement>(
+  const queryRoot: Document | HTMLElement = root ?? document
+  const activePane = queryRoot.querySelector<HTMLElement>(
     '[data-boring-workspace-part="chat-pane"][data-boring-state="active"]',
   )
-  const root: Document | HTMLElement = activePane ?? document
-  const textarea = root.querySelector<HTMLTextAreaElement>(
+  const composerRoot: Document | HTMLElement = activePane ?? queryRoot
+  const textarea = composerRoot.querySelector<HTMLTextAreaElement>(
     '[data-boring-agent] textarea[name="message"], textarea[name="message"]',
   )
   textarea?.focus()
 }
 
-function scheduleComposerFocus(): void {
+function scheduleComposerFocus(root: HTMLElement | null = null): void {
   if (typeof window === "undefined") return
   window.requestAnimationFrame(() => {
-    focusAgentComposer({ onlyFromBody: true })
-    window.setTimeout(() => focusAgentComposer({ onlyFromBody: true }), 320)
+    focusAgentComposer(root, { onlyFromBody: true })
+    window.setTimeout(() => focusAgentComposer(root, { onlyFromBody: true }), 320)
   })
 }
 

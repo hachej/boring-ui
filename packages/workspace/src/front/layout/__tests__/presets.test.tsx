@@ -1180,6 +1180,29 @@ describe("ChatLayout component", () => {
     expect(closeNav).not.toHaveBeenCalled()
   })
 
+  it("treats the visually topmost session drawer as active on mobile", () => {
+    setViewport(375)
+    const closeNav = vi.fn()
+    const closeSidebar = vi.fn()
+    renderWithRegistry(
+      <ChatLayout
+        mobileShellEnabled
+        nav="session-list"
+        navParams={{ onClose: closeNav }}
+        center="chat"
+        sidebar="workbench-left"
+        sidebarParams={{ onClose: closeSidebar }}
+      />,
+      ["session-list", "chat", "workbench-left"],
+    )
+
+    fireShortcut("Escape")
+
+    expect(closeNav).toHaveBeenCalledOnce()
+    expect(closeSidebar).not.toHaveBeenCalled()
+    setViewport(1280)
+  })
+
   it("keeps focus in the topmost workbench drawer when the session drawer closes", async () => {
     const user = userEvent.setup()
     const panelRegistry = new PanelRegistry()
