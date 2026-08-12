@@ -1180,6 +1180,40 @@ describe("ChatLayout component", () => {
     expect(closeNav).not.toHaveBeenCalled()
   })
 
+  it("keeps focus in the topmost workbench drawer when the session drawer closes", async () => {
+    const user = userEvent.setup()
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("drawer-focus", { title: "drawer-focus", lazy: false, component: DrawerFocusPanel })
+    panelRegistry.register("workbench-focus", { title: "workbench-focus", lazy: false, component: DrawerFocusPanel })
+    const commandRegistry = new CommandRegistry()
+
+    function Host() {
+      const [navOpen, setNavOpen] = useState(true)
+      return (
+        <ChatLayout
+          center="chat"
+          nav={navOpen ? "drawer-focus" : null}
+          navParams={{ drawer: "session", onClose: () => setNavOpen(false) }}
+          sidebar="workbench-focus"
+          sidebarParams={{ drawer: "workbench", onClose: vi.fn() }}
+        />
+      )
+    }
+
+    render(
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+          <Host />
+        </RegistryProvider>
+      </WorkspaceProvider>,
+    )
+
+    const workbenchFirst = screen.getByRole("button", { name: "workbench first action" })
+    expect(workbenchFirst).toHaveFocus()
+    await user.keyboard("{Meta>}1{/Meta}")
+    expect(screen.getByRole("dialog", { name: "Workbench left panel" })).toContainElement(document.activeElement as HTMLElement)
+  })
+
   it.each([
     {
       drawer: "session",
