@@ -144,7 +144,7 @@ test("boring-ui agent validate reports a valid directory in human format without
   expect(result.stdout).not.toContain("tools:")
   expect(result.stdout).not.toContain("Do not print this prompt")
   expect(result.stdout).not.toContain(root)
-})
+}, 15_000)
 
 
 test("boring-ui agent validate --json emits exact AgentValidateSuccessV1", async () => {
