@@ -155,3 +155,8 @@ packages/workspace/src/plugins/eval-*/
 
 # Dev-server workspace runtime dirs (UUID-named) created under the app cwd during local runs
 /apps/full-app/*-*-*-*-*/
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules

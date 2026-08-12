@@ -13,7 +13,7 @@ import type {
   StopPayload,
   StopReceipt,
 } from '../shared/chat'
-import type { SessionListOptions, SessionSummary } from '../shared/session'
+import type { SessionActivity, SessionActivityOptions, SessionListOptions, SessionSummary } from '../shared/session'
 
 export interface PiSessionRequestContext {
   workspaceId?: string
@@ -52,6 +52,7 @@ export interface PiChatAttachmentResult {
 
 export interface PiChatSessionService {
   listSessions?(ctx: PiSessionRequestContext, options?: SessionListOptions): Promise<SessionSummary[]>
+  listSessionActivity?(ctx: PiSessionRequestContext, options: SessionActivityOptions): Promise<SessionActivity[]>
   createSession?(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
   deleteSession?(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
   readAttachment?(ctx: PiSessionRequestContext, sessionId: string, messageId: string, index: number): Promise<PiChatAttachmentResult>
@@ -86,7 +87,7 @@ export class AgentEffectAdmissionError extends Error {
   }
 }
 
-type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'listSessions' | 'readAttachment' | 'readState' | 'subscribe' | 'dispose'>
+type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'listSessions' | 'listSessionActivity' | 'readAttachment' | 'readState' | 'subscribe' | 'dispose'>
 
 export const AGENT_EFFECT_METHODS = {
   createSession: true,
@@ -105,6 +106,9 @@ export function withAgentEffectAdmission(
   return {
     ...(service.listSessions
       ? { listSessions: (ctx, options) => service.listSessions!(ctx, options) }
+      : {}),
+    ...(service.listSessionActivity
+      ? { listSessionActivity: (ctx, options) => service.listSessionActivity!(ctx, options) }
       : {}),
     async createSession(ctx, init) { await admit(ctx); return service.createSession(ctx, init) },
     async deleteSession(ctx, sessionId) { await admit(ctx); return service.deleteSession(ctx, sessionId) },

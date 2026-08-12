@@ -59,6 +59,9 @@ const EmptyBodySchema = z.preprocess((value) => value ?? {}, z.object({}).strict
 const CreateSessionBodySchema = z.preprocess((value) => value ?? {}, z.object({
   title: z.string().min(1).max(200).optional(),
 }).strict())
+const SessionActivityBodySchema = z.object({
+  sessionIds: z.array(z.string().regex(SAFE_SESSION_LIST_INCLUDE_ID)).max(MAX_SESSION_LIST_LIMIT),
+}).strict()
 
 export type {
   PiChatEventStreamResult,
@@ -119,6 +122,18 @@ export function piChatRoutes(
       return reply.send(await service.listSessions(getRequestContext(request), sessionListOptions(request)))
     } catch (err) {
       return sendRouteError(reply, err, 'list pi chat sessions failed')
+    }
+  })
+
+  app.post('/api/v1/agent/pi-chat/sessions/activity', async (request, reply) => {
+    const body = parseWithSchema(SessionActivityBodySchema, request.body, reply, 'body')
+    if (!body) return
+    try {
+      const service = await resolveService(opts, request)
+      if (!service.listSessionActivity) throw unsupportedServiceMethod('list Pi chat session activity')
+      return reply.send({ ok: true, sessions: await service.listSessionActivity(getRequestContext(request), { sessionIds: [...new Set(body.sessionIds)] }) })
+    } catch (err) {
+      return sendRouteError(reply, err, 'list pi chat session activity failed')
     }
   })
 

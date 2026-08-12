@@ -133,6 +133,38 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
+  it('reports live session activity from an existing channel without creating another adapter', async () => {
+    const { service, harness } = createService()
+
+    await service.prompt(ctx, 's1', { message: 'hello', clientNonce: 'nonce-activity' })
+    const activity = await service.listSessionActivity(ctx, { sessionIds: ['s1'] })
+
+    expect(activity).toEqual([
+      { sessionId: 's1', working: true, status: 'streaming', source: 'live-runtime' },
+    ])
+    expect(harness.getPiSessionAdapter).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports persisted sessions as idle without cold-instantiating an adapter', async () => {
+    const adapter = createAdapter()
+    const harness = createHarness(adapter)
+    const store: SessionStore = {
+      list: vi.fn(async () => []),
+      create: vi.fn(async () => ({ id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 })),
+      load: vi.fn(async () => ({ id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 })),
+      delete: vi.fn(async () => {}),
+    }
+    const service = new HarnessPiChatService({ harness, sessionStore: store, workdir: '/workspace' })
+
+    const activity = await service.listSessionActivity(ctx, { sessionIds: ['s1'] })
+
+    expect(activity).toEqual([
+      { sessionId: 's1', working: false, status: 'idle', source: 'persisted' },
+    ])
+    expect(store.load).toHaveBeenCalledWith({ workspaceId: 'workspace-a', userId: 'user-a' }, 's1')
+    expect(harness.getPiSessionAdapter).not.toHaveBeenCalled()
+  })
+
   it('disposes a receipt-only prompt, native channel, and metering exactly once', async () => {
     const adapter = createAdapter()
     const run = deferred<void>()

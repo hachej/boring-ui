@@ -19,6 +19,30 @@ Guidance for choosing models/reviewers in Boring v2 skills. These are defaults, 
 5. Plans and implementations should get an adversarial review when risk is non-trivial.
 6. Never let a cheap model be the only reviewer for risky, broad, public, auth/security, migration, or architecture-changing work.
 
+## Tier table (priority-ordered)
+
+Concrete routing table for factory seats and skills. Within a tier, models are
+listed in priority order: pick the first *available* model (quota/runtime),
+escalate a tier when the result misses the bar. Factory config
+(`factory/policy.yaml`) references tiers, never model IDs — update models
+here, not in the factory.
+
+| Tier | Models (priority order) | Quota/runtime notes | Factory use |
+| --- | --- | --- | --- |
+| T1 frontier | Fable; Sol xhigh | Fable = very token-expensive, AgentHost/pi native. Sol = codex exec only, shared 5h OpenAI window, cap 2 tracks — no durable seats | Concierge + Steward seats (Fable); Sol xhigh = cross-model adversarial pass on plans and class-B PRs |
+| T2 strong | Opus 4.8; Sol medium | Opus = Claude Max window. Sol medium shares the Sol window/cap | Hard-tagged beads; default Reviewer seat (Opus); lighter cross-checks (Sol medium) |
+| T3 workhorse | Terra; Sonnet 4.6 | Terra = codex model (codex exec runtime, currently very cheap) — cannot hold a pi session; Sonnet 4.6 is the pi-native default | Worker sessions = Sonnet 4.6; codex-delegated mechanical work (git chores, bulk edits) = Terra; triage sweeps |
+| T4 mechanical | Luna; Haiku | Luna = codex model, cheapest; Haiku where the automation needs an Anthropic/pi-native runtime | Beadle tick, reconciliation, notifications |
+
+Quota rules:
+
+- Quota is an **availability gate, not an optimizer**: on a rate-limit
+  signal, fall to the next model in the same tier.
+- If a whole tier is exhausted, **defer** shippable-quality work rather than
+  silently downgrading a tier; non-shipping mechanical work may drop a tier.
+- No account-rotation machinery until real runs prove quota is the
+  bottleneck.
+
 ## Workflow defaults
 
 | Workflow | Default model shape | Required reviewer shape | Notes |

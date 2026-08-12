@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChevronLeft, ChevronRight, ExternalLink, Pin, Plus } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
@@ -10,6 +10,12 @@ import { CHAT_SESSION_DRAG_TYPE } from "../../layout/ChatPaneStage"
 import type { SessionItem } from "../../components/SessionList"
 
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
+
+export interface SessionActivityIndicator {
+  working: boolean
+}
+
+export type SessionActivityById = Record<string, SessionActivityIndicator | undefined>
 
 /**
  * Session ids whose chat panel is currently streaming. Fed by the
@@ -53,6 +59,7 @@ export interface SessionBrowserProps {
   onLoadMore?: () => void
   hasMore?: boolean
   loadingMore?: boolean
+  sessionActivityById?: SessionActivityById
   onClose?: () => void
   className?: string
 }
@@ -163,6 +170,7 @@ export function SessionBrowser({
   onLoadMore,
   hasMore = false,
   loadingMore = false,
+  sessionActivityById,
   onClose,
   className,
 }: SessionBrowserProps) {
@@ -200,7 +208,11 @@ export function SessionBrowser({
   const [historyCollapsed, setHistoryCollapsed] = useState(
     () => (openIds?.length ?? 0) > 0 || (pinnedIds?.length ?? 0) > 0,
   )
-  const workingSessionIds = useWorkingSessionIds()
+  const optimisticWorkingSessionIds = useWorkingSessionIds()
+  const isSessionWorking = useCallback((sessionId: string) => {
+    const activity = sessionActivityById?.[sessionId]
+    return activity ? activity.working : optimisticWorkingSessionIds.has(sessionId)
+  }, [optimisticWorkingSessionIds, sessionActivityById])
   const { blockers } = useWorkspaceAttention()
   const sessionBadges = useMemo(() => {
     const badges = new Map<string, WorkspaceAttentionSessionBadge>()
@@ -275,7 +287,7 @@ export function SessionBrowser({
                     active={session.id === activeId}
                     open={openSet.has(session.id)}
                     pinned
-                    working={workingSessionIds.has(session.id)}
+                    working={isSessionWorking(session.id)}
                     attentionBadge={sessionBadges.get(session.id)}
                     onSwitch={onSwitch}
                     onOpenAsTab={onOpenAsTab}
@@ -306,7 +318,7 @@ export function SessionBrowser({
                     active={session.id === activeId}
                     open
                     pinned={pinnedSet.has(session.id)}
-                    working={workingSessionIds.has(session.id)}
+                    working={isSessionWorking(session.id)}
                     attentionBadge={sessionBadges.get(session.id)}
                     onSwitch={onSwitch}
                     onOpenAsTab={onOpenAsTab}
@@ -347,7 +359,7 @@ export function SessionBrowser({
                           active={session.id === activeId}
                           open={false}
                           pinned={pinnedSet.has(session.id)}
-                          working={workingSessionIds.has(session.id)}
+                          working={isSessionWorking(session.id)}
                           attentionBadge={sessionBadges.get(session.id)}
                           onSwitch={onSwitch}
                           onOpenAsTab={onOpenAsTab}
