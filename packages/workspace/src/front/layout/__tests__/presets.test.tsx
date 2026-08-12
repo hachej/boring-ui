@@ -1233,6 +1233,9 @@ describe("ChatLayout component", () => {
 
     const workbenchFirst = screen.getByRole("button", { name: "workbench first action" })
     expect(workbenchFirst).toHaveFocus()
+    screen.getByRole("button", { name: "session first action" }).focus()
+    const workbenchDialog = screen.getByRole("dialog", { name: "Workbench left panel" })
+    await waitFor(() => expect(workbenchDialog).toContainElement(document.activeElement as HTMLElement))
     await user.keyboard("{Meta>}1{/Meta}")
     expect(screen.getByRole("dialog", { name: "Workbench left panel" })).toContainElement(document.activeElement as HTMLElement)
   })
@@ -1306,6 +1309,20 @@ describe("ChatLayout component", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: dialogName })).not.toBeInTheDocument())
     expect(closeSurface).not.toHaveBeenCalled()
     expect(trigger).toHaveFocus()
+  })
+
+  it("keeps body scrolling locked across multiple ChatLayout shells", () => {
+    const previousOverflow = "clip"
+    document.body.style.overflow = previousOverflow
+    const first = renderWithRegistry(<ChatLayout center="empty" />, ["session-list", "empty"])
+    const second = renderWithRegistry(<ChatLayout center="empty" />, ["session-list", "empty"])
+
+    expect(document.body.style.overflow).toBe("hidden")
+    first.unmount()
+    expect(document.body.style.overflow).toBe("hidden")
+    second.unmount()
+    expect(document.body.style.overflow).toBe(previousOverflow)
+    document.body.style.overflow = ""
   })
 
   it("keeps body scrolling locked until both modal drawers close", async () => {

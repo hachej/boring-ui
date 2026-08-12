@@ -793,19 +793,41 @@ function useDrawerFocusTrap(
       }
     }
 
+    function handleFocusIn(e: FocusEvent) {
+      if (e.target instanceof Node && container!.contains(e.target)) return
+      window.requestAnimationFrame(() => {
+        if (!document.contains(container)) return
+        const firstFocusable = Array.from(container!.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).find(
+          (el) => el.offsetParent !== null,
+        )
+        ;(firstFocusable ?? container)!.focus({ preventScroll: true })
+      })
+    }
+
     container.addEventListener("keydown", handleKeyDown)
-    return () => container.removeEventListener("keydown", handleKeyDown)
+    document.addEventListener("focusin", handleFocusIn)
+    return () => {
+      container.removeEventListener("keydown", handleKeyDown)
+      document.removeEventListener("focusin", handleFocusIn)
+    }
   }, [open])
 }
 
-/** Locks document body scroll while any of the given drawers is open. */
+let bodyScrollLockCount = 0
+let bodyOverflowBeforeFirstLock = ""
+
+/** Locks document body scroll while any ChatLayout drawer is open. */
 function useBodyScrollLock(locked: boolean): void {
   useEffect(() => {
     if (!locked) return
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = "hidden"
+    if (bodyScrollLockCount === 0) {
+      bodyOverflowBeforeFirstLock = document.body.style.overflow
+      document.body.style.overflow = "hidden"
+    }
+    bodyScrollLockCount += 1
     return () => {
-      document.body.style.overflow = previousOverflow
+      bodyScrollLockCount -= 1
+      if (bodyScrollLockCount === 0) document.body.style.overflow = bodyOverflowBeforeFirstLock
     }
   }, [locked])
 }
