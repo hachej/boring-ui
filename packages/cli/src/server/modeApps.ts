@@ -960,15 +960,11 @@ export async function createWorkspacesModeApp(opts: {
   const fleetRepositoryRoot = process.cwd()
   let discoveredAgentPackages: Awaited<ReturnType<typeof workspaceServer.discoverRepositoryAgentPackages>> | undefined
   if (process.env.BORING_AGENT_FLEET === "1") {
-    const registeredWorkspaceRoots = (await registry.list())
-      .filter((workspace) => workspace.available)
-      .map((workspace) => workspace.path)
-    const packageWorkspaceRoots = [...new Set([fleetRepositoryRoot, ...registeredWorkspaceRoots])]
-    discoveredAgentPackages = await workspaceServer.discoverRepositoryAgentPackages(fleetRepositoryRoot, {
-      localPackageSources: packageWorkspaceRoots.flatMap((root) => (
-        pluginDiscovery.resolveCliLocalAgentPackageDirs(root)
-      )),
-    })
+    // This Host is shared by every registered workspace, so only repository-
+    // owned personas may enter its fleet. Workspace-local package descriptors
+    // carry no scope once handed to the Agent fleet loader; admitting them here
+    // would let one workspace seat an agent (and its knowledge) for all others.
+    discoveredAgentPackages = await workspaceServer.discoverRepositoryAgentPackages(fleetRepositoryRoot)
   }
   const agentHost = await agentServer.createAgentHost({
     // The hub serves a DIFFERENT root per registered workspace, so there is no

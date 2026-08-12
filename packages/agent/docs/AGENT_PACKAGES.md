@@ -1,21 +1,22 @@
 # Workspace agent packages
 
-With `BORING_AGENT_FLEET=1`, an agent definition may come from either the
-repository's `.agents/personas/` packages or a local package path registered in
-the workspace's `.pi/settings.json#packages`. Registration makes an agent
-package discoverable. It does not activate the agent: the class-B
-`.agents/factory/fleet.yaml` roster must also seat the package's
-`boring.agent.definitionId`.
+With `BORING_AGENT_FLEET=1`, a single-workspace host may discover an agent
+definition from either the trusted repository's `.agents/personas/` packages
+or a local package path registered in that workspace's
+`.pi/settings.json#packages`. Registration makes an agent package discoverable.
+It does not activate the agent: the class-B `.agents/factory/fleet.yaml` roster
+must also seat the package's `boring.agent.definitionId`.
 
 Agent fleet changes are boot-time changes. `/reload` can refresh ordinary
 plugin resources, but installing, updating, seating, unseating, or removing an
 agent requires restarting the workspace/CLI host.
 
-The CLI workspaces hub collects local agent packages from every available
-registered workspace when the process starts. Its Agent Host is shared, so two
-workspaces claiming the same `definitionId` conflict host-wide and both claims
-fail closed. Adding a workspace or changing its package registrations requires
-restarting the hub.
+The CLI workspaces hub has one Agent Host shared by every registered workspace.
+Its global fleet therefore admits only personas from the trusted repository's
+`.agents/personas/`; it does not admit agent definitions from any workspace's
+local package registrations. Local packages keep their ordinary plugin
+surfaces in their owning workspace. Seating workspace-local agent definitions
+in workspaces mode requires a future workspace-scoped fleet boundary.
 
 ## Install and seat
 
@@ -35,9 +36,11 @@ seats:
     skills: []
 ```
 
-Restart with `BORING_AGENT_FLEET=1`. A valid seated package appears in the
-agent catalog. An installed package without a matching seat remains inert and
-reports `AGENT_DEFINITION_UNSEATED` during fleet composition.
+Restart a single-workspace host with `BORING_AGENT_FLEET=1`. A valid seated
+package appears in the agent catalog. An installed package without a matching
+seat remains inert and reports `AGENT_DEFINITION_UNSEATED` during fleet
+composition. The shared CLI workspaces hub never admits the local agent
+contribution, even when the global roster names its definition id.
 
 ## Update
 
@@ -68,8 +71,10 @@ excluded with `AGENT_FLEET_SEAT_PERSONA_INVALID` while other agents boot.
 
 ## v1 distribution boundary
 
-Only repository personas and workspace-registered local package paths may
-contribute agents in v1. Git/npm package sources — including their materialized
-`.pi/git/` and `.pi/npm/` directories — cannot contribute an agent until the
-remote-distribution trust gate ships. Their non-agent plugin surfaces continue
-through the normal plugin pipeline unchanged.
+Repository personas may contribute agents to any fleet in v1. A
+workspace-registered local package path may contribute an agent only to a
+single-workspace host; it never enters the CLI workspaces hub's global fleet.
+Git/npm package sources — including their materialized `.pi/git/` and
+`.pi/npm/` directories — cannot contribute an agent until the
+remote-distribution trust gate ships. All excluded packages' non-agent plugin
+surfaces continue through the normal plugin pipeline unchanged.
