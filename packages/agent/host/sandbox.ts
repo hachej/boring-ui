@@ -33,7 +33,7 @@ import {
 
 import type { SandboxHandleStore } from '../src/shared/sandbox-handle-store'
 import type { AgentRuntimeHostOperations } from '../src/server/runtime/runtimeHost'
-import type { BuiltinRuntimeModeId, RuntimeModeAdapter, RuntimeModeId } from '../src/server/runtime/mode'
+import type { RuntimeModeAdapter, RuntimeModeId } from '../src/server/runtime/mode'
 import { createDirectModeAdapter } from '../src/server/runtime/modes/direct'
 import { createLocalModeAdapter } from '../src/server/runtime/modes/local'
 import { createBlaxelSandboxModeAdapter } from '../src/server/runtime/modes/blaxel'
@@ -86,7 +86,7 @@ export interface SandboxRuntimeModeOptions {
 
 /** Built-in runtime layout root without exposing provider package constants to consumers. */
 export function resolveBuiltinRuntimeLayoutRoot(
-  mode: BuiltinRuntimeModeId,
+  mode: RuntimeModeId,
   workspaceRoot: string,
 ): string {
   return mode === 'blaxel'
@@ -95,7 +95,7 @@ export function resolveBuiltinRuntimeLayoutRoot(
 }
 
 export function createSandboxRuntimeModeAdapter(
-  mode: BuiltinRuntimeModeId,
+  mode: RuntimeModeId,
   options: SandboxRuntimeModeOptions = {},
 ): RuntimeModeAdapter {
   switch (mode) {
@@ -135,5 +135,5 @@ export function createSandboxRuntimeModeAdapter(
 }
 
 export function createAgentSandboxRuntimeModeAdapter(mode: RuntimeModeId = 'direct'): RuntimeModeAdapter {
-  return createSandboxRuntimeModeAdapter(mode as BuiltinRuntimeModeId)
+  return createSandboxRuntimeModeAdapter(mode)
 }

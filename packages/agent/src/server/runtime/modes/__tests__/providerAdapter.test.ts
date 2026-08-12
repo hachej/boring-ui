@@ -124,7 +124,7 @@ test('Agent owns built-in sandbox adapter selection and host operations', async 
   expect(adapter.id).toBe('direct')
   expect(adapter.runtimeHost).toBe(sandboxRuntimeHostOperations)
   await adapter.dispose?.()
-  expect(() => createSandboxRuntimeModeAdapter('custom' as 'direct')).toThrow('no built-in adapter')
+  expect(() => createSandboxRuntimeModeAdapter('custom')).toThrow('no built-in adapter')
 })
 
 test('cached runtime eviction awaits asynchronous provider invalidation', async () => {

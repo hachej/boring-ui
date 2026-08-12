@@ -13,8 +13,9 @@ export type { RuntimeFilesystemCapability } from '../../shared/workspace'
 import type { CapabilityReadinessDetail, ReadyStatusTracker } from './readyStatus'
 import type { AgentRuntimeHostOperations } from './runtimeHost'
 import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
+import type { BuiltinRuntimeModeId } from '../../shared/runtime-mode'
 
-export type BuiltinRuntimeModeId = 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
+export type { BuiltinRuntimeModeId } from '../../shared/runtime-mode'
 export type RuntimeModeId = BuiltinRuntimeModeId | (string & {})
 
 export interface RuntimeModeReadinessHooks {

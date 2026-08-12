@@ -1252,7 +1252,7 @@ export async function createCoreWorkspaceAgentServer(
   const runtimeModeAdapter = options.runtimeModeAdapter
     ?? remoteWorkerModeAdapter
     ?? createSandboxRuntimeModeAdapter(
-      selectedMode as 'direct' | 'local' | 'blaxel' | 'vercel-sandbox',
+      selectedMode,
       { sandboxHandleStore },
     )
   const runtimeHost = options.runtimeHost ?? runtimeModeAdapter.runtimeHost ?? sandboxRuntimeHostOperations

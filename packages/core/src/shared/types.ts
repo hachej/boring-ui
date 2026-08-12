@@ -1,4 +1,5 @@
 import type { ErrorCode } from './errors.js'
+import type { BuiltinRuntimeModeId } from '@hachej/boring-agent/shared'
 
 export type MemberRole = 'owner' | 'editor' | 'viewer'
 
@@ -252,7 +253,7 @@ export type CoreCapabilities = {
 export type CapabilitiesResponse = {
   core: CoreCapabilities
   agent?: {
-    runtimeMode: 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
+    runtimeMode: BuiltinRuntimeModeId
     tools: string[]
     modelProviders: string[]
   }
