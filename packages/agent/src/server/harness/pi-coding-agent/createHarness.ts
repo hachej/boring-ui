@@ -98,6 +98,8 @@ function composeSystemPromptAppend(hostAppend: string | undefined): string {
 export interface PiHarnessOptions {
   noContextFiles?: boolean;
   noSkills?: boolean;
+  /** Disable ambient Pi extensions (required when tools execute in a remote runtime). */
+  noExtensions?: boolean;
   additionalSkillPaths?: string[];
   defaultModel?: { provider: string; id: string };
   /**
@@ -620,6 +622,7 @@ export function createPiCodingAgentHarness(opts: {
       ...(extensionFactories.length ? { extensionFactories } : {}),
       ...(pi.noContextFiles ? { noContextFiles: true } : {}),
       ...(pi.noSkills ? { noSkills: true } : {}),
+      ...(pi.noExtensions ? { noExtensions: true } : {}),
       ...(effectiveSkillPaths.length ? { additionalSkillPaths: effectiveSkillPaths } : {}),
       // skillsOverride REPLACES Pi's resolved skill set, which includes
       // skills contributed by host-declared pi packages (e.g.
