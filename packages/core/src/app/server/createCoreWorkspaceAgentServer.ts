@@ -1500,6 +1500,7 @@ export async function createCoreWorkspaceAgentServer(
     const environment: AgentHostEnvironmentScope = {
       placementIdentity,
       provisioningFingerprint,
+      runtimeWorkspaceId: workspaceId,
       workspaceRoot: root,
       templatePath,
       resolveFilesystemBindings: resolveFilesystemBindings
