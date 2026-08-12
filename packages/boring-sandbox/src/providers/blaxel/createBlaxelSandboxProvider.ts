@@ -304,7 +304,7 @@ export function createBlaxelSandboxProvider(
       })
       try {
         const preflight = await sandbox.exec(
-          `set -eu; export LC_ALL=C; command -v sh >/dev/null; command -v stat >/dev/null; command -v mv >/dev/null; command -v mkdir >/dev/null; command -v realpath >/dev/null; command -v mktemp >/dev/null; command -v rm >/dev/null; command -v sed >/dev/null; command -v flock >/dev/null; test -d ${shellQuote(BLAXEL_WORKSPACE_ROOT)}; d=$(mktemp -d /tmp/boring-blaxel-preflight.XXXXXX); volume_lock=${shellQuote(`${BLAXEL_WORKSPACE_ROOT}/.boring-blaxel-flock-preflight.lock`)}; trap 'rm -rf -- "$d"; rm -f -- "$volume_lock"' EXIT; mkdir -p -- "$d/a"; printf x >"$d/a/f"; stat -Lc '%s|%Y|%F' -- "$d/a/f" >/dev/null; realpath "$d/a/f" >/dev/null; realpath "$d/a/missing" >/dev/null; mv -T -- "$d/a/f" "$d/a/g"; flock -x -n "$volume_lock" true`,
+          `set -eu; export LC_ALL=C; command -v sh >/dev/null; command -v stat >/dev/null; command -v mv >/dev/null; command -v mkdir >/dev/null; command -v realpath >/dev/null; command -v mktemp >/dev/null; command -v rm >/dev/null; command -v sed >/dev/null; command -v flock >/dev/null; test -d ${shellQuote(BLAXEL_WORKSPACE_ROOT)}; d=$(mktemp -d /tmp/boring-blaxel-preflight.XXXXXX); volume_lock=$(mktemp ${shellQuote(`${BLAXEL_WORKSPACE_ROOT}/.boring-blaxel-flock-preflight.XXXXXX`)}); trap 'rm -rf -- "$d"; rm -f -- "$volume_lock"' EXIT; mkdir -p -- "$d/a"; printf x >"$d/a/f"; stat -Lc '%s|%Y|%F' -- "$d/a/f" >/dev/null; realpath "$d/a/f" >/dev/null; realpath "$d/a/missing" >/dev/null; mv -T -- "$d/a/f" "$d/a/g"; flock -x -n "$volume_lock" true`,
           { timeoutMs: 10_000, maxOutputBytes: 8 * 1024 },
         )
         if (preflight.exitCode !== 0) {
