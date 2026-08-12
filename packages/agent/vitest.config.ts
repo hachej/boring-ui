@@ -17,6 +17,7 @@ export default defineConfig({
       "@hachej/boring-sandbox/providers/bwrap": fileURLToPath(new URL("../boring-sandbox/src/providers/bwrap/index.ts", import.meta.url)),
       "@hachej/boring-sandbox/providers/node-workspace": fileURLToPath(new URL("../boring-sandbox/src/providers/node-workspace/index.ts", import.meta.url)),
       "@hachej/boring-sandbox/providers/vercel-sandbox": fileURLToPath(new URL("../boring-sandbox/src/providers/vercel-sandbox/index.ts", import.meta.url)),
+      "@hachej/boring-sandbox/providers/blaxel": fileURLToPath(new URL("../boring-sandbox/src/providers/blaxel/index.ts", import.meta.url)),
     },
   },
   test: {

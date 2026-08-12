@@ -14,7 +14,7 @@ import type { CapabilityReadinessDetail, ReadyStatusTracker } from './readyStatu
 import type { AgentRuntimeHostOperations } from './runtimeHost'
 import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
 
-export type BuiltinRuntimeModeId = 'direct' | 'local' | 'vercel-sandbox'
+export type BuiltinRuntimeModeId = 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
 export type RuntimeModeId = BuiltinRuntimeModeId | (string & {})
 
 export interface RuntimeModeReadinessHooks {

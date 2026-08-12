@@ -180,7 +180,7 @@ export async function provisionCliWorkspaceRuntime(opts: {
     let adapter = opts.adapter
     if (!adapter) {
       const modeAdapter = opts.modeAdapter
-        ?? agent.createSandboxRuntimeModeAdapter(opts.mode as 'direct' | 'local' | 'vercel-sandbox')
+        ?? agent.createSandboxRuntimeModeAdapter(opts.mode as 'direct' | 'local' | 'blaxel' | 'vercel-sandbox')
       scopedRuntime = await modeAdapter.create({
         workspaceRoot: opts.workspaceRoot,
         workspaceId: opts.workspaceRoot,
