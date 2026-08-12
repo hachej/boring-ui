@@ -15,7 +15,7 @@ const viewports: UiReviewViewport[] = [
 
 export const workspaceCommandPaletteSpec: UiReviewSpec = {
   id: "workspace-command-palette",
-  specRevision: "workspace-command-palette-v1",
+  specRevision: "workspace-command-palette-v2",
   fixtureResetId: "workspace-playground-e2e-fresh-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -89,14 +89,36 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
         expect(page.locator("button").filter({ hasText: /^Search/ }).first()).toBeVisible({ timeout: timeoutMs }),
       ])
     },
-    selectReplayState: (states) => states.find((state) => {
-      const palette = state.normalizedState
-        && typeof state.normalizedState.palette === "object"
-        && state.normalizedState.palette !== null
-        && !Array.isArray(state.normalizedState.palette)
-        ? state.normalizedState.palette as Record<string, unknown>
-        : null
-      return state.ordinal > 2 && state.action === "Wait" && palette?.dialogVisible === true
-    }),
+    selectReplayState: (states) => {
+      const dialogStates = states.filter((state) => {
+        const palette = state.normalizedState
+          && typeof state.normalizedState.palette === "object"
+          && state.normalizedState.palette !== null
+          && !Array.isArray(state.normalizedState.palette)
+          ? state.normalizedState.palette as Record<string, unknown>
+          : null
+        return state.ordinal > 2 && palette?.dialogVisible === true
+      })
+      const ordered = [...states].sort((left, right) => left.ordinal - right.ordinal)
+      const waits = dialogStates
+        .filter((state) => state.action === "Wait")
+        .sort((left, right) => left.ordinal - right.ordinal)
+      // The first Wait after opening can observe the dialog in the DOM before
+      // Chromium has painted it. Keep the short replayable Wait path from the
+      // Bombadil spec, but require its encoded screenshot to grow beyond the
+      // latest hydrated closed-workspace frame so the overlay is actually in it.
+      const painted = waits.find((state) => {
+        const closed = ordered.filter((candidate) => {
+          const palette = candidate.normalizedState.palette as Record<string, unknown> | undefined
+          return candidate.ordinal < state.ordinal
+            && palette?.workspaceReady === true
+            && palette.dialogVisible === false
+        }).at(-1)
+        return closed !== undefined
+          && state.screenshotDigest !== closed.screenshotDigest
+          && state.screenshotBytes > closed.screenshotBytes
+      })
+      return painted ?? waits[0] ?? dialogStates.sort((left, right) => left.ordinal - right.ordinal)[0]
+    },
   },
 }

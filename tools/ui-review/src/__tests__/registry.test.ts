@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { uiReviewSpecs, UiReviewSpecRegistry } from "../registry"
-import type { UiReviewSpec } from "../core/reviewSpec"
+import type { UiReviewExplorationState, UiReviewSpec } from "../core/reviewSpec"
 
 function spec(id: string, targetRoot: UiReviewSpec["target"]["root"]): UiReviewSpec {
   return {
@@ -56,6 +56,27 @@ describe("UI review spec registry", () => {
 
     expect(registry.ids()).toEqual(["agent-smoke", "full-app-smoke", "workspace-smoke"])
     expect(registry.get("full-app-smoke").target.root).toBe("apps/full-app")
+  })
+
+  it("selects a painted command-palette Wait for replay", () => {
+    const select = uiReviewSpecs.get("workspace-command-palette").exploration!.selectReplayState
+    const states = [
+      { ordinal: 19, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "painted", screenshotBytes: 200, normalizedState: { palette: { workspaceReady: true, dialogVisible: true, mode: "Commands" } } },
+      { ordinal: 14, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, normalizedState: { palette: { workspaceReady: true, dialogVisible: false, mode: "none" } } },
+      { ordinal: 16, viewport: { name: "desktop" }, action: { Click: {} }, screenshotDigest: "skeleton", screenshotBytes: 95, normalizedState: { palette: { workspaceReady: true, dialogVisible: true, mode: "Chats" } } },
+      { ordinal: 17, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "skeleton", screenshotBytes: 95, normalizedState: { palette: { workspaceReady: true, dialogVisible: true, mode: "Chats" } } },
+    ] as unknown as UiReviewExplorationState[]
+
+    expect(select(states)).toBe(states[0])
+    expect(select(states.slice(1))).toBe(states[3])
+
+    const mobileStates = [
+      { ordinal: 17, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "painted", screenshotBytes: 200, normalizedState: { palette: { workspaceReady: true, dialogVisible: true, mode: null } } },
+      { ordinal: 14, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, normalizedState: { palette: { workspaceReady: true, dialogVisible: false, mode: null } } },
+      { ordinal: 15, viewport: { name: "mobile" }, action: { Click: {} }, screenshotDigest: "skeleton", screenshotBytes: 100, normalizedState: { palette: { workspaceReady: true, dialogVisible: true, mode: null } } },
+      { ordinal: 16, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "skeleton", screenshotBytes: 100, normalizedState: { palette: { workspaceReady: true, dialogVisible: true, mode: null } } },
+    ] as unknown as UiReviewExplorationState[]
+    expect(select(mobileStates)).toBe(mobileStates[0])
   })
 
   it.each(["https://example.com", "../workspace", "workspace/spec", "javascript:alert(1)"])(
