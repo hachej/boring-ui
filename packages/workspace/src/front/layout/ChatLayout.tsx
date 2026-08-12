@@ -160,7 +160,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   const sidebarOpen = Boolean(props.sidebar)
   const navDrawerRef = useRef<HTMLElement | null>(null)
   const sidebarDrawerRef = useRef<HTMLElement | null>(null)
-  useDrawerFocusTrap(navOpen, navDrawerRef)
+  useDrawerFocusTrap(navOpen, navDrawerRef, scheduleComposerFocus)
   useDrawerFocusTrap(sidebarOpen, sidebarDrawerRef)
   useBodyScrollLock(navOpen || sidebarOpen)
   const canControlNav = navOpen ? Boolean(closeNav) : Boolean(props.onOpenNav)
@@ -735,7 +735,11 @@ const FOCUSABLE_SELECTOR =
  * existing Escape shortcut wiring so focus-trap scope and shortcut precedence
  * stay centralized in one place).
  */
-function useDrawerFocusTrap(open: boolean, containerRef: { current: HTMLElement | null }): void {
+function useDrawerFocusTrap(
+  open: boolean,
+  containerRef: { current: HTMLElement | null },
+  focusFallback?: () => void,
+): void {
   const previouslyFocusedRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
@@ -747,7 +751,11 @@ function useDrawerFocusTrap(open: boolean, containerRef: { current: HTMLElement 
 
     return () => {
       const target = previouslyFocusedRef.current
-      if (target && document.contains(target)) target.focus({ preventScroll: true })
+      if (target && target !== document.body && document.contains(target)) {
+        target.focus({ preventScroll: true })
+      } else {
+        focusFallback?.()
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
