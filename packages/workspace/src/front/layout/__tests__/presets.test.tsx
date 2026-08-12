@@ -596,7 +596,7 @@ describe("ChatLayout component", () => {
     fireShortcut("Escape")
 
     expect(closeNav).toHaveBeenCalledTimes(2)
-    expect(closeSurface).toHaveBeenCalledTimes(2)
+    expect(closeSurface).toHaveBeenCalledOnce()
   })
 
   it("lets active chat Escape stop streaming before shell close shortcuts run", () => {
@@ -1160,6 +1160,26 @@ describe("ChatLayout component", () => {
     expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(2)
   })
 
+  it("closes the topmost workbench drawer first when both drawers are open", () => {
+    const closeNav = vi.fn()
+    const closeSidebar = vi.fn()
+    renderWithRegistry(
+      <ChatLayout
+        nav="session-list"
+        navParams={{ onClose: closeNav }}
+        center="chat"
+        sidebar="workbench-left"
+        sidebarParams={{ onClose: closeSidebar }}
+      />,
+      ["session-list", "chat", "workbench-left"],
+    )
+
+    fireShortcut("Escape")
+
+    expect(closeSidebar).toHaveBeenCalledOnce()
+    expect(closeNav).not.toHaveBeenCalled()
+  })
+
   it.each([
     {
       drawer: "session",
@@ -1173,8 +1193,10 @@ describe("ChatLayout component", () => {
     },
   ])("traps focus, closes with Escape, and restores the $drawer drawer trigger", async ({ drawer, dialogName, openButtonName }) => {
     const user = userEvent.setup()
+    const closeSurface = vi.fn()
     const panelRegistry = new PanelRegistry()
-    panelRegistry.register("empty", { title: "empty", lazy: false, component: DummyPanel })
+    panelRegistry.register("chat", { title: "chat", lazy: false, component: DummyPanel })
+    panelRegistry.register("artifact-surface", { title: "artifact-surface", lazy: false, component: DummyPanel })
     panelRegistry.register("drawer-focus", { title: "drawer-focus", lazy: false, component: DrawerFocusPanel })
     const commandRegistry = new CommandRegistry()
 
@@ -1185,7 +1207,9 @@ describe("ChatLayout component", () => {
         <>
           <button type="button" onClick={() => setOpen(true)}>{openButtonName}</button>
           <ChatLayout
-            center="empty"
+            center="chat"
+            surface="artifact-surface"
+            surfaceParams={{ onClose: closeSurface }}
             nav={isSession && open ? "drawer-focus" : null}
             onOpenNav={isSession ? () => setOpen(true) : undefined}
             navParams={isSession ? { drawer, onClose: () => setOpen(false) } : undefined}
@@ -1223,6 +1247,7 @@ describe("ChatLayout component", () => {
 
     fireEvent.keyDown(first, { key: "Escape" })
     await waitFor(() => expect(screen.queryByRole("dialog", { name: dialogName })).not.toBeInTheDocument())
+    expect(closeSurface).not.toHaveBeenCalled()
     expect(trigger).toHaveFocus()
   })
 

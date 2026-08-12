@@ -202,6 +202,13 @@ export function ChatLayout(props: ChatLayoutProps) {
     focusAgentComposer()
     scheduleComposerFocus()
   }, [chatCollapsed, closeNav, closeSurface, navOpen, setChatCollapsed, surfaceOpen])
+  const closeActiveDrawer = useCallback(() => {
+    if (sidebarOpen) {
+      closeSidebar?.()
+      return
+    }
+    closeNav?.()
+  }, [closeNav, closeSidebar, sidebarOpen])
 
   const suppressOverlayAutoExpandRef = useRef(false)
   const toggleChatCollapsed = useCallback(() => {
@@ -232,18 +239,16 @@ export function ChatLayout(props: ChatLayoutProps) {
       if (canControlSidebar) {
         shortcuts.push({ key: "3", mod: true, allowInEditable: true, handler: toggleSidebar })
       }
-      if (sidebarOpen && closeSidebar) {
-        shortcuts.push({ key: "Escape", allowInEditable: true, handler: () => closeSidebar() })
-      }
-      if (navOpen && closeNav && centerId !== "chat") {
-        shortcuts.push({ key: "Escape", allowInEditable: true, handler: () => closeNav() })
+      if ((sidebarOpen && closeSidebar) || (navOpen && closeNav)) {
+        shortcuts.push({ key: "Escape", allowInEditable: true, handler: closeActiveDrawer })
+      } else if (centerId === "chat") {
+        shortcuts.push({ key: "Escape", allowInEditable: true, handler: focusChat })
       }
       if (centerId === "chat") {
-        shortcuts.push({ key: "Escape", allowInEditable: true, handler: focusChat })
         shortcuts.push({ key: "\\", mod: true, allowInEditable: true, handler: toggleChatCollapsed })
       }
       return shortcuts
-    }, [canControlNav, canControlSidebar, canControlSurface, centerId, closeNav, closeSidebar, focusChat, navOpen, sidebarOpen, toggleChatCollapsed, toggleNav, toggleSidebar, toggleSurface]),
+    }, [canControlNav, canControlSidebar, canControlSurface, centerId, closeActiveDrawer, closeNav, closeSidebar, focusChat, navOpen, sidebarOpen, toggleChatCollapsed, toggleNav, toggleSidebar, toggleSurface]),
   })
 
   useEffect(() => {
