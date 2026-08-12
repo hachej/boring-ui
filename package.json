@@ -59,6 +59,7 @@
     "node": ">=22.19.0"
   },
   "devDependencies": {
+    "@blaxel/core": "0.3.11",
     "@playwright/test": "^1.62.0",
     "typescript": "^6.0.3"
   },
