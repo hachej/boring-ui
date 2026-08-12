@@ -21,6 +21,7 @@ import { WorkbenchOverlayFrame } from "./WorkbenchOverlayFrame"
 import { useViewportWidth } from "./useViewportWidth"
 import { isCompactViewport } from "./breakpoints"
 import { workspaceSessionRef, workspaceSessionRefFromKey, workspaceSessionRefsEqual } from "../sessionIdentity"
+import { useModalDrawer, useModalDrawerScrollLock } from "./useModalDrawer"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   const {
@@ -161,12 +162,15 @@ export function ChatLayout(props: ChatLayoutProps) {
   const shellRef = useRef<HTMLDivElement | null>(null)
   const navDrawerRef = useRef<HTMLElement | null>(null)
   const sidebarDrawerRef = useRef<HTMLElement | null>(null)
-  const scheduleLocalComposerFocus = useCallback(() => scheduleComposerFocus(shellRef.current), [])
+  const scheduleLocalComposerFocus = useCallback(() => {
+    const shell = shellRef.current
+    if (shell) scheduleComposerFocus(shell)
+  }, [])
   const navIsTopDrawer = navOpen && (mobileShell || !sidebarOpen)
   const sidebarIsTopDrawer = sidebarOpen && !navIsTopDrawer
-  useDrawerFocusTrap(navIsTopDrawer, navDrawerRef, scheduleLocalComposerFocus)
-  useDrawerFocusTrap(sidebarIsTopDrawer, sidebarDrawerRef, scheduleLocalComposerFocus)
-  useBodyScrollLock(navOpen || sidebarOpen)
+  useModalDrawer({ active: navIsTopDrawer, containerRef: navDrawerRef, onDismiss: closeNav, focusFallback: scheduleLocalComposerFocus, lifecycleKey: sidebarOpen })
+  useModalDrawer({ active: sidebarIsTopDrawer, containerRef: sidebarDrawerRef, onDismiss: closeSidebar, focusFallback: scheduleLocalComposerFocus, lifecycleKey: navOpen })
+  useModalDrawerScrollLock(navOpen || sidebarOpen)
   const canControlNav = navOpen ? Boolean(closeNav) : Boolean(props.onOpenNav)
   const canControlSurface = surfaceOpen ? Boolean(closeSurface) : Boolean(props.onOpenSurface)
   const canControlSidebar = sidebarOpen ? Boolean(closeSidebar) : Boolean(props.onOpenSidebar)
@@ -206,16 +210,6 @@ export function ChatLayout(props: ChatLayoutProps) {
     focusAgentComposer(shellRef.current)
     scheduleLocalComposerFocus()
   }, [chatCollapsed, closeNav, closeSurface, navOpen, scheduleLocalComposerFocus, setChatCollapsed, surfaceOpen])
-  const closeActiveDrawer = useCallback(() => {
-    const activeDrawer = sidebarIsTopDrawer ? sidebarDrawerRef.current : navDrawerRef.current
-    if (!activeDrawer || activeDrawerStack[activeDrawerStack.length - 1] !== activeDrawer) return
-    if (sidebarIsTopDrawer) {
-      closeSidebar?.()
-      return
-    }
-    closeNav?.()
-  }, [closeNav, closeSidebar, sidebarIsTopDrawer])
-
   const suppressOverlayAutoExpandRef = useRef(false)
   const toggleChatCollapsed = useCallback(() => {
     const collapsing = !chatCollapsed
@@ -245,16 +239,14 @@ export function ChatLayout(props: ChatLayoutProps) {
       if (canControlSidebar) {
         shortcuts.push({ key: "3", mod: true, allowInEditable: true, handler: toggleSidebar })
       }
-      if ((sidebarOpen && closeSidebar) || (navOpen && closeNav)) {
-        shortcuts.push({ key: "Escape", allowInEditable: true, handler: closeActiveDrawer })
-      } else if (centerId === "chat") {
+      if (!sidebarOpen && !navOpen && centerId === "chat") {
         shortcuts.push({ key: "Escape", allowInEditable: true, handler: focusChat })
       }
       if (centerId === "chat") {
         shortcuts.push({ key: "\\", mod: true, allowInEditable: true, handler: toggleChatCollapsed })
       }
       return shortcuts
-    }, [canControlNav, canControlSidebar, canControlSurface, centerId, closeActiveDrawer, closeNav, closeSidebar, focusChat, navOpen, sidebarOpen, toggleChatCollapsed, toggleNav, toggleSidebar, toggleSurface]),
+    }, [canControlNav, canControlSidebar, canControlSurface, centerId, focusChat, navOpen, sidebarOpen, toggleChatCollapsed, toggleNav, toggleSidebar, toggleSurface]),
   })
 
   useEffect(() => {
@@ -728,120 +720,6 @@ export function ChatLayout(props: ChatLayoutProps) {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n))
-}
-
-const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-
-/**
- * Lightweight Radix-free dialog behavior for a persistently-mounted drawer
- * `<aside>` that toggles open/closed via CSS width (see the session/workbench
- * drawers below). On open: moves focus into the drawer and traps Tab/Shift+Tab
- * within it. On close: restores focus to whatever was focused before opening.
- * Escape is left to the caller (drawers here are closed via the shell's
- * existing Escape shortcut wiring so focus-trap scope and shortcut precedence
- * stay centralized in one place).
- */
-const activeDrawerStack: HTMLElement[] = []
-
-function useDrawerFocusTrap(
-  open: boolean,
-  containerRef: { current: HTMLElement | null },
-  focusFallback?: () => void,
-): void {
-  const previouslyFocusedRef = useRef<HTMLElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const container = containerRef.current
-    if (container) activeDrawerStack.push(container)
-    const firstFocusable = container?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
-    ;(firstFocusable ?? container)?.focus({ preventScroll: true })
-
-    return () => {
-      if (container) {
-        const stackIndex = activeDrawerStack.lastIndexOf(container)
-        if (stackIndex >= 0) activeDrawerStack.splice(stackIndex, 1)
-      }
-      const target = previouslyFocusedRef.current
-      if (target && target !== document.body && document.contains(target)) {
-        target.focus({ preventScroll: true })
-      } else {
-        const activeElement = document.activeElement
-        if (activeElement instanceof HTMLElement && container?.contains(activeElement)) activeElement.blur()
-        focusFallback?.()
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
-
-  useEffect(() => {
-    if (!open) return
-    const container = containerRef.current
-    if (!container) return
-
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key !== "Tab") return
-      const focusables = Array.from(container!.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-        (el) => el.offsetParent !== null,
-      )
-      if (focusables.length === 0) {
-        e.preventDefault()
-        container!.focus({ preventScroll: true })
-        return
-      }
-      const first = focusables[0]
-      const last = focusables[focusables.length - 1]
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault()
-        last.focus({ preventScroll: true })
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault()
-        first.focus({ preventScroll: true })
-      }
-    }
-
-    let focusRedirectFrame: number | null = null
-    function handleFocusIn(e: FocusEvent) {
-      if (e.target instanceof Node && container!.contains(e.target)) return
-      if (focusRedirectFrame !== null) window.cancelAnimationFrame(focusRedirectFrame)
-      focusRedirectFrame = window.requestAnimationFrame(() => {
-        focusRedirectFrame = null
-        const firstFocusable = Array.from(container!.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).find(
-          (el) => el.offsetParent !== null,
-        )
-        ;(firstFocusable ?? container)!.focus({ preventScroll: true })
-      })
-    }
-
-    container.addEventListener("keydown", handleKeyDown)
-    document.addEventListener("focusin", handleFocusIn)
-    return () => {
-      if (focusRedirectFrame !== null) window.cancelAnimationFrame(focusRedirectFrame)
-      container.removeEventListener("keydown", handleKeyDown)
-      document.removeEventListener("focusin", handleFocusIn)
-    }
-  }, [open])
-}
-
-let bodyScrollLockCount = 0
-let bodyOverflowBeforeFirstLock = ""
-
-/** Locks document body scroll while any ChatLayout drawer is open. */
-function useBodyScrollLock(locked: boolean): void {
-  useEffect(() => {
-    if (!locked) return
-    if (bodyScrollLockCount === 0) {
-      bodyOverflowBeforeFirstLock = document.body.style.overflow
-      document.body.style.overflow = "hidden"
-    }
-    bodyScrollLockCount += 1
-    return () => {
-      bodyScrollLockCount -= 1
-      if (bodyScrollLockCount === 0) document.body.style.overflow = bodyOverflowBeforeFirstLock
-    }
-  }, [locked])
 }
 
 type StoredNumberUpdate = number | ((previous: number) => number)

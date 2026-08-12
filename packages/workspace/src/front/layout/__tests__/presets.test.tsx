@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { useEffect, useState } from "react"
 import userEvent from "@testing-library/user-event"
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@hachej/boring-ui-kit"
 import { buildIdeLayout } from "../IdeLayout"
 import { buildChatLayout } from "../ChatLayout"
 import { RegistryProvider } from "../../registry"
@@ -38,6 +39,23 @@ function DrawerFocusPanel({ params }: { params?: Record<string, unknown> }) {
       <button type="button">{drawer} last action</button>
     </div>
   )
+}
+
+function NestedDialogPanel() {
+  return (
+    <Dialog>
+      <DialogTrigger>Open nested dialog</DialogTrigger>
+      <DialogContent>
+        <DialogTitle>Nested confirmation</DialogTitle>
+        <DialogDescription>Confirm without closing the drawer.</DialogDescription>
+        <button type="button">Nested action</button>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ComposerPanel() {
+  return <textarea name="message" aria-label="Chat composer" />
 }
 
 function WorkbenchHostControlProbe({ params }: { params?: Record<string, unknown> }) {
@@ -428,6 +446,13 @@ describe("IdeLayout responsive behavior", () => {
 
 describe("ChatLayout component", () => {
   beforeEach(() => { vi.restoreAllMocks() })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+    setViewport(1280)
+    document.body.removeAttribute("style")
+    document.body.removeAttribute("data-scroll-locked")
+  })
 
   it("renders main-style flex chrome", () => {
     const { container } = renderWithRegistry(
@@ -593,7 +618,7 @@ describe("ChatLayout component", () => {
 
     fireShortcut("1", { metaKey: true })
     fireShortcut("2", { metaKey: true })
-    fireShortcut("Escape")
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Session browser" }), { key: "Escape" })
 
     expect(closeNav).toHaveBeenCalledTimes(2)
     expect(closeSurface).toHaveBeenCalledOnce()
@@ -1175,7 +1200,7 @@ describe("ChatLayout component", () => {
       ["session-list", "chat", "workbench-left"],
     )
 
-    fireShortcut("Escape")
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Workbench left panel" }), { key: "Escape" })
 
     expect(closeSidebar).toHaveBeenCalledOnce()
     expect(closeNav).not.toHaveBeenCalled()
@@ -1197,7 +1222,7 @@ describe("ChatLayout component", () => {
       ["session-list", "chat", "workbench-left"],
     )
 
-    fireShortcut("Escape")
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Session browser" }), { key: "Escape" })
 
     expect(closeNav).toHaveBeenCalledOnce()
     expect(closeSidebar).not.toHaveBeenCalled()
@@ -1235,10 +1260,9 @@ describe("ChatLayout component", () => {
     const workbenchFirst = screen.getByRole("button", { name: "workbench first action" })
     expect(workbenchFirst).toHaveFocus()
     screen.getByRole("button", { name: "session first action" }).focus()
-    const workbenchDialog = screen.getByRole("dialog", { name: "Workbench left panel" })
-    await waitFor(() => expect(workbenchDialog).toContainElement(document.activeElement as HTMLElement))
     await user.keyboard("{Meta>}1{/Meta}")
-    expect(screen.getByRole("dialog", { name: "Workbench left panel" })).toContainElement(document.activeElement as HTMLElement)
+    expect(screen.getByLabelText("Session browser")).toHaveAttribute("data-boring-state", "collapsed")
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Workbench left panel" })).toContainElement(document.activeElement as HTMLElement))
   })
 
   it.each([
@@ -1312,32 +1336,85 @@ describe("ChatLayout component", () => {
     expect(trigger).toHaveFocus()
   })
 
-  it("Escape only closes the drawer that owns focus across multiple ChatLayout shells", () => {
-    const closeFirst = vi.fn()
-    const closeSecond = vi.fn()
-    renderWithRegistry(<ChatLayout center="empty" navParams={{ onClose: closeFirst }} />, ["session-list", "empty"])
-    renderWithRegistry(<ChatLayout center="empty" navParams={{ onClose: closeSecond }} />, ["session-list", "empty"])
-    const dialogs = screen.getAllByRole("dialog", { name: "Session browser" })
-    dialogs[1].focus()
+  it("keeps focus in a nested portaled dialog and lets Escape close it before the drawer", async () => {
+    const user = userEvent.setup()
+    const closeNav = vi.fn()
+    const { panelRegistry } = renderWithPanelRegistry(
+      <ChatLayout center="empty" nav="nested-dialog" navParams={{ onClose: closeNav }} />,
+      ["empty"],
+    )
+    act(() => {
+      panelRegistry.register("nested-dialog", { title: "nested-dialog", lazy: false, component: NestedDialogPanel })
+    })
 
-    fireShortcut("Escape")
+    await user.click(await screen.findByRole("button", { name: "Open nested dialog" }))
+    const nestedDialog = screen.getByRole("dialog", { name: "Nested confirmation" })
+    const nestedAction = screen.getByRole("button", { name: "Nested action" })
+    nestedAction.focus()
+    await act(async () => {
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+    })
 
-    expect(closeFirst).not.toHaveBeenCalled()
-    expect(closeSecond).toHaveBeenCalledOnce()
+    expect(nestedDialog).toContainElement(document.activeElement as HTMLElement)
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Nested confirmation" })).not.toBeInTheDocument())
+    expect(screen.getByRole("dialog", { name: "Session browser" })).toBeInTheDocument()
+    expect(closeNav).not.toHaveBeenCalled()
   })
 
-  it("keeps body scrolling locked across multiple ChatLayout shells", () => {
-    const previousOverflow = "clip"
-    document.body.style.overflow = previousOverflow
-    const first = renderWithRegistry(<ChatLayout center="empty" />, ["session-list", "empty"])
-    const second = renderWithRegistry(<ChatLayout center="empty" />, ["session-list", "empty"])
+  it("does not schedule focus ping-pong when two ChatLayout shells are open", async () => {
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame")
+    renderWithRegistry(<ChatLayout center="empty" nav="drawer-focus" />, ["drawer-focus", "empty"])
+    renderWithRegistry(<ChatLayout center="empty" nav="drawer-focus" />, ["drawer-focus", "empty"])
+    requestFrame.mockClear()
+    const secondDrawer = screen.getAllByRole("dialog", { name: "Session browser" })[1]
 
-    expect(document.body.style.overflow).toBe("hidden")
-    first.unmount()
-    expect(document.body.style.overflow).toBe("hidden")
-    second.unmount()
-    expect(document.body.style.overflow).toBe(previousOverflow)
-    document.body.style.overflow = ""
+    secondDrawer.focus()
+    await act(async () => { await Promise.resolve() })
+
+    expect(secondDrawer).toHaveFocus()
+    expect(requestFrame).not.toHaveBeenCalled()
+  })
+
+  it("falls back to the local composer when the drawer opener unmounts without delayed focus theft", async () => {
+    vi.useFakeTimers()
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("chat", { title: "chat", lazy: false, component: ComposerPanel })
+    panelRegistry.register("drawer-focus", { title: "drawer-focus", lazy: false, component: DrawerFocusPanel })
+    const commandRegistry = new CommandRegistry()
+
+    function Host() {
+      const [open, setOpen] = useState(false)
+      return (
+        <>
+          {open ? null : <button type="button" onClick={() => setOpen(true)}>Open transient drawer</button>}
+          <button type="button">Later interaction</button>
+          <ChatLayout
+            center="chat"
+            nav={open ? "drawer-focus" : null}
+            navParams={{ drawer: "session", onClose: () => setOpen(false) }}
+          />
+        </>
+      )
+    }
+
+    render(
+      <WorkspaceProvider agentTypeId="default" persistenceEnabled={false}>
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+          <Host />
+        </RegistryProvider>
+      </WorkspaceProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Open transient drawer" }))
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Session browser" }), { key: "Escape" })
+    await act(async () => { await vi.advanceTimersByTimeAsync(20) })
+    expect(screen.getByRole("textbox", { name: "Chat composer" })).toHaveFocus()
+
+    const laterInteraction = screen.getByRole("button", { name: "Later interaction" })
+    laterInteraction.focus()
+    await act(async () => { await vi.advanceTimersByTimeAsync(400) })
+    expect(laterInteraction).toHaveFocus()
   })
 
   it("keeps body scrolling locked until both modal drawers close", async () => {
@@ -1376,6 +1453,5 @@ describe("ChatLayout component", () => {
     expect(document.body.style.overflow).toBe(previousOverflow)
 
     result.unmount()
-    document.body.style.overflow = ""
   })
 })
