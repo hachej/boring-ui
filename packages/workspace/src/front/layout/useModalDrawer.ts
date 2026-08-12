@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react"
+import { useEffect, useRef, type RefObject } from "react"
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -23,6 +23,11 @@ export function useModalDrawer({
   focusFallback,
   lifecycleKey,
 }: ModalDrawerOptions): void {
+  const onDismissRef = useRef(onDismiss)
+  const focusFallbackRef = useRef(focusFallback)
+  onDismissRef.current = onDismiss
+  focusFallbackRef.current = focusFallback
+
   useEffect(() => {
     if (!active) return
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -32,12 +37,19 @@ export function useModalDrawer({
     const firstFocusable = container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
     ;(firstFocusable ?? container).focus({ preventScroll: true })
 
+    const observer = new MutationObserver(() => {
+      if (document.activeElement !== document.body || !container.isConnected) return
+      const nextFocusable = container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
+      ;(nextFocusable ?? container).focus({ preventScroll: true })
+    })
+    observer.observe(container, { childList: true, subtree: true })
+
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        if (!onDismiss) return
+        if (!onDismissRef.current) return
         event.preventDefault()
         event.stopPropagation()
-        onDismiss()
+        onDismissRef.current()
         return
       }
       if (event.key !== "Tab") return
@@ -64,6 +76,7 @@ export function useModalDrawer({
 
     container.addEventListener("keydown", handleKeyDown)
     return () => {
+      observer.disconnect()
       container.removeEventListener("keydown", handleKeyDown)
       if (previouslyFocused && previouslyFocused !== document.body && document.contains(previouslyFocused)) {
         previouslyFocused.focus({ preventScroll: true })
@@ -72,9 +85,9 @@ export function useModalDrawer({
       if (container.contains(document.activeElement)) {
         ;(document.activeElement as HTMLElement).blur()
       }
-      if (container.isConnected) focusFallback?.()
+      if (container.isConnected) focusFallbackRef.current?.()
     }
-  }, [active, containerRef, focusFallback, lifecycleKey, onDismiss])
+  }, [active, containerRef, lifecycleKey])
 }
 
 /** Locks body scroll only for the owning ChatLayout shell. */
