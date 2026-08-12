@@ -43,7 +43,7 @@ const skills = [
   },
 ]
 
-/** Route the two fan-out requests to their own payloads. */
+/** Route the shared skills/tools fan-out to its own payloads. */
 function respondWith({ skills: skillsPayload, tools: toolsPayload }: {
   skills?: unknown
   tools?: unknown
@@ -139,6 +139,7 @@ describe("AgentPage skills section", () => {
       "/api/v1/agents/default/tools?refresh=1",
       expect.objectContaining({ missingMessage: expect.any(String) }),
     )
+    expect(mocks.getJson.mock.calls.every(([path]) => /\/(skills|tools)(\?refresh=1)?$/.test(path))).toBe(true)
   })
 
   it("describes the surface as skills and tools in the header", async () => {
