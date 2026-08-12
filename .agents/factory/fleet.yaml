@@ -10,8 +10,9 @@
 # A stale pin silently DROPS that seat and keeps the fleet — repin in the same
 # commit as any .agents/skills/<name>/SKILL.md edit.
 #
-# Model per seat is NOT set here — it resolves at boot from policy.yaml's
-# `models.seats` tier through the MODEL-CARD priority table. Per-session and
+# Model per seat resolves at boot from policy.yaml's `models.seats` tier
+# through the priority-ordered concrete candidates below. Keep seat policy in
+# policy.yaml; update provider/model availability here. Per-session and
 # per-automation model choice happens at dispatch (#1143), never here.
 #
 # Roster: THREE seats, owner-ratified 2026-08-10 (gh-1187 S0). A seat is
@@ -22,6 +23,37 @@
 # .../agentDefinition/__tests__/fixtures/deferred-personas/. Adding one back =
 # restore the package under .agents/personas/ plus an entry in this list.
 
+
+models:
+  tiers:
+    T1:
+      - provider: anthropic
+        id: claude-fable-5
+        envVar: ANTHROPIC_API_KEY
+      - provider: google
+        id: gemini-3.1-pro-preview
+        envVar: GEMINI_API_KEY
+    T2:
+      - provider: anthropic
+        id: claude-opus-4-8
+        envVar: ANTHROPIC_API_KEY
+      - provider: google
+        id: gemini-3.1-pro-preview
+        envVar: GEMINI_API_KEY
+    T3:
+      - provider: anthropic
+        id: claude-sonnet-4-6
+        envVar: ANTHROPIC_API_KEY
+      - provider: google
+        id: gemini-3-pro-preview
+        envVar: GEMINI_API_KEY
+    T4:
+      - provider: anthropic
+        id: claude-haiku-4-5-20251001
+        envVar: ANTHROPIC_API_KEY
+      - provider: google
+        id: gemini-3.5-flash
+        envVar: GEMINI_API_KEY
 
 seats:
   # Continuous background classification of incoming work. Runs on a cadence,

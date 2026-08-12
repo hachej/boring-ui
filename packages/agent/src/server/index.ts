@@ -99,7 +99,6 @@ export type {
 export {
   FleetConfigError,
   loadConfiguredAgentFleet,
-  MODEL_TIER_CANDIDATES,
 } from './agentDefinition/loadConfiguredAgentFleet'
 export type {
   DiscoveredAgentPackageDescriptor,
