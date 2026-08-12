@@ -7,6 +7,7 @@ export type SandboxProviderId =
   | "readonly"
   | "direct"
   | "bwrap"
+  | "blaxel"
   | "vercel-sandbox"
   | "remote-worker";
 
@@ -15,6 +16,7 @@ export type RuntimeModeId =
   | "readonly"
   | "direct"
   | "local"
+  | "blaxel"
   | "vercel-sandbox"
   | "remote-worker";
 
@@ -77,6 +79,21 @@ export const PROVIDER_CAPABILITIES = {
     hardening: "process",
     filesystemPersistence: "durable",
   },
+  blaxel: {
+    fs: "readwrite",
+    exec: true,
+    realBash: "unknown",
+    realBinaries: true,
+    networkIsolation: "provider",
+    watch: true,
+    search: true,
+    sourceOfTruth: "sandbox-primary",
+    provisioningSupport: true,
+    providerContractVersion: PROVIDER_CONTRACT_VERSION,
+    runtimeImage: true,
+    hardening: "provider",
+    filesystemPersistence: "provider",
+  },
   "vercel-sandbox": {
     fs: "readwrite",
     exec: true,
@@ -114,6 +131,7 @@ export const MODE_TO_PROVIDER = {
   readonly: "readonly",
   direct: "direct",
   local: "bwrap",
+  blaxel: "blaxel",
   "vercel-sandbox": "vercel-sandbox",
   "remote-worker": "remote-worker",
 } as const satisfies Record<RuntimeModeId, SandboxProviderId>;

@@ -23,6 +23,7 @@ export {
 }
 
 type SafePaletteState = {
+  workspaceReady: boolean
   dialogVisible: boolean
   inputFocused: boolean
   mode: string
@@ -36,7 +37,6 @@ type SafePaletteState = {
   focusedControlInvalid: boolean
   undersizedTouchTargets: string[]
   lastActionWasPaletteOpen: boolean
-  lastActionWasWait: boolean
   lastActionWasInitial: boolean
   controls: Array<{ name: string; point: Point }>
 }
@@ -55,6 +55,13 @@ const palette = extract((state): SafePaletteState => {
     element.getAttribute("aria-label") ?? element.textContent ?? ""
   ).replace(/\s+/g, " ").trim()
   const visibleElements = (selector: string): Element[] => Array.from(state.document.querySelectorAll(selector)).filter(visible)
+  const completedResources = state.window.performance.getEntriesByType("resource")
+    .map((entry) => entry.name)
+  const workspaceReady = state.document.fonts.status === "loaded"
+    && Boolean(state.document.querySelector('main[aria-label="Chat"]'))
+    && completedResources.some((url) => url.includes("/api/v1/agents"))
+    && completedResources.some((url) => url.includes("/api/v1/tree"))
+    && completedResources.some((url) => url.includes("/api/v1/ui/state"))
   const dialogs = visibleElements('[role="dialog"], [aria-modal="true"]')
     .filter((element, index, all) => all.indexOf(element) === index)
   const dialog = dialogs[0] ?? null
@@ -80,7 +87,7 @@ const palette = extract((state): SafePaletteState => {
     })
   }
 
-  if (!dialog) {
+  if (!dialog && workspaceReady) {
     for (const search of searchControls) maybeAdd(search, false)
   }
   if (dialog && visible(dialog)) {
@@ -116,13 +123,13 @@ const palette = extract((state): SafePaletteState => {
     && state.lastAction !== null
     && "Click" in state.lastAction
     && state.lastAction.Click.name === "open-command-palette"
-  const lastActionWasWait = state.lastAction === "Wait"
   const lastActionWasInitial = state.lastAction === null || state.lastAction === undefined
   const input = dialog?.querySelector("input") as HTMLInputElement | null
   const text = dialog?.textContent?.replace(/\s+/g, " ").trim() ?? ""
   const selectedMode = Array.from(dialog?.querySelectorAll('button[aria-pressed="true"]') ?? [])
     .map(normalizedText)[0] ?? "none"
   return {
+    workspaceReady,
     dialogVisible: Boolean(dialog && visible(dialog)),
     inputFocused: active instanceof HTMLInputElement && Boolean(dialog?.contains(active)),
     mode: selectedMode,
@@ -136,7 +143,6 @@ const palette = extract((state): SafePaletteState => {
     focusedControlInvalid,
     undersizedTouchTargets,
     lastActionWasPaletteOpen,
-    lastActionWasWait,
     lastActionWasInitial,
     controls: allowed,
   }
@@ -155,16 +161,16 @@ export const command_palette_focus_stays_visible = always(() => !palette.current
 export const command_palette_mobile_touch_targets_are_sized = always(() => palette.current.undersizedTouchTargets.length === 0)
 
 export const commandPaletteSafeActions = actions((): Action[] => {
-  if (palette.current.lastActionWasInitial) return ["Wait"]
+  if (!palette.current.workspaceReady || palette.current.lastActionWasInitial) return ["Wait"]
   const openPalette = palette.current.controls.find((control) => control.name === "open-command-palette")
   if (!palette.current.dialogVisible && openPalette) {
     const click: Action = { Click: { name: openPalette.name, point: openPalette.point } }
-    return palette.current.lastActionWasWait ? [click] : ["Wait", click]
+    return ["Wait", click]
   }
   const openNavigation = palette.current.controls.find((control) => control.name === "open-app-navigation")
   if (!palette.current.dialogVisible && openNavigation) {
     const click: Action = { Click: { name: openNavigation.name, point: openNavigation.point } }
-    return palette.current.lastActionWasWait ? [click] : ["Wait", click]
+    return ["Wait", click]
   }
   if (palette.current.dialogVisible && palette.current.lastActionWasPaletteOpen) return ["Wait"]
   const generated: Action[] = ["Wait"]

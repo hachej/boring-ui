@@ -207,7 +207,12 @@ export type ReasoningContentProps = ComponentProps<
   children: string;
 };
 
-const streamdownPlugins = { cjk, code, math, mermaid };
+// Streamdown and @streamdown/code can resolve different Shiki minors, whose
+// generated BundledLanguage unions are structurally compatible at runtime but
+// not assignable across package instances.
+const streamdownPlugins = { cjk, code, math, mermaid } as unknown as NonNullable<
+  ComponentProps<typeof Streamdown>["plugins"]
+>;
 
 export const ReasoningContent = memo(
   ({ className, children, ...props }: ReasoningContentProps) => (

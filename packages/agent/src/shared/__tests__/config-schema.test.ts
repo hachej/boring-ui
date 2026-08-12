@@ -10,6 +10,7 @@ describe("RuntimeModeSchema", () => {
   it("accepts valid modes", () => {
     expect(RuntimeModeSchema.parse("direct")).toBe("direct")
     expect(RuntimeModeSchema.parse("local")).toBe("local")
+    expect(RuntimeModeSchema.parse("blaxel")).toBe("blaxel")
     expect(RuntimeModeSchema.parse("vercel-sandbox")).toBe("vercel-sandbox")
   })
 
@@ -109,6 +110,20 @@ describe("EnvSchema", () => {
     expect(result.VERCEL_TEAM_ID).toBe("team_abc")
     expect(result.VERCEL_PROJECT_ID).toBe("prj_abc")
     expect(result.BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS).toBe(2700000)
+  })
+
+  it("accepts and coerces Blaxel runtime fields", () => {
+    const result = EnvSchema.parse({
+      BORING_AGENT_MODE: "blaxel",
+      BL_WORKSPACE: "workspace",
+      BL_API_KEY: "secret",
+      BORING_BLAXEL_REGION: "eu-fra-1",
+      BORING_BLAXEL_MEMORY_MB: "4096",
+      BORING_BLAXEL_VOLUME_SIZE_MB: "2048",
+    })
+    expect(result.BORING_AGENT_MODE).toBe("blaxel")
+    expect(result.BORING_BLAXEL_MEMORY_MB).toBe(4096)
+    expect(result.BORING_BLAXEL_VOLUME_SIZE_MB).toBe(2048)
   })
 
   it("coerces BORING_AGENT_SNAPSHOT_KEEP to number", () => {

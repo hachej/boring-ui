@@ -37,6 +37,10 @@
       "types": "./dist/providers/node-workspace/index.d.ts",
       "import": "./dist/providers/node-workspace/index.js"
     },
+    "./providers/blaxel": {
+      "types": "./dist/providers/blaxel/index.d.ts",
+      "import": "./dist/providers/blaxel/index.js"
+    },
     "./providers/vercel-sandbox": {
       "types": "./dist/providers/vercel-sandbox/index.d.ts",
       "import": "./dist/providers/vercel-sandbox/index.js"
@@ -63,9 +67,11 @@
     "test:runsc:integration": "node ./scripts/integrate-docker-runsc-runtime.mjs",
     "measure:coldstart:latency": "node ./scripts/measure-cold-start-latency.mjs",
     "test": "vitest run --passWithNoTests",
+    "test:blaxel:live": "node ../../scripts/blaxel-adapter-smoke.mjs",
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "dependencies": {
+    "@blaxel/core": "0.3.11",
     "@vercel/blob": "^2.5.0",
     "@vercel/sandbox": "2.9.2",
     "chokidar": "^5.0.0",

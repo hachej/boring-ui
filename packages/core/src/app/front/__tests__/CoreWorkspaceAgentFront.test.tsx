@@ -166,7 +166,7 @@ describe('CoreWorkspaceAgentFront', () => {
       },
       bootPreloadPaths: ['/custom-preload'],
     })
-  }, 10_000)
+  }, 15_000) // Cold Core composition can exceed 10s under full-suite CI load.
 
   it('allows apps to suppress the default workspace switcher', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
