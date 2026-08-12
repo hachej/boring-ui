@@ -1579,11 +1579,12 @@ slices so each commit remains type-checkable and testable.
 9. Review remote-mode plugin discovery/bypass conditions currently written only
    for Vercel. Express them by placement/capability or include Blaxel explicitly.
 10. Update runtime/package docs, `.env.example`, and deploy docs.
-11. `apps/full-app/src/server/productionSafety.ts` currently allows only
-    `vercel-sandbox`. Do **not** silently add Blaxel. Add it to the production-safe
-    allowlist only after live conformance, persistent Volume recovery, and a
-    documented security decision pass; until then it remains opt-in behind the
-    existing unsafe override.
+11. `apps/full-app/src/server/productionSafety.ts` initially allowed only
+    `vercel-sandbox`. Add Blaxel to the production-safe allowlist only after live
+    conformance, persistent Volume recovery, and a documented security decision
+    pass. **Implementation outcome:** those gates passed and the owner approved
+    Blaxel as an EU production provider in PR #1236, so it is allowlisted without
+    the unsafe override.
 
 The source scan found the concrete non-document production surfaces which need a
 decision or edit: `packages/agent/host/sandbox.ts`,
@@ -1670,7 +1671,7 @@ global SDK configuration.
      inference;
    - agent e2e helper accepts the Blaxel mode;
    - no 15-second filesystem health probe is configured;
-   - production safety stays blocked until the explicit gate is approved.
+   - production safety accepts Blaxel after the explicit gate is approved.
 
 Use the existing shared suites at
 `packages/agent/src/__tests__/conformance/workspace.ts` and
@@ -1791,5 +1792,5 @@ time.
   runtime docs and error output.
 - No credential is logged, committed, or required by static tests.
 - Pair disposal/invalidation never deletes durable remote state.
-- Production safety remains gated until the explicit security/persistence gate is
-  accepted.
+- Production safety accepts Blaxel only after the explicit security/persistence
+  gate is accepted; PR #1236 records that approval after the live proof passed.
