@@ -20,6 +20,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 import { ErrorCode } from '@hachej/boring-agent/shared'
 
 import { loadBoringFactoryAgents, type BoringFactoryRole } from './factoryAgents'
+import { resolvePlaygroundDefaultAgentTypeId } from '../shared/playgroundAgents'
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../..')
 // The ratified 3-seat roster (gh-1187 S0), in fleet.yaml order.
@@ -52,8 +53,11 @@ async function expectedInstructions(role: string, skills: readonly string[]): Pr
 describe('loadBoringFactoryAgents (loader against the real .agents/ tree)', () => {
   test('composes exactly the independently expected canonical skills in deterministic order', async () => {
     const agents = await loadBoringFactoryAgents({ workspaceRoot: REPOSITORY_ROOT })
+    const defaultAgentTypeId = resolvePlaygroundDefaultAgentTypeId(agents)
 
     expect(agents.map((agent) => agent.agentTypeId)).toEqual(EXPECTED.map(({ id }) => id))
+    expect(defaultAgentTypeId).toBe(EXPECTED[0].id)
+    expect(agents.some((agent) => agent.agentTypeId === defaultAgentTypeId)).toBe(true)
     for (const [index, expected] of EXPECTED.entries()) {
       const agent = agents[index]
       if (!agent || 'legacyDefault' in agent) throw new Error('factory agent must be configured')
