@@ -11,49 +11,13 @@ import { AGENT_USER_FILESYSTEM_ID } from '../agent-host/types'
 import type { AgentInstructionFileRef, ConfiguredAgentHostAgentSpec } from '../agent-host/types'
 import type { Sha256Digest } from '../../shared/digest'
 
-/**
- * Tier → seat-eligible-model priority. Hand-maintained per
- * docs/procedures/MODEL-CARD.md's priority-ordered tier table — deliberately
- * NOT parsed from the markdown (the card is prose/rationale, this is the
- * compiled fact). Keep the two in sync by hand when the card changes.
- *
- * Only models that can hold a pi-native AgentHost seat are listed. The card's
- * Sol (codex-exec cross-model pass) and Terra/Luna (codex bulk/mechanical)
- * are explicitly out — the card states they "cannot hold a seat" / "cannot
- * hold a pi session".
- *
- * Each tier is PRIORITY-ORDERED and resolution takes the first candidate whose
- * `envVar` is present in the host process, so the fallback is a funding
- * fallback: a host with no Anthropic key still seats every tier on the
- * provider it can actually pay for. Before gh-1187 S0 this map was
- * Anthropic-only, which meant a Google-funded instance composed every seat
- * with NO resolved model and silently fell through to the host default — the
- * tier ladder in policy.yaml was decorative there (#1195).
- */
 export interface ModelTierCandidate {
   readonly provider: string
   readonly id: string
   readonly envVar: string
 }
 
-export const MODEL_TIER_CANDIDATES: Readonly<Record<string, readonly ModelTierCandidate[]>> = Object.freeze({
-  T1: [
-    { provider: 'anthropic', id: 'claude-fable-5', envVar: 'ANTHROPIC_API_KEY' },
-    { provider: 'google', id: 'gemini-3.1-pro-preview', envVar: 'GEMINI_API_KEY' },
-  ],
-  T2: [
-    { provider: 'anthropic', id: 'claude-opus-4-8', envVar: 'ANTHROPIC_API_KEY' },
-    { provider: 'google', id: 'gemini-3.1-pro-preview', envVar: 'GEMINI_API_KEY' },
-  ],
-  T3: [
-    { provider: 'anthropic', id: 'claude-sonnet-4-6', envVar: 'ANTHROPIC_API_KEY' },
-    { provider: 'google', id: 'gemini-3-pro-preview', envVar: 'GEMINI_API_KEY' },
-  ],
-  T4: [
-    { provider: 'anthropic', id: 'claude-haiku-4-5-20251001', envVar: 'ANTHROPIC_API_KEY' },
-    { provider: 'google', id: 'gemini-3.5-flash', envVar: 'GEMINI_API_KEY' },
-  ],
-})
+type ModelTierCandidates = Readonly<Record<string, readonly ModelTierCandidate[]>>
 
 export interface FleetSkillBinding {
   readonly name: string
@@ -185,6 +149,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
 const SHA256_RE = /^sha256:[0-9a-f]{64}$/
 
 function parseFleetConfig(raw: unknown, path: string): readonly FleetSeatBinding[] {
@@ -217,6 +185,45 @@ function parseFleetConfig(raw: unknown, path: string): readonly FleetSeatBinding
   })
 }
 
+const ENV_VAR_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+export function parseModelTierCandidates(raw: unknown, path: string): ModelTierCandidates {
+  const name = basename(path)
+  const models = isRecord(raw) ? raw.models : undefined
+  const tiers = isRecord(models) ? models.tiers : undefined
+  if (!isRecord(tiers) || Object.keys(tiers).length === 0) {
+    throw new FleetConfigError({
+      field: 'models.tiers',
+      message: `${name} must declare a non-empty "models.tiers" mapping`,
+    })
+  }
+
+  const result: Record<string, readonly ModelTierCandidate[]> = {}
+  for (const [tier, entries] of Object.entries(tiers)) {
+    if (!Array.isArray(entries) || entries.length === 0) {
+      throw new FleetConfigError({
+        field: `models.tiers.${tier}`,
+        message: `${name} models.tiers.${tier} must be a non-empty candidate array`,
+      })
+    }
+    result[tier] = Object.freeze(entries.map((entry, index) => {
+      if (
+        !isRecord(entry) ||
+        !isNonBlankString(entry.provider) ||
+        !isNonBlankString(entry.id) ||
+        typeof entry.envVar !== 'string' || !ENV_VAR_RE.test(entry.envVar)
+      ) {
+        throw new FleetConfigError({
+          field: `models.tiers.${tier}[${index}]`,
+          message: `${name} models.tiers.${tier}[${index}] must have non-empty provider and id strings plus a valid envVar`,
+        })
+      }
+      return Object.freeze({ provider: entry.provider, id: entry.id, envVar: entry.envVar })
+    }))
+  }
+  return Object.freeze(result)
+}
+
 function parseSeatTiers(raw: unknown): Readonly<Record<string, string>> {
   if (!isRecord(raw)) return Object.freeze({})
   const models = raw.models
@@ -228,6 +235,22 @@ function parseSeatTiers(raw: unknown): Readonly<Record<string, string>> {
     if (typeof tier === 'string') result[seat] = tier
   }
   return Object.freeze(result)
+}
+
+function validateSeatTierCandidates(
+  seatTiers: Readonly<Record<string, string>>,
+  modelTierCandidates: ModelTierCandidates,
+  fleetConfigPath: string,
+  policyPath: string,
+): void {
+  for (const [seat, tier] of Object.entries(seatTiers)) {
+    if (modelTierCandidates[tier] === undefined) {
+      throw new FleetConfigError({
+        field: `models.tiers.${tier}`,
+        message: `${basename(policyPath)} models.seats.${seat} references tier ${JSON.stringify(tier)}, which is missing from ${basename(fleetConfigPath)} models.tiers`,
+      })
+    }
+  }
 }
 
 async function readYamlFile(path: string, field: string): Promise<unknown> {
@@ -248,10 +271,14 @@ async function readYamlFile(path: string, field: string): Promise<unknown> {
   }
 }
 
-/** First available model in `tier`, or undefined if no candidate's API key is present. */
-function resolveSeatModel(tier: string | undefined, env: NodeJS.ProcessEnv): string | undefined {
+/** First configured model in `tier` whose API key is present, otherwise undefined. */
+export function resolveSeatModel(
+  tier: string | undefined,
+  env: NodeJS.ProcessEnv,
+  modelTierCandidates: ModelTierCandidates,
+): string | undefined {
   if (tier === undefined) return undefined
-  const candidates = MODEL_TIER_CANDIDATES[tier]
+  const candidates = modelTierCandidates[tier]
   if (!candidates) return undefined
   for (const candidate of candidates) {
     if (env[candidate.envVar]) return `${candidate.provider}:${candidate.id}`
@@ -296,8 +323,8 @@ async function packageSkillContent(packageRoot: string, skill: FleetSkillBinding
 /**
  * Loads the config-driven production/CLI agent fleet: `.agents/factory/fleet.yaml`
  * seat → skill-digest bindings, boot-injected plugin-shaped persona package
- * descriptors, and `.agents/factory/policy.yaml` `models.seats` tiers resolved via
- * the hardcoded MODEL-CARD priority map above.
+ * descriptors, `.agents/factory/policy.yaml` `models.seats` tiers, and the
+ * priority-ordered `models.tiers` candidates declared in fleet.yaml.
  *
  * Fails closed per seat: a persona that fails materialization, digest
  * verification, or spec composition is excluded with a stable diagnostic —
@@ -311,6 +338,7 @@ export async function loadConfiguredAgentFleet(
   const env = options.env ?? process.env
   const fleetRaw = await readYamlFile(options.fleetConfigPath, 'fleetConfigPath')
   const seats = parseFleetConfig(fleetRaw, options.fleetConfigPath)
+  const modelTierCandidates = parseModelTierCandidates(fleetRaw, options.fleetConfigPath)
 
   let seatTiers: Readonly<Record<string, string>> = Object.freeze({})
   try {
@@ -320,6 +348,7 @@ export async function loadConfiguredAgentFleet(
     // file omits preferred models for every seat rather than failing boot.
     seatTiers = Object.freeze({})
   }
+  validateSeatTierCandidates(seatTiers, modelTierCandidates, options.fleetConfigPath, options.policyPath)
 
   // Resolve the served root once, but keep failure per-seat and fail-closed:
   // composition can still proceed while publication reports the existing
@@ -423,7 +452,7 @@ export async function loadConfiguredAgentFleet(
         instructionAppendices.push({ name: appendixName, digest: skill.digest, content })
       }
 
-      const preferredModel = resolveSeatModel(seatTiers[binding.seat], env)
+      const preferredModel = resolveSeatModel(seatTiers[binding.seat], env, modelTierCandidates)
       // The loader is the only place that knows seat -> persona directory;
       // publishing it here keeps clients from inverting the mapping.
       let instructionFiles: AgentInstructionFileRef[] | undefined

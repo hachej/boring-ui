@@ -1,3 +1,13 @@
+models:
+  tiers:
+    T3:
+      - provider: anthropic
+        id: claude-sonnet-4-6
+        envVar: ANTHROPIC_API_KEY
+      - provider: google
+        id: gemini-3-pro-preview
+        envVar: GEMINI_API_KEY
+
 seats:
   - seat: alpha
     agentTypeId: fixture-alpha
