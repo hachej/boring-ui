@@ -12,12 +12,12 @@ Firecracker microVM per sandbox on shared EU bare metal:
 
 1. [Architecture and vision](../../direction/sandbox-service-architecture.md) —
    the public multi-tenant threat model, four layers, and v1-to-v2 shape.
-2. [Technology decision record](tech-choice.md) — why Firecracker is required,
-   why v1 adopts E2B self-hosted, the filesystem/virtio-fs decision, rejected
-   alternatives, and operator invariants.
-3. [LEAN V1 execution plan](plan-sbx14.md) — Gate 0, E2B provider adapter,
-   immutable cohort pin, one-host qualification, Seneca flip, launch criteria,
-   and rollback.
+2. [Technology decision record](tech-choice.md) — why Firecracker is the engine
+   and tenant boundary, why Kata is the v1 containerd runtime wrapper, the S3
+   data-substrate decision, rejected alternatives, and operator invariants.
+3. [LEAN V1 execution plan](plan-sbx14.md) — Kata + Firecracker Gate 0,
+   SandboxProviderV1 adapter, S3 sync-hybrid storage, immutable cohort pin,
+   one-host qualification, Seneca flip, launch criteria, and rollback.
 4. [v2 owned-fleet/hardening plan](plan-v2-hardening.md) — likely Cloud
    Hypervisor fleet, block/memory snapshot-fork, warm pools,
    snapshot-locality-aware scheduling, automated admission, and optional
@@ -32,15 +32,19 @@ Firecracker microVM per sandbox on shared EU bare metal:
 - Seneca is public and multi-tenant; untrusted customer agent code is the v1
   workload.
 - One sandbox equals one KVM microVM; many microVMs share one host.
-- v1 adopts E2B self-hosted + Firecracker, estimated at about 2–4 elapsed weeks
-  including a 2–3 day Gate 0, conditional on proving E2B's planned bare-metal
-  path.
-- Firecracker has no virtio-fs. The remote workspace becomes a tenant-bound
-  durable provider volume or E2B-managed workspace snapshot served through the
-  fs/exec API; no host directory is mounted into the guest.
-- Kata + Firecracker is the fallback, estimated at about 1–2 weeks if bounded
-  copy-in/out is accepted. Kata + Cloud Hypervisor preserves host mounts via
-  virtio-fs but is not the v1 selection.
+- v1 adopts Kata + Firecracker on bare-metal KVM, estimated at about 1–2 weeks
+  to a qualified single box. Firecracker is the engine/hardware boundary; Kata
+  is only the adopted OCI/containerd runtime wrapper that launches it.
+- A per-tenant S3 bucket/prefix is the durable, user-accessible system of record
+  with object version history. Each microVM uses a fast local POSIX disk and a
+  lazy-in/flush-out sync bridge; transient inputs use copy-in, never a host
+  mount.
+- The provider adapter supplies authorization-keyed session reuse with idle TTL,
+  network-off by default with S3-only egress, and optional-runtime graceful
+  degradation behind SandboxProviderV1.
+- E2B self-hosted moves to v2, when Boring may adopt its snapshot-fork engine or
+  build an owned equivalent. `firecracker-containerd` is the lower-level v1
+  alternative if Kata cannot qualify.
 - gVisor is optional inner defense-in-depth, not a tenant boundary.
 - microsandbox/libkrun is rejected for v1 because of its mode-0 seccomp,
   unmeasured fuzz/CVE posture, and pre-1.0 maturity.

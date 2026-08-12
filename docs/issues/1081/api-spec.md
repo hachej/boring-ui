@@ -13,12 +13,11 @@ is [references/control-plane-api-spec.md](references/control-plane-api-spec.md).
 
 Customers authenticate to Seneca's existing public multi-tenant edge. Seneca
 authorizes a tenant/workspace and calls this API over private management-plane
-ingress. The API gateway, durable binding/nonce state, E2B API, client-proxy,
-required Redis routing catalog, Postgres, object storage, Nomad/Consul servers,
-and private wildcard DNS/TLS ingress run on trusted management infrastructure.
+ingress. The API gateway, durable binding/nonce state, and scoped S3 credential
+issuer run on trusted management infrastructure.
 
-The bare-metal sandbox node runs only the minimum E2B node/orchestrator,
-Nomad/Consul client, Firecracker/jailer, and guest data plane. It receives no
+The bare-metal sandbox node runs only containerd, the Kata runtime wrapper,
+Firecracker/jailer, and the guest data plane. It receives no
 control-plane signing root, reusable customer/API key, model credential,
 transcript store, or direct public request.
 
@@ -30,9 +29,10 @@ Current source already provides:
 - an in-process Docker/runsc runtime.
 
 Current source does **not** provide the HTTP/SSE gateway/daemon, durable
-multi-tenant binding+nonce store, E2B API adapter, Firecracker cohort schema, or
-provider-neutral qualification driver. S1 builds those pieces; docs must not call
-the server routes already implemented.
+multi-tenant binding+nonce store, Kata/Firecracker adapter, S3 sync-hybrid
+storage path, Firecracker cohort schema, or provider-neutral qualification
+driver. S1 builds those pieces; docs must not call the server routes already
+implemented.
 
 ## Endpoint set
 
@@ -48,103 +48,123 @@ v1 keeps the existing internal prefix. Customers do not call it directly.
 | POST /internal/v1/sandboxes/{id}/renew | renew | updated lease expiry |
 | DELETE /internal/v1/sandboxes/{id} | delete | idempotent disposal result |
 
-Every guarded route applies this order before an E2B effect:
+Every guarded route applies this order before a sandbox-provider effect:
 
 1. body-size and content-type bound;
 2. strict schema validation;
 3. management-plane capability verification;
 4. durable nonce consumption and tenant/workspace binding authorization;
 5. per-tenant/global concurrency and spend/lease checks;
-6. server-side admitted-template/policy construction;
-7. E2B public API/SDK call;
+6. server-side admitted OCI-image/RuntimeClass/policy construction;
+7. Kata/containerd provider call;
 8. bounded, redacted response.
 
-No route accepts a host path, E2B API key, template override, VM spec, device,
-runtime socket, network-policy override, image tag, qualification override, or
-caller-selected isolation downgrade.
+No route accepts a host path, provider credential, image/RuntimeClass override,
+VM spec, device, runtime socket, network-policy override, image tag,
+qualification override, or caller-selected isolation downgrade.
 
-## Exact E2B adapter boundary
+## Exact Kata/Firecracker adapter boundary
 
-The v1 gateway targets E2B's **public API/SDK** for create, commands, files,
-renew/timeout, and kill. It does not call orchestrator gRPC or envd directly.
-E2B's API remains responsible for lifecycle routing to orchestrator and opaque
-template restoration. E2B SDK fs/exec traffic uses the private client-proxy
-wildcard DNS/TLS endpoint; client-proxy resolves the sandbox-to-node route from
-Redis and forwards through the owning orchestrator proxy to envd. Neither path
-is public to customers.
+The v1 gateway targets one admitted containerd/Kata configuration for create,
+commands, files, renew/timeout, and kill. Kata is only the OCI runtime wrapper;
+qualification proves it launches the pinned Firecracker engine, which remains
+the hardware-KVM boundary. `firecracker-containerd` is a separately qualified
+lower-level fallback, never mixed into the same cohort.
 
-The gateway holds its E2B service credential only on trusted management
-infrastructure. The sandbox node never receives that credential. E2B sandbox
-identifiers and template/build identifiers are stored in the management-plane
-binding record and are never treated as authorization on their own.
-
-The adapter constructs one admitted E2B template/build and resource/network
+The adapter constructs one admitted OCI image, Firecracker-backed Kata
+RuntimeClass/configuration, resource profile, S3 endpoint allowlist, and quota
 profile server-side. A caller chooses only the authorized workspace/session
-identity and supported operation inputs.
+identity and supported operation inputs. Runtime and Firecracker identifiers in
+the management binding are never authorization on their own.
 
 ## Lifecycle contract
 
 ### Create
 
 POST /internal/v1/sandboxes maps an authorized
-(workspaceId, clientLeaseId) to one deterministic opaque sandboxId and one E2B
-Firecracker microVM.
+(workspaceId, clientLeaseId) to one deterministic opaque sandboxId and one
+Firecracker microVM launched through Kata.
 
 The management gateway:
 
-- loads or creates the durable workspace-volume/snapshot binding;
-- selects the exact admitted E2B template/build cohort;
+- acquires the single active writer lease for the tenant/workspace;
+- loads the current immutable S3 manifest and object version IDs;
+- selects the exact admitted Kata/Firecracker OCI-image cohort;
 - applies fixed CPU, memory, PID/process, output, disk/block, lease, network, and
   concurrency limits;
 - creates exactly one microVM under retry;
-- records the E2B sandbox identity and tenant/workspace binding durably;
+- records the runtime sandbox identity and tenant/workspace binding durably;
 - returns runtimeCwd=/workspace.
 
 A dropped response and retried create must return the same binding and cannot
 leave two live microVMs.
 
+SandboxProviderV1 may reuse that same authorized sandbox across calls through a
+session pool. Reuse is keyed by tenant/workspace/session binding, resets the idle
+TTL, never crosses identities, and remains subordinate to the hard lease and
+single-writer lease. Idle expiry checkpoints, then destroys. If checkpoint
+fails, it fences/retains the local disk for recovery.
+
+Guest network starts disabled. The admitted policy allowlists only the tenant's
+S3 endpoint and callers cannot widen it. If Kata is absent or unhealthy, the
+host app/control plane may start, but sandbox admission/create fails closed with
+a stable unavailable result and never falls back to a weaker provider.
+
 ### Renew
 
-Renew changes only the bounded lease. It cannot alter image/template, resources,
-network policy, workspace volume, or isolation tier.
+Renew changes only the bounded lease. It cannot alter the image/RuntimeClass,
+resources, network policy, S3 namespace, writer lease, or isolation tier.
 
 ### Delete
 
-Delete is idempotent. Normal delete first commits/synchronizes the durable
-workspace state, then destroys the microVM and reclaims its ephemeral overlay.
-If durable commit cannot be proven, delete reports a stable failure and the
-reconciler retains/fences the state for recovery rather than claiming success.
+Delete is idempotent. Normal delete first publishes an immutable S3 checkpoint
+manifest and conditionally advances the workspace generation, then destroys the
+microVM and securely discards its encrypted/ephemeral local disk. If durable
+commit cannot be proven, delete reports a stable failure and the reconciler
+retains/fences the disk and writer lease for recovery rather than claiming
+success.
 
 Hard-expiry cleanup follows the same durable-state rule. Crash recovery restores
-the last acknowledged durable workspace generation and reports any explicit RPO;
-v1 may not silently discard acknowledged fs writes.
+the last committed manifest and reports the documented RPO for exec-process
+writes; v1 may not silently discard an acknowledged provider `/fs` write.
 
 ## Workspace contract
 
-Paths remain workspace-relative and resolve beneath /workspace. Path validation
-belongs to the E2B/fs adapter.
+Paths remain workspace-relative and resolve beneath `/workspace`. Path
+validation belongs to the guest fs/copy adapter.
 
 The current runsc implementation uses a daemon-owned host bind, but that is not a
 SandboxProviderV1 requirement: the remote provider already ignores the caller's
 host workspaceRoot and exposes remote /workspace.
 
-Corrected v1 uses a tenant-bound durable provider volume or E2B-managed workspace
-snapshot as the authoritative workspace. The active Firecracker guest attaches
-or restores only that workspace. Its rootfs/template snapshot is not the
-workspace authority.
+Corrected v1 uses a per-tenant S3 bucket/prefix as the durable system of record.
+Plain user files and immutable key+version checkpoint manifests remain directly
+accessible through ordinary S3 commands/APIs. The active Firecracker guest runs
+on a local ext4/xfs disk and an in-guest sync bridge lazily hydrates the selected
+manifest and flushes provider-fs writes, explicit checkpoints, and session end.
 
 Required semantics:
 
-- an acknowledged fs write is committed to the tenant's durable workspace
+- an acknowledged provider `/fs` write is committed to a new S3 manifest/
   generation before success, or the response explicitly reports failure;
+- writes made by an exec process become durable at the documented checkpoint
+  boundary and are subject to the declared crash/expiry RPO;
 - write -> destroy -> recreate -> read returns the written bytes;
-- a crash between data write and generation publication recovers either the old
-  complete generation or the new complete generation, never a partial mix;
+- publication conditionally advances one generation pointer over immutable
+  object-version manifests; a crash recovers either the old complete generation
+  or the new complete generation, never a partial mix;
+- one active writer lease exists per tenant/workspace. A second writer or direct
+  S3 edit against the baseline causes a stable conflict/fence and refresh, never
+  silent last-writer-wins;
 - a sandbox cannot attach, restore, enumerate, or infer a sibling workspace;
-- initial import and final artifact export use bounded management-plane transfer;
+- transient context/uploads/SQL-result CSVs use bounded copy-in to the unsynced
+  `/inputs` tree and are securely discarded; final artifacts live in or are
+  explicitly copied to the S3-backed `/workspace`;
 - events come from the guest agent or bounded polling; host inotify is not part
   of correctness;
-- no host directory is mounted into Firecracker.
+- no host directory is mounted into Firecracker;
+- a failed flush fences/retains the local disk and never destroys while
+  reporting success.
 
 Firecracker's lack of virtio-fs therefore requires no public-contract change.
 It changes the current runsc backend implementation and requires explicit
@@ -162,13 +182,15 @@ Exec keeps the existing bounded shape:
 - cancellation/lease expiry propagated to the guest command.
 
 No raw container/VM spec or shell argv assembled from untrusted structural
-fields reaches E2B. Background handles, PTY, stdin streaming, and public port
+fields reaches containerd/Kata. Background handles, PTY, stdin streaming, and public port
 exposure remain absent from v1.
 
 Secret-bearing credentialRefs remain fail-closed in the initial v1. Model and
-provider credentials stay in Seneca's control plane. Adding sandbox credentials
-requires a separately reviewed short-lived delivery path that does not place
-reusable secrets on the sandbox node.
+provider credentials stay in Seneca's control plane. The v1 S3 sync path is the
+narrow exception: it receives an expiring tenant-prefix/action-scoped
+credential that denies bucket policy/lifecycle/versioning/retention mutation,
+historical-version deletion, and cross-prefix access. Adding any other sandbox
+credential requires separate review.
 
 ## Authentication, replay, and tenant fairness
 
@@ -192,8 +214,8 @@ superseded.
 - The public Seneca edge owns unauthenticated rate limiting, account abuse
   controls, and customer key/session rotation. The private sandbox gateway does
   not duplicate public-edge identity.
-- The node receives only the admitted E2B operation and narrowly scoped internal
-  node credentials required by E2B; never the customer capability-signing root.
+- The node receives only the admitted provider operation; the guest receives its
+  expiring scoped S3 credential, never the customer capability-signing root.
 
 The implementation may reuse the existing binding and nonce interfaces, but the
 in-memory nonce store is only a test double in public multi-tenant production.
@@ -204,7 +226,8 @@ The current health literal docker-runsc-systrap is obsolete. Internal v1 health
 reports:
 
 - isolationTier = hardware-microvm;
-- admitted vehicle/VMM/jailer/kernel/rootfs/guest-agent/policy/evidence digests;
+- admitted runtime-wrapper/VMM/jailer/kernel/OCI-image/guest-agent/sync/policy/
+  evidence digests;
 - capacity/readiness without tenant counts or identifiers.
 
 The public app need not expose VMM brands. SandboxProviderV1 callers rely on the
@@ -214,7 +237,7 @@ hardware tier and admitted cohort, not a Firecracker-specific public verb.
 
 | E2B concept | V1 mapping | Status |
 | --- | --- | --- |
-| Sandbox.create | POST /sandboxes | supported through admitted template only |
+| Sandbox.create | POST /sandboxes | supported through admitted OCI image/runtime only |
 | Sandbox.kill | DELETE /sandboxes/{id} | supported |
 | setTimeout/TTL | POST /renew | supported |
 | commands.run | POST /exec | supported, buffered output |
@@ -223,13 +246,13 @@ hardware tier and admitted cohort, not a Firecracker-specific public verb.
 | list/connect/getInfo/metadata | none | deferred |
 | streaming stdout/stderr, PTY, stdin, background handles | none | deferred |
 | getHost(port) | none | deliberately absent |
-| pause/checkpoint/fork | no public V1 verb | E2B may use opaque template restore internally; product feature is v2 |
-| E2B API key | management gateway service credential | never exposed to customer or node |
+| pause/checkpoint/fork | no public V1 verb | block/memory fork remains v2; internal S3 manifests are storage commits, not this feature |
+| E2B API key | none in v1 | E2B self-hosted is deferred to v2 |
 
-v1 may inherit E2B's internal UFFD/NBD template restore because that is part of
-the adopted vehicle. v1 does not expose snapshots, own snapshot formats, fork
-tenant state, maintain warm pools, or schedule by snapshot locality. Those
-owned-fleet capabilities remain in plan-v2-hardening.md.
+v1 does not expose block/memory snapshots, own VMM snapshot formats, fork tenant
+working state, maintain a snapshot warm pool, or schedule by snapshot locality.
+Those fleet capabilities remain in plan-v2-hardening.md. Tenant-readable S3
+remains the durable record in either v2 path.
 
 ## SandboxProviderV1 mapping
 
@@ -242,23 +265,25 @@ SandboxProviderV1 remains the consumer seam:
 - dispose -> gateway delete;
 - provider invalidation/close -> stop admission and drain managed bindings.
 
-v1 implements the gateway plus E2B adapter. v2 may replace E2B/Firecracker with
-an owned Cloud Hypervisor fleet without changing these consumer methods.
+v1 implements the gateway plus Kata/Firecracker adapter. v2 may adopt E2B's
+Firecracker snapshot engine or replace the single-host backend with an owned,
+likely Cloud Hypervisor fleet without changing these consumer methods.
 
 ## Stable errors and proof
 
-Every failure has a stable, redacted code. Tests must prove no E2B effect for:
+Every failure has a stable, redacted code. Tests must prove no provider effect for:
 
 - malformed/expired/replayed/mismatched capability;
 - cross-tenant workspace/sandbox combination;
 - exhausted tenant or global budget;
 - host-shaped path or traversal/symlink race;
-- template/image/spec/device/network override;
+- image/RuntimeClass/spec/device/network override;
 - unqualified cohort;
-- durable workspace commit failure;
+- S3 manifest commit or writer-conflict failure;
 - partial management-plane or node failure.
 
-The end-to-end proof drives the real HTTP/SSE gateway against the E2B public API
-adapter and covers two concurrent tenant identities, durable
-write/destroy/recreate/read, retry idempotency, hard expiry, orphan cleanup,
-egress deny, quota isolation, and rollback.
+The end-to-end proof drives the real HTTP/SSE gateway against the
+Kata/Firecracker adapter and covers two concurrent tenant identities, durable
+write/destroy/recreate/read, same-workspace writer conflict, direct S3 drift,
+unsynced `/inputs`, retry idempotency, hard expiry, orphan cleanup, S3-only
+egress, scoped-credential expiry/action denial, quota isolation, and rollback.

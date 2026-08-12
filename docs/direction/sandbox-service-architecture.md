@@ -1,6 +1,6 @@
 # Sandbox Service — corrected architecture and vision
 
-Owner correction captured 2026-08-11. This document is the architecture above
+Owner correction captured 2026-08-12. This document is the architecture above
 the SBX1.4 execution plan in
 [docs/issues/1081/plan-sbx14.md](../issues/1081/plan-sbx14.md).
 
@@ -51,23 +51,24 @@ Those risks receive explicit operator controls or separate workstreams.
 ## v1 — adopt a correct boundary quickly
 
 - **Boundary:** one Firecracker microVM per sandbox.
-- **Vehicle:** E2B self-hosted infra behind SandboxProviderV1.
+- **Vehicle:** Kata Containers + Firecracker behind SandboxProviderV1.
+  Firecracker is the engine/hardware boundary; Kata is only the adopted
+  containerd runtime wrapper that launches it from OCI images.
 - **Sandbox host:** one shared EU bare-metal KVM machine; many microVMs, no
   standing per-tenant VM.
-- **Management plane:** separate trusted infrastructure for the E2B API,
-  client-proxy, required Redis routing catalog, Postgres, object storage,
-  Nomad/Consul servers, and private wildcard DNS/TLS ingress. The sandbox host
-  carries only the minimum node/client/VMM components.
-- **Filesystem:** a tenant-bound durable provider volume or E2B-managed
-  workspace snapshot, served through the guest fs/exec agent. No host-directory
-  mount.
-- **Placement:** E2B placement sees one admitted sandbox host; no Boring-owned or
+- **Management plane:** the private gateway, durable authorization/binding state,
+  and scoped S3 credential issuer. The sandbox host carries only containerd,
+  Kata, and Firecracker/jailer; each guest contains its agent and S3 sync bridge.
+- **Storage:** a per-tenant S3 bucket/prefix is the user-readable durable system
+  of record. The guest runs on a local POSIX disk with lazy-in/flush-out sync;
+  transient inputs use copy-in and no host directory is mounted.
+- **Placement:** the provider sees one admitted sandbox host; no Boring-owned or
   multi-host scheduler.
 - **Ingress:** customers authenticate to Seneca. Seneca's trusted control plane
   reaches the worker privately; the VMM/worker API is not public.
-- **Admission:** one manually qualified immutable E2B/Firecracker/kernel/template
+- **Admission:** one manually qualified immutable Kata/Firecracker/kernel/OCI-image
   cohort, with all 11 existing logical hostile assertions green through a
-  Firecracker/E2B driver on the exact box.
+  Firecracker/Kata driver on the exact box.
 - **Rollout:** BORING_AGENT_MODE=remote-worker behind the existing provider seam,
   with drain-before-flip rollback.
 
@@ -77,7 +78,8 @@ Raw Firecracker orchestration is not v1. It is a fleet build, not a lean adoptio
 
 - **Boundary:** still one KVM microVM per sandbox on shared metal.
 - **Likely VMM:** Cloud Hypervisor after a dedicated security/compatibility gate.
-- **Control plane:** owned multi-host placement, draining, fencing, and recovery.
+- **Control plane:** adopt E2B's snapshot-fork engine or build an owned multi-host
+  placement, draining, fencing, and recovery plane.
 - **Density:** block-level snapshot-fork, memory restore, warm pools, and
   snapshot-locality-aware scheduling.
 - **Admission:** protected CI owns VMM/kernel/template bumps and continuously
@@ -100,42 +102,46 @@ persistence, and locality-aware orchestration.
 | Layer | v1 | v2 | Stable seam |
 | --- | --- | --- | --- |
 | Control-plane API | Existing strict remote-worker V1 verbs and request-bound authorization | Multi-host/fleet operations remain behind the same external verbs | api-spec.md |
-| Placement | E2B placement with one admitted candidate; no Boring-owned scheduler | Cohort-first owned scheduler with bin packing, anti-affinity, draining, and snapshot locality | SandboxProviderV1 backend selection |
-| Backend | E2B self-hosted + Firecracker | Owned fleet, likely Cloud Hypervisor | SandboxProviderV1 |
-| Guest data plane | E2B envd/guest agent serving a durable tenant workspace | Owned compatible guest agent + snapshot lifecycle | remote fs/exec semantics |
+| Placement | One admitted Kata/Firecracker host; no Boring-owned scheduler | E2B snapshot-fork adoption or cohort-first owned scheduler with bin packing, anti-affinity, draining, and snapshot locality | SandboxProviderV1 backend selection |
+| Backend | Kata runtime wrapper + Firecracker engine | Snapshot-aware fleet, likely Cloud Hypervisor if owned | SandboxProviderV1 |
+| Guest data plane | Local POSIX disk + S3 sync-hybrid; copy-in transient files | Compatible guest agent + snapshot lifecycle; S3 remains the tenant data record | remote fs/exec semantics |
 
 The product interface stays narrow. No caller supplies a host path, runtime
 socket, template, arbitrary VM spec, device, image override, network-policy
 override, or qualification bypass.
 
-## Filesystem architecture
+## Storage and file-transfer architecture
 
 The prior runsc backend made a host directory authoritative and bind-mounted it
 at /workspace. That is an implementation detail, not a SandboxProviderV1
 requirement, and it does not transfer to Firecracker: Firecracker lacks
 virtio-fs and generic host-directory sharing.
 
-The corrected remote model makes a tenant-bound durable provider volume or
-E2B-managed workspace snapshot authoritative. The active guest attaches or
-restores only that workspace; its template/rootfs snapshot is not the workspace
-authority. SandboxProviderV1 still presents /workspace and the same
-read/write/exec semantics, but the management gateway maps those operations to
-the guest agent. Initial workspace content is copied in through a bounded API;
-acknowledged writes commit durably before success, and changes/final artifacts
-are observed or read back through guest events or bounded polling.
+The corrected remote model makes a per-tenant S3 bucket/prefix authoritative.
+It stores plain files that users can inspect and sync through ordinary S3 tools,
+with object versioning as visible history and audit trail. An admitted
+EU-sovereign object store keeps bytes inside the declared perimeter.
 
-Qualification proves write -> destroy -> recreate -> read and atomic recovery
-to the last acknowledged generation after an interrupted commit. Any non-zero
-RPO must be explicit and approved before launch.
+The active guest runs git, SQLite, and builds on a fast local ext4/xfs disk. A
+sync-hybrid bridge hydrates lazily and flushes on write, checkpoint, and session
+end. One durable writer lease exists per tenant/workspace; concurrent sessions
+must serialize or fail with a stable conflict rather than publish mixed or
+last-writer-wins checkpoints. Transient files are copied into the guest through
+the bounded API.
 
-This is why v1 selects E2B + Firecracker rather than Kata + Cloud Hypervisor:
-Kata/CH would preserve the host bind with virtio-fs, but would violate the v1
-Firecracker decision and pull the riskier v2 VMM forward. Kata + Firecracker is
-the fallback if its block/copy path proves simpler after the E2B bare-metal gate.
+Qualification proves write/checkpoint -> destroy -> recreate -> read, object
+version visibility, interrupted-flush recovery, and writer-lease conflict
+behavior. Any non-zero RPO must be explicit and approved before launch.
+
+Naive s3fs execution is rejected because object storage is not fully POSIX.
+Opaque volume snapshots are rejected because users cannot directly access their
+files. POSIX-over-S3 chunk stores such as JuiceFS are rejected because ordinary
+S3 clients see chunks, not user files.
 
 No host inotify, shared plaintext workspace tree, or host path is part of the
-tenant boundary. E2B's internal UFFD/NBD template restore may remain opaque in
-v1; Seneca does not expose or own snapshot/fork semantics until v2.
+tenant boundary. A virtio-fs/9p mount would be a live cross-boundary channel,
+expanding escape and path-traversal surface; copy-in removes that channel and
+keeps Firecracker viable. E2B snapshot-fork adoption is a v2 decision.
 
 ## Engine roles
 
@@ -172,14 +178,15 @@ Before public multi-tenant customer code runs:
 1. One sandbox creates one distinct Firecracker microVM and guest kernel.
 2. Two-tenant negatives prove separate block devices, network identities,
    quotas, data, and teardown.
-3. The exact E2B/Firecracker/jailer/kernel/rootfs/guest-agent/policy cohort is
+3. The exact Kata/Firecracker/jailer/kernel/OCI-image/guest-agent/sync/policy cohort is
    pinned and qualified.
-4. A Firecracker/E2B driver preserves all 11 logical hostile assertions, and
-   egress deny, host reserve, durable workspace recovery, and cleanup pass on
-   the intended box.
+4. A Firecracker/Kata driver preserves all 11 logical hostile assertions; S3-only
+   egress, host reserve, scoped-credential expiry, sync recovery, single-writer
+   conflicts, pool/idle-TTL behavior, and cleanup pass on the intended box.
 5. Startup fails closed on any missing, stale, or mismatched cohort fact.
 6. No guest sees /dev/kvm, a host path, other-tenant data, control-plane secrets,
-   customer/model credentials, or transcripts.
+   reusable customer/model credentials, or transcripts. A guest sees only an
+   expiring credential for its own S3 bucket/prefix.
 7. CPU, memory, PID, output, disk/block, lease, and concurrent-sandbox ceilings
    are enforced before code runs.
 8. Rollback drains and destroys live microVMs before the provider flip and
@@ -198,13 +205,12 @@ The adopted vehicle does not own our risk decisions.
 - Detect and reproducibly build every VMM, jailer, kernel, rootfs, guest-agent,
   microcode, network-policy, or quota-policy change in CI. v1 exact-box
   qualification and admission remain manual; v2 may automate them.
-- Keep E2B API/client-proxy, Redis, Postgres, object storage, Nomad/Consul
-  servers, signing roots, reusable customer secrets, model credentials, and
-  transcript/session history on trusted management infrastructure, outside the
-  sandbox node's guest/VMM trust domain. Keep client-proxy's wildcard DNS/TLS
-  endpoint private to the gateway path.
-- Store tenant bytes only in that sandbox's block/image objects and bounded
-  transfer channel, never a shared host workspace tree.
+- Keep signing roots, reusable customer secrets, model credentials, durable
+  authorization state, and transcript/session history on trusted management
+  infrastructure, outside the sandbox node's guest/VMM trust domain.
+- Store durable tenant bytes in that tenant's S3 bucket/prefix. Local block
+  backing is per-microVM, encrypted or ephemeral, never a shared plaintext host
+  workspace tree, and reclaimed after successful flush and teardown.
 - Keep microcode/core-scheduling/SMT policy in the separate side-channel
   workstream.
 - Fence a host that cannot prove its admitted cohort.
@@ -216,14 +222,14 @@ boundary.”
 
 Build only:
 
-- the private management gateway and thin SandboxProviderV1-to-E2B public-API
+- the private management gateway and thin SandboxProviderV1-to-Kata/containerd
   adapter;
 - durable tenant/workspace binding, atomic replay state, and per-tenant/global
   admission budgets;
-- the durable workspace adapter and provider-neutral Firecracker qualification
+- the S3 sync-hybrid adapter and provider-neutral Firecracker qualification
   driver;
 - immutable cohort admission and CI-owned pin policy;
-- one-sandbox-host plus separate-management-plane provisioning/qualification;
+- one sandbox host plus S3 endpoint and management-gateway qualification;
 - Seneca rollout and rollback.
 
 Do not build:
@@ -233,7 +239,7 @@ Do not build:
 - snapshot-fork or memory restore;
 - warm pools;
 - snapshot-locality scheduling;
-- a general E2B-compatible public API;
+- E2B self-hosted control-plane operations or a general E2B-compatible public API;
 - one standing VM per tenant.
 
 Those fleet optimizations live in

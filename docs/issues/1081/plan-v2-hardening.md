@@ -2,8 +2,8 @@
 github: https://github.com/hachej/boring-ui/issues/1081
 issue: 1081
 state: deferred-triggered
-updated: 2026-08-11
-revision: r3-microvm-fleet
+updated: 2026-08-12
+revision: r4-snapshot-fleet-after-s3-v1
 track: owner
 ---
 
@@ -25,10 +25,11 @@ guest kernel. v2 never regresses to gVisor, runc, namespaces, or process
 isolation as the outer tenant boundary, and it never turns into one standing VM
 per workspace/tenant.
 
-SandboxProviderV1 remains the application seam. The v1-to-v2 change replaces the
-adopted E2B single-sandbox-host backend with an owned fleet backend. The public
-wire contract, guest-agent shape, hardware isolation class, and block/copy
-workspace semantics remain stable.
+SandboxProviderV1 remains the application seam. v1 uses Kata as the containerd
+runtime wrapper around the Firecracker engine on one admitted host. v2 has two
+explicit paths: adopt E2B's Firecracker snapshot-fork engine, or build an owned
+fleet likely using Cloud Hypervisor. The public wire contract, guest-agent shape,
+hardware isolation class, and tenant-readable S3 data substrate remain stable.
 
 If v2 chooses Cloud Hypervisor, the VMM binary changes from Firecracker, but the
 security architecture does not: one hardware-isolated microVM per sandbox on
@@ -41,6 +42,10 @@ memory restore, block overlays, host lifecycle, placement, locality, draining,
 admission, and recovery all interact. None is required to establish a correct
 hardware boundary on one host. v1 therefore adopts; v2 builds only after real
 load supplies capacity and latency targets.
+
+Block/memory snapshots in either v2 path accelerate ephemeral working-state
+fork/restore. They do not replace the per-tenant S3 bucket/prefix as durable
+system of record or reintroduce opaque volume snapshots as the user data product.
 
 The production reference is OpenAI's [From fork() to Fleet: Designing an Agent
 Sandbox Cloud](https://www.youtube.com/watch?v=OqM67QG_Ikk) ([conference
@@ -232,7 +237,7 @@ those implementations, but it cannot defer or weaken their properties.
 ## Migration and rollback
 
 1. Add the owned fleet as a new backend behind SandboxProviderV1.
-2. Qualify it independently while v1 E2B/Firecracker remains active.
+2. Qualify it independently while v1 Kata/Firecracker remains active.
 3. Route owner canaries, then a bounded tenant cohort; never move a live
    sandbox across backends.
 4. Copy workspace artifacts through the existing bounded API or restore a

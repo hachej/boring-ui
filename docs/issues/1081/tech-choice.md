@@ -1,6 +1,6 @@
 # Sovereign Sandbox Service — corrected technology decision record
 
-Status: DECISION RECORD. Date: 2026-08-11.
+Status: DECISION RECORD. Date: 2026-08-12.
 Scope: issue #1081 and PR #1220.
 
 This record supersedes the earlier single-tenant decision that selected gVisor
@@ -77,84 +77,72 @@ boundary.
 - Spectre/MDS-class side channels remain a separate workstream; KVM does not
   solve them.
 
-## Decision 2 — v1 strategy: adopt Firecracker, do not build a fleet
+## Decision 2 — v1 vehicle: Kata runtime wrapper + Firecracker engine
 
 ### Question
 
-Should v1 orchestrate raw Firecracker itself, or adopt an existing sandbox
-vehicle?
+Which adopted runtime path launches the required Firecracker microVMs in v1
+without pulling a fleet control plane forward?
 
 ### Evidence
 
-Firecracker supplies a VMM API and jailer. It does not supply the complete
-product surface Seneca needs: lifecycle placement, guest image/rootfs assembly,
-guest exec/fs transport, network policy, quota wiring, recovery, draining,
-version admission, and control-plane operations. Building those pieces directly
-is a weeks-to-months effort and duplicates mature open-source work.
+Firecracker supplies the VMM/jailer and the hardware-KVM boundary. It does not
+turn OCI images into a containerd-compatible sandbox lifecycle by itself. Kata
+Containers already supplies that wrapper: containerd sends an admitted OCI
+workload to Kata, and Kata configures and launches the Firecracker microVM. Kata
+is therefore a runtime wrapper around the chosen engine, not a competing engine
+or a second tenant boundary.
 
-Two credible adoption vehicles remain:
+`firecracker-containerd` exposes a lower-level containerd-to-Firecracker path
+and is the fallback if Kata cannot qualify. It requires more lifecycle and guest
+integration work, so it is not the default.
 
-1. **Kata Containers** — mature OCI/containerd integration, RuntimeClass
-   switching, packaged Firecracker and Cloud Hypervisor backends, and a
-   bare-metal-first operations model.
-2. **E2B self-hosted infra** — a complete Firecracker sandbox control plane,
-   guest agent, SDK/API, template pipeline, Nomad jobs, and Consul-backed
-   orchestration. Its [architecture
-   document](https://github.com/e2b-dev/infra/blob/main/docs/ARCHITECTURE.md)
-   describes the control plane, Firecracker data plane, in-VM agent, and
-   snapshot-backed storage. The operational cost is Nomad + Consul and a
-   GCP/AWS-first deployment posture; E2B describes bare-metal Linux as planned,
-   so it must be qualified rather than assumed.
+E2B self-hosted supplies much more: API/client-proxy, Redis routing, Postgres,
+object storage metadata, Nomad/Consul orchestration, guest services, and a
+snapshot-backed persistence engine. That is attractive for the v2 fleet, but
+the S3 data-substrate decision below means v1 does not need its persistence
+engine.
 
 ### Decision
 
-**v1 adopts E2B self-hosted infra + Firecracker behind SandboxProviderV1.**
-Do not build a bespoke VMM fleet.
+**v1 adopts Kata Containers + Firecracker behind SandboxProviderV1.**
 
-Estimated adoption effort: **about 2–4 elapsed weeks** for the
-single-sandbox-host path, including a 2–3 day Gate 0, the provider adapter,
-filesystem-semantic change, pin/admission wiring, bare-metal proof, and rollback
-rehearsal. This assumes cohort build and production-management-plane
-provisioning overlap S1 after Gate 0; the sequential work is about 14–24
-person-days. Host procurement and owner wait time are excluded.
+Firecracker is the engine and isolation boundary: one hardware-KVM microVM per
+sandbox. Kata is merely the adopted containerd runtime wrapper that launches
+that engine from admitted OCI images. Do not build a bespoke VMM fleet.
 
-Kata + Firecracker is the fallback. Its honest estimate is **about 1–2 weeks**
-for one box only if the product accepts block/OCI storage plus bounded
-copy-in/out and does not require a live host-directory mount.
+Estimated adoption effort: **about 1–2 weeks** to a qualified single bare-metal
+KVM box, including Gate 0, the provider adapter, S3 sync-hybrid integration,
+pin/admission wiring, hostile probes, and rollback rehearsal. Host procurement
+and owner wait time are excluded.
 
 ### Reasoning
 
-E2B is the smallest choice that satisfies both non-negotiables at once:
-Firecracker is the outer boundary, and an off-the-shelf guest fs/exec control
-plane replaces the current host bind. SandboxProviderV1 keeps E2B-specific
-lifecycle and identifiers out of Seneca.
+Kata is the smallest mature adoption layer that supplies the OCI/containerd
+launch path without displacing Firecracker. SandboxProviderV1 keeps Kata and
+containerd details out of Seneca's app-facing contract. Gate 0 must prove that
+the exact admitted Kata configuration launches the pinned Firecracker binary,
+not QEMU or Cloud Hypervisor.
 
-The adapter targets E2B's supported public API/SDK surface, not its internal
-orchestrator or envd protocols. The estimate is conditional on Gate 0 proving
-that surface can provide the durability, recovery, and bare-metal behavior
-below without forking E2B.
+E2B self-hosted moves to v2, where Boring may adopt its snapshot-fork engine or
+build an owned equivalent. In v1, Nomad/Consul/Redis/Postgres and E2B's proxy and
+ingress services do not earn their operational weight because tenant durability
+comes directly from S3. This is a timing decision, not a rejection of E2B's
+future snapshot machinery.
 
-Nomad and Consul are operationally heavier than Kata. That cost is preferable to
-quietly changing the v1 VMM to Cloud Hypervisor or building raw Firecracker
-orchestration. Gate 0 must prove E2B's exact bare-metal path before the plan is
-funded beyond the spike.
-
-## Decision 3 — workspace filesystem: guest block + API, no host mount
+## Decision 3 — v1 storage: S3 data substrate + sync-hybrid POSIX disk
 
 ### Question
 
-The current runsc implementation derives a daemon-owned host directory,
-bind-mounts it to /workspace, and watches the host path. Firecracker has no
-virtio-fs. Is that implementation detail a provider requirement?
+What is the durable, user-facing data product, and how does untrusted code get
+POSIX-correct working storage without reopening a host path into the microVM?
 
 ### Evidence
 
-The current source is explicit:
-packages/boring-sandbox/src/providers/runsc/runtime/dockerArgv.ts constructs a
-host bind mount to /workspace. The remote provider deliberately ignores the
-caller's host workspaceRoot and presents remote /workspace. The future FUSE
-binding plan also says vanilla Firecracker cannot expose a host mount because it
-lacks virtio-fs.
+The current runsc implementation's host bind is an implementation detail. The
+remote provider already ignores the caller's host `workspaceRoot` and presents
+a provider-owned `/workspace`, so SandboxProviderV1 does not require a live host
+mount.
 
 Kata's [virtualization
 matrix](https://kata-containers.github.io/kata-containers/design/virtualization/)
@@ -166,40 +154,109 @@ documents:
   [official integration
   guide](https://github.com/kata-containers/kata-containers/blob/main/docs/how-to/how-to-use-kata-containers-with-firecracker.md).
 
+S3-compatible object storage gives every tenant a directly accessible durable
+namespace, ordinary file objects, version history, lifecycle controls, and
+portable APIs. But object storage is not a POSIX filesystem: naive s3fs-style
+execution breaks or distorts atomic rename, random write, append, locking, and
+SQLite/git/build behavior.
+
 ### Options
 
 | Option | Result |
 | --- | --- |
-| Kata + Cloud Hypervisor + virtio-fs | Preserves the current host-dir binding and is likely a 1–2 week single-box integration, but violates the v1 Firecracker decision and adopts the riskier v2 VMM early. |
-| Kata + Firecracker + block/copy | Keeps Firecracker, but requires the workspace semantic change and supplies less sandbox control-plane functionality. |
-| E2B + Firecracker + guest fs/envd API | Keeps Firecracker and supplies the guest fs/exec API needed to make the semantic change behind SandboxProviderV1. |
+| Per-tenant S3 system of record + local POSIX disk + sync-hybrid | Plain user-readable objects, S3 version history, correct guest-local POSIX behavior, no host mount; selected. |
+| Opaque block volume + volume snapshots | Durable and POSIX-capable, but users cannot read/sync their files through S3; loses the product and portability win. |
+| Naive s3fs-style direct execution | User-readable objects, but incomplete POSIX semantics make git/SQLite/builds unsafe or surprising. |
+| POSIX-over-S3 such as JuiceFS | POSIX behavior, but chunks files into implementation objects; users cannot read their files with ordinary S3 commands. |
+| Host directory via virtio-fs/9p | Live cross-boundary channel and host-path blast radius; also incompatible with Firecracker's device model. |
 
 ### Decision
 
-**The remote workspace becomes a tenant-bound durable provider volume or
-E2B-managed workspace snapshot, served through the adopted guest agent.** The
-active guest attaches or restores only that workspace. Initial content is
-copied in over a bounded API; acknowledged writes commit to the durable
-workspace before success, and mutations, events/polling, and final artifact
-copy-out use the same remote contract. No host directory is mounted into the
-Firecracker guest, and no host watcher is part of the security model.
+**A per-tenant S3 bucket, or a strictly isolated tenant prefix, is the durable
+system of record.** It stores plain CSV, Parquet, JSON, source, and artifact
+objects that the user can access directly with ordinary S3 commands, APIs, and
+sync clients: Dropbox/data-lake behavior out of the box, bring-your-own-data,
+take-your-data-out, and no proprietary volume lock-in.
 
-The rootfs/template snapshot is not the workspace authority. Gate 0 must prove
-write -> destroy -> recreate -> read and atomic recovery to the last
-acknowledged workspace generation after an interrupted commit. Any non-zero RPO
-must be explicit and approved before launch.
+Enable object versioning so users receive visible point-in-time file history.
+Each checkpoint publishes an immutable manifest of keys and version IDs and
+conditionally advances one generation pointer, yielding an atomic workspace
+snapshot rather than a mixed view of independently current objects. Access/event
+logging supplies the audit trail; regulated deployments add retention/Object
+Lock when immutable history is required. That is a product feature for
+fiduciary, tax, and insurance workflows—not merely an implementation backup.
+Use an EU-sovereign object-store deployment such as OVHcloud or Scaleway Object
+Storage, Cloudflare R2 in the EU, or self-hosted MinIO/Ceph on Seneca bare metal.
+The selected deployment must prove that data never leaves the admitted perimeter
+and support the "Hosted in Europe" claim.
+
+This design follows the object/version properties documented by [Amazon
+S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/versioning-workflows.html),
+the EU jurisdiction guarantee documented by [Cloudflare
+R2](https://developers.cloudflare.com/r2/reference/data-location/), and the
+versioning/region controls documented by [OVHcloud](https://help.ovhcloud.com/csm/pt-public-cloud-storage-s3-versioning?id=kb_article_view&sysparm_article=KB0063868)
+and [Scaleway](https://www.scaleway.com/en/docs/object-storage/concepts/).
+Equivalent versioning, conditional publication, event logging, retention, and
+region behavior must be qualified on the selected S3-compatible provider rather
+than inferred from API compatibility alone.
+
+Each microVM runs active tools on a fast local ext4/xfs block disk. The
+**sync-hybrid** bridge runs inside the guest. rclone is the initial candidate;
+Mountpoint for Amazon S3 may be qualified only as transfer/write-back plumbing
+and is never mounted at `/workspace`. The bridge hydrates a manifest lazily at
+session start and flushes on provider-fs write, explicit checkpoint, and session
+end.
+
+One active writer lease exists per tenant/workspace. Checkpoint conditionally
+publishes against the baseline object version IDs. A second sandbox writer or a
+direct user S3 edit during a live lease causes a stable conflict and fence/
+refresh; it never silently last-writer-wins or publishes a partial generation.
+Provider `/fs` success means S3 commit completed. Exec-process writes become
+durable only at the documented checkpoint boundary. If flush fails, retain and
+fence the encrypted local disk for recovery; never destroy it while claiming
+success. Gate 0 defines the exec-write crash/expiry RPO and proves
+write/checkpoint -> destroy -> recreate -> read.
+
+Mountpoint's own [filesystem-semantics
+document](https://github.com/awslabs/mountpoint-s3/blob/main/doc/SEMANTICS.md)
+explicitly does not implement full POSIX semantics; that is why it cannot be the
+working filesystem.
+
+Every guest receives only short-lived credentials scoped by prefix and action to
+its tenant namespace. The agent can read those credentials; expiry and scope are
+therefore security invariants, not optional hardening. The policy denies
+bucket-policy/lifecycle/versioning/retention changes, DeleteObjectVersion, and
+cross-prefix access. An escaped sandbox can reach at most its current tenant
+objects, not erase their retained history.
+
+### Copy-in rationale: no host mount
+
+Transient context, project inputs, uploads, and SQL-result CSVs are copied into
+the microVM's separate unsynced `/inputs` tree over the bounded provider
+channel. They are never placed under the S3-backed `/workspace`, are securely
+discarded at teardown, and are never bind-mounted from a host directory. A
+virtio-fs/9p host mount is a live
+cross-boundary channel: it expands the VMM/device attack surface, adds
+path-traversal and symlink-race opportunities, and exposes a continuously
+reachable host tree rather than a bounded copied object set. Copy-in removes
+that channel and keeps Firecracker viable because Firecracker has no virtio-fs.
+It is the structural form of the existing no-host-paths guardrail.
 
 ### Consequences
 
 - Kata + Cloud Hypervisor is not the v1 answer merely because it has virtio-fs.
-- Project quota on a shared host workspace is replaced by a bounded durable
-  tenant workspace plus a per-microVM ephemeral overlay and
-  CPU/memory/PID/output/lease/concurrency limits with a host reserve.
+- Opaque volume snapshots and JuiceFS-style chunk stores are explicitly
+  rejected for v1 persistence because they remove direct user S3 access.
+- Project quota on a shared host workspace is replaced by per-tenant S3 limits,
+  a bounded per-microVM local disk, and CPU/memory/PID/output/lease/concurrency
+  limits with a host reserve.
 - The existing public SandboxProviderV1/remote-worker fs semantics remain; only
   their backend realization changes.
 - Host inotify cannot be required. Use guest events or bounded polling.
-- Rollback copies required artifacts out through the API before destroying a
-  microVM; it does not archive a host bind-mount source.
+- Rollback checkpoints required artifacts to the tenant bucket before
+  destroying a microVM; it does not archive a host bind-mount source.
+- Same-workspace concurrency and direct S3 drift are explicit conflicts; object
+  versioning is history, not permission for uncontrolled last-writer-wins.
 
 ## Decision 4 — gVisor and alternative engines
 
@@ -235,19 +292,31 @@ Product-specific arrakis mistakes such as guest-visible nested KVM and a
 **Rejected as a tenant boundary.** They share the host kernel by definition; a
 host-kernel escape crosses tenants.
 
+### E2B self-hosted
+
+**Deferred for v1; candidate for v2 snapshot-fork adoption.** Its Firecracker
+engine is compatible with the isolation decision, but v1's S3 system of record
+does not need E2B's persistence engine. Nomad, Consul, Redis, Postgres,
+client-proxy, and ingress operations therefore do not earn their weight on the
+single-box path. v2 may adopt its snapshot-fork engine or build Boring's own.
+
 ## Decision 5 — guardrails and qualification
 
 Changing the outer engine does not remove the existing guardrails. v1 keeps and
 repoints:
 
 - fail-closed startup on missing, stale, or mismatched cohort facts;
-- immutable pins for E2B, Firecracker, jailer, guest kernel, rootfs/template,
-  guest agent, network policy, and quota profile;
-- egress denied by default;
-- all 11 existing logical hostile assertions, run through a Firecracker/E2B
-  driver against the exact box and guest template;
+- immutable pins for containerd, Kata, Firecracker, jailer, guest kernel, OCI
+  image, guest agent, S3 sync bridge, network policy, and quota profile;
+- egress denied by default with only the admitted S3 endpoint allowlisted;
+- all 11 existing logical hostile assertions, run through a Firecracker/Kata
+  driver against the exact box and guest image;
 - no host path, runtime socket, /dev/kvm, arbitrary VM spec, image/template
   override, or qualification override on the wire;
+- short-lived, tenant-prefix/action-scoped S3 credentials, with expiry,
+  cross-prefix denial, and historical-version protection proved from the guest;
+- copy-in-only transient inputs, authorization-keyed session reuse with idle
+  TTL, and optional-runtime graceful degradation;
 - per-microVM CPU, memory, PID, output, block, lease, and concurrent-sandbox
   limits plus host reserve;
 - authorization before effect, strict schemas/body bounds, stable redacted
@@ -257,20 +326,23 @@ repoints:
 ### Gate 0 correction
 
 The old openat2 gate selected a gVisor release because runsc returned ENOSYS.
-That outer-engine gate is superseded by Firecracker/E2B qualification.
+That outer-engine gate is superseded by Kata + Firecracker qualification.
 
-The path-confinement property remains. If the existing workspace helper remains
-inside the guest, qualification proves openat2 with
-RESOLVE_BENEATH/RESOLVE_NO_MAGICLINKS plus traversal and symlink-race negatives.
-If E2B's fs agent replaces it, the adapter must prove equivalent beneath-root
-semantics and the same negatives. No realpath fallback is allowed.
+The path-confinement property remains. The guest-local and copy-in paths prove
+openat2 with RESOLVE_BENEATH/RESOLVE_NO_MAGICLINKS or equivalent beneath-root
+semantics plus traversal and symlink-race negatives. No realpath fallback is
+allowed.
 
 Gate 0 additionally proves two concurrent tenant identities receive distinct
 microVMs, guest kernels, workspace/overlay objects, network identities, and
-data; all 11 logical hostile assertions pass through a Firecracker/E2B driver;
-durable workspace recovery works; cleanup works across partial
-E2B/Nomad/Consul failure; and no control-plane secret or other tenant data is
-guest-visible.
+data; all 11 logical hostile assertions pass through a Firecracker/Kata driver;
+local POSIX behavior, atomic manifest publication, single-writer/direct-edit
+conflicts, failed-flush fencing, and S3 sync-hybrid recovery work; file version
+history is user-visible; `/inputs` never syncs; network policy reaches only S3;
+scoped credentials expire, cannot cross tenant prefixes, and cannot delete
+retained versions; pool/idle-TTL and optional-runtime behaviors work; cleanup
+survives partial gateway/containerd/Kata/S3 failure; and no control-plane secret
+or other tenant data is guest-visible.
 
 ## Decision 6 — operator ownership
 
@@ -290,13 +362,13 @@ are explicitly tracked:
 
 ### Host data and secrets
 
-E2B API/client-proxy, required Redis, Postgres, object storage, and Nomad/Consul
-servers live on trusted management infrastructure rather than in the sandbox
-node's guest/VMM trust domain. The node contains no reusable customer/API
-secrets, model-provider credentials, or transcript/session store. There is no
-shared host workspace directory containing multiple tenants' plaintext. Each
-jailer chroot can reach only its sandbox's block/image objects and bounded
-transfer channel.
+The sandbox host contains no control-plane signing secrets, reusable customer
+or model-provider credentials, transcript/session store, shared plaintext
+workspace tree, or durable other-tenant plaintext in host services/files. Local
+working-block backing is per-microVM encrypted or ephemeral and securely
+discarded after a successful flush. The sync bridge and scoped credential live
+inside that guest. Because the agent can inspect the credential, short lifetime
+and prefix/action scope are mandatory.
 
 ### Side channels
 
@@ -305,42 +377,61 @@ guarantee. CPU microcode, core scheduling/sibling isolation, host cohort
 selection, and measurement are a separate workstream. They are recorded and may
 fence a cohort; they are never described as Firecracker protections.
 
-## Decision 7 — control-plane seam and hosting
+## Decision 7 — provider adapter behaviors and hosting
 
 The stable application seam remains SandboxProviderV1 and the remote-worker V1
-verbs. v1 adds a thin adapter from that contract to E2B's supported public
-API/SDK; E2B owns its internal orchestrator/envd routing. Seneca does not expose
-E2B's general template or VM-spec API.
+verbs. v1 adds a thin adapter from that contract to containerd/Kata's admitted
+OCI launch path and guest operations. Seneca does not expose RuntimeClass,
+arbitrary images, Firecracker machine configuration, or privileged devices.
+
+The adapter owns three runtime behaviors:
+
+1. **Session pool + idle TTL.** Reuse a warm sandbox across calls only for the
+   same authorized tenant/workspace/session binding. Reset the idle deadline on
+   use; flush and destroy on idle expiry or hard lease. This is bounded session
+   reuse, not v2 snapshot-fork/warm-pool machinery.
+2. **Network off by default.** The admitted policy denies all guest egress except
+   the selected tenant S3 endpoint. Callers cannot widen the allowlist.
+3. **Optional-runtime graceful degrade.** If the Kata provider/runtime is absent
+   or unhealthy, the host app/control plane may start, but sandbox admission and
+   remote-worker create fail closed with a stable unavailable state. The app
+   never silently falls back to direct, local, runsc, or another weaker runtime.
+
+The [getnao/nao BoxLite reference
+spike](https://github.com/getnao/nao/blob/018d1f155fc52e5c24853bd9934c469758487b6f/apps/backend/src/agents/tools/execute-sandboxed-code.ts)
+demonstrates the pool, idle-TTL reset, explicit copy-in, and optional-import
+patterns. Boring adopts those provider behaviors behind SandboxProviderV1, not
+BoxLite's libkrun engine. The spike enables guest networking; Boring tightens
+that setting to default-off plus S3-only allowlisting.
 
 Customers reach Seneca's public multi-tenant application. Seneca's trusted
 control plane reaches the worker over private ingress with request-bound
 authorization. The root-equivalent VMM/worker API is never a public customer
 endpoint.
 
-v1 runs its sandbox data plane on one EU bare-metal KVM host. E2B placement has
-one admitted candidate; there is no Boring-owned or multi-host scheduler.
-Trusted management infrastructure separately runs the E2B API, client-proxy,
-required Redis routing catalog, Postgres, object storage, Nomad/Consul servers,
-and private wildcard DNS/TLS ingress needed by the qualified deployment. The
-sandbox node keeps only the minimum
-node/client/VMM components and no signing roots, reusable customer secrets, or
-other-tenant plaintext. This is shared metal, not one standing VM per customer.
-A second sandbox host, real scheduler, or automatic admission is v2.
+v1 runs its sandbox data plane on one EU bare-metal KVM host with containerd,
+Kata, and Firecracker/jailer; each guest contains its agent and S3 sync bridge.
+The trusted management plane runs the bounded gateway and capability/binding
+state; the EU-sovereign object store remains the durable data tier. The sandbox
+host has no signing roots, reusable customer secrets, shared plaintext
+workspace tree, or durable other-tenant plaintext in host services/files. This
+is shared metal, not one standing VM per customer. A second sandbox host, real
+scheduler, or automatic admission is v2.
 
 ## Decision 8 — v1 to v2
 
 Because v1 already uses a KVM microVM per sandbox behind SandboxProviderV1, v2 is
-not a shared-kernel-to-hardware migration. It is an adopted-control-plane to
-owned-fleet transition. The app-facing contract, guest-agent shape, isolation
-class, and durable workspace API semantics remain stable.
+not a shared-kernel-to-hardware migration. It is a single-host runtime-wrapper
+to snapshot-aware fleet transition. The app-facing contract, guest-agent shape,
+isolation class, and S3 data-substrate semantics remain stable.
 
-v2 likely uses Cloud Hypervisor. If so, the VMM binary changes, but the boundary
-architecture does not: one hardware microVM per sandbox on shared metal. The VMM
-change receives its own qualification and CVE-response gate.
-
-E2B may internally use opaque UFFD/NBD template restore in v1; that is an
-adopted implementation detail, not a Seneca snapshot product or an owned fleet
-primitive. The owned density optimizations are deliberately deferred:
+v2 has two explicit paths. Adopting E2B's snapshot-fork engine keeps
+Firecracker. Building Boring's owned fleet likely uses Cloud Hypervisor. Either
+route receives its own qualification/CVE-response gate, preserves one microVM
+per sandbox, and keeps tenant-readable S3 as the durable system of record.
+Block/memory snapshots accelerate ephemeral working-state fork/restore; they do
+not become the opaque tenant-data product. The fleet density optimizations are
+deliberately deferred:
 
 - block-level incremental snapshot/fork;
 - memory snapshot/restore;
@@ -361,13 +452,13 @@ persistence, and snapshot-locality-aware fleet orchestration. See
 | # | Question | Corrected choice |
 | --- | --- | --- |
 | 1 | Tenant boundary | Firecracker microVM per sandbox; shared host, never shared boundary |
-| 2 | v1 build/adopt | ADOPT E2B self-hosted + Firecracker; no bespoke VMM fleet |
-| 3 | Workspace filesystem | Durable tenant volume/snapshot through fs API; no host directory mount |
-| 4 | Other engines | gVisor optional inside FC; libkrun rejected; Cloud Hypervisor likely v2 |
-| 5 | Guardrails | Fail closed, egress deny, 11 probes, no host paths, quota, rollback |
-| 6 | Operator ownership | CI-owned VMM pins; sterile hosts; side channels separate |
-| 7 | Seam/hosting | SandboxProviderV1; one EU sandbox host plus separate trusted management plane |
-| 8 | v2 | Owned fleet + snapshot/fork/locality; same isolation architecture |
+| 2 | v1 build/adopt | Firecracker engine + adopted Kata containerd runtime wrapper; no bespoke VMM fleet |
+| 3 | v1 storage | Tenant-readable S3 system of record + local POSIX disk + sync-hybrid; no host mount |
+| 4 | Other engines/vehicles | gVisor optional inside FC; microsandbox rejected; E2B deferred to v2; Cloud Hypervisor likely v2 |
+| 5 | Guardrails | Fail closed, S3-only egress, 11 probes, scoped credentials, no host paths, quota, rollback |
+| 6 | Operator ownership | CI-owned Firecracker pins; sterile hosts; side channels separate |
+| 7 | Seam/hosting | SandboxProviderV1; session pool/idle TTL; optional runtime; one EU sandbox host + EU object store |
+| 8 | v2 | E2B snapshot-fork adoption or owned fleet + warm pools/locality; same isolation spine |
 
 ## Sources
 
@@ -379,4 +470,8 @@ persistence, and snapshot-locality-aware fleet orchestration. See
 - [E2B infrastructure architecture](https://github.com/e2b-dev/infra/blob/main/docs/ARCHITECTURE.md).
 - [Kata Containers virtualization matrix](https://kata-containers.github.io/kata-containers/design/virtualization/).
 - [Kata Containers with Firecracker](https://github.com/kata-containers/kata-containers/blob/main/docs/how-to/how-to-use-kata-containers-with-firecracker.md).
+- [getnao/nao BoxLite adapter reference spike](https://github.com/getnao/nao/blob/018d1f155fc52e5c24853bd9934c469758487b6f/apps/backend/src/agents/tools/execute-sandboxed-code.ts).
+- [Amazon S3 versioning](https://docs.aws.amazon.com/AmazonS3/latest/userguide/versioning-workflows.html), [Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html), and [CloudTrail object data events](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/logging-data-events-with-cloudtrail.html).
+- [Cloudflare R2 EU jurisdiction controls](https://developers.cloudflare.com/r2/reference/data-location/), [OVHcloud Object Storage versioning](https://help.ovhcloud.com/csm/pt-public-cloud-storage-s3-versioning?id=kb_article_view&sysparm_article=KB0063868), and [Scaleway Object Storage regions/Object Lock](https://www.scaleway.com/en/docs/object-storage/concepts/).
+- [Mountpoint for Amazon S3 filesystem semantics](https://github.com/awslabs/mountpoint-s3/blob/main/doc/SEMANTICS.md).
 - [Local security evaluation](references/sandbox-engine-security-eval.md).
