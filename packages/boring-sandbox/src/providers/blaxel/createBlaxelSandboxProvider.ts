@@ -42,6 +42,26 @@ interface SeedTransaction {
   entries: string[]
 }
 
+// The Blaxel base image ships busybox flock, which supports -x/-n but not
+// -w <seconds>. Emulate the bounded wait host-side: retry a non-blocking
+// acquire until the deadline. Portable across busybox and util-linux.
+async function execFlockWithWait(
+  provisioning: BlaxelProvisioningAdapter,
+  waitSeconds: number,
+  args: string[],
+): Promise<void> {
+  const deadline = Date.now() + waitSeconds * 1000
+  for (;;) {
+    try {
+      await provisioning.exec('flock', ['-x', '-n', ...args])
+      return
+    } catch (error) {
+      if (Date.now() >= deadline) throw error
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    }
+  }
+}
+
 async function seedTemplate(input: {
   workspace: ReturnType<typeof createBlaxelSandboxWorkspace>
   provisioning: BlaxelProvisioningAdapter
@@ -118,8 +138,8 @@ mv -T -- "$lease.tmp" "$lease"`
   let lockAcquired = false
   for (let attempt = 0; attempt < 200; attempt += 1) {
     try {
-      await provisioning.exec('flock', [
-        '-w', '1', guardPath, 'sh', '-c', acquireScript, 'boring-seed-lock',
+      await execFlockWithWait(provisioning, 1, [
+        guardPath, 'sh', '-c', acquireScript, 'boring-seed-lock',
         lockPath, lockOwner, String(Date.now()), String(Date.now() + SEED_LOCK_TTL_MS),
       ])
       lockAcquired = true
@@ -142,8 +162,8 @@ mv -T -- "$lease.tmp" "$lease"`
   let renewal = Promise.resolve()
   const heartbeat = setInterval(() => {
     renewal = renewal.then(async () => {
-      await provisioning.exec('flock', [
-        '-w', '10', guardPath, 'sh', '-c', renewScript, 'boring-seed-lock',
+      await execFlockWithWait(provisioning, 10, [
+        guardPath, 'sh', '-c', renewScript, 'boring-seed-lock',
         lockPath, lockOwner, String(Date.now() + SEED_LOCK_TTL_MS),
       ])
     }).catch((error) => { heartbeatFailure = error })
@@ -235,8 +255,8 @@ lock=$1; owner=$2; lease="$lock/lease"
 test -f "$lease"
 test "$(sed -n '1p' "$lease")" = "$owner"
 rm -rf -- "$lock"`
-    await provisioning.exec('flock', [
-      '-w', '10', guardPath, 'sh', '-c', releaseScript, 'boring-seed-lock',
+    await execFlockWithWait(provisioning, 10, [
+      guardPath, 'sh', '-c', releaseScript, 'boring-seed-lock',
       lockPath, lockOwner,
     ])
     if (heartbeatFailure) {
@@ -284,7 +304,7 @@ export function createBlaxelSandboxProvider(
       })
       try {
         const preflight = await sandbox.exec(
-          `set -eu; export LC_ALL=C; command -v sh >/dev/null; command -v stat >/dev/null; command -v mv >/dev/null; command -v mkdir >/dev/null; command -v realpath >/dev/null; command -v mktemp >/dev/null; command -v rm >/dev/null; command -v sed >/dev/null; command -v flock >/dev/null; test -d ${shellQuote(BLAXEL_WORKSPACE_ROOT)}; d=$(mktemp -d /tmp/boring-blaxel-preflight.XXXXXX); volume_lock=${shellQuote(`${BLAXEL_WORKSPACE_ROOT}/.boring-blaxel-flock-preflight.lock`)}; trap 'rm -rf -- "$d"; rm -f -- "$volume_lock"' EXIT; mkdir -p -- "$d/a"; printf x >"$d/a/f"; stat -Lc '%s|%Y|%F' -- "$d/a/f" >/dev/null; realpath -e -- "$d/a/f" >/dev/null; realpath -m -- "$d/a/missing" >/dev/null; mv -T -- "$d/a/f" "$d/a/g"; flock -w 1 "$volume_lock" true`,
+          `set -eu; export LC_ALL=C; command -v sh >/dev/null; command -v stat >/dev/null; command -v mv >/dev/null; command -v mkdir >/dev/null; command -v realpath >/dev/null; command -v mktemp >/dev/null; command -v rm >/dev/null; command -v sed >/dev/null; command -v flock >/dev/null; test -d ${shellQuote(BLAXEL_WORKSPACE_ROOT)}; d=$(mktemp -d /tmp/boring-blaxel-preflight.XXXXXX); volume_lock=${shellQuote(`${BLAXEL_WORKSPACE_ROOT}/.boring-blaxel-flock-preflight.lock`)}; trap 'rm -rf -- "$d"; rm -f -- "$volume_lock"' EXIT; mkdir -p -- "$d/a"; printf x >"$d/a/f"; stat -Lc '%s|%Y|%F' -- "$d/a/f" >/dev/null; realpath "$d/a/f" >/dev/null; realpath "$d/a/missing" >/dev/null; mv -T -- "$d/a/f" "$d/a/g"; flock -x -n "$volume_lock" true`,
           { timeoutMs: 10_000, maxOutputBytes: 8 * 1024 },
         )
         if (preflight.exitCode !== 0) {

@@ -230,7 +230,12 @@ export function createBlaxelSandboxWorkspace(
   }
 
   async function assertResolvedWithinRoot(path: string): Promise<void> {
-    const resolved = (await helper(`realpath -e -- ${shellQuote(path)}`)).trim()
+    // Busybox realpath (Blaxel base image) rejects `--` and has no -e flag;
+    // plain `realpath` resolves on both busybox and GNU, and `test -e` supplies
+    // the must-exist semantics. Paths here are absolute, so no leading-dash risk.
+    // The stderr message matters: helper() maps "no such file" onto ENOENT,
+    // which provisioning's readOptional() relies on for absent-file probes.
+    const resolved = (await helper(`test -e ${shellQuote(path)} || { echo 'No such file or directory' >&2; exit 1; }; realpath ${shellQuote(path)}`)).trim()
     if (resolved !== BLAXEL_WORKSPACE_ROOT && !resolved.startsWith(`${BLAXEL_WORKSPACE_ROOT}/`)) {
       throw Object.assign(new Error('resolved path escapes workspace root'), { code: EPERM })
     }
@@ -240,7 +245,7 @@ export function createBlaxelSandboxWorkspace(
     let result
     try {
       result = await remote.process.exec({
-        command: `sh -c ${shellQuote(`export LC_ALL=C; if test -L ${shellQuote(path)}; then exit 77; elif test -e ${shellQuote(path)}; then realpath -e -- ${shellQuote(path)}; else realpath -m -- ${shellQuote(path)}; fi`)}`,
+        command: `sh -c ${shellQuote(`export LC_ALL=C; if test -L ${shellQuote(path)}; then exit 77; fi; p=${shellQuote(path)}; suffix=''; while ! test -e "$p"; do suffix="/$(basename "$p")$suffix"; p=$(dirname "$p"); done; base=$(realpath "$p") || exit 1; printf '%s%s\\n' "$base" "$suffix"`)}`,
         workingDir: BLAXEL_WORKSPACE_ROOT,
         keepAlive: true,
         timeout: HELPER_TIMEOUT_SECONDS,
