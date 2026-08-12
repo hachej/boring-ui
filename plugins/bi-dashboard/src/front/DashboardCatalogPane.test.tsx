@@ -4,22 +4,31 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { DashboardCatalogPane, type DashboardCatalogAdapter } from "./DashboardCatalogPane"
 
 class IntersectionObserverStub {
-  static callback: IntersectionObserverCallback | undefined
-  constructor(callback: IntersectionObserverCallback) {
-    IntersectionObserverStub.callback = callback
+  static instances: IntersectionObserverStub[] = []
+  active = false
+  constructor(private readonly callback: IntersectionObserverCallback) {
+    IntersectionObserverStub.instances.push(this)
   }
-  observe() {}
-  disconnect() {}
+  observe() { this.active = true }
+  disconnect() { this.active = false }
   unobserve() {}
   takeRecords(): IntersectionObserverEntry[] { return [] }
   readonly root = null
   readonly rootMargin = "0px"
   readonly thresholds = [0]
+
+  static async trigger() {
+    const observer = [...this.instances].reverse().find((instance) => instance.active)
+    await observer?.callback([{ isIntersecting: true } as IntersectionObserverEntry], observer as unknown as IntersectionObserver)
+  }
 }
 
 vi.stubGlobal("IntersectionObserver", IntersectionObserverStub)
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  IntersectionObserverStub.instances = []
+  vi.restoreAllMocks()
+})
 
 describe("DashboardCatalogPane", () => {
   it("forwards search, groups rows, and resolves selected panels", async () => {
@@ -61,14 +70,14 @@ describe("DashboardCatalogPane", () => {
     render(<DashboardCatalogPane adapter={adapter} params={{}} pageSize={1} />)
     await screen.findByText("One")
 
-    await act(async () => IntersectionObserverStub.callback?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
-    await screen.findByText("Loading more…")
+    await act(async () => IntersectionObserverStub.trigger())
+    await waitFor(() => expect(adapter.search).toHaveBeenCalledTimes(2))
     expect(adapter.search).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 1, offset: 1 }))
     expect((adapter.search as ReturnType<typeof vi.fn>).mock.calls[1][0].signal.aborted).toBe(false)
     await act(async () => resolvePage?.({ items: [{ id: "one", title: "One updated", params: { path: "one" } }], total: 3, hasMore: true }))
     expect(await screen.findByText("One updated")).toBeTruthy()
 
-    await act(async () => IntersectionObserverStub.callback?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
+    await act(async () => IntersectionObserverStub.trigger())
     expect(await screen.findByText("Three")).toBeTruthy()
     expect(adapter.search).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 1, offset: 2 }))
   })
@@ -81,7 +90,8 @@ describe("DashboardCatalogPane", () => {
     }
     render(<DashboardCatalogPane adapter={adapter} params={{}} />)
     await screen.findByText("One")
-    await act(async () => IntersectionObserverStub.callback?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
+    await waitFor(() => expect(IntersectionObserverStub.instances.some((instance) => instance.active)).toBe(true))
+    await act(async () => IntersectionObserverStub.trigger())
     expect(await screen.findByText("Could not list dashboards")).toBeTruthy()
     expect(adapter.search).toHaveBeenCalledTimes(2)
   })
