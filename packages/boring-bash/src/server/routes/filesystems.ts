@@ -66,7 +66,6 @@ function catalogEntry(binding: RuntimeFilesystemBinding): FilesystemCatalogEntry
     label: binding.filesystem,
     rootDir: '/',
     access: binding.access === 'readwrite' ? 'readwrite' : 'readonly',
-    ...(binding.provenance === 'agent-definition' ? { provenance: binding.provenance } : {}),
     capabilities: capabilitiesFor(binding),
   }
 }

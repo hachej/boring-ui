@@ -9,13 +9,13 @@ import {
   SCRIPTED_ONE_AGENT,
   SCRIPTED_ONE_AGENT_CAPABILITY_PLUGINS,
   SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS,
-  SCRIPTED_TWO_AGENT_DEFAULT,
   SCRIPTED_TWO_AGENT_FLEET,
 } from "./testing/twoAgentFleet"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 import { createWorkspaceBeadsOperations } from "@hachej/boring-tasks/server"
 import { loadBoringFactoryAgents } from "./factoryAgents"
 import { resolvePlaygroundAgentMode } from "./playgroundAgentMode"
+import { resolvePlaygroundDefaultAgentTypeId } from "../shared/playgroundAgents"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
 export const VITE_PORT = Number(process.env.PORT) || 5200
@@ -74,6 +74,7 @@ export async function startPlaygroundServer(): Promise<void> {
     const factoryAgents = agentMode === "factory" ? await loadBoringFactoryAgents({ workspaceRoot }) : undefined
     const scriptedAgents = agentMode === "scripted-multi" ? SCRIPTED_TWO_AGENT_FLEET : SCRIPTED_ONE_AGENT
     const agents = factoryAgents ?? scriptedAgents
+    const defaultAgentTypeId = resolvePlaygroundDefaultAgentTypeId(agents)
     const scriptedCapabilityPlugins = agentMode === "scripted-multi"
       ? SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS
       : agentMode === "scripted-single" ? SCRIPTED_ONE_AGENT_CAPABILITY_PLUGINS : []
@@ -96,7 +97,7 @@ export async function startPlaygroundServer(): Promise<void> {
       // production hosts get, instead of relying on the library default.
       readonlyWorkspacePaths: [".agents"],
       agents,
-      defaultAgentTypeId: agentMode === "factory" ? "boring-concierge" : SCRIPTED_TWO_AGENT_DEFAULT,
+      defaultAgentTypeId,
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
       ...(agentMode === "factory" ? {} : { harnessFactory: createPersistedScriptedPiHarness }),
       plugins: [
@@ -129,6 +130,7 @@ export async function startPlaygroundServer(): Promise<void> {
         projectName: remoteWorkerWorkspaceId ? "Remote worker playground" : localName,
         workspaceId: remoteWorkerWorkspaceId ?? localName,
         workspaceRoot,
+        defaultAgentTypeId,
       }
     })
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })

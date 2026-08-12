@@ -12,6 +12,8 @@ import {
 } from "@hachej/boring-agent/server"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
+const MODEL_TIERS_YAML = "models:\n  tiers:\n    T3:\n      - provider: anthropic\n        id: claude-sonnet-4-6\n        envVar: ANTHROPIC_API_KEY\n"
+
 const agentServerMock = vi.hoisted(() => {
   const captureResolvedRuntimeScope = vi.fn(async (_resolved?: unknown) => undefined)
   const hostClose = vi.fn(async () => {})
@@ -1480,7 +1482,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     await writeFile(join(fleetRoot, ".agents", "personas", "one", "instructions.md"), "You are One.\n", "utf8")
     await writeFile(
       join(fleetRoot, ".agents", "factory", "fleet.yaml"),
-      "seats:\n  - seat: one\n    agentTypeId: fixture-one\n    skills: []\n",
+      `${MODEL_TIERS_YAML}seats:\n  - seat: one\n    agentTypeId: fixture-one\n    skills: []\n`,
       "utf8",
     )
 
@@ -1575,7 +1577,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     await writeFile(join(personasRoot, "invalid", "package.json"), packageJson("@fixture/invalid"), "utf8")
     await writeFile(
       join(fleetRoot, ".agents", "factory", "fleet.yaml"),
-      "seats:\n  - seat: conflict\n    agentTypeId: fixture-conflict\n    skills: []\n",
+      `${MODEL_TIERS_YAML}seats:\n  - seat: conflict\n    agentTypeId: fixture-conflict\n    skills: []\n`,
       "utf8",
     )
 
@@ -1629,7 +1631,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       }), "utf8")
     }
     const writeFleet = async (seats: string) => {
-      await writeFile(fleetPath, seats ? `seats:\n${seats}` : "seats: []\n", "utf8")
+      await writeFile(fleetPath, `${MODEL_TIERS_YAML}${seats ? `seats:\n${seats}` : "seats: []\n"}`, "utf8")
     }
     const bootAgentIds = async () => {
       const app = await createWorkspaceAgentServer({
@@ -1735,7 +1737,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     )
     await writeFile(
       join(fleetRoot, ".agents", "factory", "fleet.yaml"),
-      "seats:\n  - seat: remote-worker\n    agentTypeId: fixture-remote-worker\n    skills: []\n",
+      `${MODEL_TIERS_YAML}seats:\n  - seat: remote-worker\n    agentTypeId: fixture-remote-worker\n    skills: []\n`,
       "utf8",
     )
 

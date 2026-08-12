@@ -13,6 +13,7 @@ import { createFolderModeApp, createWorkspacesModeApp } from "../modeApps.js"
 
 const automationFailure = vi.hoisted(() => ({ enabled: false }))
 const pluginFrontFailure = vi.hoisted(() => ({ enabled: false, closeCalls: 0 }))
+const MODEL_TIERS_YAML = "models:\n  tiers:\n    T3:\n      - provider: anthropic\n        id: claude-sonnet-4-6\n        envVar: ANTHROPIC_API_KEY\n"
 
 vi.mock("../pluginFrontRuntime.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../pluginFrontRuntime.js")>()
@@ -143,18 +144,25 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
 }
 
 describe.sequential("CLI Agent Host composition", () => {
-  it("workspaces hub boots a seated agent from a registered workspace-local package", async () => {
+  it("workspaces hub excludes workspace-local packages from its global fleet", async () => {
     const fleetRoot = await temporaryRoot("boring-cli-local-agent-fleet-")
-    const workspaceRoot = await temporaryRoot("boring-cli-local-agent-workspace-")
+    const workspaceARoot = await temporaryRoot("boring-cli-local-agent-workspace-a-")
+    const workspaceBRoot = await temporaryRoot("boring-cli-local-agent-workspace-b-")
     const registryRoot = await temporaryRoot("boring-cli-local-agent-registry-")
-    const packageRoot = join(workspaceRoot, "agents", "local-worker")
+    const localPackageRoot = join(workspaceARoot, "agents", "local-worker")
+    const duplicatePackageRoot = join(workspaceARoot, "agents", "duplicate-repository-worker")
+    const repositoryPackageRoot = join(fleetRoot, ".agents", "personas", "repository-worker")
     const registryPath = join(registryRoot, "workspaces.yaml")
-    await createLocalWorkspaceRegistry(registryPath).add(workspaceRoot)
-    await mkdir(packageRoot, { recursive: true })
-    await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
+    const registry = createLocalWorkspaceRegistry(registryPath)
+    await registry.add(workspaceARoot)
+    const workspaceB = await registry.add(workspaceBRoot)
+    await mkdir(localPackageRoot, { recursive: true })
+    await mkdir(join(duplicatePackageRoot, "knowledge"), { recursive: true })
+    await mkdir(join(repositoryPackageRoot, "knowledge"), { recursive: true })
+    await mkdir(join(workspaceARoot, ".pi"), { recursive: true })
     await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
-    await writeFile(join(packageRoot, "instructions.md"), "CLI local worker.\n", "utf8")
-    await writeFile(join(packageRoot, "package.json"), JSON.stringify({
+    await writeFile(join(localPackageRoot, "instructions.md"), "CLI local worker.\n", "utf8")
+    await writeFile(join(localPackageRoot, "package.json"), JSON.stringify({
       name: "@fixture/cli-local-worker",
       version: "1.0.0",
       boring: {
@@ -167,14 +175,53 @@ describe.sequential("CLI Agent Host composition", () => {
       },
       pi: { skills: [] },
     }), "utf8")
+    await writeFile(join(duplicatePackageRoot, "instructions.md"), "Workspace A duplicate worker.\n", "utf8")
+    await writeFile(join(duplicatePackageRoot, "knowledge", "scope.md"), "Workspace A only.\n", "utf8")
+    await writeFile(join(duplicatePackageRoot, "package.json"), JSON.stringify({
+      name: "@fixture/cli-duplicate-repository-worker",
+      version: "1.0.0",
+      boring: {
+        agent: {
+          definitionId: "fixture-cli-repository-worker",
+          version: "1.0.0",
+          label: "Workspace A Duplicate Worker",
+          instructionsRef: "instructions.md",
+        },
+      },
+      pi: { skills: [] },
+    }), "utf8")
+    await writeFile(join(repositoryPackageRoot, "instructions.md"), "CLI repository worker.\n", "utf8")
+    await writeFile(join(repositoryPackageRoot, "knowledge", "scope.md"), "Repository owned.\n", "utf8")
+    await writeFile(join(repositoryPackageRoot, "package.json"), JSON.stringify({
+      name: "@fixture/cli-repository-worker",
+      version: "1.0.0",
+      boring: {
+        agent: {
+          definitionId: "fixture-cli-repository-worker",
+          version: "1.0.0",
+          label: "CLI Repository Worker",
+          instructionsRef: "instructions.md",
+        },
+      },
+      pi: { skills: [] },
+    }), "utf8")
     await writeFile(
-      join(workspaceRoot, ".pi", "settings.json"),
-      JSON.stringify({ packages: ["../agents/local-worker"] }),
+      join(workspaceARoot, ".pi", "settings.json"),
+      JSON.stringify({ packages: ["../agents/local-worker", "../agents/duplicate-repository-worker"] }),
       "utf8",
     )
     await writeFile(
       join(fleetRoot, ".agents", "factory", "fleet.yaml"),
-      "seats:\n  - seat: local-worker\n    agentTypeId: fixture-cli-local-worker\n    skills: []\n",
+      MODEL_TIERS_YAML + [
+        "seats:",
+        "  - seat: repository-worker",
+        "    agentTypeId: fixture-cli-repository-worker",
+        "    skills: []",
+        "  - seat: local-worker",
+        "    agentTypeId: fixture-cli-local-worker",
+        "    skills: []",
+        "",
+      ].join("\n"),
       "utf8",
     )
 
@@ -193,16 +240,47 @@ describe.sequential("CLI Agent Host composition", () => {
       expect(createAgentHost).toHaveBeenCalledWith(expect.objectContaining({
         agents: expect.arrayContaining([
           expect.objectContaining({ agentTypeId: "default" }),
-          expect.objectContaining({ agentTypeId: "fixture-cli-local-worker" }),
+          expect.objectContaining({ agentTypeId: "fixture-cli-repository-worker" }),
         ]),
       }))
+      const agents = createAgentHost.mock.calls[0]?.[0].agents ?? []
+      expect(agents).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ agentTypeId: "fixture-cli-local-worker" }),
+      ]))
+      expect(agents).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          agentTypeId: "fixture-cli-repository-worker",
+          definition: expect.objectContaining({
+            instructions: "CLI repository worker.\n",
+            digest: expect.stringMatching(/^sha256:/),
+          }),
+          knowledge: { rootDir: join(repositoryPackageRoot, "knowledge") },
+        }),
+      ]))
+
+      const workspaceBAgents = await app.inject({
+        method: "GET",
+        url: "/api/v1/agents",
+        headers: { "x-boring-workspace-id": workspaceB.id },
+      })
+      expect(workspaceBAgents.statusCode, workspaceBAgents.body).toBe(200)
+      expect(workspaceBAgents.json()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ agentTypeId: "default" }),
+        expect.objectContaining({
+          agentTypeId: "fixture-cli-repository-worker",
+          label: "CLI Repository Worker",
+        }),
+      ]))
+      expect(workspaceBAgents.json()).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ agentTypeId: "fixture-cli-local-worker" }),
+      ]))
     } finally {
       if (app) await app.close()
       process.chdir(previousCwd)
       if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
       else process.env.BORING_AGENT_FLEET = previousFlag
     }
-  })
+  }, 30_000)
 
   it("closes folder-mode Host and front runtime when post-mount runtime route init fails", async () => {
     const workspaceRoot = await temporaryRoot("boring-cli-folder-post-mount-cleanup-")

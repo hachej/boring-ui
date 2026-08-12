@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import {
   fileResourceExists,
+  loadAgentCapabilitySections,
   loadAgentCapabilities,
   parseDescription,
   parseSkills,
@@ -169,7 +170,7 @@ describe("loadAgentCapabilities", () => {
     const client = okClient({ "/skills": new Error("boom") })
     const result = await loadAgentCapabilities(client, "a")
     expect(result.status).toBe("ready")
-    expect(result.skills).toEqual({ status: "error" })
+    expect(result.skills).toEqual({ status: "error", error: "boom" })
     expect(result.tools).toEqual({ status: "loaded", value: [{ name: "t" }] })
     expect(result.description.status).toBe("loaded")
   })
@@ -200,5 +201,27 @@ describe("loadAgentCapabilities", () => {
     expect(client.getJson.mock.calls).toHaveLength(4)
     expect(client.getJson.mock.calls.filter(([p]) => (p as string).startsWith("/api/v1/filesystems"))).toHaveLength(0)
     expect(client.getJson.mock.calls.filter(([p]) => (p as string).startsWith("/api/v1/tree"))).toHaveLength(0)
+  })
+
+  it("loads the Agent management sections without waiting on unused sources", async () => {
+    const client = okClient({
+      "/skills": { skills: [{ name: "visible" }, { name: "management", invocable: false }] },
+      "/tools": new Error("tools down"),
+    })
+    const result = await loadAgentCapabilitySections(client, "a", {
+      refresh: true,
+      includeNonInvocableSkills: true,
+    })
+
+    expect(result.skills).toEqual({
+      status: "loaded",
+      value: [{ name: "management", invocable: false }, { name: "visible" }],
+    })
+    expect(result.tools).toEqual({ status: "error", error: "tools down" })
+    expect(client.getJson).toHaveBeenCalledTimes(2)
+    for (const call of client.getJson.mock.calls) {
+      expect(call[0]).toMatch(/\?refresh=1$/)
+      expect(call[0]).toMatch(/\/(skills|tools)\?refresh=1$/)
+    }
   })
 })
