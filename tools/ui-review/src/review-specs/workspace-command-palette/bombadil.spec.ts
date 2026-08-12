@@ -37,7 +37,6 @@ type SafePaletteState = {
   focusedControlInvalid: boolean
   undersizedTouchTargets: string[]
   lastActionWasPaletteOpen: boolean
-  lastActionWasWait: boolean
   lastActionWasInitial: boolean
   controls: Array<{ name: string; point: Point }>
 }
@@ -124,7 +123,6 @@ const palette = extract((state): SafePaletteState => {
     && state.lastAction !== null
     && "Click" in state.lastAction
     && state.lastAction.Click.name === "open-command-palette"
-  const lastActionWasWait = state.lastAction === "Wait"
   const lastActionWasInitial = state.lastAction === null || state.lastAction === undefined
   const input = dialog?.querySelector("input") as HTMLInputElement | null
   const text = dialog?.textContent?.replace(/\s+/g, " ").trim() ?? ""
@@ -145,7 +143,6 @@ const palette = extract((state): SafePaletteState => {
     focusedControlInvalid,
     undersizedTouchTargets,
     lastActionWasPaletteOpen,
-    lastActionWasWait,
     lastActionWasInitial,
     controls: allowed,
   }
@@ -168,12 +165,12 @@ export const commandPaletteSafeActions = actions((): Action[] => {
   const openPalette = palette.current.controls.find((control) => control.name === "open-command-palette")
   if (!palette.current.dialogVisible && openPalette) {
     const click: Action = { Click: { name: openPalette.name, point: openPalette.point } }
-    return palette.current.lastActionWasWait ? [click] : ["Wait", click]
+    return ["Wait", click]
   }
   const openNavigation = palette.current.controls.find((control) => control.name === "open-app-navigation")
   if (!palette.current.dialogVisible && openNavigation) {
     const click: Action = { Click: { name: openNavigation.name, point: openNavigation.point } }
-    return palette.current.lastActionWasWait ? [click] : ["Wait", click]
+    return ["Wait", click]
   }
   if (palette.current.dialogVisible && palette.current.lastActionWasPaletteOpen) return ["Wait"]
   const generated: Action[] = ["Wait"]
