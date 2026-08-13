@@ -118,7 +118,7 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
           && state.screenshotDigest !== closed.screenshotDigest
           && state.screenshotBytes > closed.screenshotBytes
       })
-      return painted ?? waits[0] ?? dialogStates.sort((left, right) => left.ordinal - right.ordinal)[0]
+      return painted
     },
   },
 }
