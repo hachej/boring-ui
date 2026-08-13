@@ -1,8 +1,16 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import {
+  LegacyRemoteWorkerClient,
+  LegacyRemoteWorkerClientError,
+} from '@hachej/boring-sandbox/providers/remote-worker/legacy'
 
 import { ErrorCode } from '../../../../shared/error-codes'
 import { ERROR_CODE_AUTH_INVALID } from '../../../http/middleware'
-import { RemoteWorkerClient, constantTimeTokenEqual } from '../workerClient'
+import {
+  RemoteWorkerClient,
+  RemoteWorkerClientError,
+  constantTimeTokenEqual,
+} from '../workerClient'
 import {
   WORKER_INTERNAL_TOKEN_HEADER,
   WORKER_WORKSPACE_ID_HEADER,
@@ -12,6 +20,11 @@ import {
 describe('RemoteWorkerClient', () => {
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  test('preserves the public client and error class identities', () => {
+    expect(RemoteWorkerClient).toBe(LegacyRemoteWorkerClient)
+    expect(RemoteWorkerClientError).toBe(LegacyRemoteWorkerClientError)
   })
 
   test('builds internal headers from scratch and sends workspace ops', async () => {

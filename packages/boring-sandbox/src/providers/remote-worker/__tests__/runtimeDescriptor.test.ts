@@ -33,3 +33,21 @@ test('legacy remote-worker resolution preserves the existing host protocol and p
   expect(headers.get('x-boring-request-id')).toBe('request-1')
   await pair.dispose()
 })
+
+test('legacy timeout-only options do not silently select the secure fleet provider', async () => {
+  const provider = await remoteWorkerRuntimeDescriptor.createPairFactory({
+    providerOptions: { requestTimeoutMs: 1_000 },
+  })
+
+  expect(provider.providerId).toBe('remote-worker')
+  expect(provider.resolveRuntimeRoot({
+    workspaceRoot: '/host/workspace',
+    sessionId: 'session-1',
+  })).toBe('/workspace')
+})
+
+test('fleet options select the secure provider path', async () => {
+  await expect(remoteWorkerRuntimeDescriptor.createPairFactory({
+    providerOptions: { fleet: {} },
+  })).rejects.toThrow()
+})

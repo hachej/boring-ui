@@ -32,3 +32,7 @@ export { BUILTIN_RUNTIME_MODE_IDS, isBuiltinRuntimeModeId }
 export function resolveSandboxRuntimeModeDescriptor(mode: string) {
   return sandboxRuntimeModeRegistry.resolve(mode)
 }
+
+export function findSandboxRuntimeModeDescriptor(mode: string) {
+  return sandboxRuntimeModeRegistry.find(mode)
+}

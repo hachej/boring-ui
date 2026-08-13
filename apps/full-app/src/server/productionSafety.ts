@@ -1,6 +1,6 @@
 import {
   BUILTIN_SANDBOX_RUNTIME_DESCRIPTORS,
-  resolveSandboxRuntimeModeDescriptor,
+  findSandboxRuntimeModeDescriptor,
 } from '@hachej/boring-sandbox/providers/registry'
 
 export function assertProductionAgentModeIsSafe(env: NodeJS.ProcessEnv = process.env) {
@@ -8,12 +8,7 @@ export function assertProductionAgentModeIsSafe(env: NodeJS.ProcessEnv = process
   if (env.BORING_ALLOW_UNSAFE_AGENT_MODE === '1') return
 
   const mode = env.BORING_AGENT_MODE
-  const descriptor = mode
-    ? (() => {
-        try { return resolveSandboxRuntimeModeDescriptor(mode) }
-        catch { return undefined }
-      })()
-    : undefined
+  const descriptor = mode ? findSandboxRuntimeModeDescriptor(mode) : undefined
   if (!descriptor?.host.productionSafe) {
     const safeModes = BUILTIN_SANDBOX_RUNTIME_DESCRIPTORS
       .filter((candidate) => candidate.host.productionSafe)

@@ -15,6 +15,7 @@ import {
   withWorkspacePythonEnv,
 } from '@hachej/boring-sandbox/providers/node-workspace'
 import {
+  findSandboxRuntimeModeDescriptor as findRegisteredSandboxRuntimeModeDescriptor,
   resolveSandboxRuntimeModeDescriptor,
   sandboxRuntimeModeRegistry,
 } from '@hachej/boring-sandbox/providers/registry'
@@ -84,11 +85,9 @@ export function findSandboxRuntimeModeDescriptor(
   mode: RuntimeModeId,
   registry: SandboxRuntimeModeRegistryV1 = sandboxRuntimeModeRegistry,
 ): SandboxRuntimeModeDescriptorV1 | undefined {
-  try {
-    return getSandboxRuntimeModeDescriptor(mode, registry)
-  } catch {
-    return undefined
-  }
+  return registry === sandboxRuntimeModeRegistry
+    ? findRegisteredSandboxRuntimeModeDescriptor(mode)
+    : registry.find(mode)
 }
 
 /** Built-in runtime layout root without exposing provider package constants to consumers. */

@@ -125,6 +125,10 @@ export class SandboxRuntimeModeRegistryV1 {
     return descriptor
   }
 
+  find(id: string): SandboxRuntimeModeDescriptorV1 | undefined {
+    return this.#descriptors.get(id)
+  }
+
   list(): readonly SandboxRuntimeModeDescriptorV1[] {
     return Object.freeze([...this.#descriptors.values()])
   }

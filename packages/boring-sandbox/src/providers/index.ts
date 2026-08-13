@@ -34,6 +34,7 @@ export {
 export {
   BUILTIN_RUNTIME_MODE_IDS,
   BUILTIN_SANDBOX_RUNTIME_DESCRIPTORS,
+  findSandboxRuntimeModeDescriptor,
   isBuiltinRuntimeModeId,
   resolveSandboxRuntimeModeDescriptor,
   sandboxRuntimeModeRegistry,

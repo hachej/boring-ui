@@ -38,13 +38,13 @@ export const remoteWorkerRuntimeDescriptor = Object.freeze({
       | RemoteWorkerSandboxProviderOptionsV1
       | LegacyRemoteWorkerProviderOptions
       | undefined
-    if (!providerOptions || 'baseUrl' in providerOptions || 'token' in providerOptions || 'fetchImpl' in providerOptions) {
-      const { createLegacyRemoteWorkerSandboxProvider } = await import('./createLegacyRemoteWorkerProvider')
-      return createLegacyRemoteWorkerSandboxProvider(providerOptions as LegacyRemoteWorkerProviderOptions)
+    if (providerOptions && 'fleet' in providerOptions) {
+      const { createRemoteWorkerSandboxProviderV1 } = await import('./createRemoteWorkerProvider')
+      return createRemoteWorkerSandboxProviderV1(
+        providerOptions as RemoteWorkerSandboxProviderOptionsV1,
+      )
     }
-    const { createRemoteWorkerSandboxProviderV1 } = await import('./createRemoteWorkerProvider')
-    return createRemoteWorkerSandboxProviderV1(
-      providerOptions as RemoteWorkerSandboxProviderOptionsV1,
-    )
+    const { createLegacyRemoteWorkerSandboxProvider } = await import('./createLegacyRemoteWorkerProvider')
+    return createLegacyRemoteWorkerSandboxProvider(providerOptions as LegacyRemoteWorkerProviderOptions)
   },
 } satisfies SandboxRuntimeModeDescriptorV1)

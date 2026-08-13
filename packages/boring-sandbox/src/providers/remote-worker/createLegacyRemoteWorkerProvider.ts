@@ -29,6 +29,13 @@ export interface LegacyRemoteWorkerProviderOptions {
   execRequestGraceMs?: number
 }
 
+export interface LegacyRemoteWorkerClientOptions extends LegacyRemoteWorkerProviderOptions {
+  baseUrl: string
+  token: string
+  workspaceId: string
+  requestId?: string
+}
+
 type LegacyRemoteWorkerWorkspaceOp =
   | { op: 'readFile'; path: string }
   | { op: 'readBinaryFile'; path: string }
@@ -113,7 +120,7 @@ function makeHeaders(options: {
   return headers
 }
 
-class LegacyRemoteWorkerClient {
+export class LegacyRemoteWorkerClient {
   readonly #baseUrl: string
   readonly #token: string
   readonly #workspaceId: string
@@ -123,9 +130,7 @@ class LegacyRemoteWorkerClient {
   readonly #execTimeoutMs: number
   readonly #execRequestGraceMs: number
 
-  constructor(options: Required<Pick<LegacyRemoteWorkerProviderOptions, 'baseUrl' | 'token'>>
-    & Omit<LegacyRemoteWorkerProviderOptions, 'baseUrl' | 'token'>
-    & { workspaceId: string; requestId?: string }) {
+  constructor(options: LegacyRemoteWorkerClientOptions) {
     this.#baseUrl = requireNonEmpty(options.baseUrl, 'BORING_WORKER_BASE_URL').replace(/\/+$/, '')
     this.#token = requireNonEmpty(options.token, 'BORING_WORKER_INTERNAL_TOKEN')
     this.#workspaceId = requireNonEmpty(options.workspaceId, 'workspaceId')
@@ -313,20 +318,44 @@ function expectEntries(result: LegacyRemoteWorkerWorkspaceResult): Entry[] {
   throw new Error('remote worker returned invalid readdir response')
 }
 
-function createWorkspace(client: LegacyRemoteWorkerClient): Workspace & { closeWatcher(): void } {
+export function encodeLegacyRemoteWorkerBytes(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString('base64')
+}
+
+export function decodeLegacyRemoteWorkerBytes(value: string): Uint8Array {
+  return new Uint8Array(Buffer.from(value, 'base64'))
+}
+
+export function createLegacyRemoteWorkerWorkspace(
+  client: LegacyRemoteWorkerClient,
+): Workspace & { closeWatcher(): void } {
   let watcher: LegacyWorkspaceWatcher | null = null
   const listeners = new Map<LegacyWorkspaceChangeListener, LegacyWorkspaceWatchSubscribeOptions>()
   let stream: { close(): void } | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let closed = false
+  const clearReconnectTimer = () => {
+    if (!reconnectTimer) return
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
   const ensureStream = () => {
     if (stream || closed || listeners.size === 0) return
+    clearReconnectTimer()
     stream = client.watch(
-      (event) => { for (const listener of listeners.keys()) listener(event) },
+      (event) => {
+        for (const listener of listeners.keys()) {
+          try { listener(event) } catch { /* ignore listener errors */ }
+        }
+      },
       () => {
         stream = null
         for (const options of listeners.values()) {
-          options?.onControlEvent?.({ type: 'resync-required', reason: 'remote_worker_stream_closed' })
+          try {
+            options?.onControlEvent?.({ type: 'resync-required', reason: 'remote_worker_stream_closed' })
+          } catch {
+            // Ignore listener control-channel errors.
+          }
         }
         if (!closed && listeners.size > 0 && !reconnectTimer) {
           reconnectTimer = setTimeout(() => { reconnectTimer = null; ensureStream() }, 1_000)
@@ -336,17 +365,22 @@ function createWorkspace(client: LegacyRemoteWorkerClient): Workspace & { closeW
   }
   watcher = {
     subscribe(listener, options) {
+      if (closed) return () => {}
       listeners.set(listener, options)
       ensureStream()
       return () => {
         listeners.delete(listener)
-        if (listeners.size === 0) { stream?.close(); stream = null }
+        if (listeners.size === 0) {
+          clearReconnectTimer()
+          stream?.close()
+          stream = null
+        }
       }
     },
     close() {
       closed = true
       listeners.clear()
-      if (reconnectTimer) clearTimeout(reconnectTimer)
+      clearReconnectTimer()
       stream?.close()
       stream = null
     },
@@ -360,12 +394,12 @@ function createWorkspace(client: LegacyRemoteWorkerClient): Workspace & { closeW
     async readFile(path) { return expectContent(await client.workspace({ op: 'readFile', path })) },
     async readBinaryFile(path) {
       const result = await client.workspace({ op: 'readBinaryFile', path })
-      if ('dataBase64' in result) return new Uint8Array(Buffer.from(result.dataBase64, 'base64'))
+      if ('dataBase64' in result) return decodeLegacyRemoteWorkerBytes(result.dataBase64)
       throw new Error('remote worker returned invalid binary response')
     },
     async writeFile(path, data) { await client.workspace({ op: 'writeFile', path, data }) },
     async writeBinaryFile(path, data) {
-      await client.workspace({ op: 'writeBinaryFile', path, dataBase64: Buffer.from(data).toString('base64') })
+      await client.workspace({ op: 'writeBinaryFile', path, dataBase64: encodeLegacyRemoteWorkerBytes(data) })
     },
     async readFileWithStat(path) {
       const result = await client.workspace({ op: 'readFileWithStat', path })
@@ -374,7 +408,7 @@ function createWorkspace(client: LegacyRemoteWorkerClient): Workspace & { closeW
     },
     async writeFileWithStat(path, data) { return expectStat(await client.workspace({ op: 'writeFileWithStat', path, data })) },
     async writeBinaryFileWithStat(path, data) {
-      return expectStat(await client.workspace({ op: 'writeBinaryFileWithStat', path, dataBase64: Buffer.from(data).toString('base64') }))
+      return expectStat(await client.workspace({ op: 'writeBinaryFileWithStat', path, dataBase64: encodeLegacyRemoteWorkerBytes(data) }))
     },
     async unlink(path) { await client.workspace({ op: 'unlink', path }) },
     async readdir(path) { return expectEntries(await client.workspace({ op: 'readdir', path })) },
@@ -385,7 +419,7 @@ function createWorkspace(client: LegacyRemoteWorkerClient): Workspace & { closeW
   }
 }
 
-function createSandbox(client: LegacyRemoteWorkerClient): Sandbox {
+export function createLegacyRemoteWorkerSandbox(client: LegacyRemoteWorkerClient): Sandbox {
   const runtimeContext = { runtimeCwd: LEGACY_REMOTE_WORKER_RUNTIME_CWD }
   return {
     id: 'remote-worker',
@@ -437,8 +471,8 @@ export function createLegacyRemoteWorkerSandboxProvider(
         workspaceId,
         requestId: context.requestId,
       })
-      const workspace = createWorkspace(client)
-      const sandbox = createSandbox(client)
+      const workspace = createLegacyRemoteWorkerWorkspace(client)
+      const sandbox = createLegacyRemoteWorkerSandbox(client)
       await sandbox.init?.({ workspace, sessionId: context.sessionId })
       return {
         workspace,

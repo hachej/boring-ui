@@ -71,6 +71,11 @@
       "boring-source": "./src/providers/remote-worker/index.ts",
       "types": "./dist/providers/remote-worker/index.d.ts",
       "import": "./dist/providers/remote-worker/index.js"
+    },
+    "./providers/remote-worker/legacy": {
+      "boring-source": "./src/providers/remote-worker/legacy/index.ts",
+      "types": "./dist/providers/remote-worker/legacy.d.ts",
+      "import": "./dist/providers/remote-worker/legacy.js"
     }
   },
   "scripts": {
