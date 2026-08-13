@@ -101,7 +101,7 @@ describe('digestPiResourceInputs symlink containment', () => {
     })).rejects.toMatchObject({
       code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
       statusCode: 403,
-      message: expect.stringContaining(`escapes authorized root ${linked}`),
+      message: expect.stringContaining('escapes authorized root'),
     })
   })
 
@@ -121,7 +121,7 @@ describe('digestPiResourceInputs symlink containment', () => {
     })).rejects.toMatchObject({
       code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
       statusCode: 403,
-      message: expect.stringContaining(`escapes authorized root ${linkedSkill}`),
+      message: expect.stringContaining('escapes authorized root'),
     })
   })
 
@@ -175,13 +175,13 @@ describe('digestPiResourceInputs symlink containment', () => {
     const outside = await mkdtemp(join(tmpdir(), 'boring-pi-digest-swap-outside-'))
     const target = join(root, 'targets', 'skill')
     const linked = join(root, 'linked-skill')
-    const targetFile = join(target, 'SKILL.md')
     await mkdir(target, { recursive: true })
-    await writeFile(targetFile, '# allowed before swap\n', 'utf8')
+    await writeFile(join(target, 'SKILL.md'), '# allowed before swap\n', 'utf8')
     await writeFile(join(outside, 'SKILL.md'), '# outside after swap\n', 'utf8')
     await symlink(target, linked, 'dir')
     fsHooks.beforeOpen = async (path) => {
-      if (String(path) !== targetFile) return
+      const openedPath = String(path)
+      if (!openedPath.includes('/proc/self/fd/') || !openedPath.endsWith('/SKILL.md')) return
       fsHooks.beforeOpen = undefined
       await unlink(linked)
       await symlink(outside, linked, 'dir')

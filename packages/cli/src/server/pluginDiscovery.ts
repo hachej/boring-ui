@@ -29,6 +29,11 @@ export function resolveBoringUiCliPackageRoot(): string {
   return resolve(here, "..", "..")
 }
 
+/** Host-owned anchor for linked packages in both source checkouts and installs. */
+export function resolveBoringUiCliPackageAuthorityRoot(): string {
+  return resolve(resolveBoringUiCliPackageRoot(), "..", "..")
+}
+
 export interface ResolveCliBoringPluginDirsOptions {
   /** Existing tests/callers use this as the global extensions root. */
   globalRoot?: string
@@ -46,6 +51,8 @@ export interface ResolveCliBoringPluginDirsOptions {
   includeDefaultPackages?: boolean
   /** Include the local-only automation executor package in folder mode. */
   includeFolderModeAutomation?: boolean
+  /** Pre-resolved, pre-authorized roots for the asset manager. */
+  resolvedPluginDirs?: readonly BoringPluginSourceInput[]
 }
 
 export function getGlobalPiExtensionsRoot(options: ResolveCliBoringPluginDirsOptions = {}): string {
@@ -139,7 +146,9 @@ export function createCliPluginAssetManager(
   options: ResolveCliBoringPluginDirsOptions = {},
 ): BoringPluginAssetManager {
   return new BoringPluginAssetManager({
-    pluginDirs: resolveCliBoringPluginDirs(workspaceRoot, options),
+    pluginDirs: options.resolvedPluginDirs
+      ? [...options.resolvedPluginDirs]
+      : resolveCliBoringPluginDirs(workspaceRoot, options),
     errorRoot: resolve(workspaceRoot, ".boring-agent", "plugin-errors"),
     frontTargetResolver: options.frontTargetResolver,
   })

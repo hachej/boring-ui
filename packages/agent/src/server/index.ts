@@ -229,6 +229,7 @@ export {
 } from './piPackages'
 export {
   DEFAULT_PI_RESOURCE_DIGEST_LIMITS,
+  assertPiResourcePathsAuthorized,
   createPiResourceDigestFence,
   createPiResourceDigestInput,
   digestPiResourceInputs,

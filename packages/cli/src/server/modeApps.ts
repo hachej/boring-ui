@@ -25,7 +25,7 @@ import type {
   RuntimePluginHostSnapshot,
   RuntimePluginServerSnapshotEntry,
 } from "../shared/runtimePluginDiagnostics.js"
-import { resolveBoringUiCliPackageRoot } from "./pluginDiscovery.js"
+import { resolveBoringUiCliPackageAuthorityRoot, resolveBoringUiCliPackageRoot } from "./pluginDiscovery.js"
 import type { readCliPluginPiSnapshot as readCliPluginPiSnapshotFn } from "./pluginDiscovery.js"
 
 type CliPluginPiSnapshot = ReturnType<typeof readCliPluginPiSnapshotFn>
@@ -431,10 +431,11 @@ export async function createFolderModeApp(opts: {
 }): Promise<FastifyInstance> {
   const workspaceRoot = resolve(opts.workspaceRoot)
   const projectName = opts.projectName ?? (basename(workspaceRoot) || "workspace")
-  const [{ createWorkspaceAgentServer, readWorkspacePluginPackageRuntimePlugins }, { createPluginFrontRuntimeHost }, pluginDiscovery] = await Promise.all([
+  const [{ createWorkspaceAgentServer, readWorkspacePluginPackageRuntimePlugins }, { createPluginFrontRuntimeHost }, pluginDiscovery, agentServer] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("./pluginFrontRuntime.js"),
     import("./pluginDiscovery.js"),
+    import("@hachej/boring-agent/server"),
   ])
   const liveTranscriptEnabled = opts.liveTranscripts?.enabled ?? process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1"
   if (liveTranscriptEnabled && !opts.liveTranscripts) {
@@ -476,6 +477,15 @@ export async function createFolderModeApp(opts: {
     onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
   })
   const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot, { includeFolderModeAutomation: true })
+  await agentServer.assertPiResourcePathsAuthorized({
+    paths: pluginDirs.map((source) => typeof source === "string" ? source : source.rootDir),
+    authorizedRoots: [
+      workspaceRoot,
+      pluginDiscovery.resolveBoringUiCliPackageAuthorityRoot(),
+      join(homedir(), ".pi", "agent"),
+    ],
+    allowInternalSymlinks: true,
+  })
   let app: FastifyInstance | undefined
   try {
     const runtimeProvisioning = await provisionCliWorkspaceRuntime({
@@ -727,11 +737,12 @@ export async function createWorkspacesModeApp(opts: {
     return workspace
   }
 
+  // Authority comes only from host-owned anchors. Discovered plugin/resource
+  // paths are inputs beneath these roots; they must never authorize themselves.
   const piResourceAuthorizedRoots = (workspace: LocalWorkspace): string[] => [
     workspace.path,
-    ...pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
-    ...pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, { includeFolderModeAutomation: true })
-      .map((source) => typeof source === "string" ? source : source.rootDir),
+    resolveBoringUiCliPackageAuthorityRoot(),
+    join(homedir(), ".pi", "agent"),
   ]
 
   async function workspaceFromRequest(request: { headers?: Record<string, unknown>; query?: unknown }) {
@@ -843,14 +854,21 @@ export async function createWorkspacesModeApp(opts: {
     packageResourceDiagnostics.set(key, diagnostics)
   }
 
-  function getOrCreatePluginRuntime(workspace: LocalWorkspace) {
+  async function getOrCreatePluginRuntime(workspace: LocalWorkspace) {
     runtimeHost.activateWorkspace(workspace.id)
     const key = pluginRuntimeKey(workspace)
     let runtime = pluginRuntimes.get(key)
     if (!runtime) {
+      const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, { includeFolderModeAutomation: true })
+      await agentServer.assertPiResourcePathsAuthorized({
+        paths: pluginDirs.map((source) => typeof source === "string" ? source : source.rootDir),
+        authorizedRoots: piResourceAuthorizedRoots(workspace),
+        allowInternalSymlinks: true,
+      })
       const manager = pluginDiscovery.createCliPluginAssetManager(workspace.path, {
         frontTargetResolver: runtimeHost.createFrontTargetResolver(workspace.id),
         includeFolderModeAutomation: true,
+        resolvedPluginDirs: pluginDirs,
       })
       const backendRegistry = new workspaceServer.RuntimeBackendRegistry()
       runtime = {
@@ -875,7 +893,7 @@ export async function createWorkspacesModeApp(opts: {
   }
 
   async function getLoadedPluginRuntime(workspace: LocalWorkspace) {
-    const runtime = getOrCreatePluginRuntime(workspace)
+    const runtime = await getOrCreatePluginRuntime(workspace)
     await runtime.ensureLoaded
     return runtime
   }
