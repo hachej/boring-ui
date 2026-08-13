@@ -223,7 +223,10 @@ export class LegacyRemoteWorkerClient {
     return await response.json() as LegacyRemoteWorkerWorkspaceResult
   }
 
-  async exec(input: LegacyRemoteWorkerExecRequest, signal?: AbortSignal): Promise<ExecResult> {
+  async exec(
+    input: LegacyRemoteWorkerExecRequest,
+    options: Pick<ExecOptions, 'signal'> = {},
+  ): Promise<ExecResult> {
     const timeoutMs = (input.timeoutMs ?? this.#execTimeoutMs) + this.#execRequestGraceMs
     const response = await this.#expectOk(await this.#request(
       `${this.#baseUrl}/internal/workspaces/${encodeURIComponent(this.#workspaceId)}/exec`,
@@ -231,7 +234,7 @@ export class LegacyRemoteWorkerClient {
         method: 'POST',
         headers: this.#headers('application/json'),
         body: JSON.stringify(input),
-        signal,
+        signal: options.signal,
       },
       timeoutMs,
     ))
@@ -247,10 +250,13 @@ export class LegacyRemoteWorkerClient {
     }
   }
 
-  watch(onEvent: (event: LegacyWorkspaceChangeEvent) => void, onError: (error: Error) => void): { close(): void } {
+  watch(
+    onEvent: (event: LegacyWorkspaceChangeEvent) => void,
+    onError?: (error: Error) => void,
+  ): { close(): void } {
     const controller = new AbortController()
     void this.#consumeEvents(controller.signal, onEvent).catch((error) => {
-      if (!controller.signal.aborted) onError(error instanceof Error ? error : new Error(String(error)))
+      if (!controller.signal.aborted) onError?.(error instanceof Error ? error : new Error(String(error)))
     })
     return { close: () => controller.abort() }
   }
@@ -443,7 +449,7 @@ export function createLegacyRemoteWorkerSandbox(client: LegacyRemoteWorkerClient
           env,
           timeoutMs: options.timeoutMs,
           maxOutputBytes: options.maxOutputBytes,
-        }, options.signal)
+        }, { signal: options.signal })
         options.onStdout?.(result.stdout)
         options.onStderr?.(result.stderr)
         return result

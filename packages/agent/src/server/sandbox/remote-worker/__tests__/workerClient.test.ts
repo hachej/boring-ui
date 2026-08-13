@@ -69,6 +69,38 @@ describe('RemoteWorkerClient', () => {
     expect(result.exitCode).toBe(0)
   })
 
+  test('preserves the abortable exec options-object contract', async () => {
+    const fetchImpl = vi.fn((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+    }))
+    const client = new RemoteWorkerClient({
+      baseUrl: 'http://worker',
+      token: 'secret',
+      workspaceId: 'ws-1',
+      fetchImpl: fetchImpl as typeof fetch,
+    })
+    const controller = new AbortController()
+
+    const pending = expect(client.exec({ cmd: 'true' }, { signal: controller.signal }))
+      .rejects.toMatchObject({ code: 'ABORTED', statusCode: 499 })
+    controller.abort()
+    await pending
+  })
+
+  test('keeps the watch error callback optional', async () => {
+    const fetchImpl = vi.fn(async () => { throw new Error('stream failed') })
+    const client = new RemoteWorkerClient({
+      baseUrl: 'http://worker',
+      token: 'secret',
+      workspaceId: 'ws-1',
+      fetchImpl: fetchImpl as typeof fetch,
+    })
+
+    const stream = client.watch(vi.fn())
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledOnce())
+    stream.close()
+  })
+
   test('rejects remote errors with stable code', async () => {
     const fetchImpl = vi.fn(async () => Response.json({
       error: { code: ERROR_CODE_AUTH_INVALID, message: 'invalid internal token', statusCode: 401 },
