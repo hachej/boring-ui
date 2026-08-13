@@ -271,6 +271,11 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
 
     const adapter = await this.getAdapter(ctx, sessionId, '')
+    // State hydration is the normal first request for a newly opened chat.
+    // Finish the channel's cold setup here so the first prompt only has to
+    // reserve and enqueue work; otherwise /prompt races this lazy setup and
+    // can spend the entire client request budget booting Pi/plugins.
+    await this.ensureChannel(ctx, sessionId, adapter)
     if (this.canRefreshFromPersistedState(sessionKey, adapter)) {
       const persisted = await this.readPersistedState(ctx, sessionId)
       if (
