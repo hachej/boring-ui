@@ -16,9 +16,14 @@
     "front": "dist/front/index.js",
     "server": "dist/server/index.js"
   },
+  "pi": {
+    "skills": ["skills/bsl-querying"],
+    "systemPrompt": "Use the bsl-querying skill for semantic queries. Validate models and fields against the configured semantic model before querying, and use query_data for data retrieval."
+  },
   "files": [
     "dist",
     "python",
+    "skills",
     "README.md"
   ],
   "exports": {
