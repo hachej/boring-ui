@@ -94,8 +94,7 @@ const palette = extract((state): SafePaletteState => {
   // Resource Timing entries can be absent after cache hits or differ across
   // browser contexts; the painted shell and its safe opener are the actual UI
   // preconditions for taking the first action.
-  const workspaceReady = state.document.fonts.status === "loaded"
-    && Boolean(chatMain && visible(chatMain))
+  const workspaceReady = Boolean(chatMain && visible(chatMain))
     && allowed.some((control) => control.name === "open-command-palette" || control.name === "open-app-navigation")
 
   const observation = observeCommandPaletteDocument({
@@ -166,7 +165,6 @@ export const command_palette_mobile_touch_targets_are_sized = always(() => palet
 
 export const commandPaletteSafeActions = actions((): Action[] => {
   if (palette.current.lastActionWasInitial) return ["Wait"]
-  if (!palette.current.dialogVisible && !palette.current.workspaceReady) return ["Wait"]
   const openPalette = palette.current.controls.find((control) => control.name === "open-command-palette")
   if (!palette.current.dialogVisible && openPalette) {
     const click: Action = { Click: { name: openPalette.name, point: openPalette.point } }
