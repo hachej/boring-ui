@@ -2464,35 +2464,6 @@ export function WorkspaceAgentFront<
   }, [createAddressedSessionWithoutActivating, defaultSessionTitle, newChatAgentTypeId, fleetModeEnabled, shellCapabilitiesHost.shellCapabilities])
   const providerPanels = baseProviderPanels
   const pluginAppLeftActions = usePluginAppLeftActions({ plugins: capturedPlugins, activeOverlay: leftOverlay, setActiveOverlay: setLeftOverlay })
-  const chatTopOverlayActions = useMemo(() => {
-    if (!isPluginTabsLayout || !appLeftOverlayActions?.length) return null
-    return (
-      <div className="flex items-center gap-1">
-        {appLeftOverlayActions.map((action) => (
-          <button
-            key={action.id}
-            type="button"
-            data-boring-workspace-part="chat-pane-control"
-            className="inline-flex h-5 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground/80 transition-colors hover:bg-muted/70 hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground"
-            aria-label={action.label}
-            aria-pressed={leftOverlay === action.id}
-            title={action.label}
-            onPointerDownCapture={(event) => event.nativeEvent.stopPropagation()}
-            onMouseDownCapture={(event) => event.nativeEvent.stopPropagation()}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              setLeftOverlay((cur) => cur === action.id ? null : action.id)
-            }}
-          >
-            {action.icon ? <span className="grid size-3.5 place-items-center">{action.icon}</span> : null}
-            <span>{action.label}</span>
-          </button>
-        ))}
-      </div>
-    )
-  }, [appLeftOverlayActions, isPluginTabsLayout, leftOverlay])
-
   const managementActions = useMemo<WorkspaceAgentAppLeftAction[]>(() => {
     const actions: WorkspaceAgentAppLeftAction[] = [...pluginAppLeftActions, ...(appLeftActions ?? [])]
     for (const action of appLeftOverlayActions ?? []) {
@@ -2584,8 +2555,7 @@ export function WorkspaceAgentFront<
       center="chat"
       centerParams={centerParams}
       chatPanes={chatPanes}
-      chatTopActions={chatTopOverlayActions}
-      chatPaneSessionActions={chatPaneSessionActions}
+        chatPaneSessionActions={chatPaneSessionActions}
       activeChatPaneId={activeChatPaneId}
       onActiveChatPaneChange={activateChatPane}
       onCloseChatPane={closeChatPane}
