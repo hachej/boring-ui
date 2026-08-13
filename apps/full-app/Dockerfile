@@ -18,6 +18,7 @@ RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 ENV NODE_OPTIONS=--max-old-space-size=4096
+COPY tsconfig.base.json tsconfig.base.json
 COPY packages/ packages/
 COPY plugins/boring-mcp/ plugins/boring-mcp/
 COPY plugins/boring-governance/ plugins/boring-governance/
