@@ -884,6 +884,27 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByTestId("chat-pane")).toHaveAttribute("data-session-id", "s1")
   })
 
+  it("keeps app-left overlay actions out of chat pane headers", () => {
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-overlay-header"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session" }]}
+        activeSessionId="s1"
+        appLeftOverlayActions={[{
+          id: "mcp",
+          label: "MCP",
+          render: () => <div>MCP overlay</div>,
+        }]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "MCP" })).toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "MCP" })).toHaveLength(1)
+  })
+
   it("keeps only the current app-left overlay action selected and returns to Chats from the rail", async () => {
     const user = userEvent.setup()
     const automationPlugin = definePlugin({
