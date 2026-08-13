@@ -16,7 +16,9 @@ The product is an operator-controlled sandbox fleet in an approved EU region.
 It runs untrusted customer agent code in one hardware-isolated micro-VM per
 sandbox and keeps each workspace's durable files in self-hosted SeaweedFS.
 SeaweedFS exposes the same plain tenant files through both a POSIX mount at
-`/workspace` and an S3 API. Fast, high-churn work uses ephemeral `/scratch`.
+`/workspace` and an S3 API. Ephemeral `/scratch` remains the local tier for
+SQLite and other fsync-heavy work; Gate 0 benchmarks decide how much general
+build work also uses it.
 
 The application sees this system through the existing `SandboxProviderV1`
 contract. Kata Containers is the adopted OCI/containerd runtime wrapper;
@@ -159,12 +161,45 @@ files inside an opaque block image or chunk store. Short-lived credentials are
 scoped to the tenant/workspace prefix and required actions. S3-side events and
 guest inotify events feed the same provider watch stream.
 
-`/scratch` is a separate ephemeral per-VM local device for SQLite,
-git, builds, package installs, virtualenvs, `node_modules`, and other
-POSIX-heavy or high-churn work. Its backing may also be encrypted, but it is
-always quota-bound, destroyed at teardown, and never durable.
-It is never blanket-synchronized. A selected scratch artifact becomes durable
-only when explicitly published into `/workspace`.
+SeaweedFS `weed mount` is a genuine cached POSIX client, not an s3fs-style
+object shim: it has filer metadata and file-chunk caches, accepts
+arbitrary-offset writes, and implements `fcntl`/`flock` advisory locks. No
+current primary-source benchmark establishes `git clone`, `git status`, pnpm,
+`node_modules`, or representative JavaScript build performance on the proposed
+topology, so the general build-performance case for `/scratch` is unmeasured.
+
+The evidence for a local tier is narrower and material. SeaweedFS's first-party
+database benchmark measured SQLite one-row transactions at 1,987 tx/s on local
+NVMe versus 171 tx/s on FUSE (11.6x slower), SQLite bulk load at about 2x
+slower, and fsync latency at 0.13 ms locally versus 1.18 ms on FUSE (9x
+slower). SeaweedFS's own guidance recommends unmounted local storage for
+temporary writes. Cross-mount distributed locking is opt-in, so multi-mount
+SQLite is not safe by default, and database-grade power-loss behavior is not
+established. See the
+[storage mount performance evaluation](references/storage-mount-performance-eval.md).
+
+The v1 split is therefore chosen for predictable database-grade write latency
+and SeaweedFS's temporary-write guidance, not because SeaweedFS is proven
+unable to run git, package installs, or builds. An explicit scratch-plus-durable
+mount is one sound industry pattern, not a necessity; persistent block volumes,
+snapshot/restored local copy-on-write roots, and proprietary SSD caches in front
+of object storage are also used. Gate 0 applies the owner-set benchmark
+threshold before deciding whether general work runs directly on `/workspace`
+or also uses `/scratch`.
+
+`/scratch` is a separate ephemeral per-VM local device. Its backing may also be
+encrypted, but it is always quota-bound and never durable. It is never
+blanket-synchronized. A selected scratch artifact becomes durable only when
+explicitly published into `/workspace`.
+
+Publication is a control-plane-enforced v1 requirement, not agent discipline.
+Normal teardown must not silently destroy `/scratch` while unpublished files
+exist under admitted output paths: the control plane and guest daemon must
+either keep teardown from destroying them until publication is acknowledged or
+surface unpublished-output state before destruction. This is required because
+v1 has no version history and teardown would otherwise destroy the sole copy
+irrecoverably. The exact enforcement mechanism and state transition are open
+questions; blanket synchronization remains out of scope.
 
 Transient prompt context, selected project files, uploads, and query results
 arrive in a bounded archive and are extracted to an unsynchronized transient
@@ -210,10 +245,10 @@ application. Its required semantics are:
 | --- | --- |
 | create | Idempotent by request/session identity; one sandbox per authorized session; tenant and external/session tags |
 | exec | Bounded command, cancellation, output, time, CPU, memory, PID, and disk behavior |
-| files | Bounded read/write/list/stat plus archive copy-in and explicit artifact publication |
+| files | Bounded read/write/list/stat plus archive copy-in, explicit artifact publication, and unpublished-output state |
 | watch | Live guest inotify plus external S3 events, at-least-once delivery, monotonic cursor, dedupe, and gap reconciliation |
 | suspend/resume | Roughly 60-second idle policy and authorized resume without crossing a session key |
-| destroy | Idempotent teardown, credential expiry/revocation, scratch discard, and orphan recovery |
+| destroy | Idempotent teardown, credential expiry/revocation, control-plane-enforced protection against silent unpublished-output loss, scratch discard, and orphan recovery |
 | health/qualification | Stable unavailable/unqualified states and exact isolation/cohort facts |
 | usage | Active sandbox-seconds, lifecycle counts, storage, and egress tagged by tenant/session/provider in the protected ledger |
 
@@ -317,6 +352,26 @@ product contract, storage namespace, and isolation class must not change with
 it. These triggered decisions and their evidence belong only in the
 [scale plan](sandbox-sovereign-scale.md).
 
+## Open questions
+
+- Current SeaweedFS git, pnpm, `node_modules`, and JavaScript build performance
+  in the proposed production topology is **unknown**.
+- SeaweedFS power-loss durability for transaction commits under the intended
+  replication and filer database configuration is **unknown**.
+- SQLite safety across multiple SeaweedFS mounts, even with DLM, has no
+  published SQLite-specific certification or benchmark and is **unknown**.
+- The performance and correctness effect of enabling SeaweedFS kernel writeback
+  caching for this workload is **unknown** and carries an explicit crash-loss
+  warning.
+- Fly's support policy for a customer-installed object FUSE mount is
+  **[unverified]**.
+- Archil's SQLite locking, crash, and power-loss behavior is **[unverified]**.
+- Atomic publication visibility between SeaweedFS POSIX rename and concurrent
+  S3 readers under the intended gateway configuration is **[unverified]**.
+- The v1 control plane and guest daemon must enforce publication safety, but
+  whether teardown blocks on unpublished admitted outputs or first surfaces an
+  unpublished-output state is an open mechanism choice.
+
 ## Non-goals and rejected boundaries
 
 - Building a raw Firecracker lifecycle/fleet orchestrator for M0 instead of
@@ -354,6 +409,7 @@ qualification and rollback criteria.
 - [Managed-provider comparison](references/managed-sandbox-providers-comparison.md)
 - [Build-versus-adopt survey](references/build-vs-adopt-survey.md)
 - [Sandbox cost model](references/sandbox-cost-model.md)
+- [Storage mount performance evaluation](references/storage-mount-performance-eval.md)
 - [Kata Containers virtualization matrix](https://kata-containers.github.io/kata-containers/design/virtualization/)
 - [Kata Containers with Firecracker](https://github.com/kata-containers/kata-containers/blob/main/docs/how-to/how-to-use-kata-containers-with-firecracker.md)
 - [SeaweedFS](https://github.com/seaweedfs/seaweedfs)

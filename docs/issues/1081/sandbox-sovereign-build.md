@@ -127,6 +127,24 @@ Sovereign evidence:
   microcode, OS/kernel, containerd, Kata, Firecracker/jailer, guest
   kernel/rootfs, guest daemon placeholder, SeaweedFS components, OCI image, and
   network/storage policy digests.
+
+Storage benchmark gate (must close before the durable/ephemeral split is
+locked):
+
+- [ ] Record the mount-performance acceptance threshold before running the
+  benchmark. **Threshold: owner-set at Gate 0; value intentionally TBD.** Do not
+  infer or backfill the threshold from the results.
+- [ ] On the real proposed production topology, measure and compare SeaweedFS
+  `weed mount` at `/workspace` versus the local device for `git clone` and
+  `git status` on a representative repository, a pnpm install that produces a
+  `node_modules` tree, a representative JavaScript build, and SQLite
+  transaction throughput.
+- [ ] Record the exact topology and mount configuration, workload inputs,
+  commands, measurements, and comparison results as Gate 0 evidence.
+- [ ] Apply this decision rule: if measured mount performance meets the
+  owner-set threshold, work **MAY** run directly on `/workspace` and the
+  `/scratch` split narrows to database files and other fsync-heavy cases. If it
+  does not, retain the broader local-work split.
 - [ ] Publish a short Gate 0 report under `docs/issues/1081/evidence/` that links
   the spike commit and labels every observation `passed`, `failed`, or
   `unproven`.
@@ -140,6 +158,9 @@ Sovereign evidence:
 - [ ] SeaweedFS demonstrates same-file S3+POSIX visibility, scoped denial, and
   notifications; no result is inferred from documentation alone and no
   version-history evidence is required.
+- [ ] The storage benchmark evidence records the owner-set threshold, all four
+  representative workload comparisons, and the resulting direct-on-workspace
+  or broader `/scratch` decision.
 - [ ] The exact cohort manifest and redacted evidence are reproducible by a
   second operator.
 - [ ] Any failed or unproven load-bearing item blocks the owned path. It does
@@ -287,16 +308,23 @@ not an equivalent cohort.
   read/write, stat, recursive mkdir, rename, unlink, and concurrent-writer
   conflict. Unsupported POSIX behavior must return a stable error rather than
   silently corrupt data.
-- [ ] Attach an ephemeral per-VM local block device at `/scratch` for git,
-  SQLite, package installs, virtualenvs, `node_modules`, and builds. Its backing
-  may be encrypted, but it is always destroyed and never durable.
-  Enforce byte/inode quotas and destroy the per-VM key/backing at teardown.
+- [ ] Attach an ephemeral per-VM local block device at `/scratch` for SQLite,
+  other fsync-heavy work, and any broader local-work cases selected by the Gate
+  0 benchmark. Its backing may be encrypted, but it is never durable. Enforce
+  byte/inode quotas and destroy the per-VM key/backing only through the
+  publication-safe teardown path.
 - [ ] Implement bounded zip copy-in to `/scratch/inputs/<requestId>`: cap archive
   bytes, expanded bytes, entry count, path depth, and compression ratio; reject
   absolute paths, `..`, duplicate/conflicting names, device files, and symlink/
   hardlink escapes; extract without a host bind mount.
 - [ ] Implement explicit artifact publication from admitted `/scratch` output
   paths into `/workspace`. Never blanket-sync `/scratch`.
+- [ ] Make publication safety a v1 control-plane/guest-daemon invariant. Normal
+  teardown must not silently destroy `/scratch` while unpublished files exist
+  under admitted output paths: it must either preserve them pending publication
+  acknowledgement or surface unpublished-output state before destruction. The
+  exact mechanism is an open owner question and must be resolved before this
+  task is implemented.
 - [ ] Reconcile guest inotify events with SeaweedFS/S3 notifications: dedupe by
   source identity, assign a monotonic workspace cursor, and trigger an
   authoritative tree/object reconciliation on a detected gap.
@@ -313,6 +341,9 @@ not an equivalent cohort.
 - [ ] Zip copy-in handles a large multi-file fixture in one upload/extract
   operation and rejects the traversal/link/zip-bomb corpus without writing
   outside `/scratch/inputs/<requestId>`.
+- [ ] A teardown test proves that unpublished files under admitted `/scratch`
+  output paths cannot be silently destroyed, and that acknowledged publication
+  leaves the declared output durable under `/workspace`.
 - [ ] Backup restore recovers a tenant workspace on a clean filer/volume
   target. This is service recovery, not per-write undo or object history.
 
@@ -324,8 +355,8 @@ not an equivalent cohort.
 
 - [ ] Define a small, versioned, bounded host/guest protocol for health, exec,
   cancellation, filesystem operations, watch/reconnect, zip copy-in/extract,
-  artifact publication, and shutdown. Bind it only to the Phase 2 control
-  channel.
+  artifact publication, unpublished-output state, and shutdown. Bind it only to
+  the Phase 2 control channel.
 - [ ] Run the daemon under a minimal guest supervisor. Perform privileged boot
   setup once, then execute tenant commands and filesystem operations as the
   admitted non-root workload UID/GID.
@@ -381,8 +412,9 @@ not an equivalent cohort.
   authorization key.
 - [ ] Implement roughly 60-second idle suspend/stop, transparent resume, hard
   lease expiry, idempotent destroy, credential revocation/expiry, scratch
-  discard, and orphan reconciliation behind `SandboxProviderV1` without adding
-  provider-specific consumer methods.
+  discard through the publication-safe teardown invariant, and orphan
+  reconciliation behind `SandboxProviderV1` without adding provider-specific
+  consumer methods.
 - [ ] Emit usage facts for active sandbox-seconds, create/resume/suspend/destroy,
   boot latency, output truncation, storage bytes, event lag/gaps, and egress
   bytes, tagged by provider/cohort and joined to tenant/session in the protected
@@ -404,6 +436,9 @@ not an equivalent cohort.
 - [ ] A process restart reconnects to the same authorized durable handle; a
   retry cannot create a second VM; stale/cohort-mismatched handles fail closed;
   no handle crosses tenant/workspace/session identity.
+- [ ] Provider conformance proves that normal teardown cannot silently discard
+  unpublished admitted outputs and surfaces the contract's publication state
+  without relying on agent compliance.
 - [ ] All new shared identifiers/capabilities, provider exports, mode resolution,
   and package boundaries pass typecheck, invariant, and conformance tests.
 
@@ -532,8 +567,8 @@ These are continuous gates, not a final hardening pass.
   sandbox; give the guest only renewable, expiring tenant-prefix storage
   credentials. Redact all errors, evidence, logs, metrics, and crash dumps.
 - [ ] Disable or encrypt host/guest crash dumps and swap according to the
-  incident policy; securely discard per-VM scratch/backing and expired
-  credential material.
+  incident policy; after publication-safe teardown, securely discard per-VM
+  scratch/backing and expired credential material.
 
 ### Spectre/MDS workstream
 
@@ -567,9 +602,10 @@ These are continuous gates, not a final hardening pass.
 M0 is done only when every item below is true on one exact, immutable AX102
 cohort:
 
-- [ ] Gate 0 has committed, reproducible KVM, Firecracker boot, and SeaweedFS
-  dual-access/notification evidence (versioning evidence not required — v1
-  ships without versioning).
+- [ ] Gate 0 has committed, reproducible KVM, Firecracker boot, SeaweedFS
+  dual-access/notification, and storage benchmark evidence, including the
+  owner-set threshold and resulting direct-on-workspace or broader `/scratch`
+  decision (versioning evidence not required — v1 ships without versioning).
 - [ ] Containerd launches the admitted OCI image through Kata's `kata-fc`
   handler and the observed VMM is the pinned Firecracker binary.
 - [ ] Two concurrent tenant identities receive distinct micro-VMs, guest
@@ -578,7 +614,8 @@ cohort:
 - [ ] `SandboxProviderV1` passes create, bounded/cancelled exec, fs operations,
   zip copy-in, live inotify/S3 file events with gap recovery, idle
   suspend/resume, durable-handle restart/retry, idempotent destroy, and durable
-  write/destroy/recreate/read.
+  write/destroy/recreate/read, including control-plane-enforced protection
+  against silent unpublished-output loss.
 - [ ] All 11 hostile probes, egress allowlist negatives, fail-closed startup,
   no-host-path/copy-in checks, quotas/host reserve, credential isolation,
   partial-failure cleanup, and rollback pass with no `unproven` result.
