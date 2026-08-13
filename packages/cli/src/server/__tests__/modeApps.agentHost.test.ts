@@ -13,6 +13,7 @@ import { createFolderModeApp, createWorkspacesModeApp } from "../modeApps.js"
 
 const automationFailure = vi.hoisted(() => ({ enabled: false }))
 const pluginFrontFailure = vi.hoisted(() => ({ enabled: false, closeCalls: 0 }))
+const cliDefaultPluginPackages = vi.hoisted(() => ({ paths: [] as string[] }))
 const MODEL_TIERS_YAML = "models:\n  tiers:\n    T3:\n      - provider: anthropic\n        id: claude-sonnet-4-6\n        envVar: ANTHROPIC_API_KEY\n"
 
 vi.mock("../pluginFrontRuntime.js", async (importOriginal) => {
@@ -49,7 +50,7 @@ vi.mock("../pluginDiscovery.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../pluginDiscovery.js")>()
   return {
     ...actual,
-    resolveCliDefaultPluginPackagePaths: () => [],
+    resolveCliDefaultPluginPackagePaths: () => [...cliDefaultPluginPackages.paths],
     resolveCliBoringPluginDirs: () => [],
   }
 })
@@ -73,6 +74,7 @@ afterEach(async () => {
   automationFailure.enabled = false
   pluginFrontFailure.enabled = false
   pluginFrontFailure.closeCalls = 0
+  cliDefaultPluginPackages.paths = []
   restoreEnv("HOME", originalHome)
   restoreEnv("BORING_AGENT_SESSION_ROOT", originalSessionRoot)
   vi.restoreAllMocks()
@@ -144,6 +146,77 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
 }
 
 describe.sequential("CLI Agent Host composition", () => {
+  it("folder-mode fleet seats receive workspace plugin agent tools", async () => {
+    const fleetRoot = await temporaryRoot("boring-cli-seat-tools-fleet-")
+    const workspaceRoot = await temporaryRoot("boring-cli-seat-tools-workspace-")
+    const pluginRoot = await temporaryRoot("boring-cli-seat-tools-plugin-")
+    const personaRoot = join(fleetRoot, ".agents", "personas", "worker")
+    await mkdir(personaRoot, { recursive: true })
+    await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
+    await writeFile(join(personaRoot, "instructions.md"), "You are the fixture worker.\n", "utf8")
+    await writeFile(join(personaRoot, "package.json"), JSON.stringify({
+      name: "@fixture/boring-worker",
+      version: "1.0.0",
+      private: true,
+      boring: {
+        agent: {
+          definitionId: "boring-worker",
+          version: "1.0.0",
+          label: "Boring Worker",
+          instructionsRef: "instructions.md",
+        },
+      },
+    }), "utf8")
+    await writeFile(
+      join(fleetRoot, ".agents", "factory", "fleet.yaml"),
+      `${MODEL_TIERS_YAML}seats:\n  - seat: worker\n    agentTypeId: boring-worker\n    skills: []\n`,
+      "utf8",
+    )
+    await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+      name: "@fixture/workspace-seat-tools",
+      version: "1.0.0",
+      type: "module",
+      private: true,
+      boring: { id: "workspace-seat-tools", server: "server.mjs" },
+    }), "utf8")
+    await writeFile(join(pluginRoot, "server.mjs"), `
+      export default {
+        id: "workspace-seat-tools",
+        agentTools: [{
+          name: "workspace_seat_tool",
+          description: "Fixture workspace plugin tool.",
+          parameters: { type: "object", properties: {} },
+          async execute() { return { content: [] } },
+        }],
+      }
+    `, "utf8")
+
+    cliDefaultPluginPackages.paths = [pluginRoot]
+    const previousCwd = process.cwd()
+    const previousFlag = process.env.BORING_AGENT_FLEET
+    process.chdir(fleetRoot)
+    process.env.BORING_AGENT_FLEET = "1"
+    let app: FastifyInstance | undefined
+    try {
+      app = await createFolderModeApp({
+        workspaceRoot,
+        mode: "direct",
+        provisionWorkspace: false,
+      })
+      const defaultTools = await app.inject({ method: "GET", url: "/api/v1/agents/default/tools" })
+      const workerTools = await app.inject({ method: "GET", url: "/api/v1/agents/boring-worker/tools" })
+      expect(defaultTools.statusCode, defaultTools.body).toBe(200)
+      expect(workerTools.statusCode, workerTools.body).toBe(200)
+      expect(defaultTools.json().tools.map((tool: { name: string }) => tool.name)).toContain("workspace_seat_tool")
+      expect(workerTools.json().tools.map((tool: { name: string }) => tool.name)).toContain("workspace_seat_tool")
+    } finally {
+      if (app) await app.close()
+      process.chdir(previousCwd)
+      if (previousFlag === undefined) delete process.env.BORING_AGENT_FLEET
+      else process.env.BORING_AGENT_FLEET = previousFlag
+    }
+  }, 30_000)
+
   it("workspaces hub excludes workspace-local packages from its global fleet", async () => {
     const fleetRoot = await temporaryRoot("boring-cli-local-agent-fleet-")
     const workspaceARoot = await temporaryRoot("boring-cli-local-agent-workspace-a-")

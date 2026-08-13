@@ -199,6 +199,11 @@ export function createBlaxelSandboxExec(
         }
         if (signal?.aborted) throw abortReason(signal)
         const capped = capUtf8Outputs(terminal.stdout ?? '', terminal.stderr ?? '', maxOutputBytes)
+        // Blaxel 0.3.11 returns terminal buffers but does not stream process
+        // output. Preserve Sandbox's callback contract so consumers such as the
+        // pi bash tool receive command output.
+        if (capped.stdout.length > 0) opts?.onStdout?.(capped.stdout)
+        if (capped.stderr.length > 0) opts?.onStderr?.(capped.stderr)
         return {
           ...capped,
           exitCode: terminal.exitCode ?? 1,
