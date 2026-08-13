@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-agent",
-  "version": "0.1.95",
+  "version": "0.1.96",
   "type": "module",
   "license": "MIT",
   "description": "Pane-embeddable coding agent. Ships direct/local/vercel-sandbox execution modes behind one interface.",
@@ -117,7 +117,7 @@
     "diff": "^9.0.0",
     "fastify": "^5.11.2",
     "lucide-react": "^1.27.0",
-    "motion": "^12.43.0",
+    "motion": "^13.0.0",
     "nanoid": "^6.0.0",
     "shiki": "^4.4.2",
     "streamdown": "^2.5.0",

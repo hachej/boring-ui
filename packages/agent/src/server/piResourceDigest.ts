@@ -39,6 +39,8 @@ export interface PiResourceDigestInput {
   readonly extensionPaths?: readonly string[]
   /** Lexical roots explicitly authorized by the embedding Workspace/CLI. */
   readonly authorizedRoots: readonly string[]
+  /** CLI workspaces may contain repo-managed symlinks (e.g. .pi/skills/*). */
+  readonly allowInternalSymlinks?: boolean
   readonly limits?: Partial<PiResourceDigestLimits>
 }
 
@@ -57,6 +59,7 @@ export function createPiResourceDigestInput(input: {
   readonly noSkills?: boolean
   readonly resourceSets: readonly PiResourceSet[]
   readonly authorizedRoots: readonly string[]
+  readonly allowInternalSymlinks?: boolean
   readonly limits?: Partial<PiResourceDigestLimits>
 }): PiResourceDigestInput {
   const piCwd = resolvePiPath(input.piCwd, process.cwd())
@@ -72,6 +75,7 @@ export function createPiResourceDigestInput(input: {
     additionalSkillPaths: uniqueStrings(input.resourceSets.flatMap((set) => set.additionalSkillPaths ?? [])),
     packages: compactPiPackages(input.resourceSets.flatMap((set) => set.packages ?? [])),
     extensionPaths: uniqueStrings(input.resourceSets.flatMap((set) => set.extensionPaths ?? [])),
+    allowInternalSymlinks: input.allowInternalSymlinks,
     authorizedRoots: uniqueStrings([
       piCwd,
       piAgentDir,
@@ -130,7 +134,13 @@ export async function digestPiResourceInputs(input: PiResourceDigestInput): Prom
   }
   const authorizedRoots = await resolveAuthorizedRoots(lexicalAuthorizedRoots)
   const limits = normalizeLimits(input.limits)
-  const state: WalkState = { hash, limits, authorizedRoots, nodes: 0, bytes: 0 }
+  const state: WalkState = {
+    hash,
+    limits,
+    authorizedRoots,
+    nodes: 0,
+    bytes: 0,
+  }
   frameString(hash, 'format', FORMAT_VERSION)
   frameString(hash, 'pi-cwd', piCwd)
   frameString(hash, 'project-settings-dir', projectSettingsDir)

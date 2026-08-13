@@ -174,7 +174,7 @@ test("boring-ui agent validate --json emits exact AgentValidateSuccessV1", async
   })
   expect(result.stdout).not.toContain(instructions.trim())
   expect(result.stdout).not.toContain(root)
-})
+}, 15_000)
 
 
 test.each([

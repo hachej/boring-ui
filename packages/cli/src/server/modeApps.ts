@@ -1110,6 +1110,7 @@ export async function createWorkspacesModeApp(opts: {
               ...additionalSkillPaths,
               ...hotResources.extensionPaths,
             ]),
+            allowInternalSymlinks: true,
           })
         }
         const { resourceInputDigest, revalidateResourceInputs } = await agentServer.createPiResourceDigestFence(buildResourceDigestInput)
@@ -1210,6 +1211,7 @@ export async function createWorkspacesModeApp(opts: {
               ...hotResources.additionalSkillPaths,
               ...hotResources.extensionPaths,
             ]),
+            allowInternalSymlinks: true,
           }),
         ),
         sessionNamespace: "",

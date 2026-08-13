@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-data-bridge",
-  "version": "0.1.95",
+  "version": "0.1.96",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -16,9 +16,14 @@
     "front": "dist/front/index.js",
     "server": "dist/server/index.js"
   },
+  "pi": {
+    "skills": ["skills/bsl-querying"],
+    "systemPrompt": "Use the bsl-querying skill for semantic queries. Validate models and fields against the configured semantic model before querying, and use query_data for data retrieval."
+  },
   "files": [
     "dist",
     "python",
+    "skills",
     "README.md"
   ],
   "exports": {

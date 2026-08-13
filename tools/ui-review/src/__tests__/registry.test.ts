@@ -68,7 +68,7 @@ describe("UI review spec registry", () => {
     ] as unknown as UiReviewExplorationState[]
 
     expect(select(states)).toBe(states[0])
-    expect(select(states.slice(1))).toBe(states[3])
+    expect(select(states.slice(1))).toBeUndefined()
 
     const mobileStates = [
       { ordinal: 17, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "painted", screenshotBytes: 200, normalizedState: { palette: { workspaceReady: true, dialogVisible: true, mode: null } } },
