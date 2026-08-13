@@ -16,7 +16,7 @@ export interface CreditBalanceBadgeProps {
 }
 
 /**
- * Top-bar credit balance: a DISCRETE remaining-balance figure plus a small "+" button.
+ * Top-bar credit balance: a DISCRETE available-balance figure plus a small "+" button.
  * Clicking "+" opens a popover of fixed top-up amounts (Anthropic-style); picking one starts
  * the server-created checkout and opens it. Polls `/api/credits/balance`; hides itself when
  * credits are disabled or the user is unauthenticated.
@@ -33,7 +33,9 @@ export function CreditBalanceBadge({
   if (hidden || !balance) return null
 
   const inDebt = (balance.debtMicros ?? 0) > 0
-  const low = inDebt || isLowBalance(balance.remainingMicros)
+  const availableMicros = balance.availableMicros
+  const reservedMicros = balance.activeReservedMicros
+  const low = inDebt || isLowBalance(availableMicros)
   // Prefer server truth over the build-time flag so the action can't drift.
   const showBuy = balance.checkoutEnabled ?? buyEnabled
   // Fixed packs only (custom pay-what-you-want is not offered).
@@ -42,6 +44,11 @@ export function CreditBalanceBadge({
   // not a hard-coded EUR — packs carry the configured currency; fall back to EUR when no
   // purchase provider is wired (consumption-only).
   const currency = balance.packs?.[0]?.currency ?? 'EUR'
+  const title = inDebt
+    ? 'Amount owed — top up to resume'
+    : reservedMicros > 0
+      ? `${formatCreditMicros(availableMicros, currency, locale)} available (${formatCreditMicros(balance.remainingMicros, currency, locale)} remaining, ${formatCreditMicros(reservedMicros, currency, locale)} reserved by active runs)`
+      : 'Available credits'
 
   const pick = async (packId?: string) => {
     setOpen(false)
@@ -52,10 +59,10 @@ export function CreditBalanceBadge({
     <div className="inline-flex items-center gap-1.5" data-low={low ? 'true' : 'false'} data-debt={inDebt ? 'true' : 'false'}>
       {/* Discrete: small, muted, tabular; only colors up when low / in debt. */}
       <span
-        title={inDebt ? 'Amount owed — top up to resume' : 'Remaining credits'}
+        title={title}
         className={`text-[11px] tabular-nums ${low ? 'text-destructive' : 'text-muted-foreground'}`}
       >
-        {inDebt ? `−${formatCreditMicros(balance.debtMicros, currency, locale)}` : formatCreditMicros(balance.remainingMicros, currency, locale)}
+        {inDebt ? `−${formatCreditMicros(balance.debtMicros, currency, locale)}` : formatCreditMicros(availableMicros, currency, locale)}
       </span>
       {showBuy ? (
         <Popover open={open} onOpenChange={setOpen}>
