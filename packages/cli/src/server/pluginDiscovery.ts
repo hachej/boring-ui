@@ -1,5 +1,5 @@
 import { homedir } from "node:os"
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import {
@@ -67,6 +67,23 @@ export interface CliDefaultPluginPackageResolution {
   diagnostics: CliDefaultPluginPackageDiagnostic[]
 }
 
+function assertDefaultPluginBuildEntriesAvailable(pluginId: string, packageRoot: string): void {
+  const manifestPath = join(packageRoot, "package.json")
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+    boring?: { front?: unknown; server?: unknown }
+  }
+  for (const [kind, entry] of Object.entries(manifest.boring ?? {})) {
+    if ((kind !== "front" && kind !== "server") || typeof entry !== "string") continue
+    const entryPath = resolve(packageRoot, entry)
+    if (!existsSync(entryPath)) {
+      throw new Error(
+        `${kind} entry declared by ${manifestPath} is unavailable at ${entryPath}. `
+          + `Build or reinstall ${pluginId} so its declared plugin artifacts exist`,
+      )
+    }
+  }
+}
+
 export function getGlobalPiExtensionsRoot(options: ResolveCliBoringPluginDirsOptions = {}): string {
   return resolve(options.globalRoot ?? join(homedir(), ".pi", "agent", "extensions"))
 }
@@ -101,13 +118,18 @@ export function resolveCliDefaultPluginPackageResolution(
       // content is read.
       const linkedPackageRoot = isAbsolute(pluginId) ? undefined : join(anchorDir, "node_modules", pluginId)
       if (linkedPackageRoot && existsSync(join(linkedPackageRoot, "package.json"))) {
+        assertDefaultPluginBuildEntriesAvailable(pluginId, linkedPackageRoot)
         paths.push(linkedPackageRoot)
         continue
       }
-      paths.push(...resolveDefaultWorkspacePluginPackagePaths({
+      const resolvedPaths = resolveDefaultWorkspacePluginPackagePaths({
         anchorDir,
         defaultPluginPackages: [pluginId],
-      }))
+      })
+      for (const packageRoot of resolvedPaths) {
+        assertDefaultPluginBuildEntriesAvailable(pluginId, packageRoot)
+        paths.push(packageRoot)
+      }
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       diagnostics.push({

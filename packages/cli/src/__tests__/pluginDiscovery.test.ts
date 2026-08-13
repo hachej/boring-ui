@@ -52,6 +52,29 @@ describe("plugin discovery helpers", () => {
     })])
   })
 
+  test("reports an unavailable declared default-plugin entry without dropping healthy siblings", async () => {
+    const root = await makeTempDir("boring-cli-default-plugin-entry-")
+    const healthy = join(root, "healthy")
+    const unbuilt = join(root, "unbuilt")
+    await mkdir(healthy, { recursive: true })
+    await mkdir(unbuilt, { recursive: true })
+    await writeFile(join(healthy, "package.json"), JSON.stringify({ name: "healthy" }), "utf8")
+    await writeFile(join(unbuilt, "package.json"), JSON.stringify({
+      name: "unbuilt",
+      boring: { server: "dist/server/index.js" },
+    }), "utf8")
+
+    const resolution = resolveCliDefaultPluginPackageResolution({
+      defaultPluginPackages: [healthy, unbuilt],
+    })
+
+    expect(resolution.paths).toEqual([healthy])
+    expect(resolution.diagnostics).toEqual([expect.objectContaining({
+      pluginId: unbuilt,
+      message: expect.stringContaining(join(unbuilt, "dist", "server", "index.js")),
+    })])
+  })
+
   test("resolves the default global Pi extensions root", () => {
     expect(getGlobalPiExtensionsRoot({ globalRoot: "/tmp/custom-global" })).toBe(resolve("/tmp/custom-global"))
   })
