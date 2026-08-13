@@ -1481,6 +1481,7 @@ export async function createCoreWorkspaceAgentServer(
           ...pluginEntries.flatMap((entry) => 'dir' in entry ? [entry.dir] : []),
           ...(options.piResourceAuthorizedRoots ?? []),
         ],
+        allowInternalSymlinks: true,
       })
     }
     const { resourceInputDigest, revalidateResourceInputs } = await createPiResourceDigestFence(buildResourceDigestInput)

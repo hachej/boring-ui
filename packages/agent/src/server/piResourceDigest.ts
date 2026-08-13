@@ -2,7 +2,7 @@ import { createHash, type Hash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { lstat, open, opendir, realpath, stat as statPath } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DefaultPackageManager, getAgentDir, type ResolvedPaths } from '@mariozechner/pi-coding-agent'
 import { ErrorCode } from '../shared/error-codes'
@@ -92,6 +92,7 @@ interface WalkState {
   readonly hash: Hash
   readonly limits: PiResourceDigestLimits
   readonly authorizedRoots: AuthorizedRoots
+  readonly allowInternalSymlinks: boolean
   nodes: number
   bytes: number
 }
@@ -138,6 +139,7 @@ export async function digestPiResourceInputs(input: PiResourceDigestInput): Prom
     hash,
     limits,
     authorizedRoots,
+    allowInternalSymlinks: input.allowInternalSymlinks ?? false,
     nodes: 0,
     bytes: 0,
   }
@@ -316,6 +318,7 @@ async function hashResourceCollection(
   for (const path of [...new Set(paths)].sort()) {
     const absolutePath = resolvePiPath(path, baseDir)
     assertLexicallyContained(absolutePath, state.authorizedRoots.lexical)
+    await assertSymlinkPolicy(absolutePath, state.authorizedRoots, state.allowInternalSymlinks)
     try {
       await lstat(absolutePath)
     } catch (error) {
@@ -420,6 +423,7 @@ async function hashLocalResource(
 ): Promise<void> {
   const absolutePath = resolve(path)
   assertLexicallyContained(absolutePath, state.authorizedRoots.lexical)
+  await assertSymlinkPolicy(absolutePath, state.authorizedRoots, state.allowInternalSymlinks)
   if (depth > state.limits.maxDepth) {
     throw limitError(`Pi resource tree exceeds maximum depth ${state.limits.maxDepth}`)
   }
@@ -576,6 +580,29 @@ async function pathContainsSymlink(path: string): Promise<boolean> {
     const parent = dirname(current)
     if (parent === current) return false
     current = parent
+  }
+}
+
+async function assertSymlinkPolicy(path: string, roots: AuthorizedRoots, allowInternalSymlinks: boolean): Promise<void> {
+  if (allowInternalSymlinks) return
+  const absolutePath = resolve(path)
+  const pathRoot = parse(absolutePath).root
+  const segments = relative(pathRoot, absolutePath).split(sep).filter(Boolean)
+  let current = pathRoot
+  for (const segment of segments) {
+    current = resolve(current, segment)
+    try {
+      if (!(await lstat(current)).isSymbolicLink()) continue
+      const authorizedRoot = mostSpecificContainingRoot(path, roots.lexical) ?? '<unknown authorized root>'
+      throw stableError(
+        ErrorCode.enum.PATH_SYMLINK_ESCAPE,
+        403,
+        `Pi resource path ${path} traverses symlink ${current} under authorized root ${authorizedRoot}, but contained symlinks are disabled for this caller. Set allowInternalSymlinks: true only when the authorized root and linked target are trusted, or replace the symlink with a direct path.`,
+      )
+    } catch (error) {
+      if (isMissing(error)) return
+      throw error
+    }
   }
 }
 

@@ -36,6 +36,7 @@ function digestInput(root: string, skillPath: string): PiResourceDigestInput {
     noSkills: true,
     additionalSkillPaths: [skillPath],
     authorizedRoots: [root],
+    allowInternalSymlinks: true,
   }
 }
 
@@ -55,6 +56,22 @@ describe('digestPiResourceInputs symlink containment', () => {
     await symlink(target, linked, 'dir')
 
     await expect(digestPiResourceInputs(digestInput(root, linked))).resolves.toMatch(/^sha256:[a-f0-9]{64}$/)
+  })
+
+  test.each([undefined, false])('rejects a contained symlink unless the caller opts in (allowInternalSymlinks=%s)', async (allowInternalSymlinks) => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-contained-link-policy-'))
+    const target = join(root, 'targets', 'skill')
+    const linked = join(root, 'linked-skill')
+    await mkdir(target, { recursive: true })
+    await writeFile(join(target, 'SKILL.md'), '# linked skill\n', 'utf8')
+    await symlink(target, linked, 'dir')
+
+    const input = { ...digestInput(root, linked), allowInternalSymlinks }
+    await expect(digestPiResourceInputs(input)).rejects.toMatchObject({
+      code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
+      statusCode: 403,
+      message: expect.stringMatching(new RegExp(`${linked}.*authorized root ${root}.*allowInternalSymlinks: true`)),
+    })
   })
 
   test('rejects a symlink whose target escapes every authorized root', async () => {

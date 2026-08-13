@@ -1998,6 +1998,7 @@ export async function createWorkspaceAgentServer(
             extensionPaths,
           }],
           authorizedRoots: resolvePiResourceAuthorizedRoots(),
+          allowInternalSymlinks: true,
         })
       }
       const { resourceInputDigest, revalidateResourceInputs } = await createPiResourceDigestFence(buildResourceDigestInput)
