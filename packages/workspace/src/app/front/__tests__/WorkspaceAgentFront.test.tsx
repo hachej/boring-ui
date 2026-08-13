@@ -895,6 +895,7 @@ describe("WorkspaceAgentFront", () => {
         appLeftOverlayActions={[{
           id: "mcp",
           label: "MCP",
+          icon: <span aria-hidden="true">M</span>,
           render: () => <div>MCP overlay</div>,
         }]}
         persistenceEnabled={false}
