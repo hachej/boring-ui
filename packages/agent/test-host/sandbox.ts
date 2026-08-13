@@ -24,13 +24,14 @@ import {
   createStandaloneAgentHostApp,
   type CreateStandaloneAgentHostAppOptions,
 } from '../src/server/createStandaloneAgentHostApp'
+import { isBuiltinRuntimeModeId } from '../src/shared/runtime-mode'
 
 export async function createTestStandaloneAgentHostApp(
   options: CreateStandaloneAgentHostAppOptions = {},
 ): ReturnType<typeof createStandaloneAgentHostApp> {
   const mode = options.runtimeModeAdapter?.id ?? options.mode ?? 'direct'
   const runtimeModeAdapter = options.runtimeModeAdapter
-    ?? (mode === 'direct' || mode === 'local' || mode === 'blaxel' || mode === 'vercel-sandbox'
+    ?? (isBuiltinRuntimeModeId(mode)
       ? createAgentSandboxRuntimeModeAdapter(mode)
       : undefined)
   return await createStandaloneAgentHostApp({

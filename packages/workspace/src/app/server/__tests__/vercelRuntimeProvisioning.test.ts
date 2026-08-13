@@ -22,7 +22,7 @@ import { defineServerPlugin } from "../../../server/plugins/defineServerPlugin"
 const tempDirs: string[] = []
 
 test("sandbox runtime host rejects unknown modes with the stable resolver error", () => {
-  expect(() => createSandboxRuntimeModeAdapter("custom-sandbox" as "direct"))
+  expect(() => createSandboxRuntimeModeAdapter("custom-sandbox"))
     .toThrow('Runtime mode "custom-sandbox" has no built-in adapter')
 })
 
