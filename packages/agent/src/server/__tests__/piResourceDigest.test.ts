@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { ErrorCode } from '../../shared/error-codes'
-import { digestPiResourceInputs, inspectPiResourceSymlinks, type PiResourceDigestInput } from '../piResourceDigest'
+import {
+  assertPiResourcePathsAuthorized,
+  digestPiResourceInputs,
+  type PiResourceDigestInput,
+} from '../piResourceDigest'
 
 const fsHooks = vi.hoisted(() => ({
   beforeOpen: undefined as ((path: Parameters<typeof import('node:fs/promises').open>[0]) => Promise<void>) | undefined,
@@ -56,6 +60,18 @@ describe('digestPiResourceInputs symlink containment', () => {
     await symlink(target, linked, 'dir')
 
     await expect(digestPiResourceInputs(digestInput(root, linked))).resolves.toMatch(/^sha256:[a-f0-9]{64}$/)
+  })
+
+  test('allows a contained symlink nested inside a resource tree', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-nested-contained-link-'))
+    const skill = join(root, 'skill')
+    const target = join(root, 'shared')
+    await mkdir(skill, { recursive: true })
+    await mkdir(target, { recursive: true })
+    await writeFile(join(target, 'detail.md'), 'contained\n', 'utf8')
+    await symlink('../shared', join(skill, 'shared'), 'dir')
+
+    await expect(digestPiResourceInputs(digestInput(root, skill))).resolves.toMatch(/^sha256:[a-f0-9]{64}$/)
   })
 
   test.each([undefined, false])('rejects a contained symlink unless the caller opts in (allowInternalSymlinks=%s)', async (allowInternalSymlinks) => {
@@ -137,27 +153,6 @@ describe('digestPiResourceInputs symlink containment', () => {
     })
   })
 
-  test('reports contained and escaping package links without reading their contents', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-inspect-links-'))
-    const outside = await mkdtemp(join(tmpdir(), 'boring-pi-digest-inspect-outside-'))
-    const containedTarget = join(root, 'packages', 'contained')
-    const containedLink = join(root, 'node_modules', 'contained')
-    const escapeLink = join(root, 'node_modules', 'escape')
-    await mkdir(containedTarget, { recursive: true })
-    await mkdir(join(root, 'node_modules'), { recursive: true })
-    await symlink(containedTarget, containedLink, 'dir')
-    await symlink(outside, escapeLink, 'dir')
-
-    await expect(inspectPiResourceSymlinks({
-      piCwd: root,
-      resourcePaths: [containedLink, escapeLink],
-      authorizedRoots: [root],
-    })).resolves.toEqual([
-      expect.objectContaining({ path: containedLink, resolvedPath: containedTarget, status: 'contained' }),
-      expect.objectContaining({ path: escapeLink, resolvedPath: outside, status: 'escape' }),
-    ])
-  })
-
   test('rejects a missing resource beneath a symlink that escapes an authorized root', async () => {
     const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-missing-escape-'))
     const outside = await mkdtemp(join(tmpdir(), 'boring-pi-digest-missing-outside-'))
@@ -194,6 +189,27 @@ describe('digestPiResourceInputs symlink containment', () => {
     })
   })
 
+  test('rejects an authorized root swapped while its descriptor is established', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-root-swap-'))
+    const outside = await mkdtemp(join(tmpdir(), 'boring-pi-digest-root-swap-outside-'))
+    const parked = `${root}-parked`
+    const skill = join(root, 'skill')
+    await mkdir(skill, { recursive: true })
+    await writeFile(join(skill, 'SKILL.md'), '# before root swap\n', 'utf8')
+    fsHooks.beforeOpen = async (path) => {
+      if (!String(path).endsWith(`/${root.split('/').at(-1)}`)) return
+      fsHooks.beforeOpen = undefined
+      await rename(root, parked)
+      await symlink(outside, root, 'dir')
+    }
+
+    await expect(digestPiResourceInputs(digestInput(root, skill))).rejects.toMatchObject({
+      code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+      statusCode: 409,
+      retryable: true,
+    })
+  })
+
   test('keeps the digest stable when the same logical path becomes an in-root symlink', async () => {
     const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-stable-link-'))
     const skill = join(root, 'skill')
@@ -208,6 +224,50 @@ describe('digestPiResourceInputs symlink containment', () => {
     await symlink(target, skill, 'dir')
 
     await expect(digestPiResourceInputs(input)).resolves.toBe(directDigest)
+  })
+
+  test('accepts the normal .pi/skills link into the workspace-owned skill directory', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-workspace-skill-link-'))
+    const target = join(root, '.agents', 'skills', 'exec')
+    const linked = join(root, '.pi', 'skills', 'exec')
+    await mkdir(target, { recursive: true })
+    await mkdir(join(root, '.pi', 'skills'), { recursive: true })
+    await writeFile(join(target, 'SKILL.md'), '# exec\n', 'utf8')
+    await symlink('../../.agents/skills/exec', linked, 'dir')
+
+    await expect(digestPiResourceInputs(digestInput(root, linked))).resolves.toMatch(/^sha256:[a-f0-9]{64}$/)
+  })
+
+  test('does not discover ambient user skills when noSkills is true', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-no-ambient-skills-'))
+    const configured = join(root, 'configured')
+    const ambientTarget = join(root, 'ambient-target')
+    const ambientLink = join(root, '.agents', 'skills', 'ambient')
+    await mkdir(configured, { recursive: true })
+    await writeFile(join(configured, 'SKILL.md'), '# configured\n', 'utf8')
+    const input = digestInput(root, configured)
+    const before = await digestPiResourceInputs(input)
+    await mkdir(ambientTarget, { recursive: true })
+    await mkdir(join(root, '.agents', 'skills'), { recursive: true })
+    await writeFile(join(ambientTarget, 'SKILL.md'), '# ambient\n', 'utf8')
+    await symlink(ambientTarget, ambientLink, 'dir')
+
+    await expect(digestPiResourceInputs(input)).resolves.toBe(before)
+  })
+
+  test('rejects a direct resource outside host-owned authority', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-authorized-root-'))
+    const outside = await mkdtemp(join(tmpdir(), 'boring-pi-direct-outside-'))
+
+    await expect(assertPiResourcePathsAuthorized({
+      paths: [outside],
+      authorizedRoots: [root],
+      allowInternalSymlinks: true,
+    })).rejects.toMatchObject({
+      code: ErrorCode.enum.PATH_ESCAPE,
+      statusCode: 403,
+      message: expect.stringContaining(outside),
+    })
   })
 
   test.runIf(process.platform === 'linux' || process.platform === 'darwin')(

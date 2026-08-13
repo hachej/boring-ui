@@ -51,6 +51,17 @@ vi.mock("../pluginDiscovery.js", async (importOriginal) => {
   return {
     ...actual,
     resolveCliDefaultPluginPackagePaths: () => [...cliDefaultPluginPackages.paths],
+    resolveCliDefaultPluginPackageCandidates: () => ({
+      candidates: cliDefaultPluginPackages.paths.map((packageRoot, index) => ({
+        pluginId: `@fixture/default-${index}`,
+        packageRoot,
+      })),
+      diagnostics: [],
+    }),
+    inspectAuthorizedCliDefaultPluginPackages: (candidates: Array<{ packageRoot: string }>) => ({
+      paths: candidates.map((candidate) => candidate.packageRoot),
+      diagnostics: [],
+    }),
     resolveCliBoringPluginDirs: () => [],
   }
 })
@@ -149,7 +160,8 @@ describe.sequential("CLI Agent Host composition", () => {
   it("folder-mode fleet seats receive workspace plugin agent tools", async () => {
     const fleetRoot = await temporaryRoot("boring-cli-seat-tools-fleet-")
     const workspaceRoot = await temporaryRoot("boring-cli-seat-tools-workspace-")
-    const pluginRoot = await temporaryRoot("boring-cli-seat-tools-plugin-")
+    const pluginRoot = join(workspaceRoot, "plugins", "workspace-seat-tools")
+    await mkdir(pluginRoot, { recursive: true })
     const personaRoot = join(fleetRoot, ".agents", "personas", "worker")
     await mkdir(personaRoot, { recursive: true })
     await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })

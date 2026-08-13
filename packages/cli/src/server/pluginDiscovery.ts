@@ -1,5 +1,7 @@
 import { homedir } from "node:os"
-import { dirname, join, resolve } from "node:path"
+import { existsSync, readFileSync } from "node:fs"
+import { createRequire } from "node:module"
+import { dirname, isAbsolute, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import {
   BoringPluginAssetManager,
@@ -8,7 +10,6 @@ import {
 } from "@hachej/boring-workspace/server"
 import {
   readWorkspacePluginPackagePiSnapshot,
-  resolveDefaultWorkspacePluginPackagePaths,
   type WorkspacePluginPackagePiSnapshot,
 } from "@hachej/boring-workspace/app/server"
 import {
@@ -25,8 +26,20 @@ import {
  */
 export function resolveBoringUiCliPackageRoot(): string {
   const here = dirname(fileURLToPath(import.meta.url))
-  // pluginDiscovery.ts is in src/server/, the package root is ../..
-  return resolve(here, "..", "..")
+  let current = here
+  while (true) {
+    const manifestPath = join(current, "package.json")
+    if (existsSync(manifestPath)) {
+      try {
+        const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { name?: unknown }
+        if (manifest.name === "@hachej/boring-ui-cli") return current
+      } catch {}
+    }
+    const parent = dirname(current)
+    if (parent === current) break
+    current = parent
+  }
+  throw new Error(`Cannot locate @hachej/boring-ui-cli package root from ${here}`)
 }
 
 /** Host-owned anchor for linked packages in both source checkouts and installs. */
@@ -51,8 +64,26 @@ export interface ResolveCliBoringPluginDirsOptions {
   includeDefaultPackages?: boolean
   /** Include the local-only automation executor package in folder mode. */
   includeFolderModeAutomation?: boolean
+  /** Pre-resolved, pre-authorized default package roots. */
+  defaultPackagePaths?: readonly string[]
   /** Pre-resolved, pre-authorized roots for the asset manager. */
   resolvedPluginDirs?: readonly BoringPluginSourceInput[]
+}
+
+export interface CliDefaultPluginPackageDiagnostic {
+  source: "default-plugin-package-resolution"
+  pluginId: string
+  message: string
+}
+
+export interface CliDefaultPluginPackageCandidate {
+  pluginId: string
+  packageRoot: string
+}
+
+export interface CliDefaultPluginPackageResolution {
+  paths: string[]
+  diagnostics: CliDefaultPluginPackageDiagnostic[]
 }
 
 export function getGlobalPiExtensionsRoot(options: ResolveCliBoringPluginDirsOptions = {}): string {
@@ -71,21 +102,78 @@ function getGlobalPiAgentRoot(options: ResolveCliBoringPluginDirsOptions = {}): 
 const CLI_DEFAULT_PLUGIN_PACKAGES = ["@hachej/boring-ask-user", "@hachej/boring-diagram", "@hachej/boring-tasks"]
 const CLI_FOLDER_MODE_PLUGIN_PACKAGES = [...CLI_DEFAULT_PLUGIN_PACKAGES, "@hachej/boring-automation"]
 
-// Resolve the CLI's bundled default plugin packages from the CLI's own
-// node_modules. Automation execution is folder-mode-only until workspaces mode
-// has an equivalent request-scoped trusted actor composition.
-export function resolveCliDefaultPluginPackagePaths(options: { includeFolderModeAutomation?: boolean } = {}): string[] {
-  try {
-    return resolveDefaultWorkspacePluginPackagePaths({
-      anchorDir: resolveBoringUiCliPackageRoot(),
-      defaultPluginPackages: options.includeFolderModeAutomation ? CLI_FOLDER_MODE_PLUGIN_PACKAGES : CLI_DEFAULT_PLUGIN_PACKAGES,
-    })
-  } catch (error) {
-    // Missing dep in the CLI package is a packaging error; swallow here so a
-    // bad build doesn't crash every workspace launch — the plugin just won't load.
-    console.error("[boring-ui] failed to resolve default plugin packages:", error instanceof Error ? error.message : String(error))
-    return []
+/**
+ * Resolve package names without reading package contents. Callers must run the
+ * resulting roots through the Pi authority guard before inspecting manifests.
+ */
+export function resolveCliDefaultPluginPackageCandidates(
+  options: { includeFolderModeAutomation?: boolean; defaultPluginPackages?: readonly string[] } = {},
+): { candidates: CliDefaultPluginPackageCandidate[]; diagnostics: CliDefaultPluginPackageDiagnostic[] } {
+  const pluginIds = options.defaultPluginPackages
+    ?? (options.includeFolderModeAutomation ? CLI_FOLDER_MODE_PLUGIN_PACKAGES : CLI_DEFAULT_PLUGIN_PACKAGES)
+  const anchorDir = resolveBoringUiCliPackageRoot()
+  const requireFromCli = createRequire(join(anchorDir, "package.json"))
+  const candidates: CliDefaultPluginPackageCandidate[] = []
+  const diagnostics: CliDefaultPluginPackageDiagnostic[] = []
+  for (const pluginId of pluginIds) {
+    try {
+      const linkedRoot = isAbsolute(pluginId) ? resolve(pluginId) : join(anchorDir, "node_modules", pluginId)
+      const packageRoot = existsSync(linkedRoot)
+        ? linkedRoot
+        : isAbsolute(pluginId)
+          ? linkedRoot
+          : dirname(requireFromCli.resolve(`${pluginId}/package.json`))
+      candidates.push({ pluginId, packageRoot })
+    } catch (error) {
+      diagnostics.push(defaultPluginDiagnostic(pluginId, error))
+    }
   }
+  return { candidates, diagnostics }
+}
+
+/** Inspect only candidates that the host has already authorized. */
+export function inspectAuthorizedCliDefaultPluginPackages(
+  candidates: readonly CliDefaultPluginPackageCandidate[],
+): CliDefaultPluginPackageResolution {
+  const paths: string[] = []
+  const diagnostics: CliDefaultPluginPackageDiagnostic[] = []
+  for (const { pluginId, packageRoot } of candidates) {
+    try {
+      const manifestPath = join(packageRoot, "package.json")
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { boring?: { front?: unknown; server?: unknown } }
+      for (const [kind, entry] of Object.entries(manifest.boring ?? {})) {
+        if ((kind !== "front" && kind !== "server") || typeof entry !== "string") continue
+        const entryPath = resolve(packageRoot, entry)
+        if (!existsSync(entryPath)) {
+          throw new Error(`${kind} entry declared by ${manifestPath} is unavailable at ${entryPath}`)
+        }
+      }
+      paths.push(packageRoot)
+    } catch (error) {
+      diagnostics.push(defaultPluginDiagnostic(pluginId, error))
+    }
+  }
+  return { paths, diagnostics }
+}
+
+function defaultPluginDiagnostic(pluginId: string, error: unknown): CliDefaultPluginPackageDiagnostic {
+  const reason = error instanceof Error ? error.message : String(error)
+  return {
+    source: "default-plugin-package-resolution",
+    pluginId,
+    message: `Default plugin ${pluginId} could not be loaded and will be unavailable: ${reason}. Install, build, or repair ${pluginId} in the boring-ui CLI package, then restart the CLI. Other default plugins remain enabled.`,
+  }
+}
+
+/** Legacy synchronous helper for non-boot callers. CLI boot uses the guarded two-phase API above. */
+export function resolveCliDefaultPluginPackagePaths(options: { includeFolderModeAutomation?: boolean } = {}): string[] {
+  const located = resolveCliDefaultPluginPackageCandidates(options)
+  const resolution = inspectAuthorizedCliDefaultPluginPackages(located.candidates)
+  const diagnostics = [...located.diagnostics, ...resolution.diagnostics]
+  if (diagnostics.length > 0) {
+    console.warn(JSON.stringify({ event: "boring_ui_default_plugin_resolution_warning", diagnostics }))
+  }
+  return resolution.paths
 }
 
 export function resolveCliBoringPluginDirs(
@@ -110,7 +198,9 @@ export function resolveCliBoringPluginDirs(
       ? [{ rootDir: resolve(process.cwd(), ".agents", "personas"), kind: "internal" as const }]
       : []),
     ...(includeDefaultPackages
-      ? resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: options.includeFolderModeAutomation }).map((rootDir): BoringPluginSourceInput => ({ rootDir, kind: "internal" }))
+      ? (options.defaultPackagePaths
+          ?? resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: options.includeFolderModeAutomation }))
+        .map((rootDir): BoringPluginSourceInput => ({ rootDir, kind: "internal" }))
       : []),
     { rootDir: getGlobalPiExtensionsRoot(options), kind: "external" },
     { rootDir: globalScope.npmDir, kind: "external" },

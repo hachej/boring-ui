@@ -1224,6 +1224,33 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
+  test("rejects an escaping package link before its server module can execute", async () => {
+    const workspaceRoot = await makeTempDir("boring-escaping-plugin-workspace-")
+    const outsideRoot = await makeTempDir("boring-escaping-plugin-outside-")
+    const linkedRoot = join(workspaceRoot, "node_modules", "escaping-plugin")
+    await mkdir(join(workspaceRoot, "node_modules"), { recursive: true })
+    await writeFile(join(outsideRoot, "package.json"), JSON.stringify({
+      name: "escaping-plugin",
+      boring: { server: "server.mjs" },
+    }), "utf8")
+    await writeFile(join(outsideRoot, "server.mjs"), [
+      "globalThis.__escapingPluginExecuted = true",
+      "export default { id: 'escaping-plugin' }",
+    ].join("\n"), "utf8")
+    await symlink(outsideRoot, linkedRoot, "dir")
+    delete (globalThis as { __escapingPluginExecuted?: boolean }).__escapingPluginExecuted
+
+    await expect(createWorkspaceAgentServer({
+      workspaceRoot,
+      appRoot: workspaceRoot,
+      defaultPluginPackages: [linkedRoot],
+      allowInternalPiResourceSymlinks: true,
+      logger: false,
+      provisionWorkspace: false,
+    })).rejects.toMatchObject({ code: "PATH_SYMLINK_ESCAPE", statusCode: 403 })
+    expect((globalThis as { __escapingPluginExecuted?: boolean }).__escapingPluginExecuted).toBeUndefined()
+  })
+
   test("workspace and configured agent-spec activation share one canonical artifact and load lifecycle", async () => {
     const workspaceRoot = await makeTempDir("boring-one-machinery-workspace-")
     const pluginRoot = join(workspaceRoot, "plugins", "one-machinery")
@@ -1357,7 +1384,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       logger: false,
       provisionWorkspace: false,
       externalPlugins: false,
-      piResourceAuthorizedRoots: ["/plugins"],
+      piResourceAuthorizedRoots: ["/plugins", alphaPackageRoot, betaPackageRoot],
       plugins: [
         {
           id: "alpha-plugin",
@@ -1779,8 +1806,6 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const fleetRoot = await makeTempDir("boring-agent-remote-gate-repo-")
     const remotePackageRoot = join(workspaceRoot, ".pi", "npm", "remote-worker")
     await mkdir(remotePackageRoot, { recursive: true })
-    await mkdir(join(workspaceRoot, "agents"), { recursive: true })
-    await symlink(remotePackageRoot, join(workspaceRoot, "agents", "remote-alias"))
     await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
     await writeFile(join(remotePackageRoot, "instructions.md"), "Remote worker instructions.\n", "utf8")
     await writeFile(join(remotePackageRoot, "package.json"), JSON.stringify({
@@ -1801,7 +1826,6 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       JSON.stringify({
         packages: [
           "./npm/remote-worker",
-          "../agents/remote-alias",
           "git:https://example.test/remote-worker.git",
         ],
       }),
@@ -2524,6 +2548,7 @@ describe("beforeReload triggers directory-source re-resolve", () => {
       provisionWorkspace: false,
       externalPlugins: false,
       defaults: [],
+      piResourceAuthorizedRoots: [packageRoot],
       plugins: [{
         id: "direct-resource-plugin",
         contentDigest: "direct-resource-plugin-v1",

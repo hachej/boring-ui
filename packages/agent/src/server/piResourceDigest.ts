@@ -1,6 +1,6 @@
 import { createHash, type Hash } from 'node:crypto'
 import { constants } from 'node:fs'
-import { lstat, open, opendir, realpath, stat as statPath, type FileHandle } from 'node:fs/promises'
+import { lstat, open, opendir, readFile, realpath, stat as statPath, type FileHandle } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -112,18 +112,6 @@ interface AuthorizedRoots {
   readonly canonical: readonly string[]
 }
 
-export interface PiResourceSymlinkDiagnostic {
-  readonly source: 'pi-resource-symlink'
-  readonly path: string
-  readonly requestedPath: string
-  readonly authorizedRoot: string
-  readonly resolvedPath?: string
-  readonly status: 'contained' | 'escape' | 'dangling'
-  readonly consequence: string
-  readonly operatorAction: string
-  readonly message: string
-}
-
 const FORMAT_VERSION = 'boring-pi-resource-digest-v4'
 const EXCLUDED_DIRECTORIES = new Set(['.git', 'node_modules'])
 // Host-written observation metadata is not a Pi input. Including it makes the
@@ -173,6 +161,21 @@ export async function digestPiResourceInputs(input: PiResourceDigestInput): Prom
   }
   await hashResourceCollection(state, piCwd, 'extension', localExtensionPaths, true)
 
+  // DefaultPackageManager reads package manifests while resolving. Authorize
+  // every local package source first, including sources declared in settings.
+  const localPackagePaths = await configuredLocalPackagePaths({
+    projectSettingsPath: join(projectSettingsDir, 'settings.json'),
+    globalSettingsPath: join(piAgentDir, 'settings.json'),
+    projectSettingsDir,
+    piAgentDir,
+    packages: input.packages ?? [],
+  })
+  await assertPiResourcePathsAuthorized({
+    paths: localPackagePaths,
+    authorizedRoots: lexicalAuthorizedRoots,
+    allowInternalSymlinks: input.allowInternalSymlinks ?? false,
+  })
+
   const settingsManager = createResourceSettingsManager(piCwd, piAgentDir, [...(input.packages ?? [])], {
     includePackage: (source) => isLocalPiResourceSource(typeof source === 'string' ? source : source.source),
   })
@@ -199,95 +202,13 @@ export async function digestPiResourceInputs(input: PiResourceDigestInput): Prom
   }
 }
 
-/**
- * Inspect configured local Pi resource names for symlink components. This is a
- * diagnostic companion to the digest guard: it uses the same lexical and
- * canonical containment model, but never reads resource contents.
- */
-export async function inspectPiResourceSymlinks(input: {
-  readonly piCwd: string
-  readonly resourcePaths: readonly string[]
-  readonly authorizedRoots: readonly string[]
-}): Promise<PiResourceSymlinkDiagnostic[]> {
-  const piCwd = resolvePiPath(input.piCwd, process.cwd())
-  const lexicalRoots = uniqueStrings(input.authorizedRoots.map((root) => resolvePiPath(root, piCwd)))
-  if (lexicalRoots.length === 0) return []
-  const roots = await resolveAuthorizedRoots(lexicalRoots)
-  try {
-  const diagnostics = new Map<string, PiResourceSymlinkDiagnostic>()
-  for (const configuredPath of uniqueStrings(input.resourcePaths.map((path) => resolvePiPath(path, piCwd))).sort()) {
-    const boundary = roots.lexical
-      .filter((root) => root !== configuredPath && isContained(configuredPath, root))
-      .sort((left, right) => right.length - left.length)[0]
-      ?? mostSpecificContainingRoot(configuredPath, roots.lexical)
-    if (!boundary) continue
-    const suffix = relative(boundary, configuredPath)
-    let current = boundary
-    for (const component of suffix.split(sep).filter(Boolean)) {
-      current = resolve(current, component)
-      let currentStat
-      try {
-        currentStat = await lstat(current)
-      } catch (error) {
-        if (isMissing(error)) break
-        throw error
-      }
-      if (!currentStat.isSymbolicLink() || diagnostics.has(current)) continue
-      try {
-        const target = await realpath(current)
-        const containedBy = mostSpecificContainingRoot(target, roots.canonical)
-        const status = containedBy ? 'contained' : 'escape'
-        const operatorAction = status === 'contained'
-          ? 'No action is required while the target remains inside an authorized Pi resource root.'
-          : symlinkEscapeOperatorAction()
-        const consequence = status === 'contained'
-          ? 'The linked plugin or Pi resource remains loadable and is protected by the normal containment and TOCTOU checks.'
-          : 'Pi resource loading is blocked, so the affected plugin, skill, or extension will be unavailable.'
-        diagnostics.set(current, {
-          source: 'pi-resource-symlink',
-          path: current,
-          requestedPath: configuredPath,
-          authorizedRoot: boundary,
-          resolvedPath: target,
-          status,
-          consequence,
-          operatorAction,
-          message: status === 'contained'
-            ? `Pi resource symlink is contained: ${current} resolves to ${target}. ${consequence}`
-            : symlinkEscapeMessage(current, target, boundary),
-        })
-      } catch (error) {
-        if (!isMissing(error)) throw error
-        const consequence = 'Pi resource loading is blocked, so the affected plugin, skill, or extension will be unavailable.'
-        const operatorAction = danglingSymlinkOperatorAction()
-        diagnostics.set(current, {
-          source: 'pi-resource-symlink',
-          path: current,
-          requestedPath: configuredPath,
-          authorizedRoot: boundary,
-          status: 'dangling',
-          consequence,
-          operatorAction,
-          message: danglingSymlinkMessage(current, boundary),
-        })
-      }
-    }
-  }
-  return [...diagnostics.values()]
-  } finally {
-    await Promise.all(roots.entries.map((root) => root.handle.close()))
-  }
-}
-
-/**
- * Validate local resource names before any manifest scan or module import.
- * Authority is supplied separately by the host; resource paths never extend it.
- */
+/** Validate local resource names before any manifest scan or module import. */
 export async function assertPiResourcePathsAuthorized(input: {
   readonly paths: readonly string[]
   readonly authorizedRoots: readonly string[]
   readonly allowInternalSymlinks?: boolean
 }): Promise<void> {
+  if (input.paths.length === 0) return
   const lexicalRoots = uniqueStrings(input.authorizedRoots.map((root) => resolve(root)))
   const roots = await resolveAuthorizedRoots(lexicalRoots)
   try {
@@ -385,6 +306,40 @@ async function hashResourceCollection(
 
 function localPiPackagePath(source: string, baseDir: string): string | undefined {
   return isLocalPiResourceSource(source) ? resolvePiPath(source, baseDir) : undefined
+}
+
+async function configuredLocalPackagePaths(input: {
+  projectSettingsPath: string
+  globalSettingsPath: string
+  projectSettingsDir: string
+  piAgentDir: string
+  packages: readonly PiPackageSource[]
+}): Promise<string[]> {
+  const paths: string[] = []
+  const append = (source: PiPackageSource, baseDir: string) => {
+    const value = typeof source === 'string' ? source : source.source
+    const path = localPiPackagePath(value, baseDir)
+    if (path) paths.push(path)
+  }
+  for (const source of input.packages) append(source, input.projectSettingsDir)
+  for (const [settingsPath, baseDir] of [
+    [input.globalSettingsPath, input.piAgentDir],
+    [input.projectSettingsPath, input.projectSettingsDir],
+  ] as const) {
+    try {
+      const parsed = JSON.parse(await readFile(settingsPath, 'utf8')) as { packages?: unknown }
+      if (!Array.isArray(parsed.packages)) continue
+      for (const source of parsed.packages) {
+        if (typeof source === 'string') append(source, baseDir)
+        else if (source && typeof source === 'object' && typeof (source as { source?: unknown }).source === 'string') {
+          append(source as PiPackageSource, baseDir)
+        }
+      }
+    } catch (error) {
+      if (!isMissing(error)) throw error
+    }
+  }
+  return uniqueStrings(paths)
 }
 
 function isLocalPiResourceSource(source: string): boolean {
@@ -485,17 +440,22 @@ async function hashLocalResource(
       throw error
     }
     if (process.platform !== 'linux') {
-      throw stableError(
-        ErrorCode.enum.PATH_SYMLINK_ESCAPE,
-        403,
-        `Contained Pi resource symlinks require descriptor-relative traversal, which is unavailable on ${process.platform}`,
-      )
+      if (lexicalStat.isSymbolicLink() || await pathContainsSymlink(absolutePath)) {
+        throw stableError(
+          ErrorCode.enum.CONFIG_INVALID,
+          400,
+          `Contained Pi resource symlinks require descriptor-relative traversal, which is unavailable on ${process.platform}. Replace the symlink with a direct path or run this CLI on Linux.`,
+        )
+      }
+      // Normal direct resources retain the portable pre/post identity fences.
+    } else {
+      const target = await resolveContainedTarget(absolutePath, state.authorizedRoots, lexicalStat.isSymbolicLink())
+      const root = mostSpecificCanonicalRoot(target, state.authorizedRoots)
+      if (!root) throw symlinkEscapeError(absolutePath, target, state.authorizedRoots)
+      await hashAnchoredResource(state, root, target, absolutePath, logicalPath, depth)
+      return
     }
-    const target = await resolveContainedTarget(absolutePath, state.authorizedRoots, lexicalStat.isSymbolicLink())
-    const root = mostSpecificCanonicalRoot(target, state.authorizedRoots)
-    if (!root) throw symlinkEscapeError(absolutePath, target, state.authorizedRoots)
-    await hashAnchoredResource(state, root, target, absolutePath, logicalPath, depth)
-    return
+    // Fall through to the portable direct-resource reader below.
   }
   let lexicalStat
   try {
@@ -613,7 +573,7 @@ async function hashAnchoredResource(
   logicalPath: string,
   depth: number,
 ): Promise<void> {
-  const handle = await openAnchored(root, canonicalTarget)
+  const handle = await openAnchored(root, canonicalTarget, requestedPath)
   try {
     await hashOpenResource(state, handle, requestedPath, logicalPath, depth)
     if (await realpath(requestedPath) !== canonicalTarget) throw changedError(requestedPath)
@@ -623,10 +583,10 @@ async function hashAnchoredResource(
   }
 }
 
-async function openAnchored(root: AuthorizedRoot, canonicalTarget: string): Promise<FileHandle> {
+async function openAnchored(root: AuthorizedRoot, canonicalTarget: string, requestedPath: string): Promise<FileHandle> {
   const suffix = relative(root.canonical, canonicalTarget)
   if (isAbsolute(suffix) || suffix === '..' || suffix.startsWith(`..${sep}`)) {
-    throw symlinkEscapeError(canonicalTarget, canonicalTarget, { entries: [root], lexical: [root.lexical], canonical: [root.canonical] })
+    throw symlinkEscapeError(requestedPath, canonicalTarget, { entries: [root], lexical: [root.lexical], canonical: [root.canonical] })
   }
   // /proc/self/fd/<n> is itself a kernel-owned link to the already-open root;
   // following that one link duplicates the trusted descriptor. Every resource
@@ -649,7 +609,7 @@ async function openAnchored(root: AuthorizedRoot, canonicalTarget: string): Prom
   } catch (error) {
     await handle.close()
     if (isSymlinkTraversalError(error)) {
-      throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource changed to a symlink while opening ${canonicalTarget}`)
+      throw changedError(requestedPath)
     }
     throw error
   }
@@ -684,9 +644,14 @@ async function hashOpenResource(
         )
       } catch (error) {
         if (isSymlinkTraversalError(error)) {
-          throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource tree contains a symlink: ${requestedPath}/${entry.name}`)
+          const childPath = resolve(requestedPath, entry.name)
+          const target = await resolveContainedTarget(childPath, state.authorizedRoots, true)
+          const root = mostSpecificCanonicalRoot(target, state.authorizedRoots)
+          if (!root) throw symlinkEscapeError(childPath, target, state.authorizedRoots)
+          child = await openAnchored(root, target, childPath)
+        } else {
+          throw error
         }
-        throw error
       }
       try {
         const childBefore = await child.stat()
@@ -784,37 +749,79 @@ async function resolveAuthorizedRoots(lexicalRoots: readonly string[]): Promise<
   try {
     for (const lexical of lexicalRoots) {
       try {
-        // Roots are host-owned trust anchors. A symlinked/missing resource path
-        // never becomes authority merely because a caller also listed it here.
-        if (await pathContainsSymlink(lexical)) continue
-        const before = await lstat(lexical)
-        if (!before.isDirectory()) continue
-        const canonical = await realpath(lexical)
-        const handle = await open(canonical, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
-        try {
-          assertSameFile(before, await handle.stat(), lexical)
-          if (await realpath(lexical) !== canonical) throw changedError(lexical)
-          assertSameFile(before, await statPath(lexical), lexical)
-          entries.push({ lexical, canonical, handle })
-        } catch (error) {
-          await handle.close()
-          throw error
-        }
+        const root = process.platform === 'linux'
+          ? await openLinuxAuthorizedRoot(lexical)
+          : await openPortableAuthorizedRoot(lexical)
+        if (root) entries.push(root)
       } catch (error) {
         if (isSymlinkTraversalError(error)) throw changedError(lexical)
         if (!isMissing(error)) throw error
       }
     }
-    if (entries.length === 0) {
-      throw stableError(ErrorCode.enum.CONFIG_INVALID, 400, 'Pi resource digest has no existing independently authorized directory root')
-    }
     return {
       entries,
-      lexical: entries.map((root) => root.lexical),
+      // Missing host-owned roots remain lexical boundaries for missing
+      // resources. They never add canonical authority until they exist.
+      lexical: lexicalRoots,
       canonical: entries.map((root) => root.canonical),
     }
   } catch (error) {
     await Promise.all(entries.map((root) => root.handle.close()))
+    throw error
+  }
+}
+
+/** Establish authority by walking from an already-open filesystem root. */
+async function openLinuxAuthorizedRoot(lexical: string): Promise<AuthorizedRoot | undefined> {
+  const absolute = resolve(lexical)
+  if (await pathContainsSymlink(absolute)) return undefined
+  const lexicalBefore = await lstat(absolute)
+  if (lexicalBefore.isSymbolicLink() || !lexicalBefore.isDirectory()) return undefined
+  const filesystemRoot = parse(absolute).root
+  let handle = await open(filesystemRoot, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+  try {
+    for (const segment of relative(filesystemRoot, absolute).split(sep).filter(Boolean)) {
+      let next: FileHandle
+      try {
+        next = await open(
+          `/proc/self/fd/${handle.fd}/${segment}`,
+          constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+        )
+      } catch (error) {
+        // The root was direct at admission but became a link while its
+        // descriptor chain was established.
+        if (isSymlinkTraversalError(error)) throw changedError(absolute)
+        throw error
+      }
+      await handle.close()
+      handle = next
+    }
+    const pinned = await handle.stat()
+    assertSameFile(lexicalBefore, pinned, absolute)
+    const canonical = await realpath(`/proc/self/fd/${handle.fd}`)
+    if (await realpath(absolute) !== canonical) throw changedError(absolute)
+    assertSameFile(pinned, await statPath(absolute), absolute)
+    return { lexical: absolute, canonical, handle }
+  } catch (error) {
+    await handle.close()
+    throw error
+  }
+}
+
+/** Portable direct-root path. Symlinked roots are never admitted as authority. */
+async function openPortableAuthorizedRoot(lexical: string): Promise<AuthorizedRoot | undefined> {
+  if (await pathContainsSymlink(lexical)) return undefined
+  const before = await lstat(lexical)
+  if (!before.isDirectory()) return undefined
+  const canonical = await realpath(lexical)
+  const handle = await open(lexical, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+  try {
+    assertSameFile(before, await handle.stat(), lexical)
+    if (await realpath(lexical) !== canonical) throw changedError(lexical)
+    assertSameFile(before, await statPath(lexical), lexical)
+    return { lexical, canonical, handle }
+  } catch (error) {
+    await handle.close()
     throw error
   }
 }

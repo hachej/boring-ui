@@ -4,7 +4,9 @@ import {
   createCliPluginAssetManager,
   getGlobalPiExtensionsRoot,
   readCliPluginPiSnapshot,
+  inspectAuthorizedCliDefaultPluginPackages,
   resolveCliBoringPluginDirs,
+  resolveCliDefaultPluginPackageCandidates,
 } from "../server/pluginDiscovery.js"
 import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -33,6 +35,45 @@ async function writePiSettings(settingsPath: string, packages: string[]): Promis
 }
 
 describe("plugin discovery helpers", () => {
+  test("keeps healthy default plugins when a sibling package is missing", async () => {
+    const root = await makeTempDir("boring-cli-default-plugin-resolution-")
+    const healthy = join(root, "healthy")
+    const missing = join(root, "missing")
+    await mkdir(healthy, { recursive: true })
+    await writeFile(join(healthy, "package.json"), JSON.stringify({ name: "healthy" }), "utf8")
+
+    const located = resolveCliDefaultPluginPackageCandidates({ defaultPluginPackages: [healthy, missing] })
+    const resolution = inspectAuthorizedCliDefaultPluginPackages(located.candidates)
+
+    expect(resolution.paths).toEqual([healthy])
+    expect(resolution.diagnostics).toEqual([expect.objectContaining({
+      pluginId: missing,
+      message: expect.stringContaining("Other default plugins remain enabled"),
+    })])
+  })
+
+  test("reports an unavailable declared build entry without dropping healthy siblings", async () => {
+    const root = await makeTempDir("boring-cli-default-plugin-entry-")
+    const healthy = join(root, "healthy")
+    const unbuilt = join(root, "unbuilt")
+    await mkdir(healthy, { recursive: true })
+    await mkdir(unbuilt, { recursive: true })
+    await writeFile(join(healthy, "package.json"), JSON.stringify({ name: "healthy" }), "utf8")
+    await writeFile(join(unbuilt, "package.json"), JSON.stringify({
+      name: "unbuilt",
+      boring: { server: "dist/server/index.js" },
+    }), "utf8")
+
+    const located = resolveCliDefaultPluginPackageCandidates({ defaultPluginPackages: [healthy, unbuilt] })
+    const resolution = inspectAuthorizedCliDefaultPluginPackages(located.candidates)
+
+    expect(resolution.paths).toEqual([healthy])
+    expect(resolution.diagnostics).toEqual([expect.objectContaining({
+      pluginId: unbuilt,
+      message: expect.stringContaining(join(unbuilt, "dist", "server", "index.js")),
+    })])
+  })
+
   test("resolves the default global Pi extensions root", () => {
     expect(getGlobalPiExtensionsRoot({ globalRoot: "/tmp/custom-global" })).toBe(resolve("/tmp/custom-global"))
   })
