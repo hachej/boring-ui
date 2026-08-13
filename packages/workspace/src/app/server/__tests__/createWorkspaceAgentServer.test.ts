@@ -2544,6 +2544,7 @@ describe("beforeReload triggers directory-source re-resolve", () => {
         } | undefined>
         pi?: {
           getHotReloadableResources?(): { additionalSkillPaths: string[] }
+          locateSkillResource?(filePath: string): { filesystem: string; path: string } | undefined
         }
         systemPromptAppend?: string
         loadSystemPromptAppend?(): string | undefined | Promise<string | undefined>
@@ -2562,6 +2563,10 @@ describe("beforeReload triggers directory-source re-resolve", () => {
       expect((await runtime.getFilesystemBindings?.(ctx))?.map((binding) => binding.filesystem)).toEqual(["agent_resources"])
       expect(runtime.pi?.getHotReloadableResources?.().additionalSkillPaths)
         .toContain(join(packageRoot, "skills", "authoring"))
+      expect(runtime.pi?.locateSkillResource?.(join(packageRoot, "skills", "authoring", "SKILL.md"))).toEqual({
+        filesystem: "agent_resources",
+        path: "packages/@example/direct-resource/skills/authoring/SKILL.md",
+      })
       const prompt = [runtime.systemPromptAppend, await runtime.loadSystemPromptAppend?.()]
         .filter(Boolean)
         .join("\n\n")

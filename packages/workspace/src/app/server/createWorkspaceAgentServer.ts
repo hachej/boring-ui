@@ -1938,6 +1938,12 @@ export async function createWorkspaceAgentServer(
             ...(selectedPi?.extensionPaths ?? []),
           ]),
           ...(getHotReloadableResources ? { getHotReloadableResources } : {}),
+          ...(legacyGlobalPluginAgentContributions
+            ? {
+                locateSkillResource: (filePath: string) =>
+                  currentPackageResourceSnapshot?.registry.locateSkill(filePath),
+              }
+            : {}),
         },
         extraTools: [
           ...baseExtraTools,
