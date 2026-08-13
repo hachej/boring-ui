@@ -87,7 +87,10 @@ const palette = extract((state): SafePaletteState => {
     })
   }
 
-  if (!dialog && workspaceReady) {
+  // Action availability must follow the visible, allowlisted controls rather
+  // than resource-performance timing. Exploration and replay can observe the
+  // same painted control before their resource entry lists settle identically.
+  if (!dialog) {
     for (const search of searchControls) maybeAdd(search, false)
   }
   if (dialog && visible(dialog)) {
@@ -161,7 +164,7 @@ export const command_palette_focus_stays_visible = always(() => !palette.current
 export const command_palette_mobile_touch_targets_are_sized = always(() => palette.current.undersizedTouchTargets.length === 0)
 
 export const commandPaletteSafeActions = actions((): Action[] => {
-  if (!palette.current.workspaceReady || palette.current.lastActionWasInitial) return ["Wait"]
+  if (palette.current.lastActionWasInitial) return ["Wait"]
   const openPalette = palette.current.controls.find((control) => control.name === "open-command-palette")
   if (!palette.current.dialogVisible && openPalette) {
     const click: Action = { Click: { name: openPalette.name, point: openPalette.point } }

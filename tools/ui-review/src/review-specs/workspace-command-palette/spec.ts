@@ -15,7 +15,7 @@ const viewports: UiReviewViewport[] = [
 
 export const workspaceCommandPaletteSpec: UiReviewSpec = {
   id: "workspace-command-palette",
-  specRevision: "workspace-command-palette-v2",
+  specRevision: "workspace-command-palette-v3",
   fixtureResetId: "workspace-playground-e2e-fresh-v1",
   rubricVersion: "impeccable-v1",
   target: {
