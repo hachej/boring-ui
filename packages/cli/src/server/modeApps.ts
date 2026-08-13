@@ -577,9 +577,6 @@ export async function createFolderModeApp(opts: {
   try {
     const runtimeProvisioning = await provisionCliWorkspaceRuntime({
       workspaceRoot,
-      appRoot: pluginDiscovery.resolveBoringUiCliPackageRoot(),
-      piResourceAuthorizedRoots: [pluginDiscovery.resolveBoringUiCliPackageAuthorityRoot()],
-      allowInternalPiResourceSymlinks: true,
       mode: opts.mode,
       provisionWorkspace: opts.provisionWorkspace,
       plugins: readWorkspacePluginPackageRuntimePlugins(pluginDirs),

@@ -47,6 +47,7 @@ vi.mock('@hachej/boring-agent/server', async (importOriginal) => ({
 }))
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
+  defaultWorkspacePluginPackageCandidates: () => [],
   collectWorkspaceAgentServerPlugins: () => ({
     agentOptions: {
       extraTools: [],
@@ -90,6 +91,7 @@ vi.mock('@hachej/boring-workspace/server', () => ({
   }),
   createWorkspaceUiTools: () => [],
   InMemoryWorkspaceBridgeIdempotencyStore: class InMemoryWorkspaceBridgeIdempotencyStore {},
+  defaultWorkspacePluginPackageCandidates: () => [],
   uiRoutes: async () => {},
   workspaceBridgeHttpRoutes: async () => {},
 }))
