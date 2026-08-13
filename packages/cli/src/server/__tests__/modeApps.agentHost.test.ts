@@ -51,6 +51,10 @@ vi.mock("../pluginDiscovery.js", async (importOriginal) => {
   return {
     ...actual,
     resolveCliDefaultPluginPackagePaths: () => [...cliDefaultPluginPackages.paths],
+    resolveCliDefaultPluginPackageResolution: () => ({
+      paths: [...cliDefaultPluginPackages.paths],
+      diagnostics: [],
+    }),
     resolveCliBoringPluginDirs: () => [],
   }
 })
