@@ -1039,6 +1039,7 @@ export async function createWorkspacesModeApp(opts: {
               extensionPaths: hotResources.extensionPaths,
             }],
             authorizedRoots: piResourceAuthorizedRoots(workspace),
+            allowInternalSymlinks: true,
           })
         }
         const { resourceInputDigest, revalidateResourceInputs } = await agentServer.createPiResourceDigestFence(buildResourceDigestInput)
@@ -1130,6 +1131,7 @@ export async function createWorkspacesModeApp(opts: {
               extensionPaths: hotResources.extensionPaths,
             }],
             authorizedRoots: piResourceAuthorizedRoots(workspace),
+            allowInternalSymlinks: true,
           }),
         ),
         sessionNamespace: "",

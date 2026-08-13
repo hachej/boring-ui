@@ -660,6 +660,16 @@ describe("workspace app-server plugin package helpers", () => {
       code: "PATH_SYMLINK_ESCAPE",
       statusCode: 403,
     })
+    const internalRoot = join(root, "internal")
+    const internalTarget = join(internalRoot, "internal.js")
+    await mkdir(internalRoot)
+    await writeFile(internalTarget, "export default 'internal'\n", "utf8")
+    await symlink(internalTarget, join(internalRoot, "internal-link.js"))
+    await expect(digestWorkspacePiResourceInputs({
+      ...input,
+      extensionPaths: [join(internalRoot, "internal-link.js")],
+      allowInternalSymlinks: true,
+    })).resolves.toMatch(/^sha256:/)
 
     const collisionRoot = await makeTempDir("boring-resource-digest-framing-")
     const directoryShape = join(collisionRoot, "a")
