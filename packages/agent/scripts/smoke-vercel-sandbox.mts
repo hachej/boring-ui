@@ -4,15 +4,14 @@ import { join, resolve } from 'node:path'
 import { Sandbox } from '@vercel/sandbox'
 
 import {
-  createVercelSandboxProvider,
   FileHandleStore,
-  VERCEL_SANDBOX_REMOTE_ROOT,
-  VERCEL_SANDBOX_WORKSPACE_ROOT,
 } from '@hachej/boring-sandbox/providers/vercel-sandbox'
-import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
 import { getBoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
 import { provisionWorkspaceRuntime } from '../src/server/workspace/provisioning'
-import { agentSandboxRuntimeHostOperations } from '../host/sandbox'
+import {
+  agentSandboxRuntimeHostOperations,
+  createSandboxRuntimeModeAdapter,
+} from '../host/sandbox'
 
 function requireEnv(name: string): string {
   const value = process.env[name]?.trim()
@@ -35,11 +34,8 @@ async function main() {
   const storePath = join(tempDir, 'sandboxes.json')
   const workspaceId = `smoke-${Date.now()}-${Math.random().toString(36).slice(2)}`
   const store = new FileHandleStore({ storePath })
-  const adapter = createVercelSandboxModeAdapter({
-    provider: createVercelSandboxProvider({ store, orphanGuardMaxIdleMs: null }),
-    runtimeHost: agentSandboxRuntimeHostOperations,
-    remoteRoot: VERCEL_SANDBOX_REMOTE_ROOT,
-    workspaceRoot: VERCEL_SANDBOX_WORKSPACE_ROOT,
+  const adapter = createSandboxRuntimeModeAdapter('vercel-sandbox', {
+    providerOptions: { store, orphanGuardMaxIdleMs: null },
   })
   const runtimeLayout = getBoringAgentRuntimePaths('/workspace')
   const modeCtx = {

@@ -1,6 +1,8 @@
 import { expect, test, vi } from 'vitest'
 
-import type { SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
+import {
+  type SandboxProviderV1,
+} from '@hachej/boring-sandbox/shared'
 import type { Sandbox, Workspace } from '../../../../shared'
 import type { RuntimeBundle } from '../../mode'
 import { createProviderRuntimeModeAdapter } from '../providerAdapter'
@@ -14,6 +16,7 @@ function createPairProvider(options: {
   checkHealth?: () => Promise<{ state: 'ok' } | { state: 'recreate'; message?: string }>
   dispose: () => Promise<void>
   invalidate?: (ctx: { workspaceId: string }) => Promise<void>
+  providerId?: string
 }): SandboxProviderV1 {
   const runtimeContext = { runtimeCwd: '/workspace' }
   const workspace: Workspace = {
@@ -31,7 +34,7 @@ function createPairProvider(options: {
   const sandbox: Sandbox = {
     id: 'provider-adapter-test',
     placement: 'server',
-    provider: 'direct',
+    provider: options.providerId ?? 'direct',
     capabilities: ['exec'],
     runtimeContext,
     async exec() {
@@ -47,7 +50,7 @@ function createPairProvider(options: {
 
   return {
     contractVersion: 'boring-sandbox.provider.v1',
-    providerId: 'direct',
+    providerId: options.providerId ?? 'direct',
     capabilities: {
       exec: true,
       fs: 'readwrite',
@@ -147,4 +150,32 @@ test('cached runtime eviction awaits asynchronous provider invalidation', async 
   releaseInvalidation()
   await eviction
   expect(invalidate).toHaveBeenCalledWith({ workspaceId: 'workspace' })
+})
+
+test('rejects and disposes a provider pair whose runtime roots diverge', async () => {
+  const dispose = vi.fn(async () => {})
+  const provider = createPairProvider({ dispose })
+  const originalCreate = provider.create
+  provider.create = async (context) => {
+    const pair = await originalCreate(context)
+    return {
+      ...pair,
+      sandbox: {
+        ...pair.sandbox,
+        runtimeContext: { runtimeCwd: '/different-root' },
+      },
+    }
+  }
+  const adapter = createProviderRuntimeModeAdapter({
+    id: 'direct',
+    provider,
+    runtimeHost: testRuntimeHostOperations,
+    workspaceFsCapability: 'strong',
+    bash: { kind: 'host' },
+    filesystem: { kind: 'host' },
+  })
+
+  await expect(adapter.create({ workspaceRoot: '/tmp/workspace', sessionId: 'session' }))
+    .rejects.toThrow('mismatched Workspace + Sandbox pair')
+  expect(dispose).toHaveBeenCalledOnce()
 })

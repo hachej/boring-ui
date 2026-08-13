@@ -38,3 +38,4 @@ export type {
   VercelSandboxClient,
 } from './resolveSandboxHandle'
 export type { PeriodicSnapshotScheduler } from './periodicSnapshot'
+export { vercelSandboxRuntimeDescriptor } from './runtimeDescriptor'

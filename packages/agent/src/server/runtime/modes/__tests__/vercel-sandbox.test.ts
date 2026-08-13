@@ -1,19 +1,10 @@
 import { expect, test } from 'vitest'
 
-import {
-  createVercelSandboxProvider,
-  testRuntimeHostOperations,
-  VERCEL_SANDBOX_REMOTE_ROOT,
-  VERCEL_SANDBOX_WORKSPACE_ROOT,
-} from '@agent-test-host'
-import { createVercelSandboxModeAdapter } from '../vercel-sandbox'
+import { createSandboxRuntimeModeAdapter } from '../../sandboxRuntimeHost'
 
 function createAdapter(getEnvVar: (name: string) => string | undefined) {
-  return createVercelSandboxModeAdapter({
-    provider: createVercelSandboxProvider({ getEnvVar }),
-    runtimeHost: testRuntimeHostOperations,
-    remoteRoot: VERCEL_SANDBOX_REMOTE_ROOT,
-    workspaceRoot: VERCEL_SANDBOX_WORKSPACE_ROOT,
+  return createSandboxRuntimeModeAdapter('vercel-sandbox', {
+    providerOptions: { getEnvVar },
   })
 }
 

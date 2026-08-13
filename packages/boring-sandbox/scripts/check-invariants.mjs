@@ -10,7 +10,9 @@ const packageJsonPath = join(packageRoot, "package.json");
 export const requiredExports = [
   ".",
   "./shared",
+  "./runtime-modes",
   "./providers",
+  "./providers/registry",
   "./providers/direct",
   "./providers/bwrap",
   "./providers/node-workspace",

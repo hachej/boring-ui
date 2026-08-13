@@ -1,14 +1,4 @@
-import {
-  createBlaxelSandboxProvider,
-  BLAXEL_WORKSPACE_ROOT,
-} from '@hachej/boring-sandbox/providers/blaxel'
-import {
-  buildBwrapArgs,
-  createBwrapSandboxProvider,
-} from '@hachej/boring-sandbox/providers/bwrap'
-import {
-  createDirectSandboxProvider,
-} from '@hachej/boring-sandbox/providers/direct'
+import { buildBwrapArgs } from '@hachej/boring-sandbox/providers/bwrap'
 import {
   assertRealPathWithinWorkspace,
   BORING_AGENT_DIR,
@@ -24,39 +14,29 @@ import {
   validatePath,
   withWorkspacePythonEnv,
 } from '@hachej/boring-sandbox/providers/node-workspace'
-import { createAgentResourceFilesystemBinding } from '@hachej/boring-bash/server'
 import {
-  createVercelSandboxProvider,
-  VERCEL_SANDBOX_REMOTE_ROOT,
-  VERCEL_SANDBOX_WORKSPACE_ROOT,
-} from '@hachej/boring-sandbox/providers/vercel-sandbox'
+  resolveSandboxRuntimeModeDescriptor,
+  sandboxRuntimeModeRegistry,
+} from '@hachej/boring-sandbox/providers/registry'
+import type {
+  SandboxRuntimeModeDescriptorV1,
+  SandboxRuntimeModeRegistryV1,
+} from '@hachej/boring-sandbox/shared'
+import type { LegacyRemoteWorkerProviderOptions } from '@hachej/boring-sandbox/providers/remote-worker'
+import { createAgentResourceFilesystemBinding } from '@hachej/boring-bash/server'
 
 import type { SandboxHandleStore } from '../src/shared/sandbox-handle-store'
 import type { AgentRuntimeHostOperations } from '../src/server/runtime/runtimeHost'
 import type { RuntimeModeAdapter, RuntimeModeId } from '../src/server/runtime/mode'
-import { createDirectModeAdapter } from '../src/server/runtime/modes/direct'
-import { createLocalModeAdapter } from '../src/server/runtime/modes/local'
-import { createBlaxelSandboxModeAdapter } from '../src/server/runtime/modes/blaxel'
-import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
+import { createDescriptorRuntimeModeAdapter } from '../src/server/runtime/modes/providerAdapter'
 
 export {
-  createBlaxelSandboxProvider,
-  BLAXEL_WORKSPACE_ROOT,
   buildBwrapArgs,
-  createBwrapSandboxProvider,
   createNodeWorkspace,
-  createDirectSandboxProvider,
   getBoringAgentPathEntries,
   getBoringAgentRuntimeEnv,
   getBoringAgentRuntimePaths,
 }
-export { createDirectSandbox } from '@hachej/boring-sandbox/providers/direct'
-export {
-  createVercelSandboxProvider,
-  createVercelProvisioningAdapter,
-  VERCEL_SANDBOX_REMOTE_ROOT,
-  VERCEL_SANDBOX_WORKSPACE_ROOT,
-} from '@hachej/boring-sandbox/providers/vercel-sandbox'
 
 export const agentSandboxRuntimeHostOperations: AgentRuntimeHostOperations = {
   createNodeWorkspace,
@@ -82,6 +62,33 @@ export const sandboxRuntimeHostOperations = agentSandboxRuntimeHostOperations
 
 export interface SandboxRuntimeModeOptions {
   readonly sandboxHandleStore?: SandboxHandleStore
+  readonly providerOptions?: unknown
+  readonly registry?: SandboxRuntimeModeRegistryV1
+}
+
+export function getSandboxRuntimeModeDescriptor(
+  mode: RuntimeModeId,
+  registry: SandboxRuntimeModeRegistryV1 = sandboxRuntimeModeRegistry,
+): SandboxRuntimeModeDescriptorV1 {
+  if (registry !== sandboxRuntimeModeRegistry) return registry.resolve(mode)
+  try {
+    return resolveSandboxRuntimeModeDescriptor(mode)
+  } catch {
+    throw new Error(
+      `Runtime mode "${String(mode)}" has no built-in adapter. Pass runtimeModeAdapter to use a custom sandbox mode.`,
+    )
+  }
+}
+
+export function findSandboxRuntimeModeDescriptor(
+  mode: RuntimeModeId,
+  registry: SandboxRuntimeModeRegistryV1 = sandboxRuntimeModeRegistry,
+): SandboxRuntimeModeDescriptorV1 | undefined {
+  try {
+    return getSandboxRuntimeModeDescriptor(mode, registry)
+  } catch {
+    return undefined
+  }
 }
 
 /** Built-in runtime layout root without exposing provider package constants to consumers. */
@@ -89,51 +96,38 @@ export function resolveBuiltinRuntimeLayoutRoot(
   mode: RuntimeModeId,
   workspaceRoot: string,
 ): string {
-  return mode === 'blaxel'
-    ? BLAXEL_WORKSPACE_ROOT
-    : mode === 'vercel-sandbox' ? VERCEL_SANDBOX_WORKSPACE_ROOT : workspaceRoot
+  return getSandboxRuntimeModeDescriptor(mode).resolveRuntimeRoot({
+    workspaceRoot,
+    sessionId: 'layout-only',
+  })
 }
 
 export function createSandboxRuntimeModeAdapter(
   mode: RuntimeModeId,
   options: SandboxRuntimeModeOptions = {},
 ): RuntimeModeAdapter {
-  switch (mode) {
-    case 'direct':
-      return createDirectModeAdapter({
-        provider: createDirectSandboxProvider(),
-        runtimeHost: agentSandboxRuntimeHostOperations,
-      })
-    case 'local':
-      return createLocalModeAdapter({
-        provider: createBwrapSandboxProvider(),
-        runtimeHost: agentSandboxRuntimeHostOperations,
-      })
-    case 'vercel-sandbox':
-      return createVercelSandboxModeAdapter({
-        provider: createVercelSandboxProvider({
-          ...(options.sandboxHandleStore
-            ? { store: options.sandboxHandleStore, orphanGuardMaxIdleMs: null }
-            : {}),
-        }),
-        runtimeHost: agentSandboxRuntimeHostOperations,
-        remoteRoot: VERCEL_SANDBOX_REMOTE_ROOT,
-        workspaceRoot: VERCEL_SANDBOX_WORKSPACE_ROOT,
-      })
-    case 'blaxel':
-      return createBlaxelSandboxModeAdapter({
-        provider: createBlaxelSandboxProvider({
-          ...(options.sandboxHandleStore ? { handleStore: options.sandboxHandleStore } : {}),
-        }),
-        runtimeHost: agentSandboxRuntimeHostOperations,
-      })
-    default:
-      throw new Error(
-        `Runtime mode "${String(mode)}" has no built-in adapter. Pass runtimeModeAdapter to use a custom sandbox mode.`,
-      )
-  }
+  const descriptor = getSandboxRuntimeModeDescriptor(mode, options.registry)
+  return createDescriptorRuntimeModeAdapter({
+    descriptor,
+    runtimeHost: agentSandboxRuntimeHostOperations,
+    pairFactoryOptions: {
+      sandboxHandleStore: options.sandboxHandleStore,
+      providerOptions: options.providerOptions,
+    },
+  })
 }
 
 export function createAgentSandboxRuntimeModeAdapter(mode: RuntimeModeId = 'direct'): RuntimeModeAdapter {
   return createSandboxRuntimeModeAdapter(mode)
+}
+
+export type RemoteWorkerModeAdapterOptions = LegacyRemoteWorkerProviderOptions
+
+/** Backward-compatible convenience wrapper over the provider registry. */
+export function createRemoteWorkerModeAdapter(
+  options: RemoteWorkerModeAdapterOptions = {},
+): RuntimeModeAdapter {
+  return createSandboxRuntimeModeAdapter('remote-worker', {
+    providerOptions: options,
+  })
 }

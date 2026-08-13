@@ -36,3 +36,13 @@ export {
   type RemoteWorkerTransportRequestV1,
   type RemoteWorkerTransportV1,
 } from "./transport";
+export { remoteWorkerRuntimeDescriptor } from './runtimeDescriptor'
+export {
+  createLegacyRemoteWorkerSandboxProvider,
+  LegacyRemoteWorkerClientError,
+  LEGACY_REMOTE_WORKER_RUNTIME_CWD,
+  LEGACY_WORKER_INTERNAL_TOKEN_HEADER,
+  LEGACY_WORKER_REQUEST_ID_HEADER,
+  LEGACY_WORKER_WORKSPACE_ID_HEADER,
+  type LegacyRemoteWorkerProviderOptions,
+} from './createLegacyRemoteWorkerProvider'

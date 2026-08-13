@@ -35,11 +35,11 @@ export function autoDetectMode(): BuiltinRuntimeModeId {
 }
 
 export interface ResolveModeOptions {
-  adapters?: Readonly<Record<BuiltinRuntimeModeId, RuntimeModeAdapter>>
+  adapters?: Readonly<Record<string, RuntimeModeAdapter>>
 }
 
 export function resolveMode(mode: RuntimeModeId = autoDetectMode(), opts: ResolveModeOptions = {}): RuntimeModeAdapter {
-  if (isBuiltinRuntimeModeId(mode) && opts.adapters) return opts.adapters[mode]
+  if (isBuiltinRuntimeModeId(mode) && opts.adapters?.[mode]) return opts.adapters[mode]
   if (isBuiltinRuntimeModeId(mode)) {
     throw new Error(`Runtime mode "${mode}" requires a host-injected runtimeModeAdapter.`)
   }

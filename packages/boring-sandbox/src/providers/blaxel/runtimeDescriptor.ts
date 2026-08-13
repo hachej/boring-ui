@@ -1,0 +1,51 @@
+import { PROVIDER_CAPABILITIES } from '../../shared/providerMatrix'
+import type { SandboxRuntimeModeDescriptorV1 } from '../../shared/runtimeDescriptor'
+
+const BLAXEL_WORKSPACE_ROOT = '/workspace'
+
+export const blaxelRuntimeDescriptor = Object.freeze({
+  id: 'blaxel',
+  providerId: 'blaxel',
+  pair: {
+    workspaceProviderId: 'blaxel',
+    sandboxProviderId: 'blaxel',
+  },
+  capabilities: PROVIDER_CAPABILITIES.blaxel,
+  errorCodeNamespace: 'BLAXEL',
+  adapter: {
+    workspaceFsCapability: 'best-effort',
+    bash: { kind: 'remote' },
+    filesystem: { kind: 'remote-workspace' },
+    storageRoot: 'none',
+    provisioning: 'pair',
+    readiness: {
+      initialSandboxReady: false,
+      initialWorkspaceReadiness: { state: 'preparing' },
+      markSandboxReadyOnTrackerCreated: true,
+    },
+  },
+  host: {
+    productionSafe: true,
+    inferSiblingSessionRoot: true,
+    allowPiExtensions: false,
+    loadWorkspacePiResources: true,
+    includePluginAuthoringProvisioning: true,
+    resolveCompanyContextFromHostWorkspace: true,
+    httpWorkspaceScope: 'default',
+    sandboxHandle: {
+      provider: 'blaxel',
+      defaultPersistenceMode: 'persistent',
+    },
+  },
+  resolveRuntimeRoot() {
+    return BLAXEL_WORKSPACE_ROOT
+  },
+  async createPairFactory(options) {
+    const { createBlaxelSandboxProvider } = await import('./createBlaxelSandboxProvider')
+    const providerOptions = options.providerOptions as Record<string, unknown> | undefined
+    return createBlaxelSandboxProvider({
+      ...providerOptions,
+      ...(options.sandboxHandleStore ? { handleStore: options.sandboxHandleStore } : {}),
+    })
+  },
+} satisfies SandboxRuntimeModeDescriptorV1)

@@ -150,7 +150,9 @@ export async function createStandaloneAgentHostApp(
   // its runtime workspace identity; forwarding `default` is invalid and would
   // route filesystem operations to the wrong tenant.
   const authority = createStandaloneScopeAuthority()
-  const httpWorkspaceScopeId = resolvedMode === 'remote-worker' ? sessionId : DEFAULT_SESSION_ID
+  const httpWorkspaceScopeId = modeAdapter.runtimeProvider?.host.httpWorkspaceScope === 'session'
+    ? sessionId
+    : DEFAULT_SESSION_ID
   const httpScope = authority.issue(httpWorkspaceScopeId)
   const dispatcherScope = sessionId === httpWorkspaceScopeId ? httpScope : authority.issue(sessionId)
   const app = Fastify({ logger: options.logger ?? true, bodyLimit: 16 * 1024 * 1024 })

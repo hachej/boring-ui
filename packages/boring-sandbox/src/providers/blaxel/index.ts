@@ -6,3 +6,4 @@ export { createBlaxelProvisioningAdapter, BLAXEL_PROVISIONING_CACHE_ROOT } from 
 export { BLAXEL_WORKSPACE_ROOT } from './config'
 export { blaxelSandboxName, blaxelVolumeName } from './resolveSandboxHandle'
 export type { BlaxelClient, BlaxelRemoteSandbox, BlaxelRemoteVolume } from './client'
+export { blaxelRuntimeDescriptor } from './runtimeDescriptor'

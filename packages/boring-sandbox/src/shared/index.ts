@@ -88,6 +88,22 @@ export type {
 } from "./providerV1";
 export { SandboxProviderError } from "./providerV1";
 export type {
+  SandboxRuntimeAdapterProfileV1,
+  SandboxRuntimeBashStrategyV1,
+  SandboxRuntimeFilesystemStrategyV1,
+  SandboxRuntimeHostPolicyV1,
+  SandboxRuntimeModeDescriptorV1,
+  SandboxRuntimePairFactoryOptionsV1,
+  SandboxRuntimeReadinessV1,
+  SandboxRuntimeRemotePathOptionsV1,
+} from './runtimeDescriptor'
+export { SandboxRuntimeModeRegistryV1 } from './runtimeDescriptor'
+export {
+  BUILTIN_RUNTIME_MODE_IDS,
+  isBuiltinRuntimeModeId,
+} from './runtimeModeCatalog'
+export type { BuiltinRuntimeModeId } from './runtimeModeCatalog'
+export type {
   RemoteWorkerBindingReceiptPayloadV1,
   RemoteWorkerBindingReceiptV1,
   RemoteWorkerCapabilityClaimsV1,
