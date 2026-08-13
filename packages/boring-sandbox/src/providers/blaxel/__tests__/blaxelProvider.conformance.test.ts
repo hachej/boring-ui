@@ -70,7 +70,7 @@ describe('Blaxel adapter policies', () => {
     expect(result.truncated).toBe(true)
   })
 
-  test('preserves terminal output exactly and applies one stdout-first byte budget without lossy callbacks', async () => {
+  test('preserves terminal output and replays capped buffers through callbacks', async () => {
     const value = await harness()
     const stdoutChunks: Uint8Array[] = []
     const stderrChunks: Uint8Array[] = []
@@ -82,8 +82,8 @@ describe('Blaxel adapter policies', () => {
     expect(new TextDecoder().decode(exact.stdout)).toBe('a\n\nb')
     expect(exact.stderr.byteLength).toBe(2)
     expect(exact.truncated).toBe(true)
-    expect(stdoutChunks).toEqual([])
-    expect(stderrChunks).toEqual([])
+    expect(stdoutChunks).toEqual([exact.stdout])
+    expect(stderrChunks).toEqual([exact.stderr])
     expect(value.client.kills).toEqual([])
     await value.pair.dispose()
   })

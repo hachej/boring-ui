@@ -449,7 +449,8 @@ test('core/full-app scope authority rejects forgeries and cross-workspace route 
       workspaceScopeId: JSON.stringify(['workspace-a', 'workspace-a']),
       authSubjectId: 'user-a',
     })
-
+    await expect(hostOptions.resolveAuthorizedEnvironmentScope({ authorizedScope: scope }))
+      .resolves.toMatchObject({ runtimeWorkspaceId: 'workspace-a' })
     const forgedScopes = [
       { label: 'spread copy', scope: { ...scope } },
       { label: 'JSON round-trip', scope: JSON.parse(JSON.stringify(scope)) },

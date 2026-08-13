@@ -1450,6 +1450,40 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
+  test("workspace-scoped Agent plugin artifacts stay canonical and dedupe explicit bindings", () => {
+    const tool = {
+      name: "workspace_tool",
+      description: "workspace scoped",
+      parameters: { type: "object", properties: {} },
+      async execute() { return { content: [] } },
+    }
+    const plugin = {
+      id: "workspace-plugin",
+      contentDigest: "workspace-plugin-v1",
+      agentTools: [tool],
+    }
+    const artifact = {
+      id: plugin.id,
+      contentDigest: plugin.contentDigest,
+      plugin,
+      entry: plugin,
+    }
+    const agent = {
+      agentTypeId: "worker",
+      definition: { label: "Worker", instructions: "work" },
+      plugins: [{ name: plugin.id }],
+    }
+
+    const projection = projectAgentSpecPluginArtifacts(agent, [artifact], [artifact])
+    expect(projection.artifacts).toEqual([artifact])
+    expect(projection.agentOptions.extraTools?.map((candidate) => candidate.name)).toEqual([tool.name])
+
+    const unpreflighted = { ...artifact, id: "unpreflighted-plugin" }
+    expect(() => projectAgentSpecPluginArtifacts(agent, [artifact], [unpreflighted])).toThrow(
+      'receives workspace-scoped plugin "unpreflighted-plugin" without a preflighted artifact',
+    )
+  })
+
   // M3 fix round 1 (gh-1106 slice 3): `legacyGlobalPluginAgentContributions`
   // used to key off `opts.agents === undefined`. With BORING_AGENT_FLEET=1
   // and no explicit `opts.agents`, the RESOLVED fleet has more than the
@@ -1459,6 +1493,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
   test("BORING_AGENT_FLEET=1 with no explicit opts.agents scopes plugin contributions per Agent, not the legacy global fleet", async () => {
     const workspaceRoot = await makeTempDir("boring-agent-fleet-flag-")
     const fleetRoot = await makeTempDir("boring-agent-fleet-flag-repo-")
+    const workspacePluginRoot = join(workspaceRoot, "workspace-plugin")
     await mkdir(join(fleetRoot, ".agents", "personas", "one"), { recursive: true })
     await mkdir(join(fleetRoot, ".agents", "factory"), { recursive: true })
     await writeFile(
@@ -1485,6 +1520,26 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       `${MODEL_TIERS_YAML}seats:\n  - seat: one\n    agentTypeId: fixture-one\n    skills: []\n`,
       "utf8",
     )
+    await mkdir(workspacePluginRoot, { recursive: true })
+    await writeFile(join(workspacePluginRoot, "package.json"), JSON.stringify({
+      name: "@fixture/workspace-plugin",
+      version: "1.0.0",
+      type: "module",
+      private: true,
+      boring: { id: "workspace-plugin", server: "server.mjs" },
+    }), "utf8")
+    await writeFile(join(workspacePluginRoot, "server.mjs"), `
+      export default {
+        id: "workspace-plugin",
+        systemPrompt: "WORKSPACE_PLUGIN_PROMPT",
+        agentTools: [{
+          name: "workspace_tool",
+          description: "workspace-scoped default plugin tool",
+          parameters: { type: "object", properties: {} },
+          async execute() { return { content: [] } },
+        }],
+      }
+    `, "utf8")
 
     const globalTool = {
       name: "global_tool",
@@ -1503,6 +1558,11 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         provisionWorkspace: false,
         externalPlugins: false,
         piResourceAuthorizedRoots: ["/plugins"],
+        // Exercise canonical path matching as well as the policy boundary:
+        // default packages are workspace-scoped, while arbitrary `plugins`
+        // remain explicit persona grants.
+        defaultPluginPackages: [`${workspaceRoot}/nested/../workspace-plugin`],
+        workspaceScopedDefaultPluginAgentContributions: true,
         plugins: [{
           id: "global-plugin",
           contentDigest: "global-plugin-content-v1",
@@ -1544,6 +1604,8 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       // used to wrongly apply server-wide whenever `opts.agents` was
       // undefined, flag or no flag.
       const seatScope = await hostOptions.resolveDirectRuntimeScopeForTest({ agentTypeId: "fixture-one", scope })
+      expect(seatScope.extraTools?.map((tool) => tool.name) ?? []).toContain("workspace_tool")
+      expect(seatScope.systemPromptAppend ?? "").toContain("WORKSPACE_PLUGIN_PROMPT")
       expect(seatScope.extraTools?.map((tool) => tool.name) ?? []).not.toContain("global_tool")
       expect(seatScope.systemPromptAppend ?? "").not.toContain("GLOBAL_PLUGIN_PROMPT")
     } finally {
