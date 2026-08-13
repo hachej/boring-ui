@@ -2,7 +2,7 @@ import { createHash, type Hash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { lstat, open, opendir, realpath, stat as statPath } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DefaultPackageManager, getAgentDir, type ResolvedPaths } from '@mariozechner/pi-coding-agent'
 import { ErrorCode } from '../shared/error-codes'
@@ -87,9 +87,16 @@ type StableResourceError = Error & { code: string; statusCode: number; retryable
 interface WalkState {
   readonly hash: Hash
   readonly limits: PiResourceDigestLimits
-  readonly authorizedRoots: readonly string[]
+  readonly authorizedRoots: AuthorizedRoots
   nodes: number
   bytes: number
+}
+
+interface AuthorizedRoots {
+  /** Independently authorized names used to admit requested Pi resource paths. */
+  readonly lexical: readonly string[]
+  /** Canonical targets of those names used to contain resolved filesystem reads. */
+  readonly canonical: readonly string[]
 }
 
 const FORMAT_VERSION = 'boring-pi-resource-digest-v4'
@@ -105,10 +112,11 @@ export async function digestPiResourceInputs(input: PiResourceDigestInput): Prom
   const piAgentDir = resolvePiPath(input.piAgentDir, process.cwd())
   const piUserHome = resolvePiPath(input.piUserHome, process.cwd())
   const projectSettingsDir = join(piCwd, '.pi')
-  const authorizedRoots = [...new Set(input.authorizedRoots.map((path) => resolvePiPath(path, piCwd)))]
-  if (authorizedRoots.length === 0) {
+  const lexicalAuthorizedRoots = [...new Set(input.authorizedRoots.map((path) => resolvePiPath(path, piCwd)))]
+  if (lexicalAuthorizedRoots.length === 0) {
     throw stableError(ErrorCode.enum.CONFIG_INVALID, 400, 'Pi resource digest requires at least one independently authorized root')
   }
+  const authorizedRoots = await resolveAuthorizedRoots(lexicalAuthorizedRoots)
   const limits = normalizeLimits(input.limits)
   const state: WalkState = { hash, limits, authorizedRoots, nodes: 0, bytes: 0 }
   frameString(hash, 'format', FORMAT_VERSION)
@@ -209,11 +217,12 @@ async function hashResourceCollection(
 ): Promise<void> {
   for (const path of [...new Set(paths)].sort()) {
     const absolutePath = resolvePiPath(path, baseDir)
-    await assertContainedWithoutSymlinks(absolutePath, state.authorizedRoots)
+    assertLexicallyContained(absolutePath, state.authorizedRoots.lexical)
     try {
       await lstat(absolutePath)
     } catch (error) {
       if (isMissing(error)) {
+        await assertMissingPathContained(absolutePath, state.authorizedRoots)
         frameString(state.hash, `${kind}-missing`, absolutePath)
         continue
       }
@@ -268,8 +277,8 @@ async function hashResolvedPiInventory(
     }
     resources.add(resource.path)
   }
-  await hashResourceCollection(state, state.authorizedRoots[0]!, 'resolved-package-manifest', [...packageManifests], false)
-  await hashResourceCollection(state, state.authorizedRoots[0]!, 'resolved-resource', [...resources], false)
+  await hashResourceCollection(state, state.authorizedRoots.lexical[0]!, 'resolved-package-manifest', [...packageManifests], false)
+  await hashResourceCollection(state, state.authorizedRoots.lexical[0]!, 'resolved-resource', [...resources], false)
 }
 
 /** Mirrors Pi's cwd-relative path normalization for configured resources. */
@@ -284,17 +293,18 @@ function resolvePiPath(input: string, baseDir: string): string {
   return isAbsolute(normalized) ? resolve(normalized) : resolve(baseDir, normalized)
 }
 
-async function findContainingArtifactRoot(path: string, authorizedRoots: readonly string[]): Promise<string> {
+async function findContainingArtifactRoot(path: string, authorizedRoots: AuthorizedRoots): Promise<string> {
   let current = dirname(path)
-  const boundary = mostSpecificContainingRoot(current, authorizedRoots)
+  const boundary = mostSpecificContainingRoot(current, authorizedRoots.lexical)
   if (!boundary) throw stableError(ErrorCode.enum.PATH_ESCAPE, 403, `Pi resource path is outside authorized roots: ${path}`)
   while (isContained(current, boundary)) {
+    const packagePath = resolve(current, 'package.json')
     try {
-      const packageStat = await lstat(resolve(current, 'package.json'))
-      if (packageStat.isSymbolicLink()) {
-        throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource package manifest cannot be a symlink: ${current}`)
+      const packageStat = await statPath(packagePath)
+      if (packageStat.isFile()) {
+        await resolveContainedTarget(packagePath, authorizedRoots)
+        return current
       }
-      if (packageStat.isFile()) return current
     } catch (error) {
       if (!isMissing(error)) throw error
     }
@@ -311,15 +321,16 @@ async function hashLocalResource(
   depth: number,
 ): Promise<void> {
   const absolutePath = resolve(path)
-  await assertContainedWithoutSymlinks(absolutePath, state.authorizedRoots)
+  assertLexicallyContained(absolutePath, state.authorizedRoots.lexical)
   if (depth > state.limits.maxDepth) {
     throw limitError(`Pi resource tree exceeds maximum depth ${state.limits.maxDepth}`)
   }
-  let stat
+  let lexicalStat
   try {
-    stat = await lstat(absolutePath)
+    lexicalStat = await lstat(absolutePath)
   } catch (error) {
     if (isMissing(error)) {
+      await assertMissingPathContained(absolutePath, state.authorizedRoots)
       frameString(state.hash, 'missing', logicalPath)
       return
     }
@@ -329,37 +340,51 @@ async function hashLocalResource(
   if (state.nodes > state.limits.maxFiles) {
     throw limitError(`Pi resource tree exceeds maximum node count ${state.limits.maxFiles}`)
   }
-  if (stat.isSymbolicLink()) {
-    throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource symlinks are not allowed: ${absolutePath}`)
-  }
+  const openedTarget = await resolveContainedTarget(absolutePath, state.authorizedRoots, lexicalStat.isSymbolicLink())
+  const stat = await statPath(openedTarget)
   if (stat.isDirectory()) {
     frameString(state.hash, 'directory', logicalPath)
-    const openedTarget = await realpath(absolutePath)
-    if (!mostSpecificContainingRoot(openedTarget, state.authorizedRoots)) {
-      throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource resolves outside authorized roots: ${absolutePath}`)
-    }
-    assertSameFile(stat, await statPath(openedTarget), absolutePath)
     const entries: import('node:fs').Dirent[] = []
-    for await (const entry of await opendir(openedTarget)) {
-      if (EXCLUDED_DIRECTORIES.has(entry.name)) continue
-      if (entry.isFile() && EXCLUDED_FILES.has(entry.name)) continue
-      if (entries.length >= state.limits.maxFiles - state.nodes) {
-        throw limitError(`Pi resource tree exceeds maximum node count ${state.limits.maxFiles}`)
+    const descriptorPath = process.platform === 'linux'
+      ? '/proc/self/fd'
+      : process.platform === 'darwin'
+        ? '/dev/fd'
+        : undefined
+    const directoryHandle = descriptorPath
+      ? await open(openedTarget, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+      : undefined
+    try {
+      if (directoryHandle) assertSameFile(stat, await directoryHandle.stat(), absolutePath)
+      // Linux and macOS expose an already-open descriptor as a path, binding
+      // entry discovery to the verified directory inode instead of re-opening
+      // a raceable pathname. Node has no portable descriptor-based opendir API;
+      // other platforms retain the pre/post realpath and identity fences below.
+      const directoryPath = directoryHandle ? `${descriptorPath}/${directoryHandle.fd}` : openedTarget
+      for await (const entry of await opendir(directoryPath)) {
+        if (EXCLUDED_DIRECTORIES.has(entry.name)) continue
+        if (entry.isFile() && EXCLUDED_FILES.has(entry.name)) continue
+        if (entries.length >= state.limits.maxFiles - state.nodes) {
+          throw limitError(`Pi resource tree exceeds maximum node count ${state.limits.maxFiles}`)
+        }
+        entries.push(entry)
       }
-      entries.push(entry)
+      assertSameFile(stat, directoryHandle ? await directoryHandle.stat() : await statPath(openedTarget), absolutePath)
+    } finally {
+      await directoryHandle?.close()
     }
     entries.sort((left, right) => left.name.localeCompare(right.name))
     for (const entry of entries) {
       frameString(state.hash, 'entry-name', entry.name)
       await hashLocalResource(
         state,
-        resolve(openedTarget, entry.name),
+        resolve(absolutePath, entry.name),
         logicalPath === '.' ? entry.name : `${logicalPath}/${entry.name}`,
         depth + 1,
       )
     }
     const afterTarget = await realpath(absolutePath)
     if (afterTarget !== openedTarget) throw changedError(absolutePath)
+    assertCanonicalTargetContained(afterTarget, state.authorizedRoots.canonical, absolutePath)
     assertSameFile(stat, await statPath(afterTarget), absolutePath)
     return
   }
@@ -374,15 +399,20 @@ async function hashLocalResource(
   }
   frameString(state.hash, 'file', logicalPath)
   frameNumber(state.hash, 'file-bytes', stat.size)
-  const handle = await open(absolutePath, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW)
+  // A link is only an alternate name for independently authorized content: the
+  // digest frames the logical Pi inventory and resolved bytes, never link metadata
+  // or target spelling. Link topology alone therefore cannot change the digest.
+  // Opening the canonical target with O_NOFOLLOW, then re-resolving the original
+  // name and comparing file identity before and after the read, keeps that
+  // topology-independence from weakening containment or the TOCTOU fence.
+  const handle = await open(openedTarget, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW)
   try {
     const opened = await handle.stat()
     assertSameFile(stat, opened, absolutePath)
-    const openedTarget = await realpath(absolutePath)
-    if (!mostSpecificContainingRoot(openedTarget, state.authorizedRoots)) {
-      throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource resolves outside authorized roots: ${absolutePath}`)
-    }
-    assertSameFile(opened, await statPath(openedTarget), absolutePath)
+    const afterOpenTarget = await realpath(absolutePath)
+    if (afterOpenTarget !== openedTarget) throw changedError(absolutePath)
+    assertCanonicalTargetContained(afterOpenTarget, state.authorizedRoots.canonical, absolutePath)
+    assertSameFile(opened, await statPath(afterOpenTarget), absolutePath)
     const buffer = new Uint8Array(Math.min(64 * 1024, Math.max(1, stat.size)))
     let offset = 0
     while (offset < stat.size) {
@@ -395,6 +425,7 @@ async function hashLocalResource(
     assertSameFile(opened, after, absolutePath)
     const afterTarget = await realpath(absolutePath)
     if (afterTarget !== openedTarget) throw changedError(absolutePath)
+    assertCanonicalTargetContained(afterTarget, state.authorizedRoots.canonical, absolutePath)
     assertSameFile(after, await statPath(afterTarget), absolutePath)
     state.bytes += offset
   } finally {
@@ -416,25 +447,71 @@ function assertSameFile(
   ) throw changedError(path)
 }
 
-async function assertContainedWithoutSymlinks(path: string, roots: readonly string[]): Promise<void> {
+async function resolveAuthorizedRoots(lexicalRoots: readonly string[]): Promise<AuthorizedRoots> {
+  const canonical = await Promise.all(lexicalRoots.map(async (root) => {
+    try {
+      return await realpath(root)
+    } catch (error) {
+      if (isMissing(error)) return root
+      throw error
+    }
+  }))
+  return { lexical: lexicalRoots, canonical: [...new Set(canonical)] }
+}
+
+function assertLexicallyContained(path: string, roots: readonly string[]): void {
   const root = mostSpecificContainingRoot(path, roots)
   if (!root) {
     throw stableError(ErrorCode.enum.PATH_ESCAPE, 403, `Pi resource path is outside authorized roots: ${path}`)
   }
-  const absolutePath = resolve(path)
-  const pathRoot = parse(absolutePath).root
-  const segments = relative(pathRoot, absolutePath).split(sep).filter(Boolean)
-  let current = pathRoot
-  for (const segment of segments) {
-    current = resolve(current, segment)
+}
+
+async function assertMissingPathContained(path: string, roots: AuthorizedRoots): Promise<void> {
+  const boundary = mostSpecificContainingRoot(path, roots.lexical)
+  if (!boundary) {
+    throw stableError(ErrorCode.enum.PATH_ESCAPE, 403, `Pi resource path is outside authorized roots: ${path}`)
+  }
+  let current = dirname(path)
+  while (isContained(current, boundary)) {
     try {
-      if ((await lstat(current)).isSymbolicLink()) {
-        throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource symlinks are not allowed: ${current}`)
-      }
+      const target = await realpath(current)
+      assertCanonicalTargetContained(target, roots.canonical, path)
+      return
     } catch (error) {
-      if (isMissing(error)) return
-      throw error
+      if (!isMissing(error)) throw error
+      try {
+        if ((await lstat(current)).isSymbolicLink()) {
+          throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource symlink target is unavailable: ${current}`)
+        }
+      } catch (lstatError) {
+        if (!isMissing(lstatError)) throw lstatError
+      }
     }
+    if (current === boundary) return
+    current = dirname(current)
+  }
+}
+
+async function resolveContainedTarget(
+  path: string,
+  roots: AuthorizedRoots,
+  knownSymlink = false,
+): Promise<string> {
+  try {
+    const target = await realpath(path)
+    assertCanonicalTargetContained(target, roots.canonical, path)
+    return target
+  } catch (error) {
+    if (knownSymlink && isMissing(error)) {
+      throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource symlink target is unavailable: ${path}`)
+    }
+    throw error
+  }
+}
+
+function assertCanonicalTargetContained(target: string, roots: readonly string[], requestedPath: string): void {
+  if (!mostSpecificContainingRoot(target, roots)) {
+    throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource resolves outside authorized roots: ${requestedPath}`)
   }
 }
 

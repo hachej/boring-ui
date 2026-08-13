@@ -1,0 +1,157 @@
+import { mkdir, mkdtemp, rename, symlink, unlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import { ErrorCode } from '../../shared/error-codes'
+import { digestPiResourceInputs, type PiResourceDigestInput } from '../piResourceDigest'
+
+const fsHooks = vi.hoisted(() => ({
+  beforeOpen: undefined as ((path: Parameters<typeof import('node:fs/promises').open>[0]) => Promise<void>) | undefined,
+  beforeOpendir: undefined as ((path: Parameters<typeof import('node:fs/promises').opendir>[0]) => Promise<void>) | undefined,
+  afterOpendir: undefined as ((path: Parameters<typeof import('node:fs/promises').opendir>[0]) => Promise<void>) | undefined,
+}))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    open: async (...args: Parameters<typeof actual.open>) => {
+      await fsHooks.beforeOpen?.(args[0])
+      return actual.open(...args)
+    },
+    opendir: async (...args: Parameters<typeof actual.opendir>) => {
+      await fsHooks.beforeOpendir?.(args[0])
+      const directory = await actual.opendir(...args)
+      await fsHooks.afterOpendir?.(args[0])
+      return directory
+    },
+  }
+})
+
+function digestInput(root: string, skillPath: string): PiResourceDigestInput {
+  return {
+    piCwd: root,
+    piAgentDir: join(root, '.pi-agent'),
+    piUserHome: root,
+    noSkills: true,
+    additionalSkillPaths: [skillPath],
+    authorizedRoots: [root],
+  }
+}
+
+describe('digestPiResourceInputs symlink containment', () => {
+  afterEach(() => {
+    fsHooks.beforeOpen = undefined
+    fsHooks.beforeOpendir = undefined
+    fsHooks.afterOpendir = undefined
+  })
+
+  test('allows a symlink whose target remains inside an authorized root', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-contained-link-'))
+    const target = join(root, 'targets', 'skill')
+    const linked = join(root, 'linked-skill')
+    await mkdir(target, { recursive: true })
+    await writeFile(join(target, 'SKILL.md'), '# linked skill\n', 'utf8')
+    await symlink(target, linked, 'dir')
+
+    await expect(digestPiResourceInputs(digestInput(root, linked))).resolves.toMatch(/^sha256:[a-f0-9]{64}$/)
+  })
+
+  test('rejects a symlink whose target escapes every authorized root', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-escape-link-'))
+    const outside = await mkdtemp(join(tmpdir(), 'boring-pi-digest-outside-'))
+    const linked = join(root, 'linked-skill')
+    await writeFile(join(outside, 'SKILL.md'), '# outside skill\n', 'utf8')
+    await symlink(outside, linked, 'dir')
+
+    await expect(digestPiResourceInputs(digestInput(root, linked))).rejects.toMatchObject({
+      code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
+      statusCode: 403,
+    })
+  })
+
+  test('rejects a missing resource beneath a symlink that escapes an authorized root', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-missing-escape-'))
+    const outside = await mkdtemp(join(tmpdir(), 'boring-pi-digest-missing-outside-'))
+    const linked = join(root, 'linked-skill')
+    await symlink(outside, linked, 'dir')
+
+    await expect(digestPiResourceInputs(digestInput(root, join(linked, 'missing')))).rejects.toMatchObject({
+      code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
+      statusCode: 403,
+    })
+  })
+
+  test('rejects a symlink swapped between containment validation and open', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-swap-link-'))
+    const outside = await mkdtemp(join(tmpdir(), 'boring-pi-digest-swap-outside-'))
+    const target = join(root, 'targets', 'skill')
+    const linked = join(root, 'linked-skill')
+    const targetFile = join(target, 'SKILL.md')
+    await mkdir(target, { recursive: true })
+    await writeFile(targetFile, '# allowed before swap\n', 'utf8')
+    await writeFile(join(outside, 'SKILL.md'), '# outside after swap\n', 'utf8')
+    await symlink(target, linked, 'dir')
+    fsHooks.beforeOpen = async (path) => {
+      if (String(path) !== targetFile) return
+      fsHooks.beforeOpen = undefined
+      await unlink(linked)
+      await symlink(outside, linked, 'dir')
+    }
+
+    await expect(digestPiResourceInputs(digestInput(root, linked))).rejects.toMatchObject({
+      code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+      statusCode: 409,
+      retryable: true,
+    })
+  })
+
+  test('keeps the digest stable when the same logical path becomes an in-root symlink', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-stable-link-'))
+    const skill = join(root, 'skill')
+    const target = join(root, 'targets', 'skill')
+    await mkdir(skill, { recursive: true })
+    await writeFile(join(skill, 'SKILL.md'), '# stable skill\n', 'utf8')
+    const input = digestInput(root, skill)
+    const directDigest = await digestPiResourceInputs(input)
+
+    await mkdir(join(root, 'targets'), { recursive: true })
+    await rename(skill, target)
+    await symlink(target, skill, 'dir')
+
+    await expect(digestPiResourceInputs(input)).resolves.toBe(directDigest)
+  })
+
+  test.runIf(process.platform === 'linux' || process.platform === 'darwin')(
+    'binds directory enumeration to the verified directory when its pathname is transiently swapped',
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-directory-swap-'))
+      const outside = await mkdtemp(join(tmpdir(), 'boring-pi-digest-directory-swap-outside-'))
+      const target = join(root, 'targets', 'skill')
+      const parked = join(root, 'targets', 'parked-skill')
+      const linked = join(root, 'linked-skill')
+      await mkdir(target, { recursive: true })
+      await writeFile(join(target, 'SKILL.md'), '# directory identity stays pinned\n', 'utf8')
+      await symlink(target, linked, 'dir')
+      const input = digestInput(root, linked)
+      fsHooks.beforeOpendir = async (path) => {
+        if (!String(path).includes('/fd/')) return
+        fsHooks.beforeOpendir = undefined
+        await rename(target, parked)
+        await symlink(outside, target, 'dir')
+      }
+      fsHooks.afterOpendir = async (path) => {
+        if (!String(path).includes('/fd/')) return
+        fsHooks.afterOpendir = undefined
+        await unlink(target)
+        await rename(parked, target)
+      }
+
+      await expect(digestPiResourceInputs(input)).rejects.toMatchObject({
+        code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+        statusCode: 409,
+        retryable: true,
+      })
+    },
+  )
+})
