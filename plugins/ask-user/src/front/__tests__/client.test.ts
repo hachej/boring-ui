@@ -59,6 +59,18 @@ describe("ask-user front client", () => {
     expect(normalizeQuestion({ ...question, artifact })?.artifacts).toEqual([])
   })
 
+  it("allows hosts to override the stock browser CSRF proof", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ ok: true, output: { pending: null } }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await createQuestionsClient({ headers: { "x-csrf-token": "signed-proof" } }).pending("default")
+
+    expect(fetchMock.mock.calls[0]![1]!.headers).toMatchObject({
+      "x-csrf-token": "signed-proof",
+      "x-boring-session-id": "default",
+    })
+  })
+
   it("cancels through the bridge when crypto.subtle is unavailable", async () => {
     vi.stubGlobal("crypto", {})
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ ok: true, output: { ok: true, status: "cancelled" } }))
@@ -66,7 +78,12 @@ describe("ask-user front client", () => {
 
     await expect(createQuestionsClient().cancel(question)).resolves.toEqual({ ok: true, status: "cancelled" })
 
-    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body))
+    const request = fetchMock.mock.calls[0]![1]!
+    expect(request.headers).toMatchObject({
+      "x-csrf-token": "browser",
+      "x-boring-session-id": "default",
+    })
+    const body = JSON.parse(String(request.body))
     expect(body).toMatchObject({
       op: "ask-user.v1.cancel",
       input: { questionId: "q1", sessionId: "default", answerToken: "secret" },
