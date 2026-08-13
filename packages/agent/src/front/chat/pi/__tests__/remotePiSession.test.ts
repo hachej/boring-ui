@@ -212,6 +212,32 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('allows command admission more time than state hydration', async () => {
+    vi.useFakeTimers()
+    const events = openNdjsonStream()
+    const promptResponse = deferred<Response>()
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/events?cursor=0')) return Promise.resolve(new Response(events.stream))
+      if (url.endsWith('/prompt')) return promptResponse.promise
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, {
+      autoStart: false,
+      requestTimeoutMs: 20,
+      commandTimeoutMs: 40,
+    })
+
+    const prompt = session.prompt({ message: 'hello', clientNonce: 'nonce-1' })
+    await flushPromises()
+    vi.advanceTimersByTime(25)
+    await flushPromises()
+    expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/prompt'))).toBe(true)
+
+    promptResponse.resolve(jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce-1' }))
+    await expect(prompt).resolves.toMatchObject({ accepted: true, clientNonce: 'nonce-1' })
+    session.dispose()
+  })
+
   it('recovers a hung /state hydration via the request timeout instead of stalling forever', async () => {
     // First /state never settles (saturated/restarting server). Without a
     // per-attempt timeout the chat stays stuck "Loading chat history…"; the
