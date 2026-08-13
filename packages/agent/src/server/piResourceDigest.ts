@@ -41,6 +41,8 @@ export interface PiResourceDigestInput {
   readonly authorizedRoots: readonly string[]
   /** CLI workspaces may contain repo-managed symlinks (e.g. .pi/skills/*). */
   readonly allowInternalSymlinks?: boolean
+  /** When set, only symlink entries beneath these roots may be followed. */
+  readonly internalSymlinkRoots?: readonly string[]
   readonly limits?: Partial<PiResourceDigestLimits>
 }
 
@@ -60,6 +62,7 @@ export function createPiResourceDigestInput(input: {
   readonly resourceSets: readonly PiResourceSet[]
   readonly authorizedRoots: readonly string[]
   readonly allowInternalSymlinks?: boolean
+  readonly internalSymlinkRoots?: readonly string[]
   readonly limits?: Partial<PiResourceDigestLimits>
 }): PiResourceDigestInput {
   const piCwd = resolvePiPath(input.piCwd, process.cwd())
@@ -76,6 +79,7 @@ export function createPiResourceDigestInput(input: {
     packages: compactPiPackages(input.resourceSets.flatMap((set) => set.packages ?? [])),
     extensionPaths: uniqueStrings(input.resourceSets.flatMap((set) => set.extensionPaths ?? [])),
     allowInternalSymlinks: input.allowInternalSymlinks,
+    internalSymlinkRoots: input.internalSymlinkRoots?.map((root) => resolvePiPath(root, piCwd)),
     authorizedRoots: uniqueStrings([
       piCwd,
       piAgentDir,
@@ -93,6 +97,7 @@ interface WalkState {
   readonly limits: PiResourceDigestLimits
   readonly authorizedRoots: readonly string[]
   readonly allowInternalSymlinks: boolean
+  readonly internalSymlinkRoots: readonly string[]
   nodes: number
   bytes: number
 }
@@ -120,6 +125,7 @@ export async function digestPiResourceInputs(input: PiResourceDigestInput): Prom
     limits,
     authorizedRoots,
     allowInternalSymlinks: input.allowInternalSymlinks ?? false,
+    internalSymlinkRoots: (input.internalSymlinkRoots ?? []).map((root) => resolvePiPath(root, piCwd)),
     nodes: 0,
     bytes: 0,
   }
@@ -221,7 +227,7 @@ async function hashResourceCollection(
 ): Promise<void> {
   for (const path of [...new Set(paths)].sort()) {
     const absolutePath = resolvePiPath(path, baseDir)
-    await assertContainedWithoutSymlinks(absolutePath, state.authorizedRoots, state.allowInternalSymlinks)
+    await assertContainedWithoutSymlinks(absolutePath, state.authorizedRoots, state.allowInternalSymlinks, state.internalSymlinkRoots)
     try {
       await lstat(absolutePath)
     } catch (error) {
@@ -323,7 +329,7 @@ async function hashLocalResource(
   depth: number,
 ): Promise<void> {
   const absolutePath = resolve(path)
-  await assertContainedWithoutSymlinks(absolutePath, state.authorizedRoots, state.allowInternalSymlinks)
+  await assertContainedWithoutSymlinks(absolutePath, state.authorizedRoots, state.allowInternalSymlinks, state.internalSymlinkRoots)
   if (depth > state.limits.maxDepth) {
     throw limitError(`Pi resource tree exceeds maximum depth ${state.limits.maxDepth}`)
   }
@@ -342,7 +348,7 @@ async function hashLocalResource(
     throw limitError(`Pi resource tree exceeds maximum node count ${state.limits.maxFiles}`)
   }
   if (stat.isSymbolicLink()) {
-    if (!state.allowInternalSymlinks) {
+    if (!state.allowInternalSymlinks || (state.internalSymlinkRoots.length > 0 && !state.internalSymlinkRoots.some((root) => isContained(absolutePath, root)))) {
       throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource symlinks are not allowed: ${absolutePath}`)
     }
     const target = await realpath(absolutePath)
@@ -437,7 +443,12 @@ function assertSameFile(
   ) throw changedError(path)
 }
 
-async function assertContainedWithoutSymlinks(path: string, roots: readonly string[], allowInternalSymlinks = false): Promise<void> {
+async function assertContainedWithoutSymlinks(
+  path: string,
+  roots: readonly string[],
+  allowInternalSymlinks = false,
+  internalSymlinkRoots: readonly string[] = [],
+): Promise<void> {
   const root = mostSpecificContainingRoot(path, roots)
   if (!root) {
     throw stableError(ErrorCode.enum.PATH_ESCAPE, 403, `Pi resource path is outside authorized roots: ${path}`)
@@ -450,7 +461,7 @@ async function assertContainedWithoutSymlinks(path: string, roots: readonly stri
     current = resolve(current, segment)
     try {
       if ((await lstat(current)).isSymbolicLink()) {
-        if (!allowInternalSymlinks) {
+        if (!allowInternalSymlinks || (internalSymlinkRoots.length > 0 && !internalSymlinkRoots.some((root) => isContained(current, root)))) {
           throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource symlinks are not allowed: ${current}`)
         }
         const target = await realpath(current)
