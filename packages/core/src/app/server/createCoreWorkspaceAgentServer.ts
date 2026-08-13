@@ -8,6 +8,7 @@ import {
   autoDetectMode,
   createAgentHost,
   createEnvironmentProvisioningFingerprint,
+  findSandboxRuntimeModeDescriptor,
   createPiResourceDigestFence,
   createPiResourceDigestInput,
   createRemoteWorkerModeAdapter,
@@ -393,7 +394,7 @@ function createCoreAgentScopeAuthority(input: {
 }
 
 function inferSessionRootForWorkspaceRoot(workspaceRoot: string, runtimeMode: string | undefined): string | undefined {
-  if (runtimeMode !== 'vercel-sandbox' && runtimeMode !== 'blaxel') return undefined
+  if (!runtimeMode || !findSandboxRuntimeModeDescriptor(runtimeMode)?.host.inferSiblingSessionRoot) return undefined
   const resolvedRoot = path.resolve(workspaceRoot)
   if (path.basename(resolvedRoot) !== 'workspaces') return undefined
   return path.join(path.dirname(resolvedRoot), 'pi-sessions')
@@ -1241,11 +1242,16 @@ export async function createCoreWorkspaceAgentServer(
 
   const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
   const selectedMode = options.mode ?? process.env.BORING_AGENT_MODE ?? autoDetectMode()
-  const handleProvider = selectedMode === 'blaxel'
-    ? 'blaxel'
-    : selectedMode === 'vercel-sandbox' ? 'vercel' : undefined
+  const selectedDescriptor = findSandboxRuntimeModeDescriptor(selectedMode)
+  const handle = selectedDescriptor?.host.sandboxHandle
   const sandboxHandleStore = options.sandboxHandleStore
-    ?? (handleProvider ? new WorkspaceRuntimeSandboxHandleStore(workspaceStore, handleProvider) : undefined)
+    ?? (handle
+      ? new WorkspaceRuntimeSandboxHandleStore(
+          workspaceStore,
+          handle.provider,
+          handle.defaultPersistenceMode,
+        )
+      : undefined)
   const remoteWorkerModeAdapter = workerBaseUrl
     ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
     : undefined
@@ -1255,6 +1261,8 @@ export async function createCoreWorkspaceAgentServer(
       selectedMode,
       { sandboxHandleStore },
     )
+  const runtimeProvider = runtimeModeAdapter.runtimeProvider
+    ?? findSandboxRuntimeModeDescriptor(runtimeModeAdapter.id)
   const runtimeHost = options.runtimeHost ?? runtimeModeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const piOptionsByRoot = new Map<string, AgentPiOptions>()
   const getPluginPiOptions = (root: string): AgentPiOptions => {
@@ -1281,7 +1289,7 @@ export async function createCoreWorkspaceAgentServer(
     // not scan per-workspace Pi skills/plugins from the public host path — it
     // can be stale after volume cutover and would reintroduce split-brain. Keep
     // only static app/plugin Pi config plus explicit caller overrides.
-    const pluginOptions = remoteWorkerModeAdapter
+    const pluginOptions = runtimeProvider?.host.loadWorkspacePiResources === false
       ? pluginCollection.agentOptions.pi
       : getPluginPiOptions(ctx.workspaceRoot)
     const bridgePiOptions = options.getWorkspaceBridgePi
@@ -1374,7 +1382,7 @@ export async function createCoreWorkspaceAgentServer(
       ? await options.getTemplatePath({ workspaceId, workspaceRoot: root, request })
       : options.templatePath ?? normalizeOptionalPath(process.env.BORING_AGENT_TEMPLATE_PATH)
     const resolvedPi = await resolvePiOptions({ workspaceId, workspaceRoot: root, request }) ?? {}
-    const pi: PiHarnessOptions = runtimeModeAdapter.id === 'blaxel' || runtimeModeAdapter.id === 'vercel-sandbox'
+    const pi: PiHarnessOptions = runtimeProvider?.host.allowPiExtensions === false
       ? { ...resolvedPi, noExtensions: true }
       : resolvedPi
     const sessionNamespace = await resolveSessionNamespace({
@@ -1525,7 +1533,7 @@ export async function createCoreWorkspaceAgentServer(
               }) ?? root,
             )
             const result = await provisionWorkspaceRuntime({
-              plugins: runtimeModeAdapter.id === 'direct'
+              plugins: runtimeProvider?.host.includePluginAuthoringProvisioning === false
                 ? omitPluginAuthoringProvisioning(runtimePlugins)
                 : runtimePlugins,
               adapter: runtimeBundle.provisioningAdapter,

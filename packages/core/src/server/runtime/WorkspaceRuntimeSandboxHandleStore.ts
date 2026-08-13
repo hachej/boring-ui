@@ -40,7 +40,8 @@ export class WorkspaceRuntimeSandboxHandleStore {
 
   constructor(
     private readonly store: WorkspaceRuntimeStoreLike,
-    provider: 'vercel' | 'blaxel' = 'vercel',
+    provider = 'vercel',
+    private readonly defaultPersistenceMode = 'ephemeral',
   ) {
     this.resource = { kind: 'sandbox', purpose: 'main', provider }
   }
@@ -54,7 +55,7 @@ export class WorkspaceRuntimeSandboxHandleStore {
     const seenAt = new Date().toISOString()
     await this.store.putWorkspaceRuntimeResource(
       record.workspaceId,
-      handleToResourceInput(record, seenAt, this.resource),
+      handleToResourceInput(record, seenAt, this.resource, this.defaultPersistenceMode),
     )
   }
 
@@ -81,6 +82,7 @@ function handleToResourceInput(
   record: WorkspaceSandboxHandleRecord,
   seenAt: string,
   resource: WorkspaceRuntimeResourceSelector,
+  defaultPersistenceMode: string,
 ): WorkspaceRuntimeResourceInput {
   return {
     ...resource,
@@ -89,7 +91,7 @@ function handleToResourceInput(
     providerResourceId: record.sandboxId,
     state: 'ready',
     persistenceMode: record.persistenceMode
-      ?? (record.snapshotId ? 'snapshot' : resource.provider === 'blaxel' ? 'persistent' : 'ephemeral'),
+      ?? (record.snapshotId ? 'snapshot' : defaultPersistenceMode),
     providerMeta: {
       ...(record.providerMeta ?? {}),
       ...(record.snapshotId ? { snapshotId: record.snapshotId } : {}),

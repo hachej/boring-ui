@@ -16,6 +16,7 @@ import {
   DEFAULT_READONLY_WORKSPACE_PATHS,
   createValidatingAgentFleetCompiler,
   digestPiResourceInputs,
+  findSandboxRuntimeModeDescriptor,
   mergeRuntimeFilesystemBindings,
   normalizeRuntimeReadonlyFilesystemPolicy,
   provisionRuntimeWorkspace,
@@ -1272,6 +1273,8 @@ export async function createWorkspaceAgentServer(
   const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(
     resolvedMode,
   )
+  const runtimeProvider = modeAdapter.runtimeProvider
+    ?? findSandboxRuntimeModeDescriptor(modeAdapter.id)
   const runtimeHost = opts.runtimeHost ?? modeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
@@ -1427,7 +1430,9 @@ export async function createWorkspaceAgentServer(
       ...pluginCollection.runtimePlugins,
       ...scanned,
     ])
-    if (resolvedMode === "direct") return omitPluginAuthoringProvisioning(inputs)
+    if (runtimeProvider?.host.includePluginAuthoringProvisioning === false) {
+      return omitPluginAuthoringProvisioning(inputs)
+    }
     return inputs
   }
   let currentRuntimeProvisioning = opts.runtimeProvisioning

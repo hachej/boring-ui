@@ -29,7 +29,7 @@ Peer deps (optional): `react`, `react-dom`, `tailwindcss`.
 import { createAgentApp } from "@hachej/boring-agent/server"
 
 const app = await createAgentApp({
-  mode: "local",                 // "direct" | "local" | "vercel-sandbox"
+  mode: "local",                 // any registered built-in runtime mode
   workspaceRoot: process.cwd(),
 })
 await app.listen({ port: 3001 })

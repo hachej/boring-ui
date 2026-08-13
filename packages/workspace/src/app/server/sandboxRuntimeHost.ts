@@ -4,6 +4,8 @@
  */
 export {
   createSandboxRuntimeModeAdapter,
+  findSandboxRuntimeModeDescriptor,
+  getSandboxRuntimeModeDescriptor,
   sandboxRuntimeHostOperations,
 } from '@hachej/boring-agent/server'
 export type { SandboxRuntimeModeOptions } from '@hachej/boring-agent/server'
