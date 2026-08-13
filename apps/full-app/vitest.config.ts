@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { defineConfig } from 'vitest/config'
 import { createBoringAppViteAliases } from '../../packages/core/src/app/vite/index.ts'
+import { sandboxSourceAlias } from '../../scripts/vite-sandbox-alias.ts'
 
 const appRoot = import.meta.dirname
 const boringAliases = createBoringAppViteAliases({ appRoot })
@@ -24,6 +25,7 @@ export default defineConfig({
       { find: /^@hachej\/boring-mcp\/server$/, replacement: path.resolve(repoRoot, 'plugins/boring-mcp/src/server/index.ts') },
       { find: /^@hachej\/boring-mcp\/front$/, replacement: path.resolve(repoRoot, 'plugins/boring-mcp/src/front/index.tsx') },
       { find: /^@hachej\/boring-mcp\/shared$/, replacement: path.resolve(repoRoot, 'plugins/boring-mcp/src/shared/index.ts') },
+      sandboxSourceAlias,
     ],
   },
   test: {

@@ -1,5 +1,6 @@
 import { resolve } from "node:path"
 import { configDefaults, defineConfig } from "vitest/config"
+import { sandboxSourceAlias } from "../../scripts/vite-sandbox-alias.ts"
 
 const root = import.meta.dirname
 const repoRoot = resolve(root, "..", "..")
@@ -60,6 +61,7 @@ export default defineConfig({
       { find: /^@hachej\/boring-transcription\/front$/, replacement: resolve(repoRoot, "plugins/live-transcription/src/front/index.tsx") },
       { find: /^@hachej\/boring-transcription\/server$/, replacement: resolve(repoRoot, "plugins/live-transcription/src/server/index.ts") },
       { find: /^@hachej\/boring-ui-plugin-cli$/, replacement: resolve(repoRoot, "packages/plugin-cli/src/index.ts") },
+      sandboxSourceAlias,
     ],
   },
 })
