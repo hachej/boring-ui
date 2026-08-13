@@ -60,7 +60,7 @@ describe("ask-user front client", () => {
   })
 
   it("allows hosts to override the stock browser CSRF proof", async () => {
-    const fetchMock = vi.fn(async () => Response.json({ ok: true, output: { pending: null } }))
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ ok: true, output: { pending: null } }))
     vi.stubGlobal("fetch", fetchMock)
 
     await createQuestionsClient({ headers: { "x-csrf-token": "signed-proof" } }).pending("default")
