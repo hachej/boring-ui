@@ -43,6 +43,11 @@ const DEFAULT_RECONNECT_MAX_MS = 30_000
 // a slow/hung attempt surfaces as a (retryable) error and the reconnect loop
 // re-issues a fresh request against the recovered server.
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
+// Prompt admission may cold-start the agent runtime and load plugins before it
+// can return its 202 receipt. Keep state/stream recovery bounded tightly, but
+// give commands enough time to finish admission instead of rolling back an
+// accepted prompt after the client-side deadline.
+const DEFAULT_COMMAND_TIMEOUT_MS = 60_000
 const DEFAULT_LARGE_STATE_WARNING_BYTES = 5 * 1024 * 1024
 const DEFAULT_LARGE_STATE_WARNING_MESSAGES = 300
 const EVENT_TYPE_RING_LIMIT = 20
@@ -79,9 +84,12 @@ export interface RemotePiSessionOptions {
   }
   setTimeoutFn?: typeof globalThis.setTimeout
   clearTimeoutFn?: typeof globalThis.clearTimeout
-  // Per-attempt timeout for /state and command fetches. Defaults to
-  // DEFAULT_REQUEST_TIMEOUT_MS; exposed mainly for tests.
+  // Per-attempt timeout for /state and event-stream connection fetches.
+  // Defaults to DEFAULT_REQUEST_TIMEOUT_MS; exposed mainly for tests.
   requestTimeoutMs?: number
+  // Per-attempt timeout for command fetches. Defaults to
+  // DEFAULT_COMMAND_TIMEOUT_MS; exposed mainly for tests.
+  commandTimeoutMs?: number
 }
 
 export interface RemotePiSessionLargeStateWarning {
@@ -133,6 +141,7 @@ export class RemotePiSession {
   private readonly setTimeoutFn: typeof globalThis.setTimeout
   private readonly clearTimeoutFn: typeof globalThis.clearTimeout
   private readonly requestTimeoutMs: number
+  private readonly commandTimeoutMs: number
   private generation = 0
   private streamRunId = 0
   private reconnectAttempt = 0
@@ -154,6 +163,7 @@ export class RemotePiSession {
     this.setTimeoutFn = options.setTimeoutFn ?? globalThis.setTimeout
     this.clearTimeoutFn = options.clearTimeoutFn ?? globalThis.clearTimeout
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+    this.commandTimeoutMs = options.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS
     this.store = createPiChatStore(createInitialPiChatState({
       sessionId: options.sessionId,
       workspaceId: options.workspaceId,
@@ -520,7 +530,7 @@ export class RemotePiSession {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(this.addressedCommandPayload(path, payload)),
-    })
+    }, this.commandTimeoutMs)
     if (!this.isGenerationActive(generation)) {
       throw abortError('Remote Pi session disposed before command receipt.')
     }
@@ -540,7 +550,7 @@ export class RemotePiSession {
     this.store.dispatch({ type: 'remove-optimistic-user-message', clientNonce }, { flush: true })
   }
 
-  private async fetchJson(url: string, init: RequestInit): Promise<unknown> {
+  private async fetchJson(url: string, init: RequestInit, timeoutMs = this.requestTimeoutMs): Promise<unknown> {
     const controller = new AbortController()
     this.fetchControllers.add(controller)
     // Bound the attempt: a hung request (saturated server right after a
@@ -551,7 +561,7 @@ export class RemotePiSession {
     const timer = globalThis.setTimeout(() => {
       timedOut = true
       controller.abort()
-    }, this.requestTimeoutMs)
+    }, timeoutMs)
     try {
       const response = await this.fetchImpl(url, { ...init, signal: controller.signal })
       const body = await safeReadJson(response)
@@ -561,7 +571,7 @@ export class RemotePiSession {
       // Distinguish our own timeout abort from a dispose-driven abort: a
       // dispose abort must stay an (ignored) AbortError, but a timeout should
       // throw a real error so the caller's catch reaches scheduleReconnect.
-      if (timedOut) throw new Error(`Request to ${url} timed out after ${this.requestTimeoutMs}ms.`)
+      if (timedOut) throw new Error(`Request to ${url} timed out after ${timeoutMs}ms.`)
       throw error
     } finally {
       globalThis.clearTimeout(timer)
