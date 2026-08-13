@@ -15,7 +15,7 @@ import type {
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
 import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
-import { homedir, userInfo } from "node:os"
+import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
 import { registerWorkspacePluginConfigRoutes, registerWorkspaceTaskRoutes } from "./workspacePluginRoutes.js"
@@ -25,7 +25,7 @@ import type {
   RuntimePluginHostSnapshot,
   RuntimePluginServerSnapshotEntry,
 } from "../shared/runtimePluginDiagnostics.js"
-import { resolveBoringUiCliPackageAuthorityRoot, resolveBoringUiCliPackageRoot } from "./pluginDiscovery.js"
+import { resolveBoringUiCliPackageRoot } from "./pluginDiscovery.js"
 import type { readCliPluginPiSnapshot as readCliPluginPiSnapshotFn } from "./pluginDiscovery.js"
 
 type CliPluginPiSnapshot = ReturnType<typeof readCliPluginPiSnapshotFn>
@@ -348,7 +348,6 @@ function buildRuntimePluginDiagnosticsResponse(args: {
   errors: Array<{ id: string; message: string }>
   host: RuntimePluginHostSnapshot[]
   frontErrors?: RuntimePluginFrontError[]
-  resourceDiagnostics?: Array<{ source: string; message: string; pluginId?: string }>
 }): RuntimePluginDiagnosticsResponse {
   const byPlugin = new Map<string, RuntimePluginServerSnapshotEntry>()
   for (const plugin of args.loaded) {
@@ -388,7 +387,6 @@ function buildRuntimePluginDiagnosticsResponse(args: {
   return {
     workspaceId: args.workspaceId,
     plugins: [...byPlugin.values()].sort((a, b) => a.id.localeCompare(b.id)),
-    resourceDiagnostics: args.resourceDiagnostics ?? [],
   }
 }
 
@@ -477,16 +475,7 @@ export async function createFolderModeApp(opts: {
   const runtimeHost = await createPluginFrontRuntimeHost({
     onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
   })
-  const defaultPluginResolution = typeof pluginDiscovery.resolveCliDefaultPluginPackageResolution === "function"
-    ? pluginDiscovery.resolveCliDefaultPluginPackageResolution({ includeFolderModeAutomation: true })
-    : {
-        paths: pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true }),
-        diagnostics: [],
-      }
-  const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot, {
-    includeFolderModeAutomation: true,
-    defaultPackagePaths: defaultPluginResolution.paths,
-  })
+  const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot, { includeFolderModeAutomation: true })
   let app: FastifyInstance | undefined
   try {
     const runtimeProvisioning = await provisionCliWorkspaceRuntime({
@@ -497,8 +486,6 @@ export async function createFolderModeApp(opts: {
     })
     app = await createWorkspaceAgentServer({
       workspaceRoot,
-      appRoot: resolveBoringUiCliPackageRoot(),
-      piResourceAuthorizedRoots: [resolveBoringUiCliPackageAuthorityRoot()],
       mode: opts.mode,
       logger: false,
       provisionWorkspace: false,
@@ -514,11 +501,7 @@ export async function createFolderModeApp(opts: {
       // CLI-bundled internal plugins, resolved to absolute package dirs. This
       // drives the server-side install array (boot-time routes/agentTools);
       // additionalBoringPluginDirs only feeds the asset-manager scan.
-      defaultPluginPackages: defaultPluginResolution.paths,
-      startupPluginDiagnostics: defaultPluginResolution.diagnostics,
-      onPiResourceBootWarning: (warning) => {
-        console.warn(JSON.stringify(warning))
-      },
+      defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true }),
       // CLI-bundled internal plugins are workspace capabilities (ask_user,
       // manage_tasks, boring_automation), not persona grants. Share their
       // complete Agent contribution across repository-owned fleet seats while
@@ -560,18 +543,13 @@ export async function createFolderModeApp(opts: {
         inspectLoaded(): Array<{ id: string; version?: string; revision?: number; rootDir?: string; frontPath?: string; frontTarget?: unknown }>
         getErrors(): Array<{ id: string; message: string }>
       }
-      __boringPluginDiagnostics?: () => Array<{ source: string; message: string; pluginId?: string }>
     }).__boringAssetManager
-    const resourceDiagnostics = (app as FastifyInstance & {
-      __boringPluginDiagnostics?: () => Array<{ source: string; message: string; pluginId?: string }>
-    }).__boringPluginDiagnostics?.() ?? []
     return buildRuntimePluginDiagnosticsResponse({
       workspaceId: FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID,
       loaded: manager?.inspectLoaded() ?? [],
       errors: manager?.getErrors() ?? [],
       host: diagnosticsStore.snapshot(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
       frontErrors: diagnosticsStore.frontErrors(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
-      resourceDiagnostics,
     })
   })
 
@@ -638,10 +616,6 @@ export async function createWorkspacesModeApp(opts: {
   const runtimeHost = await createPluginFrontRuntimeHost({
     onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
   })
-  const defaultPluginResolution = pluginDiscovery.resolveCliDefaultPluginPackageResolution()
-  const folderDefaultPluginResolution = pluginDiscovery.resolveCliDefaultPluginPackageResolution({ includeFolderModeAutomation: true })
-  const startupPluginDiagnostics = [...defaultPluginResolution.diagnostics, ...folderDefaultPluginResolution.diagnostics]
-    .filter((diagnostic, index, values) => values.findIndex((candidate) => candidate.pluginId === diagnostic.pluginId) === index)
   await runtimeHost.registerRoutes(app)
   // External plugin server routes (/api/v1/plugins/<id>/*). The gateway is
   // registered once; dispatch resolves the per-workspace RuntimeBackendRegistry
@@ -696,8 +670,6 @@ export async function createWorkspacesModeApp(opts: {
   const pluginPiSnapshots = new Map<string, CliPluginPiSnapshot>()
   const packageResourceSnapshots = new Map<string, CliPackageResourceSnapshot>()
   const packageResourceDiagnostics = new Map<string, Array<{ source: string; message: string; pluginId?: string }>>()
-  const piResourceDiagnostics = new Map<string, Array<{ source: string; message: string; pluginId?: string }>>()
-  const warnedPiResourceWorkspaces = new Set<string>()
   const runtimeProvisioningByWorkspace = new Map<string, WorkspaceProvisioningResult | undefined>()
   const lastReloadDiagnostics = new Map<string, Array<{ source: string; message: string; pluginId?: string }>>()
   const automationStores = new Map<string, InstanceType<typeof FileAutomationStore>>()
@@ -725,7 +697,7 @@ export async function createWorkspacesModeApp(opts: {
         // trusted plugins rather than letting plugins invent a fallback.
         agentTypeId: "default",
         availableAgentTypeIds: ["default"],
-        defaultPluginPackages: defaultPluginResolution.paths,
+        defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
         installPluginAuthoring: false,
         excludeDefaults: ["boring-ui-plugin-cli-package"],
       })
@@ -755,14 +727,11 @@ export async function createWorkspacesModeApp(opts: {
     return workspace
   }
 
-  const piResourceAuthorizedRoots = (workspace: LocalWorkspace, resourcePaths: readonly string[] = []): string[] => [
+  const piResourceAuthorizedRoots = (workspace: LocalWorkspace): string[] => [
     workspace.path,
-    resolveBoringUiCliPackageAuthorityRoot(),
-    resolve(homedir(), ".pi", "agent"),
-    resolve(homedir(), ".agents"),
-    resolve(userInfo().homedir, ".pi", "agent"),
-    resolve(userInfo().homedir, ".agents"),
-    ...resourcePaths,
+    ...pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
+    ...pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, { includeFolderModeAutomation: true })
+      .map((source) => typeof source === "string" ? source : source.rootDir),
   ]
 
   async function workspaceFromRequest(request: { headers?: Record<string, unknown>; query?: unknown }) {
@@ -874,36 +843,6 @@ export async function createWorkspacesModeApp(opts: {
     packageResourceDiagnostics.set(key, diagnostics)
   }
 
-  async function refreshPiResourceDiagnostics(workspace: LocalWorkspace): Promise<void> {
-    const pluginRoots = pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, {
-      includeFolderModeAutomation: true,
-      defaultPackagePaths: folderDefaultPluginResolution.paths,
-    }).map((source) => typeof source === "string" ? source : source.rootDir)
-    const hotResources = getLoadedPluginPiSnapshot(workspace)
-    const symlinks = await agentServer.inspectPiResourceSymlinks({
-      piCwd: workspace.path,
-      resourcePaths: [...pluginRoots, ...hotResources.additionalSkillPaths, ...hotResources.extensionPaths],
-      authorizedRoots: piResourceAuthorizedRoots(workspace),
-    })
-    piResourceDiagnostics.set(pluginRuntimeKey(workspace), [
-      ...startupPluginDiagnostics,
-      ...symlinks.map((diagnostic) => ({ source: diagnostic.source, message: diagnostic.message })),
-    ])
-    if ((symlinks.length > 0 || startupPluginDiagnostics.length > 0) && !warnedPiResourceWorkspaces.has(workspace.id)) {
-      warnedPiResourceWorkspaces.add(workspace.id)
-      console.warn(JSON.stringify({
-        event: "boring_ui_pi_resource_boot_warning",
-        workspaceRoot: workspace.path,
-        symlinks,
-        diagnostics: startupPluginDiagnostics,
-        consequence: symlinks.some((diagnostic) => diagnostic.status !== "contained")
-          || startupPluginDiagnostics.length > 0
-          ? "One or more plugins or Pi resources may be unavailable; inspect diagnostics and repair the named package or path before retrying."
-          : "Contained workspace package symlinks are allowed; resources remain loadable while their targets stay inside an authorized root.",
-      }))
-    }
-  }
-
   function getOrCreatePluginRuntime(workspace: LocalWorkspace) {
     runtimeHost.activateWorkspace(workspace.id)
     const key = pluginRuntimeKey(workspace)
@@ -912,7 +851,6 @@ export async function createWorkspacesModeApp(opts: {
       const manager = pluginDiscovery.createCliPluginAssetManager(workspace.path, {
         frontTargetResolver: runtimeHost.createFrontTargetResolver(workspace.id),
         includeFolderModeAutomation: true,
-        defaultPackagePaths: folderDefaultPluginResolution.paths,
       })
       const backendRegistry = new workspaceServer.RuntimeBackendRegistry()
       runtime = {
@@ -920,7 +858,6 @@ export async function createWorkspacesModeApp(opts: {
         backendRegistry,
         ensureLoaded: manager.load().then(async () => {
           await syncLoadedPluginPiSnapshot(workspace, manager)
-          await refreshPiResourceDiagnostics(workspace)
           await backendRegistry.reloadFromLoadedPlugins(manager.inspectLoaded())
           // Fire-and-forget: pre-transform the loaded plugins' front entries
           // (and their react/@hachej/boring-workspace singletons) so the first
@@ -965,8 +902,6 @@ export async function createWorkspacesModeApp(opts: {
     pluginPiSnapshots.delete(runtimeKey)
     packageResourceSnapshots.delete(runtimeKey)
     packageResourceDiagnostics.delete(runtimeKey)
-    piResourceDiagnostics.delete(runtimeKey)
-    warnedPiResourceWorkspaces.delete(workspace.id)
     runtimeProvisioningByWorkspace.delete(workspace.id)
     lastReloadDiagnostics.delete(runtimeKey)
     automationStores.delete(runtimeKey)
@@ -1065,9 +1000,7 @@ export async function createWorkspacesModeApp(opts: {
           await getLoadedPluginRuntime(workspace)
           const handledRoots = packageResourceSnapshots.get(pluginRuntimeKey(workspace))?.registry.handledPackageRoots ?? []
           const plugins = workspaceAppServer.readWorkspacePluginPackageRuntimePlugins(
-            pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, {
-              defaultPackagePaths: defaultPluginResolution.paths,
-            }),
+            pluginDiscovery.resolveCliBoringPluginDirs(workspace.path),
           ).map((plugin) => ({
             ...plugin,
             ...(plugin.skills
@@ -1091,7 +1024,6 @@ export async function createWorkspacesModeApp(opts: {
         const buildResourceDigestInput = () => {
           const hotResources = pluginDiscovery.readCliPluginPiSnapshot(workspace.path, {
             includeFolderModeAutomation: true,
-            defaultPackagePaths: folderDefaultPluginResolution.paths,
           })
           const additionalSkillPaths = [
             join(workspace.path, ".agents", "skills"),
@@ -1106,10 +1038,7 @@ export async function createWorkspacesModeApp(opts: {
               packages: hotResources.packages,
               extensionPaths: hotResources.extensionPaths,
             }],
-            authorizedRoots: piResourceAuthorizedRoots(workspace, [
-              ...additionalSkillPaths,
-              ...hotResources.extensionPaths,
-            ]),
+            authorizedRoots: piResourceAuthorizedRoots(workspace),
             allowInternalSymlinks: true,
           })
         }
@@ -1122,13 +1051,9 @@ export async function createWorkspacesModeApp(opts: {
           sessionNamespace: "",
           async applyReload() {
             const runtime = await getLoadedPluginRuntime(workspace)
-            runtime.manager.setPluginDirs(pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, {
-              includeFolderModeAutomation: true,
-              defaultPackagePaths: folderDefaultPluginResolution.paths,
-            }))
+            runtime.manager.setPluginDirs(pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, { includeFolderModeAutomation: true }))
             const scan = await runtime.manager.load()
             await syncLoadedPluginPiSnapshot(workspace, runtime.manager)
-            await refreshPiResourceDiagnostics(workspace)
             syncRuntimeHostFromPluginEvents(runtimeHost, workspace.id, scan.events)
             const backendReload = await runtime.backendRegistry.reloadFromLoadedPlugins(runtime.manager.inspectLoaded())
             const diagnostics = [
@@ -1179,7 +1104,6 @@ export async function createWorkspacesModeApp(opts: {
               pluginId: error.pluginId,
             })),
             ...(packageResourceDiagnostics.get(pluginRuntimeKey(workspace)) ?? []),
-            ...(piResourceDiagnostics.get(pluginRuntimeKey(workspace)) ?? []),
           ],
         }),
       ]
@@ -1206,11 +1130,7 @@ export async function createWorkspacesModeApp(opts: {
               packages: hotResources.packages,
               extensionPaths: hotResources.extensionPaths,
             }],
-            authorizedRoots: piResourceAuthorizedRoots(workspace, [
-              join(workspace.path, ".agents", "skills"),
-              ...hotResources.additionalSkillPaths,
-              ...hotResources.extensionPaths,
-            ]),
+            authorizedRoots: piResourceAuthorizedRoots(workspace),
             allowInternalSymlinks: true,
           }),
         ),
@@ -1319,10 +1239,6 @@ export async function createWorkspacesModeApp(opts: {
       errors: runtime.manager.getErrors(),
       host: diagnosticsStore.snapshot(workspace.id),
       frontErrors: diagnosticsStore.frontErrors(workspace.id),
-      resourceDiagnostics: [
-        ...(packageResourceDiagnostics.get(pluginRuntimeKey(workspace)) ?? []),
-        ...(piResourceDiagnostics.get(pluginRuntimeKey(workspace)) ?? []),
-      ],
     })
   })
 

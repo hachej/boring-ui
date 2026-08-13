@@ -780,16 +780,12 @@ function withCommittedMessages(state: PiChatState, committedMessages: BoringChat
 
 function settleTurn(state: PiChatState, status: 'ok' | 'aborted' | 'error'): PiChatState {
   const shouldSettleStreamingMessage = status !== 'ok' && state.streamingMessage !== undefined
-  const hasVisuallyPendingTool = [...state.committedMessages, ...(state.streamingMessage ? [state.streamingMessage] : [])]
-    .some((message) => message.parts.some((part) => part.type === 'tool-call' && isToolPending(part)))
-  if (state.pendingToolCallIds.size === 0 && !hasVisuallyPendingTool && !shouldSettleStreamingMessage) return state
+  if (state.pendingToolCallIds.size === 0 && !shouldSettleStreamingMessage) return state
   const toolState = status === 'error' ? 'output-error' : 'aborted'
   const settleParts = (message: BoringChatMessage): BoringChatMessage => ({
     ...message,
     parts: message.parts.map((part) => {
-      if (part.type === 'tool-call' && (state.pendingToolCallIds.has(part.id) || isToolPending(part))) {
-        return { ...part, state: toolState }
-      }
+      if (part.type === 'tool-call' && state.pendingToolCallIds.has(part.id)) return { ...part, state: toolState }
       if (status !== 'ok' && part.type === 'reasoning' && part.state === 'streaming') return { ...part, state: 'done' }
       return part
     }),
@@ -797,8 +793,7 @@ function settleTurn(state: PiChatState, status: 'ok' | 'aborted' | 'error'): PiC
   const settleCommittedMessage = (message: BoringChatMessage): BoringChatMessage => {
     const settled = settleParts(message)
     if (status === 'ok' || message.role !== 'assistant') return settled
-    const hadPendingTool = message.parts.some((part) =>
-      part.type === 'tool-call' && (state.pendingToolCallIds.has(part.id) || isToolPending(part)))
+    const hadPendingTool = message.parts.some((part) => part.type === 'tool-call' && state.pendingToolCallIds.has(part.id))
     if (message.status !== 'streaming' && !hadPendingTool) return settled
     return { ...settled, status: status === 'error' ? 'error' : 'aborted' }
   }

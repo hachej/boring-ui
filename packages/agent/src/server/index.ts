@@ -232,12 +232,10 @@ export {
   createPiResourceDigestFence,
   createPiResourceDigestInput,
   digestPiResourceInputs,
-  inspectPiResourceSymlinks,
 } from './piResourceDigest'
 export type {
   PiResourceDigestInput,
   PiResourceDigestLimits,
-  PiResourceSymlinkDiagnostic,
   PiResourceSet,
 } from './piResourceDigest'
 export type {

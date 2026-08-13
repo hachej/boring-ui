@@ -779,27 +779,6 @@ describe('piChatReducer', () => {
     expect(aborted.committedMessages[0]?.parts).toContainEqual(expect.objectContaining({ type: 'tool-call', id: 'call-1', state: 'aborted' }))
   })
 
-  it('repairs a visually running tool at terminal turn end when pending bookkeeping was lost', () => {
-    const beforeAbort = reduceEvents([
-      { type: 'agent-start', seq: 1, turnId: 'turn-1' },
-      { type: 'message-start', seq: 2, messageId: 'a1', role: 'assistant' },
-      { type: 'tool-call', seq: 3, messageId: 'a1', toolCallId: 'call-1', toolName: 'bash', input: { command: 'pwd' } },
-      { type: 'message-end', seq: 4, messageId: 'a1', final: assistantFinal('a1', 'done') },
-    ])
-    const desynchronized = { ...beforeAbort, pendingToolCallIds: new Set<string>() }
-
-    const aborted = piChatReducer(desynchronized, {
-      type: 'event',
-      event: { type: 'agent-end', seq: 5, turnId: 'turn-1', status: 'aborted' },
-    })
-
-    expect(aborted.status).toBe('idle')
-    expect(aborted.committedMessages[0]).toMatchObject({ id: 'a1', status: 'aborted' })
-    expect(aborted.committedMessages[0]?.parts).toContainEqual(
-      expect.objectContaining({ type: 'tool-call', id: 'call-1', state: 'aborted' }),
-    )
-  })
-
   it('does not let a delayed tool result overwrite an aborted tool', () => {
     const beforeAbort = reduceEvents([
       { type: 'agent-start', seq: 1, turnId: 'turn-1' },

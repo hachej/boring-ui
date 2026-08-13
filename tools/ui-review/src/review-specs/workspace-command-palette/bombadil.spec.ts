@@ -55,6 +55,13 @@ const palette = extract((state): SafePaletteState => {
     element.getAttribute("aria-label") ?? element.textContent ?? ""
   ).replace(/\s+/g, " ").trim()
   const visibleElements = (selector: string): Element[] => Array.from(state.document.querySelectorAll(selector)).filter(visible)
+  const completedResources = state.window.performance.getEntriesByType("resource")
+    .map((entry) => entry.name)
+  const workspaceReady = state.document.fonts.status === "loaded"
+    && Boolean(state.document.querySelector('main[aria-label="Chat"]'))
+    && completedResources.some((url) => url.includes("/api/v1/agents"))
+    && completedResources.some((url) => url.includes("/api/v1/tree"))
+    && completedResources.some((url) => url.includes("/api/v1/ui/state"))
   const dialogs = visibleElements('[role="dialog"], [aria-modal="true"]')
     .filter((element, index, all) => all.indexOf(element) === index)
   const dialog = dialogs[0] ?? null
@@ -80,22 +87,12 @@ const palette = extract((state): SafePaletteState => {
     })
   }
 
-  // Action availability must follow the visible, allowlisted controls rather
-  // than resource-performance timing. Exploration and replay can observe the
-  // same painted control before their resource entry lists settle identically.
-  if (!dialog) {
+  if (!dialog && workspaceReady) {
     for (const search of searchControls) maybeAdd(search, false)
   }
   if (dialog && visible(dialog)) {
     for (const element of dialog.querySelectorAll("button")) maybeAdd(element, true)
   }
-  const chatMain = state.document.querySelector('main[aria-label="Chat"]')
-  // Readiness must be observable in both exploration and replay. Performance
-  // Resource Timing entries can be absent after cache hits or differ across
-  // browser contexts; the painted shell and its safe opener are the actual UI
-  // preconditions for taking the first action.
-  const workspaceReady = Boolean(chatMain && visible(chatMain))
-    && allowed.some((control) => control.name === "open-command-palette" || control.name === "open-app-navigation")
 
   const observation = observeCommandPaletteDocument({
     checkpoint: "explore",
@@ -164,16 +161,16 @@ export const command_palette_focus_stays_visible = always(() => !palette.current
 export const command_palette_mobile_touch_targets_are_sized = always(() => palette.current.undersizedTouchTargets.length === 0)
 
 export const commandPaletteSafeActions = actions((): Action[] => {
-  if (palette.current.lastActionWasInitial) return ["Wait"]
+  if (!palette.current.workspaceReady || palette.current.lastActionWasInitial) return ["Wait"]
   const openPalette = palette.current.controls.find((control) => control.name === "open-command-palette")
   if (!palette.current.dialogVisible && openPalette) {
     const click: Action = { Click: { name: openPalette.name, point: openPalette.point } }
-    return [click]
+    return ["Wait", click]
   }
   const openNavigation = palette.current.controls.find((control) => control.name === "open-app-navigation")
   if (!palette.current.dialogVisible && openNavigation) {
     const click: Action = { Click: { name: openNavigation.name, point: openNavigation.point } }
-    return [click]
+    return ["Wait", click]
   }
   if (palette.current.dialogVisible && palette.current.lastActionWasPaletteOpen) return ["Wait"]
   const generated: Action[] = ["Wait"]

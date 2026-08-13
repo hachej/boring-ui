@@ -236,7 +236,6 @@ export async function createStandaloneAgentHostApp(
               ],
             }],
             authorizedRoots: [workspaceRoot, ...(options.piResourceAuthorizedRoots ?? [])],
-            allowInternalSymlinks: true,
           })
         }
         const { resourceInputDigest, revalidateResourceInputs } = await createPiResourceDigestFence(buildResourceDigestInput)

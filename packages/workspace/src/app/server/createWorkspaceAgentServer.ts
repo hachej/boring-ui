@@ -8,7 +8,6 @@ import {
   autoDetectMode,
   createAgentAuthMiddleware,
   createAgentHost,
-  createPluginDiagnosticsTool,
   createPiResourceDigestFence,
   createPiResourceDigestInput,
   createResolvedRuntimeScopeIdentity,
@@ -17,7 +16,6 @@ import {
   DEFAULT_READONLY_WORKSPACE_PATHS,
   createValidatingAgentFleetCompiler,
   digestPiResourceInputs,
-  inspectPiResourceSymlinks,
   mergeRuntimeFilesystemBindings,
   normalizeRuntimeReadonlyFilesystemPolicy,
   provisionRuntimeWorkspace,
@@ -36,7 +34,6 @@ import {
   type AgentMeteringSink,
   type AgentRuntimeHostOperations,
   type PiExtensionFactory,
-  type PiResourceSymlinkDiagnostic,
   type ProvisionWorkspaceRuntimeOptions,
   type ResolvedAgentRuntimeScope,
   type RuntimeBundle,
@@ -59,7 +56,7 @@ import {
   type TelemetrySink,
 } from "@hachej/boring-agent/shared"
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify"
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { homedir } from "node:os"
@@ -152,20 +149,6 @@ interface WorkspaceReloadHookResult {
   diagnostics?: ReadonlyArray<{ source: string; message: string; pluginId?: string }>
 }
 
-export interface WorkspacePluginDiagnostic {
-  source: string
-  message: string
-  pluginId?: string
-}
-
-export interface WorkspacePiResourceBootWarning {
-  event: "boring_ui_pi_resource_boot_warning"
-  workspaceRoot: string
-  symlinks: readonly PiResourceSymlinkDiagnostic[]
-  diagnostics: readonly WorkspacePluginDiagnostic[]
-  consequence: string
-}
-
 export interface WorkspaceAgentPiOptions {
   noContextFiles?: boolean
   noSkills?: boolean
@@ -218,10 +201,6 @@ export interface WorkspaceAgentCreateOptions {
   externalPlugins?: boolean
   /** Independently trusted roots for configured Pi resources outside the workspace/plugin roots. */
   piResourceAuthorizedRoots?: string[]
-  /** Host-side package resolution failures captured before Workspace composition. */
-  startupPluginDiagnostics?: readonly WorkspacePluginDiagnostic[]
-  /** Receives the single aggregate Pi-resource warning emitted during boot. */
-  onPiResourceBootWarning?: (warning: WorkspacePiResourceBootWarning) => void
   beforeReload?: () => void | WorkspaceReloadHookResult | undefined | Promise<void | WorkspaceReloadHookResult | undefined>
   systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
   onWorkspaceAgentDispatcher?: (resolver: WorkspaceAgentDispatcherResolver) => void
@@ -711,32 +690,7 @@ function directoryContentDigest(root: string): string {
     hash.update(readFileSync(absolute))
     hash.update("\0")
   }
-  const requestedRoot = resolve(root)
-  let contentRoot = requestedRoot
-  const requestedStat = lstatSync(requestedRoot)
-  if (requestedStat.isSymbolicLink()) {
-    try {
-      contentRoot = realpathSync(requestedRoot)
-    } catch {
-      throw new AgentRuntimeIdentityError(
-        `directory plugin symlink ${requestedRoot} has no resolvable target; restore the package link or reinstall the plugin`,
-      )
-    }
-  }
-  const before = statSync(contentRoot)
-  visit(contentRoot, "")
-  const afterTarget = realpathSync(requestedRoot)
-  const after = statSync(afterTarget)
-  if (
-    afterTarget !== contentRoot
-    || before.dev !== after.dev
-    || before.ino !== after.ino
-    || before.size !== after.size
-    || before.mtimeMs !== after.mtimeMs
-    || before.ctimeMs !== after.ctimeMs
-  ) {
-    throw new AgentRuntimeIdentityError(`directory plugin changed while its identity was being computed: ${requestedRoot}; retry startup`)
-  }
+  visit(resolve(root), "")
   return hash.digest("hex")
 }
 
@@ -1161,10 +1115,6 @@ function localPiPackageRoot(source: WorkspacePiPackageSource | undefined): strin
   return isAbsolute(candidate) || candidate.startsWith(".") ? resolve(candidate) : undefined
 }
 
-function isLocalPiResourcePath(value: string): boolean {
-  return !['npm:', 'git:', 'github:', 'http:', 'https:', 'ssh:'].some((prefix) => value.trim().startsWith(prefix))
-}
-
 export function readWorkspacePluginPackageRuntimePlugins(pluginDirs: BoringPluginSourceInput[]): WorkspaceRuntimeProvisioningInput[] {
   const scan = scanBoringPlugins(pluginDirs)
   return scan.plugins.map((plugin) => ({
@@ -1568,48 +1518,6 @@ export async function createWorkspaceAgentServer(
     packageResourceDiagnostics = [...snapshot.diagnostics]
   }
   await rebuildPackageResourceRegistry()
-  const resolvePiResourceAuthorizedRoots = () => uniqueStrings([
-      workspaceRoot,
-      ...(opts.appRoot ? [opts.appRoot] : []),
-      join(homedir(), ".pi", "agent"),
-      ...defaultPluginPackagePaths,
-      ...resolveBoringPluginDirs().map((source) => source.rootDir),
-      runtimeLayout.skills,
-      ...builtInBoringPiSkillPaths,
-      ...[localPiPackageRoot(workspacePackagePiPackage)].filter((path): path is string => Boolean(path)),
-      ...(currentPackageResourceSnapshot?.registry.handledPackageRoots ?? []),
-      ...(opts.piResourceAuthorizedRoots ?? []),
-    ])
-  const piResourceDiagnosticPaths = uniqueStrings([
-    ...defaultPluginPackagePaths,
-    ...resolveBoringPluginDirs().map((source) => source.rootDir),
-    ...staticPiSkillPaths,
-    ...staticPiExtensionPaths.filter(isLocalPiResourcePath),
-    ...staticPiPackages.map(localPiPackageRoot).filter((path): path is string => Boolean(path)),
-    ...(currentPackageResourceSnapshot?.registry.handledPackageRoots ?? []),
-  ])
-  const piResourceSymlinkDiagnostics = await inspectPiResourceSymlinks({
-    piCwd: workspaceRoot,
-    resourcePaths: piResourceDiagnosticPaths,
-    authorizedRoots: resolvePiResourceAuthorizedRoots(),
-  })
-  let lastReloadDiagnostics: ReadonlyArray<WorkspacePluginDiagnostic> = []
-  let bootPluginDiagnostics: WorkspacePluginDiagnostic[] = []
-
-  const getWorkspacePluginDiagnostics = (): WorkspacePluginDiagnostic[] => [
-    ...(opts.startupPluginDiagnostics ?? []),
-    ...boringAssetManager.getErrors().map((error) => ({
-      source: `boring plugin asset scan (${error.id})`,
-      message: error.message,
-      pluginId: error.id,
-    })),
-    ...bootPluginDiagnostics,
-    ...packageResourceDiagnostics,
-    ...piResourceSymlinkDiagnostics.map((diagnostic) => ({
-      source: diagnostic.source,
-      message: diagnostic.message,
-    })),
-  ]
   const normalizedRuntimeContributions = new Map<string, NormalizedAgentRuntimeContribution>()
   const resolvedFleetCompiler: AgentFleetCompiler = {
     async compile({ agents: fleet }) {
@@ -1688,13 +1596,6 @@ export async function createWorkspaceAgentServer(
     ...(opts.extraTools ?? []),
     ...uiTools,
     ...(legacyGlobalPluginAgentContributions ? pluginCollection.agentOptions.extraTools ?? [] : []),
-    ...(externalPluginsEnabled && !(opts.extraTools ?? []).some((tool) => tool.name === "plugin_diagnostics")
-      ? [createPluginDiagnosticsTool({
-          getLastReloadDiagnostics: () => lastReloadDiagnostics,
-          getHarness: () => undefined,
-          getPluginErrors: async () => getWorkspacePluginDiagnostics(),
-        })]
-      : []),
   ]
   const baseSystemPromptAppend = [
     workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt({ pluginAuthoringEnabled }) : undefined,
@@ -1753,7 +1654,6 @@ export async function createWorkspaceAgentServer(
       ...diagnostics,
       ...(callerResult && typeof callerResult === "object" ? callerResult.diagnostics ?? [] : []),
     ]
-    lastReloadDiagnostics = mergedDiagnostics
     if (mergedRestartWarnings.length === 0 && mergedDiagnostics.length === 0) return undefined
     return {
       ...(mergedRestartWarnings.length > 0 ? { restart_warnings: mergedRestartWarnings } : {}),
@@ -1997,8 +1897,17 @@ export async function createWorkspaceAgentServer(
             packages,
             extensionPaths,
           }],
-          authorizedRoots: resolvePiResourceAuthorizedRoots(),
-          allowInternalSymlinks: true,
+          authorizedRoots: uniqueStrings([
+            workspaceRoot,
+            ...defaultPluginPackagePaths,
+            ...resolveBoringPluginDirs().map((source) => source.rootDir),
+            runtimeLayout.skills,
+            ...builtInBoringPiSkillPaths,
+            ...[localPiPackageRoot(workspacePackagePiPackage)]
+              .filter((path): path is string => Boolean(path)),
+            ...(currentPackageResourceSnapshot?.registry.handledPackageRoots ?? []),
+            ...(opts.piResourceAuthorizedRoots ?? []),
+          ]),
         })
       }
       const { resourceInputDigest, revalidateResourceInputs } = await createPiResourceDigestFence(buildResourceDigestInput)
@@ -2206,24 +2115,7 @@ export async function createWorkspaceAgentServer(
   try {
     refreshBoringPluginDirs()
     await boringAssetManager.load()
-    const initialBackendReload = await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
-    bootPluginDiagnostics = [...initialBackendReload.diagnostics]
-    const visibleBootDiagnostics = getWorkspacePluginDiagnostics()
-      .filter((diagnostic) => diagnostic.source !== 'pi-resource-symlink')
-    if (piResourceSymlinkDiagnostics.length > 0 || visibleBootDiagnostics.length > 0) {
-      const warning: WorkspacePiResourceBootWarning = {
-        event: "boring_ui_pi_resource_boot_warning",
-        workspaceRoot,
-        symlinks: piResourceSymlinkDiagnostics,
-        diagnostics: visibleBootDiagnostics,
-        consequence: piResourceSymlinkDiagnostics.some((diagnostic) => diagnostic.status !== "contained")
-          || visibleBootDiagnostics.length > 0
-          ? "One or more plugins or Pi resources may be unavailable; inspect diagnostics and repair the named package or path before retrying."
-          : "Contained workspace package symlinks are allowed; resources remain loadable while their targets stay inside an authorized root.",
-      }
-      if (opts.onPiResourceBootWarning) opts.onPiResourceBootWarning(warning)
-      else app.log.warn(warning, "Pi resource startup diagnostics")
-    }
+    await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
     await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
     await app.register(workspaceBridgeHttpRoutes, {
       registry: workspaceBridgeRegistry,
@@ -2241,14 +2133,12 @@ export async function createWorkspaceAgentServer(
       __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
       __boringAssetManager?: BoringPluginAssetManager
       __boringRuntimeBackendRegistry?: RuntimeBackendRegistry
-      __boringPluginDiagnostics?: () => WorkspacePluginDiagnostic[]
     }
     const internals = app as FastifyInstance & BoringWorkspaceInternals
     internals.__boringWorkspaceBridgeRegistry = workspaceBridgeRegistry
     internals.__boringRebuildPlugins = rebuildPlugins
     internals.__boringAssetManager = boringAssetManager
     internals.__boringRuntimeBackendRegistry = runtimeBackendRegistry
-    internals.__boringPluginDiagnostics = getWorkspacePluginDiagnostics
 
     await app.register(boringPluginRoutes, {
       manager: boringAssetManager,
