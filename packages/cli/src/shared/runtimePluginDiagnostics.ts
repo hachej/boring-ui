@@ -48,4 +48,5 @@ export interface RuntimePluginServerSnapshotEntry {
 export interface RuntimePluginDiagnosticsResponse {
   workspaceId: string
   plugins: RuntimePluginServerSnapshotEntry[]
+  resourceDiagnostics: Array<{ source: string; message: string; pluginId?: string }>
 }

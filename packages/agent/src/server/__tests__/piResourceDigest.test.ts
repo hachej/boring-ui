@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { ErrorCode } from '../../shared/error-codes'
-import { digestPiResourceInputs, type PiResourceDigestInput } from '../piResourceDigest'
+import { digestPiResourceInputs, inspectPiResourceSymlinks, type PiResourceDigestInput } from '../piResourceDigest'
 
 const fsHooks = vi.hoisted(() => ({
   beforeOpen: undefined as ((path: Parameters<typeof import('node:fs/promises').open>[0]) => Promise<void>) | undefined,
@@ -67,7 +67,78 @@ describe('digestPiResourceInputs symlink containment', () => {
     await expect(digestPiResourceInputs(digestInput(root, linked))).rejects.toMatchObject({
       code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
       statusCode: 403,
+      message: expect.stringContaining(`resolves to ${outside}, which escapes authorized root ${root}`),
     })
+  })
+
+  test('does not let a resource symlink authorize its own escaping target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-self-authority-'))
+    const outside = await mkdtemp(join(tmpdir(), 'boring-pi-digest-self-authority-outside-'))
+    const linked = join(root, 'linked-skill')
+    await writeFile(join(outside, 'SKILL.md'), '# outside skill\n', 'utf8')
+    await symlink(outside, linked, 'dir')
+
+    await expect(digestPiResourceInputs({
+      ...digestInput(root, linked),
+      authorizedRoots: [root, linked],
+    })).rejects.toMatchObject({
+      code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
+      statusCode: 403,
+      message: expect.stringContaining(`escapes authorized root ${linked}`),
+    })
+  })
+
+  test('does not let a resource below a symlinked ancestor authorize the escaping target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-ancestor-authority-'))
+    const outside = await mkdtemp(join(tmpdir(), 'boring-pi-digest-ancestor-authority-outside-'))
+    const outsideSkill = join(outside, 'skill')
+    const linkedParent = join(root, 'linked-packages')
+    const linkedSkill = join(linkedParent, 'skill')
+    await mkdir(outsideSkill, { recursive: true })
+    await writeFile(join(outsideSkill, 'SKILL.md'), '# outside skill\n', 'utf8')
+    await symlink(outside, linkedParent, 'dir')
+
+    await expect(digestPiResourceInputs({
+      ...digestInput(root, linkedSkill),
+      authorizedRoots: [root, linkedSkill],
+    })).rejects.toMatchObject({
+      code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
+      statusCode: 403,
+      message: expect.stringContaining(`escapes authorized root ${linkedSkill}`),
+    })
+  })
+
+  test('rejects a dangling symlink with the path, authorized root, and repair actions', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-dangling-link-'))
+    const linked = join(root, 'linked-skill')
+    await symlink(join(root, 'missing-target'), linked, 'dir')
+
+    await expect(digestPiResourceInputs(digestInput(root, linked))).rejects.toMatchObject({
+      code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
+      statusCode: 403,
+      message: expect.stringMatching(new RegExp(`${linked}.*authorized root ${root}.*Restore the symlink target`)),
+    })
+  })
+
+  test('reports contained and escaping package links without reading their contents', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-pi-digest-inspect-links-'))
+    const outside = await mkdtemp(join(tmpdir(), 'boring-pi-digest-inspect-outside-'))
+    const containedTarget = join(root, 'packages', 'contained')
+    const containedLink = join(root, 'node_modules', 'contained')
+    const escapeLink = join(root, 'node_modules', 'escape')
+    await mkdir(containedTarget, { recursive: true })
+    await mkdir(join(root, 'node_modules'), { recursive: true })
+    await symlink(containedTarget, containedLink, 'dir')
+    await symlink(outside, escapeLink, 'dir')
+
+    await expect(inspectPiResourceSymlinks({
+      piCwd: root,
+      resourcePaths: [containedLink, escapeLink],
+      authorizedRoots: [root],
+    })).resolves.toEqual([
+      expect.objectContaining({ path: containedLink, resolvedPath: containedTarget, status: 'contained' }),
+      expect.objectContaining({ path: escapeLink, resolvedPath: outside, status: 'escape' }),
+    ])
   })
 
   test('rejects a missing resource beneath a symlink that escapes an authorized root', async () => {

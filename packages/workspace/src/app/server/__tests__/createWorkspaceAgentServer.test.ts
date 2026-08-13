@@ -1214,6 +1214,49 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
+  test("loads a default plugin through a contained package-root symlink and reports it once at boot", async () => {
+    const appRoot = await makeTempDir("boring-app-linked-default-")
+    const pluginRoot = join(appRoot, "plugins", "linked")
+    const linkedRoot = join(appRoot, "node_modules", "linked")
+    await mkdir(join(pluginRoot, "skills"), { recursive: true })
+    await mkdir(join(appRoot, "node_modules"), { recursive: true })
+    await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+      name: "linked",
+      version: "1.0.0",
+      pi: { skills: ["./skills"] },
+    }), "utf8")
+    await symlink(pluginRoot, linkedRoot, "dir")
+    const warnings: unknown[] = []
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: appRoot,
+      defaultPluginPackages: [linkedRoot],
+      logger: false,
+      provisionWorkspace: false,
+      onPiResourceBootWarning: (warning) => warnings.push(warning),
+    })
+
+    try {
+      expect(warnings).toEqual([expect.objectContaining({
+        event: "boring_ui_pi_resource_boot_warning",
+        symlinks: [expect.objectContaining({
+          path: linkedRoot,
+          resolvedPath: pluginRoot,
+          status: "contained",
+        })],
+      })])
+      const diagnostics = (app as typeof app & {
+        __boringPluginDiagnostics?: () => Array<{ source: string; message: string }>
+      }).__boringPluginDiagnostics?.() ?? []
+      expect(diagnostics).toContainEqual(expect.objectContaining({
+        source: "pi-resource-symlink",
+        message: expect.stringContaining(linkedRoot),
+      }))
+    } finally {
+      await app.close()
+    }
+  })
+
   test("workspace and configured agent-spec activation share one canonical artifact and load lifecycle", async () => {
     const workspaceRoot = await makeTempDir("boring-one-machinery-workspace-")
     const pluginRoot = join(workspaceRoot, "plugins", "one-machinery")

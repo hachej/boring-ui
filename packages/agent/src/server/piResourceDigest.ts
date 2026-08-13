@@ -99,6 +99,18 @@ interface AuthorizedRoots {
   readonly canonical: readonly string[]
 }
 
+export interface PiResourceSymlinkDiagnostic {
+  readonly source: 'pi-resource-symlink'
+  readonly path: string
+  readonly requestedPath: string
+  readonly authorizedRoot: string
+  readonly resolvedPath?: string
+  readonly status: 'contained' | 'escape' | 'dangling'
+  readonly consequence: string
+  readonly operatorAction: string
+  readonly message: string
+}
+
 const FORMAT_VERSION = 'boring-pi-resource-digest-v4'
 const EXCLUDED_DIRECTORIES = new Set(['.git', 'node_modules'])
 // Host-written observation metadata is not a Pi input. Including it makes the
@@ -161,6 +173,82 @@ export async function digestPiResourceInputs(input: PiResourceDigestInput): Prom
     if (localPath) await hashLocalResource(state, localPath, '.', 0)
   }
   return `sha256:${hash.digest('hex')}`
+}
+
+/**
+ * Inspect configured local Pi resource names for symlink components. This is a
+ * diagnostic companion to the digest guard: it uses the same lexical and
+ * canonical containment model, but never reads resource contents.
+ */
+export async function inspectPiResourceSymlinks(input: {
+  readonly piCwd: string
+  readonly resourcePaths: readonly string[]
+  readonly authorizedRoots: readonly string[]
+}): Promise<PiResourceSymlinkDiagnostic[]> {
+  const piCwd = resolvePiPath(input.piCwd, process.cwd())
+  const lexicalRoots = uniqueStrings(input.authorizedRoots.map((root) => resolvePiPath(root, piCwd)))
+  if (lexicalRoots.length === 0) return []
+  const roots = await resolveAuthorizedRoots(lexicalRoots)
+  const diagnostics = new Map<string, PiResourceSymlinkDiagnostic>()
+  for (const configuredPath of uniqueStrings(input.resourcePaths.map((path) => resolvePiPath(path, piCwd))).sort()) {
+    const boundary = roots.lexical
+      .filter((root) => root !== configuredPath && isContained(configuredPath, root))
+      .sort((left, right) => right.length - left.length)[0]
+      ?? mostSpecificContainingRoot(configuredPath, roots.lexical)
+    if (!boundary) continue
+    const suffix = relative(boundary, configuredPath)
+    let current = boundary
+    for (const component of suffix.split(sep).filter(Boolean)) {
+      current = resolve(current, component)
+      let currentStat
+      try {
+        currentStat = await lstat(current)
+      } catch (error) {
+        if (isMissing(error)) break
+        throw error
+      }
+      if (!currentStat.isSymbolicLink() || diagnostics.has(current)) continue
+      try {
+        const target = await realpath(current)
+        const containedBy = mostSpecificContainingRoot(target, roots.canonical)
+        const status = containedBy ? 'contained' : 'escape'
+        const operatorAction = status === 'contained'
+          ? 'No action is required while the target remains inside an authorized Pi resource root.'
+          : symlinkEscapeOperatorAction()
+        const consequence = status === 'contained'
+          ? 'The linked plugin or Pi resource remains loadable and is protected by the normal containment and TOCTOU checks.'
+          : 'Pi resource loading is blocked, so the affected plugin, skill, or extension will be unavailable.'
+        diagnostics.set(current, {
+          source: 'pi-resource-symlink',
+          path: current,
+          requestedPath: configuredPath,
+          authorizedRoot: boundary,
+          resolvedPath: target,
+          status,
+          consequence,
+          operatorAction,
+          message: status === 'contained'
+            ? `Pi resource symlink is contained: ${current} resolves to ${target}. ${consequence}`
+            : symlinkEscapeMessage(current, target, boundary),
+        })
+      } catch (error) {
+        if (!isMissing(error)) throw error
+        const consequence = 'Pi resource loading is blocked, so the affected plugin, skill, or extension will be unavailable.'
+        const operatorAction = danglingSymlinkOperatorAction()
+        diagnostics.set(current, {
+          source: 'pi-resource-symlink',
+          path: current,
+          requestedPath: configuredPath,
+          authorizedRoot: boundary,
+          status: 'dangling',
+          consequence,
+          operatorAction,
+          message: danglingSymlinkMessage(current, boundary),
+        })
+      }
+    }
+  }
+  return [...diagnostics.values()]
 }
 
 /** Immutable digest plus the reload fences that defend that exact snapshot. */
@@ -384,7 +472,7 @@ async function hashLocalResource(
     }
     const afterTarget = await realpath(absolutePath)
     if (afterTarget !== openedTarget) throw changedError(absolutePath)
-    assertCanonicalTargetContained(afterTarget, state.authorizedRoots.canonical, absolutePath)
+    assertCanonicalTargetContained(afterTarget, state.authorizedRoots, absolutePath)
     assertSameFile(stat, await statPath(afterTarget), absolutePath)
     return
   }
@@ -411,7 +499,7 @@ async function hashLocalResource(
     assertSameFile(stat, opened, absolutePath)
     const afterOpenTarget = await realpath(absolutePath)
     if (afterOpenTarget !== openedTarget) throw changedError(absolutePath)
-    assertCanonicalTargetContained(afterOpenTarget, state.authorizedRoots.canonical, absolutePath)
+    assertCanonicalTargetContained(afterOpenTarget, state.authorizedRoots, absolutePath)
     assertSameFile(opened, await statPath(afterOpenTarget), absolutePath)
     const buffer = new Uint8Array(Math.min(64 * 1024, Math.max(1, stat.size)))
     let offset = 0
@@ -425,7 +513,7 @@ async function hashLocalResource(
     assertSameFile(opened, after, absolutePath)
     const afterTarget = await realpath(absolutePath)
     if (afterTarget !== openedTarget) throw changedError(absolutePath)
-    assertCanonicalTargetContained(afterTarget, state.authorizedRoots.canonical, absolutePath)
+    assertCanonicalTargetContained(afterTarget, state.authorizedRoots, absolutePath)
     assertSameFile(after, await statPath(afterTarget), absolutePath)
     state.bytes += offset
   } finally {
@@ -448,15 +536,37 @@ function assertSameFile(
 }
 
 async function resolveAuthorizedRoots(lexicalRoots: readonly string[]): Promise<AuthorizedRoots> {
-  const canonical = await Promise.all(lexicalRoots.map(async (root) => {
+  const canonical = await Promise.all(lexicalRoots.map(async (root): Promise<string | undefined> => {
     try {
+      // An authorized root must be an independently trusted directory name,
+      // not the resource symlink being evaluated. Otherwise a link could
+      // authorize its own escaping target simply by appearing in both lists.
+      // Check every component: lstat(root) alone follows an intermediate link.
+      if (await pathContainsSymlink(root)) return undefined
       return await realpath(root)
     } catch (error) {
       if (isMissing(error)) return root
       throw error
     }
   }))
-  return { lexical: lexicalRoots, canonical: [...new Set(canonical)] }
+  return {
+    lexical: lexicalRoots,
+    canonical: [...new Set(canonical.filter((root): root is string => Boolean(root)))],
+  }
+}
+
+async function pathContainsSymlink(path: string): Promise<boolean> {
+  let current = resolve(path)
+  while (true) {
+    try {
+      if ((await lstat(current)).isSymbolicLink()) return true
+    } catch (error) {
+      if (!isMissing(error)) throw error
+    }
+    const parent = dirname(current)
+    if (parent === current) return false
+    current = parent
+  }
 }
 
 function assertLexicallyContained(path: string, roots: readonly string[]): void {
@@ -475,13 +585,17 @@ async function assertMissingPathContained(path: string, roots: AuthorizedRoots):
   while (isContained(current, boundary)) {
     try {
       const target = await realpath(current)
-      assertCanonicalTargetContained(target, roots.canonical, path)
+      assertCanonicalTargetContained(target, roots, path)
       return
     } catch (error) {
       if (!isMissing(error)) throw error
       try {
         if ((await lstat(current)).isSymbolicLink()) {
-          throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource symlink target is unavailable: ${current}`)
+          throw stableError(
+            ErrorCode.enum.PATH_SYMLINK_ESCAPE,
+            403,
+            danglingSymlinkMessage(current, boundary),
+          )
         }
       } catch (lstatError) {
         if (!isMissing(lstatError)) throw lstatError
@@ -499,20 +613,42 @@ async function resolveContainedTarget(
 ): Promise<string> {
   try {
     const target = await realpath(path)
-    assertCanonicalTargetContained(target, roots.canonical, path)
+    assertCanonicalTargetContained(target, roots, path)
     return target
   } catch (error) {
     if (knownSymlink && isMissing(error)) {
-      throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource symlink target is unavailable: ${path}`)
+      const boundary = mostSpecificContainingRoot(path, roots.lexical) ?? '<unknown authorized root>'
+      throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, danglingSymlinkMessage(path, boundary))
     }
     throw error
   }
 }
 
-function assertCanonicalTargetContained(target: string, roots: readonly string[], requestedPath: string): void {
-  if (!mostSpecificContainingRoot(target, roots)) {
-    throw stableError(ErrorCode.enum.PATH_SYMLINK_ESCAPE, 403, `Pi resource resolves outside authorized roots: ${requestedPath}`)
+function assertCanonicalTargetContained(target: string, roots: AuthorizedRoots, requestedPath: string): void {
+  if (!mostSpecificContainingRoot(target, roots.canonical)) {
+    const escapedRoot = mostSpecificContainingRoot(requestedPath, roots.lexical) ?? '<unknown authorized root>'
+    throw stableError(
+      ErrorCode.enum.PATH_SYMLINK_ESCAPE,
+      403,
+      symlinkEscapeMessage(requestedPath, target, escapedRoot),
+    )
   }
+}
+
+function symlinkEscapeOperatorAction(): string {
+  return 'Move the target under an authorized root, add its trusted containing directory to piResourceAuthorizedRoots, or replace the symlink.'
+}
+
+function danglingSymlinkOperatorAction(): string {
+  return 'Restore the symlink target, remove the dangling link, or update the configured Pi resource path.'
+}
+
+function symlinkEscapeMessage(path: string, target: string, authorizedRoot: string): string {
+  return `Pi resource path ${path} resolves to ${target}, which escapes authorized root ${authorizedRoot}. ${symlinkEscapeOperatorAction()}`
+}
+
+function danglingSymlinkMessage(path: string, authorizedRoot: string): string {
+  return `Pi resource symlink ${path} has no resolvable target under authorized root ${authorizedRoot}. ${danglingSymlinkOperatorAction()}`
 }
 
 function mostSpecificContainingRoot(path: string, roots: readonly string[]): string | undefined {
