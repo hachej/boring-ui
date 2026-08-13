@@ -85,7 +85,10 @@ import {
   type DirPluginEntry,
 } from "./pluginEntryResolver"
 import { rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerPlugins"
-import { resolveDefaultWorkspacePluginPackagePaths } from "./defaultPluginPackages"
+import {
+  defaultWorkspacePluginPackageCandidates,
+  resolveDefaultWorkspacePluginPackagePaths,
+} from "./defaultPluginPackages"
 export {
   createPiResourceDigestInput as createWorkspacePiResourceDigestInput,
   digestPiResourceInputs as digestWorkspacePiResourceInputs,
@@ -977,15 +980,18 @@ export async function resolveWorkspaceAgentServerPluginCollection(
     ...(opts.availableAgentTypeIds ? { availableAgentTypeIds: opts.availableAgentTypeIds } : {}),
   }
   const trustedCtx: WorkspaceAgentServerPluginContext = { ...baseCtx, trusted: opts.trustedPluginContext }
-  const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
+  const defaultPackageOptions = {
     workspaceRoot: opts.workspaceRoot,
     defaultPluginPackages: opts.defaultPluginPackages,
     anchorDir: opts.appRoot,
-  })
+  }
+  const defaultPluginCandidates = defaultWorkspacePluginPackageCandidates(defaultPackageOptions)
+  // Authorize lexical names before package.json discovery or module import.
   await opts.authorizePluginPaths?.([
-    ...defaultPluginPackagePaths,
+    ...defaultPluginCandidates.flatMap((candidate) => candidate.paths),
     ...(opts.plugins ?? []).flatMap((entry) => "dir" in entry ? [resolve(entry.dir)] : []),
   ])
+  const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths(defaultPackageOptions)
   const defaultPluginDirEntries: WorkspacePluginEntry[] = defaultPluginPackagePaths
     .map((dir) => ({ dir, hotReload: true, trust: "internal" as const }))
     .filter((entry) => hasDirServerPlugin(entry))
@@ -1313,9 +1319,10 @@ export async function createWorkspaceAgentServer(
       return await workspaceAgentDispatcherResolver.readSessionRunDetails(actor, ref, detailKinds, options)
     },
   }
-  const hostDeclaredPluginResourceRoots = (opts.plugins ?? []).flatMap((entry) =>
-    "dir" in entry ? [] : (entry.packageResources ?? []).map((resource) => resource.packageRoot),
-  )
+  const hostDeclaredPluginDirs = uniqueStrings([
+    ...(opts.plugins ?? []).flatMap((entry) => "dir" in entry ? [resolve(entry.dir)] : []),
+    ...(opts.additionalBoringPluginDirs ?? []).map((source) => resolve(typeof source === "string" ? source : source.rootDir)),
+  ])
   const pluginCollection = await resolveWorkspaceAgentServerPluginCollection({
     trustedPluginContext: {
       workspaceAgentDispatcherResolver: trustedDispatcherProxy,
@@ -1334,9 +1341,8 @@ export async function createWorkspaceAgentServer(
         authorizedRoots: uniqueStrings([
           workspaceRoot,
           ...(opts.appRoot ? [opts.appRoot] : []),
+          ...hostDeclaredPluginDirs,
           ...(opts.piResourceAuthorizedRoots ?? []),
-          ...(opts.plugins ?? []).flatMap((entry) => "dir" in entry ? [resolve(entry.dir)] : []),
-          ...hostDeclaredPluginResourceRoots,
         ]),
         allowInternalSymlinks: opts.allowInternalPiResourceSymlinks ?? false,
       })
@@ -1346,14 +1352,14 @@ export async function createWorkspaceAgentServer(
   })
   const defaultPluginPackagePaths = pluginCollection.defaultPluginPackagePaths
   await assertPiResourcePathsAuthorized({
-    paths: (opts.additionalBoringPluginDirs ?? []).map((source) => typeof source === "string" ? source : source.rootDir),
+    // Explicit host-declared plugin directories are trusted configuration
+    // anchors, but only after they are proven direct, stable filesystem roots.
+    paths: hostDeclaredPluginDirs,
     authorizedRoots: uniqueStrings([
       workspaceRoot,
       ...(opts.appRoot ? [opts.appRoot] : []),
+      ...hostDeclaredPluginDirs,
       ...(opts.piResourceAuthorizedRoots ?? []),
-      // additionalBoringPluginDirs is an explicit host declaration, unlike
-      // paths discovered from a plugin manifest.
-      ...(opts.additionalBoringPluginDirs ?? []).map((source) => typeof source === "string" ? source : source.rootDir),
     ]),
     allowInternalSymlinks: opts.allowInternalPiResourceSymlinks ?? false,
   })
@@ -1483,10 +1489,10 @@ export async function createWorkspaceAgentServer(
   const resolvePiResourceAuthorizedRoots = () => uniqueStrings([
     workspaceRoot,
     ...(opts.appRoot ? [opts.appRoot] : []),
+    ...hostDeclaredPluginDirs,
     ...(opts.piResourceAuthorizedRoots ?? []),
-    ...hostDeclaredPluginResourceRoots,
-    ...(opts.plugins ?? []).flatMap((entry) => "dir" in entry ? [resolve(entry.dir)] : []),
-    ...(opts.additionalBoringPluginDirs ?? []).map((source) => typeof source === "string" ? source : source.rootDir),
+    // Generated runtime skills are a host-established output root, not a
+    // candidate discovered from plugin metadata.
     runtimeLayout.skills,
     ...builtInBoringPiSkillPaths.map((path) => dirname(path)),
     ...[localPiPackageRoot(workspacePackagePiPackage)].filter((path): path is string => Boolean(path)),

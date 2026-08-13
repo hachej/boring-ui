@@ -37,7 +37,9 @@ export {
   type ResolvedWorkspacePluginArtifact,
 } from "./createWorkspaceAgentServer"
 export {
+  defaultWorkspacePluginPackageCandidates,
   resolveDefaultWorkspacePluginPackagePaths,
+  type DefaultWorkspacePluginPackageCandidate,
   type ResolveDefaultWorkspacePluginPackagePathsOptions,
 } from "./defaultPluginPackages"
 export {
