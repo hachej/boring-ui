@@ -2,7 +2,7 @@
 
 Version-controlled research evidence backing the sandbox-service architecture
 (`docs/direction/sandbox-service-architecture.md`, PR #1220) and the SBX1.4
-execution plan (`plan-sbx14.md`, PR #1220). Every API/architecture/isolation
+sovereign design (`sandbox-sovereign-design.md`, PR #1220). Every API/architecture/isolation
 decision in those documents cites one of the files below.
 
 Provenance: artifacts were produced during the 2026-08-11 #1081 grounding and
@@ -21,4 +21,4 @@ v1 recommendation.
 | [`managed-k8s-ch-eval.md`](managed-k8s-ch-eval.md) | Historical managed-Kubernetes vs self-controlled-node evaluation. The self-controlled KVM-host conclusion survives; its gVisor premise does not. |
 | [`sbx14-scoping.md`](sbx14-scoping.md) | Historical runsc slice scoping. Retained for shipped-code context; its runsc/openat2 engine gate is superseded by the Kata + Firecracker Gate 0. |
 | [`control-plane-api-spec.md`](control-plane-api-spec.md) | Historical E2B public-surface and code-coverage research. Its single-tenant auth/lifecycle recommendations are superseded by [`../api-spec.md`](../api-spec.md); verified E2B SDK/API facts remain reference material. |
-| [`e2b-internals-architecture.md`](e2b-internals-architecture.md) | Historical E2B `infra` repository study. Component mechanics remain useful for the v2 snapshot-fork adopt/build decision, but its v1 topology recommendation is superseded. Current v1 uses Kata as the containerd wrapper around Firecracker plus the tenant-readable S3 sync-hybrid model in the controlling plan. |
+| [`e2b-internals-architecture.md`](e2b-internals-architecture.md) | Historical E2B `infra` repository study. Component mechanics remain useful for scale-stage snapshot/fork research, but its v1 topology recommendation is superseded. Current M0 uses Kata as the containerd wrapper around Firecracker plus tenant-readable SeaweedFS dual S3+POSIX access in the controlling design. |

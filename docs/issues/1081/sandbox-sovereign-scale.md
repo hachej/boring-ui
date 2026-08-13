@@ -2,15 +2,16 @@
 github: https://github.com/hachej/boring-ui/issues/1081
 issue: 1081
 state: deferred-triggered
-updated: 2026-08-12
-revision: r4-snapshot-fleet-after-s3-v1
+updated: 2026-08-13
+revision: r5-sovereign-scale
 track: owner
 ---
 
-# gh-1081 — SBX v2 owned-fleet and hardening plan
+# gh-1081 — sovereign sandbox scale plan
 
-> Companion to [plan-sbx14.md](plan-sbx14.md). v1 already uses one hardware
-> microVM per sandbox through an adopted Firecracker vehicle. v2 owns and scales
+> Companion to the [sovereign design](sandbox-sovereign-design.md). M0 already
+> uses one hardware microVM per sandbox through an adopted Firecracker vehicle.
+> The scale stage owns and scales
 > that architecture; it does not introduce the tenant boundary for the first
 > time.
 
@@ -25,11 +26,13 @@ guest kernel. v2 never regresses to gVisor, runc, namespaces, or process
 isolation as the outer tenant boundary, and it never turns into one standing VM
 per workspace/tenant.
 
-SandboxProviderV1 remains the application seam. v1 uses Kata as the containerd
-runtime wrapper around the Firecracker engine on one admitted host. v2 has two
-explicit paths: adopt E2B's Firecracker snapshot-fork engine, or build an owned
-fleet likely using Cloud Hypervisor. The public wire contract, guest-agent shape,
-hardware isolation class, and tenant-readable S3 data substrate remain stable.
+SandboxProviderV1 remains the application seam. M0 uses Kata as the containerd
+runtime wrapper around the Firecracker engine on one admitted host. The scale
+target is the sovereign multi-host fleet, likely using Cloud Hypervisor after
+qualification. The earlier E2B adoption option remains useful reference
+material and a hardware-isolated alternate, but is not the sovereign target.
+The public wire contract, guest-agent shape, hardware isolation class, and
+tenant-readable S3 data substrate remain stable.
 
 If v2 chooses Cloud Hypervisor, the VMM binary changes from Firecracker, but the
 security architecture does not: one hardware-isolated microVM per sandbox on
@@ -40,10 +43,11 @@ shared metal. That VMM change has its own qualification and rollback gate.
 Raw VMM fleet engineering is a weeks-to-months program: snapshot formats,
 memory restore, block overlays, host lifecycle, placement, locality, draining,
 admission, and recovery all interact. None is required to establish a correct
-hardware boundary on one host. v1 therefore adopts; v2 builds only after real
+hardware boundary on one host. M0 therefore adopts Kata rather than building a
+raw VMM control plane; the scale stage builds fleet machinery only after real
 load supplies capacity and latency targets.
 
-Block/memory snapshots in either v2 path accelerate ephemeral working-state
+Block/memory snapshots in the sovereign fleet accelerate ephemeral working-state
 fork/restore. They do not replace the per-tenant S3 bucket/prefix as durable
 system of record or reintroduce opaque volume snapshots as the user data product.
 
@@ -58,7 +62,7 @@ multi-tenant threat model.
 
 ## v2.1 — VMM and fleet control-plane spike
 
-**Trigger:** Gate 0 and v1 production soak are green; a second host or measured
+**Trigger:** sovereign M0 and its production soak are green; a second host or measured
 start/density target justifies owned orchestration.
 
 Evaluate Firecracker and Cloud Hypervisor on the exact intended hardware:
@@ -216,23 +220,14 @@ scope for arXiv:2606.08433. Track separately:
 This work may fence hardware from the fleet. It is not folded into a claim that
 “KVM solved side channels.”
 
-## Multi-tenant control-plane baseline already owned by v1
+## Stable control-plane baseline
 
-The previous plan deferred durable replay defense, per-tenant fairness, edge
-rate limiting, and public auth because it assumed a single tenant. That premise
-is invalid. Corrected v1 S1 and its launch gate already require:
-
-- Seneca's public edge to own user authentication, authorization, rate limits,
-  abuse controls, key rotation, and incident response;
-- the private management gateway to durably and atomically bind
-  tenant/workspace identity, consume replay nonces, and enforce per-tenant and
-  global budgets before effect;
-- signing roots and reusable customer secrets to stay off the sandbox node;
-- two-tenant isolation tests to pass through the real wire path.
-
-This document retains only fleet-scale automation and optimizations that are
-honestly deferrable after a safe single-host microVM v1. v2 may scale or replace
-those implementations, but it cannot defer or weaken their properties.
+Authentication, durable replay defense, tenant/workspace binding, per-tenant
+fairness, secret placement, and the two-tenant wire-path guarantees already
+belong to the [design](sandbox-sovereign-design.md#tenant-boundary-and-guarantees)
+and [API contract](api-spec.md#authentication-replay-and-tenant-fairness).
+Scale work may replace their implementations but cannot defer or weaken their
+properties.
 
 ## Migration and rollback
 

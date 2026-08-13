@@ -1,7 +1,7 @@
 # Sandbox Engine Security Evaluation — Seneca (public multi-tenant, escape-critical)
 
 > Evidence pass for the SBX-14 v1 engine choice. This document does **not** modify
-> `plan-sbx14.md` or `tech-choice.md`; it is the citation base that a later rewrite consumes.
+> `sandbox-sovereign-design.md` or `tech-choice.md`; it is the citation base that a later rewrite consumes.
 
 ## 0. TL;DR
 

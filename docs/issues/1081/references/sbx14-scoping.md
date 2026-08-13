@@ -1,7 +1,7 @@
 # SBX1.4 / SBX1.5 scoping — GO/NO-GO input (2026-08-10)
 
 > **Superseded execution scope:** this document sizes the prior runsc worker.
-> Corrected v1 is the E2B + Firecracker adoption plan in `../plan-sbx14.md`.
+> The controlling sovereign architecture is in `../sandbox-sovereign-design.md`.
 > Keep this file only as historical evidence about the shipped runsc backend.
 
 Sources: bead `wt-391-forward-6gd.4`/`.5` as amended by PR #918 (merged, `bb6e328d3`), the

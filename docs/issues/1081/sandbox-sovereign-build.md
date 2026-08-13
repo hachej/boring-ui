@@ -2,22 +2,24 @@
 github: https://github.com/hachej/boring-ui/issues/1081
 issue: 1081
 state: needs-owner-approval
-updated: 2026-08-12
+updated: 2026-08-13
 flag: BORING_AGENT_MODE=remote-worker
 track: owner
 ---
 
-# gh-1081 — owned sovereign sandbox build plan
+# gh-1081 — sovereign sandbox build plan
 
-This is the implementation checklist for the owned v1 sandbox target. The
-architecture, trade-offs, and provider strategy are already decided in
-[plan-sbx14.md](plan-sbx14.md) and [tech-choice.md](tech-choice.md); do not use
-this document to reopen them. The target is containerd -> Kata Containers ->
-Firecracker on EU bare-metal KVM, with SeaweedFS-backed `/workspace`, local
-`/scratch`, and the guest daemon exposed through `SandboxProviderV1`.
+This is the implementation checklist for the sovereign sandbox described in
+[sandbox-sovereign-design.md](sandbox-sovereign-design.md). The architecture
+and trade-offs are already decided there and in
+[tech-choice.md](tech-choice.md); do not use this document to reopen them. The
+target is containerd -> Kata Containers -> Firecracker on EU bare-metal KVM,
+with SeaweedFS-backed `/workspace`, local `/scratch`, and the guest daemon
+exposed through `SandboxProviderV1`.
 
-The managed Blaxel bridge and the owned target are parallel providers. The
-owned provider must not leak Kata, Firecracker, SeaweedFS, host paths, or
+Blaxel remains the interim serving and rollback path while this build qualifies
+the sovereign provider; it is not the target or a sovereign build phase. The
+sovereign provider must not leak Kata, Firecracker, SeaweedFS, host paths, or
 credentials through the app-facing runtime contract, and it must never become
 an automatic fallback from or to a weaker isolation class.
 
@@ -42,7 +44,7 @@ Phases 2 and 3 can overlap.
   pools, failure-domain-aware scheduling, and later snapshot/fork work without
   changing `SandboxProviderV1`, the hardware-microVM isolation class, the guest
   capability shape, or the SeaweedFS data plane. See
-  [plan-v2-hardening.md](plan-v2-hardening.md).
+  [sandbox-sovereign-scale.md](sandbox-sovereign-scale.md).
 
 ## Dependency ordering
 
@@ -87,6 +89,20 @@ from that branch before closing the gate.
 
 ### Tasks
 
+Bridge evidence (preserved here so Gate 0 has one owner):
+
+- [ ] Run the Blaxel adapter against the actual `SandboxProviderV1` capability
+  matrix: idempotent create; tenant and `externalId`/session tags; bounded exec
+  and filesystem operations; zip copy-in; live watch integration;
+  suspend/resume and the roughly 60-second idle policy; Volume lifecycle;
+  network-off with SeaweedFS-endpoint-only egress; stable errors; usage and
+  egress meters; and teardown/orphan recovery.
+- [ ] Record every capability gap without leaking Blaxel SDK types or concepts
+  through the provider interface. If a required capability fails, qualify E2B
+  as the hardware-microVM alternate; never select a shared-kernel fallback.
+
+Sovereign evidence:
+
 - [ ] **[SPIKE] KVM:** on the target EU dev box, record CPU virtualization
   flags, loaded `kvm`/`kvm_amd` modules, ownership/mode of `/dev/kvm`, and a
   successful non-root KVM open from the service identity.
@@ -96,8 +112,8 @@ from that branch before closing the gate.
   clean teardown.
 - [ ] **[SPIKE] SeaweedFS dual access:** start master, volume, filer, and S3
   gateway; write a file through the FUSE/POSIX view and read the same bytes and
-  size through S3, then write a second version through S3 and observe it through
-  POSIX.
+  size through S3, then overwrite it through S3 and observe the new bytes
+  through POSIX.
 - [ ] **[SPIKE] SeaweedFS access-control and events:** prove a scoped
   cross-prefix denial and an event notification for the S3-side write.
   Bucket versioning is explicitly **out of scope for v1** (owner ruling
@@ -121,13 +137,16 @@ from that branch before closing the gate.
   inside a guest.
 - [ ] The pinned Firecracker binary boots the pinned guest and exits without an
   orphan VMM, jailer, tap device, namespace, or disk.
-- [ ] SeaweedFS demonstrates same-file S3+POSIX visibility, version recovery,
-  scoped denial, and notifications; no result is inferred from documentation
-  alone.
+- [ ] SeaweedFS demonstrates same-file S3+POSIX visibility, scoped denial, and
+  notifications; no result is inferred from documentation alone and no
+  version-history evidence is required.
 - [ ] The exact cohort manifest and redacted evidence are reproducible by a
   second operator.
 - [ ] Any failed or unproven load-bearing item blocks the owned path. It does
   not authorize a runsc, runc, local, direct, or other shared-kernel fallback.
+- [ ] Blaxel satisfies the required `SandboxProviderV1` matrix with recorded
+  gaps, or E2B is qualified as the hardware-microVM alternate before interim
+  traffic depends on the missing capability.
 
 ## Phase 1 — provision the single-box cohort
 
@@ -265,11 +284,12 @@ not an equivalent cohort.
   through the admitted FUSE path. Any guest `/dev/fuse` access remains inside
   the micro-VM boundary; no host workspace directory is bind-mounted.
 - [ ] Define and test the supported cross-interface semantics for create,
-  read/write, stat, recursive mkdir, rename, unlink, version lookup, and
-  concurrent-writer conflict. Unsupported POSIX behavior must return a stable
-  error rather than silently corrupt data.
-- [ ] Attach an encrypted or ephemeral per-VM local block device at `/scratch`
-  for git, SQLite, package installs, virtualenvs, `node_modules`, and builds.
+  read/write, stat, recursive mkdir, rename, unlink, and concurrent-writer
+  conflict. Unsupported POSIX behavior must return a stable error rather than
+  silently corrupt data.
+- [ ] Attach an ephemeral per-VM local block device at `/scratch` for git,
+  SQLite, package installs, virtualenvs, `node_modules`, and builds. Its backing
+  may be encrypted, but it is always destroyed and never durable.
   Enforce byte/inode quotas and destroy the per-VM key/backing at teardown.
 - [ ] Implement bounded zip copy-in to `/scratch/inputs/<requestId>`: cap archive
   bytes, expanded bytes, entry count, path depth, and compression ratio; reject
@@ -278,24 +298,23 @@ not an equivalent cohort.
 - [ ] Implement explicit artifact publication from admitted `/scratch` output
   paths into `/workspace`. Never blanket-sync `/scratch`.
 - [ ] Reconcile guest inotify events with SeaweedFS/S3 notifications: dedupe by
-  source identity/version, assign a monotonic workspace cursor, and trigger an
-  authoritative tree/version reconciliation on a detected gap.
+  source identity, assign a monotonic workspace cursor, and trigger an
+  authoritative tree/object reconciliation on a detected gap.
 
 ### Acceptance
 
 - [ ] POSIX write -> S3 read and S3 write -> POSIX read return identical bytes;
   rename/stat/mkdir/delete behavior matches the documented supported set.
-- [ ] Write -> destroy -> recreate -> read preserves `/workspace`, its object
-  versions, and tenant ownership; `/scratch` and copied transient inputs do not
-  survive.
+- [ ] Write -> destroy -> recreate -> read preserves `/workspace` and tenant
+  ownership; `/scratch` and copied transient inputs do not survive.
 - [ ] Credential expiry and every cross-bucket/prefix/action negative are
   denied and audited. A tenant cannot list, read, overwrite, infer, or delete a
-  sibling's keys or versions.
+  sibling's keys.
 - [ ] Zip copy-in handles a large multi-file fixture in one upload/extract
   operation and rejects the traversal/link/zip-bomb corpus without writing
   outside `/scratch/inputs/<requestId>`.
-- [ ] Backup restore recovers a tenant workspace and visible version history on
-  a clean filer/volume target.
+- [ ] Backup restore recovers a tenant workspace on a clean filer/volume
+  target. This is service recovery, not per-write undo or object history.
 
 ## Phase 4 — guest daemon and `SandboxProviderV1` provider
 
@@ -343,7 +362,8 @@ not an equivalent cohort.
   cohort reports them; set the paired mode's workspace filesystem capability
   to `strong`. Do not disturb runsc or the planned Blaxel provider.
 - [ ] Keep production app selection consistent with
-  [plan-sbx14.md](plan-sbx14.md): `BORING_AGENT_MODE=remote-worker` remains the
+  [sovereign design](sandbox-sovereign-design.md):
+  `BORING_AGENT_MODE=remote-worker` remains the
   public control-plane path when the micro-VM host is remote. The
   `firecracker-kata` mode/provider is the worker/node implementation and a
   direct injected test/operator mode; it is never auto-detected.
@@ -415,8 +435,8 @@ not an equivalent cohort.
   lease duration, per-tenant concurrency, global concurrency, and host reserve;
   verify bounded stable errors and continued service for a second tenant.
 - [ ] Issue credentials to tenants A and B; prove expiry, action denial,
-  cross-prefix/bucket denial, version-delete denial, and that logs/errors/events
-  reveal neither secret nor sibling object identity.
+  cross-prefix/bucket denial, and that logs/errors/events reveal neither secret
+  nor sibling object identity.
 - [ ] Inject failures at create, mount, credential issue/renew, exec, event
   stream, durable write, suspend, resume, destroy, and host reboot; prove
   idempotency, fencing, orphan cleanup, durable recovery, and honest errors.
@@ -592,12 +612,6 @@ cohort digest. Unit tests or mocked transports alone cannot complete M0.
 
 ## Out of scope
 
-- Reconsidering the decisions in `plan-sbx14.md` or `tech-choice.md`.
-- A raw Firecracker lifecycle/fleet orchestrator in place of Kata.
-- gVisor, runsc, runc, or plain containers as the public tenant boundary.
-- Provider-selected or caller-selected images, VMMs, RuntimeClasses, network
-  policies, devices, host paths, credentials, or qualification overrides.
-- Periodic filesystem polling as a correctness mechanism.
-- Blanket synchronization or durability of `/scratch`.
-- M2 snapshot/fork, memory restore, bin packing, locality scheduling, or a
-  Firecracker-to-Cloud-Hypervisor fleet migration.
+The [design's non-goals](sandbox-sovereign-design.md#non-goals-and-rejected-boundaries)
+control and are not restated here. This checklist does not reopen architecture
+decisions or pull the [scale backlog](sandbox-sovereign-scale.md) into M0.

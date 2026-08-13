@@ -4,8 +4,9 @@ Status: FINAL OWNER DECISION. Date: 2026-08-12.
 Scope: issue #1081 and PR #1220.
 
 This record supersedes the single-tenant gVisor design and the intermediate
-"self-host first, generic S3 sync-hybrid" design. The execution plan is
-[plan-sbx14.md](plan-sbx14.md), and the controlling evidence is the
+"self-host first, generic S3 sync-hybrid" design. The sovereign architecture is
+[sandbox-sovereign-design.md](sandbox-sovereign-design.md), the implementation
+plan is [sandbox-sovereign-build.md](sandbox-sovereign-build.md), and the controlling evidence is the
 [sandbox engine security evaluation](references/sandbox-engine-security-eval.md),
 [managed provider comparison](references/managed-sandbox-providers-comparison.md),
 and [sandbox cost model](references/sandbox-cost-model.md).
@@ -23,9 +24,9 @@ Build a sovereign sandbox and file product on EU-operated infrastructure:
 
 Many sandboxes share a host for density. Every public tenant sandbox receives
 its own guest kernel and hardware-KVM microVM boundary. The tenant's durable
-files remain plain, browsable, versioned, and portable through both POSIX and S3
-interfaces. Compute can move between qualified providers without moving or
-reformatting the user's data.
+files remain plain, browsable, and portable through both POSIX and S3
+interfaces. V1 deliberately has no object version history. Compute can move
+between qualified providers without moving or reformatting the user's data.
 
 ## Decision 1 — tenant boundary: a hardware microVM per sandbox
 
@@ -78,11 +79,12 @@ bare-metal KVM, behind `SandboxProviderV1`.
   pins; it never inherits a frozen wrapper or provider default.
 - A bespoke raw-Firecracker fleet is not v1 work.
 
-## Decision 3 — short-term compute bridge: Blaxel primary, E2B alternate
+## Decision 3 — interim compute bridge: Blaxel primary, E2B alternate
 
-Building the owned target remains the destination, but it need not gate first
-market traffic. Managed per-second hardware microVMs buy schedule and preserve
-the required boundary while the owned stack is built.
+Blaxel is the production path that exists today while the sovereign cohort is
+built and qualified. It is an interim compatibility path behind the provider
+contract, not the product strategy. Managed per-second hardware microVMs
+preserve the required boundary during that transition.
 
 ### Decision
 
@@ -102,7 +104,7 @@ layer is ready.
 
 Blaxel Volume is phase-0 persistence only. Before a workspace enters the
 durable product tier or can move providers, required files are copied to
-SeaweedFS and verified by file count, content digest, and S3 version visibility.
+SeaweedFS and verified by file count and content digest.
 After that activation, no provider-specific volume is authoritative.
 
 **E2B managed is the alternate bridge.** Its vendor-confirmed Firecracker
@@ -128,14 +130,20 @@ a POSIX FUSE mount over the same plain files.
 - `/workspace` is the durable, tenant-scoped SeaweedFS mount.
 - `/scratch` is fast local disk for SQLite, git, `node_modules`, virtualenvs,
   package installs, builds, and high-churn POSIX-heavy work.
-- Tenant buckets/prefixes, S3 versioning, event/access logging, backups, and
-  optional retention provide history and audit.
+- Tenant buckets/prefixes, event/access logging, backups, and tested restore
+  provide v1 durability and audit controls.
 - A guest receives only a short-lived credential scoped by tenant prefix and
   required actions. The agent can read it, so expiry and least privilege are
   security invariants.
 - Plain CSV, Parquet, JSON, source, and artifacts are visible through ordinary
   S3 commands and a Dropbox-like product surface. Open formats preserve
   bring-your-own-data and take-your-data-out.
+
+**Owner ruling (2026-08-12):** v1 uses plain durable S3 with dual POSIX access
+and no S3 versioning. Versioning may return only for a compliance or
+undo-agent-changes requirement. A destructive overwrite has no object-history
+recovery in v1; backup/restore is a service-durability control, not per-write
+undo.
 
 SeaweedFS is the self-hosted equivalent of Blaxel Agent Drive. The same
 SeaweedFS data plane remains when compute runs on Blaxel, E2B, the owned
@@ -169,9 +177,9 @@ not blanket-synchronized. Artifact publication copies the selected output into
 
 Changes made outside the guest arrive through SeaweedFS/S3 event notifications,
 which may duplicate or reorder source events. The provider deduplicates by
-source event/version identity, assigns a monotonic workspace cursor after
+source event identity, assigns a monotonic workspace cursor after
 ingestion, and exposes an at-least-once reconnectable stream. A gap triggers an
-authoritative filesystem/object-version reconciliation before delivery resumes;
+authoritative filesystem/object reconciliation before delivery resumes;
 this is event-driven recovery, not a periodic polling path.
 
 ## Decision 6 — provider behavior is part of the contract
@@ -187,7 +195,6 @@ the adapter. Its v1 capability matrix includes:
 - live file-events/watch stream;
 - authorization-keyed session pool;
 - idle auto-suspend after about 60 seconds and fast resume;
-- pre-warmed pools for heavy images;
 - idempotent destroy and orphan recovery;
 - usage meters for active sandbox-seconds and egress;
 - stable health, isolation-class, and qualification facts.
@@ -207,20 +214,11 @@ Every managed or owned cohort must satisfy the contract and its declared
 hardware isolation class. The owned cohort additionally proves the exact Kata
 configuration launches the pinned Firecracker binary.
 
-The existing guardrails remain launch requirements:
-
-- Gate 0 before implementation/admission;
-- all 11 logical hostile probes through a provider-neutral driver;
-- fail-closed startup and pin/cohort drift checks;
-- default-deny egress and storage-endpoint-only allowlisting;
-- no host path, runtime socket, arbitrary image/VM spec, nested `/dev/kvm`,
-  device, network-policy, credential-scope, or qualification override;
-- CPU, memory, PID, output, scratch/storage, lease, concurrency, and host-reserve
-  quotas;
-- idempotent create/retry/teardown, bounded drain, orphan cleanup, rollback, and
-  redacted stable errors;
-- live file-event, S3 notification, version-history, scoped-credential,
-  cross-tenant, copy-in, suspend/resume, and recovery probes.
+Gate 0 and exact-cohort qualification remain launch requirements. Their only
+concrete evidence checklist is in the
+[sovereign build plan](sandbox-sovereign-build.md#gate-0--feasibility-and-evidence);
+this record owns the decision to fail closed, not a second copy of the proof
+steps.
 
 No sandbox host carries a control-plane signing root, reusable customer/model
 credential, transcript/session store, shared plaintext workspace tree, or any
@@ -232,7 +230,7 @@ core scheduling/sibling isolation, host cohort selection, measurement, and
 residual-risk policy can block admission, but are not misrepresented as
 Firecracker protections.
 
-## Decision 8 — economics and the cutover trigger
+## Decision 8 — operating economics and capacity signal
 
 The [cost model](references/sandbox-cost-model.md) uses 1 vCPU/2 GiB sandboxes,
 about three active minutes per task, and a 60-second idle stop/suspend policy.
@@ -247,9 +245,11 @@ Per-second billing avoids roughly 20x per-hour rounding waste.
   move it later.
 
 Instrument active sandbox-seconds and egress bytes from day one, tagged by
-tenant, session, image, and provider. Ship the Blaxel bridge, build the owned
-target in parallel, begin canaries before the trigger, and cut compute over by
-configuration when measured economics and qualification agree.
+tenant, session, image, and provider. These measurements inform capacity and
+operating decisions; they do not define the architecture or replace the
+sovereign M0 exit criterion. Meeting M0 starts the build plan's controlled
+new-session cutover, with Blaxel retained only as the qualified rollback through
+the agreed soak.
 
 ## Decision 9 — v1 to v2
 
@@ -277,9 +277,9 @@ progression without pulling snapshot machinery into v1.
 | Durable storage | Self-hosted SeaweedFS: same plain files through S3 and POSIX FUSE |
 | Working paths | Durable `/workspace`; fast local `/scratch`; zip copy-in for transient inputs |
 | File events | Guest inotify + required live watch stream + S3 notifications; no polling |
-| Runtime behavior | Session pool, 60s suspend, fast resume, pre-warm, tags, idempotency, graceful degrade |
+| Runtime behavior | Session pool, 60s suspend, fast resume, tags, idempotency, graceful degrade |
 | Guardrails | Fail closed, S3-only egress, 11 probes, quotas, scoped credentials, rollback, Gate 0 |
-| Cutover | Meter active-hours + egress; target owned compute near 3,000 active hours/month |
+| Cutover | Sovereign M0 is the bridge exit criterion; active-hours and egress inform capacity |
 | V2 | Owned snapshot-fork fleet, warm pools, locality scheduling, likely Cloud Hypervisor; SeaweedFS unchanged |
 
 ## Sources

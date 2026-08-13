@@ -3,10 +3,10 @@
 > **Historical repository study, not the current v1 blueprint.** The component
 > inventory and envd/orchestrator mechanics remain useful. Its §7–§8 extraction
 > recommendations (container-first, remove Redis/Nomad/Consul, collapse
-> client-proxy) are superseded by [`../plan-sbx14.md`](../plan-sbx14.md) and
-> [`../tech-choice.md`](../tech-choice.md). Corrected v1 adopts E2B's supported
-> public surface with Firecracker, client-proxy, Redis, Postgres, object storage,
-> and Nomad/Consul. In E2B's current official architecture, client-proxy reads
+> client-proxy) are superseded by [`../sandbox-sovereign-design.md`](../sandbox-sovereign-design.md) and
+> [`../tech-choice.md`](../tech-choice.md). Statements below about an adopted
+> E2B v1 path preserve the earlier recommendation as research history; the
+> sovereign plan does not adopt that topology. In E2B's studied architecture, client-proxy reads
 > the Redis sandbox-to-node routing catalog; Consul discovers services but is
 > not that routing catalog.
 

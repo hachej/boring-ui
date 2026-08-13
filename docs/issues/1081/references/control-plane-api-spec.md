@@ -3,7 +3,7 @@
 > **Historical research; not the current v1 contract.** The E2B public-surface
 > inventory remains useful, but this document's single-tenant assumptions,
 > nonce/auth design, PR references, and snapshot deferrals are superseded by
-> [`../api-spec.md`](../api-spec.md), [`../plan-sbx14.md`](../plan-sbx14.md),
+> [`../api-spec.md`](../api-spec.md), [`../sandbox-sovereign-design.md`](../sandbox-sovereign-design.md),
 > and [`../tech-choice.md`](../tech-choice.md).
 
 Status: DRAFT — read-only research + spec, no implementation.
