@@ -168,12 +168,12 @@ export const commandPaletteSafeActions = actions((): Action[] => {
   const openPalette = palette.current.controls.find((control) => control.name === "open-command-palette")
   if (!palette.current.dialogVisible && openPalette) {
     const click: Action = { Click: { name: openPalette.name, point: openPalette.point } }
-    return ["Wait", click]
+    return [click]
   }
   const openNavigation = palette.current.controls.find((control) => control.name === "open-app-navigation")
   if (!palette.current.dialogVisible && openNavigation) {
     const click: Action = { Click: { name: openNavigation.name, point: openNavigation.point } }
-    return ["Wait", click]
+    return [click]
   }
   if (palette.current.dialogVisible && palette.current.lastActionWasPaletteOpen) return ["Wait"]
   const generated: Action[] = ["Wait"]
