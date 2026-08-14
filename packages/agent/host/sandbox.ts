@@ -112,6 +112,7 @@ export function createSandboxRuntimeModeAdapter(
 }
 
 export function createAgentSandboxRuntimeModeAdapter(mode: RuntimeModeId = 'direct'): RuntimeModeAdapter {
+  if (mode === 'remote-worker') return createRemoteWorkerModeAdapter()
   return createSandboxRuntimeModeAdapter(mode)
 }
 
@@ -121,5 +122,16 @@ export type { RemoteWorkerModeAdapterOptions }
 export function createRemoteWorkerModeAdapter(
   options: RemoteWorkerModeAdapterOptions = {},
 ): RuntimeModeAdapter {
-  return createAgentOwnedRemoteWorkerModeAdapter(options)
+  const adapter = createAgentOwnedRemoteWorkerModeAdapter(options)
+  return {
+    ...adapter,
+    runtimeHost: agentSandboxRuntimeHostOperations,
+    async create(context) {
+      const bundle = await adapter.create(context)
+      return {
+        ...bundle,
+        runtimeHost: agentSandboxRuntimeHostOperations,
+      }
+    },
+  }
 }

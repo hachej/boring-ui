@@ -10,6 +10,9 @@ export interface RemoteWorkerModeAdapterOptions {
   baseUrl?: string
   token?: string
   fetchImpl?: RemoteWorkerClientOptions['fetchImpl']
+  requestTimeoutMs?: RemoteWorkerClientOptions['requestTimeoutMs']
+  execTimeoutMs?: RemoteWorkerClientOptions['execTimeoutMs']
+  execRequestGraceMs?: RemoteWorkerClientOptions['execRequestGraceMs']
 }
 
 function requireOption(value: string | undefined, name: string): string {
@@ -40,6 +43,9 @@ export function createRemoteWorkerModeAdapter(opts: RemoteWorkerModeAdapterOptio
         workspaceId,
         requestId: ctx.requestId,
         fetchImpl: opts.fetchImpl,
+        requestTimeoutMs: opts.requestTimeoutMs,
+        execTimeoutMs: opts.execTimeoutMs,
+        execRequestGraceMs: opts.execRequestGraceMs,
       })
       const workspace = createRemoteWorkerWorkspace(client)
       const sandbox = createRemoteWorkerSandbox(client)
@@ -51,6 +57,7 @@ export function createRemoteWorkerModeAdapter(opts: RemoteWorkerModeAdapterOptio
         workspace,
         sandbox,
         fileSearch: createServerFileSearch(workspace, sandbox),
+        disposeRuntime: async () => workspace.closeWatcher(),
       }
     },
   }

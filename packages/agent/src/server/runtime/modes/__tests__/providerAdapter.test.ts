@@ -5,6 +5,7 @@ import {
   type SandboxRuntimeModeDescriptorV1,
 } from '@hachej/boring-sandbox/shared'
 import type { Sandbox, Workspace } from '../../../../shared'
+import { ErrorCode } from '../../../../shared/error-codes'
 import type { RuntimeBundle } from '../../mode'
 import {
   createDescriptorRuntimeModeAdapter,
@@ -15,6 +16,7 @@ import {
   createSandboxRuntimeModeAdapter,
   sandboxRuntimeHostOperations,
 } from '../../sandboxRuntimeHost'
+import { createAgentSandboxRuntimeModeAdapter } from '../../../../../host/sandbox'
 import { testRuntimeHostOperations } from '@agent-test-host'
 
 function createPairProvider(options: {
@@ -181,14 +183,16 @@ test('Agent owns built-in sandbox adapter selection and host operations', async 
 })
 
 
-test('the explicit remote-worker V0 seam owns its host policy without borrowing the V1 descriptor', () => {
+test('the explicit remote-worker V0 seam owns host composition without borrowing the V1 descriptor', () => {
   const adapter = createRemoteWorkerModeAdapter({
     baseUrl: 'http://worker.test',
     token: 'test-token',
   })
+  const selectedAdapter = createAgentSandboxRuntimeModeAdapter('remote-worker')
 
   expect(adapter.getRuntimeLayoutRoot?.({ workspaceRoot: '/host/workspace', sessionId: 'session' })).toBe('/workspace')
   expect(adapter.runtimeProvider).toBeUndefined()
+  expect(adapter.runtimeHost).toBe(sandboxRuntimeHostOperations)
   expect(adapter.runtimeHostPolicy).toEqual({
     productionSafe: false,
     inferSiblingSessionRoot: false,
@@ -198,6 +202,46 @@ test('the explicit remote-worker V0 seam owns its host policy without borrowing 
     resolveCompanyContextFromHostWorkspace: true,
     httpWorkspaceScope: 'session',
   })
+  expect(selectedAdapter.runtimeProvider).toBeUndefined()
+  expect(selectedAdapter.runtimeHostPolicy).toEqual(adapter.runtimeHostPolicy)
+})
+
+test('the explicit remote-worker V0 seam forwards timeout options', async () => {
+  vi.useFakeTimers()
+  try {
+    const fetchImpl = vi.fn((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+    }))
+    const adapter = createRemoteWorkerModeAdapter({
+      baseUrl: 'http://worker.test',
+      token: 'test-token',
+      requestTimeoutMs: 25,
+      fetchImpl: fetchImpl as typeof fetch,
+    })
+
+    const pending = expect(adapter.create({ workspaceRoot: '/host/workspace', sessionId: 'session' }))
+      .rejects.toMatchObject({
+        code: ErrorCode.enum.REMOTE_WORKER_TIMEOUT,
+        details: { timeoutMs: 25, retryable: true },
+      })
+    await vi.advanceTimersByTimeAsync(25)
+    await pending
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('the explicit remote-worker V0 bundle exposes host operations and runtime disposal', async () => {
+  const adapter = createRemoteWorkerModeAdapter({
+    baseUrl: 'http://worker.test',
+    token: 'test-token',
+    fetchImpl: vi.fn(async () => new Response(null, { status: 200 })) as typeof fetch,
+  })
+
+  const bundle = await adapter.create({ workspaceRoot: '/host/workspace', sessionId: 'session' })
+  expect(bundle.runtimeHost).toBe(sandboxRuntimeHostOperations)
+  expect(bundle.disposeRuntime).toEqual(expect.any(Function))
+  await bundle.disposeRuntime?.()
 })
 
 test('cached runtime eviction awaits asynchronous provider invalidation', async () => {
