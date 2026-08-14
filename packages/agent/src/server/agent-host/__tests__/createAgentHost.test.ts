@@ -236,6 +236,17 @@ describe('createAgentHost', () => {
         'stop',
         'workspace',
       ])
+      const busy = Object.assign(new Error('busy'), { code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, statusCode: 409 })
+      const send = vi.fn(async (command: unknown) => {
+        expect(command).toMatchObject({ kind: 'prompt', content: 'continue', requireIdle: true })
+        throw busy
+      })
+      const close = vi.fn(async () => {})
+      const connect = vi.spyOn(created.gateway, 'connectSession').mockResolvedValue({ send, close } as never)
+      await expect(binding.sendIfIdle!('session-busy', 'continue', 'nudge-1')).rejects.toBe(busy)
+      expect(connect).toHaveBeenCalledWith({ scope, ref: { agentTypeId: 'alpha', sessionId: 'session-busy' } })
+      expect(close).toHaveBeenCalledOnce()
+      connect.mockRestore()
       await binding.workspace.writeFile('dispatcher.txt', 'scoped')
     })
     expect(() => retained!.workspace.readFile('dispatcher.txt')).toThrow(expect.objectContaining({

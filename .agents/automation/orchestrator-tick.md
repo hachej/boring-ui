@@ -9,7 +9,7 @@ Run one bounded factory tick, report, and exit. Durable state lives in beads, ru
    - Still idle after the recorded nudge and cooldown: write `cancelled <ts> attempt=N`, call `cancel`, break the lease, and return the bead to ready.
    - When the configured attempt limit is exhausted, route to Steward as a spec defect and file one owner intention with `ask_user wait:false`; record `intention-raised <condition> <id> <ts>` on the bead.
    - Never cancel a streaming session. Never repeat an action whose structured bead comment already records it.
-   - Read decisions for previously recorded intention ids and act only on explicit answers.
+   - Poll previously recorded intention ids with `read_intention` and act only on explicit answered values.
 2. **Janitor.** Reconcile stale leases, proof hygiene, and epic-branch drift from durable evidence only. Mechanical blockers may be unblocked; judgment calls become one non-blocking owner intention.
 3. **Triage slot.** If untriaged GitHub issues exist and the triage automation has no active dispatch run, trigger it with `boring_automation run`.
 4. **Worker slots.** Read `beadle.worker_cap`. While ready work exceeds active workers, trigger unoccupied worker-slot automations. Start slots, never beads; each worker claims atomically for itself. A `RUN_ALREADY_ACTIVE` result means occupied and must remain rejected.

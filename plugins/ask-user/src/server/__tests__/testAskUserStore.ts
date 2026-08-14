@@ -52,6 +52,11 @@ export class MemoryAskUserStore implements AskUserStore {
     return question ? clone(question) : null
   }
 
+  async getAnswer(questionId: string): Promise<AskUserAnswer | null> {
+    const answer = this.answers.get(questionId)
+    return answer ? clone(answer) : null
+  }
+
   async createPending(question: AskUserQuestion): Promise<void> {
     const existing = this.pendingBySession.get(question.sessionId)
     if (existing && this.questions.get(existing)?.status === "ready") throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists for this session")

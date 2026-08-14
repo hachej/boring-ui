@@ -71,7 +71,7 @@ export class PostgresAutomationStore implements AutomationStore {
     const rows = await this.sql<AutomationRow[]>`
       INSERT INTO boring_automation_automations (id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, agent_type_id, session_mode, created_at, updated_at)
       VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled ?? true}, ${input.cron}, ${input.timezone}, ${input.model}, ${input.agentTypeId ?? null}, ${input.sessionMode ?? "new"}, ${now}, ${now})
-      RETURNING id, title, enabled, cron, timezone, model, agent_type_id, created_at, updated_at
+      RETURNING id, title, enabled, cron, timezone, model, agent_type_id, session_mode, created_at, updated_at
     `
     return toAutomation(rows[0]!)
   }
@@ -84,7 +84,7 @@ export class PostgresAutomationStore implements AutomationStore {
       UPDATE boring_automation_automations
       SET title = ${next.title}, enabled = ${next.enabled}, cron = ${next.cron}, timezone = ${next.timezone}, model = ${next.model}, agent_type_id = ${next.agentTypeId ?? null}, session_mode = ${next.sessionMode ?? "new"}, updated_at = ${next.updatedAt}
       WHERE id = ${id} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
-      RETURNING id, title, enabled, cron, timezone, model, agent_type_id, created_at, updated_at
+      RETURNING id, title, enabled, cron, timezone, model, agent_type_id, session_mode, created_at, updated_at
     `
     if (!rows[0]) throw automationNotFound(id)
     return toAutomation(rows[0])

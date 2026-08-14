@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { createAgent, type AgentCoreSessionService, type PiChatEventSubscriber, type PiSessionCreateInit, type PiSessionRequestContext } from "@hachej/boring-agent/core"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import "../../../../../packages/agent/src/server/http/middleware"
@@ -19,7 +19,7 @@ const SESSION_CTX: SessionCtx = { workspaceId: ACTOR.workspaceId, userId: ACTOR.
  * -> resolver/bound dispatcher -> Agent.send without a sessionId -> fresh child.
  */
 describe("boring_automation nested dispatch", () => {
-  it("completes a fresh automation child session before the parent tool turn is released", async () => {
+  it("releases the parent tool after durable admission while the child run continues host-owned", async () => {
     const sessions = new NestedSessionStore()
     sessions.seed("parent-session", SESSION_CTX)
     const service = new NestedSessionService(sessions)
@@ -74,13 +74,18 @@ describe("boring_automation nested dispatch", () => {
     expect(toolResult.details).toMatchObject({
       ok: true,
       operation: "run",
-      run: { status: "succeeded", sessionId: "session-1" },
+      run: { status: "queued", sessionId: null, trigger: "dispatch" },
     })
+
+    // The parent tool is released after durable admission, while the host-owned
+    // child continues and completes without holding the parent turn.
+    expect(service.parentReleased).toBe(false)
+    await vi.waitFor(async () => expect((await automationStore.listRuns())[0]).toMatchObject({
+      status: "succeeded",
+      sessionId: "session-1",
+    }))
     expect(sessions.createContexts).toEqual([SESSION_CTX])
     expect(service.promptedSessionIds).toEqual(["parent-session", "session-1"])
-
-    // The child tool result exists while the parent prompt is still deliberately held.
-    expect(service.parentReleased).toBe(false)
     service.releaseParent()
     await expect(parentEventsPromise).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({

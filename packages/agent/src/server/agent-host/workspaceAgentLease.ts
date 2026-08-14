@@ -262,6 +262,7 @@ export async function runWithWorkspaceAgentLease(input: {
             requestId: controlRequestId,
             clientNonce: controlRequestId,
             content: message,
+            requireIdle: true,
           })
         } finally {
           await connection.close()

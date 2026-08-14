@@ -189,17 +189,17 @@ describe("AutomationOperations", () => {
     expect(store.updatePrompt).not.toHaveBeenCalled()
   })
 
-  it("runs as the bound actor and returns a safe finalized run, including failed outcomes", async () => {
-    const failed = run({ status: "failed", error: `provider failed ${"x".repeat(500)}\nsecret second line` })
-    const executor = { run: vi.fn(async () => failed) }
+  it("durably admits a detached dispatch as the bound actor without awaiting its worker", async () => {
+    const queued = run({ status: "queued", trigger: "dispatch", sessionId: null, startedAt: null, completedAt: null })
+    const executor = { run: vi.fn(async () => { throw new Error("detached tool must not await run") }), start: vi.fn(async () => queued) }
     const actor = { workspaceId: "workspace-1", userId: "user-1" }
     const operations = createAutomationOperations({ store: storeMock(), actor, executor })
 
     const result = await operations.run("automation-1")
 
-    expect(executor.run).toHaveBeenCalledWith({ automationId: "automation-1", actor, trigger: "dispatch" })
-    expect(result.status).toBe("failed")
-    expect(result.error).toHaveLength(AUTOMATION_TOOL_ERROR_CHARACTER_LIMIT)
+    expect(executor.start).toHaveBeenCalledWith({ automationId: "automation-1", actor, trigger: "dispatch" })
+    expect(executor.run).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ status: "queued", trigger: "dispatch", sessionId: null })
     expect(result).not.toHaveProperty("promptSnapshot")
     expect(result).not.toHaveProperty("modelSnapshot")
   })

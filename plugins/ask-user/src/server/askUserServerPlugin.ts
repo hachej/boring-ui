@@ -7,6 +7,7 @@ import { AskUserRuntime } from "./askUserRuntime"
 import { FileAskUserStore, type AskUserStore } from "./askUserStore"
 import { AskUserStatePublisher } from "./askUserStatePublisher"
 import { createAskUserTool } from "./createAskUserTool"
+import { createReadIntentionTool } from "./createReadIntentionTool"
 import { createAskUserBridgeHandlers } from "./askUserBridgeHandlers"
 
 export type AskUserServerPluginOptions = {
@@ -43,11 +44,12 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
     })
   }
   const askUserTool = createAskUserTool({ runtime, sessionId: options.sessionId ?? (() => "default") })
+  const readIntentionTool = createReadIntentionTool(store)
   return defineServerPlugin({
     id: ASK_USER_PLUGIN_ID,
     label: "Questions",
     systemPrompt: [
-      "Use `ask_user` only when blocked on a human decision; it creates a blocking Human Intention in Chat and Inbox.",
+      "Use `ask_user` only when blocked on a human decision; `wait:false` files a non-blocking Human Intention. Use `read_intention` to poll a recorded id.",
       "When asking for review or approval, include explicitly known human-facing deliverables in the plural artifacts array.",
       "Do not register routine source edits, lockfiles, caches, logs, or inferred files unless the user explicitly requested them as outputs. Never infer artifacts from prose, git state, branches, titles, prompts, diffs, or filesystem changes.",
     ].join("\n"),
@@ -59,6 +61,13 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
       execute(params, ctx) {
         ensurePublisher()
         return askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal, ctx.sessionId, undefined)
+      },
+    }, {
+      name: readIntentionTool.name,
+      description: readIntentionTool.description,
+      parameters: readIntentionTool.parameters,
+      execute(params) {
+        return readIntentionTool.execute(params)
       },
     }],
     workspaceBridgeHandlers: createAskUserBridgeHandlers({ runtime, store }),

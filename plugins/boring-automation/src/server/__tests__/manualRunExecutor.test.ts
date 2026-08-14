@@ -176,6 +176,32 @@ describe("ManualRunExecutor", () => {
     }))
   })
 
+  it("admits a detached dispatch run and returns before the worker event stream completes", async () => {
+    const release = deferred<void>()
+    const dispatch = vi.fn(async (input: { requestId: string }) => ({
+      ref: { agentTypeId: "default", sessionId: "session-detached" },
+      receipt: { accepted: true as const, cursor: 0, disposition: "prompt" as const, clientNonce: input.requestId },
+      events: (async function* () {
+        await release.promise
+        yield event(0, { type: "agent-end", seq: 1, turnId: "turn-detached", status: "ok" }, "session-detached")
+      })(),
+    }))
+    const harness = createHarness({ resolver: createDirectResolver({
+      dispatch,
+      send: vi.fn(),
+      interrupt: vi.fn(),
+      stop: vi.fn(),
+    }) })
+
+    const admitted = await harness.executor.start({ automationId: harness.automation.id, actor: harness.actor, trigger: "dispatch" })
+
+    expect(admitted).toMatchObject({ status: "queued", trigger: "dispatch", sessionId: null })
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce())
+    expect([...harness.store.runs.values()][0]).toMatchObject({ status: "dispatching" })
+    release.resolve()
+    await vi.waitFor(() => expect([...harness.store.runs.values()][0]).toMatchObject({ status: "succeeded", sessionId: "session-detached" }))
+  })
+
   it("heartbeats an active run until its event stream completes", async () => {
     vi.useFakeTimers()
     const release = deferred<void>()

@@ -29,6 +29,7 @@ export interface AskUserStore {
   getPending(sessionId: string): Promise<AskUserQuestion | null>
   listPending(): Promise<AskUserQuestion[]>
   getByQuestionId(questionId: string): Promise<AskUserQuestion | null>
+  getAnswer(questionId: string): Promise<AskUserAnswer | null>
   createPending(question: AskUserQuestion): Promise<void>
   answer(questionId: string, answer: AskUserAnswer): Promise<void>
   cancel(questionId: string): Promise<void>
@@ -82,6 +83,11 @@ export class FileAskUserStore implements AskUserStore {
   async getByQuestionId(questionId: string): Promise<AskUserQuestion | null> {
     const state = await this.load()
     return state.questions[questionId] ? clone(state.questions[questionId]) : null
+  }
+
+  async getAnswer(questionId: string): Promise<AskUserAnswer | null> {
+    const state = await this.load()
+    return state.answers[questionId] ? clone(state.answers[questionId]) : null
   }
 
   async createPending(question: AskUserQuestion): Promise<void> {

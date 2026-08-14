@@ -6,7 +6,7 @@ import {
   BORING_AUTOMATION_ERROR_CODES,
   type BoringAutomationErrorCode,
 } from "../shared"
-import { parseAutomationModel } from "./manualRunExecutor"
+import { parseAutomationModel } from "./dispatchRunExecutor"
 import type { AutomationOperations, AutomationUpdateInput } from "./operations"
 import { AutomationStoreError } from "./store"
 

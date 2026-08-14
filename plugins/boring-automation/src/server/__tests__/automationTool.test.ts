@@ -106,6 +106,14 @@ describe("boring_automation agent tool", () => {
     expect(details(result)).toMatchObject({ ok: true, operation })
   })
 
+  it("rejects a dispatch when its automation already has an active run", async () => {
+    const ops = operations()
+    vi.mocked(ops.run).mockRejectedValue(new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE, "occupied"))
+    const result = await harness(ops).tool.execute({ operation: "run", automationId: "automation-1" }, context())
+    expect(result.isError).toBe(true)
+    expect(details(result)).toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE })
+  })
+
   it("supports nudge and cancel session controls", async () => {
     const h = harness()
     await h.tool.execute({ operation: "nudge", sessionId: "session-1", message: "Continue" }, context())

@@ -27,7 +27,7 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
     name: "ask_user",
     label: "Ask user",
     description: "Ask the user a structured question in Workspace. Supports true multi-field forms and optional human-facing artifacts.",
-    promptSnippet: "Use `ask_user` only when work is blocked on a human decision. It opens a blocking form in Chat and Inbox; do not simulate the question in prose. Pass `schema: { wireVersion: 1, fields: [...] }`. Register every human-facing deliverable relevant to the decision in the plural `artifacts` array as `{ id, surfaceKind, target, title, description? }`; never infer artifacts from files, diffs, branches, titles, prompts, or prose.",
+    promptSnippet: "Use `ask_user` only when work is blocked on a human decision. It blocks by default; set `wait:false` to file and return immediately, then poll the id with `read_intention`. Do not simulate the question in prose. Pass `schema: { wireVersion: 1, fields: [...] }`. Register every human-facing deliverable relevant to the decision in the plural `artifacts` array as `{ id, surfaceKind, target, title, description? }`; never infer artifacts from files, diffs, branches, titles, prompts, or prose.",
     parameters: {
       type: "object",
       properties: {

@@ -143,7 +143,7 @@ describe("createAskUserServerPlugin", () => {
     const plugin = createAskUserServerPlugin({ store, runtime, sessionId: "s1" })
     expect(plugin.id).toBe("ask-user")
     expect(plugin.routes).toEqual(expect.any(Function))
-    expect(plugin.agentTools?.map((tool) => tool.name)).toEqual(["ask_user"])
+    expect(plugin.agentTools?.map((tool) => tool.name)).toEqual(["ask_user", "read_intention"])
     expect(plugin.workspaceBridgeHandlers?.map((entry) => entry.definition.op)).toEqual([
       "ask-user.v1.request",
       "ask-user.v1.answer",
@@ -249,7 +249,7 @@ describe("createAskUserServerPlugin", () => {
     const ui = bridge()
     const plugin = createAskUserServerPlugin({ workspaceRoot: dir, bridge: ui })
     expect(plugin.id).toBe("ask-user")
-    expect(plugin.agentTools?.map((tool) => tool.name)).toEqual(["ask_user"])
+    expect(plugin.agentTools?.map((tool) => tool.name)).toEqual(["ask_user", "read_intention"])
     expect(existsSync(join(dir, ".boring", "ask-user.json"))).toBe(false)
   })
 })

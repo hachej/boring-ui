@@ -100,13 +100,18 @@ export interface AutomationOperations {
   listRuns(automationId: string, limit?: number): Promise<BoundedAutomationList<SafeAutomationRunSummary>>
 }
 
+export interface DispatchRunStarter {
+  run(input: DispatchRunInput): Promise<AutomationRun>
+  start?(input: DispatchRunInput): Promise<AutomationRun>
+}
+
 export interface AutomationOperationsResolverOptions {
   mode: AutomationStoreMode
   resolveStore(actor: VerifiedAutomationActor): Promise<AutomationStore> | AutomationStore
   resolveExecutor?: (
     actor: VerifiedAutomationActor,
     store: AutomationStore,
-  ) => Promise<Pick<{ run(input: DispatchRunInput): Promise<AutomationRun> }, "run"> | undefined> | Pick<{ run(input: DispatchRunInput): Promise<AutomationRun> }, "run"> | undefined
+  ) => Promise<DispatchRunStarter | undefined> | DispatchRunStarter | undefined
   localUserId?: string
   defaultAgentTypeId?: string
   sessionController?: AutomationSessionController
@@ -150,13 +155,14 @@ export function createAutomationOperations({
   actor: VerifiedAutomationActor
   defaultAgentTypeId?: string
   sessionController?: AutomationSessionController
-  executor?: Pick<{ run(input: DispatchRunInput): Promise<AutomationRun> }, "run">
+  executor?: DispatchRunStarter
 }): AutomationOperations {
   return {
     async list(limit) {
       return bounded(await store.listAutomations(), limit, automationSummary)
     },
     async listDispatchRuns(limit) {
+      const rowLimit = normalizeLimit(limit)
       const automations = await store.listAutomations()
       const sessionsByAgent = new Map<string, readonly AgentSessionSummary[]>()
       const rows: DispatchRunFleetSummary[] = []
@@ -168,7 +174,7 @@ export function createAutomationOperations({
           sessionsByAgent.set(agentTypeId, sessions)
         }
         const sessionById = new Map(sessions.map((session) => [session.ref.sessionId, session]))
-        for (const run of await store.listRuns(automation.id)) {
+        for (const run of await store.listRuns(automation.id, rowLimit)) {
           const session = run.sessionId ? sessionById.get(run.sessionId) : undefined
           rows.push({
             ...safeRunSummary(run),
@@ -181,7 +187,7 @@ export function createAutomationOperations({
         }
       }
       rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      return bounded(rows, limit, (row) => row)
+      return bounded(rows, rowLimit, (row) => row)
     },
     async nudge(sessionId, message) {
       if (!sessionController) throw contextUnavailable()
@@ -249,7 +255,8 @@ export function createAutomationOperations({
           "automation run executor is unavailable",
         )
       }
-      return safeRunSummary(await executor.run({ automationId, actor, trigger: "dispatch" }))
+      const input = { automationId, actor, trigger: "dispatch" as const }
+      return safeRunSummary(await (executor.start ? executor.start(input) : executor.run(input)))
     },
     async listRuns(automationId, limit) {
       return bounded(await store.listRuns(automationId), limit, safeRunSummary)

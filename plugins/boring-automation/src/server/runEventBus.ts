@@ -1,6 +1,6 @@
 import type postgres from "postgres"
 import type { AutomationRunChangedEvent } from "../shared/types"
-import type { VerifiedAutomationActor } from "./manualRunExecutor"
+import type { VerifiedAutomationActor } from "./dispatchRunExecutor"
 
 const AUTOMATION_RUN_EVENT_CHANNEL = "boring_automation_run_changed"
 

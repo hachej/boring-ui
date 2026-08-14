@@ -10,6 +10,7 @@ import { FileAskUserStore } from "../askUserStore"
 import { AskUserRuntime } from "../askUserRuntime"
 import { AskUserStatePublisher } from "../askUserStatePublisher"
 import { createAskUserTool } from "../createAskUserTool"
+import { createReadIntentionTool } from "../createReadIntentionTool"
 import { createAskUserBridgeHandlers } from "../askUserBridgeHandlers"
 import { createWorkspaceBridgeRegistry, type UiBridge, type UiCommand, type UiState, type WorkspaceBridgeCallContext } from "@hachej/boring-workspace/server"
 
@@ -127,6 +128,8 @@ describe("ask-user full workflow", () => {
     })
     expect(answered).toMatchObject({ ok: true, output: { status: "answered" } })
     await expect(store.getByQuestionId(pending.questionId)).resolves.toMatchObject({ status: "answered", wait: false })
+    const polled = await createReadIntentionTool(store).execute({ questionId: pending.questionId })
+    expect(polled).toMatchObject({ details: { questionId: pending.questionId, status: "answered", values: { decision: "approve" } } })
   })
 
 })
