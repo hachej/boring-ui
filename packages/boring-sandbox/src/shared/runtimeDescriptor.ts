@@ -65,7 +65,6 @@ export interface SandboxRuntimeHostPolicyV1 {
 
 export interface SandboxRuntimePairFactoryOptionsV1 {
   readonly sandboxHandleStore?: SandboxHandleStore
-  readonly providerOptions?: unknown
 }
 
 /**

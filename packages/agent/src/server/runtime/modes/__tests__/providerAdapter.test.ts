@@ -7,12 +7,10 @@ import {
 import type { Sandbox, Workspace } from '../../../../shared'
 import { ErrorCode } from '../../../../shared/error-codes'
 import type { RuntimeBundle } from '../../mode'
-import {
-  createDescriptorRuntimeModeAdapter,
-  createProviderRuntimeModeAdapter,
-} from '../providerAdapter'
+import { createProviderRuntimeModeAdapter } from '../providerAdapter'
 import {
   createRemoteWorkerModeAdapter,
+  createSandboxRuntimeDescriptorAdapter,
   createSandboxRuntimeModeAdapter,
   sandboxRuntimeHostOperations,
 } from '../../sandboxRuntimeHost'
@@ -142,14 +140,12 @@ test('the generic descriptor adapter composes a provider pair without a provider
     resolveRuntimeRoot: () => '/workspace',
     createPairFactory: () => provider,
   }
-  const adapter = createDescriptorRuntimeModeAdapter({
-    descriptor,
-    runtimeHost: testRuntimeHostOperations,
-  })
+  const adapter = createSandboxRuntimeDescriptorAdapter(descriptor)
 
   const bundle = await adapter.create({ workspaceRoot: '/workspace', sessionId: 'session' })
 
   expect(adapter.runtimeHostPolicy).toBe(descriptor.host)
+  expect(adapter.runtimeHost).toBe(sandboxRuntimeHostOperations)
   expect(bundle.workspace.runtimeContext).toBe(bundle.sandbox.runtimeContext)
   expect(bundle.sandbox.provider).toBe('fixture-provider')
   await bundle.disposeRuntime?.()
@@ -191,7 +187,6 @@ test('the explicit remote-worker V0 seam owns host composition without borrowing
   const selectedAdapter = createAgentSandboxRuntimeModeAdapter('remote-worker')
 
   expect(adapter.getRuntimeLayoutRoot?.({ workspaceRoot: '/host/workspace', sessionId: 'session' })).toBe('/workspace')
-  expect(adapter.runtimeProvider).toBeUndefined()
   expect(adapter.runtimeHost).toBe(sandboxRuntimeHostOperations)
   expect(adapter.runtimeHostPolicy).toEqual({
     productionSafe: false,
@@ -202,7 +197,6 @@ test('the explicit remote-worker V0 seam owns host composition without borrowing
     resolveCompanyContextFromHostWorkspace: true,
     httpWorkspaceScope: 'session',
   })
-  expect(selectedAdapter.runtimeProvider).toBeUndefined()
   expect(selectedAdapter.runtimeHostPolicy).toEqual(adapter.runtimeHostPolicy)
 })
 

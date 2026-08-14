@@ -9,11 +9,12 @@ import { ErrorCode } from '../src/shared/error-codes'
 import { mergeTools } from '../src/server/catalog/mergeTools'
 import { createStandaloneAgentHostApp } from '../src/server/createStandaloneAgentHostApp'
 import {
+  createVercelSandboxRuntimeDescriptor,
   FileHandleStore,
 } from '@hachej/boring-sandbox/providers/vercel-sandbox'
 import {
   agentSandboxRuntimeHostOperations,
-  createSandboxRuntimeModeAdapter,
+  createSandboxRuntimeDescriptorAdapter,
 } from '../host/sandbox'
 import { provisionWorkspaceRuntime, type WorkspaceProvisioningResult } from '../src/server/workspace/provisioning'
 
@@ -182,9 +183,9 @@ async function main(): Promise<void> {
   const startedAt = Date.now()
   const tempDir = await mkdtemp(join(tmpdir(), 'boring-vercel-capability-readiness-'))
   const store = new FileHandleStore({ storePath: join(tempDir, 'sandboxes.json') })
-  const runtimeModeAdapter = createSandboxRuntimeModeAdapter('vercel-sandbox', {
-    providerOptions: { store, orphanGuardMaxIdleMs: null },
-  })
+  const runtimeModeAdapter = createSandboxRuntimeDescriptorAdapter(
+    createVercelSandboxRuntimeDescriptor({ store, orphanGuardMaxIdleMs: null }),
+  )
   const workspaceId = `readiness-${Date.now()}-${Math.random().toString(36).slice(2)}`
   let app: Awaited<ReturnType<typeof createStandaloneAgentHostApp>> | undefined
   let capturedTools: AgentTool[] = []

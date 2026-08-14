@@ -4,13 +4,14 @@ import { join, resolve } from 'node:path'
 import { Sandbox } from '@vercel/sandbox'
 
 import {
+  createVercelSandboxRuntimeDescriptor,
   FileHandleStore,
 } from '@hachej/boring-sandbox/providers/vercel-sandbox'
 import { getBoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
 import { provisionWorkspaceRuntime } from '../src/server/workspace/provisioning'
 import {
   agentSandboxRuntimeHostOperations,
-  createSandboxRuntimeModeAdapter,
+  createSandboxRuntimeDescriptorAdapter,
 } from '../host/sandbox'
 
 function requireEnv(name: string): string {
@@ -34,9 +35,9 @@ async function main() {
   const storePath = join(tempDir, 'sandboxes.json')
   const workspaceId = `smoke-${Date.now()}-${Math.random().toString(36).slice(2)}`
   const store = new FileHandleStore({ storePath })
-  const adapter = createSandboxRuntimeModeAdapter('vercel-sandbox', {
-    providerOptions: { store, orphanGuardMaxIdleMs: null },
-  })
+  const adapter = createSandboxRuntimeDescriptorAdapter(
+    createVercelSandboxRuntimeDescriptor({ store, orphanGuardMaxIdleMs: null }),
+  )
   const runtimeLayout = getBoringAgentRuntimePaths('/workspace')
   const modeCtx = {
     workspaceRoot: '/workspace',

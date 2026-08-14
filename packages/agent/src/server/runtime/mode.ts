@@ -14,10 +14,7 @@ import type { CapabilityReadinessDetail, ReadyStatusTracker } from './readyStatu
 import type { AgentRuntimeHostOperations } from './runtimeHost'
 import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
 import type { BuiltinRuntimeModeId } from '../../shared/runtime-mode'
-import type {
-  SandboxRuntimeHostPolicyV1,
-  SandboxRuntimeModeDescriptorV1,
-} from '@hachej/boring-sandbox/shared'
+import type { SandboxRuntimeHostPolicyV1 } from '@hachej/boring-sandbox/shared'
 
 export type { BuiltinRuntimeModeId } from '../../shared/runtime-mode'
 export type { SandboxRuntimeHostPolicyV1 } from '@hachej/boring-sandbox/shared'
@@ -56,8 +53,6 @@ export type RuntimeFilesystemStrategy =
 
 export interface RuntimeModeAdapter {
   readonly id: RuntimeModeId
-  /** Provider-owned runtime facts used by generic host composition. */
-  readonly runtimeProvider?: SandboxRuntimeModeDescriptorV1
   /** Host composition policy explicitly owned by this adapter. */
   readonly runtimeHostPolicy?: SandboxRuntimeHostPolicyV1
   readonly runtimeHost?: AgentRuntimeHostOperations

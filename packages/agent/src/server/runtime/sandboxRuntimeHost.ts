@@ -5,6 +5,7 @@
  */
 export {
   createRemoteWorkerModeAdapter,
+  createSandboxRuntimeDescriptorAdapter,
   createSandboxRuntimeModeAdapter,
   findSandboxRuntimeModeDescriptor,
   getSandboxRuntimeModeDescriptor,

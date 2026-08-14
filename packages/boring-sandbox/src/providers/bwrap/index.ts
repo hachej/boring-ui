@@ -9,4 +9,7 @@ export type {
   BwrapResourceLimits,
   CreateBwrapSandboxOptions,
 } from './createBwrapSandbox'
-export { localRuntimeDescriptor } from './runtimeDescriptor'
+export {
+  createLocalRuntimeDescriptor,
+  localRuntimeDescriptor,
+} from './runtimeDescriptor'

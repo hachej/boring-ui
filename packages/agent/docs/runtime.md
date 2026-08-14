@@ -260,6 +260,11 @@ add its implementation and descriptor, then register that descriptor in
 `src/providers/registry/index.ts`. Do not add a provider switch or a standalone
 mode adapter under Agent.
 
+Provider-specific configuration is closed into a typed descriptor factory in
+`@hachej/boring-sandbox` before Agent composition. Call
+`createSandboxRuntimeDescriptorAdapter(descriptor)` for a configured descriptor;
+do not pass an untyped provider option bag beside a mode string.
+
 Callers can still pass a one-off `RuntimeModeAdapter` through
 `runtimeModeAdapter`. That explicit adapter takes precedence over mode
 auto-detection and does not need to be registered.
@@ -270,7 +275,7 @@ substrate as one runtime bundle.
 ```ts
 interface RuntimeModeAdapter {
   id: string
-  runtimeProvider?: SandboxRuntimeModeDescriptorV1
+  runtimeHostPolicy?: SandboxRuntimeHostPolicyV1
   workspaceFsCapability?: Workspace['fsCapability']
                                               // describes how much host-side fs access exists before create();
                                               // remote backends must not claim strong host visibility

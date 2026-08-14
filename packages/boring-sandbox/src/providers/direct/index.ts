@@ -4,4 +4,7 @@ export type {
 } from './createDirectProvider'
 export { createDirectSandbox } from './createDirectSandbox'
 export type { CreateDirectSandboxOptions } from './createDirectSandbox'
-export { directRuntimeDescriptor } from './runtimeDescriptor'
+export {
+  createDirectRuntimeDescriptor,
+  directRuntimeDescriptor,
+} from './runtimeDescriptor'

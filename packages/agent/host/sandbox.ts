@@ -64,7 +64,6 @@ export const sandboxRuntimeHostOperations = agentSandboxRuntimeHostOperations
 
 export interface SandboxRuntimeModeOptions {
   readonly sandboxHandleStore?: SandboxHandleStore
-  readonly providerOptions?: unknown
 }
 
 export function getSandboxRuntimeModeDescriptor(
@@ -96,19 +95,27 @@ export function resolveBuiltinRuntimeLayoutRoot(
   })
 }
 
-export function createSandboxRuntimeModeAdapter(
-  mode: RuntimeModeId,
+export function createSandboxRuntimeDescriptorAdapter(
+  descriptor: SandboxRuntimeModeDescriptorV1,
   options: SandboxRuntimeModeOptions = {},
 ): RuntimeModeAdapter {
-  const descriptor = getSandboxRuntimeModeDescriptor(mode)
   return createDescriptorRuntimeModeAdapter({
     descriptor,
     runtimeHost: agentSandboxRuntimeHostOperations,
     pairFactoryOptions: {
       sandboxHandleStore: options.sandboxHandleStore,
-      providerOptions: options.providerOptions,
     },
   })
+}
+
+export function createSandboxRuntimeModeAdapter(
+  mode: RuntimeModeId,
+  options: SandboxRuntimeModeOptions = {},
+): RuntimeModeAdapter {
+  return createSandboxRuntimeDescriptorAdapter(
+    getSandboxRuntimeModeDescriptor(mode),
+    options,
+  )
 }
 
 export function createAgentSandboxRuntimeModeAdapter(mode: RuntimeModeId = 'direct'): RuntimeModeAdapter {

@@ -62,6 +62,7 @@ export {
 } from './runtime/modes/providerAdapter'
 export {
   createRemoteWorkerModeAdapter,
+  createSandboxRuntimeDescriptorAdapter,
   createSandboxRuntimeModeAdapter,
   findSandboxRuntimeModeDescriptor,
   getSandboxRuntimeModeDescriptor,

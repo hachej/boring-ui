@@ -30,7 +30,7 @@ interface ProviderRuntimeModeAdapterOptions {
   provider?: SandboxProviderV1
   providerFactory?: () => SandboxProviderV1 | Promise<SandboxProviderV1>
   resolveRuntimeRoot?: (context: ModeContext) => string
-  runtimeProvider?: SandboxRuntimeModeDescriptorV1
+  expectedProviderId?: string
   runtimeHostPolicy?: SandboxRuntimeHostPolicyV1
   runtimeHost: AgentRuntimeHostOperations
   workspaceFsCapability: 'strong' | 'best-effort'
@@ -69,7 +69,6 @@ export function createProviderRuntimeModeAdapter(
 
   return {
     id: options.id,
-    runtimeProvider: options.runtimeProvider,
     runtimeHostPolicy: options.runtimeHostPolicy,
     runtimeHost: options.runtimeHost,
     workspaceFsCapability: options.workspaceFsCapability,
@@ -102,9 +101,9 @@ export function createProviderRuntimeModeAdapter(
       await options.preflight?.(context)
       await options.prepare?.(context)
       const provider = await getProvider()
-      if (options.runtimeProvider && provider.providerId !== options.runtimeProvider.providerId) {
+      if (options.expectedProviderId && provider.providerId !== options.expectedProviderId) {
         throw new Error(
-          `Runtime mode "${options.id}" resolved provider "${provider.providerId}"; expected "${options.runtimeProvider.providerId}".`,
+          `Runtime mode "${options.id}" resolved provider "${provider.providerId}"; expected "${options.expectedProviderId}".`,
         )
       }
       const pair = await provider.create(context)
@@ -153,7 +152,7 @@ export function createDescriptorRuntimeModeAdapter(options: {
   const readiness = descriptor.adapter.readiness
   return createProviderRuntimeModeAdapter({
     id: descriptor.id,
-    runtimeProvider: descriptor,
+    expectedProviderId: descriptor.providerId,
     runtimeHostPolicy: descriptor.host,
     providerFactory: () => descriptor.createPairFactory(options.pairFactoryOptions ?? {}),
     resolveRuntimeRoot: (context) => descriptor.resolveRuntimeRoot(context),
