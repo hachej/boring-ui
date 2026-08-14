@@ -65,11 +65,15 @@ const palette = extract((state): SafePaletteState => {
   const dialogs = visibleElements('[role="dialog"], [aria-modal="true"]')
     .filter((element, index, all) => all.indexOf(element) === index)
   const dialog = dialogs[0] ?? null
-  const searchControls = Array.from(state.document.querySelectorAll(
-    'button[aria-label="Search catalogs and commands"], button[data-boring-app-left-nav-key="search"]',
+  const rootControls = Array.from(state.document.querySelectorAll(
+    'button[aria-label="Search catalogs and commands"], button[data-boring-app-left-nav-key="search"], button[aria-label="Open app navigation"]',
   ))
   const allowed: Array<{ name: string; point: Point }> = []
-  const maybeAdd = (element: Element, insideDialog: boolean): void => {
+  const maybeAdd = (
+    element: Element,
+    insideDialog: boolean,
+    identity?: "command-palette-trigger",
+  ): void => {
     const label = normalizedText(element)
     if (!visible(element) || !isSafeCommandPaletteControl({
       tagName: element.tagName,
@@ -78,6 +82,7 @@ const palette = extract((state): SafePaletteState => {
       href: element.getAttribute("href"),
       formAction: element.getAttribute("formaction"),
       insideDialog,
+      identity,
     })) return
     allowed.push({
       name: insideDialog
@@ -89,8 +94,13 @@ const palette = extract((state): SafePaletteState => {
     })
   }
 
-  if (!dialog && workspaceReady) {
-    for (const search of searchControls) maybeAdd(search, false)
+  if (!dialog) {
+    for (const control of rootControls) {
+      const identity = control.matches(
+        'button[aria-label="Search catalogs and commands"], button[data-boring-app-left-nav-key="search"]',
+      ) ? "command-palette-trigger" : undefined
+      maybeAdd(control, false, identity)
+    }
   }
   if (dialog && visible(dialog)) {
     for (const element of dialog.querySelectorAll("button")) maybeAdd(element, true)

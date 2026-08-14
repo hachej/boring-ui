@@ -5,6 +5,7 @@ export type ScenarioControl = {
   href?: string | null
   formAction?: string | null
   insideDialog: boolean
+  identity?: "command-palette-trigger"
 }
 
 const DESTRUCTIVE_OR_EXTERNAL = /\b(delete|remove|destroy|reset|sign[ -]?out|log[ -]?out|publish|send|submit|open externally|external)\b/i
@@ -16,6 +17,7 @@ export function isSafeCommandPaletteControl(control: ScenarioControl): boolean {
   if (control.href?.trim() || control.formAction?.trim()) return false
   if (DESTRUCTIVE_OR_EXTERNAL.test(control.label)) return false
   if (control.insideDialog) return control.label === "Commands" || control.label === "Files"
-  return control.label === "Open app navigation"
+  return control.identity === "command-palette-trigger"
+    || control.label === "Open app navigation"
     || control.label === "Search catalogs and commands"
 }
