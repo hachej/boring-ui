@@ -14,7 +14,11 @@ import {
   verifyReproducedFinalState,
 } from "../core/replay"
 import { workspaceCommandPaletteSpec } from "../review-specs/workspace-command-palette/spec"
-import { isSafeCommandPaletteControl } from "../review-specs/workspace-command-palette/scenarioActions"
+import {
+  createSafeCommandPaletteActions,
+  isCommandPaletteDialogName,
+  isSafeCommandPaletteControl,
+} from "../review-specs/workspace-command-palette/scenarioActions"
 import { testSpec, testStagingPolicy } from "./fixtures"
 
 const UI_REVIEW_STAGING_POLICY = testStagingPolicy
@@ -227,6 +231,29 @@ describe("Bombadil exploration staging", () => {
 })
 
 describe("command palette action safety", () => {
+  it("opens an exact root control without Resource Timing readiness", () => {
+    const trigger = { name: "open-command-palette", point: { x: 24, y: 24 } }
+    expect(createSafeCommandPaletteActions({
+      dialogVisible: false,
+      inputFocused: false,
+      lastActionWasPaletteOpen: false,
+      lastActionWasInitial: false,
+      controls: [trigger],
+    })).toEqual(["Wait", { Click: trigger }])
+    expect(createSafeCommandPaletteActions({
+      dialogVisible: false,
+      inputFocused: false,
+      lastActionWasPaletteOpen: false,
+      lastActionWasInitial: true,
+      controls: [trigger],
+    })).toEqual(["Wait"])
+  })
+
+  it("distinguishes the palette from the mobile navigation dialog", () => {
+    expect(isCommandPaletteDialogName("Command Palette")).toBe(true)
+    expect(isCommandPaletteDialogName("App navigation")).toBe(false)
+  })
+
   it("allows only named non-submitting local palette controls", () => {
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Search catalogs and commands", insideDialog: false })).toBe(true)
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Search", insideDialog: false })).toBe(false)
