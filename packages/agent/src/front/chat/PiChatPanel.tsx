@@ -977,8 +977,8 @@ export function PiChatPanel<
   const stop = useCallback(() => {
     onComposerStop?.()
     clearLocalSubmitted(activeChatSessionId)
-    // The composer Stop control only interrupts the active turn. Queued follow-ups
-    // remain intact until the user explicitly moves them back into the composer.
+    // The composer Stop control interrupts instead of deleting queued follow-ups.
+    // The service retains its interrupt semantics, which may promote the next item.
     void policy?.interrupt().catch((error) => {
       addLocalNotice({ id: 'stop-error', level: 'error', text: errorMessage(error, 'Could not stop the chat session.'), dismissible: true })
     })

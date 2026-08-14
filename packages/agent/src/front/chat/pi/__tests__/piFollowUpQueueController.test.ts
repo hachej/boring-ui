@@ -167,11 +167,11 @@ describe('PiFollowUpQueueController', () => {
       type: 'clear-failed',
       draft: 'keep this',
       error: failure,
-      message: 'Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit queued or Stop.',
+      message: 'Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit queued.',
     })
 
     expect(drafts).toEqual(['keep this'])
-    expect(warnings).toEqual(['Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit queued or Stop.'])
+    expect(warnings).toEqual(['Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit queued.'])
   })
 
   it('does not clear the queue for empty edit or interrupt; stop remains the queue-clearing command', async () => {

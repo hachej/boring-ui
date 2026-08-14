@@ -117,7 +117,7 @@ export class PiFollowUpQueueController {
       await this.session.clearQueue()
       return { type: 'cleared', draft }
     } catch (error) {
-      const message = 'Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit queued or Stop.'
+      const message = 'Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit queued.'
       this.options.onWarning?.(message)
       return { type: 'clear-failed', draft, error, message }
     }
