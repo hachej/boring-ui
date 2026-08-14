@@ -73,6 +73,8 @@ export interface SandboxRuntimePairFactoryOptionsV1 {
  * The only construction seam is createPairFactory(), which returns a
  * SandboxProviderV1. That provider can only create WorkspaceSandboxPairV1, so
  * Workspace and Sandbox cannot be selected or replaced independently.
+ * Mode selection is trusted deployment configuration, never tenant- or
+ * workspace-authored data.
  */
 export interface SandboxRuntimeModeDescriptorV1 {
   readonly id: string

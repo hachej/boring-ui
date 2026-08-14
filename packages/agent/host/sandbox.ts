@@ -119,6 +119,8 @@ export function createSandboxRuntimeModeAdapter(
 }
 
 export function createAgentSandboxRuntimeModeAdapter(mode: RuntimeModeId = 'direct'): RuntimeModeAdapter {
+  // TODO(#1220): remove this sole built-in path outside the Sandbox descriptor
+  // registry when the secure remote-worker V1 deployment replaces Agent V0.
   if (mode === 'remote-worker') return createRemoteWorkerModeAdapter()
   return createSandboxRuntimeModeAdapter(mode)
 }
