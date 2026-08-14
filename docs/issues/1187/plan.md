@@ -9,6 +9,12 @@ track: owner
 
 # gh-1187 migrate the Boring Factory onto the boring-ui CLI workspace
 
+> **Historical plan:** this document records the owner-ratified S0 migration
+> baseline, including its then-current three-seat roster. The later approved
+> `docs/factory/orchestrator-loop-plan.md` supersedes that roster: the live
+> fleet is now `orchestrator` + `worker`, with triage run as a worker automation
+> slot. Historical acceptance and proof below are intentionally preserved.
+
 Plan revision **r1** — owner gate. Nothing here is implemented; the gate decides
 the target operating model, the gap dispositions, and the slice order.
 
