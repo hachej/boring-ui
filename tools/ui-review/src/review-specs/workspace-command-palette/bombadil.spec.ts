@@ -69,7 +69,11 @@ const palette = extract((state): SafePaletteState => {
     'button[aria-label="Search catalogs and commands"], button[data-boring-app-left-nav-key="search"]',
   ))
   const allowed: Array<{ name: string; point: Point }> = []
-  const maybeAdd = (element: Element, insideDialog: boolean): void => {
+  const maybeAdd = (
+    element: Element,
+    insideDialog: boolean,
+    identity?: "command-palette-trigger",
+  ): void => {
     const label = normalizedText(element)
     if (!visible(element) || !isSafeCommandPaletteControl({
       tagName: element.tagName,
@@ -78,6 +82,7 @@ const palette = extract((state): SafePaletteState => {
       href: element.getAttribute("href"),
       formAction: element.getAttribute("formaction"),
       insideDialog,
+      identity,
     })) return
     allowed.push({
       name: insideDialog
@@ -90,7 +95,7 @@ const palette = extract((state): SafePaletteState => {
   }
 
   if (!dialog && workspaceReady) {
-    for (const search of searchControls) maybeAdd(search, false)
+    for (const search of searchControls) maybeAdd(search, false, "command-palette-trigger")
   }
   if (dialog && visible(dialog)) {
     for (const element of dialog.querySelectorAll("button")) maybeAdd(element, true)

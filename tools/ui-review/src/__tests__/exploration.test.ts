@@ -231,6 +231,12 @@ describe("command palette action safety", () => {
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Search catalogs and commands", insideDialog: false })).toBe(true)
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Search", insideDialog: false })).toBe(false)
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Search⌘K", insideDialog: false })).toBe(false)
+    expect(isSafeCommandPaletteControl({
+      tagName: "button",
+      label: "Search⌘K",
+      insideDialog: false,
+      identity: "command-palette-trigger",
+    })).toBe(true)
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Open app navigation", insideDialog: false })).toBe(true)
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Commands", insideDialog: true })).toBe(true)
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Files", insideDialog: true })).toBe(true)
