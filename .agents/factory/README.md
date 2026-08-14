@@ -93,8 +93,9 @@ budgets and per-bead spend caps (the worker cap bounds total concurrency).
 
 ## Session rules
 
-These rules apply to every seat including the Concierge — its durable state
-lives in beads/notes, never in accumulated session context.
+These rules apply to every seat and to the Concierge role held by the
+orchestrator — durable state lives in beads/notes, never in accumulated session
+context.
 
 - One bead = one durable session. Identity lives in the seat, not the session.
 - The **worker writes the binding at claim**: leasing a bead and stamping the
