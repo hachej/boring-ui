@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const repoRoot = resolve(import.meta.dirname, "../../..");
@@ -41,6 +41,17 @@ const isBoringAgentSpecifier = (specifier) =>
 const isBoringBashSpecifier = (specifier) =>
   specifier === "@hachej/boring-bash" || specifier.startsWith("@hachej/boring-bash/");
 
+const normalized = (path) => path.replaceAll("\\", "/");
+const agentPackageRoot = join(repoRoot, "packages", "agent");
+
+const resolvesIntoAgentPackage = (file, specifier) => {
+  if (!specifier.startsWith(".")) return false;
+  const absoluteFile = resolve(packageRoot, file);
+  const target = normalized(resolve(dirname(absoluteFile), specifier));
+  const agentRoot = normalized(agentPackageRoot);
+  return target === agentRoot || target.startsWith(`${agentRoot}/`);
+};
+
 const isSharedFile = (file) => {
   const normalized = file.replaceAll("\\", "/");
   return normalized.includes("/src/shared/") || normalized.endsWith("/src/shared/index.ts") || normalized.startsWith("src/shared/");
@@ -53,7 +64,7 @@ export function findForbiddenPatterns(file, text) {
   for (const match of text.matchAll(importExportFromPattern)) {
     const [, statementKind, typeKeyword, specifier] = match;
     const isTypeOnly = typeKeyword === "type ";
-    if (isBoringAgentSpecifier(specifier) && !isTypeOnly) {
+    if ((isBoringAgentSpecifier(specifier) || resolvesIntoAgentPackage(file, specifier)) && !isTypeOnly) {
       add(`sandbox -> agent value ${statementKind}`);
     }
     if (isBoringBashSpecifier(specifier)) {
@@ -64,7 +75,7 @@ export function findForbiddenPatterns(file, text) {
   for (const pattern of [sideEffectImportPattern, dynamicImportPattern, requirePattern]) {
     for (const match of text.matchAll(pattern)) {
       const [, specifier] = match;
-      if (isBoringAgentSpecifier(specifier)) {
+      if (isBoringAgentSpecifier(specifier) || resolvesIntoAgentPackage(file, specifier)) {
         add("sandbox -> agent value import");
       }
       if (isBoringBashSpecifier(specifier)) {
@@ -88,13 +99,42 @@ export function findForbiddenPatterns(file, text) {
 const walk = (dir) => {
   const entries = [];
   for (const name of readdirSync(dir)) {
+    if (["node_modules", "dist", ".git", ".worktrees"].includes(name)) continue;
     const path = join(dir, name);
-    const stat = statSync(path);
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) entries.push(...walk(path));
     else if (sourceFilePattern.test(name)) entries.push(path);
   }
   return entries;
 };
+
+export function findRegistrationOwnershipViolations(file, text) {
+  const violations = [];
+  const relativeFile = normalized(relative(repoRoot, file));
+  const allowedRegistryConsumer = "packages/agent/host/sandbox.ts";
+  const registryImport = /(?:from\s+|import\s*\(\s*)["']@hachej\/boring-sandbox\/providers\/registry["']/;
+  if (registryImport.test(text) && relativeFile !== allowedRegistryConsumer) {
+    violations.push({ file: relativeFile, name: "provider registry imported outside the Agent host boundary" });
+  }
+  if (/\bMutableSandboxRuntimeModeRegistryV1\b|\bsandboxRuntimeModeRegistry\s*\.\s*register\s*\(/.test(text)) {
+    violations.push({ file: relativeFile, name: "provider registration leaked outside boring-sandbox" });
+  }
+  return violations;
+}
+
+function checkRegistrationOwnership() {
+  const violations = [];
+  for (const rootName of ["apps", "packages", "plugins", "tools"]) {
+    const root = join(repoRoot, rootName);
+    if (!statSync(root).isDirectory()) continue;
+    for (const file of walk(root)) {
+      if (normalized(file).startsWith(`${normalized(packageRoot)}/`)) continue;
+      violations.push(...findRegistrationOwnershipViolations(file, readFileSync(file, "utf8")));
+    }
+  }
+  return violations;
+}
 
 export function checkExports(packageJson) {
   const missing = [];
@@ -143,6 +183,27 @@ export function main() {
 
   if (violations.length === 0) {
     pass(`layering/front-safe scan: no forbidden patterns in ${scannedFiles} file(s)`);
+  }
+
+  const ownershipFixture = findRegistrationOwnershipViolations(
+    join(repoRoot, "packages", "core", "src", "badRegistry.ts"),
+    [
+      "import { sandboxRuntimeModeRegistry } from '@hachej/boring-sandbox/providers/registry'",
+      "sandboxRuntimeModeRegistry.register(descriptor)",
+    ].join("\n"),
+  );
+  if (ownershipFixture.length === 2) {
+    pass("provider-registration ownership negative fixture rejects external import and mutation");
+  } else {
+    fail(`provider-registration ownership fixture mismatch: ${JSON.stringify(ownershipFixture)}`);
+  }
+
+  const registrationViolations = checkRegistrationOwnership();
+  for (const violation of registrationViolations) {
+    fail(`${violation.name} found in ${violation.file}`);
+  }
+  if (registrationViolations.length === 0) {
+    pass("provider registration and registry imports stay inside boring-sandbox plus the exact Agent host lookup edge");
   }
 
   if (process.exitCode) process.exit(process.exitCode);

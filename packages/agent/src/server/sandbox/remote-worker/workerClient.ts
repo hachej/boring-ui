@@ -1,14 +1,14 @@
 import { timingSafeEqual } from 'node:crypto'
 
 export {
-  decodeLegacyRemoteWorkerBytes as decodeBytesFromWorker,
-  encodeLegacyRemoteWorkerBytes as encodeBytesForWorker,
-  LegacyRemoteWorkerClient as RemoteWorkerClient,
-  LegacyRemoteWorkerClientError as RemoteWorkerClientError,
-} from '@hachej/boring-sandbox/providers/remote-worker/legacy'
+  decodeBytesFromWorker,
+  encodeBytesForWorker,
+  RemoteWorkerClient,
+  RemoteWorkerClientError,
+} from '../../../../host/remoteWorkerLegacy'
 export type {
-  LegacyRemoteWorkerClientOptions as RemoteWorkerClientOptions,
-} from '@hachej/boring-sandbox/providers/remote-worker/legacy'
+  RemoteWorkerClientOptions,
+} from '../../../../host/remoteWorkerLegacy'
 
 export function constantTimeTokenEqual(a: string, b: string): boolean {
   if (!a || !b) return false

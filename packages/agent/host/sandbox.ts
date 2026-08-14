@@ -17,11 +17,9 @@ import {
 import {
   findSandboxRuntimeModeDescriptor as findRegisteredSandboxRuntimeModeDescriptor,
   resolveSandboxRuntimeModeDescriptor,
-  sandboxRuntimeModeRegistry,
 } from '@hachej/boring-sandbox/providers/registry'
 import type {
   SandboxRuntimeModeDescriptorV1,
-  SandboxRuntimeModeRegistryV1,
 } from '@hachej/boring-sandbox/shared'
 import type { LegacyRemoteWorkerProviderOptions } from '@hachej/boring-sandbox/providers/remote-worker'
 import { createAgentResourceFilesystemBinding } from '@hachej/boring-bash/server'
@@ -64,14 +62,11 @@ export const sandboxRuntimeHostOperations = agentSandboxRuntimeHostOperations
 export interface SandboxRuntimeModeOptions {
   readonly sandboxHandleStore?: SandboxHandleStore
   readonly providerOptions?: unknown
-  readonly registry?: SandboxRuntimeModeRegistryV1
 }
 
 export function getSandboxRuntimeModeDescriptor(
   mode: RuntimeModeId,
-  registry: SandboxRuntimeModeRegistryV1 = sandboxRuntimeModeRegistry,
 ): SandboxRuntimeModeDescriptorV1 {
-  if (registry !== sandboxRuntimeModeRegistry) return registry.resolve(mode)
   try {
     return resolveSandboxRuntimeModeDescriptor(mode)
   } catch {
@@ -83,11 +78,8 @@ export function getSandboxRuntimeModeDescriptor(
 
 export function findSandboxRuntimeModeDescriptor(
   mode: RuntimeModeId,
-  registry: SandboxRuntimeModeRegistryV1 = sandboxRuntimeModeRegistry,
 ): SandboxRuntimeModeDescriptorV1 | undefined {
-  return registry === sandboxRuntimeModeRegistry
-    ? findRegisteredSandboxRuntimeModeDescriptor(mode)
-    : registry.find(mode)
+  return findRegisteredSandboxRuntimeModeDescriptor(mode)
 }
 
 /** Built-in runtime layout root without exposing provider package constants to consumers. */
@@ -105,7 +97,7 @@ export function createSandboxRuntimeModeAdapter(
   mode: RuntimeModeId,
   options: SandboxRuntimeModeOptions = {},
 ): RuntimeModeAdapter {
-  const descriptor = getSandboxRuntimeModeDescriptor(mode, options.registry)
+  const descriptor = getSandboxRuntimeModeDescriptor(mode)
   return createDescriptorRuntimeModeAdapter({
     descriptor,
     runtimeHost: agentSandboxRuntimeHostOperations,

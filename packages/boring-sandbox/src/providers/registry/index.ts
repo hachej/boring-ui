@@ -1,4 +1,4 @@
-import { SandboxRuntimeModeRegistryV1 } from '../../shared/runtimeDescriptor'
+import type { SandboxRuntimeModeRegistryV1 } from '../../shared/runtimeDescriptor'
 import {
   BUILTIN_RUNTIME_MODE_IDS,
   isBuiltinRuntimeModeId,
@@ -8,6 +8,7 @@ import { localRuntimeDescriptor } from '../bwrap/runtimeDescriptor'
 import { directRuntimeDescriptor } from '../direct/runtimeDescriptor'
 import { remoteWorkerRuntimeDescriptor } from '../remote-worker/runtimeDescriptor'
 import { vercelSandboxRuntimeDescriptor } from '../vercel-sandbox/runtimeDescriptor'
+import { MutableSandboxRuntimeModeRegistryV1 } from './runtimeModeRegistry'
 
 export const BUILTIN_SANDBOX_RUNTIME_DESCRIPTORS = Object.freeze([
   directRuntimeDescriptor,
@@ -17,13 +18,24 @@ export const BUILTIN_SANDBOX_RUNTIME_DESCRIPTORS = Object.freeze([
   remoteWorkerRuntimeDescriptor,
 ])
 
-export const sandboxRuntimeModeRegistry = new SandboxRuntimeModeRegistryV1(
+const mutableSandboxRuntimeModeRegistry = new MutableSandboxRuntimeModeRegistryV1(
   BUILTIN_SANDBOX_RUNTIME_DESCRIPTORS,
 )
+export const sandboxRuntimeModeRegistry: SandboxRuntimeModeRegistryV1 = Object.freeze({
+  has: (id: string) => mutableSandboxRuntimeModeRegistry.has(id),
+  resolve: (id: string) => mutableSandboxRuntimeModeRegistry.resolve(id),
+  find: (id: string) => mutableSandboxRuntimeModeRegistry.find(id),
+  list: () => mutableSandboxRuntimeModeRegistry.list(),
+})
 
 for (const id of BUILTIN_RUNTIME_MODE_IDS) {
   if (!sandboxRuntimeModeRegistry.has(id)) {
     throw new Error(`Built-in runtime mode "${id}" has no registered descriptor`)
+  }
+}
+for (const descriptor of sandboxRuntimeModeRegistry.list()) {
+  if (!isBuiltinRuntimeModeId(descriptor.id)) {
+    throw new Error(`Registered sandbox provider "${descriptor.id}" is missing from the built-in runtime mode catalog`)
   }
 }
 

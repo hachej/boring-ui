@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
-  LegacyRemoteWorkerClient,
-  LegacyRemoteWorkerClientError,
-} from '@hachej/boring-sandbox/providers/remote-worker/legacy'
+  RemoteWorkerClient as HostRemoteWorkerClient,
+  RemoteWorkerClientError as HostRemoteWorkerClientError,
+} from '../../../../../host/remoteWorkerLegacy'
 
 import { ErrorCode } from '../../../../shared/error-codes'
 import { ERROR_CODE_AUTH_INVALID } from '../../../http/middleware'
@@ -23,8 +23,8 @@ describe('RemoteWorkerClient', () => {
   })
 
   test('preserves the public client and error class identities', () => {
-    expect(RemoteWorkerClient).toBe(LegacyRemoteWorkerClient)
-    expect(RemoteWorkerClientError).toBe(LegacyRemoteWorkerClientError)
+    expect(RemoteWorkerClient).toBe(HostRemoteWorkerClient)
+    expect(RemoteWorkerClientError).toBe(HostRemoteWorkerClientError)
   })
 
   test('builds internal headers from scratch and sends workspace ops', async () => {

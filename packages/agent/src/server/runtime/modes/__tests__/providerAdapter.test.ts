@@ -2,10 +2,14 @@ import { expect, test, vi } from 'vitest'
 
 import {
   type SandboxProviderV1,
+  type SandboxRuntimeModeDescriptorV1,
 } from '@hachej/boring-sandbox/shared'
 import type { Sandbox, Workspace } from '../../../../shared'
 import type { RuntimeBundle } from '../../mode'
-import { createProviderRuntimeModeAdapter } from '../providerAdapter'
+import {
+  createDescriptorRuntimeModeAdapter,
+  createProviderRuntimeModeAdapter,
+} from '../providerAdapter'
 import {
   createSandboxRuntimeModeAdapter,
   sandboxRuntimeHostOperations,
@@ -101,6 +105,50 @@ test('health and disposal stay bound to the pair after RuntimeBundle decoration'
   expect(checkHealth).toHaveBeenCalledOnce()
 
   await decoratedBundle.disposeRuntime?.()
+  expect(dispose).toHaveBeenCalledOnce()
+})
+
+test('the generic descriptor adapter composes a provider pair without a provider-specific Agent branch', async () => {
+  const dispose = vi.fn(async () => {})
+  const provider = createPairProvider({ dispose, providerId: 'fixture-provider' })
+  const descriptor: SandboxRuntimeModeDescriptorV1 = {
+    id: 'fixture-provider',
+    providerId: 'fixture-provider',
+    pair: {
+      workspaceProviderId: 'fixture-provider',
+      sandboxProviderId: 'fixture-provider',
+    },
+    capabilities: provider.capabilities,
+    errorCodeNamespace: 'FIXTURE_PROVIDER',
+    adapter: {
+      workspaceFsCapability: 'strong',
+      bash: { kind: 'host' },
+      filesystem: { kind: 'host' },
+      storageRoot: 'workspace-root',
+      provisioning: 'pair',
+    },
+    host: {
+      productionSafe: false,
+      inferSiblingSessionRoot: false,
+      allowPiExtensions: false,
+      loadWorkspacePiResources: false,
+      includePluginAuthoringProvisioning: false,
+      resolveCompanyContextFromHostWorkspace: false,
+      httpWorkspaceScope: 'default',
+    },
+    resolveRuntimeRoot: () => '/workspace',
+    createPairFactory: () => provider,
+  }
+  const adapter = createDescriptorRuntimeModeAdapter({
+    descriptor,
+    runtimeHost: testRuntimeHostOperations,
+  })
+
+  const bundle = await adapter.create({ workspaceRoot: '/workspace', sessionId: 'session' })
+
+  expect(bundle.workspace.runtimeContext).toBe(bundle.sandbox.runtimeContext)
+  expect(bundle.sandbox.provider).toBe('fixture-provider')
+  await bundle.disposeRuntime?.()
   expect(dispose).toHaveBeenCalledOnce()
 })
 

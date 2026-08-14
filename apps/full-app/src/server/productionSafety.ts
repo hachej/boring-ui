@@ -1,7 +1,5 @@
-import {
-  BUILTIN_SANDBOX_RUNTIME_DESCRIPTORS,
-  findSandboxRuntimeModeDescriptor,
-} from '@hachej/boring-sandbox/providers/registry'
+import { findSandboxRuntimeModeDescriptor } from '@hachej/boring-agent/server'
+import { BUILTIN_RUNTIME_MODE_IDS } from '@hachej/boring-agent/shared'
 
 export function assertProductionAgentModeIsSafe(env: NodeJS.ProcessEnv = process.env) {
   if (env.NODE_ENV !== 'production') return
@@ -10,9 +8,9 @@ export function assertProductionAgentModeIsSafe(env: NodeJS.ProcessEnv = process
   const mode = env.BORING_AGENT_MODE
   const descriptor = mode ? findSandboxRuntimeModeDescriptor(mode) : undefined
   if (!descriptor?.host.productionSafe) {
-    const safeModes = BUILTIN_SANDBOX_RUNTIME_DESCRIPTORS
-      .filter((candidate) => candidate.host.productionSafe)
-      .map((candidate) => candidate.id)
+    const safeModes = BUILTIN_RUNTIME_MODE_IDS.filter(
+      (candidate) => findSandboxRuntimeModeDescriptor(candidate)?.host.productionSafe,
+    )
     throw new Error(
       `BORING_AGENT_MODE=${mode ?? '<unset>'} is not allowed in production full-app. ` +
         `Set BORING_AGENT_MODE=${safeModes.join(' or ')}, or set BORING_ALLOW_UNSAFE_AGENT_MODE=1 only for an explicitly approved deployment.`,

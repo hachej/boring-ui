@@ -93,43 +93,10 @@ export interface SandboxRuntimeModeDescriptorV1 {
   ): SandboxProviderV1 | Promise<SandboxProviderV1>
 }
 
-export class SandboxRuntimeModeRegistryV1 {
-  readonly #descriptors = new Map<string, SandboxRuntimeModeDescriptorV1>()
-
-  constructor(descriptors: readonly SandboxRuntimeModeDescriptorV1[] = []) {
-    for (const descriptor of descriptors) this.register(descriptor)
-  }
-
-  register(descriptor: SandboxRuntimeModeDescriptorV1): this {
-    const id = descriptor.id.trim()
-    if (!id) throw new Error('Sandbox runtime descriptor id is required')
-    if (this.#descriptors.has(id)) {
-      throw new Error(`Sandbox runtime descriptor "${id}" is already registered`)
-    }
-    if (descriptor.providerId !== descriptor.pair.sandboxProviderId) {
-      throw new Error(
-        `Sandbox runtime descriptor "${id}" must pair its declared provider with its Sandbox factory`,
-      )
-    }
-    this.#descriptors.set(id, descriptor)
-    return this
-  }
-
-  has(id: string): boolean {
-    return this.#descriptors.has(id)
-  }
-
-  resolve(id: string): SandboxRuntimeModeDescriptorV1 {
-    const descriptor = this.#descriptors.get(id)
-    if (!descriptor) throw new Error(`Runtime mode "${id}" has no registered sandbox provider.`)
-    return descriptor
-  }
-
-  find(id: string): SandboxRuntimeModeDescriptorV1 | undefined {
-    return this.#descriptors.get(id)
-  }
-
-  list(): readonly SandboxRuntimeModeDescriptorV1[] {
-    return Object.freeze([...this.#descriptors.values()])
-  }
+/** Read-only provider lookup exposed to hosts. Registration stays package-internal. */
+export interface SandboxRuntimeModeRegistryV1 {
+  has(id: string): boolean
+  resolve(id: string): SandboxRuntimeModeDescriptorV1
+  find(id: string): SandboxRuntimeModeDescriptorV1 | undefined
+  list(): readonly SandboxRuntimeModeDescriptorV1[]
 }

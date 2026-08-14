@@ -1,15 +1,17 @@
 import { expect, test, vi } from 'vitest'
 
 import type { Sandbox, Workspace } from '@hachej/boring-agent/shared'
-import type { RuntimeBundle } from '../../../../../agent/src/server/runtime/mode'
-import { createDescriptorRuntimeModeAdapter } from '../../../../../agent/src/server/runtime/modes/providerAdapter'
-import type { AgentRuntimeHostOperations } from '../../../../../agent/src/server/runtime/runtimeHost'
 
 import {
-  SandboxRuntimeModeRegistryV1,
+  BUILTIN_RUNTIME_MODE_IDS,
   type SandboxProviderV1,
   type SandboxRuntimeModeDescriptorV1,
 } from '../../../shared'
+import {
+  BUILTIN_SANDBOX_RUNTIME_DESCRIPTORS,
+  sandboxRuntimeModeRegistry,
+} from '..'
+import { MutableSandboxRuntimeModeRegistryV1 } from '../runtimeModeRegistry'
 
 function createFixtureProvider(dispose: () => Promise<void>): SandboxProviderV1 {
   const runtimeContext = { runtimeCwd: '/workspace' }
@@ -97,33 +99,37 @@ const fixtureProviderDescriptor: SandboxRuntimeModeDescriptorV1 = {
 
 const disposeFixturePair = vi.fn(async () => {})
 
-test('a provider added only in boring-sandbox registers, resolves, and composes end to end', async () => {
-  const registry = new SandboxRuntimeModeRegistryV1()
+test('built-in catalog and registered descriptors are the same exact set', () => {
+  const catalogIds = [...BUILTIN_RUNTIME_MODE_IDS].sort()
+  const descriptorIds = BUILTIN_SANDBOX_RUNTIME_DESCRIPTORS.map(({ id }) => id).sort()
+
+  expect(descriptorIds).toEqual(catalogIds)
+  expect(sandboxRuntimeModeRegistry.list().map(({ id }) => id).sort()).toEqual(catalogIds)
+  expect('register' in sandboxRuntimeModeRegistry).toBe(false)
+})
+
+test('a provider added only in boring-sandbox registers, resolves, and creates its required pair', async () => {
+  const registry = new MutableSandboxRuntimeModeRegistryV1()
   registry.register(fixtureProviderDescriptor)
 
-  expect(registry.resolve('fixture-provider')).toBe(fixtureProviderDescriptor)
-  const adapter = createDescriptorRuntimeModeAdapter({
-    descriptor: registry.resolve('fixture-provider'),
-    // This remote fixture uses no host operations; composition still exercises
-    // the same generic adapter used by the Agent registry import.
-    runtimeHost: {} as AgentRuntimeHostOperations,
-  })
-  const bundle: RuntimeBundle = await adapter.create({
+  const descriptor = registry.resolve('fixture-provider')
+  expect(descriptor).toBe(fixtureProviderDescriptor)
+  const provider = await descriptor.createPairFactory({})
+  const pair = await provider.create({
     workspaceRoot: '/host/fixture-provider',
     workspaceId: 'workspace-1',
     sessionId: 'session-1',
   })
 
-  expect(adapter.runtimeProvider).toBe(fixtureProviderDescriptor)
-  expect(bundle.workspace.root).toBe('/workspace')
-  expect(bundle.sandbox.provider).toBe('fixture-provider')
-  expect(bundle.workspace.runtimeContext).toBe(bundle.sandbox.runtimeContext)
-  await bundle.disposeRuntime?.()
+  expect(pair.workspace.root).toBe('/workspace')
+  expect(pair.sandbox.provider).toBe('fixture-provider')
+  expect(pair.workspace.runtimeContext).toBe(pair.sandbox.runtimeContext)
+  await pair.dispose()
   expect(disposeFixturePair).toHaveBeenCalledOnce()
 })
 
 test('registry rejects a descriptor whose declared provider and pair differ', () => {
-  const registry = new SandboxRuntimeModeRegistryV1()
+  const registry = new MutableSandboxRuntimeModeRegistryV1()
   expect(() => registry.register({
     ...fixtureProviderDescriptor,
     pair: { ...fixtureProviderDescriptor.pair, sandboxProviderId: 'swapped-provider' },
