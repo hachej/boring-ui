@@ -99,6 +99,7 @@ export type PiChatReducerAction =
   | { type: 'connection-state'; state: PiChatConnectionState }
   | { type: 'heartbeat'; now?: number }
   | { type: 'protocol-error'; error: ChatError }
+  | { type: 'terminal-session-error'; message: string; errorCode: string }
   | { type: 'clear-notice'; id: string }
 
 export interface CreatePiChatStateOptions {
@@ -179,6 +180,20 @@ export function piChatReducer(state: PiChatState, action: PiChatReducerAction): 
           level: 'error',
           text: action.error.message,
           dismissible: true,
+        }),
+      }
+    case 'terminal-session-error':
+      return {
+        ...state,
+        status: 'error',
+        hydrated: true,
+        connection: { ...state.connection, state: 'suspended' },
+        retryNotice: undefined,
+        notices: upsertNotice(state.notices, {
+          id: 'terminal-session-error',
+          level: 'error',
+          text: action.message,
+          errorCode: action.errorCode,
         }),
       }
     case 'clear-notice':
