@@ -2,7 +2,6 @@ import { always } from "@antithesishq/bombadil"
 import {
   actions,
   extract,
-  type Action,
   type Point,
 } from "@antithesishq/bombadil/browser"
 import {
@@ -12,7 +11,7 @@ import {
   noUnhandledPromiseRejections,
 } from "@antithesishq/bombadil/browser/defaults/properties"
 import { observeCommandPaletteDocument } from "./browserObservation.ts"
-import { isSafeCommandPaletteControl } from "./scenarioActions.ts"
+import { createSafeCommandPaletteActions, isCommandPaletteDialogName, isSafeCommandPaletteControl } from "./scenarioActions.ts"
 import { COMMAND_PALETTE_TOUCH_EXEMPTIONS } from "./touchPolicy.ts"
 
 export {
@@ -55,6 +54,11 @@ const palette = extract((state): SafePaletteState => {
     element.getAttribute("aria-label") ?? element.textContent ?? ""
   ).replace(/\s+/g, " ").trim()
   const visibleElements = (selector: string): Element[] => Array.from(state.document.querySelectorAll(selector)).filter(visible)
+  const accessibleName = (element: Element): string => {
+    const labelledBy = element.getAttribute("aria-labelledby")?.trim().split(/\s+/) ?? []
+    return element.getAttribute("aria-label")
+      ?? labelledBy.map((id) => state.document.getElementById(id)?.textContent ?? "").join(" ").replace(/\s+/g, " ").trim()
+  }
   const completedResources = state.window.performance.getEntriesByType("resource")
     .map((entry) => entry.name)
   const workspaceReady = state.document.fonts.status === "loaded"
@@ -64,7 +68,7 @@ const palette = extract((state): SafePaletteState => {
     && completedResources.some((url) => url.includes("/api/v1/ui/state"))
   const dialogs = visibleElements('[role="dialog"], [aria-modal="true"]')
     .filter((element, index, all) => all.indexOf(element) === index)
-  const dialog = dialogs[0] ?? null
+  const dialog = dialogs.find((element) => isCommandPaletteDialogName(accessibleName(element))) ?? null
   const rootControls = Array.from(state.document.querySelectorAll(
     'button[aria-label="Search catalogs and commands"], button[data-boring-app-left-nav-key="search"], button[aria-label="Open app navigation"]',
   ))
@@ -172,29 +176,4 @@ export const command_palette_has_at_most_one_modal = always(() => palette.curren
 export const command_palette_focus_stays_visible = always(() => !palette.current.focusedControlInvalid)
 export const command_palette_mobile_touch_targets_are_sized = always(() => palette.current.undersizedTouchTargets.length === 0)
 
-export const commandPaletteSafeActions = actions((): Action[] => {
-  if (!palette.current.workspaceReady || palette.current.lastActionWasInitial) return ["Wait"]
-  const openPalette = palette.current.controls.find((control) => control.name === "open-command-palette")
-  if (!palette.current.dialogVisible && openPalette) {
-    const click: Action = { Click: { name: openPalette.name, point: openPalette.point } }
-    return ["Wait", click]
-  }
-  const openNavigation = palette.current.controls.find((control) => control.name === "open-app-navigation")
-  if (!palette.current.dialogVisible && openNavigation) {
-    const click: Action = { Click: { name: openNavigation.name, point: openNavigation.point } }
-    return ["Wait", click]
-  }
-  if (palette.current.dialogVisible && palette.current.lastActionWasPaletteOpen) return ["Wait"]
-  const generated: Action[] = ["Wait"]
-  for (const control of palette.current.controls) {
-    generated.push({ Click: control })
-  }
-  if (palette.current.dialogVisible) generated.push({ PressKey: { code: 27 } })
-  if (palette.current.inputFocused) {
-    generated.push(
-      { TypeText: { text: ">", delayMillis: 0 } },
-      { TypeText: { text: "no-matching-fixture-command", delayMillis: 0 } },
-    )
-  }
-  return generated
-})
+export const commandPaletteSafeActions = actions(() => createSafeCommandPaletteActions(palette.current))
