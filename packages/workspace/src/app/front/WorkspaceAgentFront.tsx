@@ -796,6 +796,7 @@ export function WorkspaceAgentFront<
     [authHeaders, requestHeaders, workspaceId],
   )
   const fleetModeEnabled = addressedAgentSelection && isPluginTabsLayout
+  const singleAgentSkillsActionEnabled = skillsActionEnabled && !fleetModeEnabled
   const useAgentSelection = useAddressedAgentSelectionProp ?? useDefaultAddressedAgentSelection
   const addressedAgents = useAgentSelection({
     apiBaseUrl,
@@ -1394,7 +1395,7 @@ export function WorkspaceAgentFront<
       && !addressedAgents.loading
       && !addressedAgents.agents.some((agent) => agent.agentTypeId === parsedAgentOverlay.agentTypeId))
     if (
-      (leftOverlay === "skills" && !skillsActionEnabled)
+      (leftOverlay === "skills" && !singleAgentSkillsActionEnabled)
       || (leftOverlay === "plugins" && !pluginsActionEnabled)
       || agentOverlayMissing
       || (leftOverlay !== null
@@ -1406,7 +1407,7 @@ export function WorkspaceAgentFront<
     ) {
       setLeftOverlay(null)
     }
-  }, [addressedAgents.agents, addressedAgents.loading, appLeftOverlayActions, leftOverlay, pluginOverlayActionIds, pluginsActionEnabled, skillsActionEnabled])
+  }, [addressedAgents.agents, addressedAgents.loading, appLeftOverlayActions, leftOverlay, pluginOverlayActionIds, pluginsActionEnabled, singleAgentSkillsActionEnabled])
   const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
@@ -2484,7 +2485,7 @@ export function WorkspaceAgentFront<
         onClick: () => setLeftOverlay((cur) => cur === action.id ? null : action.id),
       })
     }
-    if (skillsActionEnabled) {
+    if (singleAgentSkillsActionEnabled) {
       actions.push({
         id: "skills",
         label: "Agent",
@@ -2495,7 +2496,7 @@ export function WorkspaceAgentFront<
     }
     assertUniqueAppLeftActionIds(actions)
     return actions
-  }, [appLeftActions, appLeftOverlayActions, leftOverlay, pluginAppLeftActions, skillsActionEnabled])
+  }, [appLeftActions, appLeftOverlayActions, leftOverlay, pluginAppLeftActions, singleAgentSkillsActionEnabled])
   const openAppLeftChats = useCallback(() => {
     setLeftOverlay(null)
   }, [])
@@ -2535,7 +2536,7 @@ export function WorkspaceAgentFront<
       headerInsetEnd={!surfaceOpen}
     />
   ) : null
-  const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? agentLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
+  const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? agentLeftOverlayNode ?? (leftOverlay === "skills" && singleAgentSkillsActionEnabled ? (
     <AgentPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={mobileShellActive}
