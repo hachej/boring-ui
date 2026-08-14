@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { writeFileSync } from "node:fs";
 import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile, utimes } from "node:fs/promises";
-import { CURRENT_SESSION_VERSION, DefaultResourceLoader, SessionManager } from "@mariozechner/pi-coding-agent";
+import { CURRENT_SESSION_VERSION, DefaultResourceLoader, formatSkillsForPrompt, SessionManager } from "@mariozechner/pi-coding-agent";
 import { basename, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import {
   createResourceSettingsManager,
   createPiCodingAgentHarness,
   mergePiPackageSources,
+  projectSkillResourceLocations,
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
 import {
@@ -338,6 +339,47 @@ describe("pi extension path hot reload", () => {
       await rm(cwd, { recursive: true, force: true });
       await rm(agentDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("projectSkillResourceLocations", () => {
+  it("projects located package skills without changing workspace skills", () => {
+    const packagePath = "/srv/node_modules/@example/plugin/skills/reporting/SKILL.md";
+    const workspacePath = "/workspace/.agents/skills/local/SKILL.md";
+    const prompt = formatSkillsForPrompt([packagePath, workspacePath].map((filePath, index) => ({
+      name: `skill-${index}`,
+      description: `Skill ${index}`,
+      filePath,
+      baseDir: filePath.slice(0, -"/SKILL.md".length),
+      sourceInfo: { path: filePath, source: "test", scope: "project", origin: "top-level" },
+      disableModelInvocation: false,
+    })));
+
+    const projected = projectSkillResourceLocations(prompt, (filePath) =>
+      filePath === packagePath
+        ? { filesystem: "agent_resources", path: "packages/@example/plugin/skills/reporting/SKILL.md" }
+        : undefined,
+    );
+
+    expect(projected).toContain('<location>{"filesystem":"agent_resources","path":"packages/@example/plugin/skills/reporting/SKILL.md"}</location>');
+    expect(projected).toContain(`<location>${workspacePath}</location>`);
+    expect(projected).not.toContain(`<location>${packagePath}</location>`);
+    expect(projected).toContain("pass its filesystem and path fields to the read tool");
+    expect(projected).not.toContain("use that absolute path in tool commands");
+  });
+
+  it("leaves prompts unchanged without a binding-backed locator", () => {
+    const prompt = "<available_skills><location>/workspace/.agents/skills/local/SKILL.md</location></available_skills>";
+    expect(projectSkillResourceLocations(prompt, () => undefined)).toBe(prompt);
+  });
+
+  it("decodes and re-escapes XML entities", () => {
+    const prompt = "<location>/srv/@scope/a&amp;b/SKILL.md</location>";
+    const projected = projectSkillResourceLocations(prompt, (filePath) => {
+      expect(filePath).toBe("/srv/@scope/a&b/SKILL.md");
+      return { filesystem: "agent_resources", path: "packages/@scope/a&b/SKILL.md" };
+    });
+    expect(projected).toContain('{"filesystem":"agent_resources","path":"packages/@scope/a&amp;b/SKILL.md"}');
   });
 });
 

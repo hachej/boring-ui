@@ -1404,7 +1404,15 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
             packages?: unknown[]
             extensionPaths?: string[]
             getHotReloadableResources?: () => { additionalSkillPaths?: string[] }
+            locateSkillResource?: (filePath: string) => { filesystem: string; path: string } | undefined
           }
+          getFilesystemBindings?: (ctx: { scope: { workspaceScopeId: string; authSubjectId: string }; requestId: string }) => Promise<Array<{
+            filesystem: string
+            operations: { read(input: { filesystem: string; path: string }): Promise<{ content: string }> }
+          }>>
+          getSkillResourceSnapshot?: () => Promise<{
+            managedSkills: Array<{ name: string; resource: { filesystem: string; path: string } }>
+          } | undefined>
         }>
       }]
       const scope = routeOptions.authorizedScope
@@ -1426,6 +1434,24 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       expect(alpha.pi?.getHotReloadableResources?.().additionalSkillPaths).not.toContain(join(betaPackageRoot, "skills", "beta"))
       expect(await alpha.loadSystemPromptAppend?.()).toContain("ALPHA_MANIFEST_PROMPT")
       expect(await alpha.loadSystemPromptAppend?.()).not.toContain("BETA_MANIFEST_PROMPT")
+      const alphaSkillFile = join(alphaPackageRoot, "skills", "alpha", "SKILL.md")
+      expect(alpha.pi?.locateSkillResource?.(alphaSkillFile)).toEqual({
+        filesystem: "agent_resources",
+        path: "packages/@example/alpha/skills/alpha/SKILL.md",
+      })
+      expect(alpha.pi?.locateSkillResource?.(join(betaPackageRoot, "skills", "beta", "SKILL.md"))).toBeUndefined()
+      expect((await alpha.getSkillResourceSnapshot?.())?.managedSkills.map((skill) => skill.name)).toEqual(["alpha-skill"])
+      const agentCtx = { scope: { workspaceScopeId: "default", authSubjectId: "local" }, requestId: "agent-resource-scope" }
+      const alphaResources = (await alpha.getFilesystemBindings?.(agentCtx))?.find((binding) => binding.filesystem === "agent_resources")
+      expect(alphaResources).toBeDefined()
+      await expect(alphaResources!.operations.read({
+        filesystem: "agent_resources",
+        path: "packages/@example/alpha/skills/alpha/SKILL.md",
+      })).resolves.toMatchObject({ content: expect.stringContaining("alpha-skill") })
+      await expect(alphaResources!.operations.read({
+        filesystem: "agent_resources",
+        path: "packages/@example/beta/skills/beta/SKILL.md",
+      })).rejects.toBeDefined()
       expect(alpha.identity).toMatch(/^[a-f0-9]{64}$/)
 
       expect(beta.extraTools?.map((tool) => tool.name)).toContain("beta_tool")
@@ -1438,6 +1464,12 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       expect(beta.pi?.getHotReloadableResources?.().additionalSkillPaths).not.toContain(join(alphaPackageRoot, "skills", "alpha"))
       expect(await beta.loadSystemPromptAppend?.()).toContain("BETA_MANIFEST_PROMPT")
       expect(await beta.loadSystemPromptAppend?.()).not.toContain("ALPHA_MANIFEST_PROMPT")
+      expect(beta.pi?.locateSkillResource?.(join(betaPackageRoot, "skills", "beta", "SKILL.md"))).toEqual({
+        filesystem: "agent_resources",
+        path: "packages/@example/beta/skills/beta/SKILL.md",
+      })
+      expect(beta.pi?.locateSkillResource?.(join(alphaPackageRoot, "skills", "alpha", "SKILL.md"))).toBeUndefined()
+      expect((await beta.getSkillResourceSnapshot?.())?.managedSkills.map((skill) => skill.name)).toEqual(["beta-skill"])
       expect(beta.identity).toMatch(/^[a-f0-9]{64}$/)
       expect(beta.identity).not.toBe(alpha.identity)
 
@@ -2534,6 +2566,7 @@ describe("beforeReload triggers directory-source re-resolve", () => {
         } | undefined>
         pi?: {
           getHotReloadableResources?(): { additionalSkillPaths: string[] }
+          locateSkillResource?(filePath: string): { filesystem: string; path: string } | undefined
         }
         systemPromptAppend?: string
         loadSystemPromptAppend?(): string | undefined | Promise<string | undefined>
@@ -2552,6 +2585,10 @@ describe("beforeReload triggers directory-source re-resolve", () => {
       expect((await runtime.getFilesystemBindings?.(ctx))?.map((binding) => binding.filesystem)).toEqual(["agent_resources"])
       expect(runtime.pi?.getHotReloadableResources?.().additionalSkillPaths)
         .toContain(join(packageRoot, "skills", "authoring"))
+      expect(runtime.pi?.locateSkillResource?.(join(packageRoot, "skills", "authoring", "SKILL.md"))).toEqual({
+        filesystem: "agent_resources",
+        path: "packages/@example/direct-resource/skills/authoring/SKILL.md",
+      })
       const prompt = [runtime.systemPromptAppend, await runtime.loadSystemPromptAppend?.()]
         .filter(Boolean)
         .join("\n\n")

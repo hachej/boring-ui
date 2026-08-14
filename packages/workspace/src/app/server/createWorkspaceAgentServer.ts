@@ -58,7 +58,7 @@ import {
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify"
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
 import { createHash } from "node:crypto"
-import { basename, dirname, isAbsolute, join, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, posix, resolve } from "node:path"
 import { homedir } from "node:os"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
@@ -1782,10 +1782,31 @@ export async function createWorkspaceAgentServer(
       )
       const selectedPluginIds = new Set(contribution.artifacts.map((artifact) => artifact.pluginId))
       const resourceRegistry = currentPackageResourceSnapshot?.registry
-      const selectedPackageSkillPaths = resourceRegistry?.skills
+      const selectedPackageSkills = resourceRegistry?.skills
         .filter((skill) => skill.packageName !== "shared/pi-agent"
-          && skill.pluginIds.some((pluginId) => selectedPluginIds.has(pluginId)))
-        .map((skill) => skill.mountRoot) ?? []
+          && skill.pluginIds.some((pluginId) => selectedPluginIds.has(pluginId))) ?? []
+      const agentPackageSkills = legacyGlobalPluginAgentContributions
+        ? resourceRegistry?.skills ?? []
+        : selectedPackageSkills
+      const selectedPackageSkillPaths = selectedPackageSkills.map((skill) => skill.mountRoot)
+      const agentPackageSkillByFile = new Map(agentPackageSkills.map((skill) => [skill.skillFile, skill.resource]))
+      const agentPackageMounts = [...new Map(agentPackageSkills.map((skill) => [
+        posix.dirname(skill.resource.path),
+        { logicalRoot: posix.dirname(skill.resource.path), sourceRoot: skill.mountRoot },
+      ])).values()]
+      const agentPackageBinding = legacyGlobalPluginAgentContributions
+        ? currentPackageResourceSnapshot?.binding
+        : agentPackageMounts.length > 0
+          ? await runtimeHost.createAgentResourceFilesystemBinding(AGENT_RESOURCES_FILESYSTEM_ID, agentPackageMounts)
+          : undefined
+      const agentManagedPackageSkills = agentPackageSkills.flatMap((skill) => skill.name ? [{
+        name: skill.name,
+        description: skill.description ?? "",
+        resource: skill.resource,
+        invocable: false as const,
+        source: skill.packageName,
+      }] : [])
+      const locateAgentPackageSkill = (filePath: string) => agentPackageSkillByFile.get(resolve(filePath))
       const selectedPackagePrompt = mergePromptContents(resourceRegistry?.systemPrompts
         .filter((prompt) => prompt.pluginIds.some((pluginId) => selectedPluginIds.has(pluginId)))
         .map((prompt) => prompt.content) ?? [])
@@ -1938,6 +1959,7 @@ export async function createWorkspaceAgentServer(
             ...(selectedPi?.extensionPaths ?? []),
           ]),
           ...(getHotReloadableResources ? { getHotReloadableResources } : {}),
+          ...(agentPackageBinding ? { locateSkillResource: locateAgentPackageSkill } : {}),
         },
         extraTools: [
           ...baseExtraTools,
@@ -1953,26 +1975,20 @@ export async function createWorkspaceAgentServer(
             userId: scope.authSubjectId,
             requestId,
           }) ?? []
-          const packageBinding = currentPackageResourceSnapshot?.binding
           return [
             ...callerBindings,
-            ...(legacyGlobalPluginAgentContributions && packageBinding ? [packageBinding] : []),
+            ...(agentPackageBinding ? [agentPackageBinding] : []),
           ]
         },
         getSkillResourceSnapshot: async () => {
           const skillRegistry = currentPackageResourceSnapshot?.registry
           if (!skillRegistry) return undefined
-          // Package skill locators point at paths served through the
-          // `agent_resources` filesystem binding. That binding is only
-          // granted when `legacyGlobalPluginAgentContributions` is true
-          // (see `packageBinding` gating in getFilesystemBindings above) —
-          // an explicit fleet (`opts.agents` set) never receives it. Advertise
-          // locateSkill only when the binding it points at actually exists,
-          // otherwise callers resolve a locator whose `/files` fetch 404s.
+          // Snapshot and binding are derived from the same selected package
+          // skills, so one Agent can never receive another Agent's locator.
           return {
             generation: skillRegistry.generation,
-            managedSkills: legacyGlobalPluginAgentContributions ? skillRegistry.managedSkills : [],
-            locateSkill: legacyGlobalPluginAgentContributions ? skillRegistry.locateSkill : () => undefined,
+            managedSkills: agentManagedPackageSkills,
+            locateSkill: agentPackageBinding ? locateAgentPackageSkill : () => undefined,
           }
         },
         ...(intent.operation === "reload"
