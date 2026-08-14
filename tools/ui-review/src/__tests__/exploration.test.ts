@@ -1,7 +1,12 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
+import {
+  isRetryableBombadilStartupFailure,
+  resetBombadilOutputDirectory,
+  runWithBombadilStartupRetry,
+} from "../core/bombadilProcess"
 import {
   createUiReviewStagingPolicy,
   parseBombadilTrace,
@@ -29,6 +34,66 @@ const validateReproduceOwnership = (input: Omit<Parameters<typeof validateOwners
 const viewport = { name: "mobile", width: 390, height: 844, deviceScaleFactor: 1 } as const
 
 describe("Bombadil exploration staging", () => {
+  it("retries a Chromium websocket startup timeout exactly once", async () => {
+    const runAttempt = vi.fn()
+      .mockResolvedValueOnce({ code: 1, stderr: 'Timeout while resolving websocket URL from browser process, stderr: BrowserStderr("")' })
+      .mockResolvedValueOnce({ code: 0, stderr: "" })
+    const resetOutput = vi.fn(async () => {})
+    const waitBeforeRetry = vi.fn(async () => {})
+    await expect(runWithBombadilStartupRetry({ runAttempt, resetOutput, waitBeforeRetry })).resolves.toBeUndefined()
+    expect(runAttempt).toHaveBeenCalledTimes(2)
+    expect(resetOutput).toHaveBeenCalledOnce()
+    expect(waitBeforeRetry).toHaveBeenCalledOnce()
+  })
+
+  it("does not retry arbitrary Bombadil failures", async () => {
+    for (const stderr of ["UI_REVIEW_EXPLORATION_STABLE_ACTION_STATE_MISSING:mobile", "property violation"]) {
+      const runAttempt = vi.fn(async () => ({ code: 1, stderr }))
+      const resetOutput = vi.fn(async () => {})
+      await expect(runWithBombadilStartupRetry({ runAttempt, resetOutput, waitBeforeRetry: async () => {} }))
+        .rejects.toThrow("UI_REVIEW_BOMBADIL_FAILED:1")
+      expect(runAttempt).toHaveBeenCalledOnce()
+      expect(resetOutput).not.toHaveBeenCalled()
+    }
+  })
+
+  it("fails after one retried startup timeout and propagates spawn errors", async () => {
+    const timeout = { code: 1, stderr: "Timeout while resolving websocket URL from browser process" }
+    const runAttempt = vi.fn(async () => timeout)
+    const resetOutput = vi.fn(async () => {})
+    await expect(runWithBombadilStartupRetry({ runAttempt, resetOutput, waitBeforeRetry: async () => {} }))
+      .rejects.toThrow("UI_REVIEW_BOMBADIL_FAILED:1")
+    expect(runAttempt).toHaveBeenCalledTimes(2)
+    expect(resetOutput).toHaveBeenCalledOnce()
+
+    const spawnError = new Error("spawn ENOENT")
+    await expect(runWithBombadilStartupRetry({
+      runAttempt: async () => { throw spawnError },
+      resetOutput: async () => { throw new Error("unexpected reset") },
+      waitBeforeRetry: async () => {},
+    })).rejects.toBe(spawnError)
+  })
+
+  it("recreates a clean Bombadil output directory before retry", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ui-review-bombadil-reset-"))
+    try {
+      const outputPath = join(root, "raw")
+      await mkdir(outputPath)
+      const stale = join(outputPath, "partial-trace.jsonl")
+      await writeFile(stale, "partial")
+      await resetBombadilOutputDirectory(root, "raw")
+      await expect(readFile(stale)).rejects.toMatchObject({ code: "ENOENT" })
+      await expect(writeFile(join(outputPath, "retry-trace.jsonl"), "fresh")).resolves.toBeUndefined()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("recognizes only the Chromium websocket startup signature", () => {
+    expect(isRetryableBombadilStartupFailure("Timeout while resolving websocket URL from browser process")).toBe(true)
+    expect(isRetryableBombadilStartupFailure("Timeout while replaying browser actions")).toBe(false)
+  })
+
   it("reserves final files for candidate and paired baseline checkpoints", () => {
     const policy = createUiReviewStagingPolicy(testSpec)
     expect(policy.reservedFinalFiles).toBe(8 + (2 * testSpec.checkpoints.length * testSpec.viewports.length))
