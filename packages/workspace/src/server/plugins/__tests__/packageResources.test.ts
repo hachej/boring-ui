@@ -9,6 +9,7 @@ import {
   PACKAGE_RESOURCE_CONFLICT_CODE,
   PACKAGE_RESOURCE_INVALID_CODE,
   resolveWorkspacePackageResources,
+  selectAgentPackageResourceView,
 } from '../packageResources'
 
 const roots: string[] = []
@@ -267,6 +268,31 @@ describe('resolveWorkspacePackageResources', () => {
     expect(registry.additionalSkillPaths).not.toContain(sharedRoot)
     expect(registry.handledPackageRoots).toHaveLength(1)
 
+    const selected = selectAgentPackageResourceView(registry, {
+      pluginIds: new Set(['direct']),
+      includeAll: false,
+    })
+    expect(selected.skills.map((skill) => skill.packageName)).toEqual([
+      '@example/plugin',
+      'shared/pi-agent',
+    ])
+    expect(selected.locateSkill(sharedFile)).toEqual({
+      filesystem: AGENT_RESOURCES_FILESYSTEM_ID,
+      path: 'shared/pi-agent/shared-authoring/SKILL.md',
+    })
+    const isolated = selectAgentPackageResourceView(registry, {
+      pluginIds: new Set(['unrelated']),
+      includeAll: false,
+    })
+    expect(isolated.skills.map((skill) => skill.packageName)).toEqual(['shared/pi-agent'])
+    expect(isolated.locateSkill(join(packageRoot, 'skills', 'authoring', 'SKILL.md'))).toBeUndefined()
+    const catchAll = selectAgentPackageResourceView(registry, {
+      pluginIds: new Set(),
+      includeAll: true,
+    })
+    expect(catchAll.skills).toHaveLength(2)
+    expect(catchAll.systemPrompts).toEqual(['Use authoring.'])
+
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
       name: '@example/plugin',
       pi: { skills: ['skills/authoring'], systemPrompt: 'Use updated authoring.' },
@@ -276,6 +302,13 @@ describe('resolveWorkspacePackageResources', () => {
       options: { sharedSkillPaths: [{ id: 'shared-authoring', skillFile: sharedFile }] },
     })
     expect(updated.generation).not.toBe(registry.generation)
+  })
+
+  test("rejects the host-shared reserved package name", async () => {
+    const root = await tempRoot()
+    const packageRoot = await packageFixture(root, { name: "shared/pi-agent" })
+    await expect(resolveOne(packageRoot, { packageName: "shared/pi-agent" }))
+      .rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
   })
 
   test.each([
