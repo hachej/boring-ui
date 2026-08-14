@@ -1918,7 +1918,13 @@ export function WorkspaceAgentFront<
     const createReason = placementDirection
       ? `split:${afterId}:${placementDirection}`
       : "manual"
-    const created = resolvedCreate(createReason, ownerAgentTypeId)
+    let created: ReturnType<typeof resolvedCreate>
+    try {
+      created = resolvedCreate(createReason, ownerAgentTypeId)
+    } catch (error) {
+      settleIfOwner()
+      throw error
+    }
     void Promise.resolve(created).then((session) => {
       const id = createdSessionId(session)
       // Some session providers signal creation through a later sessions update.
@@ -2171,6 +2177,7 @@ export function WorkspaceAgentFront<
       requestHeaders: resolvedRequestHeaders,
       remoteSessionOptions: chatRemoteSessionOptions,
       showSessions: false,
+      onCreateSession: () => createChatSession(sessionRef.agentTypeId ?? selectedAgentTypeId),
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession({ agentTypeId: sessionRef.agentTypeId ?? selectedAgentTypeId, sessionId })),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
       bridgeEndpoint: null,
@@ -2211,7 +2218,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, selectedAgentTypeId, sessionSourceIsCurrent, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, createChatSession, delayAutoSubmitDraft, resolvedRequestHeaders, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, selectedAgentTypeId, sessionSourceIsCurrent, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionKey),
