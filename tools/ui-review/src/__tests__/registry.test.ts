@@ -70,6 +70,14 @@ describe("UI review spec registry", () => {
     expect(select(states)).toBe(states[0])
     expect(select(states.slice(1))).toBeUndefined()
 
+    const firstSettledWaitPath = [
+      { ordinal: 1, viewport: { name: "desktop" }, action: null, screenshotDigest: "initial", screenshotBytes: 80, screenshotPHash: "0000000000000000", normalizedState: { palette: { dialogVisible: false, mode: "none" } } },
+      { ordinal: 2, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "settled", screenshotBytes: 100, screenshotPHash: "0000000000000000", normalizedState: { palette: { dialogVisible: false, mode: "none" } } },
+      { ordinal: 3, viewport: { name: "desktop" }, action: { Click: {} }, screenshotDigest: "opening", screenshotBytes: 100, screenshotPHash: "0000000000000001", normalizedState: { palette: { dialogVisible: true, mode: "Commands" } } },
+      { ordinal: 4, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "painted", screenshotBytes: 120, screenshotPHash: "ffffffffffffffff", normalizedState: { palette: { dialogVisible: true, mode: "Commands" } } },
+    ] as unknown as UiReviewExplorationState[]
+    expect(select(firstSettledWaitPath)).toBe(firstSettledWaitPath[3])
+
     const mobileStates = [
       { ordinal: 17, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "painted", screenshotBytes: 80, screenshotPHash: "ffffffffffffffff", normalizedState: { palette: { dialogVisible: true, mode: null } } },
       { ordinal: 14, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "0000000000000000", normalizedState: { palette: { dialogVisible: false, mode: null } } },
