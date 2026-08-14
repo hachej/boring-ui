@@ -63,6 +63,26 @@ describe("CliWorkspaceShell", () => {
     document.title = ""
   })
 
+  test("keeps workspace geometry visible while metadata loads", async () => {
+    let resolveMeta: ((response: Response) => void) | undefined
+    globalThis.fetch = vi.fn(() => new Promise<Response>((resolve) => {
+      resolveMeta = resolve
+    })) as typeof fetch
+
+    const { container } = render(<CliWorkspaceShell />)
+
+    expect(container.querySelector('[data-boring-workspace-part="workspace-loading-shell"]')).not.toBeNull()
+    expect(screen.getByText("Loading CLI workspace…")).not.toBeNull()
+
+    resolveMeta?.(new Response(JSON.stringify({ projectName: "Seneca" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }))
+
+    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
+    expect(container.querySelector('[data-boring-workspace-part="workspace-loading-shell"]')).toBeNull()
+  })
+
   function mockWorkspacesMode(workspacesByCall: Array<Array<{ id: string; name: string; path: string; available: boolean }>>) {
     let call = 0
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
