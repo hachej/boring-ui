@@ -11,6 +11,7 @@ import {
   createProviderRuntimeModeAdapter,
 } from '../providerAdapter'
 import {
+  createRemoteWorkerModeAdapter,
   createSandboxRuntimeModeAdapter,
   sandboxRuntimeHostOperations,
 } from '../../sandboxRuntimeHost'
@@ -146,6 +147,7 @@ test('the generic descriptor adapter composes a provider pair without a provider
 
   const bundle = await adapter.create({ workspaceRoot: '/workspace', sessionId: 'session' })
 
+  expect(adapter.runtimeHostPolicy).toBe(descriptor.host)
   expect(bundle.workspace.runtimeContext).toBe(bundle.sandbox.runtimeContext)
   expect(bundle.sandbox.provider).toBe('fixture-provider')
   await bundle.disposeRuntime?.()
@@ -176,6 +178,26 @@ test('Agent owns built-in sandbox adapter selection and host operations', async 
   expect(adapter.runtimeHost).toBe(sandboxRuntimeHostOperations)
   await adapter.dispose?.()
   expect(() => createSandboxRuntimeModeAdapter('custom')).toThrow('no built-in adapter')
+})
+
+
+test('the explicit remote-worker V0 seam owns its host policy without borrowing the V1 descriptor', () => {
+  const adapter = createRemoteWorkerModeAdapter({
+    baseUrl: 'http://worker.test',
+    token: 'test-token',
+  })
+
+  expect(adapter.getRuntimeLayoutRoot?.({ workspaceRoot: '/host/workspace', sessionId: 'session' })).toBe('/workspace')
+  expect(adapter.runtimeProvider).toBeUndefined()
+  expect(adapter.runtimeHostPolicy).toEqual({
+    productionSafe: false,
+    inferSiblingSessionRoot: false,
+    allowPiExtensions: true,
+    loadWorkspacePiResources: false,
+    includePluginAuthoringProvisioning: true,
+    resolveCompanyContextFromHostWorkspace: true,
+    httpWorkspaceScope: 'session',
+  })
 })
 
 test('cached runtime eviction awaits asynchronous provider invalidation', async () => {

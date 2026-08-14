@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises'
 
 import type {
   SandboxProviderV1,
+  SandboxRuntimeHostPolicyV1,
   SandboxRuntimeModeDescriptorV1,
   SandboxRuntimePairFactoryOptionsV1,
   WorkspaceSandboxPairV1,
@@ -30,6 +31,7 @@ interface ProviderRuntimeModeAdapterOptions {
   providerFactory?: () => SandboxProviderV1 | Promise<SandboxProviderV1>
   resolveRuntimeRoot?: (context: ModeContext) => string
   runtimeProvider?: SandboxRuntimeModeDescriptorV1
+  runtimeHostPolicy?: SandboxRuntimeHostPolicyV1
   runtimeHost: AgentRuntimeHostOperations
   workspaceFsCapability: 'strong' | 'best-effort'
   bash: RuntimeBashStrategy
@@ -68,6 +70,7 @@ export function createProviderRuntimeModeAdapter(
   return {
     id: options.id,
     runtimeProvider: options.runtimeProvider,
+    runtimeHostPolicy: options.runtimeHostPolicy,
     runtimeHost: options.runtimeHost,
     workspaceFsCapability: options.workspaceFsCapability,
     readiness: options.readiness,
@@ -151,6 +154,7 @@ export function createDescriptorRuntimeModeAdapter(options: {
   return createProviderRuntimeModeAdapter({
     id: descriptor.id,
     runtimeProvider: descriptor,
+    runtimeHostPolicy: descriptor.host,
     providerFactory: () => descriptor.createPairFactory(options.pairFactoryOptions ?? {}),
     resolveRuntimeRoot: (context) => descriptor.resolveRuntimeRoot(context),
     runtimeHost,

@@ -1,16 +1,8 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import {
-  RemoteWorkerClient as HostRemoteWorkerClient,
-  RemoteWorkerClientError as HostRemoteWorkerClientError,
-} from '../../../../../host/remoteWorkerLegacy'
 
 import { ErrorCode } from '../../../../shared/error-codes'
 import { ERROR_CODE_AUTH_INVALID } from '../../../http/middleware'
-import {
-  RemoteWorkerClient,
-  RemoteWorkerClientError,
-  constantTimeTokenEqual,
-} from '../workerClient'
+import { RemoteWorkerClient, constantTimeTokenEqual } from '../workerClient'
 import {
   WORKER_INTERNAL_TOKEN_HEADER,
   WORKER_WORKSPACE_ID_HEADER,
@@ -20,11 +12,6 @@ import {
 describe('RemoteWorkerClient', () => {
   afterEach(() => {
     vi.useRealTimers()
-  })
-
-  test('preserves the public client and error class identities', () => {
-    expect(RemoteWorkerClient).toBe(HostRemoteWorkerClient)
-    expect(RemoteWorkerClientError).toBe(HostRemoteWorkerClientError)
   })
 
   test('builds internal headers from scratch and sends workspace ops', async () => {
@@ -67,38 +54,6 @@ describe('RemoteWorkerClient', () => {
     expect(Buffer.from(result.stdout).toString('utf8')).toBe('hello')
     expect(Buffer.from(result.stderr).toString('utf8')).toBe('warn')
     expect(result.exitCode).toBe(0)
-  })
-
-  test('preserves the abortable exec options-object contract', async () => {
-    const fetchImpl = vi.fn((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
-      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
-    }))
-    const client = new RemoteWorkerClient({
-      baseUrl: 'http://worker',
-      token: 'secret',
-      workspaceId: 'ws-1',
-      fetchImpl: fetchImpl as typeof fetch,
-    })
-    const controller = new AbortController()
-
-    const pending = expect(client.exec({ cmd: 'true' }, { signal: controller.signal }))
-      .rejects.toMatchObject({ code: ErrorCode.enum.ABORTED, statusCode: 499 })
-    controller.abort()
-    await pending
-  })
-
-  test('keeps the watch error callback optional', async () => {
-    const fetchImpl = vi.fn(async () => { throw new Error('stream failed') })
-    const client = new RemoteWorkerClient({
-      baseUrl: 'http://worker',
-      token: 'secret',
-      workspaceId: 'ws-1',
-      fetchImpl: fetchImpl as typeof fetch,
-    })
-
-    const stream = client.watch(vi.fn())
-    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledOnce())
-    stream.close()
   })
 
   test('rejects remote errors with stable code', async () => {

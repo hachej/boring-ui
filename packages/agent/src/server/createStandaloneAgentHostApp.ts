@@ -17,7 +17,6 @@ import { healthRoutes } from './http/routes/health'
 import type { RuntimeBundle, RuntimeFilesystemBinding, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { autoDetectMode, resolveMode } from './runtime/resolveMode'
 import type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
-import { findSandboxRuntimeModeDescriptor } from './runtime/sandboxRuntimeHost'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import { createPiResourceDigestFence, createPiResourceDigestInput } from './piResourceDigest'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
@@ -144,8 +143,7 @@ export async function createStandaloneAgentHostApp(
   const resolvedMode = options.runtimeModeAdapter?.id ?? options.mode ?? autoDetectMode()
   const baseModeAdapter = options.runtimeModeAdapter ?? resolveMode(resolvedMode)
   const modeAdapter = withStandaloneRuntimeContributions(baseModeAdapter, options, workspaceRoot)
-  const runtimeProvider = modeAdapter.runtimeProvider
-    ?? findSandboxRuntimeModeDescriptor(modeAdapter.id)
+  const runtimeHostPolicy = modeAdapter.runtimeHostPolicy
   const runtimeHost = options.runtimeHost ?? modeAdapter.runtimeHost
   const getRuntimeProvisioning = options.getRuntimeProvisioning ?? (() => options.runtimeProvisioning)
   // Local standalone/native Pi keeps its historical `default` transcript
@@ -153,7 +151,7 @@ export async function createStandaloneAgentHostApp(
   // its runtime workspace identity; forwarding `default` is invalid and would
   // route filesystem operations to the wrong tenant.
   const authority = createStandaloneScopeAuthority()
-  const httpWorkspaceScopeId = runtimeProvider?.host.httpWorkspaceScope === 'session'
+  const httpWorkspaceScopeId = runtimeHostPolicy?.httpWorkspaceScope === 'session'
     ? sessionId
     : DEFAULT_SESSION_ID
   const httpScope = authority.issue(httpWorkspaceScopeId)

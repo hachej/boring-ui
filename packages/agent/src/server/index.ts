@@ -278,6 +278,7 @@ export type {
   RuntimeFilesystemBindingOperations,
   RuntimeFilesystemCapability,
   RuntimeModeAdapter,
+  SandboxRuntimeHostPolicyV1,
   RuntimeModeId,
 } from './runtime/mode'
 export {

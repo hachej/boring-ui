@@ -16,14 +16,12 @@ import {
   DEFAULT_READONLY_WORKSPACE_PATHS,
   createValidatingAgentFleetCompiler,
   digestPiResourceInputs,
-  findSandboxRuntimeModeDescriptor,
   mergeRuntimeFilesystemBindings,
   normalizeRuntimeReadonlyFilesystemPolicy,
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
   projectAuthorizedSessionRunDetails,
   registerAgentHostEnvironmentRoutes,
-  resolveBuiltinRuntimeLayoutRoot,
   sandboxRuntimeHostOperations,
   withRuntimeEnvContributions,
   type AgentFleetCompiler,
@@ -1273,8 +1271,7 @@ export async function createWorkspaceAgentServer(
   const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(
     resolvedMode,
   )
-  const runtimeProvider = modeAdapter.runtimeProvider
-    ?? findSandboxRuntimeModeDescriptor(modeAdapter.id)
+  const runtimeHostPolicy = modeAdapter.runtimeHostPolicy
   const runtimeHost = opts.runtimeHost ?? modeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
@@ -1430,7 +1427,7 @@ export async function createWorkspaceAgentServer(
       ...pluginCollection.runtimePlugins,
       ...scanned,
     ])
-    if (runtimeProvider?.host.includePluginAuthoringProvisioning === false) {
+    if (runtimeHostPolicy?.includePluginAuthoringProvisioning === false) {
       return omitPluginAuthoringProvisioning(inputs)
     }
     return inputs
@@ -1440,10 +1437,7 @@ export async function createWorkspaceAgentServer(
     workspaceRoot,
     sessionId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
     workspaceId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
-  }) ?? resolveBuiltinRuntimeLayoutRoot(
-    resolvedMode,
-    workspaceRoot,
-  )
+  }) ?? workspaceRoot
   const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(runtimeWorkspaceRoot)
   type RuntimeProvisionerContext = Parameters<NonNullable<WorkspaceAgentCreateOptions["runtimeProvisioner"]>>[0]
   const runRuntimeProvisioning = async (runtimeBundle: RuntimeProvisionerContext["runtimeBundle"]) => {

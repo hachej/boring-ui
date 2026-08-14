@@ -21,7 +21,10 @@ import {
 import type {
   SandboxRuntimeModeDescriptorV1,
 } from '@hachej/boring-sandbox/shared'
-import type { LegacyRemoteWorkerProviderOptions } from '@hachej/boring-sandbox/providers/remote-worker'
+import {
+  createRemoteWorkerModeAdapter as createAgentOwnedRemoteWorkerModeAdapter,
+  type RemoteWorkerModeAdapterOptions,
+} from '../src/server/runtime/modes/remote-worker'
 import { createAgentResourceFilesystemBinding } from '@hachej/boring-bash/server'
 
 import type { SandboxHandleStore } from '../src/shared/sandbox-handle-store'
@@ -112,13 +115,11 @@ export function createAgentSandboxRuntimeModeAdapter(mode: RuntimeModeId = 'dire
   return createSandboxRuntimeModeAdapter(mode)
 }
 
-export type RemoteWorkerModeAdapterOptions = LegacyRemoteWorkerProviderOptions
+export type { RemoteWorkerModeAdapterOptions }
 
-/** Backward-compatible convenience wrapper over the provider registry. */
+/** Explicit Agent-owned V0 construction seam. */
 export function createRemoteWorkerModeAdapter(
   options: RemoteWorkerModeAdapterOptions = {},
 ): RuntimeModeAdapter {
-  return createSandboxRuntimeModeAdapter('remote-worker', {
-    providerOptions: options,
-  })
+  return createAgentOwnedRemoteWorkerModeAdapter(options)
 }
