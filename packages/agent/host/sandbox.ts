@@ -129,16 +129,8 @@ export type { RemoteWorkerModeAdapterOptions }
 export function createRemoteWorkerModeAdapter(
   options: RemoteWorkerModeAdapterOptions = {},
 ): RuntimeModeAdapter {
-  const adapter = createAgentOwnedRemoteWorkerModeAdapter(options)
-  return {
-    ...adapter,
-    runtimeHost: agentSandboxRuntimeHostOperations,
-    async create(context) {
-      const bundle = await adapter.create(context)
-      return {
-        ...bundle,
-        runtimeHost: agentSandboxRuntimeHostOperations,
-      }
-    },
-  }
+  return createAgentOwnedRemoteWorkerModeAdapter(
+    options,
+    agentSandboxRuntimeHostOperations,
+  )
 }

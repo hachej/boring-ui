@@ -11,7 +11,7 @@ import {
   BUILTIN_SANDBOX_RUNTIME_DESCRIPTORS,
   sandboxRuntimeModeRegistry,
 } from '..'
-import { MutableSandboxRuntimeModeRegistryV1 } from '../runtimeModeRegistry'
+import { createSandboxRuntimeModeRegistryV1 } from '../runtimeModeRegistry'
 
 function createFixtureProvider(dispose: () => Promise<void>): SandboxProviderV1 {
   const runtimeContext = { runtimeCwd: '/workspace' }
@@ -109,9 +109,7 @@ test('built-in catalog and registered descriptors are the same exact set', () =>
 })
 
 test('a provider added only in boring-sandbox registers, resolves, and creates its required pair', async () => {
-  const registry = new MutableSandboxRuntimeModeRegistryV1()
-  registry.register(fixtureProviderDescriptor)
-
+  const registry = createSandboxRuntimeModeRegistryV1([fixtureProviderDescriptor])
   const descriptor = registry.resolve('fixture-provider')
   expect(descriptor).toBe(fixtureProviderDescriptor)
   const provider = await descriptor.createPairFactory({})
@@ -129,9 +127,8 @@ test('a provider added only in boring-sandbox registers, resolves, and creates i
 })
 
 test('registry rejects a descriptor whose declared provider and pair differ', () => {
-  const registry = new MutableSandboxRuntimeModeRegistryV1()
-  expect(() => registry.register({
+  expect(() => createSandboxRuntimeModeRegistryV1([{
     ...fixtureProviderDescriptor,
     pair: { ...fixtureProviderDescriptor.pair, sandboxProviderId: 'swapped-provider' },
-  })).toThrow('must pair its declared provider')
+  }])).toThrow('must pair its declared provider')
 })

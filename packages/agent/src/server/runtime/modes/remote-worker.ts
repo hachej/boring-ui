@@ -1,5 +1,6 @@
 import { createServerFileSearch } from '../createServerFileSearch'
 import type { RuntimeModeAdapter } from '../mode'
+import type { AgentRuntimeHostOperations } from '../runtimeHost'
 import { createRemoteWorkerSandbox } from '../../sandbox/remote-worker/createRemoteWorkerSandbox'
 import { RemoteWorkerClient, type RemoteWorkerClientOptions } from '../../sandbox/remote-worker/workerClient'
 import { createRemoteWorkerWorkspace } from '../../workspace/createRemoteWorkerWorkspace'
@@ -21,9 +22,13 @@ function requireOption(value: string | undefined, name: string): string {
   return trimmed
 }
 
-export function createRemoteWorkerModeAdapter(opts: RemoteWorkerModeAdapterOptions = {}): RuntimeModeAdapter {
+export function createRemoteWorkerModeAdapter(
+  opts: RemoteWorkerModeAdapterOptions,
+  runtimeHost: AgentRuntimeHostOperations,
+): RuntimeModeAdapter {
   return {
     id: REMOTE_WORKER_PROVIDER,
+    runtimeHost,
     workspaceFsCapability: 'best-effort',
     getRuntimeLayoutRoot: () => REMOTE_WORKER_RUNTIME_CWD,
     runtimeHostPolicy: {
@@ -57,6 +62,7 @@ export function createRemoteWorkerModeAdapter(opts: RemoteWorkerModeAdapterOptio
         workspace,
         sandbox,
         fileSearch: createServerFileSearch(workspace, sandbox),
+        runtimeHost,
         disposeRuntime: async () => workspace.closeWatcher(),
       }
     },

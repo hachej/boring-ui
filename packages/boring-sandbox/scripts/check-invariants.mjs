@@ -116,9 +116,6 @@ export function findRegistrationOwnershipViolations(file, text) {
   if (registryImport.test(text) && relativeFile !== allowedRegistryConsumer) {
     violations.push({ file: relativeFile, name: "provider registry imported outside the Agent host boundary" });
   }
-  if (/\bMutableSandboxRuntimeModeRegistryV1\b|\bsandboxRuntimeModeRegistry\s*\.\s*register\s*\(/.test(text)) {
-    violations.push({ file: relativeFile, name: "provider registration leaked outside boring-sandbox" });
-  }
   return violations;
 }
 
@@ -186,15 +183,12 @@ export function main() {
 
   const ownershipFixture = findRegistrationOwnershipViolations(
     join(repoRoot, "packages", "core", "src", "badRegistry.ts"),
-    [
-      "import { sandboxRuntimeModeRegistry } from '@hachej/boring-sandbox/providers/registry'",
-      "sandboxRuntimeModeRegistry.register(descriptor)",
-    ].join("\n"),
+    "import { sandboxRuntimeModeRegistry } from '@hachej/boring-sandbox/providers/registry'",
   );
-  if (ownershipFixture.length === 2) {
-    pass("provider-registration ownership negative fixture rejects external import and mutation");
+  if (ownershipFixture.length === 1) {
+    pass("provider-registry ownership negative fixture rejects external imports");
   } else {
-    fail(`provider-registration ownership fixture mismatch: ${JSON.stringify(ownershipFixture)}`);
+    fail(`provider-registry ownership fixture mismatch: ${JSON.stringify(ownershipFixture)}`);
   }
 
   const registrationViolations = checkRegistrationOwnership();

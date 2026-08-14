@@ -60,9 +60,8 @@ export function createProviderRuntimeModeAdapter(
     : undefined
   const getProvider = (): Promise<SandboxProviderV1> => {
     if (!providerPromise) {
-      if (options.provider) providerPromise = Promise.resolve(options.provider)
-      else if (options.providerFactory) providerPromise = Promise.resolve(options.providerFactory())
-      else throw new Error(`Runtime mode "${options.id}" has no pair factory`)
+      if (!options.providerFactory) throw new Error(`Runtime mode "${options.id}" has no pair factory`)
+      providerPromise = Promise.resolve(options.providerFactory())
     }
     return providerPromise
   }
