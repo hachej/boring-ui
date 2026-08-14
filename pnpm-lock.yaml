@@ -484,6 +484,9 @@ importers:
       '@hachej/boring-diagram':
         specifier: workspace:*
         version: link:../../plugins/diagram
+      '@hachej/boring-pi':
+        specifier: workspace:*
+        version: link:../pi
       '@hachej/boring-sandbox':
         specifier: workspace:*
         version: link:../boring-sandbox

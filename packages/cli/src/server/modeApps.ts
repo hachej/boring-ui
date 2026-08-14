@@ -27,6 +27,7 @@ import type {
 } from "../shared/runtimePluginDiagnostics.js"
 import { resolveBoringUiCliPackageRoot } from "./pluginDiscovery.js"
 import type { readCliPluginPiSnapshot as readCliPluginPiSnapshotFn } from "./pluginDiscovery.js"
+import { detectFolderModeTaskProviders } from "./folderModeTaskProviders.js"
 
 type CliPluginPiSnapshot = ReturnType<typeof readCliPluginPiSnapshotFn>
 
@@ -130,6 +131,15 @@ function toCoreWorkspace(workspace: LocalWorkspace) {
     path: workspace.path,
   }
 }
+function packageNameAtRoot(packageRoot: string): string | undefined {
+  try {
+    const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as { name?: unknown }
+    return typeof pkg.name === "string" ? pkg.name : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function isUsableBoringUiPluginCliPackageRoot(candidate: string): boolean {
   try {
     const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
@@ -476,6 +486,9 @@ export async function createFolderModeApp(opts: {
     onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
   })
   const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot, { includeFolderModeAutomation: true })
+  const defaultPluginPackagePaths = pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true })
+  const tasksPluginPackage = defaultPluginPackagePaths.find((packageRoot) => packageNameAtRoot(packageRoot) === "@hachej/boring-tasks")
+  const taskProviders = await detectFolderModeTaskProviders(workspaceRoot)
   let app: FastifyInstance | undefined
   try {
     const runtimeProvisioning = await provisionCliWorkspaceRuntime({
@@ -501,13 +514,22 @@ export async function createFolderModeApp(opts: {
       // CLI-bundled internal plugins, resolved to absolute package dirs. This
       // drives the server-side install array (boot-time routes/agentTools);
       // additionalBoringPluginDirs only feeds the asset-manager scan.
-      defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true }),
+      defaultPluginPackages: defaultPluginPackagePaths,
       // CLI-bundled internal plugins are workspace capabilities (ask_user,
       // manage_tasks, boring_automation), not persona grants. Share their
       // complete Agent contribution across repository-owned fleet seats while
       // leaving arbitrary/workspace-local plugins on the explicit binding path.
       workspaceScopedDefaultPluginAgentContributions: true,
-      plugins: liveTranscriptPlugin ? [liveTranscriptPlugin] : undefined,
+      plugins: [
+        ...(tasksPluginPackage
+          ? [{
+              dir: tasksPluginPackage,
+              options: { config: { providers: taskProviders } },
+              trust: "internal" as const,
+            }]
+          : []),
+        ...(liveTranscriptPlugin ? [liveTranscriptPlugin] : []),
+      ],
       additionalBoringPluginDirs: pluginDirs,
       workspaceBridge: { allowInsecureLocalCliBrowserAuth: opts.allowInsecureLocalBridgeAuth === true },
       boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),

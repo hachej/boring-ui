@@ -538,11 +538,12 @@ function createBoringUiPluginCliPackageProvisioningContribution(): WorkspaceProv
   }
 }
 
-function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageSource | undefined {
-  const workspacePackageRoot = join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
-  const source = existsSync(join(workspacePackageRoot, "package.json"))
-    ? workspacePackageRoot
-    : resolveBoringPiPackageRoot()
+function createBoringPiPackageSource(): WorkspacePiPackageSource | undefined {
+  // The Pi runtime is part of the host's trusted computing base. Resolving it
+  // from the opened workspace would let that workspace substitute executable
+  // host code and, in pnpm projects, selects a symlink rejected by the resource
+  // containment guard. Always use the runtime installed with this package.
+  const source = resolveBoringPiPackageRoot()
   if (!source || !existsSync(join(source, "package.json"))) return undefined
   return { source, skills: ["skills/boring-plugin-authoring"] }
 }
@@ -561,8 +562,8 @@ function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageS
  * even under noSkills. Belt-and-suspenders so the agent always sees the
  * plugin-authoring skill.
  */
-export function resolveBoringPiSkillPaths(workspaceRoot: string): string[] {
-  const pkg = createBoringPiPackageSource(workspaceRoot)
+export function resolveBoringPiSkillPaths(_workspaceRoot?: string): string[] {
+  const pkg = createBoringPiPackageSource()
   const root = typeof pkg === "string" ? pkg : pkg?.source
   if (!root) return []
   const skillFile = join(root, "skills", "boring-plugin-authoring", "SKILL.md")
@@ -986,7 +987,9 @@ export async function resolveWorkspaceAgentServerPluginCollection(
     .filter((entry) => hasDirServerPlugin(entry))
   const allPluginEntries: WorkspacePluginEntry[] = []
   const seenDirEntries = new Set<string>()
-  for (const entry of [...defaultPluginDirEntries, ...(opts.plugins ?? [])]) {
+  // Explicit host entries take precedence over matching package defaults so a
+  // host can configure a bundled plugin without activating it twice.
+  for (const entry of [...(opts.plugins ?? []), ...defaultPluginDirEntries]) {
     if ("dir" in entry) {
       const key = resolve(entry.dir)
       if (seenDirEntries.has(key)) continue
@@ -1320,12 +1323,8 @@ export async function createWorkspaceAgentServer(
   })
   const defaultPluginPackagePaths = pluginCollection.defaultPluginPackagePaths
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
-  const allPluginEntries: WorkspacePluginEntry[] = [
-    ...defaultPluginPackagePaths
-      .map((dir) => ({ dir, hotReload: true, trust: "internal" as const }))
-      .filter((entry) => hasDirServerPlugin(entry)),
-    ...(opts.plugins ?? []),
-  ]
+  const allPluginEntries: WorkspacePluginEntry[] = pluginCollection.resolvedPluginArtifacts
+    .map((artifact) => artifact.entry)
 
   const { registry: workspaceBridgeRegistry } = createWorkspaceBridgeRuntimeCore({
     registry: opts.workspaceBridge?.registry,
@@ -1338,7 +1337,7 @@ export async function createWorkspaceAgentServer(
 
   // Static app resources are global to every Agent. Plugin Agent resources are
   // added later from the normalized contribution for that Agent.
-  const workspacePackagePiPackage = pluginAuthoringEnabled ? createBoringPiPackageSource(workspaceRoot) : undefined
+  const workspacePackagePiPackage = pluginAuthoringEnabled ? createBoringPiPackageSource() : undefined
   const builtInBoringPiSkillPaths = pluginAuthoringEnabled ? resolveBoringPiSkillPaths(workspaceRoot) : []
   const baseStaticPiSkillPaths = [
     ...builtInBoringPiSkillPaths,

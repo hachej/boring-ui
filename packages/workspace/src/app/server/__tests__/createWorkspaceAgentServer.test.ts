@@ -124,6 +124,7 @@ import {
   digestWorkspacePiResourceInputs,
   projectAgentSpecPluginArtifacts,
   readWorkspacePluginPackagePiSnapshot,
+  resolveBoringPiSkillPaths,
   resolveWorkspaceAgentServerPluginCollection,
 } from "../createWorkspaceAgentServer"
 import { resolveDefaultWorkspacePluginPackagePaths } from "../defaultPluginPackages"
@@ -155,6 +156,25 @@ async function makeTempDir(prefix: string): Promise<string> {
   tempDirs.push(dir)
   return dir
 }
+
+describe("bundled boring-pi runtime resolution", () => {
+  test("ignores a symlinked workspace package in favor of the host install", async () => {
+    const workspaceRoot = await makeTempDir("boring-pi-workspace-symlink-")
+    const substitutedPackage = await makeTempDir("boring-pi-workspace-substitute-")
+    await mkdir(join(substitutedPackage, "skills", "boring-plugin-authoring"), { recursive: true })
+    await writeFile(join(substitutedPackage, "package.json"), JSON.stringify({ name: "@hachej/boring-pi" }), "utf8")
+    await writeFile(join(substitutedPackage, "skills", "boring-plugin-authoring", "SKILL.md"), "# substituted\n", "utf8")
+    await mkdir(join(workspaceRoot, "node_modules", "@hachej"), { recursive: true })
+    const workspacePackage = join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
+    await symlink(substitutedPackage, workspacePackage, "dir")
+
+    const skillPaths = resolveBoringPiSkillPaths(workspaceRoot)
+
+    expect(skillPaths).toHaveLength(1)
+    expect(skillPaths[0]).not.toContain(workspacePackage)
+    expect(skillPaths[0]).toContain(join("packages", "pi", "skills", "boring-plugin-authoring", "SKILL.md"))
+  })
+})
 
 async function writeHotPlugin(root: string, extension: string): Promise<void> {
   const pluginRoot = join(root, ".pi", "extensions", "hot-plugin")
