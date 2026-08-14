@@ -15,7 +15,7 @@ import type {
 import { createNodeWorkspace, getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
 import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
-import { homedir, userInfo } from "node:os"
+import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
 import { registerWorkspacePluginConfigRoutes, registerWorkspaceTaskRoutes } from "./workspacePluginRoutes.js"
@@ -131,16 +131,6 @@ function toCoreWorkspace(workspace: LocalWorkspace) {
     path: workspace.path,
   }
 }
-function ambientAgentSkillRoots(): string[] {
-  const homes = [homedir()]
-  try {
-    homes.push(userInfo().homedir)
-  } catch {
-    // Some sandboxed runtimes cannot resolve the OS account; HOME still works.
-  }
-  return [...new Set(homes)].map((home) => join(home, ".agents", "skills"))
-}
-
 function packageNameAtRoot(packageRoot: string): string | undefined {
   try {
     const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as { name?: unknown }
@@ -491,10 +481,6 @@ export async function createFolderModeApp(opts: {
         reviewIntervalMs: opts.liveTranscripts.reviewIntervalMs,
       })
     : undefined
-  const diagnosticsStore = createRuntimePluginDiagnosticsStore()
-  const runtimeHost = await createPluginFrontRuntimeHost({
-    onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
-  })
   const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot, { includeFolderModeAutomation: true })
   const defaultPluginPackagePaths = pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true })
   const tasksPluginPackage = defaultPluginPackagePaths.find((packageRoot) => packageNameAtRoot(packageRoot) === "@hachej/boring-tasks")
@@ -502,6 +488,10 @@ export async function createFolderModeApp(opts: {
   const beadsOperations = taskProviders.some((provider) => provider.provider === "beads")
     ? (await import("@hachej/boring-tasks/server")).createWorkspaceBeadsOperations(createNodeWorkspace(workspaceRoot))
     : undefined
+  const diagnosticsStore = createRuntimePluginDiagnosticsStore()
+  const runtimeHost = await createPluginFrontRuntimeHost({
+    onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
+  })
   let app: FastifyInstance | undefined
   try {
     const runtimeProvisioning = await provisionCliWorkspaceRuntime({
@@ -556,6 +546,7 @@ export async function createFolderModeApp(opts: {
       try { await app.close() } catch {}
     }
     try { await runtimeHost.close() } catch {}
+    try { await beadsOperations?.dispose?.() } catch {}
     throw error
   }
   const folderAssetManager = (app as FastifyInstance & {
@@ -764,9 +755,6 @@ export async function createWorkspacesModeApp(opts: {
 
   const piResourceAuthorizedRoots = (workspace: LocalWorkspace): string[] => [
     workspace.path,
-    ...(opts.loadAmbientSkills === false
-      ? []
-      : ambientAgentSkillRoots()),
     ...pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
     ...pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, { includeFolderModeAutomation: true })
       .map((source) => typeof source === "string" ? source : source.rootDir),

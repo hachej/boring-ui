@@ -59,7 +59,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify"
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
-import { homedir, userInfo } from "node:os"
+import { homedir } from "node:os"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
@@ -435,16 +435,6 @@ function boringPiRootVisibleToAgentTools(workspaceRoot: string, resolvedMode: st
 
 
 
-function ambientAgentSkillRoots(): string[] {
-  const homes = [homedir()]
-  try {
-    homes.push(userInfo().homedir)
-  } catch {
-    // Some sandboxed runtimes cannot resolve the OS account; HOME still works.
-  }
-  return [...new Set(homes)].map((home) => join(home, ".agents", "skills"))
-}
-
 function resolveWorkspacePackageRoot(): string {
   const candidates = [
     join(__dirname, ".."),
@@ -475,6 +465,16 @@ function useLocalPackageProvisioning(): boolean {
   return process.env.BORING_USE_LOCAL_PACKAGES === "1"
 }
 
+function isUsableBoringPiPackageRoot(candidate: string): boolean {
+  try {
+    const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: unknown }
+    return pkg.name === "@hachej/boring-pi"
+      && existsSync(join(candidate, "skills", "boring-plugin-authoring", "SKILL.md"))
+  } catch {
+    return false
+  }
+}
+
 function resolveBoringPiPackageRoot(): string | null {
   const workspacePackageRoot = resolveWorkspacePackageRoot()
   const candidates = [
@@ -482,18 +482,22 @@ function resolveBoringPiPackageRoot(): string | null {
     join(workspacePackageRoot, "node_modules", "@hachej", "boring-pi"),
   ]
   for (const candidate of candidates) {
-    try {
-      const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
-      if (pkg.name === "@hachej/boring-pi") return candidate
-    } catch {
-      // try next layout
-    }
+    if (isUsableBoringPiPackageRoot(candidate)) return candidate
   }
   try {
-    return dirname(require.resolve("@hachej/boring-pi/package.json"))
+    const resolved = dirname(require.resolve("@hachej/boring-pi/package.json"))
+    return isUsableBoringPiPackageRoot(resolved) ? resolved : null
   } catch {
     return null
   }
+}
+
+function requireBoringPiPackageRoot(): string {
+  const source = resolveBoringPiPackageRoot()
+  if (source) return source
+  throw new Error(
+    "BORING_PI_RUNTIME_NOT_FOUND: @hachej/boring-pi is missing or incomplete in the host installation",
+  )
 }
 
 function isUsableBoringUiPluginCliPackageRoot(candidate: string): boolean {
@@ -548,14 +552,15 @@ function createBoringUiPluginCliPackageProvisioningContribution(): WorkspaceProv
   }
 }
 
-function createBoringPiPackageSource(): WorkspacePiPackageSource | undefined {
+function createBoringPiPackageSource(): WorkspacePiPackageSource {
   // The Pi runtime is part of the host's trusted computing base. Resolving it
   // from the opened workspace would let that workspace substitute executable
   // host code and, in pnpm projects, selects a symlink rejected by the resource
-  // containment guard. Always use the runtime installed with this package.
-  const source = resolveBoringPiPackageRoot()
-  if (!source || !existsSync(join(source, "package.json"))) return undefined
-  return { source, skills: ["skills/boring-plugin-authoring"] }
+  // containment guard. Always require the runtime installed with this package.
+  return {
+    source: requireBoringPiPackageRoot(),
+    skills: ["skills/boring-plugin-authoring"],
+  }
 }
 
 /**
@@ -573,11 +578,7 @@ function createBoringPiPackageSource(): WorkspacePiPackageSource | undefined {
  * plugin-authoring skill.
  */
 export function resolveBoringPiSkillPaths(_workspaceRoot?: string): string[] {
-  const pkg = createBoringPiPackageSource()
-  const root = typeof pkg === "string" ? pkg : pkg?.source
-  if (!root) return []
-  const skillFile = join(root, "skills", "boring-plugin-authoring", "SKILL.md")
-  return existsSync(skillFile) ? [skillFile] : []
+  return [join(requireBoringPiPackageRoot(), "skills", "boring-plugin-authoring", "SKILL.md")]
 }
 
 
@@ -1933,9 +1934,6 @@ export async function createWorkspaceAgentServer(
             runtimeLayout.skills,
             ...selectedSourceSkillPaths,
             ...builtInBoringPiSkillPaths,
-            ...((selectedPi?.noSkills ?? resolvedBasePi.noSkills) === false
-              ? ambientAgentSkillRoots()
-              : []),
             ...[localPiPackageRoot(workspacePackagePiPackage)]
               .filter((path): path is string => Boolean(path)),
             ...(getEffectivePackageResourceSnapshot()?.registry.handledPackageRoots ?? []),

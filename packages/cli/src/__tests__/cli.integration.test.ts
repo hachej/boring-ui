@@ -677,7 +677,6 @@ test("package exposes an installable boring-ui bin with published assets", async
     "@fastify/static": expect.any(String),
     "@hachej/boring-agent": expect.any(String),
     "@hachej/boring-ask-user": expect.any(String),
-    "@hachej/boring-pi": expect.any(String),
     "@hachej/boring-workspace": expect.any(String),
     fastify: expect.any(String),
   }))
