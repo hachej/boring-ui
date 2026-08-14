@@ -1,8 +1,9 @@
 import { PROVIDER_CAPABILITIES } from '../../shared/providerMatrix'
 import type { SandboxRuntimeModeDescriptorV1 } from '../../shared/runtimeDescriptor'
-import type { BlaxelSandboxProviderOptions } from './config'
-
-const BLAXEL_WORKSPACE_ROOT = '/workspace'
+import {
+  BLAXEL_WORKSPACE_ROOT,
+  type BlaxelSandboxProviderOptions,
+} from './config'
 
 export function createBlaxelRuntimeDescriptor(
   providerOptions: BlaxelSandboxProviderOptions = {},

@@ -4,11 +4,13 @@ import type {
   SandboxRuntimeRemotePathOptionsV1,
 } from '../../shared/runtimeDescriptor'
 import type { VercelSandboxProviderOptions } from './createVercelSandboxProvider'
+import {
+  VERCEL_SANDBOX_REMOTE_ROOT,
+  VERCEL_SANDBOX_WORKSPACE_ROOT,
+} from './createVercelSandboxWorkspace'
 
 const VERCEL_BINDING_HEALTHCHECK_INTERVAL_MS = 15_000
 const VERCEL_SAFE_DEFAULT_PATH = '/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin'
-const VERCEL_SANDBOX_REMOTE_ROOT = '/vercel/sandbox'
-const VERCEL_SANDBOX_WORKSPACE_ROOT = '/workspace'
 
 function vercelRemoteWorkspacePathOptions(): SandboxRuntimeRemotePathOptionsV1 {
   const remoteRoot = VERCEL_SANDBOX_REMOTE_ROOT

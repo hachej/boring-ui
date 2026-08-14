@@ -41,7 +41,7 @@ export class WorkspaceRuntimeSandboxHandleStore {
   constructor(
     private readonly store: WorkspaceRuntimeStoreLike,
     provider = 'vercel',
-    private readonly defaultPersistenceMode = 'ephemeral',
+    private readonly defaultPersistenceMode = provider === 'blaxel' ? 'persistent' : 'ephemeral',
   ) {
     this.resource = { kind: 'sandbox', purpose: 'main', provider }
   }

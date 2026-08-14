@@ -191,6 +191,13 @@ export function main() {
     fail(`provider-registry ownership fixture mismatch: ${JSON.stringify(ownershipFixture)}`);
   }
 
+  const providersBarrel = readFileSync(join(packageRoot, "src", "providers", "index.ts"), "utf8");
+  if (/from\s+["']\.\/registry(?:\/[^"']+)?(?:\.js)?["']/.test(providersBarrel)) {
+    fail("provider registry must not be re-exported from the general providers barrel");
+  } else {
+    pass("provider registry is available only through its dedicated ownership-gated export");
+  }
+
   const registrationViolations = checkRegistrationOwnership();
   for (const violation of registrationViolations) {
     fail(`${violation.name} found in ${violation.file}`);

@@ -31,11 +31,3 @@ export {
   type RemoteWorkerFleetConfigV1,
   type RemoteWorkerFleetWorkerConfigV1,
 } from './remote-worker/fleetConfig'
-export {
-  BUILTIN_RUNTIME_MODE_IDS,
-  BUILTIN_SANDBOX_RUNTIME_DESCRIPTORS,
-  findSandboxRuntimeModeDescriptor,
-  isBuiltinRuntimeModeId,
-  resolveSandboxRuntimeModeDescriptor,
-  sandboxRuntimeModeRegistry,
-} from './registry/index'

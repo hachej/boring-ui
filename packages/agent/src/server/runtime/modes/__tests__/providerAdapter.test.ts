@@ -238,6 +238,28 @@ test('the explicit remote-worker V0 bundle exposes host operations and runtime d
   await bundle.disposeRuntime?.()
 })
 
+test('retries provider creation and tolerates disposal after a factory rejection', async () => {
+  const provider = createPairProvider({ dispose: vi.fn(async () => {}) })
+  const providerFactory = vi.fn()
+    .mockRejectedValueOnce(new Error('provider unavailable'))
+    .mockResolvedValue(provider)
+  const adapter = createProviderRuntimeModeAdapter({
+    id: 'direct',
+    providerFactory,
+    runtimeHost: testRuntimeHostOperations,
+    workspaceFsCapability: 'strong',
+    bash: { kind: 'host' },
+    filesystem: { kind: 'host' },
+  })
+
+  await expect(adapter.create({ workspaceRoot: '/tmp/workspace', sessionId: 'session' }))
+    .rejects.toThrow('provider unavailable')
+  await expect(adapter.dispose?.()).resolves.toBeUndefined()
+  await expect(adapter.create({ workspaceRoot: '/tmp/workspace', sessionId: 'session' }))
+    .resolves.toMatchObject({ workspace: { root: '/workspace' } })
+  expect(providerFactory).toHaveBeenCalledTimes(2)
+})
+
 test('cached runtime eviction awaits asynchronous provider invalidation', async () => {
   let releaseInvalidation!: () => void
   const invalidate = vi.fn(() => new Promise<void>((resolve) => { releaseInvalidation = resolve }))

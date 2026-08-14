@@ -31,6 +31,24 @@ test('closes typed provider configuration into the descriptor', async () => {
   expect(createVercelSandboxProvider).toHaveBeenCalledWith({ getEnvVar })
 })
 
+test('keeps model-visible workspace paths rooted at the provider workspace', () => {
+  const descriptor = createVercelSandboxRuntimeDescriptor()
+  const filesystem = descriptor.adapter.filesystem
+
+  expect(filesystem.kind).toBe('remote-workspace')
+  if (filesystem.kind !== 'remote-workspace') throw new Error('expected remote workspace filesystem')
+  expect(filesystem.pathOptions?.toRemotePath?.('/workspace/src/index.ts'))
+    .toBe('/workspace/src/index.ts')
+  expect(filesystem.pathOptions?.toRuntimePath?.('/workspace/src/index.ts'))
+    .toBe('/workspace/src/index.ts')
+  expect(filesystem.pathOptions?.toRemotePath?.('/vercel/sandbox/src/index.ts'))
+    .toBe('/workspace/src/index.ts')
+  expect(filesystem.pathOptions?.toRuntimePath?.('/vercel/sandbox/src/index.ts'))
+    .toBe('/workspace/src/index.ts')
+  expect(filesystem.pathOptions?.sanitizeErrorText?.('failed at /vercel/sandbox/src/index.ts'))
+    .toBe('failed at /workspace/src/index.ts')
+})
+
 test('host handle ownership overrides configured store and orphan policy', async () => {
   const configuredStore = createStore()
   const hostStore = createStore()

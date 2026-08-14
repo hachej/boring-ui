@@ -166,7 +166,7 @@ describe('WorkspaceRuntimeSandboxHandleStore', () => {
   it('isolates Vercel and Blaxel handles for the same workspace', async () => {
     const { store } = makeResourceStore()
     const vercel = new WorkspaceRuntimeSandboxHandleStore(store, 'vercel')
-    const blaxel = new WorkspaceRuntimeSandboxHandleStore(store, 'blaxel', 'persistent')
+    const blaxel = new WorkspaceRuntimeSandboxHandleStore(store, 'blaxel')
     const base = { workspaceId: 'same', createdAt: '2026-04-29T00:00:00.000Z', lastUsedAt: '2026-04-29T00:02:00.000Z' }
     await vercel.put({ ...base, sandboxId: 'vercel-one', provider: 'blaxel' })
     await blaxel.put({ ...base, sandboxId: 'blaxel-one', provider: 'vercel' })

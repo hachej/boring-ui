@@ -61,10 +61,18 @@ export function createProviderRuntimeModeAdapter(
   const getProvider = (): Promise<SandboxProviderV1> => {
     if (!providerPromise) {
       if (!options.providerFactory) throw new Error(`Runtime mode "${options.id}" has no pair factory`)
-      providerPromise = Promise.resolve(options.providerFactory())
+      const attempt = Promise.resolve(options.providerFactory())
+      providerPromise = attempt
+      void attempt.catch(() => {
+        if (providerPromise === attempt) providerPromise = undefined
+      })
     }
     return providerPromise
   }
+  const getCreatedProvider = (): Promise<SandboxProviderV1 | undefined> =>
+    options.provider
+      ? Promise.resolve(options.provider)
+      : providerPromise?.catch(() => undefined) ?? Promise.resolve(undefined)
 
   return {
     id: options.id,
@@ -87,14 +95,12 @@ export function createProviderRuntimeModeAdapter(
       ?? options.provider?.resolveRuntimeRoot(context)
       ?? context.workspaceRoot,
     evictCachedRuntime: async ({ workspaceId }) => {
-      if (!providerPromise) return
-      const provider = await providerPromise
-      await provider.invalidate?.({ workspaceId })
+      const provider = await getCreatedProvider()
+      await provider?.invalidate?.({ workspaceId })
     },
     async dispose() {
-      if (!providerPromise) return
-      const provider = await providerPromise
-      await provider.close?.()
+      const provider = await getCreatedProvider()
+      await provider?.close?.()
     },
     async create(context) {
       await options.preflight?.(context)
