@@ -6,7 +6,8 @@ const isoString = z.string().datetime({ offset: true })
 const nonNegativeInteger = z.number().int().nonnegative()
 
 export const AutomationRunStatusSchema = z.enum(["queued", "running", "succeeded", "failed", "cancelled"])
-export const AutomationRunTriggerSchema = z.enum(["manual", "scheduled"])
+export const AutomationRunTriggerSchema = z.enum(["manual", "scheduled", "dispatch"])
+export const AutomationSessionModeSchema = z.enum(["new", "continue"])
 
 export const AutomationCreateSchema = z.object({
   title: nonEmptyString,
@@ -16,6 +17,7 @@ export const AutomationCreateSchema = z.object({
   model: nonEmptyString,
   agentTypeId: nonEmptyString.optional(),
   thinkingLevel: z.enum(["off", "low", "medium", "high"]).optional(),
+  sessionMode: AutomationSessionModeSchema.optional().default("new"),
   prompt: z.string().optional(),
 }).strict().superRefine((value, ctx) => {
   addScheduleIssues(ctx, value)
@@ -29,6 +31,7 @@ export const AutomationPatchSchema = z.object({
   model: nonEmptyString.optional(),
   agentTypeId: nonEmptyString.optional(),
   thinkingLevel: z.enum(["off", "low", "medium", "high"]).optional(),
+  sessionMode: AutomationSessionModeSchema.optional(),
 }).strict()
   .refine((value) => Object.keys(value).length > 0, "at least one field must be provided")
   .superRefine((value, ctx) => {
@@ -58,6 +61,7 @@ export const AutomationRunLifecyclePatchSchema = z.object({
   outputTokens: nonNegativeInteger.nullable().optional(),
   totalTokens: nonNegativeInteger.nullable().optional(),
   error: z.string().nullable().optional(),
+  note: z.string().nullable().optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, "at least one field must be provided")
 
 export const IdParamsSchema = z.object({ id: nonEmptyString })

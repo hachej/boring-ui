@@ -4,6 +4,7 @@ import type { Workspace } from './workspace'
 import type {
   AgentGateway,
   AgentSendReceipt,
+  AgentSessionPage,
   AgentSessionRef,
   AuthorizedAgentScope,
 } from './gateway/types'
@@ -50,6 +51,10 @@ export interface LeaseBoundWorkspaceAgent {
     readonly ref: AgentSessionRef
     readonly receipt: AgentSendReceipt
   }>
+  /** Transcript-redacted sessions for this exact Agent and authorized scope. */
+  listSessions?(limit?: number): Promise<AgentSessionPage>
+  /** Atomically prompt an idle session and return after host acceptance. */
+  sendIfIdle?(sessionId: string, message: string, requestId: string): Promise<AgentSendReceipt>
   interrupt(sessionId: string, requestId: string): Promise<InterruptReceipt>
   stop(sessionId: string, requestId: string): Promise<StopReceipt>
 }

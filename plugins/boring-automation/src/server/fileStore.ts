@@ -78,6 +78,7 @@ export class FileAutomationStore implements AutomationStore {
       model: input.model,
       ...(input.agentTypeId ? { agentTypeId: input.agentTypeId } : {}),
       ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
+      sessionMode: input.sessionMode ?? "new",
       promptRef: automationPromptPath(id),
       createdAt: now,
       updatedAt: now,
@@ -197,6 +198,7 @@ export class FileAutomationStore implements AutomationStore {
         promptSnapshot: input.promptSnapshot,
         modelSnapshot: input.modelSnapshot,
         error: null,
+        note: null,
         createdAt: now,
         updatedAt: now,
       }
@@ -290,7 +292,12 @@ export class FileAutomationStore implements AutomationStore {
           const raw = await readFile(this.statePath(), "utf8")
           const parsed = JSON.parse(raw) as Partial<StoredAutomationState>
           this.state = {
-            automations: parsed.automations && typeof parsed.automations === "object" ? parsed.automations : {},
+            automations: parsed.automations && typeof parsed.automations === "object"
+              ? Object.fromEntries(Object.entries(parsed.automations).map(([id, value]) => {
+                  const automation = value as Automation
+                  return [id, { ...automation, sessionMode: automation.sessionMode ?? "new" }]
+                }))
+              : {},
             runs: parsed.runs && typeof parsed.runs === "object"
               ? Object.fromEntries(Object.entries(parsed.runs).map(([id, value]) => {
                   const run = value as AutomationRun
@@ -299,6 +306,7 @@ export class FileAutomationStore implements AutomationStore {
                     invocationId: run.invocationId ?? `legacy:${id}`,
                     dispatchRequestId: run.dispatchRequestId ?? id,
                     dispatchReceipt: run.dispatchReceipt ?? null,
+                    note: run.note ?? null,
                   }]
                 }))
               : {},

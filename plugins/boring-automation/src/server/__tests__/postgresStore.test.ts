@@ -119,7 +119,7 @@ describe("PostgresAutomationStore actor isolation", () => {
       if (!text.includes("INSERT INTO boring_automation_automations")) return Promise.resolve([])
       return Promise.resolve([{
         id: values[0], title: values[3], enabled: values[4], cron: values[5], timezone: values[6], model: values[7],
-        agent_type_id: values[8], created_at: values[9], updated_at: values[10],
+        agent_type_id: values[8], session_mode: values[9], created_at: values[10], updated_at: values[11],
       }])
     }) as unknown as postgres.Sql
     const store = new PostgresAutomationStore(sql, { workspaceId: "workspace-a", userId: "user-a" }, undefined, workspace)
@@ -131,7 +131,7 @@ describe("PostgresAutomationStore actor isolation", () => {
     expect(automation.agentTypeId).toBe("researcher")
     expect(automation.promptRef).toBe(`.agents/automation/${automation.id}.md`)
     expect(files.get(automation.promptRef)).toBe("canonical prompt")
-    expect(queries[0]!.text).toContain("model, agent_type_id, created_at")
+    expect(queries[0]!.text).toContain("model, agent_type_id, session_mode, created_at")
     expect(queries[0]!.text).not.toMatch(/\bprompt\b/)
     expect(queries[0]!.values).not.toContain("canonical prompt")
   })

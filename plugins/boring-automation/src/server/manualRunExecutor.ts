@@ -4,7 +4,7 @@ import type { FastifyRequest } from "fastify"
 import type { AgentEvent } from "@hachej/boring-agent/shared"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
-import type { AutomationRun } from "../shared/types"
+import type { AutomationRun, AutomationRunTrigger } from "../shared/types"
 import type { AutomationRunEventPublisher } from "./runEventBus"
 import type { AutomationStore } from "./store"
 import { AutomationStoreError } from "./store"
@@ -14,7 +14,7 @@ export interface VerifiedAutomationActor {
   userId: string
 }
 
-export interface ManualRunExecutorOptions {
+export interface DispatchRunExecutorOptions {
   /** Host-default Agent used by legacy automations without an explicit selection. */
   agentTypeId: string
   /** Host registry used to reject stale or unknown per-automation selections. */
@@ -27,11 +27,11 @@ export interface ManualRunExecutorOptions {
   clock?: () => Date
 }
 
-export interface ManualRunInput {
+export interface DispatchRunInput {
   automationId: string
   /** Present for HTTP routes; trusted in-process callers use the verified actor path without one. */
   request?: FastifyRequest
-  trigger?: "manual" | "scheduled"
+  trigger?: AutomationRunTrigger
   scheduledFor?: string | null
   actor?: VerifiedAutomationActor
   /** Optional caller idempotency key; explicit new runs omit it and get a new ID. */
@@ -51,14 +51,14 @@ interface UsageAccumulator {
   output: number | null
 }
 
-export class ManualRunExecutor {
+export class DispatchRunExecutor {
   private readonly clock: () => Date
 
-  constructor(private readonly options: ManualRunExecutorOptions) {
+  constructor(private readonly options: DispatchRunExecutorOptions) {
     this.clock = options.clock ?? (() => new Date())
   }
 
-  async run(input: ManualRunInput): Promise<AutomationRun> {
+  async run(input: DispatchRunInput): Promise<AutomationRun> {
     const actor = input.actor ?? (input.request
       ? await this.options.actorResolver(input.request)
       : (() => { throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE, "automation actor is required") })())
@@ -85,7 +85,10 @@ export class ManualRunExecutor {
     }
     const invocationId = input.invocationId ?? (trigger === "scheduled"
       ? `scheduled:${automation.id}:${scheduledFor}`
-      : `manual:${randomUUID()}`)
+      : `${trigger}:${randomUUID()}`)
+    const continuationSessionId = automation.sessionMode === "continue"
+      ? (await store.listRuns(automation.id)).find((candidate) => candidate.sessionId)?.sessionId ?? null
+      : null
     const run = await store.beginRun({
       automationId: automation.id,
       invocationId,
@@ -143,29 +146,44 @@ export class ManualRunExecutor {
         requestId: run.id,
         ...(input.request ? { request: input.request } : {}),
       }, async (binding) => {
-        const dispatched = await binding.dispatch({
-          requestId: run.id,
-          title: automationSessionTitle(automation.title, promptSnapshot),
-          content: promptSnapshot,
-          model,
-          ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
-          actor: { id: actor.userId },
-          originSurface: "boring-automation",
-        }, async (event) => {
-          const eventSessionId = sessionIdFromEvent(event)
-          if (!durableSessionId && eventSessionId) {
-            await persistDispatchIdentity({ agentTypeId, sessionId: eventSessionId })
-          }
-          aggregateUsage(usage, event)
-          const outcome = terminalOutcomeFromEvent(event)
-          if (outcome && !terminalStatus) {
-            terminalStatus = outcome.status
-            terminalError = outcome.error
-          }
-        }, async ({ ref, receipt }) => {
-          await persistDispatchIdentity(ref, receipt)
-        })
-        if (!dispatchReceipt) await persistDispatchIdentity(dispatched.ref, dispatched.receipt)
+        const dispatchOnce = async (existingSessionId?: string) => {
+          const dispatched = await binding.dispatch({
+            requestId: run.id,
+            ...(existingSessionId ? { sessionId: existingSessionId } : {}),
+            title: automationSessionTitle(automation.title, promptSnapshot),
+            content: promptSnapshot,
+            model,
+            ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
+            actor: { id: actor.userId },
+            originSurface: "boring-automation",
+          }, async (event) => {
+            const eventSessionId = sessionIdFromEvent(event)
+            if (!durableSessionId && eventSessionId) {
+              await persistDispatchIdentity({ agentTypeId, sessionId: eventSessionId })
+            }
+            aggregateUsage(usage, event)
+            const outcome = terminalOutcomeFromEvent(event)
+            if (outcome && !terminalStatus) {
+              terminalStatus = outcome.status
+              terminalError = outcome.error
+            }
+          }, async ({ ref, receipt }) => {
+            await persistDispatchIdentity(ref, receipt)
+          })
+          if (!dispatchReceipt) await persistDispatchIdentity(dispatched.ref, dispatched.receipt)
+        }
+        try {
+          await dispatchOnce(continuationSessionId ?? undefined)
+        } catch (error) {
+          if (!continuationSessionId || dispatchReceipt || !isContinuationUnavailable(error)) throw error
+          const note = `Stored continuation session ${continuationSessionId} was unavailable; started a new session.`
+          current = await store.updateRunLifecycle(run.id, { note, sessionId: null, dispatchReceipt: null })
+          sessionId = null
+          durableSessionId = null
+          dispatchReceipt = null
+          await this.publishRunChange(actor, current)
+          await dispatchOnce()
+        }
       })
       current = await store.updateRunLifecycle(run.id, {
         status: "running",
@@ -256,6 +274,21 @@ export class ManualRunExecutor {
   private nowIso(): string {
     return this.clock().toISOString()
   }
+}
+
+/** @deprecated Internal terminology is dispatch run; kept as a source-compatible constructor. */
+export class ManualRunExecutor extends DispatchRunExecutor {}
+/** @deprecated Internal terminology is dispatch run; kept as a source-compatible type. */
+export type ManualRunExecutorOptions = DispatchRunExecutorOptions
+/** @deprecated Internal terminology is dispatch run; kept as a source-compatible type. */
+export type ManualRunInput = DispatchRunInput
+
+function isContinuationUnavailable(error: unknown): boolean {
+  const code = (error as { code?: unknown })?.code
+  return code === "AGENT_SESSION_NOT_FOUND"
+    || code === "AGENT_COMMAND_INVALID_STATE"
+    || code === "AGENT_SCOPE_DENIED"
+    || code === "AGENT_SESSION_RUNTIME_SCOPE_MISMATCH"
 }
 
 function startRunHeartbeat(store: AutomationStore, runId: string): () => Promise<void> {

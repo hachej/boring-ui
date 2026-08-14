@@ -112,6 +112,40 @@ describe("AutomationOperations", () => {
     await expect(operations.list(101)).rejects.toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.INVALID_BODY })
   })
 
+  it("joins dispatch runs with transcript-redacted session health", async () => {
+    const store = storeMock({ listRuns: vi.fn(async () => [run({ status: "running", trigger: "dispatch" })]) })
+    const sessionController = {
+      list: vi.fn(async () => [{ ref: { agentTypeId: "default", sessionId: "session-1" }, title: "[br-1276] worker", status: "running" as const, createdAt: Date.now() - 20_000, updatedAt: Date.now() - 5_000 }]),
+      nudge: vi.fn(async () => {}),
+      cancel: vi.fn(async () => {}),
+    }
+    const operations = createAutomationOperations({ store, actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })
+
+    const listed = await operations.listDispatchRuns!(10)
+
+    expect(listed.items).toEqual([expect.objectContaining({
+      trigger: "dispatch",
+      sessionId: "session-1",
+      sessionTitle: "[br-1276] worker",
+      sessionStatus: "running",
+      sessionAgeMs: expect.any(Number),
+    })])
+  })
+
+  it("surfaces the dispatcher busy state when nudging a non-idle session", async () => {
+    const busy = Object.assign(new Error("busy"), { code: "AGENT_COMMAND_INVALID_STATE", statusCode: 409 })
+    const sessionController = {
+      list: vi.fn(async () => []),
+      nudge: vi.fn(async () => { throw busy }),
+      cancel: vi.fn(async () => {}),
+    }
+    const operations = createAutomationOperations({ store: storeMock(), actor: { workspaceId: "w", userId: "u" }, defaultAgentTypeId: "default", sessionController })
+
+    await expect(operations.nudge!("session-1", "Continue")).rejects.toMatchObject({
+      code: BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_IDLE,
+    })
+  })
+
   it("caps prompt results and reports the original character count", async () => {
     const prompt = "x".repeat(AUTOMATION_TOOL_PROMPT_CHARACTER_LIMIT + 17)
     const operations = createAutomationOperations({ store: storeMock({ getPrompt: vi.fn(async () => prompt) }), actor: { workspaceId: "w", userId: "u" } })
@@ -163,7 +197,7 @@ describe("AutomationOperations", () => {
 
     const result = await operations.run("automation-1")
 
-    expect(executor.run).toHaveBeenCalledWith({ automationId: "automation-1", actor })
+    expect(executor.run).toHaveBeenCalledWith({ automationId: "automation-1", actor, trigger: "dispatch" })
     expect(result.status).toBe("failed")
     expect(result.error).toHaveLength(AUTOMATION_TOOL_ERROR_CHARACTER_LIMIT)
     expect(result).not.toHaveProperty("promptSnapshot")

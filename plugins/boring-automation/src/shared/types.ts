@@ -1,5 +1,6 @@
 export type AutomationRunStatus = "queued" | "dispatching" | "running" | "succeeded" | "failed" | "cancelled" | "outcome-unknown"
-export type AutomationRunTrigger = "manual" | "scheduled"
+export type AutomationRunTrigger = "manual" | "scheduled" | "dispatch"
+export type AutomationSessionMode = "new" | "continue"
 
 export interface AutomationRunChangedEvent {
   v: 1
@@ -21,6 +22,7 @@ export interface Automation {
   model: string
   agentTypeId?: string
   thinkingLevel?: "off" | "low" | "medium" | "high"
+  sessionMode?: AutomationSessionMode
   promptRef: string
   createdAt: string
   updatedAt: string
@@ -34,6 +36,7 @@ export interface AutomationCreate {
   model: string
   agentTypeId?: string
   thinkingLevel?: "off" | "low" | "medium" | "high"
+  sessionMode?: AutomationSessionMode
   prompt?: string
 }
 
@@ -45,6 +48,7 @@ export interface AutomationPatch {
   model?: string
   agentTypeId?: string
   thinkingLevel?: "off" | "low" | "medium" | "high"
+  sessionMode?: AutomationSessionMode
 }
 
 export interface AutomationDispatchReceipt {
@@ -78,6 +82,8 @@ export interface AutomationRun {
   promptSnapshot: string
   modelSnapshot: string
   error: string | null
+  /** Informational execution note; unlike error, this does not imply failure. */
+  note?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -103,4 +109,5 @@ export interface AutomationRunLifecyclePatch {
   outputTokens?: number | null
   totalTokens?: number | null
   error?: string | null
+  note?: string | null
 }

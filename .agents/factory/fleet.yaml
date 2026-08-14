@@ -15,7 +15,7 @@
 # policy.yaml; update provider/model availability here. Per-session and
 # per-automation model choice happens at dispatch (#1143), never here.
 #
-# Roster: THREE seats, owner-ratified 2026-08-10 (gh-1187 S0). A seat is
+# Roster: TWO seats. The former triage seat is now a worker automation slot. A seat is
 # justified by capability posture, never by model choice. Deferred,
 # grow-on-demand seats (`concierge`, `reviewer`, `auditor`, `beadle`, any
 # `worker-*` variant) hold no seat and no live persona package; their persona
@@ -67,18 +67,6 @@ models:
         envVar: GEMINI_API_KEY
 
 seats:
-  # Continuous background classification of incoming work. Runs on a cadence,
-  # never in conversation.
-  - seat: triage
-    agentTypeId: boring-triage
-    skills:
-      - name: triage
-        digest: sha256:c9931f981b0d2d55415026c25bc27dec3e24fd310bee405360eba57d6cf58766
-      - name: owner-gate
-        digest: sha256:a001dc51b8890f979358bffcf9ebe2d478002b2136a9630b638f77567b82678f
-      - name: handoff
-        digest: sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17
-
   # The owner's standing counterpart: pinned, conversational, full authority.
   # Dispatches work and reads bead END-STATES only.
   - seat: orchestrator

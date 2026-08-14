@@ -244,6 +244,30 @@ export async function runWithWorkspaceAgentLease(input: {
         return { ref: dispatched.ref, receipt: dispatched.receipt }
       })())
     },
+    async listSessions(limit?: number) {
+      assertActive()
+      return await trackOperation(gateway.listSessions({
+        scope: request.authorizedScope,
+        agentTypeId: request.agentTypeId,
+        ...(limit === undefined ? {} : { limit }),
+      }))
+    },
+    async sendIfIdle(sessionId: string, message: string, controlRequestId: string) {
+      assertActive()
+      return await trackOperation((async () => {
+        const connection = await gateway.connectSession({ scope: request.authorizedScope, ref: refFor(sessionId) })
+        try {
+          return await connection.send({
+            kind: 'prompt',
+            requestId: controlRequestId,
+            clientNonce: controlRequestId,
+            content: message,
+          })
+        } finally {
+          await connection.close()
+        }
+      })())
+    },
     async interrupt(sessionId: string, controlRequestId: string) {
       assertActive()
       return await trackOperation((async () => {

@@ -26,16 +26,16 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
   return {
     name: "ask_user",
     label: "Ask user",
-    description: "Ask the user a blocking structured question in Workspace. Supports true multi-field forms and optional human-facing artifacts.",
+    description: "Ask the user a structured question in Workspace. Supports true multi-field forms and optional human-facing artifacts.",
     promptSnippet: "Use `ask_user` only when work is blocked on a human decision. It opens a blocking form in Chat and Inbox; do not simulate the question in prose. Pass `schema: { wireVersion: 1, fields: [...] }`. Register every human-facing deliverable relevant to the decision in the plural `artifacts` array as `{ id, surfaceKind, target, title, description? }`; never infer artifacts from files, diffs, branches, titles, prompts, or prose.",
     parameters: {
       type: "object",
       properties: {
         title: { type: "string", description: "Short question title." },
         context: { type: "string", description: "Optional context shown above the form." },
+        wait: { type: "boolean", description: "Set false to file the intention and return its id immediately. Defaults to blocking." },
         artifacts: {
           type: "array",
-          maxItems: 100,
           description: "Optional explicitly registered human-facing deliverables, in registration order.",
           items: {
             type: "object",
@@ -65,9 +65,6 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
                   name: { type: "string" },
                   label: { type: "string" },
                   required: { type: "boolean" },
-                  helpText: { type: "string" },
-                  placeholder: { type: "string" },
-                  options: { type: "array", items: { type: "object", properties: { value: { type: "string" }, label: { type: "string" }, description: { type: "string" } }, required: ["value", "label"] } },
                 },
                 required: ["type", "name", "label"],
                 additionalProperties: true,
@@ -115,6 +112,16 @@ function resolveSessionId(sessionId: string | (() => string)): string {
 }
 
 function formatAskUserResult(result: AskUserToolResult, input: AskUserToolInput): AskUserToolResultPayload {
+  if (result.status === "filed") {
+    const operations = (input.artifacts ?? []).map((artifact) => ({ action: "upsert" as const, artifact }))
+    return {
+      content: [{ type: "text", text: `User intention filed as ${result.questionId}. The answer will be stored on the durable intention record.` }],
+      details: operations.length === 0 ? result : {
+        ...result,
+        handover: { kind: "boring.handover.operations", wireVersion: 1, operations },
+      },
+    }
+  }
   if (result.status === "answered") {
     const operations = (input.artifacts ?? []).map((artifact) => ({ action: "upsert" as const, artifact }))
     return {

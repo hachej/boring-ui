@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import type { FastifyRequest } from "fastify"
 import type postgres from "postgres"
@@ -15,8 +16,8 @@ import { HostedAutomationScheduler } from "./hostedScheduler"
 import { PostgresAutomationStore } from "./postgresStore"
 import { createLeaseBoundHostedAutomationStore } from "./hostedStore"
 import { createBoringAutomationTool } from "./automationTool"
-import { ManualRunExecutor, type VerifiedAutomationActor } from "./manualRunExecutor"
-import { resolveAutomationOperationsForActor, type AutomationStoreMode } from "./operations"
+import { DispatchRunExecutor, type VerifiedAutomationActor } from "./dispatchRunExecutor"
+import { resolveAutomationOperationsForActor, type AutomationSessionController, type AutomationStoreMode } from "./operations"
 import { InMemoryAutomationRunEventBus, PostgresAutomationRunEventBus, type AutomationRunEventBus } from "./runEventBus"
 import { automationRoutes } from "./routes"
 import type { AutomationStore } from "./store"
@@ -48,8 +49,8 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
   const store = options.store ?? createDefaultStore(options.workspaceRoot)
   const eventBus = options.eventBus ?? new InMemoryAutomationRunEventBus()
   const eventBusOwner = options.eventBusOwner ?? (options.eventBus ? "caller" : "plugin")
-  const manualRunExecutor = options.dispatcherResolver && options.actorResolver
-      ? new ManualRunExecutor({
+  const dispatchRunExecutor = options.dispatcherResolver && options.actorResolver
+      ? new DispatchRunExecutor({
         agentTypeId: options.agentTypeId,
         availableAgentTypeIds: options.availableAgentTypeIds,
         store,
@@ -59,8 +60,8 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
         eventPublisher: eventBus,
       })
     : undefined
-  const dueRunService = manualRunExecutor && !options.storeForRequest
-    ? new DueRunService({ store, executor: manualRunExecutor })
+  const dueRunService = dispatchRunExecutor && !options.storeForRequest
+    ? new DueRunService({ store, executor: dispatchRunExecutor })
     : undefined
   const hostedDueCoordinator = options.hostedDueRunService
     ? new HostedDueCoordinator(options.hostedDueRunService)
@@ -71,8 +72,12 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
     resolveOperationsForActor: async (actorContext) => resolveAutomationOperationsForActor({
       mode: options.storeMode ?? "local",
       resolveStore: async (actor) => options.storeForActor ? options.storeForActor(actor) : store,
+      defaultAgentTypeId: options.agentTypeId,
+      sessionController: options.dispatcherResolver
+        ? createAutomationSessionController(options.dispatcherResolver, actorContext)
+        : undefined,
       resolveExecutor: options.dispatcherResolver
-        ? async (actor, actorStore) => new ManualRunExecutor({
+        ? async (actor, actorStore) => new DispatchRunExecutor({
             agentTypeId: options.agentTypeId,
             availableAgentTypeIds: options.availableAgentTypeIds,
             store: actorStore,
@@ -91,7 +96,7 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
         if (!actor) throw new Error("automation actor resolver is unavailable")
         return await options.storeForRequest!(request, actor)
       } : undefined,
-      manualRunExecutor,
+      dispatchRunExecutor,
       dueRunService,
       hostedDueRunService: hostedDueCoordinator,
       hostedTriggerToken: options.hostedTriggerToken,
@@ -122,6 +127,50 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
     agentTools,
     routes,
   })
+}
+
+
+function createAutomationSessionController(
+  resolver: WorkspaceAgentDispatcherResolver,
+  actorContext: { workspaceId?: string; userId?: string },
+): AutomationSessionController {
+  const context = {
+    workspaceId: actorContext.workspaceId?.trim() ?? "",
+    userId: actorContext.userId?.trim() ?? "",
+  }
+  const withBinding = async <T>(
+    agentTypeId: string,
+    requestId: string,
+    operation: (binding: Parameters<Parameters<WorkspaceAgentDispatcherResolver["runWithWorkspaceAgent"]>[1]>[0]) => Promise<T>,
+  ): Promise<T> => {
+    let result: T | undefined
+    await resolver.runWithWorkspaceAgent({ agentTypeId, context, requestId }, async (binding) => {
+      result = await operation(binding)
+    })
+    return result as T
+  }
+  return {
+    async list(agentTypeId) {
+      const page = await withBinding(agentTypeId, `list:${randomUUID()}`, async (binding) => await requireLeaseMethod(binding.listSessions, "listSessions").call(binding, 100))
+      return page.sessions
+    },
+    async nudge(agentTypeId, sessionId, message, requestId) {
+      await withBinding(agentTypeId, requestId, async (binding) => {
+        await requireLeaseMethod(binding.sendIfIdle, "sendIfIdle").call(binding, sessionId, message, requestId)
+      })
+    },
+    async cancel(agentTypeId, sessionId, requestId) {
+      await withBinding(agentTypeId, requestId, async (binding) => {
+        await binding.stop(sessionId, requestId)
+      })
+    },
+  }
+}
+
+
+function requireLeaseMethod<T extends (...args: never[]) => unknown>(method: T | undefined, name: string): T {
+  if (!method) throw new Error(`workspace agent lease does not support ${name}`)
+  return method
 }
 
 function createDefaultStore(workspaceRoot: string | undefined): AutomationStore {
@@ -192,7 +241,8 @@ export * from "./automationTool"
 export * from "./dueRunService"
 export * from "./fileStore"
 export * from "./hostedDueRunService"
-export * from "./manualRunExecutor"
+export * from "./dispatchRunExecutor"
+export { ManualRunExecutor, type ManualRunExecutorOptions, type ManualRunInput } from "./manualRunExecutor"
 export * from "./migrations"
 export * from "./operations"
 export * from "./postgresStore"

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto"
+import type { AgentSessionSummary } from "@hachej/boring-agent/shared"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import type {
   Automation,
@@ -7,7 +9,7 @@ import type {
   AutomationRunStatus,
   AutomationRunTrigger,
 } from "../shared/types"
-import type { ManualRunInput, VerifiedAutomationActor } from "./manualRunExecutor"
+import type { DispatchRunInput, VerifiedAutomationActor } from "./dispatchRunExecutor"
 import { AutomationStoreError, automationNotFound, type AutomationStore } from "./store"
 
 export const AUTOMATION_TOOL_DEFAULT_LIMIT = 50
@@ -28,6 +30,7 @@ export interface AutomationSummary {
   thinkingLevel?: Automation["thinkingLevel"]
   createdAt: string
   updatedAt: string
+  sessionMode?: NonNullable<Automation["sessionMode"]>
 }
 
 export interface SafeAutomationRunSummary {
@@ -44,8 +47,24 @@ export interface SafeAutomationRunSummary {
   outputTokens: number | null
   totalTokens: number | null
   error: string | null
+  note?: string | null
   createdAt: string
   updatedAt: string
+}
+
+
+export interface DispatchRunFleetSummary extends SafeAutomationRunSummary {
+  automationTitle: string
+  agentTypeId: string
+  sessionTitle: string | null
+  sessionStatus: AgentSessionSummary["status"] | "gone" | null
+  sessionAgeMs: number | null
+}
+
+export interface AutomationSessionController {
+  list(agentTypeId: string): Promise<readonly AgentSessionSummary[]>
+  nudge(agentTypeId: string, sessionId: string, message: string, requestId: string): Promise<void>
+  cancel(agentTypeId: string, sessionId: string, requestId: string): Promise<void>
 }
 
 export interface BoundedAutomationList<T> {
@@ -68,6 +87,9 @@ export interface AutomationUpdateInput extends AutomationPatch {
 
 export interface AutomationOperations {
   list(limit?: number): Promise<BoundedAutomationList<AutomationSummary>>
+  listDispatchRuns?(limit?: number): Promise<BoundedAutomationList<DispatchRunFleetSummary>>
+  nudge?(sessionId: string, message: string): Promise<{ sessionId: string; accepted: true }>
+  cancel?(sessionId: string): Promise<{ sessionId: string; cancelled: true }>
   get(automationId: string): Promise<AutomationWithPrompt>
   create(input: AutomationCreate): Promise<AutomationSummary>
   update(automationId: string, input: AutomationUpdateInput): Promise<AutomationSummary>
@@ -84,8 +106,10 @@ export interface AutomationOperationsResolverOptions {
   resolveExecutor?: (
     actor: VerifiedAutomationActor,
     store: AutomationStore,
-  ) => Promise<Pick<{ run(input: ManualRunInput): Promise<AutomationRun> }, "run"> | undefined> | Pick<{ run(input: ManualRunInput): Promise<AutomationRun> }, "run"> | undefined
+  ) => Promise<Pick<{ run(input: DispatchRunInput): Promise<AutomationRun> }, "run"> | undefined> | Pick<{ run(input: DispatchRunInput): Promise<AutomationRun> }, "run"> | undefined
   localUserId?: string
+  defaultAgentTypeId?: string
+  sessionController?: AutomationSessionController
 }
 
 /**
@@ -108,21 +132,75 @@ export async function resolveAutomationOperationsForActor(
   const store = await options.resolveStore(actor)
   if (!store) throw contextUnavailable()
   const executor = await options.resolveExecutor?.(actor, store)
-  return { actor, operations: createAutomationOperations({ store, actor, executor }) }
+  return { actor, operations: createAutomationOperations({
+    store, actor, executor,
+    defaultAgentTypeId: options.defaultAgentTypeId,
+    sessionController: options.sessionController,
+  }) }
 }
 
 export function createAutomationOperations({
   store,
   actor,
   executor,
+  defaultAgentTypeId = "default",
+  sessionController,
 }: {
   store: AutomationStore
   actor: VerifiedAutomationActor
-  executor?: Pick<{ run(input: ManualRunInput): Promise<AutomationRun> }, "run">
+  defaultAgentTypeId?: string
+  sessionController?: AutomationSessionController
+  executor?: Pick<{ run(input: DispatchRunInput): Promise<AutomationRun> }, "run">
 }): AutomationOperations {
   return {
     async list(limit) {
       return bounded(await store.listAutomations(), limit, automationSummary)
+    },
+    async listDispatchRuns(limit) {
+      const automations = await store.listAutomations()
+      const sessionsByAgent = new Map<string, readonly AgentSessionSummary[]>()
+      const rows: DispatchRunFleetSummary[] = []
+      for (const automation of automations) {
+        const agentTypeId = automation.agentTypeId ?? defaultAgentTypeId
+        let sessions = sessionsByAgent.get(agentTypeId)
+        if (!sessions) {
+          sessions = sessionController ? await sessionController.list(agentTypeId) : []
+          sessionsByAgent.set(agentTypeId, sessions)
+        }
+        const sessionById = new Map(sessions.map((session) => [session.ref.sessionId, session]))
+        for (const run of await store.listRuns(automation.id)) {
+          const session = run.sessionId ? sessionById.get(run.sessionId) : undefined
+          rows.push({
+            ...safeRunSummary(run),
+            automationTitle: automation.title,
+            agentTypeId,
+            sessionTitle: session?.title ?? null,
+            sessionStatus: run.sessionId ? session?.status ?? "gone" : null,
+            sessionAgeMs: session ? Math.max(0, Date.now() - session.updatedAt) : null,
+          })
+        }
+      }
+      rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      return bounded(rows, limit, (row) => row)
+    },
+    async nudge(sessionId, message) {
+      if (!sessionController) throw contextUnavailable()
+      const target = await requireSessionTarget(store, sessionId, defaultAgentTypeId)
+      try {
+        await sessionController.nudge(target.agentTypeId, sessionId, message, `nudge:${randomUUID()}`)
+      } catch (error) {
+        if ((error as { code?: unknown })?.code === "AGENT_COMMAND_INVALID_STATE") {
+          throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_IDLE, `session ${sessionId} is not idle`)
+        }
+        throw error
+      }
+      return { sessionId, accepted: true }
+    },
+    async cancel(sessionId) {
+      if (!sessionController) throw contextUnavailable()
+      const target = await requireSessionTarget(store, sessionId, defaultAgentTypeId)
+      await sessionController.cancel(target.agentTypeId, sessionId, `cancel:${randomUUID()}`)
+      return { sessionId, cancelled: true }
     },
     async get(automationId) {
       const automation = await requireAutomation(store, automationId)
@@ -171,7 +249,7 @@ export function createAutomationOperations({
           "automation run executor is unavailable",
         )
       }
-      return safeRunSummary(await executor.run({ automationId, actor }))
+      return safeRunSummary(await executor.run({ automationId, actor, trigger: "dispatch" }))
     },
     async listRuns(automationId, limit) {
       return bounded(await store.listRuns(automationId), limit, safeRunSummary)
@@ -211,6 +289,7 @@ function automationSummary(automation: Automation): AutomationSummary {
     model: automation.model,
     ...(automation.agentTypeId ? { agentTypeId: automation.agentTypeId } : {}),
     ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
+    sessionMode: automation.sessionMode ?? "new",
     createdAt: automation.createdAt,
     updatedAt: automation.updatedAt,
   }
@@ -231,6 +310,7 @@ function safeRunSummary(run: AutomationRun): SafeAutomationRunSummary {
     outputTokens: run.outputTokens,
     totalTokens: run.totalTokens,
     error: sanitizeRunError(run.error),
+    note: run.note ?? null,
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
   }
@@ -247,4 +327,13 @@ function contextUnavailable(): AutomationStoreError {
     BORING_AUTOMATION_ERROR_CODES.TOOL_CONTEXT_UNAVAILABLE,
     "automation tool context is unavailable",
   )
+}
+
+async function requireSessionTarget(store: AutomationStore, sessionId: string, defaultAgentTypeId: string): Promise<{ agentTypeId: string }> {
+  for (const automation of await store.listAutomations()) {
+    if ((await store.listRuns(automation.id)).some((run) => run.sessionId === sessionId)) {
+      return { agentTypeId: automation.agentTypeId ?? defaultAgentTypeId }
+    }
+  }
+  throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_FOUND, `session ${sessionId} is not owned by an automation run`)
 }

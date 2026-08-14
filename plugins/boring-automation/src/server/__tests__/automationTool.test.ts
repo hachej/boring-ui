@@ -8,17 +8,20 @@ import { AutomationStoreError } from "../store"
 const NOW = "2026-07-19T00:00:00.000Z"
 const summary = {
   id: "automation-1", title: "Daily", enabled: true, cron: "0 9 * * *", timezone: "UTC",
-  model: "anthropic:claude-sonnet", thinkingLevel: "medium" as const, createdAt: NOW, updatedAt: NOW,
+  model: "anthropic:claude-sonnet", sessionMode: "new" as const, thinkingLevel: "medium" as const, createdAt: NOW, updatedAt: NOW,
 }
 const run = {
   id: "run-1", automationId: "automation-1", sessionId: "session-1", status: "succeeded" as const,
   trigger: "manual" as const, scheduledFor: null, startedAt: NOW, completedAt: NOW, durationMs: 10,
-  inputTokens: 1, outputTokens: 2, totalTokens: 3, error: null, createdAt: NOW, updatedAt: NOW,
+  inputTokens: 1, outputTokens: 2, totalTokens: 3, error: null, note: null, createdAt: NOW, updatedAt: NOW,
 }
 
 function operations(): AutomationOperations {
   return {
     list: vi.fn(async () => ({ items: [summary], truncated: false })),
+    listDispatchRuns: vi.fn(async () => ({ items: [], truncated: false })),
+    nudge: vi.fn(async (sessionId: string) => ({ sessionId, accepted: true as const })),
+    cancel: vi.fn(async (sessionId: string) => ({ sessionId, cancelled: true as const })),
     get: vi.fn(async () => ({ automation: summary, prompt: { text: "prompt", characterCount: 6, truncated: false } })),
     create: vi.fn(async () => summary),
     update: vi.fn(async () => summary),
@@ -51,7 +54,7 @@ describe("boring_automation agent tool", () => {
     expect(tool.name).toBe(BORING_AUTOMATION_TOOL_NAME)
     expect(tool.name).toBe("boring_automation")
     expect(tool.parameters).toMatchObject({ oneOf: expect.any(Array) })
-    expect((tool.parameters.oneOf as any[])).toHaveLength(9)
+    expect((tool.parameters.oneOf as any[])).toHaveLength(11)
     expect((tool.parameters.oneOf as any[]).every((branch) => branch.additionalProperties === false)).toBe(true)
   })
 
@@ -61,7 +64,7 @@ describe("boring_automation agent tool", () => {
     expect(result.isError).toBe(false)
     expect(resolveOperationsForActor).toHaveBeenCalledWith({ workspaceId: "workspace-1", userId: "user-1" })
     expect(ops.list).toHaveBeenCalledWith(10)
-    expect(details(result)).toEqual({ ok: true, operation: "list", automations: [summary], truncated: false })
+    expect(details(result)).toEqual({ ok: true, operation: "list", automations: [summary], dispatchRuns: [], truncated: false })
   })
 
   it("supports get and bounded prompt details", async () => {
@@ -75,12 +78,12 @@ describe("boring_automation agent tool", () => {
     const { tool, ops } = harness()
     const input = {
       operation: "create", title: "Daily", enabled: false, cron: "0 9 * * *", timezone: "UTC",
-      model: "anthropic:claude-sonnet", thinkingLevel: "high", prompt: "Summarize",
+      model: "anthropic:claude-sonnet", sessionMode: "new" as const, thinkingLevel: "high", prompt: "Summarize",
     }
     const result = await tool.execute(input, context())
     expect(result.isError).toBe(false)
     const called = vi.mocked(ops.create).mock.calls[0]![0]
-    expect(called).toEqual({ title: "Daily", enabled: false, cron: "0 9 * * *", timezone: "UTC", model: "anthropic:claude-sonnet", thinkingLevel: "high", prompt: "Summarize" })
+    expect(called).toEqual({ title: "Daily", enabled: false, cron: "0 9 * * *", timezone: "UTC", model: "anthropic:claude-sonnet", thinkingLevel: "high", sessionMode: "new", prompt: "Summarize" })
     expect(details(result)).toMatchObject({ ok: true, operation: "create", automation: summary })
   })
 
@@ -101,6 +104,22 @@ describe("boring_automation agent tool", () => {
     const result = await h.tool.execute({ operation, automationId: "automation-1" }, context())
     expect(h.ops[method]).toHaveBeenCalledWith("automation-1")
     expect(details(result)).toMatchObject({ ok: true, operation })
+  })
+
+  it("supports nudge and cancel session controls", async () => {
+    const h = harness()
+    await h.tool.execute({ operation: "nudge", sessionId: "session-1", message: "Continue" }, context())
+    await h.tool.execute({ operation: "cancel", sessionId: "session-1" }, context())
+    expect(h.ops.nudge).toHaveBeenCalledWith("session-1", "Continue")
+    expect(h.ops.cancel).toHaveBeenCalledWith("session-1")
+  })
+
+  it("fails loudly when nudge targets a non-idle session", async () => {
+    const ops = operations()
+    vi.mocked(ops.nudge!).mockRejectedValue(new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_IDLE, "busy"))
+    const result = await harness(ops).tool.execute({ operation: "nudge", sessionId: "session-1", message: "Continue" }, context())
+    expect(result.isError).toBe(true)
+    expect(details(result)).toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_IDLE })
   })
 
   it("supports bounded safe run history", async () => {

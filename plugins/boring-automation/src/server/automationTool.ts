@@ -15,6 +15,7 @@ export const BORING_AUTOMATION_TOOL_NAME = "boring_automation"
 const nonEmpty = z.string().trim().min(1)
 const limit = z.number().int().min(1).max(100).optional()
 const thinkingLevel = z.enum(["off", "low", "medium", "high"])
+const sessionMode = z.enum(["new", "continue"])
 
 const listInput = z.object({ operation: z.literal("list"), limit }).strict()
 const getInput = z.object({ operation: z.literal("get"), automationId: nonEmpty }).strict()
@@ -27,6 +28,7 @@ const createInput = z.object({
   model: nonEmpty,
   agentTypeId: nonEmpty.optional(),
   thinkingLevel: thinkingLevel.optional(),
+  sessionMode: sessionMode.optional(),
   prompt: z.string().optional(),
 }).strict()
 const updateInput = z.object({
@@ -39,12 +41,15 @@ const updateInput = z.object({
   model: nonEmpty.optional(),
   agentTypeId: nonEmpty.optional(),
   thinkingLevel: thinkingLevel.optional(),
+  sessionMode: sessionMode.optional(),
   prompt: z.string().optional(),
 }).strict()
 const idInput = (operation: "pause" | "resume" | "run" | "delete") => z.object({
   operation: z.literal(operation),
   automationId: nonEmpty,
 }).strict()
+const nudgeInput = z.object({ operation: z.literal("nudge"), sessionId: nonEmpty, message: nonEmpty }).strict()
+const cancelInput = z.object({ operation: z.literal("cancel"), sessionId: nonEmpty }).strict()
 const listRunsInput = z.object({ operation: z.literal("list_runs"), automationId: nonEmpty, limit }).strict()
 
 const AutomationToolInputSchema = z.discriminatedUnion("operation", [
@@ -55,6 +60,8 @@ const AutomationToolInputSchema = z.discriminatedUnion("operation", [
   idInput("pause"),
   idInput("resume"),
   idInput("run"),
+  nudgeInput,
+  cancelInput,
   listRunsInput,
   idInput("delete"),
 ])
@@ -73,7 +80,7 @@ export function createBoringAutomationTool(deps: BoringAutomationToolDependencie
     name: BORING_AUTOMATION_TOOL_NAME,
     description: [
       "Manage scheduled automations in the active workspace.",
-      "Supports list, get, create, update, pause, resume, run, list_runs, and delete.",
+      "Supports list, get, create, update, pause, resume, run, nudge, cancel, list_runs, and delete.",
       "Models supplied to create/update must use explicit provider:model-id syntax.",
       "Pause affects future scheduled runs only; manual run remains allowed.",
       "Delete removes automation metadata only and preserves prompt files, run history, and sessions.",
@@ -105,8 +112,8 @@ export function createBoringAutomationTool(deps: BoringAutomationToolDependencie
 async function executeOperation(operations: AutomationOperations, input: AutomationToolInput, ctx: ToolExecContext) {
   switch (input.operation) {
     case "list": {
-      const listed = await operations.list(input.limit)
-      return { ok: true as const, operation: input.operation, automations: listed.items, truncated: listed.truncated }
+      const [listed, dispatchRuns] = await Promise.all([operations.list(input.limit), operations.listDispatchRuns?.(input.limit) ?? { items: [], truncated: false }])
+      return { ok: true as const, operation: input.operation, automations: listed.items, dispatchRuns: dispatchRuns.items, truncated: listed.truncated || dispatchRuns.truncated }
     }
     case "get": {
       return { ok: true as const, operation: input.operation, ...(await operations.get(input.automationId)) }
@@ -137,6 +144,14 @@ async function executeOperation(operations: AutomationOperations, input: Automat
       assertNotAborted(ctx)
       return { ok: true as const, operation: input.operation, run: await operations.run(input.automationId) }
     }
+    case "nudge": {
+      assertNotAborted(ctx)
+      return { ok: true as const, operation: input.operation, ...(await requireOperation(operations.nudge, "nudge")(input.sessionId, input.message)) }
+    }
+    case "cancel": {
+      assertNotAborted(ctx)
+      return { ok: true as const, operation: input.operation, ...(await requireOperation(operations.cancel, "cancel")(input.sessionId)) }
+    }
     case "list_runs": {
       const listed = await operations.listRuns(input.automationId, input.limit)
       return { ok: true as const, operation: input.operation, runs: listed.items, truncated: listed.truncated }
@@ -146,6 +161,11 @@ async function executeOperation(operations: AutomationOperations, input: Automat
       return { ok: true as const, operation: input.operation, deleted: await operations.delete(input.automationId) }
     }
   }
+}
+
+function requireOperation<T extends (...args: never[]) => unknown>(operation: T | undefined, name: string): T {
+  if (!operation) throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE, `${name} is unavailable`)
+  return operation
 }
 
 function validateToolInput(input: AutomationToolInput): void {
@@ -176,7 +196,7 @@ function operationForError(params: unknown): ToolOperation | "unknown" {
     : "unknown"
 }
 
-const TOOL_OPERATIONS = new Set<ToolOperation>(["list", "get", "create", "update", "pause", "resume", "run", "list_runs", "delete"])
+const TOOL_OPERATIONS = new Set<ToolOperation>(["list", "get", "create", "update", "pause", "resume", "run", "nudge", "cancel", "list_runs", "delete"])
 
 function errorDetails(operation: ToolOperation | "unknown", cause: unknown) {
   const code = knownErrorCode(cause)
@@ -204,7 +224,9 @@ function publicErrorMessage(code: BoringAutomationErrorCode): string {
     case BORING_AUTOMATION_ERROR_CODES.INVALID_MODEL: return "Use explicit provider:model-id syntax, for example anthropic:claude-sonnet."
     case BORING_AUTOMATION_ERROR_CODES.AGENT_NOT_FOUND: return "The selected automation Agent is not available."
     case BORING_AUTOMATION_ERROR_CODES.AUTOMATION_NOT_FOUND: return "Automation not found in the active workspace."
-    case BORING_AUTOMATION_ERROR_CODES.RUN_NOT_FOUND: return "Automation run not found in the active workspace."
+    case BORING_AUTOMATION_ERROR_CODES.RUN_NOT_FOUND: return "Automation dispatch run not found in the active workspace."
+    case BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_FOUND: return "Automation session not found in the active workspace."
+    case BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_IDLE: return "The automation session is not idle; nudge was rejected."
     case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE: return "This automation already has an active run."
     case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_RECORDED: return "This scheduled automation occurrence was already recorded."
     case BORING_AUTOMATION_ERROR_CODES.RUN_LEASE_LOST: return "This automation run was recovered by another worker."
@@ -242,18 +264,20 @@ function automationToolJsonSchema(): Record<string, unknown> {
       operationOnly("get", { automationId: id }, ["automationId"]),
       operationOnly("create", {
         title: id, enabled: { type: "boolean" }, cron: id, timezone: id, model: id, agentTypeId: id,
-        thinkingLevel: { enum: ["off", "low", "medium", "high"] }, prompt: { type: "string" },
+        thinkingLevel: { enum: ["off", "low", "medium", "high"] }, sessionMode: { enum: ["new", "continue"] }, prompt: { type: "string" },
       }, ["title", "cron", "timezone", "model"]),
       {
         ...operationOnly("update", {
           automationId: id, title: id, enabled: { type: "boolean" }, cron: id, timezone: id, model: id, agentTypeId: id,
-          thinkingLevel: { enum: ["off", "low", "medium", "high"] }, prompt: { type: "string" },
+          thinkingLevel: { enum: ["off", "low", "medium", "high"] }, sessionMode: { enum: ["new", "continue"] }, prompt: { type: "string" },
         }, ["automationId"]),
-        anyOf: ["title", "enabled", "cron", "timezone", "model", "agentTypeId", "thinkingLevel", "prompt"].map((field) => ({ required: [field] })),
+        anyOf: ["title", "enabled", "cron", "timezone", "model", "agentTypeId", "thinkingLevel", "sessionMode", "prompt"].map((field) => ({ required: [field] })),
       },
       operationOnly("pause", { automationId: id }, ["automationId"]),
       operationOnly("resume", { automationId: id }, ["automationId"]),
       operationOnly("run", { automationId: id }, ["automationId"]),
+      operationOnly("nudge", { sessionId: id, message: id }, ["sessionId", "message"]),
+      operationOnly("cancel", { sessionId: id }, ["sessionId"]),
       operationOnly("list_runs", { automationId: id, limit: limitSchema }, ["automationId"]),
       operationOnly("delete", { automationId: id }, ["automationId"]),
     ],

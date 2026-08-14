@@ -230,6 +230,8 @@ describe('createAgentHost', () => {
       expect(Object.keys(binding).sort()).toEqual([
         'dispatch',
         'interrupt',
+        'listSessions',
+        'sendIfIdle',
         'signal',
         'stop',
         'workspace',

@@ -159,6 +159,23 @@ describe("AskUserRuntime", () => {
     await expect(second).resolves.toMatchObject({ status: "cancelled" })
   })
 
+  it("files wait:false questions without a waiter and accepts a later durable answer", async () => {
+    const store = await makeStore()
+    const runtime = new AskUserRuntime({ store })
+
+    const result = await runtime.ask({ sessionId: "s1", title: "Escalation", schema, wait: false })
+
+    expect(result).toMatchObject({ status: "filed", sessionId: "s1", questionId: expect.any(String) })
+    if (result.status !== "filed") throw new Error("expected filed result")
+    const question = await store.getPending("s1")
+    expect(question).toMatchObject({ status: "ready", wait: false, questionId: result.questionId })
+    expect(runtime.coordinator.hasWaiter(result.questionId)).toBe(false)
+    await runtime.abandonOrphanedPending(["s1"])
+    expect(await store.getPending("s1")).toMatchObject({ questionId: result.questionId, status: "ready" })
+    await expect(runtime.submitAnswer(result.questionId, "s1", { answer: "approve" })).resolves.toBe("answered")
+    await expect(store.getByQuestionId(result.questionId)).resolves.toMatchObject({ status: "answered" })
+  })
+
   it("delivers submitted answers to the waiting ask call", async () => {
     const store = await makeStore()
     const runtime = new AskUserRuntime({ store })
