@@ -5,7 +5,6 @@ import path from 'node:path'
 
 import {
   compactPiPackages,
-  assertPiResourcePathsAuthorized,
   autoDetectMode,
   createAgentHost,
   createEnvironmentProvisioningFingerprint,
@@ -48,7 +47,6 @@ import {
   assertWorkspaceBridgeHandlersTrusted,
   collectWorkspaceAgentServerPlugins,
   createSandboxRuntimeModeAdapter,
-  defaultWorkspacePluginPackageCandidates,
   hasDirServerPlugin,
   omitPluginAuthoringProvisioning,
   readWorkspacePluginPackagePiSnapshot,
@@ -1088,24 +1086,10 @@ export async function createCoreWorkspaceAgentServer(
       }
     : undefined)
 
-  const defaultPackageOptions = {
+  const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
     workspaceRoot: pluginWorkspaceRoot,
     defaultPluginPackages: options.defaultPluginPackages,
-    anchorDir: appRoot,
-  }
-  const hostDeclaredPluginDirs = [...new Set((options.plugins ?? []).flatMap((entry) => 'dir' in entry ? [path.resolve(entry.dir)] : []))]
-  const defaultPluginCandidatePaths = defaultWorkspacePluginPackageCandidates(defaultPackageOptions)
-    .flatMap((candidate) => candidate.paths)
-  await assertPiResourcePathsAuthorized({
-    paths: [...defaultPluginCandidatePaths, ...hostDeclaredPluginDirs],
-    authorizedRoots: [
-      pluginWorkspaceRoot,
-      ...(appRoot ? [appRoot] : []),
-      ...hostDeclaredPluginDirs,
-      ...(options.piResourceAuthorizedRoots ?? []),
-    ],
   })
-  const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths(defaultPackageOptions)
   const defaultPackagePiSnapshot = readWorkspacePluginPackagePiSnapshot(defaultPluginPackagePaths)
   const defaultPackageRuntimePlugins = readWorkspacePluginPackageRuntimePlugins(defaultPluginPackagePaths)
   const { systemPromptAppend: defaultPackageSystemPromptAppend, ...defaultPackagePiOptions } = defaultPackagePiSnapshot
@@ -1493,8 +1477,8 @@ export async function createCoreWorkspaceAgentServer(
         authorizedRoots: [
           root,
           pluginWorkspaceRoot,
-          ...(appRoot ? [appRoot] : []),
-          ...hostDeclaredPluginDirs,
+          ...defaultPluginPackagePaths,
+          ...pluginEntries.flatMap((entry) => 'dir' in entry ? [entry.dir] : []),
           ...(options.piResourceAuthorizedRoots ?? []),
         ],
       })

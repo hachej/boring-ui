@@ -6,7 +6,6 @@
  */
 import {
   autoDetectMode,
-  assertPiResourcePathsAuthorized,
   createAgentAuthMiddleware,
   createAgentHost,
   createPiResourceDigestFence,
@@ -85,10 +84,7 @@ import {
   type DirPluginEntry,
 } from "./pluginEntryResolver"
 import { rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerPlugins"
-import {
-  defaultWorkspacePluginPackageCandidates,
-  resolveDefaultWorkspacePluginPackagePaths,
-} from "./defaultPluginPackages"
+import { resolveDefaultWorkspacePluginPackagePaths } from "./defaultPluginPackages"
 export {
   createPiResourceDigestInput as createWorkspacePiResourceDigestInput,
   digestPiResourceInputs as digestWorkspacePiResourceInputs,
@@ -205,11 +201,6 @@ export interface WorkspaceAgentCreateOptions {
   externalPlugins?: boolean
   /** Independently trusted roots for configured Pi resources outside the workspace/plugin roots. */
   piResourceAuthorizedRoots?: string[]
-  /**
-   * Admit symlinks only when their canonical targets remain under a host-owned
-   * authorized root. Defaults to false; local CLI composition opts in.
-   */
-  allowInternalPiResourceSymlinks?: boolean
   beforeReload?: () => void | WorkspaceReloadHookResult | undefined | Promise<void | WorkspaceReloadHookResult | undefined>
   systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
   onWorkspaceAgentDispatcher?: (resolver: WorkspaceAgentDispatcherResolver) => void
@@ -893,8 +884,6 @@ export interface ResolveWorkspaceAgentServerPluginCollectionOptions
   trustedPluginContext?: WorkspaceAgentServerPluginContext["trusted"]
   agentTypeId?: string
   availableAgentTypeIds?: readonly string[]
-  /** Host authority check run before any plugin manifest read or module import. */
-  authorizePluginPaths?: (paths: readonly string[]) => Promise<void>
 }
 
 export function buildWorkspaceContextPrompt(options: { pluginAuthoringEnabled?: boolean } = {}): string {
@@ -980,18 +969,11 @@ export async function resolveWorkspaceAgentServerPluginCollection(
     ...(opts.availableAgentTypeIds ? { availableAgentTypeIds: opts.availableAgentTypeIds } : {}),
   }
   const trustedCtx: WorkspaceAgentServerPluginContext = { ...baseCtx, trusted: opts.trustedPluginContext }
-  const defaultPackageOptions = {
+  const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
     workspaceRoot: opts.workspaceRoot,
     defaultPluginPackages: opts.defaultPluginPackages,
     anchorDir: opts.appRoot,
-  }
-  const defaultPluginCandidates = defaultWorkspacePluginPackageCandidates(defaultPackageOptions)
-  // Authorize lexical names before package.json discovery or module import.
-  await opts.authorizePluginPaths?.([
-    ...defaultPluginCandidates.flatMap((candidate) => candidate.paths),
-    ...(opts.plugins ?? []).flatMap((entry) => "dir" in entry ? [resolve(entry.dir)] : []),
-  ])
-  const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths(defaultPackageOptions)
+  })
   const defaultPluginDirEntries: WorkspacePluginEntry[] = defaultPluginPackagePaths
     .map((dir) => ({ dir, hotReload: true, trust: "internal" as const }))
     .filter((entry) => hasDirServerPlugin(entry))
@@ -1319,10 +1301,6 @@ export async function createWorkspaceAgentServer(
       return await workspaceAgentDispatcherResolver.readSessionRunDetails(actor, ref, detailKinds, options)
     },
   }
-  const hostDeclaredPluginDirs = uniqueStrings([
-    ...(opts.plugins ?? []).flatMap((entry) => "dir" in entry ? [resolve(entry.dir)] : []),
-    ...(opts.additionalBoringPluginDirs ?? []).map((source) => resolve(typeof source === "string" ? source : source.rootDir)),
-  ])
   const pluginCollection = await resolveWorkspaceAgentServerPluginCollection({
     trustedPluginContext: {
       workspaceAgentDispatcherResolver: trustedDispatcherProxy,
@@ -1335,34 +1313,10 @@ export async function createWorkspaceAgentServer(
     agentTypeId: opts.defaultAgentTypeId ?? agents[0]?.agentTypeId ?? "default",
     availableAgentTypeIds: agents.map((agent) => agent.agentTypeId),
     workspaceRoot,
-    authorizePluginPaths: async (paths) => {
-      await assertPiResourcePathsAuthorized({
-        paths,
-        authorizedRoots: uniqueStrings([
-          workspaceRoot,
-          ...(opts.appRoot ? [opts.appRoot] : []),
-          ...hostDeclaredPluginDirs,
-          ...(opts.piResourceAuthorizedRoots ?? []),
-        ]),
-        allowInternalSymlinks: opts.allowInternalPiResourceSymlinks ?? false,
-      })
-    },
     bridge,
     installPluginAuthoring: pluginAuthoringEnabled,
   })
   const defaultPluginPackagePaths = pluginCollection.defaultPluginPackagePaths
-  await assertPiResourcePathsAuthorized({
-    // Explicit host-declared plugin directories are trusted configuration
-    // anchors, but only after they are proven direct, stable filesystem roots.
-    paths: hostDeclaredPluginDirs,
-    authorizedRoots: uniqueStrings([
-      workspaceRoot,
-      ...(opts.appRoot ? [opts.appRoot] : []),
-      ...hostDeclaredPluginDirs,
-      ...(opts.piResourceAuthorizedRoots ?? []),
-    ]),
-    allowInternalSymlinks: opts.allowInternalPiResourceSymlinks ?? false,
-  })
   // The legacy one-Agent composition (no explicit fleet, flag off) keeps its
   // route options byte-for-byte compatible; any resolved multi-agent fleet
   // (explicit `opts.agents`, or BORING_AGENT_FLEET=1) is scoped per Agent.
@@ -1486,17 +1440,6 @@ export async function createWorkspaceAgentServer(
     workspaceRoot,
   )
   const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(runtimeWorkspaceRoot)
-  const resolvePiResourceAuthorizedRoots = () => uniqueStrings([
-    workspaceRoot,
-    ...(opts.appRoot ? [opts.appRoot] : []),
-    ...hostDeclaredPluginDirs,
-    ...(opts.piResourceAuthorizedRoots ?? []),
-    // Generated runtime skills are a host-established output root, not a
-    // candidate discovered from plugin metadata.
-    runtimeLayout.skills,
-    ...builtInBoringPiSkillPaths.map((path) => dirname(path)),
-    ...[localPiPackageRoot(workspacePackagePiPackage)].filter((path): path is string => Boolean(path)),
-  ])
   type RuntimeProvisionerContext = Parameters<NonNullable<WorkspaceAgentCreateOptions["runtimeProvisioner"]>>[0]
   const runRuntimeProvisioning = async (runtimeBundle: RuntimeProvisionerContext["runtimeBundle"]) => {
     if (opts.provisionWorkspace === false) return currentRuntimeProvisioning
@@ -1954,10 +1897,17 @@ export async function createWorkspaceAgentServer(
             packages,
             extensionPaths,
           }],
-          // Resource paths are untrusted inputs, never their own authority.
-          // Only host-owned anchors can authorize canonical targets.
-          authorizedRoots: resolvePiResourceAuthorizedRoots(),
-          allowInternalSymlinks: opts.allowInternalPiResourceSymlinks ?? false,
+          authorizedRoots: uniqueStrings([
+            workspaceRoot,
+            ...defaultPluginPackagePaths,
+            ...resolveBoringPluginDirs().map((source) => source.rootDir),
+            runtimeLayout.skills,
+            ...builtInBoringPiSkillPaths,
+            ...[localPiPackageRoot(workspacePackagePiPackage)]
+              .filter((path): path is string => Boolean(path)),
+            ...(currentPackageResourceSnapshot?.registry.handledPackageRoots ?? []),
+            ...(opts.piResourceAuthorizedRoots ?? []),
+          ]),
         })
       }
       const { resourceInputDigest, revalidateResourceInputs } = await createPiResourceDigestFence(buildResourceDigestInput)

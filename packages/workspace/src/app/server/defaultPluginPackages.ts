@@ -1,70 +1,74 @@
 import { existsSync } from "node:fs"
-import { isAbsolute, join, resolve } from "node:path"
+import { createRequire } from "node:module"
+import { dirname, isAbsolute, join } from "node:path"
 
 export interface ResolveDefaultWorkspacePluginPackagePathsOptions {
   workspaceRoot?: string
   /**
    * Internal plugin packages, listed explicitly in host boot code — npm
-   * package names or absolute directory paths. Named packages are located only
-   * beneath the host/workspace node_modules anchors; no package metadata is
-   * read during candidate construction.
+   * package names (resolved via require.resolve) or absolute directory
+   * paths. Mirrors the front side, where internal plugins are statically
+   * imported in the app: both sides declare the same explicit list.
    */
   defaultPluginPackages?: string[]
-  /** Host package root used as the first node_modules anchor. */
+  /**
+   * Directory whose node_modules anchors npm-name resolution (the host
+   * package's own root). Defaults to walking up from `workspaceRoot`,
+   * then from this module's location.
+   */
   anchorDir?: string
 }
 
-/** A plugin declaration and its lexical, not-yet-inspected search candidates. */
-export interface DefaultWorkspacePluginPackageCandidate {
-  readonly declaration: string
-  readonly paths: readonly string[]
-}
-
 /**
- * Build lexical candidates without require.resolve, package.json reads, or
- * module imports. The embedding host must authorize every candidate before it
- * calls resolveDefaultWorkspacePluginPackagePaths.
+ * Resolve each entry in `defaultPluginPackages` to an absolute package
+ * directory. Accepts either an npm-style name (resolved via
+ * `require.resolve('<name>/package.json')`) or an absolute filesystem
+ * path. THROWS on unresolved entries — a typo or missing dependency
+ * is an app boot-time error, not something to silently drop.
  */
-export function defaultWorkspacePluginPackageCandidates({
+export function resolveDefaultWorkspacePluginPackagePaths({
   workspaceRoot = process.cwd(),
   defaultPluginPackages = [],
   anchorDir,
-}: ResolveDefaultWorkspacePluginPackagePathsOptions = {}): DefaultWorkspacePluginPackageCandidate[] {
-  const anchors = [...new Set([
-    ...(anchorDir ? [resolve(anchorDir)] : []),
-    resolve(workspaceRoot),
-  ])]
-  return defaultPluginPackages.map((declaration) => ({
-    declaration,
-    paths: isAbsolute(declaration)
-      ? [resolve(declaration)]
-      : [...new Set(anchors.map((anchor) => resolve(anchor, "node_modules", declaration)))],
-  }))
-}
-
-/**
- * Inspect already-authorized lexical candidates and choose the first package
- * directory containing package.json. This function intentionally performs no
- * Node package resolution: callers authorize the exact names before this first
- * filesystem read.
- */
-export function resolveDefaultWorkspacePluginPackagePaths(
-  options: ResolveDefaultWorkspacePluginPackagePathsOptions = {},
-): string[] {
+}: ResolveDefaultWorkspacePluginPackagePathsOptions = {}): string[] {
+  if (defaultPluginPackages.length === 0) return []
+  // Two anchors only: the host package's own root (explicit) and the
+  // workspace root (walk-up). No silent fallback through this module's own
+  // node_modules — a host that forgot to declare the plugin as a dependency
+  // should fail loudly at boot, not resolve through accidental hoisting.
+  const requireFromAnchor = anchorDir ? createRequire(join(anchorDir, "package.json")) : null
+  const requireFromWorkspace = createRequire(join(workspaceRoot, "package.json"))
+  const resolvers = [requireFromAnchor, requireFromWorkspace]
+    .filter((req): req is NodeRequire => req !== null)
   const resolved: string[] = []
-  for (const candidate of defaultWorkspacePluginPackageCandidates(options)) {
-    const packageRoot = candidate.paths.find((path) => existsSync(join(path, "package.json")))
-    if (!packageRoot) {
-      if (isAbsolute(candidate.declaration)) {
+  for (const entry of defaultPluginPackages) {
+    // isAbsolute handles both POSIX (`/foo`) and Windows (`C:\foo`) paths;
+    // startsWith("/") alone misses Windows absolute paths and incorrectly
+    // accepts `~/foo` as absolute.
+    if (isAbsolute(entry)) {
+      if (!existsSync(join(entry, "package.json"))) {
         throw new Error(
-          `defaultPluginPackages: "${candidate.declaration}" has no package.json — provide a path to a directory containing package.json with a "boring" field.`,
+          `defaultPluginPackages: "${entry}" has no package.json — provide a path to a directory containing package.json with a "boring" field.`,
         )
       }
+      resolved.push(entry)
+      continue
+    }
+    let resolvedPath: string | null = null
+    for (const req of resolvers) {
+      try {
+        resolvedPath = dirname(req.resolve(`${entry}/package.json`))
+        break
+      } catch {
+        // try next anchor
+      }
+    }
+    if (!resolvedPath) {
       throw new Error(
-        `defaultPluginPackages: cannot resolve "${candidate.declaration}" — install it as a dep of the app so its lexical node_modules package directory exists. Pass an absolute path instead if the package lives outside node_modules.`,
+        `defaultPluginPackages: cannot resolve "${entry}" — install it as a dep of the app so require.resolve can find its package.json. Pass an absolute path instead if the package lives outside node_modules.`,
       )
     }
-    resolved.push(packageRoot)
+    resolved.push(resolvedPath)
   }
   return resolved
 }

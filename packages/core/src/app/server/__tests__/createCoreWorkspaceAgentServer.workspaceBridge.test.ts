@@ -96,7 +96,6 @@ vi.mock('@hachej/boring-agent/server', async (importOriginal) => {
 })
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
-  defaultWorkspacePluginPackageCandidates: () => [],
   assertWorkspaceBridgeHandlersTrusted: () => {},
   collectWorkspaceAgentServerPlugins: () => ({
     agentOptions: {
@@ -206,7 +205,6 @@ vi.mock('@hachej/boring-workspace/server', () => {
     return await execute()
   }),
   InMemoryWorkspaceBridgeIdempotencyStore: class InMemoryWorkspaceBridgeIdempotencyStore {},
-  defaultWorkspacePluginPackageCandidates: () => [],
   InMemoryWorkspaceBridgeRuntimeRefreshTokenStore: class InMemoryWorkspaceBridgeRuntimeRefreshTokenStore {},
   uiRoutes: async () => {},
   verifyWorkspaceBridgeRuntimeToken: verifyRuntimeToken,

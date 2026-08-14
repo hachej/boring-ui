@@ -54,7 +54,6 @@ vi.mock('@hachej/boring-agent/server', async (importOriginal) => {
 })
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
-  defaultWorkspacePluginPackageCandidates: () => [],
   assertWorkspaceBridgeHandlersTrusted: () => {},
   collectWorkspaceAgentServerPlugins: mocks.collectWorkspaceAgentServerPlugins,
   createSandboxRuntimeModeAdapter: () => ({ id: 'direct', runtimeHost: mocks.runtimeHost }),
@@ -78,7 +77,6 @@ vi.mock('@hachej/boring-workspace/server', () => ({
   createWorkspaceBridgeRegistry: () => ({ call: vi.fn(), getDefinition: vi.fn(), registerHandler: vi.fn() }),
   createWorkspaceUiTools: mocks.createWorkspaceUiTools,
   InMemoryWorkspaceBridgeIdempotencyStore: class InMemoryWorkspaceBridgeIdempotencyStore {},
-  defaultWorkspacePluginPackageCandidates: () => [],
   uiRoutes: async () => {},
   workspaceBridgeHttpRoutes: async () => {},
 }))
