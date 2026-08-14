@@ -190,7 +190,7 @@ describe("AutomationOperations", () => {
   })
 
   it("durably admits a detached dispatch as the bound actor without awaiting its worker", async () => {
-    const queued = run({ status: "queued", trigger: "dispatch", sessionId: null, startedAt: null, completedAt: null })
+    const queued = run({ status: "dispatching", trigger: "dispatch", sessionId: null, startedAt: null, completedAt: null })
     const executor = { run: vi.fn(async () => { throw new Error("detached tool must not await run") }), start: vi.fn(async () => queued) }
     const actor = { workspaceId: "workspace-1", userId: "user-1" }
     const operations = createAutomationOperations({ store: storeMock(), actor, executor })
@@ -199,7 +199,7 @@ describe("AutomationOperations", () => {
 
     expect(executor.start).toHaveBeenCalledWith({ automationId: "automation-1", actor, trigger: "dispatch" })
     expect(executor.run).not.toHaveBeenCalled()
-    expect(result).toMatchObject({ status: "queued", trigger: "dispatch", sessionId: null })
+    expect(result).toMatchObject({ status: "dispatching", trigger: "dispatch", sessionId: null })
     expect(result).not.toHaveProperty("promptSnapshot")
     expect(result).not.toHaveProperty("modelSnapshot")
   })

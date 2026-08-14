@@ -130,7 +130,7 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
 }
 
 
-function createAutomationSessionController(
+export function createAutomationSessionController(
   resolver: WorkspaceAgentDispatcherResolver,
   actorContext: { workspaceId?: string; userId?: string },
 ): AutomationSessionController {

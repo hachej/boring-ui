@@ -195,11 +195,19 @@ describe("ManualRunExecutor", () => {
 
     const admitted = await harness.executor.start({ automationId: harness.automation.id, actor: harness.actor, trigger: "dispatch" })
 
-    expect(admitted).toMatchObject({ status: "queued", trigger: "dispatch", sessionId: null })
+    expect(admitted).toMatchObject({ status: "dispatching", trigger: "dispatch", sessionId: null })
     await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce())
     expect([...harness.store.runs.values()][0]).toMatchObject({ status: "dispatching" })
     release.resolve()
     await vi.waitFor(() => expect([...harness.store.runs.values()][0]).toMatchObject({ status: "succeeded", sessionId: "session-detached" }))
+  })
+
+  it("rejects detached admission when the durable run cannot be claimed", async () => {
+    const harness = createHarness()
+    vi.spyOn(harness.store, "claimRunForDispatch").mockRejectedValue(new Error("claim failed"))
+
+    await expect(harness.executor.start({ automationId: harness.automation.id, actor: harness.actor, trigger: "dispatch" }))
+      .rejects.toThrow("claim failed")
   })
 
   it("heartbeats an active run until its event stream completes", async () => {

@@ -167,13 +167,25 @@ describe("AskUserRuntime", () => {
 
     expect(result).toMatchObject({ status: "filed", sessionId: "s1", questionId: expect.any(String) })
     if (result.status !== "filed") throw new Error("expected filed result")
-    const question = await store.getPending("s1")
+    const question = await store.getByQuestionId(result.questionId)
     expect(question).toMatchObject({ status: "ready", wait: false, questionId: result.questionId })
     expect(runtime.coordinator.hasWaiter(result.questionId)).toBe(false)
     await runtime.abandonOrphanedPending(["s1"])
-    expect(await store.getPending("s1")).toMatchObject({ questionId: result.questionId, status: "ready" })
+    expect(await store.getByQuestionId(result.questionId)).toMatchObject({ questionId: result.questionId, status: "ready" })
     await expect(runtime.submitAnswer(result.questionId, "s1", { answer: "approve" })).resolves.toBe("answered")
     await expect(store.getByQuestionId(result.questionId)).resolves.toMatchObject({ status: "answered" })
+  })
+
+  it("files multiple wait:false intentions from one tick session", async () => {
+    const store = await makeStore()
+    const runtime = new AskUserRuntime({ store })
+
+    const first = await runtime.ask({ sessionId: "tick-1", title: "First", schema, wait: false })
+    const second = await runtime.ask({ sessionId: "tick-1", title: "Second", schema, wait: false })
+
+    expect(first).toMatchObject({ status: "filed", questionId: expect.any(String) })
+    expect(second).toMatchObject({ status: "filed", questionId: expect.any(String) })
+    expect((await store.listPending()).filter((question) => question.sessionId === "tick-1")).toHaveLength(2)
   })
 
   it("delivers submitted answers to the waiting ask call", async () => {

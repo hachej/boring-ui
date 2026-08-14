@@ -164,27 +164,35 @@ export function createAutomationOperations({
     async listDispatchRuns(limit) {
       const rowLimit = normalizeLimit(limit)
       const automations = await store.listAutomations()
-      const sessionsByAgent = new Map<string, readonly AgentSessionSummary[]>()
+      const automationById = new Map(automations.map((automation) => [automation.id, automation]))
+      const recentRuns = store.listRecentRuns
+        ? await store.listRecentRuns(rowLimit)
+        : (await Promise.all(automations.map((automation) => store.listRuns(automation.id, rowLimit))))
+          .flat().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, rowLimit)
+      const agentTypeIds = [...new Set(recentRuns.flatMap((run) => {
+        const automation = automationById.get(run.automationId)
+        return automation ? [automation.agentTypeId ?? defaultAgentTypeId] : []
+      }))]
+      const sessionsByAgent = new Map(await Promise.all(agentTypeIds.map(async (agentTypeId) => [
+        agentTypeId,
+        sessionController ? await sessionController.list(agentTypeId) : [],
+      ] as const)))
       const rows: DispatchRunFleetSummary[] = []
-      for (const automation of automations) {
+      for (const run of recentRuns) {
+        const automation = automationById.get(run.automationId)
+        if (!automation) continue
         const agentTypeId = automation.agentTypeId ?? defaultAgentTypeId
-        let sessions = sessionsByAgent.get(agentTypeId)
-        if (!sessions) {
-          sessions = sessionController ? await sessionController.list(agentTypeId) : []
-          sessionsByAgent.set(agentTypeId, sessions)
-        }
-        const sessionById = new Map(sessions.map((session) => [session.ref.sessionId, session]))
-        for (const run of await store.listRuns(automation.id, rowLimit)) {
-          const session = run.sessionId ? sessionById.get(run.sessionId) : undefined
-          rows.push({
-            ...safeRunSummary(run),
-            automationTitle: automation.title,
-            agentTypeId,
-            sessionTitle: session?.title ?? null,
-            sessionStatus: run.sessionId ? session?.status ?? "gone" : null,
-            sessionAgeMs: session ? Math.max(0, Date.now() - session.updatedAt) : null,
-          })
-        }
+        const session = run.sessionId
+          ? sessionsByAgent.get(agentTypeId)?.find((candidate) => candidate.ref.sessionId === run.sessionId)
+          : undefined
+        rows.push({
+          ...safeRunSummary(run),
+          automationTitle: automation.title,
+          agentTypeId,
+          sessionTitle: session?.title ?? null,
+          sessionStatus: run.sessionId ? session?.status ?? "gone" : null,
+          sessionAgeMs: session ? Math.max(0, Date.now() - session.updatedAt) : null,
+        })
       }
       rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       return bounded(rows, rowLimit, (row) => row)
@@ -337,9 +345,15 @@ function contextUnavailable(): AutomationStoreError {
 }
 
 async function requireSessionTarget(store: AutomationStore, sessionId: string, defaultAgentTypeId: string): Promise<{ agentTypeId: string }> {
-  for (const automation of await store.listAutomations()) {
-    if ((await store.listRuns(automation.id)).some((run) => run.sessionId === sessionId)) {
-      return { agentTypeId: automation.agentTypeId ?? defaultAgentTypeId }
+  if (store.findRunBySessionId) {
+    const run = await store.findRunBySessionId(sessionId)
+    const automation = run ? await store.getAutomation(run.automationId) : null
+    if (automation) return { agentTypeId: automation.agentTypeId ?? defaultAgentTypeId }
+  } else {
+    for (const automation of await store.listAutomations()) {
+      if ((await store.listRuns(automation.id)).some((run) => run.sessionId === sessionId)) {
+        return { agentTypeId: automation.agentTypeId ?? defaultAgentTypeId }
+      }
     }
   }
   throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.SESSION_NOT_FOUND, `session ${sessionId} is not owned by an automation run`)

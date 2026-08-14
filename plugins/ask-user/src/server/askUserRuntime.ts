@@ -137,8 +137,13 @@ export class AskUserRuntime {
 
     if (request.wait === false) {
       await this.store.createPending(question)
-      await this.store.appendTranscriptEvent({ type: "created", question, at: this.isoNow() })
-      await this.store.appendTranscriptEvent({ type: "ready", questionId: question.questionId, sessionId: question.sessionId, schema: parsed.data, at: this.isoNow() })
+      try {
+        await this.store.appendTranscriptEvent({ type: "created", question, at: this.isoNow() })
+        await this.store.appendTranscriptEvent({ type: "ready", questionId: question.questionId, sessionId: question.sessionId, schema: parsed.data, at: this.isoNow() })
+      } catch {
+        // Durable question admission is authoritative. Transcript projection is
+        // recoverable and must not hide the polling id from the caller.
+      }
       return { status: "filed", questionId: question.questionId, sessionId: question.sessionId }
     }
 

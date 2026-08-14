@@ -116,7 +116,7 @@ describe("ask-user Pi tool", () => {
         handover: { kind: "boring.handover.operations", operations: [{ action: "upsert", artifact }] },
       },
     })
-    const question = await store.getPending("s1")
+    const question = await store.getByQuestionId((result.details as any).questionId)
     expect(question).toMatchObject({ questionId: (result.details as any).questionId, wait: false, status: "ready" })
     expect(runtime.coordinator.hasWaiter(question!.questionId)).toBe(false)
   })

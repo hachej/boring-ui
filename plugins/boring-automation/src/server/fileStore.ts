@@ -256,6 +256,23 @@ export class FileAutomationStore implements AutomationStore {
     return runs.slice(0, limit ?? runs.length).map(clone)
   }
 
+  async listRecentRuns(limit: number): Promise<AutomationRun[]> {
+    const state = await this.load()
+    return Object.values(state.runs)
+      .filter((run) => state.automations[run.automationId] !== undefined)
+      .sort((a, b) => runSortTimestamp(b).localeCompare(runSortTimestamp(a)))
+      .slice(0, limit)
+      .map(clone)
+  }
+
+  async findRunBySessionId(sessionId: string): Promise<AutomationRun | null> {
+    const state = await this.load()
+    const run = Object.values(state.runs)
+      .filter((candidate) => candidate.sessionId === sessionId && state.automations[candidate.automationId] !== undefined)
+      .sort((a, b) => runSortTimestamp(b).localeCompare(runSortTimestamp(a)))[0]
+    return run ? clone(run) : null
+  }
+
   private statePath(): string {
     return join(this.rootDir, "store.json")
   }

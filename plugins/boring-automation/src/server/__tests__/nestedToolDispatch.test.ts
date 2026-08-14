@@ -74,7 +74,7 @@ describe("boring_automation nested dispatch", () => {
     expect(toolResult.details).toMatchObject({
       ok: true,
       operation: "run",
-      run: { status: "queued", sessionId: null, trigger: "dispatch" },
+      run: { status: "dispatching", sessionId: null, trigger: "dispatch" },
     })
 
     // The parent tool is released after durable admission, while the host-owned

@@ -60,14 +60,14 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
       parameters: askUserTool.parameters,
       execute(params, ctx) {
         ensurePublisher()
-        return askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal, ctx.sessionId, undefined)
+        return askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal, ctx.sessionId, ctx.userId)
       },
     }, {
       name: readIntentionTool.name,
       description: readIntentionTool.description,
       parameters: readIntentionTool.parameters,
-      execute(params) {
-        return readIntentionTool.execute(params)
+      execute(params, ctx) {
+        return readIntentionTool.execute(params, ctx.userId)
       },
     }],
     workspaceBridgeHandlers: createAskUserBridgeHandlers({ runtime, store }),

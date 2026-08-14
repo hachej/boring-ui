@@ -74,8 +74,7 @@ export class FileAskUserStore implements AskUserStore {
 
   async listPending(): Promise<AskUserQuestion[]> {
     const state = await this.load()
-    return Object.values(state.pendingBySession)
-      .map((questionId) => state.questions[questionId])
+    return Object.values(state.questions)
       .filter(isPending)
       .map((question) => clone(question))
   }
@@ -93,11 +92,11 @@ export class FileAskUserStore implements AskUserStore {
   async createPending(question: AskUserQuestion): Promise<void> {
     await this.mutate(async (state) => {
       const existing = state.pendingBySession[question.sessionId]
-      if (existing && isPending(state.questions[existing])) {
+      if (question.wait !== false && existing && isPending(state.questions[existing])) {
         throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists for this session")
       }
       state.questions[question.questionId] = clone(question)
-      if (isPending(question)) state.pendingBySession[question.sessionId] = question.questionId
+      if (isPending(question) && question.wait !== false) state.pendingBySession[question.sessionId] = question.questionId
       this.emit({ sessionId: question.sessionId, questionId: question.questionId, reason: "create" })
     })
   }

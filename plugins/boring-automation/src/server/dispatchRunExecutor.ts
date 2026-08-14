@@ -119,7 +119,6 @@ export class DispatchRunExecutor {
       createdAt,
     })
     await this.publishRunChange(actor, run)
-    await input.onStarted?.(run)
     // beginRun is the durable invocation-to-run receipt. A retry of a terminal
     // invocation returns that receipt verbatim and must never enter dispatch
     // again, especially after restart reconciliation made the outcome unknown.
@@ -130,10 +129,15 @@ export class DispatchRunExecutor {
     let terminalStatus: "succeeded" | "failed" | "cancelled" | null = null
     let terminalError: string | null = null
     const claimed = await store.claimRunForDispatch(run.id)
-    if (!claimed) return await this.readDurableRun(store, automation.id, run.id, run)
+    if (!claimed) {
+      const durable = await this.readDurableRun(store, automation.id, run.id, run)
+      await input.onStarted?.(durable)
+      return durable
+    }
     let current = claimed
     const stopHeartbeat = startRunHeartbeat(store, run.id)
     await this.publishRunChange(actor, current)
+    await input.onStarted?.(current)
     let startedAt: string | null = null
 
     try {

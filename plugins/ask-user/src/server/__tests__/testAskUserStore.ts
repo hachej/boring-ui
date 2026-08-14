@@ -41,9 +41,8 @@ export class MemoryAskUserStore implements AskUserStore {
   }
 
   async listPending(): Promise<AskUserQuestion[]> {
-    return [...this.pendingBySession.values()]
-      .map((questionId) => this.questions.get(questionId))
-      .filter((question): question is AskUserQuestion => question?.status === "ready")
+    return [...this.questions.values()]
+      .filter((question): question is AskUserQuestion => question.status === "ready")
       .map((question) => clone(question))
   }
 
@@ -59,9 +58,9 @@ export class MemoryAskUserStore implements AskUserStore {
 
   async createPending(question: AskUserQuestion): Promise<void> {
     const existing = this.pendingBySession.get(question.sessionId)
-    if (existing && this.questions.get(existing)?.status === "ready") throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists for this session")
+    if (question.wait !== false && existing && this.questions.get(existing)?.status === "ready") throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists for this session")
     this.questions.set(question.questionId, clone(question))
-    if (question.status === "ready") this.pendingBySession.set(question.sessionId, question.questionId)
+    if (question.status === "ready" && question.wait !== false) this.pendingBySession.set(question.sessionId, question.questionId)
     this.emit({ sessionId: question.sessionId, questionId: question.questionId, reason: "create" })
   }
 

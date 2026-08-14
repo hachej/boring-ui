@@ -227,6 +227,36 @@ export class PostgresAutomationStore implements AutomationStore {
     return rows.map(toRun)
   }
 
+  async listRecentRuns(limit: number): Promise<AutomationRun[]> {
+    const rows = await this.sql<RunRow[]>`
+      SELECT runs.* FROM boring_automation_runs AS runs
+      INNER JOIN boring_automation_automations AS automations
+        ON automations.id = runs.automation_id
+        AND automations.workspace_id = runs.workspace_id
+        AND automations.owner_user_id = runs.owner_user_id
+      WHERE runs.workspace_id = ${this.actor.workspaceId} AND runs.owner_user_id = ${this.actor.userId}
+        AND automations.deleted_at IS NULL
+      ORDER BY runs.updated_at DESC, runs.id DESC
+      LIMIT ${limit}
+    `
+    return rows.map(toRun)
+  }
+
+  async findRunBySessionId(sessionId: string): Promise<AutomationRun | null> {
+    const rows = await this.sql<RunRow[]>`
+      SELECT runs.* FROM boring_automation_runs AS runs
+      INNER JOIN boring_automation_automations AS automations
+        ON automations.id = runs.automation_id
+        AND automations.workspace_id = runs.workspace_id
+        AND automations.owner_user_id = runs.owner_user_id
+      WHERE runs.workspace_id = ${this.actor.workspaceId} AND runs.owner_user_id = ${this.actor.userId}
+        AND runs.session_id = ${sessionId} AND automations.deleted_at IS NULL
+      ORDER BY runs.updated_at DESC, runs.id DESC
+      LIMIT 1
+    `
+    return rows[0] ? toRun(rows[0]) : null
+  }
+
   private requireWorkspace(): Workspace {
     if (this.workspace) return this.workspace
     throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.TOOL_CONTEXT_UNAVAILABLE, "automation workspace is unavailable")

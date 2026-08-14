@@ -5,7 +5,7 @@ export type ReadIntentionToolDefinition = {
   label: string
   description: string
   parameters: Record<string, unknown>
-  execute(params: Record<string, unknown>): Promise<{
+  execute(params: Record<string, unknown>, ownerPrincipalId?: string): Promise<{
     content: Array<{ type: "text"; text: string }>
     details?: unknown
     isError?: boolean
@@ -24,11 +24,14 @@ export function createReadIntentionTool(store: AskUserStore): ReadIntentionToolD
       required: ["questionId"],
       additionalProperties: false,
     },
-    async execute(params) {
+    async execute(params, ownerPrincipalId) {
       const questionId = typeof params.questionId === "string" ? params.questionId.trim() : ""
       if (!questionId) return error("questionId is required")
       const question = await store.getByQuestionId(questionId)
       if (!question) return error("intention was not found")
+      if (ownerPrincipalId && question.ownerPrincipalId !== "anonymous" && question.ownerPrincipalId !== ownerPrincipalId) {
+        return error("intention was not found")
+      }
       const answer = question.status === "answered" ? await store.getAnswer(questionId) : null
       const details = {
         questionId,

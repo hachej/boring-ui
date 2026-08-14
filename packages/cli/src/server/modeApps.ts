@@ -591,7 +591,7 @@ export async function createWorkspacesModeApp(opts: {
   if (process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1") {
     throw new Error("live_transcript_local_only: live transcripts are supported only by boring-ui [folder]")
   }
-  const [workspaceAppServer, workspaceServer, agentServer, agentShared, boringBashServer, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createBoringAutomationTool, DueRunService, FileAutomationStore, InMemoryAutomationRunEventBus, ManualRunExecutor, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
+  const [workspaceAppServer, workspaceServer, agentServer, agentShared, boringBashServer, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createAutomationSessionController, createBoringAutomationTool, DispatchRunExecutor, DueRunService, FileAutomationStore, InMemoryAutomationRunEventBus, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
     import("@hachej/boring-agent/server"),
@@ -751,7 +751,7 @@ export async function createWorkspacesModeApp(opts: {
   async function automationExecutorForRequest(request: FastifyRequest) {
     const workspace = await workspaceFromRequest(request)
     if (!workspaceAgentDispatcher) throw httpError("workspace agent dispatcher is unavailable", 503)
-    return new ManualRunExecutor({
+    return new DispatchRunExecutor({
       agentTypeId: "default",
       store: automationStore(workspace),
       dispatcherResolver: workspaceAgentDispatcher,
@@ -767,7 +767,7 @@ export async function createWorkspacesModeApp(opts: {
         resolveStore: async (actor) => automationStore(await requireWorkspace(actor.workspaceId)),
         resolveExecutor: async (actor, store) => {
           if (!workspaceAgentDispatcher) throw httpError("workspace agent dispatcher is unavailable", 503)
-          return new ManualRunExecutor({
+          return new DispatchRunExecutor({
             agentTypeId: "default",
             store,
             dispatcherResolver: workspaceAgentDispatcher,
@@ -776,6 +776,10 @@ export async function createWorkspacesModeApp(opts: {
           })
         },
         localUserId: "local",
+        defaultAgentTypeId: "default",
+        sessionController: workspaceAgentDispatcher
+          ? createAutomationSessionController(workspaceAgentDispatcher, actorContext)
+          : undefined,
       }, actorContext),
     })
   }
@@ -1199,7 +1203,7 @@ export async function createWorkspacesModeApp(opts: {
     await automationRoutes(app, {
       store: new FileAutomationStore(join(process.cwd(), ".pi", "automation-unused")),
       storeForRequest: async (request) => automationStore(await workspaceFromRequest(request)),
-      manualRunExecutorForRequest: automationExecutorForRequest,
+      dispatchRunExecutorForRequest: automationExecutorForRequest,
       dueRunServiceForRequest: async (request) => {
         const workspace = await workspaceFromRequest(request)
         return new DueRunService({

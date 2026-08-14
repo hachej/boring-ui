@@ -114,7 +114,7 @@ describe("ask-user full workflow", () => {
       schema: { wireVersion: 1, fields: [{ type: "radio", name: "decision", label: "Decision", options: [{ value: "approve", label: "Approve" }, { value: "reject", label: "Reject" }] }] },
     })
     expect(result).toMatchObject({ details: { status: "filed", questionId: expect.any(String) } })
-    const pending = (await store.getPending("s1"))!
+    const pending = (await store.getByQuestionId((result.details as any).questionId))!
 
     const answered = await registry.call({
       op: ASK_USER_BRIDGE_OPS.answer,
@@ -128,7 +128,9 @@ describe("ask-user full workflow", () => {
     })
     expect(answered).toMatchObject({ ok: true, output: { status: "answered" } })
     await expect(store.getByQuestionId(pending.questionId)).resolves.toMatchObject({ status: "answered", wait: false })
-    const polled = await createReadIntentionTool(store).execute({ questionId: pending.questionId })
+    const reader = createReadIntentionTool(store)
+    await expect(reader.execute({ questionId: pending.questionId }, "p2")).resolves.toMatchObject({ isError: true })
+    const polled = await reader.execute({ questionId: pending.questionId }, "p1")
     expect(polled).toMatchObject({ details: { questionId: pending.questionId, status: "answered", values: { decision: "approve" } } })
   })
 
