@@ -65,7 +65,9 @@ const palette = extract((state): SafePaletteState => {
   const dialogs = visibleElements('[role="dialog"], [aria-modal="true"]')
     .filter((element, index, all) => all.indexOf(element) === index)
   const dialog = dialogs[0] ?? null
-  const searchControls = Array.from(state.document.querySelectorAll("button"))
+  const searchControls = Array.from(state.document.querySelectorAll(
+    'button[aria-label="Search catalogs and commands"], button[data-boring-app-left-nav-key="search"]',
+  ))
   const allowed: Array<{ name: string; point: Point }> = []
   const maybeAdd = (element: Element, insideDialog: boolean): void => {
     const label = normalizedText(element)

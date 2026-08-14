@@ -29,8 +29,12 @@ export type UiReviewReproduceManifest = {
 export async function verifyReproducedFinalState(
   replayRoot: string,
   expected: UiReviewReproduceManifest,
+  spec: UiReviewSpec,
 ): Promise<void> {
-  const final = (await parseBombadilTrace(replayRoot)).at(-1)
+  const final = (await parseBombadilTrace(
+    replayRoot,
+    spec.exploration?.normalizeReplayState,
+  )).at(-1)
   if (!final) throw new Error(`UI_REVIEW_REPRODUCE_EMPTY:${expected.stateId}`)
   if (final.normalizedStateSignature !== expected.expectedNormalizedStateSignature) {
     throw new Error(`UI_REVIEW_REPRODUCE_STATE_MISMATCH:${expected.stateId}`)
@@ -96,7 +100,9 @@ export async function validateReproduceOwnership(input: {
     }
     return { name: snapshot.name, value: snapshot.value }
   })
-  if (sha256Json(normalizeManifestState(final.state.url, snapshots)) !== selected.normalizedStateSignature) {
+  const normalizedState = normalizeManifestState(final.state.url, snapshots)
+  const replayState = spec.exploration?.normalizeReplayState?.(normalizedState) ?? normalizedState
+  if (sha256Json(replayState) !== selected.normalizedStateSignature) {
     throw new Error(`UI_REVIEW_REPRODUCE_TRACE_SIGNATURE_INVALID:${selected.id}`)
   }
 }

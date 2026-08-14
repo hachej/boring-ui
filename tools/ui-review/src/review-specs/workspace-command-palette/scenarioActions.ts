@@ -18,5 +18,4 @@ export function isSafeCommandPaletteControl(control: ScenarioControl): boolean {
   if (control.insideDialog) return control.label === "Commands" || control.label === "Files"
   return control.label === "Open app navigation"
     || control.label === "Search catalogs and commands"
-    || /^Search(?:⌘K|CtrlK)?$/.test(control.label)
 }
