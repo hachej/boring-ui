@@ -182,7 +182,7 @@ describe("workspaces mode runtime plugin wiring", () => {
     expect(runResult.run).toMatchObject({ status: "succeeded", sessionId: "workspace-a:local" })
     expect(runResult.run).not.toHaveProperty("promptSnapshot")
     expect(runResult.run).not.toHaveProperty("modelSnapshot")
-    expect(executorRun).toHaveBeenCalledWith({ automationId: created.id, actor: { workspaceId: "workspace-a", userId: "local" } })
+    expect(executorRun).toHaveBeenCalledWith({ automationId: created.id, actor: { workspaceId: "workspace-a", userId: "local" }, trigger: "dispatch" })
 
     expect(toolDetails(await tool.execute({ operation: "list_runs", automationId: created.id }, toolContext("workspace-a"))).runs).toEqual([])
     expect(toolDetails(await tool.execute({ operation: "delete", automationId: created.id }, toolContext("workspace-a"))).deleted).toMatchObject({ automationId: created.id, title: "Updated A" })
