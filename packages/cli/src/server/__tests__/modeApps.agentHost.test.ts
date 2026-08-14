@@ -384,7 +384,10 @@ describe.sequential("CLI Agent Host composition", () => {
         return {
           id: "tasks",
           routes: async (app) => {
-            app.get("/fixture-task-config", async () => options.config)
+            app.get("/fixture-task-config", async () => ({
+              config: options.config,
+              hasBeadsOperations: typeof options.beadsOperations?.runRead === "function",
+            }))
           },
         }
       }
@@ -400,7 +403,10 @@ describe.sequential("CLI Agent Host composition", () => {
       const response = await app.inject({ method: "GET", url: "/fixture-task-config" })
       expect(response.statusCode, response.body).toBe(200)
       expect(response.json()).toEqual({
-        providers: [{ provider: "github", repo: "auto" }, { provider: "beads" }],
+        config: {
+          providers: [{ provider: "github", repo: "auto" }, { provider: "beads" }],
+        },
+        hasBeadsOperations: true,
       })
     } finally {
       await app.close()

@@ -59,7 +59,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify"
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
-import { homedir } from "node:os"
+import { homedir, userInfo } from "node:os"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
@@ -434,6 +434,16 @@ function boringPiRootVisibleToAgentTools(workspaceRoot: string, resolvedMode: st
 }
 
 
+
+function ambientAgentSkillRoots(): string[] {
+  const homes = [homedir()]
+  try {
+    homes.push(userInfo().homedir)
+  } catch {
+    // Some sandboxed runtimes cannot resolve the OS account; HOME still works.
+  }
+  return [...new Set(homes)].map((home) => join(home, ".agents", "skills"))
+}
 
 function resolveWorkspacePackageRoot(): string {
   const candidates = [
@@ -1923,6 +1933,9 @@ export async function createWorkspaceAgentServer(
             runtimeLayout.skills,
             ...selectedSourceSkillPaths,
             ...builtInBoringPiSkillPaths,
+            ...((selectedPi?.noSkills ?? resolvedBasePi.noSkills) === false
+              ? ambientAgentSkillRoots()
+              : []),
             ...[localPiPackageRoot(workspacePackagePiPackage)]
               .filter((path): path is string => Boolean(path)),
             ...(getEffectivePackageResourceSnapshot()?.registry.handledPackageRoots ?? []),

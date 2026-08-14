@@ -41,4 +41,13 @@ describe("folder-mode task provider detection", () => {
     const workspaceRoot = await workspaceFixture({ beads, github })
     await expect(detectFolderModeTaskProviders(workspaceRoot)).resolves.toEqual(expected)
   })
+
+  test("accepts a username-free scp-style GitHub remote", async () => {
+    const workspaceRoot = await workspaceFixture({ beads: false, github: false })
+    await execFileAsync("git", ["init", "--quiet", workspaceRoot])
+    await execFileAsync("git", ["-C", workspaceRoot, "remote", "add", "origin", "github.com:hachej/boring-ui.git"])
+    await expect(detectFolderModeTaskProviders(workspaceRoot)).resolves.toEqual([
+      { provider: "github", repo: "auto" },
+    ])
+  })
 })

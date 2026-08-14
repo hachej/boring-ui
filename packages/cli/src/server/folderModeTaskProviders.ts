@@ -10,7 +10,7 @@ export type FolderModeTaskProvider =
   | { provider: "beads" }
 
 function isGitHubRemoteUrl(value: string): boolean {
-  return /^(?:(?:https?|git|ssh):\/\/(?:[^@/\s]+@)?github\.com[/:]|[^@/\s]+@github\.com:)/i.test(value.trim())
+  return /^(?:(?:https?|git|ssh):\/\/(?:[^@/\s]+@)?github\.com[/:]|(?:[^@/\s]+@)?github\.com:)/i.test(value.trim())
 }
 
 async function hasGitHubRemote(workspaceRoot: string): Promise<boolean> {
