@@ -129,7 +129,7 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
       const painted = [...waits].reverse().find((state) => {
         const closed = ordered.filter((candidate) => {
           const palette = candidate.normalizedState.palette as Record<string, unknown> | undefined
-          return candidate.ordinal > 2
+          return (candidate.ordinal > 2 || candidate.action === "Wait")
             && candidate.ordinal < state.ordinal
             && palette?.dialogVisible === false
         }).at(-1)
