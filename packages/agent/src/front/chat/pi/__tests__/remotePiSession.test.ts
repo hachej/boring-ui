@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
+import { AgentGatewayErrorCode } from '../../../../shared/gateway/errors'
 import type { PiChatEvent, PiChatSnapshot } from '../../../../shared/chat'
+import { RUNTIME_SCOPE_MISMATCH_MESSAGE } from '../../gatewayResponseError'
 import { PI_CHAT_CURSOR_AHEAD_CODE, PI_CHAT_REPLAY_GAP_CODE } from '../piChatStream'
 import { RemotePiSession, piChatErrorCode } from '../remotePiSession'
 
@@ -564,6 +566,35 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('suspends without reconnecting when an existing session belongs to another runtime scope', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) {
+        return jsonResponse({
+          error: {
+            code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+            message: 'session is pinned to a different runtime scope',
+          },
+        }, 409)
+      }
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock)
+
+    await waitUntil(() => session.getState().connection.state === 'suspended')
+    await new Promise((resolve) => setTimeout(resolve, 25))
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(session.getState()).toMatchObject({ hydrated: true, status: 'error' })
+    expect(session.getDebugState().suspended).toBe(true)
+    expect(session.getState().notices).toContainEqual(expect.objectContaining({
+      id: 'terminal-session-error',
+      errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+      text: RUNTIME_SCOPE_MISMATCH_MESSAGE,
+    }))
+
+    session.dispose()
+  })
+
   it('shows a protocol runtime notice and does not open events for unsupported /state protocol versions', async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url.endsWith('/state')) return jsonResponse({ ...snapshot(), protocolVersion: 2 })
@@ -767,12 +798,15 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
-  it('piChatErrorCode ignores non-canonical/missing codes and reads a plain canonical errorCode', () => {
+  it('piChatErrorCode ignores unknown codes and reads shared or gateway errorCode values', () => {
     expect(piChatErrorCode(new Error('boom'))).toBeUndefined()
     expect(piChatErrorCode(undefined)).toBeUndefined()
     // A non-canonical code must NOT be surfaced as a host action key.
     expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: 'NOT_A_REAL_CODE' }))).toBeUndefined()
     expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: ErrorCode.enum.SESSION_LOCKED }))).toBe(ErrorCode.enum.SESSION_LOCKED)
+    expect(piChatErrorCode(Object.assign(new Error('x'), {
+      errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+    }))).toBe(AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH)
   })
 
   it('clears optimistic queued follow-ups from the stop receipt before a queue echo arrives', async () => {

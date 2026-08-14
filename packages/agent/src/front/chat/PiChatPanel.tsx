@@ -2,6 +2,8 @@
 
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Button } from '@hachej/boring-ui-kit'
+import { AgentGatewayErrorCode } from '../../shared/gateway/errors'
 import type { PromptInputFilePart } from '../primitives/prompt-input'
 import { ArtifactOpenProvider } from '../ArtifactOpenContext'
 import {
@@ -176,6 +178,8 @@ export interface PiChatPanelProps<
   allowPromptDuringInitialHydration?: boolean
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
   onSessionReset?: () => void | Promise<void>
+  /** Creates and selects a session when the host controls sessionId. */
+  onCreateSession?: () => void | Promise<void>
   onBeforeSubmit?: (draft: string, context: ChatSubmitContext) => false | void | boolean | Promise<false | void | boolean>
   onReloadAgentPlugins?: () => Promise<AgentPluginReloadResult | string>
   onCommandResult?: (message: string) => void
@@ -242,6 +246,7 @@ export function PiChatPanel<
   allowPromptDuringInitialHydration = false,
   workspaceWarmupStatus,
   onSessionReset,
+  onCreateSession,
   onBeforeSubmit,
   onReloadAgentPlugins,
   onCommandResult,
@@ -537,12 +542,43 @@ export function PiChatPanel<
     setLocalNotices((previous) => previous.filter((notice) => notice.id !== id))
   }, [])
 
+  const createSessionInFlightRef = useRef<Promise<void> | null>(null)
+  const [creatingSession, setCreatingSession] = useState(false)
   const createSession = useCallback(() => {
-    if (externalSessionId) return
-    void sessions.create().catch((error) => {
-      addLocalNotice({ id: 'session-create-error', level: 'error', text: errorMessage(error, 'Could not create a chat session.'), dismissible: true })
-    })
-  }, [addLocalNotice, externalSessionId, sessions.create])
+    if (createSessionInFlightRef.current) return createSessionInFlightRef.current
+    if (externalSessionId && !onCreateSession) return Promise.resolve()
+    setCreatingSession(true)
+    const operation = (async () => {
+      // Defer invocation so synchronous host failures enter the same cleanup path.
+      await Promise.resolve()
+      if (externalSessionId) await onCreateSession?.()
+      else await sessions.create()
+    })().catch((error) => {
+        addLocalNotice({ id: 'session-create-error', level: 'error', text: errorMessage(error, 'Could not create a chat session.'), dismissible: true })
+      })
+      .finally(() => {
+        if (createSessionInFlightRef.current === operation) createSessionInFlightRef.current = null
+        setCreatingSession(false)
+      })
+    createSessionInFlightRef.current = operation
+    return operation
+  }, [addLocalNotice, externalSessionId, onCreateSession, sessions.create])
+
+  const renderRuntimeNoticeAction = useCallback((notice: PiChatRuntimeNotice) => {
+    const hostAction = renderNoticeAction?.(notice)
+    if (hostAction != null) return hostAction
+    if (
+      notice.errorCode === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
+      && (!externalSessionId || onCreateSession)
+    ) {
+      return (
+        <Button type="button" size="sm" variant="outline" disabled={creatingSession} onClick={createSession}>
+          {creatingSession ? 'Starting new chat…' : 'Start new chat'}
+        </Button>
+      )
+    }
+    return null
+  }, [createSession, creatingSession, externalSessionId, onCreateSession, renderNoticeAction])
 
   useEffect(() => {
     if (externalSessionId || sessionsLoading || sessionsError || activeSessionId || sessionList.length > 0) return
@@ -1244,7 +1280,7 @@ export function PiChatPanel<
               onMentionActivate={activateAssistantMention}
               runtimeNotices={runtimeNotices}
               onDismissNotice={clearLocalNotice}
-              renderNoticeAction={renderNoticeAction}
+              renderNoticeAction={renderRuntimeNoticeAction}
               onScrollToBottomReady={(scrollToBottom) => {
                 scrollToBottomRef.current = scrollToBottom
               }}
