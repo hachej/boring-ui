@@ -29,7 +29,7 @@ export function createReadIntentionTool(store: AskUserStore): ReadIntentionToolD
       if (!questionId) return error("questionId is required")
       const question = await store.getByQuestionId(questionId)
       if (!question) return error("intention was not found")
-      if (ownerPrincipalId && question.ownerPrincipalId !== "anonymous" && question.ownerPrincipalId !== ownerPrincipalId) {
+      if (question.ownerPrincipalId !== "anonymous" && question.ownerPrincipalId !== ownerPrincipalId) {
         return error("intention was not found")
       }
       const answer = question.status === "answered" ? await store.getAnswer(questionId) : null

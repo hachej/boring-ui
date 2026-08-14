@@ -122,7 +122,10 @@ export class DispatchRunExecutor {
     // beginRun is the durable invocation-to-run receipt. A retry of a terminal
     // invocation returns that receipt verbatim and must never enter dispatch
     // again, especially after restart reconciliation made the outcome unknown.
-    if (isTerminalRunStatus(run.status)) return run
+    if (isTerminalRunStatus(run.status)) {
+      await input.onStarted?.(run)
+      return run
+    }
 
     const usage: UsageAccumulator = { input: null, output: null }
     let sessionId: string | null = null

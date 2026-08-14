@@ -132,6 +132,17 @@ describe("AutomationOperations", () => {
     })])
   })
 
+  it("reports truncation when the storage-bounded fleet query has more rows", async () => {
+    const recent = vi.fn(async () => [run({ id: "run-2" }), run({ id: "run-1" })])
+    const store = storeMock({ listRecentRuns: recent })
+    const operations = createAutomationOperations({ store, actor: { workspaceId: "w", userId: "u" } })
+
+    const listed = await operations.listDispatchRuns!(1)
+
+    expect(recent).toHaveBeenCalledWith(2)
+    expect(listed).toMatchObject({ truncated: true, items: [{ id: "run-2" }] })
+  })
+
   it("surfaces the dispatcher busy state when nudging a non-idle session", async () => {
     const busy = Object.assign(new Error("busy"), { code: "AGENT_COMMAND_INVALID_STATE", statusCode: 409 })
     const sessionController = {

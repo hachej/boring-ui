@@ -58,9 +58,10 @@ export class MemoryAskUserStore implements AskUserStore {
 
   async createPending(question: AskUserQuestion): Promise<void> {
     const existing = this.pendingBySession.get(question.sessionId)
-    if (question.wait !== false && existing && this.questions.get(existing)?.status === "ready") throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists for this session")
+    const existingQuestion = existing ? this.questions.get(existing) : undefined
+    if (existingQuestion?.status === "ready" && (question.wait !== false || existingQuestion.wait !== false)) throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists for this session")
     this.questions.set(question.questionId, clone(question))
-    if (question.status === "ready" && question.wait !== false) this.pendingBySession.set(question.sessionId, question.questionId)
+    if (question.status === "ready") this.pendingBySession.set(question.sessionId, question.questionId)
     this.emit({ sessionId: question.sessionId, questionId: question.questionId, reason: "create" })
   }
 
@@ -69,7 +70,7 @@ export class MemoryAskUserStore implements AskUserStore {
     question.status = "answered"
     question.updatedAt = new Date().toISOString()
     this.answers.set(questionId, clone(answer))
-    this.pendingBySession.delete(question.sessionId)
+    this.promotePending(question.sessionId, questionId)
     this.emit({ sessionId: question.sessionId, questionId, reason: "answer" })
   }
 
@@ -77,7 +78,7 @@ export class MemoryAskUserStore implements AskUserStore {
     const question = this.requireQuestion(questionId)
     question.status = "cancelled"
     question.updatedAt = new Date().toISOString()
-    this.pendingBySession.delete(question.sessionId)
+    this.promotePending(question.sessionId, questionId)
     this.emit({ sessionId: question.sessionId, questionId, reason: "cancel" })
   }
 
@@ -85,7 +86,7 @@ export class MemoryAskUserStore implements AskUserStore {
     const question = this.requireQuestion(questionId)
     question.status = "abandoned"
     question.updatedAt = new Date().toISOString()
-    this.pendingBySession.delete(question.sessionId)
+    this.promotePending(question.sessionId, questionId)
     this.emit({ sessionId: question.sessionId, questionId, reason: "abandon" })
   }
 
@@ -107,6 +108,15 @@ export class MemoryAskUserStore implements AskUserStore {
 
   async getTranscriptEventsForQuestion(questionId: string): Promise<AskUserTranscriptEvent[]> {
     return clone([...this.transcriptsBySession.values()].flat().filter((event) => transcriptQuestionId(event) === questionId))
+  }
+
+  private promotePending(sessionId: string, completedQuestionId: string): void {
+    if (this.pendingBySession.get(sessionId) !== completedQuestionId) return
+    const next = [...this.questions.values()]
+      .filter((question) => question.sessionId === sessionId && question.status === "ready" && question.questionId !== completedQuestionId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0]
+    if (next) this.pendingBySession.set(sessionId, next.questionId)
+    else this.pendingBySession.delete(sessionId)
   }
 
   subscribe(listener: AskUserStoreListener): () => void {

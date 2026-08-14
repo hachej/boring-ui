@@ -185,7 +185,13 @@ describe("AskUserRuntime", () => {
 
     expect(first).toMatchObject({ status: "filed", questionId: expect.any(String) })
     expect(second).toMatchObject({ status: "filed", questionId: expect.any(String) })
+    if (first.status !== "filed" || second.status !== "filed") throw new Error("expected filed intentions")
     expect((await store.listPending()).filter((question) => question.sessionId === "tick-1")).toHaveLength(2)
+    await expect(store.getPending("tick-1")).resolves.toMatchObject({ questionId: second.questionId })
+    await runtime.submitAnswer(second.questionId, "tick-1", { answer: "second" })
+    await expect(store.getPending("tick-1")).resolves.toMatchObject({ questionId: first.questionId })
+    await runtime.submitAnswer(first.questionId, "tick-1", { answer: "first" })
+    await expect(store.getPending("tick-1")).resolves.toBeNull()
   })
 
   it("delivers submitted answers to the waiting ask call", async () => {

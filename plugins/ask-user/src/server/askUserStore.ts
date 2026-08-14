@@ -92,11 +92,12 @@ export class FileAskUserStore implements AskUserStore {
   async createPending(question: AskUserQuestion): Promise<void> {
     await this.mutate(async (state) => {
       const existing = state.pendingBySession[question.sessionId]
-      if (question.wait !== false && existing && isPending(state.questions[existing])) {
+      const existingQuestion = existing ? state.questions[existing] : undefined
+      if (existingQuestion && isPending(existingQuestion) && (question.wait !== false || existingQuestion.wait !== false)) {
         throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists for this session")
       }
       state.questions[question.questionId] = clone(question)
-      if (isPending(question) && question.wait !== false) state.pendingBySession[question.sessionId] = question.questionId
+      if (isPending(question)) state.pendingBySession[question.sessionId] = question.questionId
       this.emit({ sessionId: question.sessionId, questionId: question.questionId, reason: "create" })
     })
   }
@@ -113,7 +114,7 @@ export class FileAskUserStore implements AskUserStore {
       question.status = "answered"
       question.updatedAt = nowIso()
       state.answers[questionId] = clone(answer)
-      delete state.pendingBySession[question.sessionId]
+      promotePendingForSession(state, question.sessionId, questionId)
       this.emit({ sessionId: question.sessionId, questionId, reason: "answer" })
     })
   }
@@ -126,7 +127,7 @@ export class FileAskUserStore implements AskUserStore {
       if (!isPending(question)) throw new AskUserStoreError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question is not pending")
       question.status = "cancelled"
       question.updatedAt = nowIso()
-      delete state.pendingBySession[question.sessionId]
+      promotePendingForSession(state, question.sessionId, questionId)
       this.emit({ sessionId: question.sessionId, questionId, reason: "cancel" })
     })
   }
@@ -137,7 +138,7 @@ export class FileAskUserStore implements AskUserStore {
       if (!isPending(question)) return
       question.status = "abandoned"
       question.updatedAt = nowIso()
-      delete state.pendingBySession[question.sessionId]
+      promotePendingForSession(state, question.sessionId, questionId)
       this.emit({ sessionId: question.sessionId, questionId, reason: "abandon" })
     })
   }
@@ -229,6 +230,15 @@ function isPromiseLike(value: unknown): value is Promise<unknown> {
 
 function isPending(question: AskUserQuestion | undefined): question is AskUserQuestion {
   return question?.status === "ready"
+}
+
+function promotePendingForSession(state: StoredAskUserState, sessionId: string, completedQuestionId: string): void {
+  if (state.pendingBySession[sessionId] !== completedQuestionId) return
+  const next = Object.values(state.questions)
+    .filter((question) => question.sessionId === sessionId && isPending(question) && question.questionId !== completedQuestionId)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0]
+  if (next) state.pendingBySession[sessionId] = next.questionId
+  else delete state.pendingBySession[sessionId]
 }
 
 function requireQuestion(state: StoredAskUserState, questionId: string): AskUserQuestion {

@@ -166,9 +166,9 @@ export function createAutomationOperations({
       const automations = await store.listAutomations()
       const automationById = new Map(automations.map((automation) => [automation.id, automation]))
       const recentRuns = store.listRecentRuns
-        ? await store.listRecentRuns(rowLimit)
-        : (await Promise.all(automations.map((automation) => store.listRuns(automation.id, rowLimit))))
-          .flat().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, rowLimit)
+        ? await store.listRecentRuns(rowLimit + 1)
+        : (await Promise.all(automations.map((automation) => store.listRuns(automation.id, rowLimit + 1))))
+          .flat().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, rowLimit + 1)
       const agentTypeIds = [...new Set(recentRuns.flatMap((run) => {
         const automation = automationById.get(run.automationId)
         return automation ? [automation.agentTypeId ?? defaultAgentTypeId] : []

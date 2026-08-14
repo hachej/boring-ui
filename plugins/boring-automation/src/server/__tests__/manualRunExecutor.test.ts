@@ -202,6 +202,15 @@ describe("ManualRunExecutor", () => {
     await vi.waitFor(() => expect([...harness.store.runs.values()][0]).toMatchObject({ status: "succeeded", sessionId: "session-detached" }))
   })
 
+  it("returns an existing terminal idempotency receipt from detached start", async () => {
+    const harness = createHarness()
+    const terminal = await harness.executor.run({ automationId: harness.automation.id, actor: harness.actor, invocationId: "same" })
+    vi.spyOn(harness.store, "beginRun").mockResolvedValue(terminal)
+
+    await expect(harness.executor.start({ automationId: harness.automation.id, actor: harness.actor, invocationId: "same" }))
+      .resolves.toMatchObject({ id: terminal.id, status: "succeeded" })
+  })
+
   it("rejects detached admission when the durable run cannot be claimed", async () => {
     const harness = createHarness()
     vi.spyOn(harness.store, "claimRunForDispatch").mockRejectedValue(new Error("claim failed"))
