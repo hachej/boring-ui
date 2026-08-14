@@ -97,7 +97,7 @@ export type {
   SandboxRuntimeReadinessV1,
   SandboxRuntimeRemotePathOptionsV1,
 } from './runtimeDescriptor'
-export { SandboxRuntimeModeRegistryV1 } from './runtimeDescriptor'
+export type { SandboxRuntimeModeRegistryV1 } from './runtimeDescriptor'
 export {
   BUILTIN_RUNTIME_MODE_IDS,
   isBuiltinRuntimeModeId,

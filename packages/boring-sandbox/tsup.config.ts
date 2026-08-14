@@ -14,7 +14,6 @@ export default defineConfig({
     "providers/vercel-sandbox/index": "src/providers/vercel-sandbox/index.ts",
     "providers/runsc/index": "src/providers/runsc/index.ts",
     "providers/remote-worker/index": "src/providers/remote-worker/index.ts",
-    "providers/remote-worker/legacy": "src/providers/remote-worker/legacy/index.ts",
   },
   format: ["esm"],
   dts: true,

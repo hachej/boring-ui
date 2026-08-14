@@ -20,7 +20,6 @@ export const requiredExports = [
   "./providers/vercel-sandbox",
   "./providers/runsc",
   "./providers/remote-worker",
-  "./providers/remote-worker/legacy",
 ];
 
 const sourceFilePattern = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;

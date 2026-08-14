@@ -1,53 +1,23 @@
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
 
+import { REMOTE_WORKER_ERROR_CODES_V1 } from '../../../shared/remoteWorkerProtocolV1'
 import { remoteWorkerRuntimeDescriptor } from '../runtimeDescriptor'
 
-test('legacy remote-worker resolution preserves the existing host protocol and pair roots', async () => {
-  const fetchImpl = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
-    expect(String(input)).toBe('http://worker/internal/health')
-    return new Response(null, { status: 200 })
-  })
-  const provider = await remoteWorkerRuntimeDescriptor.createPairFactory({
-    providerOptions: {
-      baseUrl: 'http://worker/',
-      token: 'secret',
-      fetchImpl: fetchImpl as typeof fetch,
-    },
-  })
-  const pair = await provider.create({
-    workspaceRoot: '/host/workspace',
-    workspaceId: 'workspace-1',
-    sessionId: 'session-1',
-    requestId: 'request-1',
-  })
-
-  expect(provider.providerId).toBe('remote-worker')
-  expect(pair.workspace.root).toBe('/workspace')
-  expect(pair.workspace.runtimeContext.runtimeCwd).toBe('/workspace')
-  expect(pair.sandbox.provider).toBe('remote-worker')
-  expect(pair.sandbox.runtimeContext.runtimeCwd).toBe('/workspace')
-  expect(fetchImpl).toHaveBeenCalledOnce()
-  const headers = fetchImpl.mock.calls[0]?.[1]?.headers as Headers
-  expect(headers.get('x-boring-internal-token')).toBe('secret')
-  expect(headers.get('x-boring-workspace-id')).toBe('workspace-1')
-  expect(headers.get('x-boring-request-id')).toBe('request-1')
-  await pair.dispose()
+test.each([
+  undefined,
+  {},
+  { baseUrl: 'http://legacy-worker', token: 'legacy-token' },
+  { fleet: {} },
+])('fails closed with the canonical config error for absent or incomplete V1 options: %j', async (providerOptions) => {
+  await expect(remoteWorkerRuntimeDescriptor.createPairFactory({ providerOptions }))
+    .rejects.toMatchObject({ code: REMOTE_WORKER_ERROR_CODES_V1.configInvalid })
 })
 
-test('legacy timeout-only options do not silently select the secure fleet provider', async () => {
-  const provider = await remoteWorkerRuntimeDescriptor.createPairFactory({
-    providerOptions: { requestTimeoutMs: 1_000 },
+test('keeps the registered remote-worker descriptor V1-only and production unsafe', async () => {
+  expect(remoteWorkerRuntimeDescriptor.host.productionSafe).toBe(false)
+  expect(remoteWorkerRuntimeDescriptor.providerId).toBe('remote-worker')
+  expect(remoteWorkerRuntimeDescriptor.pair).toMatchObject({
+    workspaceProviderId: 'remote-worker',
+    sandboxProviderId: 'remote-worker',
   })
-
-  expect(provider.providerId).toBe('remote-worker')
-  expect(provider.resolveRuntimeRoot({
-    workspaceRoot: '/host/workspace',
-    sessionId: 'session-1',
-  })).toBe('/workspace')
-})
-
-test('fleet options select the secure provider path', async () => {
-  await expect(remoteWorkerRuntimeDescriptor.createPairFactory({
-    providerOptions: { fleet: {} },
-  })).rejects.toThrow()
 })
