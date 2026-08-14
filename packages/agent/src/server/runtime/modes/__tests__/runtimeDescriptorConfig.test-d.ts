@@ -1,3 +1,5 @@
+import { expectTypeOf, test } from 'vitest'
+
 import type { SandboxRuntimeModeDescriptorV1 } from '@hachej/boring-sandbox/shared'
 
 import {
@@ -5,11 +7,12 @@ import {
   createSandboxRuntimeModeAdapter,
 } from '../../sandboxRuntimeHost'
 
-declare const configuredDescriptor: SandboxRuntimeModeDescriptorV1
+test('provider configuration is closed before generic Agent composition', () => {
+  expectTypeOf<Parameters<typeof createSandboxRuntimeDescriptorAdapter>[0]>()
+    .toEqualTypeOf<SandboxRuntimeModeDescriptorV1>()
 
-createSandboxRuntimeDescriptorAdapter(configuredDescriptor)
-createSandboxRuntimeModeAdapter('direct')
-
-// Provider-specific configuration must be closed into its typed Sandbox descriptor.
-// @ts-expect-error Agent host options contain no untyped provider option bag.
-createSandboxRuntimeModeAdapter('direct', { providerOptions: {} })
+  type HostOptions = NonNullable<Parameters<typeof createSandboxRuntimeModeAdapter>[1]>
+  // @ts-expect-error Agent host options contain no untyped provider option bag.
+  const invalidOptions: HostOptions = { providerOptions: {} }
+  void invalidOptions
+})
