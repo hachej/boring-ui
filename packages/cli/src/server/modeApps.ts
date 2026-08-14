@@ -584,8 +584,6 @@ export async function createFolderModeApp(opts: {
     app = await createWorkspaceAgentServer({
       workspaceRoot,
       appRoot: pluginDiscovery.resolveBoringUiCliPackageRoot(),
-      piResourceAuthorizedRoots: [pluginDiscovery.resolveBoringUiCliPackageAuthorityRoot()],
-      allowInternalPiResourceSymlinks: true,
       mode: opts.mode,
       logger: false,
       provisionWorkspace: false,
@@ -815,13 +813,6 @@ export async function createWorkspacesModeApp(opts: {
         agentTypeId: "default",
         availableAgentTypeIds: ["default"],
         defaultPluginPackages: pluginInputs.agentDefaultPackagePaths,
-        authorizePluginPaths: async (paths) => {
-          await agentServer.assertPiResourcePathsAuthorized({
-            paths,
-            authorizedRoots: piResourceAuthorizedRoots(workspace),
-            allowInternalSymlinks: true,
-          })
-        },
         installPluginAuthoring: false,
         excludeDefaults: ["boring-ui-plugin-cli-package"],
       })
