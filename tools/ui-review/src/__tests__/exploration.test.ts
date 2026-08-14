@@ -13,6 +13,7 @@ import {
   validateReproduceOwnership as validateOwnershipForSpec,
   verifyReproducedFinalState,
 } from "../core/replay"
+import { workspaceCommandPaletteSpec } from "../review-specs/workspace-command-palette/spec"
 import { isSafeCommandPaletteControl } from "../review-specs/workspace-command-palette/scenarioActions"
 import { testSpec, testStagingPolicy } from "./fixtures"
 
@@ -127,7 +128,7 @@ describe("Bombadil exploration staging", () => {
 
   it("verifies replay final normalized state and screenshot, not exit alone", async () => {
     const raw = await fixture([entry(1, { screenshot: "expected", palette: { dialogVisible: true } })])
-    const [expected] = await parseBombadilTrace(raw)
+    const [expected] = await parseBombadilTrace(raw, testSpec.exploration?.normalizeReplayState)
     await expect(verifyReproducedFinalState(raw, {
       schemaVersion: 1,
       stateId: "state",
@@ -145,7 +146,7 @@ describe("Bombadil exploration staging", () => {
       sourceScreenshotName: "1.png",
       actionCount: 1,
       hashCurrent: 1,
-    })).resolves.toBeUndefined()
+    }, testSpec)).resolves.toBeUndefined()
     await expect(verifyReproducedFinalState(raw, {
       schemaVersion: 1,
       stateId: "state",
@@ -163,15 +164,73 @@ describe("Bombadil exploration staging", () => {
       sourceScreenshotName: "1.png",
       actionCount: 1,
       hashCurrent: 1,
-    })).rejects.toThrow("UI_REVIEW_REPRODUCE_STATE_MISMATCH")
+    }, testSpec)).rejects.toThrow("UI_REVIEW_REPRODUCE_STATE_MISMATCH")
+  })
+
+  it("replays transient command-palette metadata changes but rejects durable changes", async () => {
+    const transient = {
+      dialogVisible: true,
+      mode: "Commands",
+      query: "",
+      workspaceReady: false,
+      lastActionWasPaletteOpen: true,
+      lastActionWasInitial: false,
+      controls: [{ name: "palette-mode-commands", point: { x: 10.25, y: 20.5 } }],
+    }
+    const expectedRoot = await fixture([entry(1, { screenshot: "stable", palette: transient })])
+    const normalize = workspaceCommandPaletteSpec.exploration!.normalizeReplayState
+    const [expected] = await parseBombadilTrace(expectedRoot, normalize)
+    const manifest = {
+      schemaVersion: 1 as const,
+      stateId: "state",
+      scenarioId: workspaceCommandPaletteSpec.id,
+      scenarioSpecRevision: workspaceCommandPaletteSpec.specRevision,
+      fixtureResetId: workspaceCommandPaletteSpec.fixtureResetId,
+      origin: "http://localhost:5380",
+      targetUrl: "http://localhost:5380/?fresh=1",
+      viewport,
+      expectedNormalizedStateSignature: expected!.normalizedStateSignature,
+      expectedScreenshotDigest: expected!.screenshotDigest,
+      expectedScreenshotPHash: expected!.screenshotPHash,
+      maximumScreenshotPHashDistance: 8,
+      traceDigest: "a".repeat(64),
+      sourceScreenshotName: "1.png",
+      actionCount: 1,
+      hashCurrent: 1,
+    }
+    const replayRoot = await fixture([entry(1, {
+      screenshot: "stable",
+      palette: {
+        ...transient,
+        workspaceReady: true,
+        lastActionWasPaletteOpen: false,
+        lastActionWasInitial: true,
+        controls: [{ name: "palette-mode-commands", point: { x: 11.75, y: 20.5 } }],
+      },
+    })])
+    await expect(verifyReproducedFinalState(
+      replayRoot,
+      manifest,
+      workspaceCommandPaletteSpec,
+    )).resolves.toBeUndefined()
+
+    const durableMismatchRoot = await fixture([entry(1, {
+      screenshot: "stable",
+      palette: { ...transient, mode: "Files" },
+    })])
+    await expect(verifyReproducedFinalState(
+      durableMismatchRoot,
+      manifest,
+      workspaceCommandPaletteSpec,
+    )).rejects.toThrow("UI_REVIEW_REPRODUCE_STATE_MISMATCH")
   })
 })
 
 describe("command palette action safety", () => {
   it("allows only named non-submitting local palette controls", () => {
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Search catalogs and commands", insideDialog: false })).toBe(true)
-    expect(isSafeCommandPaletteControl({ tagName: "button", label: "Search", insideDialog: false })).toBe(true)
-    expect(isSafeCommandPaletteControl({ tagName: "button", label: "Search⌘K", insideDialog: false })).toBe(true)
+    expect(isSafeCommandPaletteControl({ tagName: "button", label: "Search", insideDialog: false })).toBe(false)
+    expect(isSafeCommandPaletteControl({ tagName: "button", label: "Search⌘K", insideDialog: false })).toBe(false)
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Open app navigation", insideDialog: false })).toBe(true)
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Commands", insideDialog: true })).toBe(true)
     expect(isSafeCommandPaletteControl({ tagName: "button", label: "Files", insideDialog: true })).toBe(true)

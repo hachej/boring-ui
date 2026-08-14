@@ -53,7 +53,7 @@ try {
     await validateReproduceOwnership({ outputRoot, selected: selected as never, manifest, origin, targetUrl: origin, spec })
     const replayRoot = await mkdtemp(join(tmpdir(), `boring-ui-review-replay-${viewport.viewport.name}.`))
     await runBombadil(["browser", "test", manifest.targetUrl, spec.exploration.bombadilSpecPath, "--output-path", replayRoot, "--headless", "--width", String(manifest.viewport.width), "--height", String(manifest.viewport.height), "--device-scale-factor", String(manifest.viewport.deviceScaleFactor), "--instrument-javascript", "inline", "--reproduce", bundleArgument], outputRoot)
-    await verifyReproducedFinalState(replayRoot, manifest)
+    await verifyReproducedFinalState(replayRoot, manifest, spec)
     console.log(`verified Bombadil replay final state: ${selected.id}`)
   }
 } finally { await stop(server) }
