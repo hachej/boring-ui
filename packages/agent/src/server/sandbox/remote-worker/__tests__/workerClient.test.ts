@@ -82,7 +82,7 @@ describe('RemoteWorkerClient', () => {
     const controller = new AbortController()
 
     const pending = expect(client.exec({ cmd: 'true' }, { signal: controller.signal }))
-      .rejects.toMatchObject({ code: 'ABORTED', statusCode: 499 })
+      .rejects.toMatchObject({ code: ErrorCode.enum.ABORTED, statusCode: 499 })
     controller.abort()
     await pending
   })
