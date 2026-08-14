@@ -18,6 +18,25 @@ The plugin registers:
 - panel: `bi-dashboard.panel`
 - command: `bi-dashboard.open`
 
+## Custom dashboard catalogs
+
+`DashboardCatalogPane` lets hosts reuse the dashboard browser for server-backed or virtual dashboards instead of
+materializing every dashboard as a workspace file. Provide a stable adapter and map each row to either file-path or
+in-memory-spec panel parameters:
+
+```tsx
+const adapter = useMemo(() => ({
+  search: ({query, limit, offset, signal}) =>
+    fetchDashboardCatalog({query, limit, offset, signal}),
+}), [])
+
+return <DashboardCatalogPane {...sourceProps} adapter={adapter} />
+```
+
+The pane owns loading, cancellation, grouping, badges, refresh, pagination, and panel opening. The built-in
+`DashboardFilesPane` uses the same component with its filesystem-backed adapter, so existing plugin behavior is
+unchanged.
+
 ## Dashboard contract
 
 Agents should generate specs shaped like:

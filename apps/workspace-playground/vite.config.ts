@@ -1,12 +1,58 @@
-import { defineConfig } from "vite"
+import { defineConfig, normalizePath, type Plugin } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { dirname, resolve } from "node:path"
 import { createBoringAppViteAliases } from "@hachej/boring-core/app/vite"
 import { AGENT_API_PORT, VITE_PORT, startPlaygroundServer } from "./src/server/dev"
+import { assertReleaseCandidateDistModule } from "./src/release-candidate-dist"
 
 const baseResolve = createBoringAppViteAliases({ appRoot: __dirname })
 const repoRoot = resolve(__dirname, "../..")
+const releaseCandidateDistOnly = process.env.BORING_PLAYGROUND_DIST_ONLY === "1"
+
+if (releaseCandidateDistOnly) {
+  console.log("[workspace-playground] release-candidate dist-only package resolution enabled")
+}
+
+function releaseCandidateAgentStylesheet(): Plugin {
+  const stylesheetPath = normalizePath(resolve(repoRoot, "packages/agent/dist/front/styles.css"))
+  return {
+    name: "boring-release-candidate-agent-stylesheet",
+    transformIndexHtml() {
+      return [{
+        tag: "link",
+        attrs: {
+          rel: "stylesheet",
+          href: `/@fs/${stylesheetPath}`,
+          "data-boring-agent-stylesheet": "package-import",
+        },
+        injectTo: "head",
+      }]
+    },
+  }
+}
+
+function releaseCandidateDistOnlyGuard(): Plugin {
+  return {
+    name: "boring-release-candidate-dist-only",
+    enforce: "pre",
+    async resolveId(source, importer, options) {
+      if (!source.startsWith("@hachej/boring-")) return null
+      const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
+      if (!resolved || resolved.external) return resolved
+      assertReleaseCandidateDistModule(resolved.id, `resolved ${source}`)
+      return resolved
+    },
+    load(id) {
+      assertReleaseCandidateDistModule(id, "load")
+      return null
+    },
+    transform(_code, id) {
+      assertReleaseCandidateDistModule(id, "transform")
+      return null
+    },
+  }
+}
 const externalWorkspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT?.trim()
 const externalRuntimeExtensionsRoot = externalWorkspaceRoot
   ? resolve(externalWorkspaceRoot, ".pi", "extensions")
@@ -24,9 +70,10 @@ const fsAllow = [
 // the standard helper doesn't cover. Add those alongside the shared
 // aliases.
 const playgroundOnlyAliases = [
-  // Keep app code importing the public package CSS subpath, but point the
-  // playground's local monorepo dev server at the source CSS so Vite serves
-  // it as text/css even when package dist artifacts are stale/missing.
+  // Keep app code importing the public package CSS subpaths, but point the
+  // playground's local monorepo dev server at source CSS so a bare tsup build
+  // (clean:true) cannot wipe a live demo's generated styles.
+  { find: "@hachej/boring-agent/front/styles.css", replacement: resolve(__dirname, "../../packages/agent/src/front/styles/globals.css") },
   { find: "@hachej/boring-workspace/globals.css", replacement: resolve(__dirname, "../../packages/workspace/src/globals.css") },
   // Cover subpath imports from runtime extensions (e.g. boring-ui-factory
   // .pi/extensions) that land through Vite's /@fs/ resolver.
@@ -90,6 +137,9 @@ const pollingInterval = Number(process.env.CHOKIDAR_INTERVAL ?? process.env.BORI
 
 export default defineConfig({
   plugins: [
+    ...(releaseCandidateDistOnly
+      ? [releaseCandidateAgentStylesheet(), releaseCandidateDistOnlyGuard()]
+      : []),
     react({
       exclude: dynamicPluginReactRefreshExclude,
     }),
@@ -113,16 +163,27 @@ export default defineConfig({
     },
   ],
   resolve: {
-    alias: [...baseResolve.alias, ...playgroundOnlyAliases],
+    alias: releaseCandidateDistOnly
+      ? baseResolve.alias
+      : [...baseResolve.alias, ...playgroundOnlyAliases],
     dedupe: baseResolve.dedupe,
   },
   server: {
     port: VITE_PORT,
+    ...(releaseCandidateDistOnly
+      ? { warmup: { clientFiles: [resolve(__dirname, "src/front/main.tsx")] } }
+      : {}),
     host: true,
-    hmr: {
-      host: process.env.VITE_HMR_HOST ?? "100.68.199.114",
-      clientPort: Number(process.env.VITE_HMR_CLIENT_PORT ?? VITE_PORT),
-    },
+    // Stable review origins rebuild linked package bundles in place. Disable
+    // browser caching there so an old immutable entry module cannot import a
+    // freshly rebuilt graph and produce multiple React dispatchers.
+    headers: process.env.BORING_VITE_HMR === "0" ? { "Cache-Control": "no-store" } : undefined,
+    hmr: process.env.BORING_VITE_HMR === "0"
+      ? false
+      : {
+          host: process.env.VITE_HMR_HOST ?? "100.68.199.114",
+          clientPort: Number(process.env.VITE_HMR_CLIENT_PORT ?? VITE_PORT),
+        },
     fs: {
       allow: fsAllow,
     },

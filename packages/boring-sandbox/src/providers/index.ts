@@ -10,6 +10,8 @@ export { createDirectSandboxProvider } from './direct/createDirectProvider'
 export type { DirectSandboxProviderOptions } from './direct/createDirectProvider'
 export { createBwrapSandboxProvider } from './bwrap/createBwrapProvider'
 export type { BwrapSandboxProviderOptions } from './bwrap/createBwrapProvider'
+export { createBlaxelSandboxProvider } from './blaxel/createBlaxelSandboxProvider'
+export type { BlaxelSandboxProviderOptions } from './blaxel/config'
 export { createVercelSandboxProvider } from './vercel-sandbox/createVercelSandboxProvider'
 export type { VercelSandboxProviderOptions } from './vercel-sandbox/createVercelSandboxProvider'
 export {

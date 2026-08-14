@@ -2,6 +2,7 @@ import { constants } from 'node:fs'
 import { access, lstat, mkdir, readFile, readdir, readlink, realpath, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
+import type { RuntimeFilesystemBinding } from '../../runtime/types'
 import type {
   EditOperations,
   FindOperations,
@@ -23,6 +24,8 @@ export interface BoundFs {
 export interface BoundFsOptions {
   /** Agent-visible root that pi tools may pass back as absolute paths. */
   runtimeRoot?: string
+  /** Optional primary binding used for mutation authorization and execution. */
+  primaryBinding?: RuntimeFilesystemBinding
 }
 
 function toPosixPath(value: string): string {
@@ -202,6 +205,38 @@ export function boundFs(workspaceRoot: string, opts: BoundFsOptions = {}): Bound
     if (rel.startsWith('..') || isAbsolute(rel)) return absolutePath
     return `${runtimeRoot}/${toPosixPath(rel)}`
   }
+  const binding = opts.primaryBinding
+
+  function bindingPath(absolutePath: string): string {
+    const normalized = toPosixPath(absolutePath)
+    if (runtimeRoot && normalized === runtimeRoot) return '.'
+    if (runtimeRoot && normalized.startsWith(`${runtimeRoot}/`)) return normalized.slice(runtimeRoot.length + 1)
+    const rel = toPosixPath(relative(workspaceRoot, toStoragePath(absolutePath)))
+    return rel || '.'
+  }
+
+  async function requireCapability(path: string, capability: 'write' | 'create-child'): Promise<void> {
+    if (!binding) return
+    const decision = await binding.operations.resolveAccess?.({ filesystem: binding.filesystem, path })
+    if (decision ? !decision.capabilities[capability] : binding.access !== 'readwrite') {
+      binding.operations.rejectMutation(capability, { filesystem: binding.filesystem, path })
+    }
+  }
+
+  async function ensureBindingDirectory(absolutePath: string): Promise<void> {
+    if (!binding) return
+    const path = bindingPath(absolutePath)
+    try {
+      if ((await binding.operations.stat({ filesystem: binding.filesystem, path })).isDirectory) return
+      throw Object.assign(new Error('path already exists and is not a directory'), { code: 'EEXIST' })
+    } catch (error: unknown) {
+      if ((error as { code?: string }).code !== 'ENOENT') throw error
+    }
+    await requireCapability(path, 'create-child')
+    if (!binding.operations.mkdir) binding.operations.rejectMutation('create-child', { filesystem: binding.filesystem, path })
+    await binding.operations.mkdir?.({ filesystem: binding.filesystem, path, recursive: true })
+  }
+
   const read: ReadOperations = {
     async readFile(absolutePath: string): Promise<Buffer> {
       const storagePath = toStoragePath(absolutePath)
@@ -219,12 +254,23 @@ export function boundFs(workspaceRoot: string, opts: BoundFsOptions = {}): Bound
     async writeFile(absolutePath: string, content: string): Promise<void> {
       const storagePath = toStoragePath(absolutePath)
       await assertWithinWorkspace(workspaceRoot, storagePath)
+      if (binding) {
+        const path = bindingPath(absolutePath)
+        await requireCapability(path, 'write')
+        if (!binding.operations.write) binding.operations.rejectMutation('write', { filesystem: binding.filesystem, path })
+        await binding.operations.write?.({ filesystem: binding.filesystem, path, content })
+        return
+      }
       await mkdir(dirname(storagePath), { recursive: true })
       await writeFile(storagePath, content)
     },
     async mkdir(dir: string): Promise<void> {
       const storagePath = toStoragePath(dir)
       await assertWithinWorkspace(workspaceRoot, storagePath)
+      if (binding) {
+        await ensureBindingDirectory(dir)
+        return
+      }
       await mkdir(storagePath, { recursive: true })
     },
   }
@@ -238,6 +284,13 @@ export function boundFs(workspaceRoot: string, opts: BoundFsOptions = {}): Bound
     async writeFile(absolutePath: string, content: string): Promise<void> {
       const storagePath = toStoragePath(absolutePath)
       await assertWithinWorkspace(workspaceRoot, storagePath)
+      if (binding) {
+        const path = bindingPath(absolutePath)
+        await requireCapability(path, 'write')
+        if (!binding.operations.write) binding.operations.rejectMutation('write', { filesystem: binding.filesystem, path })
+        await binding.operations.write?.({ filesystem: binding.filesystem, path, content })
+        return
+      }
       await writeFile(storagePath, content)
     },
     async access(absolutePath: string): Promise<void> {

@@ -148,15 +148,40 @@ export type {
   ServerBootstrapOptions,
   ServerBootstrapResult,
   WorkspaceBridgeHandlerContribution,
+  WorkspacePackageResourceContribution,
+  WorkspacePackageResourceRecord,
   WorkspacePiPackageSource,
   WorkspaceProvisioningContribution,
   WorkspaceRouteContribution,
   WorkspaceServerPlugin,
   WorkspaceServerPluginAsset,
 } from "./plugins/bootstrapServer"
+export {
+  PACKAGE_RESOURCE_CONFLICT_CODE,
+  PACKAGE_RESOURCE_INVALID_CODE,
+  WorkspacePackageResourceRegistryError,
+  discoverPackageResourceRecords,
+  enumerateExternalSkillFiles,
+  packageResourceHandlesPath,
+  packageResourceSystemPrompt,
+  resolveWorkspacePackageResourceSnapshot,
+  resolveWorkspacePackageResources,
+} from "./plugins/packageResources"
+export type {
+  AgentResourceReadonlyMount,
+  PackageResourceDiagnostic,
+  PackageResourceScanSource,
+  ResolvedAgentManagedSkill,
+  ResolvedAgentPackageSkill,
+  ResolvedWorkspacePackageResourceRegistry,
+} from "./plugins/packageResources"
 // Boring plugin asset manager + reload-pluggability helpers.
 export { buildBoringSystemPrompt } from "./boringSystemPrompt"
 export { BoringPluginAssetManager } from "./agentPlugins/manager"
+export type { DiscoveredBoringAgentPackage } from "./agentPlugins/types"
+export { discoverRepositoryAgentPackages } from "./agentPlugins/discoverAgentPackages"
+export type { DiscoverRepositoryAgentPackagesOptions } from "./agentPlugins/discoverAgentPackages"
+export { isRemoteMaterializedPiPackageRoot } from "./agentPlugins/settingsSources"
 export { boringPluginRoutes, collectRestartWarnings } from "./agentPlugins/routes"
 export type { PluginRestartWarning } from "./agentPlugins/routes"
 export { aggregatePluginPrompts } from "./agentPlugins/aggregatePluginPrompts"

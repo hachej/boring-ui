@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import {
   AIRTABLE_MCP_TEMPLATE,
+  DEFAULT_MCP_PROVIDER_TEMPLATES,
   MCP_ERROR_CODES,
   McpAccessFacade,
   McpError,
@@ -9,13 +10,19 @@ import {
   classifyMcpTool,
   containsMcpSecret,
   containsMcpSecretOrCanary,
+  createUserRegisteredMcpProviderTemplate,
+  createUserRegisteredMcpSource,
   doctorMcpSource,
+  getMcpProviderTemplate,
+  isUserRegisteredMcpSource,
   redactMcpSecrets,
   toMcpSourceDto,
+  validateUserRegisteredMcpEndpoint,
   type McpActor,
   type McpSource,
   type McpSourceStore,
   type McpTransportClient,
+  type McpUserRegisteredSourceConfig,
 } from "../shared"
 
 const actor: McpActor = { userId: "user-1", workspaceId: "workspace-1" }
@@ -155,4 +162,140 @@ describe("McpAccessFacade", () => {
     await expect(policyFacade.probeSource(actor, teamSource.id)).resolves.toMatchObject({ sourceId: teamSource.id })
   })
 
+})
+
+describe("user-registered MCP source type", () => {
+  const baseConfig: McpUserRegisteredSourceConfig = {
+    enabled: true,
+    endpoint: "https://mcp.example.com/stream",
+    displayName: "Example MCP",
+  }
+
+  it("does not add entries to the default provider template list", () => {
+    expect(DEFAULT_MCP_PROVIDER_TEMPLATES).toEqual([NOTION_MCP_TEMPLATE, AIRTABLE_MCP_TEMPLATE])
+    expect(getMcpProviderTemplate("user-registered")).toBeUndefined()
+  })
+
+  it("leaves the two existing hardcoded providers unchanged", () => {
+    expect(getMcpProviderTemplate("notion")).toBe(NOTION_MCP_TEMPLATE)
+    expect(getMcpProviderTemplate("airtable")).toBe(AIRTABLE_MCP_TEMPLATE)
+  })
+
+  it("only trusts source instances produced by the registration factory", () => {
+    const { provider: _provider, ...input } = notionSource
+    const registered = createUserRegisteredMcpSource(input, baseConfig)
+    expect(isUserRegisteredMcpSource(registered)).toBe(true)
+    expect(isUserRegisteredMcpSource({ ...registered })).toBe(false)
+    expect(isUserRegisteredMcpSource({ ...notionSource, provider: "user-registered" })).toBe(false)
+  })
+
+  it("builds a valid template for an enabled, well-formed endpoint", () => {
+    const template = createUserRegisteredMcpProviderTemplate(baseConfig)
+    expect(template.id).toBe("user-registered")
+    expect(template.transport).toBe("streamable-http")
+    expect(template.endpoint).toBe("https://mcp.example.com/stream")
+  })
+
+  it("default-denies when not explicitly enabled", () => {
+    expect(() => createUserRegisteredMcpProviderTemplate({ ...baseConfig, enabled: false })).toThrow(McpError)
+    try {
+      createUserRegisteredMcpProviderTemplate({ ...baseConfig, enabled: false })
+    } catch (error) {
+      expect((error as McpError).code).toBe(MCP_ERROR_CODES.USER_REGISTERED_SOURCE_DISABLED)
+    }
+  })
+
+  it("accepts a valid https endpoint", () => {
+    expect(validateUserRegisteredMcpEndpoint("https://mcp.example.com/stream").hostname).toBe("mcp.example.com")
+  })
+
+  it.each([
+    ["http (non-https)", "http://mcp.example.com/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_SCHEME_INVALID],
+    ["unparseable URL", "not-a-url", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_SCHEME_INVALID],
+    ["non-streamable-http scheme", "wss://mcp.example.com/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_SCHEME_INVALID],
+    ["loopback hostname", "https://localhost/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["loopback IPv4", "https://127.0.0.1/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["loopback IPv6", "https://[::1]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["link-local", "https://169.254.1.5/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["cloud metadata service", "https://169.254.169.254/latest/meta-data", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["private 10.x", "https://10.0.0.5/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["private 192.168.x", "https://192.168.1.1/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    [".internal suffix", "https://svc.internal/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["credentials in URL", "https://user:pass@mcp.example.com/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_CREDENTIALS_INVALID],
+    ["IPv4-mapped IPv6 loopback (dotted-quad spelling)", "https://[::ffff:127.0.0.1]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["IPv4-mapped IPv6 loopback (hex-word spelling, as WHATWG URL normalizes it)", "https://[::ffff:7f00:1]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["IPv4-mapped IPv6 cloud metadata (hex-word spelling)", "https://[::ffff:a9fe:a9fe]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["IPv4-mapped IPv6 private 10.x (dotted-quad spelling)", "https://[::ffff:10.0.0.1]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["IPv4-mapped IPv6 private 192.168.x (hex-word spelling)", "https://[::ffff:c0a8:1]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["trailing-root-dot localhost", "https://localhost./stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["IPv6 link-local upper end of /10 (febf)", "https://[febf::1]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["deprecated IPv6 site-local (fec0::/10)", "https://[fec0::1]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["NAT64 well-known prefix", "https://[64:ff9b::a9fe:a9fe]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["NAT64 RFC 8215 local-use prefix", "https://[64:ff9b:1::a9fe:a9fe]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["IPv4 multicast", "https://224.0.0.1/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["IPv4 benchmarking", "https://198.18.0.1/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["IPv6 multicast", "https://[ff02::1]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["IPv6 documentation", "https://[2001:db8::1]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+    ["6to4-encoded loopback", "https://[2002:7f00:1::]/stream", MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED],
+  ])("rejects %s", (_label, endpoint, expectedCode) => {
+    expect(() => validateUserRegisteredMcpEndpoint(endpoint)).toThrow(McpError)
+    try {
+      validateUserRegisteredMcpEndpoint(endpoint)
+    } catch (error) {
+      expect((error as McpError).code).toBe(expectedCode)
+    }
+  })
+
+  it("rejects a non-streamable-http transport even with a valid https endpoint", () => {
+    expect(() =>
+      validateUserRegisteredMcpEndpoint("https://mcp.example.com/stream", "sse" as never),
+    ).toThrowError(expect.objectContaining({ code: MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_TRANSPORT_INVALID }))
+  })
+
+  it("propagates endpoint validation failures through the template builder", () => {
+    expect(() =>
+      createUserRegisteredMcpProviderTemplate({ ...baseConfig, endpoint: "https://localhost/stream" }),
+    ).toThrowError(expect.objectContaining({ code: MCP_ERROR_CODES.USER_REGISTERED_ENDPOINT_HOST_BLOCKED }))
+  })
+
+  it("getMcpProviderTemplate rejects a hand-constructed 'user-registered' template that bypasses the factory's endpoint validation", () => {
+    const bypassTemplate = {
+      id: "user-registered" as const,
+      displayName: "Malicious",
+      endpoint: "https://127.0.0.1/x",
+      transport: "streamable-http" as const,
+      readOnlyDefault: true,
+      allowedTools: ["*"],
+      deniedTools: [],
+    }
+    expect(getMcpProviderTemplate("user-registered", [bypassTemplate])).toBeUndefined()
+  })
+
+  it("getMcpProviderTemplate rejects endpoint-bearing custom-provider templates", () => {
+    expect(getMcpProviderTemplate("custom", [{
+      id: "custom",
+      displayName: "Mislabelled user endpoint",
+      endpoint: "https://mcp.example.com/stream",
+      transport: "streamable-http",
+      readOnlyDefault: true,
+      allowedTools: [],
+      deniedTools: [],
+    }])).toBeUndefined()
+  })
+
+  it("getMcpProviderTemplate rejects a forged template even when its endpoint passes validation", () => {
+    const real = createUserRegisteredMcpProviderTemplate(baseConfig)
+    const forged = { ...real }
+    expect(getMcpProviderTemplate("user-registered", [forged])).toBeUndefined()
+  })
+
+  it("getMcpProviderTemplate accepts a factory-created user-registered template", () => {
+    const template = createUserRegisteredMcpProviderTemplate(baseConfig)
+    expect(getMcpProviderTemplate("user-registered", [template])).toBe(template)
+  })
+
+  it("defaults denied tools to the same write/admin patterns as curated templates when unspecified", () => {
+    const template = createUserRegisteredMcpProviderTemplate(baseConfig)
+    expect(template.deniedTools).toEqual(["create_*", "update_*", "delete_*", "publish_*", "admin_*"])
+  })
 })

@@ -14,6 +14,7 @@ export const AutomationCreateSchema = z.object({
   cron: nonEmptyString,
   timezone: nonEmptyString,
   model: nonEmptyString,
+  agentTypeId: nonEmptyString.optional(),
   thinkingLevel: z.enum(["off", "low", "medium", "high"]).optional(),
   prompt: z.string().optional(),
 }).strict().superRefine((value, ctx) => {
@@ -26,6 +27,7 @@ export const AutomationPatchSchema = z.object({
   cron: nonEmptyString.optional(),
   timezone: nonEmptyString.optional(),
   model: nonEmptyString.optional(),
+  agentTypeId: nonEmptyString.optional(),
   thinkingLevel: z.enum(["off", "low", "medium", "high"]).optional(),
 }).strict()
   .refine((value) => Object.keys(value).length > 0, "at least one field must be provided")

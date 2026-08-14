@@ -1,4 +1,4 @@
-import { compileAgentDirectory } from './compileAgentDirectory'
+import { compileAgentDirectory, compilePersonaPackageDirectory } from './compileAgentDirectory'
 import { AgentDefinitionValidationError } from '../../shared/agent-definition'
 import {
   AgentDefinitionErrorCode,
@@ -20,11 +20,24 @@ export type AuthoredAgentSourceV1 = Readonly<{
   label?: string
   description?: string
   instructions: string
+  /**
+   * Computed identity of the compiled definition (instructions + knowledge
+   * bytes). The digest, not the version string, is the definition identity.
+   */
+  definitionDigest?: string
+  /** Host path of the package's optional `knowledge/` folder, when present. */
+  knowledgeDir?: string
 }>
 
 export interface MaterializeAgentDirectoryInput {
   directory: string
   expectedAgentTypeId?: string
+  /**
+   * Manifest shape to compile. Defaults to `agent.json` for backward
+   * compatibility. `package.json` reads the `boring.agent` block, used by
+   * plugin-shaped personas (`.agents/personas/<seat>`).
+   */
+  manifest?: 'agent.json' | 'package.json'
 }
 
 export class AuthoredAgentMaterializationError extends Error {
@@ -64,7 +77,9 @@ export async function materializeAgentDirectory(
 ): Promise<AuthoredAgentSourceV1> {
   let bundle: Awaited<ReturnType<typeof compileAgentDirectory>>
   try {
-    bundle = await compileAgentDirectory(input.directory)
+    bundle = input.manifest === 'package.json'
+      ? await compilePersonaPackageDirectory(input.directory)
+      : await compileAgentDirectory(input.directory)
   } catch (error) {
     if (
       error instanceof AgentDefinitionValidationError &&
@@ -109,5 +124,7 @@ export async function materializeAgentDirectory(
     ...(definition.label === undefined ? {} : { label: definition.label }),
     ...(definition.description === undefined ? {} : { description: definition.description }),
     instructions,
+    definitionDigest: bundle.definitionDigest,
+    ...(bundle.knowledgeDir === undefined ? {} : { knowledgeDir: bundle.knowledgeDir }),
   })
 }

@@ -57,6 +57,35 @@ describe("ManualRunExecutor", () => {
     }))
   })
 
+  it("uses the host default for a legacy automation in a multi-Agent registry", async () => {
+    const harness = createHarness({ availableAgentTypeIds: ["default", "researcher"] })
+
+    await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+
+    expect(harness.resolver.runWithWorkspaceAgent).toHaveBeenCalledWith(expect.objectContaining({
+      agentTypeId: "default",
+    }), expect.any(Function))
+  })
+
+  it("dispatches with the automation-selected Agent from the host registry", async () => {
+    const harness = createHarness({ agentTypeId: "researcher", availableAgentTypeIds: ["default", "researcher"] })
+
+    await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+
+    expect(harness.resolver.runWithWorkspaceAgent).toHaveBeenCalledWith(expect.objectContaining({
+      agentTypeId: "researcher",
+    }), expect.any(Function))
+  })
+
+  it("rejects an unknown automation Agent before creating a run", async () => {
+    const harness = createHarness({ agentTypeId: "retired", availableAgentTypeIds: ["default", "researcher"] })
+
+    await expect(harness.executor.run({ automationId: harness.automation.id, request: harness.request }))
+      .rejects.toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.AGENT_NOT_FOUND })
+    expect(harness.resolver.runWithWorkspaceAgent).not.toHaveBeenCalled()
+    expect(harness.store.runs.size).toBe(0)
+  })
+
   it("allows a trusted in-process caller to dispatch a fresh child session without a Fastify request", async () => {
     const harness = createHarness()
 
@@ -373,6 +402,8 @@ describe("ManualRunExecutor", () => {
 interface HarnessOptions {
   prompt?: string
   model?: string
+  agentTypeId?: string
+  availableAgentTypeIds?: readonly string[]
   events?: AgentEvent[]
   streamError?: unknown
   resolver?: WorkspaceAgentDispatcherResolver
@@ -389,7 +420,7 @@ function deferred<T>() {
 
 function createHarness(options: HarnessOptions = {}) {
   const store = new MemoryAutomationStore()
-  const automation = store.seedAutomation({ model: options.model ?? "test:gpt-5.5", prompt: options.prompt ?? "canonical prompt" })
+  const automation = store.seedAutomation({ model: options.model ?? "test:gpt-5.5", prompt: options.prompt ?? "canonical prompt", agentTypeId: options.agentTypeId })
   const actor: VerifiedAutomationActor = { workspaceId: "workspace-1", userId: "user-1" }
   const actorResolver = vi.fn(async () => actor)
   const request = options.request ?? fakeRequest()
@@ -399,7 +430,7 @@ function createHarness(options: HarnessOptions = {}) {
   const dispatcher = createDispatcher(options.events ?? defaultEvents, options.streamError)
   const resolver = options.resolver ?? createDirectResolver(dispatcher)
   const clock = clockFrom(options.clockDates)
-  const executor = new ManualRunExecutor({ agentTypeId: "default", store, dispatcherResolver: resolver, actorResolver, eventPublisher: options.eventPublisher, clock })
+  const executor = new ManualRunExecutor({ agentTypeId: "default", availableAgentTypeIds: options.availableAgentTypeIds, store, dispatcherResolver: resolver, actorResolver, eventPublisher: options.eventPublisher, clock })
   return { store, automation, actor, actorResolver, request, dispatcher, resolver, executor }
 }
 
@@ -474,7 +505,7 @@ class MemoryAutomationStore implements AutomationStore {
   private nextAutomationId = 1
   private nextRunId = 1
 
-  seedAutomation(input: { model: string; prompt: string }): Automation {
+  seedAutomation(input: { model: string; prompt: string; agentTypeId?: string }): Automation {
     const id = `automation-${this.nextAutomationId++}`
     const now = "2026-07-10T00:00:00.000Z"
     const automation: Automation = {
@@ -484,6 +515,7 @@ class MemoryAutomationStore implements AutomationStore {
       cron: "0 9 * * *",
       timezone: "UTC",
       model: input.model,
+      ...(input.agentTypeId ? { agentTypeId: input.agentTypeId } : {}),
       promptRef: `prompts/${id}.md`,
       createdAt: now,
       updatedAt: now,
@@ -503,7 +535,7 @@ class MemoryAutomationStore implements AutomationStore {
   }
 
   async createAutomation(input: AutomationCreate): Promise<Automation> {
-    return this.seedAutomation({ model: input.model, prompt: input.prompt ?? "" })
+    return this.seedAutomation({ model: input.model, prompt: input.prompt ?? "", agentTypeId: input.agentTypeId })
   }
 
   async updateAutomation(id: string, patch: AutomationPatch): Promise<Automation> {

@@ -236,12 +236,18 @@ test.describe('Pi-native harness-backed baseline message flow', () => {
       await page.reload({ waitUntil: 'domcontentloaded' })
       await expect(chat).toHaveAttribute('data-pi-chat-connection', 'connected', { timeout: 10_000 })
 
+      // The second turn may legitimately settle while the page is reloading
+      // (the scripted run keeps streaming server-side), so this frame asserts
+      // the hydration ORDERING guarantee — the completed first turn precedes
+      // the second turn with stable ids — and accepts the second assistant in
+      // either its streaming or its already-settled shape. Requiring the
+      // working indicator here made the wait unsatisfiable whenever the run
+      // settled during the reload window (the original flake).
       const secondRunningAfterReload = await waitForTimelineFrame(page, 'active reload keeps previous completed turn before the running turn', (state) => {
         const assistants = assistantMessages(state)
         const firstAssistant = assistants[0]
         const secondAssistant = assistants[1]
-        return state.workingVisible
-          && state.messages.map((message) => message.role).join(',') === 'user,assistant,user,assistant'
+        return state.messages.map((message) => message.role).join(',') === 'user,assistant,user,assistant'
           && state.messages.slice(0, 2).map((message) => message.id).join(',') === firstTurnIds.join(',')
           && state.messages.map((message) => message.id).join(',') === 'u1,a1,u2,a2'
           && firstAssistant?.status === 'done'

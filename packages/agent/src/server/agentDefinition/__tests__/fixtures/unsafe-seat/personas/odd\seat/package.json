@@ -1,0 +1,14 @@
+{
+  "name": "@fixture/odd-seat",
+  "version": "1.0.0",
+  "private": true,
+  "boring": {
+    "agent": {
+      "definitionId": "fixture-odd",
+      "version": "1.0.0",
+      "label": "Fixture Odd",
+      "description": "Seat whose directory name cannot be published as a path segment.",
+      "instructionsRef": "instructions.md"
+    }
+  }
+}

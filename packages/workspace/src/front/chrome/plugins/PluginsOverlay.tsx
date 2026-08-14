@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Plug, RefreshCw, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../agentPlugins/reloadEvent"
@@ -60,17 +60,26 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
   const [reloading, setReloading] = useState(false)
   const [reloadMessage, setReloadMessage] = useState<string | null>(null)
 
+  // Reload (host POST) and Retry (GET) can be triggered from the same error
+  // state. Every commit is stamped with the generation that started it, so a
+  // slow stale response can never land on top of a newer load or reload.
+  const generationRef = useRef(0)
+
   const loadPlugins = useCallback(async () => {
+    const generation = ++generationRef.current
+    const isStale = () => generationRef.current !== generation
     setState((current) => ({ status: "loading", plugins: current.plugins }))
     try {
       const plugins = await client.getJson<ExternalPluginEntry[]>("/api/v1/agent-plugins?external=1", {
         missingMessage: "Failed to load external plugins.",
       })
+      if (isStale()) return
       const sorted = Array.isArray(plugins)
         ? [...plugins].sort((a, b) => pluginLabel(a).localeCompare(pluginLabel(b)))
         : []
       setState({ status: "ready", plugins: sorted })
     } catch (error) {
+      if (isStale()) return
       const message = error instanceof Error ? error.message : "Failed to load external plugins."
       // A 404 means this deployment doesn't expose the external-plugins API at
       // all (e.g. a locked-down public app with externalPlugins: false). That's
@@ -144,6 +153,9 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
   const sorted = useMemo(() => [...state.plugins].sort((a, b) => pluginLabel(a).localeCompare(pluginLabel(b))), [state.plugins])
 
   const reload = useCallback(async () => {
+    // Invalidate any in-flight load so it can't commit while the host reload
+    // is still running.
+    generationRef.current += 1
     setReloading(true)
     setReloadMessage(null)
     try {
@@ -197,41 +209,72 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
         </IconButton>
       </>)}
     >
-      <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto p-4" aria-live="polite">
+      <div
+        className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto p-4"
+        aria-busy={state.status === "loading" || reloading}
+      >
         {state.status === "error" ? (
-          <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-            {state.error}
+          <div
+            role="alert"
+            className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive"
+          >
+            <span className="min-w-0">{state.error}</span>
+            <button
+              type="button"
+              onClick={() => void loadPlugins()}
+              className="min-h-11 shrink-0 rounded-md border border-destructive/40 px-3 text-xs font-medium transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              Retry
+            </button>
           </div>
         ) : null}
         {reloadMessage ? (
-          <div className="mb-4 rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             {reloadMessage}
           </div>
         ) : null}
         {state.status === "loading" && sorted.length === 0 ? (
-          <div className="flex h-full min-h-[180px] items-center justify-center text-sm text-muted-foreground">
-            Loading external plugins…
+          <div
+            role="status"
+            aria-label="Loading external plugins"
+            className="grid gap-2"
+          >
+            {[0, 1, 2, 3].map((row) => (
+              <div
+                key={row}
+                aria-hidden="true"
+                className="min-h-11 animate-pulse rounded-xl border border-border/60 bg-card/70 px-3 py-2.5 motion-reduce:animate-none"
+              >
+                <div className="h-3.5 w-1/3 rounded bg-foreground/[0.08]" />
+                <div className="mt-2 h-3 w-3/5 rounded bg-foreground/[0.06]" />
+              </div>
+            ))}
+            <span className="sr-only">Loading external plugins…</span>
           </div>
-        ) : sorted.length === 0 ? (
+        ) : state.status === "ready" && sorted.length === 0 ? (
           <div className="flex h-full min-h-[180px] items-center justify-center text-center text-sm text-muted-foreground">
             <div>
               <div className="font-medium text-foreground/80">No external plugins loaded</div>
-              <p className="mt-1 max-w-xs">Create or install an external plugin, then reload external plugins.</p>
+              <p className="mt-1 max-w-xs leading-5">Create or install an external plugin, then reload external plugins.</p>
             </div>
           </div>
-        ) : (
+        ) : sorted.length > 0 ? (
           <ul role="list" className="grid gap-2">
-            {sorted.map((plugin) => {
+            {/* Tiebroken with the row index, like every other host-supplied
+                list: a host that reports the same plugin id twice otherwise
+                gives two rows one key, and the pending spinner lands on the
+                wrong plugin. */}
+            {sorted.map((plugin, index) => {
               const pending = pendingIds.has(plugin.id)
               return (
                 <li
-                  key={plugin.id}
-                  className="rounded-xl border border-border/60 bg-card/70 px-3 py-2.5"
+                  key={`${plugin.id}\u0000${index}`}
+                  className="min-h-11 min-w-0 rounded-xl border border-border/60 bg-card/70 px-3 py-2.5"
                 >
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-foreground">{pluginLabel(plugin)}</div>
-                      <div className="mt-0.5 truncate text-[11px] text-muted-foreground/80">{plugin.id}</div>
+                      <div className="truncate text-sm font-medium leading-5 text-foreground" title={pluginLabel(plugin)}>{pluginLabel(plugin)}</div>
+                      <div className="mt-0.5 truncate text-[11px] text-muted-foreground" title={plugin.id}>{plugin.id}</div>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       {pending ? (
@@ -252,7 +295,7 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
               )
             })}
           </ul>
-        )}
+        ) : null}
       </div>
     </ManagementOverlaySurface>
   )

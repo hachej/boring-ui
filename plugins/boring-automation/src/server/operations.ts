@@ -24,6 +24,7 @@ export interface AutomationSummary {
   cron: string
   timezone: string
   model: string
+  agentTypeId?: string
   thinkingLevel?: Automation["thinkingLevel"]
   createdAt: string
   updatedAt: string
@@ -208,6 +209,7 @@ function automationSummary(automation: Automation): AutomationSummary {
     cron: automation.cron,
     timezone: automation.timezone,
     model: automation.model,
+    ...(automation.agentTypeId ? { agentTypeId: automation.agentTypeId } : {}),
     ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
     createdAt: automation.createdAt,
     updatedAt: automation.updatedAt,

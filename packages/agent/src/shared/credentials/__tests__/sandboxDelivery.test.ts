@@ -9,6 +9,7 @@ import {
   createNotImplementedSandboxCredentialPayloadResolverV1,
   createProviderCredentialRefFactoryV1,
   createProviderRegistryV1,
+  sandboxCredentialPayloadMetadataBytesV1,
 } from '..'
 import type {
   AuthorizedWorkspaceCredentialScopeV1,
@@ -197,21 +198,10 @@ async function standaloneSbx1FakeDeliver(
         schemaMismatch('Sandbox credential payload is too large')
       }
     }
-    const metadata = new TextEncoder().encode(JSON.stringify({
-      contractVersion: payload.contractVersion,
-      workspaceId: payload.workspaceId,
-      sandboxId: payload.sandboxId,
-      executionId: payload.executionId,
-      deliveryAttemptId: payload.deliveryAttemptId,
-      bindingId: payload.bindingId,
-      credentialVersion: payload.credentialVersion,
-      expiresAt: payload.expiresAt,
-      fields: payload.fields.map((field) => ({
-        fieldId: field.fieldId,
-        byteLength: field.value.byteLength,
-      })),
-    }))
-    if (metadata.byteLength > SANDBOX_CREDENTIAL_MAX_METADATA_BYTES_V1) {
+    if (
+      sandboxCredentialPayloadMetadataBytesV1(payload)
+      > SANDBOX_CREDENTIAL_MAX_METADATA_BYTES_V1
+    ) {
       schemaMismatch('Sandbox credential metadata is too large')
     }
 

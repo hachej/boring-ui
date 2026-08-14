@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-diagram",
-  "version": "0.1.95",
+  "version": "0.1.100",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -58,7 +58,7 @@
     "react-dom": "^18.0.0 || ^19.0.0"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "^0.80.10",
+    "@earendil-works/pi-ai": "^0.83.0",
     "@excalidraw/excalidraw": "^0.18.1",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
@@ -68,12 +68,12 @@
     "@hachej/boring-workspace": "workspace:*",
     "@testing-library/jest-dom": "^7.0.0",
     "@types/node": "^22.20.0",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^4.0.0",
-    "jsdom": "^29.1.1",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "jsdom": "^30.0.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "tsup": "^8.4.0",
     "typescript": "~5.9.3",
     "vitest": "^4.1.9"

@@ -4,6 +4,7 @@ import { uiRoutes } from "../uiRoutes"
 import { createInMemoryBridge } from "../../../bridge/createInMemoryBridge"
 import { createPaneRenderStatusStore } from "../../panelStatus/paneRenderStatusStore"
 import type { WorkspaceBridge } from "../../../../shared/ui-bridge"
+import { URL_PANE_PANEL_ID } from "../../../../shared/urlPane"
 
 describe("uiRoutes", () => {
   test("getBridge scopes UI state by request", async () => {
@@ -174,6 +175,54 @@ describe("uiRoutes", () => {
       activeFile: "a.ts",
     })
     expect((await bridge.getState())?.staleBrowserKey).toBeUndefined()
+    await app.close()
+  })
+
+  test("serves the url-pane origin allowlist", async () => {
+    const app = Fastify({ logger: false })
+    await app.register(uiRoutes, { bridge: createInMemoryBridge(), urlPanePolicy: { origins: ["http://127.0.0.1:*"] } })
+    await app.ready()
+
+    const response = await app.inject({ method: "GET", url: "/api/v1/ui/url-pane/policy" })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ origins: ["http://127.0.0.1:*"] })
+    await app.close()
+  })
+
+  test("rejects an openPanel command targeting the url pane with a disallowed origin", async () => {
+    const app = Fastify({ logger: false })
+    const bridge = createInMemoryBridge()
+    await app.register(uiRoutes, { bridge, urlPanePolicy: { origins: ["http://127.0.0.1:*"] } })
+    await app.ready()
+
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/api/v1/ui/commands",
+      payload: {
+        kind: "openPanel",
+        params: { id: "demo", component: URL_PANE_PANEL_ID, params: { url: "https://example.com/" } },
+      },
+    })
+    expect(blocked.statusCode).toBe(400)
+    expect(blocked.json()).toMatchObject({ error: "url_pane_origin_not_allowed" })
+
+    const allowed = await app.inject({
+      method: "POST",
+      url: "/api/v1/ui/commands",
+      payload: {
+        kind: "openPanel",
+        params: { id: "demo", component: URL_PANE_PANEL_ID, params: { url: "http://127.0.0.1:5210/" } },
+      },
+    })
+    expect(allowed.statusCode).toBe(200)
+
+    // Unrelated panels are untouched by the url-pane rule.
+    const other = await app.inject({
+      method: "POST",
+      url: "/api/v1/ui/commands",
+      payload: { kind: "openPanel", params: { id: "f", component: "filesystem.html-viewer", params: { path: "a.html" } } },
+    })
+    expect(other.statusCode).toBe(200)
     await app.close()
   })
 })

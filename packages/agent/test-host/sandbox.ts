@@ -3,6 +3,7 @@ export {
   buildBwrapArgs,
   createAgentSandboxRuntimeModeAdapter as createTestRuntimeModeAdapter,
   createBwrapSandboxProvider,
+  createBlaxelSandboxProvider,
   createDirectSandbox,
   createDirectSandboxProvider,
   createNodeWorkspace,
@@ -12,6 +13,7 @@ export {
   getBoringAgentRuntimeEnv,
   getBoringAgentRuntimePaths,
   VERCEL_SANDBOX_REMOTE_ROOT,
+  BLAXEL_WORKSPACE_ROOT,
   VERCEL_SANDBOX_WORKSPACE_ROOT,
 } from '../host/sandbox'
 import {
@@ -28,7 +30,7 @@ export async function createTestStandaloneAgentHostApp(
 ): ReturnType<typeof createStandaloneAgentHostApp> {
   const mode = options.runtimeModeAdapter?.id ?? options.mode ?? 'direct'
   const runtimeModeAdapter = options.runtimeModeAdapter
-    ?? (mode === 'direct' || mode === 'local' || mode === 'vercel-sandbox'
+    ?? (mode === 'direct' || mode === 'local' || mode === 'blaxel' || mode === 'vercel-sandbox'
       ? createAgentSandboxRuntimeModeAdapter(mode)
       : undefined)
   return await createStandaloneAgentHostApp({

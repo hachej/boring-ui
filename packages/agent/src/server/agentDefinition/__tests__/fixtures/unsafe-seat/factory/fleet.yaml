@@ -1,0 +1,14 @@
+models:
+  tiers:
+    T3:
+      - provider: anthropic
+        id: claude-sonnet-4-6
+        envVar: ANTHROPIC_API_KEY
+
+seats:
+  - seat: "odd\\seat"
+    agentTypeId: fixture-odd
+    skills: []
+  - seat: encoded%2eseat
+    agentTypeId: fixture-encoded
+    skills: []

@@ -252,6 +252,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
     return this.runtime.compiledAgents.map((agent) => ({
       agentTypeId: agent.agentTypeId,
       label: 'legacyDefault' in agent ? 'Agent' : agent.definition.label,
+      ...('legacyDefault' in agent || !agent.plugins?.length
+        ? {}
+        : { pluginIds: agent.plugins.map((plugin) => plugin.name) }),
       ...('legacyDefault' in agent || !agent.definition.version
         ? {}
         : { definition: { version: agent.definition.version, digest: canonicalDigest(agent.definition as unknown as JsonValue) } }),
@@ -593,6 +596,12 @@ export class EmbeddedAgentGateway implements AgentGateway {
       )
     const persistedPin = authority?.runtimeScopeIdentity
     const pinned = persistedPin ?? cached
+    if (pinned && pinned !== resolved.identity) {
+      throw new AgentGatewayError(
+        AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+        'session is pinned to a different runtime scope',
+      )
+    }
     const publishedPinned = pinned && typeof this.runtime.findPublishedBinding === 'function'
       ? this.runtime.findPublishedBinding(
           ref.agentTypeId,
@@ -607,12 +616,6 @@ export class EmbeddedAgentGateway implements AgentGateway {
       })
       this.pins.set(key, pinned!)
       return publishedPinned
-    }
-    if (pinned && pinned !== resolved.identity) {
-      throw new AgentGatewayError(
-        AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-        'session is pinned to a different runtime scope',
-      )
     }
     // Pre-AH0 transcripts have no pin. They use the first
     // current runtime for this Host lifetime without mutating historical JSONL.

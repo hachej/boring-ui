@@ -43,7 +43,24 @@ export type {
   WorkspaceAgentGatewayBinding,
 } from './workspaceAgentDispatcher'
 export type { WorkspaceRuntimeContext } from './runtime'
-export type { Workspace, Entry, Stat, WorkspaceWatchControlEvent } from './workspace'
+export {
+  AGENT_KNOWLEDGE_FILESYSTEM_ID,
+  AGENT_RESOURCES_FILESYSTEM_ID,
+} from './skill-resource'
+export type { AgentSkillResource } from './skill-resource'
+export {
+  READONLY_FILESYSTEM_MUTATION_CODE,
+  RUNTIME_FILESYSTEM_CAPABILITIES,
+  ReadonlyFilesystemMutationError,
+  isReadonlyFilesystemMutationError,
+} from './workspace'
+export type {
+  Workspace,
+  Entry,
+  Stat,
+  WorkspaceWatchControlEvent,
+  RuntimeFilesystemCapability,
+} from './workspace'
 export type {
   Sandbox,
   SandboxCapability,
@@ -57,6 +74,7 @@ export type { ToolUiMetadata } from './tool-ui'
 export { isToolUiMetadata, extractToolUiMetadata } from './tool-ui'
 export type { CatalogDeps, ToolCatalog } from './catalog'
 export { SAFE_NATIVE_SESSION_ID } from './session'
+export { safeRandomUUID } from './random-id'
 export type {
   SessionStore,
   SessionCtx,

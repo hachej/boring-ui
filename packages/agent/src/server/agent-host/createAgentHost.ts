@@ -6,6 +6,7 @@ import { buildAgentComposition, type BuiltAgentComposition } from './buildAgentC
 import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
 import { getOptionalRuntimeBundleStorageRoot } from '../runtime/mode'
+import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
 import { createAgentHostRoutes } from './httpProjection'
 import { InMemoryAgentRequestLedger } from './requestLedger'
 import { SqliteAgentRequestLedger } from './sqliteRequestLedger'
@@ -743,6 +744,9 @@ export async function createAgentHost(
         agents: compiledAgents.map((agent) => ({
           agentTypeId: agent.agentTypeId,
           label: 'legacyDefault' in agent ? 'Agent' : agent.definition.label,
+          ...('legacyDefault' in agent || agent.definition.digest === undefined
+            ? {}
+            : { definitionDigest: agent.definition.digest }),
         })),
         draining: runtime.isDraining(),
       }
@@ -792,12 +796,16 @@ export async function createAgentHost(
     }
     try {
       unregister = runtime.registerSubscription(release)
-      const filesystemBindings = environment.resolveFilesystemBindings
+      const requestedFilesystemBindings = environment.resolveFilesystemBindings
         ? await environment.resolveFilesystemBindings({
             verifiedClaim: claim,
             requestId: input.intent.requestId,
           })
-        : providerLease.bundle.filesystemBindings
+        : undefined
+      const filesystemBindings = mergeRuntimeFilesystemBindings(
+        providerLease.bundle.filesystemBindings,
+        requestedFilesystemBindings,
+      )
       if (!active) throw bindingDisposedError()
       const assertActive = () => {
         if (!active) throw bindingDisposedError()

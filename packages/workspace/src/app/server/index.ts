@@ -1,5 +1,13 @@
 // App-server surface (host integration). Plugin author types live on
 // /server, not here — keep this barrel scoped to orchestration.
+// resolveDefaultAgentFleet moved to @hachej/boring-agent/server (gh-1106
+// slice 3 fix round 1, M9/B2): one canonical fleet-composition helper shared
+// by createWorkspaceAgentServer, createCoreWorkspaceAgentServer, and the CLI
+// hub. Re-exported here for callers that already import it from this barrel.
+export {
+  resolveDefaultAgentFleet,
+  type ResolveDefaultAgentFleetOptions,
+} from "@hachej/boring-agent/server"
 export {
   buildWorkspaceContextPrompt,
   collectWorkspaceAgentServerPlugins,
@@ -12,6 +20,7 @@ export {
   resolveWorkspaceAgentServerPluginCollection,
   readWorkspacePluginPackagePiSnapshot,
   readWorkspacePluginPackageRuntimePlugins,
+  resolveBoringPiSkillPaths,
   PLUGIN_AUTHORING_PROVISIONING_IDS,
   AGENT_SPEC_PLUGIN_PROJECTION_ERROR_CODE,
   AgentSpecPluginProjectionError,

@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-bash",
-  "version": "0.1.95",
+  "version": "0.1.100",
   "type": "module",
   "license": "MIT",
   "description": "Filesystem and shell binding contracts for Boring runtimes.",
@@ -43,12 +43,12 @@
   },
   "peerDependencies": {
     "@hachej/boring-agent": "workspace:*",
-    "fastify": "^5.9.0"
+    "fastify": "^5.11.2"
   },
   "devDependencies": {
     "@hachej/boring-agent": "workspace:*",
     "@types/node": "^22.20.0",
-    "fastify": "^5.9.0",
+    "fastify": "^5.11.2",
     "tsup": "^8.4.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"

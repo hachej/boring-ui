@@ -7,7 +7,6 @@ import type { RuntimeFilesystemBinding, RuntimeFilesystemBindingOperations } fro
 import { ErrorCode } from '@hachej/boring-agent/shared'
 import type { CreateCoreWorkspaceAgentServerOptions } from '@hachej/boring-core/app/server'
 import {
-  COMPANY_CONTEXT_FILESYSTEM_ID,
   ScopedFilesystemRuntimeBindingManager,
   createLogger,
   createReadonlyProjectionOperations,
@@ -22,6 +21,8 @@ import { COMPANY_CONTEXT_STATE_DIR, CompanyContextStore } from './companyContext
 import type { GovernanceService } from './governanceService.js'
 import type { GovernanceUserLike } from './policyTypes.js'
 import { normalizePolicyEmail } from './validatePolicy.js'
+
+export const COMPANY_CONTEXT_FILESYSTEM_ID = 'company_context'
 
 const COMPANY_CONTEXT_MOUNT_PATH = '/company_context'
 const AGENT_MODE_ENV = 'BORING_AGENT_MODE'

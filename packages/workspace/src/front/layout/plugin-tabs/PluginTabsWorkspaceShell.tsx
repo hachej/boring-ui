@@ -6,6 +6,7 @@ import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@
 import { cn } from "../../lib/utils"
 import { PaneCollapseButton } from "../paneCollapseButton"
 import { useViewportWidth } from "../useViewportWidth"
+import { isCompactViewport } from "../breakpoints"
 
 function AppLeftPaneResizeHandle({
   width,
@@ -108,7 +109,7 @@ export function PluginTabsWorkspaceShell({
 }: PluginTabsWorkspaceShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const viewport = useViewportWidth()
-  const mobileShell = mobileShellEnabled === true && viewport < 640
+  const mobileShell = mobileShellEnabled === true && isCompactViewport(viewport)
   const effectiveCollapsed = mobileShell ? !mobileOpen : collapsed
   useEffect(() => {
     if (!mobileShell) setMobileOpen(false)
@@ -152,7 +153,7 @@ export function PluginTabsWorkspaceShell({
               <button
                 type="button"
                 aria-label="Close app navigation"
-                className="absolute left-1.5 top-1.5 z-10 grid size-11 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="absolute left-[calc(0.375rem+env(safe-area-inset-left))] top-[calc(0.375rem+env(safe-area-inset-top))] z-10 grid size-11 place-items-center rounded-lg text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
               </button>
@@ -165,7 +166,7 @@ export function PluginTabsWorkspaceShell({
       {/* The same control owns both states. Expanded chrome reserves matching
           header space; collapsed chrome occupies the rail's fixed top slot. */}
       {!mobileShell || !mobileOpen ? (
-      <div className="pointer-events-none absolute left-1.5 top-2 z-[70]">
+      <div className="pointer-events-none absolute left-[calc(0.375rem+env(safe-area-inset-left))] top-[calc(0.5rem+env(safe-area-inset-top))] z-[70]">
         <PaneCollapseButton
           label={effectiveCollapsed ? "Open app navigation" : "Hide app navigation"}
           side="right"
@@ -173,9 +174,9 @@ export function PluginTabsWorkspaceShell({
           onClick={mobileShell ? () => setMobileOpen((open) => !open) : collapsed ? onExpand : onCollapse}
         >
           {effectiveCollapsed ? (
-            <PanelLeftOpen className="h-4 w-4" strokeWidth={1.75} />
+            <PanelLeftOpen className="size-4" strokeWidth={1.75} />
           ) : (
-            <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
+            <PanelLeftClose className="size-4" strokeWidth={1.75} />
           )}
         </PaneCollapseButton>
       </div>

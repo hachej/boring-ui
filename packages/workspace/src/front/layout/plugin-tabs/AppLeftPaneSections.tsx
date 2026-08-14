@@ -13,7 +13,7 @@ export function SessionSubSection({ title, empty, children }: { title?: string; 
         </div>
       ) : null}
       <div className="space-y-0.5">
-        {hasChildren ? children : <div className="px-2 py-1.5 text-xs text-muted-foreground/60">{empty}</div>}
+        {hasChildren ? children : <div className="px-2 py-1.5 text-xs text-muted-foreground">{empty}</div>}
       </div>
     </div>
   )

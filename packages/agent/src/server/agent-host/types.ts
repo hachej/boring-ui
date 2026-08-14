@@ -28,6 +28,7 @@ import type {
   WorkspaceAgentDirectRunInput,
   WorkspaceAgentDispatcherContext,
 } from '../../shared/workspaceAgentDispatcher'
+import type { AgentSkillResourceSnapshot } from '../http/routes/skills'
 
 export type { LeaseBoundWorkspaceAgent } from '../../shared/workspaceAgentDispatcher'
 
@@ -130,13 +131,53 @@ export interface AgentEffectAdmission {
   }): Promise<AgentEffectAdmissionResult>
 }
 
+/**
+ * The workspace filesystem the Host serves its own configuration tree from,
+ * matching `GET /api/v1/filesystems`. Instruction refs are addressed the same
+ * way as every other openable file so clients never special-case them.
+ */
+export const AGENT_USER_FILESYSTEM_ID = 'user'
+
+/**
+ * An authored file that contributes to this agent's instructions, addressed
+ * exactly like every other openable resource (`{filesystem, path}`) so the
+ * client can route it through the same safety guard as skills.
+ *
+ * The Host knows these locations from fleet configuration; clients must never
+ * re-derive them from the agent id (seat and agentTypeId are unrelated
+ * fleet.yaml fields). `role` is a DISCRIMINATOR, not a display string — the
+ * words shown to the user are the client's business.
+ */
+export interface AgentInstructionFileRef {
+  readonly filesystem: string
+  /** Workspace-relative path, e.g. `.agents/personas/concierge/instructions.md`. */
+  readonly path: string
+  readonly role: 'persona'
+}
+
 export interface ConfiguredAgentHostAgentSpec {
   readonly agentTypeId: string
   readonly definition: {
     readonly instructions: string
     readonly label: string
     readonly version?: string
+    /**
+     * Computed identity of the compiled definition (instructions + knowledge
+     * bytes). The digest, not the version string, is the definition identity.
+     */
+    readonly digest?: string
   }
+  /**
+   * Optional agent-carried knowledge shipped inside the definition package.
+   * Composition mounts it as a readonly, agent-scoped filesystem binding;
+   * absent = no binding.
+   */
+  readonly knowledge?: {
+    /** Host path of the package's `knowledge/` folder. */
+    readonly rootDir: string
+  }
+  /** Authored instruction sources behind `definition.instructions`. */
+  readonly instructionFiles?: readonly AgentInstructionFileRef[]
   readonly plugins?: readonly {
     /** Canonical app-preflighted plugin ID. */
     readonly name: string
@@ -188,7 +229,7 @@ export interface ResolvedEnvironmentScope {
 }
 
 export interface ResolvedAgentRuntimeScope {
-  /** Complete app-canonicalized PL1 composition identity. */
+  /** Persisted semantic compatibility identity. */
   readonly identity: string
   /** Stable physical binding slot, independent of semantic resource revisions. */
   readonly physicalBindingIdentity?: string
@@ -227,6 +268,17 @@ export interface ResolvedAgentRuntimeScope {
     readonly sessionId?: string
     readonly requestId: string
   }) => Promise<readonly RuntimeFilesystemBinding[] | undefined>
+  /**
+   * Skill-resource locator/catalog snapshot for the current reload
+   * generation. Threaded through the capability-projection layer so
+   * `/skills` can resolve package-managed skill locators without going
+   * through the legacy path-shaped `additionalSkillPaths` hot-reload API.
+   */
+  readonly getSkillResourceSnapshot?: (input: {
+    readonly scope: VerifiedAgentScopeClaim
+    readonly sessionId?: string
+    readonly requestId: string
+  }) => Promise<AgentSkillResourceSnapshot | undefined>
   readonly systemPromptAppend?: string
   readonly loadSystemPromptAppend?: () => Promise<string | undefined>
 }
@@ -277,6 +329,8 @@ export interface AgentHostDescription {
   readonly agents: readonly {
     readonly agentTypeId: string
     readonly label: string
+    /** Computed definition identity digest (instructions + knowledge bytes), when the spec carries one. */
+    readonly definitionDigest?: string
   }[]
   readonly draining: boolean
 }

@@ -4,6 +4,7 @@ const EXPECTED_ROUTES_ENV = 'BORING_AGENTHOST_EXPECTED_ROUTES'
 const FALLBACK_EXPECTED_ROUTES = [
   'GET /api/v1/agents',
   'GET /api/v1/agents/:agentTypeId/sessions',
+  'POST /api/v1/agents/:agentTypeId/sessions/summaries',
   'POST /api/v1/agents/:agentTypeId/sessions',
   'DELETE /api/v1/agents/:agentTypeId/sessions/:sessionId',
   'GET /api/v1/agents/:agentTypeId/sessions/:sessionId/state',
@@ -22,6 +23,7 @@ const FALLBACK_EXPECTED_ROUTES = [
   'GET /api/v1/agents/:agentTypeId/models',
   'GET /api/v1/agents/:agentTypeId/sessions/:sessionId/system-prompt',
   'GET /api/v1/agents/:agentTypeId/tools',
+  'GET /api/v1/agents/:agentTypeId/describe',
   'GET /api/v1/agents/:agentTypeId/sessions/:sessionId/changes',
   'GET /api/v1/agents/:agentTypeId/ready-status',
 ] as const

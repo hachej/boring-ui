@@ -6,10 +6,12 @@
   "scripts": {
     "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-ui-plugin-cli build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-tasks build && pnpm --filter @hachej/boring-diagram build && pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-data-catalog build",
     "dev": "pnpm run build:deps && vite",
+    "dev:multiagent": "VITE_BORING_FACTORY_AGENTS=1 pnpm run dev",
     "build": "pnpm run build:deps && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "pnpm run build:deps && playwright test",
+    "test:e2e:release-candidate": "playwright test apps/workspace-playground/e2e/release-candidate-golden-route.spec.ts",
     "smoke:bridge": "pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && tsx scripts/bridge-e2e.ts",
     "eval": "AGENT_API_PORT=5350 vite-node src/eval/run.ts",
     "eval:slash-command": "AGENT_API_PORT=5350 vite-node src/eval/run.ts src/eval/plugin-slash-command.yaml",
@@ -24,21 +26,21 @@
     "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-diagram": "workspace:*",
     "@duckdb/node-api": "1.5.2-r.2",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "@hachej/boring-data-explorer": "workspace:*",
     "@hachej/boring-data-catalog": "workspace:*"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.0",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/vite": "^4.3.3",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^4.0.0",
     "tailwindcss": "^4.3.3",
-    "tsx": "^4.23.1",
+    "tsx": "^4.23.6",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9",
-    "vite": "^8.1.5"
+    "vite": "^8.2.0"
   }
 }

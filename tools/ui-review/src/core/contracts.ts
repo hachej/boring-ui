@@ -15,6 +15,12 @@ export type UiReviewViewport = {
   width: number
   height: number
   deviceScaleFactor: number
+  /**
+   * Emulate a touch device. Without this a narrow viewport is still a
+   * fine-pointer browser, so `@media (hover: none)` / `(pointer: coarse)`
+   * never match and every coarse-pointer rule goes uncovered.
+   */
+  hasTouch?: boolean
 }
 
 export type UiReviewState = {
@@ -26,6 +32,8 @@ export type UiReviewState = {
   screenshotPath: string
   screenshotDigest: string
   screenshotBytes: number
+  /** Perceptual image hash for exploration/replay stability checks. */
+  screenshotPHash?: string
   source?: "known" | "bombadil"
   normalizedStateSignature?: string
   reproducePath?: string

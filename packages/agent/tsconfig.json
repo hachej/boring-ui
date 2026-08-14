@@ -27,6 +27,7 @@
       "@hachej/boring-sandbox/providers/bwrap": ["../boring-sandbox/src/providers/bwrap/index.ts"],
       "@hachej/boring-sandbox/providers/node-workspace": ["../boring-sandbox/src/providers/node-workspace/index.ts"],
       "@hachej/boring-sandbox/providers/vercel-sandbox": ["../boring-sandbox/src/providers/vercel-sandbox/index.ts"],
+      "@hachej/boring-sandbox/providers/blaxel": ["../boring-sandbox/src/providers/blaxel/index.ts"],
       "@agent-test-host": ["test-host/sandbox.ts"],
       "@/*": ["src/*"]
     },
@@ -46,6 +47,7 @@
   ],
   "exclude": [
     "node_modules",
-    "dist"
+    "dist",
+    "src/server/events/__tests__/fixtures/concurrentAppendWorker.ts"
   ]
 }

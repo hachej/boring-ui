@@ -1,7 +1,6 @@
-export type FilesystemId = "user" | "company_context" | (string & {})
+export type FilesystemId = "user" | (string & {})
 
 export const USER_FILESYSTEM_ID = "user" satisfies FilesystemId
-export const COMPANY_CONTEXT_FILESYSTEM_ID = "company_context" satisfies FilesystemId
 
 export interface UiFileResource {
   readonly filesystem: FilesystemId
@@ -15,6 +14,21 @@ export type UiFileResourceInput = string | {
 
 export function normalizeUiFilesystem(filesystem: FilesystemId | null | undefined): FilesystemId {
   return filesystem && filesystem.length > 0 ? filesystem : USER_FILESYSTEM_ID
+}
+
+/** How a file panel presents a file. One spelling for the whole workspace. */
+export const UI_FILE_OPEN_MODES = ["view", "edit", "diff"] as const
+
+export type UiFileOpenMode = typeof UI_FILE_OPEN_MODES[number]
+
+/**
+ * The mode when the caller supplied a real one, else `undefined` so callers
+ * can spread it away. Every surface that narrows an untrusted `mode` MUST use
+ * this — hand-rolled `x === "view" || x === "edit" || x === "diff"` chains had
+ * already been copied four times, one per surface that could forget a member.
+ */
+export function parseFileOpenMode(value: unknown): UiFileOpenMode | undefined {
+  return UI_FILE_OPEN_MODES.includes(value as UiFileOpenMode) ? value as UiFileOpenMode : undefined
 }
 
 export function normalizeUiFileResource(input: UiFileResourceInput): UiFileResource {

@@ -4,13 +4,14 @@ import { useEffect, useState, type ReactNode } from "react"
 import type { DispatchContext } from "../../front/bridge"
 import { DetachedChatPopover } from "../../front/chrome/chat/DetachedChatPopover"
 import type { ChatPanelHostProps } from "../../front/chrome/chat/ChatPanelHost"
-import type { WorkspaceShellCapabilities } from "../../front/shell/WorkspaceShellCapabilitiesContext"
+import type { WorkspaceShellCapabilities, WorkspaceShellCapabilityResult, WorkspaceShellCreatedSessionResult } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import type { WorkspaceShellSessionRef } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import { workspaceSessionKey } from "../../front/sessionIdentity"
 import { useWorkspaceShellCapabilitiesController } from "./useWorkspaceShellCapabilitiesController"
 
 export interface WorkspaceShellCapabilitiesHostResult {
   floatingChatNode: ReactNode
+  floatingChatOpen: boolean
   shellCapabilities: WorkspaceShellCapabilities
 }
 
@@ -19,29 +20,49 @@ export function useWorkspaceShellCapabilitiesHost({
   workspaceId,
   effectiveAppLeftPaneWidth,
   sessionTitleById,
+  agentLabelByTypeId,
   defaultSessionTitle,
   makeCenterParams,
+  createChatSession,
+  deleteChatSession,
   openChatPane,
   refreshChatSessions,
   surfaceDispatch,
   onDockOverlay,
+  isAppLeftOverlayAvailable,
 }: {
   appLeftPaneCollapsed: boolean
   workspaceId: string
   effectiveAppLeftPaneWidth: number
   sessionTitleById: Map<string, string | null | undefined>
+  /**
+   * Agent labels keyed by agentTypeId. Null when the workspace has fewer than
+   * two Agents — the detached header then stays exactly as it was.
+   */
+  agentLabelByTypeId?: Map<string, string> | null
   defaultSessionTitle: string
   makeCenterParams: (sessionKey: string, options?: { bridgeEnabled?: boolean }) => unknown
+  createChatSession: (options?: { title?: string }) => Promise<WorkspaceShellCreatedSessionResult>
+  deleteChatSession: (ref: WorkspaceShellSessionRef) => Promise<WorkspaceShellCapabilityResult>
   openChatPane: (sessionId: string, agentTypeId?: string) => void
   refreshChatSessions: () => Promise<void>
   surfaceDispatch: DispatchContext
   onDockOverlay?: () => void
+  isAppLeftOverlayAvailable?: (id: string) => boolean
 }): WorkspaceShellCapabilitiesHostResult {
   const [floatingChatSession, setFloatingChatSession] = useState<{ ref: WorkspaceShellSessionRef; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>(null)
   useEffect(() => {
     setFloatingChatSession(null)
   }, [workspaceId])
-  const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSession, openChatPane, refreshChatSessions, surfaceDispatch })
+  const shellCapabilities = useWorkspaceShellCapabilitiesController({
+    setFloatingChatSession,
+    createChatSession,
+    deleteChatSession,
+    openChatPane,
+    refreshChatSessions,
+    surfaceDispatch,
+    isAppLeftOverlayAvailable,
+  })
 
   useEffect(() => {
     const onOpenDetachedChat = (event: Event) => {
@@ -69,18 +90,29 @@ export function useWorkspaceShellCapabilitiesHost({
         ...(floatingChatSession?.initialDraft !== undefined ? { initialDraft: floatingChatSession.initialDraft } : {}),
       }
     : null
+  const floatingChatAgentLabel = floatingChatRef?.agentTypeId
+    ? agentLabelByTypeId?.get(floatingChatRef.agentTypeId)
+    : undefined
   const floatingChatNode = floatingChatRef && floatingChatSessionKey && floatingChatParams ? (
     <DetachedChatPopover
       key={floatingChatSessionKey}
       sessionId={floatingChatRef.sessionId}
       title={floatingChatTitle ?? floatingChatRef.sessionId}
+      {...(floatingChatAgentLabel ? { agentLabel: floatingChatAgentLabel } : {})}
       chatParams={floatingChatParams}
       initialPosition={{ left: appLeftPaneCollapsed ? 24 : effectiveAppLeftPaneWidth + 24, top: 72 }}
       composingEnabled={floatingChatSession?.composingEnabled ?? false}
-      onClose={() => setFloatingChatSession(null)}
+      onClose={() => {
+        setFloatingChatSession(null)
+        // Detached chats do not share the docked pane's session-sync lifecycle.
+        // Refresh on dismissal so a completed quick chat and its generated title
+        // are represented in the persistent session list immediately.
+        void refreshChatSessions()
+      }}
       onDock={() => {
         openChatPane(floatingChatRef.sessionId, floatingChatRef.agentTypeId)
         setFloatingChatSession(null)
+        void refreshChatSessions()
         onDockOverlay?.()
       }}
     />
@@ -88,6 +120,7 @@ export function useWorkspaceShellCapabilitiesHost({
 
   return {
     floatingChatNode,
+    floatingChatOpen: floatingChatRef !== null,
     shellCapabilities,
   }
 }

@@ -1,6 +1,6 @@
 import type { WorkspaceBridge, CausedBy } from "./types"
 import type { WorkspaceStore, PanelState } from "../store/types"
-import type { FilesystemId } from "../../shared/types/filesystem"
+import type { FilesystemId, UiFileOpenMode } from "../../shared/types/filesystem"
 
 export interface UIStatePut {
   v: 1
@@ -85,7 +85,7 @@ async function dispatchCommand(
         params.path as string,
         params.mode || params.filesystem
           ? {
-              mode: params.mode as "view" | "edit" | "diff" | undefined,
+              mode: params.mode as UiFileOpenMode | undefined,
               filesystem: params.filesystem as string | undefined,
             }
           : undefined,

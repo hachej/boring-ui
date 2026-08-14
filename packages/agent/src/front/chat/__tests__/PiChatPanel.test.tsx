@@ -3,6 +3,7 @@ import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@t
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { SessionSummary } from '../../../shared/session'
+import { AgentGatewayErrorCode } from '../../../shared/gateway/errors'
 import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
 import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSession'
 import { activeSessionStorageKey, scopedComposerStorageKey, type ActiveSessionStorageLike } from '../session'
@@ -437,7 +438,7 @@ describe('PiChatPanel sandbox shell', () => {
     unmount()
     window.removeEventListener('boring:chat-session-status', onStatus)
 
-    expect(statusEvents).toContainEqual({ sessionId: 'pi-1', agentTypeId: 'beta', working: true })
+    expect(statusEvents).toContainEqual({ workspaceId: 'workspace-a', sessionId: 'pi-1', agentTypeId: 'beta', working: true })
   })
 
   test('keeps the working indicator slot mounted across stream start and finish', async () => {
@@ -515,6 +516,69 @@ describe('PiChatPanel sandbox shell', () => {
 
     // A rejected send never admits a server turn, so it must not report one.
     expect(onTurnComplete).not.toHaveBeenCalled()
+  })
+
+  test('offers a new chat when a run is rejected by a stale runtime pin', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    remote.prompt.mockRejectedValue(Object.assign(new Error('This chat belongs to a previous runtime configuration and can no longer be changed.'), {
+      errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+    }))
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url.includes('/api/v1/agents/default/sessions?') && method === 'GET') return jsonResponse([session('pi-1')])
+      if (url.endsWith('/api/v1/agents/default/sessions') && method === 'POST') return jsonResponse(session('pi-current', 'Current runtime chat'), 201)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    render(
+      <PiChatPanel
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'continue old chat' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    const action = await screen.findByRole('button', { name: 'Start new chat' })
+    fireEvent.click(action)
+    fireEvent.click(action)
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/agents/default/sessions',
+      expect.objectContaining({ method: 'POST' }),
+    ))
+    await waitFor(() => expect(document.querySelector('[data-pi-chat-session-id="pi-current"]')).toBeTruthy())
+    expect(fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/sessions') && call[1]?.method === 'POST')).toHaveLength(1)
+  })
+
+  test('uses the host session creator for a runtime mismatch in controlled-session mode', async () => {
+    const remote = new FakeRemotePiSession(remoteState({
+      status: 'error',
+      notices: [{
+        id: 'terminal-session-error',
+        level: 'error',
+        text: 'This chat belongs to a previous runtime configuration and can no longer be changed.',
+        errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+      }],
+    }))
+    const onCreateSession = vi.fn().mockResolvedValue(undefined)
+    render(
+      <PiChatPanel
+        sessionId="pi-1"
+        showSessions={false}
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={remoteFactory(remote)}
+        onCreateSession={onCreateSession}
+      />,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Start new chat' }))
+    await waitFor(() => expect(onCreateSession).toHaveBeenCalledTimes(1))
   })
 
   test('fires onTurnComplete per turn-settle event, including back-to-back queued turns', async () => {
@@ -674,6 +738,35 @@ describe('PiChatPanel sandbox shell', () => {
     expect(document.querySelector('[data-boring-agent-part="chat-history-loading"]')).toBeTruthy()
     expect(screen.queryByText(/Loading chat history/)).toBeNull()
     expect(screen.queryByText('What should we work on?')).toBeNull()
+  })
+
+  test('shows loading, not the empty hero, while an attached session is still unhydrated', async () => {
+    // External-sessionId hosts attach with autoStart:false, so the session
+    // reports status 'idle' with hydrated:false until the /state snapshot
+    // lands. That window must render the history loader, never the hero.
+    const remote = new FakeRemotePiSession(remoteState({
+      committedMessages: [],
+      sessionId: 'pi-1',
+      status: 'idle',
+      hydrated: false,
+      connection: { state: 'disconnected' },
+    }))
+
+    render(
+      <PiChatPanel
+        sessionId="pi-1"
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    expect((await screen.findByRole('status', { name: 'Loading chat history' })).getAttribute('aria-busy')).toBe('true')
+    expect(screen.queryByText('What should we work on?')).toBeNull()
+
+    remote.setState(remoteState({ committedMessages: [], sessionId: 'pi-1', hydrated: true }))
+    await screen.findByText('What should we work on?')
+    expect(screen.queryByRole('status', { name: 'Loading chat history' })).toBeNull()
   })
 
   test('orders the empty hero as title, composer, then quick actions', async () => {

@@ -1,14 +1,18 @@
 import { describe, expect, it, vi } from "vitest"
-import { act, fireEvent, render, screen } from "@testing-library/react"
-import type { ComponentType } from "react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { useEffect, type ComponentType } from "react"
 
 // Capture the props handed to DockviewReact so we can assert the rendering
 // contract that keeps chat panes mounted across activation. The real dockview
 // component needs a DOM grid engine we don't exercise here, so it is mocked.
 const dockviewProps = vi.fn()
+const dockviewMounts = vi.fn()
 vi.mock("dockview-react", () => ({
   DockviewReact: (props: Record<string, unknown>) => {
     dockviewProps(props)
+    useEffect(() => {
+      dockviewMounts()
+    }, [])
     type MockPanelApi = { id: string; title: string; onDidTitleChange: () => { dispose: () => void } }
     const Header = props.defaultTabComponent as ComponentType<{ api: MockPanelApi }> | undefined
     const HeaderActions = props.rightHeaderActionsComponent as ComponentType<{ activePanel: { api: MockPanelApi } }> | undefined
@@ -82,7 +86,7 @@ describe("ChatPaneStageDock", () => {
     expect(onDrop).toHaveBeenCalledWith("shared", "beta")
   })
 
-  it('mounts panes with the "always" renderer so switching panes preserves scroll (#276)', () => {
+  it("renders the active pane in Dockview's visible group", () => {
     dockviewProps.mockClear()
     render(
       <ChatPaneStageDock
@@ -95,11 +99,38 @@ describe("ChatPaneStageDock", () => {
       />,
     )
 
-    // The default "onlyWhenVisible" renderer detaches and re-appends a group's
-    // content element on activation, which resets the transcript scroll
-    // container's scrollTop to 0. "always" keeps it mounted in place.
     expect(dockviewProps).toHaveBeenCalled()
-    expect(dockviewProps.mock.calls[0][0]).toMatchObject({ defaultRenderer: "always" })
+    expect(dockviewProps.mock.calls[0][0]).toMatchObject({ defaultRenderer: "onlyWhenVisible" })
+  })
+
+  it("shows a loading surface while remounting a switched single pane", async () => {
+    dockviewMounts.mockClear()
+    dockviewProps.mockClear()
+    const { rerender } = render(
+      <ChatPaneStageDock
+        panes={[{ id: "a", title: "A" }]}
+        activePaneId="a"
+        renderPane={(pane) => <div>{pane.id}</div>}
+      />,
+    )
+    expect(screen.getByRole("status", { name: "Loading chat" })).toBeInTheDocument()
+    const firstApi = mockDockApi([])
+    act(() => (dockviewProps.mock.calls.at(-1)?.[0].onReady as (event: { api: typeof firstApi }) => void)({ api: firstApi }))
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Loading chat" })).not.toBeInTheDocument())
+
+    rerender(
+      <ChatPaneStageDock
+        panes={[{ id: "b", title: "B" }]}
+        activePaneId="b"
+        renderPane={(pane) => <div>{pane.id}</div>}
+      />,
+    )
+    expect(screen.getByRole("status", { name: "Loading chat" })).toBeInTheDocument()
+    const secondApi = mockDockApi([])
+    act(() => (dockviewProps.mock.calls.at(-1)?.[0].onReady as (event: { api: typeof secondApi }) => void)({ api: secondApi }))
+
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Loading chat" })).not.toBeInTheDocument())
+    expect(dockviewMounts).toHaveBeenCalledTimes(2)
   })
 
   it("renders chat top actions only in the active pane header", () => {
@@ -295,6 +326,46 @@ describe("ChatPaneStageDock", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Chat name" }), { target: { value: "Renamed chat" } })
     fireEvent.click(screen.getByRole("button", { name: "Rename" }))
     expect(onRename).toHaveBeenCalledWith("a", "Renamed chat")
+  })
+
+  it("names the owning Agent in each pane header when the host supplies one", () => {
+    render(
+      <ChatPaneStageDock
+        panes={[
+          { id: "a", title: "A", agentLabel: "Coder" },
+          { id: "b", title: "B", agentLabel: "Researcher" },
+        ]}
+        activePaneId="a"
+        renderPane={(pane) => <div>{pane.id}</div>}
+      />,
+    )
+
+    const labels = document.querySelectorAll('[data-boring-workspace-part="chat-pane-agent"]')
+    expect([...labels].map((node) => node.textContent)).toEqual(["Coder", "Researcher"])
+    // Quiet secondary treatment, and it truncates instead of pushing the
+    // split/close controls out of the header.
+    expect(labels[0]?.className).toContain("text-[11px]")
+    expect(labels[0]?.className).toContain("text-muted-foreground")
+    expect(labels[0]?.className).toContain("text-ellipsis")
+    expect(labels[0]?.className).toContain("min-w-0")
+    // The full pair still reads out on hover when either half is truncated.
+    const header = labels[0]?.closest('[data-boring-workspace-part="chat-pane-title"]')
+    expect(header?.getAttribute("title")).toBe("A — Coder")
+  })
+
+  it("omits the Agent label when the host supplies none (single-Agent workspace)", () => {
+    render(
+      <ChatPaneStageDock
+        panes={[{ id: "a", title: "A" }]}
+        activePaneId="a"
+        renderPane={(pane) => <div>{pane.id}</div>}
+      />,
+    )
+
+    expect(document.querySelector('[data-boring-workspace-part="chat-pane-agent"]')).toBeNull()
+    expect(
+      document.querySelector('[data-boring-workspace-part="chat-pane-title"]')?.getAttribute("title"),
+    ).toBe("A")
   })
 
   it("replaces machine session identifiers with a readable title", () => {

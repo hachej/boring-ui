@@ -11,7 +11,7 @@ import type { WorkspaceBridge, CommandResult, BridgeEventMap } from "../../bridg
 import type { WorkspaceState, PanelState } from "../../store/types"
 import { WorkbenchLeftPane } from "../workbench-left/WorkbenchLeftPane"
 import { useRegistry, useSurfaceResolverRegistry } from "../../registry"
-import { normalizeUiFilesystem, type FilesystemId, type UiFileResource } from "../../../shared/types/filesystem"
+import { normalizeUiFilesystem, parseFileOpenMode, type FilesystemId, type UiFileOpenMode, type UiFileResource } from "../../../shared/types/filesystem"
 import {
   closeWorkbenchPreview,
   isWorkbenchPreviewParams,
@@ -56,7 +56,7 @@ export interface OpenPanelConfig {
 
 export interface SurfaceShellOpenFileOptions {
   filesystem?: FilesystemId
-  mode?: "view" | "edit" | "diff"
+  mode?: UiFileOpenMode
 }
 
 /** Result of openFileCore — the shared resolve/activate logic behind openFile
@@ -460,7 +460,7 @@ export function SurfaceShell({
     const mode = panel?.params?.mode
     emitFileOpened(resource.path, {
       filesystem: resource.filesystem,
-      ...(mode === "view" || mode === "edit" || mode === "diff" ? { mode } : {}),
+      ...(((parsed) => parsed ? { mode: parsed } : {})(parseFileOpenMode(mode))),
     })
   }, [emitFileOpened])
 
@@ -555,7 +555,7 @@ export function SurfaceShell({
       const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
       const result = openFileCore(api, normalizedRequest.target, {
         filesystem: normalizedRequest.filesystem,
-        ...(surfaceMode === "view" || surfaceMode === "edit" || surfaceMode === "diff" ? { mode: surfaceMode } : {}),
+        ...(((parsed) => parsed ? { mode: parsed } : {})(parseFileOpenMode(surfaceMode))),
         ...(closeWorkbenchOnDone && onCloseRef.current
           ? { extraParams: { __closeWorkbenchOnDone: onCloseRef.current } }
           : {}),
@@ -938,7 +938,9 @@ export function SurfaceShell({
         data-boring-state={hostRailOnly ? "collapsed" : "expanded"}
         className={cn(
           "pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center",
-          hostRailOnly ? "justify-center border-b border-border/60 bg-background" : "justify-end px-3",
+          hostRailOnly
+            ? "justify-center border-b border-border bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)]"
+            : "justify-end px-3",
         )}
         style={{ height: workbenchHeaderHeight }}
       >
@@ -946,13 +948,13 @@ export function SurfaceShell({
           <IconButton
             type="button"
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             className="workbench-open-button pointer-events-auto"
             onClick={toggleHostWorkbench}
             aria-label="Open workbench"
             title="Open workbench (⌘2)"
           >
-            <PanelRightOpen className="h-4 w-4" strokeWidth={1.75} />
+            <PanelRightOpen className="size-4" strokeWidth={1.75} />
           </IconButton>
         ) : (
           <WorkbenchHeaderActions
@@ -1019,7 +1021,7 @@ export function SurfaceShell({
           data-boring-workspace-part="surface-sidebar"
           data-boring-state={hostRailOnly ? "host-collapsed" : sourcePaneOpen ? "expanded" : "rail"}
           className={cn(
-            "relative z-10 flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-border/60",
+            "relative z-10 flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-border",
             !hideLevelOneHeader && "mt-11",
           )}
           style={{

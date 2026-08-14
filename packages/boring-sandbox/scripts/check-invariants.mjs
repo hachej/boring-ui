@@ -14,6 +14,7 @@ export const requiredExports = [
   "./providers/direct",
   "./providers/bwrap",
   "./providers/node-workspace",
+  "./providers/blaxel",
   "./providers/vercel-sandbox",
   "./providers/runsc",
   "./providers/remote-worker",

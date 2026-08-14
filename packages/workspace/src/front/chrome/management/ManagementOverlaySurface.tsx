@@ -1,6 +1,6 @@
 "use client"
 
-import type { ReactNode } from "react"
+import { useId, type ReactNode } from "react"
 import { cn } from "../../lib/utils"
 
 export interface ManagementOverlaySurfaceProps {
@@ -28,23 +28,34 @@ export function ManagementOverlaySurface({
   headerInsetEnd = false,
   children,
 }: ManagementOverlaySurfaceProps) {
+  const titleId = useId()
+  const descriptionId = useId()
+
   return (
-    <div data-boring-workspace-part={part} className="flex h-full min-h-0 flex-col bg-background">
+    <section
+      data-boring-workspace-part={part}
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      className="flex h-full min-h-0 flex-col bg-background"
+    >
       <header className={cn(
         "flex h-12 shrink-0 items-center justify-between border-b border-border/60",
         headerInsetStart ? "pl-12" : "pl-4",
         headerInsetEnd ? "pr-16" : "pr-4",
       )}>
-        <div className="flex min-w-0 items-center gap-2">
-          {icon}
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="shrink-0">{icon}</div>
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold tracking-tight text-foreground">{title}</h2>
-            <p className="truncate text-xs text-muted-foreground">{description}</p>
+            <h2 id={titleId} className="truncate text-sm font-semibold tracking-tight text-foreground" title={title}>{title}</h2>
+            <p id={descriptionId} className="truncate text-xs text-muted-foreground" title={description}>{description}</p>
           </div>
         </div>
-        {actions ? <div className="flex shrink-0 items-center gap-0.5">{actions}</div> : null}
+        {/* Actions stay icon-dense on a mouse; `management-overlay-actions`
+            grows every action to the 44px minimum on coarse pointers
+            (globals.css) so consumers don't each re-declare touch sizing. */}
+        {actions ? <div role="group" aria-label={`${title} actions`} className="management-overlay-actions flex shrink-0 items-center gap-0.5">{actions}</div> : null}
       </header>
       {children}
-    </div>
+    </section>
   )
 }

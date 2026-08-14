@@ -61,6 +61,7 @@ export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createDirectModeAdapter } from './runtime/modes/direct'
 export { createLocalModeAdapter } from './runtime/modes/local'
 export { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
+export { createBlaxelSandboxModeAdapter } from './runtime/modes/blaxel'
 export { createProviderRuntimeModeAdapter } from './runtime/modes/providerAdapter'
 export {
   createSandboxRuntimeModeAdapter,
@@ -72,6 +73,7 @@ export type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 export {
   AgentDirectoryCompilerError,
   compileAgentDirectory,
+  compilePersonaPackageDirectory,
 } from './agentDefinition/compileAgentDirectory'
 export type {
   AgentDirectoryCompilerErrorCode,
@@ -95,6 +97,28 @@ export type {
   TrustedAgentInstructionAppendix,
   TrustedAuthoredAgentPolicy,
 } from './agentDefinition/createConfiguredAgentHostAgentSpec'
+export {
+  FleetConfigError,
+  loadConfiguredAgentFleet,
+} from './agentDefinition/loadConfiguredAgentFleet'
+export type {
+  DiscoveredAgentPackageDescriptor,
+  FleetConfigErrorCode,
+  FleetLoaderDiagnostic,
+  FleetLoaderDiagnosticCode,
+  FleetSeatBinding,
+  FleetSkillBinding,
+  LoadConfiguredAgentFleetOptions,
+  LoadConfiguredAgentFleetResult,
+  ModelTierCandidate,
+} from './agentDefinition/loadConfiguredAgentFleet'
+export {
+  LEGACY_DEFAULT_AGENT_FLEET,
+  resolveDefaultAgentFleet,
+} from './agentDefinition/resolveDefaultAgentFleet'
+export type {
+  ResolveDefaultAgentFleetOptions,
+} from './agentDefinition/resolveDefaultAgentFleet'
 export {
   createResolvedAgentDigest,
   resolveAgentDeployment,
@@ -171,6 +195,7 @@ export type {
   AgentRequestLedger,
   AgentRequestLedgerPrepareResult,
   AgentRequestLedgerRecord,
+  AgentInstructionFileRef,
   CompiledAgentHostAgentSpec,
   ConfiguredAgentHostAgentSpec,
   CreateAgentHostOptions,
@@ -194,6 +219,8 @@ export type {
   PiPackageSource,
 } from './harness/pi-coding-agent/createHarness'
 export { createResourceSettingsManager } from './harness/pi-coding-agent/createHarness'
+export { parseSkillMetadataFrontmatter } from './skillFrontmatter'
+export type { SkillMetadataFrontmatter } from './skillFrontmatter'
 export {
   compactPiPackages,
   mergePiPackageSources,
@@ -222,6 +249,7 @@ export {
   type RuntimeEnvContributionContext,
 } from './runtimeEnvContributions'
 export { createBoundWorkspaceAgentDispatcher } from './workspaceAgentDispatcher'
+export { projectAuthorizedSessionRunDetails, type AuthorizedSessionRunDetails } from './sessionRunDetails'
 export { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 export type {
   AgentMeteringSink,
@@ -242,11 +270,27 @@ export type {
   BuiltinRuntimeModeId,
   ModeContext,
   RuntimeBundle,
+  RuntimeFilesystemAccessDecision,
   RuntimeFilesystemBinding,
   RuntimeFilesystemBindingOperations,
+  RuntimeFilesystemCapability,
   RuntimeModeAdapter,
   RuntimeModeId,
 } from './runtime/mode'
+export {
+  RUNTIME_FILESYSTEM_BINDING_DUPLICATE_CODE,
+  RuntimeFilesystemBindingConfigurationError,
+  mergeRuntimeFilesystemBindings,
+} from './runtime/filesystemBindings'
+export {
+  DEFAULT_READONLY_WORKSPACE_PATHS,
+  RUNTIME_READONLY_FILESYSTEM_POLICY_INVALID_CODE,
+  RuntimeReadonlyFilesystemPolicyError,
+  normalizeRuntimeReadonlyFilesystemPolicy,
+  resolveRuntimeReadonlyFilesystemAccess,
+} from './runtime/readonlyFilesystemPolicy'
+export type { RuntimeReadonlyFilesystemPolicy } from './runtime/readonlyFilesystemPolicy'
+export { createUserFilesystemBinding } from './runtime/userFilesystemBinding'
 export {
   createFakeAuthorityVerifierV1,
   createHostSideCredentialResolverV1,

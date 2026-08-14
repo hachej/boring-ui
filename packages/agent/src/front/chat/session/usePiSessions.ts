@@ -39,7 +39,10 @@ export interface UsePiSessionsOptions {
   workspaceId?: string
   /** Stable caller identity echoed only after this source's rows are authoritative. */
   sourceIdentity?: string
+  /** Server-authorized workspace/storage scope used for HTTP requests. */
   storageScope?: string
+  /** Browser-only active-session persistence scope; defaults to storageScope. */
+  activeSessionStorageScope?: string
   requestHeaders?: Record<string, string | undefined>
   enabled?: boolean
   refreshKey?: unknown
@@ -108,6 +111,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
   const apiBaseUrl = options.apiBaseUrl?.replace(/\/$/, '') ?? ''
   const sessionsApiPath = options.sessionsApiPath ?? `/api/v1/agents/${encodeURIComponent(options.agentTypeId)}/sessions`
   const storageScope = options.storageScope ?? 'default'
+  const activeSessionStorageScope = options.activeSessionStorageScope ?? storageScope
   const fetchImpl = useMemo(() => options.fetch ?? globalThis.fetch.bind(globalThis), [options.fetch])
   const createRemoteSession = options.createRemoteSession ?? createRemotePiSession
   const connectActiveSession = options.connectActiveSession ?? true
@@ -155,6 +159,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
   const loadMoreRequestSeqRef = useRef(0)
   const loadMoreInFlightRef = useRef(false)
   const pendingCreatedRef = useRef<Map<string, SessionSummary>>(new Map())
+  const pendingDeletedRef = useRef<Set<string>>(new Set())
   const pendingCreatedScopeRef = useRef(requestScopeKey)
   const dataStorageScopeRef = useRef(storageScope)
   const loadedDataSourceRef = useRef(dataSourceKey)
@@ -205,8 +210,8 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
   }, [sessionsUrl])
 
   const persistActive = useCallback((id: string | undefined) => {
-    writeActiveSessionId(id, { storageScope, storage: options.storage })
-  }, [options.storage, storageScope])
+    writeActiveSessionId(id, { storageScope: activeSessionStorageScope, storage: options.storage })
+  }, [activeSessionStorageScope, options.storage])
 
   const persistBootResume = useCallback((id: string | undefined) => {
     writeBootResumeSessionId(id, { bootResumeSource, storage: options.bootResumeStorage })
@@ -222,14 +227,18 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     if (pendingCreatedScopeRef.current === requestScopeKey) return
     pendingCreatedScopeRef.current = requestScopeKey
     pendingCreatedRef.current.clear()
+    pendingDeletedRef.current.clear()
   }, [requestScopeKey])
 
   const preferredSessionId = useCallback((): string | undefined => {
-    const persisted = options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
+    const persisted = options.initialActiveSessionId ?? readActiveSessionId({
+      storageScope: activeSessionStorageScope,
+      storage: options.storage,
+    })
     if (loadedDataSourceRef.current === dataSourceKey) return activeSessionIdRef.current ?? persisted
     if (dataStorageScopeRef.current !== storageScope) return persisted
     return undefined
-  }, [dataSourceKey, options.initialActiveSessionId, options.storage, storageScope])
+  }, [activeSessionStorageScope, dataSourceKey, options.initialActiveSessionId, options.storage, storageScope])
 
   const applySessions = useCallback((data: SessionSummary[], applyOptions: { background?: boolean; nextCursor?: string } = {}) => {
     ensurePendingScope()
@@ -237,22 +246,31 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     const requestedActiveId = preferredSessionId()
     const replacingScopePreferred = replacingScope ? requestedActiveId : undefined
     const pendingCreated = pendingCreatedRef.current
+    const pendingDeleted = pendingDeletedRef.current
+    const deletedIds = new Set(pendingDeleted)
     for (const session of data) pendingCreated.delete(session.id)
-    const canonicalCount = canonicalPageCount(data)
+    const filteredData = data.filter((session) => !deletedIds.has(session.id))
+    if (applyOptions.nextCursor === undefined) {
+      const returnedIds = new Set(data.map((session) => session.id))
+      for (const deletedId of pendingDeleted) {
+        if (!returnedIds.has(deletedId)) pendingDeleted.delete(deletedId)
+      }
+    }
+    const canonicalCount = canonicalPageCount(filteredData)
     const pageMayHaveMore = applyOptions.nextCursor !== undefined
     const wasExhaustedBeyondFirstPage = applyOptions.background
       && !hasMoreRef.current
       && canonicalLoadedCountRef.current >= canonicalCount
-    const requestedActiveReturned = Boolean(requestedActiveId && data.some((session) => session.id === requestedActiveId))
+    const requestedActiveReturned = Boolean(requestedActiveId && filteredData.some((session) => session.id === requestedActiveId))
     const current = applyOptions.background && pageMayHaveMore
       ? sessionsRef.current.filter((session) => !requestedActiveId || requestedActiveReturned || session.id !== requestedActiveId)
       : []
-    const merged = mergeSessions(Array.from(pendingCreated.values()), data, current)
+    const merged = mergeSessions(Array.from(pendingCreated.values()), filteredData, current.filter((session) => !deletedIds.has(session.id)))
     const rememberedEmptyId = readBootResumeSessionId({
       bootResumeSource,
       storage: options.bootResumeStorage,
     })
-    if (rememberedEmptyId && data.some((session) => session.id === rememberedEmptyId)) {
+    if (rememberedEmptyId && filteredData.some((session) => session.id === rememberedEmptyId)) {
       persistBootResume(undefined)
     }
     const nextHasMore = pageMayHaveMore && !wasExhaustedBeyondFirstPage
@@ -352,9 +370,9 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     setLoadingMore(true)
     try {
       const page = await fetchSessionList(fetchImpl, sessionsListUrl(nextCursorRef.current), requestHeaders())
-      const data = page.sessions
+      const data = page.sessions.filter((session) => !pendingDeletedRef.current.has(session.id))
       if (requestSeq !== loadMoreRequestSeqRef.current || version !== refreshVersionRef.current || !sourceIsCurrent(scope)) return
-      const merged = mergeSessions(sessionsRef.current, data)
+      const merged = mergeSessions(sessionsRef.current.filter((session) => !pendingDeletedRef.current.has(session.id)), data)
       const nextHasMore = page.nextCursor !== undefined
       canonicalLoadedCountRef.current += data.length
       nextCursorRef.current = page.nextCursor
@@ -416,7 +434,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
       throw err
     }
     const body = await response.json()
-    const session = addressedCreatedSession(body, init?.title)
+    const session = addressedCreatedSession(body, options.agentTypeId, init?.title)
     if (!sourceIsCurrent(scope)) return session
     ensurePendingScope()
     rememberConfirmedEmptySession(session.id)
@@ -463,7 +481,10 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     if (readBootResumeSessionId({ bootResumeSource, storage: options.bootResumeStorage }) === id) {
       persistBootResume(undefined)
     }
+    const deletedSession = sessionsRef.current.find((session) => session.id === id)
+    const deletedSessionWasActive = activeSessionIdRef.current === id
     pendingCreatedRef.current.delete(id)
+    pendingDeletedRef.current.add(id)
     setDataStorageScope(storageScope)
     setSessions((previous) => previous.filter((session) => session.id !== id))
     setActiveSessionId((previous) => {
@@ -482,6 +503,14 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
       if (sourceIsCurrent(scope)) {
+        pendingDeletedRef.current.delete(id)
+        if (deletedSession) {
+          setSessions((previous) => mergeSessions([deletedSession], previous))
+          if (deletedSessionWasActive) {
+            setActiveSessionId(id)
+            persistActive(id)
+          }
+        }
         setError(error)
         void refresh()
       }
@@ -493,6 +522,7 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
   const reset = useCallback(() => {
     if (!sourceIsCurrent(requestScopeKey)) return
     pendingCreatedRef.current.clear()
+    pendingDeletedRef.current.clear()
     loadMoreRequestSeqRef.current += 1
     loadMoreInFlightRef.current = false
     canonicalLoadedCountRef.current = canonicalPageCount(sessionsRef.current)
@@ -581,13 +611,19 @@ function toAddressedSessionSummary(value: unknown): SessionSummary {
   }
 }
 
-function addressedCreatedSession(value: unknown, title?: string): SessionSummary {
-  if (typeof value !== 'object' || value === null || typeof (value as { sessionId?: unknown }).sessionId !== 'string') {
+function addressedCreatedSession(value: unknown, expectedAgentTypeId: string, title?: string): SessionSummary {
+  if (
+    typeof value !== 'object'
+    || value === null
+    || typeof (value as { sessionId?: unknown }).sessionId !== 'string'
+    || (value as { agentTypeId?: unknown }).agentTypeId !== expectedAgentTypeId
+  ) {
     throw new Error('invalid addressed session ref')
   }
   const now = new Date().toISOString()
   return {
     id: (value as { sessionId: string }).sessionId,
+    agentTypeId: expectedAgentTypeId,
     title: title ?? 'Untitled',
     createdAt: now,
     updatedAt: now,

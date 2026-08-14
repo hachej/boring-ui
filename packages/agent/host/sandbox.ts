@@ -1,4 +1,8 @@
 import {
+  createBlaxelSandboxProvider,
+  BLAXEL_WORKSPACE_ROOT,
+} from '@hachej/boring-sandbox/providers/blaxel'
+import {
   buildBwrapArgs,
   createBwrapSandboxProvider,
 } from '@hachej/boring-sandbox/providers/bwrap'
@@ -16,9 +20,11 @@ import {
   getBoringAgentRuntimePaths,
   getNodeWorkspaceHostRoot,
   isIgnoredDirName,
+  resolveRealWorkspacePath,
   validatePath,
   withWorkspacePythonEnv,
 } from '@hachej/boring-sandbox/providers/node-workspace'
+import { createAgentResourceFilesystemBinding } from '@hachej/boring-bash/server'
 import {
   createVercelSandboxProvider,
   VERCEL_SANDBOX_REMOTE_ROOT,
@@ -30,9 +36,12 @@ import type { AgentRuntimeHostOperations } from '../src/server/runtime/runtimeHo
 import type { BuiltinRuntimeModeId, RuntimeModeAdapter, RuntimeModeId } from '../src/server/runtime/mode'
 import { createDirectModeAdapter } from '../src/server/runtime/modes/direct'
 import { createLocalModeAdapter } from '../src/server/runtime/modes/local'
+import { createBlaxelSandboxModeAdapter } from '../src/server/runtime/modes/blaxel'
 import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
 
 export {
+  createBlaxelSandboxProvider,
+  BLAXEL_WORKSPACE_ROOT,
   buildBwrapArgs,
   createBwrapSandboxProvider,
   createNodeWorkspace,
@@ -62,7 +71,9 @@ export const agentSandboxRuntimeHostOperations: AgentRuntimeHostOperations = {
   },
   validatePath,
   assertRealPathWithinWorkspace,
+  resolveRealWorkspacePath,
   isIgnoredDirName,
+  createAgentResourceFilesystemBinding,
   buildBwrapArgs,
   withWorkspacePythonEnv,
 }
@@ -78,7 +89,9 @@ export function resolveBuiltinRuntimeLayoutRoot(
   mode: BuiltinRuntimeModeId,
   workspaceRoot: string,
 ): string {
-  return mode === 'vercel-sandbox' ? VERCEL_SANDBOX_WORKSPACE_ROOT : workspaceRoot
+  return mode === 'blaxel'
+    ? BLAXEL_WORKSPACE_ROOT
+    : mode === 'vercel-sandbox' ? VERCEL_SANDBOX_WORKSPACE_ROOT : workspaceRoot
 }
 
 export function createSandboxRuntimeModeAdapter(
@@ -106,6 +119,13 @@ export function createSandboxRuntimeModeAdapter(
         runtimeHost: agentSandboxRuntimeHostOperations,
         remoteRoot: VERCEL_SANDBOX_REMOTE_ROOT,
         workspaceRoot: VERCEL_SANDBOX_WORKSPACE_ROOT,
+      })
+    case 'blaxel':
+      return createBlaxelSandboxModeAdapter({
+        provider: createBlaxelSandboxProvider({
+          ...(options.sandboxHandleStore ? { handleStore: options.sandboxHandleStore } : {}),
+        }),
+        runtimeHost: agentSandboxRuntimeHostOperations,
       })
     default:
       throw new Error(

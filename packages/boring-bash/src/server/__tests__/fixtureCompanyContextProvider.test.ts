@@ -12,7 +12,7 @@ import {
   listFixtureProjectionFiles,
   readFixtureProjectionFile,
   seedCompanyContextFixture,
-} from "../testing/companyContextFixtureProvider";
+} from "./companyContextFixture";
 
 const ctx: BoundFilesystemContext = {
   humanUserId: "human-1",
@@ -129,6 +129,6 @@ describe("FixtureCompanyContextBindingProvider", () => {
       resolvePolicy: () => ({ allowedPathPrefixes: ["/company/hr"] }),
     });
 
-    await expect(provider.prepareBinding(ctx, readonlyBinding)).rejects.toThrow("escapes company context root");
+    await expect(provider.prepareBinding(ctx, readonlyBinding)).rejects.toThrow("escapes external context root");
   });
 });

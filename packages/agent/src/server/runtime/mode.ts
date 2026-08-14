@@ -2,12 +2,19 @@ import type { FileSearch } from '../../shared/file-search'
 import type { WorkspaceRuntimeContext } from '../../shared/runtime'
 import type { Sandbox } from '../../shared/sandbox'
 import type { TelemetrySink } from '../../shared/telemetry'
-import type { Workspace } from '../../shared/workspace'
+import type { RuntimeFilesystemCapability, Workspace } from '../../shared/workspace'
+export {
+  READONLY_FILESYSTEM_MUTATION_CODE,
+  RUNTIME_FILESYSTEM_CAPABILITIES,
+  ReadonlyFilesystemMutationError,
+  isReadonlyFilesystemMutationError,
+} from '../../shared/workspace'
+export type { RuntimeFilesystemCapability } from '../../shared/workspace'
 import type { CapabilityReadinessDetail, ReadyStatusTracker } from './readyStatus'
 import type { AgentRuntimeHostOperations } from './runtimeHost'
 import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
 
-export type BuiltinRuntimeModeId = 'direct' | 'local' | 'vercel-sandbox'
+export type BuiltinRuntimeModeId = 'direct' | 'local' | 'blaxel' | 'vercel-sandbox'
 export type RuntimeModeId = BuiltinRuntimeModeId | (string & {})
 
 export interface RuntimeModeReadinessHooks {
@@ -67,6 +74,13 @@ export interface ModeContext {
   telemetry?: TelemetrySink
 }
 
+export interface RuntimeFilesystemAccessDecision {
+  readonly filesystem: string
+  readonly normalizedPath: string
+  readonly access: 'readonly' | 'readwrite'
+  readonly capabilities: Readonly<Record<RuntimeFilesystemCapability, boolean>>
+}
+
 export interface RuntimeFilesystemBindingOperations {
   read(descriptor: { filesystem: string; path: string }): Promise<{ content: string; mtimeMs?: number; metadata?: unknown }>
   list(descriptor: { filesystem: string; path: string }): Promise<{ entries: string[]; metadata?: unknown }>
@@ -74,9 +88,11 @@ export interface RuntimeFilesystemBindingOperations {
   grep(descriptor: { filesystem: string; path: string }, pattern: string, options?: { limit?: number; offset?: number }): Promise<{ matches: Array<{ path: string; line: number; text: string }>; metadata?: unknown }>
   stat(descriptor: { filesystem: string; path: string }): Promise<{ isDirectory: boolean; metadata?: unknown }>
   write?(descriptor: { filesystem: string; path: string; content: string; expectedMtimeMs?: number }): Promise<{ mtimeMs?: number; metadata?: unknown }>
+  writeBinary?(descriptor: { filesystem: string; path: string; content: Uint8Array }): Promise<{ mtimeMs?: number; metadata?: unknown }>
   delete?(descriptor: { filesystem: string; path: string }): Promise<{ metadata?: unknown }>
   move?(descriptor: { filesystem: string; from: string; to: string }): Promise<{ metadata?: unknown }>
   mkdir?(descriptor: { filesystem: string; path: string; recursive?: boolean }): Promise<{ metadata?: unknown }>
+  resolveAccess?(descriptor: { filesystem: string; path: string }): Promise<RuntimeFilesystemAccessDecision>
   rejectMutation(operation: string, descriptor: { filesystem: string; path: string }): never
 }
 
@@ -108,6 +124,12 @@ export interface RuntimeBundle {
   filesystem?: RuntimeFilesystemStrategy
   /** Optional filesystem bindings prepared for this runtime/session. */
   filesystemBindings?: RuntimeFilesystemBinding[]
+  /**
+   * Workspace-relative prefixes the host protects from mutation. Carried on the
+   * bundle so shell/provisioning enforcement uses the same policy as the
+   * Operations bindings instead of re-deriving it.
+   */
+  readonlyWorkspacePaths?: readonly string[]
   /** Provisioning operations derived from this bundle's acquired Workspace + Sandbox pair. */
   provisioningAdapter?: WorkspaceProvisioningAdapter
   /** Idempotently releases the acquired Workspace + Sandbox pair. */

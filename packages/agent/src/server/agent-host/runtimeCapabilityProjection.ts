@@ -11,6 +11,7 @@ import { modelsRoutes, type ModelsRoutesOptions } from '../http/routes/models'
 import { readyStatusRoutes } from '../http/routes/readyStatus'
 import { sessionChangesRoutes } from '../http/routes/sessionChanges'
 import { skillsRoutes } from '../http/routes/skills'
+import type { AgentSkillResourceSnapshot } from '../http/routes/skills'
 import { systemPromptRoutes } from '../http/routes/systemPrompt'
 import type { SessionChangesTracker } from '../http/sessionChangesTracker'
 import type { AgentMeteringSink } from '../pi-chat/metering'
@@ -18,8 +19,28 @@ import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { canonicalDigest } from './canonical'
 import type { AgentHostRuntime, RuntimeBinding } from './createAgentHost'
 import type { EmbeddedAgentGateway } from './embeddedGateway'
-import type { AgentHostDirectProjectionOptions } from './types'
+import type { AgentHostDirectProjectionOptions, AgentInstructionFileRef } from './types'
 import { projectStableServiceError } from './stableServiceError'
+import {
+  resolveAgentMcpGrants,
+  type McpConnectorCatalog,
+  type McpGrantDiagnostic,
+  type ResolvedMcpConnectorGrant,
+} from './mcpGrants'
+import type { McpGrantStore } from './mcpGrantStore'
+
+/**
+ * Optional per-agent MCP grant resolution, wired into the capability
+ * projection so `mcpServerRefs` resolve through this seam and no parallel
+ * authorization path. Omitting this entirely preserves prior behavior
+ * (no MCP connectors surfaced through this binding).
+ */
+export interface AgentHostRuntimeCapabilityMcpGrantsOptions {
+  readonly store: McpGrantStore
+  readonly catalog?: McpConnectorCatalog
+  /** The Agent definition's declared `mcpServerRefs` for a given agentTypeId, treated as connector ids. */
+  getMcpServerRefs(agentTypeId: string): readonly string[] | undefined
+}
 
 const SAFE_REQUEST_ID = /^[A-Za-z0-9._:-]+$/
 const AgentParams = z.object({ agentTypeId: z.string().min(1).max(128) }).passthrough()
@@ -41,7 +62,57 @@ export interface AgentHostRuntimeCapabilityBinding {
   readonly readyTracker: ReadyStatusTracker
   readonly pi?: PiHarnessOptions
   readonly additionalSkillPaths?: readonly string[]
+  /**
+   * Skill-resource locator/catalog snapshot for the current reload
+   * generation, sourced from `ResolvedAgentRuntimeScope.getSkillResourceSnapshot`.
+   * Carries package-managed skill locators through the capability-projection
+   * path (Option A) rather than through the legacy path-shaped
+   * `additionalSkillPaths` hot-reload API, which #970 retires.
+   */
+  readonly skillResourceSnapshot?: AgentSkillResourceSnapshot
   readonly runContext: RunContext
+  /**
+   * Connectors/tools this Agent is actually granted, resolved through
+   * per-agent MCP grants (gh-1087). Undefined when no grant seam is
+   * configured on this projection; empty array is default-deny (declared
+   * refs exist but nothing was granted).
+   */
+  readonly mcpGrants?: readonly ResolvedMcpConnectorGrant[]
+  /** Stable-coded diagnostics for any declared `mcpServerRefs` entry that was dropped during resolution. */
+  readonly mcpGrantDiagnostics?: readonly McpGrantDiagnostic[]
+}
+
+/**
+ * User-facing "what can this agent do?" description. Authorized at the same
+ * per-agent bar as every sibling route, but served without materializing a
+ * runtime binding: everything here comes from the compiled fleet spec plus
+ * the MCP grant seam.
+ *
+ * Deliberately NARROW: only what needs the compiled spec or the grant seam.
+ * Identity (`label`) and `pluginIds` already come from the fleet list route,
+ * and duplicating them here forced the client to reconcile two shapes for the
+ * same fact.
+ *
+ * The composed `systemPrompt` used to ship here too. Its ONLY consumer was the
+ * Agent details "System prompt" section, which the owner removed as unhelpful:
+ * a wall of composed text nobody could act on. Serving a whole agent's
+ * instructions to every details open with no reader left is pure payload, so
+ * the field went with the section. `instructionFiles` is what survives — the
+ * authored sources, which the operator can actually open and edit.
+ */
+export interface AgentHostAgentDescription {
+  readonly agentTypeId: string
+  /** Preferred model id from the agent definition, when pinned. */
+  readonly model: string | null
+  /**
+   * Authored instruction sources behind this agent's instructions. The Host is the only
+   * component that knows these locations (seat and agentTypeId are unrelated
+   * fleet.yaml fields), so clients render what they are given rather than
+   * guessing a persona directory.
+   */
+  readonly instructionFiles: readonly AgentInstructionFileRef[]
+  /** MCP connectors this agent is actually granted (default-deny). */
+  readonly mcpServers: readonly { readonly id: string; readonly tools: readonly string[] }[]
 }
 
 export interface AgentHostRuntimeCapabilityProjection {
@@ -58,6 +129,10 @@ export interface AgentHostRuntimeCapabilityProjection {
     readonly agentTypeId: string
     readonly sessionId?: string
   }): Promise<AgentHostRuntimeCapabilityBinding>
+  describeAgent(input: {
+    readonly request: FastifyRequest
+    readonly agentTypeId: string
+  }): Promise<AgentHostAgentDescription>
   reload(input: {
     readonly request: FastifyRequest
     readonly agentTypeId: string
@@ -82,8 +157,9 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
     AgentHostDirectProjectionOptions,
     'authorizeAgentRequest' | 'defaultSessionId' | 'filterModels' | 'sessionChangesTracker'
   >
+  readonly mcpGrants?: AgentHostRuntimeCapabilityMcpGrantsOptions
 }): AgentHostRuntimeCapabilityProjection {
-  const { runtime, gateway, options } = input
+  const { runtime, gateway, options, mcpGrants } = input
   const authorized = new WeakMap<FastifyRequest, Promise<{
     scope: import('../../shared/index').AuthorizedAgentScope
     claim: import('../../shared/index').VerifiedAgentScopeClaim
@@ -100,12 +176,17 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
     }
     return result
   }
-  const resolve = async (request: FastifyRequest, agentTypeId: string, sessionId?: string) => {
+  /**
+   * The per-agent authorization decision, shared by every per-agent route.
+   * `runtime.resolveAgentRuntimeScope` invokes the host's
+   * `resolveAuthorizedAgentRuntimeScope` hook, which is the ONLY seam where a
+   * host can deny THIS subject access to THIS agentTypeId — workspace-scope
+   * authorization alone does not answer that question. Read-only projections
+   * stop here; routes that actually drive the harness continue into
+   * `resolveBinding`.
+   */
+  const authorizeAgentAccess = async (request: FastifyRequest, agentTypeId: string) => {
     const { scope, claim } = await authorize(request)
-    if (sessionId) {
-      const pinned = await gateway.resolveHostSessionBinding(scope, { agentTypeId, sessionId })
-      return { scope, claim: pinned.claim, binding: pinned.binding }
-    }
     const resolved = await runtime.resolveAgentRuntimeScope(
       agentTypeId,
       scope,
@@ -113,6 +194,15 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       'new-binding',
       request.id,
     )
+    return { scope, claim, resolved }
+  }
+  const resolve = async (request: FastifyRequest, agentTypeId: string, sessionId?: string) => {
+    if (sessionId) {
+      const { scope } = await authorize(request)
+      const pinned = await gateway.resolveHostSessionBinding(scope, { agentTypeId, sessionId })
+      return { scope, claim: pinned.claim, binding: pinned.binding }
+    }
+    const { scope, claim, resolved } = await authorizeAgentAccess(request, agentTypeId)
     const binding = await runtime.resolveBinding(agentTypeId, scope, claim, resolved)
     return { scope, claim, binding }
   }
@@ -129,7 +219,19 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
     },
     async resolveBinding({ request, agentTypeId, sessionId }) {
       const { claim, binding } = await resolve(request, agentTypeId, sessionId)
+      // Start the (host-implemented, effectively synchronous) skill-resource
+      // read and immediately read hot-reloadable pi resources in the same
+      // synchronous tick — no `await` sits between the two calls, so a
+      // concurrent reload cannot swap the host's registry generation in
+      // between them (Option A: one immutable snapshot per read). Awaiting
+      // afterwards only unwraps a promise that has already settled.
+      const skillResourceSnapshotPromise = binding.scope.getSkillResourceSnapshot?.({
+        scope: claim,
+        sessionId,
+        requestId: request.id,
+      })
       const hotResources = binding.scope.pi?.getHotReloadableResources?.()
+      const skillResourceSnapshot = await skillResourceSnapshotPromise
       const pi = hotResources
         ? {
             ...binding.scope.pi,
@@ -150,13 +252,33 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
       const user = (request as typeof request & {
         user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null
       }).user
+      let resolvedMcpGrants: readonly ResolvedMcpConnectorGrant[] | undefined
+      let mcpGrantDiagnostics: readonly McpGrantDiagnostic[] | undefined
+      if (mcpGrants) {
+        const refs = mcpGrants.getMcpServerRefs(agentTypeId) ?? []
+        const listed = refs.length > 0
+          ? await mcpGrants.store.listGrants(claim.workspaceScopeId)
+          : { grants: [], diagnostics: [] }
+        const resolved = resolveAgentMcpGrants({
+          workspaceId: claim.workspaceScopeId,
+          agentTypeId,
+          mcpServerRefs: refs,
+          grants: listed.grants,
+          catalog: mcpGrants.catalog,
+        })
+        resolvedMcpGrants = resolved.connectors
+        mcpGrantDiagnostics = [...listed.diagnostics, ...resolved.diagnostics]
+      }
       return {
         harness: binding.composition.harness,
         tools: binding.composition.tools,
+        mcpGrants: resolvedMcpGrants,
+        mcpGrantDiagnostics,
         workspace: binding.composition.runtimeBundle.workspace,
         readyTracker: binding.composition.readyTracker,
         pi,
         additionalSkillPaths: binding.environmentLease.provisioning?.skillPaths,
+        skillResourceSnapshot,
         runContext: {
           abortSignal: new AbortController().signal,
           workdir: binding.composition.runtimeBundle.workspace.root,
@@ -172,6 +294,42 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
             : {}),
           userEmailVerified: user?.emailVerified === true,
         },
+      }
+    },
+    async describeAgent({ request, agentTypeId }) {
+      // Authorize BEFORE looking the agent up, matching `resolve()` and every
+      // sibling route. Checking existence first turns an unauthorized request
+      // into an agent-existence oracle: unknown vs denied are distinguishable
+      // without any right to ask.
+      const { claim } = await authorizeAgentAccess(request, agentTypeId)
+      const spec = runtime.compiledById.get(agentTypeId)
+      if (!spec) {
+        throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
+      }
+      const legacy = 'legacyDefault' in spec
+      let mcpServers: AgentHostAgentDescription['mcpServers'] = []
+      if (mcpGrants) {
+        const refs = mcpGrants.getMcpServerRefs(agentTypeId) ?? []
+        if (refs.length > 0) {
+          const listed = await mcpGrants.store.listGrants(claim.workspaceScopeId)
+          const resolved = resolveAgentMcpGrants({
+            workspaceId: claim.workspaceScopeId,
+            agentTypeId,
+            mcpServerRefs: refs,
+            grants: listed.grants,
+            catalog: mcpGrants.catalog,
+          })
+          mcpServers = resolved.connectors.map((connector) => ({
+            id: connector.connectorId,
+            tools: connector.allowedTools,
+          }))
+        }
+      }
+      return {
+        agentTypeId,
+        model: legacy ? null : spec.model?.preferred ?? null,
+        instructionFiles: legacy ? [] : spec.instructionFiles ?? [],
+        mcpServers,
       }
     },
     async executeCommand({ request, agentTypeId, requestId, sessionId, name, args }) {
@@ -438,6 +596,7 @@ export function createAgentHostRuntimeCapabilityRoutes(
       ],
       getPiPackages: async (request) => (await resolve(request, agentId(request))).pi?.packages,
       getNoSkills: async (request) => (await resolve(request, agentId(request))).pi?.noSkills,
+      getSkillResourceSnapshot: async (request) => (await resolve(request, agentId(request))).skillResourceSnapshot,
     })
     await app.register(catalogRoutes, {
       path: '/api/v1/agents/:agentTypeId/tools',
@@ -479,6 +638,19 @@ export function createAgentHostRuntimeCapabilityRoutes(
       authorizeRequest: async (request) => { await resolve(request, agentId(request)) },
       getTracker: async (request) => (await resolve(request, agentId(request))).readyTracker,
       registerStreamClose: projection.registerSubscription,
+    })
+
+    app.get('/api/v1/agents/:agentTypeId/describe', async (request, reply) => {
+      const value = params(AgentParams, request, reply)
+      if (!value) return
+      try {
+        return reply.code(200).send(await projection.describeAgent({
+          request,
+          agentTypeId: value.agentTypeId,
+        }))
+      } catch (error) {
+        return sendError(reply, error)
+      }
     })
 
     app.get('/api/v1/agents/:agentTypeId/commands', async (request, reply) => {

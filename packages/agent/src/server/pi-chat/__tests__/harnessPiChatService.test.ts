@@ -1245,6 +1245,37 @@ describe('HarnessPiChatService', () => {
     ])
   })
 
+  it('keeps live state when the persisted transcript lags behind the live adapter', async () => {
+    // An active-reload hydration race (gh-1159): the run settles, the adapter
+    // holds the full transcript, but the persisted store has not caught up
+    // (or, like the scripted e2e harness, never persists transcripts). The
+    // lagging persisted snapshot would fence the durable seq while dropping
+    // the rendered turns, permanently hiding them from a hydrating client.
+    const adapter = createAdapter()
+    adapter.readSnapshot().isStreaming = false
+    adapter.readSnapshot().messages = [
+      { id: 'live-user', message: { role: 'user', content: [{ type: 'text', text: 'live prompt' }] } },
+    ]
+    const persistedStore: PersistedSessionStore = {
+      ...sessionStore,
+      loadEntries: vi.fn(async () => ({ id: 's1', messages: [] })),
+    }
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore: persistedStore,
+      workdir: '/workspace',
+    })
+    // Open the channel first so readState takes the previously-opened path.
+    const subscription = await service.subscribe(ctx, 's1', 0, () => {})
+    expect(subscription.type).toBe('ok')
+    if (subscription.type === 'ok') subscription.unsubscribe()
+
+    const state = await service.readState(ctx, 's1')
+
+    expect(state.status).toBe('idle')
+    expect(state.messages).toEqual([expect.objectContaining({ id: 'live-user' })])
+  })
+
   it('fences in-memory event replay behind an idle persisted snapshot cursor', async () => {
     const adapter = createAdapter()
     adapter.readSnapshot().isStreaming = false

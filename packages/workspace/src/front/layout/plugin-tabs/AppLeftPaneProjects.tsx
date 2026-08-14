@@ -8,6 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Skeleton,
 } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { AppSessionRow } from "./AppLeftPaneSessionRow"
@@ -80,9 +81,13 @@ export function ProjectOverview({
 
   return (
     <div className="space-y-0.5">
-      {projects.map((project) => (
+      {/* Every list on this surface tiebreaks its key with the row index: the
+          host supplies projects and their chats, and nothing upstream promises
+          the ids are unique. A duplicate id makes React reconcile two rows as
+          one, and the expanded/pinned state lands on the wrong project. */}
+      {projects.map((project, index) => (
         <ProjectRow
-          key={project.id}
+          key={`${project.id}\u0000${index}`}
           project={project}
           fallbackName={fallbackName}
           active={project.id === activeId}
@@ -158,7 +163,7 @@ function ProjectRow({
           switched projects). */}
       <div
         className={cn(
-          "group relative flex min-h-8 w-full items-center gap-2 rounded-md py-1 pl-2 pr-2 transition-colors",
+          "app-left-project-row group relative flex min-h-8 w-full items-center gap-2 rounded-md py-1 pl-2 pr-2 transition-colors",
           active
             // Background-only active state: the accent color is reserved for the
             // deepest selected item (the active session), so the parent project
@@ -193,10 +198,10 @@ function ProjectRow({
         {/* Right slot: session count at rest, swapped for actions on hover/focus
             (or while the menu is open). Reserves width so the name truncates and
             never sits under the icons. */}
-        <span className="relative flex h-6 w-[3.25rem] shrink-0 items-center justify-end">
+        <span className="app-left-project-status-slot relative flex h-6 w-[3.25rem] shrink-0 items-center justify-end">
           {blocked > 0 ? (
             <span className={cn(
-              "pointer-events-none absolute inset-0 flex items-center justify-end transition-opacity",
+              "app-left-project-status pointer-events-none absolute inset-0 flex items-center justify-end transition-opacity",
               hasActions && "group-hover:opacity-0 group-focus-within:opacity-0",
               menuOpen && "opacity-0",
             )}>
@@ -210,7 +215,12 @@ function ProjectRow({
           ) : null}
           {hasActions ? (
             <span className={cn(
-              "flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+              // The size and the touch behaviour of these two live in
+              // globals.css beside the session-row rules, under the same
+              // condition. Carrying a Tailwind `size-6` here instead is what
+              // left them 24px and invisible-but-clickable on touch, with the
+              // "N waiting" badge painted directly over their hit area.
+              "app-left-project-actions flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
               menuOpen && "opacity-100",
             )}>
               {onCreateSession ? (
@@ -238,7 +248,7 @@ function ProjectRow({
                       <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={2} />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" sideOffset={6} className="w-48 border-border/50 shadow-[0_12px_28px_-6px_rgba(0,0,0,0.55)]">
+                  <DropdownMenuContent data-boring-workspace-part="app-left-menu" align="end" sideOffset={6} className="w-48 border-border/50 shadow-[0_12px_28px_-6px_rgba(0,0,0,0.55)]">
                     <DropdownMenuItem onSelect={onTogglePinned} className="gap-2 text-[13px]">
                       {pinned ? <PinOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Pin className="h-3.5 w-3.5" aria-hidden="true" />}
                       {pinned ? "Unpin project" : "Pin project"}
@@ -274,12 +284,17 @@ function ProjectRow({
       {expanded ? (
         <div className="space-y-0.5 pl-6">
           {project.loadingSessions && sessions.length === 0 ? (
-            <div className="px-1 py-1.5 text-xs text-muted-foreground">Loading chats…</div>
+            <div className="space-y-1 px-1 py-1.5" role="status" aria-live="polite" aria-label={`Loading chats in ${name}`}>
+              <div className="space-y-1" aria-hidden="true">
+                <Skeleton className="h-6 w-full rounded-md" />
+                <Skeleton className="h-6 w-3/4 rounded-md" />
+              </div>
+            </div>
           ) : sessions.length === 0 ? (
             <div className="px-1 py-1.5 text-xs text-muted-foreground">No chats yet.</div>
           ) : (
-            sessions.map((session) => (
-              <div key={session.id}>
+            sessions.map((session, index) => (
+              <div key={`${session.id}\u0000${index}`}>
                 {renderProjectSession ? renderProjectSession(project, session) : (
                   <AppSessionRow
                     session={session}

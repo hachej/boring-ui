@@ -9,7 +9,25 @@
         "packageRoot": "packages/core",
         "testName": "Core mounts one direct Host table and enforces browser scope policy",
         "projection": "direct",
-        "applicableRouteIds": ["health", "fleet", "sessions", "attachments", "reload", "skills", "commands", "models", "system-prompt", "tool-catalog", "session-changes", "agent-readiness", "files", "tree-search", "git", "workspace-meta"],
+        "applicableRouteIds": [
+          "health",
+          "fleet",
+          "sessions",
+          "attachments",
+          "reload",
+          "skills",
+          "commands",
+          "models",
+          "agent-describe",
+          "system-prompt",
+          "tool-catalog",
+          "session-changes",
+          "agent-readiness",
+          "files",
+          "tree-search",
+          "git",
+          "workspace-meta"
+        ],
         "proofLevel": "shared-exact-composed-table"
       },
       {
@@ -19,7 +37,25 @@
         "packageRoot": "packages/workspace",
         "testName": "Workspace mounts the canonical direct Host projection once",
         "projection": "direct",
-        "applicableRouteIds": ["health", "app-readiness", "fleet", "sessions", "attachments", "reload", "skills", "commands", "models", "system-prompt", "tool-catalog", "session-changes", "agent-readiness", "files", "tree-search", "git"],
+        "applicableRouteIds": [
+          "health",
+          "app-readiness",
+          "fleet",
+          "sessions",
+          "attachments",
+          "reload",
+          "skills",
+          "commands",
+          "models",
+          "agent-describe",
+          "system-prompt",
+          "tool-catalog",
+          "session-changes",
+          "agent-readiness",
+          "files",
+          "tree-search",
+          "git"
+        ],
         "proofLevel": "shared-exact-composed-table"
       },
       {
@@ -29,7 +65,26 @@
         "packageRoot": "packages/cli",
         "testName": "CLI folder mode inherits Workspace's direct Host projection",
         "projection": "delegates-to-workspace",
-        "applicableRouteIds": ["health", "app-readiness", "fleet", "sessions", "attachments", "reload", "skills", "commands", "models", "system-prompt", "tool-catalog", "session-changes", "agent-readiness", "files", "tree-search", "git", "workspace-meta"],
+        "applicableRouteIds": [
+          "health",
+          "app-readiness",
+          "fleet",
+          "sessions",
+          "attachments",
+          "reload",
+          "skills",
+          "commands",
+          "models",
+          "agent-describe",
+          "system-prompt",
+          "tool-catalog",
+          "session-changes",
+          "agent-readiness",
+          "files",
+          "tree-search",
+          "git",
+          "workspace-meta"
+        ],
         "proofLevel": "shared-exact-composed-table"
       },
       {
@@ -39,7 +94,26 @@
         "packageRoot": "packages/cli",
         "testName": "CLI workspaces mode uses one Host and preserves transcript bytes",
         "projection": "direct",
-        "applicableRouteIds": ["health", "app-readiness", "fleet", "sessions", "attachments", "reload", "skills", "commands", "models", "system-prompt", "tool-catalog", "session-changes", "agent-readiness", "files", "tree-search", "git", "workspace-meta"],
+        "applicableRouteIds": [
+          "health",
+          "app-readiness",
+          "fleet",
+          "sessions",
+          "attachments",
+          "reload",
+          "skills",
+          "commands",
+          "models",
+          "agent-describe",
+          "system-prompt",
+          "tool-catalog",
+          "session-changes",
+          "agent-readiness",
+          "files",
+          "tree-search",
+          "git",
+          "workspace-meta"
+        ],
         "proofLevel": "shared-exact-composed-table"
       },
       {
@@ -49,7 +123,25 @@
         "packageRoot": "apps/agent-playground",
         "testName": "playground delegates to one canonical Host and trusted scope",
         "projection": "direct",
-        "applicableRouteIds": ["health", "app-readiness", "fleet", "sessions", "attachments", "reload", "skills", "commands", "models", "system-prompt", "tool-catalog", "session-changes", "agent-readiness", "files", "tree-search", "git"],
+        "applicableRouteIds": [
+          "health",
+          "app-readiness",
+          "fleet",
+          "sessions",
+          "attachments",
+          "reload",
+          "skills",
+          "commands",
+          "models",
+          "agent-describe",
+          "system-prompt",
+          "tool-catalog",
+          "session-changes",
+          "agent-readiness",
+          "files",
+          "tree-search",
+          "git"
+        ],
         "proofLevel": "shared-exact-composed-table"
       },
       {
@@ -59,7 +151,25 @@
         "packageRoot": "packages/agent",
         "testName": "standalone delegates its trusted scope to the canonical Host table",
         "projection": "direct",
-        "applicableRouteIds": ["health", "app-readiness", "fleet", "sessions", "attachments", "reload", "skills", "commands", "models", "system-prompt", "tool-catalog", "session-changes", "agent-readiness", "files", "tree-search", "git"],
+        "applicableRouteIds": [
+          "health",
+          "app-readiness",
+          "fleet",
+          "sessions",
+          "attachments",
+          "reload",
+          "skills",
+          "commands",
+          "models",
+          "agent-describe",
+          "system-prompt",
+          "tool-catalog",
+          "session-changes",
+          "agent-readiness",
+          "files",
+          "tree-search",
+          "git"
+        ],
         "proofLevel": "shared-exact-composed-table"
       },
       {
@@ -69,7 +179,20 @@
         "packageRoot": "packages/agent",
         "testName": "direct Host mounts the exact table once behind authorization",
         "projection": "direct",
-        "applicableRouteIds": ["fleet", "sessions", "attachments", "reload", "skills", "commands", "models", "system-prompt", "tool-catalog", "session-changes", "agent-readiness"],
+        "applicableRouteIds": [
+          "fleet",
+          "sessions",
+          "attachments",
+          "reload",
+          "skills",
+          "commands",
+          "models",
+          "agent-describe",
+          "system-prompt",
+          "tool-catalog",
+          "session-changes",
+          "agent-readiness"
+        ],
         "proofLevel": "exact-composed-table"
       }
     ],
@@ -168,14 +291,23 @@
       "id": "app-readiness",
       "owner": "app-core",
       "auth": "public",
-      "consumers": ["workspace/playground deployment readiness probes"],
-      "proof": ["per-root composed route table", "public readiness tests"],
+      "consumers": [
+        "workspace/playground deployment readiness probes"
+      ],
+      "proof": [
+        "per-root composed route table",
+        "public readiness tests"
+      ],
       "contract": {
         "request": "Empty readiness probe request.",
         "response": "Preserve the app composition's readiness response contract."
       },
-      "current": ["GET /ready"],
-      "final": ["GET /ready"],
+      "current": [
+        "GET /ready"
+      ],
+      "final": [
+        "GET /ready"
+      ],
       "disposition": "retain",
       "slice": 3
     },
@@ -217,7 +349,8 @@
         "plugins/github-pr-tracker",
         "plugins/ccusage-dashboard",
         "E2E/smoke fixtures",
-        "Workspace session activity stream"
+        "Workspace session activity stream",
+        "plugins/ask-user Inbox session title enrichment"
       ],
       "proof": [
         "Gateway conformance",
@@ -225,7 +358,8 @@
         "front URL tests",
         "full-app/playground E2E",
         "duplicate queue-clear alias absent after contraction",
-        "workspace-scoped activity SSE snapshot/transition tests"
+        "workspace-scoped activity SSE snapshot/transition tests",
+        "authorized batch session-summary tests"
       ],
       "contract": {
         "request": "Preserve current validated request contract for sessions except explicitly documented addressed agent/session parameters and required requestId fields.",
@@ -257,6 +391,7 @@
       ],
       "final": [
         "GET /api/v1/agents/:agentTypeId/sessions",
+        "POST /api/v1/agents/:agentTypeId/sessions/summaries",
         "POST /api/v1/agents/:agentTypeId/sessions",
         "DELETE /api/v1/agents/:agentTypeId/sessions/:sessionId",
         "GET /api/v1/agents/:agentTypeId/sessions/:sessionId/state",
@@ -453,6 +588,30 @@
         "GET /api/v1/agents/:agentTypeId/tools"
       ],
       "disposition": "replace",
+      "slice": 2
+    },
+    {
+      "id": "agent-describe",
+      "owner": "agent-host",
+      "auth": "authorized-scope",
+      "consumers": [
+        "Workspace AgentDetailsOverlay"
+      ],
+      "proof": [
+        "agent describe route tests",
+        "AgentDetailsOverlay front tests"
+      ],
+      "contract": {
+        "request": "Addressed agentTypeId path parameter; empty body.",
+        "response": "200 {agentTypeId,model,instructionFiles,mcpServers}; label and pluginIds come from the fleet list route, not here, and the composed systemPrompt left the payload with the Agent details section that was its only reader. Canonical Gateway error envelope for unknown agent or denied scope; denied scope is reported before agent existence."
+      },
+      "current": [
+        "GET /api/v1/agents/:agentTypeId/describe"
+      ],
+      "final": [
+        "GET /api/v1/agents/:agentTypeId/describe"
+      ],
+      "disposition": "retain",
       "slice": 2
     },
     {

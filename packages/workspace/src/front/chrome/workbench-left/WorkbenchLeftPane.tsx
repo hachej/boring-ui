@@ -8,9 +8,10 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react"
-import { PanelLeftClose, Search, X } from "lucide-react"
-import { IconButton, Input } from "@hachej/boring-ui-kit"
+import { Layers, PanelLeftClose, Search, X } from "lucide-react"
+import { IconButton, Input, Skeleton } from "@hachej/boring-ui-kit"
 import { ControlTooltip } from "../../components/ControlTooltip"
 import { cn } from "../../lib/utils"
 import { PaneCollapseButton } from "../../layout/paneCollapseButton"
@@ -142,14 +143,14 @@ export function WorkbenchLeftPane({
     <nav
       data-boring-workspace-part="workbench-activity-rail"
       data-boring-side={railSide}
-      className="flex w-11 shrink-0 flex-col items-center gap-1 bg-muted/35 px-1.5 py-2"
+      className="flex w-11 shrink-0 flex-col items-center gap-1 bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)] px-1.5 py-2"
       aria-label="Workspace categories"
     >
       {railSide === "left" ? (
         <>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center" data-boring-workspace-part="workbench-host-control-slot">
+          <div className="workbench-rail-slot flex h-8 w-8 shrink-0 items-center justify-center" data-boring-workspace-part="workbench-host-control-slot">
             {onCollapse ? (
-              <PaneCollapseButton label="Hide workspace menu" side={tooltipSide} onClick={onCollapse}>
+              <PaneCollapseButton className="workbench-rail-action" label="Hide workspace menu" side={tooltipSide} onClick={onCollapse}>
                 <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
               </PaneCollapseButton>
             ) : null}
@@ -172,7 +173,7 @@ export function WorkbenchLeftPane({
                 void entry.reloadAgentPlugins()
               }}
               className={cn(
-                "relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                "workbench-rail-action relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
               )}
               // Inline (not arbitrary Tailwind classes) so it applies even when
               // the host's prebuilt CSS doesn't include these classes. Only an
@@ -205,10 +206,12 @@ export function WorkbenchLeftPane({
 
       <div data-boring-workspace-part="workbench-source-pane" className="flex h-full min-w-0 flex-1 flex-col bg-muted/35">
         {!activeOwnsSearch && (
-          <div className="flex h-11 items-center gap-1 border-b border-border/60 bg-muted/35 px-2.5">
+          <div className="flex h-11 items-center gap-0.5 border-b border-border/60 bg-muted/35 px-3.5">
             <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <span className="shrink-0 text-foreground/80">{activeEntry?.icon}</span>
-              <div className="truncate text-[14px] font-medium tracking-tight text-foreground">{activeEntry?.title ?? "Sources"}</div>
+              <span aria-hidden="true" className="shrink-0 text-foreground/70">{activeEntry?.icon}</span>
+              <div className="truncate text-[12px] font-medium tracking-tight text-foreground/70" title={activeEntry?.title ?? "Sources"}>
+                {activeEntry?.title ?? "Sources"}
+              </div>
             </div>
             {showChromeSearch && (
               <ControlTooltip label="Search" side="bottom">
@@ -233,7 +236,7 @@ export function WorkbenchLeftPane({
         )}
 
         {!activeOwnsSearch && showChromeSearch && searchOpen && (
-          <div className="flex items-center gap-1 border-b border-border/60 px-2 py-1.5">
+          <div className="flex items-center gap-1.5 border-b border-border/60 px-3.5 py-1.5">
             <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <Input
               ref={searchInputRef}
@@ -241,8 +244,9 @@ export function WorkbenchLeftPane({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onSearchKeyDown}
-              placeholder={`Search ${(activeEntry?.title ?? "sources").toLowerCase()}...`}
-              className="h-7 flex-1 border-0 bg-transparent px-0 py-0 text-xs shadow-none focus-visible:ring-0 dark:bg-transparent"
+              placeholder={`Search ${(activeEntry?.title ?? "sources").toLowerCase()}…`}
+              aria-label={`Search ${(activeEntry?.title ?? "sources").toLowerCase()}`}
+              className="h-7 min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-[12px] shadow-none focus-visible:ring-0 dark:bg-transparent"
             />
             {query && (
               <IconButton
@@ -272,11 +276,66 @@ export function WorkbenchLeftPane({
   )
 }
 
+/**
+ * The three quiet states this pane can show — page launched, no category
+ * registered, category loading — share one calm centred layout so switching
+ * between them never moves the eye. Only the copy and the icon change.
+ */
+function LeftPaneMessage({
+  icon,
+  title,
+  detail,
+  dataPart,
+}: {
+  icon?: ReactNode
+  title: string
+  detail: string
+  dataPart: string
+}) {
+  return (
+    <div
+      data-boring-workspace-part={dataPart}
+      className="flex h-full flex-col items-center justify-center px-6 text-center"
+    >
+      {icon}
+      <div className="text-[13px] font-medium text-foreground/80">{title}</div>
+      <p className="mt-1 max-w-[15rem] text-[12px] leading-5 text-muted-foreground">{detail}</p>
+    </div>
+  )
+}
+
 function WorkspacePageLauncher({ title }: { title: string }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
-      <div className="mb-1 text-sm font-medium text-foreground">{title}</div>
-      <div>Opened in the workspace.</div>
+    <LeftPaneMessage
+      dataPart="workbench-source-page-launcher"
+      title={title}
+      detail="Opened in the workspace."
+    />
+  )
+}
+
+/**
+ * Loading is a skeleton in the shape of the tree that is about to arrive, not
+ * a line of text — the pane keeps its weight while the category resolves.
+ */
+function LeftPaneLoadingState() {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label="Loading workspace category"
+      data-boring-workspace-part="workbench-source-loading"
+      className="flex h-full flex-col gap-2 px-3.5 py-3"
+    >
+      {[0, 1, 2, 3, 4, 5].map((row) => (
+        <div key={row} aria-hidden="true" className="flex items-center gap-2" style={{ paddingLeft: row % 3 === 0 ? 0 : 14 }}>
+          <Skeleton className="size-3.5 shrink-0 rounded-sm motion-reduce:animate-none" />
+          <Skeleton
+            className="h-3 rounded-sm motion-reduce:animate-none"
+            style={{ width: `${[68, 52, 76, 44, 60, 38][row]}%` }}
+          />
+        </div>
+      ))}
     </div>
   )
 }
@@ -287,9 +346,12 @@ function LeftTabPanelHost({ source, params, onOpenPanel }: { source?: WorkspaceS
 
   if (!source || !Inner) {
     return (
-      <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
-        No workspace category registered.
-      </div>
+      <LeftPaneMessage
+        dataPart="workbench-source-empty"
+        icon={<Layers aria-hidden="true" className="mb-3 size-8 text-muted-foreground/70" strokeWidth={1.75} />}
+        title="No workspace category registered."
+        detail="Install or enable a plugin that contributes a workspace source to fill this pane."
+      />
     )
   }
   return (
@@ -298,13 +360,7 @@ function LeftTabPanelHost({ source, params, onOpenPanel }: { source?: WorkspaceS
       contributionKind="workspace-source"
       contributionId={source.id}
     >
-      <Suspense
-        fallback={
-          <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
-            Loading workspace category...
-          </div>
-        }
-      >
+      <Suspense fallback={<LeftPaneLoadingState />}>
         {createElement(Inner, {
           params,
           openPanel: onOpenPanel,
