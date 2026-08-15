@@ -37,6 +37,7 @@ import {
   type VerifiedAgentScopeClaim,
   type WorkspaceAgentDispatcherResolver,
 } from '@hachej/boring-agent/server'
+import { AgentGatewayErrorCode } from '@hachej/boring-agent/shared'
 import type {
   AgentTool,
   SandboxHandleStore,
@@ -110,9 +111,20 @@ import {
   TRUSTED_SIGNUP_HOSTNAME_HEADER,
   type ValidatedSignupAgentDefaults,
 } from '../../server/signupAgentDefaults.js'
-import { resolveWorkspaceDefaultAgentTypeId } from '../../server/defaultAgentType.js'
+import {
+  classifyWorkspaceDefaultAgentTypeCohorts,
+  resolveApplicationDefaultAgentTypeId,
+  resolveWorkspaceDefaultAgentTypeId,
+} from '../../server/defaultAgentType.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
+
+const DEFAULT_AGENT_EXECUTION_EFFECTS = new Set([
+  'session.create',
+  'session.prompt',
+  'session.followup',
+  'session.command.execute',
+])
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -336,6 +348,7 @@ function createCoreAgentScopeAuthority(input: {
   readonly userStore: UserStore
 }) {
   const records = new WeakMap<AuthorizedAgentScope, CoreAgentScopeRecord>()
+  const workspaceIdsByClaim = new WeakMap<VerifiedAgentScopeClaim, string>()
 
   const issueScope = ({
     claim,
@@ -357,6 +370,7 @@ function createCoreAgentScopeAuthority(input: {
       environment,
       agentRuntime,
     })
+    workspaceIdsByClaim.set(verifiedClaim, claim.workspaceScopeId)
     return scope
   }
 
@@ -371,6 +385,11 @@ function createCoreAgentScopeAuthority(input: {
       const record = records.get(scope)
       if (!record) throw new Error('agent scope was not issued by Core')
       return record.agentRuntime
+    },
+    resolveWorkspaceId(claim: VerifiedAgentScopeClaim): string {
+      const workspaceId = workspaceIdsByClaim.get(claim)
+      if (!workspaceId) throw new Error('agent scope claim was not issued by Core')
+      return workspaceId
     },
     verifier: {
       async verify(scope: AuthorizedAgentScope): Promise<VerifiedAgentScopeClaim> {
@@ -1081,6 +1100,12 @@ export async function createCoreWorkspaceAgentServer(
     ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
   registerTelemetryHooks(app, telemetry)
 
+  const availableAgentTypeIds = agents.map((agent) => agent.agentTypeId)
+  const applicationDefaultAgentTypeId = resolveApplicationDefaultAgentTypeId({
+    bootDefaultAgentTypeId: options.defaultAgentTypeId,
+    availableAgentTypeIds,
+  })
+
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
 
   if (serveFrontend && appRoot) {
@@ -1576,6 +1601,48 @@ export async function createCoreWorkspaceAgentServer(
     })
   }
 
+  const assertWorkspaceDefaultAgentExecutionAvailable = async (workspaceId: string): Promise<void> => {
+    const workspace = await workspaceStore.get(workspaceId)
+    if (!workspace || workspace.appId !== config.appId) throw httpError('workspace access denied', 403)
+    resolveWorkspaceDefaultAgentTypeId({
+      persistedDefaultAgentTypeId: workspace.defaultAgentTypeId,
+      bootDefaultAgentTypeId: applicationDefaultAgentTypeId,
+      availableAgentTypeIds,
+      onUnknownPersistedSeat: (diagnostic) => {
+        app.log.warn(
+          { workspaceId, ...diagnostic },
+          'workspace default Agent is not in the validated fleet; execution denied',
+        )
+      },
+    })
+  }
+  const coreEffectAdmission: AgentEffectAdmission = {
+    async admit(input) {
+      if (DEFAULT_AGENT_EXECUTION_EFFECTS.has(input.operation)) {
+        const workspaceId = scopeAuthority.resolveWorkspaceId(input.scope)
+        try {
+          await assertWorkspaceDefaultAgentExecutionAvailable(workspaceId)
+        } catch (error) {
+          if (error instanceof HttpError && error.code === ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT) {
+            return {
+              type: 'rejected',
+              error: {
+                code: AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN,
+                message: 'Workspace default Agent is unavailable',
+                details: { code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT },
+                target: input.target,
+                requestId: input.key.requestId,
+              },
+            }
+          }
+          throw error
+        }
+      }
+      if (options.effectAdmission) return await options.effectAdmission.admit(input)
+      return { type: 'accepted', admissionReceipt: `core-trusted-local:${input.key.requestId}` }
+    },
+  }
+
   const agentHost = await createAgentHost({
     agents,
     fleetCompiler: createValidatingAgentFleetCompiler({
@@ -1595,14 +1662,7 @@ export async function createCoreWorkspaceAgentServer(
     telemetry,
     metering: options.metering,
     harnessFactory: options.harnessFactory,
-    effectAdmission: options.effectAdmission ?? {
-      async admit({ key }) {
-        return {
-          type: 'accepted',
-          admissionReceipt: `core-trusted-local:${key.requestId}`,
-        }
-      },
-    },
+    effectAdmission: coreEffectAdmission,
     async resolveAuthorizedEnvironmentScope({ authorizedScope }) {
       return scopeAuthority.resolveEnvironment(authorizedScope)
     },
@@ -1610,6 +1670,32 @@ export async function createCoreWorkspaceAgentServer(
       return scopeAuthority.resolveAgentRuntime(authorizedScope)
     },
   })
+
+  // Decision 28 migration phase: createAgentHost has now compiled and
+  // validated the static fleet. Inventory every persisted cohort, then
+  // compare-and-set only legacy NULL rows before any route can serve.
+  // Re-running this startup phase is idempotent; concurrent non-NULL writers
+  // always win, and hostname never enters either store operation.
+  const cohortsBefore = classifyWorkspaceDefaultAgentTypeCohorts(
+    await workspaceStore.inventoryDefaultAgentTypeIds(config.appId),
+    availableAgentTypeIds,
+  )
+  const migratedDefaultAgentTypeIdCount = await workspaceStore.compareAndSetNullDefaultAgentTypeId(
+    config.appId,
+    applicationDefaultAgentTypeId,
+  )
+  const cohortsAfter = classifyWorkspaceDefaultAgentTypeCohorts(
+    await workspaceStore.inventoryDefaultAgentTypeIds(config.appId),
+    availableAgentTypeIds,
+  )
+  app.log.info({
+    event: 'workspace.default_agent_type_id.backfill',
+    appId: config.appId,
+    applicationDefaultAgentTypeId,
+    before: cohortsBefore,
+    migratedCount: migratedDefaultAgentTypeIdCount,
+    after: cohortsAfter,
+  }, 'workspace default Agent legacy cohorts reconciled')
 
   let hostMounted = false
   try {
@@ -1624,9 +1710,9 @@ export async function createCoreWorkspaceAgentServer(
           workspaceId,
           workspaceRoot: workspaceRootForRequest,
           projectName: workspace?.name ?? 'Workspace',
-          // Decision 28: prefer the workspace's persisted default seat when it
-          // names a validated fleet member; fail closed to the boot option,
-          // then the legacy default, with a stable diagnostic code.
+          // Decision 28: a configured persisted default is authoritative.
+          // Unknown values fail stably and are never reinterpreted as a boot
+          // or fleet default.
           defaultAgentTypeId: resolveWorkspaceDefaultAgentTypeId({
             persistedDefaultAgentTypeId: workspace?.defaultAgentTypeId,
             bootDefaultAgentTypeId: options.defaultAgentTypeId,
@@ -1634,7 +1720,7 @@ export async function createCoreWorkspaceAgentServer(
             onUnknownPersistedSeat: (diagnostic) => {
               request.log.warn(
                 { workspaceId, ...diagnostic },
-                'workspace default agent seat is not in the validated fleet; falling back',
+                'workspace default Agent is not in the validated fleet; meta resolution denied',
               )
             },
           }),
@@ -1650,6 +1736,9 @@ export async function createCoreWorkspaceAgentServer(
           ? (error as { statusCode: number }).statusCode
           : 500
         const message = error instanceof Error ? error.message : 'workspace meta failed'
+        if (error instanceof HttpError) {
+          return reply.code(statusCode).send({ error: { code: error.code, message } })
+        }
         return reply.code(statusCode).send({ error: message })
       }
     })
@@ -1670,6 +1759,7 @@ export async function createCoreWorkspaceAgentServer(
     const directDispatcherResolver: WorkspaceAgentDispatcherResolver = {
       async runWithWorkspaceAgent(input, run) {
         const authorizedScope = await authorizeAgentRequest(input.request, input.context)
+        await assertWorkspaceDefaultAgentExecutionAvailable(input.context.workspaceId)
         await agentHost.runWithWorkspaceAgent({ ...input, authorizedScope }, run)
       },
       async resolve() {

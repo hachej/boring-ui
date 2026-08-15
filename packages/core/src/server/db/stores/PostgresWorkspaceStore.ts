@@ -2,7 +2,11 @@ import { createHash, randomBytes } from 'node:crypto'
 import { and, eq, isNull, sql, desc } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
-import type { WorkspaceStore, WorkspaceStoreCreateOptions } from '../../app/types.js'
+import type {
+  WorkspaceDefaultAgentTypeInventoryItem,
+  WorkspaceStore,
+  WorkspaceStoreCreateOptions,
+} from '../../app/types.js'
 import type {
   MemberRole,
   User,
@@ -225,6 +229,35 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
       .orderBy(desc(workspaces.isDefault), desc(workspaces.createdAt))
 
     return rows.map((r) => toWorkspace(r.ws))
+  }
+
+  async inventoryDefaultAgentTypeIds(appId: string): Promise<WorkspaceDefaultAgentTypeInventoryItem[]> {
+    const rows = await this.db
+      .select({
+        defaultAgentTypeId: workspaces.defaultAgentTypeId,
+        count: sql<number>`count(*)::integer`,
+      })
+      .from(workspaces)
+      .where(eq(workspaces.appId, appId))
+      .groupBy(workspaces.defaultAgentTypeId)
+
+    return rows
+      .map((row) => ({
+        defaultAgentTypeId: row.defaultAgentTypeId,
+        count: Number(row.count),
+      }))
+      .sort((left, right) => (left.defaultAgentTypeId ?? '').localeCompare(right.defaultAgentTypeId ?? ''))
+  }
+
+  async compareAndSetNullDefaultAgentTypeId(appId: string, value: string): Promise<number> {
+    const defaultAgentTypeId = parseTrustedDefaultAgentTypeId(value)
+    if (defaultAgentTypeId === null) return 0
+    const rows = await this.db
+      .update(workspaces)
+      .set({ defaultAgentTypeId })
+      .where(and(eq(workspaces.appId, appId), isNull(workspaces.defaultAgentTypeId)))
+      .returning({ id: workspaces.id })
+    return rows.length
   }
 
   async get(id: string): Promise<Workspace | null> {
