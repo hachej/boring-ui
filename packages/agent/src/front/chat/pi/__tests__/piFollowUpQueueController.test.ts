@@ -135,7 +135,7 @@ describe('PiFollowUpQueueController', () => {
     ])
   })
 
-  it('clears each selected queue item before restoring it to the composer in order', async () => {
+  it('restores the complete queue snapshot before clearing selected items in order', async () => {
     const ordered: string[] = []
     const session = new FakeQueueSession('streaming', [
       { id: 'q1', kind: 'followup', displayText: 'first queued', clientSeq: 1 },
@@ -157,14 +157,14 @@ describe('PiFollowUpQueueController', () => {
     })
 
     expect(ordered).toEqual([
+      'draft:first queued\n\nsecond queued\n\nexisting draft',
       'clear:1',
       'clear:2',
-      'draft:first queued\n\nsecond queued\n\nexisting draft',
     ])
     expect(session.state.queue.followUps).toEqual([])
   })
 
-  it('restores only successfully cleared items when a later selected clear fails', async () => {
+  it('keeps the complete recovered snapshot when a later selected clear fails', async () => {
     const warnings: string[] = []
     const drafts: string[] = []
     const session = new FakeQueueSession('streaming', [
@@ -184,16 +184,16 @@ describe('PiFollowUpQueueController', () => {
 
     await expect(controller.editQueued()).resolves.toEqual({
       type: 'clear-failed',
-      draft: 'restored',
+      draft: 'restored\n\nstill queued',
       error: failure,
-      message: 'Cleared messages were copied into the composer, but some queued messages remain. Retry Edit queued.',
+      message: 'Queued messages were copied into the composer, but some may remain queued. Retry Edit queued.',
     })
 
-    expect(drafts).toEqual(['restored'])
+    expect(drafts).toEqual(['restored\n\nstill queued'])
     expect(session.state.queue.followUps).toEqual([
       { id: 'q2', kind: 'followup', displayText: 'still queued', clientSeq: 2 },
     ])
-    expect(warnings).toEqual(['Cleared messages were copied into the composer, but some queued messages remain. Retry Edit queued.'])
+    expect(warnings).toEqual(['Queued messages were copied into the composer, but some may remain queued. Retry Edit queued.'])
   })
 
   it('coalesces concurrent multi-item edits and preserves canonical order', async () => {

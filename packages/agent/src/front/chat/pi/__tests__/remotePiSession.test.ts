@@ -917,7 +917,7 @@ describe('RemotePiSession', () => {
       attempts += 1
       if (attempts === 1) throw new TypeError('connection reset after commit')
       if (attempts <= 3) {
-        return jsonResponse({ error: { code: 'AGENT_REQUEST_IN_PROGRESS', message: 'still clearing' } }, 409)
+        return jsonResponse({ error: { code: AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS, message: 'still clearing' } }, 409)
       }
       return jsonResponse({ accepted: true, cursor: 3, cleared: 1 })
     }) as unknown as MockFetch

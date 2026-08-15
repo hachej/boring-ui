@@ -124,33 +124,35 @@ export class PiFollowUpQueueController {
       return { type: 'empty', message }
     }
 
-    const clearedFollowUps: QueuedUserMessage[] = []
+    const selected = followUps.map((followUp) => ({ followUp, selector: queueClearSelector(followUp) }))
+    const unselectable = selected.find((item) => !item.selector)
+    if (unselectable) {
+      const error = new Error('Queued message lacks a stable clear selector.')
+      const draft = this.options.getDraft?.() ?? ''
+      const message = 'Queued messages were not cleared, so the composer was left unchanged. Retry Edit queued.'
+      this.options.onWarning?.(message)
+      return { type: 'clear-failed', draft, error, message }
+    }
+
+    // Recover the complete snapshot synchronously before the first destructive
+    // request. This keeps typed content in the originating composer even if the
+    // user switches sessions or a clear commits but its receipt is lost.
+    const currentDraft = this.options.getDraft?.() ?? ''
+    const draft = buildEditedQueuedDraft(followUps, currentDraft)
+    if (draft !== currentDraft) this.options.onDraftChange?.(draft)
+
     let clearError: unknown
-    for (const followUp of followUps) {
-      const selector = queueClearSelector(followUp)
-      if (!selector) {
-        clearError = new Error('Queued message lacks a stable clear selector.')
-        break
-      }
+    for (const item of selected) {
       try {
-        const receipt = await this.session.clearQueue(selector)
-        if (receipt.cleared > 0) clearedFollowUps.push(followUp)
+        await this.session.clearQueue(item.selector!)
       } catch (error) {
         clearError = error
         break
       }
     }
-
-    const currentDraft = this.options.getDraft?.() ?? ''
-    const draft = clearedFollowUps.length > 0
-      ? buildEditedQueuedDraft(clearedFollowUps, currentDraft)
-      : currentDraft
-    if (draft !== currentDraft) this.options.onDraftChange?.(draft)
     if (!clearError) return { type: 'cleared', draft }
 
-    const message = clearedFollowUps.length > 0
-      ? 'Cleared messages were copied into the composer, but some queued messages remain. Retry Edit queued.'
-      : 'Queued messages were not cleared, so the composer was left unchanged. Retry Edit queued.'
+    const message = 'Queued messages were copied into the composer, but some may remain queued. Retry Edit queued.'
     this.options.onWarning?.(message)
     return { type: 'clear-failed', draft, error: clearError, message }
   }
