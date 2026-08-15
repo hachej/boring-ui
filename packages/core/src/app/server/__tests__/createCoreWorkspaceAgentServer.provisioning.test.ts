@@ -223,6 +223,40 @@ test('core backfills through explicit CAS after fleet validation and before rout
   } finally { await app.close() }
 }, 60_000)
 
+test.each(['before-inventory', 'cas', 'after-inventory', 'remaining-null'] as const)(
+  'closes AgentHost when default migration fails at %s',
+  async (stage) => {
+    mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+      runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
+      preservedUiStateKeys: [], routeContributions: [],
+    })
+    if (stage === 'before-inventory') {
+      mocks.inventoryDefaultAgentTypeIds.mockRejectedValueOnce(new Error('inventory unavailable'))
+    } else if (stage === 'cas') {
+      mocks.inventoryDefaultAgentTypeIds.mockResolvedValueOnce([])
+      mocks.compareAndSetNullDefaultAgentTypeId.mockRejectedValueOnce(new Error('CAS unavailable'))
+    } else if (stage === 'after-inventory') {
+      mocks.inventoryDefaultAgentTypeIds
+        .mockResolvedValueOnce([])
+        .mockRejectedValueOnce(new Error('post-inventory unavailable'))
+    } else {
+      mocks.inventoryDefaultAgentTypeIds
+        .mockResolvedValueOnce([{ defaultAgentTypeId: null, count: 1 }])
+        .mockResolvedValueOnce([{ defaultAgentTypeId: null, count: 1 }])
+    }
+    const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+    await expect(createCoreWorkspaceAgentServer({
+      config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+      workspaceRoot: '/tmp/full-app-workspaces', defaultAgentTypeId: 'default', serveFrontend: false,
+    })).rejects.toThrow(stage === 'remaining-null'
+      ? 'Workspace default Agent legacy reconciliation did not converge'
+      : /unavailable/)
+    expect(mocks.hostClose).toHaveBeenCalledOnce()
+    expect(mocks.hostRegisterDirectRoutes).not.toHaveBeenCalled()
+  },
+  30_000,
+)
+
 test('unknown persisted default denies execution but preserves session and history reads', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },

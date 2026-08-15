@@ -1671,34 +1671,41 @@ export async function createCoreWorkspaceAgentServer(
     },
   })
 
-  // Decision 28 migration phase: createAgentHost has now compiled and
-  // validated the static fleet. Inventory every persisted cohort, then
-  // compare-and-set only legacy NULL rows before any route can serve.
-  // Re-running this startup phase is idempotent; concurrent non-NULL writers
-  // always win, and hostname never enters either store operation.
-  const cohortsBefore = classifyWorkspaceDefaultAgentTypeCohorts(
-    await workspaceStore.inventoryDefaultAgentTypeIds(config.appId),
-    availableAgentTypeIds,
-  )
-  const migratedDefaultAgentTypeIdCount = await workspaceStore.compareAndSetNullDefaultAgentTypeId(
-    config.appId,
-    applicationDefaultAgentTypeId,
-  )
-  const cohortsAfter = classifyWorkspaceDefaultAgentTypeCohorts(
-    await workspaceStore.inventoryDefaultAgentTypeIds(config.appId),
-    availableAgentTypeIds,
-  )
-  app.log.info({
-    event: 'workspace.default_agent_type_id.backfill',
-    appId: config.appId,
-    applicationDefaultAgentTypeId,
-    before: cohortsBefore,
-    migratedCount: migratedDefaultAgentTypeIdCount,
-    after: cohortsAfter,
-  }, 'workspace default Agent legacy cohorts reconciled')
-
   let hostMounted = false
   try {
+    // Decision 28 migration phase: createAgentHost has now compiled and
+    // validated the static fleet. Inventory every persisted cohort, then
+    // compare-and-set only legacy NULL rows before any route can serve.
+    // Re-running this startup phase is idempotent; concurrent non-NULL writers
+    // always win, and hostname never enters either store operation.
+    const cohortsBefore = classifyWorkspaceDefaultAgentTypeCohorts(
+      await workspaceStore.inventoryDefaultAgentTypeIds(config.appId),
+      availableAgentTypeIds,
+    )
+    const migratedDefaultAgentTypeIdCount = await workspaceStore.compareAndSetNullDefaultAgentTypeId(
+      config.appId,
+      applicationDefaultAgentTypeId,
+    )
+    const cohortsAfter = classifyWorkspaceDefaultAgentTypeCohorts(
+      await workspaceStore.inventoryDefaultAgentTypeIds(config.appId),
+      availableAgentTypeIds,
+    )
+    if (cohortsAfter.nullCount > 0) {
+      throw new HttpError({
+        status: 500,
+        code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+        message: 'Workspace default Agent legacy reconciliation did not converge',
+      })
+    }
+    app.log.info({
+      event: 'workspace.default_agent_type_id.backfill',
+      appId: config.appId,
+      applicationDefaultAgentTypeId,
+      before: cohortsBefore,
+      migratedCount: migratedDefaultAgentTypeIdCount,
+      after: cohortsAfter,
+    }, 'workspace default Agent legacy cohorts reconciled')
+
     app.get('/api/v1/workspace/meta', async (request, reply) => {
       try {
         const workspaceId = await resolveWorkspaceId(request)
@@ -1797,8 +1804,8 @@ export async function createCoreWorkspaceAgentServer(
       await registerFrontendFallback(app, appRoot, telemetry, options.frontendRootHandler)
     }
   } catch (error) {
-    if (hostMounted) await app.close().catch(() => undefined)
-    else await agentHost.host.close().catch(() => undefined)
+    if (!hostMounted) await agentHost.host.close().catch(() => undefined)
+    await app.close().catch(() => undefined)
     throw error
   }
 
