@@ -111,8 +111,8 @@ static credential binding
   -> credentialId + existing principal + one existing Workspace
   -> current app / non-deleted Workspace / current membership
   -> strict Workspace defaultAgentTypeId resolution against static fleet
-  -> binding-specific Core authorize() closure
-  -> branded AuthorizedAgentScope + resolved Agent + minimal artifact reader
+  -> binding-specific Core admitStart() / authorizeStatus() closures
+  -> task lease for execution; separate scope for status disclosure
   -> existing AgentGateway
   -> existing managed MCP delegation and bounded delivery
 ```
@@ -144,9 +144,12 @@ Extend, do not replace, `ManagedAgentMcpDelegateController` and its MCP server:
   task, not as a second lifecycle or a generic canonical artifact locator;
 - require a non-empty ASCII `[A-Za-z0-9._:-]+` key of at most 128 UTF-8 bytes
   for both start tools;
-- allow the host to supply request-authorized `agentTypeId`, redacted admission
-  identity, and minimum artifact reader after current authorization instead of
-  constructor-fixed Agent selection;
+- let the host supply a task-scoped lease for each new start: redacted admission
+  identity, request-authorized `agentTypeId`, gateway scope, minimum artifact
+  reader, and `release()`; retain it only through that task's asynchronous
+  terminal result/artifact collection, then release on every outcome;
+- authorize each status lookup separately with a disclosure scope that carries
+  trusted record identity but no gateway or artifact capability;
 - scope dedupe to credential/principal/Workspace/Agent/key plus the exact bytes
   of the existing trimmed `parseBrief` result;
 - authorize first, then look up the scoped key, then apply new-work limits, then
@@ -179,42 +182,41 @@ introduced.
 Expose a binding-specific boot-time capability rather than a general scope
 issuer. Full-app supplies Core one server-owned static
 `{credentialId, principalId, workspaceId}` binding at composition time and
-receives a non-parameterized `authorize()` closure. The closure accepts no
-caller-selected identity. On every invocation it rechecks the bound identity and
-returns only an operation-scoped bundle:
+receives two non-parameterized closures, neither accepting caller-selected
+identity: `admitStart()` and `authorizeStatus()`.
+
+`admitStart()` rechecks the bound principal/Workspace/app/membership and strict
+Workspace default, then returns one task-scoped lease:
 
 ```ts
-type AuthorizedManagedMcpOperation = {
+type ManagedMcpTaskLease = {
   credentialId: string
   agentTypeId: string
   scope: AuthorizedAgentScope
   gateway: AgentGateway
   artifactReader: Pick<Workspace, 'stat' | 'readBinaryFile'>
+  release(): Promise<void>
 }
 ```
 
-The semantic shape is a planning constraint, not permission to export these
-objects separately or retain them past the operation. Core owns scope issuance
-and the authorized Workspace read capability; the app edge never receives a
-general function that can mint scope for arbitrary identity.
+The package may retain this lease only for the admitted task, including work
+that continues after `delegate_task_start` returns and later inline artifact
+collection. It releases the lease after terminal success, failure, or cancel.
+This is the explicit admission-snapshot boundary: membership removal does not
+retroactively cancel the admitted task or its authorized artifact read.
 
-Each `authorize()` invocation:
+`authorizeStatus()` independently rechecks the same bound identity and strict
+default, then returns only a trusted disclosure key for receipt lookup. It has
+no AgentGateway, scope-minting parameter, or artifact reader. If membership is
+removed, new starts and later status disclosure fail; an already-admitted task
+may finish under its lease, but its polling result is not disclosed until the
+caller is authorized again (and only while retained).
 
-1. loads the bound principal and Workspace in the current app and rejects a
-   missing user, missing/deleted Workspace, or missing membership;
-2. strictly resolves persisted `defaultAgentTypeId` against the validated fleet:
-   an unknown persisted value fails stably with no fallback or effect; a null
-   value may use the configured boot/fleet default;
-3. issues/revalidates the branded scope through Core;
-4. returns the existing AgentGateway, resolved Agent, and only the artifact-read
-   operations needed by the retained inline Markdown delivery.
-
-The shared Core default resolver and web tests are reconciled in this slice so
-web and MCP cannot disagree by silently falling back from an unknown persisted
-Agent. The full-app edge constant-time verifies the bearer, chooses only its
-pre-composed binding, calls `authorize()` before each start and status lookup,
-and passes the resulting operation bundle into the package's request-time
-resolver.
+Both closures accept no identity arguments. Core owns scope issuance and the
+authorized Workspace reader; the app edge never receives a general function
+that can mint arbitrary scope. The shared Core default resolver and web tests
+are reconciled so web and MCP cannot silently fall back from an unknown
+persisted Agent.
 
 The route remains absent unless credential identity/binding and all three finite
 admission options are complete. Full-app uses explicit server-only names
@@ -238,8 +240,10 @@ an unmodified SDK client and prove:
   value fails without fallback or effect;
 - a same-key retry within retained TTL creates one gateway session, while the
   post-TTL/restart duplicate limitation is explicit;
-- start/status reauthorization denies removed membership or a deleted
-  Workspace without disclosing whether the target existed;
+- removed membership or a deleted Workspace denies new starts and status
+  disclosure without revealing target existence; an already-admitted polling
+  task may finish and collect its artifact under its task lease, but the revoked
+  caller cannot poll it; terminal cleanup always releases the lease;
 - polling returns bounded progress and a bounded final result without secret,
   token, host root, session root, or artifact path;
 - restart loss is documented honestly; and
@@ -266,9 +270,11 @@ and rollback approval.
    funnel.
 5. **Use one private pre-provisioned binding first.** The tracer needs no login,
    chooser, token-management UI, OAuth product, or implicit Workspace creation.
-6. **Revalidate each start and status operation.** Transport establishment is
-   not durable authority. An already-admitted turn uses an admission snapshot;
-   this plan does not invent mid-turn revocation hooks.
+6. **Separate task admission from status disclosure.** Every new start gets one
+   reauthorized task lease retained through terminal cleanup; every status lookup
+   reauthorizes independently and receives no execution/artifact capability. An
+   admitted turn and its artifact collection use the admission snapshot; this
+   plan does not invent mid-turn revocation hooks.
 7. **Keep retry state process-local and retention-bounded.** Same-process
    duplicate model work within retained TTL is the
    immediate defect. Restart-safe exactly-once work belongs to a durable-task
@@ -306,16 +312,18 @@ and rollback approval.
 - A stock external MCP client authenticates with one pre-provisioned credential
   and invokes the strictly validated persisted default Agent in one existing
   Workspace; an unknown persisted Agent fails with no fallback or effect.
-- Current app, non-deleted Workspace, membership, validated fleet/default, and
-  branded Core scope are checked before a new receipt/session/model effect and
-  before each status disclosure.
+- Current app, non-deleted Workspace, membership, strict fleet/default, and
+  branded Core scope are checked before a new receipt/session/model effect; each
+  status disclosure separately rechecks authority without execution capability.
 - MCP structured responses use canonical `AgentTask` v2 for task identity,
   principal/actor, messages, and lifecycle; inline Markdown is only a bounded
   edge delivery projection.
 - MCP uses the same AgentGateway, construction funnel, strict fleet/default,
   Workspace, and execution-environment lifecycle as web; the app receives a
-  non-parameterized binding closure and only the minimum artifact reader, never
-  a general scope issuer or second resolver/composer.
+  non-parameterized start/status closures; only a start lease contains the
+  minimum artifact reader and it is released at terminal cleanup. Status receives
+  disclosure identity only, never a general scope issuer, gateway, reader, or
+  second resolver/composer.
 - Hostname, body, tool args, MCP session ids, JSON-RPC ids, and forwarding
   headers cannot select principal, Workspace, Agent, runtime, root, or model.
 - Same authorized scope + idempotency key + exact trimmed-brief bytes creates
@@ -329,7 +337,9 @@ and rollback approval.
   bounds are finite and exact-boundary tested; existing caps and secret
   redaction do not weaken.
 - Maximum valid completion remains retrievable by polling through a stock
-  client without duplicating the full result in text content.
+  client without duplicating the full result in text content. Revocation denies
+  new starts/status, while an admitted task may finish and read its artifact under
+  the bounded lease; terminal success/error/cancel always releases that lease.
 - Route stays dark by default and fails startup on incomplete/unbounded config.
 - Documentation states restart loss, private credential scope, local/reference
   proof, and the #1011 opposite-direction boundary without claiming public or
@@ -362,8 +372,9 @@ and rollback approval.
 
 **Bead:** `wt-391-forward-rjkl.3`
 **Priority:** P1
-**Delivers:** Canonical AgentTask v2 edge projection, request-authorized Agent
-selection/artifact reader, caller-stable retention-bounded idempotency, exact
+**Delivers:** Canonical AgentTask v2 edge projection, a task lease retained only
+through asynchronous terminal work/artifact collection plus separate status
+disclosure authorization, caller-stable retention-bounded idempotency, exact
 fixed-window/concurrency admission, progress byte caps, compact text projection,
 and exact final-response proof.
 **Blocked by:** planning bead `wt-391-forward-rjkl.1`; the orchestrator closes
@@ -372,8 +383,8 @@ that dependency only after gate-1 approval.
 `managedAgentMcpServer.ts`, focused delegate test, and MCP exports only if
 required.
 **Proof:** focused agent MCP test, agent typecheck, invariants; exact/over,
-state transitions/schema validation, per-request Agent selection,
-concurrency/retry/conflict, cross-scope, fixed-window reset, retention/expiry,
+state transitions/schema validation, task-lease lifecycle/release and
+status-scope separation, per-request Agent selection, concurrency/retry/conflict, cross-scope, fixed-window reset, retention/expiry,
 dedupe-before-limit, and stock-client assertions.
 **Review budget:** Inside — one package controller/server seam and one focused
 test file; fits one worker session.
@@ -382,8 +393,10 @@ test file; fits one worker session.
 
 **Bead:** `wt-391-forward-rjkl.4`
 **Priority:** P1
-**Delivers:** Non-parameterized Core binding closure returning branded scope,
-strict resolved Agent, existing gateway, and minimal artifact reader; shared
+**Delivers:** Non-parameterized Core `admitStart()` task-lease and
+`authorizeStatus()` disclosure closures; start returns branded scope, strict
+resolved Agent, existing gateway, minimal artifact reader, and release; status
+returns no execution/artifact capability; shared
 unknown-default fallback drift is fixed for web and MCP; full-app reauthorizes
 on start/status with no hostname authority.
 **Blocked by:** `wt-391-forward-rjkl.3`.
@@ -401,7 +414,8 @@ adapter; fits one worker session.
 **Priority:** P2
 **Delivers:** Deterministic external SDK-client qualification and operator docs
 for canonical AgentTask + strict current authority, including retained-window
-retry, revocation, bounds,
+retry, start/status authority-lifetime separation, terminal lease release,
+revocation, bounds,
 redaction, rollback, restart limitation, and direction terminology.
 **Blocked by:** `wt-391-forward-rjkl.4`.
 **File scope:** `apps/full-app/scripts/managed-agent-mcp-smoke.ts`, full-app
@@ -422,7 +436,7 @@ combined contract. File scopes do not overlap across writer beads.
 | --- | --- | --- | --- |
 | Scope capability is exposed too broadly from Core | Medium | High | Boot-time narrow callback only; branded scope remains issuer-owned; focused misuse tests and fresh security review. |
 | Retry key leaks or becomes caller authority | Low | High | Scope with redacted `credentialId` after authorization; bearer/JSON-RPC/MCP session ids prohibited from identity. |
-| Status reauthorization hides an admitted result after membership removal | Medium | Medium | Intentional current-authority rule; admitted turn may finish but status denies after revocation; document and test. |
+| Task lease outlives revocation while status is denied | Medium | High | Explicit admission snapshot: lease is task-only and released terminally; status has no reader/gateway; test revoked polling denial plus admitted completion and cleanup. |
 | Final response cap rejects a maximum valid artifact | Medium | Medium | Derive envelope from retained component budgets and prove exact maximum through a stock client. |
 | Private reference route is mistaken for public/production auth | Medium | High | Dark default, static binding, explicit docs/non-goals, and separate app-owned deployment gate. |
 | #1011 direction is conflated with ingress | Medium | Medium | Separate flow diagrams, credentials, file scopes, acceptance, and no dependency on connector registration/grants. |
@@ -481,5 +495,11 @@ combined contract. File scopes do not overlap across writer beads.
 - **Pass 2 findings/disposition:** made `.3` self-contained with the exact key
   grammar/byte limit, fixed-window reset, and `retryAfterMs`; corrected the HTML
   to state no unexpired-record eviction/capacity rejection and the exact package
-  files; added the strict default resolver test to canonical/HTML proof. A final
-  fresh pass will review the final substantive SHA.
+  files; added the strict default resolver test to canonical/HTML proof.
+- **Pass 3 target:** commit `0c56c8c938c48965f6ffc8376834a0669c40eff8`.
+- **Pass 3 verdict:** revise.
+- **Pass 3 findings/disposition:** resolved asynchronous authority lifetime with
+  task-scoped `admitStart()` leases retained through terminal artifact/result
+  collection plus separately reauthorized capability-free status disclosure;
+  added `.1` Acceptance Criteria for lint; reordered/capped the gate HTML.
+  A clean final pass is required before handoff.
