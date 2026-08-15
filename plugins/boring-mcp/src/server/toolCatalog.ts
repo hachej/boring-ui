@@ -98,7 +98,7 @@ function displayName(toolName: string): string {
   return toolName.replace(/[_:.-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-function sourceCatalogRevision(source: { status: string; updatedAt?: string; connectorRef?: { sessionId?: string; connectedAccountId?: string; externalSourceId?: string } }): string {
+export function createMcpSourceRevision(source: { status: string; updatedAt?: string; connectorRef?: { sessionId?: string; connectedAccountId?: string; externalSourceId?: string } }): string {
   return createHash("sha256").update(JSON.stringify({
     status: source.status,
     updatedAt: source.updatedAt,
@@ -173,7 +173,7 @@ export function createBoringMcpToolCatalog(options: BoringMcpToolCatalogOptions)
   async function loadSourceCatalog(actor: McpActor, sourceId: string, refresh?: boolean, providerRefresh?: boolean): Promise<McpToolCatalogSnapshot> {
     const { source, resolvedSourceId } = await resolveConnectedSource(actor, sourceId)
 
-    const sourceRevision = sourceCatalogRevision(source)
+    const sourceRevision = createMcpSourceRevision(source)
     if (!refresh && !providerRefresh) {
       const cached = await cache.get(actor, resolvedSourceId)
       if (cached && cached.provider === source.provider && cached.sourceRevision === sourceRevision) return cached
@@ -214,7 +214,7 @@ export function createBoringMcpToolCatalog(options: BoringMcpToolCatalogOptions)
             offset,
             forceProviderRefresh: input.providerRefresh ?? input.refresh ?? false,
           })
-          managedResults.push(...normalizeManagedTools(resolvedSourceId, source.provider, sourceCatalogRevision(source), tools).slice(0, limit))
+          managedResults.push(...normalizeManagedTools(resolvedSourceId, source.provider, createMcpSourceRevision(source), tools).slice(0, limit))
           continue
         }
         const result = await loadSourceCatalog(actor, resolvedSourceId, input.refresh, input.providerRefresh)
@@ -233,7 +233,7 @@ export function createBoringMcpToolCatalog(options: BoringMcpToolCatalogOptions)
           forceProviderRefresh: input.providerRefresh ?? input.refresh ?? false,
         })
         resolvedTool = managedTool
-          ? normalizeMcpCatalogTool(resolvedSourceId, source.provider, managedTool, options.templates, sourceCatalogRevision(source))
+          ? normalizeMcpCatalogTool(resolvedSourceId, source.provider, managedTool, options.templates, createMcpSourceRevision(source))
           : undefined
       } else {
         const result = await loadSourceCatalog(actor, resolvedSourceId, input.refresh, input.providerRefresh)

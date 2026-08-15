@@ -288,6 +288,24 @@ describe("Composio full-catalog backend", () => {
     }
 
     const active = completeAccount
+    const nullableAccount = { ...active("nullable-account"), word_id: null, alias: null, status_reason: null }
+    const nullableApi = composioApiFetch(fakeMcp.url, [nullableAccount])
+    await expect(requireExactlyOneComposioAccount(backendOptions(nullableApi.fetch), { actor, secret, toolkitId: "github" }))
+      .resolves.toMatchObject({ connectedAccountId: "nullable-account" })
+
+    const pages = [
+      { items: [{ ...active("inactive-account"), status: "INACTIVE" }], next_cursor: "page-2", current_page: 1, total_pages: 2, total_items: 2 },
+      { items: [active("active-account")], next_cursor: null, current_page: 2, total_pages: 2, total_items: 2 },
+    ]
+    let page = 0
+    const paginatedFetch = vi.fn(async (input: string | URL | Request) => {
+      if (page === 1) expect(String(input)).toContain("cursor=page-2")
+      return Response.json(pages[page++]!)
+    }) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
+    await expect(requireExactlyOneComposioAccount(backendOptions(paginatedFetch), { actor, secret, toolkitId: "github" }))
+      .resolves.toMatchObject({ connectedAccountId: "active-account" })
+    expect(paginatedFetch).toHaveBeenCalledTimes(2)
+
     const multiple = composioApiFetch(fakeMcp.url, [active("account-1"), active("account-2")])
     await expect(requireExactlyOneComposioAccount(backendOptions(multiple.fetch), { actor, secret, toolkitId: "github" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.CONNECTED_ACCOUNT_CONFLICT })
@@ -384,6 +402,21 @@ describe("Composio full-catalog backend", () => {
     expect(sessionCanaryApi.deletedSessions).toEqual(["session-1"])
   })
 
+  it("keys transient catalog data by complete source/account revision", async () => {
+    const fakeMcp = await listenFakeComposioMcp()
+    const api = composioApiFetch(fakeMcp.url)
+    let currentSource: McpSource = { ...source, connectorRef: { provider: "composio", connectedAccountId: "account-1" } }
+    const dynamicRegistry: McpSourceRegistry = {
+      listSources: vi.fn(async () => [currentSource]),
+      getSource: vi.fn(async () => currentSource),
+    }
+    const catalog = createBoringMcpToolCatalog({ registry: dynamicRegistry, transport: fallbackTransport, managedCatalog: createComposioCatalogBackend(backendOptions(api.fetch)) })
+    await catalog.searchTools(actor, { sourceId: source.id, query: "github", limit: 1 })
+    currentSource = { ...currentSource, connectorRef: { provider: "composio", connectedAccountId: "account-2" } }
+    await catalog.searchTools(actor, { sourceId: source.id, query: "github", limit: 1 })
+    expect(api.sessionBodies).toHaveLength(2)
+  })
+
   it("invalidates stale descriptors when provider refresh removes or invalidates a schema", async () => {
     const behavior: { mismatchedSlug?: boolean } = {}
     const fakeMcp = await listenFakeComposioMcp(behavior)
@@ -393,7 +426,11 @@ describe("Composio full-catalog backend", () => {
     await expect(catalog.describeTool(actor, { sourceId: source.id, toolName: "GITHUB_GET_CURRENT_USER" })).resolves.toMatchObject({ tool: { toolName: "GITHUB_GET_CURRENT_USER" } })
 
     behavior.mismatchedSlug = true
+    await catalog.searchTools(actor, { sourceId: source.id, query: "github", limit: 1, offset: 1 })
     await expect(catalog.searchTools(actor, { sourceId: source.id, query: "github", limit: 1, refresh: true })).resolves.toMatchObject({ tools: [] })
+    const sessionsAfterRefresh = api.sessionBodies.length
+    await expect(catalog.describeTool(actor, { sourceId: source.id, toolName: "GITHUB_CREATE_ISSUE" })).resolves.toMatchObject({ tool: { toolName: "GITHUB_CREATE_ISSUE" } })
+    expect(api.sessionBodies).toHaveLength(sessionsAfterRefresh + 1)
     await expect(catalog.describeTool(actor, { sourceId: source.id, toolName: "GITHUB_GET_CURRENT_USER" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.TOOL_NOT_FOUND })
   })

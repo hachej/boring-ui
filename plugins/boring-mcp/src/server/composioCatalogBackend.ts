@@ -9,7 +9,7 @@ import {
 } from "../shared"
 import type { ManagedConnectorSecret, ManagedConnectorSecretResolver } from "./managedConnectorAdapter"
 import { createMcpSdkStreamableHttpTransport } from "./mcpSdkTransport"
-import type { McpManagedCatalogBackend, McpManagedCatalogTool } from "./toolCatalog"
+import { createMcpSourceRevision, type McpManagedCatalogBackend, type McpManagedCatalogTool } from "./toolCatalog"
 
 export const COMPOSIO_CATALOG_PROVIDER_ID = "composio" as const
 
@@ -19,11 +19,19 @@ const COMPOSIO_GET_TOOL_SCHEMAS = "COMPOSIO_GET_TOOL_SCHEMAS"
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
 const DEFAULT_MAX_RESPONSE_BYTES = 512 * 1024
 const MAX_ACCOUNT_RESULTS = 100
+const MAX_ACCOUNT_PAGES = 5
+const MAX_TOTAL_ACCOUNTS = MAX_ACCOUNT_RESULTS * MAX_ACCOUNT_PAGES
 const MAX_QUERY_LENGTH = 256
 const MAX_DESCRIPTION_LENGTH = 4_000
 const MAX_SCHEMA_BYTES = 64 * 1024
 const DEFAULT_CACHE_ENTRIES = 128
 const DEFAULT_CACHE_TTL_MS = 60_000
+const COMPOSIO_ACCOUNT_STATUSES = new Set(["INITIALIZING", "INITIATED", "ACTIVE", "FAILED", "EXPIRED", "INACTIVE", "REVOKED"])
+const COMPOSIO_AUTH_SCHEMES = new Set([
+  "OAUTH2", "OAUTH1", "API_KEY", "BASIC", "BILLCOM_AUTH", "BEARER_TOKEN",
+  "GOOGLE_SERVICE_ACCOUNT", "NO_AUTH", "BASIC_WITH_JWT", "CALCOM_AUTH",
+  "SERVICE_ACCOUNT", "SAML", "DCR_OAUTH", "S2S_OAUTH2",
+])
 
 export interface ComposioCatalogSession {
   id: string
@@ -75,6 +83,12 @@ class BoundedTtlCache<T> {
 
   delete(key: string): void {
     this.values.delete(key)
+  }
+
+  deletePrefix(prefix: string): void {
+    for (const key of this.values.keys()) {
+      if (key.startsWith(prefix)) this.values.delete(key)
+    }
   }
 
   set(key: string, value: T): void {
@@ -311,52 +325,85 @@ export async function requireExactlyOneComposioAccount(
 ): Promise<ComposioAccountPin> {
   const toolkitId = input.toolkitId.trim().toLowerCase()
   if (!toolkitId) throw new McpError(MCP_ERROR_CODES.INPUT_INVALID, "Composio toolkit is required")
-  const params = new URLSearchParams({ user_ids: composioUserId(input.actor), toolkit_slugs: toolkitId, limit: String(MAX_ACCOUNT_RESULTS) })
-  const payload = await composioRequest(options, input.secret, "GET", `/api/v3.1/connected_accounts?${params}`)
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw safeProviderError("Composio connected-account response was malformed")
+  const items: unknown[] = []
+  let cursor: string | undefined
+  let expectedTotalItems: number | undefined
+
+  for (let requestedPage = 1; requestedPage <= MAX_ACCOUNT_PAGES; requestedPage += 1) {
+    const params = new URLSearchParams({ user_ids: composioUserId(input.actor), toolkit_slugs: toolkitId, limit: String(MAX_ACCOUNT_RESULTS) })
+    if (cursor) params.set("cursor", cursor)
+    const payload = await composioRequest(options, input.secret, "GET", `/api/v3.1/connected_accounts?${params}`)
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw safeProviderError("Composio connected-account response was malformed")
+    }
+    const root = payload as Record<string, unknown>
+    if (!Array.isArray(root.items)) throw safeProviderError("Composio connected-account items were malformed")
+    const totalPages = root.total_pages
+    const currentPage = root.current_page
+    const totalItems = root.total_items
+    if (!Number.isInteger(totalPages) || !Number.isInteger(currentPage) || !Number.isInteger(totalItems)) {
+      throw safeProviderError("Composio connected-account pagination was malformed")
+    }
+    if (root.items.length === 0 && totalPages === 0 && currentPage === 0 && totalItems === 0) {
+      if (root.next_cursor != null) throw safeProviderError("Composio connected-account pagination was inconsistent")
+      break
+    }
+    if (
+      currentPage !== requestedPage
+      || (totalPages as number) < requestedPage
+      || (totalPages as number) > MAX_ACCOUNT_PAGES
+      || (totalItems as number) < root.items.length
+      || (totalItems as number) > MAX_TOTAL_ACCOUNTS
+      || (expectedTotalItems !== undefined && totalItems !== expectedTotalItems)
+    ) {
+      throw safeProviderError("Composio connected-account pagination was malformed")
+    }
+    expectedTotalItems = totalItems as number
+    items.push(...root.items)
+    if (items.length > MAX_TOTAL_ACCOUNTS) throw safeProviderError("Composio connected-account result exceeded the size limit")
+
+    const nextCursor = root.next_cursor
+    const hasNextPage = requestedPage < (totalPages as number)
+    if (hasNextPage) {
+      if (typeof nextCursor !== "string" || !nextCursor.trim()) {
+        throw safeProviderError("Composio connected-account continuation cursor was malformed")
+      }
+      cursor = nextCursor.trim()
+      continue
+    }
+    if (nextCursor != null && (typeof nextCursor !== "string" || nextCursor.trim())) {
+      throw safeProviderError("Composio connected-account pagination was inconsistent")
+    }
+    break
   }
-  const root = payload as Record<string, unknown>
-  if (!Array.isArray(root.items)) throw safeProviderError("Composio connected-account items were malformed")
-  const cursorValue = root.next_cursor
-  const totalPages = root.total_pages
-  const currentPage = root.current_page
-  const totalItems = root.total_items
-  if (
-    (cursorValue != null && (typeof cursorValue !== "string" || !cursorValue.trim()))
-    || !Number.isInteger(totalPages)
-    || !Number.isInteger(currentPage)
-    || !Number.isInteger(totalItems)
-    || (root.items.length === 0
-      ? !(totalPages === 0 && currentPage === 0 && totalItems === 0)
-      : !(totalPages === 1 && currentPage === 1 && totalItems === root.items.length))
-  ) {
-    throw safeProviderError("Composio connected-account pagination was malformed")
-  }
-  if (optionalString(cursorValue) || root.items.length >= MAX_ACCOUNT_RESULTS) {
+  if (expectedTotalItems !== undefined && items.length !== expectedTotalItems) {
     throw safeProviderError("Composio connected-account result was incomplete")
   }
-  const accounts = root.items.map((value) => {
+
+  const accounts = items.map((value) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       throw safeProviderError("Composio connected-account row was malformed")
     }
     const account = value as Record<string, unknown>
+    const authConfig = record(account.auth_config)
     const id = optionalString(account.id)
     const userId = optionalString(account.user_id)
     const accountToolkit = optionalString(record(account.toolkit).slug)?.toLowerCase()
     const status = optionalString(account.status)?.toUpperCase()
-    const authConfig = record(account.auth_config)
-    const requiredStrings = [
-      account.word_id, account.alias, account.authScheme, account.created_at, account.updated_at,
-      account.status_reason, account.test_request_endpoint,
-      authConfig.id, authConfig.auth_scheme,
-    ]
-    const requiredObjects = [account.experimental, account.state, account.data]
+    const requiredNullableStrings = ["word_id", "alias", "status_reason"]
+    const nullableStringsValid = requiredNullableStrings.every((key) => Object.prototype.hasOwnProperty.call(account, key) && (account[key] === null || typeof account[key] === "string"))
+    const statusAllowed = COMPOSIO_ACCOUNT_STATUSES.has(status ?? "")
+    const authSchemeAllowed = COMPOSIO_AUTH_SCHEMES.has(optionalString(authConfig.auth_scheme) ?? "")
     if (
-      !id || !userId || !accountToolkit || !status
-      || requiredStrings.some((value) => typeof value !== "string")
-      || requiredObjects.some((value) => !value || typeof value !== "object" || Array.isArray(value))
+      !id || !userId || !accountToolkit || !statusAllowed
+      || !nullableStringsValid
+      || typeof account.created_at !== "string"
+      || typeof account.updated_at !== "string"
+      || !account.state || typeof account.state !== "object" || Array.isArray(account.state)
+      || !account.data || typeof account.data !== "object" || Array.isArray(account.data)
       || typeof account.is_disabled !== "boolean"
+      || !optionalString(authConfig.id)
+      || !authSchemeAllowed
       || typeof authConfig.is_disabled !== "boolean"
       || typeof authConfig.is_composio_managed !== "boolean"
     ) {
@@ -575,6 +622,10 @@ async function withCatalogSession<T>(
   return outcome.value
 }
 
+function sourceCacheKey(source: McpSource): string {
+  return `${source.workspaceId}:${source.userId}:${source.id}:${createMcpSourceRevision(source)}`
+}
+
 export function createComposioCatalogBackend(options: ComposioCatalogBackendOptions): ComposioCatalogBackend {
   const maxEntries = options.cacheEntries ?? DEFAULT_CACHE_ENTRIES
   const ttlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS
@@ -649,14 +700,13 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
       if (!query || query.length > MAX_QUERY_LENGTH) {
         throw new McpError(MCP_ERROR_CODES.INPUT_INVALID, "Composio catalog query must be between 1 and 256 characters")
       }
-      const key = `${source.workspaceId}:${source.userId}:${source.id}:${source.updatedAt ?? ""}:${query}:${input.offset}:${input.limit}`
+      const sourceKey = sourceCacheKey(source)
+      const key = `${sourceKey}:search:${query}:${input.offset}:${input.limit}`
       const previous = searchCache.get(key)
       if (!input.forceProviderRefresh && previous) return previous
       if (input.forceProviderRefresh) {
-        searchCache.delete(key)
-        for (const tool of previous ?? []) {
-          describeCache.delete(`${source.workspaceId}:${source.userId}:${source.id}:${source.updatedAt ?? ""}:${tool.name}`)
-        }
+        searchCache.deletePrefix(`${sourceKey}:search:`)
+        describeCache.deletePrefix(`${sourceKey}:describe:`)
       }
       const tools = await guarded(source, () => withCatalogSession(options, source, release, retainFailedCleanup, async (session, transport) => {
         const search = await transport.callTool(source, COMPOSIO_SEARCH_TOOLS, { queries: [query], session: session.id })
@@ -673,14 +723,14 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
         })
       }))
       searchCache.set(key, tools)
-      for (const tool of tools) describeCache.set(`${source.workspaceId}:${source.userId}:${source.id}:${source.updatedAt ?? ""}:${tool.name}`, tool)
+      for (const tool of tools) describeCache.set(`${sourceKey}:describe:${tool.name}`, tool)
       return tools
     },
 
     async describeTool(source, toolName, input) {
       validateMcpToolName(toolName)
       if (toolName.startsWith("COMPOSIO_")) return undefined
-      const key = `${source.workspaceId}:${source.userId}:${source.id}:${source.updatedAt ?? ""}:${toolName}`
+      const key = `${sourceCacheKey(source)}:describe:${toolName}`
       if (!input.forceProviderRefresh) {
         const cached = describeCache.get(key)
         if (cached) return cached
