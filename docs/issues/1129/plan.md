@@ -46,8 +46,8 @@ Current `origin/main` (`ee2017188`) already provides:
 
 Decisions 28, 29, and 30 supersede the old typed-domain target:
 
-- a Workspace durably persists `defaultAgentTypeId`, validated against the
-  deployment-static fleet;
+- a Workspace durably persists `defaultAgentTypeId`; an unknown persisted value
+  must fail stably rather than silently select another fleet Agent;
 - `AgentGateway` is the sole session contract and `createAgentHost()` is the
   sole construction funnel;
 - `AuthorizedAgentScope` is an issuer-owned runtime capability rechecked on
@@ -58,11 +58,16 @@ Decisions 28, 29, and 30 supersede the old typed-domain target:
 
 The full-app MCP adapter has not caught up completely: it hardcodes
 `agentTypeId: 'default'` and uses the compatibility
-`runWithWorkspaceAgent` bridge rather than receiving the current Core-owned
-AgentGateway plus scope issuer.
+`runWithWorkspaceAgent` bridge. Core's current helper also silently falls back
+when a persisted default names an unknown fleet member, contradicting Decision
+28's stable-failure rule. This code drift is evidence to reconcile, not authority
+to extend into MCP.
 
 ### Remaining safety gaps
 
+- The MCP edge returns a bespoke `running/completed/error` delegation shape
+  instead of projecting Decision 22's canonical `AgentTask` v2 lifecycle,
+  messages, principal, and actor.
 - `delegate_task` and `delegate_task_start` have no caller-stable idempotency
   key, so a lost response retried with a fresh JSON-RPC id can start duplicate
   model work.
@@ -105,8 +110,9 @@ authority:
 static credential binding
   -> credentialId + existing principal + one existing Workspace
   -> current app / non-deleted Workspace / current membership
-  -> Workspace persisted defaultAgentTypeId validated against static fleet
-  -> Core-issued AuthorizedAgentScope
+  -> strict Workspace defaultAgentTypeId resolution against static fleet
+  -> binding-specific Core authorize() closure
+  -> branded AuthorizedAgentScope + resolved Agent + minimal artifact reader
   -> existing AgentGateway
   -> existing managed MCP delegation and bounded delivery
 ```
@@ -118,56 +124,107 @@ no authority.
 
 Retry identity is a required caller-supplied `idempotencyKey`, scoped after
 current authorization to the trusted credential/principal/Workspace/Agent
-binding. Same scope + same normalized brief returns the existing running or
-completed receipt; same key + different brief conflicts. The guarantee is
-same-process only; restart or replica handoff may lose the record and retry.
+binding. Same scope + the exact bytes returned by the existing trimmed `parseBrief`
+normalization returns the existing task while its record is retained; same key +
+different normalized bytes conflicts. The guarantee lasts only for the
+configured terminal-retention window in one process. Expiry, restart, or replica
+handoff may lose the record and permit another run.
 
 ## Solution
 
-### 1. Harden the existing package edge
+### 1. Reconcile the task contract and harden the existing package edge
 
 Extend, do not replace, `ManagedAgentMcpDelegateController` and its MCP server:
 
+- make canonical `AgentTask` schema v2 the authoritative task projection in
+  structured responses: principal and actor come from trusted binding data; the
+  consumer brief and Agent output are canonical messages; task identity/state
+  follows `submitted -> working -> completed|failed|canceled|rejected`;
+- retain inline Markdown only as an edge delivery presentation alongside the
+  task, not as a second lifecycle or a generic canonical artifact locator;
 - require a non-empty ASCII `[A-Za-z0-9._:-]+` key of at most 128 UTF-8 bytes
   for both start tools;
-- resolve a redacted trusted admission identity supplied by the host after
-  bearer validation; never use bearer text, MCP session id, or JSON-RPC id;
-- authorize first, then look up the scoped key, then apply new-work rate and
-  concurrency limits, then create a record/session;
-- single-flight concurrent same-key starts; return the same receipt/result for
-  same payload and a stable conflict for different payload;
+- allow the host to supply request-authorized `agentTypeId`, redacted admission
+  identity, and minimum artifact reader after current authorization instead of
+  constructor-fixed Agent selection;
+- scope dedupe to credential/principal/Workspace/Agent/key plus the exact bytes
+  of the existing trimmed `parseBrief` result;
+- authorize first, then look up the scoped key, then apply new-work limits, then
+  create a task/session;
+- single-flight concurrent same-key starts; return the retained task for same
+  payload and a stable conflict for different payload;
+- require fixed-window options `maxStartsPerWindow` (1..10,000),
+  `startWindowMs` (1,000..86,400,000), and
+  `maxConcurrentPerCredential` (1..100); the fixed window begins at the first
+  admitted new start and resets when `now >= windowStart + startWindowMs`;
+  retries of retained keys bypass both limits; new starts increment the window
+  and concurrency, and terminal tasks release concurrency; rate errors include
+  bounded `retryAfterMs` to that reset;
 - cap each visible progress message at 4 KiB and total retained progress at
   64 KiB in addition to the existing 100-item cap;
 - keep `structuredContent` authoritative and return only a bounded compact text
   summary instead of duplicating the result;
 - derive and test a final wire-response budget that can still carry the maximum
-  otherwise-valid structured result plus retained progress and bounded envelope.
+  otherwise-valid structured result plus retained progress and bounded envelope;
+- never evict an unexpired idempotency record to admit new work: prune only at
+  terminal retention expiry and reject new work when record capacity is full.
 
-No new database, durable task service, second MCP server, or second model loop.
+The same-process one-session claim is explicitly bounded by the retained record.
+A retry after terminal TTL, process restart, or replica handoff may run again. No
+new database, durable task service, second MCP server, or second model loop is
+introduced.
 
 ### 2. Bind full-app through Core's current authority
 
-Expose the narrow boot-time capability the app edge needs from
-`createCoreWorkspaceAgentServer`: the existing AgentGateway plus a trusted
-function that issues/revalidates `AuthorizedAgentScope` for a server-resolved
-principal/Workspace. The capability must not expose policy stores or permit a
-caller to mint arbitrary scope.
+Expose a binding-specific boot-time capability rather than a general scope
+issuer. Full-app supplies Core one server-owned static
+`{credentialId, principalId, workspaceId}` binding at composition time and
+receives a non-parameterized `authorize()` closure. The closure accepts no
+caller-selected identity. On every invocation it rechecks the bound identity and
+returns only an operation-scoped bundle:
 
-The full-app edge then:
+```ts
+type AuthorizedManagedMcpOperation = {
+  credentialId: string
+  agentTypeId: string
+  scope: AuthorizedAgentScope
+  gateway: AgentGateway
+  artifactReader: Pick<Workspace, 'stat' | 'readBinaryFile'>
+}
+```
 
-1. constant-time verifies the configured bearer and obtains a redacted
-   `credentialId` plus server-owned principal/Workspace binding;
-2. loads the Workspace in the current app and rejects deletion or missing
-   membership before receipt creation or model work;
-3. resolves the Workspace's persisted `defaultAgentTypeId` through the same
-   validated-fleet fallback/diagnostic rule used by web;
-4. asks Core for the branded scope and calls the supplied AgentGateway;
-5. repeats current authorization for every new start and every status lookup;
-6. keeps the route absent unless credential identity, binding, and finite
-   admission limits are complete.
+The semantic shape is a planning constraint, not permission to export these
+objects separately or retain them past the operation. Core owns scope issuance
+and the authorized Workspace read capability; the app edge never receives a
+general function that can mint scope for arbitrary identity.
 
-The route remains a protocol binding at the edge under Decision 22. It does not
-create a second behavior resolver or runtime owner.
+Each `authorize()` invocation:
+
+1. loads the bound principal and Workspace in the current app and rejects a
+   missing user, missing/deleted Workspace, or missing membership;
+2. strictly resolves persisted `defaultAgentTypeId` against the validated fleet:
+   an unknown persisted value fails stably with no fallback or effect; a null
+   value may use the configured boot/fleet default;
+3. issues/revalidates the branded scope through Core;
+4. returns the existing AgentGateway, resolved Agent, and only the artifact-read
+   operations needed by the retained inline Markdown delivery.
+
+The shared Core default resolver and web tests are reconciled in this slice so
+web and MCP cannot disagree by silently falling back from an unknown persisted
+Agent. The full-app edge constant-time verifies the bearer, chooses only its
+pre-composed binding, calls `authorize()` before each start and status lookup,
+and passes the resulting operation bundle into the package's request-time
+resolver.
+
+The route remains absent unless credential identity/binding and all three finite
+admission options are complete. Full-app uses explicit server-only names
+`BORING_MANAGED_AGENT_MCP_CREDENTIAL_ID`,
+`BORING_MANAGED_AGENT_MCP_MAX_STARTS_PER_WINDOW`,
+`BORING_MANAGED_AGENT_MCP_START_WINDOW_MS`, and
+`BORING_MANAGED_AGENT_MCP_MAX_CONCURRENT`; enabled startup rejects missing,
+non-integer, zero, negative, or out-of-range values. It remains a protocol binding at the edge under
+Decision 22 and creates no second behavior resolver, filesystem authority, or
+runtime owner.
 
 ### 3. Qualify the reference route with a stock client
 
@@ -175,8 +232,12 @@ Upgrade the deterministic full-app smoke to exercise the final binding through
 an unmodified SDK client and prove:
 
 - invalid bearer rejects before Workspace/gateway work;
-- persisted default Agent selection is used;
-- a same-key retry creates one gateway session;
+- canonical `AgentTask` v2 is validated across submitted/working/terminal
+  projection while edge-specific Markdown delivery remains bounded;
+- strict persisted default Agent selection is used and an unknown persisted
+  value fails without fallback or effect;
+- a same-key retry within retained TTL creates one gateway session, while the
+  post-TTL/restart duplicate limitation is explicit;
 - start/status reauthorization denies removed membership or a deleted
   Workspace without disclosing whether the target existed;
 - polling returns bounded progress and a bounded final result without secret,
@@ -196,21 +257,26 @@ and rollback approval.
 2. **Use Workspace default, not typed domain, to select the Agent.** Decision 28
    explicitly makes `defaultAgentTypeId` durable Workspace state and reduces
    any `workspaceTypeId` to inert compatibility metadata.
-3. **Use AgentGateway, not the compatibility dispatcher, for new ingress.**
+3. **Use canonical AgentTask v2 for task semantics and AgentGateway for session effects.**
+   MCP is an edge projection of Decision 22's shared task contract; bespoke
+   delivery metadata may not become a second lifecycle. Decision 29 makes the
+   gateway the sole session contract and construction funnel.
+4. **Use AgentGateway, not the compatibility dispatcher, for new ingress.**
    Decision 29 makes the gateway the sole session contract and construction
    funnel.
-4. **Use one private pre-provisioned binding first.** The tracer needs no login,
+5. **Use one private pre-provisioned binding first.** The tracer needs no login,
    chooser, token-management UI, OAuth product, or implicit Workspace creation.
-5. **Revalidate each start and status operation.** Transport establishment is
+6. **Revalidate each start and status operation.** Transport establishment is
    not durable authority. An already-admitted turn uses an admission snapshot;
    this plan does not invent mid-turn revocation hooks.
-6. **Keep retry state process-local.** Same-process duplicate model work is the
+7. **Keep retry state process-local and retention-bounded.** Same-process
+   duplicate model work within retained TTL is the
    immediate defect. Restart-safe exactly-once work belongs to a durable-task
    plan, not this edge hardening.
-7. **Hostname selects pixels, never authority.** Decision 30 is literal; no
+8. **Hostname selects pixels, never authority.** Decision 30 is literal; no
    audience-by-domain, typed host resolver, or forwarded-host authorization is
    added.
-8. **Keep #1011 orthogonal.** User-registered MCP servers and per-Agent grants
+9. **Keep #1011 orthogonal.** User-registered MCP servers and per-Agent grants
    are capabilities consumed by an Agent after ingress authorization, not part
    of authenticating the external caller.
 
@@ -238,17 +304,27 @@ and rollback approval.
 ## Acceptance
 
 - A stock external MCP client authenticates with one pre-provisioned credential
-  and invokes the current persisted default Agent in one existing Workspace.
+  and invokes the strictly validated persisted default Agent in one existing
+  Workspace; an unknown persisted Agent fails with no fallback or effect.
 - Current app, non-deleted Workspace, membership, validated fleet/default, and
   branded Core scope are checked before a new receipt/session/model effect and
   before each status disclosure.
-- MCP uses the same AgentGateway, construction funnel, fleet, Workspace, and
-  execution-environment lifecycle as web; no second resolver/composer exists.
+- MCP structured responses use canonical `AgentTask` v2 for task identity,
+  principal/actor, messages, and lifecycle; inline Markdown is only a bounded
+  edge delivery projection.
+- MCP uses the same AgentGateway, construction funnel, strict fleet/default,
+  Workspace, and execution-environment lifecycle as web; the app receives a
+  non-parameterized binding closure and only the minimum artifact reader, never
+  a general scope issuer or second resolver/composer.
 - Hostname, body, tool args, MCP session ids, JSON-RPC ids, and forwarding
   headers cannot select principal, Workspace, Agent, runtime, root, or model.
-- Same authorized scope + idempotency key + normalized brief creates one
-  same-process session; changed payload conflicts; different trusted scopes do
-  not collide; dedupe precedes new-work limits.
+- Same authorized scope + idempotency key + exact trimmed-brief bytes creates
+  one session while the record is retained in the same process; changed payload
+  conflicts; different trusted scopes do not collide; dedupe precedes new-work
+  limits; expiry/restart may duplicate and is documented.
+- Fixed-window admission uses required bounded `maxStartsPerWindow`,
+  `startWindowMs`, and `maxConcurrentPerCredential`; exact boundary/reset,
+  concurrency release, retry bypass, and bounded `retryAfterMs` are tested.
 - Per-credential start/concurrency and all input/progress/result/final-response
   bounds are finite and exact-boundary tested; existing caps and secret
   redaction do not weaken.
@@ -271,7 +347,8 @@ and rollback approval.
 - Exact command: `pnpm lint:invariants`
 - Screenshot/demo: not required for this server/protocol slice; stock-client
   assertions and captured command output are stronger evidence.
-- Manual steps: set the four private binding values plus finite limits in a
+- Manual steps: set the existing bearer/user/Workspace binding values plus the
+  credential id and three finite limit values in a
   local full-app instance, connect a stock client to `/mcp/managed-agent`, call
   start/status with a stable idempotency key, then disable the route and verify
   ordinary web access remains healthy.
@@ -283,50 +360,55 @@ and rollback approval.
 
 ### Slice: Bounded retry-safe MCP ingress admission
 
-**Bead:** `wt-391-forward-rjkl.3`  
-**Priority:** P1  
-**Delivers:** Caller-stable scoped idempotency, finite per-credential admission,
-progress byte caps, compact text projection, and exact final-response proof in
-the existing package MCP edge.  
-**Blocked by:** None after gate 1.  
+**Bead:** `wt-391-forward-rjkl.3`
+**Priority:** P1
+**Delivers:** Canonical AgentTask v2 edge projection, request-authorized Agent
+selection/artifact reader, caller-stable retention-bounded idempotency, exact
+fixed-window/concurrency admission, progress byte caps, compact text projection,
+and exact final-response proof.
+**Blocked by:** planning bead `wt-391-forward-rjkl.1`; the orchestrator closes
+that dependency only after gate-1 approval.
 **File scope:** `packages/agent/src/server/mcp/managedAgentDelegate.ts`,
 `managedAgentMcpServer.ts`, focused delegate test, and MCP exports only if
-required.  
+required.
 **Proof:** focused agent MCP test, agent typecheck, invariants; exact/over,
-concurrency/retry/conflict, cross-scope, dedupe-before-limit, and stock-client
-assertions.  
+state transitions/schema validation, per-request Agent selection,
+concurrency/retry/conflict, cross-scope, fixed-window reset, retention/expiry,
+dedupe-before-limit, and stock-client assertions.
 **Review budget:** Inside — one package controller/server seam and one focused
 test file; fits one worker session.
 
 ### Slice: Bind MCP ingress to current Workspace AgentGateway authority
 
-**Bead:** `wt-391-forward-rjkl.4`  
-**Priority:** P1  
-**Delivers:** Narrow Core-issued gateway/scope capability and full-app edge
-binding that reauthorizes current Workspace membership/default Agent on start
-and status, with no hostname authority.  
-**Blocked by:** `wt-391-forward-rjkl.3`.  
-**File scope:** Core app-server construction plus directly focused tests;
-full-app `managedAgentMcp.ts`, `main.ts`, `dev.ts`, managed MCP and production
-safety tests. No package MCP implementation files.  
+**Bead:** `wt-391-forward-rjkl.4`
+**Priority:** P1
+**Delivers:** Non-parameterized Core binding closure returning branded scope,
+strict resolved Agent, existing gateway, and minimal artifact reader; shared
+unknown-default fallback drift is fixed for web and MCP; full-app reauthorizes
+on start/status with no hostname authority.
+**Blocked by:** `wt-391-forward-rjkl.3`.
+**File scope:** Core app-server construction and strict default resolver plus
+directly focused tests; full-app `managedAgentMcp.ts`, `main.ts`, `dev.ts`, managed MCP and production
+safety tests. No package MCP implementation files.
 **Proof:** focused Core/full-app tests, both package typechecks, invariants;
-negative authorization/default/spoof tests prove no effect before authority.  
+negative authorization/default/spoof tests prove no effect before authority.
 **Review budget:** Inside — one Core composition callback and one app edge
 adapter; fits one worker session.
 
 ### Slice: Stock-client full-app ingress qualification
 
-**Bead:** `wt-391-forward-rjkl.5`  
-**Priority:** P2  
+**Bead:** `wt-391-forward-rjkl.5`
+**Priority:** P2
 **Delivers:** Deterministic external SDK-client qualification and operator docs
-for the final current-authority route, including retry, revocation, bounds,
-redaction, rollback, restart limitation, and direction terminology.  
-**Blocked by:** `wt-391-forward-rjkl.4`.  
+for canonical AgentTask + strict current authority, including retained-window
+retry, revocation, bounds,
+redaction, rollback, restart limitation, and direction terminology.
+**Blocked by:** `wt-391-forward-rjkl.4`.
 **File scope:** `apps/full-app/scripts/managed-agent-mcp-smoke.ts`, full-app
 script wiring only if needed, and `apps/full-app/README.md`. No package/Core or
-route implementation files.  
+route implementation files.
 **Proof:** `pnpm --filter full-app smoke:mcp-managed-agent`, focused full-app
-test, full-app typecheck, invariants, with pasted assertion counts.  
+test, full-app typecheck, invariants, with pasted assertion counts.
 **Review budget:** Inside — one deterministic smoke and its operator contract;
 fits one worker session.
 
@@ -383,6 +465,14 @@ combined contract. File scopes do not overlap across writer beads.
 
 ## Adversarial Review
 
-Pending fresh-context review of this final plan and Beads graph on
-`openai-codex:gpt-5.6-sol`; provenance, findings, dispositions, target SHA, and
-verdict will be appended before handoff.
+- **Reviewer:** `openai-codex:gpt-5.6-sol` (fresh-context `reviewer`).
+- **Mandate:** refute plan/graph against Decisions 22/28/29/30, current ingress
+  code, #1011 direction, authority safety, executable slices, dependencies, and
+  proof; read-only, never rewrite.
+- **Target:** commit `3f7f740a6010ffb046b28576b5b1b92898c06945`.
+- **Verdict:** revise.
+- **Disposition:** fixed the gate dependency, strict unknown-default failure,
+  package request-time Agent resolver, operation-scoped artifact reader,
+  non-parameterized Core binding closure, retention-bounded idempotency,
+  Decision 22 AgentTask projection, exact fixed-window contract, and whitespace.
+  A second fresh pass will review the final SHA.
