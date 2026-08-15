@@ -159,10 +159,12 @@ export function QueuedComposerNotice({
   followUps,
   onEdit,
   onResume,
+  resumePending = false,
 }: {
   followUps: QueuedUserMessage[]
   onEdit: () => void
   onResume?: () => void
+  resumePending?: boolean
 }) {
   return (
     <div
@@ -185,6 +187,8 @@ export function QueuedComposerNotice({
             variant="ghost"
             size="icon-sm"
             onClick={onResume}
+            disabled={resumePending}
+            aria-busy={resumePending}
             data-boring-agent-part="composer-queue-resume"
             className="text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)]"
             aria-label="Resume queued follow-ups"

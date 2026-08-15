@@ -287,14 +287,18 @@ async function clickStop(ctx: RunnerContext): Promise<ChatAction> {
     await ctx.page.waitForTimeout(100)
     return 'wait'
   }
-  await expect(ctx.queuePreview).toHaveCount(0, { timeout: 10_000 })
+  await expect(ctx.page.getByTestId('chat-working')).toHaveCount(0, { timeout: 10_000 })
 
   const knownQueued = extractKnownQueuedText(before.queueText)
   if (knownQueued) {
+    await expect(ctx.queuePreview).toContainText(knownQueued, { timeout: 10_000 })
+    await expect(ctx.conversation.getByText(knownQueued)).toHaveCount(0)
+    await ctx.page.getByRole('button', { name: 'Resume queued follow-ups', exact: true }).click()
     await expect.poll(async () => queuedTextState(ctx.page, knownQueued), {
-      message: `expected queued follow-up "${knownQueued}" to become a submitted turn after Stop`,
+      message: `expected held follow-up "${knownQueued}" to become a submitted turn only after exact Resume`,
       timeout: 10_000,
     }).toBe('submitted')
+    await expect(ctx.queuePreview).toHaveCount(0, { timeout: 10_000 })
   }
   return 'click-stop'
 }

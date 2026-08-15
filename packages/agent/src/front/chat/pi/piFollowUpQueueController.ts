@@ -56,6 +56,8 @@ export type PiQueueEditQueuedResult =
 
 interface QueueRecoveryCoordination {
   inFlight?: Promise<PiQueueEditQueuedResult>
+  readonly recoveredSelectors: Map<string, string>
+  recoveredBlock: string
 }
 
 const queueRecoveryByKey = new WeakMap<object, QueueRecoveryCoordination>()
@@ -113,19 +115,22 @@ export class PiFollowUpQueueController {
 
   editQueued(): Promise<PiQueueEditQueuedResult> {
     const key = this.options.coordinationKey ?? this.session
-    const coordination = queueRecoveryByKey.get(key) ?? {}
+    const coordination = queueRecoveryByKey.get(key) ?? {
+      recoveredSelectors: new Map<string, string>(),
+      recoveredBlock: '',
+    }
     queueRecoveryByKey.set(key, coordination)
     if (coordination.inFlight) return coordination.inFlight
-    const run = this.editQueuedOnce()
+    const run = this.editQueuedOnce(coordination)
     coordination.inFlight = run
     void run.finally(() => {
       if (coordination.inFlight === run) coordination.inFlight = undefined
-      queueRecoveryByKey.delete(key)
+      if (coordination.recoveredSelectors.size === 0) queueRecoveryByKey.delete(key)
     }).catch(() => {})
     return run
   }
 
-  private async editQueuedOnce(): Promise<PiQueueEditQueuedResult> {
+  private async editQueuedOnce(coordination: QueueRecoveryCoordination): Promise<PiQueueEditQueuedResult> {
     const followUps = this.session.getState().queue.followUps
     if (followUps.length === 0) {
       const message = 'No queued messages to edit.'
@@ -143,22 +148,44 @@ export class PiFollowUpQueueController {
       return { type: 'clear-failed', draft, error, message }
     }
 
-    // Recover the complete snapshot synchronously before the first destructive
-    // request. This keeps typed content in the originating composer even if the
-    // user switches sessions or a clear commits but its receipt is lost.
+    // Recover each selector exactly once before its first destructive request.
+    // The coordination key survives policy/controller recreation for a session,
+    // so retrying a partial clear cannot duplicate text already in the draft.
+    const currentItems = new Map(selected.map((item) => [
+      queueSelectorKey(item.selector!),
+      item.followUp.displayText,
+    ]))
+    for (const [selectorKey, recoveredText] of coordination.recoveredSelectors) {
+      if (currentItems.get(selectorKey) !== recoveredText) coordination.recoveredSelectors.delete(selectorKey)
+    }
+    const newlyRecovered = selected.filter((item) => (
+      coordination.recoveredSelectors.get(queueSelectorKey(item.selector!)) !== item.followUp.displayText
+    ))
     const currentDraft = this.options.getDraft?.() ?? ''
-    const draft = buildEditedQueuedDraft(followUps, currentDraft)
+    const newBlock = newlyRecovered.map((item) => item.followUp.displayText.trim()).filter(Boolean).join('\n\n')
+    const draft = newBlock && coordination.recoveredBlock && currentDraft.startsWith(coordination.recoveredBlock)
+      ? `${coordination.recoveredBlock}\n\n${newBlock}${currentDraft.slice(coordination.recoveredBlock.length)}`
+      : buildEditedQueuedDraft(newlyRecovered.map((item) => item.followUp), currentDraft)
     if (draft !== currentDraft) this.options.onDraftChange?.(draft)
+    if (newBlock) coordination.recoveredBlock = coordination.recoveredBlock
+      ? `${coordination.recoveredBlock}\n\n${newBlock}`
+      : newBlock
+    for (const item of newlyRecovered) {
+      coordination.recoveredSelectors.set(queueSelectorKey(item.selector!), item.followUp.displayText)
+    }
 
     let clearError: unknown
     for (const item of selected) {
+      const selectorKey = queueSelectorKey(item.selector!)
       try {
         await this.session.clearQueue(item.selector!)
+        coordination.recoveredSelectors.delete(selectorKey)
       } catch (error) {
         clearError = error
         break
       }
     }
+    if (coordination.recoveredSelectors.size === 0) coordination.recoveredBlock = ''
     if (!clearError) return { type: 'cleared', draft }
 
     const message = 'Queued messages were copied into the composer, but some may remain queued. Review the queue and composer before sending.'
@@ -249,6 +276,10 @@ function queueClearSelector(followUp: QueuedUserMessage): QueueClearPayload | un
   }
   if (followUp.clientSeq !== undefined) return { clientSeq: followUp.clientSeq }
   return undefined
+}
+
+function queueSelectorKey(selector: QueueClearPayload): string {
+  return `${selector.clientNonce ?? ''}:${selector.clientSeq ?? ''}`
 }
 
 function isBusySlashCommand(input: PiQueueSubmitInput): boolean {

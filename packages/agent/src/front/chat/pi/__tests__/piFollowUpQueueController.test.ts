@@ -174,8 +174,9 @@ describe('PiFollowUpQueueController', () => {
     ])
     const clearQueue = session.clearQueue
     const failure = new Error('offline')
+    let remainingFailures = 2
     session.clearQueue = vi.fn(async (payload?: QueueClearPayload) => {
-      if (payload?.clientSeq === 2) throw failure
+      if (payload?.clientSeq === 2 && remainingFailures-- > 0) throw failure
       return clearQueue(payload)
     })
     let draft = ''
@@ -201,6 +202,32 @@ describe('PiFollowUpQueueController', () => {
       { id: 'q2', kind: 'followup', displayText: 'still queued', clientSeq: 2 },
     ])
     expect(warnings).toEqual(['Queued messages were copied into the composer, but some may remain queued. Review the queue and composer before sending.'])
+
+    await expect(controller.editQueued()).resolves.toMatchObject({ type: 'clear-failed', draft: 'restored\n\nstill queued' })
+    expect(drafts).toEqual(['restored\n\nstill queued'])
+    expect(session.state.queue.followUps).toEqual([
+      { id: 'q2', kind: 'followup', displayText: 'still queued', clientSeq: 2 },
+    ])
+
+    const recreatedSession = new FakeQueueSession('streaming', [
+      ...session.state.queue.followUps,
+      { id: 'q3', kind: 'followup', displayText: 'newly queued', clientSeq: 3 },
+    ])
+    const recreatedController = createPiFollowUpQueueController(recreatedSession, {
+      coordinationKey,
+      getDraft: () => draft,
+      onDraftChange: (next) => {
+        draft = next
+        drafts.push(next)
+      },
+    })
+    await expect(recreatedController.editQueued()).resolves.toMatchObject({ type: 'cleared' })
+    expect(draft).toBe('restored\n\nstill queued\n\nnewly queued')
+    expect(drafts).toEqual([
+      'restored\n\nstill queued',
+      'restored\n\nstill queued\n\nnewly queued',
+    ])
+    expect(recreatedSession.state.queue.followUps).toEqual([])
   })
 
   it('coalesces concurrent multi-item edits and preserves canonical order', async () => {

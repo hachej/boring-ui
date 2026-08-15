@@ -83,6 +83,7 @@ export interface PiChatComposerSurfaceProps<
   queuePreview: QueuedUserMessage[]
   onEditQueued: () => void
   onResumeQueued: () => void
+  resumeQueuedPending: boolean
   hotReloadEnabled: boolean
   pluginUpdateState: PluginUpdateState | null
   onDismissPluginUpdate: () => void
@@ -147,6 +148,7 @@ export function PiChatComposerSurface<
   queuePreview,
   onEditQueued,
   onResumeQueued,
+  resumeQueuedPending,
   hotReloadEnabled,
   pluginUpdateState,
   onDismissPluginUpdate,
@@ -268,7 +270,12 @@ export function PiChatComposerSurface<
         />
       ) : null}
       {queuePreview.length > 0 ? (
-        <QueuedComposerNotice followUps={queuePreview} onEdit={onEditQueued} onResume={isStreaming ? undefined : onResumeQueued} />
+        <QueuedComposerNotice
+          followUps={queuePreview}
+          onEdit={onEditQueued}
+          onResume={isStreaming ? undefined : onResumeQueued}
+          resumePending={resumeQueuedPending}
+        />
       ) : null}
       {hotReloadEnabled ? (
         <PluginUpdateStatus

@@ -10,6 +10,7 @@ import {
   type AgentSessionRef,
   type IdempotentAgentControl,
   type IdempotentAgentSend,
+  type IdempotentInterruptControl,
   type IdempotentQueueClear,
 } from '../../shared/index'
 import type { PiChatSessionService } from '../../core/piChatSessionService'
@@ -548,7 +549,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     const body = parseWithSchema(InterruptBodySchema, request.body, reply, 'body')
     if (!body) return
     try {
-      const control: IdempotentAgentControl = {
+      const control: IdempotentInterruptControl = {
         requestId: body.requestId ?? randomUUID(),
         ...(body.queueAction !== undefined ? { queueAction: body.queueAction } : {}),
       }

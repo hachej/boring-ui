@@ -158,7 +158,10 @@ export type IdempotentAgentSend = AgentPromptCommand | AgentFollowUpCommand
 
 export interface IdempotentAgentControl {
   readonly requestId: string
-  /** Interrupt-only policy: abort without promoting a queued follow-up. */
+}
+
+export interface IdempotentInterruptControl extends IdempotentAgentControl {
+  /** Abort-and-queue policy specific to interrupt commands. */
   readonly queueAction?: 'hold' | 'resume'
 }
 
@@ -199,7 +202,7 @@ export interface AgentSessionConnection {
   readonly ref: AgentSessionRef
   readonly events: AsyncIterable<AgentSessionEvent>
   send(input: IdempotentAgentSend): Promise<AgentSendReceipt>
-  interrupt(input: IdempotentAgentControl): Promise<CommandReceipt>
+  interrupt(input: IdempotentInterruptControl): Promise<CommandReceipt>
   stop(input: IdempotentAgentControl): Promise<StopReceipt>
   clearQueue(input: IdempotentQueueClear): Promise<QueueClearReceipt>
   close(): Promise<void>

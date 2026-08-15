@@ -10,6 +10,7 @@ import {
   type AuthorizedAgentScope,
   type IdempotentAgentControl,
   type IdempotentAgentSend,
+  type IdempotentInterruptControl,
   type IdempotentQueueClear,
 } from '../../../shared/index'
 import type { PiChatSessionService } from '../../../core/piChatSessionService'
@@ -104,7 +105,7 @@ class FakeGateway implements AgentGateway {
           ...(command.kind === 'followup' ? { clientSeq: command.clientSeq } : {}),
         }
       },
-      interrupt: async (control: IdempotentAgentControl) => {
+      interrupt: async (control: IdempotentInterruptControl) => {
         this.calls.push({ method: 'interrupt', input: control })
         return { accepted: true, cursor: 10 }
       },
