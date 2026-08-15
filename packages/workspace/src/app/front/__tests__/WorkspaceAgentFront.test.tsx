@@ -2317,7 +2317,7 @@ describe("WorkspaceAgentFront", () => {
       expect(call[1]?.headers).not.toHaveProperty("X-BORING-WORKSPACE-ID")
     }
     // gh-601: provisionWorkspace=false must not disable the default remote pi-chat
-    // session hook, since the default chat panel still talks to /api/v1/agent/pi-chat/*.
+    // session hook, since the default chat panel still talks to addressed agent session routes.
     expect(fetchMock.mock.calls.some(([input]) => isDefaultSessionsCollectionUrl(String(input)))).toBe(true)
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agents/default/ready-status"))).toBe(false)
   })
