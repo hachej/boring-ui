@@ -890,7 +890,7 @@ describe('RemotePiSession', () => {
       ['https://agent.test/api/v1/agents/default/sessions/s1/interrupt', 'POST'],
       ['https://agent.test/api/v1/agents/default/sessions/s1/stop', 'POST'],
     ])
-    expect(JSON.parse(String(postCalls[2]?.[1]?.body))).toEqual({ clientNonce: 'nonce-q', clientSeq: 1 })
+    expect(JSON.parse(String(postCalls[2]?.[1]?.body))).toEqual({ clientNonce: 'nonce-q', clientSeq: 1, requestId: 'queue-clear:nonce-q:1' })
     expect(session.getState().committedMessages).toEqual([])
     expect(session.getState().optimisticOutbox['nonce-1']).toMatchObject({
       role: 'user',
@@ -901,6 +901,30 @@ describe('RemotePiSession', () => {
     expect(Date.parse(session.getState().optimisticOutbox['nonce-1']?.createdAt ?? '')).not.toBeNaN()
     expect(session.getState().optimisticOutbox['nonce-q']).toBeUndefined()
 
+    session.dispose()
+  })
+
+  it('retries selected queue clears with one idempotency key after an ambiguous transport failure', async () => {
+    const bodies: unknown[] = []
+    let attempts = 0
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (!url.endsWith('/queue/clear')) throw new Error(`unexpected URL ${url}`)
+      bodies.push(JSON.parse(String(init?.body)))
+      attempts += 1
+      if (attempts === 1) throw new TypeError('connection reset after commit')
+      return jsonResponse({ accepted: true, cursor: 3, cleared: 1 })
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    await expect(session.clearQueue({ clientNonce: 'nonce-q', clientSeq: 1 })).resolves.toEqual({
+      accepted: true,
+      cursor: 3,
+      cleared: 1,
+    })
+    expect(bodies).toEqual([
+      { clientNonce: 'nonce-q', clientSeq: 1, requestId: 'queue-clear:nonce-q:1' },
+      { clientNonce: 'nonce-q', clientSeq: 1, requestId: 'queue-clear:nonce-q:1' },
+    ])
     session.dispose()
   })
 

@@ -52,6 +52,8 @@ export type PiQueueEditQueuedResult =
   | { type: 'empty'; message: string }
   | { type: 'clear-failed'; draft: string; error: unknown; message: string }
 
+const editQueuedInFlight = new WeakMap<PiQueueSessionLike, Promise<PiQueueEditQueuedResult>>()
+
 export class PiFollowUpQueueController {
   private nextClientSeqFloor: number | undefined
 
@@ -103,7 +105,18 @@ export class PiFollowUpQueueController {
     return { type: 'prompt', clientNonce, cursor: receipt.cursor }
   }
 
-  async editQueued(): Promise<PiQueueEditQueuedResult> {
+  editQueued(): Promise<PiQueueEditQueuedResult> {
+    const active = editQueuedInFlight.get(this.session)
+    if (active) return active
+    const run = this.editQueuedOnce()
+    editQueuedInFlight.set(this.session, run)
+    void run.finally(() => {
+      if (editQueuedInFlight.get(this.session) === run) editQueuedInFlight.delete(this.session)
+    }).catch(() => {})
+    return run
+  }
+
+  private async editQueuedOnce(): Promise<PiQueueEditQueuedResult> {
     const followUps = this.session.getState().queue.followUps
     if (followUps.length === 0) {
       const message = 'No queued messages to edit.'
@@ -129,7 +142,9 @@ export class PiFollowUpQueueController {
     }
 
     const currentDraft = this.options.getDraft?.() ?? ''
-    const draft = buildEditedQueuedDraft(clearedFollowUps, currentDraft)
+    const draft = clearedFollowUps.length > 0
+      ? buildEditedQueuedDraft(clearedFollowUps, currentDraft)
+      : currentDraft
     if (draft !== currentDraft) this.options.onDraftChange?.(draft)
     if (!clearError) return { type: 'cleared', draft }
 

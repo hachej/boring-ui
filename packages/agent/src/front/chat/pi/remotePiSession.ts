@@ -1,6 +1,7 @@
 import { ErrorCode } from '../../../shared/error-codes'
 import {
   errorResponseCode,
+  GatewayResponseError,
   gatewayResponseErrorFromBody,
   isRuntimeScopeMismatchError,
 } from '../gatewayResponseError'
@@ -263,7 +264,13 @@ export class RemotePiSession {
   }
 
   async clearQueue(payload: QueueClearPayload = {}): Promise<QueueClearReceipt> {
-    const receipt = await this.postCommand('/queue/clear', payload, QueueClearReceiptSchema)
+    let receipt: QueueClearReceipt
+    try {
+      receipt = await this.postCommand('/queue/clear', payload, QueueClearReceiptSchema)
+    } catch (error) {
+      if (error instanceof GatewayResponseError) throw error
+      receipt = await this.postCommand('/queue/clear', payload, QueueClearReceiptSchema)
+    }
     if (!this.disposed && receipt.cleared > 0) {
       this.store.dispatch({ type: 'clear-optimistic-followups', ...payload }, { flush: true })
     }
@@ -638,6 +645,15 @@ export class RemotePiSession {
         requestId: record.clientNonce,
         content: message,
         ...(typeof displayMessage === 'string' ? { displayContent: displayMessage } : {}),
+      }
+    }
+    if (
+      path === '/queue/clear'
+      && (typeof record.clientNonce === 'string' || typeof record.clientSeq === 'number')
+    ) {
+      return {
+        ...record,
+        requestId: `queue-clear:${typeof record.clientNonce === 'string' ? record.clientNonce : ''}:${typeof record.clientSeq === 'number' ? record.clientSeq : ''}`,
       }
     }
     if (
