@@ -916,6 +916,9 @@ describe('RemotePiSession', () => {
       bodies.push(JSON.parse(String(init?.body)))
       attempts += 1
       if (attempts === 1) throw new TypeError('connection reset after commit')
+      if (attempts <= 3) {
+        return jsonResponse({ error: { code: 'AGENT_REQUEST_IN_PROGRESS', message: 'still clearing' } }, 409)
+      }
       return jsonResponse({ accepted: true, cursor: 3, cleared: 1 })
     }) as unknown as MockFetch
     const session = createSession(fetchMock, { autoStart: false })
@@ -925,13 +928,13 @@ describe('RemotePiSession', () => {
       cursor: 3,
       cleared: 1,
     })
-    expect(bodies).toHaveLength(2)
+    expect(bodies).toHaveLength(4)
     expect(bodies[0]).toEqual({
       clientNonce: 'nonce-q',
       clientSeq: 1,
       requestId: expect.stringMatching(/^queue-clear:[a-f0-9-]{36}$/u),
     })
-    expect(bodies[1]).toEqual(bodies[0])
+    expect(bodies.slice(1)).toEqual([bodies[0], bodies[0], bodies[0]])
     session.dispose()
   })
 

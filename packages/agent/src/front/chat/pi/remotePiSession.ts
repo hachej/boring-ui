@@ -1,5 +1,6 @@
 import { ErrorCode } from '../../../shared/error-codes'
 import { safeRandomUUID } from '../../../shared/random-id'
+import { AgentGatewayErrorCode } from '../../../shared/gateway/errors'
 import {
   errorResponseCode,
   GatewayResponseError,
@@ -265,20 +266,30 @@ export class RemotePiSession {
   }
 
   async clearQueue(payload: QueueClearPayload = {}): Promise<QueueClearReceipt> {
-    const commandPayload = hasQueueSelector(payload)
-      ? { ...payload, requestId: `queue-clear:${safeRandomUUID()}` }
-      : payload
-    let receipt: QueueClearReceipt
-    try {
-      receipt = await this.postCommand('/queue/clear', commandPayload, QueueClearReceiptSchema)
-    } catch (error) {
-      if (error instanceof GatewayResponseError || !hasQueueSelector(payload)) throw error
-      receipt = await this.postCommand('/queue/clear', commandPayload, QueueClearReceiptSchema)
-    }
+    const receipt = hasQueueSelector(payload)
+      ? await this.postSelectedQueueClear({ ...payload, requestId: `queue-clear:${safeRandomUUID()}` })
+      : await this.postCommand('/queue/clear', payload, QueueClearReceiptSchema)
     if (!this.disposed && receipt.cleared > 0) {
       this.store.dispatch({ type: 'clear-optimistic-followups', ...payload }, { flush: true })
     }
     return receipt
+  }
+
+  private async postSelectedQueueClear(commandPayload: QueueClearPayload & { requestId: string }): Promise<QueueClearReceipt> {
+    let transportRetried = false
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await this.postCommand('/queue/clear', commandPayload, QueueClearReceiptSchema)
+      } catch (error) {
+        if (!(error instanceof GatewayResponseError)) {
+          if (transportRetried) throw error
+          transportRetried = true
+          continue
+        }
+        if (errorResponseCode(error) !== AgentGatewayErrorCode.AGENT_REQUEST_IN_PROGRESS || attempt >= 40) throw error
+        await new Promise<void>((resolve) => { this.setTimeoutFn(resolve, 50) })
+      }
+    }
   }
 
   async interrupt(payload: InterruptPayload = {}): Promise<CommandReceipt> {
