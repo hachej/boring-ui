@@ -307,28 +307,29 @@ export async function requireExactlyOneComposioAccount(
 ): Promise<ComposioAccountPin> {
   const toolkitId = input.toolkitId.trim().toLowerCase()
   if (!toolkitId) throw new McpError(MCP_ERROR_CODES.INPUT_INVALID, "Composio toolkit is required")
-  const params = new URLSearchParams({ user_id: composioUserId(input.actor), toolkit_slug: toolkitId, limit: String(MAX_ACCOUNT_RESULTS) })
+  const params = new URLSearchParams({ user_ids: composioUserId(input.actor), toolkit_slugs: toolkitId, limit: String(MAX_ACCOUNT_RESULTS) })
   const payload = await composioRequest(options, input.secret, "GET", `/api/v3.1/connected_accounts?${params}`)
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw safeProviderError("Composio connected-account response was malformed")
   }
   const root = payload as Record<string, unknown>
   if (!Array.isArray(root.items)) throw safeProviderError("Composio connected-account items were malformed")
-  const hasMorePresent = Object.prototype.hasOwnProperty.call(root, "has_more")
-  const cursorPresent = Object.prototype.hasOwnProperty.call(root, "next_cursor") || Object.prototype.hasOwnProperty.call(root, "nextCursor")
-  const cursorValue = root.next_cursor ?? root.nextCursor
-  const pagePresent = Object.prototype.hasOwnProperty.call(root, "page") || Object.prototype.hasOwnProperty.call(root, "total_pages") || Object.prototype.hasOwnProperty.call(root, "totalPages")
-  const page = root.page
-  const totalPages = root.total_pages ?? root.totalPages
+  const cursorValue = root.next_cursor
+  const totalPages = root.total_pages
+  const currentPage = root.current_page
+  const totalItems = root.total_items
   if (
-    (hasMorePresent && typeof root.has_more !== "boolean")
-    || (cursorPresent && cursorValue != null && (typeof cursorValue !== "string" || !cursorValue.trim()))
-    || (pagePresent && (!Number.isInteger(page) || !Number.isInteger(totalPages) || page !== 1 || totalPages !== 1))
+    (cursorValue != null && (typeof cursorValue !== "string" || !cursorValue.trim()))
+    || !Number.isInteger(totalPages)
+    || !Number.isInteger(currentPage)
+    || !Number.isInteger(totalItems)
+    || (root.items.length === 0
+      ? !(totalPages === 0 && currentPage === 0 && totalItems === 0)
+      : !(totalPages === 1 && currentPage === 1 && totalItems === root.items.length))
   ) {
     throw safeProviderError("Composio connected-account pagination was malformed")
   }
-  const continuation = optionalString(cursorValue)
-  if (root.has_more === true || continuation || array(root.items).length >= MAX_ACCOUNT_RESULTS) {
+  if (optionalString(cursorValue) || root.items.length >= MAX_ACCOUNT_RESULTS) {
     throw safeProviderError("Composio connected-account result was incomplete")
   }
   const accounts = root.items.map((value) => {
@@ -340,13 +341,15 @@ export async function requireExactlyOneComposioAccount(
     const userId = optionalString(account.user_id)
     const accountToolkit = optionalString(record(account.toolkit).slug)?.toLowerCase()
     const status = optionalString(account.status)?.toUpperCase()
-    if (!id || !userId || !accountToolkit || !status) {
+    const authConfig = record(account.auth_config)
+    const authConfigId = optionalString(authConfig.id)
+    if (!id || !userId || !accountToolkit || !status || !authConfigId || typeof account.is_disabled !== "boolean" || typeof authConfig.is_disabled !== "boolean") {
       throw safeProviderError("Composio connected-account row was incomplete")
     }
-    return { account, id, userId, accountToolkit, status }
+    return { account, authConfig, id, userId, accountToolkit, status }
   })
-  const active = accounts.flatMap(({ account, id, userId, accountToolkit, status }): ComposioAccountPin[] => {
-    const disabled = account.is_disabled === true || record(account.auth_config).is_disabled === true
+  const active = accounts.flatMap(({ account, authConfig, id, userId, accountToolkit, status }): ComposioAccountPin[] => {
+    const disabled = account.is_disabled || authConfig.is_disabled
     if (userId !== composioUserId(input.actor) || accountToolkit !== toolkitId || disabled) return []
     return status === "ACTIVE" || status === "CONNECTED" || status === "ENABLED" ? [{ connectedAccountId: id, toolkitId }] : []
   })

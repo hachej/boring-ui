@@ -135,8 +135,10 @@ function composioApiFetch(mcpUrl: string, accounts: unknown[] = []) {
     expect(init?.redirect).toBe("error")
     expect(init?.headers).toMatchObject({ "x-api-key": secret.value })
     if (url.includes("/api/v3.1/connected_accounts?")) {
-      expect(url).toContain(`user_id=${composioSubject}`)
-      return Response.json({ items: accounts, has_more: false })
+      expect(url).toContain(`user_ids=${composioSubject}`)
+      expect(url).toContain("toolkit_slugs=github")
+      const count = accounts.length
+      return Response.json({ items: accounts, next_cursor: null, current_page: count ? 1 : 0, total_pages: count ? 1 : 0, total_items: count })
     }
     if (url.endsWith("/api/v3.1/tool_router/session") && init?.method === "POST") {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>
@@ -239,21 +241,24 @@ describe("Composio full-catalog backend", () => {
     const none = composioApiFetch(fakeMcp.url)
     await expect(requireExactlyOneComposioAccount(backendOptions(none.fetch), { actor, secret, toolkitId: "github" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.CONNECTED_ACCOUNT_REQUIRED })
-    for (const malformed of [{ has_more: false }, { items: [{ id: "account-1", user_id: composioSubject, status: "ACTIVE", toolkit: { slug: "github" } }, "malformed-row"], has_more: false }]) {
+    for (const malformed of [
+      { next_cursor: null, current_page: 0, total_pages: 0, total_items: 0 },
+      { items: [{ id: "account-1", user_id: composioSubject, status: "ACTIVE", toolkit: { slug: "github" } }, "malformed-row"], next_cursor: null, current_page: 1, total_pages: 1, total_items: 2 },
+    ]) {
       const fetch = vi.fn(async () => Response.json(malformed)) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
       await expect(requireExactlyOneComposioAccount(backendOptions(fetch), { actor, secret, toolkitId: "github" }))
         .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_ERROR })
     }
 
-    const pagedFetch = vi.fn(async () => Response.json({ items: [{ id: "account-1", user_id: composioSubject, status: "ACTIVE", toolkit: { slug: "github" } }], next_cursor: "more" })) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
+    const pagedFetch = vi.fn(async () => Response.json({ items: [{ id: "account-1", user_id: composioSubject, status: "ACTIVE", is_disabled: false, auth_config: { id: "auth-1", is_disabled: false }, toolkit: { slug: "github" } }], next_cursor: "more", current_page: 1, total_pages: 2, total_items: 2 })) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
     await expect(requireExactlyOneComposioAccount(backendOptions(pagedFetch), { actor, secret, toolkitId: "github" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_ERROR })
-    const malformedPageFetch = vi.fn(async () => Response.json({ items: [], has_more: "false" })) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
+    const malformedPageFetch = vi.fn(async () => Response.json({ items: [], next_cursor: null, current_page: "0", total_pages: 0, total_items: 0 })) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
     await expect(requireExactlyOneComposioAccount(backendOptions(malformedPageFetch), { actor, secret, toolkitId: "github" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_ERROR })
     for (const malformed of [
-      { items: [], next_cursor: "   " },
-      { items: [], page: 1, total_pages: 2, has_more: false },
+      { items: [], next_cursor: "   ", current_page: 0, total_pages: 0, total_items: 0 },
+      { items: [], next_cursor: null, current_page: 1, total_pages: 2, total_items: 0 },
     ]) {
       const fetch = vi.fn(async () => Response.json(malformed)) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
       await expect(requireExactlyOneComposioAccount(backendOptions(fetch), { actor, secret, toolkitId: "github" }))
@@ -265,6 +270,7 @@ describe("Composio full-catalog backend", () => {
       user_id: userId,
       status: "ACTIVE",
       is_disabled: false,
+      auth_config: { id: "auth-config-1", is_disabled: false },
       toolkit: { slug: "github" },
     })
     const multiple = composioApiFetch(fakeMcp.url, [active("account-1"), active("account-2")])
