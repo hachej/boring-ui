@@ -119,6 +119,7 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
 
 import {
   AgentRuntimeIdentityError,
+  ConfiguredDefaultAgentError,
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
   digestWorkspacePiResourceInputs,
@@ -127,12 +128,18 @@ import {
   resolveBoringPiSkillPaths,
   resolveWorkspaceAgentServerPluginCollection,
 } from "../createWorkspaceAgentServer"
+import {
+  CONFIGURED_DEFAULT_AGENT_ERROR_CODE as PUBLIC_CONFIGURED_DEFAULT_AGENT_ERROR_CODE,
+  ConfiguredDefaultAgentError as PublicConfiguredDefaultAgentError,
+} from "../index"
 import { resolveDefaultWorkspacePluginPackagePaths } from "../defaultPluginPackages"
 import { RuntimeBackendRegistry } from "../../../server/runtimeBackend"
 
 const tempDirs: string[] = []
+const inheritedFleetFlag = process.env.BORING_AGENT_FLEET
 
 beforeEach(() => {
+  delete process.env.BORING_AGENT_FLEET
   agentServerMock.captureResolvedRuntimeScope.mockClear()
   agentServerMock.createAgentHost.mockClear()
   agentServerMock.hostClose.mockClear()
@@ -149,6 +156,8 @@ function mockResolvedRuntimeScopeOnce(factory: (resolved?: unknown) => Promise<u
 
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+  if (inheritedFleetFlag === undefined) delete process.env.BORING_AGENT_FLEET
+  else process.env.BORING_AGENT_FLEET = inheritedFleetFlag
 })
 
 async function makeTempDir(prefix: string): Promise<string> {
@@ -2055,6 +2064,11 @@ ${seats}` : "seats: []\n"}`, "utf8")
     expect(createRuntime).not.toHaveBeenCalled()
     expect(agentServerMock.provisionWorkspaceRuntime).not.toHaveBeenCalled()
     expect(agentServerMock.captureResolvedRuntimeScope).not.toHaveBeenCalled()
+  })
+
+  test("exports the configured-default startup error through the public app/server surface", () => {
+    expect(PublicConfiguredDefaultAgentError).toBe(ConfiguredDefaultAgentError)
+    expect(PUBLIC_CONFIGURED_DEFAULT_AGENT_ERROR_CODE).toBe("CONFIG_INVALID")
   })
 
   test("rejects a configured defaultAgentTypeId that is absent from the boot fleet", async () => {

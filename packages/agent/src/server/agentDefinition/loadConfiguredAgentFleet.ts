@@ -392,10 +392,8 @@ export async function loadConfiguredAgentFleet(
     packagesByDefinitionId.set(definitionId, existing)
   }
   const seatedDefinitionIds = new Set(seats.map((seat) => seat.agentTypeId))
-  const conflictedDefinitionIds = new Set<string>()
   for (const [definitionId, descriptors] of packagesByDefinitionId) {
     if (descriptors.length > 1) {
-      conflictedDefinitionIds.add(definitionId)
       const configuredSeat = seats.find((seat) => seat.agentTypeId === definitionId)
       if (configuredSeat) {
         throw new ConfiguredFleetSeatError({
@@ -429,7 +427,6 @@ export async function loadConfiguredAgentFleet(
   for (const binding of seats) {
     try {
       const descriptors = packagesByDefinitionId.get(binding.agentTypeId) ?? []
-      if (conflictedDefinitionIds.has(binding.agentTypeId)) continue
       const descriptor = descriptors[0]
       if (!descriptor || !descriptor.preflight.ok) throw new Error(`seat "${binding.seat}" has no valid discovered agent package`)
       // Canonicalize the discovered package root once: everything after this
