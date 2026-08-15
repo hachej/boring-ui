@@ -687,6 +687,7 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
     const identity = sourceIdentityKey(source)
     const revision = createMcpSourceRevision(source)
     if (sourceRevisions.get(identity) !== revision) {
+      cacheGeneration += 1
       searchCache.deletePrefix(`${identity}:`)
       describeCache.deletePrefix(`${identity}:`)
       sourceRevisions.set(identity, revision)

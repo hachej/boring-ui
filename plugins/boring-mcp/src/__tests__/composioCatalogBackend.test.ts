@@ -80,7 +80,7 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
   return chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : undefined
 }
 
-async function listenFakeComposioMcp(options: { metadataCanary?: string; oversizedSchema?: boolean; oversizedResponse?: boolean; delayMs?: number; exposedWorkbench?: boolean; mismatchedSlug?: boolean; missingInputSchema?: boolean; invalidInputSchemaType?: boolean; missingToolkit?: boolean } = {}) {
+async function listenFakeComposioMcp(options: { metadataCanary?: string; oversizedSchema?: boolean; oversizedResponse?: boolean; delayMs?: number; exposedWorkbench?: boolean; mismatchedSlug?: boolean; missingInputSchema?: boolean; invalidInputSchemaType?: boolean; missingToolkit?: boolean; toolDescription?: string } = {}) {
   const calls: Array<{ name: string; arguments: unknown }> = []
   const server = new McpServer({ name: "fake-composio", version: "1.0.0" })
   server.registerTool("COMPOSIO_SEARCH_TOOLS", { description: "controlled search" }, async () => {
@@ -103,7 +103,7 @@ async function listenFakeComposioMcp(options: { metadataCanary?: string; oversiz
             ? `provider text ${options.metadataCanary}`
             : options.oversizedResponse
               ? "x".repeat(600_000)
-              : "Get the current GitHub user",
+              : options.toolDescription ?? "Get the current GitHub user",
           input_schema: options.missingInputSchema ? undefined : options.invalidInputSchemaType ? { type: "array" } : options.oversizedSchema ? { type: "object", padding: "x".repeat(70_000) } : { type: "object", properties: {} },
           output_schema: { type: "object" },
         },
@@ -455,6 +455,43 @@ describe("Composio full-catalog backend", () => {
     await catalog.searchTools(actor, { sourceId: source.id, query: "github cached", limit: 1 })
     expect(api.sessionBodies).toHaveLength(afterDescribeRefresh + 1)
 
+  })
+
+  it("generation-fences an in-flight write across an A-to-B-to-A source revision transition", async () => {
+    const slowA = await listenFakeComposioMcp({ delayMs: 150, toolDescription: "stale A" })
+    const revisionB = await listenFakeComposioMcp({ toolDescription: "revision B" })
+    const freshA = await listenFakeComposioMcp({ toolDescription: "fresh A" })
+    const urls = [slowA.url, revisionB.url, freshA.url]
+    let sessionCount = 0
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith("/api/v3.1/tool_router/session") && init?.method === "POST") {
+        const id = `generation-session-${sessionCount + 1}`
+        const mcpUrl = urls[sessionCount++]!
+        return Response.json({ id, mcp: { url: mcpUrl }, config: { workbench: { enable: false } } })
+      }
+      const match = url.match(/\/(generation-session-\d+)$/)
+      if (match && init?.method === "DELETE") return new Response(undefined, { status: 204 })
+      if (match && init?.method === "GET") return Response.json({ error: "not found" }, { status: 404 })
+      return Response.json({ error: "not found" }, { status: 404 })
+    }) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
+    let currentSource: McpSource = { ...source, connectorRef: { provider: "composio", connectedAccountId: "account-A" } }
+    const dynamicRegistry: McpSourceRegistry = { listSources: vi.fn(async () => [currentSource]), getSource: vi.fn(async () => currentSource) }
+    const catalog = createBoringMcpToolCatalog({ registry: dynamicRegistry, transport: fallbackTransport, managedCatalog: createComposioCatalogBackend(backendOptions(fetch)) })
+
+    const stale = catalog.searchTools(actor, { sourceId: source.id, query: "github race", limit: 1 })
+    while (sessionCount < 1) await new Promise((resolve) => setTimeout(resolve, 1))
+    currentSource = { ...currentSource, connectorRef: { provider: "composio", connectedAccountId: "account-B" } }
+    await catalog.searchTools(actor, { sourceId: source.id, query: "github B", limit: 1 })
+    currentSource = { ...currentSource, connectorRef: { provider: "composio", connectedAccountId: "account-A" } }
+    const fresh = await catalog.searchTools(actor, { sourceId: source.id, query: "github race", limit: 1 })
+    expect(fresh.tools[0]?.description).toBe("fresh A")
+    await stale
+
+    const sessionsBeforeCacheHit = sessionCount
+    const cached = await catalog.searchTools(actor, { sourceId: source.id, query: "github race", limit: 1 })
+    expect(cached.tools[0]?.description).toBe("fresh A")
+    expect(sessionCount).toBe(sessionsBeforeCacheHit)
   })
 
   it("rejects missing or mismatched provider schemas instead of fabricating descriptors", async () => {
