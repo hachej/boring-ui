@@ -118,8 +118,8 @@ static credential binding
   -> strict Workspace defaultAgentTypeId resolution against static fleet
   -> binding-specific Core authorizeStart() / authorizeStatus() closures
   -> capability-light StartAdmission; lease only after dedupe/limits
-  -> task lease for one new task; separate scope for status disclosure
-  -> existing AgentGateway
+  -> narrow task capability lease for one new task; separate status disclosure
+  -> Core closes over strict Agent selection + AuthorizedAgentScope + AgentGateway
   -> existing managed MCP delegation and bounded delivery
 ```
 
@@ -144,7 +144,7 @@ handoff may lose the record and permit another run.
 | --- | --- | --- |
 | **External MCP client connection** | The caller's SDK `Client` plus HTTP connection(s). Streamable HTTP may reconnect or issue concurrent requests; it is not an Agent runtime. | External caller; outside boring-ui. |
 | **MCP server transport session** | The server-side SDK `McpServer` + `StreamableHTTPServerTransport` for protocol parsing and response delivery. Today's route has `sessionIdGenerator: undefined`, so it is stateless across HTTP requests and creates/closes this pair per request/response. | Full-app MCP edge; request/transport lifetime. |
-| **Selected `AgentGateway`** | Decision 29's sole Agent session API, selected only after current credential/Workspace/default-Agent authorization. It is not an MCP transport and does not own the external connection. | Application fleet process; borrowed by one admitted task lease. |
+| **Selected `AgentGateway`** | Decision 29's sole Agent session API, selected only after current credential/Workspace/default-Agent authorization. It is not an MCP transport and is never exposed raw to the MCP package. | Application fleet process; Core's narrow task capability closes over it for one admitted task. |
 | **Workspace authorization/default** | Current app, non-deleted Workspace, membership, principal, and strict persisted `defaultAgentTypeId`. Workspace chooses the authorized Agent; it does not hold an MCP socket or protocol session. | Core/Workspace authority; rechecked for each start and status call. |
 | **Background agent task** | One admitted canonical `AgentTask` plus gateway session, bounded artifact collection, concurrency slot, and retained receipt. | Process-lifetime MCP delegate controller record plus one per-task execution lease until terminal collection. |
 | **Factory worker session** | The development automation session that later implements a bead. It is not a product runtime or MCP component. | Boring Factory only; no production connection, task, Workspace, or gateway ownership. |
@@ -161,7 +161,7 @@ running delegation.
 | --- | --- | --- | --- |
 | **A — each `AgentApplication` holds an MCP connection** | One protocol client/server connection per fleet Agent. | Superficially makes routing look direct. | **Reject.** It couples an edge protocol and caller lifetime to deployment-static behavior objects, duplicates transport ownership per Agent, bypasses Workspace strict-default selection, and conflicts with Decisions 22/28/29. AgentApplications receive invocation capabilities; they do not own transport sessions. |
 | **B — Workspace holds the MCP connection** | The authorized Workspace keeps the external protocol session and dispatches from it. | Makes Workspace selection visible. | **Reject.** Workspace is authorization/default/filesystem authority, not a network-session container. Connection churn would distort Workspace lifetime, risk cross-client state, and couple Core/CLI Workspace orchestration to one edge protocol. |
-| **C — app edge owns protocol transport; delegate controller owns receipts; each admitted task owns a bounded execution lease** | Full-app authenticates each request and owns the stateless SDK transport. The process-lifetime MCP controller holds only bounded task/receipt state. After reauthorization, dedupe and limits, one new task acquires the selected AgentGateway/scope/reader lease through terminal collection. | Keeps protocol at the edge, Workspace as authority, AgentGateway as the sole session contract, and task authority no broader/longer than needed. | **Choose.** This matches Decisions 22/28/29/30 and today's `createManagedAgentMcpHttpHandler`: per-request SDK transport with `sessionIdGenerator: undefined`, while one controller is created at route registration and survives request disconnects. |
+| **C — app edge owns protocol transport; delegate controller owns receipts; each admitted task owns a bounded execution lease** | Full-app authenticates each request and owns the stateless SDK transport. The process-lifetime MCP controller holds only bounded task/receipt state. After reauthorization, dedupe and limits, one new task acquires a narrow Core capability that closes over the selected AgentGateway/scope and exposes only task run/stop, minimal reader, and release through terminal collection. | Keeps protocol at the edge, Workspace as authority, AgentGateway as the sole hidden session contract, and task authority no broader/longer than needed. | **Choose.** This matches Decisions 22/28/29/30 and today's `createManagedAgentMcpHttpHandler`: per-request SDK transport with `sessionIdGenerator: undefined`, while one controller is created at route registration and survives request disconnects. |
 
 No new long-lived MCP server session is introduced. If a later MCP feature
 requires a stateful server session, the full-app edge still owns it and maps its
@@ -177,34 +177,51 @@ AgentApplication and grants no selection or execution authority.
 2. **Select Agent.** `authorizeStart()` rechecks app, Workspace existence,
    membership, principal, and strict persisted `defaultAgentTypeId` against the
    static fleet. Neither connection nor MCP session chooses an Agent.
-3. **Admit task.** The process-lifetime controller scopes idempotency to the
-   trusted credential/principal/Workspace/Agent binding, returns retained work
-   when possible, then enforces fixed-window rate, per-credential concurrency,
-   and capacity. Only one newly reserved record calls `acquireTaskLease()`.
-4. **Run.** The task record, not the transport, retains the selected gateway,
-   branded scope, minimal reader, and concurrency slot through terminal result
-   and artifact collection. `delegate_task_start` returns a receipt as soon as
-   admission is recorded; `delegate_task` keeps the request open to terminal.
+3. **Admit task / commit async ownership.** The process-lifetime controller
+   scopes idempotency to the trusted credential/principal/Workspace/Agent binding,
+   returns retained work when possible, then enforces fixed-window rate,
+   per-credential concurrency, and capacity. Only one newly reserved record calls
+   `acquireTaskLease()`. The async commit point is observable inside the controller:
+   the narrow lease is atomically attached and a running receipt is stored before
+   response delivery is attempted. Before commit, request abort cancels admission;
+   after commit, task-owned cancellation replaces the request signal. A lost
+   response can recover the same receipt by idempotent retry.
+4. **Run.** The task record, not the transport, retains the narrow task runner,
+   minimal reader, and concurrency slot through terminal result and artifact
+   collection. Core retains the raw scope/gateway and closes task methods over the
+   strictly resolved Agent. `delegate_task_start` returns the stored receipt;
+   `delegate_task` keeps the request open to terminal.
 5. **Status / poll.** The same external SDK client may poll sequentially or in
    parallel, and a reconnecting client with the same credential may poll too.
    Every status call independently runs `authorizeStatus()` and receives only a
    disclosure key; it never reacquires the execution lease.
-6. **Disconnect.** Closing/loss of the HTTP/MCP transport closes only the
-   request-scoped SDK server/transport. After `delegate_task_start` has returned
-   its receipt, connection loss **does not cancel** the background task. For the
-   synchronous `delegate_task`, request abort **does cancel** that task, projects
-   canonical `canceled`, and releases lease + concurrency exactly once. A client
-   that needs disconnect-tolerant work must use start + status.
+6. **Disconnect and cross-tool retry.** Closing/loss of HTTP/MCP closes only the
+   request-scoped SDK server/transport. An async-created task survives after the
+   controller commit point even if its receipt never reaches the client. Both MCP
+   start tools share one task keyed by scope/key/payload: each caller gets its own
+   response shape (`delegate_task_start` returns current receipt; `delegate_task`
+   waits for terminal). The task's origin mode is frozen at first admission. Only
+   the originating synchronous request signal may cancel a sync-created task;
+   aborting a duplicate waiter never cancels shared work, and async-created tasks
+   use only explicit controller/shutdown cancellation.
 7. **Completion / cleanup.** `completed`, `failed`, `canceled`, and `rejected`
    all release the task lease and concurrency slot exactly once after bounded
    terminal collection. Only the non-capability receipt remains until TTL; then
-   pruning removes it. Route/application shutdown aborts in-flight work, awaits
-   terminal cleanup, then closes the application-owned gateway.
+   pruning removes it.
 8. **Revocation.** Membership/deletion/default drift denies new starts and later
-   status disclosure. A previously admitted asynchronous task may finish under
-   its admission snapshot, but the revoked caller cannot poll it. Revocation
-   does not use connection closure as an authorization signal.
-9. **Process restart.** Request transports, controller records, running tasks,
+   status disclosure. Gateway revalidation remains authoritative through task
+   creation/connect/send. The snapshot boundary is the accepted gateway send
+   receipt, not controller admission: revocation before that receipt rejects the
+   effect; after it, the already-running event stream and lease-authorized artifact
+   collection may finish, but the revoked caller cannot poll. Connection closure
+   is never an authorization signal.
+9. **Shutdown.** Route close stops admission, aborts task-owned signals, and waits
+   at most required `shutdownGraceMs` (100..300,000). Cooperative tasks clean up
+   normally. At deadline, unresolved records are fenced from publishing status or
+   performing later task/reader calls, marked canceled, and their lease/slot are
+   logically released exactly once; late settlement is ignored. Only then may the
+   application close its gateway, whose own lifecycle policy remains authoritative.
+10. **Process restart.** Request transports, controller records, running tasks,
    and task leases are process-local. Restart closes/loses them; startup creates
    a new edge/controller and fleet gateway. There is no resume/recovery claim;
    old delegation ids return not found and retry may duplicate work.
@@ -217,8 +234,10 @@ create a new authority bucket. Admission keys by trusted `credentialId`, not by
 TCP connection, SDK client instance, MCP session id, JSON-RPC id, or bearer text.
 Every genuinely new admitted start consumes both the credential's fixed-window
 start budget and one `maxConcurrentPerCredential` slot. Retained idempotent
-retries consume neither. Concurrent same-key calls single-flight. Completion or
-any terminal failure releases exactly one slot. Therefore opening more
+retries consume neither. Concurrent same-key calls across either start tool
+single-flight onto one task; the first admission freezes its origin/cancellation
+mode, while duplicate call abort cancels only that waiter. Completion or any
+terminal failure releases exactly one slot. Therefore opening more
 connections or client instances cannot bypass per-credential concurrency; a
 credential may run at most the configured 1..100 tasks concurrently, additionally
 bounded by global controller capacity.
@@ -326,8 +345,12 @@ type ManagedMcpStartAdmission = {
 }
 
 type ManagedMcpTaskLease = {
-  scope: AuthorizedAgentScope
-  gateway: AgentGateway
+  // Core closes over AuthorizedAgentScope, strict agentTypeId, and AgentGateway.
+  // No raw gateway/scope/close/list/arbitrary-agent operation crosses this seam.
+  task: {
+    run(input: ManagedMcpBoundTaskInput): AsyncIterable<AgentEvent>
+    stop(reason: 'caller-abort' | 'shutdown'): Promise<void>
+  }
   artifactReader: Pick<Workspace, 'stat' | 'readBinaryFile'>
   release(): Promise<void>
 }
@@ -351,14 +374,16 @@ continues after `delegate_task_start` returns and inline artifact collection,
 then releases it and the concurrency slot exactly once for every canonical
 terminal state: completed, failed, canceled, or rejected.
 
-This is the explicit admission-snapshot boundary: membership removal does not
-retroactively cancel the admitted task or its authorized artifact read.
+This is not a controller-admission snapshot that bypasses gateway checks.
+Decision 29 revalidation remains authoritative through create/connect/send. The
+snapshot begins only after the gateway accepts the send effect; from there the
+already-running event stream and lease-authorized artifact read may finish.
 
 `authorizeStatus()` independently rechecks the same bound identity and strict
 default, then returns only a trusted disclosure key for receipt lookup. It has
 no AgentGateway, scope-minting parameter, or artifact reader. If membership is
-removed, new starts and later status disclosure fail; an already-admitted task
-may finish under its lease, but its polling result is not disclosed until the
+removed, new starts and later status disclosure fail; a task whose send effect
+was already accepted may finish under its lease, but its polling result is not disclosed until the
 caller is authorized again (and only while retained).
 
 Both closures accept no identity arguments. Core owns scope issuance and the
@@ -367,13 +392,15 @@ that can mint arbitrary scope. The shared Core default resolver and web tests
 are reconciled so web and MCP cannot silently fall back from an unknown
 persisted Agent.
 
-The route remains absent unless credential identity/binding and all three finite
-admission options are complete. Full-app uses explicit server-only names
+The route remains absent unless credential identity/binding and all four finite
+lifecycle/admission options are complete. Full-app uses explicit server-only names
 `BORING_MANAGED_AGENT_MCP_CREDENTIAL_ID`,
 `BORING_MANAGED_AGENT_MCP_MAX_STARTS_PER_WINDOW`,
 `BORING_MANAGED_AGENT_MCP_START_WINDOW_MS`, and
-`BORING_MANAGED_AGENT_MCP_MAX_CONCURRENT`; enabled startup rejects missing,
-non-integer, zero, negative, or out-of-range values. It remains a protocol binding at the edge under
+`BORING_MANAGED_AGENT_MCP_MAX_CONCURRENT`, and
+`BORING_MANAGED_AGENT_MCP_SHUTDOWN_GRACE_MS`; enabled startup rejects missing,
+non-integer, zero, negative, or out-of-range values. Shutdown grace is
+100..300,000 ms. It remains a protocol binding at the edge under
 Decision 22 and creates no second behavior resolver, filesystem authority, or
 runtime owner.
 
@@ -390,8 +417,9 @@ an unmodified SDK client and prove:
 - a same-key retry within retained TTL creates one gateway session, while the
   post-TTL/restart duplicate limitation is explicit;
 - removed membership or a deleted Workspace denies new starts and status
-  disclosure without revealing target existence; an already-admitted polling
-  task may finish and collect its artifact under its task lease, but the revoked
+  disclosure without revealing target existence; a polling task whose gateway
+  send was already accepted may finish and collect its artifact under its narrow
+  task lease, but the revoked
   caller cannot poll it; terminal cleanup always releases the lease;
 - polling returns bounded progress and a bounded final result without secret,
   token, host root, session root, or artifact path;
@@ -422,9 +450,10 @@ and rollback approval.
 6. **Separate task admission from status disclosure.** Every new start gets one
    reauthorized capability-light admission; only a new reserved task acquires
    one lease retained through terminal cleanup; every status lookup
-   reauthorizes independently and receives no execution/artifact capability. An
-   admitted turn and its artifact collection use the admission snapshot; this
-   plan does not invent mid-turn revocation hooks.
+   reauthorizes independently and receives no execution/artifact capability.
+   Gateway per-use checks remain authoritative through accepted send; only then
+   may the running stream and authorized artifact collection finish under the
+   bounded task lease without inventing mid-turn revocation hooks.
 7. **Keep retry state process-local and retention-bounded.** Same-process
    duplicate model work within retained TTL is the
    immediate defect. Restart-safe exactly-once work belongs to a durable-task
@@ -438,20 +467,21 @@ and rollback approval.
 10. **Keep connection, receipt, and execution ownership separate.** Choose option
     C: full-app owns request-scoped MCP transport, the delegate controller owns
     bounded process-local receipts, and each new task owns one terminally bounded
-    execution lease. AgentApplication and Workspace own neither the connection nor
-    the task lease.
+    narrow execution lease while Core retains raw gateway/scope. AgentApplication
+    and Workspace own neither the connection nor the task lease.
 11. **Connection loss is not revocation.** Async start survives disconnect;
-    synchronous delegation cancels on request abort; process shutdown aborts all
-    in-flight work and awaits exactly-once cleanup before gateway close.
+    first admission freezes cancellation ownership; duplicate waiter abort cannot
+    cancel shared work; bounded process shutdown aborts/fences in-flight work and
+    completes exactly-once logical cleanup before gateway close.
 
 ## Flag / Abstraction
 
 - **Needed?:** No new flag framework. Retain the existing
   `BORING_MANAGED_AGENT_MCP_ENABLED=1` plus complete-config startup gate.
-- **Path:** Existing managed MCP package edge -> narrow Core-issued gateway
-  capability -> full-app adapter.
-- **Rollback:** Disable managed MCP/remove the static binding and restart. No
-  Workspace data, persisted default, session schema, or web route is rolled
+- **Path:** Existing managed MCP package edge -> narrow Core-issued task
+  capability (raw gateway/scope remain in Core) -> full-app adapter.
+- **Rollback:** Stop admission, run bounded controller shutdown, disable managed
+  MCP/remove the static binding, and restart. No Workspace data, persisted default, session schema, or web route is rolled
   back.
 
 ## Test Seams
@@ -482,19 +512,24 @@ and rollback approval.
   Workspace, and execution-environment lifecycle as web; the app receives a
   non-parameterized start/status closures. Start authorization allocates no
   lease; only a new post-dedupe/post-limit record acquires the one-shot lease,
-  whose minimum artifact reader and reserved concurrency are released/rolled
-  back on setup failure and exactly once on completed/failed/canceled/rejected.
+  whose narrow bound task runner + minimum artifact reader + reserved concurrency
+  are released/rolled back on setup failure and exactly once on
+  completed/failed/canceled/rejected. Raw scope and full AgentGateway stay inside
+  Core; arbitrary Agent/list/session/close operations are not exposed.
   Core makes acquisition failure-atomic for active leases/bindings/references
   before rejecting (without changing environment cache retirement); package tests
   prove concurrency rollback for that rejection. Status receives
   disclosure identity only, never a general scope issuer, gateway, reader, or
-  second resolver/composer.
+  second resolver/composer. Gateway rechecks remain authoritative through the
+  accepted send receipt; only already-accepted work may finish after revocation.
 - Hostname, body, tool args, MCP session ids, JSON-RPC ids, and forwarding
   headers cannot select principal, Workspace, Agent, runtime, root, or model.
   Response-bearing JSON-RPC ids are safe integers or at most 128-byte safe ASCII
   strings; invalid ids reject before SDK tool/controller dispatch.
 - Same authorized scope + idempotency key + exact trimmed-brief bytes creates
-  one session while the record is retained in the same process; changed payload
+  one shared task across either start tool while retained. Each call keeps its
+  response shape; first admission freezes origin cancellation policy; aborting a
+  duplicate waiter never cancels shared work. Changed payload
   conflicts; different trusted scopes do not collide; dedupe precedes new-work
   limits; expiry/restart may duplicate and is documented.
 - Fixed-window admission uses required bounded `maxStartsPerWindow`,
@@ -509,14 +544,16 @@ and rollback approval.
   redaction do not weaken.
 - Maximum valid completion remains retrievable by polling through a stock
   client without duplicating the full result in text content. Revocation denies
-  new starts/status, while an admitted task may finish and read its artifact under
-  the bounded lease; setup failure rolls back its concurrency slot, and
+  new starts/status and any not-yet-accepted gateway effect, while a task with an
+  accepted send receipt may finish and read its artifact under the bounded lease; setup failure rolls back its concurrency slot, and
   completed/failed/canceled/rejected each release lease + concurrency exactly once.
 - Route stays dark by default and fails startup on incomplete/unbounded config.
 - Full-app owns request-scoped stateless MCP transports; Workspace and
-  AgentApplication own none. `delegate_task_start` work survives transport loss,
-  synchronous `delegate_task` cancels on request abort, and application shutdown
-  aborts/cleans every task before closing the application-owned gateway.
+  AgentApplication own none. Async work survives transport loss after atomic
+  controller commit even if receipt delivery is lost; synchronous-origin request
+  abort cancels only its task, duplicate waiter abort does not. Application
+  shutdown uses required bounded grace + late-settlement fencing, releases each
+  task once, then permits the application-owned gateway to close.
 - Documentation states restart loss, private credential scope, local/reference
   proof, and the #1011 opposite-direction boundary without claiming public or
   production readiness.
@@ -535,11 +572,13 @@ and rollback approval.
   two client instances sharing one credential cannot exceed its concurrency cap;
   async start survives client disconnect/reconnect; synchronous request abort
   cancels; shutdown aborts tasks, releases each lease/slot once, and only then
-  closes the gateway; restart loses receipts and does not claim recovery.
+  closes the gateway; cross-tool same-key races preserve one task and caller-local
+  cancellation; grace-expiry fences a never-settling task; restart loses receipts
+  and does not claim recovery.
 - Screenshot/demo: not required for this server/protocol slice; stock-client
   assertions and captured command output are stronger evidence.
 - Manual steps: set the existing bearer/user/Workspace binding values plus the
-  credential id and three finite limit values in a
+  credential id and four finite lifecycle/admission values in a
   local full-app instance, connect a stock client to `/mcp/managed-agent`, call
   start/status with a stable idempotency key, then disable the route and verify
   ordinary web access remains healthy.
@@ -554,8 +593,9 @@ and rollback approval.
 **Bead:** `wt-391-forward-rjkl.3`
 **Priority:** P1
 **Delivers:** Explicit edge/controller/task lifetime: request-scoped stateless
-MCP server transports, one process-lifetime controller, async-start disconnect
-survival, synchronous-request abort cancellation, shutdown cleanup, plus canonical
+MCP server transports, one process-lifetime controller, atomic async commit and
+lost-receipt retry recovery, cross-tool shared-task/caller-local cancellation,
+bounded shutdown grace + fencing, plus canonical
 AgentTask v2 edge projection, capability-light start
 authorization before dedupe, exactly one lease acquired only for a new reserved
 record and released on setup failure or terminal cleanup, plus separate
@@ -572,8 +612,8 @@ required.
 **Proof:** focused agent MCP test, agent typecheck, invariants; exact/over,
 state transitions/schema validation, zero lease acquisition on retry/conflict/
 rate/concurrency/capacity rejection, reservation/acquisition failure cleanup,
-task-lease lifecycle/release and status-scope separation, per-request Agent selection, Core failure-atomic
-acquisition rejection plus package concurrency rollback, fulfilled-lease setup
+task-lease lifecycle/release and status-scope separation, per-request Agent
+selection, package rollback when an injected acquisition closure rejects, fulfilled-lease setup
 release/rollback, completed/failed/canceled/rejected cleanup,
 concurrency/retry/conflict, cross-scope, fixed-window reset, retention/expiry,
 dedupe-before-limit, safe-integer/128-byte id/token success, invalid id/token and
@@ -586,11 +626,13 @@ test file; fits one worker session.
 
 **Bead:** `wt-391-forward-rjkl.4`
 **Priority:** P1
-**Delivers:** Application-owned gateway shutdown ordering and no MCP transport
-ownership in Workspace/AgentApplication, plus non-parameterized Core `authorizeStart()` capability-light
+**Delivers:** Application-owned gateway shutdown ordering after bounded
+controller close, raw gateway/scope retained inside Core behind a narrow bound task
+run/stop capability, and no MCP transport ownership in Workspace/AgentApplication,
+plus non-parameterized Core `authorizeStart()` capability-light
 admission with a one-shot lease closure and `authorizeStatus()` disclosure
-closure; only the acquired lease returns branded scope, existing gateway,
-minimal artifact reader, and release; status
+closure; only the acquired lease returns bound task run/stop methods, a minimal
+artifact reader, and release while raw scope/gateway stay inside Core; status
 returns no execution/artifact capability; shared
 unknown-default fallback drift is fixed for web and MCP; full-app reauthorizes
 on start/status with no hostname authority.
@@ -600,7 +642,9 @@ directly focused tests; full-app `managedAgentMcp.ts`, `main.ts`, `dev.ts`, mana
 safety tests. No package MCP implementation files.
 **Proof:** focused Core/full-app tests, both package typechecks, invariants;
 negative authorization/default/spoof tests prove no effect before authority;
-fault injection after each acquisition allocation proves Core rejection leaves no
+pre/post-accepted-send revocation freezes the exact snapshot boundary; misuse
+proof shows the package cannot list Agents/sessions, select another Agent, or
+close the gateway; fault injection after each acquisition allocation proves Core rejection leaves no
 active lease/task binding/reference (cached generations follow existing retire).
 **Review budget:** Inside — one Core composition callback and one app edge
 adapter; fits one worker session.
@@ -610,8 +654,10 @@ adapter; fits one worker session.
 **Bead:** `wt-391-forward-rjkl.5`
 **Priority:** P2
 **Delivers:** Deterministic external SDK-client qualification and operator docs
-for sequential/concurrent calls, reconnect, async disconnect survival, synchronous
-abort cancellation, process restart loss, and shutdown cleanup, plus
+for sequential/concurrent and cross-tool calls, reconnect, atomic async commit +
+lost-receipt recovery, synchronous-origin versus duplicate-waiter cancellation,
+pre/post-send revocation, bounded shutdown including never-settling work, process
+restart loss, and cleanup, plus
 for canonical AgentTask + strict current authority, including retained-window
 retry, start/status authority-lifetime separation, terminal lease release,
 revocation, bounds,
@@ -635,9 +681,12 @@ combined contract. File scopes do not overlap across writer beads.
 | --- | --- | --- | --- |
 | Scope capability is exposed too broadly from Core | Medium | High | Boot-time narrow callback only; branded scope remains issuer-owned; focused misuse tests and fresh security review. |
 | Retry key leaks or becomes caller authority | Low | High | Scope with redacted `credentialId` after authorization; bearer/JSON-RPC/MCP session ids prohibited from identity. |
-| Task lease outlives revocation while status is denied | Medium | High | Explicit admission snapshot: lease is task-only and released terminally; status has no reader/gateway; test revoked polling denial plus admitted completion and cleanup. |
+| Task lease outlives revocation while status is denied | Medium | High | Snapshot begins only at accepted gateway send receipt; pre-acceptance rechecks remain authoritative; status has no reader/gateway; test both sides of boundary. |
 | Connection, Workspace, AgentApplication, and task lifetimes are conflated | Medium | High | Option C is normative; request transport at app edge, receipt at controller, execution authority in one task lease; lifecycle/disconnect/restart tests. |
 | Multiple client connections bypass concurrency | Medium | High | Key rate/concurrency by trusted credentialId after authorization, never connection/session/JSON-RPC identity; prove parallel multi-client admission. |
+| Full gateway capability crosses into MCP package | Low | High | Core returns only bound task run/stop + reader + release; compile/runtime misuse proof excludes list/arbitrary-Agent/session/close. |
+| Lost async receipt or cross-tool abort changes task ownership | Medium | High | Atomic controller commit before response attempt; idempotent receipt recovery; first-admission origin policy; duplicate waiter abort is local. |
+| Abort-insensitive task hangs shutdown | Medium | High | Required 100..300,000 ms grace, late-settlement fencing, exactly-once logical release, never-settling test before gateway close. |
 | Final response cap rejects a maximum valid artifact | Medium | Medium | Derive envelope from retained component budgets and prove exact maximum through a stock client. |
 | Private reference route is mistaken for public/production auth | Medium | High | Dark default, static binding, explicit docs/non-goals, and separate app-owned deployment gate. |
 | #1011 direction is conflated with ingress | Medium | Medium | Separate flow diagrams, credentials, file scopes, acceptance, and no dependency on connector registration/grants. |
@@ -753,3 +802,25 @@ combined contract. File scopes do not overlap across writer beads.
 - **Pass 10 result:** no blockers; scoped lint and both graph checks clean.
   Residual risk is implementation-only proof and the one-session estimate for
   dense slice `.3`.
+- **R2 ownership/lifetime pass 1 target:** commit
+  `b7cfe9faafb5f9331f5fb499f4bf9d69e20e17f8`.
+- **R2 pass 1 reviewer/mandate:** fresh-context
+  `openai-codex:gpt-5.6-sol`; read-only adversarial refutation of revised
+  canonical plan, new r2 HTML, current SDK/server, Decisions 22/28/29/30,
+  AgentGateway contract, and live `.1/.3/.4/.5` graph. Explicitly challenged
+  options A/B/C, six lifetime terms, lifecycle/concurrency, proof, rollback, and
+  child contracts.
+- **R2 pass 1 verdict:** revise.
+- **R2 pass 1 findings/disposition:** (1) raw scope/full gateway made the lease
+  too broad — Core now retains both and exposes only Agent-bound run/stop,
+  minimal reader, and release; (2) admission snapshot conflicted with gateway
+  rechecks — snapshot now starts only at accepted send; (3) async disconnect had
+  no observable commit — lease attachment + stored receipt atomically commit
+  before response attempt and idempotent retry recovers lost delivery; (4)
+  cross-tool retry/cancel was undefined — one shared task, caller-specific
+  response, first-origin cancellation, duplicate waiter abort local; (5) `.3`
+  claimed Core proof — package rejection rollback remains `.3`, Core failure
+  atomicity remains `.4`; (6) shutdown could hang — required 100..300,000 ms
+  grace, late-settlement fencing, exactly-once logical release, then gateway
+  close; (7) r2 review label/SHA provenance corrected. Final exact-SHA pass is
+  required.
