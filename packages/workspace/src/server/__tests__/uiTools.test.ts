@@ -207,6 +207,21 @@ describe("createExecUiTool — path validation", () => {
     ])
   })
 
+  test("exec_ui keeps explicit-open rules while routing plural evidence through artifact channels", () => {
+    const tool = createExecUiTool(bridge, { workspaceRoot })
+
+    expect(tool.description).toContain("ALWAYS call exec_ui openFile")
+    expect(tool.description).toContain("same path is idempotent")
+    expect(tool.description).toContain("single-slot focus action")
+    expect(tool.description).toContain("only the last remains visible")
+    expect(tool.description).toContain("plain-text `@path` mention")
+    expect(tool.description).toContain("not a code span")
+    expect(tool.description).toContain("inline artifact card")
+    expect(tool.description).toContain("plural `ask_user`")
+    expect(tool.description).toContain("`artifacts[]` array")
+    expect(tool.description).toContain("Do not use repeated openFile calls as a plural")
+  })
+
   test("exec_ui advertises openSurface filesystem", () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
     const parameters = tool.parameters as {
