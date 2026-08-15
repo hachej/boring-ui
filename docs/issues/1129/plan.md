@@ -9,7 +9,9 @@ track: owner
 
 # gh-1129 MCP ingress — external clients consume a boring-ui Workspace
 
-Plan revision **r1** — gate 1. This replaces the obsolete implementation target in
+Plan revision **r2** — gate 1 request-changes response. Revision r1 and its visual packet remain immutable evidence. This revision answers who owns the MCP connection/session and how that lifetime relates to Agent execution.
+
+This plan replaces the obsolete implementation target in
 `docs/issues/806/plan.md`; it does not implement product source or authorize a
 production exposure.
 
@@ -134,11 +136,100 @@ different normalized bytes conflicts. The guarantee lasts only for the
 configured terminal-retention window in one process. Expiry, restart, or replica
 handoff may lose the record and permit another run.
 
+## Ownership and lifetime decision
+
+### Terms: six different lifetimes
+
+| Term | Meaning here | Owner / lifetime |
+| --- | --- | --- |
+| **External MCP client connection** | The caller's SDK `Client` plus HTTP connection(s). Streamable HTTP may reconnect or issue concurrent requests; it is not an Agent runtime. | External caller; outside boring-ui. |
+| **MCP server transport session** | The server-side SDK `McpServer` + `StreamableHTTPServerTransport` for protocol parsing and response delivery. Today's route has `sessionIdGenerator: undefined`, so it is stateless across HTTP requests and creates/closes this pair per request/response. | Full-app MCP edge; request/transport lifetime. |
+| **Selected `AgentGateway`** | Decision 29's sole Agent session API, selected only after current credential/Workspace/default-Agent authorization. It is not an MCP transport and does not own the external connection. | Application fleet process; borrowed by one admitted task lease. |
+| **Workspace authorization/default** | Current app, non-deleted Workspace, membership, principal, and strict persisted `defaultAgentTypeId`. Workspace chooses the authorized Agent; it does not hold an MCP socket or protocol session. | Core/Workspace authority; rechecked for each start and status call. |
+| **Background agent task** | One admitted canonical `AgentTask` plus gateway session, bounded artifact collection, concurrency slot, and retained receipt. | Process-lifetime MCP delegate controller record plus one per-task execution lease until terminal collection. |
+| **Factory worker session** | The development automation session that later implements a bead. It is not a product runtime or MCP component. | Boring Factory only; no production connection, task, Workspace, or gateway ownership. |
+
+In this plan, **worker** means only the last row when discussing Beads/factory
+execution. It never means the external MCP client, app server, MCP controller,
+Workspace, AgentApplication, AgentGateway, or background agent task. Product
+text uses **background agent task** or **task lease**, never "worker", for the
+running delegation.
+
+### Options compared
+
+| Option | Shape | Benefit | Failure / decision |
+| --- | --- | --- | --- |
+| **A — each `AgentApplication` holds an MCP connection** | One protocol client/server connection per fleet Agent. | Superficially makes routing look direct. | **Reject.** It couples an edge protocol and caller lifetime to deployment-static behavior objects, duplicates transport ownership per Agent, bypasses Workspace strict-default selection, and conflicts with Decisions 22/28/29. AgentApplications receive invocation capabilities; they do not own transport sessions. |
+| **B — Workspace holds the MCP connection** | The authorized Workspace keeps the external protocol session and dispatches from it. | Makes Workspace selection visible. | **Reject.** Workspace is authorization/default/filesystem authority, not a network-session container. Connection churn would distort Workspace lifetime, risk cross-client state, and couple Core/CLI Workspace orchestration to one edge protocol. |
+| **C — app edge owns protocol transport; delegate controller owns receipts; each admitted task owns a bounded execution lease** | Full-app authenticates each request and owns the stateless SDK transport. The process-lifetime MCP controller holds only bounded task/receipt state. After reauthorization, dedupe and limits, one new task acquires the selected AgentGateway/scope/reader lease through terminal collection. | Keeps protocol at the edge, Workspace as authority, AgentGateway as the sole session contract, and task authority no broader/longer than needed. | **Choose.** This matches Decisions 22/28/29/30 and today's `createManagedAgentMcpHttpHandler`: per-request SDK transport with `sessionIdGenerator: undefined`, while one controller is created at route registration and survives request disconnects. |
+
+No new long-lived MCP server session is introduced. If a later MCP feature
+requires a stateful server session, the full-app edge still owns it and maps its
+opaque session id to bounded edge state; it does not move into Workspace or an
+AgentApplication and grants no selection or execution authority.
+
+### Exact lifecycle
+
+1. **Create / connect.** An external caller creates one SDK client/transport and
+   connects to `/mcp/managed-agent`. Full-app authenticates every HTTP request.
+   The server creates a request-scoped `McpServer`/transport pair; there is no
+   durable server session id in this slice.
+2. **Select Agent.** `authorizeStart()` rechecks app, Workspace existence,
+   membership, principal, and strict persisted `defaultAgentTypeId` against the
+   static fleet. Neither connection nor MCP session chooses an Agent.
+3. **Admit task.** The process-lifetime controller scopes idempotency to the
+   trusted credential/principal/Workspace/Agent binding, returns retained work
+   when possible, then enforces fixed-window rate, per-credential concurrency,
+   and capacity. Only one newly reserved record calls `acquireTaskLease()`.
+4. **Run.** The task record, not the transport, retains the selected gateway,
+   branded scope, minimal reader, and concurrency slot through terminal result
+   and artifact collection. `delegate_task_start` returns a receipt as soon as
+   admission is recorded; `delegate_task` keeps the request open to terminal.
+5. **Status / poll.** The same external SDK client may poll sequentially or in
+   parallel, and a reconnecting client with the same credential may poll too.
+   Every status call independently runs `authorizeStatus()` and receives only a
+   disclosure key; it never reacquires the execution lease.
+6. **Disconnect.** Closing/loss of the HTTP/MCP transport closes only the
+   request-scoped SDK server/transport. After `delegate_task_start` has returned
+   its receipt, connection loss **does not cancel** the background task. For the
+   synchronous `delegate_task`, request abort **does cancel** that task, projects
+   canonical `canceled`, and releases lease + concurrency exactly once. A client
+   that needs disconnect-tolerant work must use start + status.
+7. **Completion / cleanup.** `completed`, `failed`, `canceled`, and `rejected`
+   all release the task lease and concurrency slot exactly once after bounded
+   terminal collection. Only the non-capability receipt remains until TTL; then
+   pruning removes it. Route/application shutdown aborts in-flight work, awaits
+   terminal cleanup, then closes the application-owned gateway.
+8. **Revocation.** Membership/deletion/default drift denies new starts and later
+   status disclosure. A previously admitted asynchronous task may finish under
+   its admission snapshot, but the revoked caller cannot poll it. Revocation
+   does not use connection closure as an authorization signal.
+9. **Process restart.** Request transports, controller records, running tasks,
+   and task leases are process-local. Restart closes/loses them; startup creates
+   a new edge/controller and fleet gateway. There is no resume/recovery claim;
+   old delegation ids return not found and retry may duplicate work.
+
+### One client, multiple tasks and concurrency
+
+One authenticated external client may submit sequential tasks and concurrent
+`delegate_task_start` calls over one SDK client/transport; reconnecting does not
+create a new authority bucket. Admission keys by trusted `credentialId`, not by
+TCP connection, SDK client instance, MCP session id, JSON-RPC id, or bearer text.
+Every genuinely new admitted start consumes both the credential's fixed-window
+start budget and one `maxConcurrentPerCredential` slot. Retained idempotent
+retries consume neither. Concurrent same-key calls single-flight. Completion or
+any terminal failure releases exactly one slot. Therefore opening more
+connections or client instances cannot bypass per-credential concurrency; a
+credential may run at most the configured 1..100 tasks concurrently, additionally
+bounded by global controller capacity.
+
 ## Solution
 
 ### 1. Reconcile the task contract and harden the existing package edge
 
-Extend, do not replace, `ManagedAgentMcpDelegateController` and its MCP server:
+Keep the `ManagedAgentMcpDelegateController` process-lifetime at route registration,
+while every SDK `McpServer`/transport remains request-scoped and stateless. Extend,
+do not replace, `ManagedAgentMcpDelegateController` and its MCP server:
 
 - make canonical `AgentTask` schema v2 the authoritative task projection in
   structured responses: principal and actor come from trusted binding data; the
@@ -344,6 +435,14 @@ and rollback approval.
 9. **Keep #1011 orthogonal.** User-registered MCP servers and per-Agent grants
    are capabilities consumed by an Agent after ingress authorization, not part
    of authenticating the external caller.
+10. **Keep connection, receipt, and execution ownership separate.** Choose option
+    C: full-app owns request-scoped MCP transport, the delegate controller owns
+    bounded process-local receipts, and each new task owns one terminally bounded
+    execution lease. AgentApplication and Workspace own neither the connection nor
+    the task lease.
+11. **Connection loss is not revocation.** Async start survives disconnect;
+    synchronous delegation cancels on request abort; process shutdown aborts all
+    in-flight work and awaits exactly-once cleanup before gateway close.
 
 ## Flag / Abstraction
 
@@ -368,7 +467,9 @@ and rollback approval.
 
 ## Acceptance
 
-- A stock external MCP client authenticates with one pre-provisioned credential
+- A stock external MCP client may use one connection for sequential or concurrent
+  tasks; opening/reconnecting clients cannot bypass credential-scoped rate,
+  concurrency, or global capacity. It authenticates with one pre-provisioned credential
   and invokes the strictly validated persisted default Agent in one existing
   Workspace; an unknown persisted Agent fails with no fallback or effect.
 - Current app, non-deleted Workspace, membership, strict fleet/default, and
@@ -412,6 +513,10 @@ and rollback approval.
   the bounded lease; setup failure rolls back its concurrency slot, and
   completed/failed/canceled/rejected each release lease + concurrency exactly once.
 - Route stays dark by default and fails startup on incomplete/unbounded config.
+- Full-app owns request-scoped stateless MCP transports; Workspace and
+  AgentApplication own none. `delegate_task_start` work survives transport loss,
+  synchronous `delegate_task` cancels on request abort, and application shutdown
+  aborts/cleans every task before closing the application-owned gateway.
 - Documentation states restart loss, private credential scope, local/reference
   proof, and the #1011 opposite-direction boundary without claiming public or
   production readiness.
@@ -426,6 +531,11 @@ and rollback approval.
 - Exact command: `pnpm --filter full-app typecheck`
 - Exact command: `pnpm --filter full-app smoke:mcp-managed-agent`
 - Exact command: `pnpm lint:invariants`
+- Focused lifecycle proof: one SDK client submits sequential and concurrent starts;
+  two client instances sharing one credential cannot exceed its concurrency cap;
+  async start survives client disconnect/reconnect; synchronous request abort
+  cancels; shutdown aborts tasks, releases each lease/slot once, and only then
+  closes the gateway; restart loses receipts and does not claim recovery.
 - Screenshot/demo: not required for this server/protocol slice; stock-client
   assertions and captured command output are stronger evidence.
 - Manual steps: set the existing bearer/user/Workspace binding values plus the
@@ -443,7 +553,10 @@ and rollback approval.
 
 **Bead:** `wt-391-forward-rjkl.3`
 **Priority:** P1
-**Delivers:** Canonical AgentTask v2 edge projection, capability-light start
+**Delivers:** Explicit edge/controller/task lifetime: request-scoped stateless
+MCP server transports, one process-lifetime controller, async-start disconnect
+survival, synchronous-request abort cancellation, shutdown cleanup, plus canonical
+AgentTask v2 edge projection, capability-light start
 authorization before dedupe, exactly one lease acquired only for a new reserved
 record and released on setup failure or terminal cleanup, plus separate
 status-disclosure authorization, caller-stable retention-bounded idempotency, exact
@@ -473,7 +586,8 @@ test file; fits one worker session.
 
 **Bead:** `wt-391-forward-rjkl.4`
 **Priority:** P1
-**Delivers:** Non-parameterized Core `authorizeStart()` capability-light
+**Delivers:** Application-owned gateway shutdown ordering and no MCP transport
+ownership in Workspace/AgentApplication, plus non-parameterized Core `authorizeStart()` capability-light
 admission with a one-shot lease closure and `authorizeStatus()` disclosure
 closure; only the acquired lease returns branded scope, existing gateway,
 minimal artifact reader, and release; status
@@ -496,6 +610,8 @@ adapter; fits one worker session.
 **Bead:** `wt-391-forward-rjkl.5`
 **Priority:** P2
 **Delivers:** Deterministic external SDK-client qualification and operator docs
+for sequential/concurrent calls, reconnect, async disconnect survival, synchronous
+abort cancellation, process restart loss, and shutdown cleanup, plus
 for canonical AgentTask + strict current authority, including retained-window
 retry, start/status authority-lifetime separation, terminal lease release,
 revocation, bounds,
@@ -520,6 +636,8 @@ combined contract. File scopes do not overlap across writer beads.
 | Scope capability is exposed too broadly from Core | Medium | High | Boot-time narrow callback only; branded scope remains issuer-owned; focused misuse tests and fresh security review. |
 | Retry key leaks or becomes caller authority | Low | High | Scope with redacted `credentialId` after authorization; bearer/JSON-RPC/MCP session ids prohibited from identity. |
 | Task lease outlives revocation while status is denied | Medium | High | Explicit admission snapshot: lease is task-only and released terminally; status has no reader/gateway; test revoked polling denial plus admitted completion and cleanup. |
+| Connection, Workspace, AgentApplication, and task lifetimes are conflated | Medium | High | Option C is normative; request transport at app edge, receipt at controller, execution authority in one task lease; lifecycle/disconnect/restart tests. |
+| Multiple client connections bypass concurrency | Medium | High | Key rate/concurrency by trusted credentialId after authorization, never connection/session/JSON-RPC identity; prove parallel multi-client admission. |
 | Final response cap rejects a maximum valid artifact | Medium | Medium | Derive envelope from retained component budgets and prove exact maximum through a stock client. |
 | Private reference route is mistaken for public/production auth | Medium | High | Dark default, static binding, explicit docs/non-goals, and separate app-owned deployment gate. |
 | #1011 direction is conflated with ingress | Medium | Medium | Separate flow diagrams, credentials, file scopes, acceptance, and no dependency on connector registration/grants. |
@@ -544,7 +662,9 @@ combined contract. File scopes do not overlap across writer beads.
 
 ## Open Questions
 
-- **None for gate 1.** Current Decisions settle authority and direction. A
+- **None for gate 1.** The owner's connection-ownership question exposes a
+  technical lifetime boundary, not unresolved product intent. Decisions 22/28/29/30
+  and current stateless Streamable HTTP implementation support option C. A
   production application must separately answer credential custody, release,
   deployment values, monitoring, and rollback before enabling the route for a
   real tenant.
