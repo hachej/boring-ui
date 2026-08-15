@@ -51,7 +51,7 @@ function completeAccount(id: string, userId = composioSubject) {
     experimental: {},
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
-    state: {},
+    state: { authScheme: "OAUTH2", val: { status: "ACTIVE" } },
     data: {},
     status_reason: "connected",
     test_request_endpoint: "https://backend.composio.dev/test",
@@ -266,6 +266,8 @@ describe("Composio full-catalog backend", () => {
     for (const malformed of [
       { next_cursor: null, current_page: 0, total_pages: 0, total_items: 0 },
       { items: [{ id: "account-1", user_id: composioSubject, status: "ACTIVE", toolkit: { slug: "github" } }, "malformed-row"], next_cursor: null, current_page: 1, total_pages: 1, total_items: 2 },
+      { items: [{ ...completeAccount("lowercase"), status: "active" }], next_cursor: null, current_page: 1, total_pages: 1, total_items: 1 },
+      { items: [{ ...completeAccount("bad-state"), state: {} }], next_cursor: null, current_page: 1, total_pages: 1, total_items: 1 },
     ]) {
       const fetch = vi.fn(async () => Response.json(malformed)) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
       await expect(requireExactlyOneComposioAccount(backendOptions(fetch), { actor, secret, toolkitId: "github" }))
@@ -433,6 +435,19 @@ describe("Composio full-catalog backend", () => {
     expect(api.sessionBodies).toHaveLength(sessionsAfterRefresh + 1)
     await expect(catalog.describeTool(actor, { sourceId: source.id, toolName: "GITHUB_GET_CURRENT_USER" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.TOOL_NOT_FOUND })
+  })
+
+  it("invalidates every source query on describe refresh and fences in-flight stale writes", async () => {
+    const behavior: { delayMs?: number } = {}
+    const fakeMcp = await listenFakeComposioMcp(behavior)
+    const api = composioApiFetch(fakeMcp.url)
+    const catalog = createBoringMcpToolCatalog({ registry, transport: fallbackTransport, managedCatalog: createComposioCatalogBackend(backendOptions(api.fetch)) })
+    await catalog.searchTools(actor, { sourceId: source.id, query: "github cached", limit: 1 })
+    await catalog.describeTool(actor, { sourceId: source.id, toolName: "GITHUB_GET_CURRENT_USER", refresh: true })
+    const afterDescribeRefresh = api.sessionBodies.length
+    await catalog.searchTools(actor, { sourceId: source.id, query: "github cached", limit: 1 })
+    expect(api.sessionBodies).toHaveLength(afterDescribeRefresh + 1)
+
   })
 
   it("rejects missing or mismatched provider schemas instead of fabricating descriptors", async () => {

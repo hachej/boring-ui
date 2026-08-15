@@ -27,6 +27,7 @@ const MAX_SCHEMA_BYTES = 64 * 1024
 const DEFAULT_CACHE_ENTRIES = 128
 const DEFAULT_CACHE_TTL_MS = 60_000
 const COMPOSIO_ACCOUNT_STATUSES = new Set(["INITIALIZING", "INITIATED", "ACTIVE", "FAILED", "EXPIRED", "INACTIVE", "REVOKED"])
+const COMPOSIO_STATE_STATUSES = new Set(["INITIALIZING", "INITIATED", "ACTIVE", "FAILED", "EXPIRED", "INACTIVE"])
 const COMPOSIO_AUTH_SCHEMES = new Set([
   "OAUTH2", "OAUTH1", "API_KEY", "BASIC", "BILLCOM_AUTH", "BEARER_TOKEN",
   "GOOGLE_SERVICE_ACCOUNT", "NO_AUTH", "BASIC_WITH_JWT", "CALCOM_AUTH",
@@ -389,21 +390,25 @@ export async function requireExactlyOneComposioAccount(
     const id = optionalString(account.id)
     const userId = optionalString(account.user_id)
     const accountToolkit = optionalString(record(account.toolkit).slug)?.toLowerCase()
-    const status = optionalString(account.status)?.toUpperCase()
+    const status = optionalString(account.status)
     const requiredNullableStrings = ["word_id", "alias", "status_reason"]
     const nullableStringsValid = requiredNullableStrings.every((key) => Object.prototype.hasOwnProperty.call(account, key) && (account[key] === null || typeof account[key] === "string"))
+    const state = record(account.state)
+    const stateValue = record(state.val)
     const statusAllowed = COMPOSIO_ACCOUNT_STATUSES.has(status ?? "")
     const authSchemeAllowed = COMPOSIO_AUTH_SCHEMES.has(optionalString(authConfig.auth_scheme) ?? "")
+      && COMPOSIO_AUTH_SCHEMES.has(optionalString(state.authScheme) ?? "")
+    const stateStatusAllowed = COMPOSIO_STATE_STATUSES.has(optionalString(stateValue.status) ?? "")
     if (
       !id || !userId || !accountToolkit || !statusAllowed
       || !nullableStringsValid
       || typeof account.created_at !== "string"
       || typeof account.updated_at !== "string"
-      || !account.state || typeof account.state !== "object" || Array.isArray(account.state)
+      || !authSchemeAllowed
+      || !stateStatusAllowed
       || !account.data || typeof account.data !== "object" || Array.isArray(account.data)
       || typeof account.is_disabled !== "boolean"
       || !optionalString(authConfig.id)
-      || !authSchemeAllowed
       || typeof authConfig.is_disabled !== "boolean"
       || typeof authConfig.is_composio_managed !== "boolean"
     ) {
@@ -641,6 +646,7 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
     throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Composio catalog request bounds are invalid")
   }
   let activeRequests = 0
+  let cacheGeneration = 0
   const pendingCleanup = new Map<string, { secret: ManagedConnectorSecret; sessionId: string }>()
 
   function retainFailedCleanup(lease: { secret: ManagedConnectorSecret; sessionId: string }): void {
@@ -705,9 +711,11 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
       const previous = searchCache.get(key)
       if (!input.forceProviderRefresh && previous) return previous
       if (input.forceProviderRefresh) {
+        cacheGeneration += 1
         searchCache.deletePrefix(`${sourceKey}:search:`)
         describeCache.deletePrefix(`${sourceKey}:describe:`)
       }
+      const requestGeneration = cacheGeneration
       const tools = await guarded(source, () => withCatalogSession(options, source, release, retainFailedCleanup, async (session, transport) => {
         const search = await transport.callTool(source, COMPOSIO_SEARCH_TOOLS, { queries: [query], session: session.id })
         const slugs = searchSlugs(search, input.offset + input.limit).slice(input.offset)
@@ -722,8 +730,10 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
           return tool ? [tool] : []
         })
       }))
-      searchCache.set(key, tools)
-      for (const tool of tools) describeCache.set(`${sourceKey}:describe:${tool.name}`, tool)
+      if (requestGeneration === cacheGeneration) {
+        searchCache.set(key, tools)
+        for (const tool of tools) describeCache.set(`${sourceKey}:describe:${tool.name}`, tool)
+      }
       return tools
     },
 
@@ -735,8 +745,12 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
         const cached = describeCache.get(key)
         if (cached) return cached
       } else {
-        describeCache.delete(key)
+        cacheGeneration += 1
+        const sourceKey = sourceCacheKey(source)
+        searchCache.deletePrefix(`${sourceKey}:search:`)
+        describeCache.deletePrefix(`${sourceKey}:describe:`)
       }
+      const requestGeneration = cacheGeneration
       const tool = await guarded(source, () => withCatalogSession(options, source, release, retainFailedCleanup, async (session, transport) => {
         const result = await transport.callTool(source, COMPOSIO_GET_TOOL_SCHEMAS, {
           tool_slugs: [toolName],
@@ -744,7 +758,7 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
         })
         return normalizeSchema(toolName, schemasFromPayload(result)[toolName])
       }))
-      if (tool) describeCache.set(key, tool)
+      if (tool && requestGeneration === cacheGeneration) describeCache.set(key, tool)
       return tool
     },
   }
