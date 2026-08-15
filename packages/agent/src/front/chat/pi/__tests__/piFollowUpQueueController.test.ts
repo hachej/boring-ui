@@ -174,7 +174,7 @@ describe('PiFollowUpQueueController', () => {
     expect(warnings).toEqual(['Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit queued.'])
   })
 
-  it('does not duplicate restored queue text when retrying Edit queued after a clear failure', async () => {
+  it('restores each queue item once across a failed clear and a changed-queue retry', async () => {
     const session = new FakeQueueSession('streaming', [
       { id: 'q1', kind: 'followup', displayText: 'first queued', clientSeq: 1 },
       { id: 'q2', kind: 'followup', displayText: 'second queued', clientSeq: 2 },
@@ -193,12 +193,16 @@ describe('PiFollowUpQueueController', () => {
     })
 
     await expect(controller.editQueued()).resolves.toMatchObject({ type: 'clear-failed' })
+    session.state.queue.followUps = [
+      ...session.state.queue.followUps,
+      { id: 'q3', kind: 'followup', displayText: 'third queued', clientSeq: 3 },
+    ]
     await expect(controller.editQueued()).resolves.toMatchObject({ type: 'cleared' })
 
-    expect(draft).toBe('first queued\n\nsecond queued\n\nexisting draft')
+    expect(draft).toBe('third queued\n\nfirst queued\n\nsecond queued\n\nexisting draft')
     expect(drafts).toEqual([
       'first queued\n\nsecond queued\n\nexisting draft',
-      'first queued\n\nsecond queued\n\nexisting draft',
+      'third queued\n\nfirst queued\n\nsecond queued\n\nexisting draft',
     ])
     expect(session.clearQueue).toHaveBeenCalledTimes(2)
   })

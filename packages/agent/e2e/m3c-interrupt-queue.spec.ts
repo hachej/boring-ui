@@ -106,7 +106,7 @@ test.describe('M3c: interrupt + message queue (requires real key)', () => {
     await expect(browserPage.locator('text=Follow-up')).not.toBeVisible({ timeout: 5_000 })
   })
 
-  test('stop clears the queued follow-up — it does not auto-send', async ({ browserPage }) => {
+  test('stop aborts the active turn and promotes the queued follow-up', async ({ browserPage }) => {
     await composer(browserPage).fill(
       'Run this exact bash command and nothing else: sleep 10 && echo done',
     )
@@ -115,18 +115,18 @@ test.describe('M3c: interrupt + message queue (requires real key)', () => {
     await waitForStreaming(browserPage)
 
     // Queue a follow-up
-    await composer(browserPage).fill('this should not send')
+    await composer(browserPage).fill('this should send next')
     await composer(browserPage).press('Enter')
     await expect(browserPage.locator('text=Follow-up')).toBeVisible({ timeout: 5_000 })
 
-    // Stop — clears both stream and pending message
+    // Stop aborts the active turn and promotes the pending message
     await stopBtn(browserPage).click()
     await waitForIdle(browserPage)
 
     // Follow-up bubble must be gone
     await expect(browserPage.locator('text=Follow-up')).not.toBeVisible({ timeout: 5_000 })
 
-    // "this should not send" must not appear anywhere on the page
-    await expect(browserPage.locator('body')).not.toContainText('this should not send')
+    // The queued message becomes the next user turn instead of being discarded.
+    await expect(browserPage.locator('body')).toContainText('this should send next', { timeout: 60_000 })
   })
 })

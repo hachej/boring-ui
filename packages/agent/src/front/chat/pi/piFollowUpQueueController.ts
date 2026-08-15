@@ -53,6 +53,7 @@ export type PiQueueEditQueuedResult =
 
 export class PiFollowUpQueueController {
   private nextClientSeqFloor: number | undefined
+  private readonly restoredQueueKeys = new Set<string>()
 
   constructor(
     private readonly session: PiQueueSessionLike,
@@ -110,13 +111,17 @@ export class PiFollowUpQueueController {
       return { type: 'empty', message }
     }
 
-    const draft = buildEditedQueuedDraft(followUps, this.options.getDraft?.() ?? '')
-    this.options.onDraftChange?.(draft)
+    const currentDraft = this.options.getDraft?.() ?? ''
+    const unrestored = followUps.filter((followUp) => !this.restoredQueueKeys.has(queueRecoveryKey(followUp)))
+    const draft = buildEditedQueuedDraft(unrestored, currentDraft)
+    if (draft !== currentDraft) this.options.onDraftChange?.(draft)
 
     try {
       await this.session.clearQueue()
+      this.restoredQueueKeys.clear()
       return { type: 'cleared', draft }
     } catch (error) {
+      for (const followUp of followUps) this.restoredQueueKeys.add(queueRecoveryKey(followUp))
       const message = 'Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit queued.'
       this.options.onWarning?.(message)
       return { type: 'clear-failed', draft, error, message }
@@ -190,8 +195,13 @@ export function buildEditedQueuedDraft(followUps: readonly QueuedUserMessage[], 
   const draft = existingDraft.trim()
   if (!queuedText) return draft
   if (!draft) return queuedText
-  if (draft === queuedText || draft.startsWith(`${queuedText}\n\n`)) return draft
   return `${queuedText}\n\n${draft}`
+}
+
+function queueRecoveryKey(followUp: QueuedUserMessage): string {
+  if (followUp.clientNonce) return `nonce:${followUp.clientNonce}`
+  if (followUp.clientSeq !== undefined) return `seq:${followUp.clientSeq}`
+  return `id:${followUp.id}`
 }
 
 function isBusySlashCommand(input: PiQueueSubmitInput): boolean {
