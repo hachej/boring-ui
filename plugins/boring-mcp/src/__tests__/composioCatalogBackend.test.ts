@@ -57,7 +57,7 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
   return chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : undefined
 }
 
-async function listenFakeComposioMcp(options: { metadataCanary?: string; oversizedSchema?: boolean; oversizedResponse?: boolean; delayMs?: number; exposedWorkbench?: boolean; mismatchedSlug?: boolean; missingInputSchema?: boolean; missingToolkit?: boolean } = {}) {
+async function listenFakeComposioMcp(options: { metadataCanary?: string; oversizedSchema?: boolean; oversizedResponse?: boolean; delayMs?: number; exposedWorkbench?: boolean; mismatchedSlug?: boolean; missingInputSchema?: boolean; invalidInputSchemaType?: boolean; missingToolkit?: boolean } = {}) {
   const calls: Array<{ name: string; arguments: unknown }> = []
   const server = new McpServer({ name: "fake-composio", version: "1.0.0" })
   server.registerTool("COMPOSIO_SEARCH_TOOLS", { description: "controlled search" }, async () => {
@@ -81,7 +81,7 @@ async function listenFakeComposioMcp(options: { metadataCanary?: string; oversiz
             : options.oversizedResponse
               ? "x".repeat(600_000)
               : "Get the current GitHub user",
-          input_schema: options.missingInputSchema ? undefined : options.oversizedSchema ? { padding: "x".repeat(70_000) } : { type: "object", properties: {} },
+          input_schema: options.missingInputSchema ? undefined : options.invalidInputSchemaType ? { type: "array" } : options.oversizedSchema ? { type: "object", padding: "x".repeat(70_000) } : { type: "object", properties: {} },
           output_schema: { type: "object" },
         },
         GITHUB_CREATE_ISSUE: {
@@ -143,7 +143,7 @@ function composioApiFetch(mcpUrl: string, accounts: unknown[] = []) {
       nextSession += 1
       return Response.json({
         id: `session-${nextSession}`,
-        mcp: { url: mcpUrl, headers: { "x-composio-session": `private-session-${nextSession}` } },
+        mcp: { url: mcpUrl, headers: { "x-composio-mcp-session": `private-session-${nextSession}` } },
         config: { workbench: body.workbench, connected_accounts: body.connected_accounts },
       })
     }
@@ -336,7 +336,7 @@ describe("Composio full-catalog backend", () => {
     await expect(mismatchCatalog.describeTool(actor, { sourceId: source.id, toolName: "GITHUB_GET_CURRENT_USER", refresh: true }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.TOOL_NOT_FOUND })
 
-    for (const invalid of [{ missingInputSchema: true }, { missingToolkit: true }]) {
+    for (const invalid of [{ missingInputSchema: true }, { invalidInputSchemaType: true }, { missingToolkit: true }]) {
       const invalidMcp = await listenFakeComposioMcp(invalid)
       const invalidApi = composioApiFetch(invalidMcp.url)
       const invalidCatalog = createBoringMcpToolCatalog({ registry, transport: fallbackTransport, managedCatalog: createComposioCatalogBackend(backendOptions(invalidApi.fetch)) })

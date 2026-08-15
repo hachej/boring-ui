@@ -279,7 +279,7 @@ export async function resolveComposioCatalogSession(
   const payload = await composioRequest(options, input.secret, "POST", "/api/v3.1/tool_router/session", body, true)
   const sessionId = optionalString(sessionEnvelope(payload).id) ?? optionalString(sessionEnvelope(payload).session_id)
   try {
-    if (containsMcpSecretOrCanary(payload, [input.secret.value])) {
+    if (JSON.stringify(payload).includes(input.secret.value)) {
       throw new McpError(MCP_ERROR_CODES.SECRET_LEAK_GUARD, "Composio Session response echoed the operator key")
     }
     return extractSession(payload, options, input.accountPin)
@@ -413,7 +413,7 @@ function normalizeSchema(slug: string, value: unknown, fallbackToolkit?: string)
   if (!name || name !== slug || name.startsWith("COMPOSIO_")) return undefined
   validateMcpToolName(name)
   const inputSchema = schema.input_schema
-  if (!inputSchema || typeof inputSchema !== "object" || Array.isArray(inputSchema)) return undefined
+  if (!inputSchema || typeof inputSchema !== "object" || Array.isArray(inputSchema) || record(inputSchema).type !== "object") return undefined
   const toolkit = optionalString(schema.toolkit_slug)?.toLowerCase()
   if (!toolkit || (fallbackToolkit && toolkit !== fallbackToolkit)) return undefined
   const description = optionalString(schema.description)
