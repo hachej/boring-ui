@@ -152,9 +152,12 @@ Extend, do not replace, `ManagedAgentMcpDelegateController` and its MCP server:
   single-flight record, call `acquireTaskLease()` exactly once, and atomically
   transfer the lease to that record; retained retries and every rejection path
   acquire no lease; acquisition/setup failure removes the reservation and
-  releases any acquired lease;
+  releases any acquired lease, and decrements the reserved per-credential
+  concurrency slot exactly once;
 - retain the transferred task lease through asynchronous terminal
-  result/artifact collection, then release on success, error, or cancel;
+  result/artifact collection; each canonical terminal state — `completed`,
+  `failed`, `canceled`, or `rejected` — releases the lease and decrements the
+  concurrency slot exactly once;
 - authorize each status lookup separately with a disclosure scope that carries
   trusted record identity but no gateway or artifact capability;
 - scope dedupe to credential/principal/Workspace/Agent/key plus the exact bytes
@@ -174,8 +177,11 @@ Extend, do not replace, `ManagedAgentMcpDelegateController` and its MCP server:
   64 KiB in addition to the existing 100-item cap;
 - keep `structuredContent` authoritative and return only a bounded compact text
   summary instead of duplicating the result;
-- derive and test a final wire-response budget that can still carry the maximum
-  otherwise-valid structured result plus retained progress and bounded envelope;
+- freeze `MAX_MCP_STATUS_RESPONSE_BYTES = 480 * 1024` bytes, exactly
+  `384 KiB` existing combined canonical-task/edge-delivery result + `64 KiB`
+  retained progress + `32 KiB` MCP/JSON-RPC envelope and compact text summary;
+  measure the complete serialized response after `structuredContent`, compact
+  `content`, and protocol envelope are assembled, with exact/over tests;
 - never evict an unexpired idempotency record to admit new work: prune only at
   terminal retention expiry and reject new work when record capacity is full.
 
@@ -216,10 +222,11 @@ conflict, fixed-window, concurrency, and capacity checks first. A retained retry
 returns its existing task and never calls `acquireTaskLease()`. A rejected start
 also never calls it. Only after reserving one new single-flight record may the
 package invoke the one-shot closure and atomically attach the returned lease to
-that record. If acquisition or setup fails, it removes the reservation and
-releases any acquired lease. The record retains the lease through work that
+that record. If acquisition or setup fails, it removes the reservation, decrements the
+reserved concurrency slot exactly once, and releases any acquired lease. The record retains the lease through work that
 continues after `delegate_task_start` returns and inline artifact collection,
-then releases it after terminal success, failure, or cancel.
+then releases it and the concurrency slot exactly once for every canonical
+terminal state: completed, failed, canceled, or rejected.
 
 This is the explicit admission-snapshot boundary: membership removal does not
 retroactively cancel the admitted task or its authorized artifact read.
@@ -342,7 +349,8 @@ and rollback approval.
   Workspace, and execution-environment lifecycle as web; the app receives a
   non-parameterized start/status closures. Start authorization allocates no
   lease; only a new post-dedupe/post-limit record acquires the one-shot lease,
-  whose minimum artifact reader is released on setup failure or terminal cleanup. Status receives
+  whose minimum artifact reader and reserved concurrency are released/rolled
+  back on setup failure and exactly once on completed/failed/canceled/rejected. Status receives
   disclosure identity only, never a general scope issuer, gateway, reader, or
   second resolver/composer.
 - Hostname, body, tool args, MCP session ids, JSON-RPC ids, and forwarding
@@ -355,12 +363,14 @@ and rollback approval.
   `startWindowMs`, and `maxConcurrentPerCredential`; exact boundary/reset,
   concurrency release, retry bypass, and bounded `retryAfterMs` are tested.
 - Per-credential start/concurrency and all input/progress/result/final-response
-  bounds are finite and exact-boundary tested; existing caps and secret
+  bounds are finite and exact-boundary tested; the complete status response cap
+  is `480 * 1024` bytes by the `384 + 64 + 32 KiB` formula; existing caps and secret
   redaction do not weaken.
 - Maximum valid completion remains retrievable by polling through a stock
   client without duplicating the full result in text content. Revocation denies
   new starts/status, while an admitted task may finish and read its artifact under
-  the bounded lease; terminal success/error/cancel always releases that lease.
+  the bounded lease; setup failure rolls back its concurrency slot, and
+  completed/failed/canceled/rejected each release lease + concurrency exactly once.
 - Route stays dark by default and fails startup on incomplete/unbounded config.
 - Documentation states restart loss, private credential scope, local/reference
   proof, and the #1011 opposite-direction boundary without claiming public or
@@ -398,7 +408,7 @@ authorization before dedupe, exactly one lease acquired only for a new reserved
 record and released on setup failure or terminal cleanup, plus separate
 status-disclosure authorization, caller-stable retention-bounded idempotency, exact
 fixed-window/concurrency admission, progress byte caps, compact text projection,
-and exact final-response proof.
+and exact `480 * 1024`-byte final-response proof.
 **Blocked by:** planning bead `wt-391-forward-rjkl.1`; the orchestrator closes
 that dependency only after gate-1 approval.
 **File scope:** `packages/agent/src/server/mcp/managedAgentDelegate.ts`,
@@ -407,7 +417,9 @@ required.
 **Proof:** focused agent MCP test, agent typecheck, invariants; exact/over,
 state transitions/schema validation, zero lease acquisition on retry/conflict/
 rate/concurrency/capacity rejection, reservation/acquisition failure cleanup,
-task-lease lifecycle/release and status-scope separation, per-request Agent selection, concurrency/retry/conflict, cross-scope, fixed-window reset, retention/expiry,
+task-lease lifecycle/release and status-scope separation, per-request Agent selection, acquisition/setup
+concurrency rollback, completed/failed/canceled/rejected cleanup,
+concurrency/retry/conflict, cross-scope, fixed-window reset, retention/expiry,
 dedupe-before-limit, and stock-client assertions.
 **Review budget:** Inside — one package controller/server seam and one focused
 test file; fits one worker session.
@@ -533,4 +545,10 @@ combined contract. File scopes do not overlap across writer beads.
   capability-light; a one-shot lease is acquired only after dedupe/limits and a
   new record reservation, with all non-admission/setup release paths explicit.
   Today/Delta and direction evidence are integrated into the mandated sections.
-  A clean final pass is required before handoff.
+- **Pass 5 target:** commit `8e683c0c5b6b3cb704b687031049117d002cc1eb`.
+- **Pass 5 verdict:** revise.
+- **Pass 5 findings/disposition:** missing concurrency rollback on setup failure, omitted rejected
+  cleanup, an unfrozen final wire cap, and a non-Bead gate node in the graph.
+  Those are fixed with exactly-once slot/lease cleanup for every path, a
+  `480 * 1024` byte (`384 + 64 + 32 KiB`) serialized cap, and the exact live
+  `.1 -> .3 -> .4 -> .5` Bead graph. A clean final pass is required.
