@@ -4,7 +4,7 @@ import type { FastifyRequest } from 'fastify'
 import type { InterruptReceipt, PiChatEvent, StopReceipt } from '../shared/chat'
 import type { AgentEvent, AgentMessageContent } from '../shared/events'
 import { ErrorCode } from '../shared/error-codes'
-import type { AgentSessionRef } from '../shared/gateway/types'
+import type { AgentSessionJsonlPage, AgentSessionRef } from '../shared/gateway/types'
 import type { Workspace } from '../shared/workspace'
 import type { AuthorizedSessionRunDetails } from './sessionRunDetails'
 import type {
@@ -82,6 +82,13 @@ export interface WorkspaceAgentDispatcherResolver {
     detailKinds: readonly string[],
     options?: WorkspaceAgentDispatcherResolveOptions,
   ): Promise<readonly AuthorizedSessionRunDetails[]>
+  /** Authorized exact JSONL page for a caller that already bound a concrete session ref. */
+  readSessionJsonlPage?(
+    ctx: WorkspaceAgentDispatcherContext,
+    ref: AgentSessionRef,
+    input: { cursor: number; limit: number; maxBytes: number },
+    options?: WorkspaceAgentDispatcherResolveOptions,
+  ): Promise<AgentSessionJsonlPage>
 }
 
 /**

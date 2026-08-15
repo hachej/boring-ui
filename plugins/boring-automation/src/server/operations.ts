@@ -16,6 +16,9 @@ export const AUTOMATION_TOOL_DEFAULT_LIMIT = 50
 export const AUTOMATION_TOOL_MAX_LIMIT = 100
 export const AUTOMATION_TOOL_PROMPT_CHARACTER_LIMIT = 16_384
 export const AUTOMATION_TOOL_ERROR_CHARACTER_LIMIT = 300
+export const AUTOMATION_JSONL_DEFAULT_LIMIT = 50
+export const AUTOMATION_JSONL_MAX_LIMIT = 100
+export const AUTOMATION_JSONL_MAX_PAGE_BYTES = 512 * 1024
 
 export type AutomationStoreMode = "local" | "hosted"
 
@@ -85,6 +88,24 @@ export interface AutomationUpdateInput extends AutomationPatch {
   prompt?: string
 }
 
+export interface AutomationJsonlPage {
+  lines: string[]
+  nextCursor: number
+  hasMore: boolean
+  runStatus: AutomationRunStatus
+  sessionId: string
+}
+
+export interface AutomationRunTranscriptReader {
+  read(input: {
+    automation: Automation
+    run: AutomationRun
+    cursor: number
+    limit: number
+    maxBytes: number
+  }): Promise<{ lines: readonly string[]; nextCursor: number; hasMore: boolean }>
+}
+
 export interface AutomationOperations {
   list(limit?: number): Promise<BoundedAutomationList<AutomationSummary>>
   listDispatchRuns?(limit?: number): Promise<BoundedAutomationList<DispatchRunFleetSummary>>
@@ -98,6 +119,7 @@ export interface AutomationOperations {
   delete(automationId: string): Promise<{ automationId: string; title: string }>
   run(automationId: string): Promise<SafeAutomationRunSummary>
   listRuns(automationId: string, limit?: number): Promise<BoundedAutomationList<SafeAutomationRunSummary>>
+  readRunJsonl?(automationId: string, runId: string, cursor?: number, limit?: number): Promise<AutomationJsonlPage>
 }
 
 export interface DispatchRunStarter {
@@ -113,6 +135,7 @@ export interface AutomationOperationsResolverOptions {
     store: AutomationStore,
   ) => Promise<DispatchRunStarter | undefined> | DispatchRunStarter | undefined
   localUserId?: string
+  resolveTranscriptReader?: (actor: VerifiedAutomationActor, store: AutomationStore) => Promise<AutomationRunTranscriptReader | undefined> | AutomationRunTranscriptReader | undefined
   defaultAgentTypeId?: string
   sessionController?: AutomationSessionController
 }
@@ -137,8 +160,9 @@ export async function resolveAutomationOperationsForActor(
   const store = await options.resolveStore(actor)
   if (!store) throw contextUnavailable()
   const executor = await options.resolveExecutor?.(actor, store)
+  const transcriptReader = await options.resolveTranscriptReader?.(actor, store)
   return { actor, operations: createAutomationOperations({
-    store, actor, executor,
+    store, actor, executor, transcriptReader,
     defaultAgentTypeId: options.defaultAgentTypeId,
     sessionController: options.sessionController,
   }) }
@@ -150,11 +174,13 @@ export function createAutomationOperations({
   executor,
   defaultAgentTypeId = "default",
   sessionController,
+  transcriptReader,
 }: {
   store: AutomationStore
   actor: VerifiedAutomationActor
   defaultAgentTypeId?: string
   sessionController?: AutomationSessionController
+  transcriptReader?: AutomationRunTranscriptReader
   executor?: DispatchRunStarter
 }): AutomationOperations {
   return {
@@ -269,6 +295,26 @@ export function createAutomationOperations({
     async listRuns(automationId, limit) {
       return bounded(await store.listRuns(automationId), limit, safeRunSummary)
     },
+    async readRunJsonl(automationId, runId, cursor = 0, limit = AUTOMATION_JSONL_DEFAULT_LIMIT) {
+      const automation = await requireAutomation(store, automationId)
+      const run = (await store.listRuns(automationId)).find((candidate) => candidate.id === runId)
+      if (!run) throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_NOT_FOUND, `automation run ${runId} not found`)
+      if (!run.sessionId || !transcriptReader) throw contextUnavailable()
+      const page = await transcriptReader.read({
+        automation,
+        run,
+        cursor: boundedJsonlCursor(cursor),
+        limit: boundedJsonlLimit(limit),
+        maxBytes: AUTOMATION_JSONL_MAX_PAGE_BYTES,
+      })
+      return {
+        lines: [...page.lines],
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
+        runStatus: run.status,
+        sessionId: run.sessionId,
+      }
+    },
   }
 }
 
@@ -329,6 +375,20 @@ function safeRunSummary(run: AutomationRun): SafeAutomationRunSummary {
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
   }
+}
+
+function boundedJsonlCursor(value: number): number {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.INVALID_BODY, "cursor must be a non-negative integer")
+  }
+  return value
+}
+
+function boundedJsonlLimit(value: number): number {
+  if (!Number.isInteger(value) || value < 1 || value > AUTOMATION_JSONL_MAX_LIMIT) {
+    throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.INVALID_BODY, `limit must be an integer between 1 and ${AUTOMATION_JSONL_MAX_LIMIT}`)
+  }
+  return value
 }
 
 function sanitizeRunError(error: string | null): string | null {

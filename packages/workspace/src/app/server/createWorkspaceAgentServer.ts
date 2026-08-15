@@ -1300,6 +1300,10 @@ export async function createWorkspaceAgentServer(
       if (!workspaceAgentDispatcherResolver?.readSessionRunDetails) throw new Error("workspace agent run details are not ready")
       return await workspaceAgentDispatcherResolver.readSessionRunDetails(actor, ref, detailKinds, options)
     },
+    async readSessionJsonlPage(actor, ref, input, options) {
+      if (!workspaceAgentDispatcherResolver?.readSessionJsonlPage) throw new Error("workspace agent raw transcript is not ready")
+      return await workspaceAgentDispatcherResolver.readSessionJsonlPage(actor, ref, input, options)
+    },
   }
   const pluginCollection = await resolveWorkspaceAgentServerPluginCollection({
     trustedPluginContext: {
@@ -2114,6 +2118,13 @@ export async function createWorkspaceAgentServer(
           : scopeIssuer.issue({ claim: { workspaceScopeId, authSubjectId: context.userId.trim() } })
         const snapshot = await agentHost.gateway.readSessionState({ scope, ref })
         return projectAuthorizedSessionRunDetails(snapshot.state.messages, detailKinds)
+      },
+      async readSessionJsonlPage(context, ref, input, resolveOptions) {
+        const scope = resolveOptions?.request
+          ? await authorizeAgentRequest(resolveOptions.request)
+          : scopeIssuer.issue({ claim: { workspaceScopeId, authSubjectId: context.userId.trim() } })
+        if (!agentHost.gateway.readSessionJsonlPage) throw new Error("workspace agent raw transcript is unavailable")
+        return await agentHost.gateway.readSessionJsonlPage({ scope, ref, ...input })
       },
     }
     workspaceAgentDispatcherResolver = directDispatcher

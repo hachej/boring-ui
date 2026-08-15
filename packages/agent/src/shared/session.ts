@@ -7,6 +7,8 @@ export interface SessionStore {
   /** Native Pi transcripts can append a session_info title without a wrapper. */
   rename?(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary>
   load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail>
+  /** Exact raw JSONL lines for trusted, already-authorized internal consumers. */
+  readRawJsonlPage?(ctx: SessionCtx, sessionId: string, input: SessionJsonlPageInput): Promise<SessionJsonlPage>
   delete(ctx: SessionCtx, sessionId: string): Promise<void>
 }
 
@@ -42,3 +44,15 @@ export interface SessionSummary {
 }
 
 export type SessionDetail = SessionSummary
+
+export interface SessionJsonlPageInput {
+  cursor: number
+  limit: number
+  maxBytes: number
+}
+
+export interface SessionJsonlPage {
+  lines: string[]
+  nextCursor: number
+  hasMore: boolean
+}

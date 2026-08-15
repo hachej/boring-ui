@@ -1127,6 +1127,10 @@ export async function createCoreWorkspaceAgentServer(
       if (!workspaceAgentDispatcherResolver?.readSessionRunDetails) throw new Error('workspace agent run details are not ready')
       return await workspaceAgentDispatcherResolver.readSessionRunDetails(actor, ref, detailKinds, resolveOptions)
     },
+    async readSessionJsonlPage(actor, ref, input, resolveOptions) {
+      if (!workspaceAgentDispatcherResolver?.readSessionJsonlPage) throw new Error('workspace agent raw transcript is not ready')
+      return await workspaceAgentDispatcherResolver.readSessionJsonlPage(actor, ref, input, resolveOptions)
+    },
   }
   const basePluginResolveContext: WorkspaceAgentServerPluginContext = {
     workspaceRoot: pluginWorkspaceRoot,
@@ -1677,6 +1681,11 @@ export async function createCoreWorkspaceAgentServer(
         const scope = await authorizeAgentRequest(resolveOptions?.request, context)
         const snapshot = await agentHost.gateway.readSessionState({ scope, ref })
         return projectAuthorizedSessionRunDetails(snapshot.state.messages, detailKinds)
+      },
+      async readSessionJsonlPage(context, ref, input, resolveOptions) {
+        const scope = await authorizeAgentRequest(resolveOptions?.request, context)
+        if (!agentHost.gateway.readSessionJsonlPage) throw new Error('workspace agent raw transcript is unavailable')
+        return await agentHost.gateway.readSessionJsonlPage({ scope, ref, ...input })
       },
     }
     workspaceAgentDispatcherResolver = directDispatcherResolver

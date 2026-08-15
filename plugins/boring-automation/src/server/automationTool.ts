@@ -51,6 +51,13 @@ const idInput = (operation: "pause" | "resume" | "run" | "delete") => z.object({
 const nudgeInput = z.object({ operation: z.literal("nudge"), sessionId: nonEmpty, message: nonEmpty }).strict()
 const cancelInput = z.object({ operation: z.literal("cancel"), sessionId: nonEmpty }).strict()
 const listRunsInput = z.object({ operation: z.literal("list_runs"), automationId: nonEmpty, limit }).strict()
+const readRunJsonlInput = z.object({
+  operation: z.literal("read_run_jsonl"),
+  automationId: nonEmpty,
+  runId: nonEmpty,
+  cursor: z.number().int().min(0).optional(),
+  limit,
+}).strict()
 
 const AutomationToolInputSchema = z.discriminatedUnion("operation", [
   listInput,
@@ -63,6 +70,7 @@ const AutomationToolInputSchema = z.discriminatedUnion("operation", [
   nudgeInput,
   cancelInput,
   listRunsInput,
+  readRunJsonlInput,
   idInput("delete"),
 ])
 
@@ -80,7 +88,8 @@ export function createBoringAutomationTool(deps: BoringAutomationToolDependencie
     name: BORING_AUTOMATION_TOOL_NAME,
     description: [
       "Manage scheduled automations in the active workspace.",
-      "Supports list, get, create, update, pause, resume, run, nudge, cancel, list_runs, and delete.",
+      "Supports list, get, create, update, pause, resume, run, nudge, cancel, list_runs, read_run_jsonl, and delete. " +
+      "read_run_jsonl returns bounded exact raw transcript lines for that run, including system, reasoning, and tool records.",
       "Models supplied to create/update must use explicit provider:model-id syntax.",
       "Pause affects future scheduled runs only; manual run remains allowed.",
       "Delete removes automation metadata only and preserves prompt files, run history, and sessions.",
@@ -156,6 +165,13 @@ async function executeOperation(operations: AutomationOperations, input: Automat
       const listed = await operations.listRuns(input.automationId, input.limit)
       return { ok: true as const, operation: input.operation, runs: listed.items, truncated: listed.truncated }
     }
+    case "read_run_jsonl": {
+      return {
+        ok: true as const,
+        operation: input.operation,
+        ...(await requireOperation(operations.readRunJsonl, "read_run_jsonl")(input.automationId, input.runId, input.cursor, input.limit)),
+      }
+    }
     case "delete": {
       assertNotAborted(ctx)
       return { ok: true as const, operation: input.operation, deleted: await operations.delete(input.automationId) }
@@ -196,7 +212,7 @@ function operationForError(params: unknown): ToolOperation | "unknown" {
     : "unknown"
 }
 
-const TOOL_OPERATIONS = new Set<ToolOperation>(["list", "get", "create", "update", "pause", "resume", "run", "nudge", "cancel", "list_runs", "delete"])
+const TOOL_OPERATIONS = new Set<ToolOperation>(["list", "get", "create", "update", "pause", "resume", "run", "nudge", "cancel", "list_runs", "read_run_jsonl", "delete"])
 
 function errorDetails(operation: ToolOperation | "unknown", cause: unknown) {
   const code = knownErrorCode(cause)
@@ -279,6 +295,9 @@ function automationToolJsonSchema(): Record<string, unknown> {
       operationOnly("nudge", { sessionId: id, message: id }, ["sessionId", "message"]),
       operationOnly("cancel", { sessionId: id }, ["sessionId"]),
       operationOnly("list_runs", { automationId: id, limit: limitSchema }, ["automationId"]),
+      operationOnly("read_run_jsonl", {
+        automationId: id, runId: id, cursor: { type: "integer", minimum: 0 }, limit: limitSchema,
+      }, ["automationId", "runId"]),
       operationOnly("delete", { automationId: id }, ["automationId"]),
     ],
   }

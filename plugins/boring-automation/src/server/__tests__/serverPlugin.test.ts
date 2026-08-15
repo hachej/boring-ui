@@ -89,6 +89,42 @@ describe("boring automation server plugin", () => {
     await app.close()
   })
 
+  it("reads a run transcript through its durable dispatch ref, not mutable automation metadata", async () => {
+    const readSessionJsonlPage = vi.fn(async () => ({
+      lines: ['{"type":"session"}'], nextCursor: 1, hasMore: false,
+    }))
+    const automation = {
+      id: "automation-1", title: "Transcript", enabled: true, cron: "0 9 * * *", timezone: "UTC",
+      model: "test:model", agentTypeId: "changed-agent", thinkingLevel: "medium", sessionMode: "new",
+      promptRef: "prompts/automation-1.md", createdAt: "2026-07-19T00:00:00.000Z", updatedAt: "2026-07-19T00:00:00.000Z",
+    }
+    const run = {
+      id: "run-1", automationId: automation.id, sessionId: "session-1", status: "succeeded", trigger: "dispatch",
+      scheduledFor: null, startedAt: automation.createdAt, completedAt: automation.createdAt, durationMs: 1,
+      inputTokens: 1, outputTokens: 1, totalTokens: 2, promptSnapshot: "prompt", modelSnapshot: "test:model",
+      error: null, createdAt: automation.createdAt, updatedAt: automation.createdAt,
+      dispatchReceipt: { ref: { agentTypeId: "original-agent", sessionId: "session-1" }, accepted: true, cursor: 1, disposition: "prompt", clientNonce: "run-1" },
+    }
+    const plugin = createBoringAutomationServerPlugin({
+      agentTypeId: "default-agent",
+      availableAgentTypeIds: ["default-agent", "changed-agent", "original-agent"],
+      store: { getAutomation: vi.fn(async () => automation), listRuns: vi.fn(async () => [run]) } as never,
+      dispatcherResolver: { readSessionJsonlPage } as never,
+    })
+    const result = await plugin.agentTools![0]!.execute(
+      { operation: "read_run_jsonl", automationId: automation.id, runId: run.id },
+      { abortSignal: new AbortController().signal, toolCallId: "call-1", workspaceId: "workspace-1", userId: "user-1" },
+    )
+
+    expect(result.isError).toBe(false)
+    expect(readSessionJsonlPage).toHaveBeenCalledWith(
+      { workspaceId: "workspace-1", userId: "user-1" },
+      { agentTypeId: "original-agent", sessionId: "session-1" },
+      { cursor: 0, limit: 50, maxBytes: 512 * 1024 },
+    )
+    expect(result.details).toMatchObject({ lines: ['{"type":"session"}'], nextCursor: 1, hasMore: false })
+  })
+
   it("hosted tool fails closed before the unbound fallback store can be queried", async () => {
     const sql = vi.fn(async () => [])
     const plugin = defaultBoringAutomationServerPlugin({ agentTypeId: "selected-agent" }, {

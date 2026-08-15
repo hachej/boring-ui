@@ -358,4 +358,25 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     const detail = await store.load(ctx, sessionId);
     expect(detail.title).toBe("Legacy session");
   });
+
+  it("pages exact raw JSONL lines with a stable line cursor", async () => {
+    const sessionId = "raw-page";
+    const lines = [
+      JSON.stringify({ type: "session", version: 3, id: sessionId, timestamp: "2026-06-02T00:00:00.000Z", cwd: tmpDir, boringSessionCtx: { workspaceId: "default" } }),
+      JSON.stringify({ type: "session_info", id: "info", parentId: null, timestamp: "2026-06-02T00:00:01.000Z", name: "Raw" }),
+      "{malformed raw record",
+    ];
+    await writeFile(join(tmpDir, `${sessionId}.jsonl`), `${lines.join("\n")}\n`, "utf-8");
+    const store = new PiSessionStore(tmpDir, tmpDir);
+
+    await expect(store.readRawJsonlPage({ workspaceId: "default" }, sessionId, { cursor: 0, limit: 2, maxBytes: 1024 * 1024 }))
+      .resolves.toEqual({ lines: lines.slice(0, 2), nextCursor: 2, hasMore: true });
+    await expect(store.readRawJsonlPage({ workspaceId: "default" }, sessionId, { cursor: 2, limit: 2, maxBytes: 1024 * 1024 }))
+      .resolves.toEqual({ lines: lines.slice(2), nextCursor: 3, hasMore: false });
+    await expect(store.readRawJsonlPage({ workspaceId: "other" }, sessionId, { cursor: 0, limit: 2, maxBytes: 1024 * 1024 }))
+      .rejects.toThrow(`Session not found: ${sessionId}`);
+    await expect(store.readRawJsonlPage({ workspaceId: "default" }, sessionId, { cursor: 1, limit: 2, maxBytes: 5 }))
+      .rejects.toThrow("JSONL line exceeds page byte limit");
+  });
+
 });

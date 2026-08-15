@@ -10,7 +10,8 @@ import {
   rename,
   open,
 } from "node:fs/promises";
-import { closeSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
+import { closeSync, createReadStream, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
+import { createInterface } from "node:readline";
 import { join, basename, resolve } from "node:path";
 import { homedir } from "node:os";
 import { getEnv } from "../../config/env.js";
@@ -30,6 +31,8 @@ import {
   type SessionSummary,
   type SessionDetail,
   type SessionListOptions,
+  type SessionJsonlPage,
+  type SessionJsonlPageInput,
 } from "../../../shared/session.js";
 import { appendVerifiedNativeRename } from "./nativeSessionRename.js";
 import {
@@ -514,6 +517,36 @@ export class PiSessionStore implements SessionStore {
     } catch {
       return null;
     }
+  }
+
+  async readRawJsonlPage(ctx: SessionCtx, sessionId: string, input: SessionJsonlPageInput): Promise<SessionJsonlPage> {
+    if (!Number.isInteger(input.cursor) || input.cursor < 0) throw new TypeError("invalid JSONL cursor");
+    if (!Number.isInteger(input.limit) || input.limit < 1) throw new TypeError("invalid JSONL limit");
+    if (!Number.isInteger(input.maxBytes) || input.maxBytes < 1) throw new TypeError("invalid JSONL byte limit");
+    const filepath = await this.resolveSessionFile(sessionId, ctx);
+    const stream = createReadStream(filepath, { encoding: "utf-8" });
+    const reader = createInterface({ input: stream, crlfDelay: Infinity });
+    const lines: string[] = [];
+    let lineIndex = 0;
+    let bytes = 0;
+    let hasMore = false;
+    try {
+      for await (const line of reader) {
+        if (lineIndex++ < input.cursor) continue;
+        const lineBytes = Buffer.byteLength(line, "utf-8");
+        if (lines.length >= input.limit || bytes + lineBytes > input.maxBytes) {
+          if (lines.length === 0) throw new RangeError("JSONL line exceeds page byte limit");
+          hasMore = true;
+          break;
+        }
+        lines.push(line);
+        bytes += lineBytes;
+      }
+    } finally {
+      reader.close();
+      stream.destroy();
+    }
+    return { lines, nextCursor: input.cursor + lines.length, hasMore };
   }
 
   async loadPiSessionFile(ctx: SessionCtx, sessionId: string): Promise<string | null> {

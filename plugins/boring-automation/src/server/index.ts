@@ -16,8 +16,8 @@ import { HostedAutomationScheduler } from "./hostedScheduler"
 import { PostgresAutomationStore } from "./postgresStore"
 import { createLeaseBoundHostedAutomationStore } from "./hostedStore"
 import { createBoringAutomationTool } from "./automationTool"
-import { DispatchRunExecutor, type VerifiedAutomationActor } from "./dispatchRunExecutor"
-import { resolveAutomationOperationsForActor, type AutomationSessionController, type AutomationStoreMode } from "./operations"
+import { DispatchRunExecutor, resolveAutomationAgentTypeId, type VerifiedAutomationActor } from "./dispatchRunExecutor"
+import { resolveAutomationOperationsForActor, type AutomationRunTranscriptReader, type AutomationSessionController, type AutomationStoreMode } from "./operations"
 import { InMemoryAutomationRunEventBus, PostgresAutomationRunEventBus, type AutomationRunEventBus } from "./runEventBus"
 import { automationRoutes } from "./routes"
 import type { AutomationStore } from "./store"
@@ -75,6 +75,14 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
       defaultAgentTypeId: options.agentTypeId,
       sessionController: options.dispatcherResolver
         ? createAutomationSessionController(options.dispatcherResolver, actorContext)
+        : undefined,
+      resolveTranscriptReader: options.dispatcherResolver?.readSessionJsonlPage
+        ? () => createAutomationTranscriptReader(
+            options.dispatcherResolver!,
+            actorContext,
+            options.agentTypeId,
+            options.availableAgentTypeIds,
+          )
         : undefined,
       resolveExecutor: options.dispatcherResolver
         ? async (actor, actorStore) => new DispatchRunExecutor({
@@ -167,6 +175,36 @@ export function createAutomationSessionController(
   }
 }
 
+
+function createAutomationTranscriptReader(
+  resolver: WorkspaceAgentDispatcherResolver,
+  actorContext: { workspaceId?: string; userId?: string },
+  defaultAgentTypeId: string,
+  availableAgentTypeIds?: readonly string[],
+): AutomationRunTranscriptReader {
+  const context = {
+    workspaceId: actorContext.workspaceId?.trim() ?? "",
+    userId: actorContext.userId?.trim() ?? "",
+  }
+  return {
+    async read({ automation, run, cursor, limit, maxBytes }) {
+      const agentTypeId = run.dispatchReceipt?.ref.agentTypeId ?? resolveAutomationAgentTypeId(
+        automation.agentTypeId,
+        defaultAgentTypeId,
+        availableAgentTypeIds,
+      )
+      const sessionId = run.dispatchReceipt?.ref.sessionId ?? run.sessionId!
+      if (run.dispatchReceipt && run.sessionId !== sessionId) {
+        throw new Error("automation run dispatch receipt does not match its session")
+      }
+      return await resolver.readSessionJsonlPage!(
+        context,
+        { agentTypeId, sessionId },
+        { cursor, limit, maxBytes },
+      )
+    },
+  }
+}
 
 function requireLeaseMethod<T extends (...args: never[]) => unknown>(method: T | undefined, name: string): T {
   if (!method) throw new Error(`workspace agent lease does not support ${name}`)

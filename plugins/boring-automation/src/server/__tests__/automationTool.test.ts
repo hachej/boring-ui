@@ -30,6 +30,7 @@ function operations(): AutomationOperations {
     delete: vi.fn(async () => ({ automationId: summary.id, title: summary.title })),
     run: vi.fn(async () => run),
     listRuns: vi.fn(async () => ({ items: [run], truncated: false })),
+    readRunJsonl: vi.fn(async () => ({ lines: ['{"type":"session"}'], nextCursor: 1, hasMore: false, runStatus: "succeeded" as const, sessionId: "session-1" })),
   }
 }
 
@@ -54,7 +55,7 @@ describe("boring_automation agent tool", () => {
     expect(tool.name).toBe(BORING_AUTOMATION_TOOL_NAME)
     expect(tool.name).toBe("boring_automation")
     expect(tool.parameters).toMatchObject({ oneOf: expect.any(Array) })
-    expect((tool.parameters.oneOf as any[])).toHaveLength(11)
+    expect((tool.parameters.oneOf as any[])).toHaveLength(12)
     expect((tool.parameters.oneOf as any[]).every((branch) => branch.additionalProperties === false)).toBe(true)
   })
 
@@ -72,6 +73,19 @@ describe("boring_automation agent tool", () => {
     const result = await tool.execute({ operation: "get", automationId: "automation-1" }, context())
     expect(ops.get).toHaveBeenCalledWith("automation-1")
     expect(details(result)).toMatchObject({ ok: true, operation: "get", automation: summary, prompt: { text: "prompt" } })
+  })
+
+  it("returns exact paginated raw JSONL for a bound run", async () => {
+    const { tool, ops } = harness()
+    const result = await tool.execute({
+      operation: "read_run_jsonl", automationId: "automation-1", runId: "run-1", cursor: 0, limit: 10,
+    }, context())
+    expect(result.isError).toBe(false)
+    expect(ops.readRunJsonl).toHaveBeenCalledWith("automation-1", "run-1", 0, 10)
+    expect(details(result)).toEqual({
+      ok: true, operation: "read_run_jsonl", lines: ['{"type":"session"}'], nextCursor: 1,
+      hasMore: false, runStatus: "succeeded", sessionId: "session-1",
+    })
   })
 
   it("supports create with prompt, effort, enabled state, and explicit model", async () => {

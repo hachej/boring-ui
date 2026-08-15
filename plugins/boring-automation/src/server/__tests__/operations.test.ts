@@ -235,6 +235,36 @@ describe("AutomationOperations", () => {
     expect(result.items[0]).not.toHaveProperty("modelSnapshot")
   })
 
+  it("reads a bounded exact JSONL page only through the run-bound transcript reader", async () => {
+    const transcriptReader = { read: vi.fn(async () => ({
+      lines: ['{"type":"session"}', '{"type":"message"}'], nextCursor: 4, hasMore: true,
+    })) }
+    const operations = createAutomationOperations({
+      store: storeMock(), actor: { workspaceId: "w", userId: "u" }, transcriptReader,
+    })
+
+    await expect(operations.readRunJsonl!("automation-1", "run-1", 2, 2)).resolves.toEqual({
+      lines: ['{"type":"session"}', '{"type":"message"}'],
+      nextCursor: 4, hasMore: true, runStatus: "succeeded", sessionId: "session-1",
+    })
+    expect(transcriptReader.read).toHaveBeenCalledWith(expect.objectContaining({
+      automation: expect.objectContaining({ id: "automation-1" }),
+      run: expect.objectContaining({ id: "run-1", sessionId: "session-1" }),
+      cursor: 2, limit: 2, maxBytes: 512 * 1024,
+    }))
+  })
+
+  it("rejects transcript reads that are not bound to a durable run session", async () => {
+    const operations = createAutomationOperations({
+      store: storeMock({ listRuns: vi.fn(async () => [run({ sessionId: null })]) }),
+      actor: { workspaceId: "w", userId: "u" },
+      transcriptReader: { read: vi.fn() },
+    })
+    await expect(operations.readRunJsonl!("automation-1", "run-1")).rejects.toMatchObject({
+      code: BORING_AUTOMATION_ERROR_CODES.TOOL_CONTEXT_UNAVAILABLE,
+    })
+  })
+
   it("preserves store not-found errors", async () => {
     const operations = createAutomationOperations({ store: storeMock(), actor: { workspaceId: "w", userId: "u" } })
     await expect(operations.get("missing")).rejects.toBeInstanceOf(AutomationStoreError)
