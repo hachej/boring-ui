@@ -111,8 +111,9 @@ static credential binding
   -> credentialId + existing principal + one existing Workspace
   -> current app / non-deleted Workspace / current membership
   -> strict Workspace defaultAgentTypeId resolution against static fleet
-  -> binding-specific Core admitStart() / authorizeStatus() closures
-  -> task lease for execution; separate scope for status disclosure
+  -> binding-specific Core authorizeStart() / authorizeStatus() closures
+  -> capability-light StartAdmission; lease only after dedupe/limits
+  -> task lease for one new task; separate scope for status disclosure
   -> existing AgentGateway
   -> existing managed MCP delegation and bounded delivery
 ```
@@ -144,10 +145,16 @@ Extend, do not replace, `ManagedAgentMcpDelegateController` and its MCP server:
   task, not as a second lifecycle or a generic canonical artifact locator;
 - require a non-empty ASCII `[A-Za-z0-9._:-]+` key of at most 128 UTF-8 bytes
   for both start tools;
-- let the host supply a task-scoped lease for each new start: redacted admission
-  identity, request-authorized `agentTypeId`, gateway scope, minimum artifact
-  reader, and `release()`; retain it only through that task's asynchronous
-  terminal result/artifact collection, then release on every outcome;
+- let the host first supply a capability-light `StartAdmission`: redacted
+  identity, request-authorized `agentTypeId`, and one-shot
+  `acquireTaskLease()`, but no gateway/artifact reader;
+- after dedupe, conflict, rate, concurrency, and capacity checks, reserve one new
+  single-flight record, call `acquireTaskLease()` exactly once, and atomically
+  transfer the lease to that record; retained retries and every rejection path
+  acquire no lease; acquisition/setup failure removes the reservation and
+  releases any acquired lease;
+- retain the transferred task lease through asynchronous terminal
+  result/artifact collection, then release on success, error, or cancel;
 - authorize each status lookup separately with a disclosure scope that carries
   trusted record identity but no gateway or artifact capability;
 - scope dedupe to credential/principal/Workspace/Agent/key plus the exact bytes
@@ -183,15 +190,19 @@ Expose a binding-specific boot-time capability rather than a general scope
 issuer. Full-app supplies Core one server-owned static
 `{credentialId, principalId, workspaceId}` binding at composition time and
 receives two non-parameterized closures, neither accepting caller-selected
-identity: `admitStart()` and `authorizeStatus()`.
+identity: `authorizeStart()` and `authorizeStatus()`.
 
-`admitStart()` rechecks the bound principal/Workspace/app/membership and strict
-Workspace default, then returns one task-scoped lease:
+`authorizeStart()` rechecks the bound principal/Workspace/app/membership and
+strict Workspace default, then returns a capability-light admission:
 
 ```ts
-type ManagedMcpTaskLease = {
+type ManagedMcpStartAdmission = {
   credentialId: string
   agentTypeId: string
+  acquireTaskLease(): Promise<ManagedMcpTaskLease> // one shot
+}
+
+type ManagedMcpTaskLease = {
   scope: AuthorizedAgentScope
   gateway: AgentGateway
   artifactReader: Pick<Workspace, 'stat' | 'readBinaryFile'>
@@ -199,9 +210,17 @@ type ManagedMcpTaskLease = {
 }
 ```
 
-The package may retain this lease only for the admitted task, including work
-that continues after `delegate_task_start` returns and later inline artifact
-collection. It releases the lease after terminal success, failure, or cancel.
+Authorization therefore occurs before scoped dedupe without allocating an
+execution/artifact lease. The package performs retained-key lookup, payload
+conflict, fixed-window, concurrency, and capacity checks first. A retained retry
+returns its existing task and never calls `acquireTaskLease()`. A rejected start
+also never calls it. Only after reserving one new single-flight record may the
+package invoke the one-shot closure and atomically attach the returned lease to
+that record. If acquisition or setup fails, it removes the reservation and
+releases any acquired lease. The record retains the lease through work that
+continues after `delegate_task_start` returns and inline artifact collection,
+then releases it after terminal success, failure, or cancel.
+
 This is the explicit admission-snapshot boundary: membership removal does not
 retroactively cancel the admitted task or its authorized artifact read.
 
@@ -271,7 +290,8 @@ and rollback approval.
 5. **Use one private pre-provisioned binding first.** The tracer needs no login,
    chooser, token-management UI, OAuth product, or implicit Workspace creation.
 6. **Separate task admission from status disclosure.** Every new start gets one
-   reauthorized task lease retained through terminal cleanup; every status lookup
+   reauthorized capability-light admission; only a new reserved task acquires
+   one lease retained through terminal cleanup; every status lookup
    reauthorizes independently and receives no execution/artifact capability. An
    admitted turn and its artifact collection use the admission snapshot; this
    plan does not invent mid-turn revocation hooks.
@@ -320,8 +340,9 @@ and rollback approval.
   edge delivery projection.
 - MCP uses the same AgentGateway, construction funnel, strict fleet/default,
   Workspace, and execution-environment lifecycle as web; the app receives a
-  non-parameterized start/status closures; only a start lease contains the
-  minimum artifact reader and it is released at terminal cleanup. Status receives
+  non-parameterized start/status closures. Start authorization allocates no
+  lease; only a new post-dedupe/post-limit record acquires the one-shot lease,
+  whose minimum artifact reader is released on setup failure or terminal cleanup. Status receives
   disclosure identity only, never a general scope issuer, gateway, reader, or
   second resolver/composer.
 - Hostname, body, tool args, MCP session ids, JSON-RPC ids, and forwarding
@@ -372,9 +393,10 @@ and rollback approval.
 
 **Bead:** `wt-391-forward-rjkl.3`
 **Priority:** P1
-**Delivers:** Canonical AgentTask v2 edge projection, a task lease retained only
-through asynchronous terminal work/artifact collection plus separate status
-disclosure authorization, caller-stable retention-bounded idempotency, exact
+**Delivers:** Canonical AgentTask v2 edge projection, capability-light start
+authorization before dedupe, exactly one lease acquired only for a new reserved
+record and released on setup failure or terminal cleanup, plus separate
+status-disclosure authorization, caller-stable retention-bounded idempotency, exact
 fixed-window/concurrency admission, progress byte caps, compact text projection,
 and exact final-response proof.
 **Blocked by:** planning bead `wt-391-forward-rjkl.1`; the orchestrator closes
@@ -383,8 +405,9 @@ that dependency only after gate-1 approval.
 `managedAgentMcpServer.ts`, focused delegate test, and MCP exports only if
 required.
 **Proof:** focused agent MCP test, agent typecheck, invariants; exact/over,
-state transitions/schema validation, task-lease lifecycle/release and
-status-scope separation, per-request Agent selection, concurrency/retry/conflict, cross-scope, fixed-window reset, retention/expiry,
+state transitions/schema validation, zero lease acquisition on retry/conflict/
+rate/concurrency/capacity rejection, reservation/acquisition failure cleanup,
+task-lease lifecycle/release and status-scope separation, per-request Agent selection, concurrency/retry/conflict, cross-scope, fixed-window reset, retention/expiry,
 dedupe-before-limit, and stock-client assertions.
 **Review budget:** Inside — one package controller/server seam and one focused
 test file; fits one worker session.
@@ -393,9 +416,10 @@ test file; fits one worker session.
 
 **Bead:** `wt-391-forward-rjkl.4`
 **Priority:** P1
-**Delivers:** Non-parameterized Core `admitStart()` task-lease and
-`authorizeStatus()` disclosure closures; start returns branded scope, strict
-resolved Agent, existing gateway, minimal artifact reader, and release; status
+**Delivers:** Non-parameterized Core `authorizeStart()` capability-light
+admission with a one-shot lease closure and `authorizeStatus()` disclosure
+closure; only the acquired lease returns branded scope, existing gateway,
+minimal artifact reader, and release; status
 returns no execution/artifact capability; shared
 unknown-default fallback drift is fixed for web and MCP; full-app reauthorizes
 on start/status with no hostname authority.
@@ -502,4 +526,11 @@ combined contract. File scopes do not overlap across writer beads.
   task-scoped `admitStart()` leases retained through terminal artifact/result
   collection plus separately reauthorized capability-free status disclosure;
   added `.1` Acceptance Criteria for lint; reordered/capped the gate HTML.
+- **Pass 4 target:** commit `0ccb556ef713462ac27ddf348e24d5e38f432d74`.
+- **Pass 4 verdict:** revise.
+- **Pass 4 findings/disposition:** lease acquisition occurred too early and the HTML still implied
+  status-to-gateway capability/section drift. Start authorization is now
+  capability-light; a one-shot lease is acquired only after dedupe/limits and a
+  new record reservation, with all non-admission/setup release paths explicit.
+  Today/Delta and direction evidence are integrated into the mandated sections.
   A clean final pass is required before handoff.
