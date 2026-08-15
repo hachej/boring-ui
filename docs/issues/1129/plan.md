@@ -152,8 +152,9 @@ Extend, do not replace, `ManagedAgentMcpDelegateController` and its MCP server:
   single-flight record, call `acquireTaskLease()` exactly once, and atomically
   transfer the lease to that record; retained retries and every admission
   rejection acquire no lease; if acquisition rejects, Core guarantees
-  failure-atomic cleanup of every partially allocated gateway/environment/reader
-  resource, while the package removes the reservation and decrements concurrency
+  failure-atomic release of every partial lease/binding/reference so no active
+  task binding or capability survives; cached environment generations remain
+  under the existing manager and retire only by its canonical retire policy, while the package removes the reservation and decrements concurrency
   exactly once; if later package setup fails after fulfillment, the package also
   calls `release()` exactly once;
 - retain the transferred task lease through asynchronous terminal
@@ -179,11 +180,18 @@ Extend, do not replace, `ManagedAgentMcpDelegateController` and its MCP server:
   64 KiB in addition to the existing 100-item cap;
 - keep `structuredContent` authoritative and return only a bounded compact text
   summary instead of duplicating the result;
-- freeze `MAX_MCP_STATUS_RESPONSE_BYTES = 480 * 1024` bytes, exactly
-  `384 KiB` existing combined canonical-task/edge-delivery result + `64 KiB`
-  retained progress + `32 KiB` MCP/JSON-RPC envelope and compact text summary;
-  measure the complete serialized response after `structuredContent`, compact
-  `content`, and protocol envelope are assembled, with exact/over tests;
+- freeze `MAX_MCP_STATUS_RESPONSE_BYTES = 2112 * 1024` bytes from an explicit
+  worst-case complete-JSON budget: `192 KiB` for the 32 KiB brief at 6x JSON
+  escaping; `576 KiB` for canonical 96 KiB final text at 6x; `576 KiB` for the
+  retained compatibility `finalAssistantText` projection at 6x (derived from
+  the canonical task, not a second lifecycle); `512 KiB` for validated 256 KiB
+  Markdown at 2x escaping; `128 KiB` for all bounded task/delivery metadata;
+  `64 KiB` for retained progress measured after JSON serialization; and `64
+  KiB` for MCP/JSON-RPC envelope plus compact summary. Add a 4 KiB artifact-title
+  cap within metadata. Measure after `structuredContent`, compact `content`, and
+  protocol envelope are assembled, with exact/over and worst-escape tests;
+- preserve the existing oversize-result assertion without weakening or deletion:
+  its 384 KiB title now rejects against the stricter 4 KiB title cap;
 - never evict an unexpired idempotency record to admit new work: prune only at
   terminal retention expiry and reject new work when record capacity is full.
 
@@ -225,12 +233,14 @@ conflict, fixed-window, concurrency, and capacity checks first. A retained retry
 returns its existing task and never calls `acquireTaskLease()`. A rejected start
 also never calls it. Only after reserving one new single-flight record may the
 package invoke the one-shot closure and atomically attach the returned lease to
-that record. If acquisition rejects, Core first disposes every partially allocated
-gateway/environment/artifact resource before rejecting; the package then removes
+that record. If acquisition rejects, Core first releases every partial lease/binding/reference before rejecting so
+no active task binding or capability survives; cached environment generations
+remain governed by the existing manager/retire policy; the package then removes
 the reservation and decrements concurrency exactly once. If package setup fails
 after a fulfilled lease, the package additionally calls `release()` exactly once.
 Focused Core tests inject failure after each fallible acquisition step and assert
-no surviving binding/resource. The record retains the lease through work that
+no active lease, task binding, or reference survives. They do not require eager
+destruction of a cached environment generation; canonical retire owns that. The record retains the lease through work that
 continues after `delegate_task_start` returns and inline artifact collection,
 then releases it and the concurrency slot exactly once for every canonical
 terminal state: completed, failed, canceled, or rejected.
@@ -358,7 +368,8 @@ and rollback approval.
   lease; only a new post-dedupe/post-limit record acquires the one-shot lease,
   whose minimum artifact reader and reserved concurrency are released/rolled
   back on setup failure and exactly once on completed/failed/canceled/rejected.
-  Core makes lease acquisition failure-atomic before rejecting; package tests
+  Core makes acquisition failure-atomic for active leases/bindings/references
+  before rejecting (without changing environment cache retirement); package tests
   prove concurrency rollback for that rejection. Status receives
   disclosure identity only, never a general scope issuer, gateway, reader, or
   second resolver/composer.
@@ -373,7 +384,8 @@ and rollback approval.
   concurrency release, retry bypass, and bounded `retryAfterMs` are tested.
 - Per-credential start/concurrency and all input/progress/result/final-response
   bounds are finite and exact-boundary tested; the complete status response cap
-  is `480 * 1024` bytes by the `384 + 64 + 32 KiB` formula; existing caps and secret
+  is `2112 * 1024` bytes by the `192 + 576 + 576 + 512 + 128 + 64 + 64 KiB`
+  worst-case JSON formula; existing caps and secret
   redaction do not weaken.
 - Maximum valid completion remains retrievable by polling through a stock
   client without duplicating the full result in text content. Revocation denies
@@ -417,7 +429,7 @@ authorization before dedupe, exactly one lease acquired only for a new reserved
 record and released on setup failure or terminal cleanup, plus separate
 status-disclosure authorization, caller-stable retention-bounded idempotency, exact
 fixed-window/concurrency admission, progress byte caps, compact text projection,
-and exact `480 * 1024`-byte final-response proof.
+and exact `2112 * 1024`-byte complete-response proof with worst-case escaping.
 **Blocked by:** planning bead `wt-391-forward-rjkl.1`; the orchestrator closes
 that dependency only after gate-1 approval.
 **File scope:** `packages/agent/src/server/mcp/managedAgentDelegate.ts`,
@@ -452,7 +464,7 @@ safety tests. No package MCP implementation files.
 **Proof:** focused Core/full-app tests, both package typechecks, invariants;
 negative authorization/default/spoof tests prove no effect before authority;
 fault injection after each acquisition allocation proves Core rejection leaves no
-gateway/environment/artifact binding alive.
+active lease/task binding/reference (cached generations follow existing retire).
 **Review budget:** Inside — one Core composition callback and one app edge
 adapter; fits one worker session.
 
@@ -562,12 +574,21 @@ combined contract. File scopes do not overlap across writer beads.
 - **Pass 5 findings/disposition:** missing concurrency rollback on setup failure, omitted rejected
   cleanup, an unfrozen final wire cap, and a non-Bead gate node in the graph.
   Those are fixed with exactly-once slot/lease cleanup for every path, a
-  `480 * 1024` byte (`384 + 64 + 32 KiB`) serialized cap, and the exact live
+  `2112 * 1024` byte worst-case serialized cap, and the exact live
   `.1 -> .3 -> .4 -> .5` Bead graph.
 - **Pass 6 target:** commit `cb9f3a6622eba4ff93ecc86ecdef4e1a96ddbf3f`.
 - **Pass 6 verdict:** revise.
 - **Pass 6 findings/disposition:** acquisition rejection could hide a partial
   resource before a lease handle existed. `acquireTaskLease()` is now explicitly
-  failure-atomic inside Core, with fault-injection proof after each allocation;
+  failure-atomic for active lease/binding/reference cleanup inside Core, with
+  fault-injection proof after each allocation; cached generations keep canonical
+  retire semantics;
   package concurrency rollback remains required, and fulfilled-lease setup
-  failure calls `release()`. A clean final pass is required.
+  failure calls `release()`.
+- **Pass 7 target:** commit `9547efa041e937f50201de33799e132c8dfc8614`.
+- **Pass 7 verdict:** revise.
+- **Pass 7 findings/disposition:** narrowed failure atomicity to no active
+  lease/binding/reference (cached environment generations retain existing retire
+  semantics) and replaced the impossible 480 KiB cap with the exact 2112 KiB
+  worst-case JSON budget. The existing oversize-result assertion remains and
+  now rejects its title via a stricter 4 KiB cap. A clean final pass is required.
