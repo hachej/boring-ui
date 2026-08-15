@@ -301,6 +301,8 @@ vi.mock('../../../server/db/index.js', () => ({
       workspaceServerMock.memberChecks.push([workspaceId, userId])
       return true
     }
+    async inventoryDefaultAgentTypeIds() { return [] }
+    async compareAndSetNullDefaultAgentTypeId() { return 0 }
   },
 }))
 

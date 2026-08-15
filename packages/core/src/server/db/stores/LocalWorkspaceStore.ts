@@ -1,5 +1,9 @@
 import { randomUUID, createHash } from 'node:crypto'
-import type { WorkspaceStore, WorkspaceStoreCreateOptions } from '../../app/types.js'
+import type {
+  WorkspaceDefaultAgentTypeInventoryItem,
+  WorkspaceStore,
+  WorkspaceStoreCreateOptions,
+} from '../../app/types.js'
 import type {
   Workspace,
   WorkspaceMember,
@@ -102,6 +106,30 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       return b.createdAt.localeCompare(a.createdAt)
     })
     return result
+  }
+
+  async inventoryDefaultAgentTypeIds(appId: string): Promise<WorkspaceDefaultAgentTypeInventoryItem[]> {
+    const counts = new Map<string | null, number>()
+    for (const workspace of this.workspaces.values()) {
+      if (workspace.appId !== appId) continue
+      const value = workspace.defaultAgentTypeId ?? null
+      counts.set(value, (counts.get(value) ?? 0) + 1)
+    }
+    return [...counts.entries()]
+      .map(([defaultAgentTypeId, count]) => ({ defaultAgentTypeId, count }))
+      .sort((left, right) => (left.defaultAgentTypeId ?? '').localeCompare(right.defaultAgentTypeId ?? ''))
+  }
+
+  async compareAndSetNullDefaultAgentTypeId(appId: string, value: string): Promise<number> {
+    const defaultAgentTypeId = parseTrustedDefaultAgentTypeId(value)
+    if (defaultAgentTypeId === null) return 0
+    let updated = 0
+    for (const [id, workspace] of this.workspaces) {
+      if (workspace.appId !== appId || workspace.defaultAgentTypeId != null) continue
+      this.workspaces.set(id, { ...workspace, defaultAgentTypeId })
+      updated += 1
+    }
+    return updated
   }
 
   async get(id: string): Promise<Workspace | null> {

@@ -354,6 +354,45 @@ export function describeWorkspaceStoreConformance(
     )
 
     it(
+      'inventories legacy cohorts and compare-and-sets NULL defaults idempotently',
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
+        const { workspaceStore, appId, otherAppId, users } = await setup()
+        const legacy = await workspaceStore.create(users.owner.id, 'Legacy NULL', appId)
+        const known = await workspaceStore.create(users.owner.id, 'Known', appId, { defaultAgentTypeId: 'default' })
+        const unknown = await workspaceStore.create(users.owner.id, 'Unknown', appId, { defaultAgentTypeId: 'retired-seat' })
+        const otherAppLegacy = await workspaceStore.create(users.owner.id, 'Other app NULL', otherAppId)
+
+        expect(await workspaceStore.inventoryDefaultAgentTypeIds(appId)).toEqual([
+          { defaultAgentTypeId: null, count: 1 },
+          { defaultAgentTypeId: 'default', count: 1 },
+          { defaultAgentTypeId: 'retired-seat', count: 1 },
+        ])
+        expect(await workspaceStore.compareAndSetNullDefaultAgentTypeId(appId, 'default')).toBe(1)
+        expect(await workspaceStore.compareAndSetNullDefaultAgentTypeId(appId, 'default')).toBe(0)
+        expect((await workspaceStore.get(legacy.id))?.defaultAgentTypeId).toBe('default')
+        expect((await workspaceStore.get(known.id))?.defaultAgentTypeId).toBe('default')
+        expect((await workspaceStore.get(unknown.id))?.defaultAgentTypeId).toBe('retired-seat')
+        expect((await workspaceStore.get(otherAppLegacy.id))?.defaultAgentTypeId ?? null).toBeNull()
+        assertionPassed('default-agent-null-cas-idempotent')
+      }),
+    )
+
+    it(
+      'allows exactly one concurrent NULL-default compare-and-set winner',
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
+        const { workspaceStore, appId, users } = await setup()
+        const legacy = await workspaceStore.create(users.owner.id, 'Concurrent legacy NULL', appId)
+        const results = await Promise.all([
+          workspaceStore.compareAndSetNullDefaultAgentTypeId(appId, 'default'),
+          workspaceStore.compareAndSetNullDefaultAgentTypeId(appId, 'alternate'),
+        ])
+        expect(results.reduce((sum, count) => sum + count, 0)).toBe(1)
+        expect(['default', 'alternate']).toContain((await workspaceStore.get(legacy.id))?.defaultAgentTypeId)
+        assertionPassed('default-agent-null-cas-concurrent-winner')
+      }),
+    )
+
+    it(
       'never rewrites an existing workspace defaultAgentTypeId implicitly (D28 write-once)',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
