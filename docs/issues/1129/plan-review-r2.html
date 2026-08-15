@@ -20,9 +20,10 @@
   Agent[Selected AgentApplication]
   Workspace[Workspace authority/default]
   Client --> Edge --> Controller
-  Controller --> Auth
+  Controller -->|authorize start or status| Auth
   Workspace --> Auth
-  Auth -->|disclosure only| Controller
+  Auth -->|start: admission + one-shot narrow lease closure| Controller
+  Auth -->|status: disclosure key only| Controller
   Controller -->|atomic commit after dedupe + limits| Record --> Lease --> Gateway --> Agent
   Edge -. disconnect closes transport only .-> Controller
   classDef protocol fill:#dce8ff,stroke:#2458d6,color:#152033;
@@ -84,5 +85,5 @@
 
 <section class="card"><h2>Proof path & references</h2><table><tr><th>Area</th><th>Evidence</th></tr><tr><td>Package</td><td>Focused package tests: atomic async commit/lost delivery, cross-tool single-flight and caller-local abort, two clients/one credential cap, injected acquisition rollback, bounded shutdown grace/fencing, exact cleanup.</td></tr><tr><td>Core/full-app</td><td>Strict default/current membership; Core-bound narrow task capability (no raw gateway/scope); pre/post-send revocation; failure-atomic acquisition; bounded controller close before gateway; typechecks.</td></tr><tr><td>Stock client</td><td><code>smoke:mcp-managed-agent</code>: reconnect/poll, concurrent admission, disconnect policy, restart loss, bounded response, MCP-off rollback.</td></tr><tr><td>Plan gate</td><td><code>git diff --check</code>; target <code>br lint</code>; <code>br dep cycles</code>; <code>bv --robot-insights</code>; exact-SHA fresh-context review.</td></tr><tr><td>Canonical</td><td><code>docs/issues/1129/plan.md</code> revision r2.</td></tr><tr><td>Prior immutable evidence</td><td><code>docs/issues/1129/plan-review.html</code> revision r1.</td></tr><tr><td>Authority</td><td>Decisions 22/28/29/30; <code>packages/agent/docs/AGENT_GATEWAY_V0.md</code>; current <code>managedAgentMcpServer.ts</code>/<code>managedAgentMcp.ts</code>.</td></tr></table></section>
 
-<section class="card"><h2>Adversarial review</h2><div class="status"><strong>Fresh-context r2 pass 1: REVISE; all material findings integrated. Final exact-SHA clean pass follows.</strong><p>Pass 1 model <code>openai-codex:gpt-5.6-sol</code>, target <code>b7cfe9faafb5f9331f5fb499f4bf9d69e20e17f8</code>. Fixed: raw-gateway overbreadth, pre-send revocation semantics, async commit/lost receipt race, cross-tool cancellation, cross-slice proof ownership, and unbounded shutdown. Final target/verdict are recorded in the canonical plan and on bead <code>wt-391-forward-rjkl.1</code>. Prior r1 pass history remains in the canonical plan and immutable r1 packet.</p></div></section>
+<section class="card"><h2>Adversarial review</h2><div class="status"><strong>Fresh-context r2 pass 1: REVISE; all material findings integrated. Final exact-SHA clean pass follows.</strong><p>Pass 1 model <code>openai-codex:gpt-5.6-sol</code>, target <code>b7cfe9faafb5f9331f5fb499f4bf9d69e20e17f8</code>. Fixed: raw-gateway overbreadth, pre-send revocation semantics, async commit/lost receipt race, cross-tool cancellation, cross-slice proof ownership, and unbounded shutdown. This artifact records review history through pass 2 but does not self-attest its own final SHA. The final exact-SHA verdict is recorded externally on bead <code>wt-391-forward-rjkl.1</code> after a clean fresh-context pass. Prior r1 pass history remains in the canonical plan and immutable r1 packet.</p></div></section>
 </main></body></html>

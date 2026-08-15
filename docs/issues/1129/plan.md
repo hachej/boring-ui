@@ -824,3 +824,12 @@ combined contract. File scopes do not overlap across writer beads.
   grace, late-settlement fencing, exactly-once logical release, then gateway
   close; (7) r2 review label/SHA provenance corrected. Final exact-SHA pass is
   required.
+- **R2 ownership/lifetime pass 2 target:** commit
+  `802f82b347c64b16ee2340cbc72078e5c8712e77`; fresh-context
+  `openai-codex:gpt-5.6-sol`; same read-only adversarial mandate; verdict revise.
+- **R2 pass 2 findings/disposition:** the r2 architecture diagram now gives
+  `authorizeStart()` and `authorizeStatus()` distinct return arrows, so the
+  start admission/one-shot narrow lease closure is not mislabeled as
+  disclosure-only. The HTML no longer claims its own immutable target can
+  contain an external final verdict; final exact-SHA attestation belongs on the
+  bead after review. All pass-1 material fixes were otherwise verified clean.
