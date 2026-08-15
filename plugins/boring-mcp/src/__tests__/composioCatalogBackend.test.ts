@@ -36,6 +36,28 @@ const fallbackTransport: McpTransportClient = {
   readResource: vi.fn(),
   callTool: vi.fn(),
 }
+
+function completeAccount(id: string, userId = composioSubject) {
+  return {
+    id,
+    word_id: `word-${id}`,
+    alias: `alias-${id}`,
+    user_id: userId,
+    status: "ACTIVE",
+    authScheme: "OAUTH2",
+    is_disabled: false,
+    toolkit: { slug: "github" },
+    auth_config: { id: "auth-config-1", auth_scheme: "OAUTH2", is_composio_managed: true, is_disabled: false },
+    experimental: {},
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+    state: {},
+    data: {},
+    status_reason: "connected",
+    test_request_endpoint: "https://backend.composio.dev/test",
+  }
+}
+
 const registry: McpSourceRegistry = {
   async listSources(requestActor) {
     return requestActor.userId === actor.userId && requestActor.workspaceId === actor.workspaceId ? [source] : []
@@ -250,7 +272,7 @@ describe("Composio full-catalog backend", () => {
         .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_ERROR })
     }
 
-    const pagedFetch = vi.fn(async () => Response.json({ items: [{ id: "account-1", user_id: composioSubject, status: "ACTIVE", is_disabled: false, auth_config: { id: "auth-1", is_disabled: false }, toolkit: { slug: "github" } }], next_cursor: "more", current_page: 1, total_pages: 2, total_items: 2 })) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
+    const pagedFetch = vi.fn(async () => Response.json({ items: [completeAccount("account-1")], next_cursor: "more", current_page: 1, total_pages: 2, total_items: 2 })) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
     await expect(requireExactlyOneComposioAccount(backendOptions(pagedFetch), { actor, secret, toolkitId: "github" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_ERROR })
     const malformedPageFetch = vi.fn(async () => Response.json({ items: [], next_cursor: null, current_page: "0", total_pages: 0, total_items: 0 })) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
@@ -265,14 +287,7 @@ describe("Composio full-catalog backend", () => {
         .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_ERROR })
     }
 
-    const active = (id: string, userId = composioSubject) => ({
-      id,
-      user_id: userId,
-      status: "ACTIVE",
-      is_disabled: false,
-      auth_config: { id: "auth-config-1", is_disabled: false },
-      toolkit: { slug: "github" },
-    })
+    const active = completeAccount
     const multiple = composioApiFetch(fakeMcp.url, [active("account-1"), active("account-2")])
     await expect(requireExactlyOneComposioAccount(backendOptions(multiple.fetch), { actor, secret, toolkitId: "github" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.CONNECTED_ACCOUNT_CONFLICT })
@@ -367,6 +382,20 @@ describe("Composio full-catalog backend", () => {
     expect(sessionError).toMatchObject({ code: MCP_ERROR_CODES.SECRET_LEAK_GUARD })
     expect(JSON.stringify(sessionError)).not.toContain("private-session-1")
     expect(sessionCanaryApi.deletedSessions).toEqual(["session-1"])
+  })
+
+  it("invalidates stale descriptors when provider refresh removes or invalidates a schema", async () => {
+    const behavior: { mismatchedSlug?: boolean } = {}
+    const fakeMcp = await listenFakeComposioMcp(behavior)
+    const api = composioApiFetch(fakeMcp.url)
+    const catalog = createBoringMcpToolCatalog({ registry, transport: fallbackTransport, managedCatalog: createComposioCatalogBackend(backendOptions(api.fetch)) })
+    await catalog.searchTools(actor, { sourceId: source.id, query: "github", limit: 1 })
+    await expect(catalog.describeTool(actor, { sourceId: source.id, toolName: "GITHUB_GET_CURRENT_USER" })).resolves.toMatchObject({ tool: { toolName: "GITHUB_GET_CURRENT_USER" } })
+
+    behavior.mismatchedSlug = true
+    await expect(catalog.searchTools(actor, { sourceId: source.id, query: "github", limit: 1, refresh: true })).resolves.toMatchObject({ tools: [] })
+    await expect(catalog.describeTool(actor, { sourceId: source.id, toolName: "GITHUB_GET_CURRENT_USER" }))
+      .rejects.toMatchObject({ code: MCP_ERROR_CODES.TOOL_NOT_FOUND })
   })
 
   it("rejects missing or mismatched provider schemas instead of fabricating descriptors", async () => {

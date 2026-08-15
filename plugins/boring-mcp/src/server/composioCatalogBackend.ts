@@ -73,6 +73,10 @@ class BoundedTtlCache<T> {
     return entry.value
   }
 
+  delete(key: string): void {
+    this.values.delete(key)
+  }
+
   set(key: string, value: T): void {
     this.values.delete(key)
     this.values.set(key, { expiresAt: Date.now() + this.ttlMs, value })
@@ -337,13 +341,25 @@ export async function requireExactlyOneComposioAccount(
       throw safeProviderError("Composio connected-account row was malformed")
     }
     const account = value as Record<string, unknown>
-    const id = optionalString(account.id) ?? optionalString(account.nanoid)
+    const id = optionalString(account.id)
     const userId = optionalString(account.user_id)
     const accountToolkit = optionalString(record(account.toolkit).slug)?.toLowerCase()
     const status = optionalString(account.status)?.toUpperCase()
     const authConfig = record(account.auth_config)
-    const authConfigId = optionalString(authConfig.id)
-    if (!id || !userId || !accountToolkit || !status || !authConfigId || typeof account.is_disabled !== "boolean" || typeof authConfig.is_disabled !== "boolean") {
+    const requiredStrings = [
+      account.word_id, account.alias, account.authScheme, account.created_at, account.updated_at,
+      account.status_reason, account.test_request_endpoint,
+      authConfig.id, authConfig.auth_scheme,
+    ]
+    const requiredObjects = [account.experimental, account.state, account.data]
+    if (
+      !id || !userId || !accountToolkit || !status
+      || requiredStrings.some((value) => typeof value !== "string")
+      || requiredObjects.some((value) => !value || typeof value !== "object" || Array.isArray(value))
+      || typeof account.is_disabled !== "boolean"
+      || typeof authConfig.is_disabled !== "boolean"
+      || typeof authConfig.is_composio_managed !== "boolean"
+    ) {
       throw safeProviderError("Composio connected-account row was incomplete")
     }
     return { account, authConfig, id, userId, accountToolkit, status }
@@ -351,7 +367,7 @@ export async function requireExactlyOneComposioAccount(
   const active = accounts.flatMap(({ account, authConfig, id, userId, accountToolkit, status }): ComposioAccountPin[] => {
     const disabled = account.is_disabled || authConfig.is_disabled
     if (userId !== composioUserId(input.actor) || accountToolkit !== toolkitId || disabled) return []
-    return status === "ACTIVE" || status === "CONNECTED" || status === "ENABLED" ? [{ connectedAccountId: id, toolkitId }] : []
+    return status === "ACTIVE" ? [{ connectedAccountId: id, toolkitId }] : []
   })
   if (active.length === 0) {
     throw new McpError(MCP_ERROR_CODES.CONNECTED_ACCOUNT_REQUIRED, "Exactly one active connected account is required")
@@ -634,9 +650,13 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
         throw new McpError(MCP_ERROR_CODES.INPUT_INVALID, "Composio catalog query must be between 1 and 256 characters")
       }
       const key = `${source.workspaceId}:${source.userId}:${source.id}:${source.updatedAt ?? ""}:${query}:${input.offset}:${input.limit}`
-      if (!input.forceProviderRefresh) {
-        const cached = searchCache.get(key)
-        if (cached) return cached
+      const previous = searchCache.get(key)
+      if (!input.forceProviderRefresh && previous) return previous
+      if (input.forceProviderRefresh) {
+        searchCache.delete(key)
+        for (const tool of previous ?? []) {
+          describeCache.delete(`${source.workspaceId}:${source.userId}:${source.id}:${source.updatedAt ?? ""}:${tool.name}`)
+        }
       }
       const tools = await guarded(source, () => withCatalogSession(options, source, release, retainFailedCleanup, async (session, transport) => {
         const search = await transport.callTool(source, COMPOSIO_SEARCH_TOOLS, { queries: [query], session: session.id })
@@ -664,6 +684,8 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
       if (!input.forceProviderRefresh) {
         const cached = describeCache.get(key)
         if (cached) return cached
+      } else {
+        describeCache.delete(key)
       }
       const tool = await guarded(source, () => withCatalogSession(options, source, release, retainFailedCleanup, async (session, transport) => {
         const result = await transport.callTool(source, COMPOSIO_GET_TOOL_SCHEMAS, {
