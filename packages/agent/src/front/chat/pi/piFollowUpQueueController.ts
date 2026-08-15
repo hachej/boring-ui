@@ -40,6 +40,7 @@ export interface PiQueueControllerOptions {
   onWarning?: (message: string) => void
   onPromptSubmitStarted?: (clientNonce: string) => void
   allowPromptDuringInitialHydration?: boolean
+  coordinationKey?: object
 }
 
 export type PiQueueSubmitResult =
@@ -52,8 +53,13 @@ export type PiQueueEditQueuedResult =
   | { type: 'empty'; message: string }
   | { type: 'clear-failed'; draft: string; error: unknown; message: string }
 
-const editQueuedInFlight = new WeakMap<PiQueueSessionLike, Promise<PiQueueEditQueuedResult>>()
-const recoveredQueueSelectors = new WeakMap<PiQueueSessionLike, Set<string>>()
+interface QueueRecoveryCoordination {
+  inFlight?: Promise<PiQueueEditQueuedResult>
+  readonly recoveredSelectors: Map<string, string>
+  recoveredBlock: string
+}
+
+const queueRecoveryByKey = new WeakMap<object, QueueRecoveryCoordination>()
 
 export class PiFollowUpQueueController {
   private nextClientSeqFloor: number | undefined
@@ -107,17 +113,23 @@ export class PiFollowUpQueueController {
   }
 
   editQueued(): Promise<PiQueueEditQueuedResult> {
-    const active = editQueuedInFlight.get(this.session)
-    if (active) return active
-    const run = this.editQueuedOnce()
-    editQueuedInFlight.set(this.session, run)
+    const key = this.options.coordinationKey ?? this.session
+    const coordination = queueRecoveryByKey.get(key) ?? {
+      recoveredSelectors: new Map<string, string>(),
+      recoveredBlock: '',
+    }
+    queueRecoveryByKey.set(key, coordination)
+    if (coordination.inFlight) return coordination.inFlight
+    const run = this.editQueuedOnce(coordination)
+    coordination.inFlight = run
     void run.finally(() => {
-      if (editQueuedInFlight.get(this.session) === run) editQueuedInFlight.delete(this.session)
+      if (coordination.inFlight === run) coordination.inFlight = undefined
+      if (coordination.recoveredSelectors.size === 0) queueRecoveryByKey.delete(key)
     }).catch(() => {})
     return run
   }
 
-  private async editQueuedOnce(): Promise<PiQueueEditQueuedResult> {
+  private async editQueuedOnce(coordination: QueueRecoveryCoordination): Promise<PiQueueEditQueuedResult> {
     const followUps = this.session.getState().queue.followUps
     if (followUps.length === 0) {
       const message = 'No queued messages to edit.'
@@ -138,30 +150,41 @@ export class PiFollowUpQueueController {
     // Recover the complete snapshot synchronously before the first destructive
     // request. This keeps typed content in the originating composer even if the
     // user switches sessions or a clear commits but its receipt is lost.
-    const recovered = recoveredQueueSelectors.get(this.session) ?? new Set<string>()
-    recoveredQueueSelectors.set(this.session, recovered)
-    const currentKeys = new Set(selected.map((item) => queueSelectorKey(item.selector!)))
-    for (const key of recovered) {
-      if (!currentKeys.has(key)) recovered.delete(key)
+    const currentItems = new Map(selected.map((item) => [
+      queueSelectorKey(item.selector!),
+      item.followUp.displayText,
+    ]))
+    for (const [selectorKey, recoveredText] of coordination.recoveredSelectors) {
+      if (currentItems.get(selectorKey) !== recoveredText) coordination.recoveredSelectors.delete(selectorKey)
     }
-    const newlyRecovered = selected.filter((item) => !recovered.has(queueSelectorKey(item.selector!)))
+    const newlyRecovered = selected.filter((item) => (
+      coordination.recoveredSelectors.get(queueSelectorKey(item.selector!)) !== item.followUp.displayText
+    ))
     const currentDraft = this.options.getDraft?.() ?? ''
-    const draft = buildEditedQueuedDraft(newlyRecovered.map((item) => item.followUp), currentDraft)
+    const newBlock = newlyRecovered.map((item) => item.followUp.displayText.trim()).filter(Boolean).join('\n\n')
+    const draft = newBlock && coordination.recoveredBlock && currentDraft.startsWith(coordination.recoveredBlock)
+      ? `${coordination.recoveredBlock}\n\n${newBlock}${currentDraft.slice(coordination.recoveredBlock.length)}`
+      : buildEditedQueuedDraft(newlyRecovered.map((item) => item.followUp), currentDraft)
     if (draft !== currentDraft) this.options.onDraftChange?.(draft)
-    for (const item of newlyRecovered) recovered.add(queueSelectorKey(item.selector!))
+    if (newBlock) coordination.recoveredBlock = coordination.recoveredBlock
+      ? `${coordination.recoveredBlock}\n\n${newBlock}`
+      : newBlock
+    for (const item of newlyRecovered) {
+      coordination.recoveredSelectors.set(queueSelectorKey(item.selector!), item.followUp.displayText)
+    }
 
     let clearError: unknown
     for (const item of selected) {
-      const key = queueSelectorKey(item.selector!)
+      const selectorKey = queueSelectorKey(item.selector!)
       try {
         await this.session.clearQueue(item.selector!)
-        recovered.delete(key)
+        coordination.recoveredSelectors.delete(selectorKey)
       } catch (error) {
         clearError = error
         break
       }
     }
-    if (recovered.size === 0) recoveredQueueSelectors.delete(this.session)
+    if (coordination.recoveredSelectors.size === 0) coordination.recoveredBlock = ''
     if (!clearError) return { type: 'cleared', draft }
 
     const message = 'Queued messages were copied into the composer, but some may remain queued. Retry Edit queued.'

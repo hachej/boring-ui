@@ -797,6 +797,7 @@ export function PiChatPanel<
     }
     return createPiComposerPolicyController({
       session: policySession,
+      coordinationKey: selectedPiSession,
       registry,
       slashContext: {
         sessionId: activeChatSessionId,

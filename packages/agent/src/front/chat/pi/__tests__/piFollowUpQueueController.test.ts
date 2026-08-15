@@ -200,10 +200,23 @@ describe('PiFollowUpQueueController', () => {
     ])
     expect(warnings).toEqual(['Queued messages were copied into the composer, but some may remain queued. Retry Edit queued.'])
 
+    session.state.queue.followUps.push({
+      id: 'q3', kind: 'followup', displayText: 'newly queued', clientSeq: 3,
+    })
     session.clearQueue = clearQueue
-    await expect(controller.editQueued()).resolves.toMatchObject({ type: 'cleared' })
-    expect(draft).toBe('restored\n\nstill queued')
-    expect(drafts).toEqual(['restored\n\nstill queued'])
+    const recreatedController = createPiFollowUpQueueController(session, {
+      getDraft: () => draft,
+      onDraftChange: (next) => {
+        draft = next
+        drafts.push(next)
+      },
+    })
+    await expect(recreatedController.editQueued()).resolves.toMatchObject({ type: 'cleared' })
+    expect(draft).toBe('restored\n\nstill queued\n\nnewly queued')
+    expect(drafts).toEqual([
+      'restored\n\nstill queued',
+      'restored\n\nstill queued\n\nnewly queued',
+    ])
     expect(session.state.queue.followUps).toEqual([])
   })
 
