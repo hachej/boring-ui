@@ -171,6 +171,7 @@ async function composioRequest(
   method: "DELETE" | "GET" | "POST",
   path: string,
   body?: unknown,
+  allowSessionEnvelope = false,
 ): Promise<unknown> {
   requireServerSecret(secret)
   const controller = new AbortController()
@@ -185,7 +186,7 @@ async function composioRequest(
     })
     const payload = await readBoundedJson(response, options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES)
     if (!response.ok) throw safeProviderError("Composio request failed", response.status)
-    if (containsMcpSecretOrCanary(payload, [secret.value])) {
+    if (!allowSessionEnvelope && containsMcpSecretOrCanary(payload, [secret.value])) {
       throw new McpError(MCP_ERROR_CODES.SECRET_LEAK_GUARD, "Composio response contained server-only material")
     }
     return payload
@@ -275,12 +276,15 @@ export async function resolveComposioCatalogSession(
   if (input.accountPin) {
     body.connected_accounts = { [input.accountPin.toolkitId]: [input.accountPin.connectedAccountId] }
   }
-  const payload = await composioRequest(options, input.secret, "POST", "/api/v3.1/tool_router/session", body)
+  const payload = await composioRequest(options, input.secret, "POST", "/api/v3.1/tool_router/session", body, true)
+  const sessionId = optionalString(sessionEnvelope(payload).id) ?? optionalString(sessionEnvelope(payload).session_id)
   try {
+    if (containsMcpSecretOrCanary(payload, [input.secret.value])) {
+      throw new McpError(MCP_ERROR_CODES.SECRET_LEAK_GUARD, "Composio Session response echoed the operator key")
+    }
     return extractSession(payload, options, input.accountPin)
   } catch (error) {
-    const sessionId = optionalString(sessionEnvelope(payload).id) ?? optionalString(sessionEnvelope(payload).session_id)
-    if (sessionId) await deleteComposioCatalogSession(options, input.secret, sessionId).catch(() => undefined)
+    if (sessionId) await deleteComposioCatalogSession(options, input.secret, sessionId)
     throw error
   }
 }
@@ -408,6 +412,10 @@ function normalizeSchema(slug: string, value: unknown, fallbackToolkit?: string)
   const name = optionalString(schema.tool_slug)
   if (!name || name !== slug || name.startsWith("COMPOSIO_")) return undefined
   validateMcpToolName(name)
+  const inputSchema = schema.input_schema
+  if (!inputSchema || typeof inputSchema !== "object" || Array.isArray(inputSchema)) return undefined
+  const toolkit = optionalString(schema.toolkit_slug)?.toLowerCase()
+  if (!toolkit || (fallbackToolkit && toolkit !== fallbackToolkit)) return undefined
   const description = optionalString(schema.description)
   if (description && description.length > MAX_DESCRIPTION_LENGTH) {
     throw new McpError(MCP_ERROR_CODES.RESOURCE_LIMIT_EXCEEDED, "Composio tool description exceeded the size limit")
@@ -415,9 +423,10 @@ function normalizeSchema(slug: string, value: unknown, fallbackToolkit?: string)
   return {
     name,
     description,
-    inputSchema: boundedSchema(schema.input_schema),
+    inputSchema: boundedSchema(inputSchema),
     outputSchema: schema.output_schema === undefined ? undefined : boundedSchema(schema.output_schema),
-    toolkit: optionalString(schema.toolkit_slug)?.toLowerCase() ?? fallbackToolkit,
+    toolkit,
+    version: optionalString(schema.version) ?? optionalString(schema.tool_version),
   }
 }
 
@@ -428,7 +437,9 @@ function searchSlugs(payload: unknown, limit: number): Array<{ slug: string; too
   const seen = new Set<string>()
   for (const item of array(data.results)) {
     const result = record(item)
-    const toolkit = array(result.toolkits).map(optionalString).find(Boolean)?.toLowerCase()
+    const toolkits = [...new Set(array(result.toolkits).map(optionalString).filter((value): value is string => Boolean(value)).map((value) => value.toLowerCase()))]
+    if (toolkits.length !== 1) continue
+    const toolkit = toolkits[0]!
     for (const value of [...array(result.primary_tool_slugs), ...array(result.related_tool_slugs)]) {
       const slug = optionalString(value)
       if (!slug || slug.startsWith("COMPOSIO_") || seen.has(slug)) continue

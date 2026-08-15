@@ -33,6 +33,7 @@ export interface McpToolCatalogCache {
 export interface McpManagedCatalogTool extends McpDiscoveredTool {
   toolkit?: string
   outputSchema?: unknown
+  version?: string
 }
 
 export interface McpManagedCatalogBackend {
@@ -112,6 +113,7 @@ export function normalizeMcpCatalogTool(
   provider: McpProviderId,
   tool: McpDiscoveredTool,
   templates?: readonly McpProviderTemplate[],
+  sourceRevision?: string,
 ): McpToolCatalogEntry {
   const template = getMcpProviderTemplate(provider, templates)
   const decision = template
@@ -128,6 +130,9 @@ export function normalizeMcpCatalogTool(
     description: tool.description,
     inputSchema,
     outputSchema: managedTool.outputSchema,
+    sourceRevision,
+    toolVersion: managedTool.version,
+    providerSupplied: true,
     risk: decision.risk,
     enabled: decision.allowed,
     blockedReasons: decision.allowed ? [] : [decision.reason],
@@ -161,8 +166,8 @@ export function createBoringMcpToolCatalog(options: BoringMcpToolCatalogOptions)
     return { source, resolvedSourceId }
   }
 
-  function normalizeManagedTools(sourceId: string, provider: McpProviderId, tools: McpManagedCatalogTool[]): McpToolCatalogEntry[] {
-    return tools.map((tool) => normalizeMcpCatalogTool(sourceId, provider, tool, options.templates))
+  function normalizeManagedTools(sourceId: string, provider: McpProviderId, sourceRevision: string, tools: McpManagedCatalogTool[]): McpToolCatalogEntry[] {
+    return tools.map((tool) => normalizeMcpCatalogTool(sourceId, provider, tool, options.templates, sourceRevision))
   }
 
   async function loadSourceCatalog(actor: McpActor, sourceId: string, refresh?: boolean, providerRefresh?: boolean): Promise<McpToolCatalogSnapshot> {
@@ -175,7 +180,7 @@ export function createBoringMcpToolCatalog(options: BoringMcpToolCatalogOptions)
     }
 
     const discoveredTools = await options.transport.listTools(source, { forceProviderRefresh: providerRefresh ?? refresh })
-    const tools = discoveredTools.map((tool) => normalizeMcpCatalogTool(resolvedSourceId, source.provider, tool, options.templates))
+    const tools = discoveredTools.map((tool) => normalizeMcpCatalogTool(resolvedSourceId, source.provider, tool, options.templates, sourceRevision))
     const snapshot = { sourceId: resolvedSourceId, provider: source.provider, sourceRevision, tools }
     assertMcpPublicPayloadSecretFree(snapshot)
     await cache.set(actor, resolvedSourceId, snapshot)
@@ -208,7 +213,7 @@ export function createBoringMcpToolCatalog(options: BoringMcpToolCatalogOptions)
             offset,
             forceProviderRefresh: input.providerRefresh ?? input.refresh ?? false,
           })
-          managedResults.push(...normalizeManagedTools(resolvedSourceId, source.provider, tools).slice(0, limit))
+          managedResults.push(...normalizeManagedTools(resolvedSourceId, source.provider, sourceCatalogRevision(source), tools).slice(0, limit))
           continue
         }
         const result = await loadSourceCatalog(actor, resolvedSourceId, input.refresh, input.providerRefresh)
@@ -227,7 +232,7 @@ export function createBoringMcpToolCatalog(options: BoringMcpToolCatalogOptions)
           forceProviderRefresh: input.providerRefresh ?? input.refresh ?? false,
         })
         resolvedTool = managedTool
-          ? normalizeMcpCatalogTool(resolvedSourceId, source.provider, managedTool, options.templates)
+          ? normalizeMcpCatalogTool(resolvedSourceId, source.provider, managedTool, options.templates, sourceCatalogRevision(source))
           : undefined
       } else {
         const result = await loadSourceCatalog(actor, resolvedSourceId, input.refresh, input.providerRefresh)

@@ -183,6 +183,9 @@ export interface McpToolCatalogEntry {
   description?: string
   inputSchema: unknown
   outputSchema?: unknown
+  sourceRevision?: string
+  toolVersion?: string
+  providerSupplied?: true
   risk: McpToolRisk
   enabled: boolean
   blockedReasons: string[]
