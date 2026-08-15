@@ -75,7 +75,9 @@ to extend into MCP.
   rate/concurrency admission.
 - Retained progress has an item cap but no per-message or aggregate byte cap.
 - `resultTool()` duplicates the full structured result into text and no test
-  freezes the final serialized MCP response boundary.
+  freezes the final serialized MCP response boundary. The SDK echoes caller
+  JSON-RPC ids and currently accepts unbounded strings, so the edge cannot claim
+  any complete-response ceiling until it validates response-bearing ids.
 - The current smoke proves protocol plumbing through a fake dispatcher seam;
   it does not qualify persisted default-agent selection through the current
   AgentGateway authority.
@@ -145,6 +147,11 @@ Extend, do not replace, `ManagedAgentMcpDelegateController` and its MCP server:
   task, not as a second lifecycle or a generic canonical artifact locator;
 - require a non-empty ASCII `[A-Za-z0-9._:-]+` key of at most 128 UTF-8 bytes
   for both start tools;
+- before handing parsed bodies to the MCP SDK, validate every response-bearing
+  JSON-RPC request id: allow only a safe integer or an ASCII
+  `[A-Za-z0-9._:-]+` string of at most 128 UTF-8 bytes; reject null, unsafe or
+  non-integer numbers, oversized/other strings, arrays, and objects before tool/
+  controller work. Notifications with no id remain allowed;
 - let the host first supply a capability-light `StartAdmission`: redacted
   identity, request-authorized `agentTypeId`, and one-shot
   `acquireTaskLease()`, but no gateway/artifact reader;
@@ -187,7 +194,7 @@ Extend, do not replace, `ManagedAgentMcpDelegateController` and its MCP server:
   the canonical task, not a second lifecycle); `512 KiB` for validated 256 KiB
   Markdown at 2x escaping; `128 KiB` for all bounded task/delivery metadata;
   `64 KiB` for retained progress measured after JSON serialization; and `64
-  KiB` for MCP/JSON-RPC envelope plus compact summary. Add a 4 KiB artifact-title
+  KiB` for the bounded JSON-RPC id, MCP/JSON-RPC envelope, and compact summary. Add a 4 KiB artifact-title
   cap within metadata. Measure after `structuredContent`, compact `content`, and
   protocol envelope are assembled, with exact/over and worst-escape tests;
 - preserve the existing oversize-result assertion without weakening or deletion:
@@ -215,7 +222,8 @@ strict Workspace default, then returns a capability-light admission:
 type ManagedMcpStartAdmission = {
   credentialId: string
   agentTypeId: string
-  // One shot. Rejection is failure-atomic inside Core: no partial resource survives.
+  // One shot. Rejection leaves no active lease/binding/reference.
+  // Cached environment generations keep canonical retire semantics.
   acquireTaskLease(): Promise<ManagedMcpTaskLease>
 }
 
@@ -375,6 +383,8 @@ and rollback approval.
   second resolver/composer.
 - Hostname, body, tool args, MCP session ids, JSON-RPC ids, and forwarding
   headers cannot select principal, Workspace, Agent, runtime, root, or model.
+  Response-bearing JSON-RPC ids are safe integers or at most 128-byte safe ASCII
+  strings; invalid ids reject before SDK tool/controller dispatch.
 - Same authorized scope + idempotency key + exact trimmed-brief bytes creates
   one session while the record is retained in the same process; changed payload
   conflicts; different trusted scopes do not collide; dedupe precedes new-work
@@ -385,7 +395,8 @@ and rollback approval.
 - Per-credential start/concurrency and all input/progress/result/final-response
   bounds are finite and exact-boundary tested; the complete status response cap
   is `2112 * 1024` bytes by the `192 + 576 + 576 + 512 + 128 + 64 + 64 KiB`
-  worst-case JSON formula; existing caps and secret
+  worst-case JSON formula, whose 64 KiB envelope includes the bounded JSON-RPC
+  id; existing caps and secret
   redaction do not weaken.
 - Maximum valid completion remains retrievable by polling through a stock
   client without duplicating the full result in text content. Revocation denies
@@ -429,7 +440,8 @@ authorization before dedupe, exactly one lease acquired only for a new reserved
 record and released on setup failure or terminal cleanup, plus separate
 status-disclosure authorization, caller-stable retention-bounded idempotency, exact
 fixed-window/concurrency admission, progress byte caps, compact text projection,
-and exact `2112 * 1024`-byte complete-response proof with worst-case escaping.
+and exact `2112 * 1024`-byte complete-response proof with worst-case escaping
+and exact/over/type JSON-RPC id validation before SDK dispatch.
 **Blocked by:** planning bead `wt-391-forward-rjkl.1`; the orchestrator closes
 that dependency only after gate-1 approval.
 **File scope:** `packages/agent/src/server/mcp/managedAgentDelegate.ts`,
@@ -442,7 +454,8 @@ task-lease lifecycle/release and status-scope separation, per-request Agent sele
 acquisition rejection plus package concurrency rollback, fulfilled-lease setup
 release/rollback, completed/failed/canceled/rejected cleanup,
 concurrency/retry/conflict, cross-scope, fixed-window reset, retention/expiry,
-dedupe-before-limit, and stock-client assertions.
+dedupe-before-limit, safe-integer/128-byte-id success, invalid-id pre-dispatch
+rejection, and stock-client assertions.
 **Review budget:** Inside — one package controller/server seam and one focused
 test file; fits one worker session.
 
@@ -591,4 +604,10 @@ combined contract. File scopes do not overlap across writer beads.
   lease/binding/reference (cached environment generations retain existing retire
   semantics) and replaced the impossible 480 KiB cap with the exact 2112 KiB
   worst-case JSON budget. The existing oversize-result assertion remains and
-  now rejects its title via a stricter 4 KiB cap. A clean final pass is required.
+  now rejects its title via a stricter 4 KiB cap.
+- **Pass 8 target:** commit `1bfeba1bf591e49b1c3f66154896b31dad907ae1`.
+- **Pass 8 verdict:** revise.
+- **Pass 8 findings/disposition:** bounded every echoed response-bearing JSON-RPC
+  id before MCP SDK dispatch (safe integer or <=128-byte safe ASCII string) so
+  the 64 KiB envelope term is exhaustive; removed stale eager-disposal wording
+  from the active contract and `.3`. A clean final pass is required.
