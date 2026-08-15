@@ -8,6 +8,7 @@ import type {
   PromptPayload,
   PromptReceipt,
   QueuedUserMessage,
+  QueueClearPayload,
   QueueClearReceipt,
   StopReceipt,
 } from '../../../shared/chat'
@@ -17,7 +18,7 @@ export interface PiQueueSessionLike {
   getState(): PiChatState
   prompt(payload: PromptPayload): Promise<PromptReceipt>
   followUp(payload: FollowUpPayload): Promise<FollowUpReceipt>
-  clearQueue(): Promise<QueueClearReceipt>
+  clearQueue(payload?: QueueClearPayload): Promise<QueueClearReceipt>
   interrupt(): Promise<InterruptReceipt>
   stop(): Promise<StopReceipt>
 }
@@ -110,18 +111,33 @@ export class PiFollowUpQueueController {
       return { type: 'empty', message }
     }
 
-    const currentDraft = this.options.getDraft?.() ?? ''
-    const draft = buildEditedQueuedDraft(followUps, currentDraft)
-    if (draft !== currentDraft) this.options.onDraftChange?.(draft)
-
-    try {
-      await this.session.clearQueue()
-      return { type: 'cleared', draft }
-    } catch (error) {
-      const message = 'Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit queued.'
-      this.options.onWarning?.(message)
-      return { type: 'clear-failed', draft, error, message }
+    const clearedFollowUps: QueuedUserMessage[] = []
+    let clearError: unknown
+    for (const followUp of followUps) {
+      const selector = queueClearSelector(followUp)
+      if (!selector) {
+        clearError = new Error('Queued message lacks a stable clear selector.')
+        break
+      }
+      try {
+        const receipt = await this.session.clearQueue(selector)
+        if (receipt.cleared > 0) clearedFollowUps.push(followUp)
+      } catch (error) {
+        clearError = error
+        break
+      }
     }
+
+    const currentDraft = this.options.getDraft?.() ?? ''
+    const draft = buildEditedQueuedDraft(clearedFollowUps, currentDraft)
+    if (draft !== currentDraft) this.options.onDraftChange?.(draft)
+    if (!clearError) return { type: 'cleared', draft }
+
+    const message = clearedFollowUps.length > 0
+      ? 'Cleared messages were copied into the composer, but some queued messages remain. Retry Edit queued.'
+      : 'Queued messages were not cleared, so the composer was left unchanged. Retry Edit queued.'
+    this.options.onWarning?.(message)
+    return { type: 'clear-failed', draft, error: clearError, message }
   }
 
   interrupt(): Promise<CommandReceipt> {
@@ -187,19 +203,22 @@ export function nextFollowUpClientSeq(state: PiChatState, floor = 1): number {
 }
 
 export function buildEditedQueuedDraft(followUps: readonly QueuedUserMessage[], existingDraft = ''): string {
-  const queuedTexts = followUps.map((followUp) => followUp.displayText.trim()).filter(Boolean)
+  const queuedText = followUps.map((followUp) => followUp.displayText.trim()).filter(Boolean).join('\n\n')
   const draft = existingDraft.trim()
-  if (queuedTexts.length === 0) return draft
-  if (!draft) return queuedTexts.join('\n\n')
+  if (!queuedText) return draft
+  if (!draft) return queuedText
+  return `${queuedText}\n\n${draft}`
+}
 
-  let restoredPrefixCount = 0
-  for (let index = 1; index <= queuedTexts.length; index += 1) {
-    const prefix = queuedTexts.slice(0, index).join('\n\n')
-    if (draft === prefix || draft.startsWith(`${prefix}\n\n`)) restoredPrefixCount = index
-    else break
+function queueClearSelector(followUp: QueuedUserMessage): QueueClearPayload | undefined {
+  if (followUp.clientNonce) {
+    return {
+      clientNonce: followUp.clientNonce,
+      ...(followUp.clientSeq !== undefined ? { clientSeq: followUp.clientSeq } : {}),
+    }
   }
-  const unrestoredText = queuedTexts.slice(restoredPrefixCount).join('\n\n')
-  return unrestoredText ? `${unrestoredText}\n\n${draft}` : draft
+  if (followUp.clientSeq !== undefined) return { clientSeq: followUp.clientSeq }
+  return undefined
 }
 
 function isBusySlashCommand(input: PiQueueSubmitInput): boolean {
