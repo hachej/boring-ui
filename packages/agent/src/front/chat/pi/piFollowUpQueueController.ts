@@ -53,6 +53,7 @@ export type PiQueueEditQueuedResult =
   | { type: 'clear-failed'; draft: string; error: unknown; message: string }
 
 const editQueuedInFlight = new WeakMap<PiQueueSessionLike, Promise<PiQueueEditQueuedResult>>()
+const recoveredQueueSelectors = new WeakMap<PiQueueSessionLike, Set<string>>()
 
 export class PiFollowUpQueueController {
   private nextClientSeqFloor: number | undefined
@@ -137,19 +138,30 @@ export class PiFollowUpQueueController {
     // Recover the complete snapshot synchronously before the first destructive
     // request. This keeps typed content in the originating composer even if the
     // user switches sessions or a clear commits but its receipt is lost.
+    const recovered = recoveredQueueSelectors.get(this.session) ?? new Set<string>()
+    recoveredQueueSelectors.set(this.session, recovered)
+    const currentKeys = new Set(selected.map((item) => queueSelectorKey(item.selector!)))
+    for (const key of recovered) {
+      if (!currentKeys.has(key)) recovered.delete(key)
+    }
+    const newlyRecovered = selected.filter((item) => !recovered.has(queueSelectorKey(item.selector!)))
     const currentDraft = this.options.getDraft?.() ?? ''
-    const draft = buildEditedQueuedDraft(followUps, currentDraft)
+    const draft = buildEditedQueuedDraft(newlyRecovered.map((item) => item.followUp), currentDraft)
     if (draft !== currentDraft) this.options.onDraftChange?.(draft)
+    for (const item of newlyRecovered) recovered.add(queueSelectorKey(item.selector!))
 
     let clearError: unknown
     for (const item of selected) {
+      const key = queueSelectorKey(item.selector!)
       try {
         await this.session.clearQueue(item.selector!)
+        recovered.delete(key)
       } catch (error) {
         clearError = error
         break
       }
     }
+    if (recovered.size === 0) recoveredQueueSelectors.delete(this.session)
     if (!clearError) return { type: 'cleared', draft }
 
     const message = 'Queued messages were copied into the composer, but some may remain queued. Retry Edit queued.'
@@ -236,6 +248,10 @@ function queueClearSelector(followUp: QueuedUserMessage): QueueClearPayload | un
   }
   if (followUp.clientSeq !== undefined) return { clientSeq: followUp.clientSeq }
   return undefined
+}
+
+function queueSelectorKey(selector: QueueClearPayload): string {
+  return `${selector.clientNonce ?? ''}:${selector.clientSeq ?? ''}`
 }
 
 function isBusySlashCommand(input: PiQueueSubmitInput): boolean {

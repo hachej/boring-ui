@@ -177,8 +177,13 @@ describe('PiFollowUpQueueController', () => {
       if (payload?.clientSeq === 2) throw failure
       return clearQueue(payload)
     })
+    let draft = ''
     const controller = createPiFollowUpQueueController(session, {
-      onDraftChange: (draft) => drafts.push(draft),
+      getDraft: () => draft,
+      onDraftChange: (next) => {
+        draft = next
+        drafts.push(next)
+      },
       onWarning: (message) => warnings.push(message),
     })
 
@@ -194,6 +199,12 @@ describe('PiFollowUpQueueController', () => {
       { id: 'q2', kind: 'followup', displayText: 'still queued', clientSeq: 2 },
     ])
     expect(warnings).toEqual(['Queued messages were copied into the composer, but some may remain queued. Retry Edit queued.'])
+
+    session.clearQueue = clearQueue
+    await expect(controller.editQueued()).resolves.toMatchObject({ type: 'cleared' })
+    expect(draft).toBe('restored\n\nstill queued')
+    expect(drafts).toEqual(['restored\n\nstill queued'])
+    expect(session.state.queue.followUps).toEqual([])
   })
 
   it('coalesces concurrent multi-item edits and preserves canonical order', async () => {
