@@ -125,6 +125,31 @@ export interface LoadConfiguredAgentFleetResult {
   readonly diagnostics: readonly FleetLoaderDiagnostic[]
 }
 
+/**
+ * A roster-authorized package is part of host configuration, not optional
+ * discovery. Invalid configured seats therefore abort boot instead of being
+ * silently omitted from the fleet.
+ */
+export class ConfiguredFleetSeatError extends Error {
+  readonly code: FleetLoaderDiagnosticCode
+  readonly seat: string
+  readonly agentTypeId: string
+
+  constructor(input: {
+    code: FleetLoaderDiagnosticCode
+    seat: string
+    agentTypeId: string
+    message: string
+    cause?: unknown
+  }) {
+    super(input.message, input.cause === undefined ? undefined : { cause: input.cause })
+    this.name = 'ConfiguredFleetSeatError'
+    this.code = input.code
+    this.seat = input.seat
+    this.agentTypeId = input.agentTypeId
+  }
+}
+
 export type FleetConfigErrorCode = Extract<AgentErrorCode, 'AGENT_FLEET_CONFIG_FILE_INVALID'>
 
 /** Thrown for whole-fleet configuration failures (not per-seat, fail-closed). */
@@ -326,11 +351,11 @@ async function packageSkillContent(packageRoot: string, skill: FleetSkillBinding
  * descriptors, `.agents/factory/policy.yaml` `models.seats` tiers, and the
  * priority-ordered `models.tiers` candidates declared in fleet.yaml.
  *
- * Fails closed per seat: a persona that fails materialization, digest
- * verification, or spec composition is excluded with a stable diagnostic —
- * the remaining valid seats still compose. Whole-fleet config errors (an
- * unreadable/malformed fleet.yaml or policy.yaml) throw `FleetConfigError`,
- * since there is no seat set to fail closed against.
+ * Invalid unseated discovery remains optional and is excluded with a stable
+ * diagnostic. Once a roster seat names a package, however, schema,
+ * preflight, conflict, materialization, and digest failures throw
+ * `ConfiguredFleetSeatError` and abort host boot. Whole-fleet config errors
+ * (an unreadable/malformed fleet.yaml or policy.yaml) throw `FleetConfigError`.
  */
 export async function loadConfiguredAgentFleet(
   options: LoadConfiguredAgentFleetOptions,
@@ -371,6 +396,15 @@ export async function loadConfiguredAgentFleet(
   for (const [definitionId, descriptors] of packagesByDefinitionId) {
     if (descriptors.length > 1) {
       conflictedDefinitionIds.add(definitionId)
+      const configuredSeat = seats.find((seat) => seat.agentTypeId === definitionId)
+      if (configuredSeat) {
+        throw new ConfiguredFleetSeatError({
+          code: ErrorCode.enum.AGENT_DEFINITION_ID_CONFLICT,
+          seat: configuredSeat.seat,
+          agentTypeId: definitionId,
+          message: `configured agent definition "${definitionId}" is claimed by multiple discovered packages`,
+        })
+      }
       for (const _descriptor of descriptors) {
         diagnostics.push({
           agentTypeId: definitionId,
@@ -393,7 +427,6 @@ export async function loadConfiguredAgentFleet(
   }
 
   for (const binding of seats) {
-    let recorded = false
     try {
       const descriptors = packagesByDefinitionId.get(binding.agentTypeId) ?? []
       if (conflictedDefinitionIds.has(binding.agentTypeId)) continue
@@ -419,14 +452,12 @@ export async function loadConfiguredAgentFleet(
         declaredSet.size !== pinnedSet.size ||
         [...declaredSet].some((name) => !pinnedSet.has(name))
       ) {
-        recorded = true
-        diagnostics.push({
+        throw new ConfiguredFleetSeatError({
           seat: binding.seat,
           agentTypeId: binding.agentTypeId,
           code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH,
           message: `seat "${binding.seat}" skill pins do not exactly match its package pi.skills declarations`,
         })
-        continue
       }
 
       const instructionAppendices: { name: string; digest: Sha256Digest; content: string }[] = []
@@ -437,14 +468,13 @@ export async function loadConfiguredAgentFleet(
             ? await packageSkillContent(personaSource, skill)
             : await canonicalSkillContent(options.skillsRoot, skill)
         } catch (error) {
-          recorded = true
-          diagnostics.push({
+          throw new ConfiguredFleetSeatError({
             seat: binding.seat,
             agentTypeId: binding.agentTypeId,
             code: ErrorCode.enum.AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH,
             message: error instanceof Error ? error.message : `skill "${skill.name}" is unavailable`,
+            cause: error,
           })
-          throw error
         }
         const appendixName = skill.name.includes('/')
           ? `package-${instructionAppendices.length + 1}-${skill.digest.slice('sha256:'.length, 'sha256:'.length + 12)}`
@@ -507,14 +537,14 @@ export async function loadConfiguredAgentFleet(
       })
       agents.push(spec)
     } catch (error) {
-      if (!recorded) {
-        diagnostics.push({
-          seat: binding.seat,
-          agentTypeId: binding.agentTypeId,
-          code: ErrorCode.enum.AGENT_FLEET_SEAT_PERSONA_INVALID,
-          message: error instanceof Error ? error.message : `seat "${binding.seat}" persona is invalid`,
-        })
-      }
+      if (error instanceof ConfiguredFleetSeatError) throw error
+      throw new ConfiguredFleetSeatError({
+        seat: binding.seat,
+        agentTypeId: binding.agentTypeId,
+        code: ErrorCode.enum.AGENT_FLEET_SEAT_PERSONA_INVALID,
+        message: error instanceof Error ? error.message : `seat "${binding.seat}" persona is invalid`,
+        cause: error,
+      })
     }
   }
 

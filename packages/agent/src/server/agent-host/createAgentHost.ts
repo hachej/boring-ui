@@ -744,6 +744,9 @@ export async function createAgentHost(
         agents: compiledAgents.map((agent) => ({
           agentTypeId: agent.agentTypeId,
           label: 'legacyDefault' in agent ? 'Agent' : agent.definition.label,
+          ...('legacyDefault' in agent || agent.definition.version === undefined
+            ? {}
+            : { definitionVersion: agent.definition.version }),
           ...('legacyDefault' in agent || agent.definition.digest === undefined
             ? {}
             : { definitionDigest: agent.definition.digest }),

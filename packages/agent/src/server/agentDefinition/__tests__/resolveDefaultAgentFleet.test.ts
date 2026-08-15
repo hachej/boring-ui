@@ -109,39 +109,41 @@ describe('resolveDefaultAgentFleet (BORING_AGENT_FLEET gate, gh-1106 slice 3)', 
     )
   })
 
-  describe('flag=1 with a missing/malformed .agents tree (M4: degrade, do not crash boot)', () => {
+  describe('flag=1 fail-closes missing or malformed configured fleet state', () => {
     let root: string
 
     afterEach(async () => {
       if (root) await rm(root, { recursive: true, force: true })
     })
 
-    test('degrades to the legacy default agent and logs a diagnostic', async () => {
-      root = await mkdtemp(join(tmpdir(), 'fleet-boot-degrade-'))
-      // No .agents/ tree at all under this root.
-      const agents = await resolveDefaultAgentFleet({
+    test('rejects a missing configured fleet file', async () => {
+      root = await mkdtemp(join(tmpdir(), 'fleet-boot-reject-'))
+      await expect(resolveDefaultAgentFleet({
         repositoryRoot: root,
         discoveredPackages: [],
         workspaceRoot: root,
         env: { BORING_AGENT_FLEET: '1' },
+      })).rejects.toMatchObject({
+        name: 'FleetConfigError',
+        code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
       })
-      expect(agents).toEqual(LEGACY_DEFAULT_AGENT_FLEET)
-      expect(loggerMocks.error).toHaveBeenCalledTimes(1)
-      expect(loggerMocks.error.mock.calls[0]?.[0]).toMatch(/degrading to the legacy default agent/)
+      expect(loggerMocks.error).not.toHaveBeenCalled()
     })
 
-    test('degrades on a malformed fleet.yaml too', async () => {
-      root = await mkdtemp(join(tmpdir(), 'fleet-boot-degrade-'))
+    test('rejects malformed configured fleet YAML', async () => {
+      root = await mkdtemp(join(tmpdir(), 'fleet-boot-reject-'))
       await mkdir(join(root, '.agents', 'factory'), { recursive: true })
       await writeFile(join(root, '.agents', 'factory', 'fleet.yaml'), 'not: [valid, seats, shape')
-      const agents = await resolveDefaultAgentFleet({
+      await expect(resolveDefaultAgentFleet({
         repositoryRoot: root,
         discoveredPackages: [],
         workspaceRoot: root,
         env: { BORING_AGENT_FLEET: '1' },
+      })).rejects.toMatchObject({
+        name: 'FleetConfigError',
+        code: ErrorCode.enum.AGENT_FLEET_CONFIG_FILE_INVALID,
       })
-      expect(agents).toEqual(LEGACY_DEFAULT_AGENT_FLEET)
-      expect(loggerMocks.error).toHaveBeenCalledTimes(1)
+      expect(loggerMocks.error).not.toHaveBeenCalled()
     })
   })
 })

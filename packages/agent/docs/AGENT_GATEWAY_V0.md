@@ -73,6 +73,8 @@ Note `listAgents` takes `ListAgentsInput`, not a bare `AuthorizedAgentScope`.
 ### Output DTOs
 
 `AgentSummary` (`agentTypeId`, `label`, `description?`, `definition?{version,digest}`),
+where `version` is the exact package declaration and `digest` is the computed
+compiled-definition identity (not a re-hash of the response DTO),
 `AgentSessionSummary` (`ref`, `title`, `status`, `createdAt`, `updatedAt`),
 `AgentSessionPage` (`sessions`, `nextCursor?`), and the receipts
 (`CommandReceipt`, `AgentSendReceipt`, `QueueClearReceipt`, `StopReceipt`) are

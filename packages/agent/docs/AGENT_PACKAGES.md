@@ -37,7 +37,10 @@ seats:
 ```
 
 Restart a single-workspace host with `BORING_AGENT_FLEET=1`. A valid seated
-package appears in the agent catalog. An installed package without a matching
+package appears in the agent catalog with its exact declared
+`boring.agent.version` and computed definition digest. The Host `describe()`
+inventory exposes the same values as `definitionVersion` and
+`definitionDigest`. An installed package without a matching
 seat remains inert and reports `AGENT_DEFINITION_UNSEATED` during fleet
 composition. The shared CLI workspaces hub never admits the local agent
 contribution, even when the global roster names its definition id.
@@ -52,8 +55,11 @@ contribution, even when the global roster names its definition id.
 Digest refresh is intentionally repository-local in v1. The script reads only
 `.agents/personas/`; it does not rewrite pins for agent packages installed from
 another local directory. Such packages must already have matching
-seat-authoritative skill pins. A mismatch excludes only that seat with
-`AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH`; the rest of the fleet still boots.
+seat-authoritative skill pins. Once a roster seat names the package, a
+schema, preflight, conflict, materialization, or digest mismatch is invalid
+host configuration and aborts startup with its stable diagnostic (for example
+`AGENT_FLEET_SEAT_SKILL_DIGEST_MISMATCH`). Invalid unseated discovery may still
+be excluded because it has no activation authority.
 
 ## Unseat or remove
 
@@ -66,8 +72,10 @@ To remove its workspace registration as well:
 boring-ui-plugin remove --local --workspace . my-agent-plugin-id
 ```
 
-Then restart. If the roster still names the removed definition, that seat is
-excluded with `AGENT_FLEET_SEAT_PERSONA_INVALID` while other agents boot.
+Then restart. Remove the roster seat before removing its registration. If the
+roster still names the removed definition, startup fails with
+`AGENT_FLEET_SEAT_PERSONA_INVALID` instead of silently publishing a partial
+fleet.
 
 ## v1 distribution boundary
 

@@ -10,7 +10,12 @@ import type { McpGrant } from '../mcpGrants'
 const agents = [
   {
     agentTypeId: 'concierge',
-    definition: { instructions: 'You are the concierge.', label: 'Concierge' },
+    definition: {
+      instructions: 'You are the concierge.',
+      label: 'Concierge',
+      version: '2026.08.15',
+      digest: `sha256:${'a'.repeat(64)}`,
+    },
     instructionFiles: [{ filesystem: 'user', path: '.agents/personas/concierge-seat/instructions.md', role: 'persona' }],
     plugins: [{ name: 'ask-user' }, { name: 'pr-review', config: { mode: 'strict' } }],
     model: { preferred: 'pi-large' },
@@ -66,6 +71,7 @@ describe('describeAgent', () => {
     const description = await projection.describeAgent({ request: {} as never, agentTypeId: 'concierge' })
     expect(description).toEqual({
       agentTypeId: 'concierge',
+      definition: { version: '2026.08.15', digest: `sha256:${'a'.repeat(64)}` },
       model: 'pi-large',
       mcpServers: [],
       // The seat directory is NOT derivable from the agent id; the Host is

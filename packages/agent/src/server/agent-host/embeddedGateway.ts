@@ -255,9 +255,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
       ...('legacyDefault' in agent || !agent.plugins?.length
         ? {}
         : { pluginIds: agent.plugins.map((plugin) => plugin.name) }),
-      ...('legacyDefault' in agent || !agent.definition.version
+      ...('legacyDefault' in agent || !agent.definition.version || !agent.definition.digest
         ? {}
-        : { definition: { version: agent.definition.version, digest: canonicalDigest(agent.definition as unknown as JsonValue) } }),
+        : { definition: { version: agent.definition.version, digest: agent.definition.digest } }),
     }))
   }
 
@@ -778,13 +778,18 @@ export class EmbeddedAgentGateway implements AgentGateway {
                 await this.runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
                 throw error
               }
-              const unknown = new AgentGatewayError(
-                AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
-                'effect outcome could not be safely replayed',
+              // Runtime/application loading is a pre-effect operation. Its
+              // failure cannot have mutated the requested Agent effect, so it
+              // is safe to return a stable retryable rejection instead of an
+              // outcome-unknown tombstone. A fresh request id may retry after
+              // the runtime dependency recovers; sibling Agents remain live.
+              const retryable = new AgentGatewayError(
+                AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+                'Agent runtime failed to load',
+                { retryable: true },
               )
-              await this.runtime.ledger.beginEffect(key).catch(() => {})
-              await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
-              throw unknown
+              await this.runtime.ledger.reject(key, { kind: 'gateway', error: retryable.toJSON() }).catch(() => {})
+              throw retryable
             }
           }
           await this.runtime.ledger.beginEffect(key)

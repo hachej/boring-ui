@@ -1282,6 +1282,9 @@ export async function createWorkspaceAgentServer(
     workspaceRoot,
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
+  if (opts.defaultAgentTypeId && !agents.some((agent) => agent.agentTypeId === opts.defaultAgentTypeId)) {
+    throw new TypeError(`defaultAgentTypeId ${JSON.stringify(opts.defaultAgentTypeId)} is not in the configured Agent fleet`)
+  }
   const standaloneDefaultIdentityV1 = agents.length === 1 && "legacyDefault" in agents[0]!
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()

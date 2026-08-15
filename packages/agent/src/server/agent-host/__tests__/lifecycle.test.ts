@@ -294,6 +294,48 @@ describe('Agent Host lifecycle', () => {
     })
   })
 
+  it('isolates a retryable runtime load failure without removing the Agent or its sibling', async () => {
+    let alphaLoads = 0
+    const fixture = await options({
+      agents: [
+        { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
+        { agentTypeId: 'beta', definition: { instructions: 'beta', label: 'Beta' } },
+      ],
+      resolveAuthorizedAgentRuntimeScope: async ({ agentTypeId }) => {
+        if (agentTypeId === 'alpha' && alphaLoads++ === 0) throw new Error('transient Agent application load failure')
+        return {
+          identity: `runtime:${agentTypeId}`,
+          physicalBindingIdentity: `runtime:${agentTypeId}`,
+          resourceInputDigest: `runtime:${agentTypeId}`,
+          sessionNamespace: agentTypeId,
+        }
+      },
+    })
+    const created = await createAgentHost(fixture.value)
+
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'alpha-load-fails',
+    })).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+      details: { retryable: true },
+    })
+    expect((await created.gateway.listAgents({ scope })).map((agent) => agent.agentTypeId)).toEqual(['alpha', 'beta'])
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'beta',
+      requestId: 'beta-still-live',
+    })).resolves.toMatchObject({ agentTypeId: 'beta' })
+    await expect(created.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'alpha-retry',
+    })).resolves.toMatchObject({ agentTypeId: 'alpha' })
+
+    await created.host.close()
+  })
+
   it('keeps gateway.close facade-local and idempotent', async () => {
     const fixture = await options()
     const created = await createAgentHost(fixture.value)
