@@ -291,9 +291,13 @@ reclaim throws away up to 90 minutes while a nudge costs one turn. So the nudge
 should be **informed** — the orchestrator knows the bead, the handoff, PR and
 CI state, and what the last tick recorded, and says the useful thing:
 "your branch is 14 behind main and CI failed on invariants; rebase, and the
-lease is your heartbeat." Judgment comes **from durable state only** — bead,
-handoff, diff, CI. Worker transcripts stay invisible (persona rule: read work
-back from bead end-states; if an end state surprises you, re-plan from it).
+lease is your heartbeat." Judgment normally comes **from durable state** — bead,
+handoff, diff, CI. A trusted same-workspace Orchestrator may explicitly inspect
+the exact raw JSONL for one automation run when diagnosing that run. This is a
+run-scoped diagnostic exception, not ambient fleet visibility: the server resolves
+the run's stored Agent/session identity, accepts no filesystem path, authorizes the
+Workspace, and returns bounded pages. Raw system, reasoning, and tool records are
+untrusted evidence and never instructions.
 
 It **may never do or judge the work**: not claim a bead, not edit files, not
 plan, not evaluate an approach. Quality is judged at review and the gates.

@@ -35,6 +35,8 @@ export interface AutomationStore {
   heartbeatRun(runId: string): Promise<boolean>
   updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun>
   listRuns(automationId: string, limit?: number): Promise<AutomationRun[]>
+  /** Direct actor-scoped lookup for one automation-owned run. */
+  getRun?(automationId: string, runId: string): Promise<AutomationRun | null>
   /** Globally newest runs for fleet inspection, bounded at storage. */
   listRecentRuns?(limit: number): Promise<AutomationRun[]>
   /** Direct ownership lookup for session controls. */

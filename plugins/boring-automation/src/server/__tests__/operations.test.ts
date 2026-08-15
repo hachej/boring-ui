@@ -239,14 +239,16 @@ describe("AutomationOperations", () => {
     const transcriptReader = { read: vi.fn(async () => ({
       lines: ['{"type":"session"}', '{"type":"message"}'], nextCursor: 4, hasMore: true,
     })) }
+    const getRun = vi.fn(async () => run())
     const operations = createAutomationOperations({
-      store: storeMock(), actor: { workspaceId: "w", userId: "u" }, transcriptReader,
+      store: storeMock({ getRun }), actor: { workspaceId: "w", userId: "u" }, transcriptReader,
     })
 
     await expect(operations.readRunJsonl!("automation-1", "run-1", 2, 2)).resolves.toEqual({
       lines: ['{"type":"session"}', '{"type":"message"}'],
       nextCursor: 4, hasMore: true, runStatus: "succeeded", sessionId: "session-1",
     })
+    expect(getRun).toHaveBeenCalledWith("automation-1", "run-1")
     expect(transcriptReader.read).toHaveBeenCalledWith(expect.objectContaining({
       automation: expect.objectContaining({ id: "automation-1" }),
       run: expect.objectContaining({ id: "run-1", sessionId: "session-1" }),

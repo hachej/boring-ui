@@ -187,7 +187,7 @@ function createAutomationTranscriptReader(
     userId: actorContext.userId?.trim() ?? "",
   }
   return {
-    async read({ automation, run, cursor, limit, maxBytes }) {
+    async read({ automation, run, cursor, limit, maxBytes, signal }) {
       const agentTypeId = run.dispatchReceipt?.ref.agentTypeId ?? resolveAutomationAgentTypeId(
         automation.agentTypeId,
         defaultAgentTypeId,
@@ -200,7 +200,7 @@ function createAutomationTranscriptReader(
       return await resolver.readSessionJsonlPage!(
         context,
         { agentTypeId, sessionId },
-        { cursor, limit, maxBytes },
+        { cursor, limit, maxBytes, signal },
       )
     },
   }

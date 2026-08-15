@@ -246,6 +246,13 @@ export class FileAutomationStore implements AutomationStore {
     return clone(requireValue(updated))
   }
 
+  async getRun(automationId: string, runId: string): Promise<AutomationRun | null> {
+    const automation = await this.getAutomation(automationId)
+    if (!automation) throw automationNotFound(automationId)
+    const run = (await this.load()).runs[runId]
+    return run?.automationId === automationId ? clone(run) : null
+  }
+
   async listRuns(automationId: string, limit?: number): Promise<AutomationRun[]> {
     const automation = await this.getAutomation(automationId)
     if (!automation) throw automationNotFound(automationId)

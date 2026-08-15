@@ -81,7 +81,7 @@ describe("boring_automation agent tool", () => {
       operation: "read_run_jsonl", automationId: "automation-1", runId: "run-1", cursor: 0, limit: 10,
     }, context())
     expect(result.isError).toBe(false)
-    expect(ops.readRunJsonl).toHaveBeenCalledWith("automation-1", "run-1", 0, 10)
+    expect(ops.readRunJsonl).toHaveBeenCalledWith("automation-1", "run-1", 0, 10, expect.any(AbortSignal))
     expect(details(result)).toEqual({
       ok: true, operation: "read_run_jsonl", lines: ['{"type":"session"}'], nextCursor: 1,
       hasMore: false, runStatus: "succeeded", sessionId: "session-1",

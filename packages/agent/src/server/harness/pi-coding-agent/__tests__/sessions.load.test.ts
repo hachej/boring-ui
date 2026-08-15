@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtemp, rm, writeFile, readFile, stat } from "node:fs/promises";
+import { appendFile, mkdtemp, rm, writeFile, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildPiChatHistory } from "../../../pi-chat/piChatHistory";
@@ -377,6 +377,32 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
       .rejects.toThrow(`Session not found: ${sessionId}`);
     await expect(store.readRawJsonlPage({ workspaceId: "default" }, sessionId, { cursor: 1, limit: 2, maxBytes: 5 }))
       .rejects.toThrow("JSONL line exceeds page byte limit");
+
+    await appendFile(join(tmpDir, `${sessionId}.jsonl`), "partial", "utf-8");
+    await expect(store.readRawJsonlPage({ workspaceId: "default" }, sessionId, { cursor: 3, limit: 2, maxBytes: 1024 }))
+      .resolves.toEqual({ lines: [], nextCursor: 3, hasMore: false });
+    await appendFile(join(tmpDir, `${sessionId}.jsonl`), " record\n", "utf-8");
+    await expect(store.readRawJsonlPage({ workspaceId: "default" }, sessionId, { cursor: 3, limit: 2, maxBytes: 1024 }))
+      .resolves.toEqual({ lines: ["partial record"], nextCursor: 4, hasMore: false });
+  });
+
+  it("authorizes through a wrapper and pages the linked canonical JSONL", async () => {
+    const sessionId = "linked-raw-page";
+    const linkedPath = join(tmpDir, "canonical.jsonl");
+    const linkedLines = [
+      JSON.stringify({ type: "session", version: 3, id: "native", timestamp: "2026-06-02T00:00:00.000Z", cwd: tmpDir }),
+      JSON.stringify({ type: "message", id: "native-message", parentId: null, timestamp: "2026-06-02T00:00:01.000Z", message: { role: "user", content: "canonical", timestamp: 0 } }),
+    ];
+    const wrapperLines = [
+      JSON.stringify({ type: "session", version: 3, id: sessionId, timestamp: "2026-06-02T00:00:00.000Z", cwd: tmpDir, boringSessionCtx: { workspaceId: "default" } }),
+      JSON.stringify({ type: "pi_session_file", timestamp: "2026-06-02T00:00:01.000Z", path: linkedPath }),
+    ];
+    await writeFile(linkedPath, `${linkedLines.join("\n")}\n`, "utf-8");
+    await writeFile(join(tmpDir, `${sessionId}.jsonl`), `${wrapperLines.join("\n")}\n`, "utf-8");
+    const store = new PiSessionStore(tmpDir, tmpDir);
+
+    await expect(store.readRawJsonlPage({ workspaceId: "default" }, sessionId, { cursor: 0, limit: 10, maxBytes: 1024 * 1024 }))
+      .resolves.toEqual({ lines: linkedLines, nextCursor: 2, hasMore: false });
   });
 
 });

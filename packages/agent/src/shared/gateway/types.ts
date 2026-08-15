@@ -123,6 +123,7 @@ export interface ReadAgentSessionJsonlInput extends ReadAgentSessionStateInput {
   readonly cursor: number
   readonly limit: number
   readonly maxBytes: number
+  readonly signal?: AbortSignal
 }
 
 export interface AgentSessionJsonlPage {

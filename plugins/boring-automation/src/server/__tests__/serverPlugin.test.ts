@@ -120,7 +120,7 @@ describe("boring automation server plugin", () => {
     expect(readSessionJsonlPage).toHaveBeenCalledWith(
       { workspaceId: "workspace-1", userId: "user-1" },
       { agentTypeId: "original-agent", sessionId: "session-1" },
-      { cursor: 0, limit: 50, maxBytes: 512 * 1024 },
+      { cursor: 0, limit: 50, maxBytes: 512 * 1024, signal: expect.any(AbortSignal) },
     )
     expect(result.details).toMatchObject({ lines: ['{"type":"session"}'], nextCursor: 1, hasMore: false })
   })

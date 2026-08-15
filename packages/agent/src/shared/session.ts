@@ -49,6 +49,7 @@ export interface SessionJsonlPageInput {
   cursor: number
   limit: number
   maxBytes: number
+  signal?: AbortSignal
 }
 
 export interface SessionJsonlPage {

@@ -86,7 +86,7 @@ export interface WorkspaceAgentDispatcherResolver {
   readSessionJsonlPage?(
     ctx: WorkspaceAgentDispatcherContext,
     ref: AgentSessionRef,
-    input: { cursor: number; limit: number; maxBytes: number },
+    input: { cursor: number; limit: number; maxBytes: number; signal?: AbortSignal },
     options?: WorkspaceAgentDispatcherResolveOptions,
   ): Promise<AgentSessionJsonlPage>
 }

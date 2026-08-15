@@ -11,7 +11,6 @@ import {
   open,
 } from "node:fs/promises";
 import { closeSync, createReadStream, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
-import { createInterface } from "node:readline";
 import { join, basename, resolve } from "node:path";
 import { homedir } from "node:os";
 import { getEnv } from "../../config/env.js";
@@ -523,27 +522,58 @@ export class PiSessionStore implements SessionStore {
     if (!Number.isInteger(input.cursor) || input.cursor < 0) throw new TypeError("invalid JSONL cursor");
     if (!Number.isInteger(input.limit) || input.limit < 1) throw new TypeError("invalid JSONL limit");
     if (!Number.isInteger(input.maxBytes) || input.maxBytes < 1) throw new TypeError("invalid JSONL byte limit");
-    const filepath = await this.resolveSessionFile(sessionId, ctx);
-    const stream = createReadStream(filepath, { encoding: "utf-8" });
-    const reader = createInterface({ input: stream, crlfDelay: Infinity });
+    const wrapperFilepath = await this.resolveSessionFile(sessionId, ctx);
+    const wrapperEntries = parseJsonlPrefixEntries(await readJsonlPrefix(wrapperFilepath));
+    const filepath = extractPiSessionFilePath(wrapperEntries) ?? wrapperFilepath;
+    const stream = createReadStream(filepath, { signal: input.signal });
     const lines: string[] = [];
     let lineIndex = 0;
-    let bytes = 0;
+    let pageBytes = 0;
+    let currentBytes = 0;
+    let currentParts: Buffer[] = [];
+    let blocked: "limit" | "bytes" | null = null;
     let hasMore = false;
+    let stop = false;
     try {
-      for await (const line of reader) {
-        if (lineIndex++ < input.cursor) continue;
-        const lineBytes = Buffer.byteLength(line, "utf-8");
-        if (lines.length >= input.limit || bytes + lineBytes > input.maxBytes) {
-          if (lines.length === 0) throw new RangeError("JSONL line exceeds page byte limit");
-          hasMore = true;
-          break;
+      for await (const rawChunk of stream) {
+        const chunk = Buffer.isBuffer(rawChunk) ? rawChunk : Buffer.from(rawChunk);
+        let start = 0;
+        while (start < chunk.length && !stop) {
+          const newline = chunk.indexOf(0x0a, start);
+          const end = newline === -1 ? chunk.length : newline;
+          const segment = chunk.subarray(start, end);
+          if (lineIndex >= input.cursor && blocked === null) {
+            if (lines.length >= input.limit) {
+              blocked = "limit";
+            } else if (pageBytes + currentBytes + segment.length > input.maxBytes) {
+              blocked = "bytes";
+              currentParts = [];
+            } else if (segment.length > 0) {
+              currentParts.push(segment);
+              currentBytes += segment.length;
+            }
+          }
+          if (newline === -1) break;
+          if (lineIndex >= input.cursor) {
+            if (blocked === "bytes" && lines.length === 0) {
+              throw new RangeError("JSONL line exceeds page byte limit");
+            }
+            if (blocked !== null) {
+              hasMore = true;
+              stop = true;
+              break;
+            }
+            lines.push(Buffer.concat(currentParts, currentBytes).toString("utf-8"));
+            pageBytes += currentBytes;
+          }
+          lineIndex += 1;
+          currentBytes = 0;
+          currentParts = [];
+          start = newline + 1;
         }
-        lines.push(line);
-        bytes += lineBytes;
+        if (stop) break;
       }
     } finally {
-      reader.close();
       stream.destroy();
     }
     return { lines, nextCursor: input.cursor + lines.length, hasMore };

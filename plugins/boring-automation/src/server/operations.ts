@@ -103,6 +103,7 @@ export interface AutomationRunTranscriptReader {
     cursor: number
     limit: number
     maxBytes: number
+    signal?: AbortSignal
   }): Promise<{ lines: readonly string[]; nextCursor: number; hasMore: boolean }>
 }
 
@@ -119,7 +120,7 @@ export interface AutomationOperations {
   delete(automationId: string): Promise<{ automationId: string; title: string }>
   run(automationId: string): Promise<SafeAutomationRunSummary>
   listRuns(automationId: string, limit?: number): Promise<BoundedAutomationList<SafeAutomationRunSummary>>
-  readRunJsonl?(automationId: string, runId: string, cursor?: number, limit?: number): Promise<AutomationJsonlPage>
+  readRunJsonl?(automationId: string, runId: string, cursor?: number, limit?: number, signal?: AbortSignal): Promise<AutomationJsonlPage>
 }
 
 export interface DispatchRunStarter {
@@ -295,9 +296,11 @@ export function createAutomationOperations({
     async listRuns(automationId, limit) {
       return bounded(await store.listRuns(automationId), limit, safeRunSummary)
     },
-    async readRunJsonl(automationId, runId, cursor = 0, limit = AUTOMATION_JSONL_DEFAULT_LIMIT) {
+    async readRunJsonl(automationId, runId, cursor = 0, limit = AUTOMATION_JSONL_DEFAULT_LIMIT, signal) {
       const automation = await requireAutomation(store, automationId)
-      const run = (await store.listRuns(automationId)).find((candidate) => candidate.id === runId)
+      const run = store.getRun
+        ? await store.getRun(automationId, runId)
+        : (await store.listRuns(automationId)).find((candidate) => candidate.id === runId)
       if (!run) throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_NOT_FOUND, `automation run ${runId} not found`)
       if (!run.sessionId || !transcriptReader) throw contextUnavailable()
       const page = await transcriptReader.read({
@@ -306,6 +309,7 @@ export function createAutomationOperations({
         cursor: boundedJsonlCursor(cursor),
         limit: boundedJsonlLimit(limit),
         maxBytes: AUTOMATION_JSONL_MAX_PAGE_BYTES,
+        signal,
       })
       return {
         lines: [...page.lines],
