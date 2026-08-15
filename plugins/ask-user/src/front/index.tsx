@@ -1,7 +1,7 @@
 "use client"
 
 import { Button, EmptyState, Notice, Pane, PaneBody, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
-import { Artifact, ArtifactAction, ArtifactActions, ArtifactDescription, ArtifactHeader, ArtifactTitle, useOpenArtifact } from "@hachej/boring-agent/front"
+import { Artifact, ArtifactAction, ArtifactActions, ArtifactDescription, ArtifactHeader, ArtifactTitle, useOpenArtifact } from "@hachej/boring-agent/front/artifacts"
 import {
   WORKSPACE_COMPOSER_STOP_EVENT,
   postUiCommand,
