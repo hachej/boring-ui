@@ -339,7 +339,7 @@ and rollback approval.
 
 - Exact command: `pnpm --filter @hachej/boring-agent test -- src/server/mcp/__tests__/managedAgentDelegate.test.ts`
 - Exact command: `pnpm --filter @hachej/boring-agent typecheck`
-- Exact command: `pnpm --filter @hachej/boring-core test -- src/app/server/__tests__/createCoreWorkspaceAgentServer*.test.ts`
+- Exact command: `pnpm --filter @hachej/boring-core test -- src/app/server/__tests__/createCoreWorkspaceAgentServer*.test.ts src/server/__tests__/defaultAgentType.test.ts`
 - Exact command: `pnpm --filter @hachej/boring-core typecheck`
 - Exact command: `pnpm --filter full-app test -- src/server/__tests__/managedAgentMcp.test.ts src/server/__tests__/production-safety.test.ts`
 - Exact command: `pnpm --filter full-app typecheck`
@@ -475,4 +475,11 @@ combined contract. File scopes do not overlap across writer beads.
   package request-time Agent resolver, operation-scoped artifact reader,
   non-parameterized Core binding closure, retention-bounded idempotency,
   Decision 22 AgentTask projection, exact fixed-window contract, and whitespace.
-  A second fresh pass will review the final SHA.
+  Second-pass verification targeted the resulting commit.
+- **Pass 2 target:** commit `7638775f51c4f8bff1ac328be7b8a0b7a2abe40e`.
+- **Pass 2 verdict:** revise.
+- **Pass 2 findings/disposition:** made `.3` self-contained with the exact key
+  grammar/byte limit, fixed-window reset, and `retryAfterMs`; corrected the HTML
+  to state no unexpired-record eviction/capacity rejection and the exact package
+  files; added the strict default resolver test to canonical/HTML proof. A final
+  fresh pass will review the final substantive SHA.
