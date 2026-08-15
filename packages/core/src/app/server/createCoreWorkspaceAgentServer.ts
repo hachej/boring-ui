@@ -117,6 +117,16 @@ import {
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
 
+function hasErrorCode(error: unknown, code: string): boolean {
+  let current: unknown = error
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (!current || typeof current !== 'object') return false
+    if ((current as { code?: unknown }).code === code) return true
+    current = (current as { cause?: unknown }).cause
+  }
+  return false
+}
+
 const DEFAULT_AGENT_EXECUTION_EFFECTS = new Set([
   'session.create',
   'session.prompt',
@@ -1668,38 +1678,50 @@ export async function createCoreWorkspaceAgentServer(
 
   let hostMounted = false
   try {
-    // Decision 28 migration phase: createAgentHost has now compiled and
-    // validated the static fleet. Inventory every persisted cohort, then
-    // compare-and-set only legacy NULL rows before any route can serve.
-    // Re-running this startup phase is idempotent; concurrent non-NULL writers
-    // always win, and hostname never enters either store operation.
-    const cohortsBefore = classifyWorkspaceDefaultAgentTypeCohorts(
-      await workspaceStore.inventoryDefaultAgentTypeIds(config.appId),
-      availableAgentTypeIds,
-    )
-    const migratedDefaultAgentTypeIdCount = await workspaceStore.compareAndSetNullDefaultAgentTypeId(
-      config.appId,
-      applicationDefaultAgentTypeId,
-    )
-    const cohortsAfter = classifyWorkspaceDefaultAgentTypeCohorts(
-      await workspaceStore.inventoryDefaultAgentTypeIds(config.appId),
-      availableAgentTypeIds,
-    )
-    if (cohortsAfter.nullCount > 0) {
-      throw new HttpError({
-        status: 500,
-        code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
-        message: 'Workspace default Agent legacy reconciliation did not converge',
-      })
+    // Reference images intentionally prove the process can expose /health
+    // before schema deployment. With no workspaces relation there is no cohort
+    // or Agent execution to reconcile; every other migration error stays fatal.
+    try {
+      // Decision 28 migration phase: createAgentHost has now compiled and
+      // validated the static fleet. Inventory every persisted cohort, then
+      // compare-and-set only legacy NULL rows before any route can serve.
+      // Re-running this startup phase is idempotent; concurrent non-NULL writers
+      // always win, and hostname never enters either store operation.
+      const cohortsBefore = classifyWorkspaceDefaultAgentTypeCohorts(
+        await workspaceStore.inventoryDefaultAgentTypeIds(config.appId),
+        availableAgentTypeIds,
+      )
+      const migratedDefaultAgentTypeIdCount = await workspaceStore.compareAndSetNullDefaultAgentTypeId(
+        config.appId,
+        applicationDefaultAgentTypeId,
+      )
+      const cohortsAfter = classifyWorkspaceDefaultAgentTypeCohorts(
+        await workspaceStore.inventoryDefaultAgentTypeIds(config.appId),
+        availableAgentTypeIds,
+      )
+      if (cohortsAfter.nullCount > 0) {
+        throw new HttpError({
+          status: 500,
+          code: ERROR_CODES.DEFAULT_AGENT_TYPE_UNKNOWN_SEAT,
+          message: 'Workspace default Agent legacy reconciliation did not converge',
+        })
+      }
+      app.log.info({
+        event: 'workspace.default_agent_type_id.backfill',
+        appId: config.appId,
+        applicationDefaultAgentTypeId,
+        before: cohortsBefore,
+        migratedCount: migratedDefaultAgentTypeIdCount,
+        after: cohortsAfter,
+      }, 'workspace default Agent legacy cohorts reconciled')
+    } catch (error) {
+      if (!hasErrorCode(error, '42P01')) throw error
+      app.log.warn({
+        event: 'workspace.default_agent_type_id.backfill.skipped',
+        appId: config.appId,
+        reason: 'workspaces_relation_absent',
+      }, 'workspace default Agent reconciliation skipped before schema deployment')
     }
-    app.log.info({
-      event: 'workspace.default_agent_type_id.backfill',
-      appId: config.appId,
-      applicationDefaultAgentTypeId,
-      before: cohortsBefore,
-      migratedCount: migratedDefaultAgentTypeIdCount,
-      after: cohortsAfter,
-    }, 'workspace default Agent legacy cohorts reconciled')
 
     app.get('/api/v1/workspace/meta', async (request, reply) => {
       try {

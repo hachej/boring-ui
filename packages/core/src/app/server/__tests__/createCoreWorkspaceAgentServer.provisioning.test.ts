@@ -284,6 +284,26 @@ test.each(['before-inventory', 'cas', 'after-inventory', 'remaining-null'] as co
   30_000,
 )
 
+test('keeps the pre-schema reference health composition bootable without weakening other migration failures', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
+    preservedUiStateKeys: [], routeContributions: [],
+  })
+  mocks.inventoryDefaultAgentTypeIds.mockRejectedValueOnce(Object.assign(
+    new Error('inventory query failed'),
+    { cause: Object.assign(new Error('relation workspaces does not exist'), { code: '42P01' }) },
+  ))
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces', defaultAgentTypeId: 'default', serveFrontend: false,
+  })
+  try {
+    expect(mocks.compareAndSetNullDefaultAgentTypeId).not.toHaveBeenCalled()
+    expect(mocks.hostRegisterDirectRoutes).toHaveBeenCalledOnce()
+  } finally { await app.close() }
+}, 30_000)
+
 test('unknown persisted default denies execution but preserves session and history reads', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
