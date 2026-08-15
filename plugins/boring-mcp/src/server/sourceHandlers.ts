@@ -20,7 +20,7 @@ import {
 import { createHardenedMcpTransport, verifyMcpDisconnectResult, type McpProviderHardeningOptions } from "./hardening"
 import { assertMcpPublicPayloadSecretFree, createMcpSourceStatusPayload, requireActorOwnedMcpSource, validateMcpSourceId } from "./sourceAccess"
 import { createBoringMcpReadonlyCaller, type McpReadonlyCallAuditSink } from "./readonlyCall"
-import { InMemoryMcpToolCatalogCache, createBoringMcpToolCatalog, type McpToolDescribeInput, type McpToolsSearchInput } from "./toolCatalog"
+import { InMemoryMcpToolCatalogCache, createBoringMcpToolCatalog, type McpManagedCatalogBackend, type McpToolDescribeInput, type McpToolsSearchInput } from "./toolCatalog"
 
 export interface BoringMcpSourceHandlersOptions {
   registry: McpSourceRegistry
@@ -29,6 +29,7 @@ export interface BoringMcpSourceHandlersOptions {
   maxReadonlyInputBytes?: number
   audit?: McpReadonlyCallAuditSink
   hardening?: McpProviderHardeningOptions
+  managedCatalog?: McpManagedCatalogBackend
 }
 
 export interface BoringMcpSourceHandlers {

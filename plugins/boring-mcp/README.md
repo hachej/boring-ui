@@ -10,7 +10,7 @@ This package is the generic MCP capability that child apps can enable. It owns:
 - reusable Composio managed connector provider for hosted OAuth/session onboarding;
 - MCP SDK Streamable HTTP transport for real MCP-compatible endpoints, including Composio session MCP URLs;
 - fake-transport-testable facade seams;
-- normalized tool catalog search/describe contracts;
+- normalized tool catalog search/describe contracts, including an optional bounded Composio full-catalog backend;
 - governed `mcp_readonly_call` execution boundary with audit metadata;
 - thin agent bridge tool registry for the seven stable boring-mcp operations;
 - server-only managed connector adapter seam with app-injected secret resolution.
@@ -80,6 +80,12 @@ createCoreWorkspaceAgentServer({
 ```
 
 When `registry`, `transport`, and `resolveActor` are provided, the plugin contributes the seven stable agent tools automatically: `mcp_servers_list`, `mcp_server_status`, `mcp_server_doctor`, `mcp_server_probe`, `mcp_tools_search`, `mcp_tool_describe`, and `mcp_readonly_call`.
+
+### Full-catalog Composio backend
+
+Hosts that persist a server-owned source with `provider: "composio"` and `credentialProvider: "composio-managed"` may inject `createComposioCatalogBackend({ secretResolver })` as `managedCatalog` in source handlers, agent tools, or app bindings. The backend sends the actual bounded query through Composio's search/schema meta-tools, creates an unfiltered Session with `workbench.enable: false`, and verified-cleans each Session. Its transient metadata caches are TTL- and cardinality-bounded.
+
+This seam is discovery-only. It never exposes or invokes raw `COMPOSIO_*` execution/control/workbench/bash tools, and template-free catalog entries remain disabled until a separate host approval boundary is supplied. `requireExactlyOneComposioAccount` plus `resolveComposioCatalogSession({ accountPin })` provide the fail-closed zero/multiple/exact-account pinning seam for that later execution boundary; they do not make tools callable here. Curated Notion/Airtable connectors continue through `createComposioMcpTransport` unchanged.
 
 For trusted, app-configured non-Composio endpoints, apps can use `createMcpSdkStreamableHttpTransport({ endpoint })` directly. User-supplied endpoints must cross both authoritative shared constructors: build the template with `createUserRegisteredMcpProviderTemplate(...)` and the persisted/runtime source with `createUserRegisteredMcpSource(...)`. A structural object with `provider: "user-registered"` is intentionally rejected; persistence rehydrates accepted records through the source constructor before transport use.
 
