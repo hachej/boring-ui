@@ -230,7 +230,7 @@ function knownErrorCode(cause: unknown): BoringAutomationErrorCode {
   if (cause instanceof AutomationStoreError && Object.values(BORING_AUTOMATION_ERROR_CODES).includes(cause.code as BoringAutomationErrorCode)) {
     return cause.code as BoringAutomationErrorCode
   }
-  if (cause instanceof DOMException && cause.name === "AbortError") {
+  if (isAbortError(cause)) {
     return BORING_AUTOMATION_ERROR_CODES.TOOL_ABORTED
   }
   if (cause instanceof z.ZodError) {
@@ -240,6 +240,12 @@ function knownErrorCode(cause: unknown): BoringAutomationErrorCode {
     return BORING_AUTOMATION_ERROR_CODES.INVALID_BODY
   }
   return BORING_AUTOMATION_ERROR_CODES.OPERATION_FAILED
+}
+
+function isAbortError(cause: unknown): boolean {
+  if (!cause || typeof cause !== "object") return false
+  const candidate = cause as { name?: unknown; code?: unknown }
+  return candidate.name === "AbortError" || candidate.code === "ABORT_ERR"
 }
 
 function publicErrorMessage(code: BoringAutomationErrorCode): string {

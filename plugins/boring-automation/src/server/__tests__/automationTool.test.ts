@@ -109,7 +109,7 @@ describe("boring_automation agent tool", () => {
     const ops = operations()
     ops.readRunJsonl = vi.fn(async () => {
       controller.abort()
-      throw new DOMException("aborted", "AbortError")
+      throw Object.assign(new Error("aborted"), { name: "AbortError", code: "ABORT_ERR" })
     })
     const result = await harness(ops).tool.execute({
       operation: "read_run_jsonl", automationId: "automation-1", runId: "run-1",
