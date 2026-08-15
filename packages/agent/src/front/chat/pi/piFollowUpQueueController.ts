@@ -53,7 +53,6 @@ export type PiQueueEditQueuedResult =
 
 export class PiFollowUpQueueController {
   private nextClientSeqFloor: number | undefined
-  private readonly restoredQueueKeys = new Set<string>()
 
   constructor(
     private readonly session: PiQueueSessionLike,
@@ -112,16 +111,13 @@ export class PiFollowUpQueueController {
     }
 
     const currentDraft = this.options.getDraft?.() ?? ''
-    const unrestored = followUps.filter((followUp) => !this.restoredQueueKeys.has(queueRecoveryKey(followUp)))
-    const draft = buildEditedQueuedDraft(unrestored, currentDraft)
+    const draft = buildEditedQueuedDraft(followUps, currentDraft)
     if (draft !== currentDraft) this.options.onDraftChange?.(draft)
 
     try {
       await this.session.clearQueue()
-      this.restoredQueueKeys.clear()
       return { type: 'cleared', draft }
     } catch (error) {
-      for (const followUp of followUps) this.restoredQueueKeys.add(queueRecoveryKey(followUp))
       const message = 'Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit queued.'
       this.options.onWarning?.(message)
       return { type: 'clear-failed', draft, error, message }
@@ -191,17 +187,19 @@ export function nextFollowUpClientSeq(state: PiChatState, floor = 1): number {
 }
 
 export function buildEditedQueuedDraft(followUps: readonly QueuedUserMessage[], existingDraft = ''): string {
-  const queuedText = followUps.map((followUp) => followUp.displayText.trim()).filter(Boolean).join('\n\n')
+  const queuedTexts = followUps.map((followUp) => followUp.displayText.trim()).filter(Boolean)
   const draft = existingDraft.trim()
-  if (!queuedText) return draft
-  if (!draft) return queuedText
-  return `${queuedText}\n\n${draft}`
-}
+  if (queuedTexts.length === 0) return draft
+  if (!draft) return queuedTexts.join('\n\n')
 
-function queueRecoveryKey(followUp: QueuedUserMessage): string {
-  if (followUp.clientNonce) return `nonce:${followUp.clientNonce}`
-  if (followUp.clientSeq !== undefined) return `seq:${followUp.clientSeq}`
-  return `id:${followUp.id}`
+  let restoredPrefixCount = 0
+  for (let index = 1; index <= queuedTexts.length; index += 1) {
+    const prefix = queuedTexts.slice(0, index).join('\n\n')
+    if (draft === prefix || draft.startsWith(`${prefix}\n\n`)) restoredPrefixCount = index
+    else break
+  }
+  const unrestoredText = queuedTexts.slice(restoredPrefixCount).join('\n\n')
+  return unrestoredText ? `${unrestoredText}\n\n${draft}` : draft
 }
 
 function isBusySlashCommand(input: PiQueueSubmitInput): boolean {

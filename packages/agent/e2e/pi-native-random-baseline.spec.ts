@@ -292,9 +292,9 @@ async function clickStop(ctx: RunnerContext): Promise<ChatAction> {
   const knownQueued = extractKnownQueuedText(before.queueText)
   if (knownQueued) {
     await expect.poll(async () => queuedTextState(ctx.page, knownQueued), {
-      message: `expected queued follow-up "${knownQueued}" to either clear or become a submitted turn after Stop`,
+      message: `expected queued follow-up "${knownQueued}" to become a submitted turn after Stop`,
       timeout: 10_000,
-    }).not.toBe('queued')
+    }).toBe('submitted')
   }
   return 'click-stop'
 }
