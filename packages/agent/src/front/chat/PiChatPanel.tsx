@@ -86,6 +86,7 @@ const EMPTY_BLOCKERS: never[] = []
 /** Stable id for the notice that surfaces a rejected run (so re-rejections replace
  * it rather than stacking, and the next admit can retract it). */
 const RUN_REJECTED_NOTICE_ID = 'run-rejected'
+const RESUME_QUEUED_ERROR_PREFIX = 'resume-queued-error:'
 
 export type { ComposerBlocker, ComposerBlockerAction, PanelNotice }
 
@@ -533,6 +534,15 @@ export function PiChatPanel<
   const clearLocalNotice = useCallback((id: string) => {
     setDismissedNoticeIds((previous) => new Set(previous).add(id))
     setLocalNotices((previous) => previous.filter((notice) => notice.id !== id))
+    if (id.startsWith(RESUME_QUEUED_ERROR_PREFIX)) {
+      const sessionId = id.slice(RESUME_QUEUED_ERROR_PREFIX.length)
+      setResumeQueuedErrorsBySessionId((previous) => {
+        if (!previous.has(sessionId)) return previous
+        const next = new Map(previous)
+        next.delete(sessionId)
+        return next
+      })
+    }
   }, [])
 
   // Remove a notice so it can be shown again later (unlike clearLocalNotice, which
@@ -1004,6 +1014,8 @@ export function PiChatPanel<
   const resumeQueued = useCallback(() => {
     const sessionId = activeChatSessionId
     if (!policy || !sessionId || resumeQueuedInFlightRef.current.has(sessionId)) return
+    const errorNoticeId = `${RESUME_QUEUED_ERROR_PREFIX}${sessionId}`
+    dropLocalNotice(errorNoticeId)
     setResumeQueuedErrorsBySessionId((previous) => {
       if (!previous.has(sessionId)) return previous
       const next = new Map(previous)
@@ -1015,7 +1027,7 @@ export function PiChatPanel<
     resumeQueuedInFlightRef.current.set(sessionId, run)
     void run.catch((error) => {
       setResumeQueuedErrorsBySessionId((previous) => new Map(previous).set(sessionId, {
-        id: `resume-queued-error:${sessionId}`,
+        id: errorNoticeId,
         level: 'error',
         text: errorMessage(error, 'Could not resume queued follow-ups.'),
         dismissible: true,
@@ -1030,7 +1042,7 @@ export function PiChatPanel<
         return next
       })
     })
-  }, [activeChatSessionId, policy])
+  }, [activeChatSessionId, dropLocalNotice, policy])
 
   useEffect(() => {
     setPluginUpdateState(null)

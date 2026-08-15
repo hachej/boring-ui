@@ -1049,6 +1049,43 @@ describe('PiChatPanel sandbox shell', () => {
     expect((screen.getByRole('button', { name: 'Resume queued follow-ups' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
+  test('re-arms dismissed Resume errors on retry without resurrecting them after a session switch', async () => {
+    const remoteA = new FakeRemotePiSession(remoteState({
+      sessionId: 'pi-a',
+      status: 'idle',
+      queue: { followUps: [{ id: 'qa', kind: 'followup', displayText: 'queued in A', clientNonce: 'nonce-a', clientSeq: 1 }] },
+    }))
+    const remoteB = new FakeRemotePiSession(remoteState({ sessionId: 'pi-b', status: 'idle' }))
+    const firstResume = deferred<{ accepted: true; cursor: number }>()
+    const secondResume = deferred<{ accepted: true; cursor: number }>()
+    remoteA.interrupt.mockImplementationOnce(() => firstResume.promise).mockImplementationOnce(() => secondResume.promise)
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => {
+      const remote = options.sessionId === 'pi-a' ? remoteA : remoteB
+      remote.onEvent = options.onEvent as ((event: unknown) => void) | undefined
+      return remote as unknown as RemotePiSession
+    })
+    const props = { serverResourcesEnabled: false, storageScope: 'scope-a', createRemoteSession }
+    const { rerender } = render(<PiChatPanel {...props} sessionId="pi-a" />)
+
+    await screen.findByText('queued in A')
+    fireEvent.click(screen.getByRole('button', { name: 'Resume queued follow-ups' }))
+    await act(async () => { firstResume.reject(new Error('First Resume failed')) })
+    const firstError = await screen.findByText('First Resume failed')
+    fireEvent.click(within(firstError.closest('[data-boring-agent-part="runtime-notice"]') as HTMLElement).getByRole('button', { name: 'Dismiss notice' }))
+    expect(screen.queryByText('First Resume failed')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resume queued follow-ups' }))
+    await act(async () => { secondResume.reject(new Error('Second Resume failed')) })
+    const secondError = await screen.findByText('Second Resume failed')
+    fireEvent.click(within(secondError.closest('[data-boring-agent-part="runtime-notice"]') as HTMLElement).getByRole('button', { name: 'Dismiss notice' }))
+    expect(screen.queryByText('Second Resume failed')).toBeNull()
+
+    rerender(<PiChatPanel {...props} sessionId="pi-b" />)
+    rerender(<PiChatPanel {...props} sessionId="pi-a" />)
+    await screen.findByText('queued in A')
+    expect(screen.queryByText('Second Resume failed')).toBeNull()
+  })
+
   test('renders optimistic queued follow-ups in the composer banner before server queue metadata arrives', async () => {
     const remote = new FakeRemotePiSession(remoteState({
       status: 'streaming',
