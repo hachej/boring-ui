@@ -628,3 +628,8 @@ combined contract. File scopes do not overlap across writer beads.
   cover every emitted and retained notification including token/JSON/SSE framing,
   with one coalesced terminal marker and no emissions after exhaustion. A clean
   final pass is required.
+- **Pass 10 target:** commit `1065f3400716fdf56b33046584475374cd637cad`.
+- **Pass 10 verdict:** clean.
+- **Pass 10 result:** no blockers; scoped lint and both graph checks clean.
+  Residual risk is implementation-only proof and the one-session estimate for
+  dense slice `.3`.
