@@ -52,6 +52,7 @@ import {
   AGENT_RESOURCES_FILESYSTEM_ID,
   AgentGatewayError,
   AgentGatewayErrorCode,
+  ErrorCode,
   type AgentTool,
   type TelemetrySink,
 } from "@hachej/boring-agent/shared"
@@ -614,6 +615,18 @@ interface NormalizedAgentRuntimeContribution {
   readonly includeAllDiscoveredPluginResources: boolean
   /** Preserves persisted runtime pins from the pre-normalization standalone host. */
   readonly standaloneIdentityV1: boolean
+}
+
+export const CONFIGURED_DEFAULT_AGENT_ERROR_CODE = ErrorCode.enum.CONFIG_INVALID
+
+export class ConfiguredDefaultAgentError extends Error {
+  readonly code = CONFIGURED_DEFAULT_AGENT_ERROR_CODE
+  readonly field = "defaultAgentTypeId"
+
+  constructor(defaultAgentTypeId: string) {
+    super(`defaultAgentTypeId ${JSON.stringify(defaultAgentTypeId)} is not in the configured Agent fleet`)
+    this.name = "ConfiguredDefaultAgentError"
+  }
 }
 
 export const AGENT_RUNTIME_IDENTITY_ERROR_CODE = "BORING_AGENT_RUNTIME_IDENTITY_INCOMPLETE"
@@ -1282,8 +1295,8 @@ export async function createWorkspaceAgentServer(
     workspaceRoot,
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
-  if (opts.defaultAgentTypeId && !agents.some((agent) => agent.agentTypeId === opts.defaultAgentTypeId)) {
-    throw new TypeError(`defaultAgentTypeId ${JSON.stringify(opts.defaultAgentTypeId)} is not in the configured Agent fleet`)
+  if (opts.defaultAgentTypeId !== undefined && !agents.some((agent) => agent.agentTypeId === opts.defaultAgentTypeId)) {
+    throw new ConfiguredDefaultAgentError(opts.defaultAgentTypeId)
   }
   const standaloneDefaultIdentityV1 = agents.length === 1 && "legacyDefault" in agents[0]!
   const bridge = createInMemoryBridge()

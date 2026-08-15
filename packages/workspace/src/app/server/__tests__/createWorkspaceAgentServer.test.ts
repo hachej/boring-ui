@@ -2065,7 +2065,19 @@ ${seats}` : "seats: []\n"}`, "utf8")
       agents: [{ agentTypeId: "configured", definition: { label: "Configured", instructions: "Be useful." } }],
       defaultAgentTypeId: "missing-default",
       fleetCompiler: { async compile({ agents }) { return agents } },
-    })).rejects.toThrow('defaultAgentTypeId "missing-default" is not in the configured Agent fleet')
+    })).rejects.toMatchObject({
+      name: "ConfiguredDefaultAgentError",
+      code: "CONFIG_INVALID",
+      field: "defaultAgentTypeId",
+    })
+    await expect(createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("boring-agent-default-empty-"),
+      logger: false,
+      externalPlugins: false,
+      agents: [{ agentTypeId: "configured", definition: { label: "Configured", instructions: "Be useful." } }],
+      defaultAgentTypeId: "",
+      fleetCompiler: { async compile({ agents }) { return agents } },
+    })).rejects.toMatchObject({ name: "ConfiguredDefaultAgentError", code: "CONFIG_INVALID" })
     expect(agentServerMock.createAgentHost).not.toHaveBeenCalled()
   })
 

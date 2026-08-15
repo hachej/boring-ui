@@ -301,15 +301,18 @@ describe('Agent Host lifecycle', () => {
         { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
         { agentTypeId: 'beta', definition: { instructions: 'beta', label: 'Beta' } },
       ],
-      resolveAuthorizedAgentRuntimeScope: async ({ agentTypeId }) => {
-        if (agentTypeId === 'alpha' && alphaLoads++ === 0) throw new Error('transient Agent application load failure')
-        return {
-          identity: `runtime:${agentTypeId}`,
-          physicalBindingIdentity: `runtime:${agentTypeId}`,
-          resourceInputDigest: `runtime:${agentTypeId}`,
-          sessionNamespace: agentTypeId,
+      harnessFactory: async (input) => {
+        if (input.systemPromptAppend === 'alpha' && alphaLoads++ === 0) {
+          throw new Error('transient Agent application load failure')
         }
+        return await createScriptedPiHarness(input)
       },
+      resolveAuthorizedAgentRuntimeScope: async ({ agentTypeId }) => ({
+        identity: `runtime:${agentTypeId}`,
+        physicalBindingIdentity: `runtime:${agentTypeId}`,
+        resourceInputDigest: `runtime:${agentTypeId}`,
+        sessionNamespace: agentTypeId,
+      }),
     })
     const created = await createAgentHost(fixture.value)
 

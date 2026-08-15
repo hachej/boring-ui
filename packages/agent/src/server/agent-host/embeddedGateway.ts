@@ -25,6 +25,7 @@ import { agentSessionKey } from './agentSessionKey'
 import { canonicalDigest } from './canonical'
 import { stableServiceActionFailure } from './stableServiceError'
 import type { AgentHostRuntime } from './createAgentHost'
+import { rejectRetryablePreflightFailure } from './retryablePreflightFailure'
 import type {
   AgentGatewayEffect,
   AgentRequestFailure,
@@ -778,18 +779,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
                 await this.runtime.ledger.reject(key, { kind: 'gateway', error: error.toJSON() }).catch(() => {})
                 throw error
               }
-              // Runtime/application loading is a pre-effect operation. Its
-              // failure cannot have mutated the requested Agent effect, so it
-              // is safe to return a stable retryable rejection instead of an
-              // outcome-unknown tombstone. A fresh request id may retry after
-              // the runtime dependency recovers; sibling Agents remain live.
-              const retryable = new AgentGatewayError(
-                AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
-                'Agent runtime failed to load',
-                { retryable: true },
-              )
-              await this.runtime.ledger.reject(key, { kind: 'gateway', error: retryable.toJSON() }).catch(() => {})
-              throw retryable
+              await rejectRetryablePreflightFailure(this.runtime.ledger, key)
             }
           }
           await this.runtime.ledger.beginEffect(key)
