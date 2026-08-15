@@ -1921,6 +1921,7 @@ export async function createWorkspaceAgentServer(
         return createPiResourceDigestInput({
           piCwd: workspaceRoot,
           noSkills: selectedPi?.noSkills ?? resolvedBasePi.noSkills,
+          noContextFiles: selectedPi?.noContextFiles ?? resolvedBasePi.noContextFiles,
           resourceSets: [{
             promptParts: [staticSystemPromptAppend, dynamicSystemPromptAppend],
             additionalSkillPaths,
