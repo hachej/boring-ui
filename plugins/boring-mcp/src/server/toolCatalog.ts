@@ -98,10 +98,12 @@ function displayName(toolName: string): string {
   return toolName.replace(/[_:.-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-export function createMcpSourceRevision(source: { status: string; updatedAt?: string; connectorRef?: { sessionId?: string; connectedAccountId?: string; externalSourceId?: string } }): string {
+export function createMcpSourceRevision(source: { status: string; updatedAt?: string; connectorRef?: { provider?: string; toolkitId?: string; sessionId?: string; connectedAccountId?: string; externalSourceId?: string } }): string {
   return createHash("sha256").update(JSON.stringify({
     status: source.status,
     updatedAt: source.updatedAt,
+    provider: source.connectorRef?.provider,
+    toolkitId: source.connectorRef?.toolkitId,
     sessionId: source.connectorRef?.sessionId,
     connectedAccountId: source.connectorRef?.connectedAccountId,
     externalSourceId: source.connectorRef?.externalSourceId,

@@ -51,7 +51,7 @@ function completeAccount(id: string, userId = composioSubject) {
     experimental: {},
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
-    state: { authScheme: "OAUTH2", val: { status: "ACTIVE" } },
+    state: { authScheme: "OAUTH2", val: { status: "ACTIVE", access_token: "provider-oauth-token-value" } },
     data: {},
     status_reason: "connected",
     test_request_endpoint: "https://backend.composio.dev/test",
@@ -263,6 +263,11 @@ describe("Composio full-catalog backend", () => {
     const none = composioApiFetch(fakeMcp.url)
     await expect(requireExactlyOneComposioAccount(backendOptions(none.fetch), { actor, secret, toolkitId: "github" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.CONNECTED_ACCOUNT_REQUIRED })
+    const operatorEcho = completeAccount("operator-echo")
+    operatorEcho.state.val.access_token = secret.value
+    const operatorEchoApi = composioApiFetch(fakeMcp.url, [operatorEcho])
+    await expect(requireExactlyOneComposioAccount(backendOptions(operatorEchoApi.fetch), { actor, secret, toolkitId: "github" }))
+      .rejects.toMatchObject({ code: MCP_ERROR_CODES.SECRET_LEAK_GUARD })
     for (const malformed of [
       { next_cursor: null, current_page: 0, total_pages: 0, total_items: 0 },
       { items: [{ id: "account-1", user_id: composioSubject, status: "ACTIVE", toolkit: { slug: "github" } }, "malformed-row"], next_cursor: null, current_page: 1, total_pages: 1, total_items: 2 },
@@ -291,7 +296,7 @@ describe("Composio full-catalog backend", () => {
 
     const active = completeAccount
     const nullableAccount = { ...active("nullable-account"), word_id: null, alias: null, status_reason: null }
-    const nullableApi = composioApiFetch(fakeMcp.url, [nullableAccount])
+    const nullableApi = composioApiFetch(fakeMcp.url, [nullableAccount, { ...active("revoked-account"), status: "REVOKED", state: { authScheme: "OAUTH2", val: { status: "REVOKED" } } }])
     await expect(requireExactlyOneComposioAccount(backendOptions(nullableApi.fetch), { actor, secret, toolkitId: "github" }))
       .resolves.toMatchObject({ connectedAccountId: "nullable-account" })
 
@@ -414,9 +419,11 @@ describe("Composio full-catalog backend", () => {
     }
     const catalog = createBoringMcpToolCatalog({ registry: dynamicRegistry, transport: fallbackTransport, managedCatalog: createComposioCatalogBackend(backendOptions(api.fetch)) })
     await catalog.searchTools(actor, { sourceId: source.id, query: "github", limit: 1 })
-    currentSource = { ...currentSource, connectorRef: { provider: "composio", connectedAccountId: "account-2" } }
+    currentSource = { ...currentSource, connectorRef: { provider: "composio", toolkitId: "github", connectedAccountId: "account-2" } }
     await catalog.searchTools(actor, { sourceId: source.id, query: "github", limit: 1 })
-    expect(api.sessionBodies).toHaveLength(2)
+    currentSource = { ...currentSource, connectorRef: { provider: "composio", connectedAccountId: "account-1" } }
+    await catalog.searchTools(actor, { sourceId: source.id, query: "github", limit: 1 })
+    expect(api.sessionBodies).toHaveLength(3)
   })
 
   it("invalidates stale descriptors when provider refresh removes or invalidates a schema", async () => {

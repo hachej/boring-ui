@@ -27,7 +27,7 @@ const MAX_SCHEMA_BYTES = 64 * 1024
 const DEFAULT_CACHE_ENTRIES = 128
 const DEFAULT_CACHE_TTL_MS = 60_000
 const COMPOSIO_ACCOUNT_STATUSES = new Set(["INITIALIZING", "INITIATED", "ACTIVE", "FAILED", "EXPIRED", "INACTIVE", "REVOKED"])
-const COMPOSIO_STATE_STATUSES = new Set(["INITIALIZING", "INITIATED", "ACTIVE", "FAILED", "EXPIRED", "INACTIVE"])
+const COMPOSIO_STATE_STATUSES = new Set(["INITIALIZING", "INITIATED", "ACTIVE", "FAILED", "EXPIRED", "INACTIVE", "REVOKED"])
 const COMPOSIO_AUTH_SCHEMES = new Set([
   "OAUTH2", "OAUTH1", "API_KEY", "BASIC", "BILLCOM_AUTH", "BEARER_TOKEN",
   "GOOGLE_SERVICE_ACCOUNT", "NO_AUTH", "BASIC_WITH_JWT", "CALCOM_AUTH",
@@ -190,7 +190,7 @@ async function composioRequest(
   method: "DELETE" | "GET" | "POST",
   path: string,
   body?: unknown,
-  allowSessionEnvelope = false,
+  allowSecretBearingPayload = false,
 ): Promise<unknown> {
   requireServerSecret(secret)
   const controller = new AbortController()
@@ -205,7 +205,7 @@ async function composioRequest(
     })
     const payload = await readBoundedJson(response, options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES)
     if (!response.ok) throw safeProviderError("Composio request failed", response.status)
-    if (!allowSessionEnvelope && containsMcpSecretOrCanary(payload, [secret.value])) {
+    if (!allowSecretBearingPayload && containsMcpSecretOrCanary(payload, [secret.value])) {
       throw new McpError(MCP_ERROR_CODES.SECRET_LEAK_GUARD, "Composio response contained server-only material")
     }
     return payload
@@ -333,7 +333,10 @@ export async function requireExactlyOneComposioAccount(
   for (let requestedPage = 1; requestedPage <= MAX_ACCOUNT_PAGES; requestedPage += 1) {
     const params = new URLSearchParams({ user_ids: composioUserId(input.actor), toolkit_slugs: toolkitId, limit: String(MAX_ACCOUNT_RESULTS) })
     if (cursor) params.set("cursor", cursor)
-    const payload = await composioRequest(options, input.secret, "GET", `/api/v3.1/connected_accounts?${params}`)
+    const payload = await composioRequest(options, input.secret, "GET", `/api/v3.1/connected_accounts?${params}`, undefined, true)
+    if (JSON.stringify(payload).includes(input.secret.value)) {
+      throw new McpError(MCP_ERROR_CODES.SECRET_LEAK_GUARD, "Composio connected-account response echoed the operator key")
+    }
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
       throw safeProviderError("Composio connected-account response was malformed")
     }
@@ -627,8 +630,12 @@ async function withCatalogSession<T>(
   return outcome.value
 }
 
+function sourceIdentityKey(source: McpSource): string {
+  return `${source.workspaceId}:${source.userId}:${source.id}`
+}
+
 function sourceCacheKey(source: McpSource): string {
-  return `${source.workspaceId}:${source.userId}:${source.id}:${createMcpSourceRevision(source)}`
+  return `${sourceIdentityKey(source)}:${createMcpSourceRevision(source)}`
 }
 
 export function createComposioCatalogBackend(options: ComposioCatalogBackendOptions): ComposioCatalogBackend {
@@ -640,6 +647,7 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
   const searchCache = new BoundedTtlCache<McpManagedCatalogTool[]>(maxEntries, ttlMs)
   const describeCache = new BoundedTtlCache<McpManagedCatalogTool>(maxEntries, ttlMs)
   const requestBudget = new BoundedTtlCache<{ calls: number }>(maxEntries, 60_000)
+  const sourceRevisions = new BoundedTtlCache<string>(maxEntries, ttlMs)
   const maxConcurrent = options.maxConcurrentRequests ?? 4
   const maxRequestsPerMinute = options.maxRequestsPerMinute ?? 60
   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || !Number.isInteger(maxRequestsPerMinute) || maxRequestsPerMinute < 1) {
@@ -675,6 +683,17 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
     if (firstError) throw firstError
   }
 
+  function prepareSourceCache(source: McpSource): string {
+    const identity = sourceIdentityKey(source)
+    const revision = createMcpSourceRevision(source)
+    if (sourceRevisions.get(identity) !== revision) {
+      searchCache.deletePrefix(`${identity}:`)
+      describeCache.deletePrefix(`${identity}:`)
+      sourceRevisions.set(identity, revision)
+    }
+    return `${identity}:${revision}`
+  }
+
   async function guarded<T>(source: McpSource, run: () => Promise<T>): Promise<T> {
     await drainPending()
     if (activeRequests >= maxConcurrent) {
@@ -706,14 +725,15 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
       if (!query || query.length > MAX_QUERY_LENGTH) {
         throw new McpError(MCP_ERROR_CODES.INPUT_INVALID, "Composio catalog query must be between 1 and 256 characters")
       }
-      const sourceKey = sourceCacheKey(source)
+      const sourceKey = prepareSourceCache(source)
       const key = `${sourceKey}:search:${query}:${input.offset}:${input.limit}`
       const previous = searchCache.get(key)
       if (!input.forceProviderRefresh && previous) return previous
       if (input.forceProviderRefresh) {
         cacheGeneration += 1
-        searchCache.deletePrefix(`${sourceKey}:search:`)
-        describeCache.deletePrefix(`${sourceKey}:describe:`)
+        const identity = sourceIdentityKey(source)
+        searchCache.deletePrefix(`${identity}:`)
+        describeCache.deletePrefix(`${identity}:`)
       }
       const requestGeneration = cacheGeneration
       const tools = await guarded(source, () => withCatalogSession(options, source, release, retainFailedCleanup, async (session, transport) => {
@@ -740,15 +760,17 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
     async describeTool(source, toolName, input) {
       validateMcpToolName(toolName)
       if (toolName.startsWith("COMPOSIO_")) return undefined
-      const key = `${sourceCacheKey(source)}:describe:${toolName}`
+      const sourceKey = prepareSourceCache(source)
+      const key = `${sourceKey}:describe:${toolName}`
       if (!input.forceProviderRefresh) {
         const cached = describeCache.get(key)
         if (cached) return cached
       } else {
         cacheGeneration += 1
         const sourceKey = sourceCacheKey(source)
-        searchCache.deletePrefix(`${sourceKey}:search:`)
-        describeCache.deletePrefix(`${sourceKey}:describe:`)
+        const identity = sourceIdentityKey(source)
+        searchCache.deletePrefix(`${identity}:`)
+        describeCache.deletePrefix(`${identity}:`)
       }
       const requestGeneration = cacheGeneration
       const tool = await guarded(source, () => withCatalogSession(options, source, release, retainFailedCleanup, async (session, transport) => {
