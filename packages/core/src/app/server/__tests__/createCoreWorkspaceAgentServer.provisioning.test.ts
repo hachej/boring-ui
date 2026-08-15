@@ -12,6 +12,12 @@ const mocks = vi.hoisted(() => {
   const hostRegisterDirectRoutes = vi.fn((_projection: any) => async () => {})
   const hostClose = vi.fn(async () => {})
   const acquireEnvironment = vi.fn()
+  const gatewayReadSessionState = vi.fn(async ({ ref }: { ref: unknown }) => ({
+    ref,
+    seq: 0,
+    summary: {},
+    state: { messages: [] },
+  }))
   return {
     createAgentHost: vi.fn(async (options: any) => {
       await options.fleetCompiler.compile({ agents: options.agents })
@@ -20,18 +26,22 @@ const mocks = vi.hoisted(() => {
         host: { close: hostClose, drain: vi.fn(async () => {}) },
         registerDirectRoutes: hostRegisterDirectRoutes,
         acquireEnvironment,
+        gateway: { readSessionState: gatewayReadSessionState },
         runWithWorkspaceAgent: vi.fn(),
       }
     }),
     hostRegisterDirectRoutes,
     hostClose,
     acquireEnvironment,
+    gatewayReadSessionState,
     provisionWorkspaceRuntime: vi.fn(async () => ({ changed: false, env: {}, pathEntries: [], skillPaths: [] })),
     collectWorkspaceAgentServerPlugins: vi.fn(),
     createWorkspaceUiTools: vi.fn(() => []),
     isMember: vi.fn(async (_workspaceId: string, _userId: string) => true),
-    getWorkspace: vi.fn(async (id: string) => ({ id, appId: 'test-app' })),
+    getWorkspace: vi.fn(async (id: string) => ({ id, appId: 'test-app', defaultAgentTypeId: 'default' })),
     getUser: vi.fn(async (id: string) => ({ id })),
+    inventoryDefaultAgentTypeIds: vi.fn(async (_appId: string): Promise<Array<{ defaultAgentTypeId: string | null; count: number }>> => []),
+    compareAndSetNullDefaultAgentTypeId: vi.fn(async (_appId: string, _value: string) => 0),
     actualCreateAgentHost: undefined as undefined | ((options: any) => Promise<any>),
     runtimeHost: {
       source: 'custom-adapter-host',
@@ -120,9 +130,12 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.provisionWorkspaceRuntime.mockResolvedValue({ changed: false, env: {}, pathEntries: [], skillPaths: [] })
   mocks.acquireEnvironment.mockReset()
+  mocks.gatewayReadSessionState.mockClear()
   mocks.isMember.mockResolvedValue(true)
-  mocks.getWorkspace.mockImplementation(async (id: string) => ({ id, appId: 'test-app' }))
+  mocks.getWorkspace.mockImplementation(async (id: string) => ({ id, appId: 'test-app', defaultAgentTypeId: 'default' }))
   mocks.getUser.mockImplementation(async (id: string) => ({ id }))
+  mocks.inventoryDefaultAgentTypeIds.mockResolvedValue([])
+  mocks.compareAndSetNullDefaultAgentTypeId.mockResolvedValue(0)
 })
 
 vi.mock('../../../server/routes/index.js', () => ({
@@ -140,6 +153,10 @@ vi.mock('../../../server/db/index.js', () => ({
   PostgresWorkspaceStore: class {
     get(id: string) { return mocks.getWorkspace(id) }
     isMember(workspaceId: string, userId: string) { return mocks.isMember(workspaceId, userId) }
+    inventoryDefaultAgentTypeIds(appId: string) { return mocks.inventoryDefaultAgentTypeIds(appId) }
+    compareAndSetNullDefaultAgentTypeId(appId: string, value: string) {
+      return mocks.compareAndSetNullDefaultAgentTypeId(appId, value)
+    }
   },
 }))
 
@@ -180,6 +197,77 @@ test('core production mounts only the awaited CreatedAgentHost route projection'
   expect(orderedCompositionEdges.every((index) => index >= 0)).toBe(true)
   expect(orderedCompositionEdges).toEqual([...orderedCompositionEdges].sort((left, right) => left - right))
 })
+
+test('core backfills through explicit CAS after fleet validation and before routes', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
+    preservedUiStateKeys: [], routeContributions: [],
+  })
+  mocks.inventoryDefaultAgentTypeIds
+    .mockResolvedValueOnce([{ defaultAgentTypeId: null, count: 2 }])
+    .mockResolvedValueOnce([{ defaultAgentTypeId: 'default', count: 2 }])
+  mocks.compareAndSetNullDefaultAgentTypeId.mockResolvedValueOnce(2)
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces', defaultAgentTypeId: 'default', serveFrontend: false,
+  })
+  try {
+    expect(mocks.inventoryDefaultAgentTypeIds).toHaveBeenNthCalledWith(1, 'boring-ui-v2-test')
+    expect(mocks.compareAndSetNullDefaultAgentTypeId).toHaveBeenCalledWith('boring-ui-v2-test', 'default')
+    expect(mocks.inventoryDefaultAgentTypeIds).toHaveBeenCalledTimes(2)
+    expect(mocks.createAgentHost.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.compareAndSetNullDefaultAgentTypeId.mock.invocationCallOrder[0]!)
+    expect(mocks.compareAndSetNullDefaultAgentTypeId.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.hostRegisterDirectRoutes.mock.invocationCallOrder[0]!)
+  } finally { await app.close() }
+}, 60_000)
+
+test('unknown persisted default denies execution but preserves session and history reads', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
+    preservedUiStateKeys: [], routeContributions: [],
+  })
+  mocks.getWorkspace.mockImplementation(async (id: string) => ({
+    id, appId: 'boring-ui-v2-test', defaultAgentTypeId: 'retired-seat',
+  }))
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  let dispatcher: import('@hachej/boring-agent/server').WorkspaceAgentDispatcherResolver | undefined
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces', defaultAgentTypeId: 'default', serveFrontend: false,
+    onWorkspaceAgentDispatcher: (value) => { dispatcher = value },
+  })
+  try {
+    const hostOptions = (mocks.createAgentHost as any).mock.calls.at(-1)?.[0]
+    const projection = (mocks.hostRegisterDirectRoutes as any).mock.calls.at(-1)?.[0]
+    const authorizedScope = await projection.authorizeAgentRequest(fakeRequest('workspace-a', 'user-a'))
+    const verifiedClaim = await hostOptions.scopeVerifier.verify(authorizedScope)
+    const ref = { agentTypeId: 'default', sessionId: 'old-session' }
+    await expect(dispatcher!.authorizeSession!({ workspaceId: 'workspace-a', userId: 'user-a' }, ref)).resolves.toBeUndefined()
+    await expect(dispatcher!.readSessionRunDetails!(
+      { workspaceId: 'workspace-a', userId: 'user-a' }, ref, ['tool'],
+    )).resolves.toEqual([])
+    expect(mocks.gatewayReadSessionState).toHaveBeenCalledTimes(2)
+
+    const target = { kind: 'agent', agentTypeId: 'default' }
+    const execution = await hostOptions.effectAdmission.admit({
+      key: { workspaceScopeId: verifiedClaim.workspaceScopeId, authSubjectId: verifiedClaim.authSubjectId,
+        operation: 'session.create', target, requestId: 'unknown-default-create' },
+      digest: 'sha256:test', scope: verifiedClaim, operation: 'session.create', target,
+    })
+    expect(execution).toMatchObject({ type: 'rejected', error: {
+      code: 'AGENT_TYPE_UNKNOWN', details: { code: 'default_agent_type_unknown_seat' },
+    } })
+
+    const meta = await app.inject({ method: 'GET', url: '/api/v1/workspace/meta?workspaceId=workspace-a',
+      headers: { 'x-test-user-id': 'user-a' } })
+    expect(meta.statusCode).toBe(409)
+    expect(meta.json()).toEqual({ error: {
+      code: 'default_agent_type_unknown_seat', message: 'Workspace default Agent is unavailable',
+    } })
+  } finally { await app.close() }
+}, 60_000)
 
 test('core environment routes acquire one Host lease and release it after a finite response', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
@@ -294,7 +382,8 @@ test('core/full-app gives strong admission only to the direct Host projection', 
 
   try {
     const hostOptions = (mocks.createAgentHost as any).mock.calls.at(-1)?.[0]
-    expect(hostOptions.effectAdmission).toBe(effectAdmission)
+    expect(hostOptions.effectAdmission).not.toBe(effectAdmission)
+    expect(hostOptions.effectAdmission).toMatchObject({ admit: expect.any(Function) })
     expect(hostOptions).not.toHaveProperty('admitEffect')
     expect(mocks.hostRegisterDirectRoutes).toHaveBeenCalledOnce()
   } finally {
@@ -424,7 +513,7 @@ test('core/full-app scope authority rejects forgeries and cross-workspace route 
     routeContributions: [],
   })
   const config = createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' })
-  mocks.getWorkspace.mockImplementation(async (id: string) => ({ id, appId: config.appId }))
+  mocks.getWorkspace.mockImplementation(async (id: string) => ({ id, appId: config.appId, defaultAgentTypeId: 'default' }))
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const app = await createCoreWorkspaceAgentServer({
     config,
