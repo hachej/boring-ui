@@ -840,6 +840,9 @@ importers:
       '@hachej/boring-bash':
         specifier: workspace:*
         version: link:../boring-bash
+      '@hachej/boring-pi':
+        specifier: workspace:*
+        version: link:../pi
       '@hachej/boring-sandbox':
         specifier: workspace:*
         version: link:../boring-sandbox

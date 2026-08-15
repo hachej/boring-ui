@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process"
 import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -364,6 +365,52 @@ describe.sequential("CLI Agent Host composition", () => {
       provisionWorkspace: false,
     })).rejects.toThrow("injected folder runtime route failure")
     expect(pluginFrontFailure.closeCalls).toBe(1)
+  })
+
+  it("registers detected task providers in folder mode", async () => {
+    const workspaceRoot = await temporaryRoot("boring-cli-folder-task-providers-")
+    const tasksPluginRoot = await temporaryRoot("boring-cli-folder-tasks-plugin-")
+    await mkdir(join(workspaceRoot, ".beads"), { recursive: true })
+    await writeFile(join(workspaceRoot, ".beads", "beads.db"), "fixture", "utf8")
+    execFileSync("git", ["init", "--quiet", workspaceRoot])
+    execFileSync("git", ["-C", workspaceRoot, "remote", "add", "origin", "https://github.com/hachej/boring-ui.git"])
+    await writeFile(join(tasksPluginRoot, "package.json"), JSON.stringify({
+      name: "@hachej/boring-tasks",
+      version: "1.0.0",
+      boring: { id: "tasks", server: "server.mjs" },
+    }), "utf8")
+    await writeFile(join(tasksPluginRoot, "server.mjs"), `
+      export default function tasksPlugin(options) {
+        return {
+          id: "tasks",
+          routes: async (app) => {
+            app.get("/fixture-task-config", async () => ({
+              config: options.config,
+              hasBeadsOperations: typeof options.beadsOperations?.runRead === "function",
+            }))
+          },
+        }
+      }
+    `, "utf8")
+    cliDefaultPluginPackages.paths = [tasksPluginRoot]
+
+    const app = await createFolderModeApp({
+      workspaceRoot,
+      mode: "direct",
+      provisionWorkspace: false,
+    })
+    try {
+      const response = await app.inject({ method: "GET", url: "/fixture-task-config" })
+      expect(response.statusCode, response.body).toBe(200)
+      expect(response.json()).toEqual({
+        config: {
+          providers: [{ provider: "github", repo: "auto" }, { provider: "beads" }],
+        },
+        hasBeadsOperations: true,
+      })
+    } finally {
+      await app.close()
+    }
   })
 
   it("closes the CLI Host exactly once when awaited post-mount initialization fails", async () => {
