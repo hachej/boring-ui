@@ -13,6 +13,9 @@ import type {
   MemberRole,
 } from '../../shared/types.js'
 import type { ERROR_CODES } from '../../shared/errors.js'
+import type { WorkspaceDefaultAgentTypeInventoryItem } from '../defaultAgentType.js'
+
+export type { WorkspaceDefaultAgentTypeInventoryItem } from '../defaultAgentType.js'
 import type { WorkspaceProvisioner } from '../provisioner/types.js'
 
 export interface UserStore {
@@ -48,11 +51,6 @@ export interface WorkspaceStoreCreateOptions {
    * initialization; an existing workspace's value is never rewritten.
    */
   readonly defaultAgentTypeId?: string
-}
-
-export interface WorkspaceDefaultAgentTypeInventoryItem {
-  readonly defaultAgentTypeId: string | null
-  readonly count: number
 }
 
 export interface WorkspaceStore {
