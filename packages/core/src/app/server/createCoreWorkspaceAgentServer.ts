@@ -1074,14 +1074,24 @@ export async function createCoreWorkspaceAgentServer(
     workspaceRoot: null,
     ...(discoveredPackages ? { discoveredPackages } : {}),
   })
+  const availableAgentTypeIds = agents.map((agent) => agent.agentTypeId)
+  const applicationDefaultAgentTypeId = resolveApplicationDefaultAgentTypeId({
+    bootDefaultAgentTypeId: options.defaultAgentTypeId ?? rawConfig.defaultAgentTypeId,
+    availableAgentTypeIds,
+  })
   const signupAgentDefaults = compileSignupAgentDefaults(
     rawConfig.signupAgentDefaults,
-    agents.map((agent) => agent.agentTypeId),
+    availableAgentTypeIds,
     rawConfig.security?.trustedProxy,
   )
-  // Decision 28 hook: validate all trusted signup config before allocating DB
-  // or HTTP resources. Unknown seats and malformed server options fail boot.
-  const config: CoreConfig = { ...rawConfig, signupAgentDefaults }
+  // Decision 28 hook: validate all trusted signup/default config before
+  // allocating DB or HTTP resources. Core creation writers receive this same
+  // resolved non-NULL application default used by the legacy backfill.
+  const config: CoreConfig = {
+    ...rawConfig,
+    defaultAgentTypeId: applicationDefaultAgentTypeId,
+    signupAgentDefaults,
+  }
   const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(
     config,
     signupAgentDefaults,
@@ -1099,12 +1109,6 @@ export async function createCoreWorkspaceAgentServer(
     ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
     ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
   registerTelemetryHooks(app, telemetry)
-
-  const availableAgentTypeIds = agents.map((agent) => agent.agentTypeId)
-  const applicationDefaultAgentTypeId = resolveApplicationDefaultAgentTypeId({
-    bootDefaultAgentTypeId: options.defaultAgentTypeId,
-    availableAgentTypeIds,
-  })
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
 
@@ -1739,13 +1743,11 @@ export async function createCoreWorkspaceAgentServer(
         ) {
           throw error
         }
+        if (error instanceof HttpError) throw error
         const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
           ? (error as { statusCode: number }).statusCode
           : 500
         const message = error instanceof Error ? error.message : 'workspace meta failed'
-        if (error instanceof HttpError) {
-          return reply.code(statusCode).send({ error: { code: error.code, message } })
-        }
         return reply.code(statusCode).send({ error: message })
       }
     })
