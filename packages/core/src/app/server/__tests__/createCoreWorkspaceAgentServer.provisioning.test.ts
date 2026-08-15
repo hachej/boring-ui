@@ -250,7 +250,7 @@ test('uses one validated config default for backfill and future workspace writer
   } finally { await app.close() }
 }, 30_000)
 
-test.each(['before-inventory', 'cas', 'after-inventory', 'remaining-null'] as const)(
+test.each(['before-inventory', 'cas', 'cas-undefined-table', 'after-inventory', 'after-inventory-undefined-table', 'remaining-null'] as const)(
   'closes AgentHost when default migration fails at %s',
   async (stage) => {
     mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
@@ -259,13 +259,19 @@ test.each(['before-inventory', 'cas', 'after-inventory', 'remaining-null'] as co
     })
     if (stage === 'before-inventory') {
       mocks.inventoryDefaultAgentTypeIds.mockRejectedValueOnce(new Error('inventory unavailable'))
-    } else if (stage === 'cas') {
+    } else if (stage === 'cas' || stage === 'cas-undefined-table') {
       mocks.inventoryDefaultAgentTypeIds.mockResolvedValueOnce([])
-      mocks.compareAndSetNullDefaultAgentTypeId.mockRejectedValueOnce(new Error('CAS unavailable'))
-    } else if (stage === 'after-inventory') {
+      mocks.compareAndSetNullDefaultAgentTypeId.mockRejectedValueOnce(
+        stage === 'cas'
+          ? new Error('CAS unavailable')
+          : Object.assign(new Error('CAS relation failure'), { cause: { code: '42P01' } }),
+      )
+    } else if (stage === 'after-inventory' || stage === 'after-inventory-undefined-table') {
       mocks.inventoryDefaultAgentTypeIds
         .mockResolvedValueOnce([])
-        .mockRejectedValueOnce(new Error('post-inventory unavailable'))
+        .mockRejectedValueOnce(stage === 'after-inventory'
+          ? new Error('post-inventory unavailable')
+          : Object.assign(new Error('post-inventory relation failure'), { cause: { code: '42P01' } }))
     } else {
       mocks.inventoryDefaultAgentTypeIds
         .mockResolvedValueOnce([{ defaultAgentTypeId: null, count: 1 }])
@@ -277,7 +283,7 @@ test.each(['before-inventory', 'cas', 'after-inventory', 'remaining-null'] as co
       workspaceRoot: '/tmp/full-app-workspaces', defaultAgentTypeId: 'default', serveFrontend: false,
     })).rejects.toThrow(stage === 'remaining-null'
       ? 'Workspace default Agent legacy reconciliation did not converge'
-      : /unavailable/)
+      : stage.includes('undefined-table') ? /relation failure/ : /unavailable/)
     expect(mocks.hostClose).toHaveBeenCalledOnce()
     expect(mocks.hostRegisterDirectRoutes).not.toHaveBeenCalled()
   },
