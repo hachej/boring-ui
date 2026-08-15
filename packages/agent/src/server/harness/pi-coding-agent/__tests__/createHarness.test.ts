@@ -419,12 +419,14 @@ describe("adaptToolsForPi", () => {
       description: "Records calls",
       parameters: { type: "object", properties: { x: { type: "number" } } },
       async execute(params, ctx) {
-        calls.push({ params, toolCallId: ctx.toolCallId });
+        calls.push({ params, toolCallId: ctx.toolCallId, agentTypeId: ctx.agentTypeId });
         return { content: [{ type: "text", text: "done" }] };
       },
     };
 
-    const [adapted] = adaptToolsForPi([tool]);
+    const [adapted] = adaptToolsForPi([tool], undefined, undefined, () => ({
+      abortSignal: new AbortController().signal, workdir: "/workspace", agentTypeId: "boring-orchestrator",
+    }));
     const result = await adapted.execute(
       "call-1",
       { x: 42 },
@@ -434,7 +436,7 @@ describe("adaptToolsForPi", () => {
     );
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toEqual({ params: { x: 42 }, toolCallId: "call-1" });
+    expect(calls[0]).toEqual({ params: { x: 42 }, toolCallId: "call-1", agentTypeId: "boring-orchestrator" });
     expect(result.content).toEqual([{ type: "text", text: "done" }]);
   });
 

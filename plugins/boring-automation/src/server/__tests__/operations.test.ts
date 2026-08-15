@@ -31,6 +31,10 @@ function run(overrides: Partial<AutomationRun> = {}): AutomationRun {
     id: "run-1",
     automationId: "automation-1",
     sessionId: "session-1",
+    dispatchReceipt: {
+      ref: { agentTypeId: "worker", sessionId: "session-1" }, accepted: true, cursor: 1,
+      disposition: "prompt", clientNonce: "run-1",
+    },
     status: "succeeded",
     trigger: "manual",
     scheduledFor: null,
@@ -66,6 +70,7 @@ function storeMock(overrides: Partial<AutomationStore> = {}) {
     updateRunLifecycle: vi.fn(async () => run()),
     listRuns: vi.fn(async () => [run()]),
     ...overrides,
+    getRun: overrides.getRun ?? vi.fn(async (_automationId, runId) => runId === "run-1" ? run() : null),
   }
   return store
 }
@@ -256,9 +261,9 @@ describe("AutomationOperations", () => {
     }))
   })
 
-  it("rejects transcript reads that are not bound to a durable run session", async () => {
+  it("rejects transcript reads without an immutable dispatch receipt", async () => {
     const operations = createAutomationOperations({
-      store: storeMock({ listRuns: vi.fn(async () => [run({ sessionId: null })]) }),
+      store: storeMock({ getRun: vi.fn(async () => run({ dispatchReceipt: null })) }),
       actor: { workspaceId: "w", userId: "u" },
       transcriptReader: { read: vi.fn() },
     })

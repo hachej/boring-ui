@@ -16,7 +16,7 @@ import { HostedAutomationScheduler } from "./hostedScheduler"
 import { PostgresAutomationStore } from "./postgresStore"
 import { createLeaseBoundHostedAutomationStore } from "./hostedStore"
 import { createBoringAutomationTool } from "./automationTool"
-import { DispatchRunExecutor, resolveAutomationAgentTypeId, type VerifiedAutomationActor } from "./dispatchRunExecutor"
+import { DispatchRunExecutor, type VerifiedAutomationActor } from "./dispatchRunExecutor"
 import { resolveAutomationOperationsForActor, type AutomationRunTranscriptReader, type AutomationSessionController, type AutomationStoreMode } from "./operations"
 import { InMemoryAutomationRunEventBus, PostgresAutomationRunEventBus, type AutomationRunEventBus } from "./runEventBus"
 import { automationRoutes } from "./routes"
@@ -35,6 +35,8 @@ export interface BoringAutomationServerPluginOptions {
   storeMode?: AutomationStoreMode
   /** Boot-time gate. Disabling removes only the tool; routes and UI remain available. */
   agentToolEnabled?: boolean
+  /** Server-owned seat grant for raw run transcripts. Defaults to boring-orchestrator only. */
+  rawRunTranscriptAgentTypeIds?: readonly string[]
   actorVerifier?: (actor: VerifiedAutomationActor) => Promise<boolean> | boolean
   hostedTriggerToken?: string
   hostedDueRunService?: Pick<HostedDueRunService, "runDue">
@@ -68,7 +70,9 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
     : undefined
   const hostedSchedulerEnabled = Boolean(hostedDueCoordinator) && options.hostedSchedulerEnabled !== false
   let scheduler: HostedAutomationScheduler | undefined
+  const rawRunTranscriptAgentTypeIds = options.rawRunTranscriptAgentTypeIds ?? ["boring-orchestrator"]
   const agentTools = options.agentToolEnabled === false ? [] : [createBoringAutomationTool({
+    rawRunTranscriptAgentTypeIds,
     resolveOperationsForActor: async (actorContext) => resolveAutomationOperationsForActor({
       mode: options.storeMode ?? "local",
       resolveStore: async (actor) => options.storeForActor ? options.storeForActor(actor) : store,
@@ -80,8 +84,6 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
         ? () => createAutomationTranscriptReader(
             options.dispatcherResolver!,
             actorContext,
-            options.agentTypeId,
-            options.availableAgentTypeIds,
           )
         : undefined,
       resolveExecutor: options.dispatcherResolver
@@ -179,8 +181,6 @@ export function createAutomationSessionController(
 function createAutomationTranscriptReader(
   resolver: WorkspaceAgentDispatcherResolver,
   actorContext: { workspaceId?: string; userId?: string },
-  defaultAgentTypeId: string,
-  availableAgentTypeIds?: readonly string[],
 ): AutomationRunTranscriptReader {
   const context = {
     workspaceId: actorContext.workspaceId?.trim() ?? "",
@@ -188,13 +188,9 @@ function createAutomationTranscriptReader(
   }
   return {
     async read({ automation, run, cursor, limit, maxBytes, signal }) {
-      const agentTypeId = run.dispatchReceipt?.ref.agentTypeId ?? resolveAutomationAgentTypeId(
-        automation.agentTypeId,
-        defaultAgentTypeId,
-        availableAgentTypeIds,
-      )
-      const sessionId = run.dispatchReceipt?.ref.sessionId ?? run.sessionId!
-      if (run.dispatchReceipt && run.sessionId !== sessionId) {
+      const agentTypeId = run.dispatchReceipt!.ref.agentTypeId
+      const sessionId = run.dispatchReceipt!.ref.sessionId
+      if (run.sessionId !== sessionId) {
         throw new Error("automation run dispatch receipt does not match its session")
       }
       return await resolver.readSessionJsonlPage!(

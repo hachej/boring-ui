@@ -11,6 +11,8 @@ export interface ToolExecContext {
   abortSignal: AbortSignal
   toolCallId: string
   onUpdate?: (partial: string) => void
+  /** Server-owned Agent type executing this tool, when known. */
+  agentTypeId?: string
   /** Agent chat/session id executing this tool, when known. */
   sessionId?: string
   /** Authenticated human/workspace context executing this tool, when known. */

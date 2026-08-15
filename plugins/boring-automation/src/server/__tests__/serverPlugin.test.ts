@@ -89,6 +89,23 @@ describe("boring automation server plugin", () => {
     await app.close()
   })
 
+  it("withholds raw run transcripts from a Worker composition", async () => {
+    const readSessionJsonlPage = vi.fn()
+    const plugin = createBoringAutomationServerPlugin({
+      agentTypeId: "boring-worker",
+      store: {} as never,
+      dispatcherResolver: { readSessionJsonlPage } as never,
+    })
+    const tool = plugin.agentTools![0]!
+    const result = await tool.execute(
+      { operation: "read_run_jsonl", automationId: "automation-1", runId: "run-1" },
+      { abortSignal: new AbortController().signal, toolCallId: "call-worker", agentTypeId: "boring-worker", workspaceId: "workspace-1", userId: "user-1" },
+    )
+    expect(result.isError).toBe(true)
+    expect(result.details).toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.INVALID_BODY })
+    expect(readSessionJsonlPage).not.toHaveBeenCalled()
+  })
+
   it("reads a run transcript through its durable dispatch ref, not mutable automation metadata", async () => {
     const readSessionJsonlPage = vi.fn(async () => ({
       lines: ['{"type":"session"}'], nextCursor: 1, hasMore: false,
@@ -106,14 +123,14 @@ describe("boring automation server plugin", () => {
       dispatchReceipt: { ref: { agentTypeId: "original-agent", sessionId: "session-1" }, accepted: true, cursor: 1, disposition: "prompt", clientNonce: "run-1" },
     }
     const plugin = createBoringAutomationServerPlugin({
-      agentTypeId: "default-agent",
-      availableAgentTypeIds: ["default-agent", "changed-agent", "original-agent"],
-      store: { getAutomation: vi.fn(async () => automation), listRuns: vi.fn(async () => [run]) } as never,
+      agentTypeId: "boring-orchestrator",
+      availableAgentTypeIds: ["boring-orchestrator", "changed-agent", "original-agent"],
+      store: { getAutomation: vi.fn(async () => automation), getRun: vi.fn(async () => run), listRuns: vi.fn(async () => [run]) } as never,
       dispatcherResolver: { readSessionJsonlPage } as never,
     })
     const result = await plugin.agentTools![0]!.execute(
       { operation: "read_run_jsonl", automationId: automation.id, runId: run.id },
-      { abortSignal: new AbortController().signal, toolCallId: "call-1", workspaceId: "workspace-1", userId: "user-1" },
+      { abortSignal: new AbortController().signal, toolCallId: "call-1", agentTypeId: "boring-orchestrator", workspaceId: "workspace-1", userId: "user-1" },
     )
 
     expect(result.isError).toBe(false)

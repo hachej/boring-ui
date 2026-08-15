@@ -284,6 +284,7 @@ export async function buildAgentComposition(
     harness,
     sessionStore,
     workdir: runtimeBundle.workspace.root,
+    agentTypeId: input.agent.agentTypeId,
     workspace: runtimeBundle.workspace,
     onEvent: input.observeSessionEvent,
     attachmentUrl: ({ sessionId, messageId, index }) =>

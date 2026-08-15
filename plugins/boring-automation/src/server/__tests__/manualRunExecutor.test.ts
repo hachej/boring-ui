@@ -698,6 +698,11 @@ class MemoryAutomationStore implements AutomationStore {
     return clone(updated)
   }
 
+  async getRun(automationId: string, runId: string): Promise<AutomationRun | null> {
+    const run = this.runs.get(runId)
+    return run?.automationId === automationId ? clone(run) : null
+  }
+
   async listRuns(automationId: string): Promise<AutomationRun[]> {
     return [...this.runs.values()].filter((run) => run.automationId === automationId).map(clone)
   }

@@ -298,11 +298,9 @@ export function createAutomationOperations({
     },
     async readRunJsonl(automationId, runId, cursor = 0, limit = AUTOMATION_JSONL_DEFAULT_LIMIT, signal) {
       const automation = await requireAutomation(store, automationId)
-      const run = store.getRun
-        ? await store.getRun(automationId, runId)
-        : (await store.listRuns(automationId)).find((candidate) => candidate.id === runId)
+      const run = await store.getRun(automationId, runId)
       if (!run) throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_NOT_FOUND, `automation run ${runId} not found`)
-      if (!run.sessionId || !transcriptReader) throw contextUnavailable()
+      if (!run.sessionId || !run.dispatchReceipt || !transcriptReader) throw contextUnavailable()
       const page = await transcriptReader.read({
         automation,
         run,

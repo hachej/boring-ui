@@ -336,6 +336,9 @@ class NestedAutomationStore implements AutomationStore {
     this.run = { ...this.run, ...patch, updatedAt: patch.completedAt ?? this.run.updatedAt }
     return this.run
   }
+  async getRun(automationId: string, runId: string) {
+    return this.run?.automationId === automationId && this.run.id === runId ? this.run : null
+  }
   async listRuns() { return this.run ? [this.run] : [] }
 }
 

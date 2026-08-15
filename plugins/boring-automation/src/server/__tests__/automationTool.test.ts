@@ -35,12 +35,12 @@ function operations(): AutomationOperations {
 }
 
 function context(controller = new AbortController()): ToolExecContext {
-  return { abortSignal: controller.signal, toolCallId: "call-1", workspaceId: "workspace-1", userId: "user-1" }
+  return { abortSignal: controller.signal, toolCallId: "call-1", agentTypeId: "boring-orchestrator", workspaceId: "workspace-1", userId: "user-1" }
 }
 
 function harness(ops = operations()) {
   const resolveOperationsForActor = vi.fn(async () => ({ operations: ops }))
-  return { ops, resolveOperationsForActor, tool: createBoringAutomationTool({ resolveOperationsForActor }) }
+  return { ops, resolveOperationsForActor, tool: createBoringAutomationTool({ rawRunTranscriptAgentTypeIds: ["boring-orchestrator"], resolveOperationsForActor }) }
 }
 
 function details(result: ToolResult): any {
@@ -57,6 +57,22 @@ describe("boring_automation agent tool", () => {
     expect(tool.parameters).toMatchObject({ oneOf: expect.any(Array) })
     expect((tool.parameters.oneOf as any[])).toHaveLength(12)
     expect((tool.parameters.oneOf as any[]).every((branch) => branch.additionalProperties === false)).toBe(true)
+  })
+
+  it("omits and denies raw transcript reads without the server-owned seat grant", async () => {
+    const ops = operations()
+    const tool = createBoringAutomationTool({
+      rawRunTranscriptAgentTypeIds: ["boring-orchestrator"],
+      resolveOperationsForActor: vi.fn(async () => ({ operations: ops })),
+    })
+    expect((tool.parameters.oneOf as any[])).toHaveLength(12)
+    const result = await tool.execute(
+      { operation: "read_run_jsonl", automationId: "automation-1", runId: "run-1" },
+      { ...context(), agentTypeId: "boring-worker" },
+    )
+    expect(result.isError).toBe(true)
+    expect(details(result)).toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.INVALID_BODY })
+    expect(ops.readRunJsonl).not.toHaveBeenCalled()
   })
 
   it("derives scope only from ToolExecContext and lists bounded results", async () => {
@@ -86,6 +102,20 @@ describe("boring_automation agent tool", () => {
       ok: true, operation: "read_run_jsonl", lines: ['{"type":"session"}'], nextCursor: 1,
       hasMore: false, runStatus: "succeeded", sessionId: "session-1",
     })
+  })
+
+  it("reports an in-flight raw transcript cancellation as tool aborted", async () => {
+    const controller = new AbortController()
+    const ops = operations()
+    ops.readRunJsonl = vi.fn(async () => {
+      controller.abort()
+      throw new DOMException("aborted", "AbortError")
+    })
+    const result = await harness(ops).tool.execute({
+      operation: "read_run_jsonl", automationId: "automation-1", runId: "run-1",
+    }, context(controller))
+    expect(result.isError).toBe(true)
+    expect(details(result)).toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.TOOL_ABORTED })
   })
 
   it("supports create with prompt, effort, enabled state, and explicit model", async () => {
