@@ -76,8 +76,9 @@ to extend into MCP.
 - Retained progress has an item cap but no per-message or aggregate byte cap.
 - `resultTool()` duplicates the full structured result into text and no test
   freezes the final serialized MCP response boundary. The SDK echoes caller
-  JSON-RPC ids and currently accepts unbounded strings, so the edge cannot claim
-  any complete-response ceiling until it validates response-bearing ids.
+  JSON-RPC ids and `_meta.progressToken` values, and accepts batch arrays. The
+  edge cannot claim a complete HTTP/SSE response ceiling until it bounds both
+  identifiers, rejects batches, and caps all emitted progress bytes.
 - The current smoke proves protocol plumbing through a fake dispatcher seam;
   it does not qualify persisted default-agent selection through the current
   AgentGateway authority.
@@ -147,11 +148,14 @@ Extend, do not replace, `ManagedAgentMcpDelegateController` and its MCP server:
   task, not as a second lifecycle or a generic canonical artifact locator;
 - require a non-empty ASCII `[A-Za-z0-9._:-]+` key of at most 128 UTF-8 bytes
   for both start tools;
-- before handing parsed bodies to the MCP SDK, validate every response-bearing
-  JSON-RPC request id: allow only a safe integer or an ASCII
+- before handing parsed bodies to the MCP SDK, reject batch arrays (exactly one
+  JSON-RPC request or notification object per HTTP transport call), then validate
+  every response-bearing JSON-RPC request id: allow only a safe integer or an ASCII
   `[A-Za-z0-9._:-]+` string of at most 128 UTF-8 bytes; reject null, unsafe or
   non-integer numbers, oversized/other strings, arrays, and objects before tool/
-  controller work. Notifications with no id remain allowed;
+  controller work. Notifications with no id remain allowed. Apply the same rule
+  to `params._meta.progressToken` when present; null/invalid tokens reject before
+  SDK dispatch;
 - let the host first supply a capability-light `StartAdmission`: redacted
   identity, request-authorized `agentTypeId`, and one-shot
   `acquireTaskLease()`, but no gateway/artifact reader;
@@ -183,8 +187,10 @@ Extend, do not replace, `ManagedAgentMcpDelegateController` and its MCP server:
   retries of retained keys bypass both limits; new starts increment the window
   and concurrency, and terminal tasks release concurrency; rate errors include
   bounded `retryAfterMs` to that reset;
-- cap each visible progress message at 4 KiB and total retained progress at
-  64 KiB in addition to the existing 100-item cap;
+- cap each fully serialized progress notification — message, bounded token, JSON,
+  and SSE framing — at 4 KiB, and all emitted plus retained serialized progress
+  for one delegation at 64 KiB in addition to the 100-item cap. At exhaustion,
+  emit/retain one bounded coalesced marker and no further progress notifications;
 - keep `structuredContent` authoritative and return only a bounded compact text
   summary instead of duplicating the result;
 - freeze `MAX_MCP_STATUS_RESPONSE_BYTES = 2112 * 1024` bytes from an explicit
@@ -193,7 +199,8 @@ Extend, do not replace, `ManagedAgentMcpDelegateController` and its MCP server:
   retained compatibility `finalAssistantText` projection at 6x (derived from
   the canonical task, not a second lifecycle); `512 KiB` for validated 256 KiB
   Markdown at 2x escaping; `128 KiB` for all bounded task/delivery metadata;
-  `64 KiB` for retained progress measured after JSON serialization; and `64
+  `64 KiB` for all emitted plus retained progress measured after complete JSON/
+  SSE serialization, including the bounded progress token; and `64
   KiB` for the bounded JSON-RPC id, MCP/JSON-RPC envelope, and compact summary. Add a 4 KiB artifact-title
   cap within metadata. Measure after `structuredContent`, compact `content`, and
   protocol envelope are assembled, with exact/over and worst-escape tests;
@@ -395,8 +402,9 @@ and rollback approval.
 - Per-credential start/concurrency and all input/progress/result/final-response
   bounds are finite and exact-boundary tested; the complete status response cap
   is `2112 * 1024` bytes by the `192 + 576 + 576 + 512 + 128 + 64 + 64 KiB`
-  worst-case JSON formula, whose 64 KiB envelope includes the bounded JSON-RPC
-  id; existing caps and secret
+  worst-case JSON formula; its progress term includes every emitted/retained
+  notification plus bounded token/framing, and its envelope includes the bounded
+  JSON-RPC id; existing caps and secret
   redaction do not weaken.
 - Maximum valid completion remains retrievable by polling through a stock
   client without duplicating the full result in text content. Revocation denies
@@ -441,7 +449,8 @@ record and released on setup failure or terminal cleanup, plus separate
 status-disclosure authorization, caller-stable retention-bounded idempotency, exact
 fixed-window/concurrency admission, progress byte caps, compact text projection,
 and exact `2112 * 1024`-byte complete-response proof with worst-case escaping
-and exact/over/type JSON-RPC id validation before SDK dispatch.
+and exact/over/type JSON-RPC id/progress-token validation, batch rejection, and
+progress aggregate/coalescing before SDK dispatch.
 **Blocked by:** planning bead `wt-391-forward-rjkl.1`; the orchestrator closes
 that dependency only after gate-1 approval.
 **File scope:** `packages/agent/src/server/mcp/managedAgentDelegate.ts`,
@@ -454,8 +463,9 @@ task-lease lifecycle/release and status-scope separation, per-request Agent sele
 acquisition rejection plus package concurrency rollback, fulfilled-lease setup
 release/rollback, completed/failed/canceled/rejected cleanup,
 concurrency/retry/conflict, cross-scope, fixed-window reset, retention/expiry,
-dedupe-before-limit, safe-integer/128-byte-id success, invalid-id pre-dispatch
-rejection, and stock-client assertions.
+dedupe-before-limit, safe-integer/128-byte id/token success, invalid id/token and
+batch pre-dispatch rejection, 64 KiB complete progress aggregate/coalescing, and
+stock-client assertions.
 **Review budget:** Inside — one package controller/server seam and one focused
 test file; fits one worker session.
 
@@ -610,4 +620,11 @@ combined contract. File scopes do not overlap across writer beads.
 - **Pass 8 findings/disposition:** bounded every echoed response-bearing JSON-RPC
   id before MCP SDK dispatch (safe integer or <=128-byte safe ASCII string) so
   the 64 KiB envelope term is exhaustive; removed stale eager-disposal wording
-  from the active contract and `.3`. A clean final pass is required.
+  from the active contract and `.3`.
+- **Pass 9 target:** commit `55f232f44585cd122cc4ef453970c1542561448f`.
+- **Pass 9 verdict:** revise.
+- **Pass 9 findings/disposition:** reject all JSON-RPC batch arrays before SDK
+  dispatch; bound progress tokens like request ids; make the 64 KiB progress term
+  cover every emitted and retained notification including token/JSON/SSE framing,
+  with one coalesced terminal marker and no emissions after exhaustion. A clean
+  final pass is required.
