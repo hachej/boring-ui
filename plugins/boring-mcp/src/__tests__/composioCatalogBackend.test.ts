@@ -13,6 +13,7 @@ import {
   resolveComposioCatalogSession,
   type ComposioCatalogBackendOptions,
 } from "../server/composioCatalogBackend"
+import { createBoringMcpSourceHandlers } from "../server/sourceHandlers"
 import { createBoringMcpToolCatalog } from "../server/toolCatalog"
 import { MCP_ERROR_CODES, type McpActor, type McpSource, type McpSourceRegistry, type McpTransportClient } from "../shared"
 
@@ -173,6 +174,13 @@ describe("Composio full-catalog backend", () => {
     expect(created.id).toBe(createComposioCatalogSource(actor).id)
     expect(created.id).not.toContain(actor.workspaceId)
     expect(created.id).not.toContain(actor.userId)
+    const createdRegistry: McpSourceRegistry = { listSources: vi.fn(async () => [created]), getSource: vi.fn(async () => created) }
+    const backend = createComposioCatalogBackend(backendOptions(vi.fn() as unknown as typeof fetch))
+    const handlers = createBoringMcpSourceHandlers({ registry: createdRegistry, transport: fallbackTransport, managedCatalog: backend })
+    return Promise.all([
+      expect(handlers.doctorSource(actor, created.id)).resolves.toMatchObject({ ok: true, issues: [] }),
+      expect(handlers.probeSource(actor, created.id)).resolves.toMatchObject({ sourceId: created.id, provider: "composio", tools: [], resources: [] }),
+    ]).then(() => undefined)
   })
 
   it("uses the exact query through real MCP SDK transport, bounds results, and verified-cleans the unfiltered Session", async () => {
@@ -232,6 +240,13 @@ describe("Composio full-catalog backend", () => {
     await expect(requireExactlyOneComposioAccount(backendOptions(none.fetch), { actor, secret, toolkitId: "github" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.CONNECTED_ACCOUNT_REQUIRED })
 
+    const pagedFetch = vi.fn(async () => Response.json({ items: [{ id: "account-1", user_id: composioSubject, status: "ACTIVE", toolkit: { slug: "github" } }], next_cursor: "more" })) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
+    await expect(requireExactlyOneComposioAccount(backendOptions(pagedFetch), { actor, secret, toolkitId: "github" }))
+      .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_ERROR })
+    const malformedPageFetch = vi.fn(async () => Response.json({ items: [], has_more: "false" })) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
+    await expect(requireExactlyOneComposioAccount(backendOptions(malformedPageFetch), { actor, secret, toolkitId: "github" }))
+      .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_ERROR })
+
     const active = (id: string, userId = composioSubject) => ({
       id,
       user_id: userId,
@@ -258,6 +273,20 @@ describe("Composio full-catalog backend", () => {
     })
     expect(exactApi.sessionBodies[0]).not.toHaveProperty("toolkits")
     await deleteComposioCatalogSession(options, secret, session.id)
+
+    const broadPinFetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith("/api/v3.1/tool_router/session") && init?.method === "POST") return Response.json({
+        id: "broad-session",
+        mcp: { url: fakeMcp.url },
+        config: { workbench: { enable: false }, connected_accounts: { github: ["account-1"], slack: ["account-2"] } },
+      })
+      if (url.endsWith("/broad-session") && init?.method === "DELETE") return new Response(undefined, { status: 204 })
+      if (url.endsWith("/broad-session") && init?.method === "GET") return Response.json({ error: "not found" }, { status: 404 })
+      return Response.json({ error: "not found" }, { status: 404 })
+    }) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
+    await expect(resolveComposioCatalogSession(backendOptions(broadPinFetch), { actor, secret, accountPin: { toolkitId: "github", connectedAccountId: "account-1" } }))
+      .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_ERROR })
   })
 
   it("never exposes or invokes raw Composio execution/control/bash/workbench meta-tools", async () => {
@@ -381,6 +410,30 @@ describe("Composio full-catalog backend", () => {
     expect(secretDeleted).toEqual(["secret-session"])
   })
 
+  it("retains failed cleanup leases, preserves the primary failure, and drains deterministically", async () => {
+    const unsafeMcp = await listenFakeComposioMcp({ exposedWorkbench: true })
+    const api = composioApiFetch(unsafeMcp.url)
+    let deleteAttempts = 0
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith("/session-1") && init?.method === "DELETE") {
+        deleteAttempts += 1
+        if (deleteAttempts === 1) return Response.json({ error: "transient" }, { status: 503 })
+      }
+      return api.fetch(input, init)
+    }) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
+    const backend = createComposioCatalogBackend(backendOptions(fetch))
+    const catalog = createBoringMcpToolCatalog({ registry, transport: fallbackTransport, managedCatalog: backend })
+
+    await expect(catalog.searchTools(actor, { sourceId: source.id, query: "github" }))
+      .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID })
+    expect(deleteAttempts).toBe(1)
+    await expect(backend.drain()).resolves.toBeUndefined()
+    expect(deleteAttempts).toBe(2)
+    await expect(backend.drain()).resolves.toBeUndefined()
+    expect(deleteAttempts).toBe(2)
+  })
+
   it("enforces bounded request concurrency and per-source rate budgets before Session creation", async () => {
     const slowMcp = await listenFakeComposioMcp({ delayMs: 50 })
     const concurrentApi = composioApiFetch(slowMcp.url)
@@ -430,6 +483,19 @@ describe("Composio full-catalog backend", () => {
     await expect(slowCatalog.searchTools(actor, { sourceId: source.id, query: "github" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_TIMEOUT })
     expect(slowApi.deletedSessions).toEqual(["session-1"])
+  })
+
+  it("keeps blank all-source curated search working when a catalog source is present", async () => {
+    const notion = { ...source, id: "managed:notion:user-1", provider: "notion" }
+    const mixedRegistry: McpSourceRegistry = {
+      listSources: vi.fn(async () => [notion, source]),
+      getSource: vi.fn(async (id) => id === notion.id ? notion : id === source.id ? source : undefined),
+    }
+    const curatedTransport: McpTransportClient = { ...fallbackTransport, listTools: vi.fn(async () => [{ name: "NOTION_SEARCH_NOTION_PAGE", inputSchema: { type: "object" } }]) }
+    const backend = createComposioCatalogBackend(backendOptions(vi.fn() as unknown as typeof fetch))
+    const catalog = createBoringMcpToolCatalog({ registry: mixedRegistry, transport: curatedTransport, managedCatalog: backend })
+    await expect(catalog.searchTools(actor)).resolves.toMatchObject({ tools: [expect.objectContaining({ toolName: "NOTION_SEARCH_NOTION_PAGE" })] })
+    expect(curatedTransport.listTools).toHaveBeenCalledTimes(1)
   })
 
   it("preserves curated transport fallback unchanged", async () => {

@@ -235,8 +235,9 @@ function extractSession(payload: unknown, options: ComposioCatalogBackendOptions
     throw safeProviderError("Composio unexpectedly filtered the full toolkit catalog")
   }
   if (accountPin && Object.keys(echoed).length > 0) {
-    const pinned = array(record(echoed.connected_accounts)[accountPin.toolkitId])
-    if (pinned.length !== 1 || pinned[0] !== accountPin.connectedAccountId) {
+    const connectedAccounts = record(echoed.connected_accounts)
+    const pinned = array(connectedAccounts[accountPin.toolkitId])
+    if (Object.keys(connectedAccounts).length !== 1 || pinned.length !== 1 || pinned[0] !== accountPin.connectedAccountId) {
       throw safeProviderError("Composio did not preserve the exact connected-account pin")
     }
   }
@@ -295,10 +296,16 @@ export async function requireExactlyOneComposioAccount(
 ): Promise<ComposioAccountPin> {
   const toolkitId = input.toolkitId.trim().toLowerCase()
   if (!toolkitId) throw new McpError(MCP_ERROR_CODES.INPUT_INVALID, "Composio toolkit is required")
-  const params = new URLSearchParams({ user_id: composioUserId(input.actor), toolkit_slug: toolkitId })
+  const params = new URLSearchParams({ user_id: composioUserId(input.actor), toolkit_slug: toolkitId, limit: String(MAX_ACCOUNT_RESULTS) })
   const payload = await composioRequest(options, input.secret, "GET", `/api/v3.1/connected_accounts?${params}`)
   const root = record(payload)
-  if (root.has_more === true || array(root.items).length >= MAX_ACCOUNT_RESULTS) {
+  const hasMorePresent = Object.prototype.hasOwnProperty.call(root, "has_more")
+  const cursorValue = root.next_cursor ?? root.nextCursor
+  if ((hasMorePresent && typeof root.has_more !== "boolean") || (cursorValue != null && typeof cursorValue !== "string")) {
+    throw safeProviderError("Composio connected-account pagination was malformed")
+  }
+  const continuation = optionalString(cursorValue)
+  if (root.has_more === true || continuation || array(root.items).length >= MAX_ACCOUNT_RESULTS) {
     throw safeProviderError("Composio connected-account result was incomplete")
   }
   const active = array(root.items).flatMap((value): ComposioAccountPin[] => {
@@ -458,9 +465,24 @@ function schemasFromPayload(payload: unknown): Record<string, unknown> {
   return record(data.tool_schemas ?? root.tool_schemas)
 }
 
+export interface ComposioCatalogBackend extends McpManagedCatalogBackend {
+  /** Retry and verify every retained failed Session cleanup lease. */
+  drain(): Promise<void>
+}
+
+function sanitizeCatalogError(error: unknown): McpError {
+  if (error instanceof McpError) {
+    return new McpError(error.code, error.code === MCP_ERROR_CODES.SECRET_LEAK_GUARD
+      ? error.message
+      : "Composio MCP catalog request failed")
+  }
+  return safeProviderError("Composio MCP catalog request failed")
+}
+
 async function withCatalogSession<T>(
   options: ComposioCatalogBackendOptions,
   source: McpSource,
+  release: (secret: ManagedConnectorSecret, session: ComposioCatalogSession) => Promise<void>,
   run: (session: ComposioCatalogSession, transport: ReturnType<typeof createMcpSdkStreamableHttpTransport>) => Promise<T>,
 ): Promise<T> {
   const secret = await options.secretResolver.resolveSecret(COMPOSIO_CATALOG_PROVIDER_ID)
@@ -473,6 +495,7 @@ async function withCatalogSession<T>(
     clientVersion: options.clientVersion ?? "0.0.0",
     fetch: mcpFetchForSession(options, session),
   })
+  let outcome: { ok: true; value: T } | { ok: false; error: McpError }
   try {
     const sessionTools = await transport.listTools(source)
     const names = new Set(sessionTools.map((tool) => tool.name))
@@ -486,20 +509,21 @@ async function withCatalogSession<T>(
     if (containsMcpSecretOrCanary(value, canaries)) {
       throw new McpError(MCP_ERROR_CODES.SECRET_LEAK_GUARD, "Composio catalog metadata contained server-only material")
     }
-    return value
+    outcome = { ok: true, value }
   } catch (error) {
-    if (error instanceof McpError) {
-      throw new McpError(error.code, error.code === MCP_ERROR_CODES.SECRET_LEAK_GUARD
-        ? error.message
-        : "Composio MCP catalog request failed")
-    }
-    throw safeProviderError("Composio MCP catalog request failed")
-  } finally {
-    await deleteComposioCatalogSession(options, secret, session.id)
+    outcome = { ok: false, error: sanitizeCatalogError(error) }
   }
+
+  try {
+    await release(secret, session)
+  } catch (cleanupError) {
+    if (outcome.ok) throw cleanupError
+  }
+  if (!outcome.ok) throw outcome.error
+  return outcome.value
 }
 
-export function createComposioCatalogBackend(options: ComposioCatalogBackendOptions): McpManagedCatalogBackend {
+export function createComposioCatalogBackend(options: ComposioCatalogBackendOptions): ComposioCatalogBackend {
   const maxEntries = options.cacheEntries ?? DEFAULT_CACHE_ENTRIES
   const ttlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS
   if (!Number.isInteger(maxEntries) || maxEntries < 1 || !Number.isFinite(ttlMs) || ttlMs < 1) {
@@ -514,8 +538,32 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
     throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Composio catalog request bounds are invalid")
   }
   let activeRequests = 0
+  const pendingCleanup = new Map<string, { secret: ManagedConnectorSecret; session: ComposioCatalogSession }>()
+
+  async function release(secret: ManagedConnectorSecret, session: ComposioCatalogSession): Promise<void> {
+    try {
+      await deleteComposioCatalogSession(options, secret, session.id)
+      pendingCleanup.delete(session.id)
+    } catch (error) {
+      pendingCleanup.set(session.id, { secret, session })
+      throw sanitizeCatalogError(error)
+    }
+  }
+
+  async function drainPending(): Promise<void> {
+    let firstError: McpError | undefined
+    for (const { secret, session } of [...pendingCleanup.values()]) {
+      try {
+        await release(secret, session)
+      } catch (error) {
+        firstError ??= sanitizeCatalogError(error)
+      }
+    }
+    if (firstError) throw firstError
+  }
 
   async function guarded<T>(source: McpSource, run: () => Promise<T>): Promise<T> {
+    await drainPending()
     if (activeRequests >= maxConcurrent) {
       throw new McpError(MCP_ERROR_CODES.RESOURCE_LIMIT_EXCEEDED, "Composio catalog concurrency limit exceeded")
     }
@@ -534,6 +582,8 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
   }
 
   return {
+    drain: drainPending,
+
     supports(source) {
       return source.provider === COMPOSIO_CATALOG_PROVIDER_ID && source.credentialProvider === "composio-managed"
     },
@@ -548,7 +598,7 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
         const cached = searchCache.get(key)
         if (cached) return cached
       }
-      const tools = await guarded(source, () => withCatalogSession(options, source, async (session, transport) => {
+      const tools = await guarded(source, () => withCatalogSession(options, source, release, async (session, transport) => {
         const search = await transport.callTool(source, COMPOSIO_SEARCH_TOOLS, { queries: [query], session: session.id })
         const slugs = searchSlugs(search, input.offset + input.limit).slice(input.offset)
         if (slugs.length === 0) return []
@@ -575,7 +625,7 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
         const cached = describeCache.get(key)
         if (cached) return cached
       }
-      const tool = await guarded(source, () => withCatalogSession(options, source, async (session, transport) => {
+      const tool = await guarded(source, () => withCatalogSession(options, source, release, async (session, transport) => {
         const result = await transport.callTool(source, COMPOSIO_GET_TOOL_SCHEMAS, {
           tool_slugs: [toolName],
           session_id: session.id,

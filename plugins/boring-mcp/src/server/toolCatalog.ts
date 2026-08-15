@@ -198,6 +198,7 @@ export function createBoringMcpToolCatalog(options: BoringMcpToolCatalogOptions)
         const { source, resolvedSourceId } = await resolveConnectedSource(actor, candidate.id)
         if (options.managedCatalog?.supports(source)) {
           const query = input.query?.trim() ?? ""
+          if (!query && !input.sourceId) continue
           if (!query) throw new McpError(MCP_ERROR_CODES.INPUT_INVALID, "Managed MCP catalog search requires a query")
           const limit = input.limit ?? 20
           if (!Number.isInteger(limit) || limit < 1 || limit > 20) {
