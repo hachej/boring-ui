@@ -246,6 +246,14 @@ describe("Composio full-catalog backend", () => {
     const malformedPageFetch = vi.fn(async () => Response.json({ items: [], has_more: "false" })) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
     await expect(requireExactlyOneComposioAccount(backendOptions(malformedPageFetch), { actor, secret, toolkitId: "github" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_ERROR })
+    for (const malformed of [
+      { items: [], next_cursor: "   " },
+      { items: [], page: 1, total_pages: 2, has_more: false },
+    ]) {
+      const fetch = vi.fn(async () => Response.json(malformed)) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
+      await expect(requireExactlyOneComposioAccount(backendOptions(fetch), { actor, secret, toolkitId: "github" }))
+        .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_ERROR })
+    }
 
     const active = (id: string, userId = composioSubject) => ({
       id,
@@ -408,6 +416,35 @@ describe("Composio full-catalog backend", () => {
     await expect(resolveComposioCatalogSession(backendOptions(secretFetch), { actor, secret }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.SECRET_LEAK_GUARD })
     expect(secretDeleted).toEqual(["secret-session"])
+  })
+
+  it("retains failed cleanup from rejected Session validation without masking the security failure", async () => {
+    const fakeMcp = await listenFakeComposioMcp()
+    let deleteAttempts = 0
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith("/api/v3.1/tool_router/session") && init?.method === "POST") return Response.json({
+        id: "rejected-session",
+        echo: secret.value,
+        mcp: { url: fakeMcp.url, headers: { "x-composio-mcp-session": "private-rejected" } },
+        config: { workbench: { enable: false } },
+      })
+      if (url.endsWith("/rejected-session") && init?.method === "DELETE") {
+        deleteAttempts += 1
+        if (deleteAttempts === 1) return Response.json({ error: "transient" }, { status: 503 })
+        return new Response(undefined, { status: 204 })
+      }
+      if (url.endsWith("/rejected-session") && init?.method === "GET") return Response.json({ error: "not found" }, { status: 404 })
+      return Response.json({ error: "not found" }, { status: 404 })
+    }) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
+    const backend = createComposioCatalogBackend(backendOptions(fetch))
+    const catalog = createBoringMcpToolCatalog({ registry, transport: fallbackTransport, managedCatalog: backend })
+
+    await expect(catalog.searchTools(actor, { sourceId: source.id, query: "github" }))
+      .rejects.toMatchObject({ code: MCP_ERROR_CODES.SECRET_LEAK_GUARD })
+    expect(deleteAttempts).toBe(1)
+    await expect(backend.drain()).resolves.toBeUndefined()
+    expect(deleteAttempts).toBe(2)
   })
 
   it("retains failed cleanup leases, preserves the primary failure, and drains deterministically", async () => {

@@ -266,7 +266,12 @@ export async function deleteComposioCatalogSession(
 
 export async function resolveComposioCatalogSession(
   options: ComposioCatalogBackendOptions,
-  input: { actor: McpActor; secret: ManagedConnectorSecret; accountPin?: ComposioAccountPin },
+  input: {
+    actor: McpActor
+    secret: ManagedConnectorSecret
+    accountPin?: ComposioAccountPin
+    retainFailedCleanup?: (lease: { secret: ManagedConnectorSecret; sessionId: string }) => void
+  },
 ): Promise<ComposioCatalogSession> {
   const body: Record<string, unknown> = {
     user_id: composioUserId(input.actor),
@@ -285,7 +290,13 @@ export async function resolveComposioCatalogSession(
     }
     return extractSession(payload, options, input.accountPin)
   } catch (error) {
-    if (sessionId) await deleteComposioCatalogSession(options, input.secret, sessionId)
+    if (sessionId) {
+      try {
+        await deleteComposioCatalogSession(options, input.secret, sessionId)
+      } catch {
+        input.retainFailedCleanup?.({ secret: input.secret, sessionId })
+      }
+    }
     throw error
   }
 }
@@ -300,8 +311,16 @@ export async function requireExactlyOneComposioAccount(
   const payload = await composioRequest(options, input.secret, "GET", `/api/v3.1/connected_accounts?${params}`)
   const root = record(payload)
   const hasMorePresent = Object.prototype.hasOwnProperty.call(root, "has_more")
+  const cursorPresent = Object.prototype.hasOwnProperty.call(root, "next_cursor") || Object.prototype.hasOwnProperty.call(root, "nextCursor")
   const cursorValue = root.next_cursor ?? root.nextCursor
-  if ((hasMorePresent && typeof root.has_more !== "boolean") || (cursorValue != null && typeof cursorValue !== "string")) {
+  const pagePresent = Object.prototype.hasOwnProperty.call(root, "page") || Object.prototype.hasOwnProperty.call(root, "total_pages") || Object.prototype.hasOwnProperty.call(root, "totalPages")
+  const page = root.page
+  const totalPages = root.total_pages ?? root.totalPages
+  if (
+    (hasMorePresent && typeof root.has_more !== "boolean")
+    || (cursorPresent && cursorValue != null && (typeof cursorValue !== "string" || !cursorValue.trim()))
+    || (pagePresent && (!Number.isInteger(page) || !Number.isInteger(totalPages) || page !== 1 || totalPages !== 1))
+  ) {
     throw safeProviderError("Composio connected-account pagination was malformed")
   }
   const continuation = optionalString(cursorValue)
@@ -482,12 +501,13 @@ function sanitizeCatalogError(error: unknown): McpError {
 async function withCatalogSession<T>(
   options: ComposioCatalogBackendOptions,
   source: McpSource,
-  release: (secret: ManagedConnectorSecret, session: ComposioCatalogSession) => Promise<void>,
+  release: (secret: ManagedConnectorSecret, sessionId: string) => Promise<void>,
+  retainFailedCleanup: (lease: { secret: ManagedConnectorSecret; sessionId: string }) => void,
   run: (session: ComposioCatalogSession, transport: ReturnType<typeof createMcpSdkStreamableHttpTransport>) => Promise<T>,
 ): Promise<T> {
   const secret = await options.secretResolver.resolveSecret(COMPOSIO_CATALOG_PROVIDER_ID)
   requireServerSecret(secret)
-  const session = await resolveComposioCatalogSession(options, { actor: actorForSource(source), secret })
+  const session = await resolveComposioCatalogSession(options, { actor: actorForSource(source), secret, retainFailedCleanup })
   const canaries = [secret.value, session.id, session.mcp.url, ...Object.values(session.mcp.headers ?? {})]
   const transport = createMcpSdkStreamableHttpTransport({
     endpoint: { url: session.mcp.url, headers: { ...(session.mcp.headers ?? {}), "x-api-key": secret.value } },
@@ -515,7 +535,7 @@ async function withCatalogSession<T>(
   }
 
   try {
-    await release(secret, session)
+    await release(secret, session.id)
   } catch (cleanupError) {
     if (outcome.ok) throw cleanupError
   }
@@ -538,23 +558,27 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
     throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Composio catalog request bounds are invalid")
   }
   let activeRequests = 0
-  const pendingCleanup = new Map<string, { secret: ManagedConnectorSecret; session: ComposioCatalogSession }>()
+  const pendingCleanup = new Map<string, { secret: ManagedConnectorSecret; sessionId: string }>()
 
-  async function release(secret: ManagedConnectorSecret, session: ComposioCatalogSession): Promise<void> {
+  function retainFailedCleanup(lease: { secret: ManagedConnectorSecret; sessionId: string }): void {
+    pendingCleanup.set(lease.sessionId, lease)
+  }
+
+  async function release(secret: ManagedConnectorSecret, sessionId: string): Promise<void> {
     try {
-      await deleteComposioCatalogSession(options, secret, session.id)
-      pendingCleanup.delete(session.id)
+      await deleteComposioCatalogSession(options, secret, sessionId)
+      pendingCleanup.delete(sessionId)
     } catch (error) {
-      pendingCleanup.set(session.id, { secret, session })
+      retainFailedCleanup({ secret, sessionId })
       throw sanitizeCatalogError(error)
     }
   }
 
   async function drainPending(): Promise<void> {
     let firstError: McpError | undefined
-    for (const { secret, session } of [...pendingCleanup.values()]) {
+    for (const { secret, sessionId } of [...pendingCleanup.values()]) {
       try {
-        await release(secret, session)
+        await release(secret, sessionId)
       } catch (error) {
         firstError ??= sanitizeCatalogError(error)
       }
@@ -598,7 +622,7 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
         const cached = searchCache.get(key)
         if (cached) return cached
       }
-      const tools = await guarded(source, () => withCatalogSession(options, source, release, async (session, transport) => {
+      const tools = await guarded(source, () => withCatalogSession(options, source, release, retainFailedCleanup, async (session, transport) => {
         const search = await transport.callTool(source, COMPOSIO_SEARCH_TOOLS, { queries: [query], session: session.id })
         const slugs = searchSlugs(search, input.offset + input.limit).slice(input.offset)
         if (slugs.length === 0) return []
@@ -625,7 +649,7 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
         const cached = describeCache.get(key)
         if (cached) return cached
       }
-      const tool = await guarded(source, () => withCatalogSession(options, source, release, async (session, transport) => {
+      const tool = await guarded(source, () => withCatalogSession(options, source, release, retainFailedCleanup, async (session, transport) => {
         const result = await transport.callTool(source, COMPOSIO_GET_TOOL_SCHEMAS, {
           tool_slugs: [toolName],
           session_id: session.id,
