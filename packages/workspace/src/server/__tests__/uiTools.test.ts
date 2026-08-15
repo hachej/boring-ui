@@ -13,6 +13,7 @@ import { afterEach, beforeEach, expect, test, describe } from "vitest"
 import { createExecUiTool, createWorkspaceUiTools } from "../ui-control/tools/uiTools"
 import { createInMemoryBridge } from "../bridge/createInMemoryBridge"
 import type { WorkspaceBridge } from "../../shared/ui-bridge"
+import { HumanArtifactListSchema } from "../../shared/artifacts"
 
 const FAKE_CTX = {
   abortSignal: new AbortController().signal,
@@ -207,19 +208,58 @@ describe("createExecUiTool — path validation", () => {
     ])
   })
 
-  test("exec_ui keeps explicit-open rules while routing plural evidence through artifact channels", () => {
+  test("exec_ui preserves explicit file actions while deferring to registered domain surfaces", async () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
 
+    expect(tool.description).toContain("Prefer an available registered domain-specific surface")
+    expect(tool.description).toContain("deck, dashboard, or")
+    expect(tool.description).toContain("playground catalog item")
+    expect(tool.description).toContain("use exec_ui openSurface exactly")
+    expect(tool.description).toContain("Otherwise, when the user asks to open / show /")
     expect(tool.description).toContain("ALWAYS call exec_ui openFile")
     expect(tool.description).toContain("same path is idempotent")
+
+    await tool.execute(
+      { kind: "openFile", params: { path: "src/README.md" } },
+      FAKE_CTX,
+    )
+    await tool.execute(
+      {
+        kind: "openSurface",
+        params: {
+          kind: "workspace.open.path",
+          target: "deck/intro.md",
+        },
+      },
+      FAKE_CTX,
+    )
+    await expect(bridge.drainCommands!()).resolves.toEqual([
+      expect.objectContaining({ kind: "openFile", params: { path: "src/README.md" } }),
+      expect.objectContaining({
+        kind: "openSurface",
+        params: { kind: "workspace.open.path", target: "deck/intro.md" },
+      }),
+    ])
+  })
+
+  test("exec_ui routes plural presentation only through the shipped HumanArtifact contract", () => {
+    const tool = createExecUiTool(bridge, { workspaceRoot })
+    const artifacts = HumanArtifactListSchema.parse([
+      { id: "proof-a", surfaceKind: "workspace.open.path", target: "proof/a.md", title: "Proof A" },
+      { id: "proof-b", surfaceKind: "workspace.open.path", target: "proof/b.md", title: "Proof B" },
+    ])
+
+    expect(artifacts).toHaveLength(2)
     expect(tool.description).toContain("single-slot focus action")
     expect(tool.description).toContain("only the last remains visible")
-    expect(tool.description).toContain("plain-text `@path` mention")
-    expect(tool.description).toContain("not a code span")
-    expect(tool.description).toContain("inline artifact card")
-    expect(tool.description).toContain("plural `ask_user`")
-    expect(tool.description).toContain("`artifacts[]` array")
-    expect(tool.description).toContain("Do not use repeated openFile calls as a plural")
+    expect(tool.description).toContain("structured plural HumanArtifact list")
+    expect(tool.description).toContain("including ask_user")
+    expect(tool.description).toContain("artifacts[], supplied by the active tool or workflow")
+    expect(tool.description).toContain("register every")
+    expect(tool.description).toContain("not use repeated openFile calls as a plural")
+    expect(tool.description).toContain("claim that chat automatically recognizes arbitrary @path text")
+    expect(tool.description).not.toContain("plain-text `@path` mention")
+    expect(tool.description).not.toContain("inline artifact card")
   })
 
   test("exec_ui advertises openSurface filesystem", () => {
