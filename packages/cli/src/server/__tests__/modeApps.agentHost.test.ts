@@ -337,16 +337,19 @@ describe.sequential("CLI Agent Host composition", () => {
         headers: { "x-boring-workspace-id": workspaceB.id },
       })
       expect(workspaceBAgents.statusCode, workspaceBAgents.body).toBe(200)
-      expect(workspaceBAgents.json()).toEqual(expect.arrayContaining([
-        expect.objectContaining({ agentTypeId: "default" }),
+      expect(workspaceBAgents.json()).toEqual([
         expect.objectContaining({
           agentTypeId: "fixture-cli-repository-worker",
           label: "CLI Repository Worker",
         }),
-      ]))
-      expect(workspaceBAgents.json()).not.toEqual(expect.arrayContaining([
-        expect.objectContaining({ agentTypeId: "fixture-cli-local-worker" }),
-      ]))
+      ])
+
+      const defaultTools = await app.inject({
+        method: "GET",
+        url: "/api/v1/agents/default/tools",
+        headers: { "x-boring-workspace-id": workspaceB.id },
+      })
+      expect(defaultTools.statusCode, defaultTools.body).toBe(200)
     } finally {
       if (app) await app.close()
       process.chdir(previousCwd)
