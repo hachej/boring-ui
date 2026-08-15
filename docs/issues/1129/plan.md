@@ -150,10 +150,12 @@ Extend, do not replace, `ManagedAgentMcpDelegateController` and its MCP server:
   `acquireTaskLease()`, but no gateway/artifact reader;
 - after dedupe, conflict, rate, concurrency, and capacity checks, reserve one new
   single-flight record, call `acquireTaskLease()` exactly once, and atomically
-  transfer the lease to that record; retained retries and every rejection path
-  acquire no lease; acquisition/setup failure removes the reservation and
-  releases any acquired lease, and decrements the reserved per-credential
-  concurrency slot exactly once;
+  transfer the lease to that record; retained retries and every admission
+  rejection acquire no lease; if acquisition rejects, Core guarantees
+  failure-atomic cleanup of every partially allocated gateway/environment/reader
+  resource, while the package removes the reservation and decrements concurrency
+  exactly once; if later package setup fails after fulfillment, the package also
+  calls `release()` exactly once;
 - retain the transferred task lease through asynchronous terminal
   result/artifact collection; each canonical terminal state — `completed`,
   `failed`, `canceled`, or `rejected` — releases the lease and decrements the
@@ -205,7 +207,8 @@ strict Workspace default, then returns a capability-light admission:
 type ManagedMcpStartAdmission = {
   credentialId: string
   agentTypeId: string
-  acquireTaskLease(): Promise<ManagedMcpTaskLease> // one shot
+  // One shot. Rejection is failure-atomic inside Core: no partial resource survives.
+  acquireTaskLease(): Promise<ManagedMcpTaskLease>
 }
 
 type ManagedMcpTaskLease = {
@@ -222,8 +225,12 @@ conflict, fixed-window, concurrency, and capacity checks first. A retained retry
 returns its existing task and never calls `acquireTaskLease()`. A rejected start
 also never calls it. Only after reserving one new single-flight record may the
 package invoke the one-shot closure and atomically attach the returned lease to
-that record. If acquisition or setup fails, it removes the reservation, decrements the
-reserved concurrency slot exactly once, and releases any acquired lease. The record retains the lease through work that
+that record. If acquisition rejects, Core first disposes every partially allocated
+gateway/environment/artifact resource before rejecting; the package then removes
+the reservation and decrements concurrency exactly once. If package setup fails
+after a fulfilled lease, the package additionally calls `release()` exactly once.
+Focused Core tests inject failure after each fallible acquisition step and assert
+no surviving binding/resource. The record retains the lease through work that
 continues after `delegate_task_start` returns and inline artifact collection,
 then releases it and the concurrency slot exactly once for every canonical
 terminal state: completed, failed, canceled, or rejected.
@@ -350,7 +357,9 @@ and rollback approval.
   non-parameterized start/status closures. Start authorization allocates no
   lease; only a new post-dedupe/post-limit record acquires the one-shot lease,
   whose minimum artifact reader and reserved concurrency are released/rolled
-  back on setup failure and exactly once on completed/failed/canceled/rejected. Status receives
+  back on setup failure and exactly once on completed/failed/canceled/rejected.
+  Core makes lease acquisition failure-atomic before rejecting; package tests
+  prove concurrency rollback for that rejection. Status receives
   disclosure identity only, never a general scope issuer, gateway, reader, or
   second resolver/composer.
 - Hostname, body, tool args, MCP session ids, JSON-RPC ids, and forwarding
@@ -417,8 +426,9 @@ required.
 **Proof:** focused agent MCP test, agent typecheck, invariants; exact/over,
 state transitions/schema validation, zero lease acquisition on retry/conflict/
 rate/concurrency/capacity rejection, reservation/acquisition failure cleanup,
-task-lease lifecycle/release and status-scope separation, per-request Agent selection, acquisition/setup
-concurrency rollback, completed/failed/canceled/rejected cleanup,
+task-lease lifecycle/release and status-scope separation, per-request Agent selection, Core failure-atomic
+acquisition rejection plus package concurrency rollback, fulfilled-lease setup
+release/rollback, completed/failed/canceled/rejected cleanup,
 concurrency/retry/conflict, cross-scope, fixed-window reset, retention/expiry,
 dedupe-before-limit, and stock-client assertions.
 **Review budget:** Inside — one package controller/server seam and one focused
@@ -440,7 +450,9 @@ on start/status with no hostname authority.
 directly focused tests; full-app `managedAgentMcp.ts`, `main.ts`, `dev.ts`, managed MCP and production
 safety tests. No package MCP implementation files.
 **Proof:** focused Core/full-app tests, both package typechecks, invariants;
-negative authorization/default/spoof tests prove no effect before authority.
+negative authorization/default/spoof tests prove no effect before authority;
+fault injection after each acquisition allocation proves Core rejection leaves no
+gateway/environment/artifact binding alive.
 **Review budget:** Inside — one Core composition callback and one app edge
 adapter; fits one worker session.
 
@@ -551,4 +563,11 @@ combined contract. File scopes do not overlap across writer beads.
   cleanup, an unfrozen final wire cap, and a non-Bead gate node in the graph.
   Those are fixed with exactly-once slot/lease cleanup for every path, a
   `480 * 1024` byte (`384 + 64 + 32 KiB`) serialized cap, and the exact live
-  `.1 -> .3 -> .4 -> .5` Bead graph. A clean final pass is required.
+  `.1 -> .3 -> .4 -> .5` Bead graph.
+- **Pass 6 target:** commit `cb9f3a6622eba4ff93ecc86ecdef4e1a96ddbf3f`.
+- **Pass 6 verdict:** revise.
+- **Pass 6 findings/disposition:** acquisition rejection could hide a partial
+  resource before a lease handle existed. `acquireTaskLease()` is now explicitly
+  failure-atomic inside Core, with fault-injection proof after each allocation;
+  package concurrency rollback remains required, and fulfilled-lease setup
+  failure calls `release()`. A clean final pass is required.
