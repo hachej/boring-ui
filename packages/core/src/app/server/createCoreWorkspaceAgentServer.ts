@@ -1679,16 +1679,27 @@ export async function createCoreWorkspaceAgentServer(
   let hostMounted = false
   try {
     // Reference images intentionally prove the process can expose /health
-    // before schema deployment. With no workspaces relation there is no cohort
-    // or Agent execution to reconcile; every other migration error stays fatal.
+    // before schema deployment. Only an undefined workspaces relation on the
+    // initial inventory proves that state; after inventory succeeds, every CAS
+    // or convergence error remains fatal.
+    let inventoryBefore: Awaited<ReturnType<WorkspaceStore['inventoryDefaultAgentTypeIds']>> | undefined
     try {
+      inventoryBefore = await workspaceStore.inventoryDefaultAgentTypeIds(config.appId)
+    } catch (error) {
+      if (!hasErrorCode(error, '42P01')) throw error
+      app.log.warn({
+        event: 'workspace.default_agent_type_id.backfill.skipped',
+        appId: config.appId,
+        reason: 'workspaces_relation_absent',
+      }, 'workspace default Agent reconciliation skipped before schema deployment')
+    }
+    if (inventoryBefore) {
       // Decision 28 migration phase: createAgentHost has now compiled and
-      // validated the static fleet. Inventory every persisted cohort, then
-      // compare-and-set only legacy NULL rows before any route can serve.
-      // Re-running this startup phase is idempotent; concurrent non-NULL writers
-      // always win, and hostname never enters either store operation.
+      // validated the static fleet. Compare-and-set only legacy NULL rows
+      // before any route can serve. Re-running is idempotent; concurrent
+      // non-NULL writers always win, and hostname never enters either store.
       const cohortsBefore = classifyWorkspaceDefaultAgentTypeCohorts(
-        await workspaceStore.inventoryDefaultAgentTypeIds(config.appId),
+        inventoryBefore,
         availableAgentTypeIds,
       )
       const migratedDefaultAgentTypeIdCount = await workspaceStore.compareAndSetNullDefaultAgentTypeId(
@@ -1714,13 +1725,6 @@ export async function createCoreWorkspaceAgentServer(
         migratedCount: migratedDefaultAgentTypeIdCount,
         after: cohortsAfter,
       }, 'workspace default Agent legacy cohorts reconciled')
-    } catch (error) {
-      if (!hasErrorCode(error, '42P01')) throw error
-      app.log.warn({
-        event: 'workspace.default_agent_type_id.backfill.skipped',
-        appId: config.appId,
-        reason: 'workspaces_relation_absent',
-      }, 'workspace default Agent reconciliation skipped before schema deployment')
     }
 
     app.get('/api/v1/workspace/meta', async (request, reply) => {
