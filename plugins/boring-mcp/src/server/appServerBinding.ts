@@ -676,6 +676,7 @@ export function registerBoringMcpRoutes(app: BoringMcpAppServer, options: Regist
       sourceId: sourceIdFromBody(request.body, request.id),
       query: parseString(body.query),
       limit: typeof body.limit === 'number' ? body.limit : undefined,
+      offset: typeof body.offset === 'number' ? body.offset : undefined,
       refresh: body.refresh === true,
     }))
     return { tools: result.tools }

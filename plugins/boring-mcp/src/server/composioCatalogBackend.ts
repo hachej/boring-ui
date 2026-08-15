@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import {
   MCP_ERROR_CODES,
   McpError,
@@ -46,6 +47,8 @@ export interface ComposioCatalogBackendOptions {
   cacheTtlMs?: number
   /** Loopback-only fake MCP seam. Never enables arbitrary production origins. */
   allowInsecureLoopbackForTests?: boolean
+  maxConcurrentRequests?: number
+  maxRequestsPerMinute?: number
 }
 
 interface CacheEntry<T> {
@@ -99,11 +102,26 @@ function optionalHeaders(value: unknown): Record<string, string> | undefined {
 }
 
 function composioUserId(actor: McpActor): string {
-  return `${actor.workspaceId}:${actor.userId}`
+  const digest = createHash("sha256").update(`${actor.workspaceId}\0${actor.userId}`).digest("hex")
+  return `boring_${digest}`
 }
 
 function actorForSource(source: McpSource): McpActor {
   return { workspaceId: source.workspaceId, userId: source.userId }
+}
+
+export function createComposioCatalogSource(actor: McpActor): McpSource {
+  const digest = createHash("sha256").update(`${actor.workspaceId}\0${actor.userId}\0composio`).digest("hex").slice(0, 32)
+  return {
+    id: `managed:composio:${digest}`,
+    workspaceId: actor.workspaceId,
+    userId: actor.userId,
+    provider: COMPOSIO_CATALOG_PROVIDER_ID,
+    displayName: "Composio",
+    status: "connected",
+    ownerKind: "user",
+    credentialProvider: "composio-managed",
+  }
 }
 
 function requireServerSecret(secret: ManagedConnectorSecret): void {
@@ -195,9 +213,14 @@ function normalizeMcpUrl(rawUrl: string, options: ComposioCatalogBackendOptions)
   return url
 }
 
+function sessionEnvelope(payload: unknown): Record<string, unknown> {
+  const root = record(payload)
+  return record(root.session ?? root.data ?? root)
+}
+
 function extractSession(payload: unknown, options: ComposioCatalogBackendOptions, accountPin?: ComposioAccountPin): ComposioCatalogSession {
   const root = record(payload)
-  const session = record(root.session ?? root.data ?? root)
+  const session = sessionEnvelope(payload)
   const mcp = record(session.mcp)
   const id = optionalString(session.id) ?? optionalString(session.session_id)
   const rawUrl = optionalString(mcp.url)
@@ -256,8 +279,7 @@ export async function resolveComposioCatalogSession(
   try {
     return extractSession(payload, options, input.accountPin)
   } catch (error) {
-    const session = record(payload)
-    const sessionId = optionalString(session.id) ?? optionalString(record(session.session).id)
+    const sessionId = optionalString(sessionEnvelope(payload).id) ?? optionalString(sessionEnvelope(payload).session_id)
     if (sessionId) await deleteComposioCatalogSession(options, input.secret, sessionId).catch(() => undefined)
     throw error
   }
@@ -381,9 +403,10 @@ function boundedSchema(value: unknown): unknown {
 }
 
 function normalizeSchema(slug: string, value: unknown, fallbackToolkit?: string): McpManagedCatalogTool | undefined {
-  const schema = record(value)
-  const name = optionalString(schema.tool_slug) ?? slug
-  if (name.startsWith("COMPOSIO_")) return undefined
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const schema = value as Record<string, unknown>
+  const name = optionalString(schema.tool_slug)
+  if (!name || name !== slug || name.startsWith("COMPOSIO_")) return undefined
   validateMcpToolName(name)
   const description = optionalString(schema.description)
   if (description && description.length > MAX_DESCRIPTION_LENGTH) {
@@ -393,7 +416,7 @@ function normalizeSchema(slug: string, value: unknown, fallbackToolkit?: string)
     name,
     description,
     inputSchema: boundedSchema(schema.input_schema),
-    outputSchema: boundedSchema(schema.output_schema),
+    outputSchema: schema.output_schema === undefined ? undefined : boundedSchema(schema.output_schema),
     toolkit: optionalString(schema.toolkit_slug)?.toLowerCase() ?? fallbackToolkit,
   }
 }
@@ -440,6 +463,14 @@ async function withCatalogSession<T>(
     fetch: mcpFetchForSession(options, session),
   })
   try {
+    const sessionTools = await transport.listTools(source)
+    const names = new Set(sessionTools.map((tool) => tool.name))
+    if (!names.has(COMPOSIO_SEARCH_TOOLS) || !names.has(COMPOSIO_GET_TOOL_SCHEMAS)) {
+      throw safeProviderError("Composio Session is missing controlled catalog tools")
+    }
+    if (names.has("COMPOSIO_REMOTE_BASH_TOOL") || names.has("COMPOSIO_REMOTE_WORKBENCH")) {
+      throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Composio Session exposed disabled workbench capabilities")
+    }
     const value = await run(session, transport)
     if (containsMcpSecretOrCanary(value, canaries)) {
       throw new McpError(MCP_ERROR_CODES.SECRET_LEAK_GUARD, "Composio catalog metadata contained server-only material")
@@ -464,7 +495,32 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
     throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Composio catalog cache bounds are invalid")
   }
   const searchCache = new BoundedTtlCache<McpManagedCatalogTool[]>(maxEntries, ttlMs)
-  const describeCache = new BoundedTtlCache<McpManagedCatalogTool | undefined>(maxEntries, ttlMs)
+  const describeCache = new BoundedTtlCache<McpManagedCatalogTool>(maxEntries, ttlMs)
+  const requestBudget = new BoundedTtlCache<{ calls: number }>(maxEntries, 60_000)
+  const maxConcurrent = options.maxConcurrentRequests ?? 4
+  const maxRequestsPerMinute = options.maxRequestsPerMinute ?? 60
+  if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || !Number.isInteger(maxRequestsPerMinute) || maxRequestsPerMinute < 1) {
+    throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Composio catalog request bounds are invalid")
+  }
+  let activeRequests = 0
+
+  async function guarded<T>(source: McpSource, run: () => Promise<T>): Promise<T> {
+    if (activeRequests >= maxConcurrent) {
+      throw new McpError(MCP_ERROR_CODES.RESOURCE_LIMIT_EXCEEDED, "Composio catalog concurrency limit exceeded")
+    }
+    const key = `${source.workspaceId}:${source.userId}:${source.id}`
+    const budget = requestBudget.get(key) ?? { calls: 0 }
+    if (budget.calls >= maxRequestsPerMinute) {
+      throw new McpError(MCP_ERROR_CODES.RESOURCE_LIMIT_EXCEEDED, "Composio catalog request budget exceeded")
+    }
+    requestBudget.set(key, { calls: budget.calls + 1 })
+    activeRequests += 1
+    try {
+      return await run()
+    } finally {
+      activeRequests -= 1
+    }
+  }
 
   return {
     supports(source) {
@@ -476,14 +532,14 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
       if (!query || query.length > MAX_QUERY_LENGTH) {
         throw new McpError(MCP_ERROR_CODES.INPUT_INVALID, "Composio catalog query must be between 1 and 256 characters")
       }
-      const key = `${source.workspaceId}:${source.userId}:${source.id}:${source.updatedAt ?? ""}:${query}:${input.limit}`
+      const key = `${source.workspaceId}:${source.userId}:${source.id}:${source.updatedAt ?? ""}:${query}:${input.offset}:${input.limit}`
       if (!input.forceProviderRefresh) {
         const cached = searchCache.get(key)
         if (cached) return cached
       }
-      const tools = await withCatalogSession(options, source, async (session, transport) => {
+      const tools = await guarded(source, () => withCatalogSession(options, source, async (session, transport) => {
         const search = await transport.callTool(source, COMPOSIO_SEARCH_TOOLS, { queries: [query], session: session.id })
-        const slugs = searchSlugs(search, input.limit)
+        const slugs = searchSlugs(search, input.offset + input.limit).slice(input.offset)
         if (slugs.length === 0) return []
         const schemas = await transport.callTool(source, COMPOSIO_GET_TOOL_SCHEMAS, {
           tool_slugs: slugs.map(({ slug }) => slug),
@@ -494,7 +550,7 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
           const tool = normalizeSchema(slug, bySlug[slug], toolkit)
           return tool ? [tool] : []
         })
-      })
+      }))
       searchCache.set(key, tools)
       for (const tool of tools) describeCache.set(`${source.workspaceId}:${source.userId}:${source.id}:${source.updatedAt ?? ""}:${tool.name}`, tool)
       return tools
@@ -508,14 +564,14 @@ export function createComposioCatalogBackend(options: ComposioCatalogBackendOpti
         const cached = describeCache.get(key)
         if (cached) return cached
       }
-      const tool = await withCatalogSession(options, source, async (session, transport) => {
+      const tool = await guarded(source, () => withCatalogSession(options, source, async (session, transport) => {
         const result = await transport.callTool(source, COMPOSIO_GET_TOOL_SCHEMAS, {
           tool_slugs: [toolName],
           session_id: session.id,
         })
         return normalizeSchema(toolName, schemasFromPayload(result)[toolName])
-      })
-      describeCache.set(key, tool)
+      }))
+      if (tool) describeCache.set(key, tool)
       return tool
     },
   }

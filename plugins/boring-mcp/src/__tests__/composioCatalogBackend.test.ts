@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { AddressInfo } from "node:net"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -6,6 +7,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import {
   COMPOSIO_CATALOG_PROVIDER_ID,
   createComposioCatalogBackend,
+  createComposioCatalogSource,
   deleteComposioCatalogSession,
   requireExactlyOneComposioAccount,
   resolveComposioCatalogSession,
@@ -15,6 +17,7 @@ import { createBoringMcpToolCatalog } from "../server/toolCatalog"
 import { MCP_ERROR_CODES, type McpActor, type McpSource, type McpSourceRegistry, type McpTransportClient } from "../shared"
 
 const actor: McpActor = { workspaceId: "workspace-1", userId: "user-1" }
+const composioSubject = `boring_${createHash("sha256").update(`${actor.workspaceId}\0${actor.userId}`).digest("hex")}`
 const secret = { storage: "server-env" as const, value: "cmp_test_key" }
 const source: McpSource = {
   id: "managed:composio:user-1",
@@ -54,7 +57,7 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
   return chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : undefined
 }
 
-async function listenFakeComposioMcp(options: { metadataCanary?: string; oversizedSchema?: boolean; oversizedResponse?: boolean; delayMs?: number } = {}) {
+async function listenFakeComposioMcp(options: { metadataCanary?: string; oversizedSchema?: boolean; oversizedResponse?: boolean; delayMs?: number; exposedWorkbench?: boolean; mismatchedSlug?: boolean } = {}) {
   const calls: Array<{ name: string; arguments: unknown }> = []
   const server = new McpServer({ name: "fake-composio", version: "1.0.0" })
   server.registerTool("COMPOSIO_SEARCH_TOOLS", { description: "controlled search" }, async () => {
@@ -71,7 +74,7 @@ async function listenFakeComposioMcp(options: { metadataCanary?: string; oversiz
     return {
       content: [{ type: "text", text: JSON.stringify({ data: { tool_schemas: {
         GITHUB_GET_CURRENT_USER: {
-          tool_slug: "GITHUB_GET_CURRENT_USER",
+          tool_slug: options.mismatchedSlug ? "GITHUB_WRONG_TOOL" : "GITHUB_GET_CURRENT_USER",
           toolkit_slug: "github",
           description: options.metadataCanary
             ? `provider text ${options.metadataCanary}`
@@ -91,8 +94,10 @@ async function listenFakeComposioMcp(options: { metadataCanary?: string; oversiz
     }
   })
   server.registerTool("COMPOSIO_MULTI_EXECUTE_TOOL", { description: "must never be called" }, async () => ({ content: [{ type: "text", text: "unsafe" }] }))
-  server.registerTool("COMPOSIO_REMOTE_BASH_TOOL", { description: "must never be called" }, async () => ({ content: [{ type: "text", text: "unsafe" }] }))
-  server.registerTool("COMPOSIO_REMOTE_WORKBENCH", { description: "must never be called" }, async () => ({ content: [{ type: "text", text: "unsafe" }] }))
+  if (options.exposedWorkbench) {
+    server.registerTool("COMPOSIO_REMOTE_BASH_TOOL", { description: "must never be called" }, async () => ({ content: [{ type: "text", text: "unsafe" }] }))
+    server.registerTool("COMPOSIO_REMOTE_WORKBENCH", { description: "must never be called" }, async () => ({ content: [{ type: "text", text: "unsafe" }] }))
+  }
 
   const http = createServer(async (request: IncomingMessage, response: ServerResponse) => {
     if (request.url !== "/mcp" || request.method !== "POST") {
@@ -129,7 +134,7 @@ function composioApiFetch(mcpUrl: string, accounts: unknown[] = []) {
     expect(init?.redirect).toBe("error")
     expect(init?.headers).toMatchObject({ "x-api-key": secret.value })
     if (url.includes("/api/v3.1/connected_accounts?")) {
-      expect(url).toContain("user_id=workspace-1%3Auser-1")
+      expect(url).toContain(`user_id=${composioSubject}`)
       return Response.json({ items: accounts, has_more: false })
     }
     if (url.endsWith("/api/v3.1/tool_router/session") && init?.method === "POST") {
@@ -162,6 +167,14 @@ function backendOptions(fetch: typeof globalThis.fetch): ComposioCatalogBackendO
 }
 
 describe("Composio full-catalog backend", () => {
+  it("derives an opaque stable catalog source identity", () => {
+    const created = createComposioCatalogSource(actor)
+    expect(created).toMatchObject({ provider: "composio", credentialProvider: "composio-managed", status: "connected" })
+    expect(created.id).toBe(createComposioCatalogSource(actor).id)
+    expect(created.id).not.toContain(actor.workspaceId)
+    expect(created.id).not.toContain(actor.userId)
+  })
+
   it("uses the exact query through real MCP SDK transport, bounds results, and verified-cleans the unfiltered Session", async () => {
     const fakeMcp = await listenFakeComposioMcp()
     const api = composioApiFetch(fakeMcp.url)
@@ -181,7 +194,7 @@ describe("Composio full-catalog backend", () => {
       { name: "COMPOSIO_GET_TOOL_SCHEMAS", arguments: expect.objectContaining({ tool_slugs: ["GITHUB_GET_CURRENT_USER"], session_id: "session-1" }) },
     ])
     expect(api.sessionBodies[0]).toMatchObject({
-      user_id: "workspace-1:user-1",
+      user_id: composioSubject,
       mcp: true,
       manage_connections: { enable: true, enable_wait_for_connections: false },
       workbench: { enable: false },
@@ -189,6 +202,9 @@ describe("Composio full-catalog backend", () => {
     expect(api.sessionBodies[0]).not.toHaveProperty("toolkits")
     expect(api.deletedSessions).toEqual(["session-1"])
     expect(api.requests).toContain("GET https://backend.composio.dev/api/v3.1/tool_router/session/session-1")
+
+    const secondPage = await catalog.searchTools(actor, { sourceId: source.id, query: "github current user", limit: 1, offset: 1 })
+    expect(secondPage.tools).toEqual([expect.objectContaining({ toolName: "GITHUB_CREATE_ISSUE" })])
     expect(fallbackTransport.listTools).not.toHaveBeenCalled()
   })
 
@@ -214,7 +230,7 @@ describe("Composio full-catalog backend", () => {
     await expect(requireExactlyOneComposioAccount(backendOptions(none.fetch), { actor, secret, toolkitId: "github" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.CONNECTED_ACCOUNT_REQUIRED })
 
-    const active = (id: string, userId = "workspace-1:user-1") => ({
+    const active = (id: string, userId = composioSubject) => ({
       id,
       user_id: userId,
       status: "ACTIVE",
@@ -225,7 +241,7 @@ describe("Composio full-catalog backend", () => {
     await expect(requireExactlyOneComposioAccount(backendOptions(multiple.fetch), { actor, secret, toolkitId: "github" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.CONNECTED_ACCOUNT_CONFLICT })
 
-    const exactApi = composioApiFetch(fakeMcp.url, [active("other-user", "workspace-1:user-2"), active("account-1")])
+    const exactApi = composioApiFetch(fakeMcp.url, [active("other-user", "boring_other_user"), active("account-1")])
     const options = backendOptions(exactApi.fetch)
     const account = await requireExactlyOneComposioAccount(options, { actor, secret, toolkitId: "github" })
     const session = await resolveComposioCatalogSession(options, {
@@ -260,6 +276,14 @@ describe("Composio full-catalog backend", () => {
     await expect(catalog.describeTool(actor, { sourceId: source.id, toolName: "COMPOSIO_REMOTE_WORKBENCH" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.TOOL_NOT_FOUND })
     expect(fakeMcp.calls.map(({ name }) => name).every((name) => name === "COMPOSIO_SEARCH_TOOLS" || name === "COMPOSIO_GET_TOOL_SCHEMAS")).toBe(true)
+
+    const unsafeMcp = await listenFakeComposioMcp({ exposedWorkbench: true })
+    const unsafeApi = composioApiFetch(unsafeMcp.url)
+    const unsafeCatalog = createBoringMcpToolCatalog({ registry, transport: fallbackTransport, managedCatalog: createComposioCatalogBackend(backendOptions(unsafeApi.fetch)) })
+    await expect(unsafeCatalog.searchTools(actor, { sourceId: source.id, query: "github" }))
+      .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID })
+    expect(unsafeMcp.calls).toEqual([])
+    expect(unsafeApi.deletedSessions).toEqual(["session-1"])
   })
 
   it("fails closed on missing queries, oversized schemas, and redaction canaries", async () => {
@@ -293,6 +317,68 @@ describe("Composio full-catalog backend", () => {
     expect(sessionError).toMatchObject({ code: MCP_ERROR_CODES.SECRET_LEAK_GUARD })
     expect(JSON.stringify(sessionError)).not.toContain("private-session-1")
     expect(sessionCanaryApi.deletedSessions).toEqual(["session-1"])
+  })
+
+  it("rejects missing or mismatched provider schemas instead of fabricating descriptors", async () => {
+    const fakeMcp = await listenFakeComposioMcp()
+    const api = composioApiFetch(fakeMcp.url)
+    const catalog = createBoringMcpToolCatalog({ registry, transport: fallbackTransport, managedCatalog: createComposioCatalogBackend(backendOptions(api.fetch)) })
+    await expect(catalog.describeTool(actor, { sourceId: source.id, toolName: "GITHUB_UNKNOWN_TOOL" }))
+      .rejects.toMatchObject({ code: MCP_ERROR_CODES.TOOL_NOT_FOUND })
+
+    const mismatchMcp = await listenFakeComposioMcp({ mismatchedSlug: true })
+    const mismatchApi = composioApiFetch(mismatchMcp.url)
+    const mismatchCatalog = createBoringMcpToolCatalog({ registry, transport: fallbackTransport, managedCatalog: createComposioCatalogBackend(backendOptions(mismatchApi.fetch)) })
+    const search = await mismatchCatalog.searchTools(actor, { sourceId: source.id, query: "github", limit: 1 })
+    expect(search.tools).toEqual([])
+    await expect(mismatchCatalog.describeTool(actor, { sourceId: source.id, toolName: "GITHUB_GET_CURRENT_USER", refresh: true }))
+      .rejects.toMatchObject({ code: MCP_ERROR_CODES.TOOL_NOT_FOUND })
+  })
+
+  it("verified-cleans nested rejected Session envelopes", async () => {
+    const deleted: string[] = []
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith("/api/v3.1/tool_router/session") && init?.method === "POST") {
+        return Response.json({ data: { id: "nested-session", mcp: { url: "https://backend.composio.dev/mcp" }, config: { workbench: { enable: true } } } })
+      }
+      if (url.endsWith("/nested-session") && init?.method === "DELETE") {
+        deleted.push("nested-session")
+        return new Response(undefined, { status: 204 })
+      }
+      if (url.endsWith("/nested-session") && init?.method === "GET") return Response.json({ error: "not found" }, { status: 404 })
+      return Response.json({ error: "not found" }, { status: 404 })
+    }) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
+    await expect(resolveComposioCatalogSession(backendOptions(fetch), { actor, secret }))
+      .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_ERROR })
+    expect(deleted).toEqual(["nested-session"])
+  })
+
+  it("enforces bounded request concurrency and per-source rate budgets before Session creation", async () => {
+    const slowMcp = await listenFakeComposioMcp({ delayMs: 50 })
+    const concurrentApi = composioApiFetch(slowMcp.url)
+    const concurrentCatalog = createBoringMcpToolCatalog({
+      registry,
+      transport: fallbackTransport,
+      managedCatalog: createComposioCatalogBackend({ ...backendOptions(concurrentApi.fetch), maxConcurrentRequests: 1 }),
+    })
+    const first = concurrentCatalog.searchTools(actor, { sourceId: source.id, query: "github first" })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    await expect(concurrentCatalog.searchTools(actor, { sourceId: source.id, query: "github second" }))
+      .rejects.toMatchObject({ code: MCP_ERROR_CODES.RESOURCE_LIMIT_EXCEEDED })
+    await expect(first).resolves.toMatchObject({ tools: expect.any(Array) })
+
+    const budgetMcp = await listenFakeComposioMcp()
+    const budgetApi = composioApiFetch(budgetMcp.url)
+    const budgetCatalog = createBoringMcpToolCatalog({
+      registry,
+      transport: fallbackTransport,
+      managedCatalog: createComposioCatalogBackend({ ...backendOptions(budgetApi.fetch), maxRequestsPerMinute: 1 }),
+    })
+    await budgetCatalog.searchTools(actor, { sourceId: source.id, query: "github one" })
+    await expect(budgetCatalog.searchTools(actor, { sourceId: source.id, query: "github two" }))
+      .rejects.toMatchObject({ code: MCP_ERROR_CODES.RESOURCE_LIMIT_EXCEEDED })
+    expect(budgetApi.sessionBodies).toHaveLength(1)
   })
 
   it("bounds MCP response streams and times out stalled MCP calls with verified cleanup", async () => {

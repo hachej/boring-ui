@@ -83,7 +83,7 @@ When `registry`, `transport`, and `resolveActor` are provided, the plugin contri
 
 ### Full-catalog Composio backend
 
-Hosts that persist a server-owned source with `provider: "composio"` and `credentialProvider: "composio-managed"` may inject `createComposioCatalogBackend({ secretResolver })` as `managedCatalog` in source handlers, agent tools, or app bindings. The backend sends the actual bounded query through Composio's search/schema meta-tools, creates an unfiltered Session with `workbench.enable: false`, and verified-cleans each Session. Its transient metadata caches are TTL- and cardinality-bounded.
+Hosts persist the opaque server-owned source returned by `createComposioCatalogSource(actor)`, then inject `createComposioCatalogBackend({ secretResolver })` as `managedCatalog` in source handlers, agent tools, or app bindings. The backend sends the actual bounded query through Composio's search/schema meta-tools, creates an unfiltered Session with `workbench.enable: false`, and verified-cleans each Session. Its transient metadata caches are TTL- and cardinality-bounded.
 
 This seam is discovery-only. It never exposes or invokes raw `COMPOSIO_*` execution/control/workbench/bash tools, and template-free catalog entries remain disabled until a separate host approval boundary is supplied. `requireExactlyOneComposioAccount` plus `resolveComposioCatalogSession({ accountPin })` provide the fail-closed zero/multiple/exact-account pinning seam for that later execution boundary; they do not make tools callable here. Curated Notion/Airtable connectors continue through `createComposioMcpTransport` unchanged.
 

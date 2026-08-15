@@ -67,6 +67,7 @@ const TOOL_SEARCH_INPUT_SCHEMA = {
     sourceId: { type: "string", description: "Optional source id to search within." },
     query: { type: "string", description: "Optional text query for tool name, summary, provider, or description." },
     limit: { type: "integer", minimum: 1, maximum: 20, description: "Maximum managed-catalog results." },
+    offset: { type: "integer", minimum: 0, maximum: 80, description: "Bounded managed-catalog result offset." },
     refresh: { type: "boolean", description: "Refresh provider tool metadata before searching." },
   },
   additionalProperties: false,
@@ -178,6 +179,7 @@ function parseSearchInput(input: unknown): McpToolsSearchInput {
     sourceId: sourceId === undefined ? undefined : parseBridgeSourceId(sourceId),
     query: optionalStringField(record, "query"),
     limit: optionalIntegerField(record, "limit"),
+    offset: optionalIntegerField(record, "offset"),
     refresh: optionalBooleanField(record, "refresh"),
   }
 }

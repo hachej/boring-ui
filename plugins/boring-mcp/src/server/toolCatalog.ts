@@ -37,7 +37,7 @@ export interface McpManagedCatalogTool extends McpDiscoveredTool {
 
 export interface McpManagedCatalogBackend {
   supports(source: Pick<McpSource, "provider" | "credentialProvider">): boolean
-  searchTools(source: McpSource, input: { query: string; limit: number; forceProviderRefresh: boolean }): Promise<McpManagedCatalogTool[]>
+  searchTools(source: McpSource, input: { query: string; limit: number; offset: number; forceProviderRefresh: boolean }): Promise<McpManagedCatalogTool[]>
   describeTool(source: McpSource, toolName: string, input: { forceProviderRefresh: boolean }): Promise<McpManagedCatalogTool | undefined>
 }
 
@@ -53,6 +53,7 @@ export interface McpToolsSearchInput {
   sourceId?: string
   query?: string
   limit?: number
+  offset?: number
   refresh?: boolean
   providerRefresh?: boolean
 }
@@ -197,9 +198,14 @@ export function createBoringMcpToolCatalog(options: BoringMcpToolCatalogOptions)
           if (!Number.isInteger(limit) || limit < 1 || limit > 20) {
             throw new McpError(MCP_ERROR_CODES.INPUT_INVALID, "Managed MCP catalog search limit must be between 1 and 20")
           }
+          const offset = input.offset ?? 0
+          if (!Number.isInteger(offset) || offset < 0 || offset > 80) {
+            throw new McpError(MCP_ERROR_CODES.INPUT_INVALID, "Managed MCP catalog search offset must be between 0 and 80")
+          }
           const tools = await options.managedCatalog.searchTools(source, {
             query,
             limit,
+            offset,
             forceProviderRefresh: input.providerRefresh ?? input.refresh ?? false,
           })
           managedResults.push(...normalizeManagedTools(resolvedSourceId, source.provider, tools).slice(0, limit))
