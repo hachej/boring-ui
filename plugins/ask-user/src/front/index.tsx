@@ -1,18 +1,21 @@
 "use client"
 
 import { Button, EmptyState, Notice, Pane, PaneBody, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
+import { Artifact, ArtifactAction, ArtifactActions, ArtifactDescription, ArtifactHeader, ArtifactTitle, useOpenArtifact } from "@hachej/boring-agent/front"
 import {
+  HumanArtifactListSchema,
   WORKSPACE_COMPOSER_STOP_EVENT,
   postUiCommand,
   useWorkspaceAttention,
   useWorkspaceContext,
   useWorkspaceContextOptional,
   workspaceComposerStopAppliesToSession,
+  type HumanArtifact,
   type PaneProps,
   type PluginProviderProps,
 } from "@hachej/boring-workspace"
 import { definePlugin, type BoringFrontAppLeftOverlayProps, type BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
-import { CheckCircle2, HelpCircle, Inbox, SquareArrowOutUpRight, XCircle } from "lucide-react"
+import { CheckCircle2, ExternalLink, FileText, HelpCircle, Inbox, SquareArrowOutUpRight, XCircle } from "lucide-react"
 import { useEffect, useMemo, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import type { AskUserAnswerValue, AskUserQuestion } from "../shared/types"
@@ -155,20 +158,65 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   </div>
 }
 
+function inlineArtifactsFromInput(input: unknown): HumanArtifact[] {
+  if (typeof input !== "object" || !input) return []
+  const result = HumanArtifactListSchema.safeParse((input as { artifacts?: unknown }).artifacts ?? [])
+  return result.success ? result.data : []
+}
+
+function InlineArtifactList({ artifacts }: { artifacts: HumanArtifact[] }) {
+  const openArtifact = useOpenArtifact()
+  if (artifacts.length === 0) return null
+  return <ul className="mt-3 space-y-2" aria-label="Artifacts">
+    {artifacts.map((artifact) => {
+      const opensWorkspacePath = artifact.surfaceKind === "workspace.open.path"
+      const open = () => {
+        if (opensWorkspacePath) openArtifact?.(artifact.target)
+        else postUiCommand({ kind: "openSurface", params: { kind: artifact.surfaceKind, target: artifact.target } })
+      }
+      const canOpen = !opensWorkspacePath || openArtifact !== null
+      return <li key={artifact.id}><Artifact className="shadow-none">
+        <ArtifactHeader className="gap-3 border-b-0 px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <ArtifactTitle className="truncate">{artifact.title}</ArtifactTitle>
+            {artifact.description ? <ArtifactDescription className="mt-0.5 line-clamp-2 text-xs">{artifact.description}</ArtifactDescription> : null}
+          </div>
+          <ArtifactActions>
+            <ArtifactAction
+              icon={opensWorkspacePath ? FileText : ExternalLink}
+              label={`Open ${artifact.title}`}
+              tooltip={canOpen ? `Open ${artifact.title}` : "Workspace file opening is unavailable"}
+              disabled={!canOpen}
+              onClick={open}
+            />
+          </ArtifactActions>
+        </ArtifactHeader>
+      </Artifact></li>
+    })}
+  </ul>
+}
+
 function InlineQuestion({ part }: { part: unknown }) {
   const runtime = useQuestionsRuntime()
   useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
   const toolPart = typeof part === "object" && part ? part as { toolCallId?: unknown; state?: unknown; input?: unknown } : null
   const toolCallId = typeof toolPart?.toolCallId === "string" ? toolPart.toolCallId : null
   const question = toolCallId ? runtime.getPendingByToolCallId(toolCallId) : null
-  if (question) return <section data-boring-ask-user-inline-question="true" data-testid="ask-user-inline-question" className="my-3 rounded-lg border border-border/70 bg-card p-4 text-sm shadow-sm"><PendingQuestionBody question={question} compact onOpen={() => postUiCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { sessionId: question.sessionId } } })} /></section>
+  const artifacts = inlineArtifactsFromInput(toolPart?.input)
+  if (question) return <section data-boring-ask-user-inline-question="true" data-testid="ask-user-inline-question" className="my-3 rounded-lg border border-border/70 bg-card p-4 text-sm shadow-sm">
+    <PendingQuestionBody question={question} compact onOpen={() => postUiCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { sessionId: question.sessionId } } })} />
+    <InlineArtifactList artifacts={artifacts} />
+  </section>
   if (toolPart?.state !== "output-available" && toolPart?.state !== "output-error" && toolPart?.state !== "aborted") return null
   const input = typeof toolPart.input === "object" && toolPart.input ? toolPart.input as { title?: unknown } : null
   const title = typeof input?.title === "string" ? input.title : "Agent question"
   const cancelled = toolPart.state !== "output-available"
-  return <section data-boring-ask-user-resolved-question="true" className="my-3 flex items-center gap-3 rounded-lg border border-border/60 bg-muted/25 px-4 py-3 text-sm">
-    {cancelled ? <XCircle className="h-4 w-4 text-muted-foreground" /> : <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
-    <div className="min-w-0"><div className="truncate font-medium text-foreground">{title}</div><div className="text-xs text-muted-foreground">{cancelled ? "Question cancelled" : "Answer submitted"}</div></div>
+  return <section data-boring-ask-user-resolved-question="true" className="my-3 rounded-lg border border-border/60 bg-muted/25 px-4 py-3 text-sm">
+    <div className="flex items-center gap-3">
+      {cancelled ? <XCircle className="h-4 w-4 text-muted-foreground" /> : <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+      <div className="min-w-0"><div className="truncate font-medium text-foreground">{title}</div><div className="text-xs text-muted-foreground">{cancelled ? "Question cancelled" : "Answer submitted"}</div></div>
+    </div>
+    <InlineArtifactList artifacts={artifacts} />
   </section>
 }
 

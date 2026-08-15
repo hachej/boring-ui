@@ -34,6 +34,14 @@ export {
   useOpenArtifact,
   type OpenArtifactHandler,
 } from './ArtifactOpenContext'
+export {
+  Artifact,
+  ArtifactAction,
+  ArtifactActions,
+  ArtifactDescription,
+  ArtifactHeader,
+  ArtifactTitle,
+} from './primitives/artifact'
 export { ChatEmptyState, defaultChatSuggestions } from './ChatEmptyState'
 export type { ChatEmptyStateProps, ChatSuggestion } from './ChatEmptyState'
 export { ModelSelect, ModelPickerMenu, ModelSelectTrigger, ThinkingSelect } from './chatPanelComposerControls'
