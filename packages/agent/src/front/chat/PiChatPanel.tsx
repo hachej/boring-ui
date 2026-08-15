@@ -385,6 +385,7 @@ export function PiChatPanel<
   const [draft, setDraft] = useState(() => initialDraft ?? '')
   const draftRef = useRef(draft)
   draftRef.current = draft
+  const queueCoordinationKeysRef = useRef(new Map<string, object>())
   const initialDraftGuard = useRef(new InitialDraftAutoSubmitGuard())
   const pendingAutoSubmitSettleRef = useRef<string | undefined>(undefined)
   const acceptedAutoSubmitSettleRef = useRef<string | undefined>(undefined)
@@ -781,6 +782,11 @@ export function PiChatPanel<
 
   const policy = useMemo(() => {
     if (!selectedPiSession || !activeChatSessionId || !serverModelSelectionReady) return undefined
+    let queueCoordinationKey = queueCoordinationKeysRef.current.get(activeChatSessionId)
+    if (!queueCoordinationKey) {
+      queueCoordinationKey = {}
+      queueCoordinationKeysRef.current.set(activeChatSessionId, queueCoordinationKey)
+    }
     const policySession = {
       getState: () => {
         const state = selectedPiSession.getState()
@@ -797,7 +803,7 @@ export function PiChatPanel<
     }
     return createPiComposerPolicyController({
       session: policySession,
-      coordinationKey: selectedPiSession,
+      coordinationKey: queueCoordinationKey,
       registry,
       slashContext: {
         sessionId: activeChatSessionId,

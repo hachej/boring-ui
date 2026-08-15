@@ -167,6 +167,7 @@ describe('PiFollowUpQueueController', () => {
   it('keeps the complete recovered snapshot when a later selected clear fails', async () => {
     const warnings: string[] = []
     const drafts: string[] = []
+    const coordinationKey = {}
     const session = new FakeQueueSession('streaming', [
       { id: 'q1', kind: 'followup', displayText: 'restored', clientSeq: 1 },
       { id: 'q2', kind: 'followup', displayText: 'still queued', clientSeq: 2 },
@@ -179,6 +180,7 @@ describe('PiFollowUpQueueController', () => {
     })
     let draft = ''
     const controller = createPiFollowUpQueueController(session, {
+      coordinationKey,
       getDraft: () => draft,
       onDraftChange: (next) => {
         draft = next
@@ -200,11 +202,12 @@ describe('PiFollowUpQueueController', () => {
     ])
     expect(warnings).toEqual(['Queued messages were copied into the composer, but some may remain queued. Retry Edit queued.'])
 
-    session.state.queue.followUps.push({
-      id: 'q3', kind: 'followup', displayText: 'newly queued', clientSeq: 3,
-    })
-    session.clearQueue = clearQueue
-    const recreatedController = createPiFollowUpQueueController(session, {
+    const recreatedSession = new FakeQueueSession('streaming', [
+      ...session.state.queue.followUps,
+      { id: 'q3', kind: 'followup', displayText: 'newly queued', clientSeq: 3 },
+    ])
+    const recreatedController = createPiFollowUpQueueController(recreatedSession, {
+      coordinationKey,
       getDraft: () => draft,
       onDraftChange: (next) => {
         draft = next
@@ -217,7 +220,7 @@ describe('PiFollowUpQueueController', () => {
       'restored\n\nstill queued',
       'restored\n\nstill queued\n\nnewly queued',
     ])
-    expect(session.state.queue.followUps).toEqual([])
+    expect(recreatedSession.state.queue.followUps).toEqual([])
   })
 
   it('coalesces concurrent multi-item edits and preserves canonical order', async () => {
