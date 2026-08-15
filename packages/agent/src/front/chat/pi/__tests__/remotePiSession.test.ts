@@ -893,7 +893,7 @@ describe('RemotePiSession', () => {
     expect(JSON.parse(String(postCalls[2]?.[1]?.body))).toEqual({
       clientNonce: 'nonce-q',
       clientSeq: 1,
-      requestId: expect.stringMatching(/^queue-clear:[a-f0-9]{64}$/u),
+      requestId: expect.stringMatching(/^queue-clear:[a-f0-9-]{36}$/u),
     })
     expect(session.getState().committedMessages).toEqual([])
     expect(session.getState().optimisticOutbox['nonce-1']).toMatchObject({
@@ -908,7 +908,7 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
-  it('retries selected queue clears with one idempotency key after an ambiguous transport failure', async () => {
+  it('retries one selected queue clear with the same operation key after an ambiguous transport failure', async () => {
     const bodies: unknown[] = []
     let attempts = 0
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -929,27 +929,32 @@ describe('RemotePiSession', () => {
     expect(bodies[0]).toEqual({
       clientNonce: 'nonce-q',
       clientSeq: 1,
-      requestId: expect.stringMatching(/^queue-clear:[a-f0-9]{64}$/u),
+      requestId: expect.stringMatching(/^queue-clear:[a-f0-9-]{36}$/u),
     })
     expect(bodies[1]).toEqual(bodies[0])
     session.dispose()
   })
 
-  it('bounds and sanitizes selected-clear idempotency keys for arbitrary valid nonces', async () => {
+  it('uses fresh bounded operation keys for repeated clears of the same arbitrary selector', async () => {
     const nonce = `external/nonce with spaces:${'x'.repeat(96)}`
-    let body: Record<string, unknown> | undefined
+    const bodies: Array<Record<string, unknown>> = []
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (!url.endsWith('/queue/clear')) throw new Error(`unexpected URL ${url}`)
-      body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
       return jsonResponse({ accepted: true, cursor: 3, cleared: 1 })
     }) as unknown as MockFetch
     const session = createSession(fetchMock, { autoStart: false })
 
     await session.clearQueue({ clientNonce: nonce, clientSeq: 42 })
+    await session.clearQueue({ clientNonce: nonce, clientSeq: 42 })
 
-    expect(body).toMatchObject({ clientNonce: nonce, clientSeq: 42 })
-    expect(body?.requestId).toEqual(expect.stringMatching(/^queue-clear:[a-f0-9]{64}$/u))
-    expect(String(body?.requestId)).toHaveLength(76)
+    expect(bodies).toHaveLength(2)
+    for (const body of bodies) {
+      expect(body).toMatchObject({ clientNonce: nonce, clientSeq: 42 })
+      expect(body.requestId).toEqual(expect.stringMatching(/^queue-clear:[a-f0-9-]{36}$/u))
+      expect(String(body.requestId)).toHaveLength(48)
+    }
+    expect(bodies[0]?.requestId).not.toBe(bodies[1]?.requestId)
     session.dispose()
   })
 

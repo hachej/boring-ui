@@ -1,5 +1,5 @@
 import { ErrorCode } from '../../../shared/error-codes'
-import { sha256 } from '../../../shared/digest'
+import { safeRandomUUID } from '../../../shared/random-id'
 import {
   errorResponseCode,
   GatewayResponseError,
@@ -265,12 +265,15 @@ export class RemotePiSession {
   }
 
   async clearQueue(payload: QueueClearPayload = {}): Promise<QueueClearReceipt> {
+    const commandPayload = hasQueueSelector(payload)
+      ? { ...payload, requestId: `queue-clear:${safeRandomUUID()}` }
+      : payload
     let receipt: QueueClearReceipt
     try {
-      receipt = await this.postCommand('/queue/clear', payload, QueueClearReceiptSchema)
+      receipt = await this.postCommand('/queue/clear', commandPayload, QueueClearReceiptSchema)
     } catch (error) {
       if (error instanceof GatewayResponseError || !hasQueueSelector(payload)) throw error
-      receipt = await this.postCommand('/queue/clear', payload, QueueClearReceiptSchema)
+      receipt = await this.postCommand('/queue/clear', commandPayload, QueueClearReceiptSchema)
     }
     if (!this.disposed && receipt.cleared > 0) {
       this.store.dispatch({ type: 'clear-optimistic-followups', ...payload }, { flush: true })
@@ -556,7 +559,7 @@ export class RemotePiSession {
     const raw = await this.fetchJson(this.sessionUrl(path), {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify(await this.addressedCommandPayload(path, payload)),
+      body: JSON.stringify(this.addressedCommandPayload(path, payload)),
     }, this.commandTimeoutMs)
     if (!this.isGenerationActive(generation)) {
       throw abortError('Remote Pi session disposed before command receipt.')
@@ -635,7 +638,7 @@ export class RemotePiSession {
     return `${this.apiBaseUrl}/api/v1/agents/${encodeURIComponent(this.options.agentTypeId)}/sessions/${encodeURIComponent(this.options.sessionId)}${path}`
   }
 
-  private async addressedCommandPayload(path: string, payload: unknown): Promise<unknown> {
+  private addressedCommandPayload(path: string, payload: unknown): unknown {
     if (typeof payload !== 'object' || payload === null) return payload
     const record = payload as Record<string, unknown>
     if (typeof record.requestId === 'string' && record.requestId.length > 0) return payload
@@ -646,19 +649,6 @@ export class RemotePiSession {
         requestId: record.clientNonce,
         content: message,
         ...(typeof displayMessage === 'string' ? { displayContent: displayMessage } : {}),
-      }
-    }
-    if (
-      path === '/queue/clear'
-      && (typeof record.clientNonce === 'string' || typeof record.clientSeq === 'number')
-    ) {
-      const selectorDigest = await sha256(JSON.stringify([
-        typeof record.clientNonce === 'string' ? record.clientNonce : null,
-        typeof record.clientSeq === 'number' ? record.clientSeq : null,
-      ]))
-      return {
-        ...record,
-        requestId: `queue-clear:${selectorDigest.slice('sha256:'.length)}`,
       }
     }
     if (
