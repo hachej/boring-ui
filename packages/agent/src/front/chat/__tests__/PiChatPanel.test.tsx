@@ -334,7 +334,7 @@ describe('PiChatPanel sandbox shell', () => {
     await screen.findByTestId('chat-working')
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
 
-    await waitFor(() => expect(remote.interrupt).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(remote.interrupt).toHaveBeenCalledWith({ queueAction: 'hold' }))
     expect(remote.stop).not.toHaveBeenCalled()
     expect(remote.clearQueue).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.queryByTestId('chat-working')).toBeNull())
@@ -903,6 +903,8 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
     fireEvent.keyDown(textarea, { key: 'Escape' })
     await waitFor(() => expect(remote.interrupt).toHaveBeenCalledTimes(2))
+    expect(remote.interrupt).toHaveBeenNthCalledWith(1, { queueAction: 'hold' })
+    expect(remote.interrupt).toHaveBeenNthCalledWith(2, {})
     expect(remote.stop).not.toHaveBeenCalled()
   })
 
@@ -991,6 +993,11 @@ describe('PiChatPanel sandbox shell', () => {
 
     await screen.findByText('queued from server')
     expect(screen.getByText('1 queued follow-up').closest('[data-boring-agent-part="composer-queue-preview"]')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Resume queued follow-ups' })).toBeNull()
+    act(() => { remote.setState({ ...remote.state, status: 'idle' }) })
+    const resume = await screen.findByRole('button', { name: 'Resume queued follow-ups' })
+    fireEvent.click(resume)
+    await waitFor(() => expect(remote.interrupt).toHaveBeenCalledWith({ queueAction: 'resume' }))
     expect(document.querySelector('[data-boring-agent-message-id^="queue:"]')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Delete queued message' })).toBeNull()
   })

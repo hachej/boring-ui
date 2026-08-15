@@ -522,16 +522,20 @@ export class HarnessPiChatService implements PiChatSessionService {
     return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0, cleared: clearedQueue.length }
   }
 
-  async interrupt(ctx: PiSessionRequestContext, sessionId: string, _payload: InterruptPayload): Promise<{ accepted: true; cursor: number }> {
-    return this.lifecycle.run(() => this.interruptBeforeDispose(ctx, sessionId))
+  async interrupt(ctx: PiSessionRequestContext, sessionId: string, payload: InterruptPayload): Promise<{ accepted: true; cursor: number }> {
+    return this.lifecycle.run(() => this.interruptBeforeDispose(ctx, sessionId, payload))
   }
 
-  private async interruptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string): Promise<{ accepted: true; cursor: number }> {
+  private async interruptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: InterruptPayload): Promise<{ accepted: true; cursor: number }> {
     const sessionKey = this.sessionKey(ctx, sessionId)
     const adapter = await this.getAdapter(ctx, sessionId, '')
     const snapshot = adapter.readSnapshot()
     const wasActive = snapshot.isStreaming || snapshot.isRetrying
-    const nextFollowUp = wasActive ? this.nextFollowUpForInterrupt(sessionId, sessionKey, adapter) : undefined
+    const shouldPromoteFollowUp = payload.queueAction === 'resume'
+      || (wasActive && payload.queueAction !== 'hold')
+    const nextFollowUp = shouldPromoteFollowUp
+      ? this.nextFollowUpForInterrupt(sessionId, sessionKey, adapter)
+      : undefined
     const activeRun = this.activePromptRuns.get(sessionKey)
     adapter.abortRetry?.()
     if (wasActive) await adapter.abort()

@@ -984,9 +984,8 @@ export function PiChatPanel<
   const stop = useCallback(() => {
     onComposerStop?.()
     clearLocalSubmitted(activeChatSessionId)
-    // The composer Stop control interrupts instead of deleting queued follow-ups.
-    // The service retains its interrupt semantics, which may promote the next item.
-    void policy?.interrupt().catch((error) => {
+    // Stop aborts the active turn while explicitly holding queued follow-ups.
+    void policy?.interrupt({ queueAction: 'hold' }).catch((error) => {
       addLocalNotice({ id: 'stop-error', level: 'error', text: errorMessage(error, 'Could not stop the chat session.'), dismissible: true })
     })
   }, [activeChatSessionId, addLocalNotice, clearLocalSubmitted, onComposerStop, policy])
@@ -994,6 +993,12 @@ export function PiChatPanel<
   const interrupt = useCallback(() => {
     void policy?.interrupt().catch((error) => {
       addLocalNotice({ id: 'interrupt-error', level: 'error', text: errorMessage(error, 'Could not interrupt the chat session.'), dismissible: true })
+    })
+  }, [addLocalNotice, policy])
+
+  const resumeQueued = useCallback(() => {
+    void policy?.resumeQueued().catch((error) => {
+      addLocalNotice({ id: 'resume-queued-error', level: 'error', text: errorMessage(error, 'Could not resume queued follow-ups.'), dismissible: true })
     })
   }, [addLocalNotice, policy])
 
@@ -1186,6 +1191,7 @@ export function PiChatPanel<
               onComposerBlockerAction={onComposerBlockerAction}
               queuePreview={queuePreview}
               onEditQueued={editQueued}
+              onResumeQueued={resumeQueued}
               hotReloadEnabled={hotReloadEnabled}
               pluginUpdateState={pluginUpdateState}
               onDismissPluginUpdate={dismissPluginUpdate}

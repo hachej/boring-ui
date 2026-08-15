@@ -4,6 +4,7 @@ import type {
   FollowUpPayload,
   FollowUpReceipt,
   InterruptReceipt,
+  InterruptPayload,
   PiChatStatus,
   PromptPayload,
   PromptReceipt,
@@ -19,7 +20,7 @@ export interface PiQueueSessionLike {
   prompt(payload: PromptPayload): Promise<PromptReceipt>
   followUp(payload: FollowUpPayload): Promise<FollowUpReceipt>
   clearQueue(payload?: QueueClearPayload): Promise<QueueClearReceipt>
-  interrupt(): Promise<InterruptReceipt>
+  interrupt(payload?: InterruptPayload): Promise<InterruptReceipt>
   stop(): Promise<StopReceipt>
 }
 
@@ -165,8 +166,12 @@ export class PiFollowUpQueueController {
     return { type: 'clear-failed', draft, error: clearError, message }
   }
 
-  interrupt(): Promise<CommandReceipt> {
-    return this.session.interrupt()
+  interrupt(payload: InterruptPayload = {}): Promise<CommandReceipt> {
+    return this.session.interrupt(payload)
+  }
+
+  resumeQueued(): Promise<CommandReceipt> {
+    return this.session.interrupt({ queueAction: 'resume' })
   }
 
   stop(): Promise<StopReceipt> {

@@ -136,6 +136,10 @@ const FollowUpBodySchema = z.object({
 const ControlBodySchema = z.preprocess((value) => value === undefined ? {} : value, z.object({
   requestId: RequestIdSchema.optional(),
 }).strict())
+const InterruptBodySchema = z.preprocess((value) => value === undefined ? {} : value, z.object({
+  requestId: RequestIdSchema.optional(),
+  queueAction: z.enum(['hold', 'resume']).optional(),
+}).strict())
 const QueueClearBodySchema = z.preprocess((value) => value === undefined ? {} : value, z.object({
   requestId: RequestIdSchema.optional(),
   clientNonce: NonEmptyString.max(128).optional(),
@@ -541,10 +545,13 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
   app.post('/api/v1/agents/:agentTypeId/sessions/:sessionId/interrupt', async (request, reply) => {
     const params = parseWithSchema(SessionParamsSchema, request.params, reply, 'params')
     if (!params) return
-    const body = parseWithSchema(ControlBodySchema, request.body, reply, 'body')
+    const body = parseWithSchema(InterruptBodySchema, request.body, reply, 'body')
     if (!body) return
     try {
-      const control: IdempotentAgentControl = { requestId: body.requestId ?? randomUUID() }
+      const control: IdempotentAgentControl = {
+        requestId: body.requestId ?? randomUUID(),
+        ...(body.queueAction !== undefined ? { queueAction: body.queueAction } : {}),
+      }
       return reply.code(202).send(await withConnection(input, request, params, (connection) => connection.interrupt(control)))
     } catch (error) {
       return sendError(reply, error)

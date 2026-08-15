@@ -99,6 +99,7 @@ describe('Pi chat shared schemas', () => {
     expect(QueueClearPayloadSchema.parse(undefined)).toEqual({})
     expect(QueueClearPayloadSchema.parse({ clientNonce: 'nonce-q', clientSeq: 1 })).toEqual({ clientNonce: 'nonce-q', clientSeq: 1 })
     expect(InterruptPayloadSchema.parse({})).toEqual({})
+    expect(InterruptPayloadSchema.parse({ queueAction: 'hold' })).toEqual({ queueAction: 'hold' })
     expect(StopPayloadSchema.parse({})).toEqual({})
     expect(QueueClearPayloadSchema.safeParse({ unexpected: true }).success).toBe(false)
 

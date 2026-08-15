@@ -82,6 +82,7 @@ export interface PiChatComposerSurfaceProps<
   onComposerBlockerAction?: (blocker: TComposerBlocker, action: string) => void
   queuePreview: QueuedUserMessage[]
   onEditQueued: () => void
+  onResumeQueued: () => void
   hotReloadEnabled: boolean
   pluginUpdateState: PluginUpdateState | null
   onDismissPluginUpdate: () => void
@@ -145,6 +146,7 @@ export function PiChatComposerSurface<
   onComposerBlockerAction,
   queuePreview,
   onEditQueued,
+  onResumeQueued,
   hotReloadEnabled,
   pluginUpdateState,
   onDismissPluginUpdate,
@@ -266,7 +268,7 @@ export function PiChatComposerSurface<
         />
       ) : null}
       {queuePreview.length > 0 ? (
-        <QueuedComposerNotice followUps={queuePreview} onEdit={onEditQueued} />
+        <QueuedComposerNotice followUps={queuePreview} onEdit={onEditQueued} onResume={isStreaming ? undefined : onResumeQueued} />
       ) : null}
       {hotReloadEnabled ? (
         <PluginUpdateStatus

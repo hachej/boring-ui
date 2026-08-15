@@ -270,11 +270,13 @@ describe('PiFollowUpQueueController', () => {
     const controller = createPiFollowUpQueueController(session, { onWarning: (message) => warnings.push(message) })
 
     await expect(controller.editQueued()).resolves.toEqual({ type: 'empty', message: 'No queued messages to edit.' })
-    await controller.interrupt()
+    await controller.interrupt({ queueAction: 'hold' })
+    await controller.resumeQueued()
     await controller.stop()
 
     expect(session.clearQueue).not.toHaveBeenCalled()
-    expect(session.interrupt).toHaveBeenCalledTimes(1)
+    expect(session.interrupt).toHaveBeenNthCalledWith(1, { queueAction: 'hold' })
+    expect(session.interrupt).toHaveBeenNthCalledWith(2, { queueAction: 'resume' })
     expect(session.stop).toHaveBeenCalledTimes(1)
     expect(warnings).toEqual(['No queued messages to edit.'])
   })

@@ -86,10 +86,16 @@ test.describe('Pi-native property baseline', () => {
       await assertAfter('queue follow-up before stop')
 
       await page.getByRole('button', { name: 'Stop', exact: true }).click()
+      await expect(page.getByTestId('chat-working')).toHaveCount(0, { timeout: 10_000 })
+      await expect(queuePreviewText).toContainText('property queued runs after stop', { timeout: 10_000 })
+      await expect(conversation.getByText('property queued runs after stop')).toHaveCount(0)
+      await assertAfter('stop holds queued follow-up')
+
+      await page.getByRole('button', { name: 'Resume queued follow-ups', exact: true }).click()
       await expect(queuePreview).toHaveCount(0, { timeout: 10_000 })
       await expect(conversation.getByText('property queued runs after stop')).toBeVisible({ timeout: 10_000 })
       await expectAssistantCompletionAfterUser(page, 'property queued runs after stop')
-      await assertAfter('stop promotes queued follow-up')
+      await assertAfter('explicit resume promotes held follow-up')
 
       await page.reload({ waitUntil: 'domcontentloaded' })
       await expect(chat).toHaveAttribute('data-pi-chat-connection', /connected|connecting/, { timeout: 10_000 })

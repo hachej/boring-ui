@@ -158,6 +158,8 @@ export type IdempotentAgentSend = AgentPromptCommand | AgentFollowUpCommand
 
 export interface IdempotentAgentControl {
   readonly requestId: string
+  /** Interrupt-only policy: abort without promoting a queued follow-up. */
+  readonly queueAction?: 'hold' | 'resume'
 }
 
 export interface IdempotentQueueClear extends IdempotentAgentControl {

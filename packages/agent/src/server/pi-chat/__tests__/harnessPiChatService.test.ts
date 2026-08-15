@@ -1504,6 +1504,26 @@ describe('HarnessPiChatService', () => {
     })
   })
 
+  it('holds queued follow-ups when interrupting an active turn for Stop', async () => {
+    const adapter = createAdapter()
+    const { service } = createService(adapter)
+
+    await service.followUp(ctx, 's1', {
+      message: 'held after stop',
+      clientNonce: 'nonce-held',
+      clientSeq: 9,
+    })
+    await expect(service.interrupt(ctx, 's1', { queueAction: 'hold' })).resolves.toMatchObject({ accepted: true })
+
+    expect(adapter.abortRetry).toHaveBeenCalledTimes(1)
+    expect(adapter.abort).toHaveBeenCalledTimes(1)
+    expect(adapter.continueQueuedFollowUp).not.toHaveBeenCalled()
+    expect(adapter.prompt).not.toHaveBeenCalled()
+    await expect(service.readState(ctx, 's1')).resolves.toMatchObject({
+      queue: { followUps: [{ displayText: 'held after stop', clientNonce: 'nonce-held', clientSeq: 9 }] },
+    })
+  })
+
   it('acknowledges interrupt while the auto-posted replacement remains stoppable', async () => {
     const adapter = createAdapter()
     const replacement = deferred<void>()
@@ -1586,7 +1606,7 @@ describe('HarnessPiChatService', () => {
     if (subscription.type === 'ok') subscription.unsubscribe()
   })
 
-  it('does not auto-post queued follow-ups when interrupting an idle session', async () => {
+  it('resumes the oldest held follow-up when interrupt is invoked on an idle session', async () => {
     const adapter = createAdapter()
     adapter.readSnapshot().isStreaming = false
     adapter.readSnapshot().isRetrying = false
@@ -1597,14 +1617,14 @@ describe('HarnessPiChatService', () => {
       clientNonce: 'nonce-idle',
       clientSeq: 7,
     })
-    await expect(service.interrupt(ctx, 's1', {})).resolves.toMatchObject({ accepted: true })
+    await expect(service.interrupt(ctx, 's1', { queueAction: 'resume' })).resolves.toMatchObject({ accepted: true })
 
     expect(adapter.abortRetry).toHaveBeenCalledTimes(1)
     expect(adapter.abort).not.toHaveBeenCalled()
-    expect(adapter.continueQueuedFollowUp).not.toHaveBeenCalled()
+    expect(adapter.continueQueuedFollowUp).toHaveBeenCalledTimes(1)
     expect(adapter.prompt).not.toHaveBeenCalled()
     await expect(service.readState(ctx, 's1')).resolves.toMatchObject({
-      queue: { followUps: [{ displayText: 'idle queued', clientNonce: 'nonce-idle', clientSeq: 7 }] },
+      queue: { followUps: [] },
     })
   })
 
