@@ -309,7 +309,11 @@ export async function requireExactlyOneComposioAccount(
   if (!toolkitId) throw new McpError(MCP_ERROR_CODES.INPUT_INVALID, "Composio toolkit is required")
   const params = new URLSearchParams({ user_id: composioUserId(input.actor), toolkit_slug: toolkitId, limit: String(MAX_ACCOUNT_RESULTS) })
   const payload = await composioRequest(options, input.secret, "GET", `/api/v3.1/connected_accounts?${params}`)
-  const root = record(payload)
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw safeProviderError("Composio connected-account response was malformed")
+  }
+  const root = payload as Record<string, unknown>
+  if (!Array.isArray(root.items)) throw safeProviderError("Composio connected-account items were malformed")
   const hasMorePresent = Object.prototype.hasOwnProperty.call(root, "has_more")
   const cursorPresent = Object.prototype.hasOwnProperty.call(root, "next_cursor") || Object.prototype.hasOwnProperty.call(root, "nextCursor")
   const cursorValue = root.next_cursor ?? root.nextCursor
@@ -327,14 +331,23 @@ export async function requireExactlyOneComposioAccount(
   if (root.has_more === true || continuation || array(root.items).length >= MAX_ACCOUNT_RESULTS) {
     throw safeProviderError("Composio connected-account result was incomplete")
   }
-  const active = array(root.items).flatMap((value): ComposioAccountPin[] => {
-    const account = record(value)
+  const accounts = root.items.map((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw safeProviderError("Composio connected-account row was malformed")
+    }
+    const account = value as Record<string, unknown>
     const id = optionalString(account.id) ?? optionalString(account.nanoid)
     const userId = optionalString(account.user_id)
     const accountToolkit = optionalString(record(account.toolkit).slug)?.toLowerCase()
     const status = optionalString(account.status)?.toUpperCase()
+    if (!id || !userId || !accountToolkit || !status) {
+      throw safeProviderError("Composio connected-account row was incomplete")
+    }
+    return { account, id, userId, accountToolkit, status }
+  })
+  const active = accounts.flatMap(({ account, id, userId, accountToolkit, status }): ComposioAccountPin[] => {
     const disabled = account.is_disabled === true || record(account.auth_config).is_disabled === true
-    if (!id || userId !== composioUserId(input.actor) || accountToolkit !== toolkitId || disabled) return []
+    if (userId !== composioUserId(input.actor) || accountToolkit !== toolkitId || disabled) return []
     return status === "ACTIVE" || status === "CONNECTED" || status === "ENABLED" ? [{ connectedAccountId: id, toolkitId }] : []
   })
   if (active.length === 0) {

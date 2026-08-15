@@ -239,6 +239,11 @@ describe("Composio full-catalog backend", () => {
     const none = composioApiFetch(fakeMcp.url)
     await expect(requireExactlyOneComposioAccount(backendOptions(none.fetch), { actor, secret, toolkitId: "github" }))
       .rejects.toMatchObject({ code: MCP_ERROR_CODES.CONNECTED_ACCOUNT_REQUIRED })
+    for (const malformed of [{ has_more: false }, { items: [{ id: "account-1", user_id: composioSubject, status: "ACTIVE", toolkit: { slug: "github" } }, "malformed-row"], has_more: false }]) {
+      const fetch = vi.fn(async () => Response.json(malformed)) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
+      await expect(requireExactlyOneComposioAccount(backendOptions(fetch), { actor, secret, toolkitId: "github" }))
+        .rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_ERROR })
+    }
 
     const pagedFetch = vi.fn(async () => Response.json({ items: [{ id: "account-1", user_id: composioSubject, status: "ACTIVE", toolkit: { slug: "github" } }], next_cursor: "more" })) as typeof globalThis.fetch & ReturnType<typeof vi.fn>
     await expect(requireExactlyOneComposioAccount(backendOptions(pagedFetch), { actor, secret, toolkitId: "github" }))
