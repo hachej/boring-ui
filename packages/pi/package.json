@@ -4,6 +4,9 @@
   "type": "module",
   "license": "MIT",
   "description": "Pi skills and agent-facing references for boring-ui.",
+  "scripts": {
+    "build": "node scripts/assert-package.mjs"
+  },
   "files": [
     "skills",
     "references"
