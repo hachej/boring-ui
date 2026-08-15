@@ -1,4 +1,5 @@
 import { ErrorCode } from '../../../shared/error-codes'
+import { sha256 } from '../../../shared/digest'
 import {
   errorResponseCode,
   GatewayResponseError,
@@ -268,7 +269,7 @@ export class RemotePiSession {
     try {
       receipt = await this.postCommand('/queue/clear', payload, QueueClearReceiptSchema)
     } catch (error) {
-      if (error instanceof GatewayResponseError) throw error
+      if (error instanceof GatewayResponseError || !hasQueueSelector(payload)) throw error
       receipt = await this.postCommand('/queue/clear', payload, QueueClearReceiptSchema)
     }
     if (!this.disposed && receipt.cleared > 0) {
@@ -555,7 +556,7 @@ export class RemotePiSession {
     const raw = await this.fetchJson(this.sessionUrl(path), {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify(this.addressedCommandPayload(path, payload)),
+      body: JSON.stringify(await this.addressedCommandPayload(path, payload)),
     }, this.commandTimeoutMs)
     if (!this.isGenerationActive(generation)) {
       throw abortError('Remote Pi session disposed before command receipt.')
@@ -634,7 +635,7 @@ export class RemotePiSession {
     return `${this.apiBaseUrl}/api/v1/agents/${encodeURIComponent(this.options.agentTypeId)}/sessions/${encodeURIComponent(this.options.sessionId)}${path}`
   }
 
-  private addressedCommandPayload(path: string, payload: unknown): unknown {
+  private async addressedCommandPayload(path: string, payload: unknown): Promise<unknown> {
     if (typeof payload !== 'object' || payload === null) return payload
     const record = payload as Record<string, unknown>
     if (typeof record.requestId === 'string' && record.requestId.length > 0) return payload
@@ -651,9 +652,13 @@ export class RemotePiSession {
       path === '/queue/clear'
       && (typeof record.clientNonce === 'string' || typeof record.clientSeq === 'number')
     ) {
+      const selectorDigest = await sha256(JSON.stringify([
+        typeof record.clientNonce === 'string' ? record.clientNonce : null,
+        typeof record.clientSeq === 'number' ? record.clientSeq : null,
+      ]))
       return {
         ...record,
-        requestId: `queue-clear:${typeof record.clientNonce === 'string' ? record.clientNonce : ''}:${typeof record.clientSeq === 'number' ? record.clientSeq : ''}`,
+        requestId: `queue-clear:${selectorDigest.slice('sha256:'.length)}`,
       }
     }
     if (
@@ -827,6 +832,10 @@ function estimateJsonBytes(value: unknown): number {
   } catch {
     return 0
   }
+}
+
+function hasQueueSelector(payload: QueueClearPayload): boolean {
+  return Boolean(payload.clientNonce) || payload.clientSeq !== undefined
 }
 
 function hasHeader(headers: Record<string, string>, name: string): boolean {

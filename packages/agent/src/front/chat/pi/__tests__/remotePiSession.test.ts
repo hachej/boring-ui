@@ -890,7 +890,11 @@ describe('RemotePiSession', () => {
       ['https://agent.test/api/v1/agents/default/sessions/s1/interrupt', 'POST'],
       ['https://agent.test/api/v1/agents/default/sessions/s1/stop', 'POST'],
     ])
-    expect(JSON.parse(String(postCalls[2]?.[1]?.body))).toEqual({ clientNonce: 'nonce-q', clientSeq: 1, requestId: 'queue-clear:nonce-q:1' })
+    expect(JSON.parse(String(postCalls[2]?.[1]?.body))).toEqual({
+      clientNonce: 'nonce-q',
+      clientSeq: 1,
+      requestId: expect.stringMatching(/^queue-clear:[a-f0-9]{64}$/u),
+    })
     expect(session.getState().committedMessages).toEqual([])
     expect(session.getState().optimisticOutbox['nonce-1']).toMatchObject({
       role: 'user',
@@ -921,10 +925,31 @@ describe('RemotePiSession', () => {
       cursor: 3,
       cleared: 1,
     })
-    expect(bodies).toEqual([
-      { clientNonce: 'nonce-q', clientSeq: 1, requestId: 'queue-clear:nonce-q:1' },
-      { clientNonce: 'nonce-q', clientSeq: 1, requestId: 'queue-clear:nonce-q:1' },
-    ])
+    expect(bodies).toHaveLength(2)
+    expect(bodies[0]).toEqual({
+      clientNonce: 'nonce-q',
+      clientSeq: 1,
+      requestId: expect.stringMatching(/^queue-clear:[a-f0-9]{64}$/u),
+    })
+    expect(bodies[1]).toEqual(bodies[0])
+    session.dispose()
+  })
+
+  it('bounds and sanitizes selected-clear idempotency keys for arbitrary valid nonces', async () => {
+    const nonce = `external/nonce with spaces:${'x'.repeat(96)}`
+    let body: Record<string, unknown> | undefined
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (!url.endsWith('/queue/clear')) throw new Error(`unexpected URL ${url}`)
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return jsonResponse({ accepted: true, cursor: 3, cleared: 1 })
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    await session.clearQueue({ clientNonce: nonce, clientSeq: 42 })
+
+    expect(body).toMatchObject({ clientNonce: nonce, clientSeq: 42 })
+    expect(body?.requestId).toEqual(expect.stringMatching(/^queue-clear:[a-f0-9]{64}$/u))
+    expect(String(body?.requestId)).toHaveLength(76)
     session.dispose()
   })
 
