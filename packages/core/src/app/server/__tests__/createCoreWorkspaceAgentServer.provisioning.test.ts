@@ -223,6 +223,33 @@ test('core backfills through explicit CAS after fleet validation and before rout
   } finally { await app.close() }
 }, 60_000)
 
+test('uses one validated config default for backfill and future workspace writers', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [], agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
+    preservedUiStateKeys: [], routeContributions: [],
+  })
+  const config = createTestCoreConfig({
+    stores: 'postgres',
+    databaseUrl: 'postgres://test',
+    defaultAgentTypeId: 'reviewer',
+  })
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config,
+    agents: [
+      { agentTypeId: 'default', legacyDefault: true },
+      { agentTypeId: 'reviewer', definition: { label: 'Reviewer', instructions: 'Review.' } },
+    ],
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+  })
+  try {
+    expect(mocks.compareAndSetNullDefaultAgentTypeId)
+      .toHaveBeenCalledWith(config.appId, 'reviewer')
+    expect(app.config.defaultAgentTypeId).toBe('reviewer')
+  } finally { await app.close() }
+}, 30_000)
+
 test.each(['before-inventory', 'cas', 'after-inventory', 'remaining-null'] as const)(
   'closes AgentHost when default migration fails at %s',
   async (stage) => {
@@ -297,9 +324,11 @@ test('unknown persisted default denies execution but preserves session and histo
     const meta = await app.inject({ method: 'GET', url: '/api/v1/workspace/meta?workspaceId=workspace-a',
       headers: { 'x-test-user-id': 'user-a' } })
     expect(meta.statusCode).toBe(409)
-    expect(meta.json()).toEqual({ error: {
-      code: 'default_agent_type_unknown_seat', message: 'Workspace default Agent is unavailable',
-    } })
+    expect(meta.json()).toMatchObject({
+      code: 'default_agent_type_unknown_seat',
+      message: 'Workspace default Agent is unavailable',
+      requestId: expect.any(String),
+    })
   } finally { await app.close() }
 }, 60_000)
 
