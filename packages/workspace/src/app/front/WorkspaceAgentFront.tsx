@@ -796,7 +796,6 @@ export function WorkspaceAgentFront<
     [authHeaders, requestHeaders, workspaceId],
   )
   const fleetModeEnabled = addressedAgentSelection && isPluginTabsLayout
-  const singleAgentSkillsActionEnabled = skillsActionEnabled && !fleetModeEnabled
   const useAgentSelection = useAddressedAgentSelectionProp ?? useDefaultAddressedAgentSelection
   const addressedAgents = useAgentSelection({
     apiBaseUrl,
@@ -804,6 +803,9 @@ export function WorkspaceAgentFront<
     storageScope: workspaceId,
     enabled: fleetModeEnabled,
   })
+  const singleAgentSkillsActionEnabled = skillsActionEnabled && (
+    !fleetModeEnabled || (!addressedAgents.loading && addressedAgents.agents.length === 1)
+  )
   const effectiveAgentTypeId = addressedAgents.selectedAgentTypeId ?? defaultAgentTypeId
   const selectedAgentTypeId = effectiveAgentTypeId
   // The New chat picker chooses who the *next* chat belongs to. It is

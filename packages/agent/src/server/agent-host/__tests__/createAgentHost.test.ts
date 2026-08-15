@@ -89,6 +89,34 @@ describe('createAgentHost', () => {
     await second.host.close()
   })
 
+  it('presents a lone legacy default but hides it from a composed fleet without breaking direct access', async () => {
+    const legacy = await createAgentHost({
+      ...options(await root()),
+      agents: [{ agentTypeId: 'default', legacyDefault: true }],
+    })
+    expect((await legacy.host.describe()).agents).toEqual([{ agentTypeId: 'default', label: 'Agent' }])
+    expect(await legacy.gateway.listAgents({ scope })).toEqual([{ agentTypeId: 'default', label: 'Agent' }])
+    await legacy.host.close()
+
+    const composed = await createAgentHost({
+      ...options(await root()),
+      agents: [
+        { agentTypeId: 'default', legacyDefault: true },
+        { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
+      ],
+    })
+    expect((await composed.host.describe()).agents).toEqual([{ agentTypeId: 'alpha', label: 'Alpha' }])
+    expect(await composed.gateway.listAgents({ scope })).toEqual([{ agentTypeId: 'alpha', label: 'Alpha' }])
+
+    const defaultSession = await composed.gateway.createSession({
+      scope,
+      agentTypeId: 'default',
+      requestId: 'legacy-default-direct-access',
+    })
+    expect(defaultSession.agentTypeId).toBe('default')
+    await composed.host.close()
+  })
+
   it('requires a stable host identity source and validates explicit IDs', async () => {
     const sessionRoot = await root()
     await expect(createAgentHost({ ...options(sessionRoot), hostId: 'bad host' })).rejects.toThrow('hostId')

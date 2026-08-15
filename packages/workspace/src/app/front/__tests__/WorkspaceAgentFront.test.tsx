@@ -614,6 +614,41 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByRole("button", { name: "Start new chat with Alpha" })).not.toBeInTheDocument()
   })
 
+  it("shows the Agent nav action for an actual single-agent catalog", () => {
+    const useAgentSelection = () => ({
+      agents: [{ agentTypeId: "default", label: "Agent" }],
+      selectedAgentTypeId: "default",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    const useSingleAgentSessions: AttestedWorkspaceAgentFrontProps<WorkspaceAgentSession>["useSessions"] = (options) => ({
+      sessions: [],
+      loading: false,
+      activeSessionId: undefined,
+      activeSessionAgentTypeId: options.agentTypeId,
+      activeSession: undefined,
+      workspaceId: options.workspaceId,
+      switch: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="legacy-single-agent"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAgentSelection}
+        useSessions={useSingleAgentSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Agent" })).toBeInTheDocument()
+  })
+
   it("discovers an addressed fleet, groups its chats, and creates through the chosen owner", async () => {
     const user = userEvent.setup()
     const createdBy = vi.fn()
