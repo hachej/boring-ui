@@ -190,6 +190,7 @@ export function buildEditedQueuedDraft(followUps: readonly QueuedUserMessage[], 
   const draft = existingDraft.trim()
   if (!queuedText) return draft
   if (!draft) return queuedText
+  if (draft === queuedText || draft.startsWith(`${queuedText}\n\n`)) return draft
   return `${queuedText}\n\n${draft}`
 }
 

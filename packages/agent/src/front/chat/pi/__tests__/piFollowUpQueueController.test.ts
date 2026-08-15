@@ -174,6 +174,35 @@ describe('PiFollowUpQueueController', () => {
     expect(warnings).toEqual(['Queued messages were copied into the composer, but the server queue was not cleared. They may still send unless you retry Edit queued.'])
   })
 
+  it('does not duplicate restored queue text when retrying Edit queued after a clear failure', async () => {
+    const session = new FakeQueueSession('streaming', [
+      { id: 'q1', kind: 'followup', displayText: 'first queued', clientSeq: 1 },
+      { id: 'q2', kind: 'followup', displayText: 'second queued', clientSeq: 2 },
+    ])
+    session.clearQueue
+      .mockRejectedValueOnce(new Error('clear failed'))
+      .mockResolvedValueOnce({ accepted: true, cursor: 2, cleared: 2 })
+    let draft = 'existing draft'
+    const drafts: string[] = []
+    const controller = createPiFollowUpQueueController(session, {
+      getDraft: () => draft,
+      onDraftChange: (next) => {
+        draft = next
+        drafts.push(next)
+      },
+    })
+
+    await expect(controller.editQueued()).resolves.toMatchObject({ type: 'clear-failed' })
+    await expect(controller.editQueued()).resolves.toMatchObject({ type: 'cleared' })
+
+    expect(draft).toBe('first queued\n\nsecond queued\n\nexisting draft')
+    expect(drafts).toEqual([
+      'first queued\n\nsecond queued\n\nexisting draft',
+      'first queued\n\nsecond queued\n\nexisting draft',
+    ])
+    expect(session.clearQueue).toHaveBeenCalledTimes(2)
+  })
+
   it('does not clear the queue for empty edit or interrupt; stop remains the queue-clearing command', async () => {
     const warnings: string[] = []
     const session = new FakeQueueSession('streaming')
