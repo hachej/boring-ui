@@ -3,7 +3,6 @@
 import { Button, EmptyState, Notice, Pane, PaneBody, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
 import { Artifact, ArtifactAction, ArtifactActions, ArtifactDescription, ArtifactHeader, ArtifactTitle, useOpenArtifact } from "@hachej/boring-agent/front"
 import {
-  HumanArtifactListSchema,
   WORKSPACE_COMPOSER_STOP_EVENT,
   postUiCommand,
   useWorkspaceAttention,
@@ -18,6 +17,7 @@ import { definePlugin, type BoringFrontAppLeftOverlayProps, type BoringFrontFact
 import { CheckCircle2, ExternalLink, FileText, HelpCircle, Inbox, SquareArrowOutUpRight, XCircle } from "lucide-react"
 import { useEffect, useMemo, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
+import { AskUserToolInputSchema } from "../shared/schema"
 import type { AskUserAnswerValue, AskUserQuestion } from "../shared/types"
 import { createQuestionsClient, QuestionsClientError } from "./client"
 import { createQuestionsStore, pendingQuestionSnapshot, QuestionsRuntimeContext, isSessionOpen, useQuestionsRuntime, type QuestionsRuntime } from "./runtime"
@@ -159,9 +159,8 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
 }
 
 function inlineArtifactsFromInput(input: unknown): HumanArtifact[] {
-  if (typeof input !== "object" || !input) return []
-  const result = HumanArtifactListSchema.safeParse((input as { artifacts?: unknown }).artifacts ?? [])
-  return result.success ? result.data : []
+  const result = AskUserToolInputSchema.safeParse(input)
+  return result.success ? result.data.artifacts ?? [] : []
 }
 
 function InlineArtifactList({ artifacts }: { artifacts: HumanArtifact[] }) {

@@ -613,7 +613,7 @@ describe("askUserPlugin front shell", () => {
     const onOpenArtifact = vi.fn()
     const onCommand = vi.fn()
     window.addEventListener(UI_COMMAND_EVENT, onCommand)
-    const input = { title: pendingQuestion.title, artifacts }
+    const input = { title: pendingQuestion.title, schema: pendingQuestion.schema, artifacts }
     const view = render(
       <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
         <Provider apiBaseUrl="" activeSessionId="default"><>{renderer.render({ toolCallId: pendingQuestion.toolCallId, state: "input-available", input })}</></Provider>
@@ -626,6 +626,7 @@ describe("askUserPlugin front shell", () => {
     expect(screen.getByText("Open the registered catalog surface.")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Open PR review" }))
     expect(onOpenArtifact).toHaveBeenCalledWith("docs/review.html")
+    expect(onCommand).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole("button", { name: "Open Orders table" }))
     expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ detail: {
       kind: "openSurface",
@@ -647,19 +648,34 @@ describe("askUserPlugin front shell", () => {
   it("keeps authored artifacts visible in cancelled output", () => {
     const Provider = getProvider()
     const renderer = capturedPlugin.registrations.toolRenderers.find((registration) => registration.id === "ask_user")!
-    render(<Provider apiBaseUrl=""><>{renderer.render({ state: "aborted", input: { title: "Review decision", artifacts: [{ id: "proof", surfaceKind: "workspace.open.path", target: "proof.md", title: "Proof bundle" }] } })}</></Provider>)
+    const onCommand = vi.fn()
+    window.addEventListener(UI_COMMAND_EVENT, onCommand)
+    render(<Provider apiBaseUrl=""><>{renderer.render({ state: "aborted", input: { title: "Review decision", schema: question.schema, artifacts: [{ id: "proof", surfaceKind: "workspace.open.path", target: "proof.md", title: "Proof bundle" }] } })}</></Provider>)
     expect(screen.getByText("Question cancelled")).toBeInTheDocument()
     expect(screen.getByText("Proof bundle")).toBeInTheDocument()
+    const open = screen.getByRole("button", { name: "Open Proof bundle" })
+    expect(open).toBeDisabled()
+    fireEvent.click(open)
+    expect(onCommand).not.toHaveBeenCalled()
+    window.removeEventListener(UI_COMMAND_EVENT, onCommand)
   })
 
   it("fails closed for an invalid artifact payload without crashing the resolved card", () => {
     const Provider = getProvider()
     const renderer = capturedPlugin.registrations.toolRenderers.find((registration) => registration.id === "ask_user")!
-    render(<Provider apiBaseUrl=""><>{renderer.render({ state: "output-available", input: { title: "Safe resolution", artifacts: [{ id: "duplicate", surfaceKind: "workspace.open.path", target: "one.md", title: "Must not render" }, { id: "duplicate", surfaceKind: "workspace.open.path", target: "two.md", title: "Also hidden" }] } })}</></Provider>)
+    render(<Provider apiBaseUrl=""><>{renderer.render({ state: "output-available", input: { title: "Safe resolution", schema: question.schema, artifacts: [{ id: "duplicate", surfaceKind: "workspace.open.path", target: "one.md", title: "Must not render" }, { id: "duplicate", surfaceKind: "workspace.open.path", target: "two.md", title: "Also hidden" }] } })}</></Provider>)
     expect(screen.getByText("Safe resolution")).toBeInTheDocument()
     expect(screen.getByText("Answer submitted")).toBeInTheDocument()
     expect(screen.queryByText("Must not render")).not.toBeInTheDocument()
     expect(screen.queryByText("Also hidden")).not.toBeInTheDocument()
+  })
+
+  it("hides otherwise valid artifacts when the canonical ask_user input is malformed", () => {
+    const Provider = getProvider()
+    const renderer = capturedPlugin.registrations.toolRenderers.find((registration) => registration.id === "ask_user")!
+    render(<Provider apiBaseUrl=""><>{renderer.render({ state: "output-error", input: { title: "Missing required schema", artifacts: [{ id: "proof", surfaceKind: "catalog.open-row", target: "orders", title: "Must stay hidden" }] } })}</></Provider>)
+    expect(screen.getByText("Question cancelled")).toBeInTheDocument()
+    expect(screen.queryByText("Must stay hidden")).not.toBeInTheDocument()
   })
 
   it("accepts the same authored artifact array in ask_user input and the shared Inbox schema", () => {
