@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
-import type { PiChatEvent } from '../../shared/chat'
+import type { PiChatEvent, PiChatSnapshot } from '../../shared/chat'
 import type { AgentSessionActivity, AgentSessionRef, AuthorizedAgentScope, VerifiedAgentScopeClaim } from '../../shared/index'
 import type { SessionSummary } from '../../shared/session'
 import { PiSessionStore } from '../harness/pi-coding-agent/sessions'
+import { buildPiChatHistory } from '../pi-chat/piChatHistory'
 import { agentSessionKey } from './agentSessionKey'
 import type { CompiledAgentHostAgentSpec, ResolvedAgentRuntimeScope } from './types'
 
@@ -70,6 +71,44 @@ export class AgentSessionInventory {
           { workspaceId: claim.workspaceScopeId },
           sessionId,
         ),
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === `Session not found: ${sessionId}`) return undefined
+      throw error
+    }
+  }
+
+  /**
+   * Reads a persisted transcript without constructing an executable runtime
+   * binding. The store still enforces the workspace/user header before any
+   * content is returned; the omitted runtime pin is deliberate because this
+   * path can never expose a command-capable service.
+   */
+  async readPersistedSession(
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    sessionId: string,
+  ): Promise<{ summary: SessionSummary; state: PiChatSnapshot } | undefined> {
+    const resolved = await this.resolveStore(agentTypeId, scope, claim)
+    if (!resolved) return undefined
+    try {
+      const ctx = { workspaceId: claim.workspaceScopeId }
+      const [summary, entries] = await Promise.all([
+        resolved.store.load(ctx, sessionId),
+        resolved.store.loadEntries(ctx, sessionId),
+      ])
+      return {
+        summary,
+        state: {
+          protocolVersion: 1,
+          sessionId: entries.id,
+          seq: 0,
+          status: 'idle',
+          messages: buildPiChatHistory(entries.messages, { sessionId: entries.id }),
+          queue: { followUps: [] },
+          followUpMode: 'one-at-a-time',
+        },
       }
     } catch (error) {
       if (error instanceof Error && error.message === `Session not found: ${sessionId}`) return undefined

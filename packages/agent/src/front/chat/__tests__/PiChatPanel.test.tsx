@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { useState } from 'react'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { SessionSummary } from '../../../shared/session'
@@ -518,9 +519,9 @@ describe('PiChatPanel sandbox shell', () => {
     expect(onTurnComplete).not.toHaveBeenCalled()
   })
 
-  test('offers a new chat when a run is rejected by a stale runtime pin', async () => {
+  test('transparently forks a frozen transcript and retries the message in the live continuation', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
-    remote.prompt.mockRejectedValue(Object.assign(new Error('This chat belongs to a previous runtime configuration and can no longer be changed.'), {
+    remote.prompt.mockRejectedValueOnce(Object.assign(new Error('scope mismatch'), {
       errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
     }))
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -543,42 +544,67 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.change(textarea, { target: { value: 'continue old chat' } })
     fireEvent.keyDown(textarea, { key: 'Enter' })
 
-    const action = await screen.findByRole('button', { name: 'Start new chat' })
-    fireEvent.click(action)
-    fireEvent.click(action)
-
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/agents/default/sessions',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.any(String),
+      }),
     ))
-    await waitFor(() => expect(document.querySelector('[data-pi-chat-session-id="pi-current"]')).toBeTruthy())
-    expect(fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/sessions') && call[1]?.method === 'POST')).toHaveLength(1)
+    const forkCall = fetchMock.mock.calls.find((call) => String(call[0]).endsWith('/sessions') && call[1]?.method === 'POST')
+    expect(JSON.parse(String(forkCall?.[1]?.body))).toMatchObject({
+      forkSessionId: 'pi-1',
+      forkPrompt: { message: 'continue old chat' },
+    })
+    expect(remote.prompt).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('[data-pi-chat-session-id="pi-current"]')).toBeTruthy()
+    expect(document.querySelector('[data-runtime-notice-id="run-rejected"]')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Start new chat' })).toBeNull()
   })
 
-  test('uses the host session creator for a runtime mismatch in controlled-session mode', async () => {
+  test('uses the controlled host fork and hides the scope mismatch transport notice', async () => {
     const remote = new FakeRemotePiSession(remoteState({
       status: 'error',
       notices: [{
         id: 'terminal-session-error',
         level: 'error',
-        text: 'This chat belongs to a previous runtime configuration and can no longer be changed.',
+        text: 'scope mismatch',
         errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
       }],
     }))
-    const onCreateSession = vi.fn().mockResolvedValue(undefined)
-    render(
-      <PiChatPanel
-        sessionId="pi-1"
-        showSessions={false}
-        serverResourcesEnabled={false}
-        storageScope="scope-a"
-        createRemoteSession={remoteFactory(remote)}
-        onCreateSession={onCreateSession}
-      />,
-    )
+    remote.prompt.mockRejectedValueOnce(Object.assign(new Error('scope mismatch'), {
+      errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+    }))
+    const onForkSession = vi.fn()
+    function ControlledForkPanel() {
+      const [controlledSessionId, setControlledSessionId] = useState('pi-1')
+      return (
+        <PiChatPanel
+          sessionId={controlledSessionId}
+          showSessions={false}
+          serverResourcesEnabled={false}
+          storageScope="scope-a"
+          createRemoteSession={remoteFactory(remote)}
+          onForkSession={async (sourceSessionId, forkPrompt) => {
+            onForkSession(sourceSessionId, forkPrompt)
+            setControlledSessionId('pi-current')
+          }}
+        />
+      )
+    }
+    render(<ControlledForkPanel />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Start new chat' }))
-    await waitFor(() => expect(onCreateSession).toHaveBeenCalledTimes(1))
+    expect(document.querySelector('[data-runtime-notice-id="terminal-session-error"]')).toBeNull()
+    const textarea = screen.getByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: 'continue controlled chat' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    await waitFor(() => expect(onForkSession).toHaveBeenCalledWith(
+      'pi-1',
+      expect.objectContaining({ message: 'continue controlled chat' }),
+    ))
+    expect(remote.prompt).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('[data-pi-chat-session-id="pi-current"]')).toBeTruthy()
   })
 
   test('fires onTurnComplete per turn-settle event, including back-to-back queued turns', async () => {

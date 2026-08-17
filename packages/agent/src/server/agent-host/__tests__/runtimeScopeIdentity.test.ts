@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -186,7 +186,7 @@ describe('runtime scope identity', () => {
     await created.host.close()
   })
 
-  it('fails a restarted mismatching actor closed before a second runtime binding or transcript effect', async () => {
+  it('serves a mismatched transcript read-only while every write remains pin-rejected', async () => {
     const sessionRoot = await temporaryRoot()
     const creator = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
     const other = { workspaceScopeId: 'workspace-a', authSubjectId: 'other' } as AuthorizedAgentScope
@@ -194,6 +194,11 @@ describe('runtime scope identity', () => {
     const ref = await first.gateway.createSession({ scope: creator, agentTypeId: 'alpha', requestId: 'create' })
     const namespace = sessionNamespaceForAgent(agent, 'workspace-a', 'sessions')!
     const transcriptPath = await sessionFilePath(join(sessionRoot, namespace), ref.sessionId)
+    await appendFile(transcriptPath, [
+      { type: 'message', id: 'user-1', parentId: null, timestamp: '2026-08-17T00:00:00.000Z', message: { role: 'user', content: 'inspect frozen chat', timestamp: 1 } },
+      { type: 'message', id: 'assistant-1', parentId: 'user-1', timestamp: '2026-08-17T00:00:01.000Z', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'call-1', name: 'read', arguments: { path: 'README.md' } }], timestamp: 2 } },
+      { type: 'message', id: 'tool-1', parentId: 'assistant-1', timestamp: '2026-08-17T00:00:02.000Z', message: { role: 'toolResult', toolCallId: 'call-1', content: [{ type: 'text', text: 'frozen result' }], timestamp: 3 } },
+    ].map((entry) => JSON.stringify(entry)).join('\n') + '\n')
     const before = await readFile(transcriptPath, 'utf8')
     await first.host.close()
 
@@ -205,15 +210,59 @@ describe('runtime scope identity', () => {
       createRuntime,
       effectAdmission: { admit },
     }))
+    const frozen = await restarted.gateway.readSessionState({ scope: other, ref })
+    expect(frozen.state.messages).toEqual([
+      expect.objectContaining({ role: 'user', parts: [expect.objectContaining({ text: 'inspect frozen chat' })] }),
+      expect.objectContaining({
+        role: 'assistant',
+        parts: [expect.objectContaining({
+          type: 'tool-call',
+          id: 'call-1',
+          toolName: 'read',
+          state: 'output-available',
+          output: [{ type: 'text', text: 'frozen result' }],
+        })],
+      }),
+    ])
     await expect(restarted.gateway.renameSession({
       scope: other,
       ref,
       requestId: 'must-not-mutate',
       title: 'Must not change',
     })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH })
+    await expect(restarted.gateway.connectSession({ scope: other, ref }))
+      .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH })
+    await expect(restarted.gateway.readSessionState({
+      scope: { workspaceScopeId: 'workspace-b', authSubjectId: 'other' } as AuthorizedAgentScope,
+      ref,
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND })
     expect(createRuntime).not.toHaveBeenCalled()
     expect(admit).not.toHaveBeenCalled()
     expect(await readFile(transcriptPath, 'utf8')).toBe(before)
+
+    const fork = await restarted.gateway.createSession({
+      scope: other,
+      agentTypeId: 'alpha',
+      requestId: 'fork-current-runtime',
+      forkSessionId: ref.sessionId,
+    })
+    expect(fork).not.toEqual(ref)
+    const continued = await restarted.gateway.readSessionState({ scope: other, ref: fork })
+    expect(continued.state.messages).toEqual(frozen.state.messages)
+    const forkPath = await sessionFilePath(join(sessionRoot, namespace), fork.sessionId)
+    const forkHeader = JSON.parse((await readFile(forkPath, 'utf8')).split('\n')[0]!) as {
+      id: string
+      parentSession?: string
+      boringSessionCtx?: { workspaceId?: string; runtimeScopeIdentity?: string }
+    }
+    expect(forkHeader).toMatchObject({
+      id: fork.sessionId,
+      parentSession: transcriptPath,
+      boringSessionCtx: { workspaceId: 'workspace-a', runtimeScopeIdentity: 'runtime-other' },
+    })
+    expect(await readFile(transcriptPath, 'utf8')).toBe(before)
+    expect(createRuntime).toHaveBeenCalledOnce()
+    expect(admit).toHaveBeenCalledOnce()
     await restarted.host.close()
   })
 
@@ -249,7 +298,7 @@ describe('runtime scope identity', () => {
     })
 
     await expect(restarted.gateway.readSessionState({ scope: laterReader, ref }))
-      .rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH })
+      .resolves.toMatchObject({ ref })
     expect(resolution).toHaveBeenCalledTimes(2)
     expect(runtimeIdentity).toHaveBeenCalled()
     expect(await readFile(transcriptPath, 'utf8')).toBe(before)

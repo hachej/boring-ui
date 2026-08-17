@@ -31,6 +31,9 @@ export interface PiSessionRequestContext {
 export interface PiSessionCreateInit {
   title?: string
   modelDefault?: ChatModelSelection
+  /** Native transcript to copy into this newly current-scope session. */
+  forkSessionId?: string
+  forkPrompt?: PromptPayload
 }
 
 /** Server-only prompt admission selector; browser schemas never accept requireIdle. */

@@ -306,11 +306,33 @@ export class EmbeddedAgentGateway implements AgentGateway {
         agentTypeId: input.agentTypeId,
         title: input.title ?? null,
         resumeSessionId: input.resumeSessionId ?? null,
+        forkSessionId: input.forkSessionId ?? null,
+        forkPrompt: input.forkPrompt ? input.forkPrompt as unknown as JsonValue : null,
       },
       async () => {
         const preparedBinding = binding
         if (!preparedBinding) throw new TypeError('session creation executed before binding preflight')
         return await this.runtime.runBindingOperation(preparedBinding.key, async () => {
+          if (input.forkSessionId) {
+            const forked = await preparedBinding.composition.service.createSession!(
+              context(claim, input.requestId, preparedBinding.scope.identity),
+              { title: input.title, forkSessionId: input.forkSessionId },
+            )
+            const ref = { agentTypeId: input.agentTypeId, sessionId: forked.id }
+            this.pins.set(agentSessionKey(claim.workspaceScopeId, ref), preparedBinding.scope.identity)
+            if (input.forkPrompt) {
+              await preparedBinding.composition.service.prompt(
+                context(claim, input.requestId, preparedBinding.scope.identity),
+                ref.sessionId,
+                input.forkPrompt,
+              )
+              this.runtime.activity.set(claim.workspaceScopeId, ref, 'running')
+            } else {
+              this.runtime.activity.set(claim.workspaceScopeId, ref, 'idle')
+            }
+            return ref
+          }
+
           if (input.resumeSessionId) {
             const candidateRef = { agentTypeId: input.agentTypeId, sessionId: input.resumeSessionId }
             const authority = await this.runtime.resolveSessionRuntime(
@@ -353,7 +375,27 @@ export class EmbeddedAgentGateway implements AgentGateway {
 
   async readSessionState(input: Parameters<AgentGateway['readSessionState']>[0]): Promise<AgentSessionStateSnapshot> {
     const claim = await this.verify(input.scope)
-    const binding = await this.bindingForSession(input.scope, claim, input.ref)
+    let binding: Awaited<ReturnType<EmbeddedAgentGateway['bindingForSession']>>
+    try {
+      binding = await this.bindingForSession(input.scope, claim, input.ref)
+    } catch (error) {
+      if ((error as { code?: unknown })?.code !== AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH) throw error
+      const persisted = await this.runtime.readPersistedSession(
+        input.ref.agentTypeId,
+        input.scope,
+        claim,
+        input.ref.sessionId,
+      )
+      if (!persisted) {
+        throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
+      }
+      return {
+        ref: input.ref,
+        seq: persisted.state.seq,
+        summary: summaryFromLegacy(input.ref, persisted.summary, 'idle'),
+        state: persisted.state as unknown as AgentSessionStateSnapshot['state'],
+      }
+    }
     let state: PiChatSnapshot
     try {
       state = await binding.composition.service.readState(

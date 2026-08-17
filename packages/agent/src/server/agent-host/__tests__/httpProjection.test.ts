@@ -270,6 +270,17 @@ describe('addressed Agent Host HTTP projection', () => {
     })
     expect(created.statusCode).toBe(201)
     expect(created.json()).toEqual(ref)
+    const forked = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions',
+      payload: { requestId: 'fork-1', forkSessionId: 'session-frozen', forkPrompt: { message: 'continue', clientNonce: 'fork-nonce' } },
+    })
+    expect(forked.statusCode).toBe(201)
+    expect((await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions',
+      payload: { resumeSessionId: 'empty', forkSessionId: 'frozen' },
+    })).statusCode).toBe(400)
     expect((await app.inject({ method: 'GET', url: '/api/v1/agents/alpha/sessions/session-1/state' })).json()).toEqual(snapshot)
     const attachment = await app.inject({
       method: 'GET',
@@ -334,6 +345,7 @@ describe('addressed Agent Host HTTP projection', () => {
     expect(gateway.calls).toEqual(expect.arrayContaining([
       { method: 'listSessions', input: { scope, agentTypeId: 'alpha', cursor: undefined, limit: 25 } },
       { method: 'createSession', input: { scope, agentTypeId: 'alpha', requestId: 'create-1', title: 'Created', resumeSessionId: 'persisted-empty' } },
+      { method: 'createSession', input: { scope, agentTypeId: 'alpha', requestId: 'fork-1', title: undefined, forkSessionId: 'session-frozen', forkPrompt: { message: 'continue', clientNonce: 'fork-nonce' } } },
       { method: 'send', input: expect.objectContaining({ kind: 'prompt', requestId: 'prompt-1', requireIdle: true, attachments: [expect.objectContaining({ path: 'uploads/chart.png' })] }) },
       { method: 'send', input: { kind: 'followup', requestId: 'follow-1', clientNonce: 'nonce-f', content: 'next', displayContent: 'Next', clientSeq: 3 } },
       { method: 'interrupt', input: { requestId: 'interrupt-1' } },

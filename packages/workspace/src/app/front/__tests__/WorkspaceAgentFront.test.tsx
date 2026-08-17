@@ -1808,6 +1808,51 @@ describe("WorkspaceAgentFront", () => {
     expect(create).toHaveBeenCalledWith()
   })
 
+  it("replaces a frozen pane with the current-scope native fork", async () => {
+    const user = userEvent.setup()
+    const create = vi.fn(async (input?: { forkSessionId?: string }) => ({
+      id: "forked",
+      agentTypeId: "default",
+      title: "Continued session",
+      ...(input ?? {}),
+    }))
+    const FrozenChat = (props: WorkspaceChatPanelProps) => (
+      <button
+        type="button"
+        data-session-id={props.sessionId}
+        onClick={() => void props.onForkSession?.("stale", { message: "continue", clientNonce: "nonce" })}
+      >
+        Send frozen message
+      </button>
+    )
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="transparent-frozen-fork"
+        chatPanel={FrozenChat}
+        useSessions={(options) => ({
+          sourceIdentity: options.sourceIdentity,
+          sessions: [{ id: "stale", agentTypeId: "default", title: "Frozen session" }],
+          activeSessionId: "stale",
+          activeSessionAgentTypeId: "default",
+          activeSession: { id: "stale", agentTypeId: "default", title: "Frozen session" },
+          loading: false,
+          workspaceId: options.workspaceId,
+          switch: vi.fn(),
+          delete: vi.fn(),
+          create,
+        })}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Send frozen message" }))
+    await waitFor(() => expect(create).toHaveBeenCalledWith({
+      forkSessionId: "stale",
+      forkPrompt: { message: "continue", clientNonce: "nonce" },
+    }))
+  })
+
   it("keeps an async returned created pane while controlled sessions catch up", async () => {
     const user = userEvent.setup()
 

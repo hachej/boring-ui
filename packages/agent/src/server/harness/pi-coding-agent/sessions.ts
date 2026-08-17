@@ -16,6 +16,7 @@ import { homedir } from "node:os";
 import { getEnv } from "../../config/env.js";
 import {
   parseSessionEntries,
+  SessionManager,
   type SessionEntry,
   type SessionHeader,
   type SessionMessageEntry,
@@ -270,6 +271,43 @@ export class PiSessionStore implements SessionStore {
       nativeSessionId: id,
       hasAssistantReply: false,
     };
+  }
+
+  /**
+   * Uses pi's native branch copier to create a new transcript at the source
+   * leaf, then replaces only the new header's Boring authority with the
+   * current runtime scope. The source file is never opened for append.
+   */
+  async fork(
+    ctx: RuntimePinnedSessionCtx,
+    sessionId: string,
+    _init?: { title?: string },
+  ): Promise<SessionSummary> {
+    const sourceCtx: RuntimePinnedSessionCtx = {
+      ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
+      ...(ctx.userId ? { userId: ctx.userId } : {}),
+    };
+    const source = await this.resolveSessionTranscript(sourceCtx, sessionId);
+    const sourceFile = source.linkedFilepath ?? source.filepath;
+    const manager = SessionManager.open(sourceFile, this.sessionDir, this.cwd);
+    const leafId = manager.getLeafId();
+    if (!leafId) return await this.create(ctx, _init);
+    const forkedPath = manager.createBranchedSession(leafId);
+    if (!forkedPath) throw new Error(`Failed to fork session: ${sessionId}`);
+    const header = manager.getHeader();
+    if (!header) throw new Error(`Forked session header is unavailable: ${sessionId}`);
+    const pinnedHeader: SessionHeader & { boringSessionCtx: RuntimePinnedSessionCtx } = {
+      ...header,
+      boringSessionCtx: normalizeSessionCtx(ctx) ?? {},
+    };
+    const content = [pinnedHeader, ...manager.getEntries()]
+      .map((entry) => JSON.stringify(entry))
+      .join("\n") + "\n";
+    const tmp = `${forkedPath}.pin-${randomUUID()}`;
+    await writeFile(tmp, content, "utf-8");
+    await rename(tmp, forkedPath);
+    this.prefixCache.delete(forkedPath);
+    return await this.load(ctx, manager.getSessionId());
   }
 
   async load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {

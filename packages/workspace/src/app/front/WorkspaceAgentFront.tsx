@@ -133,7 +133,7 @@ export interface WorkspaceAgentSessionsApi<
   workspaceId?: string | null
   switch: (id: string, agentTypeId?: string) => void
   /** Returns the canonical created row; void providers are a protocol violation. */
-  create: (input?: { title?: string; resumeSessionId?: string; agentTypeId?: string }) => TSession | Promise<TSession>
+  create: (input?: { title?: string; resumeSessionId?: string; forkSessionId?: string; forkPrompt?: Parameters<NonNullable<WorkspaceChatPanelProps['onForkSession']>>[1]; agentTypeId?: string }) => TSession | Promise<TSession>
   rename?: (id: string, title: string, agentTypeId?: string) => void | Promise<unknown>
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
@@ -1083,7 +1083,7 @@ export function WorkspaceAgentFront<
   })
   const coordinateRemoteCreate = useCallback((
     dedupeKey: string,
-    input?: { title?: string; resumeSessionId?: string; agentTypeId?: string },
+    input?: { title?: string; resumeSessionId?: string; forkSessionId?: string; forkPrompt?: Parameters<NonNullable<WorkspaceChatPanelProps['onForkSession']>>[1]; agentTypeId?: string },
   ): Promise<TSession | undefined> => {
     if (!sessionSourceIsCurrent() || !remoteSessionsAvailable) return Promise.resolve(undefined)
     const create = remoteSessionApi.create
@@ -1262,7 +1262,11 @@ export function WorkspaceAgentFront<
       ? rawSwitch(nextSessionId, nextAgentTypeId)
       : rawSwitch(nextSessionId)
   }, [effectiveActiveSessionId, rawSwitch, sessionSourceIsCurrent])
-  const resolvedCreate = useCallback((dedupeKey = "manual", ownerAgentTypeId?: string): Promise<TSession | undefined> => {
+  const resolvedCreate = useCallback((
+    dedupeKey = "manual",
+    ownerAgentTypeId?: string,
+    createInput?: { title?: string; resumeSessionId?: string; forkSessionId?: string; forkPrompt?: Parameters<NonNullable<WorkspaceChatPanelProps['onForkSession']>>[1] },
+  ): Promise<TSession | undefined> => {
     if (remoteSessionsPending) return Promise.resolve(undefined)
     if (sessionApi) {
       // A user create owns the empty-list transition. Cancel only a queued boot
@@ -1272,7 +1276,9 @@ export function WorkspaceAgentFront<
       sessionCreation.cancel((task) => task.phase === "queued" && task.dedupeKey === "initial-auto")
       return coordinateRemoteCreate(
         dedupeKey,
-        fleetModeEnabled && ownerAgentTypeId ? { agentTypeId: ownerAgentTypeId } : undefined,
+        createInput || (fleetModeEnabled && ownerAgentTypeId)
+          ? { ...createInput, ...(fleetModeEnabled && ownerAgentTypeId ? { agentTypeId: ownerAgentTypeId } : {}) }
+          : undefined,
       ).catch((error) => {
         // A canceled queued boot create resolves without running its own error
         // path. Re-arm boot creation if the user-owned request failed.
@@ -1897,6 +1903,7 @@ export function WorkspaceAgentFront<
     mode: "insert" | "replace",
     placementDirection?: ChatPaneSplitDirection,
     ownerAgentTypeId?: string,
+    createInput?: { title?: string; resumeSessionId?: string; forkSessionId?: string; forkPrompt?: Parameters<NonNullable<WorkspaceChatPanelProps['onForkSession']>>[1] },
   ) => {
     if (pendingCreatePaneRef.current) return
     const pendingCreatePane: PendingCreatePane = {
@@ -1921,7 +1928,7 @@ export function WorkspaceAgentFront<
       : "manual"
     let created: ReturnType<typeof resolvedCreate>
     try {
-      created = resolvedCreate(createReason, ownerAgentTypeId)
+      created = resolvedCreate(createReason, ownerAgentTypeId, createInput)
     } catch (error) {
       settleIfOwner()
       throw error
@@ -1986,6 +1993,19 @@ export function WorkspaceAgentFront<
   const createChatSession = useCallback((ownerAgentTypeId = fleetModeEnabled ? newChatAgentTypeId : undefined) => (
     createChatPaneTransaction(activeChatPaneId, "replace", undefined, ownerAgentTypeId)
   ), [activeChatPaneId, newChatAgentTypeId, createChatPaneTransaction, fleetModeEnabled])
+
+  const forkFrozenChatSession = useCallback((
+    paneId: string,
+    sourceSessionId: string,
+    ownerAgentTypeId: string,
+    forkPrompt: Parameters<NonNullable<WorkspaceChatPanelProps['onForkSession']>>[1],
+  ) => createChatPaneTransaction(
+    paneId,
+    "replace",
+    undefined,
+    ownerAgentTypeId,
+    { forkSessionId: sourceSessionId, forkPrompt },
+  ), [createChatPaneTransaction])
 
   const closeChatPane = useCallback((sessionKey: string) => {
     if (pendingCreatePaneRef.current) return
@@ -2179,6 +2199,15 @@ export function WorkspaceAgentFront<
       remoteSessionOptions: chatRemoteSessionOptions,
       showSessions: false,
       onCreateSession: () => createChatSession(sessionRef.agentTypeId ?? selectedAgentTypeId),
+      onForkSession: (
+        sourceSessionId: string,
+        forkPrompt: Parameters<NonNullable<WorkspaceChatPanelProps['onForkSession']>>[1],
+      ) => forkFrozenChatSession(
+        sessionKey,
+        sourceSessionId,
+        sessionRef.agentTypeId ?? selectedAgentTypeId,
+        forkPrompt,
+      ),
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession({ agentTypeId: sessionRef.agentTypeId ?? selectedAgentTypeId, sessionId })),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
       bridgeEndpoint: null,
@@ -2219,7 +2248,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, createChatSession, delayAutoSubmitDraft, resolvedRequestHeaders, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, selectedAgentTypeId, sessionSourceIsCurrent, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, createChatSession, delayAutoSubmitDraft, forkFrozenChatSession, resolvedRequestHeaders, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, selectedAgentTypeId, sessionSourceIsCurrent, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionKey),

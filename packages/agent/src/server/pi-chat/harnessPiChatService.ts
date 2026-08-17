@@ -1,5 +1,5 @@
 import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harness'
-import type { SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
+import type { SessionCtx, SessionListOptions, SessionStore, SessionSummary } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
 import { sessionStreamPath, type AgentEvent } from '../../shared/events'
@@ -36,6 +36,7 @@ const PROMPT_IMAGE_EXTENSIONS = new Set(['.avif', '.gif', '.jpg', '.jpeg', '.png
 type PiSessionStoreLike = SessionStore & {
   loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
   loadAttachment?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string, messageId: string, index: number) => Promise<{ data: Uint8Array; mediaType: string; filename?: string }>
+  fork?: (ctx: SessionCtx, sessionId: string, init?: { title?: string }) => Promise<SessionSummary>
 }
 
 interface LiveSessionChannel {
@@ -199,7 +200,17 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   async createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit) {
-    return this.lifecycle.run(() => this.sessionStore.create(toSessionCtx(ctx), init))
+    return this.lifecycle.run(() => {
+      const sessionCtx = toSessionCtx(ctx)
+      if (!init?.forkSessionId) return this.sessionStore.create(sessionCtx, init)
+      if (!this.sessionStore.fork) {
+        throw Object.assign(new Error('session store does not support native forks'), {
+          code: ErrorCode.enum.CONFIG_INVALID,
+          statusCode: 400,
+        })
+      }
+      return this.sessionStore.fork(sessionCtx, init.forkSessionId, init)
+    })
   }
 
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
