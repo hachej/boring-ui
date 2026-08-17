@@ -5,6 +5,7 @@ import { z } from 'zod'
 import {
   AgentGatewayError,
   AgentGatewayErrorCode,
+  PromptPayloadSchema,
   type AgentGateway,
   type AgentSessionConnection,
   type AgentSessionRef,
@@ -100,7 +101,15 @@ const CreateSessionBodySchema = z.preprocess((value) => value === undefined ? {}
   requestId: RequestIdSchema.optional(),
   title: NonEmptyString.max(200).optional(),
   resumeSessionId: SessionIdSchema.optional(),
-}).strict())
+  forkSessionId: SessionIdSchema.optional(),
+  forkPrompt: PromptPayloadSchema.optional(),
+}).strict()
+  .refine((body) => !(body.resumeSessionId && body.forkSessionId), {
+    message: 'resumeSessionId and forkSessionId are mutually exclusive',
+  })
+  .refine((body) => !body.forkPrompt || Boolean(body.forkSessionId), {
+    message: 'forkPrompt requires forkSessionId',
+  }))
 const RenameSessionBodySchema = z.object({
   requestId: RequestIdSchema,
   title: NonEmptyString.max(200),
@@ -324,13 +333,28 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     const body = parseWithSchema(CreateSessionBodySchema, request.body, reply, 'body')
     if (!body) return
     try {
+      const scope = await input.options.authorizeAgentRequest(request)
       const ref = await input.gateway.createSession({
-        scope: await input.options.authorizeAgentRequest(request),
+        scope,
         agentTypeId: params.agentTypeId,
         requestId: body.requestId ?? randomUUID(),
         title: body.title,
         ...(body.resumeSessionId ? { resumeSessionId: body.resumeSessionId } : {}),
+        ...(body.forkSessionId ? { forkSessionId: body.forkSessionId } : {}),
       })
+      if (body.forkPrompt) {
+        const command: IdempotentAgentSend = {
+          kind: 'prompt',
+          requestId: body.forkPrompt.clientNonce,
+          clientNonce: body.forkPrompt.clientNonce,
+          content: body.forkPrompt.message,
+          displayContent: body.forkPrompt.displayMessage,
+          model: body.forkPrompt.model,
+          thinkingLevel: body.forkPrompt.thinkingLevel,
+          attachments: body.forkPrompt.attachments,
+        }
+        await withConnection(input, request, ref, (connection) => connection.send(command))
+      }
       return reply.code(201).send(ref)
     } catch (error) {
       return sendError(reply, error)

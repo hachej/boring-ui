@@ -106,6 +106,8 @@ export interface CreateAgentSessionInput {
   readonly title?: string
   /** Boot-only intent to resume this exact tab-owned empty session. */
   readonly resumeSessionId?: string
+  /** Existing transcript to fork into a new session in the current runtime scope. */
+  readonly forkSessionId?: string
 }
 
 export interface ConnectAgentSessionInput {

@@ -5,6 +5,7 @@ import {
   stat as fsStat,
   rm,
   mkdir,
+  mkdtemp,
   writeFile,
   appendFile,
   rename,
@@ -16,6 +17,7 @@ import { homedir } from "node:os";
 import { getEnv } from "../../config/env.js";
 import {
   parseSessionEntries,
+  SessionManager,
   type SessionEntry,
   type SessionHeader,
   type SessionMessageEntry,
@@ -272,6 +274,69 @@ export class PiSessionStore implements SessionStore {
     };
   }
 
+  /**
+   * Uses pi's native branch copier to create a new transcript at the source
+   * leaf, then replaces only the new header's Boring authority with the
+   * current runtime scope. The source file is never opened for append.
+   */
+  async fork(
+    ctx: RuntimePinnedSessionCtx,
+    sessionId: string,
+    _init?: { title?: string },
+  ): Promise<SessionSummary> {
+    const sourceCtx: RuntimePinnedSessionCtx = {
+      ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
+      ...(ctx.userId ? { userId: ctx.userId } : {}),
+    };
+    const sourcePath = await this.resolveSessionFile(sessionId, sourceCtx);
+    const sourceEntries = safeParseEntries(await readFile(sourcePath, "utf-8"));
+    const linkedPiFile = extractPiSessionFilePath(sourceEntries);
+    const sourceFile = linkedPiFile && resolve(linkedPiFile) !== resolve(sourcePath)
+      ? linkedPiFile
+      : sourcePath;
+    const nativeEntries = sourceFile === sourcePath
+      ? sourceEntries
+      : safeParseEntries(await readFile(sourceFile, "utf-8"));
+    // SessionManager.open() may migrate and rewrite older transcripts. Always
+    // branch from an isolated copy so even legacy sources remain byte-for-byte
+    // immutable. The SDK's initially unpinned branch also stays hidden in the
+    // staging directory until its current-scope header is ready to publish.
+    const stagingDir = await mkdtemp(join(this.sessionDir, ".fork-stage-"));
+    try {
+      const stagingSource = join(stagingDir, "source.jsonl");
+      await writeFile(
+        stagingSource,
+        nativeEntries
+          .filter((entry) => (entry as { type?: string }).type !== "ui_snapshot")
+          .map((entry) => JSON.stringify(entry))
+          .join("\n") + "\n",
+        "utf-8",
+      );
+      const manager = SessionManager.open(stagingSource, stagingDir, this.cwd);
+      const leafId = manager.getLeafId();
+      if (!leafId) return await this.create(ctx, _init);
+      const stagedForkPath = manager.createBranchedSession(leafId);
+      if (!stagedForkPath) throw new Error(`Failed to fork session: ${sessionId}`);
+      const header = manager.getHeader();
+      if (!header) throw new Error(`Forked session header is unavailable: ${sessionId}`);
+      const pinnedHeader: SessionHeader & { boringSessionCtx: RuntimePinnedSessionCtx } = {
+        ...header,
+        parentSession: sourceFile,
+        boringSessionCtx: normalizeSessionCtx(ctx) ?? {},
+      };
+      const content = [pinnedHeader, ...manager.getEntries()]
+        .map((entry) => JSON.stringify(entry))
+        .join("\n") + "\n";
+      await writeFile(stagedForkPath, content, "utf-8");
+      const publishedPath = join(this.sessionDir, basename(stagedForkPath));
+      await rename(stagedForkPath, publishedPath);
+      this.prefixCache.delete(publishedPath);
+      return await this.load(ctx, manager.getSessionId());
+    } finally {
+      await rm(stagingDir, { recursive: true, force: true });
+    }
+  }
+
   async load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
     const resolved = await this.resolveSessionTranscript(ctx, sessionId);
     const nativeSummary = resolved.directNative
@@ -298,6 +363,58 @@ export class PiSessionStore implements SessionStore {
           }
         : {}),
     };
+  }
+
+  /**
+   * Non-mutating storage snapshot for frozen-session reads. Unlike the normal
+   * cold-load path, this never compacts legacy wrappers while reading them.
+   */
+  async readPersisted(ctx: SessionCtx, sessionId: string): Promise<{
+    summary: SessionSummary;
+    entries: PiSessionEntries;
+  }> {
+    const filepath = await this.resolveSessionFile(sessionId, ctx);
+    const [content, fileStat] = await Promise.all([
+      readFile(filepath, "utf-8"),
+      fsStat(filepath),
+    ]);
+    const fileEntries = safeParseEntries(content);
+    const header = fileEntries.find((entry): entry is SessionHeader => entry.type === "session");
+    const timestampNamedNative = isTimestampNamedPiSessionFile(filepath, header?.id ?? sessionId);
+    if (!this.headerBelongsToCtx(header, ctx, timestampNamedNative)) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    const sessionEntries = fileEntries.filter(
+      (entry): entry is SessionEntry => entry.type !== "session" && (entry as { type?: string }).type !== "ui_snapshot",
+    );
+    const linkedPiFile = extractPiSessionFilePath(fileEntries);
+    const linked = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)
+      ? await this.readLinkedPiSession(linkedPiFile)
+      : null;
+    const linkedEntries = linked?.entries.filter(
+      (entry): entry is SessionEntry => entry.type !== "session",
+    ) ?? [];
+    const transcriptEntries = linkedEntries.length > 0 ? linkedEntries : sessionEntries;
+    const id = header?.id ?? sessionId;
+    const directNative = timestampNamedNative && !linkedPiFile;
+    const updatedAtMs = Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
+    const summary: SessionSummary = {
+      id,
+      title: newestDurableTitle(sessionEntries, linkedEntries)
+        ?? firstUserMessage(transcriptEntries)
+        ?? "New session",
+      createdAt: header?.timestamp ?? fileStat.birthtime.toISOString(),
+      updatedAt: new Date(updatedAtMs).toISOString(),
+      turnCount: countUserTurns(transcriptEntries),
+      ...(directNative ? {
+        nativeSessionId: id,
+        hasAssistantReply: hasAssistantReply(transcriptEntries),
+      } : {}),
+    };
+    const messages = transcriptEntries
+      .filter((entry): entry is SessionMessageEntry => entry.type === "message")
+      .map((entry) => withStableMessageId(entry.message, entry.id));
+    return { summary, entries: { id, messages } };
   }
 
   /**

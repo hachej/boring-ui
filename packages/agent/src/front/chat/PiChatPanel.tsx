@@ -180,6 +180,8 @@ export interface PiChatPanelProps<
   onSessionReset?: () => void | Promise<void>
   /** Creates and selects a session when the host controls sessionId. */
   onCreateSession?: () => void | Promise<void>
+  /** Natively forks a controlled frozen session and delivers its first prompt. */
+  onForkSession?: (sourceSessionId: string, prompt: Parameters<RemotePiSession['prompt']>[0]) => void | Promise<void>
   onBeforeSubmit?: (draft: string, context: ChatSubmitContext) => false | void | boolean | Promise<false | void | boolean>
   onReloadAgentPlugins?: () => Promise<AgentPluginReloadResult | string>
   onCommandResult?: (message: string) => void
@@ -247,6 +249,7 @@ export function PiChatPanel<
   workspaceWarmupStatus,
   onSessionReset,
   onCreateSession,
+  onForkSession,
   onBeforeSubmit,
   onReloadAgentPlugins,
   onCommandResult,
@@ -508,6 +511,7 @@ export function PiChatPanel<
       : []
     const combined = [...fromState, ...sessionNotice, ...largeStateNotice, ...localNotices]
       .filter((notice) => !dismissedNoticeIds.has(notice.id))
+      .filter((notice) => !('errorCode' in notice) || notice.errorCode !== AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH)
     // A terminal chat error (history failed to load, no messages present)
     // already explains why the agent looks unreachable. Showing
     // reconnect/retry chatter next to it reads as contradictory
@@ -789,7 +793,12 @@ export function PiChatPanel<
         }
         return state
       },
-      prompt: selectedPiSession.prompt.bind(selectedPiSession),
+      prompt: (payload: Parameters<RemotePiSession['prompt']>[0]) => selectedPiSession.prompt(payload).catch((error) => {
+        throw Object.assign(new Error(errorMessage(error, 'Could not send your message.'), { cause: error }), {
+          errorCode: piChatErrorCode(error),
+          forkPrompt: payload,
+        })
+      }),
       followUp: selectedPiSession.followUp.bind(selectedPiSession),
       clearQueue: selectedPiSession.clearQueue.bind(selectedPiSession),
       interrupt: selectedPiSession.interrupt.bind(selectedPiSession),
@@ -901,6 +910,26 @@ export function PiChatPanel<
       return undefined
     } catch (error) {
       clearLocalSubmitted(activeChatSessionId)
+      if (
+        piChatErrorCode(error) === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
+        && activeChatSessionId
+      ) {
+        const forkPrompt = (error as { forkPrompt?: Parameters<RemotePiSession['prompt']>[0] }).forkPrompt
+        try {
+          if (!forkPrompt) throw new Error('The rejected prompt could not be recovered for the fork.')
+          if (externalSessionId) {
+            if (!onForkSession) throw new Error('The chat host cannot fork this frozen session.')
+            await onForkSession(activeChatSessionId, forkPrompt)
+          } else {
+            await sessions.create({ forkSessionId: activeChatSessionId, forkPrompt })
+          }
+          return undefined
+        } catch (forkError) {
+          restoreSubmittedDraft()
+          surfaceRunRejected(forkError)
+          return false
+        }
+      }
       restoreSubmittedDraft()
       // Single normalization point for rejected sends: surface as one stable
       // notice carrying the server error code so a host can attach a recovery
@@ -909,7 +938,7 @@ export function PiChatPanel<
       surfaceRunRejected(error)
       return false
     }
-  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
+  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, externalSessionId, markLocalSubmitted, onForkSession, onPromptSubmitStarted, policy, selectedPiSession, sessions.create, setComposerDraft, surfaceRunRejected])
 
   const availableAssistantSlashCommands = useMemo(
     () => policy ? actionableSlashCommands : actionableSlashCommands.filter((command) => command.clickBehavior === 'insert'),
