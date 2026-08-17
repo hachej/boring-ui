@@ -1818,6 +1818,7 @@ describe("WorkspaceAgentFront", () => {
     }))
     const mounts = vi.fn()
     const unmounts = vi.fn()
+    const switchSession = vi.fn()
     let observedBinding: WorkspaceChatPanelProps["sessionBinding"]
     const FrozenChat = (props: WorkspaceChatPanelProps) => {
       observedBinding = props.sessionBinding
@@ -1841,6 +1842,7 @@ describe("WorkspaceAgentFront", () => {
     render(
       <WorkspaceAgentFront
         workspaceId="transparent-frozen-fork"
+        workspaceLayout="plugin-tabs"
         chatPanel={FrozenChat}
         useSessions={(options) => ({
           sourceIdentity: options.sourceIdentity,
@@ -1850,7 +1852,7 @@ describe("WorkspaceAgentFront", () => {
           activeSession: { id: "stale", agentTypeId: "default", title: "Frozen session" },
           loading: false,
           workspaceId: options.workspaceId,
-          switch: vi.fn(),
+          switch: switchSession,
           delete: vi.fn(),
           create,
         })}
@@ -1876,6 +1878,10 @@ describe("WorkspaceAgentFront", () => {
     expect(unmounts).toHaveBeenCalledTimes(unmountCountBeforeFork)
     expect(screen.getByTestId("frozen-history")).toBe(history)
     expect(screen.getByTestId("frozen-history")).toHaveAttribute("data-timeline-key", stableTimelineKey)
+
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Frozen session" }))
+    expect(switchSession).toHaveBeenLastCalledWith("forked", "default")
+    expect(screen.getByTestId("frozen-history")).toBe(history)
   })
 
   it("rejects a frozen fork while another pane creation is pending", async () => {

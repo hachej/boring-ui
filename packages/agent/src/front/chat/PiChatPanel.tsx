@@ -1227,7 +1227,7 @@ export function PiChatPanel<
   const disabled = !policy || sessionsLoading || composerBlocked
   const isStreaming = isPiBusyStatus(status)
   const submitStatus = initialHydrationPromptAllowed ? 'ready' : toPromptSubmitStatus(status)
-  const submitDisabled = !policy || sessionsLoading || modelSelectionBlocked || (composerBlocked && !isStreaming)
+  const submitDisabled = !policy || sessionsLoading || modelSelectionBlocked || Boolean(forkTransition?.forking) || (composerBlocked && !isStreaming)
   const mergedToolRenderers = useMemo(() => mergeShadcnToolRenderers(toolRenderers), [toolRenderers])
   const debugMessages = useMemo(() => messages.map(toDebugUiMessage), [messages])
 

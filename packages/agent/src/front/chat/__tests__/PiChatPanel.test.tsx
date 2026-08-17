@@ -669,6 +669,10 @@ describe('PiChatPanel sandbox shell', () => {
     expect(screen.getByText('committed from /state')).toBeTruthy()
     expect(document.querySelector('[data-boring-agent-part="message-timeline"]')).toBe(timeline)
     expect(screen.getByText('Continuing this chat in the current runtime…')).toBeTruthy()
+    expect((document.querySelector('[data-boring-agent-part="composer-submit"]') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(textarea, { target: { value: 'must not replace the pending transition' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    expect(onForkSession).toHaveBeenCalledTimes(1)
 
     await act(async () => {
       forkResult.resolve({ sessionId: 'pi-current' })

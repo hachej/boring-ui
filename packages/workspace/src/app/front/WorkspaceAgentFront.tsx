@@ -873,6 +873,11 @@ export function WorkspaceAgentFront<
   const chatPaneStateRef = useRef(chatPaneState)
   chatPaneStateRef.current = chatPaneState
   const chatPaneBindingsRef = useRef(new Map<string, MutablePiChatSessionBinding>())
+  const chatPaneBindingsWorkspaceRef = useRef(workspaceId)
+  if (chatPaneBindingsWorkspaceRef.current !== workspaceId) {
+    chatPaneBindingsWorkspaceRef.current = workspaceId
+    chatPaneBindingsRef.current.clear()
+  }
   const chatPaneBinding = useCallback((paneId: string, initialSessionId = workspaceSessionRefFromKey(paneId).sessionId) => {
     const existing = chatPaneBindingsRef.current.get(paneId)
     if (existing) return existing
@@ -1892,10 +1897,12 @@ export function WorkspaceAgentFront<
         : replaceActivePane(paneState.ids, paneState.activeId, nextSessionKey)
       return { workspaceId, ids, activeId: nextSessionKey }
     })
-    return alreadyVisible
-      ? nextAgentTypeId ? rawSwitch(nextSessionId, nextAgentTypeId) : rawSwitch(nextSessionId)
-      : nextAgentTypeId ? resolvedSwitch(nextSessionId, nextAgentTypeId) : resolvedSwitch(nextSessionId)
-  }, [chatPaneState, chatSessionKey, rawSwitch, resolvedSwitch, workspaceId])
+    if (alreadyVisible) {
+      const target = boundChatSessionRef(nextSessionKey)
+      return target.agentTypeId ? rawSwitch(target.sessionId, target.agentTypeId) : rawSwitch(target.sessionId)
+    }
+    return nextAgentTypeId ? resolvedSwitch(nextSessionId, nextAgentTypeId) : resolvedSwitch(nextSessionId)
+  }, [boundChatSessionRef, chatPaneState, chatSessionKey, rawSwitch, resolvedSwitch, workspaceId])
   useEffect(() => {
     switchSessionForSurfaceRef.current = switchToChatPane
   }, [switchToChatPane])
@@ -1912,9 +1919,9 @@ export function WorkspaceAgentFront<
         activeId: nextSessionKey,
       }
     })
-    const ref = workspaceSessionRefFromKey(nextSessionKey)
+    const ref = boundChatSessionRef(nextSessionKey)
     return ref.agentTypeId ? rawSwitch(ref.sessionId, ref.agentTypeId) : rawSwitch(ref.sessionId)
-  }, [chatSessionKey, rawSwitch, workspaceId])
+  }, [boundChatSessionRef, chatSessionKey, rawSwitch, workspaceId])
 
   const openChatPane = useCallback((nextSessionId: string, nextAgentTypeId?: string) => {
     setLeftOverlay(null)
@@ -2426,8 +2433,8 @@ export function WorkspaceAgentFront<
   const topBarLeftContent = topBarLeft ? (
     <div className="flex min-w-0 items-center gap-2">{topBarLeft}</div>
   ) : undefined
-  const activeChatPaneRef = activeChatPaneId ? workspaceSessionRefFromKey(activeChatPaneId) : null
-  const openChatPaneRefs = useMemo(() => chatPaneIds.map((id) => workspaceSessionRefFromKey(id)), [chatPaneIds])
+  const activeChatPaneRef = activeChatPaneId ? boundChatSessionRef(activeChatPaneId) : null
+  const openChatPaneRefs = useMemo(() => chatPaneIds.map((id) => boundChatSessionRef(id)), [boundChatSessionRef, chatPaneIds])
   const pinnedRefs = useMemo(() => pinnedIds.map((id) => workspaceSessionRefFromKey(id)), [pinnedIds])
   const navParams = {
     sessions: resolvedSessions,
