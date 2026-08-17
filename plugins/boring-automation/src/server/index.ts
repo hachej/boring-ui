@@ -21,6 +21,7 @@ import { resolveAutomationOperationsForActor, type AutomationRunTranscriptReader
 import { InMemoryAutomationRunEventBus, PostgresAutomationRunEventBus, type AutomationRunEventBus } from "./runEventBus"
 import { automationRoutes } from "./routes"
 import type { AutomationStore } from "./store"
+import { seedStandingAutomations } from "./standingAutomations"
 
 export interface BoringAutomationServerPluginOptions {
   agentTypeId: string
@@ -123,13 +124,16 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
       if (eventBusOwner === "plugin") await eventBus.close()
     })
 
-    if (hostedDueCoordinator && hostedSchedulerEnabled) {
-      scheduler = new HostedAutomationScheduler({
-        runDue: async () => await hostedDueCoordinator.runDue(),
-        logger: app.log,
-      })
-      app.addHook("onReady", async () => scheduler?.start())
-    }
+    app.addHook("onReady", async () => {
+      if (!options.storeForRequest) await seedStandingAutomations(store)
+      if (hostedDueCoordinator && hostedSchedulerEnabled) {
+        scheduler = new HostedAutomationScheduler({
+          runDue: async () => await hostedDueCoordinator.runDue(),
+          logger: app.log,
+        })
+        scheduler.start()
+      }
+    })
   }
   return defineServerPlugin({
     id: BORING_AUTOMATION_PLUGIN_ID,
@@ -247,8 +251,16 @@ export default function defaultBoringAutomationServerPlugin(
       storeMode: "hosted",
       eventBus,
       eventBusOwner,
-      storeForRequest: async (request, actor) => await createHostedStore(sql, actor, dispatcherResolver, agentTypeId, request),
-      storeForActor: async (actor) => await createHostedStore(sql, actor, dispatcherResolver, agentTypeId),
+      storeForRequest: async (request, actor) => {
+        const actorStore = await createHostedStore(sql, actor, dispatcherResolver, agentTypeId, request)
+        await seedStandingAutomations(actorStore)
+        return actorStore
+      },
+      storeForActor: async (actor) => {
+        const actorStore = await createHostedStore(sql, actor, dispatcherResolver, agentTypeId)
+        await seedStandingAutomations(actorStore)
+        return actorStore
+      },
       dispatcherResolver,
       actorResolver: resolvedOptions.actorResolver ?? trusted.actorResolver,
       actorVerifier: resolvedOptions.actorVerifier ?? trusted.actorVerifier,
@@ -278,6 +290,7 @@ export * from "./hostedDueRunService"
 export * from "./dispatchRunExecutor"
 export { ManualRunExecutor, type ManualRunExecutorOptions, type ManualRunInput } from "./manualRunExecutor"
 export * from "./migrations"
+export * from "./standingAutomations"
 export * from "./operations"
 export * from "./postgresStore"
 export * from "./routes"

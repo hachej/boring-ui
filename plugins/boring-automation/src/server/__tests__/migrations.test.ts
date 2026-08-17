@@ -40,10 +40,10 @@ describe("runBoringAutomationMigrations", () => {
       const now = new Date().toISOString()
       await sql`
         INSERT INTO boring_automation_automations (
-          id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, created_at, updated_at
+          id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, prompt_ref, created_at, updated_at
         ) VALUES (
           ${automationId}, ${actor.workspaceId}, ${actor.userId}, 'Migration smoke', true,
-          '0 9 * * *', 'UTC', 'test:model', ${now}, ${now}
+          '0 9 * * *', 'UTC', 'test:model', ${`.agents/automation/${automationId}.md`}, ${now}, ${now}
         )
       `
       const store = new PostgresAutomationStore(sql, actor)
@@ -85,7 +85,7 @@ describe("runBoringAutomationMigrations", () => {
       expect(reconciled).toEqual(expect.arrayContaining([
         expect.objectContaining({
           actor,
-          run: expect.objectContaining({ id: run.id, status: "failed", completedAt: expect.any(String) }),
+          run: expect.objectContaining({ id: run.id, status: "outcome-unknown", completedAt: expect.any(String) }),
         }),
       ]))
       await expect(store.updateRunLifecycle(run.id, { status: "succeeded" })).rejects.toMatchObject({

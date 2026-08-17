@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import Fastify from "fastify"
@@ -19,6 +19,34 @@ describe("boring automation server plugin", () => {
     const res = await app.inject({ method: "GET", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations` })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ ok: true, automations: [] })
+
+    await app.close()
+    await rm(workspaceRoot, { recursive: true, force: true })
+  })
+
+  it("seeds checked-in standing records during workspace boot", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "boring-automation-seeded-plugin-"))
+    const promptRoot = join(workspaceRoot, ".agents", "automation")
+    await mkdir(promptRoot, { recursive: true })
+    await Promise.all([
+      writeFile(join(promptRoot, "orchestrator-tick.md"), "orchestrator prompt", "utf8"),
+      writeFile(join(promptRoot, "worker-slot.md"), "worker prompt", "utf8"),
+      writeFile(join(promptRoot, "triage-slot.md"), "triage prompt", "utf8"),
+    ])
+
+    const app = Fastify()
+    await app.register(defaultBoringAutomationServerPlugin(undefined, { workspaceRoot, agentTypeId: "selected-agent" }).routes!)
+    const response = await app.inject({ method: "GET", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations` })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json().automations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "orchestrator-tick", cron: "*/10 * * * *" }),
+      expect.objectContaining({ id: "worker-slot-1", cron: null }),
+      expect.objectContaining({ id: "worker-slot-2", cron: null }),
+      expect.objectContaining({ id: "worker-slot-3", cron: null }),
+      expect.objectContaining({ id: "triage", cron: null }),
+    ]))
+    expect(response.json().automations).toHaveLength(5)
 
     await app.close()
     await rm(workspaceRoot, { recursive: true, force: true })
@@ -52,7 +80,11 @@ describe("boring automation server plugin", () => {
 
   it("binds hosted routes to the actor workspace before selecting prompt metadata", async () => {
     const sql = vi.fn(async () => [])
-    const workspace = { root: "/workspace", runtimeContext: {} } as never
+    const workspace = {
+      root: "/workspace",
+      runtimeContext: {},
+      async readFile() { throw Object.assign(new Error("missing"), { code: "ENOENT" }) },
+    } as never
     const runWithWorkspaceAgent = vi.fn(async (_input, run) => run({
       workspace,
       signal: new AbortController().signal,

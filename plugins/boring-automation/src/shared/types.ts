@@ -17,7 +17,7 @@ export interface Automation {
   id: string
   title: string
   enabled: boolean
-  cron: string
+  cron: string | null
   timezone: string
   model: string
   agentTypeId?: string

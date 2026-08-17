@@ -8,6 +8,7 @@ export const AUTOMATION_SCHEDULE_ERRORS = {
 
 export type AutomationScheduleSkipReason =
   | "disabled"
+  | "dispatch-only"
   | "invalid-cron"
   | "invalid-timezone"
   | "not-current-minute"
@@ -85,6 +86,7 @@ export function evaluateAutomationSchedule(input: EvaluateAutomationScheduleInpu
   const scheduledFor = floorToMinute(now).toISOString()
   const runs = [...input.runs]
   const decisions = input.automations.map((automation): AutomationScheduleDecision => {
+    if (automation.cron === null) return skip(automation, null, "dispatch-only", "Automation is dispatch-only.")
     const validation = validateAutomationSchedule(automation.cron, automation.timezone)
     if (validation.errors.cron) return skip(automation, null, "invalid-cron", validation.errors.cron)
     if (validation.errors.timezone) return skip(automation, null, "invalid-timezone", validation.errors.timezone)
@@ -129,7 +131,7 @@ function hasDuplicateScheduledRun(runs: EvaluateAutomationScheduleInput["runs"],
 
 function hasActiveRun(runs: EvaluateAutomationScheduleInput["runs"], automationId: string): boolean {
   return runs.some((run) => run.automationId === automationId && (
-    run.status === "queued" || run.status === "dispatching" || run.status === "running"
+    run.status === "queued" || run.status === "dispatching" || run.status === "running" || run.status === "outcome-unknown"
   ))
 }
 

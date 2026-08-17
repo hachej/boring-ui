@@ -131,6 +131,7 @@ export class DispatchRunExecutor {
     let sessionId: string | null = null
     let terminalStatus: "succeeded" | "failed" | "cancelled" | null = null
     let terminalError: string | null = null
+    let dispatchIdentityPersistenceFailed = false
     const claimed = await store.claimRunForDispatch(run.id)
     if (!claimed) {
       const durable = await this.readDurableRun(store, automation.id, run.id, run)
@@ -160,11 +161,16 @@ export class DispatchRunExecutor {
         sessionId = ref.sessionId
         if (receipt) dispatchReceipt = { ref, ...receipt }
         if (durableSessionId === ref.sessionId && (!receipt || current.dispatchReceipt)) return
-        current = await store.updateRunLifecycle(run.id, {
-          status: "dispatching",
-          sessionId: ref.sessionId,
-          ...(dispatchReceipt ? { dispatchReceipt } : {}),
-        })
+        try {
+          current = await store.updateRunLifecycle(run.id, {
+            status: "dispatching",
+            sessionId: ref.sessionId,
+            ...(dispatchReceipt ? { dispatchReceipt } : {}),
+          })
+        } catch (error) {
+          dispatchIdentityPersistenceFailed = true
+          throw error
+        }
         durableSessionId = ref.sessionId
         await this.publishRunChange(actor, current)
       }
@@ -238,7 +244,9 @@ export class DispatchRunExecutor {
       await stopHeartbeat()
       if (isRunLeaseLost(error)) return await this.readDurableRun(store, automation.id, run.id, current)
       const cancelled = isCancellationError(error)
-      const status = terminalStatus ?? (cancelled ? "cancelled" : "failed")
+      const status = dispatchIdentityPersistenceFailed
+        ? "outcome-unknown"
+        : (terminalStatus ?? (cancelled ? "cancelled" : "failed"))
       let finalized: AutomationRun
       try {
         finalized = await this.finalizeRun(store, run.id, {
@@ -247,7 +255,7 @@ export class DispatchRunExecutor {
           startedAt,
           completedAt,
           status,
-          error: status === "failed" ? (terminalError ?? safeErrorMessage(error)) : null,
+          error: status === "failed" || status === "outcome-unknown" ? (terminalError ?? safeErrorMessage(error)) : null,
           usage,
         })
       } catch (finalizeError) {
@@ -285,7 +293,7 @@ export class DispatchRunExecutor {
     sessionId: string | null
     startedAt: string | null
     completedAt: string
-    status: "succeeded" | "failed" | "cancelled"
+    status: "succeeded" | "failed" | "cancelled" | "outcome-unknown"
     error: string | null
     usage: UsageAccumulator
   }): Promise<AutomationRun> {

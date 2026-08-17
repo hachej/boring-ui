@@ -14,6 +14,7 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
       model text NOT NULL,
       agent_type_id text,
       session_mode text NOT NULL DEFAULT 'new',
+      prompt_ref text,
       created_at timestamptz NOT NULL,
       updated_at timestamptz NOT NULL
     )
@@ -22,9 +23,20 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
     ALTER TABLE boring_automation_automations
       ADD COLUMN IF NOT EXISTS agent_type_id text,
       ADD COLUMN IF NOT EXISTS session_mode text NOT NULL DEFAULT 'new',
+      ADD COLUMN IF NOT EXISTS prompt_ref text,
       ADD COLUMN IF NOT EXISTS deleted_at timestamptz,
       DROP COLUMN IF EXISTS prompt,
       DROP COLUMN IF EXISTS prompt_file_ready
+  `)
+  await sql.unsafe(`
+    UPDATE boring_automation_automations
+    SET prompt_ref = COALESCE(prompt_ref, '.agents/automation/' || id::text || '.md')
+    WHERE prompt_ref IS NULL
+  `)
+  await sql.unsafe(`
+    ALTER TABLE boring_automation_automations
+      ALTER COLUMN cron DROP NOT NULL,
+      ALTER COLUMN prompt_ref SET NOT NULL
   `)
   await sql.unsafe(`DROP INDEX IF EXISTS boring_automation_automations_owner_idx`)
   await sql.unsafe(`

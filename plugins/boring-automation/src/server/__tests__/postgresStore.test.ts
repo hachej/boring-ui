@@ -119,7 +119,7 @@ describe("PostgresAutomationStore actor isolation", () => {
       if (!text.includes("INSERT INTO boring_automation_automations")) return Promise.resolve([])
       return Promise.resolve([{
         id: values[0], title: values[3], enabled: values[4], cron: values[5], timezone: values[6], model: values[7],
-        agent_type_id: values[8], session_mode: values[9], created_at: values[10], updated_at: values[11],
+        agent_type_id: values[8], session_mode: values[9], prompt_ref: values[10], created_at: values[11], updated_at: values[12],
       }])
     }) as unknown as postgres.Sql
     const store = new PostgresAutomationStore(sql, { workspaceId: "workspace-a", userId: "user-a" }, undefined, workspace)
@@ -132,8 +132,8 @@ describe("PostgresAutomationStore actor isolation", () => {
     expect(automation.sessionMode).toBe("continue")
     expect(automation.promptRef).toBe(`.agents/automation/${automation.id}.md`)
     expect(files.get(automation.promptRef)).toBe("canonical prompt")
-    expect(queries[0]!.text).toContain("model, agent_type_id, session_mode, created_at")
-    expect(queries[0]!.text).toContain("RETURNING id, title, enabled, cron, timezone, model, agent_type_id, session_mode")
+    expect(queries[0]!.text).toContain("model, agent_type_id, session_mode, prompt_ref, created_at")
+    expect(queries[0]!.text).toContain("RETURNING id, title, enabled, cron, timezone, model, agent_type_id, session_mode, prompt_ref")
     expect(queries[0]!.text).not.toMatch(/\bprompt\b/)
     expect(queries[0]!.values).not.toContain("canonical prompt")
   })
@@ -213,8 +213,8 @@ describe("PostgresAutomationStore actor isolation", () => {
 
     expect(recorded.queries[0]!.text).toContain("FROM boring_automation_automations")
     expect(recorded.queries[0]!.text).toContain("WHERE deleted_at IS NULL")
-    expect(recorded.queries[0]!.text).not.toContain("prompt")
-    expect(recorded.queries[1]!.text).toContain("runs.status IN ('queued', 'dispatching', 'running')")
+    expect(recorded.queries[0]!.text).toContain("prompt_ref")
+    expect(recorded.queries[1]!.text).toContain("runs.status IN ('queued', 'dispatching', 'running', 'outcome-unknown')")
     expect(recorded.queries[1]!.text).toContain("runs.scheduled_for = ?")
     expect(recorded.queries[1]!.text).not.toContain("SELECT *")
     expect(recorded.queries[1]!.values).toContain("2026-07-23T09:00:00.000Z")

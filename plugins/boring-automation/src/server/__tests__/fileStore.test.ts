@@ -110,18 +110,16 @@ describe("FileAutomationStore persistence", () => {
     await firstStore.updateRunLifecycle(orphan.id, { status: "running", startedAt: "2026-07-10T00:00:01.000Z" })
 
     const restartedStore = createStore({ clock: () => new Date("2026-07-10T00:10:00.000Z") })
-    const replacement = await restartedStore.beginRun({
+    await expect(restartedStore.beginRun({
       automationId: automation.id,
       trigger: "manual",
       promptSnapshot: "prompt",
       modelSnapshot: "test:gpt-5.5",
-    })
+    })).rejects.toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
     const runs = await restartedStore.listRuns(automation.id)
 
-    expect(replacement.status).toBe("queued")
     expect(runs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: orphan.id, status: "failed", completedAt: "2026-07-10T00:10:00.000Z", durationMs: 599_000, error: "Automation host restarted before the run completed" }),
-      expect.objectContaining({ id: replacement.id, status: "queued" }),
+      expect.objectContaining({ id: orphan.id, status: "outcome-unknown", completedAt: "2026-07-10T00:10:00.000Z", durationMs: 599_000, error: "Automation dispatch outcome is unknown after host restart; the slot remains occupied" }),
     ]))
     await expect(restartedStore.listRuns(automation.id, 1)).resolves.toHaveLength(1)
   })
@@ -195,4 +193,40 @@ describe("FileAutomationStore persistence", () => {
     await expect(readFile(path, "utf8")).resolves.toBe("repaired")
   })
 
+})
+
+describe("standing factory automation seeding", () => {
+  it("is idempotent and links all five records to their checked-in prompt files", async () => {
+    const { seedStandingAutomations } = await import("../standingAutomations")
+    await mkdir(join(dir, ".agents", "automation"), { recursive: true })
+    await Promise.all([
+      writeFile(join(dir, ".agents", "automation", "orchestrator-tick.md"), "orchestrator prompt", "utf8"),
+      writeFile(join(dir, ".agents", "automation", "worker-slot.md"), "worker prompt", "utf8"),
+      writeFile(join(dir, ".agents", "automation", "triage-slot.md"), "triage prompt", "utf8"),
+    ])
+
+    await seedStandingAutomations(createStore())
+    await seedStandingAutomations(createStore())
+
+    const store = createStore()
+    const automations = await store.listAutomations()
+    expect(automations).toHaveLength(5)
+    expect(automations.map(({ id }) => id).sort()).toEqual([
+      "orchestrator-tick", "triage", "worker-slot-1", "worker-slot-2", "worker-slot-3",
+    ])
+    expect(automations.find(({ id }) => id === "orchestrator-tick")).toMatchObject({
+      cron: "*/10 * * * *", promptRef: ".agents/automation/orchestrator-tick.md", agentTypeId: "boring-orchestrator",
+    })
+    for (const id of ["worker-slot-1", "worker-slot-2", "worker-slot-3"]) {
+      expect(automations.find((automation) => automation.id === id)).toMatchObject({
+        cron: null, promptRef: ".agents/automation/worker-slot.md", agentTypeId: "boring-worker",
+      })
+      await expect(store.getPrompt(id)).resolves.toBe("worker prompt")
+    }
+    expect(automations.find(({ id }) => id === "triage")).toMatchObject({
+      cron: null, promptRef: ".agents/automation/triage-slot.md", agentTypeId: "boring-worker",
+    })
+    await expect(store.getPrompt("orchestrator-tick")).resolves.toBe("orchestrator prompt")
+    await expect(store.getPrompt("triage")).resolves.toBe("triage prompt")
+  })
 })

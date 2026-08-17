@@ -56,10 +56,10 @@ describe("ManualRunExecutor durable restart saga", () => {
     await expect(restarted.listRuns(automation.id)).resolves.toEqual([
       expect.objectContaining({
         id: admitted.id,
-        status: "failed",
+        status: "outcome-unknown",
         sessionId: "shared",
         dispatchReceipt: expect.objectContaining({ ref: { agentTypeId: "beta", sessionId: "shared" } }),
-        error: "Automation host restarted before the run completed",
+        error: "Automation dispatch outcome is unknown after host restart; the slot remains occupied",
       }),
     ])
   })
@@ -100,7 +100,7 @@ describe("ManualRunExecutor durable restart saga", () => {
       id: admitted.id,
       status: "outcome-unknown",
       dispatchReceipt: null,
-      error: "Automation dispatch outcome is unknown after host restart; it was not retried",
+      error: "Automation dispatch outcome is unknown after host restart; the slot remains occupied",
     })
 
     const dispatch = vi.fn()
@@ -130,14 +130,13 @@ describe("ManualRunExecutor durable restart saga", () => {
     expect(dispatch).not.toHaveBeenCalled()
     await expect(restarted.listRuns(automation.id)).resolves.toHaveLength(1)
 
-    const explicitNewRun = await restarted.beginRun({
+    await expect(restarted.beginRun({
       automationId: automation.id,
       invocationId: "manual:invocation-2",
       trigger: "manual",
       promptSnapshot: "run again",
       modelSnapshot: "test:model",
-    })
-    expect(explicitNewRun.id).not.toBe(admitted.id)
+    })).rejects.toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
   })
 
   it("returns one durable run receipt for concurrent retries of an invocation", async () => {

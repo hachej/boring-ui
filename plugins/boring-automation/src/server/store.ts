@@ -8,6 +8,18 @@ import type {
   AutomationRunLifecyclePatch,
 } from "../shared/types"
 
+export interface AutomationSeed {
+  key: string
+  title: string
+  enabled: boolean
+  cron: string | null
+  timezone: string
+  model: string
+  agentTypeId: string
+  sessionMode: "new" | "continue"
+  promptRef: string
+}
+
 export type {
   Automation,
   AutomationCreate,
@@ -22,6 +34,8 @@ export interface AutomationStore {
   listAutomations(): Promise<Automation[]>
   getAutomation(id: string): Promise<Automation | null>
   createAutomation(input: AutomationCreate): Promise<Automation>
+  /** Idempotently provisions metadata for a checked-in prompt; returns null when the prompt is absent. */
+  ensureSeededAutomation?(input: AutomationSeed): Promise<Automation | null>
   updateAutomation(id: string, patch: AutomationPatch): Promise<Automation>
   deleteAutomation(id: string): Promise<void>
 

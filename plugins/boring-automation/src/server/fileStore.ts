@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { dirname, join, normalize, relative } from "node:path"
 import type {
   Automation,
   AutomationCreate,
@@ -10,7 +10,7 @@ import type {
   AutomationRunLifecyclePatch,
 } from "../shared/types"
 import { automationPromptPath } from "../shared/prompt"
-import type { AutomationStore } from "./store"
+import type { AutomationSeed, AutomationStore } from "./store"
 import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound } from "./store"
 
 type StoredAutomationState = {
@@ -34,6 +34,7 @@ const SAFE_PROMPT_ID = /^[a-zA-Z0-9_-]+$/
 const DEFAULT_PROMPT = ""
 
 export class FileAutomationStore implements AutomationStore {
+  private readonly workspaceRoot: string
   private readonly rootDir: string
   private state: StoredAutomationState | null = null
   private loadInFlight: Promise<StoredAutomationState> | null = null
@@ -48,6 +49,7 @@ export class FileAutomationStore implements AutomationStore {
     workspaceRoot: string,
     options: FileAutomationStoreOptions = {},
   ) {
+    this.workspaceRoot = workspaceRoot
     this.rootDir = join(workspaceRoot, ".pi", "automation")
     this.promptDir = join(workspaceRoot, ".agents", "automation")
     this.writer = options.writer ?? writeAtomic
@@ -93,6 +95,40 @@ export class FileAutomationStore implements AutomationStore {
     return clone(automation)
   }
 
+  async ensureSeededAutomation(input: AutomationSeed): Promise<Automation | null> {
+    try {
+      await readFile(this.workspacePath(input.promptRef), "utf8")
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT") return null
+      throw error
+    }
+
+    let seeded: Automation | undefined
+    await this.mutate((state) => {
+      const existing = state.automations[input.key]
+      if (existing) {
+        seeded = existing
+        return
+      }
+      const now = this.nowIso()
+      seeded = {
+        id: input.key,
+        title: input.title,
+        enabled: input.enabled,
+        cron: input.cron,
+        timezone: input.timezone,
+        model: input.model,
+        agentTypeId: input.agentTypeId,
+        sessionMode: input.sessionMode,
+        promptRef: input.promptRef,
+        createdAt: now,
+        updatedAt: now,
+      }
+      state.automations[input.key] = clone(seeded)
+    })
+    return clone(requireValue(seeded))
+  }
+
   async updateAutomation(id: string, patch: AutomationPatch): Promise<Automation> {
     let updated: Automation | undefined
     await this.mutate((state) => {
@@ -124,7 +160,7 @@ export class FileAutomationStore implements AutomationStore {
     const automation = await this.getAutomation(automationId)
     if (!automation) throw automationNotFound(automationId)
     try {
-      return await readFile(this.promptPath(automationId), "utf8")
+      return await readFile(this.workspacePath(automation.promptRef), "utf8")
     } catch (error) {
       // Existing automation + missing markdown file is treated as an empty prompt.
       // Saving the prompt recreates the canonical file.
@@ -136,7 +172,7 @@ export class FileAutomationStore implements AutomationStore {
   async updatePrompt(automationId: string, body: string): Promise<void> {
     const automation = await this.getAutomation(automationId)
     if (!automation) throw automationNotFound(automationId)
-    await this.writePromptFile(automationId, body)
+    await this.writer(this.workspacePath(automation.promptRef), body)
     await this.mutate((state) => {
       const current = state.automations[automationId]
       if (!current) throw automationNotFound(automationId)
@@ -154,10 +190,10 @@ export class FileAutomationStore implements AutomationStore {
 
   async beginRun(input: AutomationRunBegin): Promise<AutomationRun> {
     const now = input.createdAt ?? this.nowIso()
+    await this.reconcileOrphanedRuns(input.automationId)
     let run: AutomationRun | undefined
     await this.mutate((state) => {
       if (!state.automations[input.automationId]) throw automationNotFound(input.automationId)
-      reconcileOrphanedRuns(state, input.automationId, this.activeRunIds, now)
       const existingInvocation = input.invocationId
         ? Object.values(state.runs).find((candidate) => candidate.automationId === input.automationId && candidate.invocationId === input.invocationId)
         : undefined
@@ -175,7 +211,7 @@ export class FileAutomationStore implements AutomationStore {
       }
       const active = Object.values(state.runs).find((candidate) => (
         candidate.automationId === input.automationId
-        && (candidate.status === "queued" || candidate.status === "dispatching" || candidate.status === "running")
+        && (candidate.status === "queued" || candidate.status === "dispatching" || candidate.status === "running" || candidate.status === "outcome-unknown")
       ))
       if (active) throw runAlreadyActive(input.automationId)
       const id = randomUUID()
@@ -289,6 +325,15 @@ export class FileAutomationStore implements AutomationStore {
     return join(this.promptDir, `${automationId}.md`)
   }
 
+  private workspacePath(promptRef: string): string {
+    const normalized = normalize(promptRef)
+    const rel = relative(".", normalized)
+    if (rel.startsWith("..") || !rel.startsWith(`${normalize(".agents/automation")}/`)) {
+      throw new Error("automation prompt reference must stay within .agents/automation")
+    }
+    return join(this.workspaceRoot, rel)
+  }
+
   private async writePromptFile(automationId: string, body: string): Promise<void> {
     await this.writer(this.promptPath(automationId), body)
   }
@@ -356,12 +401,12 @@ function reconcileOrphanedRuns(
 ): void {
   for (const run of Object.values(state.runs)) {
     if (run.automationId !== automationId || isTerminalRunStatus(run.status) || activeRunIds.has(run.id)) continue
-    const ambiguousDispatch = run.status === "dispatching" && run.dispatchReceipt === null
-    run.status = ambiguousDispatch ? "outcome-unknown" : "failed"
+    const dispatchMayStillBeLive = run.status !== "queued"
+    run.status = dispatchMayStillBeLive ? "outcome-unknown" : "failed"
     run.completedAt = completedAt
     run.durationMs = Math.max(0, new Date(completedAt).getTime() - new Date(run.startedAt ?? run.createdAt).getTime())
-    run.error = ambiguousDispatch
-      ? "Automation dispatch outcome is unknown after host restart; it was not retried"
+    run.error = dispatchMayStillBeLive
+      ? "Automation dispatch outcome is unknown after host restart; the slot remains occupied"
       : "Automation host restarted before the run completed"
     run.updatedAt = completedAt
   }

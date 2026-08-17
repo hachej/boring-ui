@@ -32,7 +32,7 @@ export function draftFromAutomation(automation: Automation, prompt: string): Aut
   return {
     title: automation.title,
     enabled: automation.enabled,
-    cron: automation.cron,
+    cron: automation.cron ?? "",
     timezone: automation.timezone,
     model: automation.model,
     thinkingLevel: automation.thinkingLevel ?? "medium",
