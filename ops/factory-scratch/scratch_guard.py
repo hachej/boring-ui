@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import errno
 import fcntl
 import json
@@ -25,6 +26,8 @@ ENTRY_MARKER = ".boring-scratch.json"
 LOCK_FILE = ".boring-active.lock"
 HEARTBEAT_FILE = ".boring-heartbeat"
 TMPFS_TYPES = frozenset({"tmpfs", "ramfs"})
+AT_FDCWD = -100
+RENAME_NOREPLACE = 1
 
 
 class SafetyError(RuntimeError):
@@ -93,6 +96,60 @@ def _validate_root(root: Path) -> tuple[Path, str]:
     return resolved, root_id
 
 
+def _rename_noreplace(source: Path, target: Path) -> None:
+    try:
+        renameat2 = ctypes.CDLL(None, use_errno=True).renameat2
+    except AttributeError as exc:
+        raise SafetyError("platform lacks atomic no-clobber renameat2") from exc
+    renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    renameat2.restype = ctypes.c_int
+    if renameat2(
+        AT_FDCWD, os.fsencode(source), AT_FDCWD, os.fsencode(target), RENAME_NOREPLACE
+    ) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), target)
+
+
+def _fd_mount_id(fd: int) -> int:
+    try:
+        lines = Path(f"/proc/self/fdinfo/{fd}").read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise SafetyError(f"cannot inspect mount identity: {exc}") from exc
+    for line in lines:
+        if line.startswith("mnt_id:"):
+            try:
+                return int(line.split(":", 1)[1].strip())
+            except ValueError as exc:
+                raise SafetyError("mount identity is malformed") from exc
+    raise SafetyError("mount identity is unavailable")
+
+
+def _remove_tree_at(parent_fd: int, name: str, expected_mount_id: int) -> None:
+    directory_fd = os.open(
+        name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd
+    )
+    try:
+        if _fd_mount_id(directory_fd) != expected_mount_id:
+            raise SafetyError(f"mounted directory appeared at {name}")
+        for child in os.listdir(directory_fd):
+            child_st = os.stat(child, dir_fd=directory_fd, follow_symlinks=False)
+            if stat.S_ISLNK(child_st.st_mode):
+                raise SafetyError(f"symlink appeared during removal at {child}")
+            if stat.S_ISDIR(child_st.st_mode):
+                _remove_tree_at(directory_fd, child, expected_mount_id)
+                continue
+            path_fd = os.open(child, os.O_PATH | os.O_NOFOLLOW, dir_fd=directory_fd)
+            try:
+                if _fd_mount_id(path_fd) != expected_mount_id:
+                    raise SafetyError(f"mounted file appeared at {child}")
+            finally:
+                os.close(path_fd)
+            os.unlink(child, dir_fd=directory_fd)
+    finally:
+        os.close(directory_fd)
+    os.rmdir(name, dir_fd=parent_fd)
+
+
 def _discard_private_staging(staging: Path) -> None:
     if staging.exists() and not staging.is_symlink():
         shutil.rmtree(staging)
@@ -112,7 +169,7 @@ def initialize_root(root: Path) -> None:
         marker_path = staging / ROOT_MARKER
         marker_path.write_text(json.dumps(marker, sort_keys=True) + "\n", encoding="utf-8")
         marker_path.chmod(0o600)
-        staging.rename(root)
+        _rename_noreplace(staging, root)
     except BaseException:
         _discard_private_staging(staging)
         raise
@@ -148,7 +205,7 @@ def initialize_entry(root: Path, name: str, *, now: float | None = None) -> Path
         heartbeat.touch(mode=0o600)
         timestamp = time.time() if now is None else now
         os.utime(heartbeat, (timestamp, timestamp), follow_symlinks=False)
-        staging.rename(entry)
+        _rename_noreplace(staging, entry)
     except BaseException:
         _discard_private_staging(staging)
         raise
@@ -192,8 +249,6 @@ def _entry_decision(
     for mount in mounts:
         if mount.point == entry or entry in mount.point.parents:
             return Decision(entry, "retain", f"mounted path boundary at {mount.point}"), None
-    if not getattr(shutil.rmtree, "avoids_symlink_attacks", False):
-        return Decision(entry, "retain", "platform lacks symlink-safe tree removal"), None
     try:
         marker = _strict_json(entry / ENTRY_MARKER, {"entry", "owner", "protocol", "root_id"})
     except SafetyError as exc:
@@ -297,8 +352,10 @@ def clean_root(
     decisions: list[Decision] = []
     root_fd = os.open(canonical_root, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        if (os.fstat(root_fd).st_dev, os.fstat(root_fd).st_ino) != root_identity:
+        opened_root_st = os.fstat(root_fd)
+        if (opened_root_st.st_dev, opened_root_st.st_ino) != root_identity:
             raise SafetyError("scratch root changed while opening")
+        root_mount_id = _fd_mount_id(root_fd)
         for entry in sorted(canonical_root.iterdir(), key=lambda item: item.name):
             if entry.name == ROOT_MARKER:
                 continue
@@ -361,7 +418,7 @@ def clean_root(
                 )
                 if (quarantined_st.st_dev, quarantined_st.st_ino) != evidence.entry_identity:
                     raise SafetyError("quarantine identity mismatch")
-                shutil.rmtree(quarantine_name, dir_fd=root_fd)
+                _remove_tree_at(root_fd, quarantine_name, root_mount_id)
                 decisions.append(Decision(entry, "deleted", decision.reason))
             except (OSError, SafetyError) as exc:
                 retained_path = quarantine if renamed else entry

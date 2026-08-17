@@ -148,12 +148,13 @@ class ScratchGuardTest(unittest.TestCase):
         self.assertIn("mounted path boundary", result.reason)
         self.assertTrue(entry.exists())
 
-    def test_dry_run_refuses_when_safe_removal_is_unavailable(self) -> None:
+    def test_dry_run_refuses_when_mount_identity_is_unavailable(self) -> None:
         entry = self.entry("portable")
-        with mock.patch.object(scratch_guard.shutil.rmtree, "avoids_symlink_attacks", False):
-            result = self.decisions(apply=False)[0]
-        self.assertEqual("retain", result.action)
-        self.assertIn("lacks symlink-safe", result.reason)
+        with mock.patch.object(
+            scratch_guard, "_fd_mount_id", side_effect=scratch_guard.SafetyError("unavailable")
+        ):
+            with self.assertRaisesRegex(scratch_guard.SafetyError, "unavailable"):
+                self.decisions(apply=False)
         self.assertTrue(entry.exists())
 
 
@@ -190,6 +191,35 @@ class ScratchGuardTest(unittest.TestCase):
         self.assertEqual("retain", result.action)
         self.assertIn("entry directory changed", result.reason)
         self.assertTrue(entry.exists())
+
+
+    def test_atomic_publication_never_clobbers_existing_directory(self) -> None:
+        source = self.base / "publication-source"
+        target = self.base / "publication-target"
+        source.mkdir()
+        target.mkdir()
+        sentinel = target / "sentinel"
+        sentinel.write_text("preserve")
+        with self.assertRaises(FileExistsError):
+            scratch_guard._rename_noreplace(source, target)
+        self.assertTrue(source.exists())
+        self.assertEqual("preserve", sentinel.read_text())
+
+
+    def test_init_root_loses_race_without_clobbering_competitor(self) -> None:
+        target = self.base / "raced-root"
+        real_rename = scratch_guard._rename_noreplace
+
+        def competitor_wins(source, destination):
+            destination.mkdir()
+            (destination / "sentinel").write_text("competitor")
+            real_rename(source, destination)
+
+        with mock.patch.object(scratch_guard, "_rename_noreplace", side_effect=competitor_wins):
+            with self.assertRaises(FileExistsError):
+                scratch_guard.initialize_root(target)
+        self.assertEqual("competitor", (target / "sentinel").read_text())
+        self.assertEqual([], list(self.base.glob(".raced-root.boring-init-*")))
 
     def test_failed_initialization_removes_private_staging_and_allows_retry(self) -> None:
         target = self.base / "atomic-root"

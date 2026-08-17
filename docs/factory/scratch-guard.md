@@ -1,6 +1,7 @@
 # Opt-in factory scratch guard
 
-`ops/factory-scratch/scratch_guard.py` is a Linux operator utility for two
+`ops/factory-scratch/scratch_guard.py` is a Linux operator utility (it requires
+`/proc/self/mountinfo`, `/proc/self/fdinfo`, and `renameat2`) for two
 bounded jobs:
 
 1. fail before a long run when a selected filesystem reaches a configured inode
@@ -48,7 +49,8 @@ safe. Supply `--pnpm-store` (or `PNPM_STORE_DIR`) to make that check meaningful.
 
 `init-root` refuses an existing path and creates a private mode-0700 directory.
 Initialization stages protocol files privately and exposes the final path with one
-rename; a failed setup removes only its own private staging directory so the exact
+Linux `renameat2(RENAME_NOREPLACE)` operation, so a concurrently created path is
+never overwritten; a failed setup removes only its own private staging directory so the exact
 command can be retried. The cleaner later refuses roots that are symlinks,
 non-canonical, owned by a different uid, group/world writable, or missing the
 exact root marker.
@@ -100,7 +102,9 @@ scratch-guard clean --root /var/tmp/boring-ui-owned-scratch \
 For an eligible entry, the utility holds the exclusive lease lock, rechecks the
 lease and heartbeat, rejects symlinks/filesystem boundaries, atomically renames
 the direct child to a unique quarantine name within the same private root, then
-removes that quarantine. A failed removal is retained and reported; ambiguous
+removes that quarantine through directory descriptors. Every opened node must
+retain the root mount id from `/proc/self/fdinfo`, so a late same-device bind mount
+is refused rather than traversed. A failed removal is retained and reported; ambiguous
 quarantines are never retried automatically. This is cooperative safety, not a
 way to clean paths written by producers that ignore the lock protocol.
 
