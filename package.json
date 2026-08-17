@@ -61,7 +61,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
-    "mermaid": "11.12.2",
+    "mermaid": "11.16.1",
     "typescript": "^6.0.3"
   },
   "pnpm": {
