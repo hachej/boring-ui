@@ -615,9 +615,8 @@ describe('PiChatPanel sandbox shell', () => {
         errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
       }],
     }))
-    sourceRemote.prompt.mockRejectedValueOnce(Object.assign(new Error('scope mismatch'), {
-      errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-    }))
+    const sourcePrompt = deferred<Awaited<ReturnType<RemotePiSession['prompt']>>>()
+    sourceRemote.prompt.mockReturnValueOnce(sourcePrompt.promise)
     const targetRemote = new FakeRemotePiSession(remoteState({
       sessionId: 'pi-current',
       hydrated: false,
@@ -660,19 +659,26 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.change(textarea, { target: { value: 'continue controlled chat' } })
     fireEvent.keyDown(textarea, { key: 'Enter' })
 
+    await waitFor(() => expect(sourceRemote.prompt).toHaveBeenCalledOnce())
+    expect(screen.getByText('continue controlled chat').closest('[data-boring-agent-part="message"]')?.getAttribute('data-boring-agent-message-status')).toBe('pending')
+    expect(screen.getByText('committed from /state')).toBeTruthy()
+    expect(document.querySelector('[data-boring-agent-part="message-timeline"]')).toBe(timeline)
+    expect((document.querySelector('[data-boring-agent-part="composer-submit"]') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(textarea, { target: { value: 'must not replace the pending transition' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    expect(sourceRemote.followUp).not.toHaveBeenCalled()
+    await act(async () => {
+      sourcePrompt.reject(Object.assign(new Error('scope mismatch'), {
+        errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+      }))
+      await sourcePrompt.promise.catch(() => undefined)
+    })
     await waitFor(() => expect(onForkSession).toHaveBeenCalledWith(
       'pi-1',
       expect.objectContaining({ message: 'continue controlled chat' }),
     ))
     const forkPrompt = onForkSession.mock.calls[0]?.[1]
-    expect(screen.getByText('continue controlled chat').closest('[data-boring-agent-part="message"]')?.getAttribute('data-boring-agent-message-status')).toBe('pending')
-    expect(screen.getByText('committed from /state')).toBeTruthy()
-    expect(document.querySelector('[data-boring-agent-part="message-timeline"]')).toBe(timeline)
     expect(screen.getByText('Continuing this chat in the current runtime…')).toBeTruthy()
-    expect((document.querySelector('[data-boring-agent-part="composer-submit"]') as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.change(textarea, { target: { value: 'must not replace the pending transition' } })
-    fireEvent.keyDown(textarea, { key: 'Enter' })
-    expect(onForkSession).toHaveBeenCalledTimes(1)
 
     await act(async () => {
       forkResult.resolve({ sessionId: 'pi-current' })

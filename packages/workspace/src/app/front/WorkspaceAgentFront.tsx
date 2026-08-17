@@ -2119,11 +2119,11 @@ export function WorkspaceAgentFront<
     chatPaneStateRef.current = nextState
     setChatPaneState(nextState)
     if (nextActiveId && current.activeId === sessionKey) {
-      const next = workspaceSessionRefFromKey(nextActiveId)
+      const next = boundChatSessionRef(nextActiveId)
       if (next.agentTypeId) rawSwitch(next.sessionId, next.agentTypeId)
       else rawSwitch(next.sessionId)
     }
-  }, [chatSessionKey, createChatPaneTransaction, rawSwitch, workspaceId])
+  }, [boundChatSessionRef, chatSessionKey, createChatPaneTransaction, rawSwitch, workspaceId])
 
   const createChatPaneAfter = useCallback((afterId: string, placementDirection?: ChatPaneSplitDirection, ownerAgentTypeId = fleetModeEnabled ? newChatAgentTypeId : undefined) => (
     createChatPaneTransaction(afterId, "insert", placementDirection, ownerAgentTypeId)
@@ -2134,22 +2134,26 @@ export function WorkspaceAgentFront<
     const current = chatPaneState.workspaceId === workspaceId
       ? chatPaneState
       : { workspaceId, ids: [chatSessionKey], activeId: chatSessionKey }
-    const deletingIndex = current.ids.indexOf(sessionKey)
+    const paneId = current.ids.find((candidate) => {
+      const bound = boundChatSessionRef(candidate)
+      return workspaceSessionKey(bound.sessionId, bound.agentTypeId) === sessionKey
+    }) ?? sessionKey
+    const deletingIndex = current.ids.indexOf(paneId)
     let nextActiveId = current.activeId
     if (deletingIndex >= 0) {
-      const nextIds = current.ids.filter((id) => id !== sessionKey)
-      nextActiveId = current.activeId === sessionKey
+      const nextIds = current.ids.filter((id) => id !== paneId)
+      nextActiveId = current.activeId === paneId
         ? nextIds[Math.max(0, deletingIndex - 1)] ?? nextIds[0] ?? null
         : current.activeId
       setChatPaneState({ workspaceId, ids: nextIds, activeId: nextActiveId })
-      if (nextActiveId && current.activeId === sessionKey) {
-        const next = workspaceSessionRefFromKey(nextActiveId)
+      if (nextActiveId && current.activeId === paneId) {
+        const next = boundChatSessionRef(nextActiveId)
         if (next.agentTypeId) resolvedSwitch(next.sessionId, next.agentTypeId)
         else resolvedSwitch(next.sessionId)
       }
     }
     return resolvedDelete(sessionId, sessionAgentTypeId)
-  }, [chatPaneState, chatSessionKey, resolvedDelete, resolvedSwitch, workspaceId])
+  }, [boundChatSessionRef, chatPaneState, chatSessionKey, resolvedDelete, resolvedSwitch, workspaceId])
 
   // "New chat" from the left bar. With a split already open, the new session
   // gets its OWN dedicated pane (inserted after the active one) so the existing
@@ -2222,7 +2226,7 @@ export function WorkspaceAgentFront<
   const workbenchBlocked = workspaceWarmupStatus.status !== "ready"
   const workbenchOverlay = workbenchBlocked ? <WorkbenchWarmupOverlay status={workspaceWarmupStatus} /> : undefined
   const renameChatSession = useCallback(async (sessionKey: string, title: string) => {
-    const ref = workspaceSessionRefFromKey(sessionKey)
+    const ref = boundChatSessionRef(sessionKey)
     if (onRenameSession) {
       await onRenameSession(ref.sessionId, title, ref.agentTypeId)
       return
@@ -2237,7 +2241,7 @@ export function WorkspaceAgentFront<
     })
     if (!response.ok) throw new Error(`rename failed (${response.status})`)
     await sessionApi?.refresh?.({ background: true })
-  }, [apiBaseUrl, onRenameSession, resolvedRequestHeaders, selectedAgentTypeId, sessionApi])
+  }, [apiBaseUrl, boundChatSessionRef, onRenameSession, resolvedRequestHeaders, selectedAgentTypeId, sessionApi])
 
   const reloadAgentPluginsForSession = useCallback(async (ref: { agentTypeId: string; sessionId: string }) => {
     const endpoint = `${apiBaseUrl?.replace(/\/$/, "") ?? ""}/api/v1/agents/${encodeURIComponent(ref.agentTypeId)}/reload`

@@ -109,6 +109,7 @@ interface PiChatForkTransition {
   sourceSessionId: string
   targetSessionId?: string
   forking: boolean
+  blocksFollowUp: boolean
   optimisticMessage: OptimisticUserMessage
   preservedMessages: BoringChatMessage[]
 }
@@ -868,6 +869,9 @@ export function PiChatPanel<
         const transition: PiChatForkTransition = {
           sourceSessionId: activeChatSessionId,
           forking: false,
+          blocksFollowUp: selectRuntimeNotices(selectedPiSession.getState()).some(
+            (notice) => notice.errorCode === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+          ),
           optimisticMessage: toOptimisticUserMessage(payload),
           preservedMessages: selectMessagesForRender(selectedPiSession.getState()),
         }
@@ -968,6 +972,7 @@ export function PiChatPanel<
   }, [addLocalNotice, dropLocalNotice])
 
   const sendComposerMessage = useCallback(async ({ text, files, source = 'composer', preserveExistingDraft = false }: ComposerSendPayload) => {
+    if (transitionApplies && (forkTransition?.forking || forkTransition?.blocksFollowUp)) return false
     if (!policy) {
       addLocalNotice({ id: 'composer-no-session', level: 'warning', text: 'Create or select a chat session before sending.', dismissible: true })
       return false
@@ -1040,7 +1045,7 @@ export function PiChatPanel<
       surfaceRunRejected(error)
       return false
     }
-  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, externalSessionId, markLocalSubmitted, onForkSession, onPromptSubmitStarted, policy, selectedPiSession, sessions.create, setComposerDraft, surfaceRunRejected])
+  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, externalSessionId, forkTransition, markLocalSubmitted, onForkSession, onPromptSubmitStarted, policy, selectedPiSession, sessions.create, setComposerDraft, surfaceRunRejected, transitionApplies])
 
   const availableAssistantSlashCommands = useMemo(
     () => policy ? actionableSlashCommands : actionableSlashCommands.filter((command) => command.clickBehavior === 'insert'),
@@ -1227,7 +1232,7 @@ export function PiChatPanel<
   const disabled = !policy || sessionsLoading || composerBlocked
   const isStreaming = isPiBusyStatus(status)
   const submitStatus = initialHydrationPromptAllowed ? 'ready' : toPromptSubmitStatus(status)
-  const submitDisabled = !policy || sessionsLoading || modelSelectionBlocked || Boolean(forkTransition?.forking) || (composerBlocked && !isStreaming)
+  const submitDisabled = !policy || sessionsLoading || modelSelectionBlocked || Boolean(transitionApplies && (forkTransition?.forking || forkTransition?.blocksFollowUp)) || (composerBlocked && !isStreaming)
   const mergedToolRenderers = useMemo(() => mergeShadcnToolRenderers(toolRenderers), [toolRenderers])
   const debugMessages = useMemo(() => messages.map(toDebugUiMessage), [messages])
 
