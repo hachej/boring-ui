@@ -1819,6 +1819,26 @@ describe("WorkspaceAgentFront", () => {
     const mounts = vi.fn()
     const unmounts = vi.fn()
     const switchSession = vi.fn()
+    let publishFork: (() => void) | undefined
+    const useForkSessions: UseWorkspaceAgentSessions = (options) => {
+      const [sessions, setSessions] = useState<WorkspaceAgentSession[]>([
+        { id: "stale", agentTypeId: "default", title: "Frozen session" },
+      ])
+      publishFork = () => setSessions([{ id: "forked", agentTypeId: "default", title: "Continued session" }])
+      const active = sessions[0]
+      return {
+        sourceIdentity: options.sourceIdentity,
+        sessions,
+        activeSessionId: active?.id ?? null,
+        activeSessionAgentTypeId: active?.agentTypeId ?? null,
+        activeSession: active ?? null,
+        loading: false,
+        workspaceId: options.workspaceId,
+        switch: switchSession,
+        delete: vi.fn(),
+        create,
+      }
+    }
     let observedBinding: WorkspaceChatPanelProps["sessionBinding"]
     const FrozenChat = (props: WorkspaceChatPanelProps) => {
       observedBinding = props.sessionBinding
@@ -1844,18 +1864,7 @@ describe("WorkspaceAgentFront", () => {
         workspaceId="transparent-frozen-fork"
         workspaceLayout="plugin-tabs"
         chatPanel={FrozenChat}
-        useSessions={(options) => ({
-          sourceIdentity: options.sourceIdentity,
-          sessions: [{ id: "stale", agentTypeId: "default", title: "Frozen session" }],
-          activeSessionId: "stale",
-          activeSessionAgentTypeId: "default",
-          activeSession: { id: "stale", agentTypeId: "default", title: "Frozen session" },
-          loading: false,
-          workspaceId: options.workspaceId,
-          switch: switchSession,
-          delete: vi.fn(),
-          create,
-        })}
+        useSessions={useForkSessions}
         persistenceEnabled={false}
       />,
     )
@@ -1879,7 +1888,8 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByTestId("frozen-history")).toBe(history)
     expect(screen.getByTestId("frozen-history")).toHaveAttribute("data-timeline-key", stableTimelineKey)
 
-    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Frozen session" }))
+    act(() => publishFork?.())
+    await user.click(await within(screen.getByLabelText("App navigation")).findByRole("button", { name: "Continued session" }))
     expect(switchSession).toHaveBeenLastCalledWith("forked", "default")
     expect(screen.getByTestId("frozen-history")).toBe(history)
   })

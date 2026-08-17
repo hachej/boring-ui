@@ -872,23 +872,6 @@ export function WorkspaceAgentFront<
   )
   const chatPaneStateRef = useRef(chatPaneState)
   chatPaneStateRef.current = chatPaneState
-  const chatPaneBindingsRef = useRef(new Map<string, MutablePiChatSessionBinding>())
-  const chatPaneBindingsWorkspaceRef = useRef(workspaceId)
-  if (chatPaneBindingsWorkspaceRef.current !== workspaceId) {
-    chatPaneBindingsWorkspaceRef.current = workspaceId
-    chatPaneBindingsRef.current.clear()
-  }
-  const chatPaneBinding = useCallback((paneId: string, initialSessionId = workspaceSessionRefFromKey(paneId).sessionId) => {
-    const existing = chatPaneBindingsRef.current.get(paneId)
-    if (existing) return existing
-    const binding = createMutablePiChatSessionBinding(initialSessionId)
-    chatPaneBindingsRef.current.set(paneId, binding)
-    return binding
-  }, [])
-  const boundChatSessionRef = useCallback((paneId: string) => {
-    const ref = workspaceSessionRefFromKey(paneId)
-    return { ...ref, sessionId: chatPaneBinding(paneId, ref.sessionId).getSnapshot() }
-  }, [chatPaneBinding])
   const [pendingChatPanePlacement, setPendingChatPanePlacement] = useState<ChatPanePendingPlacement | null>(null)
   const [chatPaneSplitPending, setChatPaneSplitPending] = useState(false)
   const consumePendingChatPanePlacement = useCallback((paneId: string) => {
@@ -969,6 +952,23 @@ export function WorkspaceAgentFront<
     requestHeaders: resolvedRequestHeaders,
     enabled: remoteSessionHookEnabled,
   }), [apiBaseUrl, defaultAgentTypeId, remoteSessionHookEnabled, resolvedRequestHeaders, resolvedSessionStorageKey, workspaceId])
+  const chatPaneBindingsRef = useRef(new Map<string, MutablePiChatSessionBinding>())
+  const chatPaneBindingsSourceRef = useRef(chatPaneSourceIdentity)
+  if (chatPaneBindingsSourceRef.current !== chatPaneSourceIdentity) {
+    chatPaneBindingsSourceRef.current = chatPaneSourceIdentity
+    chatPaneBindingsRef.current.clear()
+  }
+  const chatPaneBinding = useCallback((paneId: string, initialSessionId = workspaceSessionRefFromKey(paneId).sessionId) => {
+    const existing = chatPaneBindingsRef.current.get(paneId)
+    if (existing) return existing
+    const binding = createMutablePiChatSessionBinding(initialSessionId)
+    chatPaneBindingsRef.current.set(paneId, binding)
+    return binding
+  }, [])
+  const boundChatSessionRef = useCallback((paneId: string) => {
+    const ref = workspaceSessionRefFromKey(paneId)
+    return { ...ref, sessionId: chatPaneBinding(paneId, ref.sessionId).getSnapshot() }
+  }, [chatPaneBinding])
   const chatPaneSourceIdentityRef = useRef(chatPaneSourceIdentity)
   useIsomorphicLayoutEffect(() => {
     if (chatPaneSourceIdentityRef.current === chatPaneSourceIdentity) return
@@ -1805,19 +1805,24 @@ export function WorkspaceAgentFront<
       const currentMatchesControlledSession = activeOwnerIsExplicit
         ? currentActiveRef?.sessionId === chatSessionId && currentActiveRef.agentTypeId === effectiveActiveSessionAgentTypeId
         : currentActiveRef?.sessionId === chatSessionId
+      const currentActiveSourceRef = current.activeId ? workspaceSessionRefFromKey(current.activeId) : undefined
+      const currentActiveIsRebound = Boolean(currentActiveRef && currentActiveSourceRef && currentActiveRef.sessionId !== currentActiveSourceRef.sessionId)
       const resolvedDesiredSessionId = !pendingCreatedId
         && current.activeId
-        && (!canPruneMissingSessions || resolvedSessionsByKey.has(current.activeId))
+        && (!canPruneMissingSessions || currentActiveIsRebound || Boolean(currentActiveRef && resolvedSessionsByKey.has(workspaceSessionKey(currentActiveRef.sessionId, currentActiveRef.agentTypeId))))
         && currentMatchesControlledSession
         ? current.activeId
         : desiredSessionId
       const rawIds = current.ids.length > 0 ? current.ids : [resolvedDesiredSessionId]
       const prunedIds = canPruneMissingSessions
-        ? rawIds.filter((id) => (
-            resolvedSessionsByKey.has(id)
-            || optimisticCreatedPaneKeysRef.current.has(id)
-            || id === pendingCreatedId
-          ))
+        ? rawIds.filter((id) => {
+            const sourceRef = workspaceSessionRefFromKey(id)
+            const boundRef = boundChatSessionRef(id)
+            return boundRef.sessionId !== sourceRef.sessionId
+              || resolvedSessionsByKey.has(workspaceSessionKey(boundRef.sessionId, boundRef.agentTypeId))
+              || optimisticCreatedPaneKeysRef.current.has(id)
+              || id === pendingCreatedId
+          })
         : rawIds
       const ids = prunedIds.length > 0 ? prunedIds : [resolvedDesiredSessionId]
       const activeId = current.activeId && ids.includes(current.activeId) ? current.activeId : ids[0] ?? resolvedDesiredSessionId
@@ -1883,22 +1888,26 @@ export function WorkspaceAgentFront<
 
   const switchToChatPane = useCallback((nextSessionId: string, nextAgentTypeId?: string) => {
     setLeftOverlay(null)
-    const nextSessionKey = workspaceSessionKey(nextSessionId, nextAgentTypeId)
+    const requestedSessionKey = workspaceSessionKey(nextSessionId, nextAgentTypeId)
     const current = chatPaneState.workspaceId === workspaceId
       ? chatPaneState
       : { workspaceId, ids: [chatSessionKey], activeId: chatSessionKey }
-    const alreadyVisible = current.ids.includes(nextSessionKey)
+    const retainedPaneId = current.ids.find((paneId) => (
+      workspaceSessionKey(boundChatSessionRef(paneId).sessionId, boundChatSessionRef(paneId).agentTypeId) === requestedSessionKey
+    ))
+    const nextPaneId = retainedPaneId ?? requestedSessionKey
+    const alreadyVisible = current.ids.includes(nextPaneId)
     setChatPaneState((previous) => {
       const paneState = previous.workspaceId === workspaceId
         ? previous
         : { workspaceId, ids: [chatSessionKey], activeId: chatSessionKey }
-      const ids = paneState.ids.includes(nextSessionKey)
+      const ids = paneState.ids.includes(nextPaneId)
         ? paneState.ids
-        : replaceActivePane(paneState.ids, paneState.activeId, nextSessionKey)
-      return { workspaceId, ids, activeId: nextSessionKey }
+        : replaceActivePane(paneState.ids, paneState.activeId, nextPaneId)
+      return { workspaceId, ids, activeId: nextPaneId }
     })
     if (alreadyVisible) {
-      const target = boundChatSessionRef(nextSessionKey)
+      const target = boundChatSessionRef(nextPaneId)
       return target.agentTypeId ? rawSwitch(target.sessionId, target.agentTypeId) : rawSwitch(target.sessionId)
     }
     return nextAgentTypeId ? resolvedSwitch(nextSessionId, nextAgentTypeId) : resolvedSwitch(nextSessionId)
