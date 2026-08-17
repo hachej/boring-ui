@@ -129,6 +129,31 @@ describe("AskUserStatePublisher", () => {
     await expect(s1).resolves.toMatchObject({ status: "cancelled" })
   }, 30_000)
 
+  it("re-notifies after repairing pending state overwritten by a browser snapshot", async () => {
+    const store = await makeStore()
+    const ui = bridge()
+    const publisher = new AskUserStatePublisher(store, ui)
+    publisher.start()
+    const runtime = new AskUserRuntime({ store })
+    const pendingResult = runtime.ask({ sessionId: "repair-session", title: "Repair", schema })
+    const pending = await waitForPending(store, "repair-session")
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+      hint: { questionId: pending.questionId, sessionId: pending.sessionId },
+    }))
+    const commandsBeforeDrift = ui.commands.length
+
+    await ui.setState({ [ASK_USER_UI_STATE_SLOTS.PENDING]: { hint: null, hintsBySession: {} } })
+    await publisher.publishSession(pending.sessionId)
+
+    expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+      hint: { questionId: pending.questionId, sessionId: pending.sessionId },
+    })
+    expect(ui.commands).toHaveLength(commandsBeforeDrift + 1)
+    await waitForRuntimeWaiter(runtime, pending.questionId)
+    await runtime.cancelQuestion(pending.questionId, pending.sessionId)
+    await expect(pendingResult).resolves.toMatchObject({ status: "cancelled" })
+  }, 30_000)
+
   it("retries an invalidation after a transient command delivery failure", async () => {
     const store = await makeStore()
     const ui = bridge()

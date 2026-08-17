@@ -94,13 +94,14 @@ export class AskUserStatePublisher {
 
   private async publishPendingState(current: UiState, nextPending: AskUserPendingState): Promise<void> {
     const nextSnapshot = JSON.stringify(nextPending)
-    if (JSON.stringify(current[ASK_USER_UI_STATE_SLOTS.PENDING]) !== nextSnapshot) {
+    const stateChanged = JSON.stringify(current[ASK_USER_UI_STATE_SLOTS.PENDING]) !== nextSnapshot
+    if (stateChanged) {
       await this.bridge.setState({
         ...current,
         [ASK_USER_UI_STATE_SLOTS.PENDING]: nextPending,
       })
     }
-    if (this.notifiedPendingSnapshot === nextSnapshot) return
+    if (!stateChanged && this.notifiedPendingSnapshot === nextSnapshot) return
     await this.notifyPendingChanged()
     this.notifiedPendingSnapshot = nextSnapshot
   }
