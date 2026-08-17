@@ -4,22 +4,29 @@
 //   node scripts/present-pr.mjs <pr-number> [options]
 //
 //   --repo <owner/name>   default: current repo (gh resolves it)
-//   --context <path>      sidecar .md or .json. In markdown: the first ```mermaid fence is
-//                         the intro diagram, `## Key files` pins reading order,
-//                         `## Review history` is the audit trail (one `date | type |
-//                         verdict | who | summary` bullet per event), `## Why` carries
-//                         ~10 `glob | one line` rationale entries, the rest is prose.
-//                         JSON keys: { mermaid, summary, audit, ci, verdict, keyFiles,
-//                         reviewHistory, why }
+//   --context <path>      sidecar .md or .json. In markdown: fenced blocks compose the
+//                         context visuals (Mermaid and compact code-shape sketches),
+//                         `## Key files` pins reading order, `## Review history` is the
+//                         audit trail (one `date | type | verdict | who | summary` bullet
+//                         per event), `## Why` carries ~10 `glob | one line` rationale
+//                         entries, the rest is prose. JSON keys: { visuals, summary,
+//                         audit, ci, verdict, keyFiles, reviewHistory, why }
 //   --audit "<text>"      audit status line (overrides sidecar)
 //   --out <path>          output HTML (default: pr-<n>-presentation.html)
 //
-// Output has no external requests (strict-CSP safe): all CSS/JS inline, mermaid emitted as
-// <pre class="mermaid"> which Claude artifacts render natively.
+// Output has no external requests (strict-CSP safe): all CSS/JS is inline and Mermaid is
+// pre-rendered to inline SVG so the page works in an artifact viewer or a plain browser.
 
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+
+import {
+  createPresentationContext,
+  parseContextMarkdown,
+  renderIntroVisuals,
+} from './lib/present-pr-context.mjs'
+import { renderMermaidSvg } from './lib/render-mermaid.mjs'
 
 /* ------------------------------------------------------------------ args */
 
@@ -68,41 +75,20 @@ const rawDiff = gh(['pr', 'diff', prNumber, ...repoArgs])
 
 /* ------------------------------------------------------- sidecar context */
 
-const context = { mermaid: '', summary: '', audit: '', verdict: '', keyFiles: [], reviewHistory: [], why: [] }
+let context = createPresentationContext()
 if (args.context) {
   const raw = readFileSync(args.context, 'utf8')
-  if (args.context.endsWith('.json')) Object.assign(context, JSON.parse(raw))
-  else {
-    const fence = raw.match(/```mermaid\n([\s\S]*?)```/)
-    context.mermaid = fence ? fence[1].trim() : ''
-    // `## Key files` pins the reading order; `## Review history` carries the
-    // audit trail. Sectioning is done by splitting rather than one greedy
-    // regex: `$` under /m/ ends at the first newline, so a lazy "until the next
-    // heading" match silently captures nothing.
-    const lines = raw.replace(/```mermaid\n[\s\S]*?```/, '').split('\n')
-    const keep = []
-    let section = ''
-    for (const line of lines) {
-      if (/^##+\s/.test(line)) {
-        const heading = line.replace(/^#+\s*/, '').trim().toLowerCase()
-        section = heading === 'key files' ? 'keyFiles'
-          : heading === 'review history' ? 'reviewHistory'
-          : heading === 'why' ? 'why' : ''
-      }
-      if (!section) { keep.push(line); continue }
-      const item = line.match(/^\s*[-*]\s+(.*)$/)
-      if (!item) continue
-      if (section === 'keyFiles') context.keyFiles.push(item[1].replace(/`/g, '').trim())
-      else if (section === 'why') context.why.push(item[1].replace(/`/g, '').trim())
-      else context.reviewHistory.push(item[1].trim())
-    }
-    context.summary = keep.join('\n').replace(/^#.*\n/, '').trim()
-  }
+  context = args.context.endsWith('.json')
+    ? createPresentationContext(JSON.parse(raw))
+    : parseContextMarkdown(raw)
 }
 context.keyFiles = Array.isArray(context.keyFiles) ? context.keyFiles : []
 context.reviewHistory = Array.isArray(context.reviewHistory) ? context.reviewHistory : []
 context.why = Array.isArray(context.why) ? context.why : []
 if (typeof args.audit === 'string') context.audit = args.audit
+const renderedMermaid = await Promise.all(context.visuals.map((visual) => (
+  visual.language === 'mermaid' ? renderMermaidSvg(visual.content) : ''
+)))
 
 /* -------------------------------------------------------- categorization */
 
@@ -576,8 +562,12 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 
 .card { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); padding: 18px 22px; }
 .diagram { overflow-x: auto; }
-.diagram pre.mermaid { background: transparent; margin: 0; text-align: center; }
-.diagram > pre:not(.mermaid) { white-space: pre; font-size: 12px; color: var(--muted); }
+.diagram .context-visual { margin: 0; }
+.diagram .context-visual + .context-visual { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 18px; }
+.diagram pre.mermaid { background: transparent; text-align: center; }
+.diagram .mermaid-svg { display: flex; justify-content: center; }
+.diagram .mermaid-svg svg { width: 100%; height: auto; }
+.diagram > pre.shape { white-space: pre; font-size: 12px; color: var(--muted); }
 
 .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
 .chip { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 999px; padding: 6px 13px; font-size: 12.5px; cursor: pointer; background: var(--panel); user-select: none; }
@@ -718,7 +708,7 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
 
   <h2>1 · What this touches</h2>
   <div class="card diagram">
-    ${context.mermaid ? `<pre class="mermaid">\n${esc(context.mermaid)}\n</pre>` : '<p class="muted">No intro diagram supplied. Put a <code>```mermaid</code> fence in the context sidecar.</p>'}
+    ${renderIntroVisuals(context, renderedMermaid)}
   </div>
   <div class="card" style="margin-top:12px">${paragraphs(context.summary)}</div>
 
