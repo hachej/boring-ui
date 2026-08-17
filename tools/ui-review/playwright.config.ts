@@ -5,7 +5,7 @@ import { getUiReviewSpec } from "./src/registry"
 const spec = getUiReviewSpec(process.env.UI_REVIEW_SPEC ?? "")
 const repoRoot = resolve(import.meta.dirname, "../..")
 const port = Number(process.env.UI_REVIEW_VITE_PORT) || spec.target.defaultPort
-const allowed = ["PATH", "HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "COREPACK_HOME", ...spec.target.serverEnvironmentKeys]
+const allowed = ["PATH", "HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "COREPACK_HOME", "TMPDIR", "TMP", "TEMP", ...spec.target.serverEnvironmentKeys]
   .flatMap((name) => process.env[name] ? [`${name}=${shell(process.env[name]!)}`] : [])
 const [server, ...args] = spec.target.serverCommand
 const command = `env -i ${allowed.join(" ")} COREPACK_ENABLE_DOWNLOAD_PROMPT=0 ${[server, ...args].map(shell).join(" ")}`

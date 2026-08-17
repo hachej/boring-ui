@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "lint": "pnpm run typecheck",
     "test": "vitest run",
     "ui:review": "tsx scripts/run-ui-review.mjs",
     "ui:improve:validate": "tsx scripts/validate-ui-improvement-packet.ts",

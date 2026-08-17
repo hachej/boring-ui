@@ -101,7 +101,15 @@ describe("ui review report", () => {
       "PI_CODING_AGENT_DIR",
       "PI_OFFLINE",
       "PI_TELEMETRY",
+      "TEMP",
+      "TMP",
+      "TMPDIR",
     ])
+    expect(invocation.env).toMatchObject({
+      TMPDIR: process.env.TMPDIR,
+      TMP: process.env.TMP,
+      TEMP: process.env.TEMP,
+    })
   })
 
   it("rejects incomplete hard-gate reports and blocks the critic on a failure", () => {

@@ -1,10 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process"
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { mkdir, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 import { chromium } from "@playwright/test"
 import { resetBombadilOutputDirectory, runWithBombadilStartupRetry } from "../src/core/bombadilProcess"
+import { allocateUiReviewRunDirectory } from "./ui-review-run-lifecycle.mjs"
 import { createUiReviewStagingPolicy, assertStagingBounds, stageBombadilSelection, writeSelection, type UiReviewSelection } from "../src/core/exploration"
 import { readReproduceManifest, validateReproduceOwnership, verifyReproducedFinalState } from "../src/core/replay"
 import { getUiReviewSpec } from "../src/registry"
@@ -13,7 +13,7 @@ const spec = getUiReviewSpec(requiredEnv("UI_REVIEW_SPEC"))
 if (!spec.exploration) process.exit(0)
 const repoRoot = resolve(import.meta.dirname, "../../..")
 const targetRoot = resolve(repoRoot, spec.target.root)
-const outputRoot = resolve(process.env.UI_REVIEW_OUTPUT_DIR ?? join(tmpdir(), "boring-ui-review-output"))
+const outputRoot = resolve(requiredEnv("UI_REVIEW_OUTPUT_DIR"))
 const runId = requiredEnv("UI_REVIEW_RUN_ID")
 const port = Number(requiredEnv("UI_REVIEW_VITE_PORT"))
 const origin = `http://127.0.0.1:${port}${spec.target.route}`
@@ -37,7 +37,7 @@ try {
     viewports: [], stagedFiles: 1, stagedBytes: 0,
   }
   for (const viewport of spec.viewports) {
-    const rawRoot = await mkdtemp(join(tmpdir(), `boring-ui-review-${viewport.name}.`))
+    const rawRoot = await allocateUiReviewRunDirectory(`exploration-raw-${viewport.name}`)
     await runBombadil(["browser", "test", origin, spec.exploration.bombadilSpecPath, "--time-limit", timeLimit, "--output-path", rawRoot, "--headless", "--width", String(viewport.width), "--height", String(viewport.height), "--device-scale-factor", String(viewport.deviceScaleFactor), "--instrument-javascript", "inline"], targetRoot)
     const staged = await stageBombadilSelection({ rawRoot, outputRoot, runId, origin, viewport, existingFiles: selection.stagedFiles, existingBytes: selection.stagedBytes, spec })
     selection.stagedFiles = staged.stagedFiles
@@ -52,7 +52,7 @@ try {
     const bundleArgument = selected.reproducePath!
     const manifest = await readReproduceManifest(resolve(outputRoot, bundleArgument, "reproduce.json"), spec)
     await validateReproduceOwnership({ outputRoot, selected: selected as never, manifest, origin, targetUrl: origin, spec })
-    const replayRoot = await mkdtemp(join(tmpdir(), `boring-ui-review-replay-${viewport.viewport.name}.`))
+    const replayRoot = await allocateUiReviewRunDirectory(`exploration-replay-${viewport.viewport.name}`)
     await runBombadil(["browser", "test", manifest.targetUrl, spec.exploration.bombadilSpecPath, "--output-path", replayRoot, "--headless", "--width", String(manifest.viewport.width), "--height", String(manifest.viewport.height), "--device-scale-factor", String(manifest.viewport.deviceScaleFactor), "--instrument-javascript", "inline", "--reproduce", bundleArgument], outputRoot)
     await verifyReproducedFinalState(replayRoot, manifest, spec)
     console.log(`verified Bombadil replay final state: ${selected.id}`)
@@ -147,8 +147,12 @@ async function runBombadil(args: string[], cwd: string): Promise<void> {
 }
 async function stop(server: ChildProcess): Promise<void> {
   if (server.exitCode !== null) return
+  const exited = new Promise<void>((resolveExit) => server.once("exit", () => resolveExit()))
   server.kill("SIGTERM")
-  await Promise.race([new Promise<void>((resolveExit) => server.once("exit", () => resolveExit())), sleep(5_000)])
-  if (server.exitCode === null) server.kill("SIGKILL")
+  const stopped = await Promise.race([exited.then(() => true), sleep(5_000).then(() => false)])
+  if (!stopped) {
+    server.kill("SIGKILL")
+    await exited
+  }
 }
 function requiredEnv(name: string): string { const value = process.env[name]?.trim(); if (!value) throw new Error(`UI_REVIEW_REQUIRED_ENV_MISSING:${name}`); return value }
