@@ -340,7 +340,12 @@ export function PiChatPanel<
     defaultModel,
     sessionId: activeSessionId,
     sessionHydrated: selectedChatState?.hydrated ?? false,
-    sessionIsNew: Boolean(selectedChatState?.hydrated && selectedChatState.history.messageCount === 0),
+    sessionIsNew: Boolean(
+      selectedChatState?.hydrated
+      && selectedChatState.history.messageCount === 0
+      && selectedChatState.committedMessages.length === 0
+      && !selectedChatState.streamingMessage
+    ),
     sessionModel: selectedChatState?.currentModel,
     fetch,
     requestHeaders: normalizedRequestHeaders,

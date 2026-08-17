@@ -73,7 +73,9 @@ export function useChatModelSelection({
         && sessionModel
         && !sameModel(current.pendingOverride, sessionModel)
         ? current.pendingOverride
-        : undefined
+        : sessionIsNew && sessionModel && settings.model && !sameModel(settings.model, sessionModel)
+          ? settings.model
+          : undefined
       return {
         sessionId,
         storage,
@@ -82,7 +84,7 @@ export function useChatModelSelection({
         ...(pendingOverride ? { pendingOverride } : {}),
       }
     })
-  }, [defaultModel, sessionId, sessionModel?.id, sessionModel?.provider, storage, storageScope])
+  }, [defaultModel, sessionId, sessionIsNew, sessionModel?.id, sessionModel?.provider, storage, storageScope])
 
   const setModel = useCallback((next: ModelSelection | null) => {
     const normalized = next === null ? null : parseModelSelection(next)

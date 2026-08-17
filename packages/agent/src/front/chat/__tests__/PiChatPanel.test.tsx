@@ -1173,7 +1173,7 @@ describe('PiChatPanel sandbox shell', () => {
       [scopedComposerStorageKey('workspace-a', 'thinking')]: 'high',
       [scopedComposerStorageKey('workspace-a', 'show-thoughts')]: '1',
     })
-    const remote = new FakeRemotePiSession(remoteState())
+    const remote = new FakeRemotePiSession(remoteState({ committedMessages: [], history: { mode: 'full', messageCount: 0 } }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
 
     render(
@@ -1248,7 +1248,7 @@ describe('PiChatPanel sandbox shell', () => {
   })
 
   test('opens model and thinking pickers from slash commands', async () => {
-    const remote = new FakeRemotePiSession(remoteState())
+    const remote = new FakeRemotePiSession(remoteState({ committedMessages: [], history: { mode: 'full', messageCount: 0 } }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
     render(
       <PiChatPanel

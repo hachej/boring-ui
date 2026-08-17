@@ -83,6 +83,28 @@ describe('useChatModelSelection', () => {
     expect(result.current.isOverride).toBe(false)
   })
 
+  it('restores a local default as an honest override for a still-empty new session', async () => {
+    const sessionModel = { provider: 'anthropic', id: 'claude-sonnet' } as const
+    const localDefault = { provider: 'anthropic', id: 'claude-opus' } as const
+    const store = storage({
+      [scopedComposerStorageKey('scope-a', 'model')]: JSON.stringify(localDefault),
+      [scopedComposerStorageKey('scope-a', 'model:user-selected')]: '1',
+    })
+    const { result } = renderHook(() => useChatModelSelection({
+      sessionId: 'empty-new',
+      sessionHydrated: true,
+      sessionIsNew: true,
+      sessionModel,
+      storageScope: 'scope-a',
+      storage: store,
+      enabled: false,
+    }))
+
+    await waitFor(() => expect(result.current.isOverride).toBe(true))
+    expect(result.current.sessionModel).toEqual(sessionModel)
+    expect(result.current.model).toEqual(localDefault)
+  })
+
   it('represents an explicit next-message model difference as an override and clears it on refresh', async () => {
     const currentModel: ModelSelection = { provider: 'openai-codex', id: 'gpt-5.6-sol' } as const
     const override = { provider: 'openai', id: 'gpt-5.7' } as const
