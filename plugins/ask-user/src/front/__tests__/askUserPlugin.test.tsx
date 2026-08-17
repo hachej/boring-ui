@@ -387,17 +387,24 @@ describe("askUserPlugin front shell", () => {
 
     render(<Provider apiBaseUrl="" activeSessionId="sse-session" openSessionIds={["sse-session"]}><Panel params={{}} api={{ close: vi.fn() }} className="h-full" /></Provider>)
     expect(await screen.findByText("No pending questions")).toBeInTheDocument()
+    const stateFetchCount = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/api/v1/ui/state")).length
+    const initialStateFetches = stateFetchCount()
+
+    act(() => {
+      events.emit(workspaceEvents.uiStateInvalidated, { cause: "remote", ts: Date.now(), keys: ["unrelated.slot"] })
+    })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
+    expect(stateFetchCount()).toBe(initialStateFetches)
 
     current = pushedQuestion
     act(() => {
-      events.emit(workspaceEvents.uiStateInvalidated, {
-        cause: "remote",
-        ts: Date.now(),
-        keys: ["questions.pending"],
-      })
+      const invalidation = { cause: "remote" as const, ts: Date.now(), keys: ["questions.pending"] }
+      events.emit(workspaceEvents.uiStateInvalidated, invalidation)
+      events.emit(workspaceEvents.uiStateInvalidated, invalidation)
     })
 
     expect(await screen.findByText("Question delivered over UI SSE")).toBeInTheDocument()
+    expect(stateFetchCount()).toBe(initialStateFetches + 1)
     expect(screen.queryByText("No pending questions")).not.toBeInTheDocument()
   })
 

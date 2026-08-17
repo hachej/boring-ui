@@ -156,6 +156,33 @@ describe("AskUserStatePublisher", () => {
     await expect(pendingResult).resolves.toMatchObject({ status: "cancelled" })
   }, 30_000)
 
+  it("retries an invalidation when command delivery resolves with an error", async () => {
+    const store = await makeStore()
+    const ui = bridge()
+    const publisher = new AskUserStatePublisher(store, ui)
+    publisher.start()
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null, hintsBySession: {} }))
+
+    const postCommand = vi.spyOn(ui, "postCommand")
+      .mockResolvedValueOnce({ seq: 1, status: "error", error: { code: "SSE_UNAVAILABLE", message: "temporary SSE delivery failure" } })
+      .mockImplementation(async (command) => {
+        ui.commands.push(command)
+        return { seq: ui.commands.length, status: "ok" }
+      })
+    const runtime = new AskUserRuntime({ store })
+    const pendingResult = runtime.ask({ sessionId: "retry-error-session", title: "Retry resolved error", schema })
+    const pending = await waitForPending(store, "retry-error-session")
+
+    await vi.waitFor(() => expect(postCommand).toHaveBeenCalledTimes(2))
+    expect(ui.commands.at(-1)).toEqual({
+      kind: "invalidateUiState",
+      params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] },
+    })
+    await waitForRuntimeWaiter(runtime, pending.questionId)
+    await runtime.cancelQuestion(pending.questionId, pending.sessionId)
+    await expect(pendingResult).resolves.toMatchObject({ status: "cancelled" })
+  }, 30_000)
+
   it("publishes independent hints for multiple pending sessions", async () => {
     const store = await makeStore()
     const ui = bridge()

@@ -106,10 +106,11 @@ export class AskUserStatePublisher {
   }
 
   private async notifyPendingChanged(): Promise<void> {
-    await this.bridge.postCommand({
+    const result = await this.bridge.postCommand({
       kind: UI_STATE_INVALIDATION_COMMAND,
       params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] },
     })
+    if (result.status !== "ok") throw new Error(result.error?.message ?? "UI state invalidation was not delivered")
   }
 }
 
