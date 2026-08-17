@@ -33,9 +33,9 @@ already reviewed, and state the open questions.
 
 ## Steps
 
-1. **Understand the seam.** Read the production files first. Identify the flow the PR
-   changes: entry point → policy/decision → effect. If that shape is not clear in prose,
-   read `../show-me/SKILL.md` and use its smallest useful visual in the presentation.
+1. **Understand the seam.** Read the production files first and
+   `../show-me/SKILL.md`. Identify the flow the PR changes—entry point →
+   policy/decision → effect—and compose the views that make that seam easiest to review.
 
 2. **Write the context sidecar** — one markdown file, per PR, at
    `<scratchpad>/pr-<n>-context.md`:
@@ -57,9 +57,9 @@ already reviewed, and state the open questions.
      | { status: 'started'; sessionId: string }
    ```
 
-   Fenced blocks compose the context explanation. Use the smallest combination
-   that explains the PR: trees, pseudocode, types/signatures, diff-shaped sketches,
-   and Mermaid for state, sequence, component interaction, or data flow.
+   Fenced blocks compose the context explanation in sidecar order. Follow the visual
+   selection and composition rules in `../show-me/SKILL.md`; every view must explain
+   the review seam and correspond to changed code.
 
    Follow with 3–6 sentences of context: the problem, which two or three mechanisms
    changed, what the PR explicitly does **not** do, and what to look at first.
@@ -70,31 +70,9 @@ already reviewed, and state the open questions.
    - path/to/the/second/one.ts
    ~~~
 
-   Visual rules: compose complementary views, not a gallery. Each visual must answer a
-   distinct review question; omit it if another view already answers that question.
-   Show the *mechanism*, not generic architecture. Use `diff` syntax when the surrounding
-   shape already exists; show the whole tree or block when most of it is new. Keep only
-   the calls, states, files, props, types, and boundaries needed for the decision. Keep
-   each view under ~12 nodes/lines; if it needs more, narrow that view.
-
-   Choose and combine by the review questions:
-
-   | Reviewer needs to see | Use |
-   | --- | --- |
-   | UI ownership, hooks, and boundaries | component tree |
-   | backend runtime path or orchestration | call tree / call stack |
-   | lifecycle and allowed transitions | Mermaid state diagram |
-   | ordering across actors or services | Mermaid sequence diagram |
-   | module placement or refactor ownership | shallow file layout |
-   | algorithm or policy branch | pseudocode |
-   | API or contract shape | types and signatures |
-   | before/after shape with mostly shared context | `diff` syntax |
-   | visual UI, responsive layout, or interaction feel | focused HTML mockup as the companion artifact; use a component tree or state view as the inline context visual |
-
-   Mermaid blocks are pre-rendered to inline SVG; text, `diff`, pseudocode, trees,
-   layouts, types, and signatures render as escaped preformatted shapes. The renderer
-   preserves their sidecar order so the explanation can move from structure → behavior
-   → contract. Never inject arbitrary HTML into the presentation itself.
+   PR-specific rendering contract: Mermaid blocks become inline SVG; other fenced
+   views become escaped preformatted shapes. Keep focused HTML mockups as companion
+   artifacts—never inject arbitrary HTML into the presentation itself.
 
    `## Key files` is optional and pins the reading order explicitly, overriding the
    importance heuristic. Use it whenever you know which two or three diffs decide the

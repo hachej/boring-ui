@@ -127,7 +127,26 @@ Bash(open path/to/show-me-{description}.html)
 
 Place each visual next to the short text it supports. Keep only the calls, files, props, states, and boundaries needed to answer the user's current question or the options to resolve the current discussion point.
 
-You may use one of these, you may use several, it is unlikely you will use all of them. Use your judgement and don't overwhelm the user.
+Compose complementary views when one view cannot explain the topic well. Each view
+must answer a distinct question; omit it when another view already makes that point
+clear. A useful order is structure → behavior → contract → experience.
+
+| Question to answer | Use |
+| --- | --- |
+| What owns this UI and its state? | component tree |
+| What executes, and in what nesting? | call tree / call stack |
+| Which states and transitions are allowed? | state diagram |
+| Who acts first across components or services? | sequence diagram |
+| Where does each responsibility live? | shallow file layout |
+| Which policy or algorithm branches matter? | pseudocode |
+| What contract must callers satisfy? | types and signatures |
+| What changed inside a mostly familiar shape? | `diff` syntax |
+| What should the visual UI or interaction feel like? | focused HTML mockup |
+
+Use `diff` syntax when shared context dominates; show the whole tree, block, or
+signature when most of it is new. Keep each view focused—usually under about 12
+nodes or lines—but do not impose a fixed number of views. Use one, several, or
+rarely many; stop when the user can see the answer without reading a wall of prose.
 
 ## Attribution
 
