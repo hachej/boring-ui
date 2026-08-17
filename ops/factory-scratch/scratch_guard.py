@@ -9,8 +9,8 @@ import errno
 import fcntl
 import json
 import os
+import re
 from pathlib import Path
-import shutil
 import stat
 import sys
 import tempfile
@@ -124,11 +124,19 @@ def _fd_mount_id(fd: int) -> int:
     raise SafetyError("mount identity is unavailable")
 
 
-def _remove_tree_at(parent_fd: int, name: str, expected_mount_id: int) -> None:
+def _remove_tree_at(
+    parent_fd: int,
+    name: str,
+    expected_mount_id: int,
+    expected_identity: tuple[int, int] | None = None,
+) -> None:
     directory_fd = os.open(
         name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd
     )
     try:
+        opened_st = os.fstat(directory_fd)
+        if expected_identity is not None and (opened_st.st_dev, opened_st.st_ino) != expected_identity:
+            raise SafetyError(f"directory identity changed at {name}")
         if _fd_mount_id(directory_fd) != expected_mount_id:
             raise SafetyError(f"mounted directory appeared at {name}")
         for child in os.listdir(directory_fd):
@@ -150,9 +158,20 @@ def _remove_tree_at(parent_fd: int, name: str, expected_mount_id: int) -> None:
     os.rmdir(name, dir_fd=parent_fd)
 
 
-def _discard_private_staging(staging: Path) -> None:
-    if staging.exists() and not staging.is_symlink():
-        shutil.rmtree(staging)
+def _discard_private_staging(staging: Path, identity: tuple[int, int]) -> None:
+    parent_fd = os.open(staging.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        try:
+            current_st = os.stat(staging.name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        if (current_st.st_dev, current_st.st_ino) != identity:
+            return
+        _remove_tree_at(
+            parent_fd, staging.name, _fd_mount_id(parent_fd), expected_identity=identity
+        )
+    finally:
+        os.close(parent_fd)
 
 
 def initialize_root(root: Path) -> None:
@@ -163,6 +182,8 @@ def initialize_root(root: Path) -> None:
     if not root.parent.is_dir():
         raise SafetyError("scratch root parent must already exist")
     staging = Path(tempfile.mkdtemp(prefix=f".{root.name}.boring-init-", dir=root.parent))
+    staging_st = staging.lstat()
+    staging_identity = (staging_st.st_dev, staging_st.st_ino)
     try:
         staging.chmod(0o700)
         marker = {"owner": OWNER, "protocol": PROTOCOL_VERSION, "root_id": str(uuid.uuid4())}
@@ -171,7 +192,7 @@ def initialize_root(root: Path) -> None:
         marker_path.chmod(0o600)
         _rename_noreplace(staging, root)
     except BaseException:
-        _discard_private_staging(staging)
+        _discard_private_staging(staging, staging_identity)
         raise
 
 
@@ -189,6 +210,8 @@ def initialize_entry(root: Path, name: str, *, now: float | None = None) -> Path
     if entry.exists() or entry.is_symlink():
         raise SafetyError("entry path already exists")
     staging = Path(tempfile.mkdtemp(prefix=".boring-init-", dir=canonical_root))
+    staging_st = staging.lstat()
+    staging_identity = (staging_st.st_dev, staging_st.st_ino)
     try:
         staging.chmod(0o700)
         marker = {
@@ -207,7 +230,7 @@ def initialize_entry(root: Path, name: str, *, now: float | None = None) -> Path
         os.utime(heartbeat, (timestamp, timestamp), follow_symlinks=False)
         _rename_noreplace(staging, entry)
     except BaseException:
-        _discard_private_staging(staging)
+        _discard_private_staging(staging, staging_identity)
         raise
     return entry
 
@@ -418,7 +441,12 @@ def clean_root(
                 )
                 if (quarantined_st.st_dev, quarantined_st.st_ino) != evidence.entry_identity:
                     raise SafetyError("quarantine identity mismatch")
-                _remove_tree_at(root_fd, quarantine_name, root_mount_id)
+                _remove_tree_at(
+                    root_fd,
+                    quarantine_name,
+                    root_mount_id,
+                    expected_identity=evidence.entry_identity,
+                )
                 decisions.append(Decision(entry, "deleted", decision.reason))
             except (OSError, SafetyError) as exc:
                 retained_path = quarantine if renamed else entry
@@ -441,7 +469,9 @@ def parse_mountinfo(lines: Iterable[str]) -> list[Mount]:
             fs_type = fields[separator + 1]
         except (ValueError, IndexError):
             continue
-        decoded = point.replace("\\040", " ").replace("\\011", "\t").replace("\\134", "\\")
+        decoded = re.sub(
+            r"\\([0-7]{3})", lambda match: chr(int(match.group(1), 8)), point
+        )
         mounts.append(Mount(Path(decoded), fs_type))
     return mounts
 

@@ -193,6 +193,29 @@ class ScratchGuardTest(unittest.TestCase):
         self.assertTrue(entry.exists())
 
 
+
+    def test_staging_cleanup_retains_replacement_directory(self) -> None:
+        staging = self.base / ".staging"
+        staging.mkdir()
+        staging_st = staging.lstat()
+        identity = (staging_st.st_dev, staging_st.st_ino)
+        original = self.base / "original-staging"
+        staging.rename(original)
+        staging.mkdir()
+        sentinel = staging / "sentinel"
+        sentinel.write_text("replacement")
+        scratch_guard._discard_private_staging(staging, identity)
+        self.assertEqual("replacement", sentinel.read_text())
+        self.assertTrue(original.exists())
+
+    def test_mountinfo_decodes_all_octal_escapes(self) -> None:
+        mounts = scratch_guard.parse_mountinfo(
+            ["1 0 0:1 / /mnt/space\\040tab\\011newline\\012slash\\134 rw - tmpfs tmpfs rw\n"]
+        )
+        self.assertEqual(
+            Path("/mnt/space tab\tnewline\nslash\\"), mounts[0].point
+        )
+
     def test_atomic_publication_never_clobbers_existing_directory(self) -> None:
         source = self.base / "publication-source"
         target = self.base / "publication-target"
