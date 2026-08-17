@@ -4,13 +4,13 @@
 //   node scripts/present-pr.mjs <pr-number> [options]
 //
 //   --repo <owner/name>   default: current repo (gh resolves it)
-//   --context <path>      sidecar .md or .json. In markdown: the first fenced block is
-//                         the intro visual (Mermaid or a compact code-shape sketch),
+//   --context <path>      sidecar .md or .json. In markdown: fenced blocks compose the
+//                         context visuals (Mermaid and compact code-shape sketches),
 //                         `## Key files` pins reading order, `## Review history` is the
 //                         audit trail (one `date | type | verdict | who | summary` bullet
 //                         per event), `## Why` carries ~10 `glob | one line` rationale
-//                         entries, the rest is prose. JSON keys: { mermaid, visual,
-//                         summary, audit, ci, verdict, keyFiles, reviewHistory, why }
+//                         entries, the rest is prose. JSON keys: { visuals, summary,
+//                         audit, ci, verdict, keyFiles, reviewHistory, why }
 //   --audit "<text>"      audit status line (overrides sidecar)
 //   --out <path>          output HTML (default: pr-<n>-presentation.html)
 //
@@ -24,7 +24,7 @@ import path from 'node:path'
 import {
   createPresentationContext,
   parseContextMarkdown,
-  renderIntroVisual,
+  renderIntroVisuals,
 } from './lib/present-pr-context.mjs'
 import { renderMermaidSvg } from './lib/render-mermaid.mjs'
 
@@ -86,7 +86,9 @@ context.keyFiles = Array.isArray(context.keyFiles) ? context.keyFiles : []
 context.reviewHistory = Array.isArray(context.reviewHistory) ? context.reviewHistory : []
 context.why = Array.isArray(context.why) ? context.why : []
 if (typeof args.audit === 'string') context.audit = args.audit
-const mermaidSvg = context.mermaid ? await renderMermaidSvg(context.mermaid) : ''
+const renderedMermaid = await Promise.all(context.visuals.map((visual) => (
+  visual.language === 'mermaid' ? renderMermaidSvg(visual.content) : ''
+)))
 
 /* -------------------------------------------------------- categorization */
 
@@ -560,10 +562,12 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 
 .card { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); padding: 18px 22px; }
 .diagram { overflow-x: auto; }
-.diagram pre.mermaid { background: transparent; margin: 0; text-align: center; }
+.diagram .context-visual { margin: 0; }
+.diagram .context-visual + .context-visual { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 18px; }
+.diagram pre.mermaid { background: transparent; text-align: center; }
 .diagram .mermaid-svg { display: flex; justify-content: center; }
 .diagram .mermaid-svg svg { width: 100%; height: auto; }
-.diagram > pre:not(.mermaid) { white-space: pre; font-size: 12px; color: var(--muted); }
+.diagram > pre.shape { white-space: pre; font-size: 12px; color: var(--muted); }
 
 .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
 .chip { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 999px; padding: 6px 13px; font-size: 12.5px; cursor: pointer; background: var(--panel); user-select: none; }
@@ -704,7 +708,7 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
 
   <h2>1 · What this touches</h2>
   <div class="card diagram">
-    ${renderIntroVisual(context, mermaidSvg)}
+    ${renderIntroVisuals(context, renderedMermaid)}
   </div>
   <div class="card" style="margin-top:12px">${paragraphs(context.summary)}</div>
 

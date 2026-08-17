@@ -1,12 +1,12 @@
 ---
 name: present-pr
-description: Present a PR to the owner for validation as one self-contained artifact — a context diagram, a review-history audit trail, an area→package→file sankey, a file tree, and importance-ordered diffs each carrying a one-line rationale. Use as the final step of every implementation PR, before requesting owner validation.
+description: Present a PR to the owner for validation as one self-contained artifact — composed context visuals, a review-history audit trail, an area→package→file sankey, a file tree, and importance-ordered diffs each carrying a one-line rationale. Use as the final step of every implementation PR, before requesting owner validation.
 ---
 
 # Present PR
 
 **This is the standard final step of every implementation PR: before requesting owner
-validation, generate the presentation (context diagram + summary + sankey +
+validation, generate the presentation (composed context visuals + summary + sankey +
 importance-ordered diffs) and publish/hand the artifact to the owner.**
 
 The review flow it encodes, in the owner's own order:
@@ -51,9 +51,15 @@ already reviewed, and state the open questions.
      navigateToSession
    ```
 
-   The first fenced block is the context visual. Choose the smallest shape that
-   explains the PR: call or component tree, pseudocode, a diff-shaped sketch, or
-   Mermaid for state, sequence, component interaction, or data flow.
+   ```ts
+   type SubmitResult =
+   + | { status: 'expanded'; skill: string }
+     | { status: 'started'; sessionId: string }
+   ```
+
+   Fenced blocks compose the context explanation. Use the smallest combination
+   that explains the PR: trees, pseudocode, types/signatures, diff-shaped sketches,
+   and Mermaid for state, sequence, component interaction, or data flow.
 
    Follow with 3–6 sentences of context: the problem, which two or three mechanisms
    changed, what the PR explicitly does **not** do, and what to look at first.
@@ -64,13 +70,14 @@ already reviewed, and state the open questions.
    - path/to/the/second/one.ts
    ~~~
 
-   Visual rules: one primary visual, not a gallery. Show the *mechanism*, not a generic
-   architecture diagram. Use `diff` syntax when the surrounding shape already exists;
-   show the whole tree or block when most of it is new. Keep only the calls, states,
-   files, props, and boundaries needed for the review decision. Stay under ~12
-   nodes/lines; if it needs more, narrow the view.
+   Visual rules: compose complementary views, not a gallery. Each visual must answer a
+   distinct review question; omit it if another view already answers that question.
+   Show the *mechanism*, not generic architecture. Use `diff` syntax when the surrounding
+   shape already exists; show the whole tree or block when most of it is new. Keep only
+   the calls, states, files, props, types, and boundaries needed for the decision. Keep
+   each view under ~12 nodes/lines; if it needs more, narrow that view.
 
-   Choose by the review question:
+   Choose and combine by the review questions:
 
    | Reviewer needs to see | Use |
    | --- | --- |
@@ -84,9 +91,10 @@ already reviewed, and state the open questions.
    | before/after shape with mostly shared context | `diff` syntax |
    | visual UI, responsive layout, or interaction feel | focused HTML mockup as the companion artifact; use a component tree or state view as the inline context visual |
 
-   Mermaid is pre-rendered to inline SVG; text, `diff`, pseudocode, trees, layouts,
-   types, and signatures render as escaped preformatted shapes. Never inject arbitrary
-   HTML into the presentation itself.
+   Mermaid blocks are pre-rendered to inline SVG; text, `diff`, pseudocode, trees,
+   layouts, types, and signatures render as escaped preformatted shapes. The renderer
+   preserves their sidecar order so the explanation can move from structure → behavior
+   → contract. Never inject arbitrary HTML into the presentation itself.
 
    `## Key files` is optional and pins the reading order explicitly, overriding the
    importance heuristic. Use it whenever you know which two or three diffs decide the
@@ -207,7 +215,7 @@ already reviewed, and state the open questions.
 ## What the page gives the reviewer
 
 - **Header** — title, author, branch pair, churn, live CI check tally, audit status.
-- **Section 1 — what this touches.** The intro diagram and the context summary.
+- **Section 1 — what this touches.** The composed context visuals and summary.
 - **Section 2 — review history.** A chronological audit trail with type badges, per-event
   verdict, who ran it, and a 1-line finding summary with resolution state. A headline badge
   answers "thermo review: recorded / NOT recorded" at a glance. Absent history renders as an

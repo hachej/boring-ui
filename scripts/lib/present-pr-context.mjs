@@ -1,6 +1,7 @@
 const emptyContext = () => ({
   mermaid: '',
   visual: '',
+  visuals: [],
   summary: '',
   audit: '',
   verdict: '',
@@ -9,13 +10,32 @@ const emptyContext = () => ({
   why: [],
 })
 
+const normalizeVisuals = (context) => {
+  if (Array.isArray(context.visuals) && context.visuals.length > 0) {
+    return context.visuals
+      .filter((item) => item && typeof item.content === 'string' && item.content.trim())
+      .map((item) => ({
+        language: typeof item.language === 'string' ? item.language : 'text',
+        content: item.content.trim(),
+      }))
+  }
+  if (context.mermaid) return [{ language: 'mermaid', content: context.mermaid }]
+  if (context.visual) return [{ language: 'text', content: context.visual }]
+  return []
+}
+
 export function parseContextMarkdown(raw) {
   const context = emptyContext()
-  const fence = raw.match(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/)
-  if (fence?.[1] === 'mermaid') context.mermaid = fence[2].trim()
-  else if (fence) context.visual = fence[2].trim()
+  const fencePattern = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g
+  const fences = [...raw.matchAll(fencePattern)]
+  context.visuals = fences.map((fence) => ({
+    language: fence[1] || 'text',
+    content: fence[2].trim(),
+  }))
+  context.mermaid = context.visuals.find((item) => item.language === 'mermaid')?.content ?? ''
+  context.visual = context.visuals.find((item) => item.language !== 'mermaid')?.content ?? ''
 
-  const lines = raw.replace(fence?.[0] ?? '', '').split('\n')
+  const lines = raw.replace(fencePattern, '').split('\n')
   const keep = []
   let section = ''
   for (const line of lines) {
@@ -40,7 +60,9 @@ export function parseContextMarkdown(raw) {
 }
 
 export function createPresentationContext(value = {}) {
-  return Object.assign(emptyContext(), value)
+  const context = Object.assign(emptyContext(), value)
+  context.visuals = normalizeVisuals(context)
+  return context
 }
 
 const escapeHtml = (value) => String(value).replace(
@@ -48,15 +70,19 @@ const escapeHtml = (value) => String(value).replace(
   (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[character],
 )
 
-export function renderIntroVisual(context, mermaidSvg = '') {
-  if (context.mermaid && mermaidSvg) {
-    return `<div class="mermaid-svg">${mermaidSvg}</div>`
+export function renderIntroVisuals(context, renderedMermaid = []) {
+  const visuals = normalizeVisuals(context)
+  if (visuals.length === 0) {
+    return '<p class="muted">No context visuals supplied. Add focused fenced blocks to the context sidecar.</p>'
   }
-  if (context.mermaid) {
-    return `<pre class="mermaid">\n${escapeHtml(context.mermaid)}\n</pre>`
-  }
-  if (context.visual) {
-    return `<pre class="shape"><code>${escapeHtml(context.visual)}</code></pre>`
-  }
-  return '<p class="muted">No intro visual supplied. Put one focused fenced block in the context sidecar.</p>'
+
+  return visuals.map((visual, index) => {
+    if (visual.language === 'mermaid' && renderedMermaid[index]) {
+      return `<div class="context-visual mermaid-svg">${renderedMermaid[index]}</div>`
+    }
+    if (visual.language === 'mermaid') {
+      return `<pre class="context-visual mermaid">\n${escapeHtml(visual.content)}\n</pre>`
+    }
+    return `<pre class="context-visual shape"><code>${escapeHtml(visual.content)}</code></pre>`
+  }).join('\n')
 }
