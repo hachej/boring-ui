@@ -26,7 +26,10 @@ An empty, incomplete, or unknown branch returns this usage and stops:
 ```
 
 If a human owes the next decision, use
-`docs/procedures/owner-review-card.md` instead. For bead work, put the handoff
+`docs/procedures/owner-review-card.md` instead. When that handoff or decision is
+hard to understand in prose, read `../show-me/SKILL.md` and include its smallest
+useful visual (for example, a call tree, state flow, or file layout). Do not load
+`show-me` for a handoff that is already clear. For bead work, put the handoff
 artifact pointer and a one-line `friction` note on the bead.
 
 Return branch-specific evidence:

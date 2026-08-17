@@ -34,7 +34,8 @@ already reviewed, and state the open questions.
 ## Steps
 
 1. **Understand the seam.** Read the production files first. Identify the flow the PR
-   changes: entry point → policy/decision → effect.
+   changes: entry point → policy/decision → effect. If that shape is not clear in prose,
+   read `../show-me/SKILL.md` and use its smallest useful visual in the presentation.
 
 2. **Write the context sidecar** — one markdown file, per PR, at
    `<scratchpad>/pr-<n>-context.md`:
