@@ -1090,6 +1090,10 @@ describe("PiSessionStore", () => {
       "not-valid-json-between-authority-records",
       JSON.stringify({ type: "session_info", id: "matching-but-not-adjacent", parentId: "partial", name: "Partial title" }),
       JSON.stringify({ type: "session_info", id: "later-auto", parentId: "matching-but-not-adjacent", name: "Auto after malformed record" }),
+      '{"type":"message","id":"malformed-predecessor",',
+      JSON.stringify({ type: "custom", id: "marker-after-malformed", parentId: "malformed-predecessor", customType: "boring.session-title-authority", data: { titleSetByUser: true, title: "Must stay inert" } }),
+      JSON.stringify({ type: "session_info", id: "title-after-malformed", parentId: "marker-after-malformed", name: "Must stay inert" }),
+      JSON.stringify({ type: "session_info", id: "final-auto", parentId: "title-after-malformed", name: "Auto after malformed record" }),
       "",
     ].join("\n"), "utf-8");
     const store = trustedNativeStore();
@@ -1097,6 +1101,26 @@ describe("PiSessionStore", () => {
     await expect(store.load(directCtx, id)).resolves.toMatchObject({ title: "Auto after malformed record" });
     await expect(store.list(directCtx)).resolves.toEqual([
       expect.objectContaining({ id, title: "Auto after malformed record" }),
+    ]);
+  });
+
+  it("rejects a malformed giant predecessor without parsing its payload", async () => {
+    const id = "wrapped-malformed-giant-predecessor";
+    const filepath = join(tmpDir, `${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp", boringSessionCtx: ctx }),
+      JSON.stringify({ type: "message", id: "user", parentId: null, message: { role: "user", content: "prompt" } }),
+      `{"type":"message","id":"malformed-giant","payload":"${"x".repeat(96 * 1024)}",}`,
+      JSON.stringify({ type: "custom", id: "marker", parentId: "malformed-giant", customType: "boring.session-title-authority", data: { titleSetByUser: true, title: "Must stay inert" } }),
+      JSON.stringify({ type: "session_info", id: "manual", parentId: "marker", name: "Must stay inert" }),
+      JSON.stringify({ type: "session_info", id: "auto", parentId: "manual", name: "Legacy fallback" }),
+      "",
+    ].join("\n"), "utf-8");
+    const store = new PiSessionStore("/tmp", tmpDir);
+
+    await expect(store.load(ctx, id)).resolves.toMatchObject({ title: "Legacy fallback" });
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({ id, title: "prompt" }),
     ]);
   });
 

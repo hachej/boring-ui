@@ -278,7 +278,9 @@ export class PiSessionStore implements SessionStore {
     const nativeSummary = resolved.directNative
       ? await summarizeNativeTranscript(resolved.filepath)
       : null;
-    const userTitle = nativeSummary?.userTitle ?? await summarizeUserSessionTitle(resolved.filepath);
+    const userTitle = resolved.directNative
+      ? nativeSummary?.userTitle
+      : await summarizeUserSessionTitle(resolved.filepath);
     const title = userTitle
       ?? newestDurableTitle(resolved.sessionEntries, resolved.linkedEntries)
       ?? nativeSummary?.title
@@ -745,7 +747,9 @@ export class PiSessionStore implements SessionStore {
         (e): e is SessionEntry => e.type !== "session",
       ) ?? [];
       const nativeSummary = directNative ? await summarizeNativeTranscript(filepath) : null;
-      const userTitle = nativeSummary?.userTitle ?? await summarizeUserSessionTitle(filepath);
+      const userTitle = directNative
+        ? nativeSummary?.userTitle
+        : await summarizeUserSessionTitle(filepath);
 
       const title =
         userTitle ??
