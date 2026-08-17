@@ -1,4 +1,4 @@
-import { appendFile, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, rename, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -192,15 +192,25 @@ describe('runtime scope identity', () => {
     const other = { workspaceScopeId: 'workspace-a', authSubjectId: 'other' } as AuthorizedAgentScope
     const first = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => 'runtime-creator' }))
     const ref = await first.gateway.createSession({ scope: creator, agentTypeId: 'alpha', requestId: 'create' })
+    await expect(first.gateway.createSession({
+      scope: creator,
+      agentTypeId: 'alpha',
+      requestId: 'cannot-fork-current',
+      forkSessionId: ref.sessionId,
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE })
     const namespace = sessionNamespaceForAgent(agent, 'workspace-a', 'sessions')!
-    const transcriptPath = await sessionFilePath(join(sessionRoot, namespace), ref.sessionId)
+    let transcriptPath = await sessionFilePath(join(sessionRoot, namespace), ref.sessionId)
     await appendFile(transcriptPath, [
       { type: 'message', id: 'user-1', parentId: null, timestamp: '2026-08-17T00:00:00.000Z', message: { role: 'user', content: 'inspect frozen chat', timestamp: 1 } },
       { type: 'message', id: 'assistant-1', parentId: 'user-1', timestamp: '2026-08-17T00:00:01.000Z', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'call-1', name: 'read', arguments: { path: 'README.md' } }], timestamp: 2 } },
       { type: 'message', id: 'tool-1', parentId: 'assistant-1', timestamp: '2026-08-17T00:00:02.000Z', message: { role: 'toolResult', toolCallId: 'call-1', content: [{ type: 'text', text: 'frozen result' }], timestamp: 3 } },
+      { type: 'ui_snapshot', id: 'snapshot-1', timestamp: '2026-08-17T00:00:03.000Z', messages: [{ role: 'user', content: 'legacy duplicate' }] },
     ].map((entry) => JSON.stringify(entry)).join('\n') + '\n')
-    const before = await readFile(transcriptPath, 'utf8')
     await first.host.close()
+    const legacyWrapperPath = join(sessionRoot, namespace, `${ref.sessionId}.jsonl`)
+    await rename(transcriptPath, legacyWrapperPath)
+    transcriptPath = legacyWrapperPath
+    const before = await readFile(transcriptPath, 'utf8')
 
     const createRuntime = vi.fn(createTestRuntimeModeAdapter('direct').create)
     const admit = vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'accepted' }))
@@ -240,12 +250,23 @@ describe('runtime scope identity', () => {
     expect(admit).not.toHaveBeenCalled()
     expect(await readFile(transcriptPath, 'utf8')).toBe(before)
 
-    const fork = await restarted.gateway.createSession({
+    ;(restarted.gateway as EmbeddedAgentGateway).setActivityForTesting('workspace-a', ref, 'running')
+    await expect(restarted.gateway.createSession({
+      scope: other,
+      agentTypeId: 'alpha',
+      requestId: 'cannot-fork-active',
+      forkSessionId: ref.sessionId,
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE })
+    ;(restarted.gateway as EmbeddedAgentGateway).setActivityForTesting('workspace-a', ref, 'idle')
+
+    const forkInput = {
       scope: other,
       agentTypeId: 'alpha',
       requestId: 'fork-current-runtime',
       forkSessionId: ref.sessionId,
-    })
+    }
+    const fork = await restarted.gateway.createSession(forkInput)
+    expect(await restarted.gateway.createSession(forkInput)).toEqual(fork)
     expect(fork).not.toEqual(ref)
     const continued = await restarted.gateway.readSessionState({ scope: other, ref: fork })
     expect(continued.state.messages).toEqual(frozen.state.messages)
@@ -262,7 +283,7 @@ describe('runtime scope identity', () => {
     })
     expect(await readFile(transcriptPath, 'utf8')).toBe(before)
     expect(createRuntime).toHaveBeenCalledOnce()
-    expect(admit).toHaveBeenCalledOnce()
+    expect(admit).toHaveBeenCalledTimes(2)
     await restarted.host.close()
   })
 

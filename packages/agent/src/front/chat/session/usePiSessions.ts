@@ -431,7 +431,9 @@ export function usePiSessions(options: UsePiSessionsOptions): UsePiSessionsResul
     const response = await fetchImpl(sessionsUrl(), {
       method: 'POST',
       headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify(init ?? {}),
+      body: JSON.stringify(init?.forkPrompt
+        ? { ...init, requestId: `fork:${init.forkPrompt.clientNonce}` }
+        : init ?? {}),
     })
     if (!response.ok) {
       const err = new Error(`Failed to create session: ${response.status}`)

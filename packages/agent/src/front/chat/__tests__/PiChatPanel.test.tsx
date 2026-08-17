@@ -553,6 +553,7 @@ describe('PiChatPanel sandbox shell', () => {
     ))
     const forkCall = fetchMock.mock.calls.find((call) => String(call[0]).endsWith('/sessions') && call[1]?.method === 'POST')
     expect(JSON.parse(String(forkCall?.[1]?.body))).toMatchObject({
+      requestId: expect.stringMatching(/^fork:/),
       forkSessionId: 'pi-1',
       forkPrompt: { message: 'continue old chat' },
     })
@@ -560,6 +561,48 @@ describe('PiChatPanel sandbox shell', () => {
     expect(document.querySelector('[data-pi-chat-session-id="pi-current"]')).toBeTruthy()
     expect(document.querySelector('[data-runtime-notice-id="run-rejected"]')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Start new chat' })).toBeNull()
+  })
+
+  test('binds a delayed mismatch to its original prompt across a session switch', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    const firstPrompt = deferred<{ accepted: true; cursor: number; clientNonce: string }>()
+    remote.prompt.mockImplementationOnce(async () => firstPrompt.promise)
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url.includes('/api/v1/agents/default/sessions?') && method === 'GET') {
+        return jsonResponse([session('pi-1', 'Frozen A'), session('pi-2', 'Live B')])
+      }
+      if (url.endsWith('/api/v1/agents/default/sessions') && method === 'POST') {
+        return jsonResponse(session('pi-fork', 'Forked A'), 201)
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    render(<PiChatPanel showSessions serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: 'message for A' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByText('Live B').closest('[data-boring-agent-part="session-row"]') as HTMLElement)
+    await waitFor(() => expect(document.querySelector('[data-pi-chat-session-id="pi-2"]')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Agent prompt'), { target: { value: 'message for B' } })
+    fireEvent.keyDown(screen.getByLabelText('Agent prompt'), { key: 'Enter' })
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledTimes(2))
+
+    await act(async () => {
+      firstPrompt.reject(Object.assign(new Error('scope mismatch'), {
+        errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+      }))
+      await firstPrompt.promise.catch(() => undefined)
+    })
+    await waitFor(() => expect(fetchMock.mock.calls.some((call) => call[1]?.method === 'POST')).toBe(true))
+    const forkCall = fetchMock.mock.calls.find((call) => call[1]?.method === 'POST')
+    expect(JSON.parse(String(forkCall?.[1]?.body))).toMatchObject({
+      forkSessionId: 'pi-1',
+      forkPrompt: { message: 'message for A' },
+    })
   })
 
   test('uses the controlled host fork and hides the scope mismatch transport notice', async () => {

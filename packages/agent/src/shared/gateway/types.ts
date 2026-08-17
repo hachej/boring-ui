@@ -4,7 +4,6 @@ import type {
   PiChatSnapshot,
   QueuedUserMessage,
   ThinkingLevel,
-  PromptPayload,
 } from '../chat'
 import type { AgentSessionEvent } from './events'
 
@@ -109,8 +108,6 @@ export interface CreateAgentSessionInput {
   readonly resumeSessionId?: string
   /** Existing transcript to fork into a new session in the current runtime scope. */
   readonly forkSessionId?: string
-  /** First prompt delivered to the new fork before it is returned to the client. */
-  readonly forkPrompt?: PromptPayload
 }
 
 export interface ConnectAgentSessionInput {

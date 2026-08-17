@@ -345,8 +345,9 @@ describe('addressed Agent Host HTTP projection', () => {
     expect(gateway.calls).toEqual(expect.arrayContaining([
       { method: 'listSessions', input: { scope, agentTypeId: 'alpha', cursor: undefined, limit: 25 } },
       { method: 'createSession', input: { scope, agentTypeId: 'alpha', requestId: 'create-1', title: 'Created', resumeSessionId: 'persisted-empty' } },
-      { method: 'createSession', input: { scope, agentTypeId: 'alpha', requestId: 'fork-1', title: undefined, forkSessionId: 'session-frozen', forkPrompt: { message: 'continue', clientNonce: 'fork-nonce' } } },
+      { method: 'createSession', input: { scope, agentTypeId: 'alpha', requestId: 'fork-1', title: undefined, forkSessionId: 'session-frozen' } },
       { method: 'send', input: expect.objectContaining({ kind: 'prompt', requestId: 'prompt-1', requireIdle: true, attachments: [expect.objectContaining({ path: 'uploads/chart.png' })] }) },
+      { method: 'send', input: { kind: 'prompt', requestId: 'fork-nonce', clientNonce: 'fork-nonce', content: 'continue', displayContent: undefined, model: undefined, thinkingLevel: undefined, attachments: undefined } },
       { method: 'send', input: { kind: 'followup', requestId: 'follow-1', clientNonce: 'nonce-f', content: 'next', displayContent: 'Next', clientSeq: 3 } },
       { method: 'interrupt', input: { requestId: 'interrupt-1' } },
       { method: 'stop', input: { requestId: 'stop-1' } },

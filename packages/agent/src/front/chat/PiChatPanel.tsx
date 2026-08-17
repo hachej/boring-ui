@@ -783,7 +783,6 @@ export function PiChatPanel<
     insertSlashCommand(name)
   }, [dismissSlash, insertSlashCommand, openModelPicker, openThinkingPicker, setComposerDraft])
 
-  const lastPromptPayloadRef = useRef<Parameters<RemotePiSession['prompt']>[0] | null>(null)
   const policy = useMemo(() => {
     if (!selectedPiSession || !activeChatSessionId || !serverModelSelectionReady) return undefined
     const policySession = {
@@ -794,10 +793,12 @@ export function PiChatPanel<
         }
         return state
       },
-      prompt: (payload: Parameters<RemotePiSession['prompt']>[0]) => {
-        lastPromptPayloadRef.current = payload
-        return selectedPiSession.prompt(payload)
-      },
+      prompt: (payload: Parameters<RemotePiSession['prompt']>[0]) => selectedPiSession.prompt(payload).catch((error) => {
+        throw Object.assign(new Error(errorMessage(error, 'Could not send your message.'), { cause: error }), {
+          errorCode: piChatErrorCode(error),
+          forkPrompt: payload,
+        })
+      }),
       followUp: selectedPiSession.followUp.bind(selectedPiSession),
       clearQueue: selectedPiSession.clearQueue.bind(selectedPiSession),
       interrupt: selectedPiSession.interrupt.bind(selectedPiSession),
@@ -913,7 +914,7 @@ export function PiChatPanel<
         piChatErrorCode(error) === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
         && activeChatSessionId
       ) {
-        const forkPrompt = lastPromptPayloadRef.current
+        const forkPrompt = (error as { forkPrompt?: Parameters<RemotePiSession['prompt']>[0] }).forkPrompt
         try {
           if (!forkPrompt) throw new Error('The rejected prompt could not be recovered for the fork.')
           if (externalSessionId) {
@@ -922,7 +923,6 @@ export function PiChatPanel<
           } else {
             await sessions.create({ forkSessionId: activeChatSessionId, forkPrompt })
           }
-          lastPromptPayloadRef.current = null
           return undefined
         } catch (forkError) {
           restoreSubmittedDraft()

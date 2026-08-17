@@ -287,17 +287,43 @@ export class PiSessionStore implements SessionStore {
       ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
       ...(ctx.userId ? { userId: ctx.userId } : {}),
     };
-    const source = await this.resolveSessionTranscript(sourceCtx, sessionId);
-    const sourceFile = source.linkedFilepath ?? source.filepath;
-    const manager = SessionManager.open(sourceFile, this.sessionDir, this.cwd);
-    const leafId = manager.getLeafId();
-    if (!leafId) return await this.create(ctx, _init);
-    const forkedPath = manager.createBranchedSession(leafId);
-    if (!forkedPath) throw new Error(`Failed to fork session: ${sessionId}`);
+    const sourcePath = await this.resolveSessionFile(sessionId, sourceCtx);
+    const sourceEntries = safeParseEntries(await readFile(sourcePath, "utf-8"));
+    const linkedPiFile = extractPiSessionFilePath(sourceEntries);
+    const sourceFile = linkedPiFile && resolve(linkedPiFile) !== resolve(sourcePath)
+      ? linkedPiFile
+      : sourcePath;
+    const nativeEntries = sourceFile === sourcePath
+      ? sourceEntries
+      : safeParseEntries(await readFile(sourceFile, "utf-8"));
+    const hasLegacySnapshots = nativeEntries.some((entry) => (entry as { type?: string }).type === "ui_snapshot");
+    const temporarySource = hasLegacySnapshots ? `${sourceFile}.fork-read-${randomUUID()}` : undefined;
+    if (temporarySource) {
+      await writeFile(
+        temporarySource,
+        nativeEntries
+          .filter((entry) => (entry as { type?: string }).type !== "ui_snapshot")
+          .map((entry) => JSON.stringify(entry))
+          .join("\n") + "\n",
+        "utf-8",
+      );
+    }
+    let manager: SessionManager | undefined;
+    let forkedPath: string | undefined;
+    try {
+      manager = SessionManager.open(temporarySource ?? sourceFile, this.sessionDir, this.cwd);
+      const leafId = manager.getLeafId();
+      if (!leafId) return await this.create(ctx, _init);
+      forkedPath = manager.createBranchedSession(leafId);
+    } finally {
+      if (temporarySource) await rm(temporarySource, { force: true });
+    }
+    if (!manager || !forkedPath) throw new Error(`Failed to fork session: ${sessionId}`);
     const header = manager.getHeader();
     if (!header) throw new Error(`Forked session header is unavailable: ${sessionId}`);
     const pinnedHeader: SessionHeader & { boringSessionCtx: RuntimePinnedSessionCtx } = {
       ...header,
+      parentSession: sourceFile,
       boringSessionCtx: normalizeSessionCtx(ctx) ?? {},
     };
     const content = [pinnedHeader, ...manager.getEntries()]
@@ -336,6 +362,58 @@ export class PiSessionStore implements SessionStore {
           }
         : {}),
     };
+  }
+
+  /**
+   * Non-mutating storage snapshot for frozen-session reads. Unlike the normal
+   * cold-load path, this never compacts legacy wrappers while reading them.
+   */
+  async readPersisted(ctx: SessionCtx, sessionId: string): Promise<{
+    summary: SessionSummary;
+    entries: PiSessionEntries;
+  }> {
+    const filepath = await this.resolveSessionFile(sessionId, ctx);
+    const [content, fileStat] = await Promise.all([
+      readFile(filepath, "utf-8"),
+      fsStat(filepath),
+    ]);
+    const fileEntries = safeParseEntries(content);
+    const header = fileEntries.find((entry): entry is SessionHeader => entry.type === "session");
+    const timestampNamedNative = isTimestampNamedPiSessionFile(filepath, header?.id ?? sessionId);
+    if (!this.headerBelongsToCtx(header, ctx, timestampNamedNative)) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    const sessionEntries = fileEntries.filter(
+      (entry): entry is SessionEntry => entry.type !== "session" && (entry as { type?: string }).type !== "ui_snapshot",
+    );
+    const linkedPiFile = extractPiSessionFilePath(fileEntries);
+    const linked = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)
+      ? await this.readLinkedPiSession(linkedPiFile)
+      : null;
+    const linkedEntries = linked?.entries.filter(
+      (entry): entry is SessionEntry => entry.type !== "session",
+    ) ?? [];
+    const transcriptEntries = linkedEntries.length > 0 ? linkedEntries : sessionEntries;
+    const id = header?.id ?? sessionId;
+    const directNative = timestampNamedNative && !linkedPiFile;
+    const updatedAtMs = Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
+    const summary: SessionSummary = {
+      id,
+      title: newestDurableTitle(sessionEntries, linkedEntries)
+        ?? firstUserMessage(transcriptEntries)
+        ?? "New session",
+      createdAt: header?.timestamp ?? fileStat.birthtime.toISOString(),
+      updatedAt: new Date(updatedAtMs).toISOString(),
+      turnCount: countUserTurns(transcriptEntries),
+      ...(directNative ? {
+        nativeSessionId: id,
+        hasAssistantReply: hasAssistantReply(transcriptEntries),
+      } : {}),
+    };
+    const messages = transcriptEntries
+      .filter((entry): entry is SessionMessageEntry => entry.type === "message")
+      .map((entry) => withStableMessageId(entry.message, entry.id));
+    return { summary, entries: { id, messages } };
   }
 
   /**

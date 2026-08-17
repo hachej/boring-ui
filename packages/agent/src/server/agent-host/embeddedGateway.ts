@@ -292,6 +292,12 @@ export class EmbeddedAgentGateway implements AgentGateway {
 
   async createSession(input: Parameters<AgentGateway['createSession']>[0]) {
     const claim = await this.verify(input.scope)
+    if (input.resumeSessionId && input.forkSessionId) {
+      throw new AgentGatewayError(
+        AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+        'resumeSessionId and forkSessionId are mutually exclusive',
+      )
+    }
     if (!this.runtime.compiledById.has(input.agentTypeId)) {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
     }
@@ -307,7 +313,6 @@ export class EmbeddedAgentGateway implements AgentGateway {
         title: input.title ?? null,
         resumeSessionId: input.resumeSessionId ?? null,
         forkSessionId: input.forkSessionId ?? null,
-        forkPrompt: input.forkPrompt ? input.forkPrompt as unknown as JsonValue : null,
       },
       async () => {
         const preparedBinding = binding
@@ -320,16 +325,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
             )
             const ref = { agentTypeId: input.agentTypeId, sessionId: forked.id }
             this.pins.set(agentSessionKey(claim.workspaceScopeId, ref), preparedBinding.scope.identity)
-            if (input.forkPrompt) {
-              await preparedBinding.composition.service.prompt(
-                context(claim, input.requestId, preparedBinding.scope.identity),
-                ref.sessionId,
-                input.forkPrompt,
-              )
-              this.runtime.activity.set(claim.workspaceScopeId, ref, 'running')
-            } else {
-              this.runtime.activity.set(claim.workspaceScopeId, ref, 'idle')
-            }
+            this.runtime.activity.set(claim.workspaceScopeId, ref, 'idle')
             return ref
           }
 
@@ -368,6 +364,32 @@ export class EmbeddedAgentGateway implements AgentGateway {
       {
         preflight: async () => {
           binding = await this.runtime.resolveBinding(input.agentTypeId, input.scope, claim)
+          if (!input.forkSessionId) return
+          const sourceRef = { agentTypeId: input.agentTypeId, sessionId: input.forkSessionId }
+          const sourceAuthority = await this.runtime.resolveSessionRuntime(
+            input.agentTypeId,
+            input.scope,
+            claim,
+            input.forkSessionId,
+          )
+          if (!sourceAuthority) {
+            throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
+          }
+          if (
+            !sourceAuthority.runtimeScopeIdentity
+            || sourceAuthority.runtimeScopeIdentity === binding.scope.identity
+          ) {
+            throw new AgentGatewayError(
+              AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+              'only a session pinned to a previous runtime scope can be forked',
+            )
+          }
+          if (this.runtime.activity.get(claim.workspaceScopeId, sourceRef) !== 'idle') {
+            throw new AgentGatewayError(
+              AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+              'an active session cannot be forked',
+            )
+          }
         },
       },
     ) as AgentSessionRef

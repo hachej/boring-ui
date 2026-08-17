@@ -1999,13 +1999,17 @@ export function WorkspaceAgentFront<
     sourceSessionId: string,
     ownerAgentTypeId: string,
     forkPrompt: Parameters<NonNullable<WorkspaceChatPanelProps['onForkSession']>>[1],
-  ) => createChatPaneTransaction(
-    paneId,
-    "replace",
-    undefined,
-    ownerAgentTypeId,
-    { forkSessionId: sourceSessionId, forkPrompt },
-  ), [createChatPaneTransaction])
+  ) => {
+    if (!sessionApi) return Promise.reject(new Error("This chat provider cannot create native forks."))
+    if (pendingCreatePaneRef.current) return Promise.reject(new Error("Another chat is still being created."))
+    return createChatPaneTransaction(
+      paneId,
+      "replace",
+      undefined,
+      ownerAgentTypeId,
+      { forkSessionId: sourceSessionId, forkPrompt },
+    )
+  }, [createChatPaneTransaction, sessionApi])
 
   const closeChatPane = useCallback((sessionKey: string) => {
     if (pendingCreatePaneRef.current) return

@@ -94,18 +94,15 @@ export class AgentSessionInventory {
     if (!resolved) return undefined
     try {
       const ctx = { workspaceId: claim.workspaceScopeId }
-      const [summary, entries] = await Promise.all([
-        resolved.store.load(ctx, sessionId),
-        resolved.store.loadEntries(ctx, sessionId),
-      ])
+      const persisted = await resolved.store.readPersisted(ctx, sessionId)
       return {
-        summary,
+        summary: persisted.summary,
         state: {
           protocolVersion: 1,
-          sessionId: entries.id,
+          sessionId: persisted.entries.id,
           seq: 0,
           status: 'idle',
-          messages: buildPiChatHistory(entries.messages, { sessionId: entries.id }),
+          messages: buildPiChatHistory(persisted.entries.messages, { sessionId: persisted.entries.id }),
           queue: { followUps: [] },
           followUpMode: 'one-at-a-time',
         },

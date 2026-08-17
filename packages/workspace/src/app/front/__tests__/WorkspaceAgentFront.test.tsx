@@ -1853,6 +1853,82 @@ describe("WorkspaceAgentFront", () => {
     }))
   })
 
+  it("rejects a frozen fork while another pane creation is pending", async () => {
+    const user = userEvent.setup()
+    const create = vi.fn(() => new Promise<{ id: string; agentTypeId: string; title: string }>(() => {}))
+    const BusyForkChat = (props: WorkspaceChatPanelProps) => {
+      const [error, setError] = useState("")
+      return (
+        <>
+          <button type="button" onClick={() => void props.onCreateSession?.()}>Start another chat</button>
+          <button
+            type="button"
+            onClick={() => void Promise.resolve(props.onForkSession?.("stale", { message: "continue", clientNonce: "nonce" })).catch((reason: unknown) => setError(String(reason)))}
+          >
+            Send frozen message
+          </button>
+          <output>{error}</output>
+        </>
+      )
+    }
+    render(
+      <WorkspaceAgentFront
+        workspaceId="busy-frozen-fork"
+        chatPanel={BusyForkChat}
+        useSessions={(options) => ({
+          sourceIdentity: options.sourceIdentity,
+          sessions: [{ id: "stale", agentTypeId: "default", title: "Frozen" }],
+          activeSessionId: "stale",
+          activeSession: { id: "stale", agentTypeId: "default", title: "Frozen" },
+          loading: false,
+          workspaceId: options.workspaceId,
+          switch: vi.fn(),
+          delete: vi.fn(),
+          create,
+        })}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Start another chat" }))
+    await user.click(screen.getByRole("button", { name: "Send frozen message" }))
+    await waitFor(() => expect(screen.getByText(/Another chat is still being created/)).toBeTruthy())
+    expect(create).toHaveBeenCalledOnce()
+  })
+
+  it("refuses frozen recovery when a controlled provider cannot carry fork input", async () => {
+    const user = userEvent.setup()
+    const onCreateSession = vi.fn()
+    const UnsupportedForkChat = (props: WorkspaceChatPanelProps) => {
+      const [error, setError] = useState("")
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => void Promise.resolve(props.onForkSession?.("stale", { message: "continue", clientNonce: "nonce" })).catch((reason: unknown) => setError(String(reason)))}
+          >
+            Send frozen message
+          </button>
+          <output>{error}</output>
+        </>
+      )
+    }
+    render(
+      <WorkspaceAgentFront
+        workspaceId="unsupported-frozen-fork"
+        chatPanel={UnsupportedForkChat}
+        sessions={[{ id: "stale", title: "Frozen" }]}
+        activeSessionId="stale"
+        onCreateSession={onCreateSession}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Send frozen message" }))
+    await waitFor(() => expect(screen.getByText(/cannot create native forks/)).toBeTruthy())
+    expect(onCreateSession).not.toHaveBeenCalled()
+  })
+
   it("keeps an async returned created pane while controlled sessions catch up", async () => {
     const user = userEvent.setup()
 
