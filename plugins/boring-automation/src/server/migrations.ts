@@ -103,26 +103,28 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
     CREATE INDEX IF NOT EXISTS boring_automation_runs_automation_idx
       ON boring_automation_runs (automation_id, created_at DESC)
   `)
-  await sql.unsafe(`DROP INDEX IF EXISTS boring_automation_runs_active_once_idx`)
-  await sql.unsafe(`
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT automation_id
-        FROM boring_automation_runs
+  await sql.begin(async (transaction) => {
+    await transaction.unsafe(`DROP INDEX IF EXISTS boring_automation_runs_active_once_idx`)
+    await transaction.unsafe(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT automation_id
+          FROM boring_automation_runs
+          WHERE status IN ('queued', 'dispatching', 'running', 'outcome-unknown')
+          GROUP BY automation_id
+          HAVING COUNT(*) > 1
+        ) THEN
+          RAISE EXCEPTION 'cannot enforce automation occupancy: multiple potentially live runs exist for one automation';
+        END IF;
+      END $$
+    `)
+    await transaction.unsafe(`
+      CREATE UNIQUE INDEX boring_automation_runs_active_once_idx
+        ON boring_automation_runs (automation_id)
         WHERE status IN ('queued', 'dispatching', 'running', 'outcome-unknown')
-        GROUP BY automation_id
-        HAVING COUNT(*) > 1
-      ) THEN
-        RAISE EXCEPTION 'cannot enforce automation occupancy: multiple potentially live runs exist for one automation';
-      END IF;
-    END $$
-  `)
-  await sql.unsafe(`
-    CREATE UNIQUE INDEX boring_automation_runs_active_once_idx
-      ON boring_automation_runs (automation_id)
-      WHERE status IN ('queued', 'dispatching', 'running', 'outcome-unknown')
-  `)
+    `)
+  })
   await sql.unsafe(`
     CREATE UNIQUE INDEX IF NOT EXISTS boring_automation_runs_invocation_once_idx
       ON boring_automation_runs (automation_id, invocation_id)

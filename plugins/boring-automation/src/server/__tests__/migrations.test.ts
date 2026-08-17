@@ -9,9 +9,13 @@ const TEST_DB_URL = process.env.DATABASE_URL ?? "postgres://ubuntu:test@localhos
 describe("runBoringAutomationMigrations", () => {
   it("registers hosted automation tables and atomic lease indexes through deployment SQL", async () => {
     const unsafe = vi.fn(async () => [])
-    await runBoringAutomationMigrations({ unsafe } as never)
+    const transactionUnsafe = vi.fn(async () => [])
+    const begin = vi.fn(async (run: (transaction: { unsafe: typeof transactionUnsafe }) => Promise<void>) => {
+      await run({ unsafe: transactionUnsafe })
+    })
+    await runBoringAutomationMigrations({ unsafe, begin } as never)
 
-    const statements = unsafe.mock.calls.map((call) => String((call as unknown[])[0]))
+    const statements = [...unsafe.mock.calls, ...transactionUnsafe.mock.calls].map((call) => String((call as unknown[])[0]))
     expect(statements.some((statement) => statement.includes("CREATE TABLE IF NOT EXISTS boring_automation_automations"))).toBe(true)
     expect(statements.some((statement) => statement.includes("owner_user_id text NOT NULL"))).toBe(true)
     expect(statements.some((statement) => statement.includes("prompt text"))).toBe(false)
@@ -103,6 +107,55 @@ describe("runBoringAutomationMigrations", () => {
       }
     } finally {
       await sql`DELETE FROM boring_automation_automations WHERE id = ${automationId}`.catch(() => undefined)
+      await sql.end()
+    }
+  })
+  it("rolls back the old occupancy index when legacy ambiguous duplicates block migration", async () => {
+    const sql = postgres(TEST_DB_URL, { max: 1 })
+    const automationId = randomUUID()
+    const actor = { workspaceId: `migration-rollback-workspace-${randomUUID()}`, userId: `migration-rollback-user-${randomUUID()}` }
+    try {
+      await runBoringAutomationMigrations(sql)
+      const now = new Date().toISOString()
+      await sql`
+        INSERT INTO boring_automation_automations (
+          id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, prompt_ref, created_at, updated_at
+        ) VALUES (
+          ${automationId}, ${actor.workspaceId}, ${actor.userId}, 'Rollback smoke', true,
+          NULL, 'UTC', 'test:model', ${`.agents/automation/${automationId}.md`}, ${now}, ${now}
+        )
+      `
+      await sql.unsafe(`DROP INDEX boring_automation_runs_active_once_idx`)
+      await sql.unsafe(`
+        CREATE UNIQUE INDEX boring_automation_runs_active_once_idx
+          ON boring_automation_runs (automation_id)
+          WHERE status IN ('queued', 'dispatching', 'running')
+      `)
+      const store = new PostgresAutomationStore(sql, actor)
+      const ambiguous = await store.beginRun({ automationId, trigger: "dispatch", promptSnapshot: "one", modelSnapshot: "test:model" })
+      await store.updateRunLifecycle(ambiguous.id, { status: "outcome-unknown", sessionId: "possibly-live" })
+      await sql`
+        INSERT INTO boring_automation_runs (
+          id, automation_id, workspace_id, owner_user_id, invocation_id, dispatch_request_id, dispatch_receipt,
+          session_id, status, trigger, scheduled_for, started_at, completed_at, duration_ms, input_tokens,
+          output_tokens, total_tokens, prompt_snapshot, model_snapshot, error, note, created_at, updated_at
+        ) SELECT
+          ${randomUUID()}, automation_id, workspace_id, owner_user_id, ${`replacement:${randomUUID()}`}, ${randomUUID()}, NULL,
+          NULL, 'queued', 'dispatch', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'two', model_snapshot, NULL, NULL, ${now}, ${now}
+        FROM boring_automation_runs WHERE id = ${ambiguous.id}
+      `
+
+      await expect(runBoringAutomationMigrations(sql)).rejects.toThrow("multiple potentially live runs")
+      const indexes = await sql<{ indexdef: string }[]>`
+        SELECT indexdef FROM pg_indexes
+        WHERE schemaname = current_schema() AND indexname = 'boring_automation_runs_active_once_idx'
+      `
+      expect(indexes).toHaveLength(1)
+      expect(indexes[0]!.indexdef).toContain("'queued'::text")
+      expect(indexes[0]!.indexdef).not.toContain("outcome-unknown")
+    } finally {
+      await sql`DELETE FROM boring_automation_automations WHERE id = ${automationId}`.catch(() => undefined)
+      await runBoringAutomationMigrations(sql).catch(() => undefined)
       await sql.end()
     }
   })
