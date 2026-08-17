@@ -139,6 +139,7 @@ const baseEvent = z.object({ seq: seqNumber })
 
 export const PiChatEventSchema = z.discriminatedUnion('type', [
   baseEvent.extend({ type: z.literal('agent-start'), turnId: nonEmptyString }),
+  baseEvent.extend({ type: z.literal('model-changed'), currentModel: ChatModelSelectionSchema }),
   baseEvent.extend({ type: z.literal('agent-end'), turnId: nonEmptyString, status: z.enum(['ok', 'aborted', 'error']), willRetry: z.boolean().optional() }),
   baseEvent.extend({
     type: z.literal('message-start'),

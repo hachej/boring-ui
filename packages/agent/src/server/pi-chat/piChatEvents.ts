@@ -69,6 +69,14 @@ export class PiChatEventMapper {
         return [this.event({ type: 'agent-start', turnId })]
       }
 
+      case 'model_change': {
+        const provider = optionalString(event.provider)
+        const id = optionalString(event.modelId) ?? optionalString(event.model)
+        return provider && id
+          ? [this.event({ type: 'model-changed', currentModel: { provider, id } })]
+          : []
+      }
+
       case 'agent_end': {
         const turnId = this.activeTurnId ?? this.createTurnId()
         const status = agentEndStatus(event)

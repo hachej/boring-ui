@@ -31,33 +31,11 @@ const MAX_PROMPT_IMAGE_BYTES = 10 * 1024 * 1024
 const PROMPT_IMAGE_EXTENSIONS = new Set(['.avif', '.gif', '.jpg', '.jpeg', '.png', '.webp'])
 
 
-function currentModelFromPiMessages(entries: readonly unknown[]): { provider: string; id: string } | undefined {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const raw = entries[index]
-    if (typeof raw !== 'object' || raw === null) continue
-    const record = raw as Record<string, unknown>
-    const message = typeof record.message === 'object' && record.message !== null
-      ? record.message as Record<string, unknown>
-      : record
-    if (message.role !== 'assistant') continue
-    if (typeof message.provider === 'string' && typeof message.model === 'string') {
-      return { provider: message.provider, id: message.model }
-    }
-    if (typeof message.model === 'object' && message.model !== null) {
-      const model = message.model as Record<string, unknown>
-      if (typeof model.provider === 'string' && typeof model.id === 'string') {
-        return { provider: model.provider, id: model.id }
-      }
-    }
-  }
-  return undefined
-}
-
 /** Pi session stores additionally expose the raw persisted message entries so
  * the cold-load path can run them through the same buildPiChatHistory mapping
  * as the live event path. */
 type PiSessionStoreLike = SessionStore & {
-  loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
+  loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[]; currentModel?: { provider: string; id: string } }>
   loadAttachment?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string, messageId: string, index: number) => Promise<{ data: Uint8Array; mediaType: string; filename?: string }>
 }
 
@@ -394,13 +372,13 @@ export class HarnessPiChatService implements PiChatSessionService {
   private async readPersistedState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot | null> {
     if (!this.sessionStore.loadEntries) return null
     try {
-      const { id, messages } = await this.sessionStore.loadEntries(toSessionCtx(ctx), sessionId)
+      const { id, messages, currentModel } = await this.sessionStore.loadEntries(toSessionCtx(ctx), sessionId)
       return {
         protocolVersion: 1,
         sessionId: id,
         seq: await this.readDurableLatestPiChatSeq(sessionStreamPath(this.sessionKey(ctx, id))),
         status: 'idle',
-        currentModel: currentModelFromPiMessages(messages),
+        currentModel,
         messages: buildPiChatHistory(messages, {
           sessionId: id,
           attachmentUrl: this.attachmentUrlFor(id),
@@ -454,6 +432,12 @@ export class HarnessPiChatService implements PiChatSessionService {
       }
     }
     if (outcome === 'cancelled') throw promptCancelledError()
+    const currentModel = adapter.currentModel?.()
+    if (currentModel) {
+      this.publishChannelEvents(sessionId, channel, [
+        channel.mapper.mapSynthetic({ type: 'model-changed', currentModel }),
+      ])
+    }
     this.messageMetadata.recordPrompt(sessionKey, payload)
     const receiptCursor = nextPromptReceiptCursor(channel)
     try {

@@ -19,7 +19,7 @@ const ctx: PiSessionRequestContext = {
 }
 
 type PersistedSessionStore = SessionStore & {
-  loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
+  loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[]; currentModel?: { provider: string; id: string } }>
 }
 
 const sessionStore: SessionStore = {
@@ -164,6 +164,29 @@ describe('HarnessPiChatService', () => {
       filename: 'live.png',
     })
     subscription.type === 'ok' && subscription.unsubscribe()
+    await service.dispose()
+  })
+
+  it('publishes an addressed model change before an externally submitted turn', async () => {
+    const adapter = createAdapter()
+    const currentModel = { provider: 'openai-codex', id: 'gpt-5.6-sol' }
+    adapter.currentModel = () => currentModel
+    const { service } = createService(adapter)
+    const events: PiChatEvent[] = []
+    const subscription = await service.subscribe(ctx, 's1', 0, (event) => events.push(event))
+    if (subscription.type !== 'ok') throw new Error('expected live subscription')
+
+    await service.prompt(ctx, 's1', {
+      message: 'automation prompt',
+      clientNonce: 'automation-model',
+      model: currentModel,
+    })
+    await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({
+      type: 'model-changed',
+      currentModel,
+    })))
+
+    subscription.unsubscribe()
     await service.dispose()
   })
 
@@ -1078,6 +1101,7 @@ describe('HarnessPiChatService', () => {
       ...sessionStore,
       loadEntries: vi.fn(async () => ({
         id: 's-history',
+        currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
         messages: [
           {
             id: 'u1',

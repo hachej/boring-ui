@@ -350,6 +350,8 @@ function applySequencedEvent(state: PiChatState, event: PiChatEvent): PiChatStat
 
 function reduceEvent(state: PiChatState, event: PiChatEvent): PiChatState {
   switch (event.type) {
+    case 'model-changed':
+      return { ...state, currentModel: event.currentModel }
     case 'agent-start':
       return { ...state, status: 'streaming', turnId: event.turnId, error: undefined, streamingPreservedTextPartKeys: undefined }
     case 'agent-end':

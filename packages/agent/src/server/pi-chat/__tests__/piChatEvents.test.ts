@@ -417,6 +417,22 @@ describe('PiChatEventMapper', () => {
     expect(PiChatEventSchema.parse(end[0])).toEqual(end[0])
   })
 
+  it('maps native model changes into addressed model authority events', () => {
+    const mapper = new PiChatEventMapper({ sessionId: 'sess-1' })
+    const [event] = mapper.map({
+      type: 'model_change',
+      provider: 'openai-codex',
+      modelId: 'gpt-5.6-sol',
+    } as unknown as AgentSessionEvent)
+
+    expect(event).toEqual({
+      type: 'model-changed',
+      seq: 1,
+      currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
+    })
+    expect(PiChatEventSchema.parse(event)).toEqual(event)
+  })
+
   it('maps queue updates, auto retry notices, UI commands, and assistant errors', () => {
     const mapper = new PiChatEventMapper({ sessionId: 'sess-1' })
 

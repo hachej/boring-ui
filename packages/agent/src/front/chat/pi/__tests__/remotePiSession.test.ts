@@ -726,6 +726,32 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('updates an already-connected viewer from an external model-change event', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return jsonResponse(snapshot({
+        seq: 5,
+        status: 'idle',
+        activeTurnId: undefined,
+        currentModel: { provider: 'openai', id: 'gpt-old' },
+      }))
+      if (url.endsWith('/events?cursor=5')) return new Response(events.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock)
+    await waitUntil(() => session.getState().connection.state === 'connected')
+
+    events.write({
+      type: 'model-changed',
+      seq: 6,
+      currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
+    } satisfies PiChatEvent)
+
+    await waitUntil(() => session.getState().currentModel?.id === 'gpt-5.6-sol')
+    expect(session.getState().currentModel).toEqual({ provider: 'openai-codex', id: 'gpt-5.6-sol' })
+    session.dispose()
+  })
+
   it('confirms an accepted next-message override as the session current model', async () => {
     const events = openNdjsonStream()
     const model = { provider: 'openai', id: 'gpt-5.7' }

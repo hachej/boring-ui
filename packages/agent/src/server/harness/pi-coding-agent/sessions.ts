@@ -48,6 +48,33 @@ export {
 export interface PiSessionEntries {
   id: string;
   messages: unknown[];
+  currentModel?: { provider: string; id: string };
+}
+
+function currentModelFromTranscript(entries: readonly SessionEntry[]): { provider: string; id: string } | undefined {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const raw = entries[index] as unknown
+    if (typeof raw !== "object" || raw === null) continue
+    const entry = raw as Record<string, unknown>
+    if (entry.type === "model_change") {
+      const provider = entry.provider
+      const id = entry.modelId ?? entry.model
+      if (typeof provider === "string" && typeof id === "string") return { provider, id }
+    }
+    if (entry.type !== "message" || typeof entry.message !== "object" || entry.message === null) continue
+    const message = entry.message as Record<string, unknown>
+    if (message.role !== "assistant") continue
+    if (typeof message.provider === "string" && typeof message.model === "string") {
+      return { provider: message.provider, id: message.model }
+    }
+    if (typeof message.model === "object" && message.model !== null) {
+      const model = message.model as Record<string, unknown>
+      if (typeof model.provider === "string" && typeof model.id === "string") {
+        return { provider: model.provider, id: model.id }
+      }
+    }
+  }
+  return undefined
 }
 
 export interface PiSessionAttachment {
@@ -310,7 +337,11 @@ export class PiSessionStore implements SessionStore {
     const messages = resolved.transcriptEntries
       .filter((entry): entry is SessionMessageEntry => entry.type === "message")
       .map((entry) => withStableMessageId(entry.message, entry.id));
-    return { id: resolved.resolvedSessionId, messages };
+    return {
+      id: resolved.resolvedSessionId,
+      messages,
+      currentModel: currentModelFromTranscript(resolved.transcriptEntries),
+    };
   }
 
   async loadAttachment(ctx: SessionCtx, sessionId: string, messageId: string, index: number): Promise<PiSessionAttachment> {
