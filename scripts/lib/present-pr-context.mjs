@@ -48,7 +48,10 @@ const escapeHtml = (value) => String(value).replace(
   (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[character],
 )
 
-export function renderIntroVisual(context) {
+export function renderIntroVisual(context, mermaidSvg = '') {
+  if (context.mermaid && mermaidSvg) {
+    return `<div class="mermaid-svg">${mermaidSvg}</div>`
+  }
   if (context.mermaid) {
     return `<pre class="mermaid">\n${escapeHtml(context.mermaid)}\n</pre>`
   }

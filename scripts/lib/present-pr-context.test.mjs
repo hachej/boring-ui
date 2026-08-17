@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { parseContextMarkdown, renderIntroVisual } from './present-pr-context.mjs'
+import { renderMermaidSvg } from './render-mermaid.mjs'
 
-test('preserves Mermaid markup for the artifact renderer', () => {
+test('pre-renders Mermaid to inline SVG for plain browsers', async () => {
   const context = parseContextMarkdown(`
 # Context
 
@@ -17,8 +18,10 @@ Short summary.
 
   assert.equal(context.mermaid, 'sequenceDiagram\n  UI->>Agent: show change')
   assert.equal(context.visual, '')
-  assert.match(renderIntroVisual(context), /^<pre class="mermaid">/)
-  assert.match(renderIntroVisual(context), /UI-&gt;&gt;Agent/)
+  const svg = await renderMermaidSvg(context.mermaid)
+  assert.match(svg, /^<svg/)
+  assert.match(svg, /aria-roledescription="sequence"/)
+  assert.match(renderIntroVisual(context, svg), /^<div class="mermaid-svg"><svg/)
 })
 
 test('renders call trees and other compact graphs as escaped preformatted shapes', () => {

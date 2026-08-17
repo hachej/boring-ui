@@ -14,8 +14,8 @@
 //   --audit "<text>"      audit status line (overrides sidecar)
 //   --out <path>          output HTML (default: pr-<n>-presentation.html)
 //
-// Output has no external requests (strict-CSP safe): all CSS/JS inline, mermaid emitted as
-// <pre class="mermaid"> which Claude artifacts render natively.
+// Output has no external requests (strict-CSP safe): all CSS/JS is inline and Mermaid is
+// pre-rendered to inline SVG so the page works in an artifact viewer or a plain browser.
 
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -26,6 +26,7 @@ import {
   parseContextMarkdown,
   renderIntroVisual,
 } from './lib/present-pr-context.mjs'
+import { renderMermaidSvg } from './lib/render-mermaid.mjs'
 
 /* ------------------------------------------------------------------ args */
 
@@ -85,6 +86,7 @@ context.keyFiles = Array.isArray(context.keyFiles) ? context.keyFiles : []
 context.reviewHistory = Array.isArray(context.reviewHistory) ? context.reviewHistory : []
 context.why = Array.isArray(context.why) ? context.why : []
 if (typeof args.audit === 'string') context.audit = args.audit
+const mermaidSvg = context.mermaid ? await renderMermaidSvg(context.mermaid) : ''
 
 /* -------------------------------------------------------- categorization */
 
@@ -559,6 +561,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .card { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); padding: 18px 22px; }
 .diagram { overflow-x: auto; }
 .diagram pre.mermaid { background: transparent; margin: 0; text-align: center; }
+.diagram .mermaid-svg { display: flex; justify-content: center; }
+.diagram .mermaid-svg svg { width: 100%; height: auto; }
 .diagram > pre:not(.mermaid) { white-space: pre; font-size: 12px; color: var(--muted); }
 
 .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
@@ -700,7 +704,7 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
 
   <h2>1 · What this touches</h2>
   <div class="card diagram">
-    ${renderIntroVisual(context)}
+    ${renderIntroVisual(context, mermaidSvg)}
   </div>
   <div class="card" style="margin-top:12px">${paragraphs(context.summary)}</div>
 

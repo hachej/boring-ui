@@ -64,11 +64,29 @@ already reviewed, and state the open questions.
    - path/to/the/second/one.ts
    ~~~
 
-   Visual rules: one visual, not three. Show the *mechanism*, not a generic
+   Visual rules: one primary visual, not a gallery. Show the *mechanism*, not a generic
    architecture diagram. Use `diff` syntax when the surrounding shape already exists;
    show the whole tree or block when most of it is new. Keep only the calls, states,
    files, props, and boundaries needed for the review decision. Stay under ~12
    nodes/lines; if it needs more, narrow the view.
+
+   Choose by the review question:
+
+   | Reviewer needs to see | Use |
+   | --- | --- |
+   | UI ownership, hooks, and boundaries | component tree |
+   | backend runtime path or orchestration | call tree / call stack |
+   | lifecycle and allowed transitions | Mermaid state diagram |
+   | ordering across actors or services | Mermaid sequence diagram |
+   | module placement or refactor ownership | shallow file layout |
+   | algorithm or policy branch | pseudocode |
+   | API or contract shape | types and signatures |
+   | before/after shape with mostly shared context | `diff` syntax |
+   | visual UI, responsive layout, or interaction feel | focused HTML mockup as the companion artifact; use a component tree or state view as the inline context visual |
+
+   Mermaid is pre-rendered to inline SVG; text, `diff`, pseudocode, trees, layouts,
+   types, and signatures render as escaped preformatted shapes. Never inject arbitrary
+   HTML into the presentation itself.
 
    `## Key files` is optional and pins the reading order explicitly, overriding the
    importance heuristic. Use it whenever you know which two or three diffs decide the
