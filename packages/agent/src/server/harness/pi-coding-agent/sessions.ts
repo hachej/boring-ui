@@ -32,7 +32,7 @@ import {
   type SessionListOptions,
 } from "../../../shared/session.js";
 import { appendVerifiedNativeRename } from "./nativeSessionRename.js";
-import { USER_SESSION_TITLE_CUSTOM_TYPE, userSessionTitleData, userSessionTitleFromEntry } from "./sessionTitleAuthority.js";
+import { USER_SESSION_TITLE_CUSTOM_TYPE, latestUserSessionTitle, userSessionTitleData } from "./sessionTitleAuthority.js";
 import {
   latestNativeMessageTimestamp,
   summarizeNativeTranscript,
@@ -443,22 +443,22 @@ export class PiSessionStore implements SessionStore {
         return await this.load(ctx, sessionId);
       }
       const timestamp = new Date().toISOString();
-      const entry: SessionInfoEntry = {
-        type: "session_info",
-        id: randomUUID(),
-        parentId: null,
-        timestamp,
-        name: trimmed,
-      };
       const authorityEntry: SessionEntry = {
         type: "custom",
         id: randomUUID(),
-        parentId: entry.id,
+        parentId: null,
         timestamp,
         customType: USER_SESSION_TITLE_CUSTOM_TYPE,
         data: userSessionTitleData(trimmed),
       };
-      const lines = `${JSON.stringify(entry)}\n${JSON.stringify(authorityEntry)}\n`;
+      const entry: SessionInfoEntry = {
+        type: "session_info",
+        id: randomUUID(),
+        parentId: authorityEntry.id,
+        timestamp,
+        name: trimmed,
+      };
+      const lines = `${JSON.stringify(authorityEntry)}\n${JSON.stringify(entry)}\n`;
       const targets = [resolved.filepath, resolved.linkedFilepath]
         .filter((path): path is string => Boolean(path));
       for (const filepath of targets) {
@@ -742,13 +742,12 @@ export class PiSessionStore implements SessionStore {
       const linkedEntries = linked?.entries.filter(
         (e): e is SessionEntry => e.type !== "session",
       ) ?? [];
-      const nativeSummary = directNative
-        ? await summarizeNativeTranscript(filepath)
-        : null;
+      const streamingSummary = await summarizeNativeTranscript(filepath);
+      const nativeSummary = directNative ? streamingSummary : null;
 
       const title =
+        streamingSummary.userTitle ??
         newestUserTitle(sessionEntries, linkedEntries) ??
-        nativeSummary?.userTitle ??
         newestDurableTitle(sessionEntries, linkedEntries) ??
         nativeSummary?.title ??
         nativeSummary?.firstUserTitle ??
@@ -1217,23 +1216,16 @@ function newestUserTitle(
   wrapperEntries: SessionEntry[],
   nativeEntries: SessionEntry[],
 ): string | undefined {
-  const candidates = [
-    ...wrapperEntries.flatMap((entry, offset) => {
-      const title = userSessionTitleFromEntry(entry);
-      return title ? [{ title, timestamp: entry.timestamp, native: 0, offset }] : [];
-    }),
-    ...nativeEntries.flatMap((entry, offset) => {
-      const title = userSessionTitleFromEntry(entry);
-      return title ? [{ title, timestamp: entry.timestamp, native: 1, offset }] : [];
-    }),
-  ];
-  candidates.sort((a, b) => {
-    const aTimestamp = Date.parse(a.timestamp);
-    const bTimestamp = Date.parse(b.timestamp);
-    const timestamp = (Number.isFinite(bTimestamp) ? bTimestamp : 0) - (Number.isFinite(aTimestamp) ? aTimestamp : 0);
-    return timestamp || b.native - a.native || b.offset - a.offset;
-  });
-  return candidates[0]?.title;
+  const wrapper = latestUserSessionTitle(wrapperEntries);
+  const native = latestUserSessionTitle(nativeEntries);
+  if (!wrapper) return native?.title;
+  if (!native) return wrapper.title;
+  const wrapperTimestamp = Date.parse(wrapper.timestamp);
+  const nativeTimestamp = Date.parse(native.timestamp);
+  return Number.isFinite(nativeTimestamp)
+    && (!Number.isFinite(wrapperTimestamp) || nativeTimestamp >= wrapperTimestamp)
+    ? native.title
+    : wrapper.title;
 }
 
 function newestDurableTitle(

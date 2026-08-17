@@ -48,7 +48,7 @@ async function verifiedNativeRenameAppend(
   before: Stats,
   append: NativeRenameAppend,
   title: string,
-): Promise<number | null> {
+): Promise<{ renameSize: number; currentSize: number } | null> {
   const after = await fsStat(filepath);
   if (after.dev !== before.dev || after.ino !== before.ino) return null;
 
@@ -62,7 +62,7 @@ async function verifiedNativeRenameAppend(
     const { bytesRead } = await handle.read(record, 0, record.length, before.size);
     if (bytesRead !== record.length || record.at(-1) !== 0x0a) return null;
     const lines = record.toString("utf-8").trimEnd().split("\n");
-    if (lines.length !== 2) return null;
+    if (lines.length < 2) return null;
     const authorityEntry = JSON.parse(lines[0]!) as { type?: unknown; id?: unknown; parentId?: unknown; customType?: unknown; data?: unknown };
     const titleEntry = JSON.parse(lines[1]!) as { type?: unknown; id?: unknown; parentId?: unknown; name?: unknown };
     const data = authorityEntry.data as { titleSetByUser?: unknown; title?: unknown } | null | undefined;
@@ -76,7 +76,10 @@ async function verifiedNativeRenameAppend(
       && authorityEntry.customType === USER_SESSION_TITLE_CUSTOM_TYPE
       && data?.titleSetByUser === true
       && data.title === title
-      ? after.size
+      ? {
+          renameSize: before.size + Buffer.byteLength(`${lines[0]}\n${lines[1]}\n`),
+          currentSize: after.size,
+        }
       : null;
   } catch {
     return null;
@@ -137,9 +140,11 @@ export async function appendVerifiedNativeRename(
       };
       staleRenameIds.add(titleId);
       staleRenameIds.add(authorityId);
-      const verifiedSize = await verifiedNativeRenameAppend(filepath, before, append, title);
-      if (verifiedSize !== null) {
-        await restoreVerifiedNativeRenameMtime(filepath, before, verifiedSize);
+      const verified = await verifiedNativeRenameAppend(filepath, before, append, title);
+      if (verified !== null) {
+        if (verified.renameSize === verified.currentSize) {
+          await restoreVerifiedNativeRenameMtime(filepath, before, verified.currentSize);
+        }
         return;
       }
     } catch (error) {

@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import { open } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { textFromPiContent } from "./piSessionMessages.js";
-import { userSessionTitleFromEntry } from "./sessionTitleAuthority.js";
+import { userSessionTitleFromPair } from "./sessionTitleAuthority.js";
 import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 
 const NATIVE_TAIL_CHUNK_BYTES = 64 * 1024;
@@ -101,17 +101,16 @@ export async function summarizeNativeTranscript(filepath: string): Promise<{
   let turnCount = 0;
   let hasAssistantReply = false;
   let latestMessageAtMs: number | undefined;
+  let previousEntry: SessionEntry | undefined;
   const input = createReadStream(filepath, { encoding: "utf-8" });
   const lines = createInterface({ input, crlfDelay: Infinity });
   for await (const line of lines) {
     if (!line.trim()) continue;
     try {
       const entry = JSON.parse(line) as SessionEntry;
-      const persistedUserTitle = userSessionTitleFromEntry(entry);
-      if (persistedUserTitle) {
-        userTitle = persistedUserTitle;
-        continue;
-      }
+      const persistedUserTitle = userSessionTitleFromPair(previousEntry, entry);
+      previousEntry = entry;
+      if (persistedUserTitle) userTitle = persistedUserTitle.title;
       if (entry.type === "session_info" && typeof entry.name === "string") {
         title = entry.name;
         continue;
