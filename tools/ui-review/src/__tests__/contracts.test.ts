@@ -1,5 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import {
@@ -16,7 +15,7 @@ import {
   type UiReviewState,
   type UiReviewViewport,
 } from "../core/contracts"
-import { testSpec } from "./fixtures"
+import { createTestDirectory, testSpec } from "./fixtures"
 
 const validateUiReviewManifest = (root: string, value: UiReviewManifest) => validateManifestAgainstSpec(root, value, testSpec)
 
@@ -27,7 +26,7 @@ const viewports: UiReviewViewport[] = [
 const checkpoints = ["closed", "open", "commands"]
 
 async function matrixFixture(roles: UiReviewRole[] = ["candidate"]) {
-  const root = await mkdtemp(join(tmpdir(), "ui-review-contracts."))
+  const root = await createTestDirectory("contracts")
   const states: UiReviewState[] = []
   for (const role of roles) {
     for (const viewport of viewports) {

@@ -33,8 +33,9 @@ async function execute(command, spec, lifecycle) {
   const repoRoot = resolve(import.meta.dirname, "../../..")
   const toolRoot = resolve(import.meta.dirname, "..")
   const targetRoot = resolve(repoRoot, spec.target.root)
-  const runTempEnv = { TMPDIR: lifecycle.root, TMP: lifecycle.root, TEMP: lifecycle.root }
-  const runEnv = { ...process.env, ...lifecycle.env, ...runTempEnv }
+  const childTemporaryDirectory = await lifecycle.allocateDirectory("tmp")
+  const runTempEnv = { TMPDIR: childTemporaryDirectory, TMP: childTemporaryDirectory, TEMP: childTemporaryDirectory }
+  const runEnv = { ...process.env, ...runTempEnv }
   const [buildCommand, ...buildArgs] = spec.target.buildCommand
   const build = await lifecycle.run(buildCommand, buildArgs, { stdio: "inherit", env: runEnv, cwd: targetRoot })
   if (build !== 0) return build

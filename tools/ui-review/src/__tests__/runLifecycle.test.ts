@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process"
-import { access, mkdir, readFile, writeFile } from "node:fs/promises"
-import { join, resolve } from "node:path"
+import { access, chmod, mkdir, readFile, writeFile } from "node:fs/promises"
+import { delimiter, join, resolve, sep } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
-import { describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test } from "vitest"
 import {
   UI_REVIEW_RUN_ROOT_PREFIX,
   createUiReviewRunLifecycle,
@@ -10,6 +10,14 @@ import {
 } from "../../scripts/ui-review-run-lifecycle.mjs"
 
 const FIXTURE = resolve(import.meta.dirname, "fixtures/run-lifecycle-child.mjs")
+const TOOL_ROOT = resolve(import.meta.dirname, "../..")
+const TSX_CLI = resolve(TOOL_ROOT, "node_modules/tsx/dist/cli.mjs")
+const RUNNER = resolve(TOOL_ROOT, "scripts/run-ui-review.mjs")
+const spawnedProcesses = new Set<ChildProcess>()
+afterEach(async () => {
+  await Promise.all([...spawnedProcesses].map(stopSpawnedProcess))
+  spawnedProcesses.clear()
+})
 
 describe.sequential("owned UI review run lifecycle", () => {
   test("removes the run root after normal exit", async () => {
@@ -89,7 +97,7 @@ describe.sequential("owned UI review run lifecycle", () => {
       const customTmp = await area.allocateDirectory("custom-tmp")
       const run = spawnFixture("normal", { TMPDIR: customTmp })
       const ready = await run.ready
-      expect(ready.root.startsWith(`${customTmp}/${UI_REVIEW_RUN_ROOT_PREFIX}`)).toBe(true)
+      expect(ready.root.startsWith(`${customTmp}${sep}${UI_REVIEW_RUN_ROOT_PREFIX}`)).toBe(true)
       expect(await run.closed).toMatchObject({ code: 0, signal: null })
       expect(await countRunRoots(customTmp)).toBe(0)
     } finally {
@@ -143,16 +151,94 @@ describe.sequential("owned UI review run lifecycle", () => {
     }
   })
 
-  test("refuses recursive deletion outside an exact marked run-root parent", async () => {
+  test("refuses recursive deletion when the expected parent is not exact", async () => {
     const area = await createUiReviewRunLifecycle()
+    let nestedRun: Awaited<ReturnType<typeof createUiReviewRunLifecycle>> | undefined
     try {
-      const protectedDirectory = await area.allocateDirectory("protected")
-      await expect(deleteOwnedUiReviewRunRoot(protectedDirectory, area.root)).rejects.toThrow("UI_REVIEW_RUN_ROOT_PARENT_INVALID")
-      await expect(access(protectedDirectory)).resolves.toBeUndefined()
+      const nestedParent = await area.allocateDirectory("nested-parent")
+      nestedRun = await createUiReviewRunLifecycle({ temporaryDirectory: nestedParent })
+      await expect(deleteOwnedUiReviewRunRoot(nestedRun.root, area.root)).rejects.toThrow("UI_REVIEW_RUN_ROOT_PARENT_INVALID")
+      await expect(access(nestedRun.root)).resolves.toBeUndefined()
     } finally {
+      if (nestedRun) await nestedRun.cleanup()
       await area.cleanup()
     }
   })
+
+
+  test("makes signal installation idempotent and rejects use after cleanup", async () => {
+    const beforeInt = process.listenerCount("SIGINT")
+    const beforeTerm = process.listenerCount("SIGTERM")
+    const lifecycle = await createUiReviewRunLifecycle()
+    lifecycle.installSignalHandlers()
+    lifecycle.installSignalHandlers()
+    expect(process.listenerCount("SIGINT")).toBe(beforeInt + 1)
+    expect(process.listenerCount("SIGTERM")).toBe(beforeTerm + 1)
+    lifecycle.removeSignalHandlers()
+    expect(process.listenerCount("SIGINT")).toBe(beforeInt)
+    expect(process.listenerCount("SIGTERM")).toBe(beforeTerm)
+    await lifecycle.cleanup()
+    await expect(lifecycle.allocateDirectory("late")).rejects.toThrow("UI_REVIEW_RUN_LIFECYCLE_CLOSED:closed")
+    await expect(lifecycle.run(process.execPath, ["--version"])).rejects.toThrow("UI_REVIEW_RUN_LIFECYCLE_CLOSED:closed")
+  })
+
+  test("the production runner wires owned temp paths and preserves explicit directories", async () => {
+    const area = await createUiReviewRunLifecycle()
+    try {
+      const temporaryDirectory = await area.allocateDirectory("runner-tmp")
+      const bin = await area.allocateDirectory("runner-bin")
+      const isolationRoot = await area.allocateDirectory("runner-isolation")
+      const outputRoot = await area.allocateDirectory("runner-output")
+      const baselineRoot = await area.allocateDirectory("runner-baseline")
+      const capturePath = join(await area.allocateDirectory("runner-capture"), "env.json")
+      await writeFile(join(baselineRoot, "keep.txt"), "baseline\n", "utf8")
+      await writeFakePnpm(bin, capturePath)
+      const run = spawnRunner({
+        TMPDIR: temporaryDirectory,
+        PATH: `${bin}${delimiter}${process.env.PATH}`,
+        UI_REVIEW_ISOLATION_ROOT: isolationRoot,
+        UI_REVIEW_OUTPUT_DIR: outputRoot,
+        UI_REVIEW_TEST_ENV_CAPTURE: capturePath,
+      }, ["--baseline-dir", baselineRoot])
+      expect(await run.closed).toMatchObject({ code: 0, signal: null })
+      const captured = JSON.parse(await readFile(capturePath, "utf8")) as Record<string, string>
+      expect(captured.UI_REVIEW_OUTPUT_DIR).toBe(outputRoot)
+      expect(captured.UI_REVIEW_BASELINE_DIR).toBe(baselineRoot)
+      expect(captured.TMPDIR).toBe(captured.TMP)
+      expect(captured.TMPDIR).toBe(captured.TEMP)
+      expect(captured.TMPDIR.startsWith(captured.UI_REVIEW_OWNED_RUN_ROOT + sep)).toBe(true)
+      expect(captured.UI_REVIEW_OWNED_RUN_ROOT.startsWith(temporaryDirectory + sep)).toBe(true)
+      await expect(access(captured.UI_REVIEW_OWNED_RUN_ROOT)).rejects.toMatchObject({ code: "ENOENT" })
+      expect(await readFile(join(baselineRoot, "keep.txt"), "utf8")).toBe("baseline\n")
+      await expect(access(isolationRoot)).resolves.toBeUndefined()
+      await expect(access(outputRoot)).resolves.toBeUndefined()
+      expect(await countRunRoots(temporaryDirectory)).toBe(0)
+    } finally {
+      await area.cleanup()
+    }
+  }, 15_000)
+
+  test("the production runner cleans its root after a thrown error", async () => {
+    const area = await createUiReviewRunLifecycle()
+    try {
+      const temporaryDirectory = await area.allocateDirectory("runner-error-tmp")
+      const bin = await area.allocateDirectory("runner-error-bin")
+      const outputRoot = await area.allocateDirectory("runner-error-output")
+      await writeFile(join(outputRoot, "occupied.txt"), "occupied\n", "utf8")
+      await writeFakePnpm(bin)
+      const run = spawnRunner({
+        TMPDIR: temporaryDirectory,
+        PATH: `${bin}${delimiter}${process.env.PATH}`,
+        UI_REVIEW_OUTPUT_DIR: outputRoot,
+      })
+      expect(await run.closed).toMatchObject({ code: 1, signal: null })
+      expect(run.stderr()).toContain("UI_REVIEW_OUTPUT_NOT_EMPTY")
+      expect(await countRunRoots(temporaryDirectory)).toBe(0)
+      expect(await readFile(join(outputRoot, "occupied.txt"), "utf8")).toBe("occupied\n")
+    } finally {
+      await area.cleanup()
+    }
+  }, 15_000)
 
   test("requires the ownership marker before recursive deletion", async () => {
     const area = await createUiReviewRunLifecycle()
@@ -166,11 +252,50 @@ describe.sequential("owned UI review run lifecycle", () => {
   })
 })
 
+async function writeFakePnpm(bin: string, capturePath?: string) {
+  const path = join(bin, "pnpm")
+  await writeFile(path, `#!/usr/bin/env node
+import { writeFileSync } from "node:fs"
+const command = process.argv.slice(2).join(" ")
+if (command.includes("run build:deps")) process.exit(0)
+if (command.includes("exec playwright test")) {
+  const capturePath = ${JSON.stringify(capturePath ?? "")}
+  if (capturePath) {
+    const keys = ["UI_REVIEW_OUTPUT_DIR", "UI_REVIEW_BASELINE_DIR", "UI_REVIEW_OWNED_RUN_ROOT", "TMPDIR", "TMP", "TEMP"]
+    writeFileSync(capturePath, JSON.stringify(Object.fromEntries(keys.map((key) => [key, process.env[key]]))))
+  }
+  process.exit(Number(process.env.UI_REVIEW_TEST_PLAYWRIGHT_STATUS ?? 0))
+}
+process.exit(9)
+`, "utf8")
+  await chmod(path, 0o755)
+}
+
+function spawnRunner(overrides: NodeJS.ProcessEnv, extraArgs: string[] = []) {
+  const child = spawn(process.execPath, [TSX_CLI, RUNNER, "review", "workspace-component-baselines", "--critic=fixture", ...extraArgs], {
+    cwd: TOOL_ROOT,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, ...overrides },
+  })
+  spawnedProcesses.add(child)
+  child.once("close", () => spawnedProcesses.delete(child))
+  let stderr = ""
+  child.stderr.setEncoding("utf8")
+  child.stderr.on("data", (chunk: string) => { stderr += chunk })
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveClose, reject) => {
+    child.once("error", reject)
+    child.once("close", (code, signal) => resolveClose({ code, signal }))
+  })
+  return { child, closed, stderr: () => stderr }
+}
+
 function spawnFixture(mode: string, overrides: NodeJS.ProcessEnv = {}) {
   const child = spawn(process.execPath, [FIXTURE, mode], {
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, ...overrides },
   })
+  spawnedProcesses.add(child)
+  child.once("close", () => spawnedProcesses.delete(child))
   let stdout = ""
   let stderr = ""
   child.stdout.setEncoding("utf8")
@@ -183,6 +308,14 @@ function spawnFixture(mode: string, overrides: NodeJS.ProcessEnv = {}) {
     child.once("close", (code, signal) => resolveClose({ code, signal }))
   })
   return { child, ready, closed, stderr: () => stderr }
+}
+
+async function stopSpawnedProcess(child: ChildProcess) {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  child.kill("SIGTERM")
+  const closed = new Promise<boolean>((resolveClose) => child.once("close", () => resolveClose(true)))
+  const stopped = await Promise.race([closed, sleep(2_000).then(() => false)])
+  if (!stopped && child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
 }
 
 async function waitForReady(child: ChildProcess, stdout: () => string) {

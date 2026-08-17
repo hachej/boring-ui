@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { mkdir, writeFile } from "node:fs/promises"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 import { createUiReviewRunLifecycle } from "../../../scripts/ui-review-run-lifecycle.mjs"
@@ -28,6 +28,9 @@ async function runFixture(mode) {
     await Promise.all([
       writeFile(join(isolationRoot, "isolation-survived.txt"), "isolation\n", "utf8"),
       writeFile(join(outputRoot, "output-survived.txt"), "output\n", "utf8"),
+      ...(process.env.UI_REVIEW_BASELINE_DIR
+        ? [readFile(join(process.env.UI_REVIEW_BASELINE_DIR, "baseline-survived.txt"), "utf8")]
+        : []),
     ])
     console.log(`UI_REVIEW_FIXTURE_READY:${JSON.stringify({ root: lifecycle.root, isolationRoot, outputRoot })}`)
     if (mode === "throw") throw new Error("UI_REVIEW_FIXTURE_THROW")

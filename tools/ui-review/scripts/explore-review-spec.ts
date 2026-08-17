@@ -4,7 +4,7 @@ import { join, resolve } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 import { chromium } from "@playwright/test"
 import { resetBombadilOutputDirectory, runWithBombadilStartupRetry } from "../src/core/bombadilProcess"
-import { allocateUiReviewRunDirectory } from "./ui-review-run-lifecycle.mjs"
+import { UI_REVIEW_RUN_ROOT_ENV, allocateUiReviewRunDirectory } from "./ui-review-run-lifecycle.mjs"
 import { createUiReviewStagingPolicy, assertStagingBounds, stageBombadilSelection, writeSelection, type UiReviewSelection } from "../src/core/exploration"
 import { readReproduceManifest, validateReproduceOwnership, verifyReproducedFinalState } from "../src/core/replay"
 import { getUiReviewSpec } from "../src/registry"
@@ -61,7 +61,7 @@ try {
 
 function startTarget(): ChildProcess {
   const [command, ...args] = spec.target.serverCommand
-  return spawn(command, args, { cwd: targetRoot, env: process.env, stdio: ["ignore", "inherit", "inherit"] })
+  return spawn(command, args, { cwd: targetRoot, env: externalProcessEnv(), stdio: ["ignore", "inherit", "inherit"] })
 }
 async function waitForTarget(server: ChildProcess): Promise<void> {
   const deadline = Date.now() + 120_000
@@ -127,7 +127,7 @@ async function runBombadil(args: string[], cwd: string): Promise<void> {
   if (!outputPath) throw new Error("UI_REVIEW_BOMBADIL_OUTPUT_PATH_MISSING")
   await runWithBombadilStartupRetry({
     runAttempt: () => new Promise((resolveRun, reject) => {
-      const child = spawn(bombadil, args, { cwd, env: process.env, stdio: ["ignore", "inherit", "pipe"] })
+      const child = spawn(bombadil, args, { cwd, env: externalProcessEnv(), stdio: ["ignore", "inherit", "pipe"] })
       let stderr = ""
       child.stderr.setEncoding("utf8")
       child.stderr.on("data", (chunk: string) => {
@@ -154,5 +154,10 @@ async function stop(server: ChildProcess): Promise<void> {
     server.kill("SIGKILL")
     await exited
   }
+}
+function externalProcessEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env }
+  delete env[UI_REVIEW_RUN_ROOT_ENV]
+  return env
 }
 function requiredEnv(name: string): string { const value = process.env[name]?.trim(); if (!value) throw new Error(`UI_REVIEW_REQUIRED_ENV_MISSING:${name}`); return value }
