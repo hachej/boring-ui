@@ -1,0 +1,868 @@
+<title>Part 1 Atlas</title>
+<style>
+:root{
+  --bg:#F6F6FA; --surface:#FFFFFF; --surface2:#EEEEF5; --ink:#23242E; --muted:#6A6C7E; --line:#D8D9E4;
+  --accent:#4F5BD5; --accent-soft:#E4E6FA;
+  --c-gov:#4F5BD5; --c-exec:#0B8A7D; --c-data:#A9711C; --c-chan:#5A8F2E; --c-out:#C14D6E; --c-imp:#8149C9; --c-comm:#3E7396;
+  --struct:#B0483F; --ext:#3E7396; --prod:#6A6C7E;
+  --ok:#2E7D4F; --warn:#A9711C;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#15161E; --surface:#1C1E28; --surface2:#242634; --ink:#E6E6EE; --muted:#9A9CB0; --line:#34364A;
+    --accent:#8F9AF5; --accent-soft:#2A2D4A;
+    --c-gov:#93A0F2; --c-exec:#3FC2B4; --c-data:#D9A24A; --c-chan:#8FC262; --c-out:#E58CA6; --c-imp:#B78BEA; --c-comm:#7FB0CE;
+    --struct:#E08A80; --ext:#7FB0CE; --prod:#9A9CB0;
+    --ok:#5FBE8A; --warn:#D9A24A;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#15161E; --surface:#1C1E28; --surface2:#242634; --ink:#E6E6EE; --muted:#9A9CB0; --line:#34364A;
+  --accent:#8F9AF5; --accent-soft:#2A2D4A;
+  --c-gov:#93A0F2; --c-exec:#3FC2B4; --c-data:#D9A24A; --c-chan:#8FC262; --c-out:#E58CA6; --c-imp:#B78BEA; --c-comm:#7FB0CE;
+  --struct:#E08A80; --ext:#7FB0CE; --prod:#9A9CB0;
+  --ok:#5FBE8A; --warn:#D9A24A;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:0 22px 90px}
+h1,h2,h3{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;text-wrap:balance;line-height:1.18}
+h1{font-size:2.5rem;margin:.2em 0 .1em;font-weight:600}
+h2{font-size:1.6rem;margin:2.6em 0 .5em;font-weight:600;border-bottom:1px solid var(--line);padding-bottom:.35em}
+h2 .sec{color:var(--muted);font-size:.72em;font-family:ui-monospace,"SF Mono","Cascadia Code",Menlo,monospace;margin-right:.6em;letter-spacing:.04em}
+h3{font-size:1.12rem;margin:1.6em 0 .4em;font-weight:600}
+p{max-width:72ch}
+p.lede{font-size:1.08rem;color:var(--muted);max-width:66ch}
+code,.mono{font-family:ui-monospace,"SF Mono","Cascadia Code",Menlo,monospace;font-size:.86em}
+a{color:var(--accent)}
+.eyebrow{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:34px}
+.statband{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0 8px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 16px;min-width:96px}
+.stat b{display:block;font-size:1.45rem;font-variant-numeric:tabular-nums;font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif}
+.stat span{font-size:.74rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+nav.toc{position:sticky;top:0;z-index:40;background:var(--bg);border-bottom:1px solid var(--line);margin:22px -22px 0;padding:9px 22px;display:flex;gap:7px;flex-wrap:wrap}
+nav.toc a{font-size:.76rem;text-decoration:none;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:3px 11px;background:var(--surface)}
+nav.toc a:hover{color:var(--accent);border-color:var(--accent)}
+.thesis{border-left:3px solid var(--accent);background:var(--surface);padding:16px 22px;border-radius:0 10px 10px 0;margin:20px 0;font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-size:1.16rem;max-width:62ch}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:16px 0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.card h4{margin:0 0 4px;font-size:1rem}
+.card .k{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.card p{font-size:.88rem;color:var(--muted);margin:.4em 0 0}
+.jobO h4{color:var(--c-exec)} .jobD h4{color:var(--c-gov)} .jobI h4{color:var(--c-imp)}
+.modechips{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.modechips span{border:1px dashed var(--line);border-radius:999px;padding:4px 13px;font-size:.82rem;color:var(--muted);background:var(--surface)}
+figure{margin:22px 0}
+figure svg{max-width:100%;height:auto;display:block}
+figcaption{font-size:.82rem;color:var(--muted);margin-top:8px;max-width:80ch}
+.scrollbox{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:8px}
+/* concept map */
+.maplayout{display:flex;gap:14px;align-items:stretch}
+.maplayout .scrollbox{flex:1;min-width:0}
+#detail{width:292px;flex:none;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:.86rem;align-self:flex-start;position:sticky;top:52px;max-height:82vh;overflow-y:auto}
+#detail h4{margin:0 0 2px;font-size:1.02rem}
+#detail .cl{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em}
+#detail .def{color:var(--ink);margin:.5em 0}
+#detail .rel{color:var(--muted);font-size:.8rem;margin:.15em 0}
+#detail .rel b{color:var(--ink);font-weight:600}
+#cmap text{font:600 11px system-ui,"Segoe UI",sans-serif;cursor:pointer;user-select:none}
+#cmap .panel-label{font:700 10px system-ui;letter-spacing:.12em;text-transform:uppercase;cursor:default}
+#cmap .node rect{cursor:pointer}
+#cmap .edge{stroke-opacity:.22;fill:none}
+#cmap .edge.hl{stroke-opacity:.95;stroke-width:1.8}
+#cmap .elabel{font:500 9.5px system-ui;fill:var(--muted);opacity:0;pointer-events:none}
+#cmap .elabel.hl{opacity:1;fill:var(--ink)}
+#cmap .node.dim{opacity:.28}
+@media (prefers-reduced-motion:no-preference){#cmap .edge,#cmap .node,#cmap .elabel{transition:opacity .15s,stroke-opacity .15s}}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.78rem;color:var(--muted);margin:8px 0 0}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+/* spine svg */
+#spine text{font:600 10.5px system-ui}
+#spine .band{font:700 10px system-ui;letter-spacing:.12em;text-transform:uppercase}
+#spine .note{font:400 9.5px system-ui}
+/* strips */
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:14px 0}
+.strip div{background:var(--surface);padding:13px 16px;border-left:1px solid var(--line)}
+.strip div:first-child{border-left:none}
+.strip b{display:block;font-size:.95rem}
+.strip span{font-size:.8rem;color:var(--muted)}
+/* never collapse */
+.pairs{display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));gap:10px;margin:14px 0}
+.pair{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 14px;font-size:.85rem}
+.pair b{font-size:.9rem}
+.pair .ne{color:var(--struct);font-weight:700;padding:0 2px}
+.pair p{margin:.3em 0 0;color:var(--muted);font-size:.8rem}
+/* tables */
+table{border-collapse:collapse;width:100%;font-size:.86rem;background:var(--surface)}
+th,td{border:1px solid var(--line);padding:7px 11px;text-align:left;vertical-align:top}
+th{background:var(--surface2);font-size:.76rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+/* posture */
+.axes{display:grid;gap:8px;margin:14px 0}
+.axis{display:grid;grid-template-columns:210px 1fr;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:9px 14px}
+.axis .nm b{font-size:.9rem}.axis .nm span{display:block;font-size:.72rem;color:var(--muted)}
+.steps{display:flex;gap:4px}
+.step{flex:1;min-width:0;background:var(--surface2);border-radius:6px;padding:5px 6px;font-size:.68rem;color:var(--muted);text-align:center;position:relative;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dots{position:absolute;top:-6px;right:4px;display:flex;gap:3px}
+.dot{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--surface)}
+.d-mail{background:var(--c-exec)} .d-opt{background:var(--c-imp)} .d-cre{background:var(--c-out)} .d-fac{background:var(--c-comm)}
+/* BR groups */
+.brgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px;margin:14px 0}
+.brg{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+.brg h4{margin:0 0 6px;font-size:.9rem}
+.brg ul{margin:0;padding:0;list-style:none;font-size:.82rem}
+.brg li{padding:2.5px 0;color:var(--muted)}
+.brg li code{color:var(--accent);margin-right:6px}
+/* CAP chips */
+.capfilter{display:flex;gap:8px;margin:12px 0;flex-wrap:wrap}
+.capfilter button{border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:999px;padding:4px 13px;font-size:.78rem;cursor:pointer}
+.capfilter button.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.caps{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0}
+.cap{border:1px solid var(--line);border-left-width:4px;background:var(--surface);border-radius:7px;padding:4px 10px;font-size:.76rem;cursor:default}
+.cap code{color:var(--muted);margin-right:5px}
+.cap.S{border-left-color:var(--struct)} .cap.E{border-left-color:var(--ext)} .cap.P{border-left-color:var(--prod)}
+.cap.hide{display:none}
+/* DEC */
+.decgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;margin:14px 0}
+.decg{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+.decg h4{margin:0 0 2px;font-size:.9rem}
+.decg .cnt{font-size:.72rem;color:var(--muted)}
+.decg ol{margin:.5em 0 0;padding:0;list-style:none;font-size:.8rem}
+.decg li{padding:2.5px 0;color:var(--muted)}
+.decg li code{color:var(--accent);margin-right:6px}
+/* flows */
+.flows{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:12px;margin:14px 0}
+.flow{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.flow h4{margin:0 0 6px;font-size:.88rem}
+.flow ol{margin:0;padding-left:17px;font-size:.78rem;color:var(--muted)}
+.flow li{padding:1.5px 0}
+/* glossary */
+#gsearch{width:100%;max-width:420px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:9px;padding:8px 13px;font-size:.9rem;margin:8px 0 14px}
+.gloss{display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:9px}
+.gterm{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:9px 13px;font-size:.8rem}
+.gterm b{display:block;font-size:.86rem}
+.gterm span{color:var(--muted)}
+.gterm .cl{font-size:.66rem;text-transform:uppercase;letter-spacing:.08em;float:right;margin-top:2px}
+/* heatmap */
+.heat{display:grid;grid-template-columns:230px repeat(4,1fr);gap:4px;min-width:760px;font-size:.8rem}
+.heat .hh{font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:4px 8px;text-align:center}
+.heat .rn{padding:8px 10px;font-weight:600;font-size:.82rem;display:flex;align-items:center}
+.heat .cell{border-radius:7px;padding:8px 6px;text-align:center;color:var(--ink);position:relative}
+.heat .cell small{display:block;font-size:.68rem;opacity:.75}
+/* stacked bar + donut */
+.stack{display:flex;height:34px;border-radius:9px;overflow:hidden;border:1px solid var(--line);margin:12px 0 4px;min-width:280px}
+.stack div{display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;color:var(--bg);white-space:nowrap}
+.donutwrap{display:flex;gap:26px;align-items:center;flex-wrap:wrap;margin:14px 0}
+.donut{width:170px;height:170px;border-radius:50%;position:relative;flex:none}
+.donut::after{content:"68";position:absolute;inset:34px;background:var(--bg);border-radius:50%;display:flex;align-items:center;justify-content:center;font:600 2rem "Iowan Old Style","Palatino Linotype",Palatino,serif}
+.dleg{font-size:.82rem;display:grid;gap:6px}
+.dleg i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:7px;vertical-align:-1px}
+.dleg b{font-variant-numeric:tabular-nums;margin-left:5px}
+.footer{margin-top:60px;font-size:.78rem;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+.callout{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:0 10px 10px 0;padding:12px 18px;font-size:.88rem;max-width:74ch;margin:14px 0}
+@media (max-width:900px){.maplayout{flex-direction:column}#detail{width:auto;position:static;max-height:none}.axis{grid-template-columns:1fr}}
+</style>
+
+<div class="wrap">
+<div class="eyebrow">boring-v2 · long-term plan pack · docs/plans/long-term</div>
+<h1>Part 1 Atlas</h1>
+<p class="lede">A visual map of <em>Part 1 — Business Use Cases and Required Platform Capabilities</em> (fourth-pass hybrid, 2026-08-17): every concept, the causal execution chain, the requirement and capability registers, and the 68 open decisions — arranged so the whole plan can be held in one view.</p>
+
+<div class="statband">
+  <div class="stat"><b>4,452</b><span>lines</span></div>
+  <div class="stat"><b>~55</b><span>defined terms</span></div>
+  <div class="stat"><b>56</b><span>BR families</span></div>
+  <div class="stat"><b>91</b><span>CAP capabilities</span></div>
+  <div class="stat"><b>68</b><span>open decisions</span></div>
+  <div class="stat"><b>5</b><span>golden flows</span></div>
+  <div class="stat"><b>9</b><span>posture axes</span></div>
+</div>
+
+<nav class="toc">
+  <a href="#overview">Overview</a><a href="#poster">Big picture</a><a href="#products">Products</a><a href="#map">Concept map</a><a href="#spine">Execution spine</a><a href="#truths">Never collapse</a><a href="#trust">Trust &amp; data</a><a href="#loop">Improvement loop</a><a href="#posture">Posture</a><a href="#br">BR families</a><a href="#cap">Capabilities</a><a href="#dec">Decisions</a><a href="#flows">Golden flows</a><a href="#handoff">Part 2 handoff</a><a href="#gloss">Glossary</a>
+</nav>
+
+<h2 id="overview"><span class="sec">§0–4</span>One family, three jobs, two dimensions</h2>
+<div class="thesis">A purpose-built, sovereign, agent-native application in which humans, Agents, automations, and authorized external clients perform durable domain work through the same governed operations.</div>
+<p>There is <b>one</b> foundational product family. Everything else is that family hired for a different job or moved along an independent dimension — never a second architecture. The three jobs:</p>
+<div class="cards">
+  <div class="card jobO"><span class="k">Job A · scarce: time &amp; throughput</span><h4>Operate</h4><p>Normal domain software with an Agent underneath. Humans and Agents share the same governed domain behavior; the app stays visually and operationally primary.</p></div>
+  <div class="card jobD"><span class="k">Job B · scarce: expert time &amp; reach</span><h4>Distribute</h4><p>An expert's method, Agent, and Experience packaged for other private contexts. Publisher owns methodology and lineage; subscriber owns data, Work, and outcomes.</p></div>
+  <div class="card jobI"><span class="k">Job C · scarce: decision quality vs reality</span><h4>Improve</h4><p>Candidates compared against incumbents on evidence and real outcomes; revisions promoted or rejected under authority, with rollback always possible.</p></div>
+</div>
+<p><b>Cross-cutting consumption modes</b> — how the jobs are reached, not extra jobs:</p>
+<div class="modechips"><span>Channel-first Agent Job Delivery (chat · WhatsApp · email · MCP · API)</span><span>External / headless machine consumption</span><span>Boring's own code factory (orchestrator + workers + review inbox)</span><span>Developer path — npx boring create → deploy</span></div>
+
+<figure>
+<svg viewBox="0 0 1040 150" role="img" aria-label="Two independent evolution dimensions: distribution from private application to external consumption, and adaptivity from human-only to controlled recursive improvement.">
+  <defs><marker id="ar0" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="currentColor"/></marker></defs>
+  <g fill="currentColor">
+    <text x="8" y="34" style="font:700 10px system-ui;letter-spacing:.12em">DISTRIBUTION</text>
+    <text x="8" y="112" style="font:700 10px system-ui;letter-spacing:.12em">ADAPTIVITY</text>
+  </g>
+  <line x1="120" y1="30" x2="1020" y2="30" stroke="var(--c-gov)" stroke-width="1.4" marker-end="url(#ar0)"/>
+  <line x1="120" y1="108" x2="1020" y2="108" stroke="var(--c-imp)" stroke-width="1.4" marker-end="url(#ar0)"/>
+  <g style="font:500 10.5px system-ui" fill="currentColor" text-anchor="middle">
+    <g><circle cx="150" cy="30" r="3.5" fill="var(--c-gov)"/><text x="150" y="52">private app</text></g>
+    <g><circle cx="330" cy="30" r="3.5" fill="var(--c-gov)"/><text x="330" y="52">dev project</text></g>
+    <g><circle cx="510" cy="30" r="3.5" fill="var(--c-gov)"/><text x="510" y="52">reusable package</text></g>
+    <g><circle cx="690" cy="30" r="3.5" fill="var(--c-gov)"/><text x="690" y="52">installed product</text></g>
+    <g><circle cx="850" cy="30" r="3.5" fill="var(--c-gov)"/><text x="850" y="52">subscription</text></g>
+    <g><circle cx="975" cy="30" r="3.5" fill="var(--c-gov)"/><text x="965" y="52">API service</text></g>
+    <g><circle cx="150" cy="108" r="3.5" fill="var(--c-imp)"/><text x="150" y="130">human-only</text></g>
+    <g><circle cx="310" cy="108" r="3.5" fill="var(--c-imp)"/><text x="310" y="130">Agent-assisted</text></g>
+    <g><circle cx="470" cy="108" r="3.5" fill="var(--c-imp)"/><text x="470" y="130">personalized</text></g>
+    <g><circle cx="630" cy="108" r="3.5" fill="var(--c-imp)"/><text x="630" y="130">evidence-aware</text></g>
+    <g><circle cx="790" cy="108" r="3.5" fill="var(--c-imp)"/><text x="790" y="130">outcome-driven</text></g>
+    <g><circle cx="950" cy="108" r="3.5" fill="var(--c-imp)"/><text x="945" y="130">recursively improved</text></g>
+  </g>
+</svg>
+<figcaption>The two independent evolution dimensions from §0/§4. A creator-published SaaS sits far along both; a CRM with an ambient Agent stays near the origin. Moving right never changes the product's domain identity.</figcaption>
+</figure>
+
+<h2 id="poster"><span class="sec">§0–§5</span>The whole plan in one picture</h2>
+<div class="scrollbox">
+<figure style="margin:8px">
+<svg viewBox="0 0 1160 742" role="img" aria-label="Layered poster of the platform: surfaces and channels on top feed one governed work substrate containing parties and authority, the work and run spine, and governed data; evidence and improvement loop below; commercial facts and sovereignty at the bottom.">
+<defs><marker id="par" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="currentColor"/></marker></defs>
+<!-- jobs header -->
+<g text-anchor="middle" style="font:600 11px system-ui">
+  <rect x="330" y="14" width="140" height="26" rx="13" fill="var(--surface)" stroke="var(--c-exec)"/><text x="400" y="31" fill="var(--c-exec)">OPERATE</text>
+  <rect x="510" y="14" width="140" height="26" rx="13" fill="var(--surface)" stroke="var(--c-gov)"/><text x="580" y="31" fill="var(--c-gov)">DISTRIBUTE</text>
+  <rect x="690" y="14" width="140" height="26" rx="13" fill="var(--surface)" stroke="var(--c-imp)"/><text x="760" y="31" fill="var(--c-imp)">IMPROVE</text>
+  <text x="215" y="31" fill="var(--muted)" style="font:500 10.5px system-ui" text-anchor="end">one platform, hired for three jobs →</text>
+</g>
+<!-- surfaces band -->
+<rect x="20" y="56" width="1120" height="84" rx="14" fill="var(--c-chan)" fill-opacity=".06" stroke="var(--c-chan)" stroke-opacity=".35" stroke-dasharray="3 4"/>
+<text x="34" y="76" class="panel-label" fill="var(--c-chan)" style="font:700 10px system-ui;letter-spacing:.12em">SURFACES &amp; CHANNELS — intake · steering · approval · delivery. never the identity of work</text>
+<g text-anchor="middle" style="font:600 10.5px system-ui">
+  <rect x="40" y="88" width="150" height="36" rx="8" fill="var(--surface)" stroke="var(--c-chan)"/><text x="115" y="110" fill="currentColor">Pages &amp; Views</text>
+  <rect x="212" y="88" width="140" height="36" rx="8" fill="var(--surface)" stroke="var(--c-chan)"/><text x="282" y="110" fill="currentColor">First-party chat</text>
+  <rect x="374" y="88" width="200" height="36" rx="8" fill="var(--surface)" stroke="var(--c-chan)"/><text x="474" y="110" fill="currentColor">WhatsApp · Slack · Email · Voice</text>
+  <rect x="596" y="88" width="130" height="36" rx="8" fill="var(--surface)" stroke="var(--c-chan)"/><text x="661" y="110" fill="currentColor">MCP · API</text>
+  <rect x="748" y="88" width="170" height="36" rx="8" fill="var(--surface)" stroke="var(--c-chan)"/><text x="833" y="110" fill="currentColor">Developer CLI · deploy</text>
+  <rect x="940" y="88" width="180" height="36" rx="8" fill="var(--surface)" stroke="var(--c-chan)"/><text x="1030" y="110" fill="currentColor">Attention inbox</text>
+</g>
+<g stroke="currentColor" stroke-width="1.2" opacity=".7">
+  <line x1="290" y1="140" x2="290" y2="168" marker-end="url(#par)"/><line x1="580" y1="140" x2="580" y2="168" marker-end="url(#par)"/><line x1="870" y1="140" x2="870" y2="168" marker-end="url(#par)"/>
+</g>
+<text x="640" y="160" style="font:500 9.5px system-ui" fill="var(--muted)" text-anchor="middle">projections in · Work references out</text>
+<!-- substrate -->
+<rect x="20" y="172" width="1120" height="272" rx="16" fill="var(--c-exec)" fill-opacity=".05" stroke="var(--c-exec)" stroke-opacity=".5" stroke-width="1.6"/>
+<text x="34" y="194" class="panel-label" fill="var(--c-exec)" style="font:700 10px system-ui;letter-spacing:.12em">ONE GOVERNED WORK SUBSTRATE — every mode, channel, factory, and developer product runs here</text>
+<!-- parties column -->
+<rect x="36" y="208" width="280" height="220" rx="12" fill="var(--surface)" stroke="var(--c-gov)"/>
+<text x="52" y="230" style="font:700 10px system-ui;letter-spacing:.1em" fill="var(--c-gov)">PARTIES &amp; AUTHORITY</text>
+<g style="font:500 10.5px system-ui" fill="currentColor">
+  <text x="52" y="254">Party ─ owns → Instance</text>
+  <text x="52" y="276">Actor / Agent + Binding (Seat)</text>
+  <text x="52" y="298">Authority: host-issued, narrowed,</text><text x="52" y="312">revocable — never self-widened</text>
+  <text x="52" y="336">Approval binds the exact proposal</text>
+  <text x="52" y="360">Package → Release → Deployment</text>
+  <text x="52" y="382" fill="var(--muted)" style="font:400 9.5px system-ui">publisher lineage; subscriber data</text>
+  <text x="52" y="395" fill="var(--muted)" style="font:400 9.5px system-ui">never crosses back</text>
+</g>
+<!-- spine column -->
+<rect x="336" y="208" width="470" height="220" rx="12" fill="var(--surface)" stroke="var(--c-exec)"/>
+<text x="352" y="230" style="font:700 10px system-ui;letter-spacing:.1em" fill="var(--c-exec)">THE SPINE — admission before anything billable</text>
+<g text-anchor="middle" style="font:600 10px system-ui">
+  <rect x="352" y="246" width="80" height="30" rx="7" fill="var(--bg)" stroke="var(--c-exec)"/><text x="392" y="265" fill="currentColor">Work</text>
+  <rect x="456" y="246" width="92" height="30" rx="7" fill="var(--bg)" stroke="var(--c-exec)"/><text x="502" y="265" fill="currentColor">Admission</text>
+  <rect x="572" y="246" width="80" height="30" rx="7" fill="var(--bg)" stroke="var(--c-exec)" stroke-width="2"/><text x="612" y="265" fill="currentColor">Run</text>
+  <rect x="676" y="246" width="112" height="30" rx="7" fill="var(--bg)" stroke="var(--c-exec)"/><text x="732" y="265" fill="currentColor">Effects</text>
+</g>
+<g stroke="currentColor" stroke-width="1.2"><line x1="432" y1="261" x2="454" y2="261" marker-end="url(#par)"/><line x1="548" y1="261" x2="570" y2="261" marker-end="url(#par)"/><line x1="652" y1="261" x2="674" y2="261" marker-end="url(#par)"/></g>
+<g style="font:500 10px system-ui" fill="currentColor">
+  <text x="352" y="302">RunId joins: authority · payer · context ·</text>
+  <text x="352" y="317">vintages · cost · effects · artifacts · decisions</text>
+  <text x="352" y="341">Attempts retry beneath the Run — fenced,</text>
+  <text x="352" y="356">append-only, never rewritten</text>
+  <text x="352" y="380">External effects: intent → dispatch → receipt →</text>
+  <text x="352" y="395" >reconcile · <tspan fill="var(--warn)">unknown is never blindly retried</tspan></text>
+</g>
+<text x="352" y="418" style="font:500 9.5px system-ui" fill="var(--muted)">Produced ≠ Delivered ≠ Accepted ≠ Successful</text>
+<!-- data column -->
+<rect x="826" y="208" width="298" height="220" rx="12" fill="var(--surface)" stroke="var(--c-data)"/>
+<text x="842" y="230" style="font:700 10px system-ui;letter-spacing:.1em" fill="var(--c-data)">GOVERNED DATA</text>
+<g style="font:500 10.5px system-ui" fill="currentColor">
+  <text x="842" y="254">Sources → Projections (+ Vintage)</text>
+  <text x="842" y="276">caches &amp; indexes inherit policy</text>
+  <text x="842" y="300">Domain Contract: the app's nouns</text><text x="842" y="314">&amp; verbs, human-only acts marked</text>
+  <text x="842" y="338">Deterministic kernels compute;</text><text x="842" y="352">the model proposes &amp; interprets</text>
+  <text x="842" y="376" fill="var(--struct)">untrusted content = data,</text><text x="842" y="390" fill="var(--struct)">never authority (taint persists)</text>
+</g>
+<!-- improvement band -->
+<g stroke="currentColor" stroke-width="1.2" opacity=".7"><line x1="580" y1="444" x2="580" y2="470" marker-end="url(#par)"/></g>
+<rect x="20" y="474" width="1120" height="86" rx="14" fill="var(--c-imp)" fill-opacity=".06" stroke="var(--c-imp)" stroke-opacity=".4" stroke-dasharray="3 4"/>
+<text x="34" y="494" class="panel-label" fill="var(--c-imp)" style="font:700 10px system-ui;letter-spacing:.12em">EVIDENCE &amp; PROTECTED IMPROVEMENT — same loop for customer products and Boring's own factory</text>
+<g text-anchor="middle" style="font:600 10.5px system-ui">
+  <rect x="60" y="506" width="150" height="34" rx="8" fill="var(--surface)" stroke="var(--c-imp)"/><text x="135" y="527" fill="currentColor">Evidence + Outcomes</text>
+  <rect x="270" y="506" width="150" height="34" rx="8" fill="var(--surface)" stroke="var(--c-imp)"/><text x="345" y="527" fill="currentColor">Candidate Revision</text>
+  <rect x="480" y="506" width="170" height="34" rx="8" fill="var(--surface)" stroke="var(--c-imp)"/><text x="565" y="527" fill="currentColor">Held-out evaluation</text>
+  <rect x="710" y="506" width="170" height="34" rx="8" fill="var(--surface)" stroke="var(--c-imp)"/><text x="795" y="527" fill="currentColor">Authorized promotion</text>
+  <rect x="940" y="506" width="160" height="34" rx="8" fill="var(--surface)" stroke="var(--c-imp)" stroke-dasharray="4 3"/><text x="1020" y="527" fill="currentColor">Rollback preserved</text>
+</g>
+<g stroke="currentColor" stroke-width="1.2"><line x1="210" y1="523" x2="268" y2="523" marker-end="url(#par)"/><line x1="420" y1="523" x2="478" y2="523" marker-end="url(#par)"/><line x1="650" y1="523" x2="708" y2="523" marker-end="url(#par)"/><line x1="880" y1="523" x2="938" y2="523" marker-end="url(#par)"/></g>
+<!-- bottom bands -->
+<rect x="20" y="586" width="548" height="120" rx="14" fill="var(--c-comm)" fill-opacity=".06" stroke="var(--c-comm)" stroke-opacity=".4" stroke-dasharray="3 4"/>
+<text x="34" y="606" class="panel-label" fill="var(--c-comm)" style="font:700 10px system-ui;letter-spacing:.12em">COMMERCIAL — facts below, policy above</text>
+<g style="font:500 10.5px system-ui" fill="currentColor">
+  <text x="34" y="630">Usage Facts · Payer Binding · Entitlement  =  stable platform facts</text>
+  <text x="34" y="652">subscription · per-job · credits · retainer · rev-share  =  swappable policy</text>
+  <text x="34" y="676" fill="var(--muted)" style="font:400 9.5px system-ui">a usage fact is never edited into a price · suspension never deletes Work</text>
+</g>
+<rect x="592" y="586" width="548" height="120" rx="14" fill="var(--c-gov)" fill-opacity=".06" stroke="var(--c-gov)" stroke-opacity=".4" stroke-dasharray="3 4"/>
+<text x="606" y="606" class="panel-label" fill="var(--c-gov)" style="font:700 10px system-ui;letter-spacing:.12em">SOVEREIGNTY — identity survives every hop</text>
+<g text-anchor="middle" style="font:600 10px system-ui" fill="currentColor">
+  <rect x="606" y="622" width="80" height="28" rx="7" fill="var(--surface)" stroke="var(--c-gov)"/><text x="646" y="640">local</text>
+  <rect x="706" y="622" width="90" height="28" rx="7" fill="var(--surface)" stroke="var(--c-gov)"/><text x="751" y="640">Swiss cloud</text>
+  <rect x="816" y="622" width="80" height="28" rx="7" fill="var(--surface)" stroke="var(--c-gov)"/><text x="856" y="640">EU cloud</text>
+  <rect x="916" y="622" width="90" height="28" rx="7" fill="var(--surface)" stroke="var(--c-gov)"/><text x="961" y="640">dedicated</text>
+  <rect x="1026" y="622" width="104" height="28" rx="7" fill="var(--surface)" stroke="var(--c-gov)"/><text x="1078" y="640">customer-run</text>
+</g>
+<g stroke="currentColor" stroke-width="1.1" opacity=".6"><line x1="686" y1="636" x2="704" y2="636" marker-end="url(#par)"/><line x1="796" y1="636" x2="814" y2="636" marker-end="url(#par)"/><line x1="896" y1="636" x2="914" y2="636" marker-end="url(#par)"/><line x1="1006" y1="636" x2="1024" y2="636" marker-end="url(#par)"/></g>
+<text x="606" y="676" style="font:400 9.5px system-ui" fill="var(--muted)">models, sandboxes, storage, and regions are replaceable — Work, Agent, and Package identity are not</text>
+</svg>
+<figcaption>The plan's whole shape on one canvas: many surfaces, <b>one</b> governed Work substrate, one protected improvement loop, commercial policy floating above stable facts, and deployment as a replaceable detail. Everything below in this atlas is a zoom into one of these boxes.</figcaption>
+</figure>
+</div>
+
+<h2 id="products"><span class="sec">§3.7</span>Where each product sits</h2>
+<p>The ten canonical product examples scored against the three jobs plus external/headless consumption (§3.7). Depth of color = intensity of the job in that product:</p>
+<div class="scrollbox" style="padding:14px"><div id="heat"></div></div>
+
+<h2 id="map"><span class="sec">§2.5 · §12.1</span>Concept map — the noun space</h2>
+<p>Every capitalized term in the plan, grouped into its seven natural clusters. <b>Click a node</b> for its definition and relations; hover to trace its labeled edges. The nine <em>core identity families</em> (§12.1) carry a heavier border — everything else is a lifecycle, policy, or evidentiary record that must keep independent semantics without becoming a root object.</p>
+<div class="maplayout">
+  <div class="scrollbox"><svg id="cmap" viewBox="0 0 1240 1010" role="img" aria-label="Network of the plan's concepts grouped into governance, distribution, channels, execution, data, outputs, and commercial clusters, with labeled relations between them."></svg></div>
+  <aside id="detail"><h4>Select a concept</h4><p class="def" style="color:var(--muted)">Click any node to see its business definition (§2.5) and how it relates to its neighbors (§12.2).</p></aside>
+</div>
+<div class="legend">
+  <span><i style="background:var(--c-gov)"></i>Parties &amp; governance</span>
+  <span><i style="background:var(--c-chan)"></i>Channels &amp; experience</span>
+  <span><i style="background:var(--c-exec)"></i>Work &amp; execution</span>
+  <span><i style="background:var(--c-data)"></i>Sources &amp; provenance</span>
+  <span><i style="background:var(--c-out)"></i>Outputs &amp; attention</span>
+  <span><i style="background:var(--c-imp)"></i>Evidence &amp; improvement</span>
+  <span><i style="background:var(--c-comm)"></i>Commercial facts</span>
+  <span><i style="background:transparent;border:2px solid var(--ink);width:8px;height:8px"></i>core identity family</span>
+</div>
+
+<h2 id="spine"><span class="sec">§2.4 · §5.3 · §5.8</span>The execution spine</h2>
+<p>The causal chain every unit of customer value moves through. The load-bearing rule: <b>Admission precedes everything billable</b>, and one durable Run identity joins request, authority, cost, effects, artifacts, decisions, and delayed outcomes — the recursive-improvement dataset.</p>
+<div class="scrollbox">
+<figure style="margin:8px">
+<svg id="spine" viewBox="0 0 1140 560" role="img" aria-label="Execution spine: from channel message and thread through job contract and admission into run, attempt, model and operation invocations and effects, then artifact, delivery, acceptance, outcome, evidence, evaluation and promotion.">
+<defs><marker id="ar1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="currentColor"/></marker></defs>
+<!-- band labels -->
+<g fill="var(--muted)"><text class="band" x="12" y="26">Intake &amp; contract</text><text class="band" x="12" y="216">Execution</text><text class="band" x="12" y="406">Outputs &amp; learning</text></g>
+<!-- row 1 -->
+<g stroke="var(--c-chan)" fill="var(--surface)">
+  <rect x="20" y="44" width="132" height="40" rx="9"/><rect x="188" y="44" width="100" height="40" rx="9"/>
+</g>
+<g stroke="var(--c-exec)" fill="var(--surface)">
+  <rect x="324" y="44" width="118" height="40" rx="9"/><rect x="478" y="44" width="158" height="40" rx="9"/><rect x="672" y="44" width="100" height="40" rx="9"/><rect x="808" y="44" width="118" height="40" rx="9"/><rect x="962" y="44" width="158" height="40" rx="9"/>
+</g>
+<g fill="currentColor" text-anchor="middle">
+  <text x="86" y="61">Channel · Message</text><text x="86" y="75" class="note" fill="var(--muted)">untrusted intake</text>
+  <text x="238" y="61">Thread</text><text x="238" y="75" class="note" fill="var(--muted)">may stay Thread-only</text>
+  <text x="383" y="61">Intake Run</text><text x="383" y="75" class="note" fill="var(--muted)">narrow, own admission</text>
+  <text x="557" y="61">Job Contract Revision</text><text x="557" y="75" class="note" fill="var(--muted)">immutable agreement</text>
+  <text x="722" y="61">Work</text><text x="722" y="75" class="note" fill="var(--muted)">customer value unit</text>
+  <text x="867" y="61">Admission</text><text x="867" y="75" class="note" fill="var(--muted)">payer · authority · budget</text>
+  <text x="1041" y="61">Run  (RunId)</text><text x="1041" y="75" class="note" fill="var(--muted)">one logical execution</text>
+</g>
+<g stroke="currentColor" stroke-width="1.3">
+  <line x1="152" y1="64" x2="186" y2="64" marker-end="url(#ar1)"/><line x1="288" y1="64" x2="322" y2="64" marker-end="url(#ar1)"/><line x1="442" y1="64" x2="476" y2="64" marker-end="url(#ar1)"/><line x1="636" y1="64" x2="670" y2="64" marker-end="url(#ar1)"/><line x1="772" y1="64" x2="806" y2="64" marker-end="url(#ar1)"/><line x1="926" y1="64" x2="960" y2="64" marker-end="url(#ar1)"/>
+</g>
+<g style="font:500 9px system-ui" fill="var(--muted)" text-anchor="middle">
+  <text x="169" y="56">deduped</text><text x="306" y="56">clarifies</text><text x="459" y="56">contracts</text><text x="653" y="56">creates</text><text x="789" y="56">admits</text><text x="943" y="56">mints</text>
+</g>
+<!-- connector down -->
+<path d="M1041 84 L1041 120 L120 120 L120 156" fill="none" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar1)"/>
+<text x="580" y="113" class="note" fill="var(--muted)" text-anchor="middle">immutable Admission snapshot fixed · sensitive policy revalidated before each Effect commits</text>
+<!-- row 2 -->
+<g stroke="var(--c-exec)" fill="var(--surface)">
+  <rect x="52" y="234" width="136" height="40" rx="9"/><rect x="242" y="234" width="118" height="40" rx="9"/><rect x="414" y="234" width="150" height="40" rx="9"/><rect x="618" y="234" width="160" height="40" rx="9"/><rect x="832" y="234" width="112" height="40" rx="9"/><rect x="998" y="234" width="122" height="40" rx="9"/>
+</g>
+<g fill="currentColor" text-anchor="middle">
+  <text x="120" y="251">Attempt</text><text x="120" y="265" class="note" fill="var(--muted)">worker generation</text>
+  <text x="301" y="251">Lease / fence</text><text x="301" y="265" class="note" fill="var(--muted)">stale workers fenced</text>
+  <text x="489" y="251">Model Invocation</text><text x="489" y="265" class="note" fill="var(--muted)">actual provider facts</text>
+  <text x="698" y="251">Operation Invocation</text><text x="698" y="265" class="note" fill="var(--muted)">typed, governed call</text>
+  <text x="888" y="251">Effect</text><text x="888" y="265" class="note" fill="var(--muted)">planned consequence</text>
+  <text x="1059" y="251">Effect Group</text><text x="1059" y="265" class="note" fill="var(--muted)">atomic membership</text>
+</g>
+<g stroke="currentColor" stroke-width="1.3">
+  <line x1="188" y1="254" x2="240" y2="254" marker-end="url(#ar1)"/><line x1="360" y1="254" x2="412" y2="254" marker-end="url(#ar1)"/><line x1="564" y1="254" x2="616" y2="254" marker-end="url(#ar1)"/><line x1="778" y1="254" x2="830" y2="254" marker-end="url(#ar1)"/><line x1="944" y1="254" x2="996" y2="254" marker-end="url(#ar1)"/>
+</g>
+<g style="font:500 9px system-ui" fill="var(--muted)" text-anchor="middle">
+  <text x="214" y="246">holds</text><text x="386" y="246">invokes</text><text x="590" y="246">acts via</text><text x="804" y="246">causes</text><text x="970" y="246">grouped</text>
+</g>
+<text x="120" y="296" class="note" fill="var(--muted)" text-anchor="middle">retry = new Attempt, same Run</text>
+<text x="888" y="296" class="note" fill="var(--warn)" text-anchor="middle">unknown outcome → reconcile, never blind retry</text>
+<!-- connector down -->
+<path d="M1059 274 L1059 320 L96 320 L96 346" fill="none" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar1)"/>
+<text x="580" y="313" class="note" fill="var(--muted)" text-anchor="middle">approval binds the exact rendered proposal + Effect set · material change invalidates it</text>
+<!-- row 3 -->
+<g stroke="var(--c-out)" fill="var(--surface)">
+  <rect x="40" y="424" width="112" height="40" rx="9"/><rect x="186" y="424" width="108" height="40" rx="9"/><rect x="328" y="424" width="132" height="40" rx="9"/>
+</g>
+<g stroke="var(--c-imp)" fill="var(--surface)">
+  <rect x="494" y="424" width="112" height="40" rx="9"/><rect x="640" y="424" width="110" height="40" rx="9"/><rect x="784" y="424" width="112" height="40" rx="9"/><rect x="930" y="424" width="102" height="40" rx="9"/><rect x="1058" y="424" width="72" height="40" rx="9" stroke="var(--c-imp)"/>
+</g>
+<g fill="currentColor" text-anchor="middle">
+  <text x="96" y="441">Artifact</text><text x="96" y="455" class="note" fill="var(--muted)">durable, cited</text>
+  <text x="240" y="441">Delivery</text><text x="240" y="455" class="note" fill="var(--muted)">per destination</text>
+  <text x="394" y="441">Human Decision</text><text x="394" y="455" class="note" fill="var(--muted)">accept · reject · attest</text>
+  <text x="550" y="441">Outcome</text><text x="550" y="455" class="note" fill="var(--muted)">real world, delayed</text>
+  <text x="695" y="441">Evidence</text><text x="695" y="455" class="note" fill="var(--muted)">joined by RunId</text>
+  <text x="840" y="441">Evaluation</text><text x="840" y="455" class="note" fill="var(--muted)">held-out, protected</text>
+  <text x="981" y="441">Revision</text><text x="981" y="455" class="note" fill="var(--muted)">immutable candidate</text>
+  <text x="1094" y="441">Promote</text><text x="1094" y="455" class="note" fill="var(--muted)">staged</text>
+</g>
+<g stroke="currentColor" stroke-width="1.3">
+  <line x1="152" y1="444" x2="184" y2="444" marker-end="url(#ar1)"/><line x1="294" y1="444" x2="326" y2="444" marker-end="url(#ar1)"/><line x1="460" y1="444" x2="492" y2="444" marker-end="url(#ar1)"/><line x1="606" y1="444" x2="638" y2="444" marker-end="url(#ar1)"/><line x1="750" y1="444" x2="782" y2="444" marker-end="url(#ar1)"/><line x1="896" y1="444" x2="928" y2="444" marker-end="url(#ar1)"/><line x1="1032" y1="444" x2="1056" y2="444" marker-end="url(#ar1)"/>
+</g>
+<!-- loop back -->
+<path d="M1094 464 L1094 520 L557 520 L557 468" fill="none" stroke="var(--c-imp)" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ar1)"/>
+<text x="826" y="513" class="note" fill="var(--c-imp)" text-anchor="middle">promoted revision becomes the new incumbent — old incumbent preserved, rollback always possible</text>
+</svg>
+<figcaption>The spine from §2.4/§5.3/§5.8. Every consequential lifecycle stays orthogonal: a failed Attempt does not fail the Run; a failed Run does not fail the Work; a Thread never owns any of it.</figcaption>
+</figure>
+</div>
+
+<h3>Four moments the platform never conflates</h3>
+<div class="strip">
+  <div><b>Produced</b><span>a valid Artifact or result version was created</span></div>
+  <div><b>Delivered</b><span>an authorized consumer obtained the exact promised handoff</span></div>
+  <div><b>Accepted</b><span>an authorized Human Decision accepted that exact target</span></div>
+  <div><b>Successful</b><span>a later real-world Outcome met the intended objective</span></div>
+</div>
+
+<h2 id="truths"><span class="sec">§12.4</span>Never collapse — the anti-proliferation pairs</h2>
+<p>Part 2 must find the fewest identities, but §12.4 names the pairs that may <b>not</b> be merged to shrink the noun count. These are the plan's strongest structural commitments:</p>
+<div class="pairs">
+  <div class="pair"><b>Party <span class="ne">≠</span> Actor</b><p>Ownership and liability vs operational identity. The same consultant acts for several customers under different mandates.</p></div>
+  <div class="pair"><b>Work <span class="ne">≠</span> Thread <span class="ne">≠</span> Run <span class="ne">≠</span> Attempt</b><p>Customer value ≠ conversation ≠ admitted execution ≠ worker generation. Each has its own lifecycle.</p></div>
+  <div class="pair"><b>Package <span class="ne">≠</span> Version <span class="ne">≠</span> Release <span class="ne">≠</span> Deployment <span class="ne">≠</span> Instance</b><p>Lineage, authored definition, verified build, rollout, and owned context never become one mutable "app" record.</p></div>
+  <div class="pair"><b>Delivery <span class="ne">≠</span> external Effect</b><p>Provider dispatch, confirmed effect, recipient handoff, and acceptance are four different facts.</p></div>
+  <div class="pair"><b>Evidence <span class="ne">≠</span> Outcome</b><p>"The human liked it" is preference; "conversion rose" is a measured real-world observation under a versioned definition.</p></div>
+  <div class="pair"><b>Record version <span class="ne">≠</span> Revision</b><p>An ETag is concurrency control. A Revision is an immutable candidate in an incumbent lineage.</p></div>
+  <div class="pair"><b>Admission snapshot <span class="ne">≠</span> execution record</b><p>Immutable intended context vs append-only actual history. Neither substitutes for audit or observability.</p></div>
+  <div class="pair"><b>Attention Item <span class="ne">≠</span> Human Decision</b><p>One requests judgment; the other is the typed, append-only response. Timeout never auto-approves.</p></div>
+  <div class="pair"><b>Usage Fact <span class="ne">≠</span> price <span class="ne">≠</span> invoice</b><p>Measured consumption is a stable fact; pricing, billing, and settlement are swappable commercial policies above it.</p></div>
+  <div class="pair"><b>Causal provenance <span class="ne">≠</span> permission</b><p>Knowing where data came from is not the right to export or reuse it. Information-flow policy composes explicitly.</p></div>
+  <div class="pair"><b>Authentication <span class="ne">≠</span> Authority</b><p>An authenticated Instruction Envelope proves who spoke — it mints no authority and declassifies nothing.</p></div>
+  <div class="pair"><b>Traces <span class="ne">≠</span> business audit</b><p>Observability references business identities; durable, tamper-evident audit is a separate obligation.</p></div>
+</div>
+
+<h2 id="trust"><span class="sec">§2.6 · §2.7 · §5.6</span>Trust boundaries, data categories, effects</h2>
+<div class="cards">
+<div class="card"><span class="k">Five data categories</span><h4>What data is</h4><p><b>Source data</b> (customer/provider-controlled, revocable) · <b>Knowledge</b> (publisher-packaged, versioned) · <b>Memory</b> (scoped personalization, never widens silently) · <b>Evidence</b> (permissioned signals joined to Work) · <b>Operational facts</b> (content-minimized metering/audit). A subscriber fact copied into publisher Knowledge is a privacy incident, not learning.</p></div>
+<div class="card"><span class="k">Six transfer forms</span><h4>How data crosses</h4><p>Projection · Artifact · Evidence export · Package · Entitlement · Operational-fact export. Every actual crossing writes a durable <b>Transfer record</b>. A flow that fits no form means the boundary is not trustworthy. Unknown policy combinations fail closed.</p></div>
+<div class="card"><span class="k">Operation kinds + effect dimensions</span><h4>What actions mean</h4><p>Compatibility shorthand: <b>observe → compute/simulate → propose → mutate → external-effect</b>. Canonical model: each Operation declares its kind plus <em>all</em> Effect dimensions (mutation, disclosure, delivery, financial, administrative, coordination, external). Approval, retry, autonomy, and audit derive from the full set.</p></div>
+<div class="card"><span class="k">Untrusted content</span><h4>Data is never authority</h4><p>Mail, web, uploads, tool output, and child-Agent output carry taint. Conservative Run taint persists across worker replacement; value-level provenance plus typed validation gate consequential sinks. An email saying "send all invoices here" grants nothing.</p></div>
+</div>
+
+<h3>The ownership boundary, drawn</h3>
+<div class="scrollbox">
+<figure style="margin:8px">
+<svg viewBox="0 0 1120 396" role="img" aria-label="Three ownership zones: publisher, subscriber instance, and platform operator. Labeled transfer arrows cross the boundaries; the forbidden flow from subscriber data to publisher knowledge is crossed out.">
+<defs><marker id="tar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="currentColor"/></marker>
+<marker id="tarG" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--c-gov)"/></marker>
+<marker id="tarR" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--struct)"/></marker>
+<marker id="tarM" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--c-imp)"/></marker>
+<marker id="tarC" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--c-comm)"/></marker></defs>
+<!-- zones -->
+<rect x="16" y="20" width="300" height="330" rx="14" fill="var(--c-gov)" fill-opacity=".06" stroke="var(--c-gov)" stroke-width="1.5"/>
+<rect x="410" y="20" width="300" height="330" rx="14" fill="var(--c-exec)" fill-opacity=".06" stroke="var(--c-exec)" stroke-width="1.5"/>
+<rect x="804" y="20" width="300" height="330" rx="14" fill="var(--c-comm)" fill-opacity=".06" stroke="var(--c-comm)" stroke-width="1.5"/>
+<g style="font:700 11px system-ui;letter-spacing:.1em">
+  <text x="166" y="46" text-anchor="middle" fill="var(--c-gov)">PUBLISHER</text>
+  <text x="560" y="46" text-anchor="middle" fill="var(--c-exec)">SUBSCRIBER INSTANCE</text>
+  <text x="954" y="46" text-anchor="middle" fill="var(--c-comm)">PLATFORM OPERATOR</text>
+</g>
+<g style="font:500 10.5px system-ui" fill="currentColor">
+  <text x="40" y="76">owns:</text>
+  <text x="40" y="98">· methodology &amp; Knowledge</text>
+  <text x="40" y="118">· Agent definitions &amp; revisions</text>
+  <text x="40" y="138">· default Experience</text>
+  <text x="40" y="158">· Package lineage &amp; signatures</text>
+  <text x="40" y="178">· evaluators &amp; fixtures</text>
+  <text x="40" y="206" fill="var(--muted)" style="font:400 9.5px system-ui">learns only from explicitly</text>
+  <text x="40" y="219" fill="var(--muted)" style="font:400 9.5px system-ui">permitted, exported evidence</text>
+  <text x="434" y="76">owns (exactly one controlling Party):</text>
+  <text x="434" y="98">· connected Sources &amp; credentials</text>
+  <text x="434" y="118">· Work, Threads, prompts</text>
+  <text x="434" y="138">· Artifacts &amp; private Outcomes</text>
+  <text x="434" y="158">· scoped Memory &amp; overlays</text>
+  <text x="434" y="178">· Evidence (permissioned)</text>
+  <text x="434" y="206" fill="var(--muted)" style="font:400 9.5px system-ui">upgrades never expose this;</text>
+  <text x="434" y="219" fill="var(--muted)" style="font:400 9.5px system-ui">migrations get no read-back channel</text>
+  <text x="828" y="76">owns / controls:</text>
+  <text x="828" y="98">· identity, hosting, policy infra</text>
+  <text x="828" y="118">· Package registry &amp; lineage records</text>
+  <text x="828" y="138">· base evaluators &amp; defaults</text>
+  <text x="828" y="166">reads by default:</text>
+  <text x="828" y="188">· content-minimized Operational Facts</text>
+  <text x="828" y="216" fill="var(--muted)" style="font:400 9.5px system-ui">never owns subscriber content merely</text>
+  <text x="828" y="229" fill="var(--muted)" style="font:400 9.5px system-ui">because it hosts the product</text>
+</g>
+<!-- transfers publisher -> subscriber -->
+<line x1="316" y1="252" x2="408" y2="252" stroke="var(--c-gov)" stroke-width="1.6" marker-end="url(#tarG)"/>
+<text x="362" y="244" text-anchor="middle" style="font:600 9.5px system-ui" fill="var(--c-gov)">Package (versioned)</text>
+<line x1="316" y1="286" x2="408" y2="286" stroke="var(--c-gov)" stroke-width="1.6" marker-end="url(#tarG)"/>
+<text x="362" y="278" text-anchor="middle" style="font:600 9.5px system-ui" fill="var(--c-gov)">upgrade + migration</text>
+<!-- evidence export back -->
+<line x1="408" y1="322" x2="316" y2="322" stroke="var(--c-imp)" stroke-width="1.6" marker-end="url(#tarM)"/>
+<text x="362" y="314" text-anchor="middle" style="font:600 9.5px system-ui" fill="var(--c-imp)">Evidence export — explicit, aggregated</text>
+<!-- forbidden -->
+<line x1="408" y1="120" x2="316" y2="120" stroke="var(--struct)" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#tarR)"/>
+<g stroke="var(--struct)" stroke-width="2"><line x1="352" y1="108" x2="372" y2="132"/><line x1="372" y1="108" x2="352" y2="132"/></g>
+<text x="362" y="98" text-anchor="middle" style="font:700 9.5px system-ui" fill="var(--struct)">subscriber data → Knowledge</text>
+<text x="362" y="148" text-anchor="middle" style="font:500 9px system-ui" fill="var(--struct)">= privacy incident, not "learning"</text>
+<!-- subscriber <-> operator -->
+<line x1="710" y1="252" x2="802" y2="252" stroke="var(--c-comm)" stroke-width="1.6" marker-end="url(#tarC)"/>
+<text x="756" y="244" text-anchor="middle" style="font:600 9.5px system-ui" fill="var(--c-comm)">Operational Facts (no content)</text>
+<line x1="802" y1="286" x2="710" y2="286" stroke="var(--c-comm)" stroke-width="1.6" marker-end="url(#tarC)"/>
+<text x="756" y="278" text-anchor="middle" style="font:600 9.5px system-ui" fill="var(--c-comm)">Entitlement</text>
+<line x1="802" y1="322" x2="710" y2="322" stroke="var(--c-comm)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#tarC)"/>
+<text x="756" y="314" text-anchor="middle" style="font:600 9.5px system-ui" fill="var(--c-comm)">support session — own approval, expiring</text>
+<!-- footer -->
+<text x="560" y="380" text-anchor="middle" style="font:500 10px system-ui" fill="var(--muted)">every arrow that actually fires writes a durable Transfer record · a flow that fits no arrow means the boundary is broken</text>
+</svg>
+<figcaption>§2.6–§2.7 as a picture: three Party zones, the six sanctioned transfer forms as labeled arrows, and the one forbidden flow crossed out. Third-party licensed data keeps its own license obligations inside whichever zone holds it.</figcaption>
+</figure>
+</div>
+
+<h3>One Work identity across every channel</h3>
+<div class="scrollbox">
+<figure style="margin:8px">
+<svg viewBox="0 0 1120 240" role="img" aria-label="A single work item keeps one identity while intake happens on WhatsApp, source connection and approval in the app, delivery by email, and a later outcome arrives from analytics.">
+<defs><marker id="jar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="currentColor"/></marker></defs>
+<g text-anchor="middle" style="font:600 11px system-ui">
+  <rect x="30" y="36" width="190" height="64" rx="10" fill="var(--surface)" stroke="var(--c-chan)"/>
+  <text x="125" y="60" fill="currentColor">WhatsApp</text><text x="125" y="78" style="font:400 9.5px system-ui" fill="var(--muted)">brief → Intake Run clarifies</text><text x="125" y="91" style="font:400 9.5px system-ui" fill="var(--muted)">→ Job Contract accepted</text>
+  <rect x="286" y="36" width="190" height="64" rx="10" fill="var(--surface)" stroke="var(--c-chan)"/>
+  <text x="381" y="60" fill="currentColor">Boring app</text><text x="381" y="78" style="font:400 9.5px system-ui" fill="var(--muted)">secure Source connection</text><text x="381" y="91" style="font:400 9.5px system-ui" fill="var(--muted)">private data never in chat</text>
+  <rect x="542" y="36" width="190" height="64" rx="10" fill="var(--surface)" stroke="var(--c-out)"/>
+  <text x="637" y="60" fill="currentColor">Attention inbox</text><text x="637" y="78" style="font:400 9.5px system-ui" fill="var(--muted)">step-up Approval of the</text><text x="637" y="91" style="font:400 9.5px system-ui" fill="var(--muted)">exact Effect Group</text>
+  <rect x="798" y="36" width="140" height="64" rx="10" fill="var(--surface)" stroke="var(--c-out)"/>
+  <text x="868" y="60" fill="currentColor">Email</text><text x="868" y="78" style="font:400 9.5px system-ui" fill="var(--muted)">PDF delivered,</text><text x="868" y="91" style="font:400 9.5px system-ui" fill="var(--muted)">receipt recorded</text>
+  <rect x="964" y="36" width="140" height="64" rx="10" fill="var(--surface)" stroke="var(--c-imp)" stroke-dasharray="4 3"/>
+  <text x="1034" y="60" fill="currentColor">3 weeks later</text><text x="1034" y="78" style="font:400 9.5px system-ui" fill="var(--muted)">Outcome lands on</text><text x="1034" y="91" style="font:400 9.5px system-ui" fill="var(--muted)">the same RunId</text>
+</g>
+<g stroke="currentColor" stroke-width="1.2"><line x1="220" y1="68" x2="284" y2="68" marker-end="url(#jar)"/><line x1="476" y1="68" x2="540" y2="68" marker-end="url(#jar)"/><line x1="732" y1="68" x2="796" y2="68" marker-end="url(#jar)"/><line x1="938" y1="68" x2="962" y2="68" marker-end="url(#jar)"/></g>
+<!-- work bar -->
+<rect x="30" y="140" width="1074" height="40" rx="10" fill="var(--c-exec)" fill-opacity=".13" stroke="var(--c-exec)" stroke-width="1.6"/>
+<text x="567" y="165" text-anchor="middle" style="font:700 11.5px ui-monospace,monospace" fill="var(--c-exec)">Work “supplier cost review” — one durable identity, one contract, one cost trail, one audit</text>
+<g stroke="var(--c-exec)" stroke-width="1" opacity=".55"><line x1="125" y1="100" x2="125" y2="140"/><line x1="381" y1="100" x2="381" y2="140"/><line x1="637" y1="100" x2="637" y2="140"/><line x1="868" y1="100" x2="868" y2="140"/><line x1="1034" y1="100" x2="1034" y2="140"/></g>
+<text x="567" y="212" text-anchor="middle" style="font:500 10px system-ui" fill="var(--muted)">channels change; the Work does not. Channel policy restricts each surface — the messaging channel never sees confidential Source content or high-risk approvals.</text>
+</svg>
+<figcaption>Channel-first job delivery (§3.4): conversation is intake and steering; the durable identity, budget, approvals, and outcome all belong to the Work underneath.</figcaption>
+</figure>
+</div>
+
+<h2 id="loop"><span class="sec">§5.9</span>The protected improvement loop</h2>
+<figure>
+<svg viewBox="0 0 1060 300" role="img" aria-label="Improvement cycle from evidence to candidate revision to protected evaluation to authorized promotion with guards at each step.">
+<defs><marker id="ar2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="currentColor"/></marker></defs>
+<g stroke="var(--c-imp)" fill="var(--surface)">
+  <rect x="30" y="60" width="170" height="44" rx="10"/><rect x="260" y="60" width="180" height="44" rx="10"/><rect x="500" y="60" width="190" height="44" rx="10"/><rect x="750" y="60" width="180" height="44" rx="10"/>
+</g>
+<g fill="currentColor" text-anchor="middle" style="font:600 11.5px system-ui">
+  <text x="115" y="79">Evidence + Outcomes</text><text x="115" y="93" style="font:400 9.5px system-ui" fill="var(--muted)">joined to Work &amp; revision</text>
+  <text x="350" y="79">Candidate Revision</text><text x="350" y="93" style="font:400 9.5px system-ui" fill="var(--muted)">immutable proposal</text>
+  <text x="595" y="79">Protected evaluation</text><text x="595" y="93" style="font:400 9.5px system-ui" fill="var(--muted)">vs incumbent, held-out data</text>
+  <text x="840" y="79">Authorized promotion</text><text x="840" y="93" style="font:400 9.5px system-ui" fill="var(--muted)">staged Promotion Plan</text>
+</g>
+<g stroke="currentColor" stroke-width="1.3"><line x1="200" y1="82" x2="258" y2="82" marker-end="url(#ar2)"/><line x1="440" y1="82" x2="498" y2="82" marker-end="url(#ar2)"/><line x1="690" y1="82" x2="748" y2="82" marker-end="url(#ar2)"/></g>
+<path d="M840 104 L840 150 L115 150 L115 106" fill="none" stroke="var(--c-imp)" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ar2)"/>
+<text x="477" y="143" style="font:500 9.5px system-ui" fill="var(--c-imp)" text-anchor="middle">monitor in production → outcomes feed the next cycle · rollback keeps the incumbent alive</text>
+<g style="font:500 10px system-ui" fill="var(--muted)">
+  <text x="30" y="200">Guards (BR-032…035):</text>
+  <text x="30" y="224">· a judged Actor can never author, select, or observe the Evaluator fixtures and held-out Evidence deciding its promotion</text>
+  <text x="30" y="246">· an Evaluator is never silently changed in the same promotion as the object it judges · suspicious wins route to audit</text>
+  <text x="30" y="268">· generation, evaluation, promotion, and production execution sit under distinct authorities · gates must be load-bearing</text>
+  <text x="30" y="290">· shadow paths create no customer Effect, write, Delivery, or charge · rejected candidates stay queryable</text>
+</g>
+</svg>
+<figcaption>Job C's engine, used identically by customer products and by Boring's own code factory (§3.5) — the factory gets no self-modification bypass.</figcaption>
+</figure>
+
+<h2 id="posture"><span class="sec">§9</span>Posture coordinates — not one maturity ladder</h2>
+<p>Nine independent coordinates replace a single "level". A higher number is not automatically better; each declared posture triggers its own requirements. Dots show the four example declarations from §9.9:</p>
+<div class="legend" style="margin-bottom:10px"><span><i class="dot d-mail" style="border:none"></i>Mail product</span><span><i class="dot d-opt" style="border:none"></i>Industrial optimizer</span><span><i class="dot d-cre" style="border:none"></i>Creator package</span><span><i class="dot d-fac" style="border:none"></i>Internal code factory</span></div>
+<div class="axes" id="axes"></div>
+<p style="font-size:.85rem;color:var(--muted)">Plus <b>Q — declared Quality Claims</b>: versioned, measurable promises (latency, continuity, freshness, RPO/RTO, attention budget…) recorded per product — never compressed into a score.</p>
+
+<h2 id="br"><span class="sec">§12.5</span>The 56 requirement families</h2>
+<p>Every conforming Part 2 must map each applicable <code>BR</code> family to named identities, lifecycles, or extension points — with tests, evidence, and an owner. Grouped by theme:</p>
+<div class="brgrid" id="brgrid"></div>
+
+<h2 id="cap"><span class="sec">§6</span>The 91 capabilities</h2>
+<p>Each capability carries a stable <code>CAP</code> id, an applicability trigger (hover any chip), the BR families it serves, and a <b>preservation class</b>: <span style="color:var(--struct);font-weight:600">STRUCTURAL</span> (identity/boundary that cannot be retrofitted), <span style="color:var(--ext);font-weight:600">EXTENSIBLE</span> (clean extension point, no new root object), <span style="color:var(--prod);font-weight:600">PRODUCT</span> (presentation choice). The matrix is explicitly <em>not</em> a build list.</p>
+<div class="stack" aria-hidden="true"><div style="width:86.8%;background:var(--struct)">79 structural</div><div style="width:12.1%;background:var(--ext)">11 ext.</div><div style="width:2.1%;background:var(--prod)" title="1 product">1</div></div>
+<p style="font-size:.8rem;color:var(--muted);margin-top:2px">79 of 91 capabilities are STRUCTURAL — the plan's center of gravity is identity and boundary preservation, not features.</p>
+<div class="capfilter" id="capfilter">
+  <button data-f="all" class="on">All 91</button><button data-f="S">Structural</button><button data-f="E">Extensible</button><button data-f="P">Product</button>
+</div>
+<div class="caps" id="caps"></div>
+
+<h2 id="dec"><span class="sec">§11</span>The 68 open decisions</h2>
+<p>Deliberately unresolved. An open <code>DEC</code> never supplies an implicit default; each moves <code>open → investigating → proposed → ratified/rejected/deferred/superseded</code> with recorded rationale. Grouped by accountable function:</p>
+<div class="donutwrap"><div class="donut" id="decdonut" role="img" aria-label="68 open decisions by theme: platform and architecture 21, evidence and improvement 14, product and first market 10, governance and safety 10, legal and sovereignty 8, commercial 5."></div><div class="dleg" id="decleg"></div></div>
+<div class="decgrid" id="decgrid"></div>
+<div class="callout"><b>Two reconciliation flags to watch:</b> <code>DEC-059</code> — does the ratified <code>RunId := RequestKey</code> contract satisfy canonical Run identity, or is a separate caller-idempotency binding needed? And <code>DEC-044</code> — Part 2 terminology must map explicitly onto already-ratified repository decisions (Seat ↔ Agent binding, effect-class shorthand ↔ full Effect dimensions) so no frozen concept is silently re-derived under a new name.</div>
+
+<h2 id="flows"><span class="sec">§10.6 · §12.7</span>Five golden flows — the acceptance tests</h2>
+<p>A candidate Part 2 <b>fails</b> if it cannot express all five without parallel object models. Each STRUCTURAL identity must survive at least two materially different journeys:</p>
+<div class="flows">
+  <div class="flow"><h4>A — Route-first app &amp; human-only act</h4><ol><li>Human works in normal Pages under a contract</li><li>Agent uses the same delegable Operations</li><li>Professional signature stays human-only</li><li>Source outage → declared continuity surface</li><li>Artifact, Delivery, acceptance, Outcome all separate</li></ol></div>
+  <div class="flow"><h4>B — Channel-first bounded job</h4><ol><li>WhatsApp message deduped, scanned, Thread-only</li><li>Constrained Intake Run clarifies; contract accepted</li><li>Fenced Attempts, real model facts, Run taint persists</li><li>Effect Group + step-up Approval, atomic consumption</li><li>Delivery ≠ dispatch ≠ acknowledgement</li></ol></div>
+  <div class="flow"><h4>C — Package upgrade &amp; sovereign recovery</h4><ol><li>Release with verified dependency closure</li><li>Preflight vs overlays; expand–contract migration</li><li>Canary Promotion Plan against Quality Claims</li><li>Regional failure → DR plan, identity preserved</li><li>EOL/export never gives publisher read-back</li></ol></div>
+  <div class="flow"><h4>D — Factory &amp; protected improvement</h4><ol><li>Orchestrator delegates narrowing child Work</li><li>Platform-recorded gates, not worker self-reports</li><li>Assignment &amp; held-out exposure recorded</li><li>Immutable Promotion Plan controls canary</li><li>Evidence corrections recompute, never erase</li></ol></div>
+  <div class="flow"><h4>E — Cross-party, support &amp; dispute</h4><ol><li>Mandated collaborator; revocation cascades</li><li>Support session: own approval, minimum access</li><li>Estimate → usage → invoice → dispute traceable</li><li>Suspension preserves data and Level-0 access</li></ol></div>
+</div>
+
+<h2 id="handoff"><span class="sec">§12</span>Part 2 handoff — the nine identity families</h2>
+<p>Part 2's job: cover the whole space with roughly these durable identity families — or explicitly justify a merge or split. Everything else is a lifecycle record, relation, or extension point:</p>
+<div class="cards">
+  <div class="card"><h4>1 · Party</h4><p>+ Party Relationship / mandate — who owns, pays, publishes, benefits, bears liability.</p></div>
+  <div class="card"><h4>2 · Actor &amp; Agent</h4><p>Operational identity; Agent namespace with fork/derive/revoke lineage, distinct from revisions and runtime.</p></div>
+  <div class="card"><h4>3 · Instance</h4><p>Isolated context, exactly one controlling Party; survives provider and runtime changes.</p></div>
+  <div class="card"><h4>4 · Package → Release → Deployment</h4><p>Publisher lineage, authored version, verified build, environment rollout — kept distinct.</p></div>
+  <div class="card"><h4>5 · Source lineage</h4><p>Connection → Resource → Item → Projection; Capability Providers are separate executable services.</p></div>
+  <div class="card"><h4>6 · Operation / Domain Contract</h4><p>Versioned domain semantics, human-only acts, full Effect dimensions.</p></div>
+  <div class="card"><h4>7 · Work</h4><p>Durable customer-value lineage independent of Thread, Message, Run, UI, and process.</p></div>
+  <div class="card"><h4>8 · Artifact</h4><p>Logical output identity: immutable versions, components, renditions, derivation lineage.</p></div>
+  <div class="card"><h4>9 · Revision / incumbent</h4><p>Immutable candidate + active selection; Objective Basis, Evaluator, Promotion Plan attach when improvement exists.</p></div>
+</div>
+<p style="font-size:.88rem;color:var(--muted);max-width:76ch">Acceptance test: every applicable BR family maps to named identities, boundaries, lifecycles or extension points, CAP ids, conformance/negative/fault tests, evidence, and an owner — and the final architecture must remain explainable through <b>a small diagram and one named end-to-end Work flow</b> (§12.4 rule 22 — this atlas's spine is a candidate for that diagram).</p>
+
+<h2 id="gloss"><span class="sec">§2.5</span>Glossary</h2>
+<input id="gsearch" type="search" placeholder="Filter terms — try 'run', 'party', 'effect'…" aria-label="Filter glossary terms">
+<div class="gloss" id="gloss"></div>
+
+<div class="footer">Rendered 2026-08-17 from <code>docs/plans/long-term/inbox/2026-08-17-part1-final.md</code> (fourth-pass hybrid). This atlas is a reading aid — the markdown document is the normative source; where they disagree, the document wins.</div>
+</div>
+
+<script>
+const CL={gov:{v:'--c-gov',n:'Parties & governance'},dist:{v:'--c-gov',n:'Packaging & distribution'},chan:{v:'--c-chan',n:'Channels & experience'},exec:{v:'--c-exec',n:'Work & execution'},data:{v:'--c-data',n:'Sources & provenance'},out:{v:'--c-out',n:'Outputs & attention'},imp:{v:'--c-imp',n:'Evidence & improvement'},comm:{v:'--c-comm',n:'Commercial facts'}};
+// nodes: id, label, cluster, x, y, core?, def
+const N=[
+["party","Party","gov",100,70,1,"A person, organization, or legal principal that may own, control, publish, pay, benefit, be represented, or bear liability. Legal roles are declared per purpose and jurisdiction, never inferred from hosting."],
+["partyrel","Party Relationship","gov",278,70,0,"A versioned mandate authorizing cross-Party participation: purpose, consent basis, liability allocation, data and effect boundaries, termination behavior."],
+["actor","Actor","gov",100,130,1,"A human, Agent, automation, service, or authorized foreign client that initiates, performs, approves, or observes Work on behalf of a Party. A model process is never the durable Actor."],
+["agent","Agent","gov",260,130,1,"A stable software Actor identity in an issuer/owner namespace with fork, derive, transfer, revocation, and compromise-recovery lineage — distinct from its behavior revisions, bindings, memory, and runtime."],
+["binding","Binding (Seat)","gov",100,190,0,"The revocable relation by which an Actor or Agent participates in an Instance under a role, capability ceiling, and budget. It grants participation, not identity — 'Seat' in the ratified direction work."],
+["agentrev","Agent Revision","gov",260,190,0,"An immutable behavior definition: instructions, tool requirements, schemas, examples. Every consequential execution records the exact revision it used."],
+["authn","Authentication Context","gov",100,250,0,"Durable evidence of how an Actor authenticated for a transaction: factor, device, assurance, step-up, expiry. It is not identity and not authority."],
+["authority","Authority","gov",260,250,0,"What an Actor may do now, to which data, for which purpose, under which policy, approvals, budgets, and limits. Host-issued, narrowed, revocable."],
+// distribution
+["package","Package","dist",930,70,1,"A durable publisher-owned lineage for a distributable application, Agent, or methodology — carrying identity and provenance, never subscriber data or live credentials."],
+["pkgver","Package Version","dist",1092,70,0,"One immutable authored definition in a Package lineage: methodology, Agents, Experience, semantic models, migrations, optional trusted code."],
+["release","Release","dist",1092,138,0,"An immutable deployable build resolved from a Package Version with a pinned dependency closure, verified for supply-chain, compatibility, and policy."],
+["deployment","Deployment","dist",930,138,0,"The binding of a Release to an Instance environment: region, configuration, source and secret bindings, rollout state."],
+["instance","Instance","dist",1011,208,1,"A durable isolated application context with exactly one controlling Party. It survives Release, Deployment, provider, and runtime changes."],
+// channels
+["channel","Channel","chan",90,390,0,"A transport surface: app chat, WhatsApp, email, Slack/Teams, voice, MCP, API. An intake, steering, and delivery surface — never the durable identity of Work."],
+["chanbind","Channel Binding","chan",245,390,0,"A revocable mapping from an external account, address, or device to an Actor, represented Party, Instance, and permitted purposes."],
+["extconv","External Conversation","chan",90,455,0,"A provider-scoped conversation, mail thread, call, or session identified by provider and external ID. May map to several Threads or Work items."],
+["message","Message","chan",250,455,0,"An immutable-versioned communication with provider ID, sender authentication context, origin labels, and edit/delete history. Later edits never rewrite an admitted Run snapshot."],
+["thread","Thread","chan",120,520,0,"A durable product-level conversational history aggregating messages, related to zero or more Work items. It never owns Work authority, cost, delivery, or outcome."],
+["experience","Experience · Pages · Views","chan",210,585,0,"The versioned human-facing definition of navigation, Pages, Views, action bindings, branding, and Agent presence — a projection over domain behavior, not its owner."],
+// execution
+["jobrev","Job Contract Revision","exec",470,348,0,"The immutable agreement for bounded Work: inputs, deliverable contracts, acceptance criteria, budget, deadline, allowed effects, delivery destinations. Amendment creates a new revision."],
+["work","Work","exec",632,348,1,"A named, durable, resumable unit of customer value with lineage and orthogonal control, fulfillment, budget, delivery, decision, and outcome facets. The commercial unit — not chat."],
+["admission","Admission","exec",775,348,0,"The host decision accepting one exact execution request: it resolves Actor, represented Party, agent revision, authority ceiling, payer, budgets, and provider policy before anything billable runs."],
+["intakerun","Intake Run","exec",455,425,0,"A separately admitted, tightly constrained clarification run attached to a Thread before full Work exists — narrow budget, minimal context, no consequential effects."],
+["run","Run","exec",632,425,1,"One logical admitted execution under a stable RunId — the join for inputs, authority, payer, vintages, invocations, effects, cost, and produced artifacts. The recursive-improvement dataset key."],
+["operation","Operation","exec",780,425,1,"A typed domain query, calculation, proposal, command, or coordination request with shared semantics for every authorized Actor class. Declares its kind plus all Effect dimensions."],
+["lease","Lease / fence","exec",450,500,0,"Revocable scheduling authority letting one worker generation publish for an Attempt, carrying a fence epoch that stale workers cannot use."],
+["attempt","Attempt","exec",600,500,0,"One concrete worker generation beneath a Run. Retry, process loss, or replacement creates a new Attempt — never a new Run, never overwritten history."],
+["opinv","Operation Invocation","exec",765,500,0,"One governed call of an Operation under captured actor, work, authority, policy, input, and concurrency context."],
+["modelinv","Model Invocation","exec",520,572,0,"One actual provider call beneath an Attempt: resolved model and deployment, parameters, cache and fallback behavior, usage, latency — recorded, not inferred."],
+["effect","Effect","exec",700,572,0,"One planned or dispatched consequence: mutation, disclosure, delivery, financial, administrative, coordination, or external — with intent, idempotency, observation, reconciliation, and compensation semantics."],
+["effectgroup","Effect Group","exec",705,640,0,"A stable grouping of planned Effects with immutable membership, all-or-nothing vs best-effort policy, cumulative impact, and one Approval target."],
+["ctxmanifest","Context Manifest","exec",480,640,0,"The ordered, digested record of every context segment actually supplied to a model: origin, transformation, truncation, precedence, taint labels."],
+// data
+["source","Source","data",930,348,1,"A governed data lineage: Connection → Resource → Item, binding authorized access to a provider, account, or root. Not automatically a filesystem; content is data, never authority."],
+["projection","Projection","data",1095,348,0,"A purpose-scoped derived representation — cache, index, mount, embedding, view — carrying a dependency manifest, policy inheritance, freshness, and revocation state. Never a new source of truth."],
+["vintage","Vintage","data",930,415,0,"A source, projection, or observation reference plus an assurance grade: exact immutable, snapshot, cursor, as-of, or explicitly unversioned. What makes replay and comparison honest."],
+["capprov","Capability Provider","data",1095,415,0,"A governed executable service — model, deterministic kernel, API, MCP server — whose invocation policy, credentials, and receipts are distinct from Source data lineage."],
+["domaincontract","Domain Contract","data",930,482,0,"The application's discoverable nouns, verbs, identifiers, schemas, errors, effects, and compatibility rules — including explicit human-only acts. Universal, unlike analytical semantics."],
+["semanticmodel","Semantic Model","data",1095,482,0,"A versioned analytical description of entities, measures, dimensions, units, time, and lineage over Sources. Optional; BSL is one implementation behind semantic.* operations."],
+["instrenv","Instruction Envelope","data",1012,549,0,"An authenticated Actor directive with purpose, scope, nonce, expiry, and signature. Narrative Source content never becomes one — authentication does not erase taint."],
+// outputs
+["artifact","Artifact","out",560,780,1,"A durable logical output governed by a versioned type contract: immutable content versions, components, provenance, citations, renditions, derivation lineage."],
+["delivery","Delivery","out",705,780,0,"A per-destination business handoff of an exact Artifact version. Dispatch, provider confirmation, access, acknowledgement, acceptance, and withdrawal stay distinct facts."],
+["attention","Attention Item","out",855,780,0,"A human-facing request linked to exact Work, effect intent, or artifact version: approval, question, review, exception, outcome confirmation. The human control plane."],
+["humandec","Human Decision","out",1005,780,0,"An append-only typed response: approval, acceptance, rejection, attestation, promotion, override. Editing a proposal creates a new target, never mutates the decided one."],
+["approval","Approval","out",1140,780,0,"A Human Decision bound to an exact rendered proposal, effect set, cost ceiling, and authentication context. Material change invalidates it; consumption is atomic and single-use."],
+// improvement
+["evidence","Evidence","imp",560,855,0,"A permissioned typed claim, measurement, receipt, decision, or evaluation result with producer, method, assurance, and lineage — joined to Work and revision by the Run identity."],
+["outcome","Outcome","imp",705,855,0,"An observed real-world result under a versioned Outcome Definition — possibly delayed, noisy, multi-causal, contested, corrected, or honestly never observed."],
+["outcomedef","Outcome Definition","imp",705,920,0,"A versioned declaration of what result is measured: signal, source, observation window, attribution method, missing-data behavior."],
+["evaluator","Evaluator","imp",855,855,0,"A versioned procedure or human protocol comparing an artifact or revision against declared criteria. Its fixtures and held-out evidence are unreadable to the Actors it judges."],
+["objbasis","Objective Basis","imp",1005,855,0,"A versioned statement of what 'better' means across Work: metrics, guardrails, population, comparison budget, promotion authority. Optional outside explicit improvement."],
+["revision","Revision","imp",855,920,1,"An immutable proposed replacement for an incumbent Agent, Experience, evaluator, kernel, workflow, policy, package, or domain candidate."],
+["promoplan","Promotion Plan","imp",1005,920,0,"An immutable governed plan for candidate exposure: assignment, entry and stop criteria, monitoring, consent and charging policy, rollback feasibility."],
+["qualityclaim","Quality Claim","imp",1140,855,0,"A versioned relied-upon promise — availability, latency, freshness, recovery, accuracy — with measurable target, evidence, owner, and breach remedy. Never compressed into one score."],
+// commercial
+["payerbind","Payer Binding","comm",112,710,0,"The admission-time relation fixing who funds an execution: party, entitlement, budget reservation, provider-credential policy. Not model-selectable, never retroactive."],
+["entitlement","Entitlement","comm",280,710,0,"A versioned commercial fact describing what a Party or Instance may admit. It never grants Source or Operation authority; suspension changes admission without deleting Work."],
+["usagefact","Usage Fact","comm",112,775,0,"An immutable content-minimized consumption fact — estimate, reservation, actual, correction, reversal — attributed to exact execution context. Never edited into a price."],
+["opfact","Operational Fact","comm",280,775,0,"A content-minimized status, timing, cost, or integrity fact for metering, reliability, audit, and support — readable without touching prompts, messages, or artifact bodies."]
+];
+// panels
+const P=[
+{c:"gov",label:"Parties & Governance",x:22,y:22,w:370,h:270},
+{c:"dist",label:"Packaging & Distribution",x:846,y:22,w:372,h:236,cl:"gov"},
+{c:"chan",label:"Channels & Experience",x:22,y:346,w:330,h:282},
+{c:"exec",label:"Work & Execution",x:378,y:308,w:442,h:376},
+{c:"data",label:"Sources & Provenance",x:846,y:308,w:372,h:288},
+{c:"out",label:"Outputs & Attention",x:488,y:742,w:730,h:82,cl:"out"},
+{c:"imp",label:"Evidence & Improvement",x:488,y:824,w:730,h:140},
+{c:"comm",label:"Commercial Facts",x:22,y:668,w:372,h:150}
+];
+// edges: from,to,label
+const E=[
+["party","instance","owns (exactly one controls)"],["party","partyrel","mandates"],["actor","party","acts for"],["agent","actor","is an"],["agentrev","agent","versions"],["binding","instance","seats Agent in"],["agent","binding","participates via"],["authn","actor","evidences"],["authority","actor","bounds"],
+["package","pkgver","versioned as"],["pkgver","release","builds"],["release","deployment","rolled out as"],["deployment","instance","runs in"],["party","package","publishes"],
+["channel","chanbind","binds via"],["chanbind","actor","maps to"],["message","extconv","belongs to"],["extconv","thread","aggregated by"],["thread","work","relates to · never owns"],
+["thread","intakerun","clarifies via"],["jobrev","work","contracts"],["work","admission","submitted for"],["admission","run","mints RunId"],["work","run","contains"],["run","attempt","retried as"],["lease","attempt","fences"],["attempt","modelinv","calls"],["run","opinv","performs"],["operation","opinv","defines"],["opinv","effect","causes"],["effect","effectgroup","grouped in"],["ctxmanifest","modelinv","supplied to"],
+["source","projection","projected as"],["projection","ctxmanifest","feeds"],["vintage","source","stamps"],["vintage","projection","stamps"],["capprov","run","invoked by"],["instrenv","run","directs"],["domaincontract","operation","declares"],["semanticmodel","source","describes"],["experience","domaincontract","projects"],
+["run","artifact","produces"],["artifact","delivery","handed off via"],["delivery","humandec","accepted by"],["attention","humandec","answered by"],["work","attention","raises"],["approval","effectgroup","authorizes exactly"],["humandec","approval","includes"],
+["run","evidence","joined by RunId"],["outcome","work","measures"],["outcomedef","outcome","defines"],["evidence","evaluator","consumed by"],["evaluator","revision","judges"],["objbasis","evaluator","scopes"],["revision","promoplan","activated by"],["promoplan","agentrev","promotes e.g."],["qualityclaim","work","promises about"],
+["payerbind","run","funds"],["usagefact","run","meters"],["entitlement","admission","gates"],["opfact","run","observes"]
+];
+const svg=document.getElementById('cmap');
+const S='http://www.w3.org/2000/svg';
+function el(t,a){const e=document.createElementNS(S,t);for(const k in a)e.setAttribute(k,a[k]);return e;}
+const nodeById={};N.forEach(n=>nodeById[n[0]]=n);
+function nw(n){return Math.max(58,n[1].length*6.3+18);}
+// panels
+P.forEach(p=>{const col=`var(${CL[p.cl||p.c].v})`;
+  svg.appendChild(el('rect',{x:p.x,y:p.y,width:p.w,height:p.h,rx:14,fill:col,'fill-opacity':.055,stroke:col,'stroke-opacity':.3,'stroke-dasharray':'3 4'}));
+  const t=el('text',{x:p.x+12,y:p.y+17,class:'panel-label',fill:col});t.textContent=p.label;svg.appendChild(t);});
+// edges
+const edgeEls=[];
+E.forEach((ed,i)=>{const a=nodeById[ed[0]],b=nodeById[ed[1]];if(!a||!b)return;
+  const ax=a[3],ay=a[4],bx=b[3],by=b[4];
+  const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy);
+  const ta=trim(a,dx,dy),tb=trim(b,-dx,-dy);
+  const x1=ax+dx*ta/len,y1=ay+dy*ta/len,x2=bx-dx*tb/len,y2=by-dy*tb/len;
+  const col=`var(${CL[a[2]].v})`;
+  const line=el('line',{x1,y1,x2,y2,class:'edge',stroke:col,'stroke-width':1.2,'marker-end':`url(#carr)`});
+  line.dataset.a=ed[0];line.dataset.b=ed[1];svg.appendChild(line);
+  const lab=el('text',{x:(x1+x2)/2,y:(y1+y2)/2-4,class:'elabel','text-anchor':'middle'});lab.textContent=ed[2];lab.dataset.a=ed[0];lab.dataset.b=ed[1];svg.appendChild(lab);
+  edgeEls.push([line,lab]);});
+function trim(n,dx,dy){const hw=nw(n)/2+5,hh=18;const adx=Math.abs(dx),ady=Math.abs(dy);if(adx<1e-6&&ady<1e-6)return 0;const len=Math.hypot(dx,dy);const tx=adx>1e-6?hw*len/adx:1e9;const ty=ady>1e-6?hh*len/ady:1e9;return Math.min(tx,ty);}
+// arrow marker
+const defs=el('defs',{});const m=el('marker',{id:'carr',viewBox:'0 0 8 8',refX:'7',refY:'4',markerWidth:'6.5',markerHeight:'6.5',orient:'auto'});m.appendChild(el('path',{d:'M0 0L8 4L0 8z',fill:'currentColor',opacity:.55}));defs.appendChild(m);svg.appendChild(defs);
+// nodes
+const nodeEls={};
+N.forEach(n=>{const[id,label,c,x,y,core]=n;const w=nw(n);const col=`var(${CL[c].v})`;
+  const g=el('g',{class:'node'});g.dataset.id=id;
+  g.appendChild(el('rect',{x:x-w/2,y:y-13,width:w,height:26,rx:8,fill:'var(--surface)',stroke:col,'stroke-width':core?2.4:1.3}));
+  const t=el('text',{x:x,y:y+4,'text-anchor':'middle',fill:col});t.textContent=label;g.appendChild(t);
+  svg.appendChild(g);nodeEls[id]=g;
+  g.addEventListener('mouseenter',()=>hl(id,false));
+  g.addEventListener('mouseleave',()=>{if(selected!==id)unhl();else hl(selected,true);});
+  g.addEventListener('click',ev=>{ev.stopPropagation();select(id);});});
+let selected=null;
+function hl(id,strong){edgeEls.forEach(([l,t])=>{const on=l.dataset.a===id||l.dataset.b===id;l.classList.toggle('hl',on);t.classList.toggle('hl',on);});
+  for(const nid in nodeEls){const adj=nid===id||E.some(e=>(e[0]===id&&e[1]===nid)||(e[1]===id&&e[0]===nid));nodeEls[nid].classList.toggle('dim',!adj);}}
+function unhl(){edgeEls.forEach(([l,t])=>{l.classList.remove('hl');t.classList.remove('hl');});for(const nid in nodeEls)nodeEls[nid].classList.remove('dim');}
+function select(id){selected=id;hl(id,true);const n=nodeById[id];const col=`var(${CL[n[2]].v})`;
+  const rels=E.filter(e=>e[0]===id||e[1]===id).map(e=>e[0]===id?`<div class="rel">→ <b>${nodeById[e[1]][1]}</b> — ${e[2]}</div>`:`<div class="rel">← <b>${nodeById[e[0]][1]}</b> — ${e[2]}</div>`).join('');
+  document.getElementById('detail').innerHTML=`<h4>${n[1]}</h4><div class="cl" style="color:${col}">${CL[n[2]].n}${n[5]?' · core identity':''}</div><p class="def">${n[6]}</p>${rels?'<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">'+rels+'</div>':''}`;}
+document.addEventListener('click',()=>{selected=null;unhl();});
+// ---------- posture axes ----------
+const AX=[
+["E","Agent execution & initiative",["E0 none","E1 assistive","E2 bounded action","E3 event initiative","E4 delegation"],{mail:2,opt:2,cre:1,fac:4}],
+["L","Evidence, outcomes, learning",["L0 none","L1 preference","L2 typed evidence","L3 outcome-linked","L4 protected promotion"],{mail:2,opt:4,cre:1,fac:4}],
+["G","Governance & assurance",["G0 best effort","G1 durable","G2 governed","G3 enterprise","G4 regulated"],{mail:3,opt:4,cre:2,fac:3}],
+["D","Distribution form",["private","internal reuse","developer-hosted","publisher product","public/machine"],{mail:1,opt:0,cre:3,fac:0}],
+["H","Human collaboration",["single","shared visibility","collaborative","cross-party","regulated"],{mail:2,opt:4,cre:1,fac:2}],
+["M","Agent topology",["none","one primary","specialists","delegation graph","external"],{mail:1,opt:2,cre:1,fac:3}],
+["X","Application composition",["one","modules","composed packages","shared surfaces","cross-app Work"],{mail:1,opt:0,cre:0,fac:2}],
+["S","Sovereignty & deployment",["hosted","exportable","regional/keys","dedicated","multi-region reg."],{mail:2,opt:3,cre:1,fac:2}]];
+document.getElementById('axes').innerHTML=AX.map(([k,name,steps,d])=>`<div class="axis"><div class="nm"><b>${k} — ${name}</b><span>independent coordinate, not a ladder</span></div><div class="steps">${steps.map((s,i)=>{const dots=Object.entries(d).filter(([p,v])=>v===i).map(([p])=>`<i class="dot d-${p}"></i>`).join('');return `<div class="step">${dots?`<span class="dots">${dots}</span>`:''}${s}</div>`;}).join('')}</div></div>`).join('');
+// ---------- BR families ----------
+const BR=[
+["Foundations & scope",[["001","Clause classes, stable IDs, manifests, waivers"],["002","Part 1 scope boundary — no topology or MVP"],["003","Continuity surface & fail-closed failure matrix"]]],
+["Identity & parties",[["004","Delegable parity + explicit human-only acts"],["005","Party/Actor separation, one controlling Party"],["006","Agent namespace, lineage, revision separation"]]],
+["Work & contract",[["007","Job Contract Revision lifecycle & exact binding"],["008","Work identity, facets, lineage, economics rollup"],["009","Channel / Conversation / Thread / Work / Run separation"],["010","Layered idempotency at every boundary"]]],
+["Execution",[["011","Admission-first, Intake Run envelope, revalidation"],["012","Run / Attempt / Lease / Model Invocation separation"],["013","Atomic commit, outbox/inbox, read consistency"]]],
+["Domain & effects",[["014","Versioned Domain Contract, progressive discovery"],["015","Operation kind + full Effect dimensions"],["016","Effect intent, groups, reconciliation, compensation"]]],
+["Attention & approval",[["017","Attention/Decision separation, budgets, batch safety"],["018","Exact Approval, atomic consumption, quorum, step-up"]]],
+["Context & models",[["019","Instruction Envelope, Context Manifest, taint"],["020","Model policy vs actual Model Invocation facts"]]],
+["Sources & data",[["021","Source lineage & Capability Provider separation"],["022","Vintage assurance grades & provenance"],["023","Projection manifests, policy inheritance, quarantine"],["024","Information-flow composition, transfers, declassification"],["025","Execution profiles, credential brokering, egress"]]],
+["Artifacts & delivery",[["026","Artifact type contracts, versions, lineage"],["027","Citations, selective proofs, signatures"],["028","Per-destination Delivery lifecycle"]]],
+["Facts & evidence",[["029","Facts/content plane separation, durable audit"],["030","Typed Evidence assurance & adjudication"],["031","Versioned Outcome Definitions & attribution"]]],
+["Improvement",[["032","Objective Basis, comparable budgets, assignment"],["033","Protected evaluators, anti-gaming, drift"],["034","Immutable Promotion Plan, scoped incumbents"],["035","Load-bearing gates, suspicious-win audit"]]],
+["Automation & channels",[["036","Automation actors, schedules, loop controls"],["037","Versioned Channel protocols & continuity"],["038","Experience catalog, preview, trusted-code lane"]]],
+["Packaging",[["039","Package/Version/Release/Deployment/Instance"],["040","Deterministic resolution, SBOM, update trust"],["041","Deterministic composition & collision policy"],["042","Upgrade preflight, three-way merge, receipts"],["043","Security updates, rollback resistance, trust roots"]]],
+["Collaboration",[["044","Delegation graph, narrowing, fault containment"],["045","Membership, guests, revocation cascade, quorum"],["046","Multi-app namespacing & shared attention"]]],
+["Sovereignty & ops",[["047","Isolation on every substrate, residency, keys"],["048","DR/continuity, RPO/RTO, portable exit, erasure"],["049","Developer manifest, CLI stability, local/hosted parity"],["050","Audit integrity, support sessions, kill switches"]]],
+["Commercial",[["051","Usage Fact identity, reconciliation, attribution"],["052","Payer Binding, quote-to-bill, suspension safety"]]],
+["Meta & acceptance",[["053","Posture coordinates & Quality Claims"],["054","CAP matrix with triggers, evidence, waivers"],["055","Golden-journey acceptance & falsification"],["056","Terminology reconciliation & traceability"]]]];
+document.getElementById('brgrid').innerHTML=BR.map(([g,items])=>`<div class="brg"><h4>${g}</h4><ul>${items.map(([id,t])=>`<li><code>BR-${id}</code>${t}</li>`).join('')}</ul></div>`).join('');
+// ---------- CAPs ----------
+const CAP=[[1,"Purpose-built Experience","S"],[2,"Continuity surface & fail-closed matrix","S"],[3,"Stable Actor & Agent identity","S"],[4,"Agent binding & scoped personalization","S"],[5,"Operation parity + human-only acts","S"],[6,"Operation kind + Effect declaration","S"],[7,"Per-operation autonomy policy","S"],[8,"Dry-run, compensation, concurrency","S"],[9,"Deterministic domain kernel","E"],[10,"Heterogeneous Sources","S"],[11,"File projections & shell access","E"],[12,"Domain Contract","S"],[13,"Analytical semantic engine (BSL)","E"],[14,"Durable Work","S"],[15,"Job Contract Revision & bounded delivery","S"],[16,"Channel-first intake & continuity","S"],[17,"Admission-first execution","S"],[18,"Thread-only conversation & Intake Run","S"],[19,"Layered idempotency","S"],[20,"Payer/funding & credential binding","S"],[21,"Stable execution/evidence join","S"],[22,"Content-free operational facts plane","S"],[23,"Independent lifecycles","S"],[24,"Attempt / Lease / Model Invocation facts","S"],[25,"Atomic commit, outbox, consistency","S"],[26,"Durable orchestration & cancellation","S"],[27,"Effect intent, groups, compensation","S"],[28,"Last-known-good continuity","S"],[29,"Artifact identity & immutable versions","S"],[30,"Delivery lifecycle & acceptance","S"],[31,"Attention request plane","S"],[32,"Typed Human Decisions","S"],[33,"Exact approval, step-up, quorum","S"],[34,"Automation actor + trigger rules","S"],[35,"Schedules, watermarks, loop control","E"],[36,"Untrusted-content handling","S"],[37,"Run taint + value provenance","S"],[38,"Execution profiles & governed egress","S"],[39,"Taint-aware Approval","S"],[40,"Cross-boundary transfer control","S"],[41,"Identity federation (SSO/OIDC)","E"],[42,"Retention, legal hold, erasure","S"],[43,"Rate limiting & abuse control","E"],[44,"Package trust & capability passport","S"],[45,"Advice / Action / Attestation class","S"],[46,"Impact profile & attestation lifecycle","S"],[47,"Preference evidence","S"],[48,"Permissioned Evidence claims","S"],[49,"Versioned delayed Outcomes","S"],[50,"Versioned Objective Basis","S"],[51,"Evaluation & incumbent comparison","S"],[52,"Evaluation integrity & anti-gaming","S"],[53,"Load-bearing gate verification","S"],[54,"Controlled promotion & rollback","S"],[55,"Agent-generated declarative Experience","E"],[56,"Package & Instance boundary","S"],[57,"Upgrade safety & local overlays","S"],[58,"Deterministic composition & collisions","S"],[59,"Delegation envelope & child isolation","S"],[60,"Multi-user collaboration","S"],[61,"Multi-application composition","S"],[62,"Local-to-cloud portability","S"],[63,"Residency & export","S"],[64,"Localization","P"],[65,"Admission snapshot & execution record","S"],[66,"Durable audit & support governance","S"],[67,"Privacy-safe observability","E"],[68,"Performance & context-efficiency contract","S"],[69,"Developer framework, CLI, hosting","S"],[70,"Orchestrator/worker factory & gates","E"],[71,"Usage & attention facts","S"],[72,"Flexible pricing, billing, settlement","E"],[73,"Party ownership & liability roles","S"],[74,"Authority decision/enforcement","S"],[75,"Information-flow labels & inheritance","S"],[76,"Source-driver lifecycle & health","S"],[77,"Governed derived projections & caches","S"],[78,"Source & semantic Vintages","S"],[79,"Package→Release→Deployment→Instance","S"],[80,"Release supply-chain provenance","S"],[81,"Upgrade merge, migration, restore","S"],[82,"Contract compatibility & events","S"],[83,"Replay grades & execution digest","S"],[84,"Canonical refs, commitments, receipts","S"],[85,"Model invocation identity & drift","S"],[86,"Secure update metadata & resolution","S"],[87,"Scheduling, fairness, backpressure","S"],[88,"Staged rollout & scoped incumbents","S"],[89,"Data lifecycle, withdrawal, exit","S"],[90,"Verifiable Artifact/Delivery receipts","S"],[91,"Marketplace & automated payouts","E"]];
+document.getElementById('caps').innerHTML=CAP.map(([n,t,c])=>`<span class="cap ${c}" title="CAP-${String(n).padStart(3,'0')} — ${t}"><code>${String(n).padStart(3,'0')}</code>${t}</span>`).join('');
+document.getElementById('capfilter').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#capfilter button').forEach(x=>x.classList.toggle('on',x===b));
+  const f=b.dataset.f;document.querySelectorAll('.cap').forEach(c=>c.classList.toggle('hide',f!=='all'&&!c.classList.contains(f)));});
+// ---------- DEC ----------
+const DEC={
+"Product & first market":[["001","First paid job and domain"],["002","First customer-visible Work noun"],["003","App, expert Agent, or both"],["004","Selling Advice, Action, or Attestation"],["011","Local personalization vs cross-product continuity"],["017","Can declarative Experiences cover first products"],["031","First low-friction job channel"],["032","Minimum sellable Job Contract"],["035","Dev path: hosted-first or self-hosted"],["045","Which Parties must be distinct first"]],
+"Evidence & improvement":[["005","Outcome observable within 30 days"],["008","Which Sources are necessary / forbidden"],["010","Agent identity & memory across Instances"],["013","Evidence that improves a Package safely"],["014","Method captured from publisher's own Work"],["027","Outcome signals robust enough for promotion"],["028","Improvement: customer value or moat"],["037","Which eval fixtures stay invisible; who rotates"],["040","Objective Basis lifecycle & scope"],["046","Which Sources give stable Vintages"],["048","Outcome Definitions stable enough to bill on"],["053","User-visible source-health signals"],["062","Model facts available per provider"],["065","Memory scopes & cross-product user context"]],
+"Governance & safety":[["006","Promised human attention budget"],["007","Calculations that must be outside the model"],["009","Declarative Views vs trusted code line"],["016","App-building autonomy before review"],["039","Effects needing step-up / quorum / four-eyes"],["041","Stale last-known-good vs fail closed"],["049","External effects with reliable reconciliation"],["052","Minimum delegation envelope for multi-Agent"],["060","Thread-only vs draft Work; Intake Run envelope"],["066","Material Approval change & atomic consumption"]],
+"Legal & sovereignty":[["012","Subscriber evidence exportable to publisher"],["022","Swiss vs general EU residency"],["023","Regulated advice/action & liability"],["024","Erasure vs already-promoted revisions"],["043","Support content access during incidents"],["047","Who may declassify or aggregate"],["051","Legal roles represented explicitly"],["058","What stays exportable if providers vanish"]],
+"Commercial":[["030","Usage facts required before billing model"],["033","Pricing model & payer per vertical"],["034","Boring-owned vs external billing stack"],["038","Payer/entitlement frozen at admission"],["045b","(see Product) party distinctions"],["061","Delivery receipt chain per channel"]],
+"Platform & architecture":[["015","First external door: MCP, SaaS, channel, API"],["018","Multi-Agent vs one strong Agent"],["019","Collaboration before coordination overhead"],["020","Work spanning entitled Packages"],["021","Shared attention before unified cross-app Work"],["025","Publisher upgrade merge mechanics"],["026","What works when model is down"],["029","Smallest useful capability passport"],["036","Factory contracts → platform capabilities"],["042","Package collision handling & trust"],["044","Part 2 ↔ ratified terminology mapping"],["050","BSL as public name or implementation label"],["054","Releases needing reproducible builds"],["055","Queue fairness & backpressure requirements"],["056","Digest-pinned dependencies & kernels"],["057","Compatibility guarantees for developers"],["059","RequestKey ≟ canonical Run identity"],["063","First execution profiles & trust zones"],["064","Secure-update metadata per release class"],["067","Control-plane outage & stale-lease exposure"],["068","Commitment format per verification case"]]};
+document.getElementById('decgrid').innerHTML=Object.entries(DEC).map(([g,items])=>{const it=items.filter(i=>!i[0].endsWith('b'));return `<div class="decg"><h4>${g}</h4><div class="cnt">${it.length} open</div><ol>${it.map(([id,t])=>`<li><code>DEC-${id}</code>${t}</li>`).join('')}</ol></div>`;}).join('');
+// ---------- products heatmap ----------
+const HCOLS=[["Operate","--c-exec"],["Distribute","--c-gov"],["Improve","--c-imp"],["External / headless","--c-chan"]];
+const HROWS=[
+["Creator Studio",[[3,"High"],[1,"Possible later"],[2,"Outcome-aware"],[1,"Optional"]]],
+["Creator's Personal Agent",[[2,"Medium"],[3,"High"],[2,"Personalized"],[2,"Common"]]],
+["Creator-Published SaaS",[[3,"High"],[3,"High"],[2,"Opt → high"],[1,"Optional"]]],
+["Macro Research Terminal",[[3,"High"],[1,"Possible"],[3,"High"],[2,"Common"]]],
+["Investment Workbench",[[3,"High"],[1,"Possible"],[3,"High"],[1,"Optional"]]],
+["Industrial Formulation",[[3,"High"],[1,"Possible"],[3,"High"],[1,"Optional"]]],
+["SME Pipeline Tool",[[3,"High"],[1,"Possible"],[2,"Med → high"],[2,"Common"]]],
+["Channel-First Job Service",[[2,"Medium"],[3,"High"],[2,"Opt → high"],[3,"Essential"]]],
+["Developer-Hosted Agent/App",[[3,"High"],[3,"High"],[2,"Opt → high"],[2,"Common"]]],
+["Boring Internal Code Factory",[[3,"High"],[2,"Internal reuse"],[3,"High"],[3,"High"]]]];
+const OP=[0,.16,.34,.58];
+document.getElementById('heat').innerHTML='<div class="heat"><div></div>'+HCOLS.map(([n,v])=>`<div class="hh" style="color:var(${v})">${n}</div>`).join('')+
+HROWS.map(([r,cells])=>`<div class="rn">${r}</div>`+cells.map(([v,t],i)=>`<div class="cell" style="background:color-mix(in srgb, var(${HCOLS[i][1]}) ${OP[v]*100}%, var(--surface))">${t}<small>${'●'.repeat(v)}${'○'.repeat(3-v)}</small></div>`).join('')).join('')+'</div>';
+// ---------- DEC donut ----------
+const DSEG=[["Platform & architecture",21,"--c-data"],["Evidence & improvement",14,"--c-imp"],["Product & first market",10,"--c-out"],["Governance & safety",10,"--c-exec"],["Legal & sovereignty",8,"--c-gov"],["Commercial",5,"--c-comm"]];
+let acc=0;const segs=DSEG.map(([n,c,v])=>{const a=acc/68*360,b=(acc+c)/68*360;acc+=c;return `var(${v}) ${a.toFixed(1)}deg ${b.toFixed(1)}deg`;});
+document.getElementById('decdonut').style.background=`conic-gradient(${segs.join(',')})`;
+document.getElementById('decleg').innerHTML=DSEG.map(([n,c,v])=>`<span><i style="background:var(${v})"></i>${n}<b>${c}</b></span>`).join('');
+// ---------- glossary ----------
+const EXTRA=[
+["Knowledge","gov","Publisher-packaged methodology, examples, fixtures, and instructions — versioned with the Package, never a live copy of customer data."],
+["Memory","gov","Scoped personalization for a user or Instance. Declares its scope; never widens silently; is not automatically Evidence."],
+["Transfer record","gov","Durable proof of what actually crossed a trust boundary: subject, purpose, policy decision, destination, receipt, revocation limits."],
+["Source Connection","data","The governed access binding to a provider or account, with credentials, consent, scopes, region, license, health, and revocation."],
+["Source Resource / Item","data","A provider-relative collection (mailbox, repo, bucket) and the addressable records beneath it, with stable external identity mapping."],
+["Worker claim","exec","See Lease / fence — revocable scheduling authority with an epoch stale workers cannot use."],
+["Continuity surface","gov","The declared set of capabilities that stay safe and useful per failure domain — honest, testable, never overriding fail-closed safety."],
+["Level 0","gov","The product label for the model-independent continuity surface: read Work, run deterministic calculations, export — without a model call."],
+["Attention budget","out","A product promise on how many human decisions per day the system may consume — measured like model cost."],
+["Capability passport","gov","What a Package requests, shown before install: Sources, Operations, approvals, executable code, models, cost estimate, evidence egress."],
+["Golden journeys","imp","The five §12.7 flows a candidate Part 2 must express without parallel object models."],
+["Deterministic kernel","data","Versioned non-LLM calculation of record — the model proposes and interprets; the kernel computes and rejects infeasible candidates."]];
+const GN=N.map(n=>[n[1],n[2],n[6]]).concat(EXTRA);
+const gl=document.getElementById('gloss');
+function renderGloss(q){gl.innerHTML=GN.filter(([t,c,d])=>!q||t.toLowerCase().includes(q)||d.toLowerCase().includes(q)).map(([t,c,d])=>`<div class="gterm"><span class="cl" style="color:var(${CL[c].v})">${CL[c].n.split(' ')[0]}</span><b>${t}</b><span>${d}</span></div>`).join('')||'<p style="color:var(--muted)">No terms match.</p>';}
+renderGloss('');
+document.getElementById('gsearch').addEventListener('input',e=>renderGloss(e.target.value.trim().toLowerCase()));
+</script>
