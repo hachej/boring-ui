@@ -1,4 +1,4 @@
-import { createElement, useEffect } from "react"
+import { createElement, lazy, Suspense, useEffect } from "react"
 import { FolderTree } from "lucide-react"
 import "./events"
 import {
@@ -10,19 +10,11 @@ import { useDataClient, useFileList } from "./data"
 import { DataProvider } from "./data/DataProvider"
 import { FilesystemRootsBinding } from "./FilesystemRootsBinding"
 import { useCatalogRegistry } from "../../../front/registry"
-import {
-  FileTreePane,
-  preloadFileTreeComponent,
-  type FileTreePaneParams,
-} from "./file-tree/FileTreeView"
+import type { FileTreePaneParams } from "./file-tree/FileTreeView"
 import { useFileTreeRoots } from "./file-tree/FileTreeRootsProvider"
 import type { WorkspaceSourceProps } from "../../../shared/types/panel"
 import { FilesystemFilePanelBinding } from "./filePanelBinding"
 import { FilesystemAgentFileBridge } from "./agentFileBridge"
-import { CodeEditorPane } from "./code-editor/CodeEditorPane"
-import { MarkdownEditorPane } from "./markdown-editor/MarkdownEditorPane"
-import { MediaViewerPane } from "./media-viewer/MediaViewerPane"
-import { HtmlViewerPane } from "./html-viewer/HtmlViewerPane"
 import { emptyFilePanelDef } from "./empty-file-panel/definition"
 import { filesystemSurfaceResolver } from "./surfaceResolver"
 import type {
@@ -40,6 +32,27 @@ import {
   PDF_VIEWER_PANEL_ID,
 } from "../shared/constants"
 import { createFilesCatalog } from "./catalogs"
+
+const LazyFileTreePane = lazy(() => import("./file-tree/FileTreeView").then((module) => ({ default: module.FileTreePane })))
+const LazyCodeEditorPane = lazy(() => import("./code-editor/CodeEditorPane").then((module) => ({ default: module.CodeEditorPane })))
+const LazyMarkdownEditorPane = lazy(() => import("./markdown-editor/MarkdownEditorPane").then((module) => ({ default: module.MarkdownEditorPane })))
+const LazyMediaViewerPane = lazy(() => import("./media-viewer/MediaViewerPane").then((module) => ({ default: module.MediaViewerPane })))
+const LazyHtmlViewerPane = lazy(() => import("./html-viewer/HtmlViewerPane").then((module) => ({ default: module.HtmlViewerPane })))
+
+function panelFallback(label: string) {
+  return createElement("div", { className: "flex h-full items-center justify-center text-sm text-muted-foreground" }, `Loading ${label}…`)
+}
+
+function lazyPane(component: typeof LazyCodeEditorPane, label: string) {
+  return function LazyFilesystemPane(props: Parameters<typeof component>[0]) {
+    return createElement(Suspense, { fallback: panelFallback(label) }, createElement(component, props))
+  }
+}
+
+const CodeEditorPane = lazyPane(LazyCodeEditorPane, "editor")
+const MarkdownEditorPane = lazyPane(LazyMarkdownEditorPane, "Markdown")
+const MediaViewerPane = lazyPane(LazyMediaViewerPane, "media")
+const HtmlViewerPane = lazyPane(LazyHtmlViewerPane, "HTML")
 
 // Re-export shared file pane utilities for external use
 export { useFilePane } from "./useFilePane"
@@ -77,22 +90,25 @@ function FilesystemDataProvider({
 }
 
 function FilesystemTreePreloadBinding() {
-  useEffect(() => {
-    preloadFileTreeComponent()
-  }, [])
+  // Warm only the cheap directory data. The tree implementation itself stays
+  // behind the Files surface boundary so chat-first paint never downloads it.
   useFileList(".")
   return null
 }
 
 export function FilesystemFileTreeSource(props: WorkspaceSourceProps<FileTreePaneParams>) {
   const roots = useFileTreeRoots()
-  return createElement(FileTreePane, {
-    ...props,
-    params: {
-      ...props.params,
-      roots: roots ? [...roots] : undefined,
-    },
-  })
+  return createElement(
+    Suspense,
+    { fallback: panelFallback("files") },
+    createElement(LazyFileTreePane, {
+      ...props,
+      params: {
+        ...props.params,
+        roots: roots ? [...roots] : undefined,
+      },
+    }),
+  )
 }
 
 function FilesystemCatalogBinding() {

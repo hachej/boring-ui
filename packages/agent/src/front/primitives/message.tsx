@@ -9,10 +9,6 @@ import {
 } from "@hachej/boring-ui-kit";
 import { cn } from "../lib";
 import { INLINE_CODE_CLASS_NAME } from "./markdownStyles";
-import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
-import { math } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
 import type { UIMessage } from "ai";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import type { ComponentProps, HTMLAttributes, ReactElement, ReactNode } from "react";
@@ -26,6 +22,7 @@ import {
   useState,
 } from "react";
 import { Streamdown } from "streamdown";
+import { useStreamdownPlugins } from "./useStreamdownPlugins";
 import {
   CodeBlock,
   CodeBlockCopyButton,
@@ -326,13 +323,6 @@ export const MessageBranchPage = ({
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
-// Streamdown and @streamdown/code can resolve different Shiki minors, whose
-// generated BundledLanguage unions are structurally compatible at runtime but
-// not assignable across package instances.
-const streamdownPlugins = { cjk, code, math, mermaid } as unknown as NonNullable<
-  ComponentProps<typeof Streamdown>["plugins"]
->;
-
 // Default Shiki theme pair — [light, dark]. Streamdown auto-selects based on
 // prefers-color-scheme. Consumers can override via the shikiTheme prop.
 const DEFAULT_SHIKI_THEME = ["github-light", "github-dark-dimmed"] as unknown as [
@@ -434,22 +424,25 @@ export type BoringMessageResponseProps = MessageResponseProps & {
 };
 
 export const MessageResponse = memo(
-  ({ className, shikiTheme, components, codeFilename, ...props }: BoringMessageResponseProps) => (
-    <Streamdown
-      className={cn(
-        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        className
-      )}
-      plugins={streamdownPlugins}
-      shikiTheme={shikiTheme ?? DEFAULT_SHIKI_THEME}
-      components={{
-        ...markdownComponents,
-        ...(components ?? {}),
-        ...(codeFilename ? { pre: (props: ComponentProps<"pre">) => <MarkdownPre {...props} filename={codeFilename} /> } : {}),
-      } as ComponentProps<typeof Streamdown>["components"]}
-      {...props}
-    />
-  ),
+  ({ className, shikiTheme, components, codeFilename, ...props }: BoringMessageResponseProps) => {
+    const streamdownPlugins = useStreamdownPlugins();
+    return (
+      <Streamdown
+        className={cn(
+          "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+          className
+        )}
+        plugins={streamdownPlugins}
+        shikiTheme={shikiTheme ?? DEFAULT_SHIKI_THEME}
+        components={{
+          ...markdownComponents,
+          ...(components ?? {}),
+          ...(codeFilename ? { pre: (props: ComponentProps<"pre">) => <MarkdownPre {...props} filename={codeFilename} /> } : {}),
+        } as ComponentProps<typeof Streamdown>["components"]}
+        {...props}
+      />
+    );
+  },
   (prevProps, nextProps) =>
     prevProps.children === nextProps.children &&
     nextProps.isAnimating === prevProps.isAnimating &&

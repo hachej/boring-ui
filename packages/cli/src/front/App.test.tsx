@@ -3,7 +3,7 @@ import React from "react"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { liveTranscriptPlugin } from "@hachej/boring-transcription/front"
-import { CliWorkspaceShell } from "./App"
+import { CliWorkspaceShell, loadCliDefaultPlugins } from "./App"
 
 const workspaceAgentFrontSpy = vi.fn((props: Record<string, unknown>) => (
   <div>
@@ -49,6 +49,19 @@ describe("CliWorkspaceShell", () => {
     const singletons = globalThis.__BORING_RUNTIME_SINGLETONS__ as Record<string, Record<string, unknown>> | undefined
     expect(typeof singletons?.["react/jsx-runtime"]?.jsx).toBe("function")
     expect(typeof singletons?.["react/jsx-dev-runtime"]?.jsxDEV).toBe("function")
+  })
+
+  test("keeps successful default plugin fronts when one lazy chunk fails", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    const plugins = await loadCliDefaultPlugins([
+      async () => ({ pluginId: "first" }) as never,
+      async () => { throw new Error("stale optional chunk") },
+      async () => ({ pluginId: "third" }) as never,
+    ])
+
+    expect(plugins.map((plugin) => plugin.pluginId)).toEqual(["first", "third"])
+    expect(error).toHaveBeenCalledWith("Failed to load a CLI default plugin front", expect.any(Error))
+    error.mockRestore()
   })
 
   beforeEach(() => {
@@ -177,7 +190,7 @@ describe("CliWorkspaceShell", () => {
     expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({ workspaceId: "target" })
   })
 
-  test("statically composes live transcription without knowing its commands", async () => {
+  test("lazily composes live transcription without knowing its commands", async () => {
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith("/api/v1/workspace/meta")) {
@@ -194,10 +207,9 @@ describe("CliWorkspaceShell", () => {
 
     render(<CliWorkspaceShell />)
 
-    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
-    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+    await waitFor(() => expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
       plugins: expect.arrayContaining([liveTranscriptPlugin]),
-    })
+    }))
     expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).not.toHaveProperty("extraCommands")
   })
 
@@ -221,8 +233,7 @@ describe("CliWorkspaceShell", () => {
 
     render(<CliWorkspaceShell />)
 
-    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
-    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+    await waitFor(() => expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
       frontPluginHotReload: "vite",
       workspaceLayout: "plugin-tabs",
       workspaceSectionTitle: "Project",
@@ -234,7 +245,7 @@ describe("CliWorkspaceShell", () => {
         expect.objectContaining({ pluginId: "tasks" }),
         liveTranscriptPlugin,
       ],
-    })
+    }))
 
     expect(screen.getByText("v1.2.3")).not.toBeNull()
     expect(screen.queryByText("Trusted local runtime plugins")).toBeNull()

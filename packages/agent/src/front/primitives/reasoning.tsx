@@ -7,10 +7,6 @@ import {
   CollapsibleTrigger,
 } from "@hachej/boring-ui-kit";
 import { cn } from "../lib";
-import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
-import { math } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
 import { BrainIcon, ChevronDownIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import {
@@ -24,6 +20,7 @@ import {
   useState,
 } from "react";
 import { Streamdown } from "streamdown";
+import { useStreamdownPlugins } from "./useStreamdownPlugins";
 
 import { Shimmer } from "./shimmer";
 
@@ -207,15 +204,10 @@ export type ReasoningContentProps = ComponentProps<
   children: string;
 };
 
-// Streamdown and @streamdown/code can resolve different Shiki minors, whose
-// generated BundledLanguage unions are structurally compatible at runtime but
-// not assignable across package instances.
-const streamdownPlugins = { cjk, code, math, mermaid } as unknown as NonNullable<
-  ComponentProps<typeof Streamdown>["plugins"]
->;
-
 export const ReasoningContent = memo(
-  ({ className, children, ...props }: ReasoningContentProps) => (
+  ({ className, children, ...props }: ReasoningContentProps) => {
+    const streamdownPlugins = useStreamdownPlugins();
+    return (
     <CollapsibleContent
       className={cn(
         "mt-2 border-l border-border/40 pl-3 text-xs",
@@ -226,7 +218,8 @@ export const ReasoningContent = memo(
     >
       <Streamdown plugins={streamdownPlugins}>{children}</Streamdown>
     </CollapsibleContent>
-  )
+    );
+  }
 );
 
 Reasoning.displayName = "Reasoning";
