@@ -338,13 +338,21 @@ export function PiChatPanel<
     agentTypeId,
     apiBaseUrl,
     defaultModel,
+    sessionId: activeSessionId,
+    sessionHydrated: selectedChatState?.hydrated ?? false,
+    sessionIsNew: Boolean(selectedChatState?.hydrated && selectedChatState.history.messageCount === 0),
+    sessionModel: selectedChatState?.currentModel,
     fetch,
     requestHeaders: normalizedRequestHeaders,
     storage,
     storageScope,
     enabled: modelDiscoveryEnabled,
   })
+  const sessionModel = selectedChatState?.currentModel
   const selectedModel = model === undefined ? modelDiscovery.model : model
+  const modelOverride = model === undefined
+    ? modelDiscovery.isOverride
+    : Boolean(model && sessionModel && (model.provider !== sessionModel.provider || model.id !== sessionModel.id))
   const modelOptions = useMemo(
     () => modelOptionsForSelection(availableModels ?? modelDiscovery.availableModels, selectedModel),
     [availableModels, modelDiscovery.availableModels, selectedModel],
@@ -1198,6 +1206,8 @@ export function PiChatPanel<
               onDismissSlash={dismissSlash}
               modelPickerOpen={modelPickerOpen}
               selectedModel={selectedModel}
+              sessionModel={sessionModel}
+              modelOverride={modelOverride}
               modelOptions={modelOptions}
               modelControlled={model !== undefined}
               hideDefaultModelOption={hideDefaultModelOption}

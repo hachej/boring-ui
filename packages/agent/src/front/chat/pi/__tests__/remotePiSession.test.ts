@@ -726,6 +726,22 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('confirms an accepted next-message override as the session current model', async () => {
+    const events = openNdjsonStream()
+    const model = { provider: 'openai', id: 'gpt-5.7' }
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/prompt')) return jsonResponse({ accepted: true, cursor: 0, clientNonce: 'nonce-model' })
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    await session.prompt({ message: 'switch model', clientNonce: 'nonce-model', model })
+
+    expect(session.getState().currentModel).toEqual(model)
+    session.dispose()
+  })
+
   it('opens events from the current cursor before the first command when autoStart is false', async () => {
     const events = openNdjsonStream()
     const promptResponse = deferred<Response>()

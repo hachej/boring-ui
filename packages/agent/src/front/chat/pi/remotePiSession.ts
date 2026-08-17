@@ -240,6 +240,9 @@ export class RemotePiSession {
     else if (!this.suspended) this.ensureReconnectScheduled()
     try {
       const receipt = await this.postCommand('/prompt', payload, PromptReceiptSchema)
+      if (!this.disposed && payload.model) {
+        this.store.dispatch({ type: 'model-confirmed', model: payload.model }, { flush: true })
+      }
       return receipt
     } catch (error) {
       this.rollbackOptimisticMessage(payload.clientNonce)

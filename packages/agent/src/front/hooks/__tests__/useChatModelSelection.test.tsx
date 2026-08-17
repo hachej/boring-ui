@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { readPiComposerSettings, type ActiveSessionStorageLike } from '../../chat/session'
+import { readPiComposerSettings, scopedComposerStorageKey, type ActiveSessionStorageLike } from '../../chat/session'
+import type { ModelSelection } from '../../chatPanelSettings'
 import { useChatModelSelection as useAddressedChatModelSelection } from '../useChatModelSelection'
 
 function useChatModelSelection(options: Omit<Parameters<typeof useAddressedChatModelSelection>[0], 'agentTypeId'> & { agentTypeId?: string }) {
@@ -37,6 +38,91 @@ describe('useChatModelSelection', () => {
 
     await waitFor(() => expect(result.current.model).toBeNull())
     expect(readPiComposerSettings({ storageScope: 'scope-b', storage: store }).model).toBeNull()
+  })
+
+  it('uses addressed session model instead of conflicting browser storage for an existing session', async () => {
+    const stale = { provider: 'infomaniak', id: 'Kimi-K2.6' } as const
+    const currentModel = { provider: 'openai-codex', id: 'gpt-5.6-sol' } as const
+    const store = storage({
+      [scopedComposerStorageKey('scope-a', 'model')]: JSON.stringify(stale),
+      [scopedComposerStorageKey('scope-a', 'model:user-selected')]: '1',
+    })
+
+    const { result } = renderHook(() => useChatModelSelection({
+      sessionId: 'api-created',
+      sessionHydrated: true,
+      sessionModel: currentModel,
+      storageScope: 'scope-a',
+      storage: store,
+      enabled: false,
+    }))
+
+    await waitFor(() => expect(result.current.model).toEqual(currentModel))
+    expect(result.current.sessionModel).toEqual(currentModel)
+    expect(result.current.isOverride).toBe(false)
+  })
+
+  it('uses local storage only as the default for a genuinely new session', async () => {
+    const localDefault = { provider: 'openai', id: 'gpt-new-default' } as const
+    const store = storage({
+      [scopedComposerStorageKey('scope-a', 'model')]: JSON.stringify(localDefault),
+      [scopedComposerStorageKey('scope-a', 'model:user-selected')]: '1',
+    })
+
+    const { result } = renderHook(() => useChatModelSelection({
+      sessionId: 'new-session',
+      sessionHydrated: true,
+      sessionIsNew: true,
+      storageScope: 'scope-a',
+      storage: store,
+      enabled: false,
+    }))
+
+    await waitFor(() => expect(result.current.model).toEqual(localDefault))
+    expect(result.current.sessionModel).toBeUndefined()
+    expect(result.current.isOverride).toBe(false)
+  })
+
+  it('represents an explicit next-message model difference as an override and clears it on refresh', async () => {
+    const currentModel: ModelSelection = { provider: 'openai-codex', id: 'gpt-5.6-sol' } as const
+    const override = { provider: 'openai', id: 'gpt-5.7' } as const
+    const store = storage()
+    const { result, rerender } = renderHook(
+      ({ sessionModel }) => useChatModelSelection({
+        sessionId: 'existing',
+        sessionHydrated: true,
+        sessionModel,
+        storageScope: 'scope-a',
+        storage: store,
+        enabled: false,
+      }),
+      { initialProps: { sessionModel: currentModel } },
+    )
+
+    act(() => result.current.setModel(override))
+    expect(result.current.model).toEqual(override)
+    expect(result.current.sessionModel).toEqual(currentModel)
+    expect(result.current.isOverride).toBe(true)
+
+    rerender({ sessionModel: override })
+    await waitFor(() => expect(result.current.isOverride).toBe(false))
+    expect(result.current.model).toEqual(override)
+  })
+
+  it('does not fall back to local storage for a non-new session whose model authority is unavailable', async () => {
+    const store = storage({
+      [scopedComposerStorageKey('scope-a', 'model')]: JSON.stringify({ provider: 'infomaniak', id: 'stale' }),
+    })
+    const { result } = renderHook(() => useChatModelSelection({
+      sessionId: 'existing-with-history',
+      sessionHydrated: true,
+      sessionIsNew: false,
+      storageScope: 'scope-a',
+      storage: store,
+      enabled: false,
+    }))
+
+    expect(result.current.model).toBeNull()
   })
 
   it('normalizes discovered model metadata before storing a prompt selection', async () => {

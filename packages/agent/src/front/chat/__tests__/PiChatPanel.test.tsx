@@ -1200,6 +1200,53 @@ describe('PiChatPanel sandbox shell', () => {
     })))
   })
 
+  test('shows the addressed session model and labels an explicit next-message override', async () => {
+    const sessionModel = { provider: 'openai-codex', id: 'gpt-5.6-sol' } as const
+    const staleLocalModel = { provider: 'infomaniak', id: 'Kimi-K2.6' } as const
+    const nextModel = { provider: 'openai', id: 'gpt-5.7' } as const
+    const persisted = storage({
+      [scopedComposerStorageKey('workspace-a', 'model')]: JSON.stringify(staleLocalModel),
+      [scopedComposerStorageKey('workspace-a', 'model:user-selected')]: '1',
+    })
+    const remote = new FakeRemotePiSession(remoteState({ currentModel: sessionModel }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+
+    render(
+      <PiChatPanel
+        serverResourcesEnabled={false}
+        storageScope="workspace-a"
+        storage={persisted}
+        availableModels={[
+          { ...sessionModel, label: 'GPT 5.6 Sol', available: true },
+          { ...nextModel, label: 'GPT 5.7', available: true },
+          { ...staleLocalModel, label: 'Kimi K2.6', available: true },
+        ]}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    const modelControl = await screen.findByRole('button', { name: /Current model: GPT 5.6 Sol/ })
+    expect(modelControl.textContent).toContain('GPT 5.6 Sol')
+    expect(modelControl.textContent).not.toContain('Kimi K2.6')
+
+    fireEvent.click(modelControl)
+    fireEvent.click(await screen.findByText('GPT 5.7'))
+
+    const overrideControl = screen.getByRole('button', { name: /Next-message override: GPT 5.7/ })
+    expect(overrideControl.textContent).toContain('GPT 5.6 Sol')
+    expect(overrideControl.textContent).toContain('Next override: GPT 5.7')
+    expect(overrideControl.getAttribute('data-boring-model-override')).toBe('true')
+
+    const textarea = screen.getByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: 'use override once' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'use override once',
+      model: nextModel,
+    })))
+  })
+
   test('opens model and thinking pickers from slash commands', async () => {
     const remote = new FakeRemotePiSession(remoteState())
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))

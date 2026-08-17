@@ -15,6 +15,10 @@ export function useChatModelSelection({
   agentTypeId,
   apiBaseUrl,
   defaultModel,
+  sessionId,
+  sessionHydrated = sessionId === undefined,
+  sessionIsNew = sessionId === undefined,
+  sessionModel,
   fetch: fetchImpl,
   requestHeaders,
   storage,
@@ -24,6 +28,10 @@ export function useChatModelSelection({
   agentTypeId: string
   apiBaseUrl?: string
   defaultModel?: ModelSelection
+  sessionId?: string
+  sessionHydrated?: boolean
+  sessionIsNew?: boolean
+  sessionModel?: ModelSelection
   fetch?: typeof globalThis.fetch
   requestHeaders?: Record<string, string>
   storage?: ActiveSessionStorageLike
@@ -31,11 +39,13 @@ export function useChatModelSelection({
   enabled?: boolean
 }) {
   const initialModelState = useMemo(() => readPiComposerSettings({ storageScope, storage }), [])
-  const [model, setModelState] = useState<ModelSelection | null>(
-    () => initialModelState.model ?? defaultModel ?? null,
-  )
+  const [model, setModelState] = useState<ModelSelection | null>(() => {
+    if (sessionId && (!sessionHydrated || (!sessionModel && !sessionIsNew))) return null
+    return sessionModel ?? initialModelState.model ?? defaultModel ?? null
+  })
+  const [selectionSessionId, setSelectionSessionId] = useState(sessionId)
   const [userSelectedModel, setUserSelectedModel] = useState<boolean>(
-    () => initialModelState.userSelectedModel,
+    () => sessionId === undefined && initialModelState.userSelectedModel,
   )
   const userSelectedModelRef = useRef(userSelectedModel)
   const loadedSettingsSourceRef = useRef({ storage, storageScope })
@@ -45,11 +55,15 @@ export function useChatModelSelection({
 
   const setModel = useCallback((next: ModelSelection | null) => {
     const normalized = next === null ? null : parseModelSelection(next)
-    userSelectedModelRef.current = normalized !== null
-    setUserSelectedModel(normalized !== null)
-    setModelState(normalized)
+    const differsFromSession = normalized !== null && sessionModel !== undefined
+      && (normalized.provider !== sessionModel.provider || normalized.id !== sessionModel.id)
+    const userSelected = sessionModel ? differsFromSession : normalized !== null && (!sessionId || sessionIsNew)
+    userSelectedModelRef.current = userSelected
+    setUserSelectedModel(userSelected)
+    setSelectionSessionId(sessionId)
+    setModelState(normalized ?? sessionModel ?? null)
     writePiComposerModelSelection(normalized, { storageScope, storage })
-  }, [storage, storageScope])
+  }, [sessionId, sessionIsNew, sessionModel, storage, storageScope])
 
   const discoveryKey = useMemo(
     () => JSON.stringify({
@@ -73,15 +87,34 @@ export function useChatModelSelection({
   useEffect(() => {
     const settings = readPiComposerSettings({ storageScope, storage })
     loadedSettingsSourceRef.current = { storage, storageScope }
-    userSelectedModelRef.current = settings.userSelectedModel
-    setUserSelectedModel(settings.userSelectedModel)
+    setSelectionSessionId(sessionId)
+    if (sessionId && (!sessionHydrated || (!sessionModel && !sessionIsNew))) {
+      userSelectedModelRef.current = false
+      setUserSelectedModel(false)
+      setModelState(null)
+      return
+    }
+    if (sessionModel) {
+      const currentIsOverride = userSelectedModelRef.current
+        && selectionSessionId === sessionId
+        && model !== null
+        && (model.provider !== sessionModel.provider || model.id !== sessionModel.id)
+      if (currentIsOverride) return
+      userSelectedModelRef.current = false
+      setUserSelectedModel(false)
+      setModelState(sessionModel)
+      return
+    }
+    const userSelected = sessionId === undefined && settings.userSelectedModel
+    userSelectedModelRef.current = userSelected
+    setUserSelectedModel(userSelected)
     setModelState(settings.model ?? defaultModel ?? null)
-  }, [storage, storageScope])
+  }, [defaultModel, sessionHydrated, sessionId, sessionIsNew, sessionModel?.id, sessionModel?.provider, storage, storageScope])
 
   useEffect(() => {
-    if (userSelectedModelRef.current || !defaultModel) return
+    if (sessionModel || (sessionId && (!sessionHydrated || !sessionIsNew)) || userSelectedModelRef.current || !defaultModel) return
     setModelState(defaultModel)
-  }, [defaultModel])
+  }, [defaultModel, sessionHydrated, sessionId, sessionIsNew, sessionModel])
 
   // Fetch the live list from pi's ModelRegistry so the dropdown reflects
   // what the server actually has auth for, not a hardcoded alias set.
@@ -104,8 +137,8 @@ export function useChatModelSelection({
           userSelectedModelRef.current = false
           setUserSelectedModel(false)
           setAvailableModels([])
-          setModelState(null)
-          writePiComposerModelSelection(null, { storageScope, storage })
+          setModelState(sessionModel ?? null)
+          if (!sessionModel) writePiComposerModelSelection(null, { storageScope, storage })
           setLoadedDiscoveryKey(discoveryKey)
           setLoaded(true)
           return
@@ -124,6 +157,8 @@ export function useChatModelSelection({
           setUserSelectedModel(false)
           writePiComposerModelSelection(null, { storageScope, storage })
 
+          if (sessionModel) return sessionModel
+          if (sessionId && !sessionIsNew) return null
           if (payload.defaultModel) return { provider: payload.defaultModel.provider, id: payload.defaultModel.id }
           const firstAvailable = available[0]
           return firstAvailable ? { provider: firstAvailable.provider, id: firstAvailable.id } : null
@@ -134,13 +169,13 @@ export function useChatModelSelection({
         userSelectedModelRef.current = false
         setUserSelectedModel(false)
         setAvailableModels([])
-        setModelState(null)
-        writePiComposerModelSelection(null, { storageScope, storage })
+        setModelState(sessionModel ?? null)
+        if (!sessionModel) writePiComposerModelSelection(null, { storageScope, storage })
         setLoadedDiscoveryKey(discoveryKey)
         setLoaded(true)
       })
     return () => { aborted = true }
-  }, [agentTypeId, apiBaseUrl, discoveryKey, enabled, fetchImpl, requestHeaders, storage, storageScope])
+  }, [agentTypeId, apiBaseUrl, discoveryKey, enabled, fetchImpl, requestHeaders, sessionId, sessionIsNew, sessionModel, storage, storageScope])
 
   // Optional integration hook for host slash commands. Accepts explicit
   // provider-qualified selections only ({ provider, id } or "provider:id");
@@ -157,7 +192,23 @@ export function useChatModelSelection({
 
   const currentDiscoveryLoaded = !enabled || (loaded && loadedDiscoveryKey === discoveryKey)
   const currentAvailableModels = currentDiscoveryLoaded ? availableModels : []
-  const currentModel = currentDiscoveryLoaded ? model : null
+  const selectionBelongsToSession = selectionSessionId === sessionId
+  const isOverride = Boolean(
+    selectionBelongsToSession
+      && sessionModel
+      && model
+      && (model.provider !== sessionModel.provider || model.id !== sessionModel.id),
+  )
+  const currentModel = currentDiscoveryLoaded && (!sessionId || (sessionHydrated && (sessionModel !== undefined || sessionIsNew)))
+    ? isOverride ? model : sessionModel ?? model
+    : null
 
-  return { availableModels: currentAvailableModels, loaded: currentDiscoveryLoaded, model: currentModel, setModel }
+  return {
+    availableModels: currentAvailableModels,
+    loaded: currentDiscoveryLoaded,
+    model: currentModel,
+    sessionModel,
+    isOverride,
+    setModel,
+  }
 }

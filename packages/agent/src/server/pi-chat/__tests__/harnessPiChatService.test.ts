@@ -1087,6 +1087,8 @@ describe('HarnessPiChatService', () => {
           {
             id: 'a1',
             role: 'assistant',
+            provider: 'openai-codex',
+            model: 'gpt-5.6-sol',
             content: [
               { type: 'thinking', thinking: 'thought' },
               {
@@ -1122,6 +1124,7 @@ describe('HarnessPiChatService', () => {
     expect(state).toMatchObject({
       sessionId: 's-history',
       status: 'idle',
+      currentModel: { provider: 'openai-codex', id: 'gpt-5.6-sol' },
       messages: [
         expect.objectContaining({
           id: 'u1',
