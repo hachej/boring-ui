@@ -2,7 +2,7 @@ import type { WorkspaceBridge, CausedBy } from "./types"
 import type { WorkspaceStore, PanelState } from "../store/types"
 import type { FilesystemId, UiFileOpenMode } from "../../shared/types/filesystem"
 import { UI_STATE_INVALIDATION_COMMAND } from "../../shared/ui-bridge"
-import { events, userMeta, workspaceEvents } from "../events"
+import { events, remoteMeta, workspaceEvents } from "../events"
 
 export interface UIStatePut {
   v: 1
@@ -135,7 +135,7 @@ async function dispatchCommand(
     case UI_STATE_INVALIDATION_COMMAND: {
       const keys = params.keys
       if (!Array.isArray(keys) || keys.length === 0 || keys.some((key) => typeof key !== "string" || key.length === 0)) break
-      events.emit(workspaceEvents.uiCommand, { ...userMeta(), command: { kind: UI_STATE_INVALIDATION_COMMAND, params: { keys } } })
+      events.emit(workspaceEvents.uiStateInvalidated, { ...remoteMeta(), keys })
       break
     }
   }
@@ -221,6 +221,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
           onVersionMismatch?.(parsed.v)
           return
         }
+        if (!parsed.params || typeof parsed.params !== "object" || Array.isArray(parsed.params)) return
         agentCommandDepth++
         dispatchCommand(bridge, parsed.kind, parsed.params).finally(() => {
           agentCommandDepth--
@@ -292,6 +293,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
           onVersionMismatch?.(cmd.v)
           continue
         }
+        if (!cmd.params || typeof cmd.params !== "object" || Array.isArray(cmd.params)) continue
         agentCommandDepth++
         try {
           await dispatchCommand(bridge, cmd.kind, cmd.params)

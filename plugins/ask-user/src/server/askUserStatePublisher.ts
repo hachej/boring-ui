@@ -24,6 +24,7 @@ export class AskUserStatePublisher {
   private unsubscribe?: () => void
   private publishChain = Promise.resolve()
   private readonly hintsBySession = new Map<string, AskUserPendingHint>()
+  private notifiedPendingSnapshot: string | undefined
 
   constructor(
     private readonly store: AskUserStore,
@@ -44,6 +45,7 @@ export class AskUserStatePublisher {
     this.unsubscribe = undefined
     this.publishChain = Promise.resolve()
     this.hintsBySession.clear()
+    this.notifiedPendingSnapshot = undefined
   }
 
   async publishSession(sessionId: string): Promise<void> {
@@ -52,13 +54,7 @@ export class AskUserStatePublisher {
     if (hint) this.hintsBySession.set(sessionId, hint)
     else this.hintsBySession.delete(sessionId)
     const nextPending = this.currentPendingState(hint)
-    if (JSON.stringify(current[ASK_USER_UI_STATE_SLOTS.PENDING]) === JSON.stringify(nextPending)) return
-    const next: UiState = {
-      ...current,
-      [ASK_USER_UI_STATE_SLOTS.PENDING]: nextPending,
-    }
-    await this.bridge.setState(next)
-    await this.notifyPendingChanged()
+    await this.publishPendingState(current, nextPending)
   }
 
   private currentPendingState(preferredHint?: AskUserPendingHint | null): AskUserPendingState {
@@ -93,12 +89,20 @@ export class AskUserStatePublisher {
     }
     const current = (await this.bridge.getState()) ?? {}
     const nextPending = this.currentPendingState()
-    if (JSON.stringify(current[ASK_USER_UI_STATE_SLOTS.PENDING]) === JSON.stringify(nextPending)) return
-    await this.bridge.setState({
-      ...current,
-      [ASK_USER_UI_STATE_SLOTS.PENDING]: nextPending,
-    })
+    await this.publishPendingState(current, nextPending)
+  }
+
+  private async publishPendingState(current: UiState, nextPending: AskUserPendingState): Promise<void> {
+    const nextSnapshot = JSON.stringify(nextPending)
+    if (JSON.stringify(current[ASK_USER_UI_STATE_SLOTS.PENDING]) !== nextSnapshot) {
+      await this.bridge.setState({
+        ...current,
+        [ASK_USER_UI_STATE_SLOTS.PENDING]: nextPending,
+      })
+    }
+    if (this.notifiedPendingSnapshot === nextSnapshot) return
     await this.notifyPendingChanged()
+    this.notifiedPendingSnapshot = nextSnapshot
   }
 
   private async notifyPendingChanged(): Promise<void> {

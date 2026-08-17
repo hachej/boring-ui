@@ -214,7 +214,7 @@ describe("createBridgeClient", () => {
 
     it("forwards valid UI state invalidations to reactive domain listeners", () => {
       const received: unknown[] = []
-      const off = events.on(workspaceEvents.uiCommand, ({ command }) => received.push(command))
+      const off = events.on(workspaceEvents.uiStateInvalidated, (event) => received.push(event))
       const { client } = createClient()
       client.connect()
       const es = MockEventSource.instances[0]
@@ -224,18 +224,22 @@ describe("createBridgeClient", () => {
         JSON.stringify({ v: 1, kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: ["questions.pending"] } }),
       )
 
-      expect(received).toEqual([{ kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: ["questions.pending"] } }])
+      expect(received).toEqual([expect.objectContaining({ cause: "remote", keys: ["questions.pending"] })])
       off()
       client.disconnect()
     })
 
     it("ignores malformed UI state invalidations", () => {
       const received: unknown[] = []
-      const off = events.on(workspaceEvents.uiCommand, ({ command }) => received.push(command))
+      const off = events.on(workspaceEvents.uiStateInvalidated, (event) => received.push(event))
       const { client } = createClient()
       client.connect()
       const es = MockEventSource.instances[0]
 
+      es.emit(
+        "command",
+        JSON.stringify({ v: 1, kind: UI_STATE_INVALIDATION_COMMAND, params: null }),
+      )
       es.emit(
         "command",
         JSON.stringify({ v: 1, kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: ["questions.pending", 42] } }),

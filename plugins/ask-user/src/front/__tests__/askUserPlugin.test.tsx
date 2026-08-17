@@ -390,9 +390,10 @@ describe("askUserPlugin front shell", () => {
 
     current = pushedQuestion
     act(() => {
-      events.emit(workspaceEvents.uiCommand, {
-        ...userMeta(),
-        command: { kind: "invalidateUiState", params: { keys: ["questions.pending"] } },
+      events.emit(workspaceEvents.uiStateInvalidated, {
+        cause: "remote",
+        ts: Date.now(),
+        keys: ["questions.pending"],
       })
     })
 
