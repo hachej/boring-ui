@@ -4,13 +4,13 @@
 //   node scripts/present-pr.mjs <pr-number> [options]
 //
 //   --repo <owner/name>   default: current repo (gh resolves it)
-//   --context <path>      sidecar .md or .json. In markdown: the first ```mermaid fence is
-//                         the intro diagram, `## Key files` pins reading order,
-//                         `## Review history` is the audit trail (one `date | type |
-//                         verdict | who | summary` bullet per event), `## Why` carries
-//                         ~10 `glob | one line` rationale entries, the rest is prose.
-//                         JSON keys: { mermaid, summary, audit, ci, verdict, keyFiles,
-//                         reviewHistory, why }
+//   --context <path>      sidecar .md or .json. In markdown: the first fenced block is
+//                         the intro visual (Mermaid or a compact code-shape sketch),
+//                         `## Key files` pins reading order, `## Review history` is the
+//                         audit trail (one `date | type | verdict | who | summary` bullet
+//                         per event), `## Why` carries ~10 `glob | one line` rationale
+//                         entries, the rest is prose. JSON keys: { mermaid, visual,
+//                         summary, audit, ci, verdict, keyFiles, reviewHistory, why }
 //   --audit "<text>"      audit status line (overrides sidecar)
 //   --out <path>          output HTML (default: pr-<n>-presentation.html)
 //
@@ -68,18 +68,22 @@ const rawDiff = gh(['pr', 'diff', prNumber, ...repoArgs])
 
 /* ------------------------------------------------------- sidecar context */
 
-const context = { mermaid: '', summary: '', audit: '', verdict: '', keyFiles: [], reviewHistory: [], why: [] }
+const context = {
+  mermaid: '', visual: '', summary: '', audit: '', verdict: '', keyFiles: [],
+  reviewHistory: [], why: [],
+}
 if (args.context) {
   const raw = readFileSync(args.context, 'utf8')
   if (args.context.endsWith('.json')) Object.assign(context, JSON.parse(raw))
   else {
-    const fence = raw.match(/```mermaid\n([\s\S]*?)```/)
-    context.mermaid = fence ? fence[1].trim() : ''
+    const fence = raw.match(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/)
+    if (fence?.[1] === 'mermaid') context.mermaid = fence[2].trim()
+    else if (fence) context.visual = fence[2].trim()
     // `## Key files` pins the reading order; `## Review history` carries the
     // audit trail. Sectioning is done by splitting rather than one greedy
     // regex: `$` under /m/ ends at the first newline, so a lazy "until the next
     // heading" match silently captures nothing.
-    const lines = raw.replace(/```mermaid\n[\s\S]*?```/, '').split('\n')
+    const lines = raw.replace(fence?.[0] ?? '', '').split('\n')
     const keep = []
     let section = ''
     for (const line of lines) {
@@ -718,7 +722,11 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
 
   <h2>1 · What this touches</h2>
   <div class="card diagram">
-    ${context.mermaid ? `<pre class="mermaid">\n${esc(context.mermaid)}\n</pre>` : '<p class="muted">No intro diagram supplied. Put a <code>```mermaid</code> fence in the context sidecar.</p>'}
+    ${context.mermaid
+      ? `<pre class="mermaid">\n${esc(context.mermaid)}\n</pre>`
+      : context.visual
+        ? `<pre><code>${esc(context.visual)}</code></pre>`
+        : '<p class="muted">No intro visual supplied. Put one focused fenced block in the context sidecar.</p>'}
   </div>
   <div class="card" style="margin-top:12px">${paragraphs(context.summary)}</div>
 

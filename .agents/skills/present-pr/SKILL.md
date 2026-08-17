@@ -43,14 +43,20 @@ already reviewed, and state the open questions.
    ~~~markdown
    # PR <n> context
 
-   ```mermaid
-   flowchart TB
-     ...one diagram of the seam: which components, which direction data flows,
-     which nodes are new (use `classDef new stroke-dasharray: 4 3`)
+   ```text
+   submitForm
+     createSession
+   +   expandSkillMention
+       launchAgent
+     navigateToSession
    ```
 
-   3–6 sentences of context. What problem, which two or three mechanisms changed,
-   what the PR explicitly does **not** do, and what to look at first.
+   The first fenced block is the context visual. Choose the smallest shape that
+   explains the PR: call or component tree, pseudocode, a diff-shaped sketch, or
+   Mermaid for state, sequence, component interaction, or data flow.
+
+   Follow with 3–6 sentences of context: the problem, which two or three mechanisms
+   changed, what the PR explicitly does **not** do, and what to look at first.
 
    ## Key files
 
@@ -58,9 +64,11 @@ already reviewed, and state the open questions.
    - path/to/the/second/one.ts
    ~~~
 
-   Diagram rules: one diagram, not three. Show the *mechanism*, not the file tree. Mark
-   new/changed nodes distinctly. Under ~12 nodes — if it needs more, the PR is the
-   problem, not the diagram.
+   Visual rules: one visual, not three. Show the *mechanism*, not a generic
+   architecture diagram. Use `diff` syntax when the surrounding shape already exists;
+   show the whole tree or block when most of it is new. Keep only the calls, states,
+   files, props, and boundaries needed for the review decision. Stay under ~12
+   nodes/lines; if it needs more, narrow the view.
 
    `## Key files` is optional and pins the reading order explicitly, overriding the
    importance heuristic. Use it whenever you know which two or three diffs decide the
