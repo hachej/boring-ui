@@ -21,6 +21,12 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
+import {
+  createPresentationContext,
+  parseContextMarkdown,
+  renderIntroVisual,
+} from './lib/present-pr-context.mjs'
+
 /* ------------------------------------------------------------------ args */
 
 function parseArgs(argv) {
@@ -68,40 +74,12 @@ const rawDiff = gh(['pr', 'diff', prNumber, ...repoArgs])
 
 /* ------------------------------------------------------- sidecar context */
 
-const context = {
-  mermaid: '', visual: '', summary: '', audit: '', verdict: '', keyFiles: [],
-  reviewHistory: [], why: [],
-}
+let context = createPresentationContext()
 if (args.context) {
   const raw = readFileSync(args.context, 'utf8')
-  if (args.context.endsWith('.json')) Object.assign(context, JSON.parse(raw))
-  else {
-    const fence = raw.match(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/)
-    if (fence?.[1] === 'mermaid') context.mermaid = fence[2].trim()
-    else if (fence) context.visual = fence[2].trim()
-    // `## Key files` pins the reading order; `## Review history` carries the
-    // audit trail. Sectioning is done by splitting rather than one greedy
-    // regex: `$` under /m/ ends at the first newline, so a lazy "until the next
-    // heading" match silently captures nothing.
-    const lines = raw.replace(fence?.[0] ?? '', '').split('\n')
-    const keep = []
-    let section = ''
-    for (const line of lines) {
-      if (/^##+\s/.test(line)) {
-        const heading = line.replace(/^#+\s*/, '').trim().toLowerCase()
-        section = heading === 'key files' ? 'keyFiles'
-          : heading === 'review history' ? 'reviewHistory'
-          : heading === 'why' ? 'why' : ''
-      }
-      if (!section) { keep.push(line); continue }
-      const item = line.match(/^\s*[-*]\s+(.*)$/)
-      if (!item) continue
-      if (section === 'keyFiles') context.keyFiles.push(item[1].replace(/`/g, '').trim())
-      else if (section === 'why') context.why.push(item[1].replace(/`/g, '').trim())
-      else context.reviewHistory.push(item[1].trim())
-    }
-    context.summary = keep.join('\n').replace(/^#.*\n/, '').trim()
-  }
+  context = args.context.endsWith('.json')
+    ? createPresentationContext(JSON.parse(raw))
+    : parseContextMarkdown(raw)
 }
 context.keyFiles = Array.isArray(context.keyFiles) ? context.keyFiles : []
 context.reviewHistory = Array.isArray(context.reviewHistory) ? context.reviewHistory : []
@@ -722,11 +700,7 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
 
   <h2>1 · What this touches</h2>
   <div class="card diagram">
-    ${context.mermaid
-      ? `<pre class="mermaid">\n${esc(context.mermaid)}\n</pre>`
-      : context.visual
-        ? `<pre><code>${esc(context.visual)}</code></pre>`
-        : '<p class="muted">No intro visual supplied. Put one focused fenced block in the context sidecar.</p>'}
+    ${renderIntroVisual(context)}
   </div>
   <div class="card" style="margin-top:12px">${paragraphs(context.summary)}</div>
 
