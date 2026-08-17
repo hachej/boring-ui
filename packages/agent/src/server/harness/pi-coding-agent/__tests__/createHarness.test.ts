@@ -952,7 +952,15 @@ describe("PiSessionStore", () => {
       const store = trustedNativeStore();
       await store.rename(directCtx, id, "Renamed concurrently");
       const reopened = open(filepath, tmpDir, "/tmp");
-      expect(reopened.getLeafEntry()).toMatchObject({ type: "session_info", name: "Renamed concurrently", parentId: concurrentId });
+      const renamedLeaf = reopened.getLeafEntry();
+      expect(renamedLeaf).toMatchObject({ type: "session_info", name: "Renamed concurrently" });
+      const authority = reopened.getEntry(renamedLeaf!.parentId!);
+      expect(authority).toMatchObject({
+        type: "custom",
+        customType: "boring.session-title-authority",
+        parentId: concurrentId,
+        data: { titleSetByUser: true, title: "Renamed concurrently" },
+      });
       expect(reopened.buildContextEntries().map((entry) => entry.id)).toContain(concurrentId);
       expect(((await stat(filepath)).mtimeMs - mtimeBeforeRename) / 1000).toBeGreaterThan(1);
     } finally {

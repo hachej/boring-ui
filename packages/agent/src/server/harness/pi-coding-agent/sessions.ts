@@ -32,6 +32,7 @@ import {
   type SessionListOptions,
 } from "../../../shared/session.js";
 import { appendVerifiedNativeRename } from "./nativeSessionRename.js";
+import { USER_SESSION_TITLE_CUSTOM_TYPE, userSessionTitleData, userSessionTitleFromEntry } from "./sessionTitleAuthority.js";
 import {
   latestNativeMessageTimestamp,
   summarizeNativeTranscript,
@@ -277,7 +278,9 @@ export class PiSessionStore implements SessionStore {
     const nativeSummary = resolved.directNative
       ? await summarizeNativeTranscript(resolved.filepath)
       : null;
-    const title = newestDurableTitle(resolved.sessionEntries, resolved.linkedEntries)
+    const title = newestUserTitle(resolved.sessionEntries, resolved.linkedEntries)
+      ?? nativeSummary?.userTitle
+      ?? newestDurableTitle(resolved.sessionEntries, resolved.linkedEntries)
       ?? nativeSummary?.title
       ?? nativeSummary?.firstUserTitle
       ?? "New session";
@@ -439,18 +442,27 @@ export class PiSessionStore implements SessionStore {
         }
         return await this.load(ctx, sessionId);
       }
+      const timestamp = new Date().toISOString();
       const entry: SessionInfoEntry = {
         type: "session_info",
         id: randomUUID(),
         parentId: null,
-        timestamp: new Date().toISOString(),
+        timestamp,
         name: trimmed,
       };
-      const line = `${JSON.stringify(entry)}\n`;
+      const authorityEntry: SessionEntry = {
+        type: "custom",
+        id: randomUUID(),
+        parentId: entry.id,
+        timestamp,
+        customType: USER_SESSION_TITLE_CUSTOM_TYPE,
+        data: userSessionTitleData(trimmed),
+      };
+      const lines = `${JSON.stringify(entry)}\n${JSON.stringify(authorityEntry)}\n`;
       const targets = [resolved.filepath, resolved.linkedFilepath]
         .filter((path): path is string => Boolean(path));
       for (const filepath of targets) {
-        await appendFile(filepath, line);
+        await appendFile(filepath, lines);
         this.prefixCache.delete(filepath);
       }
       return await this.load(ctx, sessionId);
@@ -735,6 +747,8 @@ export class PiSessionStore implements SessionStore {
         : null;
 
       const title =
+        newestUserTitle(sessionEntries, linkedEntries) ??
+        nativeSummary?.userTitle ??
         newestDurableTitle(sessionEntries, linkedEntries) ??
         nativeSummary?.title ??
         nativeSummary?.firstUserTitle ??
@@ -1197,6 +1211,29 @@ function hasAssistantReply(entries: SessionEntry[]): boolean {
     (entry): entry is SessionMessageEntry =>
       entry.type === "message" && entry.message.role === "assistant",
   );
+}
+
+function newestUserTitle(
+  wrapperEntries: SessionEntry[],
+  nativeEntries: SessionEntry[],
+): string | undefined {
+  const candidates = [
+    ...wrapperEntries.flatMap((entry, offset) => {
+      const title = userSessionTitleFromEntry(entry);
+      return title ? [{ title, timestamp: entry.timestamp, native: 0, offset }] : [];
+    }),
+    ...nativeEntries.flatMap((entry, offset) => {
+      const title = userSessionTitleFromEntry(entry);
+      return title ? [{ title, timestamp: entry.timestamp, native: 1, offset }] : [];
+    }),
+  ];
+  candidates.sort((a, b) => {
+    const aTimestamp = Date.parse(a.timestamp);
+    const bTimestamp = Date.parse(b.timestamp);
+    const timestamp = (Number.isFinite(bTimestamp) ? bTimestamp : 0) - (Number.isFinite(aTimestamp) ? aTimestamp : 0);
+    return timestamp || b.native - a.native || b.offset - a.offset;
+  });
+  return candidates[0]?.title;
 }
 
 function newestDurableTitle(
