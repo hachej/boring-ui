@@ -60,7 +60,7 @@ jobs:
                 ;;
             esac
             case "$file" in
-              pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|packages/cli/*|packages/cli/**|packages/agent/src/front/*|packages/agent/src/front/**|packages/ui/*|packages/ui/**|packages/workspace/*|packages/workspace/**|plugins/*/src/front/*|plugins/*/src/front/**)
+              pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|packages/cli/*|packages/cli/**|packages/agent/src/front/*|packages/agent/src/front/**|packages/core/*|packages/core/**|packages/ui/*|packages/ui/**|packages/workspace/*|packages/workspace/**|plugins/*/src/front/*|plugins/*/src/front/**)
                 cli_bundle=true
                 ;;
             esac
