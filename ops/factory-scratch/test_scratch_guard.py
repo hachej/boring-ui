@@ -4,12 +4,14 @@ from __future__ import annotations
 import fcntl
 import importlib.util
 import json
+import os
 from pathlib import Path
 import stat
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 MODULE_PATH = Path(__file__).with_name("scratch_guard.py")
 spec = importlib.util.spec_from_file_location("scratch_guard", MODULE_PATH)
@@ -134,6 +136,78 @@ class ScratchGuardTest(unittest.TestCase):
         self.assertTrue(outside.exists())
         self.assertTrue(nested.exists())
 
+
+    def test_same_device_nested_mount_boundary_is_retained(self) -> None:
+        entry = self.entry("mounted")
+        mounted_path = entry / "bind-target"
+        result = scratch_guard.clean_root(
+            self.root, stale_seconds=100, apply=True, now=10_000,
+            mounts=[scratch_guard.Mount(mounted_path, "ext4")],
+        )[0]
+        self.assertEqual("retain", result.action)
+        self.assertIn("mounted path boundary", result.reason)
+        self.assertTrue(entry.exists())
+
+    def test_dry_run_refuses_when_safe_removal_is_unavailable(self) -> None:
+        entry = self.entry("portable")
+        with mock.patch.object(scratch_guard.shutil.rmtree, "avoids_symlink_attacks", False):
+            result = self.decisions(apply=False)[0]
+        self.assertEqual("retain", result.action)
+        self.assertIn("lacks symlink-safe", result.reason)
+        self.assertTrue(entry.exists())
+
+
+    def test_heartbeat_change_at_mutation_boundary_is_retained(self) -> None:
+        entry = self.entry("heartbeat-race")
+        real_decision = scratch_guard._entry_decision
+
+        def change_heartbeat(*args, **kwargs):
+            decision, evidence = real_decision(*args, **kwargs)
+            if evidence is not None:
+                os.utime(entry / scratch_guard.HEARTBEAT_FILE, (9_950, 9_950))
+            return decision, evidence
+
+        with mock.patch.object(scratch_guard, "_entry_decision", side_effect=change_heartbeat):
+            result = self.decisions(apply=True)[0]
+        self.assertEqual("retain", result.action)
+        self.assertIn("heartbeat changed", result.reason)
+        self.assertTrue(entry.exists())
+
+    def test_entry_inode_swap_at_mutation_boundary_is_retained(self) -> None:
+        entry = self.entry("swap")
+        real_stat = scratch_guard.os.stat
+
+        def changed_stat(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            if path == "swap" and kwargs.get("dir_fd") is not None:
+                values = list(result)
+                values[1] += 1
+                return os.stat_result(values)
+            return result
+
+        with mock.patch.object(scratch_guard.os, "stat", side_effect=changed_stat):
+            result = self.decisions(apply=True)[0]
+        self.assertEqual("retain", result.action)
+        self.assertIn("entry directory changed", result.reason)
+        self.assertTrue(entry.exists())
+
+    def test_failed_initialization_removes_private_staging_and_allows_retry(self) -> None:
+        target = self.base / "atomic-root"
+        original = Path.write_text
+
+        def fail_marker(path, *args, **kwargs):
+            if path.name == scratch_guard.ROOT_MARKER:
+                raise OSError("fixture write failure")
+            return original(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "write_text", autospec=True, side_effect=fail_marker):
+            with self.assertRaisesRegex(OSError, "fixture write failure"):
+                scratch_guard.initialize_root(target)
+        self.assertFalse(target.exists())
+        self.assertEqual([], list(self.base.glob(".atomic-root.boring-init-*")))
+        scratch_guard.initialize_root(target)
+        self.assertTrue(target.is_dir())
+
     def test_unrelated_paths_are_preserved(self) -> None:
         unrelated = self.root / "notes.txt"
         unrelated.write_text("operator data")
@@ -179,6 +253,27 @@ class ScratchGuardTest(unittest.TestCase):
         )
         self.assertEqual(0, check_run.returncode, check_run.stdout)
         self.assertIn("inode usage", check_run.stdout)
+        cli_root = self.base / "cli-root"
+        init_root_run = subprocess.run(
+            [str(installed), "init-root", str(cli_root)], check=False, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        self.assertEqual(0, init_root_run.returncode, init_root_run.stdout)
+        init_entry_run = subprocess.run(
+            [str(installed), "init-entry", str(cli_root), "documented-run"],
+            check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        self.assertEqual(0, init_entry_run.returncode, init_entry_run.stdout)
+        cli_entry = cli_root / "documented-run"
+        (cli_entry / "tmp").mkdir()
+        os.utime(cli_entry / scratch_guard.HEARTBEAT_FILE, (1, 1))
+        dry_run = subprocess.run(
+            [str(installed), "clean", "--root", str(cli_root), "--stale-seconds", "1"],
+            check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        self.assertEqual(0, dry_run.returncode, dry_run.stdout)
+        self.assertIn("WOULD-DELETE", dry_run.stdout)
+        self.assertTrue(cli_entry.exists())
         help_run = subprocess.run(
             [str(installed), "check", "--help"], cwd=repo,
             check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

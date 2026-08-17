@@ -12,6 +12,7 @@ from pathlib import Path
 import shutil
 import stat
 import sys
+import tempfile
 import time
 import uuid
 from dataclasses import dataclass
@@ -41,6 +42,14 @@ class Decision:
     path: Path
     action: str
     reason: str
+
+
+@dataclass
+class LeaseEvidence:
+    lock: TextIO
+    entry_identity: tuple[int, int]
+    heartbeat_identity: tuple[int, int]
+    heartbeat_mtime_ns: int
 
 
 def _strict_json(path: Path, expected_keys: set[str]) -> dict[str, object]:
@@ -84,16 +93,29 @@ def _validate_root(root: Path) -> tuple[Path, str]:
     return resolved, root_id
 
 
+def _discard_private_staging(staging: Path) -> None:
+    if staging.exists() and not staging.is_symlink():
+        shutil.rmtree(staging)
+
+
 def initialize_root(root: Path) -> None:
     if not root.is_absolute():
         raise SafetyError("scratch root must be absolute")
     if root.exists() or root.is_symlink():
         raise SafetyError("init refuses an existing path")
-    root.mkdir(mode=0o700, parents=False)
-    marker = {"owner": OWNER, "protocol": PROTOCOL_VERSION, "root_id": str(uuid.uuid4())}
-    marker_path = root / ROOT_MARKER
-    marker_path.write_text(json.dumps(marker, sort_keys=True) + "\n", encoding="utf-8")
-    marker_path.chmod(0o600)
+    if not root.parent.is_dir():
+        raise SafetyError("scratch root parent must already exist")
+    staging = Path(tempfile.mkdtemp(prefix=f".{root.name}.boring-init-", dir=root.parent))
+    try:
+        staging.chmod(0o700)
+        marker = {"owner": OWNER, "protocol": PROTOCOL_VERSION, "root_id": str(uuid.uuid4())}
+        marker_path = staging / ROOT_MARKER
+        marker_path.write_text(json.dumps(marker, sort_keys=True) + "\n", encoding="utf-8")
+        marker_path.chmod(0o600)
+        staging.rename(root)
+    except BaseException:
+        _discard_private_staging(staging)
+        raise
 
 
 def initialize_entry(root: Path, name: str, *, now: float | None = None) -> Path:
@@ -101,7 +123,7 @@ def initialize_entry(root: Path, name: str, *, now: float | None = None) -> Path
     if (
         not name
         or name in {".", "..", ROOT_MARKER}
-        or name.startswith(".boring-trash-")
+        or name.startswith((".boring-trash-", ".boring-init-"))
         or "/" in name
         or os.sep in name
     ):
@@ -109,19 +131,27 @@ def initialize_entry(root: Path, name: str, *, now: float | None = None) -> Path
     entry = canonical_root / name
     if entry.exists() or entry.is_symlink():
         raise SafetyError("entry path already exists")
-    entry.mkdir(mode=0o700)
-    marker = {
-        "entry": name,
-        "owner": OWNER,
-        "protocol": PROTOCOL_VERSION,
-        "root_id": root_id,
-    }
-    (entry / ENTRY_MARKER).write_text(json.dumps(marker, sort_keys=True) + "\n", encoding="utf-8")
-    (entry / LOCK_FILE).touch(mode=0o600)
-    heartbeat = entry / HEARTBEAT_FILE
-    heartbeat.touch(mode=0o600)
-    timestamp = time.time() if now is None else now
-    os.utime(heartbeat, (timestamp, timestamp), follow_symlinks=False)
+    staging = Path(tempfile.mkdtemp(prefix=".boring-init-", dir=canonical_root))
+    try:
+        staging.chmod(0o700)
+        marker = {
+            "entry": name,
+            "owner": OWNER,
+            "protocol": PROTOCOL_VERSION,
+            "root_id": root_id,
+        }
+        marker_path = staging / ENTRY_MARKER
+        marker_path.write_text(json.dumps(marker, sort_keys=True) + "\n", encoding="utf-8")
+        marker_path.chmod(0o600)
+        (staging / LOCK_FILE).touch(mode=0o600)
+        heartbeat = staging / HEARTBEAT_FILE
+        heartbeat.touch(mode=0o600)
+        timestamp = time.time() if now is None else now
+        os.utime(heartbeat, (timestamp, timestamp), follow_symlinks=False)
+        staging.rename(entry)
+    except BaseException:
+        _discard_private_staging(staging)
+        raise
     return entry
 
 
@@ -149,7 +179,8 @@ def _entry_decision(
     *,
     stale_before: float,
     now: float,
-) -> tuple[Decision, TextIO | None]:
+    mounts: list[Mount],
+) -> tuple[Decision, LeaseEvidence | None]:
     try:
         entry_st = entry.lstat()
     except OSError as exc:
@@ -158,6 +189,11 @@ def _entry_decision(
         return Decision(entry, "retain", "not a real directory"), None
     if entry_st.st_dev != root.lstat().st_dev:
         return Decision(entry, "retain", "entry is a filesystem boundary"), None
+    for mount in mounts:
+        if mount.point == entry or entry in mount.point.parents:
+            return Decision(entry, "retain", f"mounted path boundary at {mount.point}"), None
+    if not getattr(shutil.rmtree, "avoids_symlink_attacks", False):
+        return Decision(entry, "retain", "platform lacks symlink-safe tree removal"), None
     try:
         marker = _strict_json(entry / ENTRY_MARKER, {"entry", "owner", "protocol", "root_id"})
     except SafetyError as exc:
@@ -219,7 +255,27 @@ def _entry_decision(
     if not confined:
         lock_handle.close()
         return Decision(entry, "retain", reason), None
-    return Decision(entry, "delete", f"stale heartbeat ({int(age)}s old), unlocked, confined"), lock_handle
+    evidence = LeaseEvidence(
+        lock=lock_handle,
+        entry_identity=(entry_st.st_dev, entry_st.st_ino),
+        heartbeat_identity=(heartbeat_st.st_dev, heartbeat_st.st_ino),
+        heartbeat_mtime_ns=heartbeat_st.st_mtime_ns,
+    )
+    return (
+        Decision(entry, "delete", f"stale heartbeat ({int(age)}s old), unlocked, confined"),
+        evidence,
+    )
+
+
+def _read_mounts() -> list[Mount]:
+    try:
+        with Path("/proc/self/mountinfo").open(encoding="utf-8") as mountinfo:
+            mounts = parse_mountinfo(mountinfo)
+    except OSError as exc:
+        raise SafetyError(f"cannot read mount boundaries: {exc}") from exc
+    if not mounts:
+        raise SafetyError("mount boundary data is empty or malformed")
+    return mounts
 
 
 def clean_root(
@@ -228,67 +284,93 @@ def clean_root(
     stale_seconds: int,
     apply: bool,
     now: float | None = None,
+    mounts: list[Mount] | None = None,
 ) -> list[Decision]:
     if stale_seconds <= 0:
         raise SafetyError("stale-seconds must be greater than zero")
     canonical_root, root_id = _validate_root(root)
+    root_st = canonical_root.lstat()
+    root_identity = (root_st.st_dev, root_st.st_ino)
+    active_mounts = _read_mounts() if mounts is None else mounts
     current_time = time.time() if now is None else now
     stale_before = current_time - stale_seconds
     decisions: list[Decision] = []
-    for entry in sorted(canonical_root.iterdir(), key=lambda item: item.name):
-        if entry.name == ROOT_MARKER:
-            continue
-        if entry.name.startswith(".boring-trash-"):
-            decisions.append(Decision(entry, "retain", "ambiguous prior quarantine"))
-            continue
-        decision, lock_handle = _entry_decision(
-            canonical_root, root_id, entry, stale_before=stale_before, now=current_time
-        )
-        if decision.action != "delete" or not apply:
-            if lock_handle is not None:
-                lock_handle.close()
-            decisions.append(
-                Decision(entry, "would-delete", decision.reason) if decision.action == "delete" else decision
+    root_fd = os.open(canonical_root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        if (os.fstat(root_fd).st_dev, os.fstat(root_fd).st_ino) != root_identity:
+            raise SafetyError("scratch root changed while opening")
+        for entry in sorted(canonical_root.iterdir(), key=lambda item: item.name):
+            if entry.name == ROOT_MARKER:
+                continue
+            if entry.name.startswith((".boring-trash-", ".boring-init-")):
+                decisions.append(Decision(entry, "retain", "ambiguous prior quarantine/staging"))
+                continue
+            decision, evidence = _entry_decision(
+                canonical_root,
+                root_id,
+                entry,
+                stale_before=stale_before,
+                now=current_time,
+                mounts=active_mounts,
             )
-            continue
+            if decision.action != "delete" or not apply:
+                if evidence is not None:
+                    evidence.lock.close()
+                decisions.append(
+                    Decision(entry, "would-delete", decision.reason)
+                    if decision.action == "delete"
+                    else decision
+                )
+                continue
 
-        if not getattr(shutil.rmtree, "avoids_symlink_attacks", False):
-            lock_handle.close()
-            decisions.append(Decision(entry, "retain", "platform lacks symlink-safe tree removal"))
-            continue
-        quarantine_name = f".boring-trash-{uuid.uuid4().hex}"
-        quarantine = canonical_root / quarantine_name
-        root_fd = os.open(canonical_root, os.O_RDONLY | os.O_DIRECTORY)
-        renamed = False
-        try:
-            # Revalidate the locked inode immediately before the mutation boundary.
-            held_lock_st = os.fstat(lock_handle.fileno())
-            path_lock_st = (entry / LOCK_FILE).lstat()
-            if (held_lock_st.st_dev, held_lock_st.st_ino) != (
-                path_lock_st.st_dev,
-                path_lock_st.st_ino,
-            ):
-                raise SafetyError("lock file changed before quarantine")
-            # Same-directory rename is atomic. The exclusive lease lock remains held.
-            os.rename(
-                entry.name,
-                quarantine_name,
-                src_dir_fd=root_fd,
-                dst_dir_fd=root_fd,
-            )
-            renamed = True
-            quarantined_st = os.stat(quarantine_name, dir_fd=root_fd, follow_symlinks=False)
-            if not stat.S_ISDIR(quarantined_st.st_mode):
-                raise SafetyError("quarantine changed type")
-            shutil.rmtree(quarantine_name, dir_fd=root_fd)
-            decisions.append(Decision(entry, "deleted", decision.reason))
-        except (OSError, SafetyError) as exc:
-            retained_path = quarantine if renamed else entry
-            reason = "quarantined but deletion failed" if renamed else "atomic quarantine failed"
-            decisions.append(Decision(retained_path, "retain", f"{reason}: {exc}"))
-        finally:
-            os.close(root_fd)
-            lock_handle.close()
+            if evidence is None:
+                raise SafetyError("eligible entry is missing lease evidence")
+            quarantine_name = f".boring-trash-{uuid.uuid4().hex}"
+            quarantine = canonical_root / quarantine_name
+            renamed = False
+            try:
+                current_root_st = canonical_root.lstat()
+                if (current_root_st.st_dev, current_root_st.st_ino) != root_identity:
+                    raise SafetyError("scratch root changed before quarantine")
+                held_lock_st = os.fstat(evidence.lock.fileno())
+                path_lock_st = (entry / LOCK_FILE).lstat()
+                if (held_lock_st.st_dev, held_lock_st.st_ino) != (
+                    path_lock_st.st_dev,
+                    path_lock_st.st_ino,
+                ):
+                    raise SafetyError("lock file changed before quarantine")
+                current_heartbeat_st = (entry / HEARTBEAT_FILE).lstat()
+                if (
+                    (current_heartbeat_st.st_dev, current_heartbeat_st.st_ino)
+                    != evidence.heartbeat_identity
+                    or current_heartbeat_st.st_mtime_ns != evidence.heartbeat_mtime_ns
+                ):
+                    raise SafetyError("heartbeat changed before quarantine")
+                current_entry_st = os.stat(entry.name, dir_fd=root_fd, follow_symlinks=False)
+                if (current_entry_st.st_dev, current_entry_st.st_ino) != evidence.entry_identity:
+                    raise SafetyError("entry directory changed before quarantine")
+                os.rename(
+                    entry.name,
+                    quarantine_name,
+                    src_dir_fd=root_fd,
+                    dst_dir_fd=root_fd,
+                )
+                renamed = True
+                quarantined_st = os.stat(
+                    quarantine_name, dir_fd=root_fd, follow_symlinks=False
+                )
+                if (quarantined_st.st_dev, quarantined_st.st_ino) != evidence.entry_identity:
+                    raise SafetyError("quarantine identity mismatch")
+                shutil.rmtree(quarantine_name, dir_fd=root_fd)
+                decisions.append(Decision(entry, "deleted", decision.reason))
+            except (OSError, SafetyError) as exc:
+                retained_path = quarantine if renamed else entry
+                reason = "quarantined but deletion failed" if renamed else "atomic quarantine failed"
+                decisions.append(Decision(retained_path, "retain", f"{reason}: {exc}"))
+            finally:
+                evidence.lock.close()
+    finally:
+        os.close(root_fd)
     return decisions
 
 
@@ -420,8 +502,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             return 0
         if args.command == "check":
-            with Path("/proc/self/mountinfo").open(encoding="utf-8") as mountinfo:
-                mounts = parse_mountinfo(mountinfo)
+            mounts = _read_mounts()
             pnpm_store = args.pnpm_store
             if pnpm_store is None and os.environ.get("PNPM_STORE_DIR"):
                 pnpm_store = Path(os.environ["PNPM_STORE_DIR"])

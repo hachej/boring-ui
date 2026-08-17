@@ -34,6 +34,7 @@ store is tmpfs/ramfs. Invalid or unavailable inputs exit `3`.
 ```bash
 export TMPDIR=/var/tmp/boring-ui-tmp
 export PNPM_STORE_DIR=/var/cache/boring-ui/pnpm-store
+install -d -m 0700 "$TMPDIR" "$PNPM_STORE_DIR"
 scratch-guard check --path "$PWD" --path "$TMPDIR" --path "$PNPM_STORE_DIR" \
   --inode-threshold 85 --tmpdir "$TMPDIR" --pnpm-store "$PNPM_STORE_DIR"
 ```
@@ -46,8 +47,11 @@ safe. Supply `--pnpm-store` (or `PNPM_STORE_DIR`) to make that check meaningful.
 ## Create a dedicated marked root
 
 `init-root` refuses an existing path and creates a private mode-0700 directory.
-The cleaner later refuses roots that are symlinks, non-canonical, owned by a
-different uid, group/world writable, or missing the exact root marker.
+Initialization stages protocol files privately and exposes the final path with one
+rename; a failed setup removes only its own private staging directory so the exact
+command can be retried. The cleaner later refuses roots that are symlinks,
+non-canonical, owned by a different uid, group/world writable, or missing the
+exact root marker.
 
 ```bash
 scratch-guard init-root /var/tmp/boring-ui-owned-scratch
@@ -61,14 +65,15 @@ A producer using an entry must:
 - refresh `.boring-heartbeat` while active.
 
 A producer that cannot honor both rules must not use this aging protocol. The
-cleaner treats missing, malformed, replaced, live, locked, symlinked, cross-filesystem,
-or otherwise ambiguous entries as retained. It examines direct children only
+cleaner treats missing, malformed, replaced, live, locked, symlinked, mounted (including same-device
+bind mounts), cross-filesystem, or otherwise ambiguous entries as retained. It examines direct children only
 and requires the entry marker to match the root id and child name exactly.
 
 Example producer lock (the heartbeat update happens while the lock is held):
 
 ```bash
 entry=/var/tmp/boring-ui-owned-scratch/run-2026-08-17-a
+mkdir -m 0700 "$entry/tmp"
 (
   flock -s 9
   touch "$entry/.boring-heartbeat"
