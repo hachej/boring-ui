@@ -62,25 +62,26 @@ async function verifiedNativeRenameAppend(
     const { bytesRead } = await handle.read(record, 0, record.length, before.size);
     if (bytesRead !== record.length || record.at(-1) !== 0x0a) return null;
     const lines = record.toString("utf-8").trimEnd().split("\n");
-    if (lines.length < 2) return null;
-    const authorityEntry = JSON.parse(lines[0]!) as { type?: unknown; id?: unknown; parentId?: unknown; customType?: unknown; data?: unknown };
-    const titleEntry = JSON.parse(lines[1]!) as { type?: unknown; id?: unknown; parentId?: unknown; name?: unknown };
+    const entries = lines.map((line) => JSON.parse(line) as { type?: unknown; id?: unknown; parentId?: unknown; name?: unknown; customType?: unknown; data?: unknown });
+    const authorityIndex = entries.findIndex((entry) => entry.id === append.authority.id);
+    if (authorityIndex < 0 || authorityIndex + 1 >= entries.length) return null;
+    const authorityEntry = entries[authorityIndex]!;
+    const titleEntry = entries[authorityIndex + 1]!;
+    const precedingEntry = entries[authorityIndex - 1];
     const data = authorityEntry.data as { titleSetByUser?: unknown; title?: unknown } | null | undefined;
-    return titleEntry.type === "session_info"
+    const validPredecessor = authorityIndex === 0 || precedingEntry?.id === append.authority.parentId;
+    if (!(validPredecessor
+      && titleEntry.type === "session_info"
       && titleEntry.id === append.title.id
       && titleEntry.parentId === append.title.parentId
       && titleEntry.name === title
       && authorityEntry.type === "custom"
-      && authorityEntry.id === append.authority.id
       && authorityEntry.parentId === append.authority.parentId
       && authorityEntry.customType === USER_SESSION_TITLE_CUSTOM_TYPE
       && data?.titleSetByUser === true
-      && data.title === title
-      ? {
-          renameSize: before.size + Buffer.byteLength(`${lines[0]}\n${lines[1]}\n`),
-          currentSize: after.size,
-        }
-      : null;
+      && data.title === title)) return null;
+    const renameSize = before.size + Buffer.byteLength(`${lines.slice(0, authorityIndex + 2).join("\n")}\n`);
+    return { renameSize, currentSize: after.size };
   } catch {
     return null;
   } finally {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { writeFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
 import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile, utimes } from "node:fs/promises";
 import { CURRENT_SESSION_VERSION, DefaultResourceLoader, formatSkillsForPrompt, SessionManager } from "@mariozechner/pi-coding-agent";
 import { basename, join } from "node:path";
@@ -969,6 +969,41 @@ describe("PiSessionStore", () => {
     }
   });
 
+  it("accepts a concurrent append before a complete pair when the marker continues that branch", async () => {
+    const id = "native-concurrent-before-pair";
+    const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "assistant", parentId: null, message: { role: "assistant", content: "answer" } }),
+      "",
+    ].join("\n"), "utf-8");
+    const open = SessionManager.open.bind(SessionManager);
+    let injected = false;
+    const openSpy = vi.spyOn(SessionManager, "open").mockImplementation((...args) => {
+      if (!injected) {
+        injected = true;
+        appendFileSync(filepath, `${JSON.stringify({ type: "message", id: "before-pair", parentId: "assistant", timestamp: new Date().toISOString(), message: { role: "user", content: "concurrent before pair" } })}\n`);
+      }
+      return open(...args);
+    });
+
+    try {
+      const store = trustedNativeStore();
+      await expect(store.rename(directCtx, id, "Renamed after concurrent append"))
+        .resolves.toMatchObject({ title: "Renamed after concurrent append" });
+      const reopened = open(filepath, tmpDir, "/tmp");
+      const title = reopened.getLeafEntry();
+      const marker = reopened.getEntry(title!.parentId!);
+      expect(title).toMatchObject({ type: "session_info", name: "Renamed after concurrent append" });
+      expect(marker).toMatchObject({ type: "custom", parentId: "before-pair" });
+      await expect(store.list(directCtx)).resolves.toEqual([
+        expect.objectContaining({ id, title: "Renamed after concurrent append" }),
+      ]);
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
   it("commits a native rename while retaining a concurrent append after its complete authority pair", async () => {
     const id = "native-continuous-contention";
     const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
@@ -1052,14 +1087,16 @@ describe("PiSessionStore", () => {
       JSON.stringify({ type: "message", id: "user", parentId: null, message: { role: "user", content: "prompt" } }),
       JSON.stringify({ type: "session_info", id: "auto", parentId: "user", name: "Auto title" }),
       JSON.stringify({ type: "custom", id: "partial", parentId: "auto", timestamp: "2026-06-04T00:00:01.000Z", customType: "boring.session-title-authority", data: { titleSetByUser: true, title: "Partial title" } }),
-      JSON.stringify({ type: "session_info", id: "mismatch", parentId: "partial", name: "Different title" }),
+      "not-valid-json-between-authority-records",
+      JSON.stringify({ type: "session_info", id: "matching-but-not-adjacent", parentId: "partial", name: "Partial title" }),
+      JSON.stringify({ type: "session_info", id: "later-auto", parentId: "matching-but-not-adjacent", name: "Auto after malformed record" }),
       "",
     ].join("\n"), "utf-8");
     const store = trustedNativeStore();
 
-    await expect(store.load(directCtx, id)).resolves.toMatchObject({ title: "Different title" });
+    await expect(store.load(directCtx, id)).resolves.toMatchObject({ title: "Auto after malformed record" });
     await expect(store.list(directCtx)).resolves.toEqual([
-      expect.objectContaining({ id, title: "Different title" }),
+      expect.objectContaining({ id, title: "Auto after malformed record" }),
     ]);
   });
 
