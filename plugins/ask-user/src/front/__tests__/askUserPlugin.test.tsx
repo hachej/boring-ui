@@ -371,6 +371,35 @@ describe("askUserPlugin front shell", () => {
     expect(screen.queryByText("First stale question")).not.toBeInTheDocument()
   })
 
+  it("surfaces a requestless question when the server invalidates pending UI state", async () => {
+    const pushedQuestion = { ...question, questionId: "sse-q1", sessionId: "sse-session", title: "Question delivered over UI SSE" }
+    let current: AskUserQuestion | null = null
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
+        return Response.json({ ok: true, output: { pending: current } })
+      }
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(current))
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const Panel = getPanel()
+
+    render(<Provider apiBaseUrl="" activeSessionId="sse-session" openSessionIds={["sse-session"]}><Panel params={{}} api={{ close: vi.fn() }} className="h-full" /></Provider>)
+    expect(await screen.findByText("No pending questions")).toBeInTheDocument()
+
+    current = pushedQuestion
+    act(() => {
+      events.emit(workspaceEvents.uiCommand, {
+        ...userMeta(),
+        command: { kind: "invalidateUiState", params: { keys: ["questions.pending"] } },
+      })
+    })
+
+    expect(await screen.findByText("Question delivered over UI SSE")).toBeInTheDocument()
+    expect(screen.queryByText("No pending questions")).not.toBeInTheDocument()
+  })
+
   it("rehydrates question from ask-user pending when opened from surface metadata", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {

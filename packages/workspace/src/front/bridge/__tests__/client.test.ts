@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { createBridgeClient, type BridgeClientOptions } from "../client"
 import type { WorkspaceBridge, CommandResult } from "../types"
 import type { WorkspaceStore } from "../../store/types"
+import { events, workspaceEvents } from "../../events"
+import { UI_STATE_INVALIDATION_COMMAND } from "../../../shared/ui-bridge"
 
 function ok(seq = 1): CommandResult {
   return { seq, status: "ok" }
@@ -207,6 +209,40 @@ describe("createBridgeClient", () => {
       await vi.advanceTimersByTimeAsync(0)
 
       expect(bridge.openFile).toHaveBeenCalledWith("/company/hr/policy.md", { mode: undefined, filesystem: "company_context" })
+      client.disconnect()
+    })
+
+    it("forwards valid UI state invalidations to reactive domain listeners", () => {
+      const received: unknown[] = []
+      const off = events.on(workspaceEvents.uiCommand, ({ command }) => received.push(command))
+      const { client } = createClient()
+      client.connect()
+      const es = MockEventSource.instances[0]
+
+      es.emit(
+        "command",
+        JSON.stringify({ v: 1, kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: ["questions.pending"] } }),
+      )
+
+      expect(received).toEqual([{ kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: ["questions.pending"] } }])
+      off()
+      client.disconnect()
+    })
+
+    it("ignores malformed UI state invalidations", () => {
+      const received: unknown[] = []
+      const off = events.on(workspaceEvents.uiCommand, ({ command }) => received.push(command))
+      const { client } = createClient()
+      client.connect()
+      const es = MockEventSource.instances[0]
+
+      es.emit(
+        "command",
+        JSON.stringify({ v: 1, kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: ["questions.pending", 42] } }),
+      )
+
+      expect(received).toEqual([])
+      off()
       client.disconnect()
     })
 

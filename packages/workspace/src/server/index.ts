@@ -20,6 +20,7 @@ export {
   createExecUiTool,
   createWorkspaceUiTools,
 } from "./ui-control/tools/uiTools"
+export { UI_STATE_INVALIDATION_COMMAND } from "../shared/ui-bridge"
 export type { UiBridge, WorkspaceBridge, UiState, UiCommand, CommandResult } from "../shared/ui-bridge"
 export {
   WorkspaceBridgeErrorCode,

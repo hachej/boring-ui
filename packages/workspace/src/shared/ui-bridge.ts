@@ -1,5 +1,7 @@
 import type { FilesystemId, UiFileOpenMode } from "./types/filesystem"
 
+export const UI_STATE_INVALIDATION_COMMAND = "invalidateUiState" as const
+
 export interface UiBridge {
   getState(): Promise<UiState | null>
   setState(state: UiState): Promise<void>

@@ -1,6 +1,8 @@
 import type { WorkspaceBridge, CausedBy } from "./types"
 import type { WorkspaceStore, PanelState } from "../store/types"
 import type { FilesystemId, UiFileOpenMode } from "../../shared/types/filesystem"
+import { UI_STATE_INVALIDATION_COMMAND } from "../../shared/ui-bridge"
+import { events, userMeta, workspaceEvents } from "../events"
 
 export interface UIStatePut {
   v: 1
@@ -51,6 +53,7 @@ type CommandKind =
   | "expandToFile"
   | "markDirty"
   | "markClean"
+  | typeof UI_STATE_INVALIDATION_COMMAND
 
 const DEBOUNCE_MS = 100
 const DEFAULT_POLL_INTERVAL = 3000
@@ -129,6 +132,12 @@ async function dispatchCommand(
     case "markClean":
       bridge.markClean(params.path as string)
       break
+    case UI_STATE_INVALIDATION_COMMAND: {
+      const keys = params.keys
+      if (!Array.isArray(keys) || keys.length === 0 || keys.some((key) => typeof key !== "string" || key.length === 0)) break
+      events.emit(workspaceEvents.uiCommand, { ...userMeta(), command: { kind: UI_STATE_INVALIDATION_COMMAND, params: { keys } } })
+      break
+    }
   }
 }
 

@@ -1,6 +1,6 @@
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import type { AskUserQuestion } from "../shared/types"
-import type { UiBridge, UiState } from "@hachej/boring-workspace/server"
+import { UI_STATE_INVALIDATION_COMMAND, type UiBridge, type UiState } from "@hachej/boring-workspace/server"
 import type { AskUserStore, AskUserStoreChange } from "./askUserStore"
 
 export type AskUserPendingHint = {
@@ -51,11 +51,14 @@ export class AskUserStatePublisher {
     const current = (await this.bridge.getState()) ?? {}
     if (hint) this.hintsBySession.set(sessionId, hint)
     else this.hintsBySession.delete(sessionId)
+    const nextPending = this.currentPendingState(hint)
+    if (JSON.stringify(current[ASK_USER_UI_STATE_SLOTS.PENDING]) === JSON.stringify(nextPending)) return
     const next: UiState = {
       ...current,
-      [ASK_USER_UI_STATE_SLOTS.PENDING]: this.currentPendingState(hint),
+      [ASK_USER_UI_STATE_SLOTS.PENDING]: nextPending,
     }
     await this.bridge.setState(next)
+    await this.notifyPendingChanged()
   }
 
   private currentPendingState(preferredHint?: AskUserPendingHint | null): AskUserPendingState {
@@ -94,6 +97,14 @@ export class AskUserStatePublisher {
     await this.bridge.setState({
       ...current,
       [ASK_USER_UI_STATE_SLOTS.PENDING]: nextPending,
+    })
+    await this.notifyPendingChanged()
+  }
+
+  private async notifyPendingChanged(): Promise<void> {
+    await this.bridge.postCommand({
+      kind: UI_STATE_INVALIDATION_COMMAND,
+      params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] },
     })
   }
 }

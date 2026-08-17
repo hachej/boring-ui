@@ -15,7 +15,7 @@ import { AskUserRuntime } from "../askUserRuntime"
 import { createAskUserTool } from "../createAskUserTool"
 import { createAskUserServerPlugin } from "../askUserServerPlugin"
 import { MemoryAskUserStore } from "./testAskUserStore"
-import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
+import { UI_STATE_INVALIDATION_COMMAND, createInMemoryBridge, uiRoutes, type UiBridge, type UiCommand, type UiState } from "@hachej/boring-workspace/server"
 import * as workspacePlugin from "@hachej/boring-workspace/plugin"
 import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import type { AskUserQuestion } from "../../shared/types"
@@ -34,6 +34,35 @@ function bridge(): UiBridge & { commands: UiCommand[] } {
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
 const pendingWait = { timeout: 30_000 }
+
+type SseEvent = { event: string; data: Record<string, unknown> }
+
+function createSseReader(reader: ReadableStreamDefaultReader<Uint8Array>) {
+  const decoder = new TextDecoder()
+  let buffer = ""
+  const queue: SseEvent[] = []
+  const drain = () => {
+    const chunks = buffer.split("\n\n")
+    buffer = chunks.pop() ?? ""
+    for (const chunk of chunks) {
+      const event = chunk.match(/^event:\s*(.+)$/m)?.[1]?.trim()
+      const data = chunk.match(/^data:\s*(.+)$/m)?.[1]
+      if (event && data) queue.push({ event, data: JSON.parse(data) as Record<string, unknown> })
+    }
+  }
+  return {
+    async next(eventName: string): Promise<SseEvent> {
+      while (true) {
+        const index = queue.findIndex(({ event }) => event === eventName)
+        if (index >= 0) return queue.splice(index, 1)[0]!
+        const chunk = await reader.read()
+        if (chunk.done) throw new Error(`SSE closed before ${eventName}`)
+        buffer += decoder.decode(chunk.value, { stream: true })
+        drain()
+      }
+    },
+  }
+}
 
 async function waitForPendingQuestion(store: AskUserStore, sessionId: string): Promise<AskUserQuestion> {
   const started = Date.now()
@@ -157,6 +186,57 @@ describe("createAskUserServerPlugin", () => {
       bridgeSpy.mockRestore()
     }
   })
+
+  it("pushes requestless ask_user lifecycle invalidations over the live UI SSE boundary", async () => {
+    const { store, runtime } = await fixture()
+    const liveBridge = createInMemoryBridge()
+    const plugin = createAskUserServerPlugin({ store, runtime, bridge: liveBridge, sessionId: "fallback" })
+    const app = Fastify()
+    const controller = new AbortController()
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+    try {
+      await app.register(plugin.routes!)
+      await app.register(uiRoutes, { bridge: liveBridge })
+      const address = await app.listen({ host: "127.0.0.1", port: 0 })
+      await vi.waitFor(async () => expect((await liveBridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null, hintsBySession: {} }))
+
+      const response = await fetch(`${address}/api/v1/ui/commands/next`, { signal: controller.signal })
+      expect(response.status).toBe(200)
+      reader = response.body!.getReader()
+      const sse = createSseReader(reader)
+      await expect(sse.next("init")).resolves.toMatchObject({ event: "init" })
+      await expect(sse.next("command")).resolves.toMatchObject({
+        data: { kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] } },
+      })
+
+      const tool = plugin.agentTools!.find((candidate) => candidate.name === "ask_user")!
+      const pendingResult = tool.execute({ title: "Requestless decision", schema }, {
+        toolCallId: "call-requestless",
+        sessionId: "session-requestless",
+        abortSignal: new AbortController().signal,
+      })
+      const pending = await waitForPendingQuestion(store, "session-requestless")
+      await expect(sse.next("command")).resolves.toMatchObject({
+        data: { kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] } },
+      })
+      const state = await fetch(`${address}/api/v1/ui/state`).then((result) => result.json()) as Record<string, unknown>
+      expect(state[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+        hint: { questionId: pending.questionId, sessionId: "session-requestless", status: "ready" },
+      })
+      expect(JSON.stringify(state)).not.toContain("answerToken")
+
+      await runtime.cancelQuestion(pending.questionId, pending.sessionId)
+      await expect(pendingResult).resolves.toMatchObject({ details: { status: "cancelled" } })
+      await expect(sse.next("command")).resolves.toMatchObject({
+        data: { kind: UI_STATE_INVALIDATION_COMMAND, params: { keys: [ASK_USER_UI_STATE_SLOTS.PENDING] } },
+      })
+      await vi.waitFor(async () => expect((await liveBridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null, hintsBySession: {} }))
+    } finally {
+      controller.abort()
+      try { await reader?.cancel() } catch {}
+      await app.close()
+    }
+  }, 30_000)
 
   it("publishes persisted pending state when plugin routes attach after server bridge registration", async () => {
     const { store, runtime } = await fixture()
