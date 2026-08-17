@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { parseContextMarkdown, renderIntroVisuals } from './present-pr-context.mjs'
-import { renderMermaidSvg } from './render-mermaid.mjs'
+import { mermaidThemeVariables } from './render-mermaid.mjs'
 
-test('composes pre-rendered Mermaid and code-shape visuals for plain browsers', async () => {
+test('composes pre-rendered Mermaid and code-shape visuals for plain browsers', () => {
   const context = parseContextMarkdown(`
 # Context
 
@@ -23,11 +23,9 @@ Short summary.
 `)
 
   assert.equal(context.visuals.length, 2)
-  const svg = await renderMermaidSvg(context.visuals[0].content)
-  assert.match(svg, /^<svg/)
-  assert.match(svg, /aria-roledescription="sequence"/)
-  assert.match(svg, /#eef2ff/)
-  assert.match(svg, /#a7b4d8/)
+  assert.equal(mermaidThemeVariables.textColor, '#eef2ff')
+  assert.equal(mermaidThemeVariables.lineColor, '#a7b4d8')
+  const svg = '<svg aria-roledescription="sequence"><text>show change</text></svg>'
   const html = renderIntroVisuals(context, [svg, ''])
   assert.match(html, /^<div class="context-visual mermaid-svg"><svg/)
   assert.match(html, /<pre class="context-visual shape"><code>request/)

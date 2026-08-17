@@ -4,7 +4,7 @@ import { chromium } from '@playwright/test'
 
 const mermaidScriptPath = fileURLToPath(import.meta.resolve('mermaid/dist/mermaid.min.js'))
 
-const themeVariables = {
+export const mermaidThemeVariables = {
   background: '#11151c',
   primaryColor: '#202838',
   primaryTextColor: '#eef2ff',
@@ -44,7 +44,7 @@ export async function renderMermaidSvg(source) {
       })
       const { svg } = await mermaid.render('pr-context-diagram', diagram)
       return svg
-    }, { diagram: source, variables: themeVariables })
+    }, { diagram: source, variables: mermaidThemeVariables })
   } finally {
     await browser.close()
   }

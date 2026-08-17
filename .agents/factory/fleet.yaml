@@ -23,7 +23,6 @@
 # .../agentDefinition/__tests__/fixtures/deferred-personas/. Adding one back =
 # restore the package under .agents/personas/ plus an entry in this list.
 
-
 # Owner ruling 2026-08-12: gpt-5.6-sol (pi openai-codex provider) is the
 # DEFAULT model for T1/T2 wherever codex is available. Availability is gated
 # by the CODEX_SOL_ENABLED marker env var (codex auths via its own login, not
@@ -77,7 +76,7 @@ seats:
       - name: owner-gate
         digest: sha256:a001dc51b8890f979358bffcf9ebe2d478002b2136a9630b638f77567b82678f
       - name: handoff
-        digest: sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17
+        digest: sha256:46ac3304704a615057579f1b5cfd456d32c38af39611bf553ca0245f18ba9524
 
   # The owner's standing counterpart: pinned, conversational, full authority.
   # Dispatches work and reads bead END-STATES only.
@@ -91,7 +90,7 @@ seats:
       - name: owner-gate
         digest: sha256:a001dc51b8890f979358bffcf9ebe2d478002b2136a9630b638f77567b82678f
       - name: handoff
-        digest: sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17
+        digest: sha256:46ac3304704a615057579f1b5cfd456d32c38af39611bf553ca0245f18ba9524
 
   # The single implementation seat. Claims a bead, works it in a lane worktree,
   # spawns its own fresh-context review subagents at gate time (`fresh-eyes`),
@@ -106,4 +105,4 @@ seats:
       - name: owner-gate
         digest: sha256:a001dc51b8890f979358bffcf9ebe2d478002b2136a9630b638f77567b82678f
       - name: handoff
-        digest: sha256:d3bd45bb74632e8388bc4a9e37febbf9d7332107fe1eff4047e91df23e7a7e17
+        digest: sha256:46ac3304704a615057579f1b5cfd456d32c38af39611bf553ca0245f18ba9524
