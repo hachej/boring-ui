@@ -1200,6 +1200,40 @@ describe('PiChatPanel sandbox shell', () => {
     })))
   })
 
+  test('does not treat a queued addressed session as genuinely new', async () => {
+    const sessionModel = { provider: 'openai-codex', id: 'gpt-5.6-sol' } as const
+    const staleLocalModel = { provider: 'infomaniak', id: 'Kimi-K2.6' } as const
+    const persisted = storage({
+      [scopedComposerStorageKey('workspace-a', 'model')]: JSON.stringify(staleLocalModel),
+      [scopedComposerStorageKey('workspace-a', 'model:user-selected')]: '1',
+    })
+    const remote = new FakeRemotePiSession(remoteState({
+      currentModel: sessionModel,
+      committedMessages: [],
+      history: { mode: 'full', messageCount: 0 },
+      queue: { followUps: [{ id: 'queued', kind: 'followup', displayText: 'already queued' }] },
+    }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+
+    render(
+      <PiChatPanel
+        serverResourcesEnabled={false}
+        storageScope="workspace-a"
+        storage={persisted}
+        availableModels={[
+          { ...sessionModel, label: 'GPT 5.6 Sol', available: true },
+          { ...staleLocalModel, label: 'Kimi K2.6', available: true },
+        ]}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    const control = await screen.findByRole('button', { name: /Current model: GPT 5.6 Sol/ })
+    expect(control.textContent).not.toContain('Next override')
+    expect(control.textContent).not.toContain('Kimi K2.6')
+  })
+
   test('shows the addressed session model and labels an explicit next-message override', async () => {
     const sessionModel = { provider: 'openai-codex', id: 'gpt-5.6-sol' } as const
     const staleLocalModel = { provider: 'infomaniak', id: 'Kimi-K2.6' } as const

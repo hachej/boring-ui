@@ -344,6 +344,8 @@ export function PiChatPanel<
       selectedChatState?.hydrated
       && selectedChatState.history.messageCount === 0
       && selectedChatState.committedMessages.length === 0
+      && selectedChatState.queue.followUps.length === 0
+      && Object.keys(selectedChatState.optimisticOutbox).length === 0
       && !selectedChatState.streamingMessage
     ),
     sessionModel: selectedChatState?.currentModel,
