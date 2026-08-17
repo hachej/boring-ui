@@ -5,6 +5,7 @@ import {
   stat as fsStat,
   rm,
   mkdir,
+  mkdtemp,
   writeFile,
   appendFile,
   rename,
@@ -296,44 +297,44 @@ export class PiSessionStore implements SessionStore {
     const nativeEntries = sourceFile === sourcePath
       ? sourceEntries
       : safeParseEntries(await readFile(sourceFile, "utf-8"));
-    const hasLegacySnapshots = nativeEntries.some((entry) => (entry as { type?: string }).type === "ui_snapshot");
-    const temporarySource = hasLegacySnapshots ? `${sourceFile}.fork-read-${randomUUID()}` : undefined;
-    if (temporarySource) {
+    // SessionManager.open() may migrate and rewrite older transcripts. Always
+    // branch from an isolated copy so even legacy sources remain byte-for-byte
+    // immutable. The SDK's initially unpinned branch also stays hidden in the
+    // staging directory until its current-scope header is ready to publish.
+    const stagingDir = await mkdtemp(join(this.sessionDir, ".fork-stage-"));
+    try {
+      const stagingSource = join(stagingDir, "source.jsonl");
       await writeFile(
-        temporarySource,
+        stagingSource,
         nativeEntries
           .filter((entry) => (entry as { type?: string }).type !== "ui_snapshot")
           .map((entry) => JSON.stringify(entry))
           .join("\n") + "\n",
         "utf-8",
       );
-    }
-    let manager: SessionManager | undefined;
-    let forkedPath: string | undefined;
-    try {
-      manager = SessionManager.open(temporarySource ?? sourceFile, this.sessionDir, this.cwd);
+      const manager = SessionManager.open(stagingSource, stagingDir, this.cwd);
       const leafId = manager.getLeafId();
       if (!leafId) return await this.create(ctx, _init);
-      forkedPath = manager.createBranchedSession(leafId);
+      const stagedForkPath = manager.createBranchedSession(leafId);
+      if (!stagedForkPath) throw new Error(`Failed to fork session: ${sessionId}`);
+      const header = manager.getHeader();
+      if (!header) throw new Error(`Forked session header is unavailable: ${sessionId}`);
+      const pinnedHeader: SessionHeader & { boringSessionCtx: RuntimePinnedSessionCtx } = {
+        ...header,
+        parentSession: sourceFile,
+        boringSessionCtx: normalizeSessionCtx(ctx) ?? {},
+      };
+      const content = [pinnedHeader, ...manager.getEntries()]
+        .map((entry) => JSON.stringify(entry))
+        .join("\n") + "\n";
+      await writeFile(stagedForkPath, content, "utf-8");
+      const publishedPath = join(this.sessionDir, basename(stagedForkPath));
+      await rename(stagedForkPath, publishedPath);
+      this.prefixCache.delete(publishedPath);
+      return await this.load(ctx, manager.getSessionId());
     } finally {
-      if (temporarySource) await rm(temporarySource, { force: true });
+      await rm(stagingDir, { recursive: true, force: true });
     }
-    if (!manager || !forkedPath) throw new Error(`Failed to fork session: ${sessionId}`);
-    const header = manager.getHeader();
-    if (!header) throw new Error(`Forked session header is unavailable: ${sessionId}`);
-    const pinnedHeader: SessionHeader & { boringSessionCtx: RuntimePinnedSessionCtx } = {
-      ...header,
-      parentSession: sourceFile,
-      boringSessionCtx: normalizeSessionCtx(ctx) ?? {},
-    };
-    const content = [pinnedHeader, ...manager.getEntries()]
-      .map((entry) => JSON.stringify(entry))
-      .join("\n") + "\n";
-    const tmp = `${forkedPath}.pin-${randomUUID()}`;
-    await writeFile(tmp, content, "utf-8");
-    await rename(tmp, forkedPath);
-    this.prefixCache.delete(forkedPath);
-    return await this.load(ctx, manager.getSessionId());
   }
 
   async load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {

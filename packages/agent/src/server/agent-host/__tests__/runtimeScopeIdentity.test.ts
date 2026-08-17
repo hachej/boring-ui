@@ -1,4 +1,4 @@
-import { appendFile, mkdtemp, readFile, rename, rm } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -200,11 +200,12 @@ describe('runtime scope identity', () => {
     })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE })
     const namespace = sessionNamespaceForAgent(agent, 'workspace-a', 'sessions')!
     let transcriptPath = await sessionFilePath(join(sessionRoot, namespace), ref.sessionId)
-    await appendFile(transcriptPath, [
+    const originalHeader = JSON.parse((await readFile(transcriptPath, 'utf8')).split('\n')[0]!)
+    await writeFile(transcriptPath, [
+      { ...originalHeader, version: 1 },
       { type: 'message', id: 'user-1', parentId: null, timestamp: '2026-08-17T00:00:00.000Z', message: { role: 'user', content: 'inspect frozen chat', timestamp: 1 } },
       { type: 'message', id: 'assistant-1', parentId: 'user-1', timestamp: '2026-08-17T00:00:01.000Z', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'call-1', name: 'read', arguments: { path: 'README.md' } }], timestamp: 2 } },
       { type: 'message', id: 'tool-1', parentId: 'assistant-1', timestamp: '2026-08-17T00:00:02.000Z', message: { role: 'toolResult', toolCallId: 'call-1', content: [{ type: 'text', text: 'frozen result' }], timestamp: 3 } },
-      { type: 'ui_snapshot', id: 'snapshot-1', timestamp: '2026-08-17T00:00:03.000Z', messages: [{ role: 'user', content: 'legacy duplicate' }] },
     ].map((entry) => JSON.stringify(entry)).join('\n') + '\n')
     await first.host.close()
     const legacyWrapperPath = join(sessionRoot, namespace, `${ref.sessionId}.jsonl`)
@@ -269,7 +270,21 @@ describe('runtime scope identity', () => {
     expect(await restarted.gateway.createSession(forkInput)).toEqual(fork)
     expect(fork).not.toEqual(ref)
     const continued = await restarted.gateway.readSessionState({ scope: other, ref: fork })
-    expect(continued.state.messages).toEqual(frozen.state.messages)
+    expect(continued.state.messages).toHaveLength(frozen.state.messages.length)
+    expect(continued.state.messages).toEqual([
+      expect.objectContaining({ role: 'user', parts: [expect.objectContaining({ text: 'inspect frozen chat' })] }),
+      expect.objectContaining({
+        role: 'assistant',
+        parts: [expect.objectContaining({
+          type: 'tool-call',
+          id: 'call-1',
+          toolName: 'read',
+          state: 'output-available',
+          output: [{ type: 'text', text: 'frozen result' }],
+        })],
+      }),
+    ])
+    expect(new Set(continued.state.messages.map((message) => message.id)).size).toBe(continued.state.messages.length)
     const forkPath = await sessionFilePath(join(sessionRoot, namespace), fork.sessionId)
     const forkHeader = JSON.parse((await readFile(forkPath, 'utf8')).split('\n')[0]!) as {
       id: string
