@@ -194,6 +194,18 @@ class ScratchGuardTest(unittest.TestCase):
 
 
 
+
+    def test_staging_cleanup_keeps_validated_empty_top_level_directory(self) -> None:
+        staging = self.base / ".empty-staging"
+        staging.mkdir()
+        (staging / "partial").write_text("partial")
+        staging_st = staging.lstat()
+        scratch_guard._discard_private_staging(
+            staging, (staging_st.st_dev, staging_st.st_ino)
+        )
+        self.assertTrue(staging.is_dir())
+        self.assertEqual([], list(staging.iterdir()))
+
     def test_staging_cleanup_retains_replacement_directory(self) -> None:
         staging = self.base / ".staging"
         staging.mkdir()
@@ -242,9 +254,11 @@ class ScratchGuardTest(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 scratch_guard.initialize_root(target)
         self.assertEqual("competitor", (target / "sentinel").read_text())
-        self.assertEqual([], list(self.base.glob(".raced-root.boring-init-*")))
+        retained = list(self.base.glob(".raced-root.boring-init-*"))
+        self.assertEqual(1, len(retained))
+        self.assertEqual([], list(retained[0].iterdir()))
 
-    def test_failed_initialization_removes_private_staging_and_allows_retry(self) -> None:
+    def test_failed_initialization_clears_private_staging_and_allows_retry(self) -> None:
         target = self.base / "atomic-root"
         original = Path.write_text
 
@@ -257,7 +271,9 @@ class ScratchGuardTest(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "fixture write failure"):
                 scratch_guard.initialize_root(target)
         self.assertFalse(target.exists())
-        self.assertEqual([], list(self.base.glob(".atomic-root.boring-init-*")))
+        retained = list(self.base.glob(".atomic-root.boring-init-*"))
+        self.assertEqual(1, len(retained))
+        self.assertEqual([], list(retained[0].iterdir()))
         scratch_guard.initialize_root(target)
         self.assertTrue(target.is_dir())
 

@@ -50,8 +50,10 @@ safe. Supply `--pnpm-store` (or `PNPM_STORE_DIR`) to make that check meaningful.
 `init-root` refuses an existing path and creates a private mode-0700 directory.
 Initialization stages protocol files privately and exposes the final path with one
 Linux `renameat2(RENAME_NOREPLACE)` operation, so a concurrently created path is
-never overwritten. On failure it removes staging only while the created inode still
-matches; a replaced or ambiguous staging path is retained rather than touched. The cleaner later refuses roots that are symlinks,
+never overwritten. On failure it clears staging only while the created inode still
+matches, but deliberately leaves that empty top-level staging directory to avoid a
+final pathname-removal race. Replaced or ambiguous staging paths are retained
+untouched; retries remain possible because the requested final path was never exposed. The cleaner later refuses roots that are symlinks,
 non-canonical, owned by a different uid, group/world writable, or missing the
 exact root marker.
 

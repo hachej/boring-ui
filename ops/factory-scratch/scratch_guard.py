@@ -129,6 +129,7 @@ def _remove_tree_at(
     name: str,
     expected_mount_id: int,
     expected_identity: tuple[int, int] | None = None,
+    remove_root: bool = True,
 ) -> None:
     directory_fd = os.open(
         name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd
@@ -155,7 +156,8 @@ def _remove_tree_at(
             os.unlink(child, dir_fd=directory_fd)
     finally:
         os.close(directory_fd)
-    os.rmdir(name, dir_fd=parent_fd)
+    if remove_root:
+        os.rmdir(name, dir_fd=parent_fd)
 
 
 def _discard_private_staging(staging: Path, identity: tuple[int, int]) -> None:
@@ -168,7 +170,11 @@ def _discard_private_staging(staging: Path, identity: tuple[int, int]) -> None:
         if (current_st.st_dev, current_st.st_ino) != identity:
             return
         _remove_tree_at(
-            parent_fd, staging.name, _fd_mount_id(parent_fd), expected_identity=identity
+            parent_fd,
+            staging.name,
+            _fd_mount_id(parent_fd),
+            expected_identity=identity,
+            remove_root=False,
         )
     finally:
         os.close(parent_fd)
