@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import fcntl
+import importlib.util
+import json
+from pathlib import Path
+import stat
+import subprocess
+import sys
+import tempfile
+import unittest
+
+MODULE_PATH = Path(__file__).with_name("scratch_guard.py")
+spec = importlib.util.spec_from_file_location("scratch_guard", MODULE_PATH)
+assert spec and spec.loader
+scratch_guard = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = scratch_guard
+spec.loader.exec_module(scratch_guard)
+
+
+class FakeStatvfs:
+    def __init__(self, files: int, free: int) -> None:
+        self.f_files = files
+        self.f_ffree = free
+
+
+class ScratchGuardTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory(prefix="scratch-guard-fixture-")
+        self.base = Path(self.temp.name)
+        self.root = self.base / "owned-root"
+        scratch_guard.initialize_root(self.root)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def entry(self, name: str, heartbeat_age: int = 1_000) -> Path:
+        return scratch_guard.initialize_entry(self.root, name, now=10_000 - heartbeat_age)
+
+    def decisions(self, *, apply: bool = False, stale_seconds: int = 100):
+        return scratch_guard.clean_root(
+            self.root, stale_seconds=stale_seconds, apply=apply, now=10_000
+        )
+
+    def test_inode_threshold_above_and_below_configured_percentage(self) -> None:
+        mounts = [scratch_guard.Mount(Path("/"), "ext4")]
+        below, messages = scratch_guard.preflight(
+            paths=[self.base], threshold=80, tmpdir=self.base, pnpm_store=self.base,
+            mounts=mounts, statvfs=lambda _: FakeStatvfs(100, 21),
+        )
+        self.assertEqual([], below)
+        self.assertTrue(any("79.00%" in line and line.startswith("OK") for line in messages))
+        above, _ = scratch_guard.preflight(
+            paths=[self.base], threshold=80, tmpdir=self.base, pnpm_store=self.base,
+            mounts=mounts, statvfs=lambda _: FakeStatvfs(100, 20),
+        )
+        self.assertTrue(any("80.00%" in line and line.startswith("FAIL") for line in above))
+
+    def test_tmpdir_mount_selection_uses_longest_mount_and_warns_on_tmpfs(self) -> None:
+        tmpdir = self.base / "nested"
+        tmpdir.mkdir()
+        mounts = [
+            scratch_guard.Mount(Path("/"), "ext4"),
+            scratch_guard.Mount(self.base, "tmpfs"),
+        ]
+        failures, _ = scratch_guard.preflight(
+            paths=[tmpdir], threshold=90, tmpdir=tmpdir, pnpm_store=None,
+            mounts=mounts, statvfs=lambda _: FakeStatvfs(100, 90),
+        )
+        self.assertIn(f"FAIL TMPDIR {tmpdir} is on tmpfs", failures)
+
+    def test_pnpm_store_on_tmpfs_is_a_failure(self) -> None:
+        store = self.base / "pnpm"
+        store.mkdir()
+        failures, _ = scratch_guard.preflight(
+            paths=[self.base], threshold=90, tmpdir=Path("/"), pnpm_store=store,
+            mounts=[scratch_guard.Mount(Path("/"), "ext4"), scratch_guard.Mount(self.base, "tmpfs")],
+            statvfs=lambda _: FakeStatvfs(100, 90),
+        )
+        self.assertTrue(any("pnpm store" in line and "tmpfs" in line for line in failures))
+
+    def test_dry_run_reports_but_does_not_delete(self) -> None:
+        entry = self.entry("stale")
+        result = self.decisions()
+        self.assertEqual("would-delete", result[0].action)
+        self.assertTrue(entry.exists())
+
+    def test_stale_marked_unlocked_entry_is_deleted_on_apply(self) -> None:
+        entry = self.entry("stale")
+        result = self.decisions(apply=True)
+        self.assertEqual("deleted", result[0].action)
+        self.assertFalse(entry.exists())
+
+    def test_active_lock_is_retained(self) -> None:
+        entry = self.entry("active-lock")
+        with (entry / scratch_guard.LOCK_FILE).open("r+") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+            result = self.decisions(apply=True)
+        self.assertEqual("retain", result[0].action)
+        self.assertIn("active lock", result[0].reason)
+        self.assertTrue(entry.exists())
+
+    def test_live_heartbeat_is_retained(self) -> None:
+        entry = self.entry("live", heartbeat_age=99)
+        result = self.decisions(apply=True, stale_seconds=100)
+        self.assertEqual("retain", result[0].action)
+        self.assertIn("heartbeat live", result[0].reason)
+        self.assertTrue(entry.exists())
+
+    def test_malformed_and_ambiguous_markers_are_retained(self) -> None:
+        malformed = self.root / "malformed"
+        malformed.mkdir()
+        (malformed / scratch_guard.ENTRY_MARKER).write_text("not json")
+        ambiguous = self.entry("ambiguous")
+        marker = json.loads((ambiguous / scratch_guard.ENTRY_MARKER).read_text())
+        marker["extra"] = "not allowed"
+        (ambiguous / scratch_guard.ENTRY_MARKER).write_text(json.dumps(marker))
+        results = self.decisions(apply=True)
+        self.assertEqual(["retain", "retain"], [result.action for result in results])
+        self.assertTrue(malformed.exists())
+        self.assertTrue(ambiguous.exists())
+
+    def test_symlink_entry_and_nested_path_escape_are_retained(self) -> None:
+        outside = self.base / "outside"
+        outside.mkdir()
+        symlink_entry = self.root / "entry-link"
+        symlink_entry.symlink_to(outside, target_is_directory=True)
+        nested = self.entry("nested-link")
+        (nested / "escape").symlink_to(outside, target_is_directory=True)
+        results = {result.path.name: result for result in self.decisions(apply=True)}
+        self.assertEqual("retain", results["entry-link"].action)
+        self.assertEqual("retain", results["nested-link"].action)
+        self.assertTrue(outside.exists())
+        self.assertTrue(nested.exists())
+
+    def test_unrelated_paths_are_preserved(self) -> None:
+        unrelated = self.root / "notes.txt"
+        unrelated.write_text("operator data")
+        result = self.decisions(apply=True)[0]
+        self.assertEqual("retain", result.action)
+        self.assertEqual("operator data", unrelated.read_text())
+
+    def test_apply_is_idempotent(self) -> None:
+        self.entry("once")
+        first = self.decisions(apply=True)
+        second = self.decisions(apply=True)
+        self.assertEqual("deleted", first[0].action)
+        self.assertEqual([], second)
+
+    def test_root_must_be_private_canonical_and_marked(self) -> None:
+        unmarked = self.base / "unmarked"
+        unmarked.mkdir(mode=0o700)
+        with self.assertRaisesRegex(scratch_guard.SafetyError, "marker"):
+            scratch_guard.clean_root(unmarked, stale_seconds=100, apply=False)
+        linked = self.base / "linked"
+        linked.symlink_to(self.root, target_is_directory=True)
+        with self.assertRaisesRegex(scratch_guard.SafetyError, "symlink"):
+            scratch_guard.clean_root(linked, stale_seconds=100, apply=False)
+
+    def test_exact_documented_install_and_check_commands_validate(self) -> None:
+        repo = MODULE_PATH.parents[2]
+        doc = (repo / "docs/factory/scratch-guard.md").read_text()
+        self.assertIn("install -m 0755 ops/factory-scratch/scratch_guard.py", doc)
+        self.assertIn("scratch-guard check --path", doc)
+        installed = self.base / "bin" / "scratch-guard"
+        installed.parent.mkdir()
+        install_run = subprocess.run(
+            ["install", "-m", "0755", str(MODULE_PATH), str(installed)],
+            cwd=repo, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        self.assertEqual(0, install_run.returncode, install_run.stdout)
+        self.assertEqual(0o755, stat.S_IMODE(installed.stat().st_mode))
+        check_run = subprocess.run(
+            [str(installed), "check", "--path", str(self.base),
+             "--inode-threshold", "100", "--tmpdir", str(self.base),
+             "--pnpm-store", str(self.base)],
+            cwd=repo, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        self.assertEqual(0, check_run.returncode, check_run.stdout)
+        self.assertIn("inode usage", check_run.stdout)
+        help_run = subprocess.run(
+            [str(installed), "check", "--help"], cwd=repo,
+            check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        self.assertEqual(0, help_run.returncode, help_run.stdout)
+        self.assertIn("--inode-threshold", help_run.stdout)
+        self.assertIn("--pnpm-store", help_run.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
