@@ -61,10 +61,12 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): AgentH
     id: 'scripted-pi-e2e',
     placement: 'server',
     sessions,
-    async getPiSessionAdapter({ sessionId }: AgentSendInput) {
+    async getPiSessionAdapter({ sessionId, model }: AgentSendInput) {
       if (!sessionId) throw new Error('sessionId is required')
       await sessions.ensure(sessionId)
-      return getAdapter(sessionId)
+      const adapter = getAdapter(sessionId)
+      if (model) adapter.setCurrentModel(model)
+      return adapter
     },
     async reloadSession() {
       return true
@@ -131,6 +133,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
   private streaming = false
   private turn = 0
   private activeRun: ScriptedRun | undefined
+  private model: { provider: string; id: string } | undefined
 
   constructor(
     private readonly sessionId: string,
@@ -138,6 +141,14 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     private readonly toolDelayTicks: number,
     private readonly reasoningPartCount: number,
   ) {}
+
+  setCurrentModel(model: { provider: string; id: string }): void {
+    this.model = model
+  }
+
+  currentModel(): { provider: string; id: string } | undefined {
+    return this.model
+  }
 
   readSnapshot(): PiAgentSessionSnapshot {
     return {
