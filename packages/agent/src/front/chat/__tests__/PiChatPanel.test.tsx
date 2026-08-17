@@ -605,9 +605,9 @@ describe('PiChatPanel sandbox shell', () => {
     })
   })
 
-  test('uses the controlled host fork and hides the scope mismatch transport notice', async () => {
-    const remote = new FakeRemotePiSession(remoteState({
-      status: 'error',
+  test('keeps frozen history mounted with an optimistic prompt while rebinding to the fork', async () => {
+    const sourceRemote = new FakeRemotePiSession(remoteState({
+      status: 'idle',
       notices: [{
         id: 'terminal-session-error',
         level: 'error',
@@ -615,22 +615,38 @@ describe('PiChatPanel sandbox shell', () => {
         errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
       }],
     }))
-    remote.prompt.mockRejectedValueOnce(Object.assign(new Error('scope mismatch'), {
+    sourceRemote.prompt.mockRejectedValueOnce(Object.assign(new Error('scope mismatch'), {
       errorCode: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
     }))
+    const targetRemote = new FakeRemotePiSession(remoteState({
+      sessionId: 'pi-current',
+      hydrated: false,
+      committedMessages: [],
+      connection: { state: 'connecting' },
+    }))
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => {
+      const remote = options.sessionId === 'pi-current' ? targetRemote : sourceRemote
+      remote.state = { ...remote.state, sessionId: options.sessionId }
+      remote.onEvent = options.onEvent as ((event: unknown) => void) | undefined
+      return remote as unknown as RemotePiSession
+    })
+    const forkResult = deferred<{ sessionId: string }>()
     const onForkSession = vi.fn()
     function ControlledForkPanel() {
       const [controlledSessionId, setControlledSessionId] = useState('pi-1')
       return (
         <PiChatPanel
           sessionId={controlledSessionId}
+          timelineKey="stable-pane"
           showSessions={false}
           serverResourcesEnabled={false}
           storageScope="scope-a"
-          createRemoteSession={remoteFactory(remote)}
+          createRemoteSession={createRemoteSession}
           onForkSession={async (sourceSessionId, forkPrompt) => {
             onForkSession(sourceSessionId, forkPrompt)
-            setControlledSessionId('pi-current')
+            const result = await forkResult.promise
+            setControlledSessionId(result.sessionId)
+            return result
           }}
         />
       )
@@ -638,6 +654,8 @@ describe('PiChatPanel sandbox shell', () => {
     render(<ControlledForkPanel />)
 
     expect(document.querySelector('[data-runtime-notice-id="terminal-session-error"]')).toBeNull()
+    const timeline = document.querySelector('[data-boring-agent-part="message-timeline"]')
+    expect(screen.getByText('committed from /state')).toBeTruthy()
     const textarea = screen.getByLabelText('Agent prompt')
     fireEvent.change(textarea, { target: { value: 'continue controlled chat' } })
     fireEvent.keyDown(textarea, { key: 'Enter' })
@@ -646,8 +664,34 @@ describe('PiChatPanel sandbox shell', () => {
       'pi-1',
       expect.objectContaining({ message: 'continue controlled chat' }),
     ))
-    expect(remote.prompt).toHaveBeenCalledTimes(1)
-    expect(document.querySelector('[data-pi-chat-session-id="pi-current"]')).toBeTruthy()
+    const forkPrompt = onForkSession.mock.calls[0]?.[1]
+    expect(screen.getByText('continue controlled chat').closest('[data-boring-agent-part="message"]')?.getAttribute('data-boring-agent-message-status')).toBe('pending')
+    expect(screen.getByText('committed from /state')).toBeTruthy()
+    expect(document.querySelector('[data-boring-agent-part="message-timeline"]')).toBe(timeline)
+    expect(screen.getByText('Continuing this chat in the current runtime…')).toBeTruthy()
+
+    await act(async () => {
+      forkResult.resolve({ sessionId: 'pi-current' })
+      await forkResult.promise
+    })
+    await waitFor(() => expect(document.querySelector('[data-pi-chat-session-id="pi-current"]')).toBeTruthy())
+    expect(screen.getByText('committed from /state')).toBeTruthy()
+    expect(screen.getByText('continue controlled chat')).toBeTruthy()
+    expect(document.querySelector('[data-boring-agent-part="message-timeline"]')).toBe(timeline)
+
+    act(() => targetRemote.setState(remoteState({
+      sessionId: 'pi-current',
+      hydrated: true,
+      committedMessages: [
+        { id: 'u1', role: 'user', status: 'done', parts: [{ type: 'text', id: 'u1:text', text: 'committed from /state' }] },
+        { id: 'u2', role: 'user', status: 'done', clientNonce: forkPrompt.clientNonce, parts: [{ type: 'text', id: 'u2:text', text: 'continue controlled chat' }] },
+      ],
+      streamingMessage: { id: 'a2', role: 'assistant', status: 'streaming', parts: [{ type: 'text', id: 'a2:text', text: 'reply streaming in place' }] },
+    })))
+    await waitFor(() => expect(screen.getByText('reply streaming in place')).toBeTruthy())
+    expect(screen.getByText('continue controlled chat').closest('[data-boring-agent-part="message"]')?.getAttribute('data-boring-agent-message-status')).toBe('done')
+    expect(document.querySelector('[data-boring-agent-part="message-timeline"]')).toBe(timeline)
+    expect(screen.queryByText('Continuing this chat in the current runtime…')).toBeNull()
   })
 
   test('fires onTurnComplete per turn-settle event, including back-to-back queued turns', async () => {

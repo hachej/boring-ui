@@ -10,6 +10,8 @@ export type {
   AgentPluginReloadResult,
   ComposerBlocker,
   ComposerBlockerAction,
+  PiChatForkResult,
+  PiChatSessionBinding,
   PiChatPanelProps,
   PiChatPanelProps as ChatPanelProps,
 } from './chat/PiChatPanel'

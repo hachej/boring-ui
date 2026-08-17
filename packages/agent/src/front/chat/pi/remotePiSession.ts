@@ -751,7 +751,7 @@ export function piChatErrorCode(error: unknown): string | undefined {
   return errorResponseCode(error)
 }
 
-function toOptimisticUserMessage(payload: PromptPayload | FollowUpPayload): OptimisticUserMessage {
+export function toOptimisticUserMessage(payload: PromptPayload | FollowUpPayload): OptimisticUserMessage {
   const displayText = payload.displayMessage ?? payload.message
   return {
     id: `optimistic:${payload.clientNonce}`,

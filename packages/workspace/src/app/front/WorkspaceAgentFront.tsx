@@ -5,6 +5,7 @@ import {
   usePiSessions as useDefaultPiSessions,
   useAddressedAgentSelection as useDefaultAddressedAgentSelection,
   searchPiSessions,
+  type PiChatSessionBinding,
   type SlashCommand,
   type ToolRendererOverrides,
 } from "@hachej/boring-agent/front"
@@ -90,13 +91,34 @@ function parseAgentOverlayId(id: string | null): { agentTypeId: string } | null 
   }
 }
 
+interface MutablePiChatSessionBinding extends PiChatSessionBinding {
+  setSessionId(sessionId: string): void
+}
+
+function createMutablePiChatSessionBinding(initialSessionId: string): MutablePiChatSessionBinding {
+  let sessionId = initialSessionId
+  const listeners = new Set<() => void>()
+  return {
+    getSnapshot: () => sessionId,
+    subscribe: (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    setSessionId: (nextSessionId) => {
+      if (nextSessionId === sessionId) return
+      sessionId = nextSessionId
+      for (const listener of listeners) listener()
+    },
+  }
+}
+
 interface PendingCreatePane {
   afterId: string
   knownIds: Set<string>
   workspaceId: string
   placementDirection?: ChatPaneSplitDirection
   createdId?: string
-  mode: "insert" | "replace"
+  mode: "insert" | "replace" | "rebind"
 }
 
 export interface WorkspaceAgentSession {
@@ -850,6 +872,18 @@ export function WorkspaceAgentFront<
   )
   const chatPaneStateRef = useRef(chatPaneState)
   chatPaneStateRef.current = chatPaneState
+  const chatPaneBindingsRef = useRef(new Map<string, MutablePiChatSessionBinding>())
+  const chatPaneBinding = useCallback((paneId: string, initialSessionId = workspaceSessionRefFromKey(paneId).sessionId) => {
+    const existing = chatPaneBindingsRef.current.get(paneId)
+    if (existing) return existing
+    const binding = createMutablePiChatSessionBinding(initialSessionId)
+    chatPaneBindingsRef.current.set(paneId, binding)
+    return binding
+  }, [])
+  const boundChatSessionRef = useCallback((paneId: string) => {
+    const ref = workspaceSessionRefFromKey(paneId)
+    return { ...ref, sessionId: chatPaneBinding(paneId, ref.sessionId).getSnapshot() }
+  }, [chatPaneBinding])
   const [pendingChatPanePlacement, setPendingChatPanePlacement] = useState<ChatPanePendingPlacement | null>(null)
   const [chatPaneSplitPending, setChatPaneSplitPending] = useState(false)
   const consumePendingChatPanePlacement = useCallback((paneId: string) => {
@@ -1440,6 +1474,7 @@ export function WorkspaceAgentFront<
   const autoCreateSessionRef = useRef(false)
   const pendingLastSessionDeleteRef = useRef<Set<string>>(new Set())
   const pendingCreatePaneRef = useRef<PendingCreatePane | null>(null)
+  const [seamlessFork, setSeamlessFork] = useState<{ workspaceId: string; paneId: string; targetSessionId?: string } | null>(null)
   const optimisticCreatedPaneKeysRef = useRef<Set<string>>(new Set())
   const surfaceOpenRef = useRef(surfaceOpen)
   const surfaceKeyRef = useRef(resolvedSurfaceStorageKey)
@@ -1760,10 +1795,10 @@ export function WorkspaceAgentFront<
       // trustworthy than it, so leave the layout untouched until the real
       // session list arrives.
       if (remoteSessionsPending && current.ids.length > 0 && !pendingCreatedId) return current
-      const currentActiveRef = current.activeId ? workspaceSessionRefFromKey(current.activeId) : undefined
+      const currentActiveRef = current.activeId ? boundChatSessionRef(current.activeId) : undefined
       const activeOwnerIsExplicit = Boolean(effectiveActiveSessionAgentTypeId)
       const currentMatchesControlledSession = activeOwnerIsExplicit
-        ? current.activeId === chatSessionKey
+        ? currentActiveRef?.sessionId === chatSessionId && currentActiveRef.agentTypeId === effectiveActiveSessionAgentTypeId
         : currentActiveRef?.sessionId === chatSessionId
       const resolvedDesiredSessionId = !pendingCreatedId
         && current.activeId
@@ -1782,14 +1817,18 @@ export function WorkspaceAgentFront<
       const ids = prunedIds.length > 0 ? prunedIds : [resolvedDesiredSessionId]
       const activeId = current.activeId && ids.includes(current.activeId) ? current.activeId : ids[0] ?? resolvedDesiredSessionId
       const nextIds = pendingCreatedId
-        ? pendingCreatePane?.mode === "replace"
-          ? replaceActivePane(ids, pendingCreatePane.afterId, pendingCreatedId)
-          : insertPaneAfter(ids, pendingCreatePane?.afterId, pendingCreatedId)
+        ? pendingCreatePane?.mode === "rebind"
+          ? ids
+          : pendingCreatePane?.mode === "replace"
+            ? replaceActivePane(ids, pendingCreatePane.afterId, pendingCreatedId)
+            : insertPaneAfter(ids, pendingCreatePane?.afterId, pendingCreatedId)
         : resolvedDesiredSessionId === activeId || ids.includes(resolvedDesiredSessionId)
           ? ids
           : replaceActivePane(ids, activeId, resolvedDesiredSessionId)
-      const nextActiveId = pendingCreatedId && nextIds.includes(pendingCreatedId)
-        ? pendingCreatedId
+      const nextActiveId = pendingCreatedId && pendingCreatePane?.mode === "rebind" && nextIds.includes(pendingCreatePane.afterId)
+        ? pendingCreatePane.afterId
+        : pendingCreatedId && nextIds.includes(pendingCreatedId)
+          ? pendingCreatedId
         : nextIds.includes(resolvedDesiredSessionId)
           ? resolvedDesiredSessionId
           : nextIds[0] ?? resolvedDesiredSessionId
@@ -1801,7 +1840,7 @@ export function WorkspaceAgentFront<
       ) return previous
       return { workspaceId, ids: nextIds, activeId: nextActiveId }
     })
-  }, [autoSubmitSessionId, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, resolvedSessionsByKey, sessionListAuthoritative, workspaceId])
+  }, [autoSubmitSessionId, boundChatSessionRef, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, resolvedSessionsByKey, sessionListAuthoritative, workspaceId])
   const [initialHydrationPromptStarted, setInitialHydrationPromptStarted] = useState<{ workspaceId: string; ids: Set<string> }>(() => ({
     workspaceId,
     ids: new Set(),
@@ -1831,6 +1870,9 @@ export function WorkspaceAgentFront<
   const chatPaneIds = activeChatPaneState.ids.length > 0 ? activeChatPaneState.ids : [chatSessionKey]
   useEffect(() => {
     openChatSessionIdsRef.current = new Set(chatPaneIds)
+    chatPaneBindingsRef.current = new Map(
+      [...chatPaneBindingsRef.current].filter(([paneId]) => chatPaneIds.includes(paneId)),
+    )
   }, [chatPaneIds])
   const activeChatPaneId = activeChatPaneState.activeId ?? chatPaneIds[0] ?? chatSessionKey
 
@@ -2002,14 +2044,44 @@ export function WorkspaceAgentFront<
   ) => {
     if (!sessionApi) return Promise.reject(new Error("This chat provider cannot create native forks."))
     if (pendingCreatePaneRef.current) return Promise.reject(new Error("Another chat is still being created."))
-    return createChatPaneTransaction(
-      paneId,
-      "replace",
-      undefined,
-      ownerAgentTypeId,
-      { forkSessionId: sourceSessionId, forkPrompt },
-    )
-  }, [createChatPaneTransaction, sessionApi])
+    const pendingCreatePane: PendingCreatePane = {
+      afterId: paneId,
+      knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
+      workspaceId,
+      mode: "rebind",
+    }
+    pendingCreatePaneRef.current = pendingCreatePane
+    setSeamlessFork({ workspaceId, paneId })
+    let created: ReturnType<typeof resolvedCreate>
+    try {
+      created = resolvedCreate(
+        `fork:${sourceSessionId}`,
+        ownerAgentTypeId,
+        { forkSessionId: sourceSessionId, forkPrompt },
+      )
+    } catch (error) {
+      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
+      setSeamlessFork(null)
+      throw error
+    }
+    return Promise.resolve(created).then((session) => {
+      const id = createdSessionId(session)
+      if (!id) throw new Error("The native fork did not return a session id.")
+      if (pendingCreatePaneRef.current !== pendingCreatePane) throw new Error("The native fork lost its pane binding.")
+      const returnedAgentTypeId = typeof (session as { agentTypeId?: unknown } | null)?.agentTypeId === "string"
+        ? (session as { agentTypeId: string }).agentTypeId
+        : ownerAgentTypeId
+      pendingCreatePane.createdId = workspaceSessionKey(id, returnedAgentTypeId)
+      chatPaneBinding(paneId, sourceSessionId).setSessionId(id)
+      setSeamlessFork({ workspaceId, paneId, targetSessionId: id })
+      scheduleActiveAgentComposerFocus()
+      return { sessionId: id, agentTypeId: returnedAgentTypeId }
+    }).catch((error) => {
+      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
+      setSeamlessFork(null)
+      throw error
+    })
+  }, [chatPaneBinding, resolvedCreate, resolvedSessions, sessionApi, workspaceId])
 
   const closeChatPane = useCallback((sessionKey: string) => {
     if (pendingCreatePaneRef.current) return
@@ -2195,6 +2267,8 @@ export function WorkspaceAgentFront<
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
       sessionId,
+      timelineKey: sessionKey,
+      sessionBinding: chatPaneBinding(sessionKey, sessionId),
       agentTypeId: sessionRef.agentTypeId ?? selectedAgentTypeId,
       apiBaseUrl,
       workspaceId,
@@ -2252,7 +2326,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, createChatSession, delayAutoSubmitDraft, forkFrozenChatSession, resolvedRequestHeaders, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, selectedAgentTypeId, sessionSourceIsCurrent, workspaceId],
+    [apiBaseUrl, chatPaneBinding, chatParams, chatRemoteSessionOptions, createChatSession, delayAutoSubmitDraft, forkFrozenChatSession, resolvedRequestHeaders, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, selectedAgentTypeId, sessionSourceIsCurrent, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionKey),
@@ -2282,14 +2356,14 @@ export function WorkspaceAgentFront<
     }
   }), [chatHeaderAgentLabelById, chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
   const providerChatPaneSessionRefs = useMemo(
-    () => chatPaneIds.map(workspaceSessionRefFromKey),
-    [chatPaneIds],
+    () => chatPaneIds.map(boundChatSessionRef),
+    [boundChatSessionRef, chatPaneIds],
   )
   const providerChatPaneSessionIds = useMemo(
     () => providerChatPaneSessionRefs.map((ref) => ref.sessionId),
     [providerChatPaneSessionRefs],
   )
-  const providerActiveSessionRef = workspaceSessionRefFromKey(activeChatPaneId)
+  const providerActiveSessionRef = boundChatSessionRef(activeChatPaneId)
   const providerActiveSessionId = providerActiveSessionRef.sessionId
   const attentionSessions = useMemo(() => {
     const refs = new Map<string, WorkspaceSessionRef>()
@@ -2381,17 +2455,17 @@ export function WorkspaceAgentFront<
   const chatPaneSessionActions = useMemo(() => ({
     isPinned: (sessionKey: string) => pinnedIds.includes(sessionKey),
     onTogglePin: (sessionKey: string) => {
-      const ref = workspaceSessionRefFromKey(sessionKey)
+      const ref = boundChatSessionRef(sessionKey)
       toggleSessionPinned(ref.sessionId, ref.agentTypeId)
     },
     ...(canRenameSessions ? { onRename: renameChatSession } : {}),
     ...(canDeleteSessions ? {
       onDelete: async (sessionKey: string) => {
-        const ref = workspaceSessionRefFromKey(sessionKey)
+        const ref = boundChatSessionRef(sessionKey)
         await deleteSessionAndPane(ref.sessionId, ref.agentTypeId)
       },
     } : {}),
-  }), [canDeleteSessions, canRenameSessions, deleteSessionAndPane, pinnedIds, renameChatSession, toggleSessionPinned])
+  }), [boundChatSessionRef, canDeleteSessions, canRenameSessions, deleteSessionAndPane, pinnedIds, renameChatSession, toggleSessionPinned])
   const commandPaletteSessionSearch = useMemo(() => (
     isPluginTabsLayout
       ? {
@@ -2586,7 +2660,13 @@ export function WorkspaceAgentFront<
       headerInsetEnd={!surfaceOpen}
     />
   ) : null)
-  const mainContent = remoteSessionsTransitioning ? (
+  const seamlessForkInProgress = seamlessFork?.workspaceId === workspaceId
+  useEffect(() => {
+    if (!seamlessFork?.targetSessionId || seamlessFork.workspaceId !== workspaceId) return
+    if (remoteSessionsTransitioning || effectiveActiveSessionId !== seamlessFork.targetSessionId) return
+    setSeamlessFork(null)
+  }, [effectiveActiveSessionId, remoteSessionsTransitioning, seamlessFork, workspaceId])
+  const mainContent = remoteSessionsTransitioning && !seamlessForkInProgress ? (
     <ChatSessionTransitionState />
   ) : (
     <ChatLayout

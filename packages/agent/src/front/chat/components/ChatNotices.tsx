@@ -54,6 +54,7 @@ export function RuntimeNoticeMessages({
     notice.id === 'connection-reconnecting' ||
     notice.id === 'auto-retry' ||
     notice.id === 'large-state-warning' ||
+    notice.id === 'runtime-fork-transition' ||
     notice.id.startsWith('command:') ||
     notice.id.startsWith('composer-warning:'),
   )

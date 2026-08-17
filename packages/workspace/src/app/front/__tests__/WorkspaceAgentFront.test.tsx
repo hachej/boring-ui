@@ -1808,7 +1808,7 @@ describe("WorkspaceAgentFront", () => {
     expect(create).toHaveBeenCalledWith()
   })
 
-  it("replaces a frozen pane with the current-scope native fork", async () => {
+  it("rebinds a frozen pane to the native fork without remounting its timeline", async () => {
     const user = userEvent.setup()
     const create = vi.fn(async (input?: { forkSessionId?: string }) => ({
       id: "forked",
@@ -1816,15 +1816,27 @@ describe("WorkspaceAgentFront", () => {
       title: "Continued session",
       ...(input ?? {}),
     }))
-    const FrozenChat = (props: WorkspaceChatPanelProps) => (
-      <button
-        type="button"
-        data-session-id={props.sessionId}
-        onClick={() => void props.onForkSession?.("stale", { message: "continue", clientNonce: "nonce" })}
-      >
-        Send frozen message
-      </button>
-    )
+    const mounts = vi.fn()
+    const unmounts = vi.fn()
+    let observedBinding: WorkspaceChatPanelProps["sessionBinding"]
+    const FrozenChat = (props: WorkspaceChatPanelProps) => {
+      observedBinding = props.sessionBinding
+      useEffect(() => {
+        mounts()
+        return () => unmounts()
+      }, [])
+      return (
+        <div data-testid="frozen-history" data-session-id={props.sessionId} data-timeline-key={props.timelineKey}>
+          <span>Frozen history stays mounted</span>
+          <button
+            type="button"
+            onClick={() => void props.onForkSession?.("stale", { message: "continue", clientNonce: "nonce" })}
+          >
+            Send frozen message
+          </button>
+        </div>
+      )
+    }
 
     render(
       <WorkspaceAgentFront
@@ -1846,11 +1858,24 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
+    await waitFor(() => expect(screen.getByTestId("frozen-history")).toHaveAttribute("data-session-id", "stale"))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    const history = screen.getByTestId("frozen-history")
+    const stableTimelineKey = history.getAttribute("data-timeline-key")
+    const mountCountBeforeFork = mounts.mock.calls.length
+    const unmountCountBeforeFork = unmounts.mock.calls.length
     await user.click(screen.getByRole("button", { name: "Send frozen message" }))
     await waitFor(() => expect(create).toHaveBeenCalledWith({
       forkSessionId: "stale",
       forkPrompt: { message: "continue", clientNonce: "nonce" },
     }))
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    expect(screen.getByTestId("frozen-history")).toHaveAttribute("data-session-id", "stale")
+    expect(observedBinding?.getSnapshot()).toBe("forked")
+    expect(mounts).toHaveBeenCalledTimes(mountCountBeforeFork)
+    expect(unmounts).toHaveBeenCalledTimes(unmountCountBeforeFork)
+    expect(screen.getByTestId("frozen-history")).toBe(history)
+    expect(screen.getByTestId("frozen-history")).toHaveAttribute("data-timeline-key", stableTimelineKey)
   })
 
   it("rejects a frozen fork while another pane creation is pending", async () => {

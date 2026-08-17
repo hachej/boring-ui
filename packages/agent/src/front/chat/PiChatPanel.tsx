@@ -1,7 +1,7 @@
 "use client"
 
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Button } from '@hachej/boring-ui-kit'
 import { AgentGatewayErrorCode } from '../../shared/gateway/errors'
 import type { PromptInputFilePart } from '../primitives/prompt-input'
@@ -11,7 +11,7 @@ import {
   WORKSPACE_COMMAND_NOTIFY_EVENT,
   type CommandNotifyPayload,
 } from '../../shared/agentPluginEvents'
-import type { PiChatEvent, PiChatStatus } from '../../shared/chat'
+import type { BoringChatMessage, PiChatEvent, PiChatStatus } from '../../shared/chat'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../chatPanelSettings'
 import { DEFAULT_THINKING } from '../chatPanelSettings'
 import { cn } from '../lib'
@@ -35,8 +35,8 @@ import {
 } from './chatPanelWorkspaceWarmup'
 import { useComposerContributions, type ComposerDraftUpdate } from './composerContributions'
 import { selectMessagesForRender, selectQueuePreview, selectRuntimeNotices } from './pi/selectors'
-import { piChatErrorCode, type RemotePiSession, type RemotePiSessionOptions } from './pi/remotePiSession'
-import type { PiChatRuntimeNotice } from './pi/piChatReducer'
+import { piChatErrorCode, toOptimisticUserMessage, type RemotePiSession, type RemotePiSessionOptions } from './pi/remotePiSession'
+import type { OptimisticUserMessage, PiChatRuntimeNotice } from './pi/piChatReducer'
 import {
   InitialDraftAutoSubmitGuard,
   createPiComposerPolicyController,
@@ -86,12 +86,32 @@ const EMPTY_BLOCKERS: never[] = []
 /** Stable id for the notice that surfaces a rejected run (so re-rejections replace
  * it rather than stacking, and the next admit can retract it). */
 const RUN_REJECTED_NOTICE_ID = 'run-rejected'
+const EMPTY_SESSION_BINDING_SUBSCRIBE = () => () => {}
+const EMPTY_SESSION_BINDING_SNAPSHOT = () => ''
 
 export type { ComposerBlocker, ComposerBlockerAction, PanelNotice }
 
 export type { ChatPanelRuntimeDependenciesWarmupStatus, ChatPanelWorkspaceWarmupStatus }
 
 export type ChatSubmitSource = 'composer' | 'suggestion' | 'auto-submit'
+
+export interface PiChatForkResult {
+  sessionId: string
+  agentTypeId?: string
+}
+
+export interface PiChatSessionBinding {
+  getSnapshot(): string
+  subscribe(listener: () => void): () => void
+}
+
+interface PiChatForkTransition {
+  sourceSessionId: string
+  targetSessionId?: string
+  forking: boolean
+  optimisticMessage: OptimisticUserMessage
+  preservedMessages: BoringChatMessage[]
+}
 
 export interface ChatSubmitContext {
   files: PromptInputFilePart[]
@@ -181,7 +201,11 @@ export interface PiChatPanelProps<
   /** Creates and selects a session when the host controls sessionId. */
   onCreateSession?: () => void | Promise<void>
   /** Natively forks a controlled frozen session and delivers its first prompt. */
-  onForkSession?: (sourceSessionId: string, prompt: Parameters<RemotePiSession['prompt']>[0]) => void | Promise<void>
+  onForkSession?: (sourceSessionId: string, prompt: Parameters<RemotePiSession['prompt']>[0]) => PiChatForkResult | void | Promise<PiChatForkResult | void>
+  /** Stable mounted-timeline identity. Hosts that rebind a pane in place keep this unchanged. */
+  timelineKey?: string
+  /** Stable host binding that can swap the remote session beneath a mounted panel. */
+  sessionBinding?: PiChatSessionBinding
   onBeforeSubmit?: (draft: string, context: ChatSubmitContext) => false | void | boolean | Promise<false | void | boolean>
   onReloadAgentPlugins?: () => Promise<AgentPluginReloadResult | string>
   onCommandResult?: (message: string) => void
@@ -250,6 +274,8 @@ export function PiChatPanel<
   onSessionReset,
   onCreateSession,
   onForkSession,
+  timelineKey,
+  sessionBinding,
   onBeforeSubmit,
   onReloadAgentPlugins,
   onCommandResult,
@@ -264,8 +290,22 @@ export function PiChatPanel<
   onTurnComplete,
   renderNoticeAction,
 }: PiChatPanelProps<TComposerBlocker>) {
-  const externalSessionId = sessionId?.trim() || undefined
+  const controlledExternalSessionId = sessionId?.trim() || undefined
+  const boundExternalSessionId = useSyncExternalStore(
+    sessionBinding?.subscribe ?? EMPTY_SESSION_BINDING_SUBSCRIBE,
+    sessionBinding?.getSnapshot ?? EMPTY_SESSION_BINDING_SNAPSHOT,
+    sessionBinding?.getSnapshot ?? EMPTY_SESSION_BINDING_SNAPSHOT,
+  ).trim() || undefined
+  const [forkBinding, setForkBinding] = useState<{ sourceSessionId: string; targetSessionId: string } | null>(null)
+  const externalSessionId = boundExternalSessionId
+    ?? (forkBinding && forkBinding.sourceSessionId === controlledExternalSessionId
+      ? forkBinding.targetSessionId
+      : controlledExternalSessionId)
   const showSessionSidebar = showSessions ?? externalSessionId === undefined
+  useEffect(() => {
+    if (!forkBinding || controlledExternalSessionId === forkBinding.sourceSessionId) return
+    setForkBinding(null)
+  }, [controlledExternalSessionId, forkBinding])
   const onDataRef = useRef(onData)
   onDataRef.current = onData
   // Ref so the (memoized) session-options closure can fire onTurnComplete without
@@ -413,6 +453,7 @@ export function PiChatPanel<
   const [serverSkillsRefreshKey, setServerSkillsRefreshKey] = useState(0)
   const [localSubmittedSessionId, setLocalSubmittedSessionId] = useState<string | undefined>()
   const localSubmittedSessionRef = useRef<string | undefined>(undefined)
+  const [forkTransition, setForkTransition] = useState<PiChatForkTransition | null>(null)
   const { attachmentNotice, setAttachmentNotice } = useAttachmentNotice()
   const composerContributions = useComposerContributions()
   const contributedCommands = useMemo(
@@ -474,8 +515,21 @@ export function PiChatPanel<
     [activeSessionId, composerBlockers],
   )
   const canonicalMessages = selectedChatState ? selectMessagesForRender(selectedChatState) : []
+  const transitionApplies = Boolean(forkTransition && (
+    activeSessionId === forkTransition.sourceSessionId
+    || activeSessionId === forkTransition.targetSessionId
+    || (externalSessionId && !forkTransition.targetSessionId)
+  ))
+  const transitionBaseMessages = transitionApplies && forkTransition
+    && activeSessionId !== forkTransition.sourceSessionId
+    && (!selectedChatState?.hydrated || canonicalMessages.length === 0)
+    ? forkTransition.preservedMessages
+    : canonicalMessages
+  const messages = transitionApplies && forkTransition
+    && !transitionBaseMessages.some((message) => message.clientNonce === forkTransition.optimisticMessage.clientNonce)
+    ? [...transitionBaseMessages, forkTransition.optimisticMessage]
+    : transitionBaseMessages
   const queuePreview = selectedChatState ? selectQueuePreview(selectedChatState) : []
-  const messages = canonicalMessages
   const userHistory = useMemo(() => selectComposerHistoryFromCanonicalUsers(canonicalMessages), [canonicalMessages])
   // A session attached with autoStart:false (external sessionId hosts) reports
   // status 'idle' with hydrated:false until the /state snapshot lands. Treat that
@@ -509,7 +563,10 @@ export function PiChatPanel<
           dismissible: true,
         }]
       : []
-    const combined = [...fromState, ...sessionNotice, ...largeStateNotice, ...localNotices]
+    const forkNotice = forkTransition?.forking
+      ? [{ id: 'runtime-fork-transition', level: 'info' as const, text: 'Continuing this chat in the current runtime…' }]
+      : []
+    const combined = [...fromState, ...sessionNotice, ...largeStateNotice, ...forkNotice, ...localNotices]
       .filter((notice) => !dismissedNoticeIds.has(notice.id))
       .filter((notice) => !('errorCode' in notice) || notice.errorCode !== AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH)
     // A terminal chat error (history failed to load, no messages present)
@@ -519,7 +576,21 @@ export function PiChatPanel<
     // but only when there's genuinely no history, matching the gate in
     // RuntimeNotices/PiConversationSurface (see terminalChatErrors.ts).
     return filterCompetingNoiseNotices(combined, messages.length === 0)
-  }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, messages.length, selectedChatState, sessionsError])
+  }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, forkTransition, localNotices, messages.length, selectedChatState, sessionsError])
+
+  useEffect(() => {
+    if (!forkTransition) return
+    if (!forkTransition.targetSessionId && activeSessionId && activeSessionId !== forkTransition.sourceSessionId) {
+      setForkTransition((current) => current?.optimisticMessage.clientNonce === forkTransition.optimisticMessage.clientNonce
+        ? { ...current, targetSessionId: activeSessionId }
+        : current)
+      return
+    }
+    if (!forkTransition.targetSessionId) return
+    if (activeSessionId !== forkTransition.targetSessionId || !selectedChatState?.hydrated) return
+    if (!canonicalMessages.some((message) => message.clientNonce === forkTransition.optimisticMessage.clientNonce)) return
+    setForkTransition((current) => current?.optimisticMessage.clientNonce === forkTransition.optimisticMessage.clientNonce ? null : current)
+  }, [activeSessionId, canonicalMessages, forkTransition, selectedChatState?.hydrated])
 
   const addLocalNotice = useCallback((notice: PanelNotice) => {
     setLocalNotices((previous) => {
@@ -793,12 +864,32 @@ export function PiChatPanel<
         }
         return state
       },
-      prompt: (payload: Parameters<RemotePiSession['prompt']>[0]) => selectedPiSession.prompt(payload).catch((error) => {
-        throw Object.assign(new Error(errorMessage(error, 'Could not send your message.'), { cause: error }), {
-          errorCode: piChatErrorCode(error),
-          forkPrompt: payload,
+      prompt: (payload: Parameters<RemotePiSession['prompt']>[0]) => {
+        const transition: PiChatForkTransition = {
+          sourceSessionId: activeChatSessionId,
+          forking: false,
+          optimisticMessage: toOptimisticUserMessage(payload),
+          preservedMessages: selectMessagesForRender(selectedPiSession.getState()),
+        }
+        setForkTransition(transition)
+        return selectedPiSession.prompt(payload).then((receipt) => {
+          setForkTransition((current) => current?.optimisticMessage.clientNonce === payload.clientNonce ? null : current)
+          return receipt
+        }).catch((error) => {
+          const errorCode = piChatErrorCode(error)
+          if (errorCode === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH) {
+            setForkTransition((current) => current?.optimisticMessage.clientNonce === payload.clientNonce
+              ? { ...current, forking: true }
+              : current)
+          } else {
+            setForkTransition((current) => current?.optimisticMessage.clientNonce === payload.clientNonce ? null : current)
+          }
+          throw Object.assign(new Error(errorMessage(error, 'Could not send your message.'), { cause: error }), {
+            errorCode,
+            forkPrompt: payload,
+          })
         })
-      }),
+      },
       followUp: selectedPiSession.followUp.bind(selectedPiSession),
       clearQueue: selectedPiSession.clearQueue.bind(selectedPiSession),
       interrupt: selectedPiSession.interrupt.bind(selectedPiSession),
@@ -917,14 +1008,25 @@ export function PiChatPanel<
         const forkPrompt = (error as { forkPrompt?: Parameters<RemotePiSession['prompt']>[0] }).forkPrompt
         try {
           if (!forkPrompt) throw new Error('The rejected prompt could not be recovered for the fork.')
-          if (externalSessionId) {
-            if (!onForkSession) throw new Error('The chat host cannot fork this frozen session.')
-            await onForkSession(activeChatSessionId, forkPrompt)
-          } else {
-            await sessions.create({ forkSessionId: activeChatSessionId, forkPrompt })
+          const forked = externalSessionId
+            ? onForkSession
+              ? await onForkSession(activeChatSessionId, forkPrompt)
+              : await Promise.reject(new Error('The chat host cannot fork this frozen session.'))
+            : await sessions.create({ forkSessionId: activeChatSessionId, forkPrompt })
+          const targetSessionId = forked && 'sessionId' in forked
+            ? forked.sessionId
+            : forked && 'id' in forked
+              ? forked.id
+              : undefined
+          if (externalSessionId && targetSessionId) {
+            setForkBinding({ sourceSessionId: externalSessionId, targetSessionId })
           }
+          setForkTransition((current) => current?.optimisticMessage.clientNonce === forkPrompt.clientNonce
+            ? { ...current, ...(targetSessionId ? { targetSessionId } : {}) }
+            : current)
           return undefined
         } catch (forkError) {
+          setForkTransition((current) => current?.optimisticMessage.clientNonce === forkPrompt?.clientNonce ? null : current)
           restoreSubmittedDraft()
           surfaceRunRejected(forkError)
           return false
@@ -1315,7 +1417,7 @@ export function PiChatPanel<
               }}
               onSuggestionSubmit={({ text, files, source }) => sendComposerMessage({ text, files, source })}
               onRestoreDraft={setComposerDraft}
-              windowResetKey={activeSessionId}
+              windowResetKey={timelineKey ?? activeSessionId}
             />
 
             {composerSurface}
