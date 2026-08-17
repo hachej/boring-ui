@@ -1,47 +1,37 @@
-import type { Automation, AutomationSeed } from "./store"
-import type { AutomationStore } from "./store"
+import { z } from "zod"
+import { isValidFiveFieldCron, isValidIanaTimeZone } from "../shared/schedule"
+import type { Automation, AutomationSeed, AutomationStore } from "./store"
 
-const STANDING_AUTOMATIONS: readonly AutomationSeed[] = [
-  {
-    key: "orchestrator-tick",
-    title: "orchestrator-tick",
-    enabled: true,
-    cron: "*/10 * * * *",
-    timezone: "UTC",
-    model: "openai-codex:gpt-5.6-sol",
-    agentTypeId: "boring-orchestrator",
-    sessionMode: "new",
-    promptRef: ".agents/automation/orchestrator-tick.md",
-  },
-  ...[1, 2, 3].map((slot): AutomationSeed => ({
-    key: `worker-slot-${slot}`,
-    title: `worker-slot-${slot}`,
-    enabled: true,
-    cron: null,
-    timezone: "UTC",
-    model: "openai-codex:gpt-5.6-sol",
-    agentTypeId: "boring-worker",
-    sessionMode: "new",
-    promptRef: ".agents/automation/worker-slot.md",
-  })),
-  {
-    key: "triage",
-    title: "triage",
-    enabled: true,
-    cron: null,
-    timezone: "UTC",
-    model: "openai-codex:gpt-5.6-sol",
-    agentTypeId: "boring-worker",
-    sessionMode: "new",
-    promptRef: ".agents/automation/triage-slot.md",
-  },
-]
+const SeedSchema = z.object({
+  key: z.string().trim().regex(/^[a-zA-Z0-9_-]+$/),
+  title: z.string().trim().min(1),
+  enabled: z.boolean(),
+  cron: z.string().trim().nullable(),
+  timezone: z.string().trim().min(1),
+  model: z.string().trim().regex(/^[^:]+:.+$/),
+  agentTypeId: z.string().trim().min(1),
+  sessionMode: z.enum(["new", "continue"]),
+  promptRef: z.string().regex(/^\.agents\/automation\/[a-zA-Z0-9_-]+\.md$/),
+}).superRefine((seed, context) => {
+  if (seed.cron !== null && !isValidFiveFieldCron(seed.cron)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["cron"], message: "invalid five-field cron" })
+  }
+  if (!isValidIanaTimeZone(seed.timezone)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["timezone"], message: "invalid IANA timezone" })
+  }
+})
 
-/** Seed only when this workspace carries the checked-in factory prompts. */
+const ManifestSchema = z.object({ automations: z.array(SeedSchema) }).strict()
+
+/** Provision a workspace-owned automation manifest without embedding factory policy in the plugin. */
 export async function seedStandingAutomations(store: AutomationStore): Promise<Automation[]> {
-  if (!store.ensureSeededAutomation) return []
-  const seeded = await Promise.all(STANDING_AUTOMATIONS.map(async (input) => await store.ensureSeededAutomation!(input)))
+  if (!store.readSeedManifest || !store.ensureSeededAutomation) return []
+  const raw = await store.readSeedManifest()
+  if (raw === null) return []
+  const seeds = ManifestSchema.parse(JSON.parse(raw)).automations as AutomationSeed[]
+  if (new Set(seeds.map(({ key }) => key)).size !== seeds.length) {
+    throw new Error("automation seed manifest contains duplicate keys")
+  }
+  const seeded = await Promise.all(seeds.map(async (input) => await store.ensureSeededAutomation!(input)))
   return seeded.filter((automation): automation is Automation => automation !== null)
 }
-
-export { STANDING_AUTOMATIONS }

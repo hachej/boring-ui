@@ -76,6 +76,15 @@ export class PostgresAutomationStore implements AutomationStore {
     return toAutomation(rows[0]!)
   }
 
+  async readSeedManifest(): Promise<string | null> {
+    try {
+      return await this.requireWorkspace().readFile(".agents/automation/manifest.json")
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT") return null
+      throw error
+    }
+  }
+
   async ensureSeededAutomation(input: AutomationSeed): Promise<Automation | null> {
     const workspace = this.requireWorkspace()
     try {
@@ -89,11 +98,22 @@ export class PostgresAutomationStore implements AutomationStore {
     const rows = await this.sql<AutomationRow[]>`
       INSERT INTO boring_automation_automations (id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, agent_type_id, session_mode, prompt_ref, created_at, updated_at)
       VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled}, ${input.cron}, ${input.timezone}, ${input.model}, ${input.agentTypeId}, ${input.sessionMode}, ${input.promptRef}, ${now}, ${now})
-      ON CONFLICT (id) DO NOTHING
+      ON CONFLICT (id) DO UPDATE SET
+        title = EXCLUDED.title,
+        enabled = EXCLUDED.enabled,
+        cron = EXCLUDED.cron,
+        timezone = EXCLUDED.timezone,
+        model = EXCLUDED.model,
+        agent_type_id = EXCLUDED.agent_type_id,
+        session_mode = EXCLUDED.session_mode,
+        prompt_ref = EXCLUDED.prompt_ref,
+        deleted_at = NULL,
+        updated_at = EXCLUDED.updated_at
+      WHERE boring_automation_automations.workspace_id = EXCLUDED.workspace_id
+        AND boring_automation_automations.owner_user_id = EXCLUDED.owner_user_id
       RETURNING id, title, enabled, cron, timezone, model, agent_type_id, session_mode, prompt_ref, created_at, updated_at
     `
-    if (rows[0]) return toAutomation(rows[0])
-    return await this.getAutomation(id)
+    return rows[0] ? toAutomation(rows[0]) : null
   }
 
   async updateAutomation(id: string, patch: AutomationPatch): Promise<Automation> {

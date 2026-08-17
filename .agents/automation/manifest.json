@@ -1,0 +1,59 @@
+{
+  "automations": [
+    {
+      "key": "orchestrator-tick",
+      "title": "orchestrator-tick",
+      "enabled": true,
+      "cron": "*/10 * * * *",
+      "timezone": "UTC",
+      "model": "openai-codex:gpt-5.6-sol",
+      "agentTypeId": "boring-orchestrator",
+      "sessionMode": "new",
+      "promptRef": ".agents/automation/orchestrator-tick.md"
+    },
+    {
+      "key": "worker-slot-1",
+      "title": "worker-slot-1",
+      "enabled": true,
+      "cron": null,
+      "timezone": "UTC",
+      "model": "openai-codex:gpt-5.6-sol",
+      "agentTypeId": "boring-worker",
+      "sessionMode": "new",
+      "promptRef": ".agents/automation/worker-slot.md"
+    },
+    {
+      "key": "worker-slot-2",
+      "title": "worker-slot-2",
+      "enabled": true,
+      "cron": null,
+      "timezone": "UTC",
+      "model": "openai-codex:gpt-5.6-sol",
+      "agentTypeId": "boring-worker",
+      "sessionMode": "new",
+      "promptRef": ".agents/automation/worker-slot.md"
+    },
+    {
+      "key": "worker-slot-3",
+      "title": "worker-slot-3",
+      "enabled": true,
+      "cron": null,
+      "timezone": "UTC",
+      "model": "openai-codex:gpt-5.6-sol",
+      "agentTypeId": "boring-worker",
+      "sessionMode": "new",
+      "promptRef": ".agents/automation/worker-slot.md"
+    },
+    {
+      "key": "triage",
+      "title": "triage",
+      "enabled": true,
+      "cron": null,
+      "timezone": "UTC",
+      "model": "openai-codex:gpt-5.6-sol",
+      "agentTypeId": "boring-worker",
+      "sessionMode": "new",
+      "promptRef": ".agents/automation/triage-slot.md"
+    }
+  ]
+}

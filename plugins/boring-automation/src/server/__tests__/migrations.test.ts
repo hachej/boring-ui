@@ -23,7 +23,8 @@ describe("runBoringAutomationMigrations", () => {
     expect(statements.some((statement) => statement.includes("ADD COLUMN IF NOT EXISTS invocation_id text"))).toBe(true)
     expect(statements.some((statement) => statement.includes("ALTER COLUMN invocation_id SET NOT NULL"))).toBe(true)
     expect(statements.some((statement) => statement.includes("status IN ('queued', 'dispatching', 'running'"))).toBe(true)
-    expect(statements.some((statement) => statement.includes("boring_automation_runs_active_once_idx"))).toBe(true)
+    expect(statements.some((statement) => statement.includes("HAVING COUNT(*) > 1") && statement.includes("outcome-unknown"))).toBe(true)
+    expect(statements.some((statement) => statement.includes("boring_automation_runs_active_once_idx") && statement.includes("outcome-unknown"))).toBe(true)
     expect(statements.some((statement) => statement.includes("boring_automation_runs_invocation_once_idx"))).toBe(true)
     expect(statements.some((statement) => statement.includes("boring_automation_runs_scheduled_once_idx"))).toBe(true)
   })
@@ -91,8 +92,54 @@ describe("runBoringAutomationMigrations", () => {
       await expect(store.updateRunLifecycle(run.id, { status: "succeeded" })).rejects.toMatchObject({
         code: "BORING_AUTOMATION_RUN_LEASE_LOST",
       })
+      const replacements = await Promise.allSettled([
+        store.beginRun({ automationId, trigger: "dispatch", promptSnapshot: "replacement-1", modelSnapshot: "test:model" }),
+        store.beginRun({ automationId, trigger: "dispatch", promptSnapshot: "replacement-2", modelSnapshot: "test:model" }),
+      ])
+      expect(replacements).toHaveLength(2)
+      for (const replacement of replacements) {
+        expect(replacement.status).toBe("rejected")
+        if (replacement.status === "rejected") expect(replacement.reason).toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
+      }
     } finally {
       await sql`DELETE FROM boring_automation_automations WHERE id = ${automationId}`.catch(() => undefined)
+      await sql.end()
+    }
+  })
+})
+
+
+describe("Postgres standing automation seeding", () => {
+  it("is concurrent-idempotent, prompt-linked, and reactivates its deterministic tombstone", async () => {
+    const sql = postgres(TEST_DB_URL, { max: 4 })
+    const actor = { workspaceId: `seed-workspace-${randomUUID()}`, userId: `seed-user-${randomUUID()}` }
+    const workspace = {
+      root: "/workspace",
+      runtimeContext: {},
+      async readFile(path: string) {
+        if (path === ".agents/automation/worker-slot.md") return "worker prompt"
+        throw Object.assign(new Error("missing"), { code: "ENOENT" })
+      },
+    } as never
+    const seed = {
+      key: "worker-slot-1", title: "worker-slot-1", enabled: true, cron: null, timezone: "UTC",
+      model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", sessionMode: "new" as const,
+      promptRef: ".agents/automation/worker-slot.md",
+    }
+    try {
+      await runBoringAutomationMigrations(sql)
+      const store = new PostgresAutomationStore(sql, actor, undefined, workspace)
+      const [first, second] = await Promise.all([store.ensureSeededAutomation(seed), store.ensureSeededAutomation(seed)])
+      expect(first).toMatchObject({ id: second?.id, cron: null, promptRef: seed.promptRef })
+      await expect(store.getPrompt(first!.id)).resolves.toBe("worker prompt")
+      await expect(store.listAutomations()).resolves.toHaveLength(1)
+
+      await store.deleteAutomation(first!.id)
+      await expect(store.listAutomations()).resolves.toEqual([])
+      await expect(store.ensureSeededAutomation(seed)).resolves.toMatchObject({ id: first!.id, promptRef: seed.promptRef })
+      await expect(store.listAutomations()).resolves.toHaveLength(1)
+    } finally {
+      await sql`DELETE FROM boring_automation_automations WHERE workspace_id = ${actor.workspaceId} AND owner_user_id = ${actor.userId}`.catch(() => undefined)
       await sql.end()
     }
   })

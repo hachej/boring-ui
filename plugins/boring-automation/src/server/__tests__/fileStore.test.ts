@@ -199,6 +199,11 @@ describe("standing factory automation seeding", () => {
   it("is idempotent and links all five records to their checked-in prompt files", async () => {
     const { seedStandingAutomations } = await import("../standingAutomations")
     await mkdir(join(dir, ".agents", "automation"), { recursive: true })
+    await writeFile(join(dir, ".agents", "automation", "manifest.json"), JSON.stringify({ automations: [
+      { key: "orchestrator-tick", title: "orchestrator-tick", enabled: true, cron: "*/10 * * * *", timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-orchestrator", sessionMode: "new", promptRef: ".agents/automation/orchestrator-tick.md" },
+      ...[1, 2, 3].map((slot) => ({ key: `worker-slot-${slot}`, title: `worker-slot-${slot}`, enabled: true, cron: null, timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", sessionMode: "new", promptRef: ".agents/automation/worker-slot.md" })),
+      { key: "triage", title: "triage", enabled: true, cron: null, timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", sessionMode: "new", promptRef: ".agents/automation/triage-slot.md" },
+    ] }), "utf8")
     await Promise.all([
       writeFile(join(dir, ".agents", "automation", "orchestrator-tick.md"), "orchestrator prompt", "utf8"),
       writeFile(join(dir, ".agents", "automation", "worker-slot.md"), "worker prompt", "utf8"),

@@ -342,13 +342,13 @@ describe("ManualRunExecutor", () => {
     expect(run).toMatchObject({ inputTokens: 8, outputTokens: null, totalTokens: 8 })
   })
 
-  it("finalizes as failed when the stream fails before the first event", async () => {
+  it("keeps accepted occupancy when the stream fails before the first event", async () => {
     const harness = createHarness({ streamError: new Error("provider unavailable") })
 
     const run = await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
 
     expect(run).toMatchObject({
-      status: "failed",
+      status: "outcome-unknown",
       sessionId: "session-1",
       dispatchReceipt: expect.objectContaining({ ref: { agentTypeId: "default", sessionId: "session-1" } }),
       inputTokens: null,
@@ -358,7 +358,7 @@ describe("ManualRunExecutor", () => {
     })
   })
 
-  it("finalizes as failed after a session id and partial usage have been observed", async () => {
+  it("keeps accepted occupancy after a session id and partial usage have been observed", async () => {
     const harness = createHarness({
       events: [
         event(0, { type: "agent-start", seq: 1, turnId: "turn-1" }, "session-partial"),
@@ -370,7 +370,7 @@ describe("ManualRunExecutor", () => {
     const run = await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
 
     expect(run).toMatchObject({
-      status: "failed",
+      status: "outcome-unknown",
       sessionId: "session-partial",
       inputTokens: 8,
       outputTokens: null,
@@ -383,7 +383,7 @@ describe("ManualRunExecutor", () => {
     const harness = createHarness({ streamError: new Error("stream crashed") })
     const updateRunLifecycle = harness.store.updateRunLifecycle.bind(harness.store)
     vi.spyOn(harness.store, "updateRunLifecycle").mockImplementation(async (runId, patch) => {
-      if (patch.status === "failed") {
+      if (patch.status === "outcome-unknown") {
         const current = harness.store.runs.get(runId)!
         harness.store.runs.set(runId, {
           ...current,

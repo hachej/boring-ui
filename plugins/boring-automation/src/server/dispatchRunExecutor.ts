@@ -131,6 +131,7 @@ export class DispatchRunExecutor {
     let sessionId: string | null = null
     let terminalStatus: "succeeded" | "failed" | "cancelled" | null = null
     let terminalError: string | null = null
+    let dispatchAccepted = false
     let dispatchIdentityPersistenceFailed = false
     const claimed = await store.claimRunForDispatch(run.id)
     if (!claimed) {
@@ -159,7 +160,10 @@ export class DispatchRunExecutor {
         receipt?: Omit<NonNullable<AutomationRun["dispatchReceipt"]>, "ref">,
       ) => {
         sessionId = ref.sessionId
-        if (receipt) dispatchReceipt = { ref, ...receipt }
+        if (receipt) {
+          dispatchAccepted = true
+          dispatchReceipt = { ref, ...receipt }
+        }
         if (durableSessionId === ref.sessionId && (!receipt || current.dispatchReceipt)) return
         try {
           current = await store.updateRunLifecycle(run.id, {
@@ -244,9 +248,8 @@ export class DispatchRunExecutor {
       await stopHeartbeat()
       if (isRunLeaseLost(error)) return await this.readDurableRun(store, automation.id, run.id, current)
       const cancelled = isCancellationError(error)
-      const status = dispatchIdentityPersistenceFailed
-        ? "outcome-unknown"
-        : (terminalStatus ?? (cancelled ? "cancelled" : "failed"))
+      const status = terminalStatus
+        ?? (cancelled ? "cancelled" : (dispatchAccepted || dispatchIdentityPersistenceFailed ? "outcome-unknown" : "failed"))
       let finalized: AutomationRun
       try {
         finalized = await this.finalizeRun(store, run.id, {

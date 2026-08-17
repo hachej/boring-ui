@@ -28,6 +28,11 @@ describe("boring automation server plugin", () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "boring-automation-seeded-plugin-"))
     const promptRoot = join(workspaceRoot, ".agents", "automation")
     await mkdir(promptRoot, { recursive: true })
+    await writeFile(join(promptRoot, "manifest.json"), JSON.stringify({ automations: [
+      { key: "orchestrator-tick", title: "orchestrator-tick", enabled: true, cron: "*/10 * * * *", timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-orchestrator", sessionMode: "new", promptRef: ".agents/automation/orchestrator-tick.md" },
+      ...[1, 2, 3].map((slot) => ({ key: `worker-slot-${slot}`, title: `worker-slot-${slot}`, enabled: true, cron: null, timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", sessionMode: "new", promptRef: ".agents/automation/worker-slot.md" })),
+      { key: "triage", title: "triage", enabled: true, cron: null, timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", sessionMode: "new", promptRef: ".agents/automation/triage-slot.md" },
+    ] }), "utf8")
     await Promise.all([
       writeFile(join(promptRoot, "orchestrator-tick.md"), "orchestrator prompt", "utf8"),
       writeFile(join(promptRoot, "worker-slot.md"), "worker prompt", "utf8"),

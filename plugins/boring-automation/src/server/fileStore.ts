@@ -95,6 +95,15 @@ export class FileAutomationStore implements AutomationStore {
     return clone(automation)
   }
 
+  async readSeedManifest(): Promise<string | null> {
+    try {
+      return await readFile(join(this.workspaceRoot, ".agents", "automation", "manifest.json"), "utf8")
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT") return null
+      throw error
+    }
+  }
+
   async ensureSeededAutomation(input: AutomationSeed): Promise<Automation | null> {
     try {
       await readFile(this.workspacePath(input.promptRef), "utf8")

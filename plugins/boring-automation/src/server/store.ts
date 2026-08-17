@@ -34,6 +34,8 @@ export interface AutomationStore {
   listAutomations(): Promise<Automation[]>
   getAutomation(id: string): Promise<Automation | null>
   createAutomation(input: AutomationCreate): Promise<Automation>
+  /** Reads the optional workspace-owned automation seed manifest. */
+  readSeedManifest?(): Promise<string | null>
   /** Idempotently provisions metadata for a checked-in prompt; returns null when the prompt is absent. */
   ensureSeededAutomation?(input: AutomationSeed): Promise<Automation | null>
   updateAutomation(id: string, patch: AutomationPatch): Promise<Automation>
