@@ -8,6 +8,7 @@
 - [03-implementation-mechanics.md](03-implementation-mechanics.md) — code-level anatomy of AIDE, DGM, SICA, ADAS
 - [04-generalization-premises.md](04-generalization-premises.md) — the nine invariants that make the loop work on any process
 - [05-delta.md](05-delta.md) — gap analysis: our operation vs. the invariants, ranked build list
+- [06-alternative-approaches.md](06-alternative-approaches.md) — the other bets: self-play RL, test-time training, memory, textual gradients, debate, certified self-modification, open-endedness
 
 ---
 
