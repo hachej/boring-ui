@@ -1,7 +1,7 @@
 import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harness'
 import type { SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
-import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
+import type { BoringChatMessage, BoringChatPart, ChatError, ChatModelSelection, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
 import { sessionStreamPath, type AgentEvent } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
 import { formatOffset, parseOffset, MAX_READ_LIMIT, type EventStreamStore } from '../events/eventStreamStore'
@@ -30,12 +30,16 @@ type PiNativeHarness = AgentHarness & {
 const MAX_PROMPT_IMAGE_BYTES = 10 * 1024 * 1024
 const PROMPT_IMAGE_EXTENSIONS = new Set(['.avif', '.gif', '.jpg', '.jpeg', '.png', '.webp'])
 
+function sameModelSelection(left: ChatModelSelection | undefined, right: ChatModelSelection): boolean {
+  return left?.provider === right.provider && left.id === right.id
+}
+
 
 /** Pi session stores additionally expose the raw persisted message entries so
  * the cold-load path can run them through the same buildPiChatHistory mapping
  * as the live event path. */
 type PiSessionStoreLike = SessionStore & {
-  loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[]; currentModel?: { provider: string; id: string } }>
+  loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[]; currentModel?: ChatModelSelection }>
   loadAttachment?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string, messageId: string, index: number) => Promise<{ data: Uint8Array; mediaType: string; filename?: string }>
 }
 
@@ -52,6 +56,7 @@ interface LiveSessionChannel {
   rejectClosed: (error: unknown) => void
   activeTurnId?: string
   messageTurnIds: Map<string, string>
+  advertisedModel?: ChatModelSelection
 }
 
 interface SyntheticPromptFailure {
@@ -433,7 +438,8 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
     if (outcome === 'cancelled') throw promptCancelledError()
     const currentModel = adapter.currentModel?.()
-    if (currentModel) {
+    if (currentModel && !sameModelSelection(channel.advertisedModel, currentModel)) {
+      channel.advertisedModel = currentModel
       this.publishChannelEvents(sessionId, channel, [
         channel.mapper.mapSynthetic({ type: 'model-changed', currentModel }),
       ])
@@ -985,6 +991,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       resolveClosed: () => closed.resolve(),
       rejectClosed: closed.reject,
       messageTurnIds: new Map(),
+      advertisedModel: adapter.currentModel?.(),
     }
     const unsubscribe = adapter.subscribe((event) => {
       const mappedEvents = mapper.map(event)

@@ -23,6 +23,7 @@ import {
   CURRENT_SESSION_VERSION,
 } from "@mariozechner/pi-coding-agent";
 import { ErrorCode } from "../../../shared/error-codes.js";
+import type { ChatModelSelection } from "../../../shared/chat/chatSubmitPayload.js";
 import {
   SAFE_NATIVE_SESSION_ID,
   type SessionStore,
@@ -48,33 +49,33 @@ export {
 export interface PiSessionEntries {
   id: string;
   messages: unknown[];
-  currentModel?: { provider: string; id: string };
+  currentModel?: ChatModelSelection;
 }
 
-function currentModelFromTranscript(entries: readonly SessionEntry[]): { provider: string; id: string } | undefined {
+function legacyAssistantModel(entry: SessionMessageEntry): ChatModelSelection | undefined {
+  const message = entry.message as unknown as Record<string, unknown>;
+  if (message.role !== "assistant") return undefined;
+  if (typeof message.provider === "string" && typeof message.model === "string") {
+    return { provider: message.provider, id: message.model };
+  }
+  if (typeof message.model !== "object" || message.model === null) return undefined;
+  const model = message.model as Record<string, unknown>;
+  return typeof model.provider === "string" && typeof model.id === "string"
+    ? { provider: model.provider, id: model.id }
+    : undefined;
+}
+
+function currentModelFromTranscript(entries: readonly SessionEntry[]): ChatModelSelection | undefined {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const raw = entries[index] as unknown
-    if (typeof raw !== "object" || raw === null) continue
-    const entry = raw as Record<string, unknown>
-    if (entry.type === "model_change") {
-      const provider = entry.provider
-      const id = entry.modelId ?? entry.model
-      if (typeof provider === "string" && typeof id === "string") return { provider, id }
-    }
-    if (entry.type !== "message" || typeof entry.message !== "object" || entry.message === null) continue
-    const message = entry.message as Record<string, unknown>
-    if (message.role !== "assistant") continue
-    if (typeof message.provider === "string" && typeof message.model === "string") {
-      return { provider: message.provider, id: message.model }
-    }
-    if (typeof message.model === "object" && message.model !== null) {
-      const model = message.model as Record<string, unknown>
-      if (typeof model.provider === "string" && typeof model.id === "string") {
-        return { provider: model.provider, id: model.id }
-      }
+    const entry = entries[index];
+    if (!entry) continue;
+    if (entry.type === "model_change") return { provider: entry.provider, id: entry.modelId };
+    if (entry.type === "message") {
+      const model = legacyAssistantModel(entry);
+      if (model) return model;
     }
   }
-  return undefined
+  return undefined;
 }
 
 export interface PiSessionAttachment {

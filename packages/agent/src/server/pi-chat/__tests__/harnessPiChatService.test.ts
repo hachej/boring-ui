@@ -167,24 +167,33 @@ describe('HarnessPiChatService', () => {
     await service.dispose()
   })
 
-  it('publishes an addressed model change before an externally submitted turn', async () => {
+  it('publishes only real addressed model transitions for externally submitted turns', async () => {
     const adapter = createAdapter()
-    const currentModel = { provider: 'openai-codex', id: 'gpt-5.6-sol' }
+    let currentModel = { provider: 'openai', id: 'gpt-old' }
     adapter.currentModel = () => currentModel
-    const { service } = createService(adapter)
+    const harness = createHarness(adapter)
+    vi.mocked(harness.getPiSessionAdapter).mockImplementation(async (input: AgentSendInput) => {
+      if (input.model) currentModel = input.model
+      return adapter
+    })
+    const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace' })
     const events: PiChatEvent[] = []
     const subscription = await service.subscribe(ctx, 's1', 0, (event) => events.push(event))
     if (subscription.type !== 'ok') throw new Error('expected live subscription')
 
+    const nextModel = { provider: 'openai-codex', id: 'gpt-5.6-sol' }
     await service.prompt(ctx, 's1', {
       message: 'automation prompt',
       clientNonce: 'automation-model',
-      model: currentModel,
+      model: nextModel,
     })
-    await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({
-      type: 'model-changed',
-      currentModel,
-    })))
+    await service.prompt(ctx, 's1', {
+      message: 'same model again',
+      clientNonce: 'automation-model-2',
+    })
+    await vi.waitFor(() => expect(events.filter((event) => event.type === 'model-changed')).toEqual([
+      expect.objectContaining({ type: 'model-changed', currentModel: nextModel }),
+    ]))
 
     subscription.unsubscribe()
     await service.dispose()
