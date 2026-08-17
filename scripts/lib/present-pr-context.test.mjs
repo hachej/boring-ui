@@ -26,6 +26,8 @@ Short summary.
   const svg = await renderMermaidSvg(context.visuals[0].content)
   assert.match(svg, /^<svg/)
   assert.match(svg, /aria-roledescription="sequence"/)
+  assert.match(svg, /#eef2ff/)
+  assert.match(svg, /#a7b4d8/)
   const html = renderIntroVisuals(context, [svg, ''])
   assert.match(html, /^<div class="context-visual mermaid-svg"><svg/)
   assert.match(html, /<pre class="context-visual shape"><code>request/)
