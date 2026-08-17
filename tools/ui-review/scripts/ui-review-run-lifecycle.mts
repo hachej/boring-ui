@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process"
-import { lstat, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { lstat, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises"
+import { constants as osConstants, tmpdir } from "node:os"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 
@@ -12,9 +12,15 @@ export const UI_REVIEW_RUN_ROOT_ENV = "UI_REVIEW_OWNED_RUN_ROOT"
 export const UI_REVIEW_TERMINATION_GRACE_MS = 5_000
 
 const SIGNAL_EXIT_CODES: Partial<Record<NodeJS.Signals, number>> = { SIGINT: 130, SIGTERM: 143 }
+const PROCESS_SUPERVISOR = resolve(import.meta.dirname, "ui-review-process-supervisor.mts")
 type LifecycleState = "open" | "closing" | "closed"
-type ProcessGroup = { child: ChildProcess; pid: number | undefined }
-type ChildResult = { code: number | null; signal: NodeJS.Signals | null; error: Error | null }
+type ChildResult = { code: number | null; signal: NodeJS.Signals | null; error: string | null }
+type SupervisedGroup = {
+  supervisor: ChildProcess
+  pid: number
+  result: Promise<ChildResult>
+  termination?: Promise<void>
+}
 
 export type UiReviewRunLifecycle = {
   root: string
@@ -31,7 +37,7 @@ export async function createUiReviewRunLifecycle(options: {
   temporaryDirectory?: string
   terminationGraceMs?: number
 } = {}): Promise<UiReviewRunLifecycle> {
-  if (process.platform === "win32") throw new Error("UI_REVIEW_PROCESS_GROUPS_UNSUPPORTED:win32")
+  if (process.platform !== "linux") throw new Error(`UI_REVIEW_PROCESS_GROUPS_UNSUPPORTED:${process.platform}`)
   const temporaryDirectory = await realpath(resolve(options.temporaryDirectory ?? tmpdir()))
   const root = await mkdtemp(join(temporaryDirectory, UI_REVIEW_RUN_ROOT_PREFIX))
   const marker = {
@@ -44,7 +50,7 @@ export async function createUiReviewRunLifecycle(options: {
   }
   await writeFile(join(root, UI_REVIEW_RUN_MARKER), `${JSON.stringify(marker, null, 2)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 })
 
-  const activeGroups = new Map<ChildProcess, ProcessGroup>()
+  const activeGroups = new Map<ChildProcess, SupervisedGroup>()
   const terminationGraceMs = options.terminationGraceMs ?? UI_REVIEW_TERMINATION_GRACE_MS
   let state: LifecycleState = "open"
   let deletePromise: Promise<void> | undefined
@@ -63,21 +69,24 @@ export async function createUiReviewRunLifecycle(options: {
 
   const run = async (command: string, args: string[], spawnOptions: SpawnOptions = {}) => {
     assertOpen()
-    const child = spawn(command, args, { ...spawnOptions, detached: true })
-    const group = { child, pid: child.pid }
-    activeGroups.set(child, group)
-    const result = await new Promise<ChildResult>((resolveExit) => {
-      let settled = false
-      const finish = (value: ChildResult) => {
-        if (settled) return
-        settled = true
-        resolveExit(value)
-      }
-      child.once("error", (error) => finish({ code: 1, signal: null, error }))
-      child.once("close", (code, signal) => finish({ code, signal, error: null }))
+    const stdioMode = spawnOptions.stdio ?? "inherit"
+    if (stdioMode !== "inherit" && stdioMode !== "ignore") throw new Error("UI_REVIEW_RUN_STDIO_UNSUPPORTED")
+    const supervisor = spawn(process.execPath, [PROCESS_SUPERVISOR, command, Buffer.from(JSON.stringify(args)).toString("base64url"), stdioMode], {
+      cwd: spawnOptions.cwd,
+      env: spawnOptions.env,
+      detached: true,
+      stdio: [stdioMode, stdioMode, stdioMode, "ipc"],
     })
-    await terminateResidualGroup(group, terminationGraceMs)
-    activeGroups.delete(child)
+    if (!supervisor.pid) throw new Error("UI_REVIEW_SUPERVISOR_PID_MISSING")
+    const group: SupervisedGroup = {
+      supervisor,
+      pid: supervisor.pid,
+      result: waitForSupervisedResult(supervisor),
+    }
+    activeGroups.set(supervisor, group)
+    const result = await group.result
+    await terminateSupervisedGroup(group, terminationGraceMs)
+    activeGroups.delete(supervisor)
     return result.error ? 1 : exitStatus(result.code, result.signal)
   }
 
@@ -98,7 +107,7 @@ export async function createUiReviewRunLifecycle(options: {
     shutdownPromise ??= (async () => {
       if (state === "closed") return
       state = "closing"
-      if (activeGroups.size > 0) await terminateGroups([...activeGroups.values()], terminationGraceMs)
+      await Promise.all([...activeGroups.values()].map((group) => terminateSupervisedGroup(group, terminationGraceMs)))
       await deleteRoot()
       state = "closed"
     })()
@@ -106,6 +115,10 @@ export async function createUiReviewRunLifecycle(options: {
   }
 
   const signalHandlers = new Map<NodeJS.Signals, () => void>()
+  const removeSignalHandlers = () => {
+    for (const [signal, handler] of signalHandlers) process.off(signal, handler)
+    signalHandlers.clear()
+  }
   const installSignalHandlers = () => {
     assertOpen()
     if (signalHandlers.size > 0) return
@@ -113,15 +126,12 @@ export async function createUiReviewRunLifecycle(options: {
       const handler = () => {
         if (requestedSignal) return
         requestedSignal = signal
+        removeSignalHandlers()
         void shutdown().catch((error: unknown) => console.error(error)).finally(() => process.exit(SIGNAL_EXIT_CODES[signal]))
       }
       signalHandlers.set(signal, handler)
       process.on(signal, handler)
     }
-  }
-  const removeSignalHandlers = () => {
-    for (const [signal, handler] of signalHandlers) process.off(signal, handler)
-    signalHandlers.clear()
   }
 
   return {
@@ -175,47 +185,79 @@ async function readAndValidateOwnedRoot(candidateRoot: string | undefined) {
   return { root, parent: raw.parent as string }
 }
 
-async function terminateGroups(groups: ProcessGroup[], graceMs: number) {
-  for (const group of groups) signalGroup(group, "SIGTERM")
-  const survivors = await waitForGroups(groups, graceMs)
-  for (const group of survivors) signalGroup(group, "SIGKILL")
-  await Promise.all(groups.map(({ child }) => waitForClose(child)))
+function waitForSupervisedResult(supervisor: ChildProcess) {
+  return new Promise<ChildResult>((resolveResult) => {
+    let settled = false
+    const finish = (result: ChildResult) => {
+      if (settled) return
+      settled = true
+      resolveResult(result)
+    }
+    supervisor.on("message", (message: unknown) => {
+      if (!isRecord(message) || message.type !== "result") return
+      finish({
+        code: typeof message.code === "number" ? message.code : null,
+        signal: typeof message.signal === "string" ? message.signal as NodeJS.Signals : null,
+        error: typeof message.error === "string" ? message.error : null,
+      })
+    })
+    supervisor.once("error", (error) => finish({ code: 1, signal: null, error: error.message }))
+    supervisor.once("close", (code, signal) => finish({ code: code ?? 1, signal, error: "UI_REVIEW_SUPERVISOR_EARLY_EXIT" }))
+  })
 }
 
-async function terminateResidualGroup(group: ProcessGroup, graceMs: number) {
-  if (!groupExists(group)) return
-  signalGroup(group, "SIGTERM")
-  const [survivor] = await waitForGroups([group], graceMs)
-  if (survivor) signalGroup(survivor, "SIGKILL")
+function terminateSupervisedGroup(group: SupervisedGroup, graceMs: number) {
+  group.termination ??= (async () => {
+    const initialMembers = await processGroupMembers(group.pid)
+    if (!initialMembers.includes(group.pid)) return
+    const descendants = initialMembers.filter((pid) => pid !== group.pid)
+    if (descendants.length > 0) {
+      signalStableGroup(group, "SIGTERM")
+      const stopped = await waitForSupervisorOnly(group.pid, graceMs)
+      if (!stopped) {
+        signalStableGroup(group, "SIGKILL")
+        await waitForClose(group.supervisor)
+        return
+      }
+    }
+    if (group.supervisor.connected) group.supervisor.send({ type: "release" })
+    await waitForClose(group.supervisor)
+  })()
+  return group.termination
 }
 
-async function waitForGroups(groups: ProcessGroup[], graceMs: number) {
+async function waitForSupervisorOnly(supervisorPid: number, graceMs: number) {
   const deadline = Date.now() + graceMs
-  let survivors = groups.filter(groupExists)
-  while (survivors.length > 0 && Date.now() < deadline) {
+  while (Date.now() < deadline) {
+    const members = await processGroupMembers(supervisorPid)
+    if (members.length === 1 && members[0] === supervisorPid) return true
+    if (!members.includes(supervisorPid)) return false
     await sleep(Math.min(25, Math.max(1, deadline - Date.now())))
-    survivors = survivors.filter(groupExists)
   }
-  return survivors
+  const members = await processGroupMembers(supervisorPid)
+  return members.length === 1 && members[0] === supervisorPid
 }
 
-function groupExists(group: ProcessGroup) {
-  if (!group.pid) return false
-  try {
-    process.kill(-group.pid, 0)
-    return true
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false
-    throw error
+async function processGroupMembers(groupId: number) {
+  const members: number[] = []
+  for (const entry of await readdir("/proc", { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue
+    try {
+      const stat = await readFile(`/proc/${entry.name}/stat`, "utf8")
+      const match = stat.match(/^\d+ \(.*\) \S (?:\d+) (\d+) /)
+      if (match && Number(match[1]) === groupId) members.push(Number(entry.name))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+    }
   }
+  return members.sort((a, b) => a - b)
 }
 
-function signalGroup(group: ProcessGroup, signal: NodeJS.Signals) {
-  if (!group.pid) return
-  try { process.kill(-group.pid, signal) }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
+function signalStableGroup(group: SupervisedGroup, signal: NodeJS.Signals) {
+  if (group.supervisor.exitCode !== null || group.supervisor.signalCode !== null) {
+    throw new Error("UI_REVIEW_SUPERVISOR_NOT_STABLE")
   }
+  process.kill(-group.pid, signal)
 }
 
 function waitForClose(child: ChildProcess) {
@@ -225,7 +267,9 @@ function waitForClose(child: ChildProcess) {
 
 function exitStatus(code: number | null, signal: NodeJS.Signals | null) {
   if (code !== null) return code
-  return signal ? SIGNAL_EXIT_CODES[signal] ?? 1 : 1
+  if (!signal) return 1
+  const signalNumber = osConstants.signals[signal]
+  return signalNumber ? 128 + signalNumber : 1
 }
 
 function assertSafeLabel(label: string) {

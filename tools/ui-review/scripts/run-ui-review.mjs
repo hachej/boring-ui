@@ -1,7 +1,7 @@
 import { cp, mkdir, readdir } from "node:fs/promises"
 import { isAbsolute, join, resolve } from "node:path"
 import { parseUiReviewArgs } from "./ui-review-args.mjs"
-import { createUiReviewRunLifecycle } from "./ui-review-run-lifecycle.mjs"
+import { UI_REVIEW_RUN_ROOT_ENV, createUiReviewRunLifecycle } from "./ui-review-run-lifecycle.mjs"
 import { readUiReviewWorktreeIdentity } from "./ui-review-worktree.mjs"
 import { getUiReviewSpec } from "../src/registry.ts"
 
@@ -24,8 +24,8 @@ async function main() {
   try {
     return await execute(command, spec, lifecycle)
   } finally {
-    await lifecycle.shutdown()
-    lifecycle.removeSignalHandlers()
+    try { await lifecycle.shutdown() }
+    finally { lifecycle.removeSignalHandlers() }
   }
 }
 
@@ -36,6 +36,7 @@ async function execute(command, spec, lifecycle) {
   const childTemporaryDirectory = await lifecycle.allocateDirectory("tmp")
   const runTempEnv = { TMPDIR: childTemporaryDirectory, TMP: childTemporaryDirectory, TEMP: childTemporaryDirectory }
   const runEnv = { ...process.env, ...runTempEnv }
+  delete runEnv[UI_REVIEW_RUN_ROOT_ENV]
   const [buildCommand, ...buildArgs] = spec.target.buildCommand
   const build = await lifecycle.run(buildCommand, buildArgs, { stdio: "inherit", env: runEnv, cwd: targetRoot })
   if (build !== 0) return build

@@ -14,7 +14,10 @@ const TOOL_ROOT = resolve(import.meta.dirname, "../..")
 const TSX_CLI = resolve(TOOL_ROOT, "node_modules/tsx/dist/cli.mjs")
 const RUNNER = resolve(TOOL_ROOT, "scripts/run-ui-review.mjs")
 const spawnedProcesses = new Set<ChildProcess>()
+const spawnedDescendantPids = new Set<number>()
 afterEach(async () => {
+  await Promise.all([...spawnedDescendantPids].map(stopDescendantProcess))
+  spawnedDescendantPids.clear()
   await Promise.all([...spawnedProcesses].map(stopSpawnedProcess))
   spawnedProcesses.clear()
 })
@@ -66,6 +69,16 @@ describe.sequential("owned UI review run lifecycle", () => {
     })
   }
 
+  test("preserves shell-equivalent status for other POSIX signals", async () => {
+    const area = await createUiReviewRunLifecycle()
+    try {
+      const status = await area.run(process.execPath, ["-e", 'process.kill(process.pid, "SIGKILL")'], { stdio: "ignore" })
+      expect(status).toBe(137)
+    } finally {
+      await area.cleanup()
+    }
+  })
+
   test("bounds TERM to KILL and terminates stubborn descendants", async () => {
     const area = await createUiReviewRunLifecycle()
     try {
@@ -78,6 +91,8 @@ describe.sequential("owned UI review run lifecycle", () => {
       })
       const ready = await run.ready
       const descendants = await waitForJson(pidFile) as { child: number; grandchild: number }
+      spawnedDescendantPids.add(descendants.child)
+      spawnedDescendantPids.add(descendants.grandchild)
       const started = Date.now()
       run.child.kill("SIGTERM")
       expect(await run.closed).toMatchObject({ code: 143, signal: null })
@@ -202,6 +217,9 @@ describe.sequential("owned UI review run lifecycle", () => {
       }, ["--baseline-dir", baselineRoot])
       expect(await run.closed).toMatchObject({ code: 0, signal: null })
       const captured = JSON.parse(await readFile(capturePath, "utf8")) as Record<string, string>
+      const buildEnv = JSON.parse(await readFile(`${capturePath}.build`, "utf8")) as Record<string, string | null>
+      expect(buildEnv.UI_REVIEW_OWNED_RUN_ROOT).toBeNull()
+      expect(buildEnv.TMPDIR?.startsWith(captured.UI_REVIEW_OWNED_RUN_ROOT + sep)).toBe(true)
       expect(captured.UI_REVIEW_OUTPUT_DIR).toBe(outputRoot)
       expect(captured.UI_REVIEW_BASELINE_DIR).toBe(baselineRoot)
       expect(captured.TMPDIR).toBe(captured.TMP)
@@ -217,6 +235,27 @@ describe.sequential("owned UI review run lifecycle", () => {
       await area.cleanup()
     }
   }, 15_000)
+
+  test("the production runner cleans and preserves status on SIGTERM", async () => {
+    const area = await createUiReviewRunLifecycle()
+    try {
+      const temporaryDirectory = await area.allocateDirectory("runner-signal-tmp")
+      const bin = await area.allocateDirectory("runner-signal-bin")
+      const capturePath = join(await area.allocateDirectory("runner-signal-capture"), "env.json")
+      await writeFakePnpm(bin, capturePath, true)
+      const run = spawnRunner({
+        TMPDIR: temporaryDirectory,
+        PATH: `${bin}${delimiter}${process.env.PATH}`,
+      })
+      const captured = await waitForJson(capturePath) as Record<string, string>
+      run.child.kill("SIGTERM")
+      expect(await run.closed).toMatchObject({ code: 143, signal: null })
+      await expect(access(captured.UI_REVIEW_OWNED_RUN_ROOT)).rejects.toMatchObject({ code: "ENOENT" })
+      expect(await countRunRoots(temporaryDirectory)).toBe(0)
+    } finally {
+      await area.cleanup()
+    }
+  }, 20_000)
 
   test("the production runner cleans its root after a thrown error", async () => {
     const area = await createUiReviewRunLifecycle()
@@ -252,19 +291,27 @@ describe.sequential("owned UI review run lifecycle", () => {
   })
 })
 
-async function writeFakePnpm(bin: string, capturePath?: string) {
+async function writeFakePnpm(bin: string, capturePath?: string, hang = false) {
   const path = join(bin, "pnpm")
   await writeFile(path, `#!/usr/bin/env node
 import { writeFileSync } from "node:fs"
 const command = process.argv.slice(2).join(" ")
-if (command.includes("run build:deps")) process.exit(0)
+const capturePath = ${JSON.stringify(capturePath ?? "")}
+if (command.includes("run build:deps")) {
+  if (capturePath) writeFileSync(capturePath + ".build", JSON.stringify({ UI_REVIEW_OWNED_RUN_ROOT: process.env.UI_REVIEW_OWNED_RUN_ROOT ?? null, TMPDIR: process.env.TMPDIR }))
+  process.exit(0)
+}
 if (command.includes("exec playwright test")) {
-  const capturePath = ${JSON.stringify(capturePath ?? "")}
   if (capturePath) {
     const keys = ["UI_REVIEW_OUTPUT_DIR", "UI_REVIEW_BASELINE_DIR", "UI_REVIEW_OWNED_RUN_ROOT", "TMPDIR", "TMP", "TEMP"]
     writeFileSync(capturePath, JSON.stringify(Object.fromEntries(keys.map((key) => [key, process.env[key]]))))
   }
-  process.exit(Number(process.env.UI_REVIEW_TEST_PLAYWRIGHT_STATUS ?? 0))
+  if (${hang}) {
+    process.on("SIGTERM", () => {})
+    setInterval(() => {}, 1_000)
+  } else {
+    process.exit(Number(process.env.UI_REVIEW_TEST_PLAYWRIGHT_STATUS ?? 0))
+  }
 }
 process.exit(9)
 `, "utf8")
@@ -310,12 +357,26 @@ function spawnFixture(mode: string, overrides: NodeJS.ProcessEnv = {}) {
   return { child, ready, closed, stderr: () => stderr }
 }
 
+async function stopDescendantProcess(pid: number) {
+  if (!processExists(pid)) return
+  try { process.kill(pid, "SIGTERM") } catch {}
+  await sleep(50)
+  if (processExists(pid)) {
+    try { process.kill(pid, "SIGKILL") } catch {}
+  }
+  const deadline = Date.now() + 2_000
+  while (processExists(pid) && Date.now() < deadline) await sleep(20)
+}
+
 async function stopSpawnedProcess(child: ChildProcess) {
   if (child.exitCode !== null || child.signalCode !== null) return
   child.kill("SIGTERM")
   const closed = new Promise<boolean>((resolveClose) => child.once("close", () => resolveClose(true)))
   const stopped = await Promise.race([closed, sleep(2_000).then(() => false)])
-  if (!stopped && child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
+  if (!stopped && child.exitCode === null && child.signalCode === null) {
+    child.kill("SIGKILL")
+    await new Promise<void>((resolveClose) => child.once("close", () => resolveClose()))
+  }
 }
 
 async function waitForReady(child: ChildProcess, stdout: () => string) {
@@ -330,7 +391,7 @@ async function waitForReady(child: ChildProcess, stdout: () => string) {
 }
 
 async function waitForJson(path: string): Promise<unknown> {
-  const deadline = Date.now() + 5_000
+  const deadline = Date.now() + 15_000
   while (Date.now() < deadline) {
     try { return JSON.parse(await readFile(path, "utf8")) }
     catch { await sleep(10) }
