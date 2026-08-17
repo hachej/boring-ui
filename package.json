@@ -32,7 +32,7 @@
     "check:cli-bundle-size": "node packages/cli/scripts/check-front-bundle-size.mjs",
     "check:core-bundle-size": "pnpm --filter @hachej/boring-core run check:bundle-size",
     "ci:bundle-size": "pnpm --filter @hachej/boring-workspace... --workspace-concurrency=4 run build && pnpm check:bundle-size",
-    "ci:cli-bundle-size": "pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-ui-cli build:front && pnpm check:cli-bundle-size",
+    "ci:cli-bundle-size": "pnpm --filter @hachej/boring-core... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-ui-cli build:front && pnpm check:cli-bundle-size",
     "ci:core-bundle-size": "pnpm --filter @hachej/boring-core... --workspace-concurrency=4 run build && pnpm check:core-bundle-size",
     "test": "pnpm run build:packages && pnpm -r --workspace-concurrency=4 run test",
     "test:changed": "node scripts/test-changed-workspaces.mjs",
