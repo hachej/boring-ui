@@ -6,6 +6,8 @@
 - [01-aide2-weco-case-study.md](01-aide2-weco-case-study.md) — deep dive on the Weco AIDE² result
 - [02-literature-survey.md](02-literature-survey.md) — annotated bibliography (theory → 2026)
 - [03-implementation-mechanics.md](03-implementation-mechanics.md) — code-level anatomy of AIDE, DGM, SICA, ADAS
+- [04-generalization-premises.md](04-generalization-premises.md) — the nine invariants that make the loop work on any process
+- [05-delta.md](05-delta.md) — gap analysis: our operation vs. the invariants, ranked build list
 
 ---
 
