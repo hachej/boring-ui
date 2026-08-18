@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto'
+import { appendFile, readdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import type { AgentHarness, AgentHarnessFactoryInput, RunContext, AgentSendInput } from '../../shared/harness.js'
@@ -28,15 +31,72 @@ const DEFAULT_TICK_MS = 5
 export function createPersistedScriptedPiHarness(input: AgentHarnessFactoryInput): AgentHarness & {
   getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>
 } {
+  const scripted = createScriptedPiHarness(input)
+  const sessions = new PiSessionStore(input.cwd, {
+    sessionDir: input.sessionDir,
+    sessionRoot: input.sessionRoot,
+    sessionNamespace: input.sessionNamespace,
+    storageCwd: input.cwd,
+  })
+  const wrapped = new Map<string, PiAgentSessionAdapter>()
+  const persistedMessageIds = new Map<string, Set<string>>()
+
   return {
-    ...createScriptedPiHarness(input),
-    sessions: new PiSessionStore(input.cwd, {
-      sessionDir: input.sessionDir,
-      sessionRoot: input.sessionRoot,
-      sessionNamespace: input.sessionNamespace,
-      storageCwd: input.cwd,
-    }),
+    ...scripted,
+    sessions,
+    async getPiSessionAdapter(sendInput, ctx) {
+      const sessionId = sendInput.sessionId
+      const adapter = await scripted.getPiSessionAdapter(sendInput, ctx)
+      if (!sessionId) return adapter
+      const existing = wrapped.get(sessionId)
+      if (existing) return existing
+      const proxy = new Proxy(adapter, {
+        get(target, property) {
+          if (property === 'prompt') {
+            return async (promptInput: PiAgentPromptInput) => {
+              await target.prompt(promptInput)
+              await persistScriptedSnapshot(sessions, target, sessionId, persistedMessageIds)
+            }
+          }
+          const value = Reflect.get(target, property, target)
+          return typeof value === 'function' ? value.bind(target) : value
+        },
+      })
+      wrapped.set(sessionId, proxy)
+      return proxy
+    },
   }
+}
+
+async function persistScriptedSnapshot(
+  sessions: PiSessionStore,
+  adapter: PiAgentSessionAdapter,
+  sessionId: string,
+  persistedBySession: Map<string, Set<string>>,
+): Promise<void> {
+  const persisted = persistedBySession.get(sessionId) ?? new Set<string>()
+  const messages = adapter.readSnapshot().messages as Array<Record<string, unknown>>
+  const entries: Array<Record<string, unknown>> = []
+  let parentId: string | null = null
+  for (const [index, message] of messages.entries()) {
+    const id = typeof message.id === 'string' && message.id ? message.id : `${sessionId}:scripted:${index}`
+    parentId = id
+    if (persisted.has(id)) continue
+    persisted.add(id)
+    entries.push({
+      type: 'message',
+      id,
+      parentId: index === 0 ? null : (typeof messages[index - 1]?.id === 'string' ? messages[index - 1]!.id : `${sessionId}:scripted:${index - 1}`),
+      timestamp: new Date(typeof message.timestamp === 'number' ? message.timestamp : Date.now()).toISOString(),
+      message: { ...message, id: undefined },
+    })
+  }
+  persistedBySession.set(sessionId, persisted)
+  if (entries.length === 0) return
+  const files = await readdir(sessions.getSessionDir())
+  const filename = files.find((candidate) => candidate === `${sessionId}.jsonl` || candidate.endsWith(`_${sessionId}.jsonl`))
+  if (!filename) throw new Error(`Scripted session transcript not found: ${sessionId}`)
+  await appendFile(join(sessions.getSessionDir(), filename), `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`, 'utf8')
 }
 
 export function createScriptedPiHarness(input: AgentHarnessFactoryInput): AgentHarness & {

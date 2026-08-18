@@ -1,11 +1,10 @@
-import { appendFile, mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { expect, test } from './fixtures'
 import { createAgentPlaygroundRuntime } from '../../../apps/agent-playground/src/server/agentHost'
 import { createPersistedScriptedPiHarness } from '../src/server/testing/scriptedPiHarness'
 
 const repoRoot = path.resolve(process.cwd(), '../..')
-import { sessionFilePath } from '../src/server/harness/pi-coding-agent/__tests__/fixtures/sessionFiles'
 
 test.describe('Pi-native cross-hub continuation', () => {
   test('continues one session from a different hub root without forking or freezing', async ({ page, workspace }, testInfo) => {
@@ -38,11 +37,7 @@ test.describe('Pi-native cross-hub continuation', () => {
     ).state.messages.filter((message) => message.role === 'assistant').length).toBe(1)
     await firstConnection.close()
     await first.close()
-    const transcriptPath = await sessionFilePath(path.join(sessionRoot, 'agent-playground'), ref.sessionId)
-    await appendFile(transcriptPath, [
-      { type: 'message', id: 'hub-a-user', parentId: null, timestamp: new Date().toISOString(), message: { role: 'user', content: 'created in hub A', timestamp: Date.now() } },
-      { type: 'message', id: 'hub-a-assistant', parentId: 'hub-a-user', timestamp: new Date().toISOString(), message: { role: 'assistant', content: [{ type: 'text', text: 'PI_NATIVE_ASSISTANT_DONE' }], timestamp: Date.now() } },
-    ].map((entry) => JSON.stringify(entry)).join('\n') + '\n')
+
 
     const second = await createAgentPlaygroundRuntime({
       workspaceRoot: secondRoot,
