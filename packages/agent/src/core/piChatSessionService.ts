@@ -23,16 +23,12 @@ export interface PiSessionRequestContext {
   authEmailVerified?: boolean
   /** Addressed Gateway binds sessions to the verified workspace/storage scope. */
   sessionAuthority?: 'workspace-scope'
-  /** Server-only Host pin persisted by the session store during creation. */
-  runtimeScopeIdentity?: string
   requestId: string
 }
 
 export interface PiSessionCreateInit {
   title?: string
   modelDefault?: ChatModelSelection
-  /** Native transcript to copy into this newly current-scope session. */
-  forkSessionId?: string
 }
 
 /** Server-only prompt admission selector; browser schemas never accept requireIdle. */

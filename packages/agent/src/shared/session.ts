@@ -13,8 +13,6 @@ export interface SessionStore {
 export interface SessionCtx {
   workspaceId?: string
   userId?: string
-  /** Server-owned Host runtime pin; never sourced from browser input. */
-  runtimeScopeIdentity?: string
 }
 
 export interface SessionListOptions {

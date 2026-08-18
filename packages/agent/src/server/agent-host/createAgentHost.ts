@@ -21,7 +21,6 @@ import {
 import {
   AgentSessionActivityIndex,
   AgentSessionInventory,
-  type AgentSessionRuntimeAuthority,
 } from './sessionInventory'
 import type {
   AgentHostAgentSpec,
@@ -65,12 +64,6 @@ export interface AgentHostRuntime {
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
   ): Promise<readonly import('../../shared/session').SessionSummary[]>
-  readPersistedSession(
-    agentTypeId: string,
-    scope: AuthorizedAgentScope,
-    claim: VerifiedAgentScopeClaim,
-    sessionId: string,
-  ): ReturnType<AgentSessionInventory['readPersistedSession']>
   isDraining(): boolean
   assertOpen(): void
   verify(scope: AuthorizedAgentScope): Promise<VerifiedAgentScopeClaim>
@@ -93,7 +86,7 @@ export interface AgentHostRuntime {
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
     sessionId: string,
-  ): Promise<AgentSessionRuntimeAuthority | undefined>
+  ): Promise<ResolvedAgentRuntimeScope | undefined>
   resolveAgentRuntimeScope(
     agentTypeId: string,
     scope: AuthorizedAgentScope,
@@ -107,20 +100,12 @@ export interface AgentHostRuntime {
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
     resolvedRuntimeScope?: ResolvedAgentRuntimeScope,
-    purpose?: 'current' | 'pinned',
   ): Promise<RuntimeBinding>
-  findPublishedBinding(
-    agentTypeId: string,
-    workspaceScopeId: string,
-    runtimeScopeIdentity?: string,
-    physicalBindingIdentity?: string,
-    provisioningFingerprint?: string,
-  ): RuntimeBinding | undefined
   findPublishedCurrentBinding(
     agentTypeId: string,
     workspaceScopeId: string,
     physicalBindingIdentity: string,
-    runtimeScopeIdentity?: string,
+    bindingIdentity?: string,
     provisioningFingerprint?: string,
   ): RuntimeBinding | undefined
   startDrain(): void
@@ -285,7 +270,6 @@ function createRuntime(
   )
   const activity = new AgentSessionActivityIndex()
   const bindings = new Map<string, Promise<RuntimeBinding>>()
-  const publishedBindings = new Map<string, RuntimeBinding>()
   const publishedCurrentBindings = new Map<string, RuntimeBinding>()
   const currentBindingReservations = new Map<string, string>()
   const nextBindingGeneration = new Map<string, number>()
@@ -339,10 +323,6 @@ function createRuntime(
       runtime.assertOpen()
       return inventory.list(agentTypeId, scope, claim)
     },
-    readPersistedSession(agentTypeId, scope, claim, sessionId) {
-      runtime.assertOpen()
-      return inventory.readPersistedSession(agentTypeId, scope, claim, sessionId)
-    },
     isDraining: () => draining,
     assertOpen() {
       if (draining) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'agent host is closing')
@@ -378,20 +358,12 @@ function createRuntime(
     },
     async resolveSessionRuntime(agentTypeId, scope, claim, sessionId) {
       runtime.assertOpen()
-      try {
-        const authority = await inventory.resolveSessionRuntime(agentTypeId, scope, claim, sessionId)
-        if (!authority) return undefined
-        validateResolvedRuntimeScope(authority.runtimeScope)
-        return authority
-      } catch {
-        throw new AgentGatewayError(
-          AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-          'session runtime scope metadata is unavailable',
-        )
-      }
+      const resolved = await inventory.resolveSessionRuntime(agentTypeId, scope, claim, sessionId)
+      if (resolved) validateResolvedRuntimeScope(resolved)
+      return resolved
     },
     resolveAgentRuntimeScope,
-    async resolveBinding(agentTypeId, scope, claim, resolvedRuntimeScope, purpose = 'current') {
+    async resolveBinding(agentTypeId, scope, claim, resolvedRuntimeScope) {
       runtime.assertOpen()
       const agent = compiledById.get(agentTypeId)
       if (!agent) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
@@ -412,8 +384,7 @@ function createRuntime(
       ])
       const physicalBindingIdentity = resolved.physicalBindingIdentity ?? resolved.identity
       const currentKey = JSON.stringify([agentTypeId, claim.workspaceScopeId, physicalBindingIdentity])
-      const useCanonicalCurrent = purpose === 'current'
-        && options.resolveAuthorizedAgentRuntimeScope !== undefined
+      const useCanonicalCurrent = options.resolveAuthorizedAgentRuntimeScope !== undefined
       if (useCanonicalCurrent) {
         const current = publishedCurrentBindings.get(currentKey)
         if (current) return current
@@ -465,11 +436,8 @@ function createRuntime(
               await disposeBinding(binding)
               throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'agent host is closing')
             }
-            publishedBindings.set(key, binding)
             // A Host generation has exactly one canonical current binding per
-            // workspace + Agent. Other identity-keyed bindings may remain
-            // published solely for persisted session pins; resolving one never
-            // makes it current implicitly.
+            // workspace + Agent.
             if (
               useCanonicalCurrent
               && currentBindingReservations.get(currentKey) === key
@@ -498,9 +466,6 @@ function createRuntime(
         })
       }
       const binding = await promise
-      // A pinned lookup may have published this exact binding before a current
-      // lookup reserved it. The explicit current reservation still owns the
-      // canonical publication; pinned creation alone never does.
       if (
         useCanonicalCurrent
         && currentBindingReservations.get(currentKey) === key
@@ -511,28 +476,11 @@ function createRuntime(
       }
       return binding
     },
-    findPublishedBinding(
-      agentTypeId,
-      workspaceScopeId,
-      runtimeScopeIdentity,
-      physicalBindingIdentity,
-      provisioningFingerprint,
-    ) {
-      const matches = [...publishedBindings.values()].filter((binding) =>
-        binding.agentTypeId === agentTypeId
-        && binding.workspaceScopeId === workspaceScopeId
-        && (!runtimeScopeIdentity || binding.scope.identity === runtimeScopeIdentity)
-        && (!physicalBindingIdentity
-          || (binding.scope.physicalBindingIdentity ?? binding.scope.identity) === physicalBindingIdentity)
-        && (!provisioningFingerprint
-          || binding.scope.environment.provisioningFingerprint === provisioningFingerprint))
-      return matches.length === 1 ? matches[0] : undefined
-    },
     findPublishedCurrentBinding(
       agentTypeId,
       workspaceScopeId,
       physicalBindingIdentity,
-      runtimeScopeIdentity,
+      bindingIdentity,
       provisioningFingerprint,
     ) {
       const exact = publishedCurrentBindings.get(JSON.stringify([
@@ -544,7 +492,7 @@ function createRuntime(
       const matches = [...publishedCurrentBindings.values()].filter((binding) =>
         binding.agentTypeId === agentTypeId
         && binding.workspaceScopeId === workspaceScopeId
-        && (!runtimeScopeIdentity || binding.scope.identity === runtimeScopeIdentity)
+        && (!bindingIdentity || binding.scope.identity === bindingIdentity)
         && (!provisioningFingerprint
           || binding.scope.environment.provisioningFingerprint === provisioningFingerprint))
       return matches.length === 1 ? matches[0] : undefined
@@ -649,7 +597,6 @@ function createRuntime(
         }
         const resolvedBindings = await Promise.allSettled([...bindings.values()])
         bindings.clear()
-        publishedBindings.clear()
         publishedCurrentBindings.clear()
         nextBindingGeneration.clear()
         currentBindingReservations.clear()

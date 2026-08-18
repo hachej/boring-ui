@@ -135,7 +135,6 @@ interface WorkspacePiSessionRequestContext {
   authEmail?: string
   authEmailVerified?: boolean
   sessionAuthority?: "workspace-scope"
-  runtimeScopeIdentity?: string
   requestId: string
 }
 
