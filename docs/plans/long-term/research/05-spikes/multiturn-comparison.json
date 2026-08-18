@@ -1,0 +1,390 @@
+{
+  "catalog": {
+    "requestCount": 24,
+    "payloadBytes": [
+      1192,
+      2184,
+      2432,
+      2671,
+      3684,
+      3935,
+      4179,
+      4650,
+      4908,
+      5146,
+      5891,
+      6148,
+      6384,
+      6842,
+      7086,
+      7329,
+      7812,
+      8071,
+      8316,
+      9065,
+      9325,
+      9565,
+      10032,
+      10292
+    ],
+    "wireBodyBytes": [
+      1193,
+      2185,
+      2433,
+      2672,
+      3685,
+      3936,
+      4180,
+      4651,
+      4909,
+      5147,
+      5892,
+      6149,
+      6385,
+      6843,
+      7087,
+      7330,
+      7813,
+      8072,
+      8317,
+      9066,
+      9326,
+      9566,
+      10033,
+      10293
+    ],
+    "providerUsage": null,
+    "totalProviderInputTokens": null,
+    "totalProviderCacheReadTokens": null,
+    "toolCalls": [
+      "search_tools",
+      "call_tool",
+      "search_tools",
+      "call_tool",
+      "search_tools",
+      "call_tool",
+      "search_tools",
+      "call_tool",
+      "search_tools",
+      "call_tool",
+      "search_tools",
+      "call_tool",
+      "search_tools",
+      "call_tool",
+      "search_tools",
+      "call_tool"
+    ]
+  },
+  "resident": {
+    "requestCount": 16,
+    "payloadBytes": [
+      10408,
+      10633,
+      10782,
+      11011,
+      11165,
+      11401,
+      11549,
+      11781,
+      11927,
+      12145,
+      12298,
+      12535,
+      12690,
+      12929,
+      13079,
+      13313
+    ],
+    "wireBodyBytes": [
+      10409,
+      10634,
+      10783,
+      11012,
+      11166,
+      11402,
+      11550,
+      11782,
+      11928,
+      12146,
+      12299,
+      12536,
+      12691,
+      12930,
+      13080,
+      13314
+    ],
+    "providerUsage": null,
+    "totalProviderInputTokens": null,
+    "totalProviderCacheReadTokens": null,
+    "toolCalls": [
+      "weather_lookup",
+      "inventory_check",
+      "sentiment_score",
+      "build_status",
+      "queue_depth",
+      "policy_evaluate",
+      "project_progress",
+      "risk_assess"
+    ]
+  },
+  "catalogPerTurn": [
+    {
+      "turn": 1,
+      "requestCount": 3,
+      "payloadBytes": [
+        1192,
+        2184,
+        2432
+      ],
+      "wireBodyBytes": [
+        1193,
+        2185,
+        2433
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    },
+    {
+      "turn": 2,
+      "requestCount": 3,
+      "payloadBytes": [
+        2671,
+        3684,
+        3935
+      ],
+      "wireBodyBytes": [
+        2672,
+        3685,
+        3936
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    },
+    {
+      "turn": 3,
+      "requestCount": 3,
+      "payloadBytes": [
+        4179,
+        4650,
+        4908
+      ],
+      "wireBodyBytes": [
+        4180,
+        4651,
+        4909
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    },
+    {
+      "turn": 4,
+      "requestCount": 3,
+      "payloadBytes": [
+        5146,
+        5891,
+        6148
+      ],
+      "wireBodyBytes": [
+        5147,
+        5892,
+        6149
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    },
+    {
+      "turn": 5,
+      "requestCount": 3,
+      "payloadBytes": [
+        6384,
+        6842,
+        7086
+      ],
+      "wireBodyBytes": [
+        6385,
+        6843,
+        7087
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    },
+    {
+      "turn": 6,
+      "requestCount": 3,
+      "payloadBytes": [
+        7329,
+        7812,
+        8071
+      ],
+      "wireBodyBytes": [
+        7330,
+        7813,
+        8072
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    },
+    {
+      "turn": 7,
+      "requestCount": 3,
+      "payloadBytes": [
+        8316,
+        9065,
+        9325
+      ],
+      "wireBodyBytes": [
+        8317,
+        9066,
+        9326
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    },
+    {
+      "turn": 8,
+      "requestCount": 3,
+      "payloadBytes": [
+        9565,
+        10032,
+        10292
+      ],
+      "wireBodyBytes": [
+        9566,
+        10033,
+        10293
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    }
+  ],
+  "residentPerTurn": [
+    {
+      "turn": 1,
+      "requestCount": 2,
+      "payloadBytes": [
+        10408,
+        10633
+      ],
+      "wireBodyBytes": [
+        10409,
+        10634
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    },
+    {
+      "turn": 2,
+      "requestCount": 2,
+      "payloadBytes": [
+        10782,
+        11011
+      ],
+      "wireBodyBytes": [
+        10783,
+        11012
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    },
+    {
+      "turn": 3,
+      "requestCount": 2,
+      "payloadBytes": [
+        11165,
+        11401
+      ],
+      "wireBodyBytes": [
+        11166,
+        11402
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    },
+    {
+      "turn": 4,
+      "requestCount": 2,
+      "payloadBytes": [
+        11549,
+        11781
+      ],
+      "wireBodyBytes": [
+        11550,
+        11782
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    },
+    {
+      "turn": 5,
+      "requestCount": 2,
+      "payloadBytes": [
+        11927,
+        12145
+      ],
+      "wireBodyBytes": [
+        11928,
+        12146
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    },
+    {
+      "turn": 6,
+      "requestCount": 2,
+      "payloadBytes": [
+        12298,
+        12535
+      ],
+      "wireBodyBytes": [
+        12299,
+        12536
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    },
+    {
+      "turn": 7,
+      "requestCount": 2,
+      "payloadBytes": [
+        12690,
+        12929
+      ],
+      "wireBodyBytes": [
+        12691,
+        12930
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    },
+    {
+      "turn": 8,
+      "requestCount": 2,
+      "payloadBytes": [
+        13079,
+        13313
+      ],
+      "wireBodyBytes": [
+        13080,
+        13314
+      ],
+      "providerUsage": null,
+      "totalProviderInputTokens": null,
+      "totalProviderCacheReadTokens": null
+    }
+  ]
+}
