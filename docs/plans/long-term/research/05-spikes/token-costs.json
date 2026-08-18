@@ -1,0 +1,43 @@
+{
+  "definitions": {
+    "allResident": "40 provider-resident function declarations",
+    "searchCatalog": "Only search_tools and call_tool resident; catalog remains host-side; search result cap 8,000 bytes (~2,000-token budget ceiling)",
+    "summaryOnly": "call_tool resident plus all 40 name/description summaries in the system instruction"
+  },
+  "allResident": {
+    "requestCount": 1,
+    "payloadBytes": [
+      10344
+    ],
+    "wireBodyBytes": [
+      10345
+    ],
+    "providerUsage": null,
+    "totalProviderInputTokens": null,
+    "totalProviderCacheReadTokens": null
+  },
+  "searchCatalog": {
+    "requestCount": 1,
+    "payloadBytes": [
+      1129
+    ],
+    "wireBodyBytes": [
+      1130
+    ],
+    "providerUsage": null,
+    "totalProviderInputTokens": null,
+    "totalProviderCacheReadTokens": null
+  },
+  "summaryOnly": {
+    "requestCount": 1,
+    "payloadBytes": [
+      2867
+    ],
+    "wireBodyBytes": [
+      2868
+    ],
+    "providerUsage": null,
+    "totalProviderInputTokens": null,
+    "totalProviderCacheReadTokens": null
+  }
+}
