@@ -160,8 +160,9 @@ export class PiSessionStore implements SessionStore {
     try {
       await this.resolveSessionFile(sessionId, ctx);
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      if (error instanceof Error && error.message === `Session not found: ${sessionId}`) return false;
+      throw error;
     }
   }
 
@@ -1000,9 +1001,9 @@ export class PiSessionStore implements SessionStore {
 
   /**
    * A bare Pi transcript carries no tenancy, so only a path-derived trusted
-   * local store may reach it. Boring-created native transcripts carry an exact
-   * persisted tenancy/runtime pin and remain reachable by hosted/namespaced
-   * stores without minting a compatibility wrapper.
+   * local store may reach it. Boring-created native transcripts carry exact
+   * persisted tenancy and remain reachable by hosted/namespaced stores without
+   * minting a compatibility wrapper.
    */
   private nativeFileBelongsToCtx(header: SessionHeader | undefined, ctx: SessionCtx): boolean {
     const pinned = readHeaderSessionCtx(header);

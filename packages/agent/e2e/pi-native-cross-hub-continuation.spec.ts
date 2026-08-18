@@ -80,6 +80,12 @@ test.describe('Pi-native cross-hub continuation', () => {
       expect(after.ref).toEqual(ref)
       expect(listed.sessions.map((session) => session.ref)).toEqual([ref])
 
+      const listedRefs = listed.sessions.map((session) => session.ref)
+      const sameSessionRef = after.ref.agentTypeId === ref.agentTypeId
+        && after.ref.sessionId === ref.sessionId
+      const forked = listedRefs.length !== 1
+        || listedRefs[0]?.agentTypeId !== ref.agentTypeId
+        || listedRefs[0]?.sessionId !== ref.sessionId
       const proof = {
         firstHubRoot: firstRoot,
         secondHubRoot: secondRoot,
@@ -87,11 +93,11 @@ test.describe('Pi-native cross-hub continuation', () => {
         sessionId: ref.sessionId,
         userTurns: after.state.messages.filter((message) => message.role === 'user').length,
         persistedAssistantReplies: after.state.messages.filter((message) => message.role === 'assistant').length,
-        liveReplyLandedOnSameRef: true,
+        liveReplyLandedOnSameRef: sameSessionRef,
         sessionsAfterContinuation: listed.sessions.length,
-        forked: false,
-        frozenBanner: false,
+        forked,
       }
+      expect(proof).toMatchObject({ liveReplyLandedOnSameRef: true, sessionsAfterContinuation: 1, forked: false })
       await page.setContent(`<!doctype html><title>Cross-hub continuation proof</title><style>body{font:16px ui-monospace;background:#111827;color:#e5e7eb;padding:40px}main{max-width:900px;margin:auto}h1{color:#86efac}pre{background:#030712;padding:24px;border:1px solid #374151;border-radius:12px;white-space:pre-wrap}</style><main><h1>✓ Same session continued across hub roots</h1><pre>${JSON.stringify(proof, null, 2)}</pre></main>`)
       const screenshot = await page.screenshot({ fullPage: true })
       const proofJson = Buffer.from(JSON.stringify(proof, null, 2))

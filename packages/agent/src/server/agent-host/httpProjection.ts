@@ -357,8 +357,8 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     const query = parseWithSchema(EmptyQuerySchema, request.query, reply, 'query')
     if (!query) return
     try {
-      // The service comes from the exact pin-checked existing-session binding;
-      // never re-resolve a candidate/current binding after authorization.
+      // The service comes from the authorized existing-session binding;
+      // never re-resolve another binding after authorization.
       const { scope, service } = await input.resolveAddressedPiChatService(
         request,
         params.agentTypeId,
