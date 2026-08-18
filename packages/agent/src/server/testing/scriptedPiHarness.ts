@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { appendFile, readdir } from 'node:fs/promises'
+import { appendFile, readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
@@ -74,29 +74,38 @@ async function persistScriptedSnapshot(
   sessionId: string,
   persistedBySession: Map<string, Set<string>>,
 ): Promise<void> {
-  const persisted = persistedBySession.get(sessionId) ?? new Set<string>()
-  const messages = adapter.readSnapshot().messages as Array<Record<string, unknown>>
-  const entries: Array<Record<string, unknown>> = []
-  let parentId: string | null = null
-  for (const [index, message] of messages.entries()) {
-    const id = typeof message.id === 'string' && message.id ? message.id : `${sessionId}:scripted:${index}`
-    parentId = id
-    if (persisted.has(id)) continue
-    persisted.add(id)
-    entries.push({
-      type: 'message',
-      id,
-      parentId: index === 0 ? null : (typeof messages[index - 1]?.id === 'string' ? messages[index - 1]!.id : `${sessionId}:scripted:${index - 1}`),
-      timestamp: new Date(typeof message.timestamp === 'number' ? message.timestamp : Date.now()).toISOString(),
-      message: { ...message, id: undefined },
-    })
-  }
-  persistedBySession.set(sessionId, persisted)
-  if (entries.length === 0) return
   const files = await readdir(sessions.getSessionDir())
   const filename = files.find((candidate) => candidate === `${sessionId}.jsonl` || candidate.endsWith(`_${sessionId}.jsonl`))
   if (!filename) throw new Error(`Scripted session transcript not found: ${sessionId}`)
-  await appendFile(join(sessions.getSessionDir(), filename), `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`, 'utf8')
+  const filepath = join(sessions.getSessionDir(), filename)
+  const transcript = (await readFile(filepath, 'utf8'))
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+  const persisted = persistedBySession.get(sessionId) ?? new Set<string>()
+  const messages = adapter.readSnapshot().messages as Array<Record<string, unknown>>
+  const entries: Array<Record<string, unknown>> = []
+  let parentId = [...transcript].reverse().find((entry) => entry.type === 'message' && typeof entry.id === 'string')?.id as string | undefined
+    ?? null
+  for (const [index, message] of messages.entries()) {
+    const sourceId = typeof message.id === 'string' && message.id
+      ? message.id
+      : `${index}:${String(message.role ?? 'unknown')}`
+    if (persisted.has(sourceId)) continue
+    persisted.add(sourceId)
+    const id = randomUUID()
+    entries.push({
+      type: 'message',
+      id,
+      parentId,
+      timestamp: new Date(typeof message.timestamp === 'number' ? message.timestamp : Date.now()).toISOString(),
+      message: { ...message, id: undefined },
+    })
+    parentId = id
+  }
+  persistedBySession.set(sessionId, persisted)
+  if (entries.length === 0) return
+  await appendFile(filepath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`, 'utf8')
 }
 
 export function createScriptedPiHarness(input: AgentHarnessFactoryInput): AgentHarness & {

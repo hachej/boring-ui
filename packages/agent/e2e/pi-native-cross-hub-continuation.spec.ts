@@ -1,8 +1,9 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { expect, test } from './fixtures'
 import { createAgentPlaygroundRuntime } from '../../../apps/agent-playground/src/server/agentHost'
 import { createPersistedScriptedPiHarness } from '../src/server/testing/scriptedPiHarness'
+import { sessionFilePath } from '../src/server/harness/pi-coding-agent/__tests__/fixtures/sessionFiles'
 
 const repoRoot = path.resolve(process.cwd(), '../..')
 
@@ -75,6 +76,17 @@ test.describe('Pi-native cross-hub continuation', () => {
       expect(after.ref).toEqual(ref)
       expect(listed.sessions.map((session) => session.ref)).toEqual([ref])
 
+      const transcriptPath = await sessionFilePath(path.join(sessionRoot, 'agent-playground'), ref.sessionId)
+      const transcriptMessages = (await readFile(transcriptPath, 'utf8'))
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as { type?: string; id?: string; parentId?: string | null })
+        .filter((entry) => entry.type === 'message')
+      const transcriptIds = transcriptMessages.map((entry) => entry.id)
+      const transcriptRoots = transcriptMessages.filter((entry) => entry.parentId === null)
+      expect(new Set(transcriptIds).size).toBe(transcriptIds.length)
+      expect(transcriptRoots).toHaveLength(1)
+
       const listedRefs = listed.sessions.map((session) => session.ref)
       const sameSessionRef = after.ref.agentTypeId === ref.agentTypeId
         && after.ref.sessionId === ref.sessionId
@@ -91,8 +103,10 @@ test.describe('Pi-native cross-hub continuation', () => {
         liveReplyLandedOnSameRef: sameSessionRef,
         sessionsAfterContinuation: listed.sessions.length,
         forked,
+        transcriptMessageIdsUnique: new Set(transcriptIds).size === transcriptIds.length,
+        transcriptRoots: transcriptRoots.length,
       }
-      expect(proof).toMatchObject({ liveReplyLandedOnSameRef: true, sessionsAfterContinuation: 1, forked: false })
+      expect(proof).toMatchObject({ liveReplyLandedOnSameRef: true, sessionsAfterContinuation: 1, forked: false, transcriptMessageIdsUnique: true, transcriptRoots: 1 })
       await page.setContent(`<!doctype html><title>Cross-hub continuation proof</title><style>body{font:16px ui-monospace;background:#111827;color:#e5e7eb;padding:40px}main{max-width:900px;margin:auto}h1{color:#86efac}pre{background:#030712;padding:24px;border:1px solid #374151;border-radius:12px;white-space:pre-wrap}</style><main><h1>✓ Same session continued across hub roots</h1><pre>${JSON.stringify(proof, null, 2)}</pre></main>`)
       const screenshot = await page.screenshot({ fullPage: true })
       const proofJson = Buffer.from(JSON.stringify(proof, null, 2))
