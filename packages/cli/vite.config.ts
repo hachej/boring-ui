@@ -26,6 +26,7 @@ export default defineConfig({
       { find: /^@hachej\/boring-diagram\/front$/, replacement: resolve(__dirname, "../../plugins/diagram/src/front/index.tsx") },
       { find: /^@hachej\/boring-diagram\/shared$/, replacement: resolve(__dirname, "../../plugins/diagram/src/shared/index.ts") },
       { find: /^@hachej\/boring-transcription\/front$/, replacement: resolve(__dirname, "../../plugins/live-transcription/src/front/index.tsx") },
+      { find: /^@hachej\/boring-agent\/front\/artifacts$/, replacement: resolve(__dirname, "../agent/src/front/artifacts.ts") },
       { find: "@hachej/boring-agent/front", replacement: resolve(__dirname, "../agent/src/front/index.ts") },
       { find: "@hachej/boring-agent/shared", replacement: resolve(__dirname, "../agent/src/shared/index.ts") },
       { find: "@hachej/boring-agent", replacement: resolve(__dirname, "../agent/src/front/index.ts") },
