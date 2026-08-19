@@ -29,22 +29,22 @@ export const mermaidThemeVariables = {
   fontFamily: 'Aptos, Segoe UI, sans-serif',
 }
 
-export async function renderMermaidSvg(source) {
+export async function renderMermaidSvg(source, renderId = 'pr-context-diagram') {
   const browser = await chromium.launch({ headless: true })
   try {
     const page = await browser.newPage()
     await page.setContent('<main id="diagram"></main>')
     await page.addScriptTag({ path: mermaidScriptPath })
-    return await page.evaluate(async ({ diagram, variables }) => {
+    return await page.evaluate(async ({ diagram, variables, id }) => {
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: 'strict',
         theme: 'base',
         themeVariables: variables,
       })
-      const { svg } = await mermaid.render('pr-context-diagram', diagram)
+      const { svg } = await mermaid.render(id, diagram)
       return svg
-    }, { diagram: source, variables: mermaidThemeVariables })
+    }, { diagram: source, variables: mermaidThemeVariables, id: renderId })
   } finally {
     await browser.close()
   }

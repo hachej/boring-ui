@@ -24,3 +24,22 @@ export function categorize(file) {
 export function isDefaultSankeyCategory(category) {
   return category !== 'test' && category !== 'docs'
 }
+
+export function createSankeyRows(files) {
+  return files.map((file) => ({
+    id: `f${file.index}`,
+    path: file.path,
+    name: file.path.split('/').pop(),
+    cat: file.cat,
+    area: file.area,
+    pkg: file.pkg,
+    add: file.additions,
+    del: file.deletions,
+    rank: file.rank,
+    supplemental: !isDefaultSankeyCategory(file.cat),
+  }))
+}
+
+export function filterSankeyRows(rows, enabledCategories, showSupplemental = false) {
+  return rows.filter((row) => enabledCategories[row.cat] && (showSupplemental || !row.supplemental))
+}

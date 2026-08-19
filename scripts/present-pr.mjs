@@ -26,8 +26,8 @@ import {
   parseContextMarkdown,
   renderIntroVisuals,
 } from './lib/present-pr-context.mjs'
-import { CATEGORIES, categorize, isDefaultSankeyCategory } from './lib/present-pr-files.mjs'
-import { extractBeadId, extractLinkedIssueNumber } from './lib/present-pr-links.mjs'
+import { CATEGORIES, categorize, createSankeyRows, isDefaultSankeyCategory } from './lib/present-pr-files.mjs'
+import { extractBeadIds, extractLinkedIssueReference, resolveLinkedIssueReference } from './lib/present-pr-links.mjs'
 import { renderMermaidSvg } from './lib/render-mermaid.mjs'
 
 /* ------------------------------------------------------------------ args */
@@ -53,6 +53,7 @@ function gh(cliArgs) {
   return execFileSync('gh', cliArgs, { encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 })
 }
 const repoArgs = args.repo ? ['--repo', args.repo] : []
+const currentRepo = args.repo || JSON.parse(gh(['repo', 'view', '--json', 'nameWithOwner'])).nameWithOwner
 
 /* ------------------------------------------------------------- gh fetch */
 
@@ -63,11 +64,13 @@ const pr = JSON.parse(
   ]),
 )
 
-const beadId = extractBeadId(pr.title, pr.body)
-const linkedIssueNumber = extractLinkedIssueNumber(pr.body)
-const linkedIssue = linkedIssueNumber === null
-  ? null
-  : JSON.parse(gh(['issue', 'view', String(linkedIssueNumber), ...repoArgs, '--json', 'number,title,url']))
+const beadIds = extractBeadIds(pr.title, pr.body)
+const linkedIssueReference = extractLinkedIssueReference(pr.body)
+const { issue: linkedIssue, notice: linkedIssueNotice } = resolveLinkedIssueReference(
+  linkedIssueReference,
+  currentRepo,
+  (repo, number) => JSON.parse(gh(['api', `repos/${repo}/issues/${number}`])),
+)
 
 let checks = []
 try {
@@ -94,8 +97,8 @@ context.keyFiles = Array.isArray(context.keyFiles) ? context.keyFiles : []
 context.reviewHistory = Array.isArray(context.reviewHistory) ? context.reviewHistory : []
 context.why = Array.isArray(context.why) ? context.why : []
 if (typeof args.audit === 'string') context.audit = args.audit
-const renderedMermaid = await Promise.all(context.visuals.map((visual) => (
-  visual.language === 'mermaid' ? renderMermaidSvg(visual.content) : ''
+const renderedMermaid = await Promise.all(context.visuals.map((visual, index) => (
+  visual.language === 'mermaid' ? renderMermaidSvg(visual.content, `pr-context-diagram-${index + 1}`) : ''
 )))
 
 /* -------------------------------------------------------- diff parsing */
@@ -695,8 +698,8 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
       <span class="problem-label">Issue being solved</span>
       ${linkedIssue
         ? `<a href="${esc(linkedIssue.url)}">#${linkedIssue.number} — ${esc(linkedIssue.title)}</a>`
-        : '<strong>no linked issue</strong>'}
-      <span class="bead">Bead <code>${esc(beadId)}</code></span>
+        : `<strong>${esc(linkedIssueNotice)}</strong>`}
+      <span class="bead">${beadIds.length === 1 ? 'Bead' : 'Beads'} <code>${esc(beadIds.length ? beadIds.join(', ') : 'unknown')}</code></span>
     </div>
     <h1>PR #${pr.number} — ${esc(pr.title)}</h1>
     <div class="meta">
@@ -761,10 +764,7 @@ ${files.map(renderFile).join('\n')}
 </div>
 
 <script>
-var SANKEY_DATA = ${JSON.stringify(files.map((f, i) => ({
-  id: `f${i}`, path: f.path, name: f.path.split('/').pop(), cat: f.cat, area: f.area, pkg: f.pkg,
-  add: f.additions, del: f.deletions, rank: f.rank, supplemental: !isDefaultSankeyCategory(f.cat),
-})))};
+var SANKEY_DATA = ${JSON.stringify(createSankeyRows(files))};
 </script>
 <script>
 (function () {

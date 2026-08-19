@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { categorize, isDefaultSankeyCategory } from './present-pr-files.mjs'
+import { categorize, createSankeyRows, filterSankeyRows, isDefaultSankeyCategory } from './present-pr-files.mjs'
 
 test('classifies every excluded test and docs path convention', () => {
   const cases = [
@@ -24,4 +24,25 @@ test('defaults the Sankey to non-test, non-doc branches only', () => {
   assert.equal(isDefaultSankeyCategory('generated'), true)
   assert.equal(isDefaultSankeyCategory('test'), false)
   assert.equal(isDefaultSankeyCategory('docs'), false)
+})
+
+test('the Sankey view model toggles supplemental rows without removing them from its dataset', () => {
+  const files = ['prod', 'test', 'docs'].map((cat, index) => ({
+    index,
+    path: `${cat}/file-${index}.ts`,
+    cat,
+    area: cat,
+    pkg: cat,
+    additions: 1,
+    deletions: 0,
+    rank: index + 1,
+  }))
+  const rows = createSankeyRows(files)
+  const enabled = { prod: true, test: true, docs: true }
+
+  assert.equal(rows.length, 3)
+  assert.deepEqual(filterSankeyRows(rows, enabled).map((row) => row.cat), ['prod'])
+  assert.deepEqual(filterSankeyRows(rows, enabled, true).map((row) => row.cat), ['prod', 'test', 'docs'])
+  assert.deepEqual(filterSankeyRows(rows.slice(1), enabled), [])
+  assert.deepEqual(filterSankeyRows(rows, { ...enabled, test: false }, true).map((row) => row.cat), ['prod', 'docs'])
 })
