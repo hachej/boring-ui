@@ -100,7 +100,9 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
       const payload = await response.json().catch(() => null) as { questions?: unknown } | null
       if (response.status === 404) {
         const output = await callBridge<{ questions: unknown }>(ASK_USER_BRIDGE_OPS.list, { status: "ready" })
-        return normalizeReadyQuestions(output.questions, response.status)
+        // Preserve the bridge transport's successful status. A malformed
+        // bridge payload is not evidence that both list transports are absent.
+        return normalizeReadyQuestions(output.questions, 200)
       }
       if (!response.ok) {
         throw new QuestionsClientError(

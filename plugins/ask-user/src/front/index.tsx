@@ -146,7 +146,8 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
     const onStop = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail
       if (!question || !workspaceComposerStopAppliesToSession(detail, question.sessionId)) return
-      runtime.setPending(null, question.sessionId)
+      // The provider owns cancellation and only removes the durable row after
+      // the server confirms success. This pane may close independently.
       api.close()
     }
     window.addEventListener(WORKSPACE_COMPOSER_STOP_EVENT, onStop)

@@ -649,9 +649,14 @@ describe("askUserPlugin front shell", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
     const Provider = getProvider()
+    const Panel = getPanel()
+    const close = vi.fn()
     render(
       <WorkspaceProvider agentTypeId="alpha" apiBaseUrl="" plugins={[]} workspaceId="test-workspace">
-        <Provider apiBaseUrl="" activeSessionId="default" openSessionIds={["default"]}><AttentionProbe /></Provider>
+        <Provider apiBaseUrl="" activeSessionId="default" openSessionIds={["default"]}>
+          <AttentionProbe />
+          {source === "composer" ? <Panel params={{ sessionId: "default", questionId: "q1" }} api={{ close }} className="h-full" /> : null}
+        </Provider>
       </WorkspaceProvider>,
     )
     await waitFor(() => expect(seen).toContainEqual(expect.objectContaining({ id: "ask-user:default:q1" })))
@@ -671,6 +676,7 @@ describe("askUserPlugin front shell", () => {
 
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.cancel"))).toBe(true))
     expect(seen).toContainEqual(expect.objectContaining({ id: "ask-user:default:q1", label: "Choose A or B" }))
+    if (source === "composer") expect(close).toHaveBeenCalled()
   })
 
   it("composer stop cancels pending question even when pane is closed", async () => {

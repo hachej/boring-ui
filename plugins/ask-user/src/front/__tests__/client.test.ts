@@ -73,6 +73,20 @@ describe("ask-user front client", () => {
     })
   })
 
+  it("does not label a malformed successful bridge list as a legacy 404", async () => {
+    const fetchMock = vi.fn(async (url: string) => (
+      String(url).includes("/api/v1/questions?status=ready")
+        ? Response.json({ error: "not_found" }, { status: 404 })
+        : Response.json({ ok: true, output: {} })
+    ))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(createQuestionsClient().listReady()).rejects.toMatchObject({
+      message: "Invalid pending questions response",
+      statusCode: 200,
+    })
+  })
+
   it("allows hosts to override the stock browser CSRF proof", async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ ok: true, output: { pending: null } }))
     vi.stubGlobal("fetch", fetchMock)
