@@ -50,6 +50,7 @@ export default defineConfig({
       { find: /^@hachej\/boring-sandbox\/providers\/vercel-sandbox$/, replacement: resolve(repoRoot, "packages/boring-sandbox/src/providers/vercel-sandbox/index.ts") },
       { find: /^@hachej\/boring-sandbox\/providers\/blaxel$/, replacement: resolve(repoRoot, "packages/boring-sandbox/src/providers/blaxel/index.ts") },
       { find: /^@\/(.*)$/, replacement: resolve(repoRoot, "packages/agent/src/$1") },
+      { find: /^@hachej\/boring-workspace\/shared$/, replacement: resolve(repoRoot, "packages/workspace/src/shared/index.ts") },
       { find: /^@hachej\/boring-workspace\/server$/, replacement: resolve(repoRoot, "packages/workspace/src/server/index.ts") },
       { find: /^@hachej\/boring-workspace\/plugin$/, replacement: resolve(repoRoot, "packages/workspace/src/plugin.ts") },
       { find: /^@hachej\/boring-workspace\/events$/, replacement: resolve(repoRoot, "packages/workspace/src/front/events/index.ts") },
