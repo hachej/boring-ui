@@ -41,7 +41,10 @@ export function namespaceMermaidSvgIds(svg, namespace) {
       .replace(new RegExp(`(\\sid=")${escaped}(")`, 'g'), `$1${namespaced}$2`)
       .replace(new RegExp(`#${escaped}(?![A-Za-z0-9_.:-])`, 'g'), `#${namespaced}`)
   }
-  return output
+  return output.replace(/\s(aria-labelledby|aria-describedby)="([^"]*)"/g, (_match, name, value) => {
+    const rewritten = value.split(/\s+/).map((token) => replacements.get(token) ?? token).join(' ')
+    return ` ${name}="${rewritten}"`
+  })
 }
 
 export async function renderMermaidSvg(source, renderId = 'pr-context-diagram') {

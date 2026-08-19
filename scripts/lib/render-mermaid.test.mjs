@@ -9,7 +9,8 @@ import { renderMermaidSvg } from './render-mermaid.mjs'
 const idsIn = (svg) => new Set([...svg.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]))
 const referencesIn = (svg) => [
   ...[...svg.matchAll(/\s(?:marker-start|marker-end|fill|filter)="url\(#([^\)]+)\)"/g)].map((match) => match[1]),
-  ...[...svg.matchAll(/(?:href|aria-labelledby|aria-describedby)="#([^"]+)"/g)].map((match) => match[1]),
+  ...[...svg.matchAll(/href="#([^"]+)"/g)].map((match) => match[1]),
+  ...[...svg.matchAll(/aria-(?:labelledby|describedby)="([^"]+)"/g)].flatMap((match) => match[1].split(/\s+/)),
 ]
 
 test('multiple sequence diagrams use disjoint, internally valid SVG fragment IDs', async () => {
@@ -28,6 +29,13 @@ test('multiple sequence diagrams use disjoint, internally valid SVG fragment IDs
   assert.deepEqual([...firstIds].filter((id) => secondIds.has(id)), [])
   assert.deepEqual(referencesIn(first).filter((id) => !firstIds.has(id)), [])
   assert.deepEqual(referencesIn(second).filter((id) => !secondIds.has(id)), [])
+})
+
+test('rewrites accessibility ID references to namespaced targets', async () => {
+  const svg = await renderMermaidSvg('flowchart LR\n  accTitle: Accessible flow\n  accDescr: Start reaches done\n  A[Start] --> B[Done]', 'accessible-diagram')
+  const ids = idsIn(svg)
+  assert.ok(referencesIn(svg).length >= 2)
+  assert.deepEqual(referencesIn(svg).filter((id) => !ids.has(id)), [])
 })
 
 test('preserves ordinary flowchart labels without HTML foreign objects', async () => {
