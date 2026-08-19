@@ -1,3 +1,4 @@
+import { StrictMode, type ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useFileUpload } from '../useFileUpload'
@@ -79,6 +80,30 @@ describe('useFileUpload', () => {
     })
   })
 
+  it('passes exact-name collision options through for file-tree uploads', async () => {
+    mockUploadFile.mockResolvedValue({ url: 'src/file.txt', path: 'src/file.txt', skipped: false })
+
+    const { result } = renderHook(() => useFileUpload())
+    const file = new File(['content'], 'file.txt', { type: 'text/plain' })
+
+    const controller = new AbortController()
+    await act(async () => {
+      await result.current.upload(file, {
+        directory: 'src',
+        preserveName: true,
+        collision: 'replace',
+        signal: controller.signal,
+      })
+    })
+
+    expect(mockUploadFile).toHaveBeenCalledWith(file, expect.objectContaining({
+      directory: 'src',
+      preserveName: true,
+      collision: 'replace',
+      signal: controller.signal,
+    }))
+  })
+
   it('uploading is true during upload and false after it resolves', async () => {
     let resolveUpload!: (value: { url: string; path: string }) => void
     mockUploadFile.mockReturnValue(
@@ -104,6 +129,26 @@ describe('useFileUpload', () => {
       await uploadPromise
     })
 
+    expect(result.current.uploading).toBe(false)
+  })
+
+  it('tracks uploading after StrictMode effect replay', async () => {
+    let resolveUpload!: (value: { url: string; path: string }) => void
+    mockUploadFile.mockReturnValue(new Promise((resolve) => { resolveUpload = resolve }))
+    const strictWrapper = ({ children }: { children: ReactNode }) => (
+      <StrictMode>{children}</StrictMode>
+    )
+    const { result } = renderHook(() => useFileUpload(), { wrapper: strictWrapper })
+    const file = new File(['x'], 'strict.png', { type: 'image/png' })
+
+    let uploadPromise!: Promise<unknown>
+    act(() => { uploadPromise = result.current.upload(file) })
+    await waitFor(() => expect(result.current.uploading).toBe(true))
+
+    await act(async () => {
+      resolveUpload({ url: 'strict.png', path: 'strict.png' })
+      await uploadPromise
+    })
     expect(result.current.uploading).toBe(false)
   })
 

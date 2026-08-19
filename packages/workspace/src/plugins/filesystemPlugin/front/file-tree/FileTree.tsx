@@ -54,6 +54,8 @@ export interface FileTreeProps {
   /** Paths currently being mutated — render a small spinner on those rows. */
   pendingPaths?: ReadonlySet<string>
   onSelect?: (path: string) => void
+  /** Called when a directory row becomes the current tree selection. */
+  onSelectDirectory?: (path: string) => void
   onExpand?: (path: string) => void
   onCollapse?: (path: string) => void
   onContextMenu?: (event: React.MouseEvent, node: FileTreeNode) => void
@@ -71,6 +73,7 @@ type ContextMenuHandler = ((e: React.MouseEvent, node: FileTreeNode) => void) | 
 
 interface TreeHandlersCtxValue {
   onContextMenu: ContextMenuHandler
+  onSelectDirectory?: (path: string) => void
   editing: FileTreeEditState | null
   pendingPaths: ReadonlySet<string>
   onSubmitEdit?: (path: string, value: string) => void
@@ -81,6 +84,7 @@ const EMPTY_SET: ReadonlySet<string> = new Set()
 
 const TreeHandlersCtx = createContext<TreeHandlersCtxValue>({
   onContextMenu: undefined,
+  onSelectDirectory: undefined,
   editing: null,
   pendingPaths: EMPTY_SET,
   onSubmitEdit: undefined,
@@ -210,7 +214,7 @@ function countVisibleNodes(
 }
 
 function Node({ node, style, dragHandle }: NodeRendererProps<FileTreeNode>) {
-  const { onContextMenu, editing, pendingPaths, onSubmitEdit, onCancelEdit } =
+  const { onContextMenu, onSelectDirectory, editing, pendingPaths, onSubmitEdit, onCancelEdit } =
     useContext(TreeHandlersCtx)
   const data = node.data
   const isDir = data.kind === "dir"
@@ -240,6 +244,8 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileTreeNode>) {
         if (isEditingHere) return
         e.stopPropagation()
         if (isDir) {
+          node.select()
+          onSelectDirectory?.(data.path)
           node.toggle()
         } else {
           node.select()
@@ -311,6 +317,7 @@ export function FileTree({
   revealPath,
   pendingPaths,
   onSelect,
+  onSelectDirectory,
   onExpand,
   onCollapse,
   onContextMenu,
@@ -376,12 +383,28 @@ export function FileTree({
 
   const handleActivate = useCallback(
     (node: { data: FileTreeNode }) => {
-      if (node.data.kind === "file") {
+      if (node.data.kind === "dir") {
+        onSelectDirectory?.(node.data.path)
+      } else {
         onSelect?.(node.data.path)
       }
     },
-    [onSelect],
+    [onSelect, onSelectDirectory],
   )
+
+  const handleFocus = useCallback(
+    (node: { data: FileTreeNode }) => {
+      if (node.data.kind === "dir") onSelectDirectory?.(node.data.path)
+    },
+    [onSelectDirectory],
+  )
+
+  const handleTreeFocus = useCallback(() => {
+    queueMicrotask(() => {
+      const node = treeRef.current?.focusedNode
+      if (node?.data.kind === "dir") onSelectDirectory?.(node.data.path)
+    })
+  }, [onSelectDirectory])
 
   const handleToggle = useCallback(
     (id: string) => {
@@ -445,12 +468,13 @@ export function FileTree({
   const handlers = useMemo(
     () => ({
       onContextMenu,
+      onSelectDirectory,
       editing: editing ?? null,
       pendingPaths: pendingPaths ?? EMPTY_SET,
       onSubmitEdit,
       onCancelEdit,
     }),
-    [onContextMenu, editing, pendingPaths, onSubmitEdit, onCancelEdit],
+    [onContextMenu, onSelectDirectory, editing, pendingPaths, onSubmitEdit, onCancelEdit],
   )
 
   // Derive all render decisions from safeFiles (what the Tree actually receives) so the
@@ -489,7 +513,11 @@ export function FileTree({
 
   return (
     <TreeHandlersCtx.Provider value={handlers}>
-      <div data-boring-workspace-part="file-tree" className={cn("file-tree", className)}>
+      <div
+        data-boring-workspace-part="file-tree"
+        className={cn("file-tree", className)}
+        onFocus={handleTreeFocus}
+      >
         <Tree<FileTreeNode>
           ref={treeRef}
           data={safeFiles}
@@ -504,6 +532,7 @@ export function FileTree({
           searchTerm={searchQuery ?? ""}
           searchMatch={searchMatch}
           onActivate={handleActivate}
+          onFocus={handleFocus}
           onToggle={handleToggle}
           onMove={handleMove}
           disableDrop={disableDrop}

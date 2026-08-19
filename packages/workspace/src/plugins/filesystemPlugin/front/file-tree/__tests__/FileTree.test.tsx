@@ -167,6 +167,33 @@ describe("FileTree", () => {
     expect(onSelect).not.toHaveBeenCalled()
   })
 
+  it("reports directory selection for destination-scoped actions", () => {
+    const onSelectDirectory = vi.fn()
+    render(
+      <FileTree
+        files={sampleFiles}
+        onSelectDirectory={onSelectDirectory}
+        height={300}
+      />,
+    )
+    fireEvent.click(screen.getByText("src"))
+    expect(onSelectDirectory).toHaveBeenCalledWith("src")
+  })
+
+  it("reports a keyboard-focused directory as the destination selection", async () => {
+    const onSelectDirectory = vi.fn()
+    render(
+      <FileTree
+        files={sampleFiles}
+        onSelectDirectory={onSelectDirectory}
+        height={300}
+      />,
+    )
+    const tree = screen.getByRole("tree")
+    tree.focus()
+    await waitFor(() => expect(onSelectDirectory).toHaveBeenCalledWith("src"))
+  })
+
   it("toggles directory on click", () => {
     const onExpand = vi.fn()
     const onCollapse = vi.fn()

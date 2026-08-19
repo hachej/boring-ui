@@ -133,6 +133,40 @@ describe('primary filesystem access projection', () => {
     await app.close()
   })
 
+  test('denies preserved-name uploads to protected binding paths', async () => {
+    const { app, user } = await appWithBinding()
+    const writeBinary = vi.spyOn(user.operations, 'writeBinary')
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/upload',
+      payload: {
+        filename: 'new.txt', directory: 'protected', preserveName: true,
+        collision: 'replace', contentBase64: 'eA==',
+      },
+    })
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ error: { code: 'readonly', message: 'user binding is readonly' } })
+    expect(writeBinary).not.toHaveBeenCalled()
+    await app.close()
+  })
+
+  test('serializes concurrent preserved-name writes through a binding', async () => {
+    const { app, user } = await appWithBinding()
+    const writeBinary = vi.spyOn(user.operations, 'writeBinary')
+    const request = () => app.inject({
+      method: 'POST',
+      url: '/api/v1/files/upload',
+      payload: {
+        filename: 'raced.txt', directory: 'a', preserveName: true,
+        collision: 'skip', contentBase64: 'eA==',
+      },
+    })
+    const responses = await Promise.all([request(), request()])
+    expect(writeBinary).toHaveBeenCalledOnce()
+    expect(responses.map((response) => response.json().skipped).sort()).toEqual([false, true])
+    await app.close()
+  })
+
   test('routes real Pi read/write tools through the user binding capabilities', async () => {
     const user = binding()
     const write = vi.spyOn(user.operations, 'write')
