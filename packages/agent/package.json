@@ -52,6 +52,10 @@
       "import": "./dist/front/index.js"
     },
     "./front/styles.css": "./dist/front/styles.css",
+    "./front/artifacts": {
+      "types": "./dist/front/artifacts.d.ts",
+      "import": "./dist/front/artifacts.js"
+    },
     "./eval": {
       "types": "./dist/eval/index.d.ts",
       "import": "./dist/eval/index.js"
