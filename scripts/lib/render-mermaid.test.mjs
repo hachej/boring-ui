@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import test from 'node:test'
 
+import { chromium } from '@playwright/test'
+
 import { renderMermaidSvg } from './render-mermaid.mjs'
 
 const idsIn = (svg) => new Set([...svg.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]))
@@ -47,10 +49,21 @@ test('blocks render-time network and removes load-capable external Mermaid conte
   const externalUrl = `http://127.0.0.1:${port}/pixel.png`
 
   try {
-    const svg = await renderMermaidSvg(`flowchart LR\n  A["<form action='${externalUrl}'><button formaction='${externalUrl}'>Send</button></form><img src='${externalUrl}'>"] --> B[Done]`, 'network-safe-diagram')
+    const source = `%%{init: {"themeCSS": "* { fill: url(pixel.png); }"}}%%\nflowchart LR\n  A["<form action='${externalUrl}'><button formaction='${externalUrl}'>Send</button></form><img src='${externalUrl}'>"] --> B[Done]`
+    const svg = await renderMermaidSvg(source, 'network-safe-diagram')
     assert.equal(requests, 0)
     assert.doesNotMatch(svg, /<(?:form|button|input|img|image)(?:\s|>)/i)
     assert.equal(svg.includes(externalUrl), false)
+    assert.doesNotMatch(svg, /url\(\s*["']?pixel\.png/i)
+
+    const browser = await chromium.launch({ headless: true })
+    try {
+      const page = await browser.newPage()
+      await page.setContent(`<base href="http://127.0.0.1:${port}/artifact/">${svg}`, { waitUntil: 'networkidle' })
+      assert.equal(requests, 0)
+    } finally {
+      await browser.close()
+    }
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   }
