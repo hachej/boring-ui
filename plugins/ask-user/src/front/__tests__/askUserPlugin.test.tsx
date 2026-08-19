@@ -574,6 +574,42 @@ describe("askUserPlugin front shell", () => {
     expect(seen).toHaveLength(2)
   })
 
+  it("polls the durable list when the host question stream is unavailable", async () => {
+    const polledQuestion = { ...question, questionId: "poll-q2", sessionId: "poll-headless", title: "Polled headless approval" }
+    let readyQuestions = [question]
+    const seen: unknown[] = []
+    function AttentionProbe() {
+      const { blockers } = useWorkspaceAttention()
+      seen.splice(0, seen.length, ...blockers)
+      return null
+    }
+    class SilentEventSource {
+      addEventListener() {}
+      removeEventListener() {}
+      close() {}
+    }
+    vi.stubGlobal("EventSource", SilentEventSource)
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => (
+      String(url).includes("/api/v1/questions?status=ready")
+        ? Response.json({ questions: readyQuestions })
+        : Response.json({})
+    )))
+    const Provider = getProvider()
+    render(
+      <WorkspaceProvider agentTypeId="alpha" apiBaseUrl="" plugins={[]} workspaceId="test-workspace">
+        <Provider apiBaseUrl="" activeSessionId="default" openSessionIds={["default"]}><AttentionProbe /></Provider>
+      </WorkspaceProvider>,
+    )
+    await waitFor(() => expect(seen).toContainEqual(expect.objectContaining({ label: "Choose A or B" })))
+
+    readyQuestions = [polledQuestion]
+    await waitFor(
+      () => expect(seen).toContainEqual(expect.objectContaining({ label: "Polled headless approval" })),
+      { timeout: 2_500 },
+    )
+    expect(seen).not.toContainEqual(expect.objectContaining({ label: "Choose A or B" }))
+  })
+
   it("contributes pending questions as explicit inbox attention blockers", async () => {
     const seen: unknown[] = []
     function AttentionProbe() {

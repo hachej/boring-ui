@@ -178,6 +178,10 @@ export function useAskUserPendingRefresh(
     const questionEvents = EventSourceCtor ? new EventSourceCtor(eventUrl, { withCredentials: true }) : null
     questionEvents?.addEventListener("ready", refreshPending)
     questionEvents?.addEventListener("questions-changed", refreshPending)
+    // Folder-mode hosts expose the canonical WorkspaceBridge list but not the
+    // workspace-mode SSE route. Polling is also a loss-recovery path if an SSE
+    // invalidation is missed during reconnect.
+    const durablePoll = setInterval(() => { void refreshPending() }, 1_500)
     void refreshPending()
     window.addEventListener("focus", refreshPending)
     document.addEventListener("visibilitychange", onVisibility)
@@ -186,6 +190,7 @@ export function useAskUserPendingRefresh(
     return () => {
       stopped = true
       if (agentDataTimer) clearTimeout(agentDataTimer)
+      clearInterval(durablePoll)
       questionEvents?.close()
       offAgentData()
       offUiCommand()

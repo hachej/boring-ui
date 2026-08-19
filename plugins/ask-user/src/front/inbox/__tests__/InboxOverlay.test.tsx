@@ -76,6 +76,13 @@ describe("InboxOverlay", () => {
     expect(screen.queryByRole("button", { name: "Open Need input" })).not.toBeInTheDocument()
   })
 
+  it("keeps linked-chat navigation when a durable row opts out of session pruning", () => {
+    blockers.splice(0, blockers.length, { ...blocker, pruneWhenSessionMissing: false })
+    render(<InboxOverlay onClose={() => undefined} />)
+
+    expect(screen.getByLabelText("Open chat for Session one")).toBeInTheDocument()
+  })
+
   it("keeps multiple waiting questions independently discoverable", async () => {
     const user = userEvent.setup()
     blockers.push({ ...blocker, id: "ask-user:s2:q2", target: "q2", label: "Second decision", sessionId: "s2" })
