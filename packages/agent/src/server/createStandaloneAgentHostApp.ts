@@ -217,6 +217,7 @@ export async function createStandaloneAgentHostApp(
           return createPiResourceDigestInput({
             piCwd: workspaceRoot,
             noSkills: pi.noSkills,
+            noContextFiles: pi.noContextFiles,
             resourceSets: [{
               promptParts: [
                 options.systemPromptAppend,

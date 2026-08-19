@@ -1036,6 +1036,9 @@ importers:
         specifier: ^3.23.0
         version: 3.25.76
     devDependencies:
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@hachej/boring-workspace':
         specifier: workspace:*
         version: link:../../packages/workspace

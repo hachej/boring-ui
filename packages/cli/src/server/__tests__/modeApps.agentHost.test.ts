@@ -82,6 +82,34 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
+async function resolvedSystemPrompt(
+  app: FastifyInstance,
+  requestId: string,
+  headers?: Record<string, string>,
+): Promise<string> {
+  const created = await app.inject({
+    method: "POST",
+    url: "/api/v1/agents/default/sessions",
+    payload: { requestId },
+    ...(headers ? { headers } : {}),
+  })
+  expect(created.statusCode, created.body).toBe(201)
+  const sessionId = (created.json() as { sessionId: string }).sessionId
+  const commands = await app.inject({
+    method: "GET",
+    url: `/api/v1/agents/default/commands?sessionId=${encodeURIComponent(sessionId)}`,
+    ...(headers ? { headers } : {}),
+  })
+  expect(commands.statusCode, commands.body).toBe(200)
+  const response = await app.inject({
+    method: "GET",
+    url: `/api/v1/agents/default/sessions/${encodeURIComponent(sessionId)}/system-prompt`,
+    ...(headers ? { headers } : {}),
+  })
+  expect(response.statusCode, response.body).toBe(200)
+  return (response.json() as { systemPrompt: string }).systemPrompt
+}
+
 async function fixtureApp(useConfiguredSessionRoot: boolean) {
   const home = await temporaryRoot("boring-cli-agent-host-home-")
   const workspaceRoot = await temporaryRoot("boring-cli-agent-host-workspace-")
@@ -142,11 +170,98 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
     mode: "direct",
     registryPath,
     provisionWorkspace: false,
+    // This fixture proves transcript routing, not ambient skill admission. Keep
+    // it hermetic from whatever ~/.pi skills exist on the test machine.
+    loadAmbientSkills: false,
   })
   return { app, workspace, sessionId, compatibleSessionIds, transcript, transcriptPath, skillPath, createAgentHost, rollbackReader }
 }
 
 describe.sequential("CLI Agent Host composition", () => {
+  it("folder mode resolves workspace AGENTS.md into Pi context by default", async () => {
+    const home = await temporaryRoot("boring-cli-folder-context-home-")
+    const workspaceRoot = await temporaryRoot("boring-cli-folder-context-workspace-")
+    const marker = "FOLDER_MODE_AMBIENT_CONTEXT_FIXTURE"
+    process.env.HOME = home
+    await writeFile(join(workspaceRoot, "AGENTS.md"), `${marker}\n`, "utf8")
+
+    const app = await createFolderModeApp({
+      workspaceRoot,
+      mode: "direct",
+      provisionWorkspace: false,
+      loadAmbientSkills: false,
+    })
+    try {
+      expect(await resolvedSystemPrompt(app, "folder-ambient-context")).toContain(marker)
+    } finally {
+      await app.close()
+    }
+  }, 30_000)
+
+  it("workspaces mode resolves each workspace AGENTS.md into Pi context by default", async () => {
+    const home = await temporaryRoot("boring-cli-workspaces-context-home-")
+    const workspaceRoot = await temporaryRoot("boring-cli-workspaces-context-workspace-")
+    const registryRoot = await temporaryRoot("boring-cli-workspaces-context-registry-")
+    const marker = "WORKSPACES_MODE_AMBIENT_CONTEXT_FIXTURE"
+    const registryPath = join(registryRoot, "workspaces.yaml")
+    process.env.HOME = home
+    await writeFile(join(workspaceRoot, "AGENTS.md"), `${marker}\n`, "utf8")
+    const workspace = await createLocalWorkspaceRegistry(registryPath).add(workspaceRoot)
+
+    const app = await createWorkspacesModeApp({
+      mode: "direct",
+      registryPath,
+      provisionWorkspace: false,
+      loadAmbientSkills: false,
+    })
+    try {
+      const headers = { "x-boring-workspace-id": workspace.id }
+      expect(await resolvedSystemPrompt(app, "workspaces-ambient-context", headers)).toContain(marker)
+    } finally {
+      await app.close()
+    }
+  }, 30_000)
+
+  it("both local CLI modes honor an explicit ambient-context opt-out", async () => {
+    const home = await temporaryRoot("boring-cli-context-off-home-")
+    const folderRoot = await temporaryRoot("boring-cli-folder-context-off-")
+    const workspaceRoot = await temporaryRoot("boring-cli-workspaces-context-off-")
+    const registryRoot = await temporaryRoot("boring-cli-context-off-registry-")
+    const marker = "AMBIENT_CONTEXT_MUST_STAY_ABSENT"
+    const registryPath = join(registryRoot, "workspaces.yaml")
+    process.env.HOME = home
+    await writeFile(join(folderRoot, "AGENTS.md"), `${marker}\n`, "utf8")
+    await writeFile(join(workspaceRoot, "AGENTS.md"), `${marker}\n`, "utf8")
+    const workspace = await createLocalWorkspaceRegistry(registryPath).add(workspaceRoot)
+
+    const folderApp = await createFolderModeApp({
+      workspaceRoot: folderRoot,
+      mode: "direct",
+      provisionWorkspace: false,
+      loadAmbientSkills: false,
+      loadAmbientContext: false,
+    })
+    try {
+      expect(await resolvedSystemPrompt(folderApp, "folder-context-off")).not.toContain(marker)
+    } finally {
+      await folderApp.close()
+    }
+
+    const workspacesApp = await createWorkspacesModeApp({
+      mode: "direct",
+      registryPath,
+      provisionWorkspace: false,
+      loadAmbientSkills: false,
+      loadAmbientContext: false,
+    })
+    try {
+      const headers = { "x-boring-workspace-id": workspace.id }
+      expect(await resolvedSystemPrompt(workspacesApp, "workspaces-context-off", headers)).not.toContain(marker)
+    } finally {
+      await workspacesApp.close()
+    }
+  }, 45_000)
+
   it("folder-mode fleet seats receive workspace plugin agent tools", async () => {
     const fleetRoot = await temporaryRoot("boring-cli-seat-tools-fleet-")
     const workspaceRoot = await temporaryRoot("boring-cli-seat-tools-workspace-")
