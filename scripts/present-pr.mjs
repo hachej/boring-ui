@@ -26,6 +26,8 @@ import {
   parseContextMarkdown,
   renderIntroVisuals,
 } from './lib/present-pr-context.mjs'
+import { CATEGORIES, categorize, isDefaultSankeyCategory } from './lib/present-pr-files.mjs'
+import { extractBeadId, extractLinkedIssueNumber } from './lib/present-pr-links.mjs'
 import { renderMermaidSvg } from './lib/render-mermaid.mjs'
 
 /* ------------------------------------------------------------------ args */
@@ -57,9 +59,15 @@ const repoArgs = args.repo ? ['--repo', args.repo] : []
 const pr = JSON.parse(
   gh([
     'pr', 'view', prNumber, ...repoArgs, '--json',
-    'number,title,url,author,state,isDraft,baseRefName,headRefName,additions,deletions,changedFiles,createdAt,updatedAt,labels,reviewDecision,mergeStateStatus',
+    'number,title,body,url,author,state,isDraft,baseRefName,headRefName,additions,deletions,changedFiles,createdAt,updatedAt,labels,reviewDecision,mergeStateStatus',
   ]),
 )
+
+const beadId = extractBeadId(pr.title, pr.body)
+const linkedIssueNumber = extractLinkedIssueNumber(pr.body)
+const linkedIssue = linkedIssueNumber === null
+  ? null
+  : JSON.parse(gh(['issue', 'view', String(linkedIssueNumber), ...repoArgs, '--json', 'number,title,url']))
 
 let checks = []
 try {
@@ -89,30 +97,6 @@ if (typeof args.audit === 'string') context.audit = args.audit
 const renderedMermaid = await Promise.all(context.visuals.map((visual) => (
   visual.language === 'mermaid' ? renderMermaidSvg(visual.content) : ''
 )))
-
-/* -------------------------------------------------------- categorization */
-
-const CATEGORIES = [
-  { id: 'generated', label: 'Generated / lockfiles', color: 'var(--cat-generated)' },
-  { id: 'config', label: 'Config / CI', color: 'var(--cat-config)' },
-  { id: 'docs', label: 'Docs', color: 'var(--cat-docs)' },
-  { id: 'test', label: 'Tests', color: 'var(--cat-test)' },
-  { id: 'prod', label: 'Production code', color: 'var(--cat-prod)' },
-]
-
-/** Order matters: first match wins, most-specific first. */
-export function categorize(file) {
-  const p = file.toLowerCase()
-  if (/(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|cargo\.lock|poetry\.lock|go\.sum)$/.test(p)) return 'generated'
-  if (/(^|\/)(dist|build|coverage|__snapshots__|\.beads)(\/|$)/.test(p) || /\.(snap|lock)$/.test(p)) return 'generated'
-  if (/(^|\/)(__tests__|__mocks__|__fixtures__|tests?|e2e|spec|fixtures)(\/|$)/.test(p)) return 'test'
-  if (/\.(test|spec|e2e)\.[a-z0-9]+$/.test(p)) return 'test'
-  if (/(^|\/)(docs?|documentation)(\/|$)/.test(p)) return 'docs'
-  if (/\.(md|mdx|rst|adoc|txt)$/.test(p)) return 'docs'
-  if (/(^|\/)\.github\//.test(p)) return 'config'
-  if (/(^|\/)(\.[a-z0-9_.-]+rc(\.[a-z]+)?|[a-z0-9.-]*\.config\.[a-z]+|tsconfig[a-z0-9.-]*\.json|package\.json|dockerfile|.*\.ya?ml|.*\.toml|.*\.ini)$/.test(p)) return 'config'
-  return 'prod'
-}
 
 /* -------------------------------------------------------- diff parsing */
 
@@ -505,6 +489,17 @@ function paragraphs(text) {
   return String(text).split(/\n{2,}/).map((p) => `<p>${esc(p.trim()).replace(/\n/g, ' ').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')}</p>`).join('\n')
 }
 
+const defaultSankeyFiles = files.filter((file) => isDefaultSankeyCategory(file.cat))
+const supplementalSankeyFiles = files.filter((file) => !isDefaultSankeyCategory(file.cat))
+const supplementalSankeyCounts = supplementalSankeyFiles.reduce((counts, file) => {
+  counts[file.cat] += 1
+  return counts
+}, { test: 0, docs: 0 })
+const supplementalSankeyLabel = [
+  supplementalSankeyCounts.test ? `${supplementalSankeyCounts.test} test${supplementalSankeyCounts.test === 1 ? '' : 's'}` : '',
+  supplementalSankeyCounts.docs ? `${supplementalSankeyCounts.docs} doc${supplementalSankeyCounts.docs === 1 ? '' : 's'}` : '',
+].filter(Boolean).join(' + ')
+
 const orderedCats = CATEGORIES.slice().reverse() // prod first
 const filterChips = orderedCats.map((c) => {
   const t = totals[c.id]
@@ -515,7 +510,8 @@ const filterChips = orderedCats.map((c) => {
   </label>`
 }).join('\n')
 
-const html = `<title>PR #${pr.number} — ${esc(pr.title)}</title>
+const html = `<meta charset="utf-8">
+<title>PR #${pr.number} — ${esc(pr.title)}</title>
 <style>
 :root {
   color-scheme: light dark;
@@ -554,6 +550,10 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .muted { color: var(--muted); }
 
 .head { border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; background: var(--panel); }
+.problem { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; margin: -2px 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.problem-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+.problem a { font-weight: 650; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.problem .bead { margin-left: auto; color: var(--muted); font-size: 12px; }
 .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--muted); font-size: 13px; margin-top: 8px; }
 .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .badge { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border); background: var(--bg); border-radius: 999px; padding: 4px 12px; font-size: 12.5px; }
@@ -691,6 +691,13 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
 
 <div class="wrap">
   <header class="head">
+    <div class="problem">
+      <span class="problem-label">Issue being solved</span>
+      ${linkedIssue
+        ? `<a href="${esc(linkedIssue.url)}">#${linkedIssue.number} — ${esc(linkedIssue.title)}</a>`
+        : '<strong>no linked issue</strong>'}
+      <span class="bead">Bead <code>${esc(beadId)}</code></span>
+    </div>
     <h1>PR #${pr.number} — ${esc(pr.title)}</h1>
     <div class="meta">
       <span>${esc(pr.author?.login ?? 'unknown')}</span>
@@ -725,8 +732,9 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
   </div>
   ${files.length >= 4 ? `<div class="card sankey" id="sankey">
     <div class="sankeyhead">
-      <p class="hint">What is touched — area → package → file. Ribbon width is changed lines, colour is the file category. Click any node to jump to its diff.</p>
-      <button class="btn" id="toggle-files" data-on="${files.length <= 24 ? '1' : '0'}">${files.length <= 24 ? 'Hide file level' : 'Show file level'}</button>
+      <p class="hint">What code is touched — area → package → file. Tests and docs are excluded by default; the complete diff list remains below.</p>
+      ${supplementalSankeyFiles.length ? `<button class="btn" id="toggle-supplemental" aria-pressed="false">Show tests + docs (${supplementalSankeyLabel})</button>` : ''}
+      <button class="btn" id="toggle-files" data-on="${defaultSankeyFiles.length <= 24 ? '1' : '0'}">${defaultSankeyFiles.length <= 24 ? 'Hide file level' : 'Show file level'}</button>
     </div>
     <div class="sankeyscroll"><svg id="sankey-svg" role="img" aria-label="Diff flow from area to package to file"></svg></div>
   </div>` : ''}
@@ -755,7 +763,7 @@ ${files.map(renderFile).join('\n')}
 <script>
 var SANKEY_DATA = ${JSON.stringify(files.map((f, i) => ({
   id: `f${i}`, path: f.path, name: f.path.split('/').pop(), cat: f.cat, area: f.area, pkg: f.pkg,
-  add: f.additions, del: f.deletions, rank: f.rank,
+  add: f.additions, del: f.deletions, rank: f.rank, supplemental: !isDefaultSankeyCategory(f.cat),
 })))};
 </script>
 <script>
@@ -767,7 +775,8 @@ var SANKEY_DATA = ${JSON.stringify(files.map((f, i) => ({
   var NS = 'http://www.w3.org/2000/svg';
 
   var BAR = 10, GAP = 7, TOP = 30, BOT = 12, MAX_FILE_NODES = 26;
-  var showFiles = SANKEY_DATA.length <= 24;
+  var showFiles = SANKEY_DATA.filter(function (row) { return !row.supplemental; }).length <= 24;
+  var showSupplemental = false;
 
   function el(name, attrs) {
     var node = document.createElementNS(NS, name);
@@ -856,7 +865,7 @@ var SANKEY_DATA = ${JSON.stringify(files.map((f, i) => ({
     if (!svg) return;
     var on = {};
     boxes.forEach(function (b) { on[b.dataset.cat] = b.checked; });
-    var rows = SANKEY_DATA.filter(function (r) { return on[r.cat]; });
+    var rows = SANKEY_DATA.filter(function (r) { return on[r.cat] && (showSupplemental || !r.supplemental); });
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (rows.length === 0) { svg.setAttribute('height', 0); return; }
 
@@ -1044,6 +1053,18 @@ var SANKEY_DATA = ${JSON.stringify(files.map((f, i) => ({
       if (act) openFile(act);
     });
     window.addEventListener('resize', function () { render(); });
+  }
+
+  var supplementalToggle = document.getElementById('toggle-supplemental');
+  if (supplementalToggle) {
+    supplementalToggle.addEventListener('click', function () {
+      showSupplemental = !showSupplemental;
+      supplementalToggle.textContent = showSupplemental
+        ? 'Hide tests + docs'
+        : 'Show tests + docs (${supplementalSankeyLabel})';
+      supplementalToggle.setAttribute('aria-pressed', showSupplemental ? 'true' : 'false');
+      render();
+    });
   }
 
   var filesToggle = document.getElementById('toggle-files');

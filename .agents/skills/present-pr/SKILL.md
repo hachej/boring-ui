@@ -168,7 +168,9 @@ already reviewed, and state the open questions.
 
    The script pulls metadata, checks, and the combined diff via `gh` and renders one HTML
    file with no external requests — safe for the artifact viewer's strict CSP. Mermaid is
-   emitted as `<pre class="mermaid">`, which artifacts render natively.
+   pre-rendered at generation time to inline SVG. This deliberately avoids runtime Mermaid,
+   external scripts, and CDN requests because the workspace HTML viewer does not execute or
+   fetch them reliably; the resulting single file also renders in a plain browser.
 
 6. **Hand it over as two panes — the standard handoff.** Working inside a
    workspace session, the artifact is not a link, it is a pane:
@@ -192,7 +194,7 @@ already reviewed, and state the open questions.
 
 ## What the page gives the reviewer
 
-- **Header** — title, author, branch pair, churn, live CI check tally, audit status.
+- **Header** — the linked issue number, exact title, and clickable URL plus the bead ID appear first; when the PR body has no semantic issue reference, the header says **no linked issue** explicitly. PR title, author, branch pair, churn, live CI check tally, and audit status follow.
 - **Section 1 — what this touches.** The composed context visuals and summary.
 - **Section 2 — review history.** A chronological audit trail with type badges, per-event
   verdict, who ran it, and a 1-line finding summary with resolution state. A headline badge
@@ -207,9 +209,11 @@ already reviewed, and state the open questions.
   - **Sankey navigation** (inline SVG, hand-rolled, no libraries): area → package → file.
     Ribbon width is changed lines, colour is the dominant file category, node bars split
     green/red by additions/deletions. Package nodes carry their own ±counts. Hovering
-    isolates a branch; clicking any node jumps to the most important diff beneath it. The
-    file level is optional and defaults off above 24 files. Below 4 changed files the
-    sankey is skipped entirely.
+    isolates a branch; clicking any node jumps to the most important diff beneath it. Tests
+    and docs are excluded from the default diagram and available through an explicit
+    **Show tests + docs** control; every file still remains in the diff list. The file level
+    is optional and defaults off above 24 files. Below 4 changed files the sankey is skipped
+    entirely.
   - **Category chips** toggle production / test / docs / config / generated, with
     per-category counts. Generated files start off.
   - **Diffs in importance order.** The top file is marked `start here` and the top two are
