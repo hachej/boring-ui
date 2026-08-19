@@ -12,6 +12,7 @@ import {
   type WorkspaceAttentionActionDetail,
 } from "@hachej/boring-workspace"
 import { ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
+import type { AskUserQuestion } from "../shared/types"
 import { createQuestionsClient, QuestionsClientError, readPendingQuestionHintsFromState, type PendingQuestionHint } from "./client"
 import { isSessionOpen, type QuestionsRuntime } from "./runtime"
 
@@ -39,7 +40,9 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
         sessionId: hint.sessionId,
         agentTypeId: runtime.agentTypeId,
         sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
-        pruneWhenSessionMissing: true,
+        // Durable-list questions are authoritative even when the session list
+        // is paginated or the headless chat was never opened.
+        pruneWhenSessionMissing: !hydrated,
         focus: { closeWorkbenchLeftPane: true },
         composer: { visible: false },
         inbox: {
@@ -57,6 +60,18 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
   }, [addBlocker, removeBlocker, runtime, pendingSnapshot])
 }
 
+async function cancelQuestion(runtime: QuestionsRuntime, pending: AskUserQuestion): Promise<void> {
+  if (!runtime.beginQuestionAction(pending)) return
+  try {
+    await createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending)
+    runtime.setPending(null, pending.sessionId)
+  } catch {
+    // Keep a still-ready durable question visible after a failed mutation.
+  } finally {
+    runtime.finishQuestionAction(pending)
+  }
+}
+
 export function useAskUserAttentionActions(runtime: QuestionsRuntime): void {
   useEffect(() => {
     const onAction = (event: Event) => {
@@ -66,11 +81,7 @@ export function useAskUserAttentionActions(runtime: QuestionsRuntime): void {
       if (!sessionId) return
       const pending = runtime.getPending(sessionId)
       if (!pending || (detail.blocker.target && pending.questionId !== detail.blocker.target)) return
-      if (!runtime.beginQuestionAction(pending)) return
-      runtime.setPending(null, pending.sessionId)
-      void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending)
-        .catch(() => undefined)
-        .finally(() => runtime.finishQuestionAction(pending))
+      void cancelQuestion(runtime, pending)
     }
     window.addEventListener(WORKSPACE_ATTENTION_ACTION_EVENT, onAction)
     return () => window.removeEventListener(WORKSPACE_ATTENTION_ACTION_EVENT, onAction)
@@ -86,11 +97,7 @@ export function useAskUserComposerStopCancel(runtime: QuestionsRuntime): void {
       if (!pending || !workspaceComposerStopAppliesToSession(detail, pending.sessionId, {
         fallbackSessionId: runtime.activeSessionId,
       })) return
-      if (!runtime.beginQuestionAction(pending)) return
-      runtime.setPending(null, pending.sessionId)
-      void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending)
-        .catch(() => undefined)
-        .finally(() => runtime.finishQuestionAction(pending))
+      void cancelQuestion(runtime, pending)
     }
     window.addEventListener(WORKSPACE_COMPOSER_STOP_EVENT, onStop)
     return () => window.removeEventListener(WORKSPACE_COMPOSER_STOP_EVENT, onStop)
@@ -117,8 +124,7 @@ export function useAskUserPendingRefresh(
         if (!stopped && sequence === refreshSequence) runtime.replacePending(questions)
         return
       } catch (error) {
-        const legacyEndpoint = error instanceof QuestionsClientError
-          && (error.statusCode === 404 || error.statusCode === 200)
+        const legacyEndpoint = error instanceof QuestionsClientError && error.statusCode === 404
         if (!legacyEndpoint) return
         // Only an explicitly absent/legacy endpoint may fall back to the old
         // hint projection. Transient durable-list failures preserve the last

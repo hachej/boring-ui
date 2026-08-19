@@ -351,6 +351,7 @@ describe("askUserPlugin front shell", () => {
     const staleNextQuestion = { ...nextQuestion, questionId: "stale-q2", sessionId: "stale-session", title: "Second stale question" }
     let current: AskUserQuestion | null = staleQuestion
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: current ? [current] : [] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         return Response.json({ ok: true, output: { pending: current } })
       }
@@ -395,6 +396,7 @@ describe("askUserPlugin front shell", () => {
     const s2Question = { ...nextQuestion, questionId: "switch-q2", sessionId: "s2", title: "Question for s2" }
     const pendingBySession = new Map<string, AskUserQuestion>([["s1", s1Question], ["s2", s2Question]])
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [...pendingBySession.values()] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
         return Response.json({ ok: true, output: { pending: pendingBySession.get(body.input?.sessionId ?? "") ?? null } })
@@ -407,7 +409,7 @@ describe("askUserPlugin front shell", () => {
     const Provider = getProvider()
 
     render(<Provider apiBaseUrl="" activeSessionId="s1" openSessionIds={["s1"]}><div>child</div></Provider>)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending"))).toBe(true))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
 
     window.dispatchEvent(new CustomEvent(WORKSPACE_COMPOSER_STOP_EVENT, { detail: { sessionId: "s1", reason: WORKSPACE_COMPOSER_STOP_REASONS.sessionSwitch } }))
 
@@ -420,6 +422,7 @@ describe("askUserPlugin front shell", () => {
     const s2Question = { ...nextQuestion, questionId: "open-cancel-q2", sessionId: "open-cancel-s2", title: "Inactive open question", answerToken: "open-cancel-token-2" }
     const pendingBySession = new Map<string, AskUserQuestion>([[s1Question.sessionId, s1Question], [s2Question.sessionId, s2Question]])
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [...pendingBySession.values()] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
         const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
         return Response.json({ ok: true, output: { pending: pendingBySession.get(body.input?.sessionId ?? "") ?? null } })
@@ -436,7 +439,7 @@ describe("askUserPlugin front shell", () => {
     const Provider = getProvider()
 
     render(<Provider apiBaseUrl="" activeSessionId={s1Question.sessionId} openSessionIds={[s1Question.sessionId, s2Question.sessionId]}><div>child</div></Provider>)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending") && String(init?.body).includes(s2Question.sessionId))).toBe(true))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
 
     window.dispatchEvent(new CustomEvent(WORKSPACE_COMPOSER_STOP_EVENT, { detail: { sessionId: s2Question.sessionId, reason: WORKSPACE_COMPOSER_STOP_REASONS.userStop } }))
 
@@ -451,6 +454,7 @@ describe("askUserPlugin front shell", () => {
     const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
     window.addEventListener(UI_COMMAND_EVENT, onCommand)
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [pendingQuestion] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: pendingQuestion } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(pendingQuestion))
       return Response.json({})
@@ -460,7 +464,7 @@ describe("askUserPlugin front shell", () => {
 
     try {
       render(<Provider apiBaseUrl="" activeSessionId={pendingQuestion.sessionId} openSessionIds={[pendingQuestion.sessionId]}><div>child</div></Provider>)
-      await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending"))).toBe(true))
+      await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
       await new Promise((resolve) => setTimeout(resolve, 20))
       expect(commands).not.toContainEqual(expect.objectContaining({ kind: "openSurface" }))
     } finally {
@@ -474,6 +478,7 @@ describe("askUserPlugin front shell", () => {
     const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
     window.addEventListener(UI_COMMAND_EVENT, onCommand)
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [closedQuestion] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: closedQuestion } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(closedQuestion))
       return Response.json({})
@@ -483,7 +488,7 @@ describe("askUserPlugin front shell", () => {
 
     try {
       render(<Provider apiBaseUrl="" activeSessionId="closed-session" openSessionIds={["other-session"]}><div>child</div></Provider>)
-      await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending"))).toBe(true))
+      await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
       await new Promise((resolve) => setTimeout(resolve, 20))
       expect(commands).not.toContainEqual(expect.objectContaining({ kind: "openSurface" }))
     } finally {
@@ -529,7 +534,14 @@ describe("askUserPlugin front shell", () => {
     const Provider = getProvider()
 
     render(
-      <WorkspaceProvider agentTypeId="alpha" apiBaseUrl="" plugins={[]} workspaceId="test-workspace">
+      <WorkspaceProvider
+        agentTypeId="alpha"
+        apiBaseUrl=""
+        plugins={[]}
+        workspaceId="test-workspace"
+        attentionSessions={[{ agentTypeId: "alpha", sessionId: "default" }]}
+        attentionSessionsAuthoritative
+      >
         <Provider apiBaseUrl="" activeSessionId="default" openSessionIds={["default"]}>
           <AttentionProbe />
         </Provider>
@@ -570,6 +582,7 @@ describe("askUserPlugin front shell", () => {
       return null
     }
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [question] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(question))
       return Response.json({})
@@ -597,6 +610,7 @@ describe("askUserPlugin front shell", () => {
 
   it("generic attention cancel action cancels the matching ask-user question", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [question] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
       if (String(url).endsWith("/api/v1/workspace-bridge/call")) return Response.json({ ok: true, output: { ok: true, status: "cancelled" } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(question))
@@ -605,7 +619,7 @@ describe("askUserPlugin front shell", () => {
     vi.stubGlobal("fetch", fetchMock)
     const Provider = getProvider()
     render(<Provider apiBaseUrl="" activeSessionId="default"><div>child</div></Provider>)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending"))).toBe(true))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
 
     window.dispatchEvent(new CustomEvent(WORKSPACE_ATTENTION_ACTION_EVENT, {
       detail: {
@@ -619,8 +633,49 @@ describe("askUserPlugin front shell", () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.cancel"))).toBe(true))
   })
 
+  it.each(["attention", "composer"] as const)("keeps the durable row when %s cancellation fails", async (source) => {
+    const seen: unknown[] = []
+    function AttentionProbe() {
+      const { blockers } = useWorkspaceAttention()
+      seen.splice(0, seen.length, ...blockers)
+      return null
+    }
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [question] })
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.cancel")) {
+        return Response.json({ ok: false, error: { code: "temporary", message: "try again" } }, { status: 503 })
+      }
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    render(
+      <WorkspaceProvider agentTypeId="alpha" apiBaseUrl="" plugins={[]} workspaceId="test-workspace">
+        <Provider apiBaseUrl="" activeSessionId="default" openSessionIds={["default"]}><AttentionProbe /></Provider>
+      </WorkspaceProvider>,
+    )
+    await waitFor(() => expect(seen).toContainEqual(expect.objectContaining({ id: "ask-user:default:q1" })))
+
+    if (source === "attention") {
+      window.dispatchEvent(new CustomEvent(WORKSPACE_ATTENTION_ACTION_EVENT, {
+        detail: {
+          blockerId: "ask-user:default:q1",
+          actionId: "cancel",
+          sessionId: "default",
+          blocker: { id: "ask-user:default:q1", reason: "ask-user.question", sessionId: "default", target: "q1" },
+        },
+      }))
+    } else {
+      window.dispatchEvent(new CustomEvent(WORKSPACE_COMPOSER_STOP_EVENT, { detail: { sessionId: "default", reason: WORKSPACE_COMPOSER_STOP_REASONS.userStop } }))
+    }
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.cancel"))).toBe(true))
+    expect(seen).toContainEqual(expect.objectContaining({ id: "ask-user:default:q1", label: "Choose A or B" }))
+  })
+
   it("composer stop cancels pending question even when pane is closed", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [question] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
       if (String(url).endsWith("/api/v1/workspace-bridge/call")) return Response.json({ ok: true, output: { ok: true, status: "cancelled" } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json({})
@@ -629,7 +684,7 @@ describe("askUserPlugin front shell", () => {
     vi.stubGlobal("fetch", fetchMock)
     const Provider = getProvider()
     render(<Provider apiBaseUrl="" activeSessionId="default"><div>child</div></Provider>)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending"))).toBe(true))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/questions?status=ready"))).toBe(true))
     window.dispatchEvent(new CustomEvent(WORKSPACE_COMPOSER_STOP_EVENT, { detail: { sessionId: "default", reason: WORKSPACE_COMPOSER_STOP_REASONS.userStop } }))
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.cancel"))).toBe(true))
   })
@@ -644,6 +699,7 @@ describe("askUserPlugin front shell", () => {
 
   it("renders only the pending question that matches an inline tool call", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [question] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(question))
       return Response.json({})
@@ -675,6 +731,7 @@ describe("askUserPlugin front shell", () => {
     ]
     const pendingQuestion = { ...question, artifacts }
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: [pendingQuestion] })
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: pendingQuestion } })
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(pendingQuestion))
       return Response.json({})
