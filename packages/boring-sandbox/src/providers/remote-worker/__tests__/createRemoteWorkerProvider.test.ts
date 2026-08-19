@@ -2,6 +2,8 @@ import { describe, expect, test, vi } from "vitest";
 
 import {
   REMOTE_WORKER_ERROR_CODES_V1,
+  REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+  REMOTE_WORKER_HEADERS_V1,
   REMOTE_WORKER_PROTOCOL_VERSION,
   type RemoteWorkerBindingReceiptPayloadV1,
   type RemoteWorkerCapabilityClaimsV1,
@@ -71,6 +73,7 @@ class FakeTransport implements RemoteWorkerTransportV1 {
   rawRequestError?: Error;
   rawExecError?: Error;
   createFailures = 0;
+  advertiseExclusiveBinaryCreate = false;
 
   async request(input: RemoteWorkerTransportRequestV1): Promise<unknown> {
     this.requests.push(input);
@@ -88,6 +91,13 @@ class FakeTransport implements RemoteWorkerTransportV1 {
         isolation: "docker-runsc-systrap",
         qualifiedAtMs: this.qualifiedAtMs,
         capabilities: ["fs", "events", "exec", "renew", "delete"],
+        ...(this.advertiseExclusiveBinaryCreate
+          ? {
+              negotiatedCapabilities: [
+                REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1,
+              ],
+            }
+          : {}),
       };
     }
     if (input.path === "/internal/v1/sandboxes") {
@@ -242,6 +252,44 @@ describe("remote-worker SandboxProviderV1 placement binding", () => {
     expect(
       transport.requests.filter((request) => request.method === "DELETE"),
     ).toHaveLength(1);
+  });
+
+  test("new client omits exclusive create against an old worker", async () => {
+    const transport = new FakeTransport();
+    const provider = createRemoteWorkerSandboxProviderV1(providerOptions(transport));
+    const pair = await provider.create({
+      workspaceRoot: "/unused",
+      workspaceId: "workspace-old-worker",
+      sessionId: "session-a",
+    });
+
+    expect(pair.workspace.createBinaryFile).toBeUndefined();
+    expect(transport.requests[0]?.headers[
+      REMOTE_WORKER_HEADERS_V1.requestedCapabilities
+    ]).toBe(REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY_V1);
+    await pair.dispose();
+  });
+
+  test("new worker negotiation exposes exclusive create without changing legacy operations", async () => {
+    const transport = new FakeTransport();
+    transport.advertiseExclusiveBinaryCreate = true;
+    const provider = createRemoteWorkerSandboxProviderV1(providerOptions(transport));
+    const pair = await provider.create({
+      workspaceRoot: "/unused",
+      workspaceId: "workspace-new-worker",
+      sessionId: "session-a",
+    });
+
+    await expect(
+      pair.workspace.createBinaryFile?.(
+        "new.bin",
+        new Uint8Array(10 * 1024 * 1024),
+      ),
+    ).resolves.toBeUndefined();
+    expect(transport.requests.some((request) =>
+      (request.body as { op?: unknown } | undefined)?.op === "createBinaryFile"
+    )).toBe(true);
+    await pair.dispose();
   });
 
   test("recovers an ambiguous create with the same client lease request", async () => {

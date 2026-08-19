@@ -80,30 +80,6 @@ describe('useFileUpload', () => {
     })
   })
 
-  it('passes exact-name collision options through for file-tree uploads', async () => {
-    mockUploadFile.mockResolvedValue({ url: 'src/file.txt', path: 'src/file.txt', skipped: false })
-
-    const { result } = renderHook(() => useFileUpload())
-    const file = new File(['content'], 'file.txt', { type: 'text/plain' })
-
-    const controller = new AbortController()
-    await act(async () => {
-      await result.current.upload(file, {
-        directory: 'src',
-        preserveName: true,
-        collision: 'replace',
-        signal: controller.signal,
-      })
-    })
-
-    expect(mockUploadFile).toHaveBeenCalledWith(file, expect.objectContaining({
-      directory: 'src',
-      preserveName: true,
-      collision: 'replace',
-      signal: controller.signal,
-    }))
-  })
-
   it('uploading is true during upload and false after it resolves', async () => {
     let resolveUpload!: (value: { url: string; path: string }) => void
     mockUploadFile.mockReturnValue(

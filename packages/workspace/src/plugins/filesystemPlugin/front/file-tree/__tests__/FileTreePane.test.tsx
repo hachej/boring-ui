@@ -12,10 +12,10 @@ const mockCreateDir = vi.fn()
 const mockMoveFile = vi.fn()
 const mockDeleteFile = vi.fn()
 const mockFileSearch = vi.fn()
-const mockUploadFile = vi.fn()
 
 const mockGetTree = vi.fn()
 const mockGetStat = vi.fn()
+const mockWriteBinaryFile = vi.fn()
 const mockGetGitUrlMetadata = vi.fn()
 
 vi.mock("../../data", () => ({
@@ -25,8 +25,7 @@ vi.mock("../../data", () => ({
   useMoveFile: () => ({ mutateAsync: mockMoveFile }),
   useDeleteFile: () => ({ mutateAsync: mockDeleteFile }),
   useFileSearch: (query: string, limit?: number) => mockFileSearch(query, limit),
-  useFileUpload: () => ({ upload: mockUploadFile, uploading: false }),
-  useDataClient: () => ({ getTree: mockGetTree, stat: mockGetStat }),
+  useDataClient: () => ({ getTree: mockGetTree, stat: mockGetStat, writeBinaryFile: mockWriteBinaryFile }),
   useGitUrlMetadata: (path: string | null) => mockGetGitUrlMetadata(path),
   useApiBaseUrl: () => "/api",
 }))
@@ -40,8 +39,8 @@ vi.mock("../FileTree", () => {
     f: Node,
     editing: EditingArg | undefined,
     pending: PendingArg,
-    onSelect: ((p: string) => void) | undefined,
-    onSelectDirectory: ((p: string) => void) | undefined,
+    onSelectionChange: ((node: Node | null) => void) | undefined,
+    onActivateFile: ((path: string) => void) | undefined,
     onContextMenu: ((e: React.MouseEvent, n: Node) => void) | undefined,
     onSubmitEdit: ((p: string, v: string) => void) | undefined,
     onCancelEdit: (() => void) | undefined,
@@ -57,14 +56,15 @@ vi.mock("../FileTree", () => {
           data-pending={isPending ? "1" : undefined}
           tabIndex={f.kind === "dir" ? 0 : undefined}
           onKeyDown={(event) => {
-            if (!isEditingHere && f.kind === "dir" && event.key === "Enter") {
-              onSelectDirectory?.(f.path)
+            if (!isEditingHere && event.key === "Enter") {
+              onSelectionChange?.(f)
+              if (f.kind === "file") onActivateFile?.(f.path)
             }
           }}
           onClick={() => {
             if (isEditingHere) return
-            if (f.kind === "dir") onSelectDirectory?.(f.path)
-            else onSelect?.(f.path)
+            onSelectionChange?.(f)
+            if (f.kind === "file") onActivateFile?.(f.path)
           }}
           onContextMenu={(e) => {
             e.preventDefault()
@@ -90,7 +90,7 @@ vi.mock("../FileTree", () => {
           {isPending && <span data-testid="file-tree-pending-spinner" />}
         </div>
         {f.children?.map((c) =>
-          renderNode(c, editing, pending, onSelect, onSelectDirectory, onContextMenu, onSubmitEdit, onCancelEdit),
+          renderNode(c, editing, pending, onSelectionChange, onActivateFile, onContextMenu, onSubmitEdit, onCancelEdit),
         )}
       </div>
     )
@@ -104,8 +104,8 @@ vi.mock("../FileTree", () => {
       pendingPaths,
       selectedPath,
       revealPath,
-      onSelect,
-      onSelectDirectory,
+      onSelectionChange,
+      onActivateFile,
       onContextMenu,
       onSubmitEdit,
       onCancelEdit,
@@ -118,8 +118,8 @@ vi.mock("../FileTree", () => {
       pendingPaths?: PendingArg
       selectedPath?: string | null
       revealPath?: string | null
-      onSelect?: (p: string) => void
-      onSelectDirectory?: (p: string) => void
+      onSelectionChange?: (node: Node | null) => void
+      onActivateFile?: (path: string) => void
       onContextMenu?: (e: React.MouseEvent, n: Node) => void
       onSubmitEdit?: (p: string, v: string) => void
       onCancelEdit?: () => void
@@ -138,8 +138,8 @@ vi.mock("../FileTree", () => {
             f,
             editing,
             pendingPaths,
-            onSelect,
-            onSelectDirectory,
+            onSelectionChange,
+            onActivateFile,
             onContextMenu,
             onSubmitEdit,
             onCancelEdit,
@@ -236,7 +236,7 @@ beforeEach(() => {
   mockFileListRefetch.mockResolvedValue(undefined)
   mockFileSearch.mockReturnValue({ data: undefined })
   mockGetStat.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }))
-  mockUploadFile.mockResolvedValue({ url: "uploaded", path: "uploaded", skipped: false })
+  mockWriteBinaryFile.mockImplementation(async (path: string) => ({ status: "written", path }))
   mockFileList.mockReturnValue({
     data: sampleFiles,
     isLoading: false,
@@ -391,7 +391,7 @@ describe("FileTreePane", () => {
   it("selects the explicit filesystem for reveal requests without sending the request to another root", async () => {
     const { rerender } = render(
       <FileTreePane
-        params={{ revealFileTreeRequest: { path: "src", seq: 1, filesystem: "company_context" } }}
+        params={{ revealFileTreeRequest: { path: "src", seq: 1, filesystem: "company_context", kind: "dir" } }}
         roots={[
           { filesystem: "user", label: "Workspace", rootDir: "." },
           { filesystem: "company_context", label: "Company", rootDir: "/" },
@@ -408,7 +408,7 @@ describe("FileTreePane", () => {
     await selectRoot("Workspace")
     rerender(
       <FileTreePane
-        params={{ revealFileTreeRequest: { path: "src", seq: 1, filesystem: "company_context" } }}
+        params={{ revealFileTreeRequest: { path: "src", seq: 1, filesystem: "company_context", kind: "dir" } }}
         roots={[
           { filesystem: "user", label: "Workspace", rootDir: "." },
           { filesystem: "company_context", label: "Company", rootDir: "/" },
@@ -469,7 +469,7 @@ describe("FileTreePane", () => {
       <FileTreePane
         params={{
           bridge,
-          revealFileTreeRequest: { path: "src", seq: 1, filesystem: "user" },
+          revealFileTreeRequest: { path: "src", seq: 1, filesystem: "user", kind: "dir" },
         }}
         roots={[
           { filesystem: "user", label: "Workspace", rootDir: "." },
@@ -503,7 +503,7 @@ describe("FileTreePane", () => {
     render(<FileTreeView bridge={bridge as any} filesystem="user" />, { wrapper })
 
     act(() => {
-      for (const handler of expandHandlers) handler({ filesystem: "user", path: "src" })
+      for (const handler of expandHandlers) handler({ filesystem: "user", path: "src", kind: "dir" } as any)
     })
     await waitFor(() => {
       expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "src")
@@ -538,7 +538,7 @@ describe("FileTreePane", () => {
     mockGetTree.mockClear()
     act(() => {
       for (const handler of handlers.get("tree:expand") ?? []) {
-        handler({ filesystem: "user", path: "src" })
+        handler({ filesystem: "user", path: "src", kind: "dir" } as any)
       }
     })
     await waitFor(() => {
@@ -560,7 +560,7 @@ describe("FileTreePane", () => {
 
     act(() => {
       for (const handler of handlers.get("tree:expand") ?? []) {
-        handler({ filesystem: "user", path: "src" })
+        handler({ filesystem: "user", path: "src", kind: "dir" } as any)
       }
     })
     await waitFor(() => {
@@ -591,7 +591,7 @@ describe("FileTreePane", () => {
 
     act(() => {
       for (const handler of handlers.get("tree:expand") ?? []) {
-        handler({ filesystem: "project_alpha", path: "docs" })
+        handler({ filesystem: "project_alpha", path: "docs", kind: "dir" } as any)
       }
     })
     rerender(<FileTreePane bridge={bridge as any} roots={[
@@ -881,8 +881,8 @@ describe("FileTreePane", () => {
     expect(mockGetTree).not.toHaveBeenCalledWith("src/nested/deep.ts")
   })
 
-  it("tree expand bridge events reveal folders without opening an editor", async () => {
-    const expandHandlers: Array<(payload: { path: string }) => void> = []
+  it("tree expand bridge events reveal authoritatively typed folders without opening an editor", async () => {
+    const expandHandlers: Array<(payload: { path: string; kind?: "file" | "dir" }) => void> = []
     const bridge = {
       getActiveFile: () => null,
       openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
@@ -897,7 +897,7 @@ describe("FileTreePane", () => {
     await waitFor(() => expect(bridge.subscribe).toHaveBeenCalled())
 
     act(() => {
-      for (const handler of expandHandlers) handler({ path: "/src//" })
+      for (const handler of expandHandlers) handler({ path: "/src//", kind: "dir" })
     })
 
     await waitFor(() => {
@@ -905,6 +905,166 @@ describe("FileTreePane", () => {
       expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "src")
     })
     expect(bridge.openFile).not.toHaveBeenCalled()
+  })
+
+  it("uses authoritative tree-expand kind for the toolbar upload destination", async () => {
+    const expandHandlers: Array<(payload: { path: string; kind?: "file" | "dir" }) => void> = []
+    const bridge = {
+      getActiveFile: () => null,
+      subscribe: vi.fn((event: string, handler: (payload: { path: string; kind?: "file" | "dir" }) => void) => {
+        if (event === "tree:expand") expandHandlers.push(handler)
+        return vi.fn()
+      }),
+    }
+    render(<FileTreePane bridge={bridge as any} />, { wrapper })
+    await waitFor(() => expect(expandHandlers).toHaveLength(1))
+    act(() => expandHandlers[0]?.({ path: "src", kind: "dir" }))
+    await waitFor(() => expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "src"))
+    expect(mockGetStat).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
+    fireEvent.change(screen.getByLabelText("Choose files to upload"), {
+      target: { files: [new File(["x"], "bridge.txt")] },
+    })
+    await waitFor(() => expect(mockWriteBinaryFile).toHaveBeenCalledWith(
+      "src/bridge.txt",
+      expect.any(File),
+      expect.objectContaining({ ifExists: "error" }),
+    ))
+  })
+
+  it("stats untyped file reveals without rewriting trailing whitespace bytes", async () => {
+    mockGetStat.mockResolvedValue({ kind: "file", size: 1, mtimeMs: 1 })
+    render(
+      <FileTreePane params={{ revealFileTreeRequest: { path: "src/report ", seq: 1 } }} />,
+      { wrapper },
+    )
+
+    await waitFor(() => expect(mockGetStat).toHaveBeenCalledWith("src/report "))
+    expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "src/report ")
+    fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
+    fireEvent.change(screen.getByLabelText("Choose files to upload"), {
+      target: { files: [new File(["x"], "sibling.txt")] },
+    })
+    await waitFor(() => expect(mockWriteBinaryFile).toHaveBeenCalledWith(
+      "src/sibling.txt",
+      expect.any(File),
+      expect.objectContaining({ ifExists: "error" }),
+    ))
+  })
+
+  it("stats untyped reveals against their named filesystem", async () => {
+    mockGetStat.mockResolvedValue({ kind: "dir", size: 0, mtimeMs: 1 })
+    render(
+      <FileTreePane
+        params={{ revealFileTreeRequest: { path: "docs", seq: 1, filesystem: "company_context" } }}
+        roots={[
+          { filesystem: "user", label: "Workspace", rootDir: "." },
+          { filesystem: "company_context", label: "Company", rootDir: "/" },
+        ]}
+      />,
+      { wrapper },
+    )
+
+    await waitFor(() => expect(mockGetStat).toHaveBeenCalledWith(
+      "docs",
+      undefined,
+      "company_context",
+    ))
+    expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "docs")
+  })
+
+  it("does not treat a whitespace-only filename as a root reveal", async () => {
+    mockGetStat.mockResolvedValue({ kind: "file", size: 1, mtimeMs: 1 })
+    render(
+      <FileTreePane params={{ revealFileTreeRequest: { path: "   ", seq: 1 } }} />,
+      { wrapper },
+    )
+
+    await waitFor(() => expect(mockGetStat).toHaveBeenCalledWith("   "))
+    expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "   ")
+    expect(mockFileListRefetch).not.toHaveBeenCalled()
+  })
+
+  it("preserves whitespace in authoritatively typed directory reveals", async () => {
+    render(
+      <FileTreePane params={{ revealFileTreeRequest: { path: "reports ", seq: 1, kind: "dir" } }} />,
+      { wrapper },
+    )
+
+    await waitFor(() => expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "reports "))
+    expect(mockGetStat).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
+    fireEvent.change(screen.getByLabelText("Choose files to upload"), {
+      target: { files: [new File(["x"], "inside.txt")] },
+    })
+    await waitFor(() => expect(mockWriteBinaryFile).toHaveBeenCalledWith(
+      "reports /inside.txt",
+      expect.any(File),
+      expect.objectContaining({ ifExists: "error" }),
+    ))
+  })
+
+  it("keeps the prior selection when an untyped reveal cannot be classified", async () => {
+    const { rerender } = render(<FileTreePane />, { wrapper })
+    fireEvent.click(await screen.findByText("src"))
+    expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "src")
+
+    rerender(
+      <FileTreePane
+        params={{ revealFileTreeRequest: { path: "unknown", seq: 1 } }}
+      />,
+    )
+    await waitFor(() => expect(mockGetStat).toHaveBeenCalledWith("unknown"))
+    expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "src")
+
+    fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
+    fireEvent.change(screen.getByLabelText("Choose files to upload"), {
+      target: { files: [new File(["x"], "still-in-src.txt")] },
+    })
+    await waitFor(() => expect(mockWriteBinaryFile).toHaveBeenCalledWith(
+      "src/still-in-src.txt",
+      expect.any(File),
+      expect.objectContaining({ ifExists: "error" }),
+    ))
+  })
+
+  it("exposes upload actions only for writable primary filesystems", async () => {
+    const chromeActionsElement = document.createElement("div")
+    const { rerender } = render(<FileTreePane params={{ chromeActionsElement }} />, { wrapper })
+    await waitFor(() => expect(within(chromeActionsElement).getByRole("button", { name: "Upload files" })).toBeTruthy())
+
+    rerender(<FileTreePane params={{ chromeActionsElement }} access="readonly" />)
+    await waitFor(() => expect(within(chromeActionsElement).queryByRole("button", { name: "Upload files" })).not.toBeInTheDocument())
+    rerender(<FileTreePane params={{ chromeActionsElement }} filesystem="company_context" />)
+    await waitFor(() => expect(screen.queryByLabelText("Choose files to upload")).not.toBeInTheDocument())
+  })
+
+  it("targets a selected directory and a selected file's parent from the toolbar", async () => {
+    render(<FileTreePane />, { wrapper })
+    fireEvent.click(await screen.findByText("src"))
+    fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
+    fireEvent.change(screen.getByLabelText("Choose files to upload"), { target: { files: [new File(["x"], "folder.txt")] } })
+    await waitFor(() => expect(mockWriteBinaryFile).toHaveBeenCalledWith("src/folder.txt", expect.any(File), expect.objectContaining({ ifExists: "error" })))
+
+    fireEvent.click(screen.getByText("index.ts"))
+    fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
+    fireEvent.change(screen.getByLabelText("Choose files to upload"), { target: { files: [new File(["x"], "root.txt")] } })
+    await waitFor(() => expect(mockWriteBinaryFile).toHaveBeenCalledWith("root.txt", expect.any(File), expect.objectContaining({ ifExists: "error" })))
+  })
+
+  it("offers context upload for directories and the background, but not files", async () => {
+    render(<FileTreePane />, { wrapper })
+    fireEvent.contextMenu(await screen.findByText("src"))
+    expect(screen.getByRole("menuitem", { name: "Upload files" })).toBeInTheDocument()
+    fireEvent.pointerDown(document.body)
+
+    fireEvent.contextMenu(screen.getByText("index.ts"))
+    expect(screen.queryByRole("menuitem", { name: "Upload files" })).not.toBeInTheDocument()
+    fireEvent.pointerDown(document.body)
+
+    const tree = screen.getByTestId("file-tree")
+    fireEvent.contextMenu(tree.parentElement!)
+    expect(screen.getByRole("menuitem", { name: "Upload files" })).toBeInTheDocument()
   })
 
   it("refreshes an expanded folder when an agent/remote change lands inside it", async () => {
@@ -927,7 +1087,7 @@ describe("FileTreePane", () => {
     // Wait for the child to actually render — that guarantees expandedChildren
     // committed (getTree is called synchronously, before its promise resolves).
     act(() => {
-      for (const handler of expandHandlers) handler({ path: "src" })
+      for (const handler of expandHandlers) handler({ path: "src", kind: "dir" } as any)
     })
     await screen.findByText("old.ts")
     mockGetTree.mockClear()
@@ -981,7 +1141,7 @@ describe("FileTreePane", () => {
       <FileTreePane
         params={{
           bridge,
-          revealFileTreeRequest: { path: "/src//", seq: 1 },
+          revealFileTreeRequest: { path: "/src//", seq: 1, kind: "dir" },
         }}
       />,
       { wrapper },
@@ -1010,7 +1170,7 @@ describe("FileTreePane", () => {
       <FileTreePane
         params={{
           bridge,
-          revealFileTreeRequest: { path: "src", seq: 1 },
+          revealFileTreeRequest: { path: "src", seq: 1, kind: "dir" },
         }}
       />,
       { wrapper },
@@ -2199,363 +2359,6 @@ describe("FileTreePane", () => {
         resolveRefetch()
       })
       await waitFor(() => expect(button).not.toBeDisabled())
-    })
-  })
-
-  describe("Batch file upload", () => {
-    it("shows the toolbar action only for writable user roots", async () => {
-      const chromeActionsElement = document.createElement("div")
-      const { rerender } = render(
-        <FileTreePane params={{ chromeActionsElement }} />,
-        { wrapper },
-      )
-      await waitFor(() => expect(within(chromeActionsElement).getByRole("button", { name: "Upload files" })).toBeTruthy())
-
-      rerender(<FileTreePane params={{ chromeActionsElement }} access="readonly" />)
-      await waitFor(() => expect(within(chromeActionsElement).queryByRole("button", { name: "Upload files" })).not.toBeInTheDocument())
-
-      rerender(<FileTreePane params={{ chromeActionsElement }} filesystem="company_context" />)
-      await waitFor(() => expect(within(chromeActionsElement).queryByRole("button", { name: "Upload files" })).not.toBeInTheDocument())
-      expect(screen.queryByLabelText("Choose files to upload")).not.toBeInTheDocument()
-
-      rerender(
-        <FileTreePane
-          params={{ chromeActionsElement }}
-          roots={[{
-            filesystem: "user",
-            label: "Workspace",
-            rootDir: ".",
-            access: "readwrite",
-            capabilities: { read: true, list: true, search: true, write: false, delete: false, move: false, mkdir: false },
-          }]}
-        />,
-      )
-      await waitFor(() => expect(within(chromeActionsElement).queryByRole("button", { name: "Upload files" })).not.toBeInTheDocument())
-    })
-
-    it("uploads multiple selected files to the selected file's parent and refreshes it", async () => {
-      render(<FileTreePane />, { wrapper })
-      await waitFor(() => expect(screen.getByText("index.ts")).toBeInTheDocument())
-      fireEvent.click(screen.getByText("index.ts"))
-      fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
-
-      const files = [
-        new File(["a"], "a.txt", { type: "text/plain" }),
-        new File(["b"], "b.txt", { type: "text/plain" }),
-      ]
-      fireEvent.change(screen.getByLabelText("Choose files to upload"), { target: { files } })
-
-      await waitFor(() => expect(mockUploadFile).toHaveBeenCalledTimes(2))
-      for (const file of files) {
-        expect(mockUploadFile).toHaveBeenCalledWith(file, expect.objectContaining({
-          directory: ".",
-          preserveName: true,
-          collision: "error",
-          signal: expect.any(AbortSignal),
-        }))
-      }
-      await waitFor(() => expect(mockFileListRefetch).toHaveBeenCalled())
-      expect(screen.getByText("2 uploaded")).toBeInTheDocument()
-    })
-
-    it("targets a selected folder from the toolbar", async () => {
-      render(<FileTreePane />, { wrapper })
-      await waitFor(() => expect(screen.getByText("src")).toBeInTheDocument())
-      fireEvent.click(screen.getByText("src"))
-      fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
-      fireEvent.change(screen.getByLabelText("Choose files to upload"), {
-        target: { files: [new File(["x"], "selected.txt")] },
-      })
-      await waitFor(() => expect(mockUploadFile).toHaveBeenCalledWith(expect.any(File), expect.objectContaining({ directory: "src" })))
-    })
-
-    it("targets a keyboard-activated folder from the toolbar", async () => {
-      render(<FileTreePane />, { wrapper })
-      const folder = await screen.findByText("src")
-      fireEvent.keyDown(folder, { key: "Enter" })
-      fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
-      fireEvent.change(screen.getByLabelText("Choose files to upload"), {
-        target: { files: [new File(["x"], "keyboard.txt")] },
-      })
-      await waitFor(() => expect(mockUploadFile).toHaveBeenCalledWith(
-        expect.any(File),
-        expect.objectContaining({ directory: "src" }),
-      ))
-    })
-
-    it("offers Upload files for a directory and background, but not a file", async () => {
-      render(<FileTreePane />, { wrapper })
-      await waitFor(() => expect(screen.getByText("src")).toBeInTheDocument())
-
-      fireEvent.contextMenu(screen.getByText("src"))
-      expect(screen.getByRole("menuitem", { name: "Upload files" })).toBeInTheDocument()
-      fireEvent.click(screen.getByRole("menuitem", { name: "Upload files" }))
-      fireEvent.change(screen.getByLabelText("Choose files to upload"), {
-        target: { files: [new File(["x"], "folder.txt", { type: "text/plain" })] },
-      })
-      await waitFor(() => expect(mockUploadFile).toHaveBeenCalledWith(expect.any(File), expect.objectContaining({ directory: "src" })))
-
-      fireEvent.contextMenu(screen.getByText("index.ts"))
-      expect(screen.queryByRole("menuitem", { name: "Upload files" })).not.toBeInTheDocument()
-      fireEvent.pointerDown(document.body)
-
-      const tree = screen.getByTestId("file-tree")
-      fireEvent.contextMenu(tree.parentElement!)
-      expect(screen.getByRole("menuitem", { name: "Upload files" })).toBeInTheDocument()
-    })
-
-    it("asks once for batch conflicts and Skip existing uploads only non-conflicting rows", async () => {
-      mockGetStat.mockImplementation(async (path: string) => {
-        if (path.endsWith("existing.txt")) return { kind: "file", size: 1, mtimeMs: 1 }
-        throw Object.assign(new Error("not found"), { status: 404 })
-      })
-      render(<FileTreePane />, { wrapper })
-      await waitFor(() => expect(screen.getByRole("button", { name: "Upload files" })).toBeInTheDocument())
-      fireEvent.change(screen.getByLabelText("Choose files to upload"), {
-        target: { files: [
-          new File(["old"], "existing.txt"),
-          new File(["new"], "new.txt"),
-        ] },
-      })
-
-      expect(await screen.findByRole("alertdialog")).toHaveTextContent("1 filename conflict")
-      expect(screen.getAllByRole("alertdialog")).toHaveLength(1)
-      fireEvent.click(screen.getByRole("button", { name: "Skip existing" }))
-
-      await waitFor(() => expect(mockUploadFile).toHaveBeenCalledTimes(1))
-      expect(mockUploadFile.mock.calls[0]?.[0].name).toBe("new.txt")
-      expect(mockUploadFile.mock.calls[0]?.[1]).toMatchObject({ collision: "skip" })
-      expect(screen.getByText("1 uploaded, 1 skipped")).toBeInTheDocument()
-      await waitFor(() => expect(mockFileListRefetch).toHaveBeenCalled())
-    })
-
-    it("serializes overlapping conflict batches without orphaning either prompt", async () => {
-      mockGetStat.mockResolvedValue({ kind: "file", size: 1, mtimeMs: 1 })
-      render(<FileTreePane />, { wrapper })
-      const input = await screen.findByLabelText("Choose files to upload")
-      fireEvent.change(input, { target: { files: [new File(["a"], "first.txt")] } })
-      fireEvent.change(input, { target: { files: [new File(["b"], "second.txt")] } })
-
-      await screen.findByRole("alertdialog")
-      expect(mockGetStat).toHaveBeenCalledTimes(1)
-      expect(mockGetStat.mock.calls[0]?.[0]).toBe("first.txt")
-      fireEvent.click(screen.getByRole("button", { name: "Skip existing" }))
-
-      await waitFor(() => expect(mockGetStat).toHaveBeenCalledTimes(2))
-      expect(mockGetStat.mock.calls[1]?.[0]).toBe("second.txt")
-      await screen.findByRole("alertdialog")
-      fireEvent.click(screen.getByRole("button", { name: "Skip existing" }))
-
-      await waitFor(() => expect(screen.getByText("2 skipped")).toBeInTheDocument())
-      expect(mockUploadFile).not.toHaveBeenCalled()
-    })
-
-    it("bounds preflight stat requests to three", async () => {
-      let active = 0
-      let maximum = 0
-      const rejectors: Array<() => void> = []
-      mockGetStat.mockImplementation((_path: string, signal: AbortSignal) => new Promise((_resolve, reject) => {
-        active += 1
-        maximum = Math.max(maximum, active)
-        const rejectNotFound = () => {
-          active -= 1
-          reject(Object.assign(new Error("not found"), { status: 404 }))
-        }
-        rejectors.push(rejectNotFound)
-        signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })
-      }))
-      render(<FileTreePane />, { wrapper })
-      fireEvent.change(await screen.findByLabelText("Choose files to upload"), {
-        target: { files: Array.from({ length: 5 }, (_, index) => new File(["x"], `${index}.txt`)) },
-      })
-
-      await waitFor(() => expect(mockGetStat).toHaveBeenCalledTimes(3))
-      expect(maximum).toBe(3)
-      await act(async () => { rejectors.splice(0, 3).forEach((reject) => reject()) })
-      await waitFor(() => expect(mockGetStat).toHaveBeenCalledTimes(5))
-      expect(maximum).toBe(3)
-      await act(async () => { rejectors.splice(0).forEach((reject) => reject()) })
-      await waitFor(() => expect(mockUploadFile).toHaveBeenCalledTimes(5))
-    })
-
-    it("Cancel marks the conflicted batch skipped without uploading", async () => {
-      mockGetStat.mockResolvedValue({ kind: "file", size: 1, mtimeMs: 1 })
-      render(<FileTreePane />, { wrapper })
-      await waitFor(() => expect(screen.getByRole("button", { name: "Upload files" })).toBeInTheDocument())
-      fireEvent.change(screen.getByLabelText("Choose files to upload"), {
-        target: { files: [new File(["a"], "a.txt")] },
-      })
-      await screen.findByRole("alertdialog")
-      fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
-      await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument())
-      expect(mockUploadFile).not.toHaveBeenCalled()
-      expect(screen.getByText("1 skipped")).toBeInTheDocument()
-      await waitFor(() => expect(mockFileListRefetch).toHaveBeenCalled())
-    })
-
-    it("refreshes after a server-side skip discovered after preflight", async () => {
-      mockUploadFile.mockResolvedValue({ url: "existing.txt", path: "existing.txt", skipped: true })
-      render(<FileTreePane />, { wrapper })
-      fireEvent.change(await screen.findByLabelText("Choose files to upload"), {
-        target: { files: [new File(["x"], "existing.txt")] },
-      })
-      await waitFor(() => expect(screen.getByText("1 skipped")).toBeInTheDocument())
-      expect(mockFileListRefetch).toHaveBeenCalled()
-    })
-
-    it("Replace all applies one overwrite decision to every row", async () => {
-      mockGetStat.mockResolvedValue({ kind: "file", size: 1, mtimeMs: 1 })
-      render(<FileTreePane />, { wrapper })
-      await waitFor(() => expect(screen.getByRole("button", { name: "Upload files" })).toBeInTheDocument())
-      fireEvent.change(screen.getByLabelText("Choose files to upload"), {
-        target: { files: [new File(["a"], "a.txt"), new File(["b"], "b.txt")] },
-      })
-      fireEvent.click(await screen.findByRole("button", { name: "Replace all" }))
-      await waitFor(() => expect(mockUploadFile).toHaveBeenCalledTimes(2))
-      expect(mockUploadFile.mock.calls.every(([, options]) => options.collision === "replace")).toBe(true)
-    })
-
-    it("rejects files over 10 MiB client-side and supports queue expand and dismiss", async () => {
-      render(<FileTreePane />, { wrapper })
-      await waitFor(() => expect(screen.getByRole("button", { name: "Upload files" })).toBeInTheDocument())
-      const oversized = new File([new Uint8Array(10 * 1024 * 1024 + 1)], "large.bin")
-      fireEvent.change(screen.getByLabelText("Choose files to upload"), { target: { files: [oversized] } })
-
-      expect(screen.getByText("1 failed")).toBeInTheDocument()
-      expect(mockUploadFile).not.toHaveBeenCalled()
-      fireEvent.click(screen.getByRole("button", { name: "1 failed" }))
-      expect(screen.getByText("large.bin")).toBeInTheDocument()
-      expect(screen.queryByRole("button", { name: "Retry large.bin" })).not.toBeInTheDocument()
-      expect(screen.getByText("File exceeds the 10 MiB limit.")).toBeInTheDocument()
-      fireEvent.click(screen.getByRole("button", { name: "Dismiss upload queue" }))
-      expect(screen.queryByLabelText("File upload queue")).not.toBeInTheDocument()
-    })
-
-    it("never runs more than three uploads concurrently", async () => {
-      let active = 0
-      let maximum = 0
-      const resolvers: Array<() => void> = []
-      mockUploadFile.mockImplementation(() => new Promise((resolve) => {
-        active += 1
-        maximum = Math.max(maximum, active)
-        resolvers.push(() => {
-          active -= 1
-          resolve({ url: "uploaded", path: "uploaded", skipped: false })
-        })
-      }))
-      render(<FileTreePane />, { wrapper })
-      await waitFor(() => expect(screen.getByRole("button", { name: "Upload files" })).toBeInTheDocument())
-      fireEvent.change(screen.getByLabelText("Choose files to upload"), {
-        target: { files: Array.from({ length: 5 }, (_, index) => new File([String(index)], `${index}.txt`)) },
-      })
-
-      await waitFor(() => expect(mockUploadFile).toHaveBeenCalledTimes(3))
-      expect(maximum).toBe(3)
-      await act(async () => { resolvers.splice(0, 3).forEach((resolve) => resolve()) })
-      await waitFor(() => expect(mockUploadFile).toHaveBeenCalledTimes(5))
-      expect(maximum).toBe(3)
-      await act(async () => { resolvers.splice(0).forEach((resolve) => resolve()) })
-      await waitFor(() => expect(screen.getByText("5 uploaded")).toBeInTheDocument())
-    })
-
-    it("aborts preflight when switching roots", async () => {
-      let preflightSignal: AbortSignal | undefined
-      mockGetStat.mockImplementation((_path: string, signal: AbortSignal) => new Promise((_resolve, reject) => {
-        preflightSignal = signal
-        signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })
-      }))
-      render(
-        <FileTreePane
-          roots={[
-            { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
-            { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readonly" },
-          ]}
-        />,
-        { wrapper },
-      )
-      fireEvent.change(await screen.findByLabelText("Choose files to upload"), {
-        target: { files: [new File(["x"], "pending.txt")] },
-      })
-      await waitFor(() => expect(preflightSignal).toBeDefined())
-
-      await selectRoot("Project")
-
-      expect(preflightSignal?.aborted).toBe(true)
-      expect(mockUploadFile).not.toHaveBeenCalled()
-    })
-
-    it("aborts preflight when the tree unmounts", async () => {
-      let preflightSignal: AbortSignal | undefined
-      mockGetStat.mockImplementation((_path: string, signal: AbortSignal) => new Promise((_resolve, reject) => {
-        preflightSignal = signal
-        signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })
-      }))
-      const { unmount } = render(<FileTreePane />, { wrapper })
-      fireEvent.change(await screen.findByLabelText("Choose files to upload"), {
-        target: { files: [new File(["x"], "pending.txt")] },
-      })
-      await waitFor(() => expect(preflightSignal).toBeDefined())
-
-      unmount()
-
-      expect(preflightSignal?.aborted).toBe(true)
-      expect(mockUploadFile).not.toHaveBeenCalled()
-    })
-
-    it("aborts an active upload when the tree unmounts", async () => {
-      let uploadSignal: AbortSignal | undefined
-      mockUploadFile.mockImplementation((_file: File, options: { signal: AbortSignal }) => new Promise((_resolve, reject) => {
-        uploadSignal = options.signal
-        options.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })
-      }))
-      const { unmount } = render(<FileTreePane />, { wrapper })
-      fireEvent.change(await screen.findByLabelText("Choose files to upload"), {
-        target: { files: [new File(["x"], "active.txt")] },
-      })
-      await waitFor(() => expect(uploadSignal).toBeDefined())
-
-      unmount()
-
-      expect(uploadSignal?.aborted).toBe(true)
-    })
-
-    it("aborts an active upload when switching roots", async () => {
-      let uploadSignal: AbortSignal | undefined
-      mockUploadFile.mockImplementation((_file: File, options: { signal: AbortSignal }) => new Promise((_resolve, reject) => {
-        uploadSignal = options.signal
-        options.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })
-      }))
-      render(
-        <FileTreePane
-          roots={[
-            { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
-            { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readonly" },
-          ]}
-        />,
-        { wrapper },
-      )
-      fireEvent.change(await screen.findByLabelText("Choose files to upload"), {
-        target: { files: [new File(["x"], "active.txt")] },
-      })
-      await waitFor(() => expect(uploadSignal).toBeDefined())
-
-      await selectRoot("Project")
-
-      expect(uploadSignal?.aborted).toBe(true)
-    })
-
-    it("exposes retry for failed rows", async () => {
-      mockUploadFile.mockRejectedValueOnce(new Error("network down")).mockResolvedValueOnce({ url: "ok", path: "ok" })
-      render(<FileTreePane />, { wrapper })
-      await waitFor(() => expect(screen.getByRole("button", { name: "Upload files" })).toBeInTheDocument())
-      fireEvent.change(screen.getByLabelText("Choose files to upload"), {
-        target: { files: [new File(["x"], "retry.txt")] },
-      })
-      await waitFor(() => expect(screen.getByText("1 failed")).toBeInTheDocument())
-      fireEvent.click(screen.getByRole("button", { name: "1 failed" }))
-      fireEvent.click(screen.getByRole("button", { name: "Retry retry.txt" }))
-      await waitFor(() => expect(mockUploadFile).toHaveBeenCalledTimes(2))
-      await waitFor(() => expect(screen.getByText("1 uploaded")).toBeInTheDocument())
     })
   })
 

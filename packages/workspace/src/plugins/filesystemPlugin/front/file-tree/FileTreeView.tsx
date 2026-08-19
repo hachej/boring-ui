@@ -22,7 +22,6 @@ import {
   useFileSearch,
   useDataClient,
   useGitUrlMetadata,
-  useFileUpload,
 } from "../data"
 import type { FileEntry, FilesystemCatalogCapabilities } from "../data/types"
 import type { FileTreeNode, FileTreeEditState } from "./FileTree"
@@ -63,11 +62,8 @@ import {
   SelectValue,
 } from "@hachej/boring-ui-kit"
 import {
-  ChevronDownIcon,
-  ChevronUpIcon,
   RefreshCwIcon,
   UploadIcon,
-  XIcon,
 } from "lucide-react"
 import { cn } from "../../../../front/lib/utils"
 import { toast } from "../../../../front/toast"
@@ -77,6 +73,10 @@ import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/typ
 import type { PaneProps } from "../../../../shared/types/panel"
 import type { FileTreeRevealRequest, LeftTabParams } from "../../../../shared/plugins/types"
 import { copyToClipboard } from "./clipboard"
+import {
+  FileTreeUploadManager,
+  type FileTreeUploadManagerHandle,
+} from "./upload/FileTreeUploadManager"
 
 export { copyToClipboard } from "./clipboard"
 
@@ -98,27 +98,6 @@ interface ContextMenuState {
 
 const CONTEXT_MENU_MARGIN = 8
 const SETTLED_REMOTE_TREE_REFRESH_MS = 250
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-const MAX_CONCURRENT_UPLOADS = 3
-
-type UploadStatus = "queued" | "uploading" | "done" | "failed" | "skipped"
-
-interface UploadQueueRow {
-  id: string
-  file: File
-  destination: string
-  status: UploadStatus
-  message?: string
-  retryable?: boolean
-}
-
-type ConflictDecision = "replace" | "skip" | "cancel"
-
-interface ConflictPromptState {
-  rows: UploadQueueRow[]
-  conflictingIds: Set<string>
-}
-
 function clampContextMenuPosition(
   x: number,
   y: number,
@@ -144,6 +123,8 @@ export interface FileTreeViewProps {
   searchQuery?: string
   bridge?: FileTreeBridge
   revealFileTreeRequest?: FileTreeRevealRequest | null
+  /** @internal Notifies pane wrappers after a one-shot reveal has been consumed. */
+  onRevealRequestHandled?: (request: FileTreeRevealRequest) => void
   /** @internal Pane wrappers disable direct events and translate them into one-shot reveal props. */
   subscribeToTreeExpand?: boolean
   filesystem?: FilesystemId
@@ -172,7 +153,7 @@ export interface FileTreeViewHandle {
 }
 
 function normalizeRevealPath(path: string): string {
-  const normalized = path.trim().replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/^\/+/, "").replace(/\/+/g, "/")
+  const normalized = path.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/^\/+/, "").replace(/\/+/g, "/")
   const withoutTrailingSlash = normalized.replace(/\/+$/, "")
   return withoutTrailingSlash || "."
 }
@@ -213,6 +194,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   searchQuery,
   bridge,
   revealFileTreeRequest,
+  onRevealRequestHandled,
   subscribeToTreeExpand = true,
   filesystem = "user",
   access = "readwrite",
@@ -256,7 +238,6 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   const { mutateAsync: createDir } = useCreateDir()
   const { mutateAsync: moveFile } = useMoveFile()
   const { mutateAsync: deleteFile } = useDeleteFile()
-  const { upload: uploadWorkspaceFile } = useFileUpload()
 
   const [expandedChildren, setExpandedChildren] = useState<
     Map<string, FileEntry[]>
@@ -285,22 +266,12 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   const { data: gitUrlMetadata } = useGitUrlMetadata(gitUrlPath)
   const [deleteTarget, setDeleteTarget] = useState<FileTreeNode | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-  const [selectedPath, setSelectedPath] = useState<string | null>(
-    bridge?.getActiveFile?.() ?? null,
-  )
-  const [selectedKind, setSelectedKind] = useState<"file" | "dir" | null>(
-    bridge?.getActiveFile?.() ? "file" : null,
-  )
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const uploadTargetRef = useRef(rootDir)
-  const uploadSeqRef = useRef(0)
-  const uploadIntakeRef = useRef<Promise<void>>(Promise.resolve())
-  const uploadLifecycleRef = useRef(new AbortController())
+  const initialActiveFile = bridge?.getActiveFile?.() ?? null
+  const [selection, setSelection] = useState<FileTreeNode | null>(initialActiveFile
+    ? { name: initialActiveFile.split("/").pop() ?? initialActiveFile, path: initialActiveFile, kind: "file" }
+    : null)
+  const uploadManagerRef = useRef<FileTreeUploadManagerHandle>(null)
   const mountedRef = useRef(true)
-  const conflictResolverRef = useRef<((decision: ConflictDecision) => void) | null>(null)
-  const [uploadRows, setUploadRows] = useState<UploadQueueRow[]>([])
-  const [queueExpanded, setQueueExpanded] = useState(false)
-  const [conflictPrompt, setConflictPrompt] = useState<ConflictPromptState | null>(null)
 
   // Inline edit state. `path` identifies which row renders an <input>; for
   // drafts (new file/folder), `parentDir` says where to place the result, and
@@ -372,18 +343,15 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   // appear in the regular browse view.
   const treeData = injectDraftIntoTree(baseTreeData, editing, rootDir)
 
-  const handleSelect = useCallback(
+  const handleActivateFile = useCallback(
     (path: string) => {
-      setSelectedPath(path)
-      setSelectedKind("file")
       bridge?.openFile(path, { mode: "edit", ...(requestFilesystem ? { filesystem: requestFilesystem } : {}) })
     },
     [bridge, requestFilesystem],
   )
 
-  const handleSelectDirectory = useCallback((path: string) => {
-    setSelectedPath(path)
-    setSelectedKind("dir")
+  const handleSelectionChange = useCallback((node: FileTreeNode | null) => {
+    setSelection(node)
   }, [])
 
   const handleExpand = useCallback(
@@ -457,220 +425,29 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
 
   useEffect(() => {
     mountedRef.current = true
-    const controller = new AbortController()
-    uploadLifecycleRef.current = controller
-    return () => {
-      mountedRef.current = false
-      controller.abort()
-      conflictResolverRef.current?.("cancel")
-      conflictResolverRef.current = null
-    }
+    return () => { mountedRef.current = false }
   }, [])
 
-  const updateUploadRow = useCallback((id: string, update: Partial<UploadQueueRow>) => {
-    if (!mountedRef.current) return
-    setUploadRows((current) => current.map((row) => row.id === id ? { ...row, ...update } : row))
-  }, [])
-
-  const refreshUploadDestination = useCallback(async (destination: string, signal?: AbortSignal) => {
-    if (signal?.aborted || !mountedRef.current) return
-    if (destination === "." || destination === rootDir || dirKey(destination) === rootDirKey) {
-      await refetchFileList()
-    } else {
-      await refreshDirs([destination], { force: true })
-    }
+  const refreshUploadDestinations = useCallback(async (destinations: string[]) => {
+    await Promise.all(destinations.map(async (destination) => {
+      if (destination === "." || destination === rootDir || dirKey(destination) === rootDirKey) {
+        await refetchFileList()
+      } else {
+        await refreshDirs([destination], { force: true })
+      }
+    }))
   }, [refetchFileList, refreshDirs, rootDir, rootDirKey])
 
-  const refreshUploadDestinations = useCallback(async (rows: UploadQueueRow[], signal?: AbortSignal) => {
-    const destinations = Array.from(new Set(rows.map((row) => row.destination)))
-    await Promise.all(destinations.map((destination) => refreshUploadDestination(destination, signal)))
-  }, [refreshUploadDestination])
-
-  const runUploadRows = useCallback(async (
-    rows: UploadQueueRow[],
-    collision: "replace" | "skip" | "error",
-    signal: AbortSignal,
-  ) => {
-    let nextIndex = 0
-    const refreshedRows: UploadQueueRow[] = []
-    const worker = async () => {
-      while (!signal.aborted && nextIndex < rows.length) {
-        const row = rows[nextIndex++]
-        if (!row) continue
-        if (row.file.size > MAX_UPLOAD_BYTES) {
-          updateUploadRow(row.id, {
-            status: "failed",
-            message: "File exceeds the 10 MiB limit.",
-            retryable: false,
-          })
-          continue
-        }
-        updateUploadRow(row.id, { status: "uploading", message: undefined, retryable: undefined })
-        try {
-          const result = await uploadWorkspaceFile(row.file, {
-            directory: row.destination,
-            preserveName: true,
-            collision,
-            signal,
-          })
-          if (signal.aborted) return
-          refreshedRows.push(row)
-          if (result.skipped) {
-            updateUploadRow(row.id, {
-              status: "skipped",
-              message: "A file with this name already exists.",
-            })
-          } else {
-            updateUploadRow(row.id, { status: "done", message: undefined })
-          }
-        } catch (uploadError) {
-          if (signal.aborted) return
-          updateUploadRow(row.id, {
-            status: "failed",
-            message: uploadError instanceof Error ? uploadError.message : "Upload failed.",
-            retryable: true,
-          })
-        }
-      }
-    }
-    await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT_UPLOADS, rows.length) }, worker))
-    if (!signal.aborted) await refreshUploadDestinations(refreshedRows, signal)
-  }, [refreshUploadDestinations, updateUploadRow, uploadWorkspaceFile])
-
-  const findUploadConflicts = useCallback(async (rows: UploadQueueRow[], signal: AbortSignal) => {
-    const conflictingIds = new Set<string>()
-    let nextIndex = 0
-    const worker = async () => {
-      while (!signal.aborted && nextIndex < rows.length) {
-        const row = rows[nextIndex++]
-        if (!row) continue
-        try {
-          await dataClient.stat(joinPath(row.destination, row.file.name), signal)
-          if (!signal.aborted) conflictingIds.add(row.id)
-        } catch (statError) {
-          if (signal.aborted) return
-          if ((statError as { status?: number }).status !== 404) throw statError
-        }
-      }
-    }
-    await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT_UPLOADS, rows.length) }, worker))
-    return conflictingIds
-  }, [dataClient])
-
-  const requestConflictDecision = useCallback((
-    rows: UploadQueueRow[],
-    conflictingIds: Set<string>,
-    signal: AbortSignal,
-  ): Promise<ConflictDecision> => new Promise((resolve) => {
-    if (signal.aborted || !mountedRef.current) {
-      resolve("cancel")
-      return
-    }
-    const finish = (decision: ConflictDecision) => {
-      signal.removeEventListener("abort", handleAbort)
-      if (conflictResolverRef.current === finish) conflictResolverRef.current = null
-      resolve(decision)
-    }
-    const handleAbort = () => finish("cancel")
-    conflictResolverRef.current = finish
-    signal.addEventListener("abort", handleAbort, { once: true })
-    setConflictPrompt({ rows, conflictingIds })
-  }), [])
-
-  const processUploadBatch = useCallback(async (rows: UploadQueueRow[], signal: AbortSignal) => {
-    try {
-      const conflictingIds = await findUploadConflicts(rows, signal)
-      if (signal.aborted) return
-      if (conflictingIds.size === 0) {
-        await runUploadRows(rows, "error", signal)
-        return
-      }
-
-      const decision = await requestConflictDecision(rows, conflictingIds, signal)
-      if (signal.aborted) return
-      setConflictPrompt(null)
-      if (decision === "cancel") {
-        for (const row of rows) {
-          updateUploadRow(row.id, { status: "skipped", message: "Batch canceled." })
-        }
-        await refreshUploadDestinations(rows, signal)
-        return
-      }
-      if (decision === "skip") {
-        const conflicts = rows.filter((row) => conflictingIds.has(row.id))
-        for (const row of conflicts) {
-          updateUploadRow(row.id, {
-            status: "skipped",
-            message: "A file with this name already exists.",
-          })
-        }
-        await runUploadRows(rows.filter((row) => !conflictingIds.has(row.id)), "skip", signal)
-        if (!signal.aborted) await refreshUploadDestinations(conflicts, signal)
-        return
-      }
-      await runUploadRows(rows, "replace", signal)
-    } catch (preflightError) {
-      if (signal.aborted) return
-      const message = preflightError instanceof Error
-        ? preflightError.message
-        : "Could not check for filename conflicts."
-      for (const row of rows) updateUploadRow(row.id, { status: "failed", message, retryable: true })
-    }
-  }, [findUploadConflicts, refreshUploadDestinations, requestConflictDecision, runUploadRows, updateUploadRow])
-
-  const enqueueUploadBatch = useCallback((rows: UploadQueueRow[]) => {
-    const signal = uploadLifecycleRef.current.signal
-    const run = () => processUploadBatch(rows, signal)
-    const queued = uploadIntakeRef.current.then(run, run)
-    uploadIntakeRef.current = queued.then(() => undefined, () => undefined)
-  }, [processUploadBatch])
-
-  const retryUploadRow = useCallback((row: UploadQueueRow) => {
-    if (row.retryable === false) return
-    updateUploadRow(row.id, { status: "queued", message: undefined })
-    const signal = uploadLifecycleRef.current.signal
-    const run = () => runUploadRows([row], "error", signal)
-    const queued = uploadIntakeRef.current.then(run, run)
-    uploadIntakeRef.current = queued.then(() => undefined, () => undefined)
-  }, [runUploadRows, updateUploadRow])
-
-  const settleConflictDecision = useCallback((decision: ConflictDecision) => {
-    const resolve = conflictResolverRef.current
-    conflictResolverRef.current = null
-    resolve?.(decision)
+  const openUploadTo = useCallback((destination: string) => {
+    uploadManagerRef.current?.open(destination)
   }, [])
 
-  const openUploadTo = useCallback((destination: string) => {
-    if (!canUpload) return
-    uploadTargetRef.current = destination
-    fileInputRef.current?.click()
-  }, [canUpload])
-
   const openUploadForSelection = useCallback(() => {
-    const destination = selectedPath
-      ? selectedKind === "dir" ? selectedPath : parentDir(selectedPath)
+    const destination = selection
+      ? selection.kind === "dir" ? selection.path : parentDir(selection.path)
       : rootDir
     openUploadTo(destination)
-  }, [openUploadTo, rootDir, selectedKind, selectedPath])
-
-  const handleUploadSelection = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? [])
-    event.target.value = ""
-    if (files.length === 0) return
-    const destination = uploadTargetRef.current
-    const rows = files.map<UploadQueueRow>((file) => ({
-      id: `upload:${++uploadSeqRef.current}`,
-      file,
-      destination,
-      status: file.size > MAX_UPLOAD_BYTES ? "failed" : "queued",
-      ...(file.size > MAX_UPLOAD_BYTES
-        ? { message: "File exceeds the 10 MiB limit.", retryable: false }
-        : {}),
-    }))
-    setUploadRows((current) => [...current, ...rows])
-    const uploadable = rows.filter((row) => row.status === "queued")
-    if (uploadable.length > 0) enqueueUploadBatch(uploadable)
-  }, [enqueueUploadBatch])
+  }, [openUploadTo, rootDir, selection])
 
   // Manual refresh (the Files-pane "Refresh" button): re-fetch this root's
   // own listing plus every subfolder currently expanded, so a stale tree
@@ -726,7 +503,13 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   }, [activeFilesystem, refreshDirs])
 
   const revealTreePath = useCallback(
-    async (path: string | null, options?: { refreshTargetDir?: boolean }) => {
+    async (
+      path: string | null,
+      options?: {
+        refreshTargetDir?: boolean
+        expectedKind?: FileTreeNode["kind"]
+      },
+    ) => {
       if (path === null || path === undefined) return
       const normalizedPath = normalizeRevealPath(path)
       const revealSeq = ++revealSeqRef.current
@@ -739,14 +522,32 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
         // select, so the honest visible answer is this root's own listing,
         // freshly fetched, with any selection carried over from the previous
         // root cleared rather than left pointing somewhere that no longer is.
-        setSelectedPath(null)
-        setSelectedKind(null)
+        setSelection(null)
         setRevealPath(null)
         await refetchFileList()
         return
       }
-      setSelectedPath(normalizedPath)
-      setSelectedKind("file")
+      let kind = options?.expectedKind
+      if (!kind) {
+        try {
+          const stat = requestFilesystem
+            ? await dataClient.stat(normalizedPath, undefined, requestFilesystem)
+            : await dataClient.stat(normalizedPath)
+          kind = stat.kind === "dir" ? "dir" : "file"
+        } catch {
+          // Untyped reveals cannot safely change upload selection on failed stat.
+          return
+        }
+      }
+      if (revealSeqRef.current !== revealSeq) return
+      setSelection((current) => {
+        if (current?.path === normalizedPath && current.kind === kind) return current
+        return {
+          path: normalizedPath,
+          name: normalizedPath.split("/").pop() ?? normalizedPath,
+          kind,
+        }
+      })
       const dirsToRefresh = options?.refreshTargetDir
         ? [...parentDirsForReveal(normalizedPath), normalizedPath]
         : parentDirsForReveal(normalizedPath)
@@ -754,7 +555,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
       if (revealSeqRef.current !== revealSeq) return
       setRevealPath(normalizedPath)
     },
-    [refetchFileList, refreshDirs],
+    [dataClient, refetchFileList, refreshDirs, requestFilesystem],
   )
 
   const handleRevealHandled = useCallback((path: string) => {
@@ -762,10 +563,10 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   }, [])
 
   const revealExplicitTreePath = useCallback(
-    async (path: string) => {
+    async (path: string, expectedKind?: FileTreeNode["kind"]) => {
       const seq = ++explicitRevealSeqRef.current
       try {
-        await revealTreePath(path, { refreshTargetDir: true })
+        await revealTreePath(path, { refreshTargetDir: true, expectedKind })
       } finally {
         if (explicitRevealSeqRef.current === seq) explicitRevealSeqRef.current = 0
       }
@@ -779,30 +580,36 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     const requestKey = `${revealFileTreeRequest.seq}:${revealFileTreeRequest.filesystem ?? ""}:${revealFileTreeRequest.path}`
     if (handledRevealRequestKeyRef.current === requestKey) return
     handledRevealRequestKeyRef.current = requestKey
-    void revealExplicitTreePath(revealFileTreeRequest.path)
-  }, [revealFileTreeRequest, revealExplicitTreePath])
+    void revealExplicitTreePath(
+      revealFileTreeRequest.path,
+      revealFileTreeRequest.kind,
+    ).then(() => onRevealRequestHandled?.(revealFileTreeRequest))
+  }, [onRevealRequestHandled, revealFileTreeRequest, revealExplicitTreePath])
 
   useEffect(() => {
     const activeFile = revealFileTreeRequest ? null : bridge?.getActiveFile?.() ?? null
-    if (activeFile && explicitRevealSeqRef.current === 0) void revealTreePath(activeFile)
+    if (activeFile && explicitRevealSeqRef.current === 0) {
+      void revealTreePath(activeFile, { expectedKind: "file" })
+    }
     const unsubscribers: Array<() => void> = []
     if (bridge?.select) {
       unsubscribers.push(
         bridge.select((state) => state.activeFile, (path) => {
           if (path) {
-            if (!revealFileTreeRequest && explicitRevealSeqRef.current === 0) void revealTreePath(path)
+            if (!revealFileTreeRequest && explicitRevealSeqRef.current === 0) {
+              void revealTreePath(path, { expectedKind: "file" })
+            }
           } else {
-            setSelectedPath(null)
-            setSelectedKind(null)
+            setSelection(null)
           }
         }),
       )
     }
     if (subscribeToTreeExpand && bridge?.subscribe) {
       unsubscribers.push(
-        bridge.subscribe("tree:expand", ({ path, filesystem: requestFilesystem }) => {
+        bridge.subscribe("tree:expand", ({ path, filesystem: requestFilesystem, kind }) => {
           if (!requestFilesystem || requestFilesystem === activeFilesystem) {
-            void revealExplicitTreePath(path)
+            void revealExplicitTreePath(path, kind)
           }
         }),
       )
@@ -1040,7 +847,8 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
               filesystem: requestFilesystem,
               kind: "file",
             })
-            handleSelect(newPath)
+            setSelection({ name: trimmed, path: newPath, kind: "file" })
+            handleActivateFile(newPath)
             toast.success({ title: "File created", description: newPath })
           } else {
             await createDir({ path: newPath, ...(requestFilesystem ? { filesystem: requestFilesystem } : {}) })
@@ -1079,7 +887,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
       clearPending,
       addOptimisticEntry,
       removeOptimisticEntry,
-      handleSelect,
+      handleActivateFile,
     ],
   )
 
@@ -1145,19 +953,6 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   const effectiveQuery =
     (!useServerSearch || filesystem !== "user") && (searchQuery?.length ?? 0) > 0 ? searchQuery : undefined
 
-  const queueCounts = uploadRows.reduce(
-    (counts, row) => ({ ...counts, [row.status]: counts[row.status] + 1 }),
-    { queued: 0, uploading: 0, done: 0, failed: 0, skipped: 0 } as Record<UploadStatus, number>,
-  )
-  const queueActive = queueCounts.queued + queueCounts.uploading > 0
-  const queueSummary = queueActive
-    ? `Uploading ${queueCounts.uploading + queueCounts.done + queueCounts.failed + queueCounts.skipped} of ${uploadRows.length}`
-    : queueCounts.failed > 0
-      ? `${queueCounts.failed} failed`
-      : queueCounts.skipped > 0 && queueCounts.done === 0
-        ? `${queueCounts.skipped} skipped`
-        : `${queueCounts.done} uploaded${queueCounts.skipped > 0 ? `, ${queueCounts.skipped} skipped` : ""}`
-
   // Mirrors the item-visibility rules rendered below: the background menu
   // only offers mutating actions (New file/folder), while a node menu always
   // has at least "Copy path". Used as a belt-and-suspenders guard so an
@@ -1167,16 +962,6 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {canUpload && (
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="sr-only"
-          aria-label="Choose files to upload"
-          onChange={handleUploadSelection}
-        />
-      )}
       {error && (
         <ErrorState
           className="m-2 rounded-md p-3"
@@ -1211,7 +996,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
           >
             <FileTree
               files={treeData}
-              selectedPath={selectedPath}
+              selectedPath={selection?.path ?? null}
               searchQuery={effectiveQuery}
               editing={
                 editing
@@ -1228,8 +1013,8 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
               revealPath={revealPath}
               onRevealHandled={handleRevealHandled}
               pendingPaths={pendingPaths}
-              onSelect={handleSelect}
-              onSelectDirectory={handleSelectDirectory}
+              onSelectionChange={handleSelectionChange}
+              onActivateFile={handleActivateFile}
               onExpand={handleExpand}
               onContextMenu={handleContextMenu}
               onSubmitEdit={handleSubmitEdit}
@@ -1308,89 +1093,12 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
         document.body,
       )}
 
-      {uploadRows.length > 0 && (
-        <section className="shrink-0 border-t bg-background" aria-label="File upload queue">
-          <div className="flex h-8 items-center gap-1 px-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 min-w-0 flex-1 justify-start gap-1.5 px-1.5 text-xs font-medium"
-              aria-expanded={queueExpanded}
-              aria-controls="file-upload-queue-rows"
-              onClick={() => setQueueExpanded((value) => !value)}
-            >
-              {queueExpanded ? <ChevronDownIcon className="size-3.5" /> : <ChevronUpIcon className="size-3.5" />}
-              <span className="truncate" aria-live="polite">{queueSummary}</span>
-            </Button>
-            {!queueActive && (
-              <IconButton
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Dismiss upload queue"
-                onClick={() => setUploadRows([])}
-              >
-                <XIcon className="size-3.5" />
-              </IconButton>
-            )}
-          </div>
-          {queueExpanded && (
-            <div id="file-upload-queue-rows" className="max-h-40 overflow-y-auto border-t px-2 py-1">
-              {uploadRows.map((row) => (
-                <div key={row.id} className="py-0.5 text-xs">
-                  <div className="flex min-h-6 items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate" title={row.file.name}>{row.file.name}</span>
-                    <span className="shrink-0 text-muted-foreground">{row.status}</span>
-                    {row.status === "failed" && row.retryable !== false && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 px-1.5 text-xs"
-                        aria-label={`Retry ${row.file.name}`}
-                        onClick={() => retryUploadRow(row)}
-                      >
-                        Retry
-                      </Button>
-                    )}
-                  </div>
-                  {row.message && (
-                    <p className="truncate text-[11px] text-muted-foreground" title={row.message}>
-                      {row.message}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      <AlertDialog
-        open={conflictPrompt !== null}
-        onOpenChange={(open) => {
-          if (!open) settleConflictDecision("cancel")
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Some files already exist</AlertDialogTitle>
-            <AlertDialogDescription>
-              {conflictPrompt?.conflictingIds.size} filename {conflictPrompt?.conflictingIds.size === 1 ? "conflict" : "conflicts"} in this folder. Choose one action for the batch.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => settleConflictDecision("cancel")}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => settleConflictDecision("skip")}>
-              Skip existing
-            </AlertDialogAction>
-            <AlertDialogAction onClick={() => settleConflictDecision("replace")}>
-              Replace all
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <FileTreeUploadManager
+        ref={uploadManagerRef}
+        client={dataClient}
+        enabled={canUpload}
+        onWritten={refreshUploadDestinations}
+      />
 
       <AlertDialog
         open={deleteTarget !== null}
@@ -1529,7 +1237,7 @@ export function FileTreePane({
     const unsubscribeOpened = effectiveBridge.subscribe("file:opened", ({ filesystem: openedFilesystem }) => {
       selectConfiguredFilesystem(openedFilesystem)
     })
-    const unsubscribeExpanded = effectiveBridge.subscribe("tree:expand", ({ path, filesystem: revealedFilesystem }) => {
+    const unsubscribeExpanded = effectiveBridge.subscribe("tree:expand", ({ path, filesystem: revealedFilesystem, kind }) => {
       selectConfiguredFilesystem(revealedFilesystem)
       // SurfaceShell sends an authoritative prop request alongside its bridge
       // event. The pane owns root synchronization, but must not retain a second
@@ -1538,6 +1246,7 @@ export function FileTreePane({
       setBridgeRevealRequest({
         path,
         ...(revealedFilesystem ? { filesystem: revealedFilesystem } : {}),
+        ...(kind ? { kind } : {}),
         seq: ++bridgeRevealSeqRef.current,
       })
     })
@@ -1554,12 +1263,9 @@ export function FileTreePane({
   const activeRevealRequest = !effectiveRevealRequest?.filesystem || effectiveRevealRequest.filesystem === activeFilesystem
     ? effectiveRevealRequest
     : null
-  useEffect(() => {
-    if (!bridgeRevealRequest || activeRevealRequest !== bridgeRevealRequest) return
-    // Consume bridge-only requests after the matching tree has rendered them.
-    // Requests for catalog roots that have not arrived yet remain pending.
-    setBridgeRevealRequest((current) => current?.seq === bridgeRevealRequest.seq ? null : current)
-  }, [activeRevealRequest, bridgeRevealRequest])
+  const handleRevealRequestHandled = useCallback((request: FileTreeRevealRequest) => {
+    setBridgeRevealRequest((current) => current?.seq === request.seq ? null : current)
+  }, [])
 
   // `FileTreeView` remounts (via the `key` below) whenever the active root
   // changes, so this ref always targets whichever root is currently
@@ -1641,6 +1347,7 @@ export function FileTreePane({
               access={activeAccess}
               capabilities={activeCapabilities}
               revealFileTreeRequest={activeRevealRequest}
+              onRevealRequestHandled={handleRevealRequestHandled}
               className={cn("px-1 [&_[role=treeitem]]:!indent-0", className)}
             />
           </div>
@@ -1683,6 +1390,7 @@ export function FileTreePane({
             access={activeAccess}
             capabilities={activeCapabilities}
             revealFileTreeRequest={activeRevealRequest}
+            onRevealRequestHandled={handleRevealRequestHandled}
             className={cn("px-1 pt-1 [&_[role=treeitem]]:!indent-0", className)}
           />
         </div>

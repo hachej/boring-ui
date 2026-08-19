@@ -53,9 +53,8 @@ export interface FileTreeProps {
   revealPath?: string | null
   /** Paths currently being mutated — render a small spinner on those rows. */
   pendingPaths?: ReadonlySet<string>
-  onSelect?: (path: string) => void
-  /** Called when a directory row becomes the current tree selection. */
-  onSelectDirectory?: (path: string) => void
+  onSelectionChange?: (node: FileTreeNode | null) => void
+  onActivateFile?: (path: string) => void
   onExpand?: (path: string) => void
   onCollapse?: (path: string) => void
   onContextMenu?: (event: React.MouseEvent, node: FileTreeNode) => void
@@ -73,7 +72,6 @@ type ContextMenuHandler = ((e: React.MouseEvent, node: FileTreeNode) => void) | 
 
 interface TreeHandlersCtxValue {
   onContextMenu: ContextMenuHandler
-  onSelectDirectory?: (path: string) => void
   editing: FileTreeEditState | null
   pendingPaths: ReadonlySet<string>
   onSubmitEdit?: (path: string, value: string) => void
@@ -84,7 +82,6 @@ const EMPTY_SET: ReadonlySet<string> = new Set()
 
 const TreeHandlersCtx = createContext<TreeHandlersCtxValue>({
   onContextMenu: undefined,
-  onSelectDirectory: undefined,
   editing: null,
   pendingPaths: EMPTY_SET,
   onSubmitEdit: undefined,
@@ -214,7 +211,7 @@ function countVisibleNodes(
 }
 
 function Node({ node, style, dragHandle }: NodeRendererProps<FileTreeNode>) {
-  const { onContextMenu, onSelectDirectory, editing, pendingPaths, onSubmitEdit, onCancelEdit } =
+  const { onContextMenu, editing, pendingPaths, onSubmitEdit, onCancelEdit } =
     useContext(TreeHandlersCtx)
   const data = node.data
   const isDir = data.kind === "dir"
@@ -245,7 +242,6 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileTreeNode>) {
         e.stopPropagation()
         if (isDir) {
           node.select()
-          onSelectDirectory?.(data.path)
           node.toggle()
         } else {
           node.select()
@@ -316,8 +312,8 @@ export function FileTree({
   editing,
   revealPath,
   pendingPaths,
-  onSelect,
-  onSelectDirectory,
+  onSelectionChange,
+  onActivateFile,
   onExpand,
   onCollapse,
   onContextMenu,
@@ -383,28 +379,14 @@ export function FileTree({
 
   const handleActivate = useCallback(
     (node: { data: FileTreeNode }) => {
-      if (node.data.kind === "dir") {
-        onSelectDirectory?.(node.data.path)
-      } else {
-        onSelect?.(node.data.path)
-      }
+      if (node.data.kind === "file") onActivateFile?.(node.data.path)
     },
-    [onSelect, onSelectDirectory],
+    [onActivateFile],
   )
 
-  const handleFocus = useCallback(
-    (node: { data: FileTreeNode }) => {
-      if (node.data.kind === "dir") onSelectDirectory?.(node.data.path)
-    },
-    [onSelectDirectory],
-  )
-
-  const handleTreeFocus = useCallback(() => {
-    queueMicrotask(() => {
-      const node = treeRef.current?.focusedNode
-      if (node?.data.kind === "dir") onSelectDirectory?.(node.data.path)
-    })
-  }, [onSelectDirectory])
+  const handleSelect = useCallback((nodes: Array<{ data: FileTreeNode }>) => {
+    onSelectionChange?.(nodes[0]?.data ?? null)
+  }, [onSelectionChange])
 
   const handleToggle = useCallback(
     (id: string) => {
@@ -468,13 +450,12 @@ export function FileTree({
   const handlers = useMemo(
     () => ({
       onContextMenu,
-      onSelectDirectory,
       editing: editing ?? null,
       pendingPaths: pendingPaths ?? EMPTY_SET,
       onSubmitEdit,
       onCancelEdit,
     }),
-    [onContextMenu, onSelectDirectory, editing, pendingPaths, onSubmitEdit, onCancelEdit],
+    [onContextMenu, editing, pendingPaths, onSubmitEdit, onCancelEdit],
   )
 
   // Derive all render decisions from safeFiles (what the Tree actually receives) so the
@@ -516,7 +497,6 @@ export function FileTree({
       <div
         data-boring-workspace-part="file-tree"
         className={cn("file-tree", className)}
-        onFocus={handleTreeFocus}
       >
         <Tree<FileTreeNode>
           ref={treeRef}
@@ -524,6 +504,7 @@ export function FileTree({
           idAccessor="path"
           childrenAccessor="children"
           openByDefault={false}
+          selectionFollowsFocus
           width="100%"
           height={height}
           rowHeight={26}
@@ -532,7 +513,7 @@ export function FileTree({
           searchTerm={searchQuery ?? ""}
           searchMatch={searchMatch}
           onActivate={handleActivate}
-          onFocus={handleFocus}
+          onSelect={handleSelect}
           onToggle={handleToggle}
           onMove={handleMove}
           disableDrop={disableDrop}

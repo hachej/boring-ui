@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { SandboxHandleRecord, SandboxHandleStore, Workspace } from '@hachej/boring-agent/shared'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 
 import { createBlaxelSandboxProvider } from '../createBlaxelSandboxProvider'
 import { normalizeBlaxelError } from '../errors'
@@ -48,6 +48,72 @@ describe('Blaxel workspace security and native watch mapping', () => {
     await pair.workspace.writeFile('source.txt', 'safe')
     await expect(pair.workspace.rename('source.txt', 'dir-link')).rejects.toMatchObject({ code: 'EPERM' })
     expect(await readFile(outsideFile, 'utf8')).toBe('unchanged')
+    await pair.dispose()
+  })
+
+  test('exclusive binary create preserves existing bytes and cleans temporary files', async () => {
+    const { pair } = await harness()
+    await pair.workspace.writeFile('existing.bin', 'old')
+    await expect(pair.workspace.createBinaryFile?.('existing.bin', new TextEncoder().encode('new')))
+      .rejects.toMatchObject({ code: 'EEXIST' })
+    expect(await pair.workspace.readFile('existing.bin')).toBe('old')
+    await pair.workspace.createBinaryFile?.('fresh.bin', new TextEncoder().encode('fresh'))
+    expect(await pair.workspace.readFile('fresh.bin')).toBe('fresh')
+    const raced = await Promise.allSettled([
+      pair.workspace.createBinaryFile!('race.bin', new TextEncoder().encode('first')),
+      pair.workspace.createBinaryFile!('race.bin', new TextEncoder().encode('second')),
+    ])
+    expect(raced.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    expect(raced.find((result) => result.status === 'rejected')).toMatchObject({ reason: { code: 'EEXIST' } })
+    expect(['first', 'second']).toContain(await pair.workspace.readFile('race.bin'))
+    expect((await pair.workspace.readdir('.')).some((entry) => entry.name.includes('.boring-upload-'))).toBe(false)
+    await pair.dispose()
+  })
+
+  test('exclusive binary create falls back to guest cleanup when SDK cleanup fails', async () => {
+    const { client, pair } = await harness()
+    const remote = client.sandboxes.get(pair.sandbox.id)!
+    vi.spyOn(remote.fs, 'rm').mockRejectedValue(new Error('injected SDK cleanup failure'))
+
+    await pair.workspace.createBinaryFile?.('fallback.bin', new TextEncoder().encode('fresh'))
+    expect(await pair.workspace.readFile('fallback.bin')).toBe('fresh')
+    expect((await pair.workspace.readdir('.')).some((entry) => entry.name.includes('.boring-upload-'))).toBe(false)
+    await pair.dispose()
+  })
+
+  test.each([
+    ['successful destination create', 'cleanup-success.bin', false],
+    ['destination collision', 'cleanup-collision.bin', true],
+  ])('reports incomplete temp cleanup without replacing the %s outcome', async (_label, path, collision) => {
+    const { client, pair } = await harness()
+    const remote = client.sandboxes.get(pair.sandbox.id)!
+    const warning = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    if (collision) await pair.workspace.writeFile(path, 'old')
+    vi.spyOn(remote.fs, 'rm').mockRejectedValue(new Error('injected SDK cleanup failure'))
+    const originalExec = remote.process.exec.bind(remote.process)
+    vi.spyOn(remote.process, 'exec').mockImplementation(async (request) => {
+      if (request.command.includes('rm -f --')) {
+        return {
+          command: request.command,
+          exitCode: 1,
+          name: 'cleanup-failure',
+          pid: 'cleanup-failure',
+          status: 'failed',
+          stderr: 'injected guest cleanup failure',
+          stdout: '',
+          workingDir: request.workingDir ?? '/workspace',
+        }
+      }
+      return await originalExec(request)
+    })
+
+    const create = pair.workspace.createBinaryFile!(path, new TextEncoder().encode('new'))
+    if (collision) await expect(create).rejects.toMatchObject({ code: 'EEXIST' })
+    else await expect(create).resolves.toBeUndefined()
+    expect(await pair.workspace.readFile(path)).toBe(collision ? 'old' : 'new')
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('exclusive create temporary-file cleanup failed'))
+    expect((await pair.workspace.readdir('.')).some((entry) => entry.name.includes('.boring-upload-'))).toBe(true)
+    warning.mockRestore()
     await pair.dispose()
   })
 

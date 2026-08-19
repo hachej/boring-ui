@@ -38,6 +38,10 @@ function binding(): RuntimeFilesystemBinding {
       },
       async write({ path, content }) { files.set(path, content); return { mtimeMs: 2 } },
       async writeBinary({ path, content }) { files.set(path, new TextDecoder().decode(content)); return { mtimeMs: 2 } },
+      async createBinary({ path, content }) {
+        if (files.has(path)) throw Object.assign(new Error('EEXIST'), { code: 'EEXIST' })
+        files.set(path, new TextDecoder().decode(content)); return { mtimeMs: 2 }
+      },
       async delete({ path }) { files.delete(path); return {} },
       async move({ from, to }) { files.set(to, files.get(from) ?? ''); files.delete(from); return {} },
       async mkdir({ path }) { dirs.add(path); return {} },
@@ -133,16 +137,13 @@ describe('primary filesystem access projection', () => {
     await app.close()
   })
 
-  test('denies preserved-name uploads to protected binding paths', async () => {
+  test('denies exact binary writes to protected binding paths', async () => {
     const { app, user } = await appWithBinding()
     const writeBinary = vi.spyOn(user.operations, 'writeBinary')
     const response = await app.inject({
       method: 'POST',
-      url: '/api/v1/files/upload',
-      payload: {
-        filename: 'new.txt', directory: 'protected', preserveName: true,
-        collision: 'replace', contentBase64: 'eA==',
-      },
+      url: '/api/v1/files/binary',
+      payload: { path: 'protected/new.txt', ifExists: 'replace', contentBase64: 'eA==' },
     })
     expect(response.statusCode).toBe(403)
     expect(response.json()).toEqual({ error: { code: 'readonly', message: 'user binding is readonly' } })
@@ -150,20 +151,17 @@ describe('primary filesystem access projection', () => {
     await app.close()
   })
 
-  test('serializes concurrent preserved-name writes through a binding', async () => {
+  test('atomically creates exact binary paths through a binding', async () => {
     const { app, user } = await appWithBinding()
-    const writeBinary = vi.spyOn(user.operations, 'writeBinary')
+    const createBinary = vi.spyOn(user.operations, 'createBinary')
     const request = () => app.inject({
       method: 'POST',
-      url: '/api/v1/files/upload',
-      payload: {
-        filename: 'raced.txt', directory: 'a', preserveName: true,
-        collision: 'skip', contentBase64: 'eA==',
-      },
+      url: '/api/v1/files/binary',
+      payload: { path: 'a/raced.txt', ifExists: 'skip', contentBase64: 'eA==' },
     })
     const responses = await Promise.all([request(), request()])
-    expect(writeBinary).toHaveBeenCalledOnce()
-    expect(responses.map((response) => response.json().skipped).sort()).toEqual([false, true])
+    expect(createBinary).toHaveBeenCalledTimes(2)
+    expect(responses.map((response) => response.json().status).sort()).toEqual(['skipped', 'written'])
     await app.close()
   })
 
