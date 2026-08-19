@@ -491,6 +491,63 @@ describe("askUserPlugin front shell", () => {
     }
   })
 
+  it("hydrates never-opened session questions from the durable list before reconciling SSE changes", async () => {
+    const neverOpened = { ...question, questionId: "headless-q1", sessionId: "headless-session", title: "Headless worker approval", answerToken: "headless-token" }
+    const later = { ...nextQuestion, questionId: "headless-q2", sessionId: "another-headless-session", title: "Later headless approval", answerToken: "later-token" }
+    let readyQuestions = [question, neverOpened]
+    const seen: Array<{ id: string; label: string }> = []
+    function AttentionProbe() {
+      const { blockers } = useWorkspaceAttention()
+      seen.splice(0, seen.length, ...blockers.map(({ id, label }) => ({ id, label: label ?? "" })))
+      return null
+    }
+    class FakeEventSource {
+      static instance: FakeEventSource | null = null
+      private readonly listeners = new Map<string, Set<EventListener>>()
+      constructor(public readonly url: string) {
+        if (url.includes("/api/v1/questions/events")) FakeEventSource.instance = this
+      }
+      addEventListener(type: string, listener: EventListener) {
+        const listeners = this.listeners.get(type) ?? new Set<EventListener>()
+        listeners.add(listener)
+        this.listeners.set(type, listeners)
+      }
+      removeEventListener(type: string, listener: EventListener) { this.listeners.get(type)?.delete(listener) }
+      emit(type: string) { for (const listener of this.listeners.get(type) ?? []) listener(new Event(type)) }
+      close() {}
+    }
+    vi.stubGlobal("EventSource", FakeEventSource)
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: readyQuestions })
+      return Response.json({})
+    }))
+    const Provider = getProvider()
+
+    render(
+      <WorkspaceProvider agentTypeId="alpha" apiBaseUrl="" plugins={[]} workspaceId="test-workspace">
+        <Provider apiBaseUrl="" activeSessionId="default" openSessionIds={["default"]}>
+          <AttentionProbe />
+        </Provider>
+      </WorkspaceProvider>,
+    )
+
+    await waitFor(() => expect(seen).toEqual(expect.arrayContaining([
+      { id: "ask-user:default:q1", label: "Choose A or B" },
+      { id: "ask-user:headless-session:headless-q1", label: "Headless worker approval" },
+    ])))
+    expect(seen).toHaveLength(2)
+    expect(FakeEventSource.instance?.url).toBe("/api/v1/questions/events")
+
+    readyQuestions = [neverOpened, later]
+    act(() => FakeEventSource.instance?.emit("questions-changed"))
+    await waitFor(() => expect(seen).toEqual(expect.arrayContaining([
+      { id: "ask-user:headless-session:headless-q1", label: "Headless worker approval" },
+      { id: "ask-user:another-headless-session:headless-q2", label: "Later headless approval" },
+    ])))
+    expect(seen).toHaveLength(2)
+    expect(seen).not.toContainEqual(expect.objectContaining({ id: "ask-user:default:q1" }))
+  })
+
   it("contributes pending questions as explicit inbox attention blockers", async () => {
     const seen: unknown[] = []
     function AttentionProbe() {

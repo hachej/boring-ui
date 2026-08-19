@@ -59,6 +59,20 @@ describe("ask-user front client", () => {
     expect(normalizeQuestion({ ...question, artifact })?.artifacts).toEqual([])
   })
 
+  it("lists and normalizes every ready question from the durable endpoint", async () => {
+    const second = { ...question, questionId: "q2", sessionId: "headless", title: "Headless approval" }
+    const fetchMock = vi.fn(async () => Response.json({ questions: [question, second] }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(createQuestionsClient({ apiBaseUrl: "/hub", headers: { "x-boring-workspace-id": "w1" } }).listReady())
+      .resolves.toEqual([question, second])
+    expect(fetchMock).toHaveBeenCalledWith("/hub/api/v1/questions?status=ready", {
+      headers: { "x-boring-workspace-id": "w1" },
+      credentials: "include",
+      cache: "no-store",
+    })
+  })
+
   it("allows hosts to override the stock browser CSRF proof", async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ ok: true, output: { pending: null } }))
     vi.stubGlobal("fetch", fetchMock)

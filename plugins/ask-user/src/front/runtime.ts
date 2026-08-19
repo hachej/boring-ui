@@ -9,6 +9,7 @@ export type QuestionsStore = {
   getPendingByToolCallId(toolCallId: string): AskUserQuestion | null
   getHydratedPendingKeys(): string[]
   setPendingHints(hints: PendingQuestionHint[]): void
+  replacePending(questions: AskUserQuestion[]): void
   beginQuestionAction(question: AskUserQuestion): boolean
   finishQuestionAction(question: AskUserQuestion): void
   isQuestionActionInFlight(question: AskUserQuestion): boolean
@@ -78,6 +79,21 @@ export function createQuestionsStore(): QuestionsStore {
         if (!hint || hint.questionId !== question.questionId || (hint.status && hint.status !== question.status)) {
           pendingBySession.delete(sessionId)
         }
+      }
+      emit()
+    },
+    replacePending(questions) {
+      pendingBySession.clear()
+      hintsBySession.clear()
+      for (const question of questions) {
+        if (question.status !== "ready") continue
+        pendingBySession.set(question.sessionId, question)
+        hintsBySession.set(question.sessionId, {
+          questionId: question.questionId,
+          sessionId: question.sessionId,
+          ...(question.toolCallId ? { toolCallId: question.toolCallId } : {}),
+          status: question.status,
+        })
       }
       emit()
     },

@@ -108,31 +108,36 @@ export function useAskUserPendingRefresh(
   const { activeSessionId, apiBaseUrl, authHeaders } = options
   useEffect(() => {
     let stopped = false
+    let refreshSequence = 0
     async function refreshPending() {
+      const sequence = ++refreshSequence
+      try {
+        const questions = await createQuestionsClient({ apiBaseUrl, headers: authHeaders }).listReady()
+        if (!stopped && sequence === refreshSequence) runtime.replacePending(questions)
+        return
+      } catch {
+        // Older servers do not expose the durable list endpoint. Keep the
+        // previous hint + per-session bridge path as a compatibility fallback.
+      }
       let hints: PendingQuestionHint[] = []
       try {
         const response = await fetch(`${apiBaseUrl}/api/v1/ui/state`, { headers: authHeaders })
         const state = await response.json().catch(() => null) as Record<string, unknown> | null
         hints = readPendingQuestionHintsFromState(state)
-        if (!stopped && hasPendingStateSlot(state)) runtime.setPendingHints(hints)
+        if (!stopped && sequence === refreshSequence && hasPendingStateSlot(state)) runtime.setPendingHints(hints)
       } catch {
         // UI state is a hint channel only; keep already-hydrated pending payloads.
       }
       const sessionsToHydrate = new Set<string>()
       if (activeSessionId) sessionsToHydrate.add(activeSessionId)
-      for (const hint of hints) {
-        // A pending question can belong to a session that is no longer mounted
-        // in the current chat layout (for example a fresh/demo URL opened while
-        // an ask_user form is still blocking an older session). Hydrate every
-        // server-published hint so the Questions pane can still render the
-        // blocking form instead of an empty state.
-        sessionsToHydrate.add(hint.sessionId)
-      }
+      for (const hint of hints) sessionsToHydrate.add(hint.sessionId)
       await Promise.all([...sessionsToHydrate].map(async (sessionId) => {
         try {
-          await runtime.refreshPending(sessionId)
+          const pending = await runtime.refreshPending(sessionId)
+          if (stopped || sequence !== refreshSequence) return
+          runtime.setPending(pending, sessionId)
         } catch {
-          if (!stopped) runtime.setPending(null, sessionId)
+          if (!stopped && sequence === refreshSequence) runtime.setPending(null, sessionId)
         }
       }))
     }
@@ -156,6 +161,11 @@ export function useAskUserPendingRefresh(
     }
     const offAgentData = events.on(workspaceEvents.agentData, onAgentData)
     const offUiCommand = events.on(workspaceEvents.uiCommand, onUiCommand)
+    const EventSourceCtor = globalThis.EventSource
+    const eventUrl = `${apiBaseUrl}/api/v1/questions/events`
+    const questionEvents = EventSourceCtor ? new EventSourceCtor(eventUrl, { withCredentials: true }) : null
+    questionEvents?.addEventListener("ready", refreshPending)
+    questionEvents?.addEventListener("questions-changed", refreshPending)
     void refreshPending()
     window.addEventListener("focus", refreshPending)
     document.addEventListener("visibilitychange", onVisibility)
@@ -164,6 +174,7 @@ export function useAskUserPendingRefresh(
     return () => {
       stopped = true
       if (agentDataTimer) clearTimeout(agentDataTimer)
+      questionEvents?.close()
       offAgentData()
       offUiCommand()
       window.removeEventListener("focus", refreshPending)

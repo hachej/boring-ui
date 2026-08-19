@@ -100,6 +100,55 @@ describe("QuestionsBridge", () => {
 })
 
 describe("questionsRoutes", () => {
+  it("lists every ready question authorized for the principal and filters other statuses", async () => {
+    const { store, runtime, question } = await fixture()
+    await store.createPending({
+      ...question,
+      questionId: "q-other-principal",
+      sessionId: "s-other-principal",
+      ownerPrincipalId: "p2",
+      answerToken: "other-token",
+      title: "Other principal",
+    })
+    await store.createPending({
+      ...question,
+      questionId: "q-anonymous",
+      sessionId: "s-anonymous",
+      ownerPrincipalId: "anonymous",
+      answerToken: "anonymous-token",
+      title: "Anonymous owner",
+    })
+    await store.createPending({
+      ...question,
+      questionId: "q-answered",
+      sessionId: "s-answered",
+      answerToken: "answered-token",
+      title: "Already answered",
+    })
+    await store.answer("q-answered", {
+      questionId: "q-answered",
+      sessionId: "s-answered",
+      values: { answer: "done" },
+      submittedAt: new Date().toISOString(),
+    })
+    const app = Fastify()
+    app.register(questionsRoutes, {
+      store,
+      runtime,
+      allowedOrigins: ["https://app.test"],
+      getAuthContext: () => ({ sessionId: "browser", principalId: "p1" }),
+    })
+
+    expect((await app.inject({ method: "GET", url: "/api/v1/questions?status=ready" })).statusCode).toBe(403)
+    expect((await app.inject({ method: "GET", url: "/api/v1/questions", headers: { origin: "https://app.test" } })).statusCode).toBe(400)
+    const response = await app.inject({ method: "GET", url: "/api/v1/questions?status=ready", headers: { origin: "https://app.test" } })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers["cache-control"]).toBe("no-store")
+    expect(response.json().questions.map((candidate: { questionId: string }) => candidate.questionId).sort()).toEqual([question.questionId, "q-anonymous"].sort())
+    expect(response.json().questions.map((candidate: { title: string }) => candidate.title).sort()).toEqual(["T", "Anonymous owner"].sort())
+    await app.close()
+  })
+
   it("enforces origin/csrf and dispatches commands", async () => {
     const { store, runtime, question } = await fixture()
     const app = Fastify()

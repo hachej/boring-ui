@@ -91,6 +91,29 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
   }
 
   return {
+    async listReady(): Promise<AskUserQuestion[]> {
+      const response = await fetch(`${options.apiBaseUrl ?? ""}/api/v1/questions?status=ready`, {
+        headers: options.headers,
+        credentials: "include",
+        cache: "no-store",
+      })
+      const payload = await response.json().catch(() => null) as { questions?: unknown } | null
+      if (!response.ok) {
+        throw new QuestionsClientError(
+          typeof payload === "object" && payload && "error" in payload && typeof payload.error === "string" ? payload.error : ASK_USER_ERROR_CODES.UI_UNAVAILABLE,
+          "Unable to list pending questions",
+          response.status,
+        )
+      }
+      if (!payload || !Array.isArray(payload.questions)) {
+        throw new QuestionsClientError(ASK_USER_ERROR_CODES.UI_UNAVAILABLE, "Invalid pending questions response", response.status)
+      }
+      const questions = payload.questions.map(normalizeQuestion)
+      if (questions.some((question) => question === null)) {
+        throw new QuestionsClientError(ASK_USER_ERROR_CODES.UI_UNAVAILABLE, "Invalid pending question payload", response.status)
+      }
+      return questions.filter((question): question is AskUserQuestion => question?.status === "ready")
+    },
     async pending(sessionId: string): Promise<AskUserQuestion | null> {
       const output = await callBridge<{ pending: AskUserQuestion | null }>(
         ASK_USER_BRIDGE_OPS.pending,

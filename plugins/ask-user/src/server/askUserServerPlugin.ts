@@ -8,6 +8,7 @@ import { FileAskUserStore, type AskUserStore } from "./askUserStore"
 import { AskUserStatePublisher } from "./askUserStatePublisher"
 import { createAskUserTool } from "./createAskUserTool"
 import { createAskUserBridgeHandlers } from "./askUserBridgeHandlers"
+import { registerQuestionsReadRoutes } from "./questionsRoutes"
 
 export type AskUserServerPluginOptions = {
   workspaceRoot?: string
@@ -34,6 +35,7 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
     if (bridge) stopPublisher = new AskUserStatePublisher(store, bridge).start()
   }
   const lifecycle: FastifyPluginAsync = async (app) => {
+    registerQuestionsReadRoutes(app, { store })
     const pending = await store.listPending()
     await runtime.abandonOrphanedPending(pending.map((question) => question.sessionId))
     ensurePublisher()

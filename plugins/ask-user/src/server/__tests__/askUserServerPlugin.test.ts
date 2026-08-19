@@ -215,13 +215,16 @@ describe("createAskUserServerPlugin", () => {
     expect(() => createAskUserServerPlugin({ store, runtime, routes: {} } as unknown as Parameters<typeof createAskUserServerPlugin>[0])).toThrow(/no longer registers/)
   })
 
-  it("does not register the legacy plugin-owned question command route by default", async () => {
+  it("registers the durable ready-question list but not the legacy command route by default", async () => {
     const { store, runtime } = await fixture()
     const plugin = createAskUserServerPlugin({ store, runtime, sessionId: "s1" })
     const app = Fastify()
     await app.register(plugin.routes!)
     const response = await app.inject({ method: "POST", url: "/api/v1/questions/commands", payload: {} })
     expect(response.statusCode).toBe(404)
+    const listResponse = await app.inject({ method: "GET", url: "/api/v1/questions?status=ready" })
+    expect(listResponse.statusCode).toBe(200)
+    expect(listResponse.json()).toEqual({ questions: [] })
     await app.close()
   })
 
