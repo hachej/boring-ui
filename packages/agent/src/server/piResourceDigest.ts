@@ -4,7 +4,7 @@ import { lstat, open, opendir, realpath, stat as statPath } from 'node:fs/promis
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DefaultPackageManager, getAgentDir, type ResolvedPaths } from '@mariozechner/pi-coding-agent'
+import { DefaultPackageManager, getAgentDir, loadProjectContextFiles, type ResolvedPaths } from '@mariozechner/pi-coding-agent'
 import { ErrorCode } from '../shared/error-codes'
 import { AgentGatewayError, AgentGatewayErrorCode } from '../shared/gateway/errors'
 import { compactPiPackages, type PiPackageSource } from './piPackages'
@@ -33,6 +33,8 @@ export interface PiResourceDigestInput {
   readonly piUserHome: string
   /** Mirrors Pi's noSkills resource-loader option. */
   readonly noSkills: boolean
+  /** Mirrors Pi's noContextFiles resource-loader option; omitted stays sealed. */
+  readonly noContextFiles?: boolean
   readonly promptParts?: readonly (string | undefined)[]
   readonly additionalSkillPaths?: readonly string[]
   readonly packages?: readonly PiPackageSource[]
@@ -55,6 +57,7 @@ export function createPiResourceDigestInput(input: {
   readonly piAgentDir?: string
   readonly piUserHome?: string
   readonly noSkills?: boolean
+  readonly noContextFiles?: boolean
   readonly resourceSets: readonly PiResourceSet[]
   readonly authorizedRoots: readonly string[]
   readonly limits?: Partial<PiResourceDigestLimits>
@@ -63,11 +66,13 @@ export function createPiResourceDigestInput(input: {
   const piAgentDir = resolvePiPath(input.piAgentDir ?? getAgentDir(), process.cwd())
   const piUserHome = resolvePiPath(input.piUserHome ?? homedir(), process.cwd())
   const noSkills = input.noSkills ?? true
+  const noContextFiles = input.noContextFiles ?? true
   return {
     piCwd,
     piAgentDir,
     piUserHome,
     noSkills,
+    noContextFiles,
     promptParts: input.resourceSets.flatMap((set) => set.promptParts ?? []),
     additionalSkillPaths: uniqueStrings(input.resourceSets.flatMap((set) => set.additionalSkillPaths ?? [])),
     packages: compactPiPackages(input.resourceSets.flatMap((set) => set.packages ?? [])),
@@ -92,7 +97,7 @@ interface WalkState {
   bytes: number
 }
 
-const FORMAT_VERSION = 'boring-pi-resource-digest-v4'
+const FORMAT_VERSION = 'boring-pi-resource-digest-v5'
 const EXCLUDED_DIRECTORIES = new Set(['.git', 'node_modules'])
 // Host-written observation metadata is not a Pi input. Including it makes the
 // act of loading a newly discovered Boring plugin invalidate its own reload.
@@ -105,6 +110,7 @@ export async function digestPiResourceInputs(input: PiResourceDigestInput): Prom
   const piAgentDir = resolvePiPath(input.piAgentDir, process.cwd())
   const piUserHome = resolvePiPath(input.piUserHome, process.cwd())
   const projectSettingsDir = join(piCwd, '.pi')
+  const noContextFiles = input.noContextFiles ?? true
   const authorizedRoots = [...new Set(input.authorizedRoots.map((path) => resolvePiPath(path, piCwd)))]
   if (authorizedRoots.length === 0) {
     throw stableError(ErrorCode.enum.CONFIG_INVALID, 400, 'Pi resource digest requires at least one independently authorized root')
@@ -116,11 +122,31 @@ export async function digestPiResourceInputs(input: PiResourceDigestInput): Prom
   frameString(hash, 'project-settings-dir', projectSettingsDir)
   frameString(hash, 'user-agent-dir', piAgentDir)
   frameString(hash, 'user-home', piUserHome)
+  frameString(hash, 'context-policy', noContextFiles ? 'sealed' : 'ambient')
   const promptText = (input.promptParts ?? [])
     .map((part) => part?.trim())
     .filter((part): part is string => Boolean(part))
     .join('\n\n')
   frameString(hash, 'prompt', promptText)
+  if (!noContextFiles) {
+    const contextFiles = loadProjectContextFiles({ cwd: piCwd, agentDir: piAgentDir })
+    for (const contextFile of contextFiles) {
+      const bytes = Buffer.byteLength(contextFile.content)
+      state.nodes += 1
+      if (state.nodes > state.limits.maxFiles) {
+        throw limitError(`Pi resource tree exceeds maximum node count ${state.limits.maxFiles}`)
+      }
+      if (bytes > state.limits.maxFileBytes) {
+        throw limitError(`Pi context file exceeds maximum bytes ${state.limits.maxFileBytes}: ${contextFile.path}`)
+      }
+      if (state.bytes + bytes > state.limits.maxTotalBytes) {
+        throw limitError(`Pi resource tree exceeds maximum total bytes ${state.limits.maxTotalBytes}`)
+      }
+      frameString(hash, 'context-path', contextFile.path)
+      frameString(hash, 'context-content', contextFile.content)
+      state.bytes += bytes
+    }
+  }
   await hashResourceCollection(state, piCwd, 'settings', [
     join(projectSettingsDir, 'settings.json'),
     join(piAgentDir, 'settings.json'),
