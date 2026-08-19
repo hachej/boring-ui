@@ -16,7 +16,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, "..")
 
 const PUBLISHABLE_PACKAGES = [
-  "packages/pi",
   "packages/ui",
   "packages/boring-bash",
   "packages/boring-sandbox",

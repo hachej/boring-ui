@@ -491,13 +491,9 @@ function resolveBoringPiPackageRoot(): string | null {
   }
 }
 
-function requireBoringPiPackageRoot(): string {
-  const source = resolveBoringPiPackageRoot()
-  if (source) return source
-  throw new Error(
-    "BORING_PI_RUNTIME_NOT_FOUND: @hachej/boring-pi is missing or incomplete in the host installation",
-  )
-}
+// 0.1.101 interim (see #848): boring-pi is OPTIONAL again — it has never been
+// published to npm, so a hard requirement would crash every published install.
+// 0.1.102 retires the package entirely (content moves to the plugin CLI).
 
 function isUsableBoringUiPluginCliPackageRoot(candidate: string): boolean {
   try {
@@ -551,13 +547,16 @@ function createBoringUiPluginCliPackageProvisioningContribution(): WorkspaceProv
   }
 }
 
-function createBoringPiPackageSource(): WorkspacePiPackageSource {
+function createBoringPiPackageSource(): WorkspacePiPackageSource | undefined {
   // The Pi runtime is part of the host's trusted computing base. Resolving it
   // from the opened workspace would let that workspace substitute executable
   // host code and, in pnpm projects, selects a symlink rejected by the resource
-  // containment guard. Always require the runtime installed with this package.
+  // containment guard. Only the host installation is consulted; absence is
+  // tolerated (published installs never carried this package — see #848).
+  const source = resolveBoringPiPackageRoot()
+  if (!source) return undefined
   return {
-    source: requireBoringPiPackageRoot(),
+    source,
     skills: ["skills/boring-plugin-authoring"],
   }
 }
@@ -577,7 +576,9 @@ function createBoringPiPackageSource(): WorkspacePiPackageSource {
  * plugin-authoring skill.
  */
 export function resolveBoringPiSkillPaths(_workspaceRoot?: string): string[] {
-  return [join(requireBoringPiPackageRoot(), "skills", "boring-plugin-authoring", "SKILL.md")]
+  const root = resolveBoringPiPackageRoot()
+  if (!root) return []
+  return [join(root, "skills", "boring-plugin-authoring", "SKILL.md")]
 }
 
 
