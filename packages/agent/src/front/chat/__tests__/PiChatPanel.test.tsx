@@ -995,14 +995,14 @@ describe('PiChatPanel sandbox shell', () => {
     render(<PiChatPanel serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
 
     const textarea = await screen.findByLabelText('Agent prompt')
-    const oversizedFile = new File([new Uint8Array((4 * 1024 * 1024) + 1)], 'large.txt', { type: 'text/plain' })
+    const oversizedFile = new File([new Uint8Array((10 * 1024 * 1024) + 1)], 'large.txt', { type: 'text/plain' })
     fireEvent.paste(textarea, {
       clipboardData: {
         items: [{ kind: 'file', getAsFile: () => oversizedFile }],
       },
     })
 
-    await screen.findByText('Files must be under 4 MB each.')
+    await screen.findByText('Files must be 10 MB or smaller.')
     expect(remote.prompt).not.toHaveBeenCalled()
   })
 
