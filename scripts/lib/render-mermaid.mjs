@@ -62,7 +62,7 @@ export async function renderMermaidSvg(source, renderId = 'pr-context-diagram') 
         securityLevel: 'strict',
         theme: 'base',
         themeVariables: variables,
-        flowchart: { htmlLabels: false },
+        htmlLabels: false,
       })
       const { svg } = await mermaid.render(id, diagram)
       const template = document.createElement('template')

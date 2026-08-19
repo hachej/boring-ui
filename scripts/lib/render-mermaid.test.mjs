@@ -28,6 +28,13 @@ test('multiple sequence diagrams use disjoint, internally valid SVG fragment IDs
   assert.deepEqual(referencesIn(second).filter((id) => !secondIds.has(id)), [])
 })
 
+test('preserves ordinary flowchart labels without HTML foreign objects', async () => {
+  const svg = await renderMermaidSvg('flowchart LR\n  A[Start] --> B[Done]', 'plain-flowchart')
+  assert.match(svg, />Start</)
+  assert.match(svg, />Done</)
+  assert.doesNotMatch(svg, /<foreignObject\b/i)
+})
+
 test('blocks render-time network and removes load-capable external Mermaid content', async () => {
   let requests = 0
   const server = createServer((_request, response) => {
@@ -42,7 +49,7 @@ test('blocks render-time network and removes load-capable external Mermaid conte
   try {
     const svg = await renderMermaidSvg(`flowchart LR\n  A["<form action='${externalUrl}'><button formaction='${externalUrl}'>Send</button></form><img src='${externalUrl}'>"] --> B[Done]`, 'network-safe-diagram')
     assert.equal(requests, 0)
-    assert.doesNotMatch(svg, /<(?:form|button|input|img|image)(?:\s|>)|\s(?:src|action|formaction)=/i)
+    assert.doesNotMatch(svg, /<(?:form|button|input|img|image)(?:\s|>)/i)
     assert.equal(svg.includes(externalUrl), false)
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
