@@ -74,7 +74,7 @@
       "@perspective-dev/viewer": "4.4.1",
       "@perspective-dev/viewer-datagrid": "4.4.1",
       "@perspective-dev/viewer-d3fc": "4.4.1",
-      "better-auth": "1.6.22"
+      "better-auth": "1.6.27"
     }
   }
 }
