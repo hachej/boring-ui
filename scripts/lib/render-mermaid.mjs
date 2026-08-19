@@ -53,6 +53,7 @@ export async function renderMermaidSvg(source, renderId = 'pr-context-diagram') 
   }
   try {
     const page = await browser.newPage()
+    await page.route('**/*', (route) => route.abort('blockedbyclient'))
     await page.setContent('<main id="diagram"></main>')
     await page.addScriptTag({ path: mermaidScriptPath })
     const svg = await page.evaluate(async ({ diagram, variables, id }) => {
@@ -63,7 +64,33 @@ export async function renderMermaidSvg(source, renderId = 'pr-context-diagram') 
         themeVariables: variables,
       })
       const { svg } = await mermaid.render(id, diagram)
-      return svg
+      const template = document.createElement('template')
+      template.innerHTML = svg.trim()
+      const root = template.content.querySelector('svg')
+      if (!root) throw new Error('Mermaid did not return an SVG root')
+
+      root.querySelectorAll('script, img, image, iframe, object, embed, link, meta, audio, video, source').forEach((node) => node.remove())
+      root.querySelectorAll('*').forEach((node) => {
+        for (const attribute of [...node.attributes]) {
+          const name = attribute.name.toLowerCase()
+          const value = attribute.value.trim()
+          if (name.startsWith('on') || name === 'src' || name === 'srcset' || name === 'srcdoc') {
+            node.removeAttribute(attribute.name)
+            continue
+          }
+          if ((name === 'href' || name === 'xlink:href') && !value.startsWith('#')) {
+            node.removeAttribute(attribute.name)
+            continue
+          }
+          if (name === 'style' && /(?:@import|expression\s*\(|url\(\s*["']?\s*(?:https?:|\/\/|data:|javascript:))/i.test(value)) {
+            node.removeAttribute(attribute.name)
+          }
+        }
+      })
+      root.querySelectorAll('style').forEach((style) => {
+        if (/(?:@import|url\(\s*["']?\s*(?:https?:|\/\/|data:|javascript:))/i.test(style.textContent || '')) style.remove()
+      })
+      return root.outerHTML
     }, { diagram: source, variables: mermaidThemeVariables, id: renderId })
     return namespaceMermaidSvgIds(svg, renderId)
   } finally {

@@ -29,7 +29,7 @@ import {
 import { CATEGORIES, categorize, createSankeyRows, isDefaultSankeyCategory, sankeyRowIsVisible } from './lib/present-pr-files.mjs'
 import { serializeInlineJson } from './lib/present-pr-html.mjs'
 import { extractBeadIds, extractLinkedIssueReference, resolveLinkedIssueReference } from './lib/present-pr-links.mjs'
-import { DARK_BADGE_THEME, LIGHT_BADGE_THEME, renderBadgeThemeVariables } from './lib/present-pr-theme.mjs'
+import { DARK_BADGE_THEME, DARK_CODE_THEME, LIGHT_BADGE_THEME, LIGHT_CODE_THEME, renderBadgeThemeVariables, renderCodeThemeVariables } from './lib/present-pr-theme.mjs'
 import { renderMermaidSvg } from './lib/render-mermaid.mjs'
 
 /* ------------------------------------------------------------------ args */
@@ -523,24 +523,24 @@ const html = `<meta charset="utf-8">
   --bg: #ffffff; --panel: #f7f8fa; --panel-2: #eef0f4; --fg: #14161a; --muted: #5b6270;
   --border: #dfe3ea;
   ${renderBadgeThemeVariables(LIGHT_BADGE_THEME)}
-  --add-bg: #e6ffec; --add-fg: #0a6b2e; --del-bg: #ffebe9; --del-fg: #9b1c1c; --hunk-bg: #eef1f7;
-  --t-kw: #8250df; --t-str: #0a6b2e; --t-num: #0550ae; --t-com: #6e7781;
+  ${renderCodeThemeVariables(LIGHT_CODE_THEME)}
+  --add-fg: #0a6b2e; --del-fg: #9b1c1c; --hunk-bg: #eef1f7;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0d1117; --panel: #12161d; --panel-2: #1b212b; --fg: #e6edf3; --muted: #9aa4b2;
     --border: #262d38;
     ${renderBadgeThemeVariables(DARK_BADGE_THEME)}
-    --add-bg: #0f2f1c; --add-fg: #6fdc8c; --del-bg: #3a1417; --del-fg: #ff8f8f; --hunk-bg: #182029;
-    --t-kw: #d2a8ff; --t-str: #7ee787; --t-num: #79c0ff; --t-com: #8b949e;
+    ${renderCodeThemeVariables(DARK_CODE_THEME)}
+    --add-fg: #6fdc8c; --del-fg: #ff8f8f; --hunk-bg: #182029;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0d1117; --panel: #12161d; --panel-2: #1b212b; --fg: #e6edf3; --muted: #9aa4b2;
   --border: #262d38;
   ${renderBadgeThemeVariables(DARK_BADGE_THEME)}
-  --add-bg: #0f2f1c; --add-fg: #6fdc8c; --del-bg: #3a1417; --del-fg: #ff8f8f; --hunk-bg: #182029;
-  --t-kw: #d2a8ff; --t-str: #7ee787; --t-num: #79c0ff; --t-com: #8b949e;
+  ${renderCodeThemeVariables(DARK_CODE_THEME)}
+  --add-fg: #6fdc8c; --del-fg: #ff8f8f; --hunk-bg: #182029;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; overflow-x: hidden; }
@@ -659,8 +659,8 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
 .evtype-verify { background: var(--good); color: var(--on-good); } .evtype-ui { background: var(--cat-docs); color: var(--on-cat-docs); }
 .evtype-review { background: var(--cat-test); color: var(--on-cat-test); } .evtype-merge { background: var(--accent); color: var(--on-accent); }
 .evverdict { font-size: 11.5px; font-weight: 600; padding: 1px 9px; border-radius: 999px; border: 1px solid currentColor; }
-.v-good { color: var(--good); } .v-warn { color: var(--warn); } .v-bad { color: var(--bad); }
-.v-fixed { color: var(--good); } .v-neutral { color: var(--muted); }
+.v-good, .v-fixed { color: var(--on-good); background: var(--good); } .v-warn { color: var(--on-warn); background: var(--warn); } .v-bad { color: var(--on-bad); background: var(--bad); }
+.v-neutral { color: var(--on-muted); background: var(--muted); }
 .evactor { font-size: 12px; color: var(--muted); }
 .evwhen { font-size: 12px; color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
 .evsummary { margin: 5px 0 0; font-size: 13.5px; }
@@ -676,7 +676,7 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
 .btn.seg { border-radius: 0; margin-left: -1px; }
 .sortwrap .btn.seg:first-of-type { border-radius: 8px 0 0 8px; margin-left: 0; }
 .sortwrap .btn.seg:last-of-type { border-radius: 0 8px 8px 0; }
-.btn.seg.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn.seg.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .sankeyscroll { overflow-x: auto; }
 .sankeyscroll svg { display: block; }
 .sk-el { transition: opacity 0.12s ease; }
@@ -931,26 +931,19 @@ ${sankeyRowIsVisible.toString()}
         var act = n.kind === 'file' ? n.id : (n.best ? n.best.id : '');
         var bar = n.kind === 'pkg' ? BAR + 5 : BAR;
         var group = el('g', { class: 'sk-el sk-node', 'data-chain': n.chain, 'data-kind': n.kind, 'data-cat': n.cat, 'data-act': act });
-        if (n.kind === 'area') {
-          var solid = el('rect', { x: n.x, y: n.y, width: bar, height: n.h, rx: 2 });
-          solid.style.fill = 'var(--cat-' + n.cat + ')';
-          group.appendChild(solid);
-        } else {
-          // Split the bar add/green over del/red, in proportion — the same
-          // encoding the diff rows use, so the two read as one language.
-          var w = weight(n);
-          var addH = n.add > 0 ? Math.max(1.5, n.add / w * n.h) : 0;
-          var delH = Math.max(0, n.h - addH);
-          if (addH > 0) {
-            var a = el('rect', { x: n.x, y: n.y, width: bar, height: addH, rx: 2 });
-            a.style.fill = 'var(--add-fg)';
-            group.appendChild(a);
-          }
-          if (delH > 0.5) {
-            var dRect = el('rect', { x: n.x, y: n.y + addH, width: bar, height: delH, rx: 2 });
-            dRect.style.fill = 'var(--del-fg)';
-            group.appendChild(dRect);
-          }
+        // Every level uses the same add/green over del/red split as the diff.
+        var w = weight(n);
+        var addH = n.add > 0 ? Math.max(1.5, n.add / w * n.h) : 0;
+        var delH = Math.max(0, n.h - addH);
+        if (addH > 0) {
+          var a = el('rect', { x: n.x, y: n.y, width: bar, height: addH, rx: 2 });
+          a.style.fill = 'var(--add-fg)';
+          group.appendChild(a);
+        }
+        if (delH > 0.5) {
+          var dRect = el('rect', { x: n.x, y: n.y + addH, width: bar, height: delH, rx: 2 });
+          dRect.style.fill = 'var(--del-fg)';
+          group.appendChild(dRect);
         }
         // Packages carry a second line with their own ±counts: the scope check
         // ("why is this PR in that package at all?") is read here, not in the diff.

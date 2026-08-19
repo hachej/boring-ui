@@ -24,8 +24,25 @@ export const DARK_BADGE_THEME = {
   muted: ['#9aa4b2', '#0d1117'],
 }
 
+export const LIGHT_CODE_THEME = {
+  surfaces: { code: '#ffffff', add: '#e6ffec', del: '#ffebe9' },
+  inks: { kw: '#6639b7', str: '#075d28', num: '#034b8f', com: '#4b5563' },
+}
+
+export const DARK_CODE_THEME = {
+  surfaces: { code: '#0d1117', add: '#0f2f1c', del: '#3a1417' },
+  inks: { kw: '#d2a8ff', str: '#7ee787', num: '#79c0ff', com: '#b7c0cc' },
+}
+
 export function renderBadgeThemeVariables(theme) {
   return Object.entries(theme)
     .map(([name, [background, foreground]]) => `--${name}: ${background}; --on-${name}: ${foreground};`)
     .join('\n  ')
+}
+
+export function renderCodeThemeVariables(theme) {
+  return [
+    `--add-bg: ${theme.surfaces.add}; --del-bg: ${theme.surfaces.del};`,
+    ...Object.entries(theme.inks).map(([name, color]) => `--t-${name}: ${color};`),
+  ].join('\n  ')
 }
