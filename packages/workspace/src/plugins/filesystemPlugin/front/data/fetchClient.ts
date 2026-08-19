@@ -1,4 +1,8 @@
-import { parseFilesystemCatalog } from "@hachej/boring-bash/shared"
+import {
+  parseExactBinaryWriteOutcome,
+  parseFilesystemCatalog,
+} from "@hachej/boring-bash/shared"
+import type { ExactBinaryWriteOutcome, ExactBinaryWritePolicy } from "@hachej/boring-bash/shared"
 import type {
   FetchClientOptions,
   FileContent,
@@ -240,6 +244,36 @@ export class FetchClient {
     }
   }
 
+  async writeBinaryFile(
+    path: string,
+    file: Blob,
+    options: { ifExists: ExactBinaryWritePolicy; signal?: AbortSignal },
+  ): Promise<ExactBinaryWriteOutcome> {
+    const contentBase64 = await blobToBase64(file, options.signal)
+    try {
+      return await this.request<ExactBinaryWriteOutcome>(
+        "POST",
+        "/api/v1/files/binary",
+        { path, contentBase64, ifExists: options.ifExists },
+        undefined,
+        options.signal,
+        async (response) => parseExactBinaryWriteOutcome(await response.json()),
+        "include",
+        0,
+      )
+    } catch (error) {
+      if (error instanceof FetchError && error.status === 409) {
+        try {
+          const outcome = parseExactBinaryWriteOutcome(error.body)
+          if (outcome.status === "conflict" && outcome.path === path) return outcome
+        } catch {
+          // Malformed conflict responses remain transport errors.
+        }
+      }
+      throw error
+    }
+  }
+
   async deleteFile(path: string, options?: { filesystem?: string }): Promise<void> {
     const params = new URLSearchParams({ path })
     if (options?.filesystem) params.set("filesystem", options.filesystem)
@@ -299,6 +333,38 @@ export class FetchClient {
   async moveFile(from: string, to: string, options?: { filesystem?: string }): Promise<void> {
     await this.request<void>("POST", "/api/v1/files/move", { from, to, ...(options?.filesystem ? { filesystem: options.filesystem } : {}) })
   }
+}
+
+function abortError(): DOMException {
+  return new DOMException("Upload aborted", "AbortError")
+}
+
+function blobToBase64(blob: Blob, signal?: AbortSignal): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(abortError())
+    const reader = new FileReader()
+    const cleanup = () => signal?.removeEventListener("abort", handleAbort)
+    const handleAbort = () => {
+      reader.abort()
+      cleanup()
+      reject(abortError())
+    }
+    reader.onload = () => {
+      cleanup()
+      const result = String(reader.result ?? "")
+      resolve(result.slice(result.indexOf(",") + 1))
+    }
+    reader.onerror = () => {
+      cleanup()
+      reject(reader.error ?? new Error("Could not read upload"))
+    }
+    reader.onabort = () => {
+      cleanup()
+      reject(abortError())
+    }
+    signal?.addEventListener("abort", handleAbort, { once: true })
+    reader.readAsDataURL(blob)
+  })
 }
 
 export class FetchError extends Error {

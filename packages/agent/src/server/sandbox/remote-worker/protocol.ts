@@ -3,6 +3,12 @@ import type { ExecResult } from '../../../shared/sandbox'
 
 export const REMOTE_WORKER_RUNTIME_CWD = '/workspace'
 export const REMOTE_WORKER_PROVIDER = 'remote-worker'
+export const REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY = 'exclusive-binary-create'
+
+export interface RemoteWorkerHealthResponse {
+  ok: true
+  capabilities?: Array<typeof REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY>
+}
 
 export const WORKER_INTERNAL_TOKEN_HEADER = 'x-boring-internal-token'
 export const WORKER_WORKSPACE_ID_HEADER = 'x-boring-workspace-id'
@@ -13,6 +19,7 @@ export type RemoteWorkerWorkspaceOp =
   | { op: 'readBinaryFile'; path: string }
   | { op: 'writeFile'; path: string; data: string }
   | { op: 'writeBinaryFile'; path: string; dataBase64: string }
+  | { op: 'createBinaryFile'; path: string; dataBase64: string }
   | { op: 'readFileWithStat'; path: string }
   | { op: 'writeFileWithStat'; path: string; data: string }
   | { op: 'writeBinaryFileWithStat'; path: string; dataBase64: string }

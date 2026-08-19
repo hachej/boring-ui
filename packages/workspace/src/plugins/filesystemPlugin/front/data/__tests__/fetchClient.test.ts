@@ -21,6 +21,72 @@ function status(code: number) {
 }
 
 describe("FetchClient", () => {
+  it("writes exact binary paths and preserves a typed conflict outcome", async () => {
+    mockFetch.mockResolvedValue(new Response(JSON.stringify({
+      status: "conflict",
+      path: "src/file.txt",
+      reason: "already-exists",
+    }), { status: 409, statusText: "Conflict" }))
+    const client = new FetchClient({ apiBaseUrl: "" })
+    const result = await client.writeBinaryFile("src/file.txt", new Blob(["hello"]), { ifExists: "error" })
+    expect(result).toEqual({ status: "conflict", path: "src/file.txt", reason: "already-exists" })
+    expect(mockFetch.mock.calls[0]?.[0]).toBe("/api/v1/files/binary")
+    expect(JSON.parse(mockFetch.mock.calls[0]?.[1].body)).toMatchObject({
+      path: "src/file.txt",
+      ifExists: "error",
+      contentBase64: "aGVsbG8=",
+    })
+  })
+
+  it("preserves leading and trailing filename spaces through success and conflict outcomes", async () => {
+    const path = " src/file.txt "
+    mockFetch
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "written", path }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "conflict", path, reason: "already-exists" }), { status: 409 }))
+    const client = new FetchClient({ apiBaseUrl: "" })
+    await expect(client.writeBinaryFile(path, new Blob(["first"]), { ifExists: "error" }))
+      .resolves.toEqual({ status: "written", path })
+    await expect(client.writeBinaryFile(path, new Blob(["second"]), { ifExists: "error" }))
+      .resolves.toEqual({ status: "conflict", path, reason: "already-exists" })
+    expect(JSON.parse(mockFetch.mock.calls[0]?.[1].body).path).toBe(path)
+  })
+
+  it.each([
+    [200, { status: "unknown", path: "src/file.txt" }],
+    [200, { status: "written", path: 42 }],
+    [409, { status: "conflict", path: "src/file.txt", reason: "unknown" }],
+  ])("rejects malformed exact-write outcome for HTTP %s", async (statusCode, body) => {
+    mockFetch.mockResolvedValue(new Response(JSON.stringify(body), {
+      status: statusCode,
+      statusText: statusCode === 409 ? "Conflict" : "OK",
+    }))
+    const client = new FetchClient({ apiBaseUrl: "" })
+    await expect(client.writeBinaryFile("src/file.txt", new Blob(["hello"]), { ifExists: "error" }))
+      .rejects.toBeInstanceOf(statusCode === 409 ? FetchError : TypeError)
+  })
+
+  it("rejects a typed conflict for a different exact path", async () => {
+    mockFetch.mockResolvedValue(new Response(JSON.stringify({
+      status: "conflict",
+      path: "src/file.txt",
+      reason: "already-exists",
+    }), { status: 409, statusText: "Conflict" }))
+    const client = new FetchClient({ apiBaseUrl: "" })
+    await expect(client.writeBinaryFile("src/file.txt ", new Blob(["hello"]), { ifExists: "error" }))
+      .rejects.toBeInstanceOf(FetchError)
+  })
+
+  it("passes abort through binary encoding and transport", async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const client = new FetchClient({ apiBaseUrl: "" })
+    await expect(client.writeBinaryFile("src/file.txt", new Blob(["hello"]), {
+      ifExists: "error",
+      signal: controller.signal,
+    })).rejects.toMatchObject({ name: "AbortError" })
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
   it("prepends apiBaseUrl to all requests", async () => {
     mockFetch.mockReturnValue(ok({ entries: [] }))
     const client = new FetchClient({ apiBaseUrl: "http://localhost:3000" })

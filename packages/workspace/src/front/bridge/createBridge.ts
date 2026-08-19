@@ -169,7 +169,7 @@ export function createBridge(store: StoreApi): WorkspaceBridge {
     },
 
     async expandToFile(path, opts) {
-      const parsed = expandToFileSchema.safeParse({ path, filesystem: opts?.filesystem })
+      const parsed = expandToFileSchema.safeParse({ path, filesystem: opts?.filesystem, kind: opts?.kind })
       if (!parsed.success) return err("VALIDATION", parsed.error.issues[0].message)
 
       const state = store.getState()
@@ -180,6 +180,7 @@ export function createBridge(store: StoreApi): WorkspaceBridge {
       emit("tree:expand", {
         path: parsed.data.path,
         ...(parsed.data.filesystem ? { filesystem: parsed.data.filesystem } : {}),
+        ...(parsed.data.kind ? { kind: parsed.data.kind } : {}),
       })
       return ok()
     },

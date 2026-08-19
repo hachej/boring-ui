@@ -3,6 +3,7 @@ import { dirname, extname, relative } from 'node:path/posix'
 import { getAgentDir } from '@mariozechner/pi-coding-agent'
 import type { Workspace } from '@hachej/boring-agent/shared'
 import type { RuntimeFilesystemBinding } from '../../agent/runtime/types'
+import { isExactBinaryWritePolicy, type ExactBinaryWriteOutcome } from '../../shared/exactBinaryWrite'
 import {
   ERROR_CODE_INVALID_PATH,
   ERROR_CODE_PATH_REJECTED,
@@ -34,6 +35,7 @@ const DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR = 'assets/images'
 const DEFAULT_FILE_UPLOAD_DIR = 'assets/uploads'
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 const USER_FILESYSTEM_ID = 'user'
+
 export const ERROR_CODE_NOT_FOUND_OR_DENIED = 'not_found_or_denied'
 export const ERROR_CODE_READONLY = 'readonly'
 
@@ -611,21 +613,24 @@ export function fileRoutes(
       const settings = await readWorkspaceSettings(workspace, binding)
       const isImage = contentType.startsWith('image/')
       const dir = isImage
-        ? normalizeUploadDir(body.directory) ?? normalizeUploadDir(settings.markdown?.imageUploadDir) ?? DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR
+        ? normalizeUploadDir(body.directory) ?? normalizeUploadDir(settings?.markdown?.imageUploadDir) ?? DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR
         : DEFAULT_FILE_UPLOAD_DIR
       const ext = extForUpload(filename, contentType)
       const base = basenameForUpload(filename)
       const unique = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
       const path = `${dir}/${base}-${unique}.${ext}`
       if (binding) await requireBindingCapability(binding, path, 'write')
-      // Check base64 length before allocating — base64 is ~4/3 the size of raw bytes.
-      const estimatedBytes = Math.ceil(contentBase64.length * 0.75)
-      if (estimatedBytes === 0 || estimatedBytes > MAX_UPLOAD_BYTES) {
+      if (contentBase64.length > Math.ceil(MAX_UPLOAD_BYTES / 3) * 4) {
         return reply.code(400).send({
           error: { code: ERROR_CODE_VALIDATION_ERROR, message: `upload must be 1 byte to ${MAX_UPLOAD_BYTES} bytes`, field: 'contentBase64' },
         })
       }
       const bytes = Buffer.from(contentBase64, 'base64')
+      if (bytes.length === 0 || bytes.length > MAX_UPLOAD_BYTES) {
+        return reply.code(400).send({
+          error: { code: ERROR_CODE_VALIDATION_ERROR, message: `upload must be 1 byte to ${MAX_UPLOAD_BYTES} bytes`, field: 'contentBase64' },
+        })
+      }
 
       const stat = binding
         ? await (async () => {
@@ -643,10 +648,6 @@ export function fileRoutes(
             await workspace.writeBinaryFile(path, bytes)
             return await workspace.stat(path)
           })()
-      // Cap sourcePath length — it only narrows the relative URL the client
-      // sees and shouldn't be more than a few hundred chars. Without a cap,
-      // a malicious or malformed client could push a multi-megabyte string
-      // through the upload route and back into every markdown image link.
       const MAX_SOURCE_PATH = 1024
       const rawSourcePath = body.sourcePath
       const sourcePath =
@@ -664,6 +665,84 @@ export function fileRoutes(
       }
     } catch (err) {
       return classifyError(err, reply, 'upload')
+    }
+  })
+
+  app.post('/api/v1/files/binary', async (request, reply) => {
+    const body = request.body as Record<string, unknown>
+    if (!requirePrimaryFilesystem(body.filesystem, reply)) return
+    if (typeof body.path !== 'string') {
+      return reply.code(400).send({
+        error: { code: ERROR_CODE_INVALID_PATH, message: 'path must be a string', field: 'path' },
+      })
+    }
+    // Preserve the requested path byte-for-byte; workspace adapters own path safety.
+    const path = body.path
+    const contentBase64 = requireStringParam(body.contentBase64, 'contentBase64', reply)
+    if (contentBase64 === null) return
+    if (!isExactBinaryWritePolicy(body.ifExists)) {
+      return reply.code(400).send({
+        error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'ifExists must be error, replace, or skip', field: 'ifExists' },
+      })
+    }
+    if (contentBase64.length > Math.ceil(MAX_UPLOAD_BYTES / 3) * 4) {
+      return reply.code(400).send({
+        error: { code: ERROR_CODE_VALIDATION_ERROR, message: `upload must be 1 byte to ${MAX_UPLOAD_BYTES} bytes`, field: 'contentBase64' },
+      })
+    }
+    const bytes = Buffer.from(contentBase64, 'base64')
+    if (bytes.length === 0 || bytes.length > MAX_UPLOAD_BYTES) {
+      return reply.code(400).send({
+        error: { code: ERROR_CODE_VALIDATION_ERROR, message: `upload must be 1 byte to ${MAX_UPLOAD_BYTES} bytes`, field: 'contentBase64' },
+      })
+    }
+
+    try {
+      const workspace = await resolveWorkspace(request)
+      const binding = await resolvePrimaryBinding(request)
+      if (binding) await requireBindingCapability(binding, path, 'write')
+
+      if (body.ifExists === 'replace') {
+        if (binding) {
+          if (!binding.operations.writeBinary) {
+            throw Object.assign(new Error('binary write operation is unavailable'), { statusCode: 501 })
+          }
+          await binding.operations.writeBinary({ filesystem: binding.filesystem, path, content: bytes })
+        } else {
+          if (!workspace.writeBinaryFile) {
+            throw Object.assign(new Error('binary write operation is unavailable'), { statusCode: 501 })
+          }
+          await workspace.writeBinaryFile(path, bytes)
+        }
+        return { status: 'written', path } satisfies ExactBinaryWriteOutcome
+      }
+
+      try {
+        if (binding) {
+          if (!binding.operations.createBinary) {
+            throw Object.assign(new Error('exclusive binary create operation is unavailable'), { statusCode: 501 })
+          }
+          await binding.operations.createBinary({ filesystem: binding.filesystem, path, content: bytes })
+        } else {
+          if (!workspace.createBinaryFile) {
+            throw Object.assign(new Error('exclusive binary create operation is unavailable'), { statusCode: 501 })
+          }
+          await workspace.createBinaryFile(path, bytes)
+        }
+        return { status: 'written', path } satisfies ExactBinaryWriteOutcome
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') throw error
+        const outcome = {
+          status: body.ifExists === 'skip' ? 'skipped' : 'conflict',
+          path,
+          reason: 'already-exists',
+        } as const
+        return body.ifExists === 'skip'
+          ? outcome satisfies ExactBinaryWriteOutcome
+          : reply.code(409).send(outcome satisfies ExactBinaryWriteOutcome)
+      }
+    } catch (err) {
+      return classifyError(err, reply, 'file')
     }
   })
 

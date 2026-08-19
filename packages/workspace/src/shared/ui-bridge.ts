@@ -24,7 +24,7 @@ export type UiCommand =
   | { kind: 'closeWorkbenchLeftPane'; params: Record<string, never> }
   | { kind: 'showNotification'; params: { msg: string; level?: 'info' | 'warn' | 'error' } }
   | { kind: 'navigateToLine'; params: { file: string; line: number } }
-  | { kind: 'expandToFile'; params: { path: string; filesystem?: FilesystemId } }
+  | { kind: 'expandToFile'; params: { path: string; filesystem?: FilesystemId; kind?: 'file' | 'dir' } }
   | { kind: string; params: Record<string, unknown> }
 
 export interface CommandResult {

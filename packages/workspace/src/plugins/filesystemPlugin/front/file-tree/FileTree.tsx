@@ -53,7 +53,8 @@ export interface FileTreeProps {
   revealPath?: string | null
   /** Paths currently being mutated — render a small spinner on those rows. */
   pendingPaths?: ReadonlySet<string>
-  onSelect?: (path: string) => void
+  onSelectionChange?: (node: FileTreeNode | null) => void
+  onActivateFile?: (path: string) => void
   onExpand?: (path: string) => void
   onCollapse?: (path: string) => void
   onContextMenu?: (event: React.MouseEvent, node: FileTreeNode) => void
@@ -240,6 +241,7 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileTreeNode>) {
         if (isEditingHere) return
         e.stopPropagation()
         if (isDir) {
+          node.select()
           node.toggle()
         } else {
           node.select()
@@ -310,7 +312,8 @@ export function FileTree({
   editing,
   revealPath,
   pendingPaths,
-  onSelect,
+  onSelectionChange,
+  onActivateFile,
   onExpand,
   onCollapse,
   onContextMenu,
@@ -376,12 +379,14 @@ export function FileTree({
 
   const handleActivate = useCallback(
     (node: { data: FileTreeNode }) => {
-      if (node.data.kind === "file") {
-        onSelect?.(node.data.path)
-      }
+      if (node.data.kind === "file") onActivateFile?.(node.data.path)
     },
-    [onSelect],
+    [onActivateFile],
   )
+
+  const handleSelect = useCallback((nodes: Array<{ data: FileTreeNode }>) => {
+    onSelectionChange?.(nodes[0]?.data ?? null)
+  }, [onSelectionChange])
 
   const handleToggle = useCallback(
     (id: string) => {
@@ -489,13 +494,17 @@ export function FileTree({
 
   return (
     <TreeHandlersCtx.Provider value={handlers}>
-      <div data-boring-workspace-part="file-tree" className={cn("file-tree", className)}>
+      <div
+        data-boring-workspace-part="file-tree"
+        className={cn("file-tree", className)}
+      >
         <Tree<FileTreeNode>
           ref={treeRef}
           data={safeFiles}
           idAccessor="path"
           childrenAccessor="children"
           openByDefault={false}
+          selectionFollowsFocus
           width="100%"
           height={height}
           rowHeight={26}
@@ -504,6 +513,7 @@ export function FileTree({
           searchTerm={searchQuery ?? ""}
           searchMatch={searchMatch}
           onActivate={handleActivate}
+          onSelect={handleSelect}
           onToggle={handleToggle}
           onMove={handleMove}
           disableDrop={disableDrop}

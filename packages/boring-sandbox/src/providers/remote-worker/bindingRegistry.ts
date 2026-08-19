@@ -1,6 +1,7 @@
 import {
   REMOTE_WORKER_ERROR_CODES_V1,
   REMOTE_WORKER_MAX_CAPABILITY_LIFETIME_MS,
+  REMOTE_WORKER_MAX_WORKSPACE_ENVELOPE_BYTES_V1,
   REMOTE_WORKER_PROTOCOL_VERSION,
   RemoteWorkerBindingReceiptSchemaV1,
   RemoteWorkerCapabilityClaimsSchemaV1,
@@ -16,7 +17,6 @@ import { SandboxProviderError } from "../../shared/providerV1";
 import { canonicalJson, remoteWorkerRequestDigestV1 } from "./requestDigest";
 import { SingleUseNonceStoreV1 } from "./singleUseNonceStore";
 
-const MAX_BOUND_REQUEST_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_LEASE_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_ACCEPTED_CAPABILITY_NONCES = 100_000;
 
@@ -117,7 +117,9 @@ function parseBindingInput<T>(
 function bindingRequestDigest(value: unknown): `sha256:${string}` {
   try {
     const encoded = new TextEncoder().encode(canonicalJson(value));
-    if (encoded.byteLength > MAX_BOUND_REQUEST_BYTES) {
+    if (
+      encoded.byteLength > REMOTE_WORKER_MAX_WORKSPACE_ENVELOPE_BYTES_V1
+    ) {
       throw bindingError(
         REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
         "remote-worker request exceeds its byte bound",
