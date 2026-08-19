@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { DARK_BADGE_THEME, DARK_CODE_THEME, LIGHT_BADGE_THEME, LIGHT_CODE_THEME } from './present-pr-theme.mjs'
+import { DARK_BADGE_THEME, DARK_CODE_THEME, DARK_TEXT_THEME, LIGHT_BADGE_THEME, LIGHT_CODE_THEME, LIGHT_TEXT_THEME } from './present-pr-theme.mjs'
 
 const channel = (hex) => {
   const value = Number.parseInt(hex, 16) / 255
@@ -17,6 +17,14 @@ test('every small badge label meets WCAG AA contrast in light and dark themes', 
   for (const [themeName, theme] of [['light', LIGHT_BADGE_THEME], ['dark', DARK_BADGE_THEME]]) {
     for (const [token, [background, foreground]] of Object.entries(theme)) {
       assert.ok(contrast(background, foreground) >= 4.5, `${themeName} ${token} contrast is ${contrast(background, foreground).toFixed(2)}:1`)
+    }
+  }
+})
+
+test('every standalone semantic ink meets WCAG AA on its panel surface', () => {
+  for (const [themeName, theme] of [['light', LIGHT_TEXT_THEME], ['dark', DARK_TEXT_THEME]]) {
+    for (const [inkName, ink] of Object.entries(theme.inks)) {
+      assert.ok(contrast(ink, theme.surface) >= 4.5, `${themeName} ${inkName} ink is ${contrast(ink, theme.surface).toFixed(2)}:1`)
     }
   }
 })

@@ -29,7 +29,7 @@ import {
 import { CATEGORIES, categorize, createSankeyRows, isDefaultSankeyCategory, sankeyRowIsVisible } from './lib/present-pr-files.mjs'
 import { serializeInlineJson } from './lib/present-pr-html.mjs'
 import { extractBeadIds, extractLinkedIssueReference, resolveLinkedIssueReference } from './lib/present-pr-links.mjs'
-import { DARK_BADGE_THEME, DARK_CODE_THEME, LIGHT_BADGE_THEME, LIGHT_CODE_THEME, renderBadgeThemeVariables, renderCodeThemeVariables } from './lib/present-pr-theme.mjs'
+import { DARK_BADGE_THEME, DARK_CODE_THEME, DARK_TEXT_THEME, LIGHT_BADGE_THEME, LIGHT_CODE_THEME, LIGHT_TEXT_THEME, renderBadgeThemeVariables, renderCodeThemeVariables, renderTextThemeVariables } from './lib/present-pr-theme.mjs'
 import { renderMermaidSvg } from './lib/render-mermaid.mjs'
 
 /* ------------------------------------------------------------------ args */
@@ -523,6 +523,7 @@ const html = `<meta charset="utf-8">
   --bg: #ffffff; --panel: #f7f8fa; --panel-2: #eef0f4; --fg: #14161a; --muted: #5b6270;
   --border: #dfe3ea;
   ${renderBadgeThemeVariables(LIGHT_BADGE_THEME)}
+  ${renderTextThemeVariables(LIGHT_TEXT_THEME)}
   ${renderCodeThemeVariables(LIGHT_CODE_THEME)}
   --add-fg: #0a6b2e; --del-fg: #9b1c1c; --hunk-bg: #eef1f7;
 }
@@ -531,6 +532,7 @@ const html = `<meta charset="utf-8">
     --bg: #0d1117; --panel: #12161d; --panel-2: #1b212b; --fg: #e6edf3; --muted: #9aa4b2;
     --border: #262d38;
     ${renderBadgeThemeVariables(DARK_BADGE_THEME)}
+    ${renderTextThemeVariables(DARK_TEXT_THEME)}
     ${renderCodeThemeVariables(DARK_CODE_THEME)}
     --add-fg: #6fdc8c; --del-fg: #ff8f8f; --hunk-bg: #182029;
   }
@@ -539,6 +541,7 @@ const html = `<meta charset="utf-8">
   --bg: #0d1117; --panel: #12161d; --panel-2: #1b212b; --fg: #e6edf3; --muted: #9aa4b2;
   --border: #262d38;
   ${renderBadgeThemeVariables(DARK_BADGE_THEME)}
+  ${renderTextThemeVariables(DARK_TEXT_THEME)}
   ${renderCodeThemeVariables(DARK_CODE_THEME)}
   --add-fg: #6fdc8c; --del-fg: #ff8f8f; --hunk-bg: #182029;
 }
@@ -601,7 +604,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .counts { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 12.5px; }
 .add { color: var(--add-fg); } .del { color: var(--del-fg); }
 
-.diffwrap { overflow-x: auto; background: var(--bg); }
+.diffwrap { overflow-x: auto; background: var(--code-bg); }
 table.diff { border-collapse: collapse; width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.55; }
 table.diff td { padding: 0 6px; vertical-align: top; white-space: pre; }
 td.ln { width: 1%; min-width: 44px; text-align: right; color: var(--muted); user-select: none; opacity: 0.7; }
@@ -640,7 +643,7 @@ tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding: 4px 10px;
 
 /* --- review history --- */
 .norecord { border-color: var(--bad); }
-.norecord strong { color: var(--bad); }
+.norecord strong { color: var(--bad-ink); }
 .norecord p { margin: 6px 0 0; color: var(--muted); font-size: 13.5px; }
 .evhead { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; font-size: 12.5px; }
 .evhead .muted { margin-left: auto; }

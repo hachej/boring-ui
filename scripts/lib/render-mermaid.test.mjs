@@ -40,11 +40,10 @@ test('blocks render-time network and removes load-capable external Mermaid conte
   const externalUrl = `http://127.0.0.1:${port}/pixel.png`
 
   try {
-    const svg = await renderMermaidSvg(`flowchart LR\n  A["<img src='${externalUrl}'>tracked"] --> B[Done]`, 'network-safe-diagram')
+    const svg = await renderMermaidSvg(`flowchart LR\n  A["<form action='${externalUrl}'><button formaction='${externalUrl}'>Send</button></form><img src='${externalUrl}'>"] --> B[Done]`, 'network-safe-diagram')
     assert.equal(requests, 0)
-    assert.doesNotMatch(svg, /<(?:img|image)(?:\s|>)|\ssrc=/i)
+    assert.doesNotMatch(svg, /<(?:form|button|input|img|image)(?:\s|>)|\s(?:src|action|formaction)=/i)
     assert.equal(svg.includes(externalUrl), false)
-    assert.match(svg, />tracked</)
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   }

@@ -24,6 +24,9 @@ export const DARK_BADGE_THEME = {
   muted: ['#9aa4b2', '#0d1117'],
 }
 
+export const LIGHT_TEXT_THEME = { surface: '#f7f8fa', inks: { good: '#176b2c', warn: '#8a4b00', bad: '#b42318' } }
+export const DARK_TEXT_THEME = { surface: '#12161d', inks: { good: '#6fdc8c', warn: '#ffc078', bad: '#ff8f8f' } }
+
 export const LIGHT_CODE_THEME = {
   surfaces: { code: '#ffffff', add: '#e6ffec', del: '#ffebe9' },
   inks: { kw: '#6639b7', str: '#075d28', num: '#034b8f', com: '#4b5563' },
@@ -40,9 +43,13 @@ export function renderBadgeThemeVariables(theme) {
     .join('\n  ')
 }
 
+export function renderTextThemeVariables(theme) {
+  return Object.entries(theme.inks).map(([name, color]) => `--${name}-ink: ${color};`).join('\n  ')
+}
+
 export function renderCodeThemeVariables(theme) {
   return [
-    `--add-bg: ${theme.surfaces.add}; --del-bg: ${theme.surfaces.del};`,
+    `--code-bg: ${theme.surfaces.code}; --add-bg: ${theme.surfaces.add}; --del-bg: ${theme.surfaces.del};`,
     ...Object.entries(theme.inks).map(([name, color]) => `--t-${name}: ${color};`),
   ].join('\n  ')
 }

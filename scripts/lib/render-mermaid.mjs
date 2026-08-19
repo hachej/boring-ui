@@ -62,6 +62,7 @@ export async function renderMermaidSvg(source, renderId = 'pr-context-diagram') 
         securityLevel: 'strict',
         theme: 'base',
         themeVariables: variables,
+        flowchart: { htmlLabels: false },
       })
       const { svg } = await mermaid.render(id, diagram)
       const template = document.createElement('template')
@@ -69,12 +70,12 @@ export async function renderMermaidSvg(source, renderId = 'pr-context-diagram') 
       const root = template.content.querySelector('svg')
       if (!root) throw new Error('Mermaid did not return an SVG root')
 
-      root.querySelectorAll('script, img, image, iframe, object, embed, link, meta, audio, video, source').forEach((node) => node.remove())
+      root.querySelectorAll('script, foreignObject, form, input, button, select, textarea, img, image, iframe, object, embed, link, meta, audio, video, source').forEach((node) => node.remove())
       root.querySelectorAll('*').forEach((node) => {
         for (const attribute of [...node.attributes]) {
           const name = attribute.name.toLowerCase()
           const value = attribute.value.trim()
-          if (name.startsWith('on') || name === 'src' || name === 'srcset' || name === 'srcdoc') {
+          if (name.startsWith('on') || name === 'src' || name === 'srcset' || name === 'srcdoc' || name === 'action' || name === 'formaction') {
             node.removeAttribute(attribute.name)
             continue
           }
