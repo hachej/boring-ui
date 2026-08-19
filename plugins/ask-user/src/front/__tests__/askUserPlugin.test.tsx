@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { UI_COMMAND_EVENT, WORKSPACE_ATTENTION_ACTION_EVENT, WORKSPACE_COMPOSER_STOP_EVENT, WORKSPACE_COMPOSER_STOP_REASONS, WorkspaceProvider, events, userMeta, useWorkspaceAttention, workspaceEvents } from "@hachej/boring-workspace"
+import { HumanArtifactListSchema, UI_COMMAND_EVENT, WORKSPACE_ATTENTION_ACTION_EVENT, WORKSPACE_COMPOSER_STOP_EVENT, WORKSPACE_COMPOSER_STOP_REASONS, WorkspaceProvider, events, userMeta, useWorkspaceAttention, workspaceEvents } from "@hachej/boring-workspace"
+import { ArtifactOpenProvider } from "@hachej/boring-agent/front"
 import { captureFrontPlugin } from "@hachej/boring-workspace/plugin"
+import { AskUserToolInputSchema } from "../../shared/schema"
 import type { AskUserQuestion } from "../../shared/types"
 import { askUserPlugin } from "../index"
 import { sharedQuestionsStore } from "../runtime"
@@ -593,6 +595,96 @@ describe("askUserPlugin front shell", () => {
 
     rerender(<Provider apiBaseUrl="" activeSessionId="other"><>{renderer.render({ toolCallId: "another-call" })}</></Provider>)
     expect(screen.queryByTestId("ask-user-inline-question")).not.toBeInTheDocument()
+  })
+
+  it("renders the authored artifact list while pending and after resolution, with host-specific routing", async () => {
+    const artifacts = [
+      { id: "review", surfaceKind: "workspace.open.path", target: "docs/review.html", title: "PR review", description: "Inspect the exact visual diff." },
+      { id: "catalog", surfaceKind: "catalog.open-row", target: "orders_daily", title: "Orders table", description: "Open the registered catalog surface." },
+    ]
+    const pendingQuestion = { ...question, artifacts }
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: pendingQuestion } })
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(pendingQuestion))
+      return Response.json({})
+    }))
+    const Provider = getProvider()
+    const renderer = capturedPlugin.registrations.toolRenderers.find((registration) => registration.id === "ask_user")!
+    const onOpenArtifact = vi.fn()
+    const onCommand = vi.fn()
+    window.addEventListener(UI_COMMAND_EVENT, onCommand)
+    const input = { title: pendingQuestion.title, schema: pendingQuestion.schema, artifacts }
+    const view = render(
+      <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
+        <Provider apiBaseUrl="" activeSessionId="default"><>{renderer.render({ toolCallId: pendingQuestion.toolCallId, state: "input-available", input })}</></Provider>
+      </ArtifactOpenProvider>,
+    )
+
+    expect(await screen.findByText("PR review")).toBeInTheDocument()
+    expect(screen.getByText("Inspect the exact visual diff.")).toBeInTheDocument()
+    expect(screen.getByText("Orders table")).toBeInTheDocument()
+    expect(screen.getByText("Open the registered catalog surface.")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Open PR review" }))
+    expect(onOpenArtifact).toHaveBeenCalledWith("docs/review.html")
+    expect(onCommand).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Open Orders table" }))
+    expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ detail: {
+      kind: "openSurface",
+      params: { kind: "catalog.open-row", target: "orders_daily" },
+    } }))
+
+    sharedQuestionsStore.setPending(null, pendingQuestion.sessionId)
+    view.rerender(
+      <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
+        <Provider apiBaseUrl="" activeSessionId="default"><>{renderer.render({ toolCallId: "resolved-call", state: "output-available", input })}</></Provider>
+      </ArtifactOpenProvider>,
+    )
+    expect(screen.getByText("Answer submitted")).toBeInTheDocument()
+    expect(screen.getByText("PR review")).toBeInTheDocument()
+    expect(screen.getByText("Orders table")).toBeInTheDocument()
+    window.removeEventListener(UI_COMMAND_EVENT, onCommand)
+  })
+
+  it("keeps authored artifacts visible in cancelled output", () => {
+    const Provider = getProvider()
+    const renderer = capturedPlugin.registrations.toolRenderers.find((registration) => registration.id === "ask_user")!
+    const onCommand = vi.fn()
+    window.addEventListener(UI_COMMAND_EVENT, onCommand)
+    render(<Provider apiBaseUrl=""><>{renderer.render({ state: "aborted", input: { title: "Review decision", schema: question.schema, artifacts: [{ id: "proof", surfaceKind: "workspace.open.path", target: "proof.md", title: "Proof bundle" }] } })}</></Provider>)
+    expect(screen.getByText("Question cancelled")).toBeInTheDocument()
+    expect(screen.getByText("Proof bundle")).toBeInTheDocument()
+    const open = screen.getByRole("button", { name: "Open Proof bundle" })
+    expect(open).toBeDisabled()
+    fireEvent.click(open)
+    expect(onCommand).not.toHaveBeenCalled()
+    window.removeEventListener(UI_COMMAND_EVENT, onCommand)
+  })
+
+  it("fails closed for an invalid artifact payload without crashing the resolved card", () => {
+    const Provider = getProvider()
+    const renderer = capturedPlugin.registrations.toolRenderers.find((registration) => registration.id === "ask_user")!
+    render(<Provider apiBaseUrl=""><>{renderer.render({ state: "output-available", input: { title: "Safe resolution", schema: question.schema, artifacts: [{ id: "duplicate", surfaceKind: "workspace.open.path", target: "one.md", title: "Must not render" }, { id: "duplicate", surfaceKind: "workspace.open.path", target: "two.md", title: "Also hidden" }] } })}</></Provider>)
+    expect(screen.getByText("Safe resolution")).toBeInTheDocument()
+    expect(screen.getByText("Answer submitted")).toBeInTheDocument()
+    expect(screen.queryByText("Must not render")).not.toBeInTheDocument()
+    expect(screen.queryByText("Also hidden")).not.toBeInTheDocument()
+  })
+
+  it("hides otherwise valid artifacts when the canonical ask_user input is malformed", () => {
+    const Provider = getProvider()
+    const renderer = capturedPlugin.registrations.toolRenderers.find((registration) => registration.id === "ask_user")!
+    render(<Provider apiBaseUrl=""><>{renderer.render({ state: "output-error", input: { title: "Missing required schema", artifacts: [{ id: "proof", surfaceKind: "catalog.open-row", target: "orders", title: "Must stay hidden" }] } })}</></Provider>)
+    expect(screen.getByText("Question cancelled")).toBeInTheDocument()
+    expect(screen.queryByText("Must stay hidden")).not.toBeInTheDocument()
+  })
+
+  it("accepts the same authored artifact array in ask_user input and the shared Inbox schema", () => {
+    const artifacts = [{ id: "review", surfaceKind: "workspace.open.path", target: "review.html", title: "Review", description: "Owner-facing review" }]
+    const input = { title: "Approve?", schema: question.schema, artifacts }
+    const toolResult = AskUserToolInputSchema.parse(input)
+    const inboxResult = HumanArtifactListSchema.parse(input.artifacts)
+    expect(toolResult.artifacts).toEqual(inboxResult)
+    expect(toolResult.artifacts).toEqual(artifacts)
   })
 
   it("registers ask_user as an inline tool renderer", () => {
