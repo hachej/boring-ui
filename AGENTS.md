@@ -29,7 +29,7 @@ These docs define the boring-coding workflow. Read local copy if available; fall
 | Design decisions (ADRs) | `docs/design-docs/decisions/` |
 | Domain deep-dives | `docs/domains/` |
 | Workflow (planning + impl) | `docs/workflow-symlinked/` |
-| Role prompts | `docs/workflow-symlinked/prompts/` |
+| Role prompts | `/home/ubuntu/projects/boring-coding/prompts/` |
 | Beads reference | `docs/workflow-symlinked/beads.md` |
 | Evidence conventions | `docs/workflow-symlinked/EVIDENCE.md` |
 | Session lifecycle | `docs/workflow-symlinked/OPERATIONS.md` |
