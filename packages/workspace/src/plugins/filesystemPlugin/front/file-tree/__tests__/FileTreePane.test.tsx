@@ -40,7 +40,7 @@ vi.mock("../FileTree", () => {
     editing: EditingArg | undefined,
     pending: PendingArg,
     onSelectionChange: ((node: Node | null) => void) | undefined,
-    onActivateFile: ((path: string) => void) | undefined,
+    onSelect: ((path: string) => void) | undefined,
     onContextMenu: ((e: React.MouseEvent, n: Node) => void) | undefined,
     onSubmitEdit: ((p: string, v: string) => void) | undefined,
     onCancelEdit: (() => void) | undefined,
@@ -58,13 +58,13 @@ vi.mock("../FileTree", () => {
           onKeyDown={(event) => {
             if (!isEditingHere && event.key === "Enter") {
               onSelectionChange?.(f)
-              if (f.kind === "file") onActivateFile?.(f.path)
+              if (f.kind === "file") onSelect?.(f.path)
             }
           }}
           onClick={() => {
             if (isEditingHere) return
             onSelectionChange?.(f)
-            if (f.kind === "file") onActivateFile?.(f.path)
+            if (f.kind === "file") onSelect?.(f.path)
           }}
           onContextMenu={(e) => {
             e.preventDefault()
@@ -90,7 +90,7 @@ vi.mock("../FileTree", () => {
           {isPending && <span data-testid="file-tree-pending-spinner" />}
         </div>
         {f.children?.map((c) =>
-          renderNode(c, editing, pending, onSelectionChange, onActivateFile, onContextMenu, onSubmitEdit, onCancelEdit),
+          renderNode(c, editing, pending, onSelectionChange, onSelect, onContextMenu, onSubmitEdit, onCancelEdit),
         )}
       </div>
     )
@@ -105,7 +105,7 @@ vi.mock("../FileTree", () => {
       selectedPath,
       revealPath,
       onSelectionChange,
-      onActivateFile,
+      onSelect,
       onContextMenu,
       onSubmitEdit,
       onCancelEdit,
@@ -119,7 +119,7 @@ vi.mock("../FileTree", () => {
       selectedPath?: string | null
       revealPath?: string | null
       onSelectionChange?: (node: Node | null) => void
-      onActivateFile?: (path: string) => void
+      onSelect?: (path: string) => void
       onContextMenu?: (e: React.MouseEvent, n: Node) => void
       onSubmitEdit?: (p: string, v: string) => void
       onCancelEdit?: () => void
@@ -139,7 +139,7 @@ vi.mock("../FileTree", () => {
             editing,
             pendingPaths,
             onSelectionChange,
-            onActivateFile,
+            onSelect,
             onContextMenu,
             onSubmitEdit,
             onCancelEdit,
@@ -164,7 +164,8 @@ vi.mock("../FileTree", () => {
   }
 })
 
-import { FileTreePane, FileTreeView, clampContextMenuPosition } from "../FileTreeView"
+import { FileTreeView, clampContextMenuPosition } from "../FileTreeView"
+import { FileTreePane } from "../FileTreePane"
 import { events, remoteMeta, userMeta } from "../../../../../front/events"
 import { filesystemEvents } from "../../../shared/events"
 
@@ -389,9 +390,10 @@ describe("FileTreePane", () => {
   })
 
   it("selects the explicit filesystem for reveal requests without sending the request to another root", async () => {
+    mockGetStat.mockResolvedValue({ kind: "dir", size: 0, mtimeMs: 1 })
     const { rerender } = render(
       <FileTreePane
-        params={{ revealFileTreeRequest: { path: "src", seq: 1, filesystem: "company_context", kind: "dir" } }}
+        params={{ revealFileTreeRequest: { path: "src", seq: 1, filesystem: "company_context" } }}
         roots={[
           { filesystem: "user", label: "Workspace", rootDir: "." },
           { filesystem: "company_context", label: "Company", rootDir: "/" },
@@ -408,7 +410,7 @@ describe("FileTreePane", () => {
     await selectRoot("Workspace")
     rerender(
       <FileTreePane
-        params={{ revealFileTreeRequest: { path: "src", seq: 1, filesystem: "company_context", kind: "dir" } }}
+        params={{ revealFileTreeRequest: { path: "src", seq: 1, filesystem: "company_context" } }}
         roots={[
           { filesystem: "user", label: "Workspace", rootDir: "." },
           { filesystem: "company_context", label: "Company", rootDir: "/" },
@@ -454,6 +456,7 @@ describe("FileTreePane", () => {
   })
 
   it("uses an authoritative prop reveal only once when the matching bridge event also arrives", async () => {
+    mockGetStat.mockResolvedValue({ kind: "dir", size: 0, mtimeMs: 1 })
     const expandHandlers: Array<(payload: { filesystem?: string; path: string }) => void> = []
     const bridge = {
       openFile: vi.fn(),
@@ -469,7 +472,7 @@ describe("FileTreePane", () => {
       <FileTreePane
         params={{
           bridge,
-          revealFileTreeRequest: { path: "src", seq: 1, filesystem: "user", kind: "dir" },
+          revealFileTreeRequest: { path: "src", seq: 1, filesystem: "user" },
         }}
         roots={[
           { filesystem: "user", label: "Workspace", rootDir: "." },
@@ -489,6 +492,7 @@ describe("FileTreePane", () => {
   })
 
   it("keeps standalone FileTreeView bridge expansion behavior", async () => {
+    mockGetStat.mockResolvedValue({ kind: "dir", size: 0, mtimeMs: 1 })
     const expandHandlers: Array<(payload: { filesystem?: string; path: string }) => void> = []
     const bridge = {
       openFile: vi.fn(),
@@ -512,6 +516,7 @@ describe("FileTreePane", () => {
   })
 
   it("synchronizes the selected root from identity-bearing open and expand events", async () => {
+    mockGetStat.mockResolvedValue({ kind: "dir", size: 0, mtimeMs: 1 })
     const handlers = new Map<string, Set<(payload: { filesystem?: string; path: string }) => void>>()
     const bridge = {
       openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
@@ -574,6 +579,7 @@ describe("FileTreePane", () => {
   })
 
   it("keeps a bridge-only reveal pending until its async catalog root arrives, then consumes it once", async () => {
+    mockGetStat.mockResolvedValue({ kind: "dir", size: 0, mtimeMs: 1 })
     const handlers = new Map<string, Set<(payload: { filesystem?: string; path: string }) => void>>()
     const bridge = {
       openFile: vi.fn(),
@@ -881,8 +887,9 @@ describe("FileTreePane", () => {
     expect(mockGetTree).not.toHaveBeenCalledWith("src/nested/deep.ts")
   })
 
-  it("tree expand bridge events reveal authoritatively typed folders without opening an editor", async () => {
-    const expandHandlers: Array<(payload: { path: string; kind?: "file" | "dir" }) => void> = []
+  it("tree expand bridge events classify folders through stat without opening an editor", async () => {
+    mockGetStat.mockResolvedValue({ kind: "dir", size: 0, mtimeMs: 1 })
+    const expandHandlers: Array<(payload: { path: string }) => void> = []
     const bridge = {
       getActiveFile: () => null,
       openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
@@ -897,7 +904,7 @@ describe("FileTreePane", () => {
     await waitFor(() => expect(bridge.subscribe).toHaveBeenCalled())
 
     act(() => {
-      for (const handler of expandHandlers) handler({ path: "/src//", kind: "dir" })
+      for (const handler of expandHandlers) handler({ path: "/src//" })
     })
 
     await waitFor(() => {
@@ -907,20 +914,21 @@ describe("FileTreePane", () => {
     expect(bridge.openFile).not.toHaveBeenCalled()
   })
 
-  it("uses authoritative tree-expand kind for the toolbar upload destination", async () => {
-    const expandHandlers: Array<(payload: { path: string; kind?: "file" | "dir" }) => void> = []
+  it("uses stat-classified tree-expand folders for the toolbar upload destination", async () => {
+    mockGetStat.mockResolvedValue({ kind: "dir", size: 0, mtimeMs: 1 })
+    const expandHandlers: Array<(payload: { path: string }) => void> = []
     const bridge = {
       getActiveFile: () => null,
-      subscribe: vi.fn((event: string, handler: (payload: { path: string; kind?: "file" | "dir" }) => void) => {
+      subscribe: vi.fn((event: string, handler: (payload: { path: string }) => void) => {
         if (event === "tree:expand") expandHandlers.push(handler)
         return vi.fn()
       }),
     }
     render(<FileTreePane bridge={bridge as any} />, { wrapper })
     await waitFor(() => expect(expandHandlers).toHaveLength(1))
-    act(() => expandHandlers[0]?.({ path: "src", kind: "dir" }))
+    act(() => expandHandlers[0]?.({ path: "src" }))
     await waitFor(() => expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "src"))
-    expect(mockGetStat).not.toHaveBeenCalled()
+    expect(mockGetStat).toHaveBeenCalledWith("src")
     fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
     fireEvent.change(screen.getByLabelText("Choose files to upload"), {
       target: { files: [new File(["x"], "bridge.txt")] },
@@ -985,14 +993,15 @@ describe("FileTreePane", () => {
     expect(mockFileListRefetch).not.toHaveBeenCalled()
   })
 
-  it("preserves whitespace in authoritatively typed directory reveals", async () => {
+  it("preserves whitespace in stat-classified directory reveals", async () => {
+    mockGetStat.mockResolvedValue({ kind: "dir", size: 0, mtimeMs: 1 })
     render(
-      <FileTreePane params={{ revealFileTreeRequest: { path: "reports ", seq: 1, kind: "dir" } }} />,
+      <FileTreePane params={{ revealFileTreeRequest: { path: "reports ", seq: 1 } }} />,
       { wrapper },
     )
 
     await waitFor(() => expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "reports "))
-    expect(mockGetStat).not.toHaveBeenCalled()
+    expect(mockGetStat).toHaveBeenCalledWith("reports ")
     fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
     fireEvent.change(screen.getByLabelText("Choose files to upload"), {
       target: { files: [new File(["x"], "inside.txt")] },
@@ -1039,6 +1048,26 @@ describe("FileTreePane", () => {
     await waitFor(() => expect(screen.queryByLabelText("Choose files to upload")).not.toBeInTheDocument())
   })
 
+  it("hides upload actions when exclusive-create capability is unavailable", async () => {
+    const chromeActionsElement = document.createElement("div")
+    render(<FileTreePane
+      params={{ chromeActionsElement }}
+      roots={[{
+        filesystem: "user",
+        label: "Workspace",
+        rootDir: ".",
+        access: "readwrite",
+        capabilities: {
+          read: true, list: true, search: true, write: true, upload: false,
+          delete: true, move: true, mkdir: true,
+        },
+      }]}
+    />, { wrapper })
+
+    await waitFor(() => expect(within(chromeActionsElement).queryByRole("button", { name: "Upload files" })).not.toBeInTheDocument())
+    expect(screen.queryByLabelText("Choose files to upload")).not.toBeInTheDocument()
+  })
+
   it("targets a selected directory and a selected file's parent from the toolbar", async () => {
     render(<FileTreePane />, { wrapper })
     fireEvent.click(await screen.findByText("src"))
@@ -1068,6 +1097,7 @@ describe("FileTreePane", () => {
   })
 
   it("refreshes an expanded folder when an agent/remote change lands inside it", async () => {
+    mockGetStat.mockResolvedValue({ kind: "dir", size: 0, mtimeMs: 1 })
     mockGetTree.mockResolvedValue([{ name: "old.ts", kind: "file", path: "src/old.ts" }])
     const expandHandlers: Array<(payload: { path: string }) => void> = []
     const bridge = {
@@ -1087,7 +1117,7 @@ describe("FileTreePane", () => {
     // Wait for the child to actually render — that guarantees expandedChildren
     // committed (getTree is called synchronously, before its promise resolves).
     act(() => {
-      for (const handler of expandHandlers) handler({ path: "src", kind: "dir" } as any)
+      for (const handler of expandHandlers) handler({ path: "src" } as any)
     })
     await screen.findByText("old.ts")
     mockGetTree.mockClear()
@@ -1132,6 +1162,7 @@ describe("FileTreePane", () => {
   })
 
   it("reveals folder requests forwarded through left-tab params", async () => {
+    mockGetStat.mockResolvedValue({ kind: "dir", size: 0, mtimeMs: 1 })
     const bridge = {
       getActiveFile: () => null,
       openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
@@ -1141,7 +1172,7 @@ describe("FileTreePane", () => {
       <FileTreePane
         params={{
           bridge,
-          revealFileTreeRequest: { path: "/src//", seq: 1, kind: "dir" },
+          revealFileTreeRequest: { path: "/src//", seq: 1 },
         }}
       />,
       { wrapper },
@@ -1156,6 +1187,7 @@ describe("FileTreePane", () => {
   })
 
   it("keeps explicit folder reveal ahead of active-file reveal when sources remount", async () => {
+    mockGetStat.mockResolvedValue({ kind: "dir", size: 0, mtimeMs: 1 })
     let emitActiveFile: ((path: string | null) => void) | undefined
     const bridge = {
       getActiveFile: () => "index.ts",
@@ -1170,7 +1202,7 @@ describe("FileTreePane", () => {
       <FileTreePane
         params={{
           bridge,
-          revealFileTreeRequest: { path: "src", seq: 1, kind: "dir" },
+          revealFileTreeRequest: { path: "src", seq: 1 },
         }}
       />,
       { wrapper },
@@ -1443,7 +1475,7 @@ describe("FileTreePane", () => {
         label: "Workspace",
         rootDir: ".",
         access: "readwrite",
-        capabilities: { read: true, list: true, search: true, write: true, mkdir: false, move: false, delete: true },
+        capabilities: { read: true, list: true, search: true, write: true, upload: true, mkdir: false, move: false, delete: true },
       }]} />, { wrapper })
       await waitFor(() => expect(screen.getByText("index.ts")).toBeInTheDocument())
 

@@ -157,11 +157,11 @@ describe('primary filesystem access projection', () => {
     const request = () => app.inject({
       method: 'POST',
       url: '/api/v1/files/binary',
-      payload: { path: 'a/raced.txt', ifExists: 'skip', contentBase64: 'eA==' },
+      payload: { path: 'a/raced.txt', ifExists: 'error', contentBase64: 'eA==' },
     })
     const responses = await Promise.all([request(), request()])
     expect(createBinary).toHaveBeenCalledTimes(2)
-    expect(responses.map((response) => response.json().status).sort()).toEqual(['skipped', 'written'])
+    expect(responses.map((response) => response.json().status).sort()).toEqual(['conflict', 'written'])
     await app.close()
   })
 
