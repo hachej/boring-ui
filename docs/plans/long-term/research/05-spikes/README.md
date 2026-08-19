@@ -1,8 +1,21 @@
 # Executable spikes — index and results
 
-Code lives in `~/projects/spike-*` on the research VM (unpinned working trees;
-see evidence-preservation gate P-1). Each proved or refuted a claim; results
-were carried into the recommendations and the architecture plan.
+The original working trees at `~/projects/spike-*` were REMOVED 2026-08-19 on
+owner instruction. The essential sources — schemas, proof scripts, key tests,
+NOTES, measured artifacts — are archived in the per-spike subfolders here;
+everything else (node_modules, bundles, transcripts) was reproducible bulk.
+All spikes ran against pinned `@earendil-works/pi-agent-core@0.80.7` /
+`pi-coding-agent@0.80.7`; celld 0.1.0; Flue 2.0.3. Each proved or refuted a
+claim; results were carried into the recommendations and architecture plan.
+
+Archived per spike: `durable-pause/` (schema.sql, durable-pause.js, worker,
+test, mutate.mjs, restart-proof.sh) · `l0-schema/` (NOTES, schema.sql,
+raw-schema-invariants test — the mutation-testing artifact) · `pi-storage/`
+(NOTES, turn-worker, host-session-storage, two-process proof script) ·
+`tool-catalog/` (README, catalog, harness, identity test, measured JSON) ·
+`migration/` (proof.ts, event-store-migration, test) · `flue-celld/` (README,
+AgentGateway→Flue shim.ts, node-server) · `dx-evidence-log.md` (onboarding DX
+spike evidence).
 
 | spike | question | result |
 | --- | --- | --- |
