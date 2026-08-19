@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { categorize, createSankeyRows, filterSankeyRows, isDefaultSankeyCategory } from './present-pr-files.mjs'
+import { categorize, createSankeyRows, isDefaultSankeyCategory, sankeyRowIsVisible } from './present-pr-files.mjs'
 
 test('classifies every excluded test and docs path convention', () => {
   const cases = [
@@ -41,8 +41,8 @@ test('the Sankey view model toggles supplemental rows without removing them from
   const enabled = { prod: true, test: true, docs: true }
 
   assert.equal(rows.length, 3)
-  assert.deepEqual(filterSankeyRows(rows, enabled).map((row) => row.cat), ['prod'])
-  assert.deepEqual(filterSankeyRows(rows, enabled, true).map((row) => row.cat), ['prod', 'test', 'docs'])
-  assert.deepEqual(filterSankeyRows(rows.slice(1), enabled), [])
-  assert.deepEqual(filterSankeyRows(rows, { ...enabled, test: false }, true).map((row) => row.cat), ['prod', 'docs'])
+  assert.deepEqual(rows.filter((row) => sankeyRowIsVisible(row, enabled)).map((row) => row.cat), ['prod'])
+  assert.deepEqual(rows.filter((row) => sankeyRowIsVisible(row, enabled, true)).map((row) => row.cat), ['prod', 'test', 'docs'])
+  assert.deepEqual(rows.slice(1).filter((row) => sankeyRowIsVisible(row, enabled)), [])
+  assert.deepEqual(rows.filter((row) => sankeyRowIsVisible(row, { ...enabled, test: false }, true)).map((row) => row.cat), ['prod', 'docs'])
 })

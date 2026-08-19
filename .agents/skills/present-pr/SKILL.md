@@ -150,7 +150,10 @@ already reviewed, and state the open questions.
    Omitting the block entirely does not hide the gap: the artifact renders a red
    "No review history recorded — treat as unreviewed" panel in its place.
 
-5. **Generate the page — into the lane worktree, not a scratchpad:**
+5. **Generate the page — into the lane worktree, not a scratchpad.** Mermaid pre-render
+   uses Playwright Chromium. If the lane has no browser binary yet, provision it from that
+   lane (never the canonical checkout or live hub) with
+   `pnpm exec playwright install chromium`.
 
    ```bash
    mkdir -p .handoff
@@ -168,9 +171,11 @@ already reviewed, and state the open questions.
 
    The script pulls metadata, checks, and the combined diff via `gh` and renders one HTML
    file with no external requests — safe for the artifact viewer's strict CSP. Mermaid is
-   pre-rendered at generation time to inline SVG. This deliberately avoids runtime Mermaid,
-   external scripts, and CDN requests because the workspace HTML viewer does not execute or
-   fetch them reliably; the resulting single file also renders in a plain browser.
+   pre-rendered at generation time to inline SVG on a fixed dark diagram surface. This
+   deliberately avoids runtime Mermaid, external scripts, and CDN requests because the
+   workspace HTML viewer does not execute or fetch them reliably; the resulting single file
+   also renders in a plain browser. `pnpm test:present-pr-mermaid` exercises the browser-backed
+   multi-diagram ID isolation separately from the browser-free lint suite.
 
 6. **Hand it over as two panes — the standard handoff.** Working inside a
    workspace session, the artifact is not a link, it is a pane:

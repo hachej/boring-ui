@@ -26,7 +26,7 @@ import {
   parseContextMarkdown,
   renderIntroVisuals,
 } from './lib/present-pr-context.mjs'
-import { CATEGORIES, categorize, createSankeyRows, isDefaultSankeyCategory } from './lib/present-pr-files.mjs'
+import { CATEGORIES, categorize, createSankeyRows, isDefaultSankeyCategory, sankeyRowIsVisible } from './lib/present-pr-files.mjs'
 import { extractBeadIds, extractLinkedIssueReference, resolveLinkedIssueReference } from './lib/present-pr-links.mjs'
 import { renderMermaidSvg } from './lib/render-mermaid.mjs'
 
@@ -568,7 +568,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .diagram .context-visual { margin: 0; }
 .diagram .context-visual + .context-visual { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 18px; }
 .diagram pre.mermaid { background: transparent; text-align: center; }
-.diagram .mermaid-svg { display: flex; justify-content: center; }
+.diagram .mermaid-svg { display: flex; justify-content: center; padding: 14px; border-radius: 9px; background: #11151c; color: #eef2ff; }
 .diagram .mermaid-svg svg { width: 100%; height: auto; }
 .diagram > pre.shape { white-space: pre; font-size: 12px; color: var(--muted); }
 
@@ -767,6 +767,8 @@ ${files.map(renderFile).join('\n')}
 var SANKEY_DATA = ${JSON.stringify(createSankeyRows(files))};
 </script>
 <script>
+${sankeyRowIsVisible.toString()}
+
 (function () {
   var fileEls = Array.prototype.slice.call(document.querySelectorAll('.file'));
   var boxes = Array.prototype.slice.call(document.querySelectorAll('.chip input'));
@@ -865,7 +867,7 @@ var SANKEY_DATA = ${JSON.stringify(createSankeyRows(files))};
     if (!svg) return;
     var on = {};
     boxes.forEach(function (b) { on[b.dataset.cat] = b.checked; });
-    var rows = SANKEY_DATA.filter(function (r) { return on[r.cat] && (showSupplemental || !r.supplemental); });
+    var rows = SANKEY_DATA.filter(function (row) { return sankeyRowIsVisible(row, on, showSupplemental); });
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (rows.length === 0) { svg.setAttribute('height', 0); return; }
 

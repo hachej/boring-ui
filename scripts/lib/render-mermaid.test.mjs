@@ -3,18 +3,26 @@ import test from 'node:test'
 
 import { renderMermaidSvg } from './render-mermaid.mjs'
 
-test('multiple Mermaid visuals use disjoint SVG fragment IDs', async () => {
+const idsIn = (svg) => new Set([...svg.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]))
+const referencesIn = (svg) => [
+  ...[...svg.matchAll(/\s(?:marker-start|marker-end|fill|filter)="url\(#([^\)]+)\)"/g)].map((match) => match[1]),
+  ...[...svg.matchAll(/(?:href|aria-labelledby|aria-describedby)="#([^"]+)"/g)].map((match) => match[1]),
+]
+
+test('multiple sequence diagrams use disjoint, internally valid SVG fragment IDs', async () => {
   const [first, second] = await Promise.all([
-    renderMermaidSvg('flowchart LR\n  A[First] --> B[Done]', 'pr-context-diagram-1'),
-    renderMermaidSvg('flowchart LR\n  A[Second] --> B[Done]', 'pr-context-diagram-2'),
+    renderMermaidSvg('sequenceDiagram\n  A->>B: First message', 'pr-context-diagram-1'),
+    renderMermaidSvg('sequenceDiagram\n  A->>B: Second message', 'pr-context-diagram-2'),
   ])
 
   assert.match(first, /id="pr-context-diagram-1"/)
   assert.match(second, /id="pr-context-diagram-2"/)
-  assert.match(first, />First</)
-  assert.match(second, />Second</)
+  assert.match(first, />First message</)
+  assert.match(second, />Second message</)
 
-  const firstIds = new Set([...first.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]))
-  const secondIds = new Set([...second.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]))
+  const firstIds = idsIn(first)
+  const secondIds = idsIn(second)
   assert.deepEqual([...firstIds].filter((id) => secondIds.has(id)), [])
+  assert.deepEqual(referencesIn(first).filter((id) => !firstIds.has(id)), [])
+  assert.deepEqual(referencesIn(second).filter((id) => !secondIds.has(id)), [])
 })

@@ -40,6 +40,6 @@ export function createSankeyRows(files) {
   }))
 }
 
-export function filterSankeyRows(rows, enabledCategories, showSupplemental = false) {
-  return rows.filter((row) => enabledCategories[row.cat] && (showSupplemental || !row.supplemental))
+export function sankeyRowIsVisible(row, enabledCategories, showSupplemental = false) {
+  return enabledCategories[row.cat] && (showSupplemental || !row.supplemental)
 }
