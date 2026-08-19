@@ -461,13 +461,12 @@ describe("adaptToolsForPi", () => {
 
 describe("PiSessionStore", () => {
   const ctx = { workspaceId: "test-ws" };
-  const trustedNativeRuntimeScopeIdentity = "runtime-direct-local";
-  const directCtx = { workspaceId: "direct-local", runtimeScopeIdentity: trustedNativeRuntimeScopeIdentity };
+  const directCtx = { workspaceId: "direct-local" };
   let tmpDir: string;
 
   const trustedNativeStore = () => new PiSessionStore("/tmp", {
     sessionDir: tmpDir,
-    trustedNativeRuntimeScopeIdentity,
+    allowUnscopedNativeAccess: true,
   });
 
   beforeEach(async () => {
@@ -853,7 +852,7 @@ describe("PiSessionStore", () => {
     expect(list).toHaveLength(0);
   });
 
-  it("lists bare native transcripts only with the explicit capability and preserves order across rename", async () => {
+  it("lists bare native transcripts only with the explicit local capability and preserves order across rename", async () => {
     const olderId = "native-older";
     const newerId = "native-newer";
     const olderPath = join(tmpDir, `2026-06-04_${olderId}.jsonl`);

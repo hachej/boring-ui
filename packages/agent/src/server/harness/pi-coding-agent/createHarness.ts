@@ -303,15 +303,12 @@ function sessionCtxFromRunContext(ctx: RunContext): SessionCtx {
 }
 
 function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
-  if (!ctx?.workspaceId && !ctx?.runtimeScopeIdentity) return undefined;
-  return {
-    ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
-    ...(ctx.runtimeScopeIdentity ? { runtimeScopeIdentity: ctx.runtimeScopeIdentity } : {}),
-  };
+  if (!ctx?.workspaceId) return undefined;
+  return { workspaceId: ctx.workspaceId };
 }
 
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
-  return JSON.stringify([sessionId, ctx.workspaceId ?? "", ctx.runtimeScopeIdentity ?? ""]);
+  return JSON.stringify([sessionId, ctx.workspaceId ?? ""]);
 }
 
 async function applyRequestedSessionOptions(
