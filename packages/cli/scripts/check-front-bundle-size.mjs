@@ -4,6 +4,7 @@ import { basename, join } from "node:path"
 const publicDir = new URL("../public/", import.meta.url)
 const budgetBytes = Number(process.env.CLI_ENTRY_BUDGET_BYTES ?? 1_000_000)
 const eagerBudgetBytes = Number(process.env.CLI_EAGER_BUDGET_BYTES ?? 1_000_000)
+const startupBudgetBytes = Number(process.env.CLI_STARTUP_BUDGET_BYTES ?? 2_500_000)
 const html = readFileSync(new URL("index.html", publicDir), "utf8")
 const entry = html.match(/<script[^>]+src="\/([^\"]+\.js)"/)?.[1]
 if (!entry) throw new Error("CLI bundle budget: index.html has no module entry")
@@ -18,15 +19,35 @@ const entryBytes = statSync(new URL(entry, publicDir)).size
 const eagerFiles = [...new Set([entry, ...preloads])]
 const eagerBytes = eagerFiles.reduce((total, file) => total + statSync(new URL(file, publicDir)).size, 0)
 
+// HTML preload hints are not the whole mandatory startup graph: the entry can
+// still statically import chunks that the browser discovers while parsing it.
+// Traverse Vite's manifest so the regression gate covers every static import.
+const manifest = JSON.parse(readFileSync(new URL(".vite/manifest.json", publicDir), "utf8"))
+const manifestEntry = Object.values(manifest).find((chunk) => chunk.isEntry && chunk.file === entry)
+if (!manifestEntry) throw new Error(`CLI bundle budget: manifest has no entry for ${entry}`)
+const startupFiles = new Set()
+function collectStaticImports(chunk) {
+  if (startupFiles.has(chunk.file)) return
+  startupFiles.add(chunk.file)
+  for (const importedKey of chunk.imports ?? []) {
+    const imported = manifest[importedKey]
+    if (!imported) throw new Error(`CLI bundle budget: manifest import ${importedKey} is missing`)
+    collectStaticImports(imported)
+  }
+}
+collectStaticImports(manifestEntry)
+const startupBytes = [...startupFiles].reduce((total, file) => total + statSync(new URL(file, publicDir)).size, 0)
+
 const rows = [
   "## CLI front bundle report",
   "",
   `Entry: \`${entry}\` — **${entryBytes.toLocaleString()} B** / ${budgetBytes.toLocaleString()} B budget`,
-  `Eager HTML JS: **${eagerBytes.toLocaleString()} B** / ${eagerBudgetBytes.toLocaleString()} B budget across ${eagerFiles.length} files (${preloads.length} modulepreloads)`,
+  `HTML entry + preload hints: **${eagerBytes.toLocaleString()} B** / ${eagerBudgetBytes.toLocaleString()} B budget across ${eagerFiles.length} files (${preloads.length} modulepreloads)`,
+  `Mandatory startup static-import closure: **${startupBytes.toLocaleString()} B** / ${startupBudgetBytes.toLocaleString()} B budget across ${startupFiles.size} files`,
   "",
-  "| Chunk | Bytes | Eager |",
-  "| --- | ---: | :---: |",
-  ...chunks.map(({ file, bytes }) => `| \`${basename(file)}\` | ${bytes.toLocaleString()} | ${eagerFiles.includes(file) ? "yes" : ""} |`),
+  "| Chunk | Bytes | HTML eager | Startup closure |",
+  "| --- | ---: | :---: | :---: |",
+  ...chunks.map(({ file, bytes }) => `| \`${basename(file)}\` | ${bytes.toLocaleString()} | ${eagerFiles.includes(file) ? "yes" : ""} | ${startupFiles.has(file) ? "yes" : ""} |`),
   "",
 ]
 const report = rows.join("\n")
@@ -37,6 +58,10 @@ if (entryBytes > budgetBytes) {
   process.exitCode = 1
 }
 if (eagerBytes > eagerBudgetBytes) {
-  console.error(`CLI eager HTML JS exceeds budget by ${(eagerBytes - eagerBudgetBytes).toLocaleString()} B`)
+  console.error(`CLI HTML entry + preload hints exceed budget by ${(eagerBytes - eagerBudgetBytes).toLocaleString()} B`)
+  process.exitCode = 1
+}
+if (startupBytes > startupBudgetBytes) {
+  console.error(`CLI mandatory startup closure exceeds budget by ${(startupBytes - startupBudgetBytes).toLocaleString()} B`)
   process.exitCode = 1
 }

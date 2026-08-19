@@ -35,6 +35,7 @@ export default defineConfig({
   build: {
     outDir: "public",
     emptyOutDir: true,
+    manifest: true,
     modulePreload: {
       // The entry discovers its direct imports in one parse. Preload only the
       // framework/runtime chunks needed to execute that first paint; optional

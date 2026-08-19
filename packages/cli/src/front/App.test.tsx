@@ -93,6 +93,9 @@ describe("CliWorkspaceShell", () => {
     }))
 
     await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
+    expect(workspaceAgentFrontSpy.mock.calls.every(([props]) => (
+      Array.isArray(props.plugins) && props.plugins.length === 5
+    ))).toBe(true)
     expect(container.querySelector('[data-boring-workspace-part="workspace-loading-shell"]')).toBeNull()
   })
 

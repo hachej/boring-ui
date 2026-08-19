@@ -206,7 +206,7 @@ export type ReasoningContentProps = ComponentProps<
 
 export const ReasoningContent = memo(
   ({ className, children, ...props }: ReasoningContentProps) => {
-    const streamdownPlugins = useStreamdownPlugins();
+    const streamdownPlugins = useStreamdownPlugins(children);
     return (
     <CollapsibleContent
       className={cn(

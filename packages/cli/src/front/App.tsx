@@ -81,8 +81,13 @@ export async function loadCliDefaultPlugins(
 }
 
 /** Start optional front loading only after the chat-capable shell commits. */
-function useCliDefaultPlugins(enabled: boolean): { plugins: BoringFrontFactoryWithId[]; runtimeSingletonReady: boolean } {
+function useCliDefaultPlugins(enabled: boolean): {
+  plugins: BoringFrontFactoryWithId[]
+  pluginsReady: boolean
+  runtimeSingletonReady: boolean
+} {
   const [plugins, setPlugins] = useState<BoringFrontFactoryWithId[]>([])
+  const [pluginsReady, setPluginsReady] = useState(false)
   const [runtimeSingletonReady, setRuntimeSingletonReady] = useState(false)
 
   useEffect(() => {
@@ -100,12 +105,17 @@ function useCliDefaultPlugins(enabled: boolean): { plugins: BoringFrontFactoryWi
     })
 
     void loadCliDefaultPlugins().then((loadedPlugins) => {
-      if (!cancelled) setPlugins(loadedPlugins)
+      if (cancelled) return
+      setPlugins(loadedPlugins)
+      // Provider topology must be complete before WorkspaceAgentFront mounts.
+      // Adding plugin providers afterward would remount the chat subtree and
+      // could discard a draft typed during startup.
+      setPluginsReady(true)
     })
     return () => { cancelled = true }
   }, [enabled])
 
-  return { plugins, runtimeSingletonReady }
+  return { plugins, pluginsReady, runtimeSingletonReady }
 }
 
 export function workspaceIdFromCliUrl(pathname: string): string | null {
@@ -361,9 +371,10 @@ export function CliWorkspaceShell() {
   }, [workspacesMode, activeWorkspaceId, workspaces, refreshWorkspaces])
 
   // Keep in sync with CLI_DEFAULT_PLUGIN_PACKAGES in server/pluginDiscovery.ts.
-  // The effect starts only after the render below can commit a chat-capable shell.
+  // Load the chunks after metadata resolves, but complete the default provider
+  // topology before mounting WorkspaceAgentFront so chat state cannot remount.
   const optionalFrontsEnabled = metaLoaded && (!workspacesMode || workspaces.some((workspace) => workspace.id === activeWorkspaceId && workspace.available))
-  const { plugins, runtimeSingletonReady } = useCliDefaultPlugins(optionalFrontsEnabled)
+  const { plugins, pluginsReady, runtimeSingletonReady } = useCliDefaultPlugins(optionalFrontsEnabled)
   const activeWorkspaceRequestHeaders = useMemo(
     () => activeWorkspaceId ? { "x-boring-workspace-id": activeWorkspaceId } : null,
     [activeWorkspaceId],
@@ -440,6 +451,16 @@ export function CliWorkspaceShell() {
         title="Loading CLI workspace…"
         description="Preparing the workspace shell."
         status="Loading workspace metadata"
+      />
+    )
+  }
+
+  if (optionalFrontsEnabled && !pluginsReady) {
+    return (
+      <WorkspaceLoadingState
+        title="Loading CLI workspace…"
+        description="Preparing default workspace capabilities."
+        status="Loading workspace plugins"
       />
     )
   }
