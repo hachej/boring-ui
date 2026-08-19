@@ -13,8 +13,8 @@ conclusions first, evidence chain behind.
 | 05-spikes | index of the 6 executable spikes (4 proven / 2 refuted) + measured tool-exposure artifacts; code in `~/projects/spike-*` | README.md |
 | 06-adversarial-reviews | Sol xhigh passes: adversarial (11 plan-breaking) → transcript recall (29 forgotten learnings) → pass2 (NOT CONVERGED + minimal edits) → pass3 (4 edits → converged) | sol-adversarial.md |
 | 07-part1-review | review of the 2026-08-17 Part-1 plan: 9 enhancements with diffs, 1 upstream adoption (5-class effect taxonomy) | PART1-REVIEW.md |
+| 08-session-log | the full session narrative: 7 phases, the reversals kept on record, how each conclusion was forced | SESSION-THREAD.md |
 
 Caveats carried honestly: file:line grounding is dated at main@1ed49b7e2
 (re-verify before executing); the ~250-candidate register re-extraction (P-1)
-remains a blocking pre-phase; spike code is unpinned pending the
-evidence-preservation gate.
+remains a blocking pre-phase; spike working trees were archived (essential sources in 05-spikes/) and removed 2026-08-19.
