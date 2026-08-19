@@ -79,7 +79,7 @@ export async function renderMermaidSvg(source, renderId = 'pr-context-diagram') 
         .replace(/\/\*[\s\S]*?\*\//g, '')
       const hasUnsafeCss = (css) => {
         const normalized = normalizeCss(css)
-        if (/(?:@import|expression\s*\()/i.test(normalized)) return true
+        if (/(?:@import|@font-face|expression\s*\(|(?:-webkit-)?image-set\s*\(|(?:^|[;{])\s*src\s*:)/i.test(normalized)) return true
         return [...normalized.matchAll(/url\(\s*(["']?)(.*?)\1\s*\)/gi)]
           .some((match) => !match[2].trim().startsWith('#'))
       }

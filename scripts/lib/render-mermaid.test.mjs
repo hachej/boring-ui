@@ -57,13 +57,14 @@ test('blocks render-time network and removes load-capable external Mermaid conte
   const externalUrl = `http://127.0.0.1:${port}/pixel.png`
 
   try {
-    const escapedCss = String.raw`%%{init: {"themeCSS": "* { fill: u\\72l(pixel.png); }"}}%%`
-    const source = `${escapedCss}\nflowchart LR\n  A["<form action='${externalUrl}'><button formaction='${externalUrl}'>Send</button></form><img src='${externalUrl}'>"] --> B[Done]`
+    const themeCSS = String.raw`* { fill: u\72l(pixel.png); background-image: image-set("${externalUrl}" 1x); }`
+    const directive = `%%{init: ${JSON.stringify({ themeCSS })}}%%`
+    const source = `${directive}\nflowchart LR\n  A["<form action='${externalUrl}'><button formaction='${externalUrl}'>Send</button></form><img src='${externalUrl}'>"] --> B[Done]`
     const svg = await renderMermaidSvg(source, 'network-safe-diagram')
     assert.equal(requests, 0)
     assert.doesNotMatch(svg, /<(?:form|button|input|img|image)(?:\s|>)/i)
     assert.equal(svg.includes(externalUrl), false)
-    assert.doesNotMatch(svg, /(?:url|u\\72l)\(\s*["']?pixel\.png/i)
+    assert.doesNotMatch(svg, /(?:url|u\\72l)\(\s*["']?pixel\.png|image-set\s*\(/i)
 
     const browser = await chromium.launch({ headless: true })
     try {
