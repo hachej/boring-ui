@@ -73,8 +73,16 @@ export async function renderMermaidSvg(source, renderId = 'pr-context-diagram') 
       const root = template.content.querySelector('svg')
       if (!root) throw new Error('Mermaid did not return an SVG root')
 
-      const hasUnsafeCssUrl = (css) => [...css.matchAll(/url\(\s*(["']?)(.*?)\1\s*\)/gi)]
-        .some((match) => !match[2].trim().startsWith('#'))
+      const normalizeCss = (css) => css
+        .replace(/\\([0-9a-f]{1,6})\s?/gi, (_match, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+        .replace(/\\([^\n\r\f])/g, '$1')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+      const hasUnsafeCss = (css) => {
+        const normalized = normalizeCss(css)
+        if (/(?:@import|expression\s*\()/i.test(normalized)) return true
+        return [...normalized.matchAll(/url\(\s*(["']?)(.*?)\1\s*\)/gi)]
+          .some((match) => !match[2].trim().startsWith('#'))
+      }
       root.querySelectorAll('script, foreignObject, form, input, button, select, textarea, img, image, iframe, object, embed, link, meta, audio, video, source').forEach((node) => node.remove())
       root.querySelectorAll('*').forEach((node) => {
         for (const attribute of [...node.attributes]) {
@@ -88,14 +96,14 @@ export async function renderMermaidSvg(source, renderId = 'pr-context-diagram') 
             node.removeAttribute(attribute.name)
             continue
           }
-          if (name === 'style' && (/(?:@import|expression\s*\()/i.test(value) || hasUnsafeCssUrl(value))) {
+          if (name === 'style' && hasUnsafeCss(value)) {
             node.removeAttribute(attribute.name)
           }
         }
       })
       root.querySelectorAll('style').forEach((style) => {
         const css = style.textContent || ''
-        if (/@import/i.test(css) || hasUnsafeCssUrl(css)) style.remove()
+        if (hasUnsafeCss(css)) style.remove()
       })
       return root.outerHTML
     }, { diagram: source, variables: mermaidThemeVariables, id: renderId })
