@@ -1,0 +1,1155 @@
+# A. Flue 2.0.x — pi adaptation
+
+## Version and import surface
+
+- Inspected runtime manifest: `withastro/flue/packages/runtime/package.json`.
+
+- The inspected package is exactly `@flue/runtime` `2.0.3`.
+
+- Pi runtime dependency 1: `@earendil-works/pi-agent-core` `^0.83.0`.
+
+- Pi runtime dependency 2: `@earendil-works/pi-ai` `^0.83.0`.
+
+- No other pi package is declared by `@flue/runtime`.
+
+- In particular, there is no pi coding-agent package, pi TUI package, pi RPC package, or pi filesystem package.
+
+- Evidence (`withastro/flue/packages/runtime/package.json:85`):
+
+```json
+"dependencies": {
+  "@earendil-works/pi-agent-core": "^0.83.0",
+  "@earendil-works/pi-ai": "^0.83.0",
+  "@hono/node-server": "^2.0.3",
+  "@modelcontextprotocol/client": "2.0.0"
+}
+```
+
+- `session.ts` imports `Agent` plus only core loop types from the package root of `@earendil-works/pi-agent-core`.
+
+- Imported core types are `AgentLoopTurnUpdate`, `AgentMessage`, `AgentTool`, `AgentToolResult`, `PrepareNextTurnContext`, and `StreamFn`.
+
+- It imports no subpath entrypoint from pi-agent-core.
+
+- `session.ts` imports only message/model/stream types from the package root of `@earendil-works/pi-ai`.
+
+- Those types are `AssistantMessage`, `ImageContent`, `Message`, `Model`, `SimpleStreamOptions`, `ToolResultMessage`, and `UserMessage`.
+
+- It imports no provider implementation from pi-ai.
+
+- Evidence (`withastro/flue/packages/runtime/src/session.ts:6`):
+
+```ts
+import type {
+  AgentLoopTurnUpdate,
+  AgentMessage,
+  AgentTool,
+  AgentToolResult,
+  PrepareNextTurnContext,
+  StreamFn,
+} from '@earendil-works/pi-agent-core';
+import { Agent } from '@earendil-works/pi-agent-core';
+```
+
+- Evidence (`withastro/flue/packages/runtime/src/session.ts:15`):
+
+```ts
+import type {
+  AssistantMessage,
+  ImageContent,
+  Message,
+  Model,
+  SimpleStreamOptions,
+  ToolResultMessage,
+  UserMessage,
+} from '@earendil-works/pi-ai';
+```
+
+- Empirical portability result: Flue consumes pi as an in-memory turn-loop library and message ABI.
+
+- It does not consume pi as a complete coding-agent host.
+
+## What Flue supplies around pi
+
+- Storage: entirely Flue-supplied.
+
+- Pi receives an in-memory `messages` array when the `Agent` is constructed.
+
+- Durable history is instead represented by Flue canonical conversation records.
+
+- The writer is injected as `ConversationRecordWriter` in `SessionInitOptions`.
+
+- Attachments are injected separately as `AttachmentStore`.
+
+- Persistent hook state is injected as `HookStateBuffer`.
+
+- The active conversation is first reduced and then rebuilt into pi messages.
+
+- Evidence (`withastro/flue/packages/runtime/src/session.ts:385`):
+
+```ts
+interface SessionInitOptions {
+  name: string;
+  conversation: ReducedConversationState;
+  config: AgentConfig;
+  conversationWriter: ConversationRecordWriter;
+  attachmentStore: AttachmentStore;
+  hookState?: HookStateBuffer;
+}
+```
+
+- Filesystem: entirely Flue/sandbox-supplied.
+
+- The public `session.fs` facade forwards each operation to the current `Sandbox`.
+
+- There is deliberately no default filesystem.
+
+- An agent without `useSandbox()` gets an error when it asks for filesystem or shell operations.
+
+- Evidence (`withastro/flue/packages/runtime/src/session.ts:2097`):
+
+```ts
+this.fs = {
+  readFile: (path) => this.env.readFile(path),
+  readFileBuffer: (path) => this.env.readFileBuffer(path),
+  writeFile: (path, content) => this.env.writeFile(path, content),
+  stat: (path) => this.env.stat(path),
+  readdir: (path) => this.env.readdir(path),
+  exists: (path) => this.env.exists(path),
+  mkdir: (path, mkdirOptions) => this.env.mkdir(path, mkdirOptions),
+  rm: (path, rmOptions) => this.env.rm(path, rmOptions),
+};
+```
+
+- The sandbox surface is mutable through a `SandboxSlot` shared by root sessions.
+
+- The slot contains `env`, a `SandboxToolFactory`, and rediscovery bookkeeping.
+
+- A task child instead captures a detached environment slot.
+
+- This is host injection, not pi state.
+
+- Exec: entirely Flue/sandbox-supplied.
+
+- `session.shell()` and the model-visible bash tool route through Flue `execShellWithEvents` and the sandbox command API.
+
+- Pi sees those as ordinary `AgentTool` objects.
+
+- Flue wraps each tool before handing it to pi.
+
+- The wrapper supplies telemetry, abort abandonment, durable-result conversion, and execution interception.
+
+- Evidence (`withastro/flue/packages/runtime/src/session.ts:3573`):
+
+```ts
+private wrapModelTool(
+  tool: AgentTool<any>,
+  source: ModelToolSource,
+  prepare = (toolCallId, params, signal) => ({
+    args: params,
+    run: () => tool.execute(toolCallId, params, signal),
+    result: toolResultText,
+  }),
+): AgentTool<any> {
+```
+
+- Fetch/provider transport: Flue-supplied.
+
+- `session.ts` contains no direct `fetch()`.
+
+- Pi's required `StreamFn` is replaced with `emitTurnRequestAndStream`.
+
+- That function calls Flue's runtime model registry, `getRuntimeModels().streamSimple(...)`.
+
+- Provider choice, credentials, Cloudflare Workers AI bindings, and wire transport therefore sit outside pi.
+
+- Evidence (`withastro/flue/packages/runtime/src/session.ts:796`):
+
+```ts
+private emitTurnRequestAndStream: StreamFn = async (model, context, options) => {
+  if (this.activeTurnId === undefined) this.activeTurnId = generateTurnId();
+  const turnId = this.activeTurnId;
+  this.emitTurnRequest(turnId, 'agent', model, context, options);
+  return interceptExecution(operation, executionContext, async () =>
+    wrapProviderStream(getRuntimeModels().streamSimple(model, context, options), operation, executionContext),
+  );
+};
+```
+
+- Clock: Flue uses the host JavaScript clock directly.
+
+- `Date.now()` stamps model/tool durations, operation timing, retries, and timeout comparisons.
+
+- `setTimeout` implements transient-model retry delay.
+
+- There is no clock interface injected into `Session`.
+
+- Consequently deterministic clock substitution is not part of this seam.
+
+- Evidence (`withastro/flue/packages/runtime/src/session.ts:620`):
+
+```ts
+function sleepUntilRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(abortErrorFor(signal));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+```
+
+- Randomness: retry jitter uses `Math.random()` directly.
+
+- IDs are generated by Flue helpers, not by pi.
+
+- Abort: Flue supplies and composes `AbortSignal`s.
+
+- A signal-deaf tool is abandoned at the turn boundary so it cannot wedge a durability deadline.
+
+- The orphaned promise may keep running, explicitly making the tool contract at-least-once.
+
+- Evidence (`withastro/flue/packages/runtime/src/session.ts:3624`):
+
+```ts
+// Abandon-on-abort: a signal-deaf tool must not wedge the turn
+// past an abort or durability deadline; its orphaned promise
+// keeps running under the at-least-once contract while the
+// turn unwinds.
+const result = await interceptExecution(
+  { type: 'tool', toolCallId, toolName: tool.name },
+  this.executionContext(),
+  () => abandonToolOnAbort(prepared.run, signal),
+);
+```
+
+## What Flue bypasses or reimplements
+
+- It bypasses pi provider selection and default streaming.
+
+- Proof is the custom `streamFn` passed to `new Agent`.
+
+- It reimplements session persistence.
+
+- Proof is that pi starts with a plain array while every streamed block is converted into canonical records.
+
+- It reimplements partial-assistant journaling.
+
+- `message_start` appends `assistant_message_started` before content arrives.
+
+- Text and reasoning deltas are durably enqueued.
+
+- Tool-call argument deltas alone are intentionally live-preview-only.
+
+- A complete `assistant_tool_call` is appended only at `toolcall_end`.
+
+- Evidence (`withastro/flue/packages/runtime/src/session.ts:2340`):
+
+```ts
+} else if (assistant && aEvent.type === 'toolcall_end') {
+  await this.appendCanonical([{
+    ...this.canonicalEnvelope('assistant_tool_call'),
+    type: 'assistant_tool_call',
+    messageId: assistant.messageId,
+    toolCallId: aEvent.toolCall.id,
+    name: aEvent.toolCall.name,
+    arguments: aEvent.toolCall.arguments,
+  }]);
+}
+```
+
+- It reimplements tool-result durability.
+
+- Pi executes a parallel batch, but Flue receives pi lifecycle events and appends one canonical `tool_outcome` per result.
+
+- Flue then commits the batch through its own `tool_results_committed` record.
+
+- Persistent hook-state writes drain into that same append batch.
+
+- That is stronger semantics than merely retaining pi's in-memory tool-result messages.
+
+- It reimplements context reconstruction.
+
+- `initializeCanonicalContext()` calls `rebuildCanonicalContext()`.
+
+- Recovery can replace pi's state from the reduced conversation after overflow, abort, or partial persistence.
+
+- It reimplements context-overflow recovery and compaction.
+
+- The classifier sees explicit errors and silent truncation overflow.
+
+- Flue may compact, rebuild, and call `agentLoop.continue()` rather than treat pi's terminal message as final.
+
+- It reimplements model retry classification and backoff.
+
+- `isRetryableModelError` checks an authored marker first, then a regular expression over overload/rate-limit/5xx/network/timeout strings.
+
+- It reimplements structured-result enforcement.
+
+- `finish` and `give_up` are Flue-injected pi tools.
+
+- If neither is called, Flue issues another `agentLoop.prompt()` with a reminder, up to a defense-in-depth ceiling of 32.
+
+- It reimplements queued delivery semantics.
+
+- Pi's steering queue is used, but Flue forces `steeringMode: 'all'` and `followUpMode: 'all'`.
+
+- The comment states Flue never calls `followUp()`.
+
+- Joined durable deliveries and finish-hook continuations drain together at the next turn boundary.
+
+- Evidence (`withastro/flue/packages/runtime/src/session.ts:2142`):
+
+```ts
+this.agentLoop = new Agent({
+  initialState: { systemPrompt, model: this.config.model, tools, messages: previousMessages },
+  streamFn: this.emitTurnRequestAndStream,
+  toolExecution: 'parallel',
+  steeringMode: 'all',
+  followUpMode: 'all',
+  sessionId: this.affinityKey,
+});
+```
+
+- It reimplements per-turn dynamic rendering.
+
+- `prepareNextTurnWithContext` is supplied only for function agents.
+
+- It rerenders after the prior tool batch has committed, so closures and system prompt are refreshed at a durable boundary.
+
+- It reimplements all public observability events.
+
+- Pi events are subscribed to and translated to Flue `agent_start`, `turn_start`, message, tool, usage, and terminal records.
+
+- It hides the internal `Session` behind a `FlueSession` facade because the internal object exposes durable execution methods.
+
+- Evidence (`withastro/flue/packages/runtime/src/session.ts:5547`):
+
+```ts
+// Session instances carry internal runtime surface (the durable
+// submission executor, `abort()`/`close()`, load-bearing `metadata`) that must
+// not leak to user code at runtime.
+export function createPublicSession(session: Session): FlueSession {
+```
+
+## Exact durable/pi seam
+
+- Admission, ordering, leases, attempts, and settlement happen outside pi.
+
+- `AgentSubmissionSession.processSubmissionInput()` is the entry from coordinator-owned durable work into `Session`.
+
+- It creates a call handle and enters `runOperation('prompt', ...)`.
+
+- It then calls `runPersistedSubmissionInput(...)`.
+
+- Evidence (`withastro/flue/packages/runtime/src/session.ts:2663`):
+
+```ts
+processSubmissionInput(input, options): CallHandle<void> {
+  return createCallHandle(undefined, (signal) =>
+    this.runOperation('prompt', signal, () =>
+      this.runPersistedSubmissionInput(input, signal, options),
+    ),
+  );
+}
+```
+
+- `runPersistedSubmissionInput` converts direct and dispatch inputs to the same canonical input path.
+
+- Its fixed input entry id is derived from `(input.kind, input.submissionId)`.
+
+- It invokes `runPersistedContextInput` with the canonical-record builder and the coordinator's `onInputApplied` callback.
+
+- The durable input record is therefore the precondition for invoking pi.
+
+- Recovery first calls `materializeGhostStream` and `repairResumableTail`.
+
+- Only after the stream is structurally complete does classification drive pi.
+
+- `resumeConversationToCompletion` is the narrow bridge.
+
+- It classifies persisted state and chooses one of:
+
+  - first `agentLoop.prompt(...)` for input-only/new work;
+
+  - `agentLoop.continue()` from complete tool results;
+
+  - compact plus continue for overflow;
+
+  - backoff plus retry for a transient model error;
+
+  - repair plus continue for a partial batch;
+
+  - fail for terminal or advanced-past-input state.
+
+- The normal fresh-call seam is one line: `start: () => this.agentLoop.prompt(projectedText, projectedImages)`.
+
+- Evidence (`withastro/flue/packages/runtime/src/session.ts:5483`):
+
+```ts
+await this.runModelTurnWithRecovery({
+  start: () => this.agentLoop.prompt(projectedText, projectedImages),
+  signal: args.signal,
+});
+```
+
+- The recovery seam is likewise one line: `start: () => this.agentLoop.continue()`.
+
+- The durable engine never checkpoints inside pi internals.
+
+- It checkpoints at the events pi emits: assistant start/delta/end, tool execution end, and turn end.
+
+- Thus the portable core is useful without exposing a serializable pi coroutine.
+
+- Flue makes the loop recoverable by reconstructing messages and choosing `prompt` versus `continue` from its own journal.
+
+## Node builtins and Cloudflare viability
+
+- `packages/runtime/src/session.ts` imports no `node:*` builtin.
+
+- Its direct globals are Web/ECMAScript globals: `URL`, `AbortController`, `AbortSignal`, `setTimeout`, `clearTimeout`, `Date`, `Math`, `WeakMap`, and promises.
+
+- Its provider boundary is abstracted behind `getRuntimeModels()`.
+
+- Its storage boundary is abstracted behind conversation/attachment writers.
+
+- Its fs/exec boundary is abstracted behind `Sandbox`.
+
+- Therefore the pi adaptation itself does not require Node shims.
+
+- The package as a whole has a Node entrypoint and a Cloudflare entrypoint.
+
+- Node-specific coordinator code uses process timers and calls `.unref()` conditionally.
+
+- The conditional check is explicit so the shared logic tolerates browser/Workers timer handles.
+
+- Node persistence is documented as `node:sqlite`; Cloudflare persistence is DO SQLite behind the same store contract.
+
+- Evidence (`withastro/flue/packages/runtime/src/agent-execution-store.ts:1`):
+
+```ts
+/**
+ * Both Cloudflare (DO SQLite) and Node (node:sqlite :memory:) implement this
+ * contract using the same underlying SQL store. The interface is target-neutral.
+ */
+```
+
+- Cloudflare-generated Durable Objects are host adapters around the portable session/store machinery.
+
+- Cloudflare-specific `cloudflare:workers` references are type-only in the 2.0.x line according to the runtime changelog and do not enter `session.ts`.
+
+- No Node builtin is shimmed inside `session.ts` because none is imported there.
+
+- Node-only modules are isolated under `packages/runtime/src/node/` and exported via `@flue/runtime/node`.
+
+- Cloudflare-only modules are isolated under `packages/runtime/src/cloudflare/` and exported via `@flue/runtime/cloudflare`.
+
+- Bottom line: pi-agent-core is highly portable here; the provider, persistence, filesystem, exec, and clock policy are not supplied by pi and remain Flue/host responsibilities.
+
+# B. Flue durable execution internals
+
+## Submission ledger and state machine
+
+- Contract file: `withastro/flue/packages/runtime/src/agent-execution-store.ts`.
+
+- SQL implementation: `withastro/flue/packages/runtime/src/sql-agent-execution-store.ts`.
+
+- Runtime orchestration helpers: `withastro/flue/packages/runtime/src/runtime/agent-submissions.ts`.
+
+- Node coordinator: `withastro/flue/packages/runtime/src/node/agent-coordinator.ts`.
+
+- Conversation settlement repair: `withastro/flue/packages/runtime/src/runtime/settlement-rebuild.ts`.
+
+- Canonical progress classifier: `withastro/flue/packages/runtime/src/submission-state.ts`.
+
+- Conversation wrapper classifier: `withastro/flue/packages/runtime/src/conversation-projections.ts`.
+
+- Session recovery/repair executor: `withastro/flue/packages/runtime/src/session.ts`.
+
+- State machine: `queued -> running -> (terminalizing ->) settled`.
+
+- Busy-response absorption adds `joining -> joined`.
+
+- `joining` is durable intent; canonical input is not yet confirmed.
+
+- `joined` means the delivery input is durably in the host response.
+
+- Joined submissions settle with their host.
+
+- The canonical stream, not the submission row, is terminal truth.
+
+- Submission rows are projections/caches of `submission_settled` records.
+
+- Coordination fields are explicitly lossy.
+
+- Leases, owner ids, attempt ids/counts, markers, and abort stamps elect/fence writers; they are not history.
+
+- Admission payload and per-session queue order remain ledger truth because they predate conversation creation.
+
+- Durability budget is stamped once and retained across retries.
+
+- Defaults (`agent-execution-store.ts:18`): ten total attempts, one-hour timeout, 30-second lease.
+
+```ts
+export const DURABILITY_DEFAULT_MAX_ATTEMPTS = 10;
+export const DURABILITY_DEFAULT_TIMEOUT_MS = 3_600_000;
+export const LEASE_DURATION_MS = 30_000;
+```
+
+## Admission and claiming
+
+- `AgentSubmissionStore` exposes admission, readiness, claims, attempts, settlement reservation/finalization, abort, joins, and leases as one target-neutral contract.
+
+- `listRunnableSubmissions()` returns at most the oldest unsettled head of each session.
+
+- Later work in that session remains excluded until earlier work settles.
+
+- Different sessions can run concurrently.
+
+- `claimSubmission(claim)` is the queue-to-running CAS.
+
+- Preconditions include `status = 'queued'`, canonical readiness, and no earlier unsettled row for the same session.
+
+- On success it writes `attempt_id`, `started_at`, `owner_id`, and lease expiry.
+
+- It increments `attempt_count` atomically.
+
+- SQL evidence (`withastro/flue/packages/runtime/src/sql-agent-execution-store.ts:598`):
+
+```sql
+UPDATE flue_agent_submissions AS current
+SET status = 'running', attempt_id = ?, started_at = ?,
+    attempt_count = attempt_count + 1,
+    max_attempts = ?, timeout_at = CASE WHEN timeout_at = 0 THEN ? ELSE timeout_at END,
+    owner_id = ?, lease_expires_at = ?
+WHERE current.submission_id = ? AND current.status = 'queued'
+  AND current.canonical_ready_at IS NOT NULL
+```
+
+- Claim success is fenced by `(submissionId, attemptId, ownerId)`.
+
+- Requeue clears attempt, start, owner, and lease fields but preserves the once-stamped timeout.
+
+- `replaceSubmissionAttempt` is the recovery handoff CAS.
+
+- It moves a running row from the stale attempt to a new attempt, increments count, and transfers ownership.
+
+## Leases and recovery loop
+
+- Active ownership is a 30-second lease.
+
+- Node coordinator heartbeat is every 10 seconds.
+
+- It renews all active submission ids in one `renewLeases(ownerId, ids)` call.
+
+- The timer is `.unref()`ed when the returned timer object supports it.
+
+- Evidence (`withastro/flue/packages/runtime/src/node/agent-coordinator.ts:450`):
+
+```ts
+const HEARTBEAT_INTERVAL_MS = 10_000;
+heartbeatInterval = setInterval(() => {
+  const ids = [...activeSubmissions.keys()];
+  if (ids.length === 0) return;
+  submissions.renewLeases(ownerId, ids).catch(...);
+}, HEARTBEAT_INTERVAL_MS);
+```
+
+- `listExpiredSubmissions()` returns only running rows with positive expired leases.
+
+- Recovery scans are single-flight.
+
+- The comment names the race being prevented: startup reconciliation and the claim loop could otherwise inspect the same expired row and create independent Sessions.
+
+- The attempt-replacement CAS would pick one winner, but the loser could already have appended a spurious interruption advisory.
+
+- `reconcileInterruptedSubmission(...)` performs the fenced recovery decision.
+
+- An in-process zombie is removed from `activeSubmissions` after recovery fencing.
+
+- Its conversation writer is also dropped so a late zombie append poisons only the stale writer, not the successor.
+
+## Settlement
+
+- Settlement is two-phase.
+
+- `reserveSubmissionSettlement(...)` moves a running attempt to `terminalizing` and reserves the exact canonical `submission_settled` record.
+
+- The record is appended to the conversation stream.
+
+- `completeSubmission(...)` or failed settlement finalization turns the row into `settled`.
+
+- First terminal state wins through attempt-id/status gating.
+
+- Joined-delivery fan-out happens in the same completion path.
+
+- A crash between reservation and append leaves a pending obligation.
+
+- `listPendingSubmissionSettlements()` exposes those obligations.
+
+- `finalizePendingSettlement` completes them on wake.
+
+- `rebuildSettledSubmissionRows` re-derives ledger terminal rows from conversation streams after backup divergence.
+
+- This architecture avoids treating a mutable SQL status flag as the historical fact.
+
+## Exact recovery classifier
+
+- File: `withastro/flue/packages/runtime/src/submission-state.ts`.
+
+- Function: `classifySubmissionState(following, opts)`.
+
+- Input is the active-path records following the submission's fixed input entry.
+
+- Output union: `absent`, `advanced_past_input`, `completed`, `tool_use_unresolved`, `terminal_error`, or `resume` with a mode.
+
+- Resume modes: `input_only`, `tool_results`, `tool_results_partial`, `stream_continuation`, `transient_retry`, `overflow`, `aborted_partial`.
+
+- Exact decision core (`submission-state.ts:413`), quoted:
+
+```ts
+if (following === undefined) return { kind: 'absent' };
+if (following.some((entry) =>
+  entry.type === 'message' && entry.message.role === 'user' &&
+  !isJoinedDeliveryInput(entry, opts.ownSubmissionId))) {
+  return { kind: 'advanced_past_input' };
+}
+const assistantIndex = following.findLastIndex(
+  (entry) => entry.type === 'message' && entry.message.role === 'assistant',
+);
+```
+
+- Exact terminal/overflow/retry branch (`submission-state.ts:437`), quoted:
+
+```ts
+if (!assistant) return { kind: 'resume', mode: 'input_only', consecutiveRetryableErrors };
+const overflow = isAssistantContextOverflow(assistant, opts.contextWindow);
+if (isCompletedAssistantResponse(assistant)) return { kind: 'completed', assistant, overflow };
+if (overflow) return { kind: 'resume', mode: 'overflow', assistant, consecutiveRetryableErrors };
+if (isRetryableModelError(assistant)) {
+  return { kind: 'resume', mode: 'transient_retry', assistant, consecutiveRetryableErrors };
+}
+```
+
+- Exact tool/abort tail (`submission-state.ts:474`), quoted:
+
+```ts
+if (assistant.stopReason === 'toolUse') {
+  if (following.some((entry) => entry.type === 'message' && entry.message.role === 'toolResult')) {
+    return {
+      kind: 'resume',
+      mode: findTrailingPartialToolBatch(following) ? 'tool_results_partial' : 'tool_results',
+      assistant,
+      consecutiveRetryableErrors,
+    };
+  }
+  return { kind: 'tool_use_unresolved', assistant };
+}
+```
+
+- For `stopReason === 'aborted'`, a trailing partial batch wins over the empty aborted message from the next provider turn.
+
+- Otherwise it returns `aborted_partial`.
+
+- Final fallback is `terminal_error` with `assistant.errorMessage ?? assistant.stopReason`.
+
+- Completed stop/length with detected overflow is intentionally classified `completed` plus `overflow: true`.
+
+- Inspection maps it to completed, but execution preamble compacts and resumes.
+
+- `advanced_past_input` and `terminal_error` inspect as interrupted so a replacement attempt burns retry budget, but the preamble fails rather than replaying work.
+
+- Exact transient heuristic (`submission-state.ts:561`):
+
+```ts
+return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|network.?error|connection.?(?:reset|refused|lost)|socket hang up|fetch failed|timed? out|timeout|terminated/i.test(
+  message.errorMessage,
+);
+```
+
+## Tool-batch repair
+
+- Finder: `findTrailingPartialToolBatch` in `submission-state.ts`.
+
+- Executor: `repairTrailingPartialToolBatch` in `session.ts`.
+
+- Entry point: `repairResumableTail` in `session.ts`.
+
+- The finder optionally skips one trailing aborted assistant.
+
+- It walks backward over contiguous `toolResult` messages.
+
+- It then requires an assistant with `stopReason === 'toolUse'`.
+
+- It extracts every `toolCall` id/name.
+
+- It returns undefined for a zero-call provider shape or when every call id has a result.
+
+- Otherwise it returns the owning assistant entry and full ordered call list.
+
+- Exact safety property: the classifier and repair executor call the same finder.
+
+- Therefore they cannot disagree about which batch is incomplete.
+
+- Recovery preserves every recorded result, first-write-wins.
+
+- Ordinary unresolved calls receive explicit interrupted/unknown-outcome error results.
+
+- Ordinary calls are never blindly re-executed.
+
+- Exception 1: an in-flight `task` child is reattached and resumed.
+
+- Exception 2: a `durable: true` tool is re-executed, but its completed steps replay from durable memos.
+
+- The complete repaired batch is atomically committed before model continuation.
+
+- Evidence (`withastro/flue/packages/runtime/src/session.ts:2682`):
+
+```ts
+// every recorded result is preserved (first-write-wins) and unresolved calls get
+// explicit unknown-outcome error results — never a blind re-execution. Two scoped
+// exceptions resolve real outcomes pre-commit: in-flight `task` children are resumed,
+// and `durable: true` tool calls are re-executed with their completed steps replaying
+// from durable memos.
+```
+
+- `tool_use_unresolved` uses the same repair path.
+
+- Only a degenerate provider response with zero tool-call blocks may tolerate a finder miss.
+
+- After repair, reclassification becomes `tool_results` and pi continues.
+
+# C. eve 0.31.x internals
+
+## Filesystem scanner and loader
+
+- Discovery directory: `vercel/eve/packages/eve/src/discover/`.
+
+- Primary root scanner: `discover/discover-agent.ts`.
+
+- Subagent scanner: `discover/discover-subagent.ts`.
+
+- Filesystem abstraction: `discover/filesystem.ts`.
+
+- Grammar/schema: `discover/grammar.ts`.
+
+- Named source directory logic: `discover/named-source-directory.ts`.
+
+- Manifest projection: `discover/manifest.ts`.
+
+- Project root selection: `discover/project-source.ts` and `discover/project.ts`.
+
+- Slot rules: `discover/slots.ts`.
+
+- Concern-specific discovery: `connections.ts`, `sandbox.ts`, `schedules.ts`, and `skills.ts`.
+
+- Discovery is build-time/compiler work, not a per-request directory walk.
+
+- The build produces inspectable `.eve/` compiled artifacts.
+
+- Runtime uses `runtime/compiled-artifacts-source.ts`.
+
+- Durable sessions use `runtime/durable-compiled-artifacts-source.ts` so a parked run can resolve the build generation it began with.
+
+- Authored TypeScript modules remain executable definitions; Markdown is parsed to definitions during compilation.
+
+- Validation is split: filesystem grammar validates placement/allowed slots; compiler/runtime validation validates loaded exports and namespace composition.
+
+- Naming is path-derived for single definitions.
+
+- Tools use their filename slug.
+
+- Skills use their filename/directory name.
+
+- Subagent directory ids become bare model-visible tool names.
+
+- Schedules and channels likewise derive stable ids from authored paths.
+
+- `named-source-directory.ts` is the shared rule for one-file versus directory forms and duplicate source candidates.
+
+- Collisions are rejected rather than resolved by last-write-wins.
+
+- Important collision class: an authored tool and subagent share one runtime tool namespace.
+
+- Example: `tools/researcher.ts` and `subagents/researcher/` are a build error.
+
+- Dynamic maps changed in 0.12: map keys are verbatim, not automatically prefixed by file slug.
+
+- Dynamic resolver duplicates throw and recommend manual namespacing.
+
+- A dynamic tool/skill may intentionally override the same-named authored definition; two dynamic producers may not emit the same key.
+
+- Connection tools are explicitly namespaced `<connection>__<tool>`.
+
+- Mounted extensions use `<namespace>__` prefixes, with co-located authored override slots shadowing extension contributions.
+
+- Drift handling is build-generation-based.
+
+- Compiled artifacts carry cache/source keys and a durable source can recover the generation for a parked session.
+
+- Runtime dynamic tools are refreshed when a production session moves to a new deployment, while the session-start prompt snapshot remains pinned in durable state.
+
+- Development snapshots referenced by local Workflow data are retained so parked HITL turns survive rebuilds.
+
+- Source-reader failure note: indexed GitHub did not return the bodies of `discover-agent.ts`, `named-source-directory.ts`, or `manifest.ts` during this run.
+
+- Therefore no unverified internal helper names or hash algorithm are asserted here.
+
+- The files themselves were enumerated from `packages/eve/src/discover/`; the build-time/runtime conclusion is independently visible in `packages/eve/README.md` and `runtime/*compiled-artifacts-source.ts` names.
+
+## Durable step journal and retry machinery
+
+- Workflow driver: `execution/workflow-entry.ts` and `execution/workflow-runtime.ts`.
+
+- One-turn child workflow: `execution/turn-workflow.ts`.
+
+- Durable step boundary: `execution/workflow-steps.ts`.
+
+- Session snapshot store: `execution/durable-session-store.ts`.
+
+- Session driver: `execution/session.ts`.
+
+- Driver decision union: `execution/next-driver-action.ts`.
+
+- Retry/error normalization: `execution/workflow-errors.ts` and `execution/runtime-errors.ts`.
+
+- Durable schema migration: `execution/durable-session-migrations/*`.
+
+- A driver workflow owns the long-lived session.
+
+- Each conversational turn runs as a short-lived child workflow.
+
+- `turnWorkflow` loops `turnStep(currentStepInput)` until the harness says done, dispatch runtime actions, or park.
+
+- It reports the decision back through a one-shot parent completion hook.
+
+- Evidence (`vercel/eve/packages/eve/src/execution/turn-workflow.ts:52`):
+
+```ts
+while (true) {
+  const result = await turnStep(currentStepInput);
+  if (result.action === "done") {
+    await notifyDriverStep({ completionToken: input.completionToken, payload: ... });
+    return;
+  }
+  if (result.action === "park") { ... }
+  currentStepInput = { input: undefined, serializedContext: result.serializedContext,
+    sessionState: result.sessionState, parentWritable: currentStepInput.parentWritable };
+}
+```
+
+- `turnStep` is a Workflow step (`"use step"` in `workflow-steps.ts`).
+
+- Workflow step results are the atomic persistence boundary for session program memory.
+
+- The current session snapshot travels inside `DurableSessionState`.
+
+- It contains version, session id, continuation token, proxy-input bit, emission state, and optional snapshot.
+
+- The durable session contains history, output schema, state map, sandbox state, pinned system prompt, and compaction counters.
+
+- Model references, live tool definitions, and compaction thresholds are deliberately omitted.
+
+- They are rebuilt each turn from the current compiled `turnAgent` bundle.
+
+- Evidence (`vercel/eve/packages/eve/src/execution/durable-session-store.ts:27`):
+
+```ts
+export interface DurableSessionState {
+  readonly version: typeof DURABLE_SESSION_VERSION;
+  readonly sessionId: string;
+  readonly continuationToken: string;
+  readonly hasProxyInputRequests: boolean;
+  readonly emissionState: HarnessEmissionState;
+  readonly snapshot?: DurableSessionSnapshot;
+}
+```
+
+- New runs embed the full snapshot in step results.
+
+- Old in-flight runs may carry only a small handle.
+
+- Legacy recovery reads the tail of durable stream namespace `eve.session` at `startIndex: -1`.
+
+- The tail read has a hard 10-second timeout.
+
+- Snapshot versions migrate through `migrateDurableSessionSnapshot`; unknown versions throw.
+
+- Rich state uses devalue semantics, preserving Buffer/Date/Map/Set and URL-backed file data.
+
+- The driver is pinned to the deployment that called Workflow `start()`.
+
+- Turn child workflows run on latest.
+
+- Versioned snapshots let the pinned driver ferry newer optional fields without interpreting them.
+
+- Retry layers are intentionally separate.
+
+- Workflow provides durable step retry from the last committed snapshot.
+
+- The harness provides a narrower transient model-call retry for the current uncommitted call.
+
+- Classified transient provider errors get at most three fresh model-call attempts.
+
+- Earlier completed steps, tool results, and sandbox changes remain in the snapshot.
+
+- Exhausting the model retry does not then stack an additional equivalent retry budget for the same condition.
+
+- Terminal/cancellation errors are normalized and not retried.
+
+- `notifyDriverStep` dynamically imports `#compiled/@workflow/core/runtime.js`, sets queue namespace `eve`, and calls `resumeHook`.
+
+- This is an explicit Vercel Workflow runtime dependency.
+
+## Human-input pause, journaling, and resume
+
+- Request model: `harness/input-request-class.ts` and `harness/input-requests.ts`.
+
+- Stale-response demotion: `harness/stale-input-responses.ts`.
+
+- AI SDK approval bridge: `harness/ai-sdk-hook-bridge.ts` and `harness/ai-sdk-approval-resume.integration.test.ts`.
+
+- Proxy requests from child sessions: `harness/proxy-input-requests.ts` and `execution/subagent-hitl-proxy.ts`.
+
+- Driver pause: `execution/turn-workflow.ts`, `execution/session.ts`, and `execution/next-driver-action.ts`.
+
+- Protocol emission: `harness/emission.ts` / `stream-actions.ts` and protocol event types.
+
+- When tool authorization or `ask_question` creates pending requests, the harness emits durable `input.requested` with the request batch.
+
+- The turn returns `action: "park"`, serialized context, session state, authorization names, and pending-input flags.
+
+- `turnWorkflow` permits park in conversation mode, for pending authorization, for pending runtime actions, or when the channel supports requestInput.
+
+- Task mode cannot park merely for follow-up input; it throws `Task mode cannot wait for follow-up input (next: null).`
+
+- The driver owns the stable session continuation hook/token.
+
+- After it records the park state, it emits `session.waiting` carrying the current continuation token.
+
+- A client resumes by posting that continuation token plus a message/input response.
+
+- Continuation ownership is checked before a new turn starts or rekeys.
+
+- The workflow command inbox deduplicates turn dispatch and serializes durable controls/follow-ups.
+
+- Approval responses are matched by request id, not merely by text or request kind.
+
+- A response is current only if that exact request id is still in the pending request set.
+
+- A request is stale if already answered, cleared by follow-up, or cancelled.
+
+- Stale question/approval payloads are demoted to an ordinary user message for the model.
+
+- Crucial safety rule: a stale approval never enters the approval-resume path and never authorizes the old tool call.
+
+- If the operation is still desired, the model must issue a new tool call and generate a new approval request id.
+
+- A stale response to request A stays ordinary user input even if a different request B is currently pending.
+
+- An unrelated message while an approval is pending is held; it does not implicitly deny the approval.
+
+- A follow-up while `ask_question` is pending clears that question; exact option/freeform matching may answer it, otherwise it is marked unanswered and the text begins a new turn.
+
+- This is the precise "detected and demoted" mechanism: membership test by request id against durable pending input, followed by conversion to normal user input rather than approval resolution.
+
+- Source-reader failure note: the indexed blob body for `harness/stale-input-responses.ts` was unavailable.
+
+- Accordingly the exact private function name of the membership/demotion helper is not guessed.
+
+- The behavior and owning file are corroborated by the adjacent source/test filenames and the stable protocol contract; only the function identifier remains unavailable.
+
+## Sandbox backend contract and implementations
+
+- Public authoring entrypoint: `eve/sandbox`.
+
+- Runtime state: `packages/eve/src/sandbox/state.ts`.
+
+- Runtime resolution: `packages/eve/src/runtime/resolve-sandbox.ts` and `runtime/sandbox/*`.
+
+- Execution lifecycle: `packages/eve/src/execution/sandbox/ensure.ts`.
+
+- Session proxy: `execution/sandbox/session.ts`.
+
+- Lazy creation: `execution/sandbox/lazy-backend.ts`.
+
+- Cleanup/prewarm: `development-cleanup.ts`, `development-prewarm.ts`, `prewarm.ts`.
+
+- Backend binding adapters live under `execution/sandbox/bindings/`.
+
+- The backend factory returns a `SandboxBackendHandle`.
+
+- Handle lifecycle includes creating/ensuring a session, executing commands, filesystem access, state capture/reattach, and required `shutdown()`.
+
+- Public command/file behavior is normalized through a session proxy rather than exposed as provider SDK objects.
+
+- Web `ReadableStream` is the public stream ABI; Vercel SDK Node streams are converted at the adapter edge.
+
+- Sandbox state is serializable and stored inside the durable session snapshot.
+
+- Sessions reattach after server restart/redeploy.
+
+- Since 0.20, custom handles must implement idempotent `shutdown()`; old `dispose()` was removed.
+
+- In-tree backends present in 0.31.x:
+
+  - Vercel Sandbox hosted backend;
+
+  - Docker local container backend;
+
+  - Microsandbox local VM backend;
+
+  - just-bash interpreter/backend;
+
+  - `defaultBackend()` selector choosing by availability/environment.
+
+- The backend choice is authored in `sandbox.ts` or `sandbox/sandbox.ts` via `defineSandbox(...)`.
+
+- Vercel builds reject explicitly pinned local-only Docker or Microsandbox backends.
+
+- A self-hosted server may choose Docker, Microsandbox, just-bash, Vercel, or a custom adapter.
+
+- Workspace seed files are written before bootstrap for all four built-ins.
+
+- Vercel, Docker, and Microsandbox support provisioning/template recovery paths.
+
+- just-bash can compose a custom filesystem around eve's durable session-owned workspace.
+
+- Source-reader failure note: the defining current `SandboxBackend`/`SandboxBackendHandle` type body was not returned by indexed GitHub.
+
+- Therefore this report does not invent exact method signatures beyond the verified required `shutdown()` and the operations visible at call sites/file layout.
+
+# D. Host binding versus portability
+
+## Flue
+
+- Genuinely portable core:
+
+  - pi message/turn loop integration in `session.ts`;
+
+  - canonical conversation record model and reducer;
+
+  - submission classifier and repair algorithm;
+
+  - target-neutral persistence contracts;
+
+  - SQL store logic over an abstract SQL interface;
+
+  - tool wrapping, compaction, result-schema loop, resources, and telemetry projection;
+
+  - Fetch-compatible routing and SDK contracts.
+
+- Host-bound Cloudflare layer:
+
+  - generated Durable Object classes and bindings;
+
+  - DO SQLite connection;
+
+  - Workers AI binding provider;
+
+  - Cloudflare Vite/wrangler configuration;
+
+  - native tracing/Agents SDK extension hooks.
+
+- Host-bound Node layer:
+
+  - `node:sqlite` connection;
+
+  - process lifecycle/signals;
+
+  - local filesystem/process sandbox;
+
+  - Node HTTP server adapter.
+
+- The key architecture fact is that both host layers implement the same `AgentSubmissionStore`, conversation stream, attachment store, provider, and sandbox seams.
+
+- Cloudflare DO is not embedded in pi adaptation or canonical recovery logic.
+
+- Flue can therefore move its harness to another durable host by supplying those stores plus a coordinator and provider/sandbox adapters.
+
+- Rough source split: a trustworthy repository-wide LOC count could not be computed because neither git archive nor npm registry was reachable from the shell.
+
+- A conservative structural estimate from the runtime tree is roughly 70–80% shared runtime and 20–30% host adapters across `packages/runtime/src`.
+
+- This is a file-tree estimate, not a measured LOC count; it excludes CLI/Vite and provider packages.
+
+- `session.ts` alone is 5,629 lines of shared code, which materially dominates either small host directory.
+
+- Portability verdict: high at the harness/recovery layer; medium at deploy/runtime level because a new host still needs durable coordination, streaming, storage, provider, and sandbox adapters.
+
+## eve
+
+- Genuinely portable core:
+
+  - filesystem grammar and manifest compilation;
+
+  - default harness/tool loop;
+
+  - AI SDK model/tool abstractions;
+
+  - input request semantics and stale-response safety;
+
+  - serializable session snapshot schema;
+
+  - sandbox backend abstraction;
+
+  - protocol events and clients.
+
+- Vercel Workflow-bound execution:
+
+  - `"use workflow"` / `"use step"` transforms;
+
+  - `start()`, `resumeHook()`, `createHook()`, `getRun()`, and writable streams;
+
+  - generated `#compiled/@workflow/core/runtime.js` imports;
+
+  - deployment-pinned driver/latest child behavior;
+
+  - Workflow queue namespace and retry journal.
+
+- Vercel platform-bound optional layers:
+
+  - Vercel Sandbox backend;
+
+  - AI Gateway/OIDC conveniences;
+
+  - Vercel service/build-output generation.
+
+- Non-Vercel portability exists through self-hosted Nitro plus a compatible Workflow "world" and custom sandbox backend.
+
+- That is not host independence: the durable algorithm is coded directly in Workflow primitives and needs a compatible Workflow runtime.
+
+- The harness can be reused more easily than the durable driver.
+
+- Rough source split: no defensible full LOC count was possible without a complete checkout.
+
+- Structural estimate for `packages/eve/src`: roughly 55–65% host-neutral compiler/harness/protocol/runtime resolution and 35–45% execution/Workflow/Vercel integration.
+
+- This estimate counts local sandbox backends as adapters, not portable core.
+
+- `execution/` is large and explicitly Workflow-shaped; unlike Flue, eve's durable scheduler is not expressed behind a small neutral store interface.
+
+- Portability verdict: medium for authoring/compiler/harness, low-to-medium for durable execution, high only among hosts that implement the expected Workflow world contract.
+
+# E. Fetch/access ledger
+
+- Successfully read `withastro/flue/packages/runtime/src/session.ts` in full-indexed line slices (5,629 lines).
+
+- Successfully read `withastro/flue/packages/runtime/package.json` (2.0.3 manifest).
+
+- Successfully read indexed bodies/symbol regions from `agent-execution-store.ts`, `sql-agent-execution-store.ts`, `submission-state.ts`, and `node/agent-coordinator.ts`.
+
+- Successfully enumerated Flue runtime, shared runtime, and Node source trees.
+
+- `runtime/agent-submissions.ts`, `runtime/settlement-rebuild.ts`, and the Cloudflare directory listing intermittently returned cache-miss errors.
+
+- Claims about those files are limited to exported names/import call sites visible in fetched coordinator/session/store sources.
+
+- Successfully enumerated eve `discover`, `execution`, `harness`, `runtime`, and sandbox trees.
+
+- Successfully read `execution/turn-workflow.ts`, `execution/durable-session-store.ts`, and relevant `workflow-steps.ts` indexed regions.
+
+- GitHub returned cache misses for `discover/discover-agent.ts`, `discover/named-source-directory.ts`, `discover/manifest.ts`, `harness/stale-input-responses.ts`, `harness/input-requests.ts`, and the current sandbox contract type body.
+
+- Those misses are called out in the affected sections; private helper identifiers and exact unavailable signatures are not guessed.
+
+- Direct `curl` to raw GitHub, r.jina.ai, and npm registry returned no body in this environment, so a repository checkout and measured LOC census were impossible.
