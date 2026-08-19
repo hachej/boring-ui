@@ -10,8 +10,8 @@ import type { UiCommand } from "./types"
 import { normalizeUiFilesystem, parseFileOpenMode } from "../../shared/types/filesystem"
 import type { SurfaceOpenRequest } from "../../shared/types/surface"
 import { UI_STATE_INVALIDATION_COMMAND } from "../../shared/ui-bridge"
-import { events, remoteMeta, workspaceEvents } from "../events"
 import { expandToFileSchema } from "./validation"
+import { dispatchUiStateInvalidation } from "./uiStateInvalidation"
 
 /**
  * Browser CustomEvent name dispatched on `window` when a `showNotification`
@@ -128,12 +128,9 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
   if (!KNOWN_KINDS.has(cmd.kind)) return
 
   switch (cmd.kind) {
-    case UI_STATE_INVALIDATION_COMMAND: {
-      const keys = cmd.params.keys
-      if (!Array.isArray(keys) || keys.length === 0 || keys.some((key) => typeof key !== "string" || key.length === 0)) return
-      events.emit(workspaceEvents.uiStateInvalidated, { ...remoteMeta(), keys })
+    case UI_STATE_INVALIDATION_COMMAND:
+      dispatchUiStateInvalidation(cmd.params)
       return
-    }
     case "openFile": {
       const path = strParam(cmd.params, "path")
       if (!path) return

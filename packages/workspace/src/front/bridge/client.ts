@@ -2,7 +2,7 @@ import type { WorkspaceBridge, CausedBy } from "./types"
 import type { WorkspaceStore, PanelState } from "../store/types"
 import type { FilesystemId, UiFileOpenMode } from "../../shared/types/filesystem"
 import { UI_STATE_INVALIDATION_COMMAND } from "../../shared/ui-bridge"
-import { events, remoteMeta, workspaceEvents } from "../events"
+import { dispatchUiStateInvalidation } from "./uiStateInvalidation"
 
 export interface UIStatePut {
   v: 1
@@ -132,12 +132,9 @@ async function dispatchCommand(
     case "markClean":
       bridge.markClean(params.path as string)
       break
-    case UI_STATE_INVALIDATION_COMMAND: {
-      const keys = params.keys
-      if (!Array.isArray(keys) || keys.length === 0 || keys.some((key) => typeof key !== "string" || key.length === 0)) break
-      events.emit(workspaceEvents.uiStateInvalidated, { ...remoteMeta(), keys })
+    case UI_STATE_INVALIDATION_COMMAND:
+      dispatchUiStateInvalidation(params)
       break
-    }
   }
 }
 
