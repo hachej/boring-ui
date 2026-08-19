@@ -41,16 +41,14 @@ function AskUserProvider({ agentTypeId, apiBaseUrl, authHeaders, authScopeKey, a
     activeSessionId,
     openSessionIds,
     async refreshPending(sessionId) {
-      const pending = await createQuestionsClient({ apiBaseUrl, headers: authHeaders }).pending(sessionId)
-      store.setPending(pending, sessionId)
-      return pending
+      return await createQuestionsClient({ apiBaseUrl, headers: authHeaders }).pending(sessionId)
     },
   }), [activeSessionId, agentTypeId, apiBaseUrl, authHeaders, openSessionIds, store])
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
   useAskUserAttentionBlockers(runtime, pendingSnapshot)
   useAskUserAttentionActions(runtime)
   useAskUserComposerStopCancel(runtime)
-  useAskUserPendingRefresh(runtime, { activeSessionId, apiBaseUrl, authHeaders })
+  useAskUserPendingRefresh(runtime, { activeSessionId, apiBaseUrl, authHeaders, workspaceId })
   return <QuestionsRuntimeContext.Provider value={runtime}>{children}</QuestionsRuntimeContext.Provider>
 }
 
@@ -138,7 +136,11 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
     : pending
   useEffect(() => {
     if (!sessionId) return
-    if (!pending || (hasExplicitTarget(params) && pending.questionId !== params.questionId)) void runtime.refreshPending(sessionId).catch(() => undefined)
+    if (!pending || (hasExplicitTarget(params) && pending.questionId !== params.questionId)) {
+      void runtime.refreshPending(sessionId)
+        .then((question) => runtime.setPending(question, sessionId))
+        .catch(() => undefined)
+    }
   }, [params, pending, runtime, sessionId])
   useEffect(() => {
     const onStop = (event: Event) => {

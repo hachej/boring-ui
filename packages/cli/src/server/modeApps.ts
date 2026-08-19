@@ -28,6 +28,8 @@ import type {
 import { resolveBoringUiCliPackageRoot } from "./pluginDiscovery.js"
 import type { readCliPluginPiSnapshot as readCliPluginPiSnapshotFn } from "./pluginDiscovery.js"
 import { detectFolderModeTaskProviders } from "./folderModeTaskProviders.js"
+import { FileAskUserStore } from "@hachej/boring-ask-user/server"
+import type { AskUserBridgeListOutput } from "@hachej/boring-ask-user/shared"
 
 type CliPluginPiSnapshot = ReturnType<typeof readCliPluginPiSnapshotFn>
 
@@ -770,6 +772,14 @@ export async function createWorkspacesModeApp(opts: {
     return await requireWorkspace(resolveWorkspaceIdFromRequest(request))
   }
 
+  async function listReadyQuestions(workspace: LocalWorkspace): Promise<AskUserBridgeListOutput> {
+    // Use a fresh read-only store view for each reconciliation. Headless worker
+    // processes write this durable file independently of the hub process, so a
+    // long-lived in-memory plugin store would miss their updates.
+    const store = new FileAskUserStore(join(workspace.path, ".boring", "ask-user.json"))
+    return { questions: await store.listPending() }
+  }
+
   function automationStore(workspace: LocalWorkspace) {
     const key = pluginRuntimeKey(workspace)
     let store = automationStores.get(key)
@@ -1264,6 +1274,58 @@ export async function createWorkspacesModeApp(opts: {
           return workspaceServer.createLocalCliBridgeAuthPolicy({ workspaceId: input.workspaceId }).resolve(input)
         },
       },
+    })
+
+    app.get("/api/v1/questions", async (request, reply) => {
+      const query = request.query as { status?: unknown }
+      if (query.status !== "ready") return reply.code(400).send({ error: "validation_error", message: "status must be ready" })
+      const workspace = await workspaceFromRequest(request)
+      reply.header("Cache-Control", "no-store")
+      return await listReadyQuestions(workspace)
+    })
+
+    app.get("/api/v1/questions/events", async (request, reply) => {
+      const workspace = await workspaceFromRequest(request)
+      reply.hijack()
+      const res = reply.raw
+      res.statusCode = 200
+      res.setHeader("Content-Type", "text/event-stream")
+      res.setHeader("Cache-Control", "no-cache, no-transform")
+      res.setHeader("Connection", "keep-alive")
+      res.setHeader("X-Accel-Buffering", "no")
+      res.flushHeaders?.()
+      let lastSnapshot = ""
+      let stopped = false
+      let refreshInFlight = false
+      const refresh = async (eventName: "ready" | "questions-changed") => {
+        if (stopped || refreshInFlight) return
+        refreshInFlight = true
+        try {
+          const output = await listReadyQuestions(workspace)
+          const snapshot = JSON.stringify(output.questions.map(({ questionId, sessionId, status, updatedAt }) => ({ questionId, sessionId, status, updatedAt })))
+          if (eventName === "ready" || snapshot !== lastSnapshot) {
+            lastSnapshot = snapshot
+            res.write(`event: ${eventName}\ndata: {}\n\n`)
+          }
+        } catch {
+          // Preserve the last known browser snapshot across transient store reads.
+        } finally {
+          refreshInFlight = false
+        }
+      }
+      await refresh("ready")
+      const interval = setInterval(() => { void refresh("questions-changed") }, 750)
+      const closeStream = () => {
+        if (stopped) return
+        stopped = true
+        clearInterval(interval)
+        workspaceEventClosers.get(workspace.id)?.delete(closeStream)
+        try { res.end() } catch {}
+      }
+      const closers = workspaceEventClosers.get(workspace.id) ?? new Set<() => void>()
+      closers.add(closeStream)
+      workspaceEventClosers.set(workspace.id, closers)
+      request.raw.on("close", closeStream)
     })
 
   app.get("/api/v1/runtime-plugin-diagnostics", async (request) => {

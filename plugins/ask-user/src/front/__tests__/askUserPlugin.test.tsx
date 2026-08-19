@@ -495,6 +495,7 @@ describe("askUserPlugin front shell", () => {
     const neverOpened = { ...question, questionId: "headless-q1", sessionId: "headless-session", title: "Headless worker approval", answerToken: "headless-token" }
     const later = { ...nextQuestion, questionId: "headless-q2", sessionId: "another-headless-session", title: "Later headless approval", answerToken: "later-token" }
     let readyQuestions = [question, neverOpened]
+    let listFails = false
     const seen: Array<{ id: string; label: string }> = []
     function AttentionProbe() {
       const { blockers } = useWorkspaceAttention()
@@ -518,7 +519,11 @@ describe("askUserPlugin front shell", () => {
     }
     vi.stubGlobal("EventSource", FakeEventSource)
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-      if (String(url).includes("/api/v1/questions?status=ready")) return Response.json({ questions: readyQuestions })
+      if (String(url).includes("/api/v1/questions?status=ready")) {
+        return listFails
+          ? Response.json({ error: "temporary" }, { status: 503 })
+          : Response.json({ questions: readyQuestions })
+      }
       return Response.json({})
     }))
     const Provider = getProvider()
@@ -536,7 +541,7 @@ describe("askUserPlugin front shell", () => {
       { id: "ask-user:headless-session:headless-q1", label: "Headless worker approval" },
     ])))
     expect(seen).toHaveLength(2)
-    expect(FakeEventSource.instance?.url).toBe("/api/v1/questions/events")
+    expect(FakeEventSource.instance?.url).toBe("/api/v1/questions/events?workspaceId=test-workspace")
 
     readyQuestions = [neverOpened, later]
     act(() => FakeEventSource.instance?.emit("questions-changed"))
@@ -546,6 +551,15 @@ describe("askUserPlugin front shell", () => {
     ])))
     expect(seen).toHaveLength(2)
     expect(seen).not.toContainEqual(expect.objectContaining({ id: "ask-user:default:q1" }))
+
+    listFails = true
+    act(() => FakeEventSource.instance?.emit("questions-changed"))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(seen).toEqual(expect.arrayContaining([
+      { id: "ask-user:headless-session:headless-q1", label: "Headless worker approval" },
+      { id: "ask-user:another-headless-session:headless-q2", label: "Later headless approval" },
+    ]))
+    expect(seen).toHaveLength(2)
   })
 
   it("contributes pending questions as explicit inbox attention blockers", async () => {

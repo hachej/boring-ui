@@ -50,18 +50,20 @@ export function registerQuestionsReadRoutes(
     if (!passesOrigin(request, opts.allowedOrigins)) return reply.code(403).send({ error: "forbidden", message: "invalid origin" })
     const query = request.query as { status?: unknown }
     if (query.status !== "ready") return reply.code(400).send({ error: "validation_error", message: "status must be ready" })
-    const auth = await opts.getAuthContext?.(request)
+    if (!opts.getAuthContext) return reply.code(401).send({ error: "unauthorized", message: "question list authorization is required" })
+    const auth = await opts.getAuthContext(request)
     reply.header("Cache-Control", "no-store")
     const questions = (await opts.store.listPending()).filter((question) => (
       question.status === "ready"
-      && (!auth || question.ownerPrincipalId === "anonymous" || question.ownerPrincipalId === auth.principalId)
+      && (question.ownerPrincipalId === "anonymous" || question.ownerPrincipalId === auth.principalId)
     ))
     return { questions }
   })
 
   app.get("/api/v1/questions/events", async (request, reply) => {
     if (!passesOrigin(request, opts.allowedOrigins)) return reply.code(403).send({ error: "forbidden", message: "invalid origin" })
-    await opts.getAuthContext?.(request)
+    if (!opts.getAuthContext) return reply.code(401).send({ error: "unauthorized", message: "question event authorization is required" })
+    await opts.getAuthContext(request)
     reply.hijack()
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",

@@ -11,7 +11,7 @@ import {
   type WorkspaceBridgeCallContext,
 } from "@hachej/boring-workspace/server"
 import { createQuestionsClient } from "../../front/client"
-import { ASK_USER_BRIDGE_CAPABILITIES, ASK_USER_BRIDGE_OPS } from "../../shared"
+import { ASK_USER_BRIDGE_CAPABILITIES, ASK_USER_BRIDGE_OPS, type AskUserQuestion } from "../../shared"
 import { AskUserRuntime } from "../askUserRuntime"
 import { createAskUserBridgeHandlers } from "../askUserBridgeHandlers"
 import { MemoryAskUserStore } from "./testAskUserStore"
@@ -167,6 +167,30 @@ describe("plugin-owned ask-user WorkspaceBridge handlers", () => {
       ok: true,
       output: { status: "answered", answer: { values: { answer: "ok" } } },
     })
+  })
+
+  it("lists ready questions across sessions while enforcing browser principal ownership", async () => {
+    const { store, registry } = fixture()
+    const base = {
+      questionId: "q-user-1",
+      sessionId: "s1",
+      ownerPrincipalId: "user-1",
+      status: "ready" as const,
+      title: "User one",
+      schema,
+      artifacts: [],
+      answerToken: "token-1",
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    }
+    await store.createPending(base)
+    await store.createPending({ ...base, questionId: "q-user-2", sessionId: "s2", ownerPrincipalId: "user-2", title: "User two", answerToken: "token-2" })
+    await store.createPending({ ...base, questionId: "q-anonymous", sessionId: "s3", ownerPrincipalId: "anonymous", title: "Anonymous", answerToken: "token-3" })
+
+    const response = await registry.call<{ status: "ready" }, { questions: AskUserQuestion[] }>({ op: ASK_USER_BRIDGE_OPS.list, input: { status: "ready" } }, browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.list]))
+
+    expect(response).toMatchObject({ ok: true })
+    expect(response.ok && response.output.questions.map((question) => question.title).sort()).toEqual(["Anonymous", "User one"])
   })
 
   it("keeps pending questions scoped by session", async () => {

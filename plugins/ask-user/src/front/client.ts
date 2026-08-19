@@ -98,6 +98,10 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
         cache: "no-store",
       })
       const payload = await response.json().catch(() => null) as { questions?: unknown } | null
+      if (response.status === 404) {
+        const output = await callBridge<{ questions: unknown }>(ASK_USER_BRIDGE_OPS.list, { status: "ready" })
+        return normalizeReadyQuestions(output.questions, response.status)
+      }
       if (!response.ok) {
         throw new QuestionsClientError(
           typeof payload === "object" && payload && "error" in payload && typeof payload.error === "string" ? payload.error : ASK_USER_ERROR_CODES.UI_UNAVAILABLE,
@@ -105,14 +109,7 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
           response.status,
         )
       }
-      if (!payload || !Array.isArray(payload.questions)) {
-        throw new QuestionsClientError(ASK_USER_ERROR_CODES.UI_UNAVAILABLE, "Invalid pending questions response", response.status)
-      }
-      const questions = payload.questions.map(normalizeQuestion)
-      if (questions.some((question) => question === null)) {
-        throw new QuestionsClientError(ASK_USER_ERROR_CODES.UI_UNAVAILABLE, "Invalid pending question payload", response.status)
-      }
-      return questions.filter((question): question is AskUserQuestion => question?.status === "ready")
+      return normalizeReadyQuestions(payload?.questions, response.status)
     },
     async pending(sessionId: string): Promise<AskUserQuestion | null> {
       const output = await callBridge<{ pending: AskUserQuestion | null }>(
@@ -162,6 +159,17 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
       )
     },
   }
+}
+
+function normalizeReadyQuestions(value: unknown, statusCode: number): AskUserQuestion[] {
+  if (!Array.isArray(value)) {
+    throw new QuestionsClientError(ASK_USER_ERROR_CODES.UI_UNAVAILABLE, "Invalid pending questions response", statusCode)
+  }
+  const questions = value.map(normalizeQuestion)
+  if (questions.some((question) => question === null)) {
+    throw new QuestionsClientError(ASK_USER_ERROR_CODES.UI_UNAVAILABLE, "Invalid pending question payload", statusCode)
+  }
+  return questions.filter((question): question is AskUserQuestion => question?.status === "ready")
 }
 
 export function normalizeQuestion(value: unknown): AskUserQuestion | null {

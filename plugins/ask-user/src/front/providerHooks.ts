@@ -12,7 +12,7 @@ import {
   type WorkspaceAttentionActionDetail,
 } from "@hachej/boring-workspace"
 import { ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
-import { createQuestionsClient, readPendingQuestionHintsFromState, type PendingQuestionHint } from "./client"
+import { createQuestionsClient, QuestionsClientError, readPendingQuestionHintsFromState, type PendingQuestionHint } from "./client"
 import { isSessionOpen, type QuestionsRuntime } from "./runtime"
 
 export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSnapshot: string): void {
@@ -103,9 +103,10 @@ export function useAskUserPendingRefresh(
     apiBaseUrl: string
     authHeaders?: Record<string, string>
     activeSessionId?: string | null
+    workspaceId?: string
   },
 ): void {
-  const { activeSessionId, apiBaseUrl, authHeaders } = options
+  const { activeSessionId, apiBaseUrl, authHeaders, workspaceId } = options
   useEffect(() => {
     let stopped = false
     let refreshSequence = 0
@@ -115,9 +116,13 @@ export function useAskUserPendingRefresh(
         const questions = await createQuestionsClient({ apiBaseUrl, headers: authHeaders }).listReady()
         if (!stopped && sequence === refreshSequence) runtime.replacePending(questions)
         return
-      } catch {
-        // Older servers do not expose the durable list endpoint. Keep the
-        // previous hint + per-session bridge path as a compatibility fallback.
+      } catch (error) {
+        const legacyEndpoint = error instanceof QuestionsClientError
+          && (error.statusCode === 404 || error.statusCode === 200)
+        if (!legacyEndpoint) return
+        // Only an explicitly absent/legacy endpoint may fall back to the old
+        // hint projection. Transient durable-list failures preserve the last
+        // authoritative snapshot instead of dropping rows.
       }
       let hints: PendingQuestionHint[] = []
       try {
@@ -162,7 +167,8 @@ export function useAskUserPendingRefresh(
     const offAgentData = events.on(workspaceEvents.agentData, onAgentData)
     const offUiCommand = events.on(workspaceEvents.uiCommand, onUiCommand)
     const EventSourceCtor = globalThis.EventSource
-    const eventUrl = `${apiBaseUrl}/api/v1/questions/events`
+    const eventQuery = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""
+    const eventUrl = `${apiBaseUrl}/api/v1/questions/events${eventQuery}`
     const questionEvents = EventSourceCtor ? new EventSourceCtor(eventUrl, { withCredentials: true }) : null
     questionEvents?.addEventListener("ready", refreshPending)
     questionEvents?.addEventListener("questions-changed", refreshPending)
@@ -182,7 +188,7 @@ export function useAskUserPendingRefresh(
       window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
       window.removeEventListener(WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, onSurfaceOpenSkipped)
     }
-  }, [activeSessionId, apiBaseUrl, authHeaders, runtime])
+  }, [activeSessionId, apiBaseUrl, authHeaders, runtime, workspaceId])
 }
 
 function hasPendingStateSlot(state: Record<string, unknown> | null): boolean {
