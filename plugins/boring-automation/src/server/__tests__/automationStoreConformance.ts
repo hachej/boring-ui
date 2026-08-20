@@ -151,7 +151,7 @@ export function runFileAutomationStoreBehaviorTests(createStore: () => FileAutom
     })
     const ambiguous = await store.beginRun({
       automationId: automation.id,
-      trigger: "dispatch",
+      trigger: "manual",
       promptSnapshot: "prompt",
       modelSnapshot: "model-a",
     })
@@ -163,8 +163,8 @@ export function runFileAutomationStoreBehaviorTests(createStore: () => FileAutom
     })
 
     const replacements = await Promise.allSettled([
-      store.beginRun({ automationId: automation.id, trigger: "dispatch", promptSnapshot: "replacement-1", modelSnapshot: "model-a" }),
-      store.beginRun({ automationId: automation.id, trigger: "dispatch", promptSnapshot: "replacement-2", modelSnapshot: "model-a" }),
+      store.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "replacement-1", modelSnapshot: "model-a" }),
+      store.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "replacement-2", modelSnapshot: "model-a" }),
     ])
 
     expect(replacements).toHaveLength(2)

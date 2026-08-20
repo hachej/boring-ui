@@ -69,7 +69,7 @@ it("keeps the slot occupied when accepted dispatch identity persistence loses th
   const ambiguous = await executor.run({
     automationId: automation.id,
     actor: { workspaceId: "workspace-1", userId: "user-1" },
-    trigger: "dispatch",
+    trigger: "manual",
   })
   expect(acceptedWorkerStillRunning).toBe(true)
   expect(ambiguous).toMatchObject({
@@ -79,8 +79,8 @@ it("keeps the slot occupied when accepted dispatch identity persistence loses th
   })
 
   const replacements = await Promise.allSettled([
-    store.beginRun({ automationId: automation.id, trigger: "dispatch", promptSnapshot: "replacement-1", modelSnapshot: automation.model }),
-    store.beginRun({ automationId: automation.id, trigger: "dispatch", promptSnapshot: "replacement-2", modelSnapshot: automation.model }),
+    store.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "replacement-1", modelSnapshot: automation.model }),
+    store.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "replacement-2", modelSnapshot: automation.model }),
   ])
   expect(replacements).toHaveLength(2)
   for (const replacement of replacements) {
