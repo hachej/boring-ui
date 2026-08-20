@@ -13,7 +13,6 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
       timezone text NOT NULL,
       model text NOT NULL,
       agent_type_id text,
-      session_mode text NOT NULL DEFAULT 'new',
       prompt_ref text,
       created_at timestamptz NOT NULL,
       updated_at timestamptz NOT NULL
@@ -22,7 +21,6 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
   await sql.unsafe(`
     ALTER TABLE boring_automation_automations
       ADD COLUMN IF NOT EXISTS agent_type_id text,
-      ADD COLUMN IF NOT EXISTS session_mode text NOT NULL DEFAULT 'new',
       ADD COLUMN IF NOT EXISTS prompt_ref text,
       ADD COLUMN IF NOT EXISTS deleted_at timestamptz,
       DROP COLUMN IF EXISTS prompt,
@@ -73,8 +71,7 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
     ALTER TABLE boring_automation_runs
       ADD COLUMN IF NOT EXISTS invocation_id text,
       ADD COLUMN IF NOT EXISTS dispatch_request_id text,
-      ADD COLUMN IF NOT EXISTS dispatch_receipt jsonb,
-      ADD COLUMN IF NOT EXISTS note text
+      ADD COLUMN IF NOT EXISTS dispatch_receipt jsonb
   `)
   await sql.unsafe(`
     UPDATE boring_automation_runs
@@ -86,18 +83,12 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
     ALTER TABLE boring_automation_runs
       ALTER COLUMN invocation_id SET NOT NULL,
       ALTER COLUMN dispatch_request_id SET NOT NULL,
-      DROP CONSTRAINT IF EXISTS boring_automation_runs_status_check,
-      DROP CONSTRAINT IF EXISTS boring_automation_runs_trigger_check
+      DROP CONSTRAINT IF EXISTS boring_automation_runs_status_check
   `)
   await sql.unsafe(`
     ALTER TABLE boring_automation_runs
       ADD CONSTRAINT boring_automation_runs_status_check
       CHECK (status IN ('queued', 'dispatching', 'running', 'succeeded', 'failed', 'cancelled', 'outcome-unknown'))
-  `)
-  await sql.unsafe(`
-    ALTER TABLE boring_automation_runs
-      ADD CONSTRAINT boring_automation_runs_trigger_check
-      CHECK (trigger IN ('manual', 'scheduled', 'dispatch'))
   `)
   await sql.unsafe(`
     CREATE INDEX IF NOT EXISTS boring_automation_runs_automation_idx

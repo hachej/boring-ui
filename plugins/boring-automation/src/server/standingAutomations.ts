@@ -10,7 +10,6 @@ const SeedSchema = z.object({
   timezone: z.string().trim().min(1),
   model: z.string().trim().regex(/^[^:]+:.+$/),
   agentTypeId: z.string().trim().min(1),
-  sessionMode: z.enum(["new", "continue"]),
   promptRef: z.string().regex(/^\.agents\/automation\/[a-zA-Z0-9_-]+\.md$/),
 }).superRefine((seed, context) => {
   if (seed.cron !== null && !isValidFiveFieldCron(seed.cron)) {

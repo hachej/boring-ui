@@ -16,7 +16,6 @@ export interface AutomationSeed {
   timezone: string
   model: string
   agentTypeId: string
-  sessionMode: "new" | "continue"
   promptRef: string
 }
 

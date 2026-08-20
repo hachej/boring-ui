@@ -80,7 +80,6 @@ export class FileAutomationStore implements AutomationStore {
       model: input.model,
       ...(input.agentTypeId ? { agentTypeId: input.agentTypeId } : {}),
       ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
-      sessionMode: input.sessionMode ?? "new",
       promptRef: automationPromptPath(id),
       createdAt: now,
       updatedAt: now,
@@ -128,7 +127,6 @@ export class FileAutomationStore implements AutomationStore {
         timezone: input.timezone,
         model: input.model,
         agentTypeId: input.agentTypeId,
-        sessionMode: input.sessionMode,
         promptRef: input.promptRef,
         createdAt: now,
         updatedAt: now,
@@ -243,7 +241,6 @@ export class FileAutomationStore implements AutomationStore {
         promptSnapshot: input.promptSnapshot,
         modelSnapshot: input.modelSnapshot,
         error: null,
-        note: null,
         createdAt: now,
         updatedAt: now,
       }
@@ -371,10 +368,7 @@ export class FileAutomationStore implements AutomationStore {
           const parsed = JSON.parse(raw) as Partial<StoredAutomationState>
           this.state = {
             automations: parsed.automations && typeof parsed.automations === "object"
-              ? Object.fromEntries(Object.entries(parsed.automations).map(([id, value]) => {
-                  const automation = value as Automation
-                  return [id, { ...automation, sessionMode: automation.sessionMode ?? "new" }]
-                }))
+              ? parsed.automations as Record<string, Automation>
               : {},
             runs: parsed.runs && typeof parsed.runs === "object"
               ? Object.fromEntries(Object.entries(parsed.runs).map(([id, value]) => {
@@ -384,7 +378,6 @@ export class FileAutomationStore implements AutomationStore {
                     invocationId: run.invocationId ?? `legacy:${id}`,
                     dispatchRequestId: run.dispatchRequestId ?? id,
                     dispatchReceipt: run.dispatchReceipt ?? null,
-                    note: run.note ?? null,
                   }]
                 }))
               : {},

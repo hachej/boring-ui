@@ -119,41 +119,22 @@ describe("PostgresAutomationStore actor isolation", () => {
       if (!text.includes("INSERT INTO boring_automation_automations")) return Promise.resolve([])
       return Promise.resolve([{
         id: values[0], title: values[3], enabled: values[4], cron: values[5], timezone: values[6], model: values[7],
-        agent_type_id: values[8], session_mode: values[9], prompt_ref: values[10], created_at: values[11], updated_at: values[12],
+        agent_type_id: values[8], prompt_ref: values[9], created_at: values[10], updated_at: values[11],
       }])
     }) as unknown as postgres.Sql
     const store = new PostgresAutomationStore(sql, { workspaceId: "workspace-a", userId: "user-a" }, undefined, workspace)
 
     const automation = await store.createAutomation({
-      title: "Daily", cron: "0 9 * * *", timezone: "UTC", model: "test:model", agentTypeId: "researcher", sessionMode: "continue", prompt: "canonical prompt",
+      title: "Daily", cron: "0 9 * * *", timezone: "UTC", model: "test:model", agentTypeId: "researcher", prompt: "canonical prompt",
     })
 
     expect(automation.agentTypeId).toBe("researcher")
-    expect(automation.sessionMode).toBe("continue")
     expect(automation.promptRef).toBe(`.agents/automation/${automation.id}.md`)
     expect(files.get(automation.promptRef)).toBe("canonical prompt")
-    expect(queries[0]!.text).toContain("model, agent_type_id, session_mode, prompt_ref, created_at")
-    expect(queries[0]!.text).toContain("RETURNING id, title, enabled, cron, timezone, model, agent_type_id, session_mode, prompt_ref")
+    expect(queries[0]!.text).toContain("model, agent_type_id, prompt_ref, created_at")
+    expect(queries[0]!.text).toContain("RETURNING id, title, enabled, cron, timezone, model, agent_type_id, prompt_ref")
     expect(queries[0]!.text).not.toMatch(/\bprompt\b/)
     expect(queries[0]!.values).not.toContain("canonical prompt")
-  })
-
-  it("returns the persisted continuation mode immediately after metadata update", async () => {
-    const queries: RecordedQuery[] = []
-    const base = {
-      id: "automation-1", title: "Daily", enabled: true, cron: "0 9 * * *", timezone: "UTC", model: "test:model", agent_type_id: null,
-      session_mode: "new", created_at: "2026-07-19T08:00:00.000Z", updated_at: "2026-07-19T08:00:00.000Z",
-    }
-    const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
-      const text = strings.join("?")
-      queries.push({ text, values })
-      return Promise.resolve([text.includes("UPDATE boring_automation_automations") ? { ...base, session_mode: "continue" } : base])
-    }) as unknown as postgres.Sql
-    const store = new PostgresAutomationStore(sql, { workspaceId: "workspace-a", userId: "user-a" })
-
-    await expect(store.updateAutomation(base.id, { sessionMode: "continue" })).resolves.toMatchObject({ sessionMode: "continue" })
-
-    expect(queries[1]!.text).toContain("RETURNING id, title, enabled, cron, timezone, model, agent_type_id, session_mode")
   })
 
   it("updates canonical prompt files without mirroring bodies into PostgreSQL", async () => {

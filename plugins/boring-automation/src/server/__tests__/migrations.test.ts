@@ -97,8 +97,8 @@ describe("runBoringAutomationMigrations", () => {
         code: "BORING_AUTOMATION_RUN_LEASE_LOST",
       })
       const replacements = await Promise.allSettled([
-        store.beginRun({ automationId, trigger: "dispatch", promptSnapshot: "replacement-1", modelSnapshot: "test:model" }),
-        store.beginRun({ automationId, trigger: "dispatch", promptSnapshot: "replacement-2", modelSnapshot: "test:model" }),
+        store.beginRun({ automationId, trigger: "manual", promptSnapshot: "replacement-1", modelSnapshot: "test:model" }),
+        store.beginRun({ automationId, trigger: "manual", promptSnapshot: "replacement-2", modelSnapshot: "test:model" }),
       ])
       expect(replacements).toHaveLength(2)
       for (const replacement of replacements) {
@@ -132,16 +132,16 @@ describe("runBoringAutomationMigrations", () => {
           WHERE status IN ('queued', 'dispatching', 'running')
       `)
       const store = new PostgresAutomationStore(sql, actor)
-      const ambiguous = await store.beginRun({ automationId, trigger: "dispatch", promptSnapshot: "one", modelSnapshot: "test:model" })
+      const ambiguous = await store.beginRun({ automationId, trigger: "manual", promptSnapshot: "one", modelSnapshot: "test:model" })
       await store.updateRunLifecycle(ambiguous.id, { status: "outcome-unknown", sessionId: "possibly-live" })
       await sql`
         INSERT INTO boring_automation_runs (
           id, automation_id, workspace_id, owner_user_id, invocation_id, dispatch_request_id, dispatch_receipt,
           session_id, status, trigger, scheduled_for, started_at, completed_at, duration_ms, input_tokens,
-          output_tokens, total_tokens, prompt_snapshot, model_snapshot, error, note, created_at, updated_at
+          output_tokens, total_tokens, prompt_snapshot, model_snapshot, error, created_at, updated_at
         ) SELECT
           ${randomUUID()}, automation_id, workspace_id, owner_user_id, ${`replacement:${randomUUID()}`}, ${randomUUID()}, NULL,
-          NULL, 'queued', 'dispatch', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'two', model_snapshot, NULL, NULL, ${now}, ${now}
+          NULL, 'queued', 'dispatch', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'two', model_snapshot, NULL, ${now}, ${now}
         FROM boring_automation_runs WHERE id = ${ambiguous.id}
       `
 
@@ -176,7 +176,7 @@ describe("Postgres standing automation seeding", () => {
     } as never
     const seed = {
       key: "worker-slot-1", title: "worker-slot-1", enabled: true, cron: null, timezone: "UTC",
-      model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", sessionMode: "new" as const,
+      model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker",
       promptRef: ".agents/automation/worker-slot.md",
     }
     try {

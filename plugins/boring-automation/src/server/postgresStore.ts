@@ -27,10 +27,10 @@ export interface ReconciledHostedAutomationRun {
 type Sql = postgres.Sql
 
 type AutomationRow = {
-  id: string; title: string; enabled: boolean; cron: string | null; timezone: string; model: string; agent_type_id: string | null; session_mode: Automation["sessionMode"]; prompt_ref: string | null; created_at: Date | string; updated_at: Date | string
+  id: string; title: string; enabled: boolean; cron: string | null; timezone: string; model: string; agent_type_id: string | null; prompt_ref: string | null; created_at: Date | string; updated_at: Date | string
 }
 type RunRow = {
-  id: string; automation_id: string; invocation_id: string; dispatch_request_id: string; dispatch_receipt: AutomationRun["dispatchReceipt"]; session_id: string | null; status: AutomationRun["status"]; trigger: AutomationRun["trigger"]; scheduled_for: Date | string | null; started_at: Date | string | null; completed_at: Date | string | null; duration_ms: number | null; input_tokens: number | null; output_tokens: number | null; total_tokens: number | null; prompt_snapshot: string; model_snapshot: string; error: string | null; note: string | null; created_at: Date | string; updated_at: Date | string
+  id: string; automation_id: string; invocation_id: string; dispatch_request_id: string; dispatch_receipt: AutomationRun["dispatchReceipt"]; session_id: string | null; status: AutomationRun["status"]; trigger: AutomationRun["trigger"]; scheduled_for: Date | string | null; started_at: Date | string | null; completed_at: Date | string | null; duration_ms: number | null; input_tokens: number | null; output_tokens: number | null; total_tokens: number | null; prompt_snapshot: string; model_snapshot: string; error: string | null; created_at: Date | string; updated_at: Date | string
 }
 type ScheduleRunRow = Pick<RunRow, "automation_id" | "status" | "trigger" | "scheduled_for">
 
@@ -45,7 +45,7 @@ export class PostgresAutomationStore implements AutomationStore {
 
   async listAutomations(): Promise<Automation[]> {
     const rows = await this.sql<AutomationRow[]>`
-      SELECT id, title, enabled, cron, timezone, model, agent_type_id, session_mode, prompt_ref, created_at, updated_at
+      SELECT id, title, enabled, cron, timezone, model, agent_type_id, prompt_ref, created_at, updated_at
       FROM boring_automation_automations
       WHERE workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
       ORDER BY created_at, id
@@ -55,7 +55,7 @@ export class PostgresAutomationStore implements AutomationStore {
 
   async getAutomation(id: string): Promise<Automation | null> {
     const rows = await this.sql<AutomationRow[]>`
-      SELECT id, title, enabled, cron, timezone, model, agent_type_id, session_mode, prompt_ref, created_at, updated_at
+      SELECT id, title, enabled, cron, timezone, model, agent_type_id, prompt_ref, created_at, updated_at
       FROM boring_automation_automations
       WHERE id = ${id} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
     `
@@ -69,9 +69,9 @@ export class PostgresAutomationStore implements AutomationStore {
     const promptRef = automationPromptPath(id)
     await this.writePromptFile(promptRef, input.prompt ?? "")
     const rows = await this.sql<AutomationRow[]>`
-      INSERT INTO boring_automation_automations (id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, agent_type_id, session_mode, prompt_ref, created_at, updated_at)
-      VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled ?? true}, ${input.cron}, ${input.timezone}, ${input.model}, ${input.agentTypeId ?? null}, ${input.sessionMode ?? "new"}, ${promptRef}, ${now}, ${now})
-      RETURNING id, title, enabled, cron, timezone, model, agent_type_id, session_mode, prompt_ref, created_at, updated_at
+      INSERT INTO boring_automation_automations (id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, agent_type_id, prompt_ref, created_at, updated_at)
+      VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled ?? true}, ${input.cron}, ${input.timezone}, ${input.model}, ${input.agentTypeId ?? null}, ${promptRef}, ${now}, ${now})
+      RETURNING id, title, enabled, cron, timezone, model, agent_type_id, prompt_ref, created_at, updated_at
     `
     return toAutomation(rows[0]!)
   }
@@ -96,8 +96,8 @@ export class PostgresAutomationStore implements AutomationStore {
     const id = deterministicSeedId(this.actor, input.key)
     const now = this.clock().toISOString()
     const rows = await this.sql<AutomationRow[]>`
-      INSERT INTO boring_automation_automations (id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, agent_type_id, session_mode, prompt_ref, created_at, updated_at)
-      VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled}, ${input.cron}, ${input.timezone}, ${input.model}, ${input.agentTypeId}, ${input.sessionMode}, ${input.promptRef}, ${now}, ${now})
+      INSERT INTO boring_automation_automations (id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, agent_type_id, prompt_ref, created_at, updated_at)
+      VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled}, ${input.cron}, ${input.timezone}, ${input.model}, ${input.agentTypeId}, ${input.promptRef}, ${now}, ${now})
       ON CONFLICT (id) DO UPDATE SET
         title = EXCLUDED.title,
         enabled = EXCLUDED.enabled,
@@ -105,13 +105,12 @@ export class PostgresAutomationStore implements AutomationStore {
         timezone = EXCLUDED.timezone,
         model = EXCLUDED.model,
         agent_type_id = EXCLUDED.agent_type_id,
-        session_mode = EXCLUDED.session_mode,
         prompt_ref = EXCLUDED.prompt_ref,
         deleted_at = NULL,
         updated_at = EXCLUDED.updated_at
       WHERE boring_automation_automations.workspace_id = EXCLUDED.workspace_id
         AND boring_automation_automations.owner_user_id = EXCLUDED.owner_user_id
-      RETURNING id, title, enabled, cron, timezone, model, agent_type_id, session_mode, prompt_ref, created_at, updated_at
+      RETURNING id, title, enabled, cron, timezone, model, agent_type_id, prompt_ref, created_at, updated_at
     `
     return rows[0] ? toAutomation(rows[0]) : null
   }
@@ -122,9 +121,9 @@ export class PostgresAutomationStore implements AutomationStore {
     const next = { ...current, ...patch, updatedAt: this.clock().toISOString() }
     const rows = await this.sql<AutomationRow[]>`
       UPDATE boring_automation_automations
-      SET title = ${next.title}, enabled = ${next.enabled}, cron = ${next.cron}, timezone = ${next.timezone}, model = ${next.model}, agent_type_id = ${next.agentTypeId ?? null}, session_mode = ${next.sessionMode ?? "new"}, updated_at = ${next.updatedAt}
+      SET title = ${next.title}, enabled = ${next.enabled}, cron = ${next.cron}, timezone = ${next.timezone}, model = ${next.model}, agent_type_id = ${next.agentTypeId ?? null}, updated_at = ${next.updatedAt}
       WHERE id = ${id} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
-      RETURNING id, title, enabled, cron, timezone, model, agent_type_id, session_mode, prompt_ref, created_at, updated_at
+      RETURNING id, title, enabled, cron, timezone, model, agent_type_id, prompt_ref, created_at, updated_at
     `
     if (!rows[0]) throw automationNotFound(id)
     return toAutomation(rows[0])
@@ -194,8 +193,8 @@ export class PostgresAutomationStore implements AutomationStore {
       const id = randomUUID()
       const invocationId = input.invocationId ?? `store:${randomUUID()}`
       const rows = await this.sql<RunRow[]>`
-        INSERT INTO boring_automation_runs (id, automation_id, workspace_id, owner_user_id, invocation_id, dispatch_request_id, dispatch_receipt, session_id, status, trigger, scheduled_for, started_at, completed_at, duration_ms, input_tokens, output_tokens, total_tokens, prompt_snapshot, model_snapshot, error, note, created_at, updated_at)
-        VALUES (${id}, ${input.automationId}, ${this.actor.workspaceId}, ${this.actor.userId}, ${invocationId}, ${id}, NULL, NULL, 'queued', ${input.trigger}, ${input.scheduledFor ?? null}, NULL, NULL, NULL, NULL, NULL, NULL, ${input.promptSnapshot}, ${input.modelSnapshot}, NULL, NULL, ${now}, ${now})
+        INSERT INTO boring_automation_runs (id, automation_id, workspace_id, owner_user_id, invocation_id, dispatch_request_id, dispatch_receipt, session_id, status, trigger, scheduled_for, started_at, completed_at, duration_ms, input_tokens, output_tokens, total_tokens, prompt_snapshot, model_snapshot, error, created_at, updated_at)
+        VALUES (${id}, ${input.automationId}, ${this.actor.workspaceId}, ${this.actor.userId}, ${invocationId}, ${id}, NULL, NULL, 'queued', ${input.trigger}, ${input.scheduledFor ?? null}, NULL, NULL, NULL, NULL, NULL, NULL, ${input.promptSnapshot}, ${input.modelSnapshot}, NULL, ${now}, ${now})
         RETURNING *
       `
       return toRun(rows[0]!)
@@ -245,7 +244,7 @@ export class PostgresAutomationStore implements AutomationStore {
     const dispatchReceipt = next.dispatchReceipt === null ? null : JSON.stringify(next.dispatchReceipt)
     const rows = await this.sql<RunRow[]>`
       UPDATE boring_automation_runs
-      SET session_id = ${next.sessionId}, dispatch_receipt = ${dispatchReceipt}::text::jsonb, status = ${next.status}, started_at = ${next.startedAt}, completed_at = ${next.completedAt}, duration_ms = ${next.durationMs}, input_tokens = ${next.inputTokens}, output_tokens = ${next.outputTokens}, total_tokens = ${next.totalTokens}, error = ${next.error}, note = ${next.note ?? null}, updated_at = NOW()
+      SET session_id = ${next.sessionId}, dispatch_receipt = ${dispatchReceipt}::text::jsonb, status = ${next.status}, started_at = ${next.startedAt}, completed_at = ${next.completedAt}, duration_ms = ${next.durationMs}, input_tokens = ${next.inputTokens}, output_tokens = ${next.outputTokens}, total_tokens = ${next.totalTokens}, error = ${next.error}, updated_at = NOW()
       WHERE id = ${runId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
         AND status = ${current.status}
       RETURNING *
@@ -351,7 +350,7 @@ export async function reconcileStaleHostedAutomationRuns(
 
 export async function listHostedAutomationCandidates(sql: Sql, scheduledFor: string): Promise<HostedAutomationCandidate[]> {
   const automationRows = await sql<(AutomationRow & { workspace_id: string; owner_user_id: string })[]>`
-    SELECT id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, agent_type_id, session_mode, prompt_ref, created_at, updated_at
+    SELECT id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, agent_type_id, prompt_ref, created_at, updated_at
     FROM boring_automation_automations
     WHERE deleted_at IS NULL
     ORDER BY id
@@ -389,7 +388,7 @@ export async function listHostedAutomationCandidates(sql: Sql, scheduledFor: str
 }
 
 function toAutomation(row: AutomationRow): Automation {
-  return { id: row.id, title: row.title, enabled: row.enabled, cron: row.cron, timezone: row.timezone, model: row.model, ...(row.agent_type_id ? { agentTypeId: row.agent_type_id } : {}), sessionMode: row.session_mode ?? "new", promptRef: row.prompt_ref ?? automationPromptPath(row.id), createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }
+  return { id: row.id, title: row.title, enabled: row.enabled, cron: row.cron, timezone: row.timezone, model: row.model, ...(row.agent_type_id ? { agentTypeId: row.agent_type_id } : {}), promptRef: row.prompt_ref ?? automationPromptPath(row.id), createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }
 }
 
 function deterministicSeedId(actor: HostedAutomationActor, key: string): string {
@@ -401,7 +400,7 @@ function deterministicSeedId(actor: HostedAutomationActor, key: string): string 
 }
 
 function toRun(row: RunRow): AutomationRun {
-  return { id: row.id, automationId: row.automation_id, invocationId: row.invocation_id, dispatchRequestId: row.dispatch_request_id, dispatchReceipt: row.dispatch_receipt, sessionId: row.session_id, status: row.status, trigger: row.trigger, scheduledFor: nullableIso(row.scheduled_for), startedAt: nullableIso(row.started_at), completedAt: nullableIso(row.completed_at), durationMs: row.duration_ms, inputTokens: row.input_tokens, outputTokens: row.output_tokens, totalTokens: row.total_tokens, promptSnapshot: row.prompt_snapshot, modelSnapshot: row.model_snapshot, error: row.error, note: row.note ?? null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }
+  return { id: row.id, automationId: row.automation_id, invocationId: row.invocation_id, dispatchRequestId: row.dispatch_request_id, dispatchReceipt: row.dispatch_receipt, sessionId: row.session_id, status: row.status, trigger: row.trigger, scheduledFor: nullableIso(row.scheduled_for), startedAt: nullableIso(row.started_at), completedAt: nullableIso(row.completed_at), durationMs: row.duration_ms, inputTokens: row.input_tokens, outputTokens: row.output_tokens, totalTokens: row.total_tokens, promptSnapshot: row.prompt_snapshot, modelSnapshot: row.model_snapshot, error: row.error, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }
 }
 
 function iso(value: Date | string): string { return value instanceof Date ? value.toISOString() : new Date(value).toISOString() }

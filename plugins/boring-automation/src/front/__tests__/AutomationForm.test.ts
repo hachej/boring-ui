@@ -12,7 +12,6 @@ describe("dispatch-only automation editing", () => {
       timezone: "UTC",
       model: "openai-codex:gpt-5.6-sol",
       agentTypeId: "boring-worker",
-      sessionMode: "new",
       promptRef: ".agents/automation/worker-slot.md",
       createdAt: "2026-08-17T00:00:00.000Z",
       updatedAt: "2026-08-17T00:00:00.000Z",

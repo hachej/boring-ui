@@ -106,9 +106,6 @@ export class DispatchRunExecutor {
     const invocationId = input.invocationId ?? (trigger === "scheduled"
       ? `scheduled:${automation.id}:${scheduledFor}`
       : `${trigger}:${randomUUID()}`)
-    const continuationSessionId = automation.sessionMode === "continue"
-      ? (await store.listRuns(automation.id)).find((candidate) => candidate.sessionId)?.sessionId ?? null
-      : null
     const run = await store.beginRun({
       automationId: automation.id,
       invocationId,
@@ -184,44 +181,29 @@ export class DispatchRunExecutor {
         requestId: run.id,
         ...(input.request ? { request: input.request } : {}),
       }, async (binding) => {
-        const dispatchOnce = async (existingSessionId?: string) => {
-          const dispatched = await binding.dispatch({
-            requestId: run.id,
-            ...(existingSessionId ? { sessionId: existingSessionId } : {}),
-            title: automationSessionTitle(automation.title, promptSnapshot),
-            content: promptSnapshot,
-            model,
-            ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
-            actor: { id: actor.userId },
-            originSurface: "boring-automation",
-          }, async (event) => {
-            const eventSessionId = sessionIdFromEvent(event)
-            if (!durableSessionId && eventSessionId) {
-              await persistDispatchIdentity({ agentTypeId, sessionId: eventSessionId })
-            }
-            aggregateUsage(usage, event)
-            const outcome = terminalOutcomeFromEvent(event)
-            if (outcome && !terminalStatus) {
-              terminalStatus = outcome.status
-              terminalError = outcome.error
-            }
-          }, async ({ ref, receipt }) => {
-            await persistDispatchIdentity(ref, receipt)
-          })
-          if (!dispatchReceipt) await persistDispatchIdentity(dispatched.ref, dispatched.receipt)
-        }
-        try {
-          await dispatchOnce(continuationSessionId ?? undefined)
-        } catch (error) {
-          if (!continuationSessionId || dispatchReceipt || !isContinuationUnavailable(error)) throw error
-          const note = `Stored continuation session ${continuationSessionId} was unavailable; started a new session.`
-          current = await store.updateRunLifecycle(run.id, { note, sessionId: null, dispatchReceipt: null })
-          sessionId = null
-          durableSessionId = null
-          dispatchReceipt = null
-          await this.publishRunChange(actor, current)
-          await dispatchOnce()
-        }
+        const dispatched = await binding.dispatch({
+          requestId: run.id,
+          title: automationSessionTitle(automation.title, promptSnapshot),
+          content: promptSnapshot,
+          model,
+          ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
+          actor: { id: actor.userId },
+          originSurface: "boring-automation",
+        }, async (event) => {
+          const eventSessionId = sessionIdFromEvent(event)
+          if (!durableSessionId && eventSessionId) {
+            await persistDispatchIdentity({ agentTypeId, sessionId: eventSessionId })
+          }
+          aggregateUsage(usage, event)
+          const outcome = terminalOutcomeFromEvent(event)
+          if (outcome && !terminalStatus) {
+            terminalStatus = outcome.status
+            terminalError = outcome.error
+          }
+        }, async ({ ref, receipt }) => {
+          await persistDispatchIdentity(ref, receipt)
+        })
+        if (!dispatchReceipt) await persistDispatchIdentity(dispatched.ref, dispatched.receipt)
       })
       current = await store.updateRunLifecycle(run.id, {
         status: "running",
@@ -313,13 +295,6 @@ export class DispatchRunExecutor {
   private nowIso(): string {
     return this.clock().toISOString()
   }
-}
-
-function isContinuationUnavailable(error: unknown): boolean {
-  const code = (error as { code?: unknown })?.code
-  return code === "AGENT_SESSION_NOT_FOUND"
-    || code === "AGENT_COMMAND_INVALID_STATE"
-    || code === "AGENT_SCOPE_DENIED"
 }
 
 function startRunHeartbeat(store: AutomationStore, runId: string): () => Promise<void> {

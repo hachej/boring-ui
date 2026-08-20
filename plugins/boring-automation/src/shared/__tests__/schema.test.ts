@@ -6,7 +6,6 @@ describe("automation schemas", () => {
     expect(AutomationCreateSchema.parse({ title: "Daily", cron: "0 9 * * *", timezone: "UTC", model: "model-a" })).toMatchObject({
       title: "Daily",
       cron: "0 9 * * *",
-      sessionMode: "new",
     })
     expect(() => AutomationCreateSchema.parse({ title: "", cron: "", timezone: "UTC", model: "model-a" })).toThrow()
     expect(() => AutomationPatchSchema.parse({})).toThrow()
@@ -27,12 +26,6 @@ describe("automation schemas", () => {
       scheduledFor: null,
       createdAt: "2026-07-09T09:00:00.000Z",
     })).toMatchObject({ automationId: "a1", trigger: "manual", scheduledFor: null })
-    expect(AutomationRunBeginSchema.parse({
-      automationId: "a1",
-      trigger: "dispatch",
-      promptSnapshot: "prompt",
-      modelSnapshot: "model-a",
-    })).toMatchObject({ trigger: "dispatch" })
     expect(() => AutomationRunBeginSchema.parse({ automationId: "a1", trigger: "manual" })).toThrow()
     expect(() => AutomationRunBeginSchema.parse({
       automationId: "a1",

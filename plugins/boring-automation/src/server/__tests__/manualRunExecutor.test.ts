@@ -102,52 +102,11 @@ describe("ManualRunExecutor", () => {
     }))
   })
 
-  it("starts a fresh session on every run by default", async () => {
-    const harness = createHarness({ sessionMode: "new" })
+  it("starts a fresh session on every run", async () => {
+    const harness = createHarness()
     await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
     await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
     expect(harness.dispatcher.dispatch).toHaveBeenNthCalledWith(2, expect.not.objectContaining({ sessionId: expect.anything() }))
-  })
-
-  it("continues the stored session when sessionMode is continue", async () => {
-    const harness = createHarness({ sessionMode: "continue" })
-    await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
-    await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
-    expect(harness.dispatcher.dispatch).toHaveBeenNthCalledWith(2, expect.objectContaining({ sessionId: "session-1" }))
-  })
-
-  it("falls back to a new session with a run note when the stored session is gone", async () => {
-    const harness = createHarness({ sessionMode: "continue" })
-    await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
-    const gone = Object.assign(new Error("gone"), { code: "AGENT_SESSION_NOT_FOUND" })
-    harness.dispatcher.dispatch
-      .mockRejectedValueOnce(gone)
-      .mockResolvedValueOnce({
-        ref: { agentTypeId: "default", sessionId: "session-2" },
-        receipt: { accepted: true, cursor: 0, disposition: "prompt", clientNonce: "fallback" },
-        events: (async function* () { yield event(0, { type: "agent-end", seq: 1, turnId: "turn-2", status: "ok" }, "session-2") })(),
-      })
-
-    const run = await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
-
-    expect(harness.dispatcher.dispatch).toHaveBeenNthCalledWith(2, expect.objectContaining({ sessionId: "session-1" }))
-    expect(harness.dispatcher.dispatch).toHaveBeenNthCalledWith(3, expect.not.objectContaining({ sessionId: expect.anything() }))
-    expect(run).toMatchObject({ status: "succeeded", sessionId: "session-2" })
-    expect(run.note).toContain("session-1 was unavailable")
-  })
-
-  it("does not fork a continuation for the retired runtime-scope mismatch code", async () => {
-    const harness = createHarness({ sessionMode: "continue" })
-    await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
-    const mismatch = Object.assign(new Error("obsolete runtime mismatch"), { code: "AGENT_SESSION_RUNTIME_SCOPE_MISMATCH" })
-    harness.dispatcher.dispatch.mockRejectedValueOnce(mismatch)
-
-    const run = await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
-
-    expect(harness.dispatcher.dispatch).toHaveBeenCalledTimes(2)
-    expect(harness.dispatcher.dispatch).toHaveBeenNthCalledWith(2, expect.objectContaining({ sessionId: "session-1" }))
-    expect(run).toMatchObject({ status: "failed", sessionId: null, error: "obsolete runtime mismatch" })
-    expect(run.note).toBeUndefined()
   })
 
   it("uses canonical prompt and model snapshots from the store", async () => {
@@ -207,9 +166,9 @@ describe("ManualRunExecutor", () => {
       stop: vi.fn(),
     }) })
 
-    const admitted = await harness.executor.start({ automationId: harness.automation.id, actor: harness.actor, trigger: "dispatch" })
+    const admitted = await harness.executor.start({ automationId: harness.automation.id, actor: harness.actor, trigger: "manual" })
 
-    expect(admitted).toMatchObject({ status: "dispatching", trigger: "dispatch", sessionId: null })
+    expect(admitted).toMatchObject({ status: "dispatching", trigger: "manual", sessionId: null })
     await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce())
     expect([...harness.store.runs.values()][0]).toMatchObject({ status: "dispatching" })
     release.resolve()
@@ -229,7 +188,7 @@ describe("ManualRunExecutor", () => {
     const harness = createHarness()
     vi.spyOn(harness.store, "claimRunForDispatch").mockRejectedValue(new Error("claim failed"))
 
-    await expect(harness.executor.start({ automationId: harness.automation.id, actor: harness.actor, trigger: "dispatch" }))
+    await expect(harness.executor.start({ automationId: harness.automation.id, actor: harness.actor, trigger: "manual" }))
       .rejects.toThrow("claim failed")
   })
 
@@ -495,7 +454,6 @@ interface HarnessOptions {
   model?: string
   agentTypeId?: string
   availableAgentTypeIds?: readonly string[]
-  sessionMode?: Automation["sessionMode"]
   events?: AgentEvent[]
   streamError?: unknown
   resolver?: WorkspaceAgentDispatcherResolver
@@ -512,7 +470,7 @@ function deferred<T>() {
 
 function createHarness(options: HarnessOptions = {}) {
   const store = new MemoryAutomationStore()
-  const automation = store.seedAutomation({ model: options.model ?? "test:gpt-5.5", prompt: options.prompt ?? "canonical prompt", agentTypeId: options.agentTypeId, sessionMode: options.sessionMode })
+  const automation = store.seedAutomation({ model: options.model ?? "test:gpt-5.5", prompt: options.prompt ?? "canonical prompt", agentTypeId: options.agentTypeId })
   const actor: VerifiedAutomationActor = { workspaceId: "workspace-1", userId: "user-1" }
   const actorResolver = vi.fn(async () => actor)
   const request = options.request ?? fakeRequest()
@@ -597,7 +555,7 @@ class MemoryAutomationStore implements AutomationStore {
   private nextAutomationId = 1
   private nextRunId = 1
 
-  seedAutomation(input: { model: string; prompt: string; agentTypeId?: string; sessionMode?: Automation["sessionMode"] }): Automation {
+  seedAutomation(input: { model: string; prompt: string; agentTypeId?: string }): Automation {
     const id = `automation-${this.nextAutomationId++}`
     const now = "2026-07-10T00:00:00.000Z"
     const automation: Automation = {
@@ -608,7 +566,6 @@ class MemoryAutomationStore implements AutomationStore {
       timezone: "UTC",
       model: input.model,
       ...(input.agentTypeId ? { agentTypeId: input.agentTypeId } : {}),
-      sessionMode: input.sessionMode ?? "new",
       promptRef: `prompts/${id}.md`,
       createdAt: now,
       updatedAt: now,
@@ -628,7 +585,7 @@ class MemoryAutomationStore implements AutomationStore {
   }
 
   async createAutomation(input: AutomationCreate): Promise<Automation> {
-    return this.seedAutomation({ model: input.model, prompt: input.prompt ?? "", agentTypeId: input.agentTypeId, sessionMode: input.sessionMode })
+    return this.seedAutomation({ model: input.model, prompt: input.prompt ?? "", agentTypeId: input.agentTypeId })
   }
 
   async updateAutomation(id: string, patch: AutomationPatch): Promise<Automation> {
