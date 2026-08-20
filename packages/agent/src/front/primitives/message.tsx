@@ -425,7 +425,7 @@ export type BoringMessageResponseProps = MessageResponseProps & {
 
 export const MessageResponse = memo(
   ({ className, shikiTheme, components, codeFilename, ...props }: BoringMessageResponseProps) => {
-    const streamdownPlugins = useStreamdownPlugins(props.children);
+    const streamdownPlugins = useStreamdownPlugins(props.children, { code: false });
     return (
       <Streamdown
         className={cn(

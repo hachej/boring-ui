@@ -1,7 +1,6 @@
 import * as React from "react"
 import * as ReactDom from "react-dom"
 import * as ReactDomClient from "react-dom/client"
-import * as ReactJsxDevRuntime from "react/jsx-dev-runtime"
 import * as ReactJsxRuntime from "react/jsx-runtime"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { WorkspaceLoadingState } from "@hachej/boring-workspace/loading"
@@ -20,10 +19,18 @@ globalThis.__BORING_RUNTIME_SINGLETONS__ = {
   react: React,
   "react-dom": ReactDom,
   "react-dom/client": ReactDomClient,
-  "react/jsx-dev-runtime": ReactJsxDevRuntime,
   "react/jsx-runtime": ReactJsxRuntime,
   "@hachej/boring-workspace/events": WorkspaceEventsSingleton,
   "@hachej/boring-workspace/plugin": WorkspacePluginSingleton,
+}
+
+if (import.meta.env.DEV) {
+  void import("react/jsx-dev-runtime").then((runtime) => {
+    globalThis.__BORING_RUNTIME_SINGLETONS__ = {
+      ...globalThis.__BORING_RUNTIME_SINGLETONS__,
+      "react/jsx-dev-runtime": runtime,
+    }
+  })
 }
 
 interface WorkspaceMeta {
@@ -81,7 +88,7 @@ export async function loadCliDefaultPlugins(
 }
 
 /** Start optional front loading only after the chat-capable shell commits. */
-function useCliDefaultPlugins(enabled: boolean): {
+function useCliDefaultPlugins(enabled: boolean, runtimePluginFrontLoadingEnabled: boolean): {
   plugins: BoringFrontFactoryWithId[]
   pluginsReady: boolean
   runtimeSingletonReady: boolean
@@ -93,16 +100,18 @@ function useCliDefaultPlugins(enabled: boolean): {
   useEffect(() => {
     if (!enabled) return
     let cancelled = false
-    void import("@hachej/boring-workspace").then((workspace) => {
-      if (cancelled) return
-      globalThis.__BORING_RUNTIME_SINGLETONS__ = {
-        ...globalThis.__BORING_RUNTIME_SINGLETONS__,
-        "@hachej/boring-workspace": workspace,
-      }
-      setRuntimeSingletonReady(true)
-    }).catch((error: unknown) => {
-      console.error("Failed to load the workspace runtime singleton", error)
-    })
+    if (runtimePluginFrontLoadingEnabled) {
+      void import("@hachej/boring-workspace").then((workspace) => {
+        if (cancelled) return
+        globalThis.__BORING_RUNTIME_SINGLETONS__ = {
+          ...globalThis.__BORING_RUNTIME_SINGLETONS__,
+          "@hachej/boring-workspace": workspace,
+        }
+        setRuntimeSingletonReady(true)
+      }).catch((error: unknown) => {
+        console.error("Failed to load the workspace runtime singleton", error)
+      })
+    }
 
     void loadCliDefaultPlugins().then((loadedPlugins) => {
       if (cancelled) return
@@ -113,7 +122,7 @@ function useCliDefaultPlugins(enabled: boolean): {
       setPluginsReady(true)
     })
     return () => { cancelled = true }
-  }, [enabled])
+  }, [enabled, runtimePluginFrontLoadingEnabled])
 
   return { plugins, pluginsReady, runtimeSingletonReady }
 }
@@ -374,7 +383,10 @@ export function CliWorkspaceShell() {
   // Load the chunks after metadata resolves, but complete the default provider
   // topology before mounting WorkspaceAgentFront so chat state cannot remount.
   const optionalFrontsEnabled = metaLoaded && (!workspacesMode || workspaces.some((workspace) => workspace.id === activeWorkspaceId && workspace.available))
-  const { plugins, pluginsReady, runtimeSingletonReady } = useCliDefaultPlugins(optionalFrontsEnabled)
+  const { plugins, pluginsReady, runtimeSingletonReady } = useCliDefaultPlugins(
+    optionalFrontsEnabled,
+    runtimePluginFrontLoadingEnabled,
+  )
   const activeWorkspaceRequestHeaders = useMemo(
     () => activeWorkspaceId ? { "x-boring-workspace-id": activeWorkspaceId } : null,
     [activeWorkspaceId],

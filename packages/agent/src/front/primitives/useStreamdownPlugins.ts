@@ -25,19 +25,37 @@ function loadStreamdownPlugin(name: StreamdownPluginName): Promise<unknown> {
   return promise
 }
 
-export function streamdownPluginNamesForSource(source: unknown): StreamdownPluginName[] {
+interface StreamdownPluginSelectionOptions {
+  code?: boolean
+}
+
+const CJK_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u
+const FENCED_CODE = /```[^\n`]*\n[\s\S]*?```|~~~[^\n~]*\n[\s\S]*?~~~/
+const INLINE_CODE = /(^|[^`])`[^`\n]+`(?!`)/
+const INLINE_MATH = /(^|[^\\$])\$(?!\s|\$)(?:\\.|[^\n$])+?(?<!\\)\$(?!\$)/
+const BLOCK_MATH = /(^|\n)\s*\$\$\s*\n?[\s\S]+?\n?\s*\$\$(?=\s*(?:\n|$))/
+const MERMAID_FENCE = /```mermaid(?:\s|$)[\s\S]*?```/i
+
+export function streamdownPluginNamesForSource(
+  source: unknown,
+  options: StreamdownPluginSelectionOptions = {},
+): StreamdownPluginName[] {
   if (typeof source !== "string" || source.length === 0) return []
   const names: StreamdownPluginName[] = []
-  if (/[^\u0000-\u024f\u1e00-\u1eff]/u.test(source)) names.push("cjk")
-  if (/`/.test(source)) names.push("code")
-  if (/(^|[^\\])\$/.test(source)) names.push("math")
-  if (/```mermaid(?:\s|$)/i.test(source)) names.push("mermaid")
+  if (CJK_SCRIPT.test(source)) names.push("cjk")
+  if (options.code !== false && (FENCED_CODE.test(source) || INLINE_CODE.test(source))) names.push("code")
+  if (INLINE_MATH.test(source) || BLOCK_MATH.test(source)) names.push("math")
+  if (MERMAID_FENCE.test(source)) names.push("mermaid")
   return names
 }
 
 /** Load only the rich renderers required by the visible markdown source. */
-export function useStreamdownPlugins(source: unknown): StreamdownPlugins | undefined {
-  const names = useMemo(() => streamdownPluginNamesForSource(source), [source])
+export function useStreamdownPlugins(
+  source: unknown,
+  options: StreamdownPluginSelectionOptions = {},
+): StreamdownPlugins | undefined {
+  const includeCode = options.code !== false
+  const names = useMemo(() => streamdownPluginNamesForSource(source, { code: includeCode }), [includeCode, source])
   const [plugins, setPlugins] = useState<Partial<StreamdownPlugins>>({})
 
   useEffect(() => {

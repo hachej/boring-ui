@@ -1,17 +1,30 @@
 "use client"
 
+import { lazy, Suspense } from "react"
 import { definePlugin, type BoringFrontAppLeftOverlayProps, type BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
 import { CalendarClock } from "lucide-react"
 import { BORING_AUTOMATION_PLUGIN_ID, BORING_AUTOMATION_PLUGIN_LABEL } from "../shared"
-import { AutomationPanel } from "./AutomationPanel"
 import { AutomationRuntimeProvider } from "./AutomationRuntimeContext"
 
+const LazyAutomationPanel = lazy(async () => {
+  const module = await import("./AutomationPanel")
+  return { default: module.AutomationPanel }
+})
+
+function AutomationPanelFallback() {
+  return <div className="grid h-full place-items-center text-sm text-muted-foreground">Loading Automations…</div>
+}
+
 function AutomationOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
-  return <div data-boring-workspace-part="automation-overlay" className="h-full min-h-0"><AutomationPanel onClose={onClose} /></div>
+  return (
+    <div data-boring-workspace-part="automation-overlay" className="h-full min-h-0">
+      <Suspense fallback={<AutomationPanelFallback />}><LazyAutomationPanel onClose={onClose} /></Suspense>
+    </div>
+  )
 }
 
 function AutomationCenterPanel() {
-  return <AutomationPanel />
+  return <Suspense fallback={<AutomationPanelFallback />}><LazyAutomationPanel /></Suspense>
 }
 
 export const boringAutomationPlugin: BoringFrontFactoryWithId = definePlugin({

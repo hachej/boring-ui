@@ -45,10 +45,13 @@ vi.mock("./WorkspaceSwitcherControl", () => ({
 describe("CliWorkspaceShell", () => {
   const originalFetch = globalThis.fetch
 
-  test("publishes JSX runtime singletons for runtime plugin fronts", () => {
+  test("publishes JSX runtime singletons for runtime plugin fronts", async () => {
     const singletons = globalThis.__BORING_RUNTIME_SINGLETONS__ as Record<string, Record<string, unknown>> | undefined
     expect(typeof singletons?.["react/jsx-runtime"]?.jsx).toBe("function")
-    expect(typeof singletons?.["react/jsx-dev-runtime"]?.jsxDEV).toBe("function")
+    await waitFor(() => {
+      const current = globalThis.__BORING_RUNTIME_SINGLETONS__ as Record<string, Record<string, unknown>> | undefined
+      expect(typeof current?.["react/jsx-dev-runtime"]?.jsxDEV).toBe("function")
+    })
   })
 
   test("keeps successful default plugin fronts when one lazy chunk fails", async () => {

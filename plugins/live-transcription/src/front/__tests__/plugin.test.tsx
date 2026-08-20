@@ -7,10 +7,14 @@ vi.mock("@hachej/boring-workspace", () => ({
   MarkdownEditorPane: ({ params }: { params?: { path?: string; mode?: string } }) => (
     <div data-testid="markdown" data-path={params?.path} data-mode={params?.mode} />
   ),
+}))
+
+vi.mock("@hachej/boring-workspace/plugin", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@hachej/boring-workspace/plugin")>(),
   postUiCommand: vi.fn(),
 }))
 
-import { postUiCommand } from "@hachej/boring-workspace"
+import { postUiCommand } from "@hachej/boring-workspace/plugin"
 import { liveTranscriptBrowserState } from "../state"
 import { TranscriptReviewToolMessage, transcriptReviewPresentationFromMessage } from "../TranscriptReviewToolMessage"
 import { encodeLiveTranscriptReviewPresentation } from "../../shared/reviewPresentation"
@@ -194,11 +198,11 @@ describe("live transcript front surface", () => {
     expect(clearInterval).toHaveBeenCalled()
   })
 
-  it("locks the active exact path and unlocks after terminal state", () => {
+  it("locks the active exact path and unlocks after terminal state", async () => {
     liveTranscriptBrowserState.set({ liveSessionId: "live-1", transcriptPath: "live-transcripts/a.md", state: "active" })
     const props = { params: { path: "live-transcripts/a.md" }, api: {} }
     const view = render(createElement(LiveTranscriptMarkdownPane, props as never))
-    expect(screen.getByTestId("markdown")).toHaveAttribute("data-mode", "view")
+    expect(await screen.findByTestId("markdown")).toHaveAttribute("data-mode", "view")
 
     act(() => liveTranscriptBrowserState.set({ liveSessionId: "live-1", transcriptPath: "live-transcripts/a.md", state: "complete" }))
     expect(screen.getByTestId("markdown")).toHaveAttribute("data-mode", "edit")

@@ -43,7 +43,15 @@ export default defineConfig({
       // surfaces remain behind their dynamic import boundaries.
       resolveDependencies(_filename, dependencies, context) {
         if (context.hostType !== "html") return dependencies
-        return dependencies.filter((dependency) => /(?:rolldown-runtime|react|jsx-runtime|jsx-dev-runtime)-/.test(dependency))
+        return dependencies.filter((dependency) => /(?:rolldown-runtime|jsx-runtime|jsx-dev-runtime)-/.test(dependency))
+      },
+    },
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("/react-dom/") || id.includes("/react/")) return "vendor-react"
+          if (id.includes("dockview")) return "vendor-dockview"
+        },
       },
     },
   },
