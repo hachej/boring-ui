@@ -11,6 +11,7 @@ function recordingSql(rows: unknown[] = []) {
     queries.push({ text: strings.join("?"), values })
     return Promise.resolve(rows)
   }) as unknown as postgres.Sql
+  Object.assign(sql, { array: (value: unknown[]) => value })
   return { sql, queries }
 }
 
@@ -195,11 +196,12 @@ describe("PostgresAutomationStore actor isolation", () => {
     expect(recorded.queries[0]!.text).toContain("FROM boring_automation_automations")
     expect(recorded.queries[0]!.text).toContain("WHERE deleted_at IS NULL")
     expect(recorded.queries[0]!.text).toContain("prompt_ref")
-    expect(recorded.queries[1]!.text).toContain("runs.status IN (?, ?, ?, ?)")
+    expect(recorded.queries[1]!.text).toContain("runs.status = ANY(?)")
     expect(recorded.queries[1]!.text).toContain("runs.scheduled_for = ?")
     expect(recorded.queries[1]!.text).not.toContain("SELECT *")
     expect(recorded.queries[1]!.values).toEqual(expect.arrayContaining([
-      "queued", "dispatching", "running", "outcome-unknown", "2026-07-23T09:00:00.000Z",
+      ["queued", "dispatching", "running", "outcome-unknown"],
+      "2026-07-23T09:00:00.000Z",
     ]))
   })
 })

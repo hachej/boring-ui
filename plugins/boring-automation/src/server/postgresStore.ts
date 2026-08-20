@@ -169,7 +169,7 @@ export class PostgresAutomationStore implements AutomationStore {
             ELSE 'Automation dispatch outcome is unknown after host restart; the slot remains occupied' END,
           updated_at = ${this.clock().toISOString()}
       WHERE automation_id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
-        AND status IN (${AUTOMATION_RUN_OCCUPYING_STATUSES[0]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[1]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[2]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[3]})
+        AND status = ANY(${this.sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
     `
   }
 
@@ -188,7 +188,7 @@ export class PostgresAutomationStore implements AutomationStore {
     const active = await this.sql<{ id: string }[]>`
       SELECT id FROM boring_automation_runs
       WHERE automation_id = ${input.automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
-        AND status IN (${AUTOMATION_RUN_OCCUPYING_STATUSES[0]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[1]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[2]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[3]})
+        AND status = ANY(${this.sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
       LIMIT 1
     `
     if (active[0]) throw runAlreadyActive(input.automationId)
@@ -343,7 +343,7 @@ export async function reconcileStaleHostedAutomationRuns(
           WHEN status = 'outcome-unknown' THEN 'Automation outcome remained unknown after its worker lease expired; releasing the occupied slot'
           ELSE 'Automation dispatch outcome is unknown after its worker lease expired; the slot remains occupied' END,
         updated_at = NOW()
-    WHERE status IN (${AUTOMATION_RUN_OCCUPYING_STATUSES[0]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[1]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[2]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[3]})
+    WHERE status = ANY(${sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
       AND updated_at < NOW() - (${staleAfterMs} * INTERVAL '1 millisecond')
     RETURNING *
   `
@@ -369,7 +369,7 @@ export async function listHostedAutomationCandidates(sql: Sql, scheduledFor: str
       AND automations.owner_user_id = runs.owner_user_id
     WHERE automations.deleted_at IS NULL
       AND (
-        runs.status IN (${AUTOMATION_RUN_OCCUPYING_STATUSES[0]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[1]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[2]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[3]})
+        runs.status = ANY(${sql.array([...AUTOMATION_RUN_OCCUPYING_STATUSES])})
         OR (runs.trigger = 'scheduled' AND runs.scheduled_for = ${scheduledFor})
       )
     ORDER BY runs.automation_id

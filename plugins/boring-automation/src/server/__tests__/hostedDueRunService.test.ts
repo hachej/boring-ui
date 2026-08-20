@@ -46,7 +46,7 @@ type MutableRunRow = Omit<typeof RUN_ROW, "session_id" | "started_at" | "complet
 }
 
 function uniqueRaceSql(constraintName: string): postgres.Sql {
-  return (async (strings: TemplateStringsArray) => {
+  return Object.assign((async (strings: TemplateStringsArray) => {
     const text = strings.join("?")
     if (text.includes("INSERT INTO boring_automation_runs")) {
       throw Object.assign(new Error("unique violation"), { code: "23505", constraint_name: constraintName })
@@ -54,7 +54,7 @@ function uniqueRaceSql(constraintName: string): postgres.Sql {
     if (text.includes("SELECT prompt")) return [{ prompt: "Run" }]
     if (text.includes("FROM boring_automation_automations")) return [AUTOMATION_ROW]
     return []
-  }) as unknown as postgres.Sql
+  }), { array: (value: unknown[]) => value }) as unknown as postgres.Sql
 }
 
 function directResolver(
@@ -91,11 +91,11 @@ function directResolver(
 describe("HostedDueRunService", () => {
   it("rejects an unauthorized creator before actor-scoped execution", async () => {
     const queries: string[] = []
-    const sql = (async (strings: TemplateStringsArray) => {
+    const sql = Object.assign((async (strings: TemplateStringsArray) => {
       const text = strings.join("?")
       queries.push(text)
       return text.includes("FROM boring_automation_automations") ? [AUTOMATION_ROW] : []
-    }) as unknown as postgres.Sql
+    }), { array: (value: unknown[]) => value }) as unknown as postgres.Sql
     const resolve = vi.fn()
     const verifyActor = vi.fn(() => false)
     const service = new HostedDueRunService({
@@ -128,7 +128,7 @@ describe("HostedDueRunService", () => {
         return [{ ...AUTOMATION_ROW, agent_type_id: "retired" }]
       }
       return []
-    }), { json: (value: unknown) => value }) as unknown as postgres.Sql
+    }), { array: (value: unknown[]) => value, json: (value: unknown) => value }) as unknown as postgres.Sql
     const dispatch = vi.fn()
     const resolver = directResolver(dispatch, { readFile: vi.fn() })
     const service = new HostedDueRunService({
@@ -169,7 +169,7 @@ describe("HostedDueRunService", () => {
       }
       if (text.includes("FROM boring_automation_automations")) return [{ ...AUTOMATION_ROW, agent_type_id: "researcher" }]
       return []
-    }), { json: (value: unknown) => value }) as unknown as postgres.Sql
+    }), { array: (value: unknown[]) => value, json: (value: unknown) => value }) as unknown as postgres.Sql
     const dispatch = vi.fn(async (input: { requestId: string }) => ({
       ref: { agentTypeId: "researcher", sessionId: "session-1" },
       receipt: { accepted: true as const, cursor: 0, disposition: "prompt" as const, clientNonce: input.requestId },
@@ -209,7 +209,7 @@ describe("HostedDueRunService", () => {
   it("reconciles stale hosted runs before evaluating new schedule work", async () => {
     const publish = vi.fn(async () => undefined)
     const resolve = vi.fn()
-    const sql = (async (strings: TemplateStringsArray) => {
+    const sql = Object.assign((async (strings: TemplateStringsArray) => {
       const text = strings.join("?")
       if (text.includes("updated_at <")) return [{
         ...RUN_ROW,
@@ -224,7 +224,7 @@ describe("HostedDueRunService", () => {
       }]
       if (text.includes("FROM boring_automation_automations")) return [{ ...AUTOMATION_ROW, enabled: false }]
       return []
-    }) as unknown as postgres.Sql
+    }), { array: (value: unknown[]) => value }) as unknown as postgres.Sql
     const service = new HostedDueRunService({
       agentTypeId: "selected-agent",
       sql,

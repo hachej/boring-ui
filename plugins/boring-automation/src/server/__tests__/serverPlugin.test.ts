@@ -160,6 +160,16 @@ describe("boring automation server plugin", () => {
     })
   })
 
+  it("accepts a binding callback whose session operation returns void", async () => {
+    const sendIfIdle = vi.fn(async () => undefined)
+    const controller = createAutomationSessionController({
+      runWithWorkspaceAgent: vi.fn(async (_input, run) => await run({ sendIfIdle } as never)),
+    } as never, { workspaceId: "workspace-1", userId: "user-1" })
+
+    await expect(controller.nudge("boring-worker", "session-1", "Continue", "request-1")).resolves.toBeUndefined()
+    expect(sendIfIdle).toHaveBeenCalledWith("session-1", "Continue", "request-1")
+  })
+
   it("starts hosted due evaluation internally when Fastify becomes ready", async () => {
     const runDue = vi.fn(async () => ({ now: "2026-07-23T09:00:00.000Z", outcomes: [] }))
     const plugin = createBoringAutomationServerPlugin({
