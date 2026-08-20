@@ -32,7 +32,6 @@ interface RecordValue {
   queue: QueuedUserMessage[]
   events: PiChatEvent[]
   subscribers: Set<PiChatEventSubscriber>
-  runtimeScopeIdentity?: string
 }
 
 let globalCreated = 0
@@ -61,7 +60,6 @@ class FakeService implements PiChatSessionService {
       queue: [],
       events: [],
       subscribers: new Set(),
-      runtimeScopeIdentity: ctx.runtimeScopeIdentity,
     }
     this.records.set(id, record)
     return this.summary(record)
@@ -157,10 +155,6 @@ class FakeService implements PiChatSessionService {
     return this.summary(record)
   }
 
-  runtimeScopeIdentity(sessionId: string): string | undefined {
-    return this.records.get(sessionId)?.runtimeScopeIdentity
-  }
-
   setActivity(sessionId: string, activity: AgentSessionActivity) {
     this.get(sessionId).status = activity
   }
@@ -254,9 +248,9 @@ export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFix
       return { workspaceScopeId: scope.workspaceScopeId, authSubjectId: scope.authSubjectId }
     },
     async resolveSessionRuntime(agentTypeId: string, _scope: AuthorizedAgentScope, claim: { workspaceScopeId: string }, sessionId: string) {
-      const runtimeScopeIdentity = serviceFor(claim.workspaceScopeId, agentTypeId).runtimeScopeIdentity(sessionId)
-      if (!runtimeScopeIdentity) return undefined
-      return { runtimeScope: { identity: 'shared-runtime' }, runtimeScopeIdentity }
+      return serviceFor(claim.workspaceScopeId, agentTypeId).records.has(sessionId)
+        ? { identity: 'shared-runtime' }
+        : undefined
     },
     async resolveAgentRuntimeScope() {
       return { identity: 'shared-runtime' }

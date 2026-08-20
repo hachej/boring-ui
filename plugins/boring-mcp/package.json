@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-mcp",
-  "version": "0.1.100",
+  "version": "0.1.101",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -64,7 +64,7 @@
     "@hachej/boring-core": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "fastify": "^5.11.2",
-    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.20.0",
     "@types/react": "^19.2.18",

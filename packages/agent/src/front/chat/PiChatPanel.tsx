@@ -2,8 +2,6 @@
 
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button } from '@hachej/boring-ui-kit'
-import { AgentGatewayErrorCode } from '../../shared/gateway/errors'
 import type { PromptInputFilePart } from '../primitives/prompt-input'
 import { ArtifactOpenProvider } from '../ArtifactOpenContext'
 import {
@@ -178,10 +176,6 @@ export interface PiChatPanelProps<
   allowPromptDuringInitialHydration?: boolean
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
   onSessionReset?: () => void | Promise<void>
-  /** Creates and selects a session when the host controls sessionId. */
-  onCreateSession?: () => void | Promise<void>
-  /** Natively forks a controlled frozen session and delivers its first prompt. */
-  onForkSession?: (sourceSessionId: string, prompt: Parameters<RemotePiSession['prompt']>[0]) => void | Promise<void>
   onBeforeSubmit?: (draft: string, context: ChatSubmitContext) => false | void | boolean | Promise<false | void | boolean>
   onReloadAgentPlugins?: () => Promise<AgentPluginReloadResult | string>
   onCommandResult?: (message: string) => void
@@ -248,8 +242,6 @@ export function PiChatPanel<
   allowPromptDuringInitialHydration = false,
   workspaceWarmupStatus,
   onSessionReset,
-  onCreateSession,
-  onForkSession,
   onBeforeSubmit,
   onReloadAgentPlugins,
   onCommandResult,
@@ -511,7 +503,6 @@ export function PiChatPanel<
       : []
     const combined = [...fromState, ...sessionNotice, ...largeStateNotice, ...localNotices]
       .filter((notice) => !dismissedNoticeIds.has(notice.id))
-      .filter((notice) => !('errorCode' in notice) || notice.errorCode !== AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH)
     // A terminal chat error (history failed to load, no messages present)
     // already explains why the agent looks unreachable. Showing
     // reconnect/retry chatter next to it reads as contradictory
@@ -546,43 +537,12 @@ export function PiChatPanel<
     setLocalNotices((previous) => previous.filter((notice) => notice.id !== id))
   }, [])
 
-  const createSessionInFlightRef = useRef<Promise<void> | null>(null)
-  const [creatingSession, setCreatingSession] = useState(false)
   const createSession = useCallback(() => {
-    if (createSessionInFlightRef.current) return createSessionInFlightRef.current
-    if (externalSessionId && !onCreateSession) return Promise.resolve()
-    setCreatingSession(true)
-    const operation = (async () => {
-      // Defer invocation so synchronous host failures enter the same cleanup path.
-      await Promise.resolve()
-      if (externalSessionId) await onCreateSession?.()
-      else await sessions.create()
-    })().catch((error) => {
-        addLocalNotice({ id: 'session-create-error', level: 'error', text: errorMessage(error, 'Could not create a chat session.'), dismissible: true })
-      })
-      .finally(() => {
-        if (createSessionInFlightRef.current === operation) createSessionInFlightRef.current = null
-        setCreatingSession(false)
-      })
-    createSessionInFlightRef.current = operation
-    return operation
-  }, [addLocalNotice, externalSessionId, onCreateSession, sessions.create])
-
-  const renderRuntimeNoticeAction = useCallback((notice: PiChatRuntimeNotice) => {
-    const hostAction = renderNoticeAction?.(notice)
-    if (hostAction != null) return hostAction
-    if (
-      notice.errorCode === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
-      && (!externalSessionId || onCreateSession)
-    ) {
-      return (
-        <Button type="button" size="sm" variant="outline" disabled={creatingSession} onClick={createSession}>
-          {creatingSession ? 'Starting new chat…' : 'Start new chat'}
-        </Button>
-      )
-    }
-    return null
-  }, [createSession, creatingSession, externalSessionId, onCreateSession, renderNoticeAction])
+    if (externalSessionId) return
+    void sessions.create().catch((error) => {
+      addLocalNotice({ id: 'session-create-error', level: 'error', text: errorMessage(error, 'Could not create a chat session.'), dismissible: true })
+    })
+  }, [addLocalNotice, externalSessionId, sessions.create])
 
   useEffect(() => {
     if (externalSessionId || sessionsLoading || sessionsError || activeSessionId || sessionList.length > 0) return
@@ -793,12 +753,7 @@ export function PiChatPanel<
         }
         return state
       },
-      prompt: (payload: Parameters<RemotePiSession['prompt']>[0]) => selectedPiSession.prompt(payload).catch((error) => {
-        throw Object.assign(new Error(errorMessage(error, 'Could not send your message.'), { cause: error }), {
-          errorCode: piChatErrorCode(error),
-          forkPrompt: payload,
-        })
-      }),
+      prompt: selectedPiSession.prompt.bind(selectedPiSession),
       followUp: selectedPiSession.followUp.bind(selectedPiSession),
       clearQueue: selectedPiSession.clearQueue.bind(selectedPiSession),
       interrupt: selectedPiSession.interrupt.bind(selectedPiSession),
@@ -910,26 +865,6 @@ export function PiChatPanel<
       return undefined
     } catch (error) {
       clearLocalSubmitted(activeChatSessionId)
-      if (
-        piChatErrorCode(error) === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
-        && activeChatSessionId
-      ) {
-        const forkPrompt = (error as { forkPrompt?: Parameters<RemotePiSession['prompt']>[0] }).forkPrompt
-        try {
-          if (!forkPrompt) throw new Error('The rejected prompt could not be recovered for the fork.')
-          if (externalSessionId) {
-            if (!onForkSession) throw new Error('The chat host cannot fork this frozen session.')
-            await onForkSession(activeChatSessionId, forkPrompt)
-          } else {
-            await sessions.create({ forkSessionId: activeChatSessionId, forkPrompt })
-          }
-          return undefined
-        } catch (forkError) {
-          restoreSubmittedDraft()
-          surfaceRunRejected(forkError)
-          return false
-        }
-      }
       restoreSubmittedDraft()
       // Single normalization point for rejected sends: surface as one stable
       // notice carrying the server error code so a host can attach a recovery
@@ -938,7 +873,7 @@ export function PiChatPanel<
       surfaceRunRejected(error)
       return false
     }
-  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, externalSessionId, markLocalSubmitted, onForkSession, onPromptSubmitStarted, policy, selectedPiSession, sessions.create, setComposerDraft, surfaceRunRejected])
+  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
 
   const availableAssistantSlashCommands = useMemo(
     () => policy ? actionableSlashCommands : actionableSlashCommands.filter((command) => command.clickBehavior === 'insert'),
@@ -1309,7 +1244,7 @@ export function PiChatPanel<
               onMentionActivate={activateAssistantMention}
               runtimeNotices={runtimeNotices}
               onDismissNotice={clearLocalNotice}
-              renderNoticeAction={renderRuntimeNoticeAction}
+              renderNoticeAction={renderNoticeAction}
               onScrollToBottomReady={(scrollToBottom) => {
                 scrollToBottomRef.current = scrollToBottom
               }}

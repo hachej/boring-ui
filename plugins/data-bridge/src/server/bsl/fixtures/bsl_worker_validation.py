@@ -37,6 +37,10 @@ class Failure:
         return self.value
 
 
+class SignatureValidationError(Exception):
+    pass
+
+
 class Dtype:
     def __str__(self):
         return "int64"
@@ -124,6 +128,10 @@ def main():
             return Success(42)
         if query == "column":
             return Success(Column())
+        if query == "invalidAggregate":
+            return Failure(SignatureValidationError(
+                "SemanticAggregateOp validation failed for `aggs`: private diagnostic: /secret/model.yml"
+            ))
         if query == "failure":
             return Failure(ValueError("private diagnostic: /secret/model.yml"))
         return Success(Table())
@@ -135,13 +143,14 @@ def main():
         {"modelPath": "/tmp/model.yml", "model": "semanticModel", "query": "scalar", "limit": 10},
         {"modelPath": "/tmp/model.yml", "model": "semanticModel", "query": "column", "limit": 10},
         {"modelPath": "/tmp/model.yml", "model": "semanticModel", "query": "table", "limit": 10},
+        {"modelPath": "/tmp/model.yml", "model": "semanticModel", "query": "invalidAggregate", "limit": 10},
         {"modelPath": "/tmp/model.yml", "model": "semanticModel", "query": "failure", "limit": 10},
     ]
     diagnostics = io.StringIO()
     with contextlib.redirect_stderr(diagnostics):
         results = worker._query_batch({"queries": queries})
 
-    assert [result["ok"] for result in results] == [False, False, False, False, True, False]
+    assert [result["ok"] for result in results] == [False, False, False, False, True, False, False]
     assert [results[index]["error"]["code"] for index in range(4)] == [
         worker.BSL_INVALID_SYNTAX,
         worker.BSL_DEFERRED_RESULT,
@@ -150,6 +159,13 @@ def main():
     ]
     assert results[4]["output"]["rows"] == [{"value": 1}]
     assert results[5]["error"] == {
+        "code": worker.BSL_INVALID_ARGUMENTS,
+        "message": (
+            "Invalid semantic aggregation arguments: pass measure names positionally, for example "
+            'aggregate("measure"); named aggregate aliases require callable expressions'
+        ),
+    }
+    assert results[6]["error"] == {
         "code": worker.BSL_EXECUTION_FAILED,
         "message": "BSL expression could not be evaluated; check the selected model and expression",
     }

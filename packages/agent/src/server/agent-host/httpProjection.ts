@@ -5,7 +5,6 @@ import { z } from 'zod'
 import {
   AgentGatewayError,
   AgentGatewayErrorCode,
-  PromptPayloadSchema,
   type AgentGateway,
   type AgentSessionConnection,
   type AgentSessionRef,
@@ -101,15 +100,7 @@ const CreateSessionBodySchema = z.preprocess((value) => value === undefined ? {}
   requestId: RequestIdSchema.optional(),
   title: NonEmptyString.max(200).optional(),
   resumeSessionId: SessionIdSchema.optional(),
-  forkSessionId: SessionIdSchema.optional(),
-  forkPrompt: PromptPayloadSchema.optional(),
-}).strict()
-  .refine((body) => !(body.resumeSessionId && body.forkSessionId), {
-    message: 'resumeSessionId and forkSessionId are mutually exclusive',
-  })
-  .refine((body) => !body.forkPrompt || Boolean(body.forkSessionId), {
-    message: 'forkPrompt requires forkSessionId',
-  }))
+}).strict())
 const RenameSessionBodySchema = z.object({
   requestId: RequestIdSchema,
   title: NonEmptyString.max(200),
@@ -191,7 +182,6 @@ function statusForGatewayError(code: string): number {
     || code === AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN
     || code === AgentGatewayErrorCode.AGENT_RUNTIME_RESTART_REQUIRED
     || code === AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE
-    || code === AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH
     || code.includes('CURSOR')
     || code.includes('REPLAY')
   ) return 409
@@ -333,28 +323,13 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     const body = parseWithSchema(CreateSessionBodySchema, request.body, reply, 'body')
     if (!body) return
     try {
-      const scope = await input.options.authorizeAgentRequest(request)
       const ref = await input.gateway.createSession({
-        scope,
+        scope: await input.options.authorizeAgentRequest(request),
         agentTypeId: params.agentTypeId,
         requestId: body.requestId ?? randomUUID(),
         title: body.title,
         ...(body.resumeSessionId ? { resumeSessionId: body.resumeSessionId } : {}),
-        ...(body.forkSessionId ? { forkSessionId: body.forkSessionId } : {}),
       })
-      if (body.forkPrompt) {
-        const command: IdempotentAgentSend = {
-          kind: 'prompt',
-          requestId: body.forkPrompt.clientNonce,
-          clientNonce: body.forkPrompt.clientNonce,
-          content: body.forkPrompt.message,
-          displayContent: body.forkPrompt.displayMessage,
-          model: body.forkPrompt.model,
-          thinkingLevel: body.forkPrompt.thinkingLevel,
-          attachments: body.forkPrompt.attachments,
-        }
-        await withConnection(input, request, ref, (connection) => connection.send(command))
-      }
       return reply.code(201).send(ref)
     } catch (error) {
       return sendError(reply, error)
@@ -382,8 +357,8 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     const query = parseWithSchema(EmptyQuerySchema, request.query, reply, 'query')
     if (!query) return
     try {
-      // The service comes from the exact pin-checked existing-session binding;
-      // never re-resolve a candidate/current binding after authorization.
+      // The service comes from the authorized existing-session binding;
+      // never re-resolve another binding after authorization.
       const { scope, service } = await input.resolveAddressedPiChatService(
         request,
         params.agentTypeId,

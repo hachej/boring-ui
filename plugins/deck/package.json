@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-deck",
-  "version": "0.1.100",
+  "version": "0.1.101",
   "type": "module",
   "license": "MIT",
   "description": "Front-only markdown deck plugin scaffold for Boring workspace.",
@@ -64,7 +64,7 @@
   },
   "devDependencies": {
     "@hachej/boring-workspace": "workspace:*",
-    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",

@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-agent",
-  "version": "0.1.100",
+  "version": "0.1.101",
   "type": "module",
   "license": "MIT",
   "description": "Pane-embeddable coding agent. Ships direct/local/vercel-sandbox execution modes behind one interface.",
@@ -52,6 +52,10 @@
       "import": "./dist/front/index.js"
     },
     "./front/styles.css": "./dist/front/styles.css",
+    "./front/artifacts": {
+      "types": "./dist/front/artifacts.d.ts",
+      "import": "./dist/front/artifacts.js"
+    },
     "./eval": {
       "types": "./dist/eval/index.d.ts",
       "import": "./dist/eval/index.js"
@@ -128,7 +132,7 @@
   },
   "devDependencies": {
     "@vercel/sandbox": "2.9.2",
-    "@antithesishq/bombadil": "0.6.1",
+    "@antithesishq/bombadil": "0.7.0",
     "@opentelemetry/api": "^1.9.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.20.0",
@@ -136,7 +140,7 @@
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^4.7.0",
     "ajv": "^8.20.0",
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.28.2",
     "postcss": "^8.5.25",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

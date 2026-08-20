@@ -28,6 +28,7 @@ describe('@hachej/boring-agent/front public exports', () => {
       './core',
       './eval',
       './front',
+      './front/artifacts',
       './front/styles.css',
       './server',
       './server/agent-host/testing/compositionRouteProof',

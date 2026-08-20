@@ -1,17 +1,10 @@
 import { createHash } from 'node:crypto'
-import type { PiChatEvent, PiChatSnapshot } from '../../shared/chat'
+import type { PiChatEvent } from '../../shared/chat'
 import type { AgentSessionActivity, AgentSessionRef, AuthorizedAgentScope, VerifiedAgentScopeClaim } from '../../shared/index'
 import type { SessionSummary } from '../../shared/session'
 import { PiSessionStore } from '../harness/pi-coding-agent/sessions'
-import { buildPiChatHistory } from '../pi-chat/piChatHistory'
 import { agentSessionKey } from './agentSessionKey'
 import type { CompiledAgentHostAgentSpec, ResolvedAgentRuntimeScope } from './types'
-
-export interface AgentSessionRuntimeAuthority {
-  readonly runtimeScope: ResolvedAgentRuntimeScope
-  /** Absent only for a pre-AH0 transcript created before runtime pins existed. */
-  readonly runtimeScopeIdentity?: string
-}
 
 function safeScopeSegment(scope: string): string {
   return createHash('sha256').update(scope).digest('hex').slice(0, 20)
@@ -61,56 +54,12 @@ export class AgentSessionInventory {
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
     sessionId: string,
-  ): Promise<AgentSessionRuntimeAuthority | undefined> {
+  ): Promise<ResolvedAgentRuntimeScope | undefined> {
     const resolved = await this.resolveStore(agentTypeId, scope, claim)
     if (!resolved) return undefined
-    try {
-      return {
-        runtimeScope: resolved.runtimeScope,
-        runtimeScopeIdentity: await resolved.store.readRuntimeScopeIdentity(
-          { workspaceId: claim.workspaceScopeId },
-          sessionId,
-        ),
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message === `Session not found: ${sessionId}`) return undefined
-      throw error
-    }
-  }
-
-  /**
-   * Reads a persisted transcript without constructing an executable runtime
-   * binding. The store still enforces the workspace/user header before any
-   * content is returned; the omitted runtime pin is deliberate because this
-   * path can never expose a command-capable service.
-   */
-  async readPersistedSession(
-    agentTypeId: string,
-    scope: AuthorizedAgentScope,
-    claim: VerifiedAgentScopeClaim,
-    sessionId: string,
-  ): Promise<{ summary: SessionSummary; state: PiChatSnapshot } | undefined> {
-    const resolved = await this.resolveStore(agentTypeId, scope, claim)
-    if (!resolved) return undefined
-    try {
-      const ctx = { workspaceId: claim.workspaceScopeId }
-      const persisted = await resolved.store.readPersisted(ctx, sessionId)
-      return {
-        summary: persisted.summary,
-        state: {
-          protocolVersion: 1,
-          sessionId: persisted.entries.id,
-          seq: 0,
-          status: 'idle',
-          messages: buildPiChatHistory(persisted.entries.messages, { sessionId: persisted.entries.id }),
-          queue: { followUps: [] },
-          followUpMode: 'one-at-a-time',
-        },
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message === `Session not found: ${sessionId}`) return undefined
-      throw error
-    }
+    return await resolved.store.has({ workspaceId: claim.workspaceScopeId }, sessionId)
+      ? resolved.runtimeScope
+      : undefined
   }
 
   private async resolveStore(

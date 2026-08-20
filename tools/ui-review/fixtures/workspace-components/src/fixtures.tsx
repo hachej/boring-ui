@@ -109,7 +109,7 @@ export function UiReviewComponentFixture({ name }: { name: string }) {
 function renderFixture(name: string): ReactNode {
   switch (name) {
     case "file-tree":
-      return <FileTree files={generateFileTreeNodes(100)} height={560} />
+      return <FileTree files={generateFileTreeNodes(100)} height={560} onActivateFile={() => {}} />
     case "code-editor":
       return (
         <CodeEditor

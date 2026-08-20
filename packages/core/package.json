@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-core",
-  "version": "0.1.100",
+  "version": "0.1.101",
   "type": "module",
   "license": "MIT",
   "description": "Foundation package for boring-ui-v2 apps: DB, auth, config, HTTP app factory, and frontend app shell.",
@@ -100,7 +100,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.3",
     "@types/node": "^22.20.0",
