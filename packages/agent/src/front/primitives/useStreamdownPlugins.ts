@@ -30,11 +30,25 @@ interface StreamdownPluginSelectionOptions {
 }
 
 const CJK_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u
-const FENCED_CODE = /(^|\n)(`{3,}|~{3,})[^\n]*\n[\s\S]*?\2(?=\s*(?:\n|$))/
 const INLINE_CODE = /(^|[^`])`[^`\n]+`(?!`)/
 const INLINE_MATH = /(^|[^\\$])\$(?!\s|\$)(?:\\.|[^\n$])+?(?<!\\)\$(?![\d$])/
 const BLOCK_MATH = /(^|\n)\s*\$\$\s*\n?[\s\S]+?\n?\s*\$\$(?=\s*(?:\n|$))/
-const MERMAID_FENCE = /(^|\n)(`{3,}|~{3,})mermaid(?:[^\n]*\n)[\s\S]*?\2(?=\s*(?:\n|$))/i
+
+function hasClosedFence(source: string, language?: string): boolean {
+  const lines = source.split("\n")
+  for (let index = 0; index < lines.length; index += 1) {
+    const opening = lines[index]?.match(/^ {0,3}(`{3,}|~{3,})[ \t]*([^ \t`~]+)?[^\n]*$/)
+    if (!opening) continue
+    if (language && opening[2]?.toLowerCase() !== language) continue
+    const marker = opening[1][0]
+    const minimumLength = opening[1].length
+    for (let closing = index + 1; closing < lines.length; closing += 1) {
+      const candidate = lines[closing]?.match(/^ {0,3}(`+|~+)[ \t]*$/)?.[1]
+      if (candidate?.[0] === marker && candidate.length >= minimumLength) return true
+    }
+  }
+  return false
+}
 
 export function streamdownPluginNamesForSource(
   source: unknown,
@@ -43,9 +57,9 @@ export function streamdownPluginNamesForSource(
   if (typeof source !== "string" || source.length === 0) return []
   const names: StreamdownPluginName[] = []
   if (CJK_SCRIPT.test(source)) names.push("cjk")
-  if (options.code !== false && (FENCED_CODE.test(source) || INLINE_CODE.test(source))) names.push("code")
+  if (options.code !== false && (hasClosedFence(source) || INLINE_CODE.test(source))) names.push("code")
   if (INLINE_MATH.test(source) || BLOCK_MATH.test(source)) names.push("math")
-  if (MERMAID_FENCE.test(source)) names.push("mermaid")
+  if (hasClosedFence(source, "mermaid")) names.push("mermaid")
   return names
 }
 

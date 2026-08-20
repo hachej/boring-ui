@@ -24,6 +24,7 @@ describe("streamdownPluginNamesForSource", () => {
     expect(streamdownPluginNamesForSource("```ts\nconst value = 1\n```", { code: false })).toEqual([])
     expect(streamdownPluginNamesForSource("```mermaid\ngraph LR\nA-->B\n```", { code: false })).toEqual(["mermaid"])
     expect(streamdownPluginNamesForSource("~~~~mermaid\ngraph LR\nA-->B\n~~~~", { code: false })).toEqual(["mermaid"])
+    expect(streamdownPluginNamesForSource("   ``` mermaid\ngraph LR\nA-->B\n   `````", { code: false })).toEqual(["mermaid"])
   })
 
   it("re-evaluates complete syntax as streamed source changes", () => {
