@@ -11,7 +11,7 @@ export const AutomationRunTriggerSchema = z.enum(["manual", "scheduled"])
 export const AutomationCreateSchema = z.object({
   title: nonEmptyString,
   enabled: z.boolean().optional(),
-  cron: nonEmptyString,
+  cron: nonEmptyString.optional(),
   timezone: nonEmptyString,
   model: nonEmptyString,
   agentTypeId: nonEmptyString.optional(),

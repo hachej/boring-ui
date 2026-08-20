@@ -5,6 +5,7 @@ import type postgres from "postgres"
 import type { WorkspaceAgentServerPluginContext } from "@hachej/boring-workspace/app/server"
 import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import {
+  BORING_AUTOMATION_ERROR_CODES,
   BORING_AUTOMATION_PLUGIN_ID,
   BORING_AUTOMATION_PLUGIN_LABEL,
 } from "../shared"
@@ -20,7 +21,7 @@ import { DispatchRunExecutor, type VerifiedAutomationActor } from "./dispatchRun
 import { resolveAutomationOperationsForActor, type AutomationSessionController, type AutomationStoreMode } from "./operations"
 import { InMemoryAutomationRunEventBus, PostgresAutomationRunEventBus, type AutomationRunEventBus } from "./runEventBus"
 import { automationRoutes } from "./routes"
-import type { AutomationStore } from "./store"
+import { AutomationStoreError, type AutomationStore } from "./store"
 import { seedStandingAutomations } from "./standingAutomations"
 
 export interface BoringAutomationServerPluginOptions {
@@ -147,11 +148,17 @@ export function createAutomationSessionController(
     requestId: string,
     operation: (binding: Parameters<Parameters<WorkspaceAgentDispatcherResolver["runWithWorkspaceAgent"]>[1]>[0]) => Promise<T>,
   ): Promise<T> => {
-    let result: T | undefined
+    let outcome: { value: T } | undefined
     await resolver.runWithWorkspaceAgent({ agentTypeId, context, requestId }, async (binding) => {
-      result = await operation(binding)
+      outcome = { value: await operation(binding) }
     })
-    return result as T
+    if (!outcome) {
+      throw new AutomationStoreError(
+        BORING_AUTOMATION_ERROR_CODES.TOOL_CONTEXT_UNAVAILABLE,
+        "workspace agent resolver returned without binding an automation session controller",
+      )
+    }
+    return outcome.value
   }
   return {
     async list(agentTypeId) {

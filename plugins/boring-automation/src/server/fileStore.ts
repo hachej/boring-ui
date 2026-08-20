@@ -10,6 +10,7 @@ import type {
   AutomationRunLifecyclePatch,
 } from "../shared/types"
 import { automationPromptPath } from "../shared/prompt"
+import { isAutomationRunOccupying } from "../shared/runStatus"
 import type { AutomationSeed, AutomationStore } from "./store"
 import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound } from "./store"
 
@@ -75,7 +76,7 @@ export class FileAutomationStore implements AutomationStore {
       id,
       title: input.title,
       enabled: input.enabled ?? true,
-      cron: input.cron,
+      cron: input.cron ?? null,
       timezone: input.timezone,
       model: input.model,
       ...(input.agentTypeId ? { agentTypeId: input.agentTypeId } : {}),
@@ -218,7 +219,7 @@ export class FileAutomationStore implements AutomationStore {
       }
       const active = Object.values(state.runs).find((candidate) => (
         candidate.automationId === input.automationId
-        && (candidate.status === "queued" || candidate.status === "dispatching" || candidate.status === "running" || candidate.status === "outcome-unknown")
+        && isAutomationRunOccupying(candidate.status)
       ))
       if (active) throw runAlreadyActive(input.automationId)
       const id = randomUUID()
@@ -284,7 +285,7 @@ export class FileAutomationStore implements AutomationStore {
       updated = applyRunPatch(run, patch, this.nowIso())
       state.runs[runId] = updated
     })
-    if (updated && isTerminalRunStatus(updated.status)) this.activeRunIds.delete(runId)
+    if (updated && !isAutomationRunOccupying(updated.status)) this.activeRunIds.delete(runId)
     return clone(requireValue(updated))
   }
 
@@ -402,20 +403,19 @@ function reconcileOrphanedRuns(
   completedAt: string,
 ): void {
   for (const run of Object.values(state.runs)) {
-    if (run.automationId !== automationId || isTerminalRunStatus(run.status) || activeRunIds.has(run.id)) continue
-    const dispatchMayStillBeLive = run.status !== "queued"
+    if (run.automationId !== automationId || !isAutomationRunOccupying(run.status) || activeRunIds.has(run.id)) continue
+    const outcomeWasAlreadyUnknown = run.status === "outcome-unknown"
+    const dispatchMayStillBeLive = run.status !== "queued" && !outcomeWasAlreadyUnknown
     run.status = dispatchMayStillBeLive ? "outcome-unknown" : "failed"
     run.completedAt = completedAt
     run.durationMs = Math.max(0, new Date(completedAt).getTime() - new Date(run.startedAt ?? run.createdAt).getTime())
-    run.error = dispatchMayStillBeLive
-      ? "Automation dispatch outcome is unknown after host restart; the slot remains occupied"
-      : "Automation host restarted before the run completed"
+    run.error = outcomeWasAlreadyUnknown
+      ? "Automation outcome remained unknown after host restart; releasing the occupied slot"
+      : dispatchMayStillBeLive
+        ? "Automation dispatch outcome is unknown after host restart; the slot remains occupied"
+        : "Automation host restarted before the run completed"
     run.updatedAt = completedAt
   }
-}
-
-function isTerminalRunStatus(status: AutomationRun["status"]): boolean {
-  return status === "succeeded" || status === "failed" || status === "cancelled" || status === "outcome-unknown"
 }
 
 function applyRunPatch(run: AutomationRun, patch: AutomationRunLifecyclePatch, updatedAt: string): AutomationRun {

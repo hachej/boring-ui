@@ -3,6 +3,7 @@ import type postgres from "postgres"
 import type { Workspace } from "@hachej/boring-agent/shared"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import { AUTOMATION_PROMPT_DIRECTORY, automationPromptPath } from "../shared/prompt"
+import { AUTOMATION_RUN_OCCUPYING_STATUSES } from "../shared/runStatus"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../shared/types"
 import { AutomationStoreError, automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound, type AutomationSeed, type AutomationStore } from "./store"
 
@@ -70,7 +71,7 @@ export class PostgresAutomationStore implements AutomationStore {
     await this.writePromptFile(promptRef, input.prompt ?? "")
     const rows = await this.sql<AutomationRow[]>`
       INSERT INTO boring_automation_automations (id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, agent_type_id, prompt_ref, created_at, updated_at)
-      VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled ?? true}, ${input.cron}, ${input.timezone}, ${input.model}, ${input.agentTypeId ?? null}, ${promptRef}, ${now}, ${now})
+      VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled ?? true}, ${input.cron ?? null}, ${input.timezone}, ${input.model}, ${input.agentTypeId ?? null}, ${promptRef}, ${now}, ${now})
       RETURNING id, title, enabled, cron, timezone, model, agent_type_id, prompt_ref, created_at, updated_at
     `
     return toAutomation(rows[0]!)
@@ -160,13 +161,15 @@ export class PostgresAutomationStore implements AutomationStore {
   async reconcileOrphanedRuns(automationId: string): Promise<void> {
     await this.sql`
       UPDATE boring_automation_runs
-      SET status = CASE WHEN status = 'queued' THEN 'failed' ELSE 'outcome-unknown' END,
+      SET status = CASE WHEN status IN ('queued', 'outcome-unknown') THEN 'failed' ELSE 'outcome-unknown' END,
           completed_at = ${this.clock().toISOString()},
-          error = CASE WHEN status = 'queued'
-            THEN 'Automation host restarted before the run completed'
+          error = CASE
+            WHEN status = 'queued' THEN 'Automation host restarted before the run completed'
+            WHEN status = 'outcome-unknown' THEN 'Automation outcome remained unknown after host restart; releasing the occupied slot'
             ELSE 'Automation dispatch outcome is unknown after host restart; the slot remains occupied' END,
           updated_at = ${this.clock().toISOString()}
-      WHERE automation_id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND status IN ('queued', 'dispatching', 'running')
+      WHERE automation_id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+        AND status IN (${AUTOMATION_RUN_OCCUPYING_STATUSES[0]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[1]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[2]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[3]})
     `
   }
 
@@ -184,7 +187,8 @@ export class PostgresAutomationStore implements AutomationStore {
     }
     const active = await this.sql<{ id: string }[]>`
       SELECT id FROM boring_automation_runs
-      WHERE automation_id = ${input.automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND status IN ('queued', 'dispatching', 'running', 'outcome-unknown')
+      WHERE automation_id = ${input.automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+        AND status IN (${AUTOMATION_RUN_OCCUPYING_STATUSES[0]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[1]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[2]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[3]})
       LIMIT 1
     `
     if (active[0]) throw runAlreadyActive(input.automationId)
@@ -332,13 +336,14 @@ export async function reconcileStaleHostedAutomationRuns(
 ): Promise<ReconciledHostedAutomationRun[]> {
   const rows = await sql<(RunRow & { workspace_id: string; owner_user_id: string })[]>`
     UPDATE boring_automation_runs
-    SET status = CASE WHEN status = 'queued' THEN 'failed' ELSE 'outcome-unknown' END,
+    SET status = CASE WHEN status IN ('queued', 'outcome-unknown') THEN 'failed' ELSE 'outcome-unknown' END,
         completed_at = NOW(),
-        error = CASE WHEN status = 'queued'
-          THEN 'Automation worker lease expired before dispatch'
+        error = CASE
+          WHEN status = 'queued' THEN 'Automation worker lease expired before dispatch'
+          WHEN status = 'outcome-unknown' THEN 'Automation outcome remained unknown after its worker lease expired; releasing the occupied slot'
           ELSE 'Automation dispatch outcome is unknown after its worker lease expired; the slot remains occupied' END,
         updated_at = NOW()
-    WHERE status IN ('queued', 'dispatching', 'running')
+    WHERE status IN (${AUTOMATION_RUN_OCCUPYING_STATUSES[0]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[1]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[2]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[3]})
       AND updated_at < NOW() - (${staleAfterMs} * INTERVAL '1 millisecond')
     RETURNING *
   `
@@ -364,7 +369,7 @@ export async function listHostedAutomationCandidates(sql: Sql, scheduledFor: str
       AND automations.owner_user_id = runs.owner_user_id
     WHERE automations.deleted_at IS NULL
       AND (
-        runs.status IN ('queued', 'dispatching', 'running', 'outcome-unknown')
+        runs.status IN (${AUTOMATION_RUN_OCCUPYING_STATUSES[0]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[1]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[2]}, ${AUTOMATION_RUN_OCCUPYING_STATUSES[3]})
         OR (runs.trigger = 'scheduled' AND runs.scheduled_for = ${scheduledFor})
       )
     ORDER BY runs.automation_id

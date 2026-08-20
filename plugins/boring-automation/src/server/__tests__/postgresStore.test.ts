@@ -195,9 +195,11 @@ describe("PostgresAutomationStore actor isolation", () => {
     expect(recorded.queries[0]!.text).toContain("FROM boring_automation_automations")
     expect(recorded.queries[0]!.text).toContain("WHERE deleted_at IS NULL")
     expect(recorded.queries[0]!.text).toContain("prompt_ref")
-    expect(recorded.queries[1]!.text).toContain("runs.status IN ('queued', 'dispatching', 'running', 'outcome-unknown')")
+    expect(recorded.queries[1]!.text).toContain("runs.status IN (?, ?, ?, ?)")
     expect(recorded.queries[1]!.text).toContain("runs.scheduled_for = ?")
     expect(recorded.queries[1]!.text).not.toContain("SELECT *")
-    expect(recorded.queries[1]!.values).toContain("2026-07-23T09:00:00.000Z")
+    expect(recorded.queries[1]!.values).toEqual(expect.arrayContaining([
+      "queued", "dispatching", "running", "outcome-unknown", "2026-07-23T09:00:00.000Z",
+    ]))
   })
 })

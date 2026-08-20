@@ -125,7 +125,10 @@ describe("ManualRunExecutor durable restart saga", () => {
       actor: { workspaceId: "workspace-1", userId: "user-1" },
     })
     expect(sameInvocation.id).toBe(admitted.id)
-    expect(sameInvocation.status).toBe("outcome-unknown")
+    expect(sameInvocation).toMatchObject({
+      status: "failed",
+      error: "Automation outcome remained unknown after host restart; releasing the occupied slot",
+    })
     expect(resolve).not.toHaveBeenCalled()
     expect(dispatch).not.toHaveBeenCalled()
     await expect(restarted.listRuns(automation.id)).resolves.toHaveLength(1)
@@ -136,7 +139,7 @@ describe("ManualRunExecutor durable restart saga", () => {
       trigger: "manual",
       promptSnapshot: "run again",
       modelSnapshot: "test:model",
-    })).rejects.toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
+    })).resolves.toMatchObject({ status: "queued" })
   })
 
   it("returns one durable run receipt for concurrent retries of an invocation", async () => {

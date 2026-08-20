@@ -7,6 +7,11 @@ describe("automation schemas", () => {
       title: "Daily",
       cron: "0 9 * * *",
     })
+    expect(AutomationCreateSchema.parse({ title: "Dispatch only", timezone: "UTC", model: "model-a" })).toEqual({
+      title: "Dispatch only",
+      timezone: "UTC",
+      model: "model-a",
+    })
     expect(() => AutomationCreateSchema.parse({ title: "", cron: "", timezone: "UTC", model: "model-a" })).toThrow()
     expect(() => AutomationPatchSchema.parse({})).toThrow()
     expect(AutomationPatchSchema.parse({ enabled: false })).toEqual({ enabled: false })

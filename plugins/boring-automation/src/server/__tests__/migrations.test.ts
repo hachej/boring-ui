@@ -27,7 +27,8 @@ describe("runBoringAutomationMigrations", () => {
     expect(statements.some((statement) => statement.includes("ADD COLUMN IF NOT EXISTS invocation_id text"))).toBe(true)
     expect(statements.some((statement) => statement.includes("ALTER COLUMN invocation_id SET NOT NULL"))).toBe(true)
     expect(statements.some((statement) => statement.includes("status IN ('queued', 'dispatching', 'running'"))).toBe(true)
-    expect(statements.some((statement) => statement.includes("HAVING COUNT(*) > 1") && statement.includes("outcome-unknown"))).toBe(true)
+    expect(statements.some((statement) => statement.includes("ROW_NUMBER() OVER") && statement.includes("outcome-unknown"))).toBe(true)
+    expect(statements.some((statement) => statement.includes("occupancy_rank > 1") && statement.includes("retained the automation slot"))).toBe(true)
     expect(statements.some((statement) => statement.includes("boring_automation_runs_active_once_idx") && statement.includes("outcome-unknown"))).toBe(true)
     expect(statements.some((statement) => statement.includes("boring_automation_runs_invocation_once_idx"))).toBe(true)
     expect(statements.some((statement) => statement.includes("boring_automation_runs_scheduled_once_idx"))).toBe(true)
@@ -96,63 +97,90 @@ describe("runBoringAutomationMigrations", () => {
       await expect(store.updateRunLifecycle(run.id, { status: "succeeded" })).rejects.toMatchObject({
         code: "BORING_AUTOMATION_RUN_LEASE_LOST",
       })
+      await sql`UPDATE boring_automation_runs SET updated_at = '2026-07-10T00:00:00.000Z' WHERE id = ${run.id}`
+      const released = await reconcileStaleHostedAutomationRuns(sql, 60_000)
+      expect(released).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          actor,
+          run: expect.objectContaining({
+            id: run.id,
+            status: "failed",
+            error: "Automation outcome remained unknown after its worker lease expired; releasing the occupied slot",
+          }),
+        }),
+      ]))
+
       const replacements = await Promise.allSettled([
         store.beginRun({ automationId, trigger: "manual", promptSnapshot: "replacement-1", modelSnapshot: "test:model" }),
         store.beginRun({ automationId, trigger: "manual", promptSnapshot: "replacement-2", modelSnapshot: "test:model" }),
       ])
-      expect(replacements).toHaveLength(2)
-      for (const replacement of replacements) {
-        expect(replacement.status).toBe("rejected")
-        if (replacement.status === "rejected") expect(replacement.reason).toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
-      }
+      expect(replacements.filter((replacement) => replacement.status === "fulfilled")).toHaveLength(1)
+      expect(replacements.filter((replacement) => replacement.status === "rejected")).toHaveLength(1)
+      const rejected = replacements.find((replacement) => replacement.status === "rejected")
+      if (rejected?.status === "rejected") expect(rejected.reason).toMatchObject({ code: "BORING_AUTOMATION_RUN_ALREADY_ACTIVE" })
     } finally {
       await sql`DELETE FROM boring_automation_automations WHERE id = ${automationId}`.catch(() => undefined)
       await sql.end()
     }
   })
-  it("rolls back the old occupancy index when legacy ambiguous duplicates block migration", async () => {
+  it("repairs duplicate potentially-live runs before enforcing the occupancy index", async () => {
     const sql = postgres(TEST_DB_URL, { max: 1 })
     const automationId = randomUUID()
-    const actor = { workspaceId: `migration-rollback-workspace-${randomUUID()}`, userId: `migration-rollback-user-${randomUUID()}` }
+    const olderRunId = randomUUID()
+    const newerRunId = randomUUID()
+    const actor = { workspaceId: `migration-repair-workspace-${randomUUID()}`, userId: `migration-repair-user-${randomUUID()}` }
     try {
       await runBoringAutomationMigrations(sql)
-      const now = new Date().toISOString()
       await sql`
         INSERT INTO boring_automation_automations (
           id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, prompt_ref, created_at, updated_at
         ) VALUES (
-          ${automationId}, ${actor.workspaceId}, ${actor.userId}, 'Rollback smoke', true,
-          NULL, 'UTC', 'test:model', ${`.agents/automation/${automationId}.md`}, ${now}, ${now}
+          ${automationId}, ${actor.workspaceId}, ${actor.userId}, 'Repair smoke', true,
+          NULL, 'UTC', 'test:model', ${`.agents/automation/${automationId}.md`},
+          '2026-07-10T00:00:00.000Z', '2026-07-10T00:00:00.000Z'
         )
       `
       await sql.unsafe(`DROP INDEX boring_automation_runs_active_once_idx`)
-      await sql.unsafe(`
-        CREATE UNIQUE INDEX boring_automation_runs_active_once_idx
-          ON boring_automation_runs (automation_id)
-          WHERE status IN ('queued', 'dispatching', 'running')
-      `)
-      const store = new PostgresAutomationStore(sql, actor)
-      const ambiguous = await store.beginRun({ automationId, trigger: "manual", promptSnapshot: "one", modelSnapshot: "test:model" })
-      await store.updateRunLifecycle(ambiguous.id, { status: "outcome-unknown", sessionId: "possibly-live" })
-      await sql`
-        INSERT INTO boring_automation_runs (
-          id, automation_id, workspace_id, owner_user_id, invocation_id, dispatch_request_id, dispatch_receipt,
-          session_id, status, trigger, scheduled_for, started_at, completed_at, duration_ms, input_tokens,
-          output_tokens, total_tokens, prompt_snapshot, model_snapshot, error, created_at, updated_at
-        ) SELECT
-          ${randomUUID()}, automation_id, workspace_id, owner_user_id, ${`replacement:${randomUUID()}`}, ${randomUUID()}, NULL,
-          NULL, 'queued', 'dispatch', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'two', model_snapshot, NULL, ${now}, ${now}
-        FROM boring_automation_runs WHERE id = ${ambiguous.id}
-      `
+      for (const [id, status, timestamp] of [
+        [olderRunId, "running", "2026-07-10T00:01:00.000Z"],
+        [newerRunId, "queued", "2026-07-10T00:02:00.000Z"],
+      ] as const) {
+        await sql`
+          INSERT INTO boring_automation_runs (
+            id, automation_id, workspace_id, owner_user_id, invocation_id, dispatch_request_id, dispatch_receipt,
+            session_id, status, trigger, scheduled_for, started_at, completed_at, duration_ms, input_tokens,
+            output_tokens, total_tokens, prompt_snapshot, model_snapshot, error, created_at, updated_at
+          ) VALUES (
+            ${id}, ${automationId}, ${actor.workspaceId}, ${actor.userId}, ${`fixture:${id}`}, ${id}, NULL,
+            NULL, ${status}, 'manual', NULL, ${timestamp}, NULL, NULL, NULL, NULL, NULL,
+            'fixture', 'test:model', NULL, ${timestamp}, ${timestamp}
+          )
+        `
+      }
 
-      await expect(runBoringAutomationMigrations(sql)).rejects.toThrow("multiple potentially live runs")
+      await expect(runBoringAutomationMigrations(sql)).resolves.toBeUndefined()
+      const rows = await sql<{ id: string; status: string; completed_at: Date | null; error: string | null }[]>`
+        SELECT id, status, completed_at, error
+        FROM boring_automation_runs
+        WHERE automation_id = ${automationId}
+        ORDER BY updated_at DESC, created_at DESC, id DESC
+      `
+      expect(rows).toHaveLength(2)
+      expect(rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: newerRunId, status: "queued", completed_at: null, error: null }),
+        expect.objectContaining({
+          id: olderRunId,
+          status: "failed",
+          completed_at: expect.any(Date),
+          error: "Migration reconciled duplicate potentially-live run; a newer run retained the automation slot",
+        }),
+      ]))
       const indexes = await sql<{ indexdef: string }[]>`
         SELECT indexdef FROM pg_indexes
         WHERE schemaname = current_schema() AND indexname = 'boring_automation_runs_active_once_idx'
       `
       expect(indexes).toHaveLength(1)
-      expect(indexes[0]!.indexdef).toContain("'queued'::text")
-      expect(indexes[0]!.indexdef).not.toContain("outcome-unknown")
+      expect(indexes[0]!.indexdef).toContain("outcome-unknown")
     } finally {
       await sql`DELETE FROM boring_automation_automations WHERE id = ${automationId}`.catch(() => undefined)
       await runBoringAutomationMigrations(sql).catch(() => undefined)

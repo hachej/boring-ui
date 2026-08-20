@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest"
 import { bootstrapServer } from "@hachej/boring-workspace/server"
 import { BORING_AUTOMATION_ERROR_CODES, BORING_AUTOMATION_PLUGIN_ID, BORING_AUTOMATION_ROUTE_PREFIX } from "../../shared"
 import { BORING_AUTOMATION_TOOL_NAME } from "../automationTool"
-import defaultBoringAutomationServerPlugin, { createBoringAutomationServerPlugin } from "../index"
+import defaultBoringAutomationServerPlugin, { createAutomationSessionController, createBoringAutomationServerPlugin } from "../index"
 
 describe("boring automation server plugin", () => {
   it("wires default-export ctx.workspaceRoot into file-backed routes", async () => {
@@ -148,6 +148,16 @@ describe("boring automation server plugin", () => {
     expect(result.isError).toBe(true)
     expect(result.details).toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.TOOL_CONTEXT_UNAVAILABLE })
     expect(sql).not.toHaveBeenCalled()
+  })
+
+  it("fails with a typed automation error when the dispatcher resolver skips its binding callback", async () => {
+    const controller = createAutomationSessionController({
+      runWithWorkspaceAgent: vi.fn(async () => undefined),
+    } as never, { workspaceId: "workspace-1", userId: "user-1" })
+
+    await expect(controller.list("boring-worker")).rejects.toMatchObject({
+      code: BORING_AUTOMATION_ERROR_CODES.TOOL_CONTEXT_UNAVAILABLE,
+    })
   })
 
   it("starts hosted due evaluation internally when Fastify becomes ready", async () => {

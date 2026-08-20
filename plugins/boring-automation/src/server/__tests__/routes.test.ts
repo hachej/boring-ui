@@ -310,6 +310,14 @@ describe("automationRoutes", () => {
     const temp = await TempStore.create()
     const app = appWithStore(temp.store)
 
+    const dispatchOnly = await app.inject({
+      method: "POST",
+      url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations`,
+      payload: { title: "Dispatch only", timezone: "UTC", model: "model-a" },
+    })
+    expect(dispatchOnly.statusCode).toBe(201)
+    expect(dispatchOnly.json()).toMatchObject({ ok: true, automation: { title: "Dispatch only", cron: null } })
+
     const invalid = await app.inject({ method: "POST", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations`, payload: { title: "" } })
     expect(invalid.statusCode).toBe(400)
     expect(invalid.json()).toMatchObject({ ok: false, code: "BORING_AUTOMATION_INVALID_BODY" })

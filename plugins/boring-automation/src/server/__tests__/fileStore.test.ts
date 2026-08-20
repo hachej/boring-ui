@@ -121,7 +121,21 @@ describe("FileAutomationStore persistence", () => {
     expect(runs).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: orphan.id, status: "outcome-unknown", completedAt: "2026-07-10T00:10:00.000Z", durationMs: 599_000, error: "Automation dispatch outcome is unknown after host restart; the slot remains occupied" }),
     ]))
-    await expect(restartedStore.listRuns(automation.id, 1)).resolves.toHaveLength(1)
+
+    await restartedStore.reconcileOrphanedRuns(automation.id)
+    await expect(restartedStore.beginRun({
+      automationId: automation.id,
+      trigger: "manual",
+      promptSnapshot: "replacement",
+      modelSnapshot: "test:gpt-5.5",
+    })).resolves.toMatchObject({ status: "queued" })
+    await expect(restartedStore.listRuns(automation.id)).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: orphan.id,
+        status: "failed",
+        error: "Automation outcome remained unknown after host restart; releasing the occupied slot",
+      }),
+    ]))
   })
 
   it("allows only one dispatcher to claim a queued run", async () => {

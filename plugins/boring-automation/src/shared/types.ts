@@ -29,7 +29,7 @@ export interface Automation {
 export interface AutomationCreate {
   title: string
   enabled?: boolean
-  cron: string
+  cron?: string
   timezone: string
   model: string
   agentTypeId?: string

@@ -67,7 +67,7 @@ export function toAutomationCreate(draft: AutomationDraft): AutomationCreate {
   return {
     title: draft.title.trim(),
     enabled: draft.enabled,
-    cron: draft.cron?.trim() ?? "",
+    ...(draft.cron === null ? {} : { cron: draft.cron.trim() }),
     timezone: draft.timezone.trim(),
     model: draft.model.trim(),
     thinkingLevel: draft.thinkingLevel,

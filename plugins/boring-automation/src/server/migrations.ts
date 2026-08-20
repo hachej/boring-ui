@@ -1,4 +1,5 @@
 import type postgres from "postgres"
+import { AUTOMATION_RUN_OCCUPYING_STATUSES_SQL } from "../shared/runStatus"
 
 /** Deployment-owned hosted schema registration for the automation plugin. */
 export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<void> {
@@ -95,25 +96,31 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
       ON boring_automation_runs (automation_id, created_at DESC)
   `)
   await sql.begin(async (transaction) => {
-    await transaction.unsafe(`DROP INDEX IF EXISTS boring_automation_runs_active_once_idx`)
+    await transaction.unsafe(`LOCK TABLE boring_automation_runs IN SHARE ROW EXCLUSIVE MODE`)
     await transaction.unsafe(`
-      DO $$
-      BEGIN
-        IF EXISTS (
-          SELECT automation_id
-          FROM boring_automation_runs
-          WHERE status IN ('queued', 'dispatching', 'running', 'outcome-unknown')
-          GROUP BY automation_id
-          HAVING COUNT(*) > 1
-        ) THEN
-          RAISE EXCEPTION 'cannot enforce automation occupancy: multiple potentially live runs exist for one automation';
-        END IF;
-      END $$
+      WITH ranked_occupants AS (
+        SELECT id,
+          ROW_NUMBER() OVER (
+            PARTITION BY automation_id
+            ORDER BY updated_at DESC, created_at DESC, id DESC
+          ) AS occupancy_rank
+        FROM boring_automation_runs
+        WHERE status IN (${AUTOMATION_RUN_OCCUPYING_STATUSES_SQL})
+      )
+      UPDATE boring_automation_runs AS runs
+      SET status = 'failed',
+          completed_at = COALESCE(runs.completed_at, NOW()),
+          error = 'Migration reconciled duplicate potentially-live run; a newer run retained the automation slot',
+          updated_at = NOW()
+      FROM ranked_occupants
+      WHERE runs.id = ranked_occupants.id
+        AND ranked_occupants.occupancy_rank > 1
     `)
+    await transaction.unsafe(`DROP INDEX IF EXISTS boring_automation_runs_active_once_idx`)
     await transaction.unsafe(`
       CREATE UNIQUE INDEX boring_automation_runs_active_once_idx
         ON boring_automation_runs (automation_id)
-        WHERE status IN ('queued', 'dispatching', 'running', 'outcome-unknown')
+        WHERE status IN (${AUTOMATION_RUN_OCCUPYING_STATUSES_SQL})
     `)
   })
   await sql.unsafe(`

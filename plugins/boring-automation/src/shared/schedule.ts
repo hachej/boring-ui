@@ -1,4 +1,5 @@
 import { Cron } from "croner"
+import { isAutomationRunOccupying } from "./runStatus"
 import type { Automation, AutomationRun } from "./types"
 
 export const AUTOMATION_SCHEDULE_ERRORS = {
@@ -130,9 +131,7 @@ function hasDuplicateScheduledRun(runs: EvaluateAutomationScheduleInput["runs"],
 }
 
 function hasActiveRun(runs: EvaluateAutomationScheduleInput["runs"], automationId: string): boolean {
-  return runs.some((run) => run.automationId === automationId && (
-    run.status === "queued" || run.status === "dispatching" || run.status === "running" || run.status === "outcome-unknown"
-  ))
+  return runs.some((run) => run.automationId === automationId && isAutomationRunOccupying(run.status))
 }
 
 function floorToMinute(date: Date): Date {
