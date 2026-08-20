@@ -29,9 +29,9 @@ describe("boring automation server plugin", () => {
     const promptRoot = join(workspaceRoot, ".agents", "automation")
     await mkdir(promptRoot, { recursive: true })
     await writeFile(join(promptRoot, "manifest.json"), JSON.stringify({ automations: [
-      { key: "orchestrator-tick", title: "orchestrator-tick", enabled: true, cron: "*/10 * * * *", timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-orchestrator", sessionMode: "new", promptRef: ".agents/automation/orchestrator-tick.md" },
-      ...[1, 2, 3].map((slot) => ({ key: `worker-slot-${slot}`, title: `worker-slot-${slot}`, enabled: true, cron: null, timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", sessionMode: "new", promptRef: ".agents/automation/worker-slot.md" })),
-      { key: "triage", title: "triage", enabled: true, cron: null, timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", sessionMode: "new", promptRef: ".agents/automation/triage-slot.md" },
+      { key: "orchestrator-tick", title: "orchestrator-tick", enabled: true, cron: "*/10 * * * *", timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-orchestrator", promptRef: ".agents/automation/orchestrator-tick.md" },
+      ...[1, 2, 3].map((slot) => ({ key: `worker-slot-${slot}`, title: `worker-slot-${slot}`, enabled: true, cron: null, timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", promptRef: ".agents/automation/worker-slot.md" })),
+      { key: "triage", title: "triage", enabled: true, cron: null, timezone: "UTC", model: "openai-codex:gpt-5.6-sol", agentTypeId: "boring-worker", promptRef: ".agents/automation/triage-slot.md" },
     ] }), "utf8")
     await Promise.all([
       writeFile(join(promptRoot, "orchestrator-tick.md"), "orchestrator prompt", "utf8"),
@@ -124,59 +124,6 @@ describe("boring automation server plugin", () => {
     )
     expect(sql).toHaveBeenCalled()
     await app.close()
-  })
-
-  it("withholds raw run transcripts from a Worker composition", async () => {
-    const readSessionJsonlPage = vi.fn()
-    const plugin = createBoringAutomationServerPlugin({
-      agentTypeId: "boring-worker",
-      store: {} as never,
-      dispatcherResolver: { readSessionJsonlPage } as never,
-    })
-    const tool = plugin.agentTools![0]!
-    const result = await tool.execute(
-      { operation: "read_run_jsonl", automationId: "automation-1", runId: "run-1" },
-      { abortSignal: new AbortController().signal, toolCallId: "call-worker", agentTypeId: "boring-worker", workspaceId: "workspace-1", userId: "user-1" },
-    )
-    expect(result.isError).toBe(true)
-    expect(result.details).toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.INVALID_BODY })
-    expect(readSessionJsonlPage).not.toHaveBeenCalled()
-  })
-
-  it("reads a run transcript through its durable dispatch ref, not mutable automation metadata", async () => {
-    const readSessionJsonlPage = vi.fn(async () => ({
-      lines: ['{"type":"session"}'], nextCursor: 1, hasMore: false,
-    }))
-    const automation = {
-      id: "automation-1", title: "Transcript", enabled: true, cron: "0 9 * * *", timezone: "UTC",
-      model: "test:model", agentTypeId: "changed-agent", thinkingLevel: "medium", sessionMode: "new",
-      promptRef: "prompts/automation-1.md", createdAt: "2026-07-19T00:00:00.000Z", updatedAt: "2026-07-19T00:00:00.000Z",
-    }
-    const run = {
-      id: "run-1", automationId: automation.id, sessionId: "session-1", status: "succeeded", trigger: "dispatch",
-      scheduledFor: null, startedAt: automation.createdAt, completedAt: automation.createdAt, durationMs: 1,
-      inputTokens: 1, outputTokens: 1, totalTokens: 2, promptSnapshot: "prompt", modelSnapshot: "test:model",
-      error: null, createdAt: automation.createdAt, updatedAt: automation.createdAt,
-      dispatchReceipt: { ref: { agentTypeId: "original-agent", sessionId: "session-1" }, accepted: true, cursor: 1, disposition: "prompt", clientNonce: "run-1" },
-    }
-    const plugin = createBoringAutomationServerPlugin({
-      agentTypeId: "boring-orchestrator",
-      availableAgentTypeIds: ["boring-orchestrator", "changed-agent", "original-agent"],
-      store: { getAutomation: vi.fn(async () => automation), getRun: vi.fn(async () => run), listRuns: vi.fn(async () => [run]) } as never,
-      dispatcherResolver: { readSessionJsonlPage } as never,
-    })
-    const result = await plugin.agentTools![0]!.execute(
-      { operation: "read_run_jsonl", automationId: automation.id, runId: run.id },
-      { abortSignal: new AbortController().signal, toolCallId: "call-1", agentTypeId: "boring-orchestrator", workspaceId: "workspace-1", userId: "user-1" },
-    )
-
-    expect(result.isError).toBe(false)
-    expect(readSessionJsonlPage).toHaveBeenCalledWith(
-      { workspaceId: "workspace-1", userId: "user-1" },
-      { agentTypeId: "original-agent", sessionId: "session-1" },
-      { cursor: 0, limit: 50, maxBytes: 512 * 1024, signal: expect.any(AbortSignal) },
-    )
-    expect(result.details).toMatchObject({ lines: ['{"type":"session"}'], nextCursor: 1, hasMore: false })
   })
 
   it("hosted tool fails closed before the unbound fallback store can be queried", async () => {

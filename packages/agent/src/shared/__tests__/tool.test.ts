@@ -21,7 +21,6 @@ test('ToolExecContext contract', () => {
     abortSignal: AbortSignal
     toolCallId: string
     onUpdate?: (partial: string) => void
-    agentTypeId?: string
     sessionId?: string
     userId?: string
     userEmail?: string
@@ -33,7 +32,6 @@ test('ToolExecContext contract', () => {
   expectTypeOf<ToolExecContext['onUpdate']>().toEqualTypeOf<
     ((partial: string) => void) | undefined
   >()
-  expectTypeOf<ToolExecContext['agentTypeId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<ToolExecContext['sessionId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<ToolExecContext['userId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<ToolExecContext['userEmail']>().toEqualTypeOf<string | undefined>()

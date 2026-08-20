@@ -8,12 +8,12 @@ import { AutomationStoreError } from "../store"
 const NOW = "2026-07-19T00:00:00.000Z"
 const summary = {
   id: "automation-1", title: "Daily", enabled: true, cron: "0 9 * * *", timezone: "UTC",
-  model: "anthropic:claude-sonnet", sessionMode: "new" as const, thinkingLevel: "medium" as const, createdAt: NOW, updatedAt: NOW,
+  model: "anthropic:claude-sonnet", thinkingLevel: "medium" as const, createdAt: NOW, updatedAt: NOW,
 }
 const run = {
   id: "run-1", automationId: "automation-1", sessionId: "session-1", status: "succeeded" as const,
   trigger: "manual" as const, scheduledFor: null, startedAt: NOW, completedAt: NOW, durationMs: 10,
-  inputTokens: 1, outputTokens: 2, totalTokens: 3, error: null, note: null, createdAt: NOW, updatedAt: NOW,
+  inputTokens: 1, outputTokens: 2, totalTokens: 3, error: null, createdAt: NOW, updatedAt: NOW,
 }
 
 function operations(): AutomationOperations {
@@ -30,17 +30,16 @@ function operations(): AutomationOperations {
     delete: vi.fn(async () => ({ automationId: summary.id, title: summary.title })),
     run: vi.fn(async () => run),
     listRuns: vi.fn(async () => ({ items: [run], truncated: false })),
-    readRunJsonl: vi.fn(async () => ({ lines: ['{"type":"session"}'], nextCursor: 1, hasMore: false, runStatus: "succeeded" as const, sessionId: "session-1" })),
   }
 }
 
 function context(controller = new AbortController()): ToolExecContext {
-  return { abortSignal: controller.signal, toolCallId: "call-1", agentTypeId: "boring-orchestrator", workspaceId: "workspace-1", userId: "user-1" }
+  return { abortSignal: controller.signal, toolCallId: "call-1", workspaceId: "workspace-1", userId: "user-1" }
 }
 
 function harness(ops = operations()) {
   const resolveOperationsForActor = vi.fn(async () => ({ operations: ops }))
-  return { ops, resolveOperationsForActor, tool: createBoringAutomationTool({ rawRunTranscriptAgentTypeIds: ["boring-orchestrator"], resolveOperationsForActor }) }
+  return { ops, resolveOperationsForActor, tool: createBoringAutomationTool({ resolveOperationsForActor }) }
 }
 
 function details(result: ToolResult): any {
@@ -55,24 +54,8 @@ describe("boring_automation agent tool", () => {
     expect(tool.name).toBe(BORING_AUTOMATION_TOOL_NAME)
     expect(tool.name).toBe("boring_automation")
     expect(tool.parameters).toMatchObject({ oneOf: expect.any(Array) })
-    expect((tool.parameters.oneOf as any[])).toHaveLength(12)
+    expect((tool.parameters.oneOf as any[])).toHaveLength(11)
     expect((tool.parameters.oneOf as any[]).every((branch) => branch.additionalProperties === false)).toBe(true)
-  })
-
-  it("omits and denies raw transcript reads without the server-owned seat grant", async () => {
-    const ops = operations()
-    const tool = createBoringAutomationTool({
-      rawRunTranscriptAgentTypeIds: ["boring-orchestrator"],
-      resolveOperationsForActor: vi.fn(async () => ({ operations: ops })),
-    })
-    expect((tool.parameters.oneOf as any[])).toHaveLength(12)
-    const result = await tool.execute(
-      { operation: "read_run_jsonl", automationId: "automation-1", runId: "run-1" },
-      { ...context(), agentTypeId: "boring-worker" },
-    )
-    expect(result.isError).toBe(true)
-    expect(details(result)).toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.INVALID_BODY })
-    expect(ops.readRunJsonl).not.toHaveBeenCalled()
   })
 
   it("derives scope only from ToolExecContext and lists bounded results", async () => {
@@ -91,43 +74,16 @@ describe("boring_automation agent tool", () => {
     expect(details(result)).toMatchObject({ ok: true, operation: "get", automation: summary, prompt: { text: "prompt" } })
   })
 
-  it("returns exact paginated raw JSONL for a bound run", async () => {
-    const { tool, ops } = harness()
-    const result = await tool.execute({
-      operation: "read_run_jsonl", automationId: "automation-1", runId: "run-1", cursor: 0, limit: 10,
-    }, context())
-    expect(result.isError).toBe(false)
-    expect(ops.readRunJsonl).toHaveBeenCalledWith("automation-1", "run-1", 0, 10, expect.any(AbortSignal))
-    expect(details(result)).toEqual({
-      ok: true, operation: "read_run_jsonl", lines: ['{"type":"session"}'], nextCursor: 1,
-      hasMore: false, runStatus: "succeeded", sessionId: "session-1",
-    })
-  })
-
-  it("reports an in-flight raw transcript cancellation as tool aborted", async () => {
-    const controller = new AbortController()
-    const ops = operations()
-    ops.readRunJsonl = vi.fn(async () => {
-      controller.abort()
-      throw Object.assign(new Error("aborted"), { name: "AbortError", code: "ABORT_ERR" })
-    })
-    const result = await harness(ops).tool.execute({
-      operation: "read_run_jsonl", automationId: "automation-1", runId: "run-1",
-    }, context(controller))
-    expect(result.isError).toBe(true)
-    expect(details(result)).toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.TOOL_ABORTED })
-  })
-
   it("supports create with prompt, effort, enabled state, and explicit model", async () => {
     const { tool, ops } = harness()
     const input = {
       operation: "create", title: "Daily", enabled: false, cron: "0 9 * * *", timezone: "UTC",
-      model: "anthropic:claude-sonnet", sessionMode: "new" as const, thinkingLevel: "high", prompt: "Summarize",
+      model: "anthropic:claude-sonnet", thinkingLevel: "high", prompt: "Summarize",
     }
     const result = await tool.execute(input, context())
     expect(result.isError).toBe(false)
     const called = vi.mocked(ops.create).mock.calls[0]![0]
-    expect(called).toEqual({ title: "Daily", enabled: false, cron: "0 9 * * *", timezone: "UTC", model: "anthropic:claude-sonnet", thinkingLevel: "high", sessionMode: "new", prompt: "Summarize" })
+    expect(called).toEqual({ title: "Daily", enabled: false, cron: "0 9 * * *", timezone: "UTC", model: "anthropic:claude-sonnet", thinkingLevel: "high", prompt: "Summarize" })
     expect(details(result)).toMatchObject({ ok: true, operation: "create", automation: summary })
   })
 

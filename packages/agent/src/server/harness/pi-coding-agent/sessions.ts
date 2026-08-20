@@ -30,11 +30,8 @@ import {
   type SessionSummary,
   type SessionDetail,
   type SessionListOptions,
-  type SessionJsonlPage,
-  type SessionJsonlPageInput,
 } from "../../../shared/session.js";
 import { appendVerifiedNativeRename } from "./nativeSessionRename.js";
-import { readRawJsonlPageFile } from "./rawJsonlPager.js";
 import {
   latestNativeMessageTimestamp,
   summarizeNativeTranscript,
@@ -516,16 +513,6 @@ export class PiSessionStore implements SessionStore {
     } catch {
       return null;
     }
-  }
-
-  async readRawJsonlPage(ctx: SessionCtx, sessionId: string, input: SessionJsonlPageInput): Promise<SessionJsonlPage> {
-    if (!Number.isInteger(input.cursor) || input.cursor < 0) throw new TypeError("invalid JSONL cursor");
-    if (!Number.isInteger(input.limit) || input.limit < 1) throw new TypeError("invalid JSONL limit");
-    if (!Number.isInteger(input.maxBytes) || input.maxBytes < 1) throw new TypeError("invalid JSONL byte limit");
-    const wrapperFilepath = await this.resolveSessionFile(sessionId, ctx);
-    const wrapperEntries = parseJsonlPrefixEntries(await readJsonlPrefix(wrapperFilepath));
-    const filepath = extractPiSessionFilePath(wrapperEntries) ?? wrapperFilepath;
-    return await readRawJsonlPageFile(filepath, input);
   }
 
   async loadPiSessionFile(ctx: SessionCtx, sessionId: string): Promise<string | null> {

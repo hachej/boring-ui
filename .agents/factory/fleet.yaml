@@ -67,8 +67,7 @@ models:
 
 seats:
   # The owner's standing counterpart: pinned, conversational, full authority.
-  # Dispatches work and normally reads bead end-states. A host-granted, run-scoped
-  # raw JSONL diagnostic is the only transcript exception; records stay untrusted.
+  # Dispatches work and reads bead END-STATES only.
   - seat: orchestrator
     agentTypeId: boring-orchestrator
     skills:

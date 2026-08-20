@@ -119,20 +119,6 @@ export interface ReadAgentSessionStateInput {
   readonly ref: AgentSessionRef
 }
 
-export interface ReadAgentSessionJsonlInput extends ReadAgentSessionStateInput {
-  readonly cursor: number
-  readonly limit: number
-  readonly maxBytes: number
-  readonly signal?: AbortSignal
-}
-
-export interface AgentSessionJsonlPage {
-  readonly ref: AgentSessionRef
-  readonly lines: readonly string[]
-  readonly nextCursor: number
-  readonly hasMore: boolean
-}
-
 export interface RenameAgentSessionInput {
   readonly scope: AuthorizedAgentScope
   readonly ref: AgentSessionRef
@@ -223,8 +209,6 @@ export interface AgentGateway {
   createSession(input: CreateAgentSessionInput): Promise<AgentSessionRef>
   connectSession(input: ConnectAgentSessionInput): Promise<AgentSessionConnection>
   readSessionState(input: ReadAgentSessionStateInput): Promise<AgentSessionStateSnapshot>
-  /** Optional trusted raw transcript capability; never projected as a public Agent route. */
-  readSessionJsonlPage?(input: ReadAgentSessionJsonlInput): Promise<AgentSessionJsonlPage>
   renameSession(input: RenameAgentSessionInput): Promise<AgentSessionSummary>
   deleteSession(input: DeleteAgentSessionInput): Promise<void>
   close(): Promise<void>

@@ -125,7 +125,6 @@ export type SendMessageInput = AgentSendInput & {
 export interface RunContext {
   abortSignal: AbortSignal
   workdir: string
-  agentTypeId?: string
   workspaceId?: string
   requestId?: string
   userId?: string

@@ -7,7 +7,6 @@ import {
   type AgentSessionActivity,
   type AgentSessionConnection,
   type AgentSessionEvent,
-  type AgentSessionJsonlPage,
   type AgentSessionRef,
   type AgentSessionStateSnapshot,
   type AgentSessionSummary,
@@ -360,31 +359,6 @@ export class EmbeddedAgentGateway implements AgentGateway {
       seq: state.seq,
       summary: summaryFromLegacy(input.ref, loaded, status),
       state: state as unknown as AgentSessionStateSnapshot['state'],
-    }
-  }
-
-  async readSessionJsonlPage(input: {
-    scope: AuthorizedAgentScope
-    ref: AgentSessionRef
-    cursor: number
-    limit: number
-    maxBytes: number
-    signal?: AbortSignal
-  }): Promise<AgentSessionJsonlPage> {
-    const claim = await this.verify(input.scope)
-    const binding = await this.bindingForSession(input.scope, claim, input.ref)
-    const repository = binding.composition.sessionStore
-    if (!repository.readRawJsonlPage) {
-      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'session repository does not support raw JSONL reads')
-    }
-    try {
-      const page = await repository.readRawJsonlPage(
-        { workspaceId: claim.workspaceScopeId }, input.ref.sessionId, input,
-      )
-      return { ref: input.ref, ...page }
-    } catch (error) {
-      if (input.signal?.aborted || error instanceof TypeError || error instanceof RangeError) throw error
-      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     }
   }
 

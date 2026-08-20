@@ -282,7 +282,6 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
         runContext: {
           abortSignal: new AbortController().signal,
           workdir: binding.composition.runtimeBundle.workspace.root,
-          agentTypeId,
           workspaceId: claim.workspaceScopeId,
           requestId: request.id,
           userId: claim.authSubjectId,
@@ -351,7 +350,6 @@ export function createAgentHostRuntimeCapabilityProjection(input: {
           await binding.composition.harness.executeSlashCommand!(sessionId, name, args, {
             abortSignal: new AbortController().signal,
             workdir: binding.composition.runtimeBundle.workspace.root,
-            agentTypeId,
             workspaceId: scope.workspaceScopeId,
             requestId,
             userId: scope.authSubjectId,

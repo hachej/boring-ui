@@ -62,7 +62,6 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
             ? (partial) => onUpdate({ content: [{ type: "text", text: partial }], details: undefined })
             : undefined,
           sessionId,
-          agentTypeId: runContext?.agentTypeId,
           userId: runContext?.userId,
           userEmail: runContext?.userEmail,
           userEmailVerified: runContext?.userEmailVerified,

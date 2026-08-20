@@ -48,7 +48,6 @@ test('RunContext contract', () => {
   expectTypeOf<RunContext>().toEqualTypeOf<{
     abortSignal: AbortSignal
     workdir: string
-    agentTypeId?: string
     workspaceId?: string
     requestId?: string
     userId?: string
@@ -60,7 +59,6 @@ test('RunContext contract', () => {
 
   expectTypeOf<RunContext['abortSignal']>().toEqualTypeOf<AbortSignal>()
   expectTypeOf<RunContext['workdir']>().toEqualTypeOf<string>()
-  expectTypeOf<RunContext['agentTypeId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['workspaceId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['userId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['userEmail']>().toEqualTypeOf<string | undefined>()

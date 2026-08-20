@@ -118,7 +118,7 @@ describe("AutomationOperations", () => {
   })
 
   it("joins dispatch runs with transcript-redacted session health", async () => {
-    const store = storeMock({ listRuns: vi.fn(async () => [run({ status: "running", trigger: "dispatch" })]) })
+    const store = storeMock({ listRuns: vi.fn(async () => [run({ status: "running", trigger: "manual" })]) })
     const sessionController = {
       list: vi.fn(async () => [{ ref: { agentTypeId: "default", sessionId: "session-1" }, title: "[br-1276] worker", status: "running" as const, createdAt: Date.now() - 20_000, updatedAt: Date.now() - 5_000 }]),
       nudge: vi.fn(async () => {}),
@@ -129,7 +129,7 @@ describe("AutomationOperations", () => {
     const listed = await operations.listDispatchRuns!(10)
 
     expect(listed.items).toEqual([expect.objectContaining({
-      trigger: "dispatch",
+      trigger: "manual",
       sessionId: "session-1",
       sessionTitle: "[br-1276] worker",
       sessionStatus: "running",
@@ -206,16 +206,16 @@ describe("AutomationOperations", () => {
   })
 
   it("durably admits a detached dispatch as the bound actor without awaiting its worker", async () => {
-    const queued = run({ status: "dispatching", trigger: "dispatch", sessionId: null, startedAt: null, completedAt: null })
+    const queued = run({ status: "dispatching", trigger: "manual", sessionId: null, startedAt: null, completedAt: null })
     const executor = { run: vi.fn(async () => { throw new Error("detached tool must not await run") }), start: vi.fn(async () => queued) }
     const actor = { workspaceId: "workspace-1", userId: "user-1" }
     const operations = createAutomationOperations({ store: storeMock(), actor, executor })
 
     const result = await operations.run("automation-1")
 
-    expect(executor.start).toHaveBeenCalledWith({ automationId: "automation-1", actor, trigger: "dispatch" })
+    expect(executor.start).toHaveBeenCalledWith({ automationId: "automation-1", actor, trigger: "manual" })
     expect(executor.run).not.toHaveBeenCalled()
-    expect(result).toMatchObject({ status: "dispatching", trigger: "dispatch", sessionId: null })
+    expect(result).toMatchObject({ status: "dispatching", trigger: "manual", sessionId: null })
     expect(result).not.toHaveProperty("promptSnapshot")
     expect(result).not.toHaveProperty("modelSnapshot")
   })
@@ -238,38 +238,6 @@ describe("AutomationOperations", () => {
     expect(result.items).toHaveLength(1)
     expect(result.items[0]).not.toHaveProperty("promptSnapshot")
     expect(result.items[0]).not.toHaveProperty("modelSnapshot")
-  })
-
-  it("reads a bounded exact JSONL page only through the run-bound transcript reader", async () => {
-    const transcriptReader = { read: vi.fn(async () => ({
-      lines: ['{"type":"session"}', '{"type":"message"}'], nextCursor: 4, hasMore: true,
-    })) }
-    const getRun = vi.fn(async () => run())
-    const operations = createAutomationOperations({
-      store: storeMock({ getRun }), actor: { workspaceId: "w", userId: "u" }, transcriptReader,
-    })
-
-    await expect(operations.readRunJsonl!("automation-1", "run-1", 2, 2)).resolves.toEqual({
-      lines: ['{"type":"session"}', '{"type":"message"}'],
-      nextCursor: 4, hasMore: true, runStatus: "succeeded", sessionId: "session-1",
-    })
-    expect(getRun).toHaveBeenCalledWith("automation-1", "run-1")
-    expect(transcriptReader.read).toHaveBeenCalledWith(expect.objectContaining({
-      automation: expect.objectContaining({ id: "automation-1" }),
-      run: expect.objectContaining({ id: "run-1", sessionId: "session-1" }),
-      cursor: 2, limit: 2, maxBytes: 512 * 1024,
-    }))
-  })
-
-  it("rejects transcript reads without an immutable dispatch receipt", async () => {
-    const operations = createAutomationOperations({
-      store: storeMock({ getRun: vi.fn(async () => run({ dispatchReceipt: null })) }),
-      actor: { workspaceId: "w", userId: "u" },
-      transcriptReader: { read: vi.fn() },
-    })
-    await expect(operations.readRunJsonl!("automation-1", "run-1")).rejects.toMatchObject({
-      code: BORING_AUTOMATION_ERROR_CODES.TOOL_CONTEXT_UNAVAILABLE,
-    })
   })
 
   it("preserves store not-found errors", async () => {

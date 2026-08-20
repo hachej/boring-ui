@@ -62,8 +62,6 @@ export interface HarnessPiChatServiceOptions {
   harness: AgentHarness
   sessionStore: SessionStore
   workdir: string
-  /** Server-owned seat identity projected into tool execution context. */
-  agentTypeId?: string
   workspace?: Workspace
   eventStore?: EventStreamStore
   /**
@@ -92,7 +90,6 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly harness: PiNativeHarness
   private readonly sessionStore: PiSessionStoreLike
   private readonly workdir: string
-  private readonly agentTypeId?: string
   private readonly workspace?: Workspace
   private readonly eventStore?: EventStreamStore
   private readonly onEvent?: (sessionId: string, event: PiChatEvent) => void
@@ -119,7 +116,6 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.harness = options.harness as PiNativeHarness
     this.sessionStore = options.sessionStore
     this.workdir = options.workdir
-    this.agentTypeId = options.agentTypeId
     this.workspace = options.workspace
     this.eventStore = options.eventStore
     this.onEvent = options.onEvent
@@ -871,7 +867,6 @@ export class HarnessPiChatService implements PiChatSessionService {
     const adapter = await this.harness.getPiSessionAdapter(sendInput, {
       abortSignal: new AbortController().signal,
       workdir: this.workdir,
-      agentTypeId: this.agentTypeId,
       workspaceId: ctx.workspaceId,
       requestId: ctx.requestId,
       userId: ctx.authSubject,
