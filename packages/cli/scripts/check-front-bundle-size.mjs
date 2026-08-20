@@ -42,19 +42,20 @@ const startupBytes = [...startupFiles].reduce((total, file) => total + statSync(
 // The CLI waits for these default front descriptors before mounting chat, so
 // their static closures are mandatory pre-chat work even though Vite represents
 // the descriptor entries as dynamic imports from the application entry.
-const defaultFrontSourceFragments = [
-  "plugins/ask-user/src/front/index",
-  "plugins/boring-automation/src/front/index",
-  "plugins/diagram/src/front/index",
-  "plugins/tasks/dist/front/index",
-  "plugins/live-transcription/src/front/index",
+const defaultFrontSourceGroups = [
+  ["plugins/ask-user/src/front/index"],
+  ["plugins/boring-automation/src/front/index"],
+  ["plugins/diagram/src/front/index"],
+  ["plugins/tasks/dist/front/index", "plugins/tasks/src/front/index"],
+  ["plugins/live-transcription/src/front/index"],
 ]
-const defaultFrontEntries = Object.entries(manifest)
-  .filter(([key]) => defaultFrontSourceFragments.some((fragment) => key.includes(fragment)))
-  .map(([, chunk]) => chunk)
-if (defaultFrontEntries.length !== defaultFrontSourceFragments.length) {
-  throw new Error(`CLI bundle budget: expected ${defaultFrontSourceFragments.length} default front entries, found ${defaultFrontEntries.length}`)
-}
+const defaultFrontEntries = defaultFrontSourceGroups.map((fragments) => {
+  const matches = Object.entries(manifest).filter(([key]) => fragments.some((fragment) => key.includes(fragment)))
+  if (matches.length !== 1) {
+    throw new Error(`CLI bundle budget: expected one default front entry matching ${fragments.join(" or ")}, found ${matches.length}`)
+  }
+  return matches[0][1]
+})
 const preChatFiles = new Set(startupFiles)
 for (const chunk of defaultFrontEntries) collectStaticImports(chunk, preChatFiles)
 const preChatBytes = [...preChatFiles].reduce((total, file) => total + statSync(new URL(file, publicDir)).size, 0)
