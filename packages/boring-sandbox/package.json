@@ -72,8 +72,8 @@
   },
   "dependencies": {
     "@blaxel/core": "0.3.11",
-    "@vercel/blob": "^2.5.0",
-    "@vercel/sandbox": "2.9.2",
+    "@vercel/blob": "^2.8.0",
+    "@vercel/sandbox": "3.0.0",
     "chokidar": "^5.0.0",
     "zod": "^3.25.76"
   },
@@ -83,7 +83,7 @@
   "devDependencies": {
     "@types/node": "^22.20.0",
     "tsup": "^8.4.0",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.9"
   }
 }
