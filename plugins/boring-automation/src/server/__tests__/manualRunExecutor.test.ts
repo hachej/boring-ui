@@ -136,6 +136,20 @@ describe("ManualRunExecutor", () => {
     expect(run.note).toContain("session-1 was unavailable")
   })
 
+  it("does not fork a continuation for the retired runtime-scope mismatch code", async () => {
+    const harness = createHarness({ sessionMode: "continue" })
+    await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+    const mismatch = Object.assign(new Error("obsolete runtime mismatch"), { code: "AGENT_SESSION_RUNTIME_SCOPE_MISMATCH" })
+    harness.dispatcher.dispatch.mockRejectedValueOnce(mismatch)
+
+    const run = await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+
+    expect(harness.dispatcher.dispatch).toHaveBeenCalledTimes(2)
+    expect(harness.dispatcher.dispatch).toHaveBeenNthCalledWith(2, expect.objectContaining({ sessionId: "session-1" }))
+    expect(run).toMatchObject({ status: "failed", sessionId: null, error: "obsolete runtime mismatch" })
+    expect(run.note).toBeUndefined()
+  })
+
   it("uses canonical prompt and model snapshots from the store", async () => {
     const harness = createHarness({ prompt: "canonical prompt", model: "anthropic:claude-sonnet" })
 

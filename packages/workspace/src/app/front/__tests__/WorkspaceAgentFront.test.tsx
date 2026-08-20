@@ -680,6 +680,9 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByRole("button", { name: "New chat with Beta" })).toBeInTheDocument()
       expect(screen.getAllByText("Alpha one").length).toBeGreaterThan(0)
     })
+    // Fleet cards own Agent-specific settings; the generic single-Agent menu
+    // must not compete with them in the primary navigation.
+    expect(within(screen.getByLabelText("App navigation")).queryByRole("button", { name: "Agent" })).not.toBeInTheDocument()
     // Chats nest under their Agent: the addressed Agent (Alpha) starts
     // disclosed, other owners' chats appear only after expanding their row.
     expect(screen.getAllByText("Alpha one").length).toBeGreaterThan(0)
@@ -1210,9 +1213,33 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="agent-page"]')).not.toBeNull())
 
     unmount()
-    render(<WorkspaceAgentFront {...props} />)
+    const restored = render(<WorkspaceAgentFront {...props} />)
 
     await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="agent-page"]')).not.toBeNull())
+
+    // The persisted generic Agent overlay belongs to single-Agent mode. A fleet
+    // must ignore and clear it rather than flashing the wrong settings surface.
+    restored.unmount()
+    const useAgentSelection = () => ({
+      agents: [
+        { agentTypeId: "alpha", label: "Alpha" },
+        { agentTypeId: "beta", label: "Beta" },
+      ],
+      selectedAgentTypeId: "alpha",
+      loading: false,
+      error: undefined,
+      selectAgentTypeId: vi.fn(),
+    })
+    render(
+      <WorkspaceAgentFront
+        {...props}
+        addressedAgentSelection
+        useAddressedAgentSelection={useAgentSelection}
+      />,
+    )
+
+    expect(document.querySelector('[data-boring-workspace-part="agent-page"]')).toBeNull()
+    expect(within(screen.getByLabelText("App navigation")).queryByRole("button", { name: "Agent" })).not.toBeInTheDocument()
   })
 
   it.each([
@@ -2279,8 +2306,8 @@ describe("WorkspaceAgentFront", () => {
         activeSessionId,
         activeSession: sessions.find((session) => session.id === activeSessionId) ?? null,
         switch: vi.fn(),
-        create: async () => {
-          createSession()
+        create: async (input?: { title?: string; resumeSessionId?: string }) => {
+          createSession(input)
           const session = { id: "sess-fresh", title: "Fresh session" }
           setSessions((current) => [session, ...current])
           setActiveSessionId(session.id)
@@ -2307,6 +2334,7 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(createSession).toHaveBeenCalledOnce()
     })
+    expect(createSession.mock.calls[0]?.[0]).not.toHaveProperty("agentTypeId")
     await waitFor(() => {
       expect(getCapturedChatProps()?.sessionId).toBe("sess-fresh")
     })

@@ -79,8 +79,7 @@ const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 const TRUSTED_LOCAL_USER_ID = "local";
 
 type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
-type RuntimePinnedSessionCtx = SessionCtx & { runtimeScopeIdentity?: string };
-type StoredSessionCtx = RuntimePinnedSessionCtx | null;
+type StoredSessionCtx = SessionCtx | null;
 
 interface PrefixCacheEntry {
   mtimeMs: number;
@@ -123,8 +122,8 @@ export interface PiSessionStoreOptions {
   sessionRoot?: string;
   /** Host/storage cwd used only to derive the default file-backed session directory. */
   storageCwd?: string;
-  /** Explicit runtime capability for unpinned native transcripts in a non-derived local store. */
-  trustedNativeRuntimeScopeIdentity?: string;
+  /** Trusted-local capability for bare native Pi transcripts in an explicit store. */
+  allowUnscopedNativeAccess?: boolean;
 }
 
 export class PiSessionStore implements SessionStore {
@@ -132,7 +131,7 @@ export class PiSessionStore implements SessionStore {
   private sessionDir: string;
   private allowLegacyUnscopedAccess: boolean;
   private pathDerivedLegacyAccess: boolean;
-  private trustedNativeRuntimeScopeIdentity: string | undefined;
+  private allowUnscopedNativeAccess: boolean;
   private prefixCache = new Map<string, PrefixCacheEntry>();
   private listInFlight = new Map<string, Promise<SessionSummary[]>>();
   private writerTails = new Map<string, Promise<void>>();
@@ -143,13 +142,13 @@ export class PiSessionStore implements SessionStore {
       this.sessionDir = options;
       this.allowLegacyUnscopedAccess = true;
       this.pathDerivedLegacyAccess = false;
-      this.trustedNativeRuntimeScopeIdentity = undefined;
+      this.allowUnscopedNativeAccess = false;
       return;
     }
     this.allowLegacyUnscopedAccess = true;
     this.pathDerivedLegacyAccess = options?.sessionDir === undefined
       && options?.sessionNamespace === undefined;
-    this.trustedNativeRuntimeScopeIdentity = options?.trustedNativeRuntimeScopeIdentity?.trim() || undefined;
+    this.allowUnscopedNativeAccess = options?.allowUnscopedNativeAccess === true;
     this.sessionDir = options?.sessionDir
       ?? (options?.sessionNamespace
         ? sessionDirForNamespace(options.sessionNamespace, options.sessionRoot)
@@ -160,14 +159,14 @@ export class PiSessionStore implements SessionStore {
     return this.sessionDir;
   }
 
-  /** Reads the Host execution pin from authoritative session metadata. */
-  async readRuntimeScopeIdentity(ctx: SessionCtx, sessionId: string): Promise<string | undefined> {
-    const filepath = await this.resolveSessionFile(sessionId, ctx);
-    const entries = parseJsonlPrefixEntries(await readJsonlPrefix(filepath));
-    const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
-    const directNative = isTimestampNamedPiSessionFile(filepath, header?.id ?? sessionId);
-    if (!this.headerBelongsToCtx(header, ctx, directNative)) throw new Error(`Session not found: ${sessionId}`);
-    return readHeaderRuntimeScopeIdentity(header);
+  async has(ctx: SessionCtx, sessionId: string): Promise<boolean> {
+    try {
+      await this.resolveSessionFile(sessionId, ctx);
+      return true;
+    } catch (error) {
+      if (error instanceof Error && error.message === `Session not found: ${sessionId}`) return false;
+      throw error;
+    }
   }
 
   async list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]> {
@@ -233,7 +232,7 @@ export class PiSessionStore implements SessionStore {
 
     const id = randomUUID();
     const now = new Date().toISOString();
-    const header: SessionHeader & { boringSessionCtx: RuntimePinnedSessionCtx } = {
+    const header: SessionHeader & { boringSessionCtx: SessionCtx } = {
       type: "session",
       version: CURRENT_SESSION_VERSION,
       id,
@@ -625,7 +624,7 @@ export class PiSessionStore implements SessionStore {
     // wrapper minted for whichever ctx happened to read it first.
     if (ctx && (
       this.pathDerivedLegacyAccess
-      || this.hasTrustedNativeRuntimeCapability(ctx)
+      || this.allowUnscopedNativeAccess
       || await this.nativeFilePin(matchedPath) !== null
     )) {
       await this.assertFileBelongsToCtx(matchedPath, ctx, sessionId);
@@ -1015,28 +1014,19 @@ export class PiSessionStore implements SessionStore {
 
   /**
    * A bare Pi transcript carries no tenancy, so only a path-derived trusted
-   * local store may reach it. Boring-created native transcripts carry an exact
-   * persisted tenancy/runtime pin and remain reachable by hosted/namespaced
-   * stores without minting a compatibility wrapper.
+   * local store may reach it. Boring-created native transcripts carry exact
+   * persisted tenancy and remain reachable by hosted/namespaced stores without
+   * minting a compatibility wrapper.
    */
   private nativeFileBelongsToCtx(header: SessionHeader | undefined, ctx: SessionCtx): boolean {
     const pinned = readHeaderSessionCtx(header);
-    if (pinned === null && this.hasTrustedNativeRuntimeCapability(ctx)) return true;
+    if (pinned === null && this.allowUnscopedNativeAccess) return true;
     // Main's path-derived store is itself a trusted-local capability: terminal
     // Pi and the local app intentionally share its unscoped/workspace-pinned
     // transcripts. Explicit/namespaced hosted stores keep the stricter native
     // gate from this branch and require an exact persisted tenancy pin.
     if (this.pathDerivedLegacyAccess) return this.storedCtxBelongsToCtx(pinned, ctx);
     return pinned !== null && sameSessionCtx(pinned, ctx);
-  }
-
-  private hasTrustedNativeRuntimeCapability(ctx: SessionCtx): boolean {
-    const runtimeScopeIdentity = (ctx as RuntimePinnedSessionCtx).runtimeScopeIdentity?.trim();
-    return Boolean(
-      runtimeScopeIdentity
-      && this.trustedNativeRuntimeScopeIdentity
-      && runtimeScopeIdentity === this.trustedNativeRuntimeScopeIdentity,
-    );
   }
 
   /** The Boring tenancy pin on a native transcript, or null when unpinned. */
@@ -1116,26 +1106,14 @@ function readHeaderSessionCtx(header: SessionHeader | undefined): StoredSessionC
   if (!header || !Object.prototype.hasOwnProperty.call(header, "boringSessionCtx")) return null;
   const raw = (header as { boringSessionCtx?: unknown }).boringSessionCtx;
   if (!raw || typeof raw !== "object") return {};
-  return normalizeSessionCtx(raw as RuntimePinnedSessionCtx) ?? {};
+  return normalizeSessionCtx(raw as SessionCtx) ?? {};
 }
 
-function readHeaderRuntimeScopeIdentity(header: SessionHeader | undefined): string | undefined {
-  const raw = (header as { boringSessionCtx?: { runtimeScopeIdentity?: unknown } } | undefined)
-    ?.boringSessionCtx?.runtimeScopeIdentity;
-  if (raw === undefined) return undefined;
-  if (typeof raw !== "string" || !raw.trim()) throw new Error("Session runtime scope identity is invalid");
-  return raw;
-}
-
-function normalizeSessionCtx(ctx: RuntimePinnedSessionCtx | undefined): RuntimePinnedSessionCtx | undefined {
-  const runtimeScopeIdentity = typeof ctx?.runtimeScopeIdentity === "string" && ctx.runtimeScopeIdentity.trim()
-    ? ctx.runtimeScopeIdentity
-    : "";
-  if (!ctx?.workspaceId && !ctx?.userId && !runtimeScopeIdentity) return undefined;
+function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
+  if (!ctx?.workspaceId && !ctx?.userId) return undefined;
   return {
-    ...(ctx?.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
-    ...(ctx?.userId ? { userId: ctx.userId } : {}),
-    ...(runtimeScopeIdentity ? { runtimeScopeIdentity } : {}),
+    ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
+    ...(ctx.userId ? { userId: ctx.userId } : {}),
   };
 }
 
@@ -1160,7 +1138,7 @@ function buildNativePiSessionWrapper(
 ): string {
   const nativeHeader = entries.find((entry): entry is SessionHeader => entry.type === "session");
   const timestamp = nativeHeader?.timestamp ?? new Date().toISOString();
-  const header: SessionHeader & { boringSessionCtx?: RuntimePinnedSessionCtx } = {
+  const header: SessionHeader & { boringSessionCtx?: SessionCtx } = {
       type: "session",
       version: CURRENT_SESSION_VERSION,
       id: sessionId,

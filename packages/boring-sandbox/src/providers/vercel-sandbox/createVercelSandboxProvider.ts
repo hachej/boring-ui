@@ -603,6 +603,7 @@ export function createVercelSandboxProvider(
 
         workspace = createVercelSandboxWorkspace(sandboxHandle, {
           onMutation: markDirty,
+          logger,
         })
 
         // Fresh Vercel sandboxes do not guarantee our logical workspace root

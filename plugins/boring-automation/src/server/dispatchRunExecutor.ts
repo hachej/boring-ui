@@ -320,7 +320,6 @@ function isContinuationUnavailable(error: unknown): boolean {
   return code === "AGENT_SESSION_NOT_FOUND"
     || code === "AGENT_COMMAND_INVALID_STATE"
     || code === "AGENT_SCOPE_DENIED"
-    || code === "AGENT_SESSION_RUNTIME_SCOPE_MISMATCH"
 }
 
 function startRunHeartbeat(store: AutomationStore, runId: string): () => Promise<void> {

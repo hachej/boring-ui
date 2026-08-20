@@ -83,6 +83,57 @@ export interface ResolvedWorkspacePackageResourceRegistry {
   locateSkill(filePath: string): AgentSkillResource | undefined
 }
 
+export interface ResolvedAgentPackageResourceView {
+  readonly generation: string
+  readonly skills: readonly ResolvedAgentPackageSkill[]
+  readonly managedSkills: readonly ResolvedAgentManagedSkill[]
+  readonly additionalSkillPaths: readonly string[]
+  readonly readonlyMounts: readonly AgentResourceReadonlyMount[]
+  readonly systemPrompts: readonly string[]
+  locateSkill(filePath: string): AgentSkillResource | undefined
+}
+
+/**
+ * Selects one internally-consistent Agent view from an immutable registry.
+ * Shared host skills are global; package skills and prompts follow plugin grants.
+ */
+export function selectAgentPackageResourceView(
+  registry: ResolvedWorkspacePackageResourceRegistry,
+  policy: { readonly pluginIds: ReadonlySet<string>; readonly includeAll: boolean },
+): ResolvedAgentPackageResourceView {
+  const selectedSkills = registry.skills.filter((skill) =>
+    skill.packageName === 'shared/pi-agent'
+    || policy.includeAll
+    || skill.pluginIds.some((pluginId) => policy.pluginIds.has(pluginId)),
+  )
+  const selectedResourcePaths = new Set(selectedSkills.map((skill) => skill.resource.path))
+  return Object.freeze({
+    generation: registry.generation,
+    skills: selectedSkills,
+    managedSkills: selectedSkills.flatMap((skill) => skill.name ? [{
+      name: skill.name,
+      description: skill.description ?? '',
+      resource: skill.resource,
+      invocable: false as const,
+      source: skill.packageName,
+    }] : []),
+    additionalSkillPaths: [...new Set(selectedSkills
+      .filter((skill) => skill.packageName !== 'shared/pi-agent')
+      .map((skill) => skill.mountRoot))],
+    readonlyMounts: selectedSkills.map((skill) => ({
+      logicalRoot: posix.dirname(skill.resource.path),
+      sourceRoot: skill.mountRoot,
+    })),
+    systemPrompts: registry.systemPrompts
+      .filter((prompt) => policy.includeAll || prompt.pluginIds.some((pluginId) => policy.pluginIds.has(pluginId)))
+      .map((prompt) => prompt.content),
+    locateSkill(filePath: string) {
+      const resource = registry.locateSkill(filePath)
+      return resource && selectedResourcePaths.has(resource.path) ? resource : undefined
+    },
+  })
+}
+
 function invalid(packageName: string, reason: string): WorkspacePackageResourceRegistryError {
   return new WorkspacePackageResourceRegistryError(
     PACKAGE_RESOURCE_INVALID_CODE,
@@ -205,6 +256,9 @@ export async function resolveWorkspacePackageResources(
   }>()
 
   for (const contribution of contributions) {
+    if (contribution.packageName === 'shared/pi-agent') {
+      throw invalid(contribution.packageName, 'package name is reserved for host-owned shared skills')
+    }
     const requestedRoot = packageRootPath(contribution.packageRoot, contribution.packageName)
     const canonicalRoot = await realpath(requestedRoot).catch(() => {
       throw invalid(contribution.packageName, 'packageRoot is not readable')
@@ -417,11 +471,11 @@ export async function enumerateExternalSkillFiles(
   return [...files.values()]
 }
 
-export async function resolveWorkspacePackageResourceSnapshot<TBinding>(input: {
+export async function resolveWorkspacePackageResourceSnapshot<TBinding = never>(input: {
   readonly declared: readonly WorkspacePackageResourceRecord[]
   readonly scanned: readonly WorkspacePackageResourceRecord[]
   readonly sharedSkillPaths?: readonly { readonly id: string; readonly skillFile: string }[]
-  readonly createBinding: (mounts: readonly AgentResourceReadonlyMount[]) => Promise<TBinding>
+  readonly createBinding?: (mounts: readonly AgentResourceReadonlyMount[]) => Promise<TBinding>
 }): Promise<{
   readonly registry: ResolvedWorkspacePackageResourceRegistry
   readonly binding?: TBinding
@@ -444,7 +498,7 @@ export async function resolveWorkspacePackageResourceSnapshot<TBinding>(input: {
   const registry = await resolveWorkspacePackageResources([...input.declared, ...accepted], {
     sharedSkillPaths: input.sharedSkillPaths,
   })
-  const binding = registry.readonlyMounts.length > 0
+  const binding = registry.readonlyMounts.length > 0 && input.createBinding
     ? await input.createBinding(registry.readonlyMounts)
     : undefined
   return Object.freeze({ registry, ...(binding ? { binding } : {}), diagnostics })

@@ -3,6 +3,7 @@ import { resolve } from "node:path"
 import { expect } from "@playwright/test"
 import type { UiReviewSpec } from "../../core/reviewSpec"
 import type { UiReviewViewport } from "../../core/contracts"
+import { hexadecimalHammingDistance } from "../../core/imageHash"
 import { observeBrowserDocument } from "../../core/browserObservation"
 import { observeCommandPaletteSurface } from "./browserObservation"
 import { COMMAND_PALETTE_HARD_GATE_CONTRACT, evaluateCommandPaletteHardGates, validateCommandPaletteHardGateReport, type UiHardGateSnapshot } from "./hardGates"
@@ -15,7 +16,7 @@ const viewports: UiReviewViewport[] = [
 
 export const workspaceCommandPaletteSpec: UiReviewSpec = {
   id: "workspace-command-palette",
-  specRevision: "workspace-command-palette-v2",
+  specRevision: "workspace-command-palette-v3",
   fixtureResetId: "workspace-playground-e2e-fresh-v1",
   rubricVersion: "impeccable-v1",
   target: {
@@ -83,10 +84,29 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
   },
   exploration: {
     bombadilSpecPath: resolve(import.meta.dirname, "bombadil.spec.ts"),
+    normalizeReplayState: (state) => {
+      const palette = state.palette
+      if (!palette || typeof palette !== "object" || Array.isArray(palette)) return state
+      const durablePalette = { ...palette } as Record<string, unknown>
+      delete durablePalette.workspaceReady
+      delete durablePalette.lastActionWasPaletteOpen
+      delete durablePalette.lastActionWasInitial
+      durablePalette.controls = Array.isArray(durablePalette.controls)
+        ? durablePalette.controls.flatMap((control) => (
+            control && typeof control === "object" && !Array.isArray(control)
+              && typeof (control as Record<string, unknown>).name === "string"
+              ? [(control as Record<string, unknown>).name]
+              : []
+          ))
+        : []
+      return { ...state, palette: durablePalette }
+    },
     ready: async (page, timeoutMs) => {
       await Promise.all([
         expect(page.getByRole("main", { name: "Chat" })).toBeVisible({ timeout: timeoutMs }),
-        expect(page.locator("button").filter({ hasText: /^Search/ }).first()).toBeVisible({ timeout: timeoutMs }),
+        expect(page.locator(
+          'button[aria-label="Search catalogs and commands"], button[data-boring-app-left-nav-key="search"]',
+        ).first()).toBeVisible({ timeout: timeoutMs }),
       ])
     },
     selectReplayState: (states) => {
@@ -103,20 +123,21 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
       const waits = dialogStates
         .filter((state) => state.action === "Wait")
         .sort((left, right) => left.ordinal - right.ordinal)
-      // The first Wait after opening can observe the dialog in the DOM before
-      // Chromium has painted it. Keep the short replayable Wait path from the
-      // Bombadil spec, but require its encoded screenshot to grow beyond the
-      // latest hydrated closed-workspace frame so the overlay is actually in it.
-      const painted = waits.find((state) => {
+      // DOM visibility can precede paint. Prefer the latest replayable Wait
+      // whose screenshot differs from a prior post-bootstrap closed state;
+      // encoded PNG byte size is not a monotonic paint signal.
+      const painted = [...waits].reverse().find((state) => {
         const closed = ordered.filter((candidate) => {
           const palette = candidate.normalizedState.palette as Record<string, unknown> | undefined
-          return candidate.ordinal < state.ordinal
-            && palette?.workspaceReady === true
-            && palette.dialogVisible === false
+          return (candidate.ordinal > 2 || candidate.action === "Wait")
+            && candidate.ordinal < state.ordinal
+            && palette?.dialogVisible === false
         }).at(-1)
         return closed !== undefined
           && state.screenshotDigest !== closed.screenshotDigest
-          && state.screenshotBytes > closed.screenshotBytes
+          && typeof state.screenshotPHash === "string"
+          && typeof closed.screenshotPHash === "string"
+          && hexadecimalHammingDistance(state.screenshotPHash, closed.screenshotPHash) > 4
       })
       return painted
     },

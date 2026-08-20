@@ -1298,11 +1298,7 @@ function toSessionCtx(ctx: PiSessionRequestContext): SessionCtx {
   if (ctx.sessionAuthority !== 'workspace-scope') {
     return { workspaceId: ctx.workspaceId, userId: ctx.authSubject }
   }
-  const sessionCtx: SessionCtx = { workspaceId: ctx.storageScope ?? ctx.workspaceId }
-  if (ctx.runtimeScopeIdentity) {
-    Object.assign(sessionCtx, { runtimeScopeIdentity: ctx.runtimeScopeIdentity })
-  }
-  return sessionCtx
+  return { workspaceId: ctx.storageScope ?? ctx.workspaceId }
 }
 
 function liveAttachmentKey(sessionId: string, messageId: string, index: number): string {

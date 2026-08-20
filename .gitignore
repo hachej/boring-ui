@@ -130,6 +130,8 @@ packages/workspace/src/plugins/eval-*/
 !/.agents/skills/present-pr/**
 !/.agents/skills/skill-management/
 !/.agents/skills/skill-management/**
+!/.agents/skills/show-me/
+!/.agents/skills/show-me/**
 !/.agents/skills/teach/
 !/.agents/skills/teach/**
 !/.agents/skills/triage/

@@ -11,6 +11,7 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { afterEach, beforeEach, expect, test, describe } from "vitest"
+import type { AgentHarnessFactory } from "@hachej/boring-agent/server"
 import {
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
@@ -370,8 +371,21 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
 
       const res = await app.inject({ method: "GET", url: "/api/v1/agents/default/skills" })
       expect(res.statusCode, res.body).toBe(200)
-      const skillNames: string[] = res.json().skills.map((s: { name: string }) => s.name)
-      expect(skillNames).toContain("boring-plugin-authoring")
+      const skills = res.json().skills as Array<{
+        name: string
+        resource?: { filesystem: string; path: string }
+      }>
+      const authoring = skills.find((skill) => skill.name === "boring-plugin-authoring")
+      expect(authoring?.resource).toMatchObject({ filesystem: "agent_resources" })
+      const file = await app.inject({
+        method: "GET",
+        url: `/api/v1/files?${new URLSearchParams({
+          filesystem: authoring!.resource!.filesystem,
+          path: authoring!.resource!.path,
+        })}`,
+      })
+      expect(file.statusCode, file.body).toBe(200)
+      expect(file.json().content).toContain("boring-plugin-authoring")
     } finally {
       await app.close()
     }
@@ -476,6 +490,173 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
       await app.close()
     }
   }, 15_000)
+
+  test("reload atomically admits package skill and prompt changes through the Host fence", async () => {
+    const workspaceRoot = await makeTempDir("boring-package-resource-route-reload-")
+    const packageRoot = await makeTempDir("boring-package-resource-source-")
+    const writeManifest = async (skills: string[], systemPrompt: string) => {
+      await writeFile(join(packageRoot, "package.json"), JSON.stringify({
+        name: "@example/reload-resource",
+        pi: { skills, systemPrompt },
+      }), "utf8")
+    }
+    await mkdir(join(packageRoot, "skills", "authoring"), { recursive: true })
+    await writeFile(join(packageRoot, "skills", "authoring", "SKILL.md"), [
+      "---",
+      "name: reload-authoring",
+      "description: Initial package skill.",
+      "---",
+      "# Authoring",
+    ].join("\n"), "utf8")
+    await writeManifest(["skills/authoring"], "Initial package prompt.")
+
+    const sessions = new Map<string, {
+      id: string
+      title: string
+      createdAt: string
+      updatedAt: string
+      turnCount: number
+    }>()
+    let activeSystemPrompt = ""
+    const harnessFactory: AgentHarnessFactory = async (input) => {
+      const refreshPrompt = async () => {
+        activeSystemPrompt = [input.systemPromptAppend, await input.systemPromptDynamic?.()]
+          .filter(Boolean)
+          .join("\n\n")
+      }
+      await refreshPrompt()
+      return {
+        id: "package-resource-reload-harness",
+        placement: "server" as const,
+        sessions: {
+          async list() { return [...sessions.values()] },
+          async create(_ctx: unknown, init?: { title?: string }) {
+            const now = new Date().toISOString()
+            const session = {
+              id: `session-${sessions.size + 1}`,
+              title: init?.title ?? "Untitled",
+              createdAt: now,
+              updatedAt: now,
+              turnCount: 0,
+            }
+            sessions.set(session.id, session)
+            return session
+          },
+          async load(_ctx: unknown, sessionId: string) {
+            const session = sessions.get(sessionId)
+            if (!session) throw new Error("session not found")
+            return { ...session, messages: [] }
+          },
+          async delete(_ctx: unknown, sessionId: string) { sessions.delete(sessionId) },
+        },
+        getSystemPrompt() { return activeSystemPrompt },
+        async reloadSession() { await refreshPrompt(); return true },
+        async getSlashCommands() { return [] },
+        async *sendMessage() {},
+      }
+    }
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      harnessFactory,
+      plugins: [serverApi.defineServerPlugin({
+        id: "reload-package-resource",
+        contentDigest: "reload-package-resource-v1",
+        packageResources: [{
+          packageName: "@example/reload-resource",
+          packageRoot,
+        }],
+      })],
+    })
+
+    try {
+      const ready = await app.inject({ method: "GET", url: "/api/v1/agents/default/ready-status" })
+      expect(ready.statusCode, ready.body).toBe(200)
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/sessions",
+        payload: {},
+      })
+      expect(created.statusCode, created.body).toBe(201)
+      const sessionId = created.json().sessionId as string
+      const readSystemPrompt = async () => {
+        const response = await app.inject({
+          method: "GET",
+          url: `/api/v1/agents/default/sessions/${sessionId}/system-prompt`,
+        })
+        expect(response.statusCode, response.body).toBe(200)
+        return response.json().systemPrompt as string
+      }
+      expect(await readSystemPrompt()).toContain("Initial package prompt.")
+
+      await mkdir(join(packageRoot, "skills", "reviewing"), { recursive: true })
+      await writeFile(join(packageRoot, "skills", "reviewing", "SKILL.md"), [
+        "---",
+        "name: reload-reviewing",
+        "description: Added package skill.",
+        "---",
+        "# Reviewing",
+      ].join("\n"), "utf8")
+      await writeManifest(["skills/authoring", "skills/reviewing"], "Updated package prompt.")
+
+      const skillReload = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/reload",
+        payload: { requestId: "package-skill-route-reload" },
+      })
+      expect(skillReload.statusCode, skillReload.body).toBe(200)
+      const skills = await app.inject({ method: "GET", url: "/api/v1/agents/default/skills" })
+      expect(skills.statusCode, skills.body).toBe(200)
+      const reviewing = (skills.json().skills as Array<{
+        name: string
+        resource?: { filesystem: string; path: string }
+      }>).find((skill) => skill.name === "reload-reviewing")
+      expect(reviewing?.resource).toEqual({
+        filesystem: "agent_resources",
+        path: "packages/@example/reload-resource/skills/reviewing/SKILL.md",
+      })
+      const file = await app.inject({
+        method: "GET",
+        url: `/api/v1/files?${new URLSearchParams(reviewing!.resource!)}`,
+      })
+      expect(file.statusCode, file.body).toBe(200)
+      expect(file.json().content).toContain("reload-reviewing")
+
+      await writeManifest(["skills/reviewing"], "Skill removal package prompt.")
+      const removalReload = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/reload",
+        payload: { requestId: "package-removal-route-reload" },
+      })
+      expect(removalReload.statusCode, removalReload.body).toBe(200)
+      const afterRemoval = await app.inject({ method: "GET", url: "/api/v1/agents/default/skills" })
+      expect(afterRemoval.statusCode, afterRemoval.body).toBe(200)
+      expect((afterRemoval.json().skills as Array<{ name: string }>).map((skill) => skill.name))
+        .not.toContain("reload-authoring")
+      const removedFile = await app.inject({
+        method: "GET",
+        url: `/api/v1/files?${new URLSearchParams({
+          filesystem: "agent_resources",
+          path: "packages/@example/reload-resource/skills/authoring/SKILL.md",
+        })}`,
+      })
+      expect(removedFile.statusCode).toBeGreaterThanOrEqual(400)
+
+      await writeManifest(["skills/reviewing"], "Prompt-only package update.")
+      const promptReload = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/reload",
+        payload: { requestId: "package-prompt-route-reload" },
+      })
+      expect(promptReload.statusCode, promptReload.body).toBe(200)
+      expect(await readSystemPrompt()).toContain("Prompt-only package update.")
+      expect(await readSystemPrompt()).not.toContain("Skill removal package prompt.")
+    } finally {
+      await app.close()
+    }
+  }, 30_000)
 
   test("collects plugin provisioning declarations and seeds the workspace", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-provisioned-")

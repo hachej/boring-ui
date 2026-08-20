@@ -1027,6 +1027,9 @@ describe('createAgentHost', () => {
     })
     const created = await createAgentHost({
       ...options(workspaceRoot),
+      // Metering rejects this request before harness execution. Keep the test on
+      // that causal seam instead of paying unrelated real-provider discovery.
+      harnessFactory: createScriptedPiHarness,
       metering: {
         isEnabled: () => true,
         reserveRun,

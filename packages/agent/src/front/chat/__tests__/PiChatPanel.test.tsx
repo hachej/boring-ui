@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { useState } from 'react'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { SessionSummary } from '../../../shared/session'
+import { AgentGatewayErrorCode } from '../../../shared/gateway/errors'
 import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
 import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSession'
 import { activeSessionStorageKey, scopedComposerStorageKey, type ActiveSessionStorageLike } from '../session'
@@ -862,14 +864,14 @@ describe('PiChatPanel sandbox shell', () => {
     render(<PiChatPanel serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
 
     const textarea = await screen.findByLabelText('Agent prompt')
-    const oversizedFile = new File([new Uint8Array((4 * 1024 * 1024) + 1)], 'large.txt', { type: 'text/plain' })
+    const oversizedFile = new File([new Uint8Array((10 * 1024 * 1024) + 1)], 'large.txt', { type: 'text/plain' })
     fireEvent.paste(textarea, {
       clipboardData: {
         items: [{ kind: 'file', getAsFile: () => oversizedFile }],
       },
     })
 
-    await screen.findByText('Files must be under 4 MB each.')
+    await screen.findByText('Files must be 10 MB or smaller.')
     expect(remote.prompt).not.toHaveBeenCalled()
   })
 

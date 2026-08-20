@@ -61,22 +61,67 @@ describe("UI review spec registry", () => {
   it("selects a painted command-palette Wait for replay", () => {
     const select = uiReviewSpecs.get("workspace-command-palette").exploration!.selectReplayState
     const states = [
-      { ordinal: 19, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "painted", screenshotBytes: 200, normalizedState: { palette: { workspaceReady: true, dialogVisible: true, mode: "Commands" } } },
-      { ordinal: 14, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, normalizedState: { palette: { workspaceReady: true, dialogVisible: false, mode: "none" } } },
-      { ordinal: 16, viewport: { name: "desktop" }, action: { Click: {} }, screenshotDigest: "skeleton", screenshotBytes: 95, normalizedState: { palette: { workspaceReady: true, dialogVisible: true, mode: "Chats" } } },
-      { ordinal: 17, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "skeleton", screenshotBytes: 95, normalizedState: { palette: { workspaceReady: true, dialogVisible: true, mode: "Chats" } } },
+      { ordinal: 19, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "painted", screenshotBytes: 80, screenshotPHash: "ffffffffffffffff", normalizedState: { palette: { dialogVisible: true, mode: "Commands" } } },
+      { ordinal: 14, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "0000000000000000", normalizedState: { palette: { dialogVisible: false, mode: "none" } } },
+      { ordinal: 16, viewport: { name: "desktop" }, action: { Click: {} }, screenshotDigest: "jitter", screenshotBytes: 95, screenshotPHash: "0000000000000001", normalizedState: { palette: { dialogVisible: true, mode: "Chats" } } },
+      { ordinal: 17, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "jitter", screenshotBytes: 95, screenshotPHash: "0000000000000001", normalizedState: { palette: { dialogVisible: true, mode: "Chats" } } },
     ] as unknown as UiReviewExplorationState[]
 
     expect(select(states)).toBe(states[0])
     expect(select(states.slice(1))).toBeUndefined()
 
+    const firstSettledWaitPath = [
+      { ordinal: 1, viewport: { name: "desktop" }, action: null, screenshotDigest: "initial", screenshotBytes: 80, screenshotPHash: "0000000000000000", normalizedState: { palette: { dialogVisible: false, mode: "none" } } },
+      { ordinal: 2, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "settled", screenshotBytes: 100, screenshotPHash: "0000000000000000", normalizedState: { palette: { dialogVisible: false, mode: "none" } } },
+      { ordinal: 3, viewport: { name: "desktop" }, action: { Click: {} }, screenshotDigest: "opening", screenshotBytes: 100, screenshotPHash: "0000000000000001", normalizedState: { palette: { dialogVisible: true, mode: "Commands" } } },
+      { ordinal: 4, viewport: { name: "desktop" }, action: "Wait", screenshotDigest: "painted", screenshotBytes: 120, screenshotPHash: "ffffffffffffffff", normalizedState: { palette: { dialogVisible: true, mode: "Commands" } } },
+    ] as unknown as UiReviewExplorationState[]
+    expect(select(firstSettledWaitPath)).toBe(firstSettledWaitPath[3])
+
     const mobileStates = [
-      { ordinal: 17, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "painted", screenshotBytes: 200, normalizedState: { palette: { workspaceReady: true, dialogVisible: true, mode: null } } },
-      { ordinal: 14, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, normalizedState: { palette: { workspaceReady: true, dialogVisible: false, mode: null } } },
-      { ordinal: 15, viewport: { name: "mobile" }, action: { Click: {} }, screenshotDigest: "skeleton", screenshotBytes: 100, normalizedState: { palette: { workspaceReady: true, dialogVisible: true, mode: null } } },
-      { ordinal: 16, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "skeleton", screenshotBytes: 100, normalizedState: { palette: { workspaceReady: true, dialogVisible: true, mode: null } } },
+      { ordinal: 17, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "painted", screenshotBytes: 80, screenshotPHash: "ffffffffffffffff", normalizedState: { palette: { dialogVisible: true, mode: null } } },
+      { ordinal: 14, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "closed", screenshotBytes: 100, screenshotPHash: "0000000000000000", normalizedState: { palette: { dialogVisible: false, mode: null } } },
+      { ordinal: 15, viewport: { name: "mobile" }, action: { Click: {} }, screenshotDigest: "jitter", screenshotBytes: 100, screenshotPHash: "0000000000000001", normalizedState: { palette: { dialogVisible: true, mode: null } } },
+      { ordinal: 16, viewport: { name: "mobile" }, action: "Wait", screenshotDigest: "jitter", screenshotBytes: 100, screenshotPHash: "0000000000000001", normalizedState: { palette: { dialogVisible: true, mode: null } } },
     ] as unknown as UiReviewExplorationState[]
     expect(select(mobileStates)).toBe(mobileStates[0])
+  })
+
+  it("normalizes transient command-palette orchestration out of replay identity", () => {
+    const normalize = uiReviewSpecs.get("workspace-command-palette").exploration!.normalizeReplayState!
+    const durable = {
+      path: "/",
+      palette: {
+        dialogVisible: true,
+        mode: "Commands",
+        query: "",
+        workspaceReady: false,
+        lastActionWasPaletteOpen: true,
+        lastActionWasInitial: false,
+        controls: [{ name: "open-command-palette", point: { x: 10.25, y: 20.5 } }],
+      },
+    }
+    expect(normalize(durable)).toEqual(normalize({
+      ...durable,
+      palette: {
+        ...durable.palette,
+        workspaceReady: true,
+        lastActionWasPaletteOpen: false,
+        lastActionWasInitial: true,
+        controls: [{ name: "open-command-palette", point: { x: 11.75, y: 20.5 } }],
+      },
+    }))
+    expect(normalize(durable)).not.toEqual(normalize({
+      ...durable,
+      palette: { ...durable.palette, mode: "Files" },
+    }))
+    expect(normalize(durable)).not.toEqual(normalize({
+      ...durable,
+      palette: {
+        ...durable.palette,
+        controls: [{ name: "palette-mode-files", point: { x: 10.25, y: 20.5 } }],
+      },
+    }))
   })
 
   it.each(["https://example.com", "../workspace", "workspace/spec", "javascript:alert(1)"])(

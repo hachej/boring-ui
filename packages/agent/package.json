@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-agent",
-  "version": "0.1.98",
+  "version": "0.1.101",
   "type": "module",
   "license": "MIT",
   "description": "Pane-embeddable coding agent. Ships direct/local/vercel-sandbox execution modes behind one interface.",
@@ -52,6 +52,10 @@
       "import": "./dist/front/index.js"
     },
     "./front/styles.css": "./dist/front/styles.css",
+    "./front/artifacts": {
+      "types": "./dist/front/artifacts.d.ts",
+      "import": "./dist/front/artifacts.js"
+    },
     "./eval": {
       "types": "./dist/eval/index.d.ts",
       "import": "./dist/eval/index.js"

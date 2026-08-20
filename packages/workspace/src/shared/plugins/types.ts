@@ -98,6 +98,7 @@ export interface FileTreeRevealRequest {
   path: string
   seq: number
   filesystem?: FilesystemId
+  kind?: "file" | "dir"
 }
 
 export interface LeftTabParams {

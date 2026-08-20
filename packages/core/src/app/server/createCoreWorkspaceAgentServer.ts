@@ -1460,6 +1460,7 @@ export async function createCoreWorkspaceAgentServer(
       return createPiResourceDigestInput({
         piCwd: root,
         noSkills: pi.noSkills,
+        noContextFiles: pi.noContextFiles,
         resourceSets: [{
           promptParts: [
             pluginCollection.agentOptions.systemPromptAppend,

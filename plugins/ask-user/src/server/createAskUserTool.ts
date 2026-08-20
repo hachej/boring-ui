@@ -36,6 +36,7 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
         wait: { type: "boolean", description: "Set false to file the intention and return its id immediately. Defaults to blocking." },
         artifacts: {
           type: "array",
+          maxItems: 100,
           description: "Optional explicitly registered human-facing deliverables, in registration order.",
           items: {
             type: "object",
@@ -65,6 +66,9 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
                   name: { type: "string" },
                   label: { type: "string" },
                   required: { type: "boolean" },
+                  helpText: { type: "string" },
+                  placeholder: { type: "string" },
+                  options: { type: "array", items: { type: "object", properties: { value: { type: "string" }, label: { type: "string" }, description: { type: "string" } }, required: ["value", "label"] } },
                 },
                 required: ["type", "name", "label"],
                 additionalProperties: true,

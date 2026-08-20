@@ -1,15 +1,17 @@
 {
   "private": true,
   "name": "boring-ui-v2",
-  "version": "0.1.98",
+  "version": "0.1.101",
   "type": "module",
   "scripts": {
     "build": "pnpm -r --workspace-concurrency=4 run build",
     "dev": "pnpm -r run dev",
     "typecheck": "pnpm run build:packages && pnpm -r --workspace-concurrency=4 run typecheck",
-    "lint": "pnpm check:agenthost-cutover-matrix && pnpm test:agenthost-compositions && pnpm check:generated-artifacts && pnpm check:agent-resources && pnpm audit:imports",
+    "lint": "pnpm check:agenthost-cutover-matrix && pnpm test:agenthost-compositions && pnpm check:generated-artifacts && pnpm check:agent-resources && pnpm test:present-pr-context && pnpm audit:imports",
     "check:agenthost-cutover-matrix": "node scripts/check-agenthost-cutover-matrix.mjs",
     "test:agenthost-compositions": "node scripts/run-agenthost-composition-proofs.mjs",
+    "test:present-pr-context": "node --test scripts/lib/present-pr-context.test.mjs scripts/lib/present-pr-files.test.mjs scripts/lib/present-pr-html.test.mjs scripts/lib/present-pr-links.test.mjs scripts/lib/present-pr-theme.test.mjs",
+    "test:present-pr-mermaid": "node --test scripts/lib/render-mermaid.test.mjs",
     "lint:invariants": "pnpm --dir packages/agent run lint:invariants && pnpm --filter @hachej/boring-bash run check:invariants && pnpm --filter @hachej/boring-sandbox run check:invariants && pnpm lint:workspace-plugin-invariants && pnpm lint:alignment-invariants && pnpm check:skill-digests",
     "lint:alignment-invariants": "node scripts/check-alignment-invariants.mjs",
     "lint:workspace-plugin-invariants": "pnpm --filter @hachej/boring-workspace run lint:plugin-invariants",
@@ -60,6 +62,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "mermaid": "11.16.1",
     "typescript": "^6.0.3"
   },
   "pnpm": {

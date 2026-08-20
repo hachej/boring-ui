@@ -3,7 +3,11 @@ import type { RuntimeModeAdapter } from '../mode'
 import { createRemoteWorkerSandbox } from '../../sandbox/remote-worker/createRemoteWorkerSandbox'
 import { RemoteWorkerClient, type RemoteWorkerClientOptions } from '../../sandbox/remote-worker/workerClient'
 import { createRemoteWorkerWorkspace } from '../../workspace/createRemoteWorkerWorkspace'
-import { REMOTE_WORKER_PROVIDER, REMOTE_WORKER_RUNTIME_CWD } from '../../sandbox/remote-worker/protocol'
+import {
+  REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY,
+  REMOTE_WORKER_PROVIDER,
+  REMOTE_WORKER_RUNTIME_CWD,
+} from '../../sandbox/remote-worker/protocol'
 import { getEnv } from '../../config/env'
 
 export interface RemoteWorkerModeAdapterOptions {
@@ -31,9 +35,14 @@ export function createRemoteWorkerModeAdapter(opts: RemoteWorkerModeAdapterOptio
         requestId: ctx.requestId,
         fetchImpl: opts.fetchImpl,
       })
-      const workspace = createRemoteWorkerWorkspace(client)
+      const health = await client.health()
+      const workspace = createRemoteWorkerWorkspace(
+        client,
+        health.capabilities?.includes(
+          REMOTE_WORKER_EXCLUSIVE_BINARY_CREATE_CAPABILITY,
+        ) ?? false,
+      )
       const sandbox = createRemoteWorkerSandbox(client)
-      await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
       return {
         runtimeContext: { runtimeCwd: REMOTE_WORKER_RUNTIME_CWD },
         bash: { kind: 'remote' },

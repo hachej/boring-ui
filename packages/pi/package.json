@@ -4,6 +4,9 @@
   "type": "module",
   "license": "MIT",
   "description": "Pi skills and agent-facing references for boring-ui.",
+  "scripts": {
+    "build": "node scripts/assert-package.mjs"
+  },
   "files": [
     "skills",
     "references"
@@ -12,5 +15,10 @@
     "skills": [
       "./skills"
     ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hachej/boring-ui.git",
+    "directory": "packages/pi"
   }
 }

@@ -124,6 +124,7 @@ import {
   digestWorkspacePiResourceInputs,
   projectAgentSpecPluginArtifacts,
   readWorkspacePluginPackagePiSnapshot,
+  resolveBoringPiSkillPaths,
   resolveWorkspaceAgentServerPluginCollection,
 } from "../createWorkspaceAgentServer"
 import { resolveDefaultWorkspacePluginPackagePaths } from "../defaultPluginPackages"
@@ -155,6 +156,25 @@ async function makeTempDir(prefix: string): Promise<string> {
   tempDirs.push(dir)
   return dir
 }
+
+describe("bundled boring-pi runtime resolution", () => {
+  test("ignores a symlinked workspace package in favor of the host install", async () => {
+    const workspaceRoot = await makeTempDir("boring-pi-workspace-symlink-")
+    const substitutedPackage = await makeTempDir("boring-pi-workspace-substitute-")
+    await mkdir(join(substitutedPackage, "skills", "boring-plugin-authoring"), { recursive: true })
+    await writeFile(join(substitutedPackage, "package.json"), JSON.stringify({ name: "@hachej/boring-pi" }), "utf8")
+    await writeFile(join(substitutedPackage, "skills", "boring-plugin-authoring", "SKILL.md"), "# substituted\n", "utf8")
+    await mkdir(join(workspaceRoot, "node_modules", "@hachej"), { recursive: true })
+    const workspacePackage = join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
+    await symlink(substitutedPackage, workspacePackage, "dir")
+
+    const skillPaths = resolveBoringPiSkillPaths(workspaceRoot)
+
+    expect(skillPaths).toHaveLength(1)
+    expect(skillPaths[0]).not.toContain(workspacePackage)
+    expect(skillPaths[0]).toContain(join("packages", "pi", "skills", "boring-plugin-authoring", "SKILL.md"))
+  })
+})
 
 async function writeHotPlugin(root: string, extension: string): Promise<void> {
   const pluginRoot = join(root, ".pi", "extensions", "hot-plugin")
@@ -1094,20 +1114,118 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     })
 
     expect(agentServerMock.captureResolvedRuntimeScope).toHaveBeenCalledTimes(1)
-    const [agentOptions] = agentServerMock.captureResolvedRuntimeScope.mock
-      .calls[0] as unknown as [
-      { pi?: { packages?: unknown[] } },
-    ]
-    // Static set: bundled @hachej/boring-pi skill (when resolvable) +
-    // factory-plugin contributions + host-supplied entries.
-    expect(agentOptions.pi?.packages).toContainEqual(
+    const [routeOptions] = agentServerMock.captureResolvedRuntimeScope.mock.calls[0] as unknown as [{
+      authorizedScope: object
+      pi?: { packages?: unknown[] }
+    }]
+    const [hostOptions] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
+      resolveDirectRuntimeScopeForTest(input: { agentTypeId: string; scope: object }): Promise<{
+        identity: string
+        pi?: { packages?: unknown[] }
+      }>
+    }]
+    // Host entries remain global; plugin entries are projected through the
+    // default Agent's normalized contribution rather than the route options.
+    expect(routeOptions.pi?.packages).toContainEqual(
       expect.objectContaining({ skills: ["skills/boring-plugin-authoring"] }),
     )
-    expect(agentOptions.pi?.packages).toContainEqual({
-      source: "npm:plugin-pi",
-      extensions: ["./a.ts", "./b.ts"],
+    expect(routeOptions.pi?.packages).toContain("npm:host-pi")
+    const runtime = await hostOptions.resolveDirectRuntimeScopeForTest({
+      agentTypeId: "default",
+      scope: routeOptions.authorizedScope,
     })
-    expect(agentOptions.pi?.packages).toContain("npm:host-pi")
+    expect(runtime.pi?.packages).toEqual([
+      expect.objectContaining({ skills: ["skills/boring-plugin-authoring"] }),
+      { source: "npm:plugin-pi", extensions: ["./a.ts", "./b.ts"] },
+      "npm:host-pi",
+    ])
+    // In the v1 standalone composition Pi package inventory lived in the
+    // global base and was not part of contribution binding identity. Compare
+    // against that portable reference shape instead of pinning an
+    // environment-sensitive digest.
+    await createWorkspaceAgentServer({
+      workspaceRoot: "/tmp/workspace-pi-forwarding",
+      logger: false,
+      provisionWorkspace: false,
+      pi: {
+        packages: [
+          "npm:host-pi",
+          { source: "npm:plugin-pi", extensions: ["./b.ts", "./a.ts"] },
+        ],
+      },
+      plugins: [{ id: "plugin-pi", contentDigest: "plugin-pi-content-v1" }],
+    })
+    const [referenceRoute] = agentServerMock.captureResolvedRuntimeScope.mock.calls.at(-1) as unknown as [{
+      authorizedScope: object
+    }]
+    const [referenceHost] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
+      resolveDirectRuntimeScopeForTest(input: { agentTypeId: string; scope: object }): Promise<{ identity: string }>
+    }]
+    const legacyReference = await referenceHost.resolveDirectRuntimeScopeForTest({
+      agentTypeId: "default",
+      scope: referenceRoute.authorizedScope,
+    })
+    expect(runtime.identity).toBe(legacyReference.identity)
+  })
+
+  test("projects defaults through the standalone Agent composition and honors exclusions", async () => {
+    const defaultTool = {
+      name: "default_tool",
+      description: "default tool",
+      parameters: { type: "object", properties: {} },
+      async execute() { return { content: [] } },
+    }
+    const defaultPlugin = {
+      id: "default-agent-plugin",
+      systemPrompt: "DEFAULT_AGENT_PROMPT",
+      agentTools: [defaultTool],
+      piPackages: ["npm:default-agent"],
+      extensionPaths: ["/plugins/default-agent.ts"],
+      skills: [{ name: "default-skill", source: "/plugins/default-skill" }],
+    }
+    const resolve = async (excludeDefaults: string[] = []) => {
+      await createWorkspaceAgentServer({
+        workspaceRoot: await makeTempDir("boring-default-agent-projection-"),
+        logger: false,
+        provisionWorkspace: false,
+        externalPlugins: false,
+        defaults: [defaultPlugin],
+        excludeDefaults,
+        piResourceAuthorizedRoots: ["/plugins"],
+      })
+      const [routeOptions] = agentServerMock.captureResolvedRuntimeScope.mock.calls.at(-1) as unknown as [{
+        authorizedScope: object
+      }]
+      const [hostOptions] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
+        resolveDirectRuntimeScopeForTest(input: { agentTypeId: string; scope: object }): Promise<{
+          extraTools?: Array<{ name: string }>
+          systemPromptAppend?: string
+          pi?: {
+            packages?: unknown[]
+            extensionPaths?: string[]
+            getHotReloadableResources?(): { additionalSkillPaths?: string[] }
+          }
+        }>
+      }]
+      return await hostOptions.resolveDirectRuntimeScopeForTest({
+        agentTypeId: "default",
+        scope: routeOptions.authorizedScope,
+      })
+    }
+
+    const included = await resolve()
+    expect(included.extraTools?.map((tool) => tool.name)).toContain("default_tool")
+    expect(included.systemPromptAppend).toContain("DEFAULT_AGENT_PROMPT")
+    expect(included.pi?.packages).toContain("npm:default-agent")
+    expect(included.pi?.extensionPaths).toContain("/plugins/default-agent.ts")
+    expect(included.pi?.getHotReloadableResources?.().additionalSkillPaths
+      ?.some((path) => path.includes("default-agent-plugin/default-skill"))).toBe(true)
+
+    const excluded = await resolve(["default-agent-plugin"])
+    expect(excluded.extraTools?.map((tool) => tool.name) ?? []).not.toContain("default_tool")
+    expect(excluded.systemPromptAppend ?? "").not.toContain("DEFAULT_AGENT_PROMPT")
+    expect(excluded.pi?.packages ?? []).not.toContain("npm:default-agent")
+    expect(excluded.pi?.extensionPaths ?? []).not.toContain("/plugins/default-agent.ts")
   })
 
   test("getHotReloadableResources reflects package.json#pi changes between calls", async () => {
@@ -2559,7 +2677,11 @@ describe("beforeReload triggers directory-source re-resolve", () => {
 
     try {
       const [runtime] = agentServerMock.captureResolvedRuntimeScope.mock.calls.at(-1) as unknown as [{
-        getFilesystemBindings?(ctx: { scope: { workspaceScopeId: string; authSubjectId: string }; requestId: string }): Promise<Array<{ filesystem: string }> | undefined>
+        applyReload?(): Promise<void>
+        getFilesystemBindings?(ctx: { scope: { workspaceScopeId: string; authSubjectId: string }; requestId: string }): Promise<Array<{
+          filesystem: string
+          operations: { read(input: { filesystem: string; path: string }): Promise<{ content: string }> }
+        }> | undefined>
         getSkillResourceSnapshot?(ctx: { scope: { workspaceScopeId: string; authSubjectId: string }; requestId: string }): Promise<{
           generation: string
           managedSkills: Array<{ name: string; resource: { filesystem: string; path: string } }>
