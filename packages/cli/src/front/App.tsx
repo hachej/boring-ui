@@ -100,19 +100,6 @@ function useCliDefaultPlugins(enabled: boolean, runtimePluginFrontLoadingEnabled
   useEffect(() => {
     if (!enabled) return
     let cancelled = false
-    if (runtimePluginFrontLoadingEnabled) {
-      void import("@hachej/boring-workspace").then((workspace) => {
-        if (cancelled) return
-        globalThis.__BORING_RUNTIME_SINGLETONS__ = {
-          ...globalThis.__BORING_RUNTIME_SINGLETONS__,
-          "@hachej/boring-workspace": workspace,
-        }
-        setRuntimeSingletonReady(true)
-      }).catch((error: unknown) => {
-        console.error("Failed to load the workspace runtime singleton", error)
-      })
-    }
-
     void loadCliDefaultPlugins().then((loadedPlugins) => {
       if (cancelled) return
       setPlugins(loadedPlugins)
@@ -120,6 +107,22 @@ function useCliDefaultPlugins(enabled: boolean, runtimePluginFrontLoadingEnabled
       // Adding plugin providers afterward would remount the chat subtree and
       // could discard a draft typed during startup.
       setPluginsReady(true)
+    })
+    return () => { cancelled = true }
+  }, [enabled])
+
+  useEffect(() => {
+    if (!enabled || !runtimePluginFrontLoadingEnabled) return
+    let cancelled = false
+    void import("@hachej/boring-workspace").then((workspace) => {
+      if (cancelled) return
+      globalThis.__BORING_RUNTIME_SINGLETONS__ = {
+        ...globalThis.__BORING_RUNTIME_SINGLETONS__,
+        "@hachej/boring-workspace": workspace,
+      }
+      setRuntimeSingletonReady(true)
+    }).catch((error: unknown) => {
+      console.error("Failed to load the workspace runtime singleton", error)
     })
     return () => { cancelled = true }
   }, [enabled, runtimePluginFrontLoadingEnabled])

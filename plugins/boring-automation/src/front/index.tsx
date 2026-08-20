@@ -28,7 +28,7 @@ function AutomationCenterPanel() {
 }
 
 export const boringAutomationPlugin: BoringFrontFactoryWithId = definePlugin({
-  id: BORING_AUTOMATION_PLUGIN_ID,
+  id: "boring-automation",
   label: BORING_AUTOMATION_PLUGIN_LABEL,
   providers: [
     {

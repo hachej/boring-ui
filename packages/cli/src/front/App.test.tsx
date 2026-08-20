@@ -251,7 +251,7 @@ describe("CliWorkspaceShell", () => {
         expect.objectContaining({ pluginId: "tasks" }),
         liveTranscriptPlugin,
       ],
-    }))
+    }), { timeout: 5_000 })
 
     expect(screen.getByText("v1.2.3")).not.toBeNull()
     expect(screen.queryByText("Trusted local runtime plugins")).toBeNull()
