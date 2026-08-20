@@ -30,11 +30,11 @@ interface StreamdownPluginSelectionOptions {
 }
 
 const CJK_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u
-const FENCED_CODE = /```[^\n`]*\n[\s\S]*?```|~~~[^\n~]*\n[\s\S]*?~~~/
+const FENCED_CODE = /(^|\n)(`{3,}|~{3,})[^\n]*\n[\s\S]*?\2(?=\s*(?:\n|$))/
 const INLINE_CODE = /(^|[^`])`[^`\n]+`(?!`)/
-const INLINE_MATH = /(^|[^\\$])\$(?!\s|\$)(?:\\.|[^\n$])+?(?<!\\)\$(?!\$)/
+const INLINE_MATH = /(^|[^\\$])\$(?!\s|\$)(?:\\.|[^\n$])+?(?<!\\)\$(?![\d$])/
 const BLOCK_MATH = /(^|\n)\s*\$\$\s*\n?[\s\S]+?\n?\s*\$\$(?=\s*(?:\n|$))/
-const MERMAID_FENCE = /```mermaid(?:\s|$)[\s\S]*?```/i
+const MERMAID_FENCE = /(^|\n)(`{3,}|~{3,})mermaid(?:[^\n]*\n)[\s\S]*?\2(?=\s*(?:\n|$))/i
 
 export function streamdownPluginNamesForSource(
   source: unknown,

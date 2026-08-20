@@ -15,6 +15,7 @@ describe("streamdownPluginNamesForSource", () => {
 
   it("does not mistake currency, punctuation, other scripts, or unmatched delimiters for rich syntax", () => {
     expect(streamdownPluginNamesForSource("It costs $20 — don’t overpay…")).toEqual([])
+    expect(streamdownPluginNamesForSource("Compare $20 vs $30 today")).toEqual([])
     expect(streamdownPluginNamesForSource("Привет κόσμε مرحبا")).toEqual([])
     expect(streamdownPluginNamesForSource("Streaming `unfinished and $x + y")).toEqual([])
   })
@@ -22,6 +23,7 @@ describe("streamdownPluginNamesForSource", () => {
   it("lets message rendering keep ownership of code highlighting", () => {
     expect(streamdownPluginNamesForSource("```ts\nconst value = 1\n```", { code: false })).toEqual([])
     expect(streamdownPluginNamesForSource("```mermaid\ngraph LR\nA-->B\n```", { code: false })).toEqual(["mermaid"])
+    expect(streamdownPluginNamesForSource("~~~~mermaid\ngraph LR\nA-->B\n~~~~", { code: false })).toEqual(["mermaid"])
   })
 
   it("re-evaluates complete syntax as streamed source changes", () => {
