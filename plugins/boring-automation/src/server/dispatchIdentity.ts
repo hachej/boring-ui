@@ -39,6 +39,10 @@ export class DispatchIdentity {
     return this.accepted || this.persistenceFailed
   }
 
+  get isAddressabilityVerified(): boolean {
+    return this.addressabilityVerified
+  }
+
   isAlreadyPersisted(ref: { sessionId: string }, receipt?: object): boolean {
     return this.durableSessionId === ref.sessionId && (!receipt || Boolean(this.options.current.dispatchReceipt))
   }
@@ -53,7 +57,6 @@ export class DispatchIdentity {
       this.dispatchReceipt = { ref, ...receipt }
     }
     if (this.isAlreadyPersisted(ref, receipt)) return
-    await this.verifyAddressability(ref)
     try {
       this.options.current = await this.options.store.updateRunLifecycle(this.options.runId, {
         status: "dispatching",
@@ -68,8 +71,10 @@ export class DispatchIdentity {
     await this.options.publish(this.options.current)
   }
 
-  private async verifyAddressability(ref: { agentTypeId: string; sessionId: string }): Promise<void> {
+  async verifyAddressability(): Promise<void> {
     if (!this.options.requireAddressability || this.addressabilityVerified) return
+    const ref = this.dispatchReceipt?.ref
+    if (!ref) throw new AutomationSessionUnaddressableError("automation dispatch completed without a durable session reference")
     const authorizeSession = this.options.dispatcherResolver.authorizeSession
     if (!authorizeSession) throw new AutomationSessionUnaddressableError("workspace session lookup is unavailable")
     try {

@@ -196,7 +196,9 @@ export class DispatchRunExecutor {
           })
           if (!identity!.dispatchReceipt) await identity!.persist(dispatched.ref, dispatched.receipt)
         })
-
+        if (terminalStatus === null || terminalStatus === "succeeded") {
+          await identity!.verifyAddressability()
+        }
       })
       current = identity.current
       current = await store.updateRunLifecycle(run.id, {
@@ -223,7 +225,13 @@ export class DispatchRunExecutor {
       await stopHeartbeat()
       if (isRunLeaseLost(error)) return await this.readDurableRun(store, automation.id, run.id, current)
       if (identity) current = identity.current
-      const failure = await classifyFailure(error, identity ?? { dispatchInFlight: false })
+      const effectiveError = trigger === "scheduled"
+        && terminalStatus === "succeeded"
+        && identity
+        && !identity.isAddressabilityVerified
+        ? new AutomationSessionUnaddressableError(`scheduled session addressability could not be verified: ${safeErrorMessage(error)}`)
+        : error
+      const failure = await classifyFailure(effectiveError, identity ?? { dispatchInFlight: false })
       const completedAt = this.nowIso()
       const status = finalStatus(failure, terminalStatus)
       let finalized: AutomationRun

@@ -174,7 +174,7 @@ describe("DispatchRunExecutor", () => {
     })).rejects.toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE })
   })
 
-  it("verifies scheduled session addressability on the first event before a later stream rejection", async () => {
+  it("degrades a scheduled terminal success when the stream rejects before session lookup", async () => {
     const harness = createHarness({
       events: [event(0, { type: "agent-end", seq: 1, turnId: "turn-1", status: "ok" })],
       streamError: new Error("stream closed after terminal event"),
@@ -187,12 +187,11 @@ describe("DispatchRunExecutor", () => {
       scheduledFor: "2026-07-10T09:00:00.000Z",
     })
 
-    expect(run).toMatchObject({ status: "succeeded", error: null })
-    expect(harness.resolver.authorizeSession).toHaveBeenCalledWith(
-      harness.actor,
-      { agentTypeId: "default", sessionId: "session-1" },
-      undefined,
-    )
+    expect(run).toMatchObject({
+      status: "outcome-unknown",
+      error: "scheduled session addressability could not be verified: stream closed after terminal event",
+    })
+    expect(harness.resolver.authorizeSession).not.toHaveBeenCalled()
   })
 
   it("preserves a scheduled worker failure without replacing it with lookup diagnostics", async () => {
@@ -208,11 +207,7 @@ describe("DispatchRunExecutor", () => {
     })
 
     expect(run).toMatchObject({ status: "failed", error: "worker failed" })
-    expect(harness.resolver.authorizeSession).toHaveBeenCalledWith(
-      harness.actor,
-      { agentTypeId: "default", sessionId: "session-1" },
-      undefined,
-    )
+    expect(harness.resolver.authorizeSession).not.toHaveBeenCalled()
   })
 
   it("uses canonical prompt and model snapshots from the store", async () => {
