@@ -8,6 +8,15 @@ import { BORING_AUTOMATION_ERROR_CODES, BORING_AUTOMATION_PLUGIN_ID, BORING_AUTO
 import { BORING_AUTOMATION_TOOL_NAME } from "../automationTool"
 import defaultBoringAutomationServerPlugin, { createAutomationSessionController, createBoringAutomationServerPlugin } from "../index"
 
+function seedReadyStore() {
+  return {
+    readSeedManifest: async () => null,
+    ensureSeededAutomation: async () => null,
+    findExistingSeedKeys: async () => [],
+    removeSeededAutomationIfIdle: async () => true,
+  } as never
+}
+
 describe("boring automation server plugin", () => {
   it("wires default-export ctx.workspaceRoot into file-backed routes", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "boring-automation-plugin-"))
@@ -206,7 +215,7 @@ describe("boring automation server plugin", () => {
     const runDue = vi.fn(async () => ({ now: "2026-07-23T09:00:00.000Z", outcomes: [] }))
     const plugin = createBoringAutomationServerPlugin({
       agentTypeId: "selected-agent",
-      store: {} as never,
+      store: seedReadyStore(),
       hostedDueRunService: { runDue },
     })
     const app = Fastify()
@@ -224,7 +233,7 @@ describe("boring automation server plugin", () => {
     const runDue = vi.fn(async () => await activeRun)
     const plugin = createBoringAutomationServerPlugin({
       agentTypeId: "selected-agent",
-      store: {} as never,
+      store: seedReadyStore(),
       hostedDueRunService: { runDue },
       hostedTriggerToken: "trigger-secret",
     })
@@ -251,7 +260,7 @@ describe("boring automation server plugin", () => {
     const activeRun = new Promise<{ now: string; outcomes: [] }>((resolve) => { resolveRun = resolve })
     const plugin = createBoringAutomationServerPlugin({
       agentTypeId: "selected-agent",
-      store: {} as never,
+      store: seedReadyStore(),
       hostedDueRunService: { runDue: async () => await activeRun },
     })
     const app = Fastify()
@@ -268,7 +277,7 @@ describe("boring automation server plugin", () => {
     const callerClose = vi.fn(async () => {})
     const callerPlugin = createBoringAutomationServerPlugin({
       agentTypeId: "selected-agent",
-      store: {} as never,
+      store: seedReadyStore(),
       eventBus: { publish: vi.fn(), subscribe: vi.fn(), close: callerClose } as never,
     })
     const callerApp = Fastify()
@@ -279,7 +288,7 @@ describe("boring automation server plugin", () => {
     const pluginClose = vi.fn(async () => {})
     const ownedPlugin = createBoringAutomationServerPlugin({
       agentTypeId: "selected-agent",
-      store: {} as never,
+      store: seedReadyStore(),
       eventBus: { publish: vi.fn(), subscribe: vi.fn(), close: pluginClose } as never,
       eventBusOwner: "plugin",
     })
@@ -293,7 +302,7 @@ describe("boring automation server plugin", () => {
     const runDue = vi.fn(async () => ({ now: "2026-07-23T09:00:00.000Z", outcomes: [] }))
     const plugin = createBoringAutomationServerPlugin({
       agentTypeId: "selected-agent",
-      store: {} as never,
+      store: seedReadyStore(),
       hostedDueRunService: { runDue },
       hostedSchedulerEnabled: false,
     })
@@ -342,7 +351,7 @@ describe("boring automation server plugin", () => {
     const storeForRequest = vi.fn()
     const plugin = createBoringAutomationServerPlugin({
       agentTypeId: "selected-agent",
-      store: {} as never,
+      store: seedReadyStore(),
       actorResolver,
       storeForRequest,
     })
