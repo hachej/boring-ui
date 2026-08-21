@@ -462,6 +462,10 @@ export async function createFolderModeApp(opts: {
       if (!liveTranscriptDispatcher) throw new Error("live_transcript_disabled: agent dispatcher is not ready")
       return await liveTranscriptDispatcher.resolve(ctx, options)
     },
+    async authorizeSession(ctx, ref, options) {
+      if (!liveTranscriptDispatcher?.authorizeSession) throw new Error("live_transcript_disabled: agent session lookup is not ready")
+      await liveTranscriptDispatcher.authorizeSession(ctx, ref, options)
+    },
   }
   const liveTranscriptPlugin = liveTranscriptEnabled && opts.liveTranscripts
     ? (await import("@hachej/boring-transcription/server")).createLiveTranscriptServerPlugin({
@@ -1236,6 +1240,13 @@ export async function createWorkspacesModeApp(opts: {
         scope: trustedLocalScope.issueScope(workspace),
         agentTypeId: "default",
       }, context)
+    },
+    async authorizeSession(context, ref) {
+      const workspace = await requireWorkspace(context.workspaceId)
+      await agentHost.gateway.readSessionState({
+        scope: trustedLocalScope.issueScope(workspace),
+        ref,
+      })
     },
   }
 
