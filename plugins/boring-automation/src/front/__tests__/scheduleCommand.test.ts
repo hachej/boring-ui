@@ -70,7 +70,7 @@ describe("/schedule slash command", () => {
     const validateModel = vi.fn(async () => undefined)
     const command = createScheduleSlashCommand({ client: api, workspaceTimezone: "UTC", validateModel })
 
-    await command.handler("weekdays 9:00 report --agent orchestrator --model anthropic:claude --timezone America/New_York --title 'Weekday report'", context)
+    await command.handler("--agent orchestrator --model anthropic:claude --timezone America/New_York --title 'Weekday report' weekdays 9:00 report", context)
 
     expect(validateModel).toHaveBeenCalledWith({ agentTypeId: "orchestrator", provider: "anthropic", id: "claude" })
     expect(api.createAutomation).toHaveBeenCalledWith(expect.objectContaining({
@@ -94,7 +94,7 @@ describe("/schedule slash command", () => {
 
   it.each([
     ["daily nope run", "could not parse cadence"],
-    ["daily 8am run --model implicit-model", "provider:model-id"],
+    ["--model implicit-model daily 8am run", "provider:model-id"],
   ])("surfaces validation failures as chat errors for %s", async (args, message) => {
     const command = createScheduleSlashCommand({ client: client(), workspaceTimezone: "UTC", validateModel: vi.fn(async () => undefined) })
 
@@ -109,7 +109,7 @@ describe("/schedule slash command", () => {
       validateModel: vi.fn(async () => { throw new Error("the selected model is not available to that Agent") }),
     })
 
-    await expect(command.handler("daily 8am run --model other:forbidden", context)).resolves.toMatchObject({
+    await expect(command.handler("--model other:forbidden daily 8am run", context)).resolves.toMatchObject({
       tone: "error",
       message: expect.stringContaining("not available"),
     })

@@ -10,12 +10,13 @@ type AutomationRuntime = { client: AutomationClient; agentTypeId: string; apiBas
 
 const AutomationClientContext = createContext<AutomationRuntime | null>(null)
 
-export function AutomationRuntimeProvider({ agentTypeId, apiBaseUrl, authHeaders, onAuthError, apiTimeout, workspaceTimezone = "UTC", children }: PluginProviderProps) {
+export function AutomationRuntimeProvider({ agentTypeId, apiBaseUrl, authHeaders, onAuthError, apiTimeout, children }: PluginProviderProps) {
   const client = useMemo(
     () => createAutomationClient({ apiBaseUrl, headers: authHeaders, onAuthError, apiTimeout }),
     [apiBaseUrl, authHeaders, onAuthError, apiTimeout],
   )
   const runtime = useMemo(() => ({ client, agentTypeId, apiBaseUrl, authHeaders }), [agentTypeId, apiBaseUrl, authHeaders, client])
+  const workspaceTimezone = useMemo(resolveBrowserTimezone, [])
   const composerContribution = useMemo<ComposerContribution>(() => ({
     id: "boring-automation.schedule",
     commands: [createScheduleSlashCommand({
@@ -31,6 +32,14 @@ export function AutomationRuntimeProvider({ agentTypeId, apiBaseUrl, authHeaders
       </ComposerContributionProvider>
     </AutomationClientContext.Provider>
   )
+}
+
+function resolveBrowserTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+  } catch {
+    return "UTC"
+  }
 }
 
 async function validateAutomationModel(

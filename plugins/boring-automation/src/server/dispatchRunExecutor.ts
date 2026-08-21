@@ -4,6 +4,7 @@ import type { FastifyRequest } from "fastify"
 import type { AgentEvent } from "@hachej/boring-agent/shared"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
+import { parseAutomationModelRef } from "../shared/model"
 import { clampAutomationPersistedDurationMs, resolveAutomationRunDurationCapMs } from "../shared/schedule"
 import type { AutomationRun, AutomationRunTrigger } from "../shared/types"
 import type { AutomationRunEventPublisher } from "./runEventBus"
@@ -220,7 +221,7 @@ export class DispatchRunExecutor {
           })
           if (!dispatchReceipt) await persistDispatchIdentity(dispatched.ref, dispatched.receipt)
         })
-        if (trigger === "scheduled") {
+        if (trigger === "scheduled" && (terminalStatus === null || terminalStatus === "succeeded")) {
           const ref = dispatchReceipt?.ref
           if (!ref) {
             throw new AutomationSessionUnaddressableError("automation dispatch completed without a durable session reference")
@@ -450,22 +451,12 @@ export function automationSessionTitle(automationTitle: string, prompt: string):
 }
 
 export function parseAutomationModel(value: string): { provider: string; id: string } {
-  const index = value.indexOf(":")
-  if (index <= 0 || index === value.length - 1) {
-    throw new AutomationStoreError(
-      BORING_AUTOMATION_ERROR_CODES.INVALID_MODEL,
-      "automation model must use explicit provider:model-id syntax",
-    )
-  }
-  const provider = value.slice(0, index).trim()
-  const id = value.slice(index + 1).trim()
-  if (!provider || !id) {
-    throw new AutomationStoreError(
-      BORING_AUTOMATION_ERROR_CODES.INVALID_MODEL,
-      "automation model must use explicit provider:model-id syntax",
-    )
-  }
-  return { provider, id }
+  const parsed = parseAutomationModelRef(value)
+  if (parsed) return parsed
+  throw new AutomationStoreError(
+    BORING_AUTOMATION_ERROR_CODES.INVALID_MODEL,
+    "automation model must use explicit provider:model-id syntax",
+  )
 }
 
 function sessionIdFromEvent(event: unknown): string | null {

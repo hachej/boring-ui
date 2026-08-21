@@ -2,6 +2,7 @@ import type { ModelSelection, SlashCommand, SlashCommandContext } from "@hachej/
 import {
   SCHEDULE_COMMAND_USAGE,
   nextScheduleFire,
+  parseAutomationModelRef,
   parseScheduleCommandArgs,
   type Automation,
   type AutomationCreate,
@@ -27,7 +28,7 @@ export function createScheduleSlashCommand(options: {
         const model = parsed.model ?? modelId(context.model)
         const agentTypeId = parsed.agentTypeId ?? context.agentTypeId
         if (!model) throw new Error("no current model is selected — pass --model provider:model-id")
-        const parsedModel = parseExplicitModel(model)
+        const parsedModel = parseAutomationModelRef(model)
         if (!parsedModel) throw new Error("model must use provider:model-id syntax")
         if (!agentTypeId.trim()) throw new Error("no current Agent is selected — pass --agent <agentTypeId>")
         await options.validateModel({ agentTypeId, ...parsedModel })
@@ -82,12 +83,6 @@ function formatAutomation(automation: Automation): string {
 
 function modelId(model: ModelSelection | null): string | undefined {
   return model ? `${model.provider}:${model.id}` : undefined
-}
-
-function parseExplicitModel(value: string): { provider: string; id: string } | null {
-  const separator = value.indexOf(":")
-  if (separator <= 0 || separator >= value.length - 1) return null
-  return { provider: value.slice(0, separator), id: value.slice(separator + 1) }
 }
 
 function defaultTitle(prompt: string): string {

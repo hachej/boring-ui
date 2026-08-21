@@ -1,5 +1,6 @@
 export * from "./constants"
 export * from "./error-codes"
+export * from "./model"
 export * from "./prompt"
 export * from "./runStatus"
 export * from "./schema"

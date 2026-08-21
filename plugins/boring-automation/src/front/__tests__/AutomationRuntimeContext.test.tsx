@@ -44,7 +44,7 @@ class ErrorBoundary extends Component<{ children: ReactNode; onError: (error: Er
 describe("AutomationRuntimeProvider", () => {
   it("contributes the /schedule command to the existing composer registry", () => {
     render(
-      <AutomationRuntimeProvider agentTypeId="default" apiBaseUrl="" workspaceTimezone="Europe/Zurich">
+      <AutomationRuntimeProvider agentTypeId="default" apiBaseUrl="">
         <ComposerProbe />
       </AutomationRuntimeProvider>,
     )

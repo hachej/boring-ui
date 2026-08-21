@@ -136,6 +136,22 @@ describe("ManualRunExecutor", () => {
     )
   })
 
+  it("preserves a scheduled worker failure without replacing it with lookup diagnostics", async () => {
+    const harness = createHarness({
+      events: [event(0, { type: "error", seq: 1, error: { code: "INTERNAL_ERROR", message: "worker failed" } })],
+    })
+
+    const run = await harness.executor.run({
+      automationId: harness.automation.id,
+      actor: harness.actor,
+      trigger: "scheduled",
+      scheduledFor: "2026-07-10T09:00:00.000Z",
+    })
+
+    expect(run).toMatchObject({ status: "failed", error: "worker failed" })
+    expect(harness.resolver.authorizeSession).not.toHaveBeenCalled()
+  })
+
   it("uses canonical prompt and model snapshots from the store", async () => {
     const harness = createHarness({ prompt: "canonical prompt", model: "anthropic:claude-sonnet" })
 

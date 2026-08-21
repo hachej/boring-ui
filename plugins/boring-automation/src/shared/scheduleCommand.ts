@@ -2,9 +2,9 @@ import { Cron } from "croner"
 import { isValidFiveFieldCron, isValidIanaTimeZone } from "./schedule"
 
 export const SCHEDULE_COMMAND_USAGE = [
-  "Usage: /schedule <cadence> <prompt...>",
+  "Usage: /schedule [flags] <cadence> <prompt...>",
   "Cadence examples: 'daily 8am', 'every 10m', 'weekdays 9:00', or '0 8 * * *'.",
-  "Optional flags: --timezone <IANA>, --model <provider:model>, --agent <agentTypeId>, --title <title>.",
+  "Flags (before cadence): --timezone <IANA>, --model <provider:model>, --agent <agentTypeId>, --title <title>.",
 ].join("\n")
 
 export interface ParsedScheduleCommand {
@@ -44,55 +44,88 @@ export function parseScheduleCadence(input: string): string | null {
 }
 
 export function parseScheduleCommandArgs(args: string): ParsedScheduleCommand {
-  const tokens = tokenize(args)
-  const positional: string[] = []
-  const flags: Partial<Record<"timezone" | "model" | "agentTypeId" | "title", string>> = {}
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index]!
-    if (!token.startsWith("--")) {
-      positional.push(token)
-      continue
-    }
-    const [rawName, inlineValue] = token.slice(2).split("=", 2)
-    const name = rawName === "agent" ? "agentTypeId" : rawName
-    if (name !== "timezone" && name !== "model" && name !== "agentTypeId" && name !== "title") {
-      throw new Error(`unknown flag --${rawName}`)
-    }
-    const value = inlineValue ?? tokens[++index]
-    if (!value || value.startsWith("--")) throw new Error(`--${rawName} requires a value`)
-    flags[name] = value
-  }
-
+  const { flags, remainder } = parseLeadingFlags(args)
   if (flags.timezone && !isValidIanaTimeZone(flags.timezone)) {
     throw new Error("invalid timezone — use an IANA timezone such as Europe/Zurich")
   }
 
-  let cadenceLength = 0
-  let cron: string | null = null
-  if (positional.length >= 5) {
-    const candidate = positional.slice(0, 5).join(" ")
-    if (isValidFiveFieldCron(candidate)) {
-      cadenceLength = 5
-      cron = candidate
-    }
-  }
-  if (!cron && positional.length >= 2) {
-    cadenceLength = 2
-    cron = parseScheduleCadence(positional.slice(0, 2).join(" "))
-  }
-  if (!cron) {
-    throw new Error("could not parse cadence — try 'daily 8am' or '0 8 * * *'")
-  }
-
-  const prompt = positional.slice(cadenceLength).join(" ").trim()
+  const cadence = consumeCadence(remainder)
+  if (!cadence) throw new Error("could not parse cadence — try 'daily 8am' or '0 8 * * *'")
+  const prompt = remainder.slice(cadence.length).trim()
   if (!prompt) throw new Error("prompt is required after the cadence")
-  return { cron, prompt, ...flags }
+  return { cron: cadence.cron, prompt, ...flags }
 }
 
 export function nextScheduleFire(cron: string, timezone: string, after = new Date()): string {
   const next = new Cron(cron, { timezone }).nextRun(after)
   if (!next) throw new Error("schedule has no next fire time")
   return next.toISOString()
+}
+
+function consumeCadence(input: string): { cron: string; length: number } | null {
+  const cronMatch = /^(\S+\s+\S+\s+\S+\s+\S+\s+\S+)(?=\s|$)/.exec(input)
+  if (cronMatch && isValidFiveFieldCron(cronMatch[1]!)) {
+    return { cron: cronMatch[1]!.replace(/\s+/g, " "), length: cronMatch[0].length }
+  }
+  const humanMatch = /^(daily|weekdays|every)\s+(\S+)(?=\s|$)/i.exec(input)
+  if (!humanMatch) return null
+  const cron = parseScheduleCadence(`${humanMatch[1]} ${humanMatch[2]}`)
+  return cron ? { cron, length: humanMatch[0].length } : null
+}
+
+function parseLeadingFlags(input: string): {
+  flags: Partial<Record<"timezone" | "model" | "agentTypeId" | "title", string>>
+  remainder: string
+} {
+  const flags: Partial<Record<"timezone" | "model" | "agentTypeId" | "title", string>> = {}
+  let cursor = skipSpace(input, 0)
+  while (input.startsWith("--", cursor)) {
+    const flag = readToken(input, cursor)
+    const separator = flag.value.indexOf("=")
+    const rawName = (separator >= 0 ? flag.value.slice(2, separator) : flag.value.slice(2))
+    const name = rawName === "agent" ? "agentTypeId" : rawName
+    if (name !== "timezone" && name !== "model" && name !== "agentTypeId" && name !== "title") {
+      throw new Error(`unknown flag --${rawName}`)
+    }
+    let value = separator >= 0 ? flag.value.slice(separator + 1) : ""
+    cursor = skipSpace(input, flag.end)
+    if (separator < 0) {
+      const valueToken = readToken(input, cursor)
+      value = valueToken.value
+      cursor = skipSpace(input, valueToken.end)
+    }
+    if (!value) throw new Error(`--${rawName} requires a value`)
+    flags[name] = value
+  }
+  return { flags, remainder: input.slice(cursor) }
+}
+
+function readToken(input: string, start: number): { value: string; end: number } {
+  if (start >= input.length) throw new Error("flag requires a value")
+  let cursor = start
+  let value = ""
+  const quote = input[cursor] === "'" || input[cursor] === '"' ? input[cursor++] : null
+  while (cursor < input.length) {
+    const character = input[cursor]!
+    if (quote) {
+      if (character === quote) return { value, end: cursor + 1 }
+      if (character === "\\" && quote === '"' && cursor + 1 < input.length) value += input[++cursor]!
+      else value += character
+      cursor += 1
+      continue
+    }
+    if (/\s/.test(character)) break
+    value += character
+    cursor += 1
+  }
+  if (quote) throw new Error("unterminated quote in /schedule arguments")
+  return { value, end: cursor }
+}
+
+function skipSpace(input: string, start: number): number {
+  let cursor = start
+  while (cursor < input.length && /\s/.test(input[cursor]!)) cursor += 1
+  return cursor
 }
 
 function parseClockTime(value: string): { hour: number; minute: number } | null {
@@ -110,41 +143,4 @@ function parseClockTime(value: string): { hour: number; minute: number } | null 
     return null
   }
   return { hour, minute }
-}
-
-function tokenize(input: string): string[] {
-  const tokens: string[] = []
-  let current = ""
-  let quote: "'" | '"' | null = null
-  let escaped = false
-  for (const character of input.trim()) {
-    if (escaped) {
-      current += character
-      escaped = false
-      continue
-    }
-    if (character === "\\" && quote !== "'") {
-      escaped = true
-      continue
-    }
-    if (quote) {
-      if (character === quote) quote = null
-      else current += character
-      continue
-    }
-    if (character === "'" || character === '"') {
-      quote = character
-      continue
-    }
-    if (/\s/.test(character)) {
-      if (current) tokens.push(current)
-      current = ""
-      continue
-    }
-    current += character
-  }
-  if (escaped) current += "\\"
-  if (quote) throw new Error("unterminated quote in /schedule arguments")
-  if (current) tokens.push(current)
-  return tokens
 }

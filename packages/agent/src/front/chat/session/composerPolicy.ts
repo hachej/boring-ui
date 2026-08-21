@@ -158,7 +158,10 @@ export class PiComposerPolicyController {
         : undefined
     const preserveDraft = Boolean(result && typeof result === 'object' && result.preserveDraft === true)
     const tone = result && typeof result === 'object' ? result.tone : undefined
-    if (message) this.options.onCommandResult?.(message, tone)
+    if (message) {
+      if (tone === undefined) this.options.onCommandResult?.(message)
+      else this.options.onCommandResult?.(message, tone)
+    }
     return { type: 'command', command: commandName, ...(message ? { result: message } : {}), preserveDraft }
   }
 

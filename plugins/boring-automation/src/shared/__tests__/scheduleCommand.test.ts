@@ -19,7 +19,7 @@ describe("/schedule cadence parsing", () => {
   )
 
   it("splits cadence, prompt, quoted flags, and overrides", () => {
-    expect(parseScheduleCommandArgs("daily 8am send the digest --timezone Europe/Zurich --model openai:gpt-5 --agent worker --title 'Morning digest'"))
+    expect(parseScheduleCommandArgs("--timezone Europe/Zurich --model openai:gpt-5 --agent worker --title 'Morning digest' daily 8am send the digest"))
       .toEqual({
         cron: "0 8 * * *",
         prompt: "send the digest",
@@ -30,16 +30,16 @@ describe("/schedule cadence parsing", () => {
       })
   })
 
-  it("passes through a five-field cron and keeps the remaining prompt", () => {
-    expect(parseScheduleCommandArgs("0 8 * * * summarize yesterday"))
-      .toMatchObject({ cron: "0 8 * * *", prompt: "summarize yesterday" })
+  it("passes through cron while preserving arbitrary prompt quoting and backslashes", () => {
+    expect(parseScheduleCommandArgs("0 8 * * * summarize 'yesterday' from C:\\\\reports"))
+      .toMatchObject({ cron: "0 8 * * *", prompt: "summarize 'yesterday' from C:\\\\reports" })
   })
 
   it.each([
     ["daily nope run", "could not parse cadence"],
     ["daily 8am", "prompt is required"],
-    ["daily 8am run --timezone Mars/Base", "invalid timezone"],
-    ["daily 8am run --wat value", "unknown flag"],
+    ["--timezone Mars/Base daily 8am run", "invalid timezone"],
+    ["--wat value daily 8am run", "unknown flag"],
   ])("returns an actionable error for %s", (input, message) => {
     expect(() => parseScheduleCommandArgs(input)).toThrow(message)
   })
