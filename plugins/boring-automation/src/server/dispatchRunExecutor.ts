@@ -225,19 +225,7 @@ export class DispatchRunExecutor {
     } catch (error) {
       await stopHeartbeat()
       if (isRunLeaseLost(error)) {
-        if (identity?.dispatchReceipt) {
-          const preserved = await store.preserveAcceptedDispatch(
-            run.id,
-            identity.dispatchReceipt,
-            this.nowIso(),
-            "Automation dispatch was accepted before its worker lease was lost; the outcome remains unknown",
-          )
-          if (preserved) {
-            await this.publishRunChange(actor, preserved)
-            return preserved
-          }
-        }
-        return await this.readDurableRun(store, automation.id, run.id, current)
+        return await this.recoverLeaseLost(store, actor, automation.id, run.id, current, identity)
       }
       if (identity) current = identity.current
       const failure = await classifyFailure(error, identity ?? { dispatchInFlight: false })
@@ -258,12 +246,37 @@ export class DispatchRunExecutor {
           usage,
         })
       } catch (finalizeError) {
-        if (isRunLeaseLost(finalizeError)) return await this.readDurableRun(store, automation.id, run.id, current)
+        if (isRunLeaseLost(finalizeError)) {
+          return await this.recoverLeaseLost(store, actor, automation.id, run.id, current, identity)
+        }
         throw finalizeError
       }
       await this.publishRunChange(actor, finalized)
       return finalized
     }
+  }
+
+  private async recoverLeaseLost(
+    store: AutomationStore,
+    actor: VerifiedAutomationActor,
+    automationId: string,
+    runId: string,
+    fallback: AutomationRun,
+    identity: DispatchIdentity | undefined,
+  ): Promise<AutomationRun> {
+    if (identity?.dispatchReceipt) {
+      const preserved = await store.preserveAcceptedDispatch(
+        runId,
+        identity.dispatchReceipt,
+        this.nowIso(),
+        "Automation dispatch was accepted before its worker lease was lost; the outcome remains unknown",
+      )
+      if (preserved) {
+        await this.publishRunChange(actor, preserved)
+        return preserved
+      }
+    }
+    return await this.readDurableRun(store, automationId, runId, fallback)
   }
 
   private async readDurableRun(store: AutomationStore, automationId: string, runId: string, fallback: AutomationRun): Promise<AutomationRun> {

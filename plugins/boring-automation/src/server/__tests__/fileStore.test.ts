@@ -238,6 +238,29 @@ describe("FileAutomationStore persistence", () => {
     await expect(createStore().listAutomations()).resolves.toEqual([])
   })
 
+  it("promotes a heartbeating older run above newer terminal history in fleet pagination", async () => {
+    let now = "2026-07-10T00:00:00.000Z"
+    const store = createStore({ clock: () => new Date(now) })
+    const activeAutomation = await store.createAutomation({ title: "active", timezone: "UTC", model: "test:model" })
+    const terminalAutomation = await store.createAutomation({ title: "terminal", timezone: "UTC", model: "test:model" })
+    const active = await store.beginRun({
+      automationId: activeAutomation.id, trigger: "manual", createdAt: "2026-07-10T00:00:00.000Z",
+      promptSnapshot: "active", modelSnapshot: "test:model",
+    })
+    await store.claimRunForDispatch(active.id)
+    now = "2026-07-10T01:00:00.000Z"
+    const terminal = await store.beginRun({
+      automationId: terminalAutomation.id, trigger: "manual", createdAt: now,
+      promptSnapshot: "terminal", modelSnapshot: "test:model",
+    })
+    await store.claimRunForDispatch(terminal.id)
+    await store.updateRunLifecycle(terminal.id, { status: "succeeded", completedAt: now })
+    now = "2026-07-10T02:00:00.000Z"
+    await store.heartbeatRun(active.id)
+
+    await expect(store.listRecentRuns(1)).resolves.toEqual([expect.objectContaining({ id: active.id })])
+  })
+
   it("loads a missing prompt as empty and repairs it through updatePrompt", async () => {
     const store = createStore()
     const automation = await store.createAutomation({

@@ -360,7 +360,7 @@ export class FileAutomationStore implements AutomationStore {
     const state = await this.load()
     return Object.values(state.runs)
       .filter((run) => state.automations[run.automationId] !== undefined)
-      .sort((a, b) => runSortTimestamp(b).localeCompare(runSortTimestamp(a)))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
       .slice(0, limit)
       .map(clone)
   }

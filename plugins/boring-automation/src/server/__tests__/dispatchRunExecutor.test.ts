@@ -601,7 +601,11 @@ describe("DispatchRunExecutor", () => {
 
     const run = await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
 
-    expect(run).toMatchObject({ status: "outcome-unknown", error: "Automation worker lease expired" })
+    expect(run).toMatchObject({
+      status: "outcome-unknown",
+      dispatchReceipt: expect.objectContaining({ accepted: true }),
+      error: "Automation dispatch was accepted before its worker lease was lost; the outcome remains unknown",
+    })
   })
 
   it("maps aborted terminal events to cancelled runs", async () => {

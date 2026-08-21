@@ -28,13 +28,18 @@ it("keeps the slot occupied when accepted dispatch identity persistence loses th
 
   const update = store.updateRunLifecycle.bind(store)
   let injectIdentityWriteFailure = true
+  let injectFallbackLeaseLoss = true
   store.updateRunLifecycle = async (runId: string, patch: AutomationRunLifecyclePatch) => {
     if (injectIdentityWriteFailure && patch.dispatchReceipt) {
       injectIdentityWriteFailure = false
+      throw new Error("injected first-receipt persistence failure")
+    }
+    if (injectFallbackLeaseLoss && patch.status === "outcome-unknown") {
+      injectFallbackLeaseLoss = false
       await update(runId, {
         status: "failed",
         completedAt: "2026-07-10T00:05:00.000Z",
-        error: "Automation worker lease expired before receipt persistence",
+        error: "Automation worker lease expired before fallback finalization",
       })
       throw runLeaseLost(runId)
     }
