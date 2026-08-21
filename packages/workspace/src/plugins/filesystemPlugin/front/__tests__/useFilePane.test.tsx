@@ -202,6 +202,70 @@ describe("useFilePane", () => {
       expect(result.current.documentStatus).toEqual({ kind: "resolved", action: "reloaded" })
     })
 
+    it("ignores a delayed Reload response after the pane switches paths", async () => {
+      let resolveReload: ((value: { status: "success"; data: { content: string; mtimeMs: number } }) => void) | undefined
+      const reloadA = vi.fn(() => new Promise<{ status: "success"; data: { content: string; mtimeMs: number } }>((resolve) => {
+        resolveReload = resolve
+      }))
+      mockFileContent.mockImplementation((path: string | null) => ({
+        data: { content: path === "b.md" ? "content B" : "content A", mtimeMs: path === "b.md" ? 2000 : 1000 },
+        isLoading: false,
+        isFetching: false,
+        error: undefined,
+        refetch: path === "a.md" ? reloadA : vi.fn(),
+      }))
+      const { result, rerender } = renderHook(
+        ({ path }) => useFilePane({ path }),
+        { wrapper, initialProps: { path: "a.md" } },
+      )
+      await act(async () => {})
+      const reloadFromA = result.current.onReloadFromServer
+      await act(async () => {
+        void reloadFromA()
+        await Promise.resolve()
+      })
+
+      rerender({ path: "b.md" })
+      await waitFor(() => expect(result.current.content).toBe("content B"))
+      await act(async () => {
+        resolveReload?.({ status: "success", data: { content: "late A", mtimeMs: 3000 } })
+        await Promise.resolve()
+      })
+
+      expect(result.current.content).toBe("content B")
+      expect(result.current.conflict).toBeNull()
+    })
+
+    it("preserves keystrokes entered while Reload is in flight", async () => {
+      let resolveReload: ((value: { status: "success"; data: { content: string; mtimeMs: number } }) => void) | undefined
+      const refetch = vi.fn(() => new Promise<{ status: "success"; data: { content: string; mtimeMs: number } }>((resolve) => {
+        resolveReload = resolve
+      }))
+      mockFileContent.mockReturnValue({
+        data: { content: "initial", mtimeMs: 1000 },
+        isLoading: false,
+        isFetching: false,
+        error: undefined,
+        refetch,
+      })
+      const { result } = renderHook(() => useFilePane({ path: "doc.md" }), { wrapper })
+      await act(async () => {})
+      await act(async () => {
+        void result.current.onReloadFromServer()
+        await Promise.resolve()
+      })
+      act(() => result.current.setContent("typed after reload click"))
+      await act(async () => {
+        resolveReload?.({ status: "success", data: { content: "server latest", mtimeMs: 3000 } })
+        await Promise.resolve()
+      })
+
+      expect(result.current.content).toBe("typed after reload click")
+      expect(result.current.isDirty).toBe(true)
+      expect(result.current.conflict).toBeInstanceOf(FileConflictError)
+      expect(result.current.documentStatus).toEqual({ kind: "conflict", source: "disk" })
+    })
+
     it("keeps local conflict state when the refetch does not return fresh server data", async () => {
       const refetchError = new Error("reload failed")
       const refetch = vi.fn(async () => ({

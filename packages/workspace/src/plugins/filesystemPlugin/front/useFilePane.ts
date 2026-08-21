@@ -138,6 +138,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   const statusClearTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const pendingExternalSourceRef = useRef<{ source: "agent" | "disk"; expiresAt: number } | null>(null)
   const resolutionInFlightRef = useRef(false)
+  const resolutionGenRef = useRef(0)
 
   const showTransientDocumentStatus = useCallback((status: FilePaneDocumentStatus) => {
     clearTimeout(statusClearTimerRef.current)
@@ -165,6 +166,8 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
       saveGenRef.current += 1
       conflictRef.current = null
       pendingExternalSourceRef.current = null
+      resolutionGenRef.current += 1
+      resolutionInFlightRef.current = false
       setConflict(null)
       setConflictSource("disk")
       setTransientDocumentStatus(null)
@@ -328,25 +331,50 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   const onReloadFromServer = useCallback(async () => {
     if (!activePath) return
 
+    const myResolutionGen = ++resolutionGenRef.current
+    const mySaveGen = ++saveGenRef.current
+    const localContentAtStart = contentRef.current
     resolutionInFlightRef.current = true
-    const refreshed = await refetchFileData()
-    if (refreshed.status !== "success" || refreshed.data == null) {
-      resolutionInFlightRef.current = false
-      return
-    }
+    try {
+      const refreshed = await refetchFileData()
+      if (
+        resolutionGenRef.current !== myResolutionGen ||
+        saveGenRef.current !== mySaveGen ||
+        refreshed.status !== "success" ||
+        refreshed.data == null
+      ) return
 
-    const next = refreshed.data
-    setContentState(next.content)
-    contentRef.current = next.content
-    diskContentRef.current = next.content
-    baselineMtimeRef.current = next.mtimeMs ?? null
-    dirtyRef.current = false
-    conflictRef.current = null
-    pendingExternalSourceRef.current = null
-    lifecycle.markClean()
-    setConflict(null)
-    showTransientDocumentStatus({ kind: "resolved", action: "reloaded" })
-    resolutionInFlightRef.current = false
+      const next = refreshed.data
+      const previousBaselineMtime = baselineMtimeRef.current
+      diskContentRef.current = next.content
+      baselineMtimeRef.current = next.mtimeMs ?? null
+
+      if (contentRef.current !== localContentAtStart) {
+        // The Reload click consents to discarding the snapshot visible at that
+        // moment, not keystrokes entered while its GET was in flight. Preserve
+        // those edits and keep the conflict frozen for another explicit choice.
+        const nextConflict = new FileConflictError(activePath, next.mtimeMs ?? null, previousBaselineMtime)
+        dirtyRef.current = true
+        conflictRef.current = nextConflict
+        setConflict(nextConflict)
+        setConflictSource("disk")
+        lifecycle.markDirty()
+        return
+      }
+
+      setContentState(next.content)
+      contentRef.current = next.content
+      dirtyRef.current = false
+      conflictRef.current = null
+      pendingExternalSourceRef.current = null
+      lifecycle.markClean()
+      setConflict(null)
+      showTransientDocumentStatus({ kind: "resolved", action: "reloaded" })
+    } finally {
+      if (resolutionGenRef.current === myResolutionGen) {
+        resolutionInFlightRef.current = false
+      }
+    }
   }, [activePath, lifecycle, refetchFileData, setContentState, showTransientDocumentStatus])
 
   const onOverwrite = useCallback(async () => {
