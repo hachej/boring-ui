@@ -6,7 +6,52 @@
 <div class="controls"><input id="q" type="search" placeholder="Search id, title, labels, reason…"><select id="system"><option value="">All systems</option><option>GH</option><option>Bead</option></select><select id="bucket"><option value="">All buckets</option></select><select id="verdict"><option value="">All verdicts</option></select></div>
 <div class="tablewrap"><table><thead><tr><th>System</th><th>ID</th><th>Type bucket</th><th>Home</th><th>Verdict</th><th>Status / date</th><th>Title</th><th>Reason</th></tr></thead><tbody id="rows"></tbody></table></div>
 <section class="panel"><h2>Taxonomy</h2><p><code>bug</code> failure · <code>feature</code> bounded capability · <code>epic</code> umbrella · <code>chore-ops</code> maintenance/operations · <code>docs</code> documentation outcome · <code>research-idea</code> uncommitted/deferred discovery · <code>spike</code> bounded evidence/decision.</p></section>
-<section class="panel"><h2>Exact execution summary</h2><pre>gh issue close 371 -c &quot;Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window.&quot;
+<section class="panel"><h2>Guarded execution manifest</h2><p><strong>Do not run mutation commands unless this exact preflight prints <code>PREFLIGHT OK</code>.</strong> Set <code>APPROVED_SHA</code> to the exact SHA named by the approval gate.</p><pre>export APPROVED_SHA=&#x27;&lt;exact SHA named by this approval gate&gt;&#x27;
+test &quot;$(git rev-parse HEAD)&quot; = &quot;$APPROVED_SHA&quot; || { echo &#x27;ABORT: SHA drift&#x27;; exit 1; }
+git diff --quiet &quot;$APPROVED_SHA&quot; -- docs/factory/issue-buckets-2026-08-21.md .handoff/issue-buckets.html || { echo &#x27;ABORT: deliverable drift&#x27;; exit 1; }
+gh issue list --state open --limit 200 --json number,title,labels,createdAt &gt; /tmp/issue-buckets-preflight-gh.json
+gh pr list --state open --limit 200 --json number,title,body,closingIssuesReferences &gt; /tmp/issue-buckets-preflight-prs.json
+br --db /home/ubuntu/projects/boring-ui-v2/.beads/beads.db list --json &gt; /tmp/issue-buckets-preflight-beads.json
+gh project view 7 --owner hachej --format json &gt; /tmp/issue-buckets-preflight-project.json
+python3 - &lt;&lt;&#x27;PY&#x27;
+import json,re,sys
+abort=lambda why: (print(f&#x27;ABORT: {why}&#x27;,file=sys.stderr),sys.exit(1))
+targets={371,601,819,883,1009,1011,1196,1210,1213,1214,1215,1216,1217,1253,1300,1314,1338}
+open_issues={x[&#x27;number&#x27;] for x in json.load(open(&#x27;/tmp/issue-buckets-preflight-gh.json&#x27;))}
+missing=targets-open_issues
+if missing: abort(f&#x27;target issues no longer all open: {sorted(missing)}&#x27;)
+for pr in json.load(open(&#x27;/tmp/issue-buckets-preflight-prs.json&#x27;)):
+    text=&#x27; &#x27;.join([pr.get(&#x27;title&#x27;) or &#x27;&#x27;,pr.get(&#x27;body&#x27;) or &#x27;&#x27;])
+    refs={int(x) for x in re.findall(r&#x27;(?:#|gh-)(\d+)&#x27;,text,re.I)}
+    refs|={x[&#x27;number&#x27;] for x in pr.get(&#x27;closingIssuesReferences&#x27;,[]) if x.get(&#x27;number&#x27;)}
+    hit=refs&amp;targets
+    if hit: abort(f&#x27;open PR #{pr[&quot;number&quot;]} now references targets {sorted(hit)}&#x27;)
+beads=json.load(open(&#x27;/tmp/issue-buckets-preflight-beads.json&#x27;))[&#x27;issues&#x27;]
+expected={
+ 371:[&#x27;bug-371-context-overflow-n0z&#x27;],601:[&#x27;bug-601-provision-remote-eal&#x27;],819:[&#x27;-fwh&#x27;],
+ 883:[&#x27;bug-883-stale-indicator-9th&#x27;],1009:[&#x27;1009-sync-driver-blocking-ek2&#x27;,&#x27;1009-durability-readiness-204&#x27;,&#x27;-0jpy.8&#x27;],
+ 1011:[&#x27;-1011-&#x27;],1196:[&#x27;-d5nj.3&#x27;],1210:[&#x27;vertical-agents-epic-nfgt&#x27;],1213:[&#x27;vertical-agents-epic-nfgt.11&#x27;],
+ 1214:[&#x27;vertical-agents-epic-nfgt.12&#x27;],1215:[&#x27;vertical-agents-epic-nfgt.13&#x27;],1216:[&#x27;vertical-agents-epic-nfgt.14&#x27;],
+ 1217:[&#x27;vertical-agents-epic-nfgt.15&#x27;],1253:[&#x27;-d5nj.4&#x27;],1300:[&#x27;-gb0o.1&#x27;],1314:[&#x27;-0jpy.14&#x27;],1338:[&#x27;-s4wq&#x27;]}
+for n,tokens in expected.items():
+    matches=[b for b in beads if any(t in b[&#x27;id&#x27;] for t in tokens)]
+    if not matches: abort(f&#x27;no retained Bead counterpart for #{n}&#x27;)
+    active=[b[&#x27;id&#x27;] for b in matches if b[&#x27;status&#x27;] in (&#x27;in_progress&#x27;,&#x27;ready_for_human&#x27;)]
+    if active: abort(f&#x27;#{n} counterpart became active: {active}&#x27;)
+for b in beads:
+    if b[&#x27;status&#x27;] not in (&#x27;in_progress&#x27;,&#x27;ready_for_human&#x27;): continue
+    text=&#x27; &#x27;.join([b.get(&#x27;external_ref&#x27;) or &#x27;&#x27;,b.get(&#x27;title&#x27;) or &#x27;&#x27;,b.get(&#x27;description&#x27;) or &#x27;&#x27;,&#x27; &#x27;.join(b.get(&#x27;labels&#x27;) or [])])
+    refs={int(x) for x in re.findall(r&#x27;(?:issues/|#|gh-|issue-)(\d+)&#x27;,text,re.I)}
+    hit=refs&amp;targets
+    if hit: abort(f&#x27;active Bead {b[&quot;id&quot;]} now references targets {sorted(hit)}&#x27;)
+project=json.load(open(&#x27;/tmp/issue-buckets-preflight-project.json&#x27;))
+if project.get(&#x27;closed&#x27;): abort(&#x27;Project #7 already closed/drifted&#x27;)
+purge_beads={&#x27;wt-391-forward-seneca-competitor-cloudflare-os-n50&#x27;,&#x27;wt-391-forward-seneca-competitor-getenergy-qaf&#x27;,&#x27;wt-391-forward-vertical-agents-epic-nfgt.6&#x27;,&#x27;wt-391-forward-vertical-agents-epic-nfgt.7&#x27;,&#x27;wt-391-forward-vertical-agents-epic-nfgt.8&#x27;,&#x27;wt-391-forward-vertical-agents-epic-nfgt.9&#x27;,&#x27;wt-391-forward-vertical-agents-epic-nfgt.10&#x27;}
+state={b[&#x27;id&#x27;]:b[&#x27;status&#x27;] for b in beads}
+drift={i:state.get(i) for i in purge_beads if state.get(i)!=&#x27;open&#x27;}
+if drift: abort(f&#x27;Bead purge targets drifted: {drift}&#x27;)
+print(&#x27;PREFLIGHT OK: exact SHA; 17 GH targets open/unprotected; counterparts retained/inactive; Project open; 7 Bead targets open.&#x27;)
+PY</pre><h3>Mutation commands — only after PREFLIGHT OK</h3><pre>gh issue close 371 -c &quot;Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window.&quot;
 gh issue close 601 -c &quot;Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window.&quot;
 gh issue close 819 -c &quot;Issue-bucket cleanup 2026-08-21: parked in deferred Beads; no longer part of the public product window.&quot;
 gh issue close 883 -c &quot;Issue-bucket cleanup 2026-08-21: tracked in Beads; internal implementation detail removed from the public issue window.&quot;
