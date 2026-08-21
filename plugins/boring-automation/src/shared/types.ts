@@ -1,4 +1,6 @@
-export type AutomationRunStatus = "queued" | "dispatching" | "running" | "succeeded" | "failed" | "cancelled" | "outcome-unknown"
+import type { AUTOMATION_RUN_STATUSES } from "./runStatus"
+
+export type AutomationRunStatus = typeof AUTOMATION_RUN_STATUSES[number]
 export type AutomationRunTrigger = "manual" | "scheduled"
 
 export interface AutomationRunChangedEvent {
@@ -21,6 +23,8 @@ export interface Automation {
   model: string
   agentTypeId?: string
   thinkingLevel?: "off" | "low" | "medium" | "high"
+  /** Explicit override; null/absent derives the cap from cron or the absolute default. */
+  runDurationCapMs?: number | null
   promptRef: string
   createdAt: string
   updatedAt: string
@@ -34,6 +38,7 @@ export interface AutomationCreate {
   model: string
   agentTypeId?: string
   thinkingLevel?: "off" | "low" | "medium" | "high"
+  runDurationCapMs?: number | null
   prompt?: string
 }
 
@@ -45,6 +50,7 @@ export interface AutomationPatch {
   model?: string
   agentTypeId?: string
   thinkingLevel?: "off" | "low" | "medium" | "high"
+  runDurationCapMs?: number | null
 }
 
 export interface AutomationDispatchReceipt {

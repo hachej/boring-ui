@@ -3,10 +3,12 @@ import type { AgentEvent, WorkspaceAgentDispatcher, WorkspaceAgentDispatcherDisp
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { BORING_AUTOMATION_ERROR_CODES } from "../../shared/error-codes"
+import { isAutomationRunOccupying } from "../../shared/runStatus"
+import { MAX_AUTOMATION_PERSISTED_DURATION_MS } from "../../shared/schedule"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../../shared/types"
 import { automationSessionTitle, ManualRunExecutor, parseAutomationModel, type VerifiedAutomationActor } from "../manualRunExecutor"
 import type { AutomationRunEventPublisher } from "../runEventBus"
-import { AutomationStoreError, type AutomationStore, automationNotFound, runLeaseLost, runNotFound } from "../store"
+import { AutomationStoreError, type AutomationStore, automationNotFound, runAlreadyActive, runLeaseLost, runNotFound } from "../store"
 
 afterEach(() => vi.useRealTimers())
 
@@ -175,13 +177,16 @@ describe("ManualRunExecutor", () => {
     await vi.waitFor(() => expect([...harness.store.runs.values()][0]).toMatchObject({ status: "succeeded", sessionId: "session-detached" }))
   })
 
-  it("returns an existing terminal idempotency receipt from detached start", async () => {
-    const harness = createHarness()
+  it("returns an existing terminal idempotency receipt without republishing it", async () => {
+    const publish = vi.fn(async () => undefined)
+    const harness = createHarness({ eventPublisher: { publish } })
     const terminal = await harness.executor.run({ automationId: harness.automation.id, actor: harness.actor, invocationId: "same" })
+    const publishedBeforeReplay = publish.mock.calls.length
     vi.spyOn(harness.store, "beginRun").mockResolvedValue(terminal)
 
     await expect(harness.executor.start({ automationId: harness.automation.id, actor: harness.actor, invocationId: "same" }))
       .resolves.toMatchObject({ id: terminal.id, status: "succeeded" })
+    expect(publish).toHaveBeenCalledTimes(publishedBeforeReplay)
   })
 
   it("rejects detached admission when the durable run cannot be claimed", async () => {
@@ -218,6 +223,120 @@ describe("ManualRunExecutor", () => {
     expect(harness.store.heartbeatCount).toBe(1)
     release.resolve()
     await execution
+  })
+
+  it("clamps persisted duration at the max-cap boundary while preserving terminal status and event", async () => {
+    vi.useFakeTimers()
+    const startedAt = "2026-07-10T00:00:00.000Z"
+    const completedAt = new Date(new Date(startedAt).getTime() + MAX_AUTOMATION_PERSISTED_DURATION_MS + 5_000).toISOString()
+    const release = deferred<void>()
+    const dispatch = vi.fn(async (input: { requestId: string }) => ({
+      ref: { agentTypeId: "default", sessionId: "session-timeout" },
+      receipt: { accepted: true as const, cursor: 0, disposition: "prompt" as const, clientNonce: input.requestId },
+      events: (async function* () { await release.promise })(),
+    }))
+    const stop = vi.fn(async () => {
+      release.resolve()
+      return { accepted: true as const, cursor: 0, stopped: true, clearedQueue: [] }
+    })
+    const publish = vi.fn(async () => undefined)
+    const harness = createHarness({
+      runDurationCapMs: MAX_AUTOMATION_PERSISTED_DURATION_MS,
+      clockDates: [startedAt, startedAt, completedAt],
+      eventPublisher: { publish },
+      resolver: createDirectResolver({ dispatch, send: vi.fn(), interrupt: vi.fn(), stop }),
+    })
+    vi.spyOn(harness.store, "heartbeatRun").mockResolvedValue(false)
+
+    const execution = harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce())
+    await vi.advanceTimersByTimeAsync(MAX_AUTOMATION_PERSISTED_DURATION_MS)
+    const timedOut = await execution
+
+    expect(stop).toHaveBeenCalledWith("session-timeout")
+    expect(timedOut).toMatchObject({
+      status: "cancelled",
+      error: `Automation run exceeded its ${MAX_AUTOMATION_PERSISTED_DURATION_MS}ms duration cap`,
+      durationMs: MAX_AUTOMATION_PERSISTED_DURATION_MS,
+    })
+    expect(isAutomationRunOccupying(timedOut.status)).toBe(false)
+    await expect(harness.store.beginRun({ automationId: harness.automation.id, trigger: "manual", promptSnapshot: "next", modelSnapshot: "test:gpt-5.5" }))
+      .resolves.toMatchObject({ status: "queued" })
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ runId: timedOut.id, status: "cancelled" }))
+  })
+
+  it("preserves occupancy when the duration cap breaches before a session id materializes", async () => {
+    vi.useFakeTimers()
+    const unresolved = deferred<void>()
+    const resolver = {
+      runWithWorkspaceAgent: vi.fn(async () => await unresolved.promise),
+      async resolve() { throw new Error("legacy resolver must not be used") },
+    } as unknown as WorkspaceAgentDispatcherResolver & { runWithWorkspaceAgent: ReturnType<typeof vi.fn> }
+    const harness = createHarness({ runDurationCapMs: 1_000, resolver })
+
+    const execution = harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+    await vi.waitFor(() => expect(resolver.runWithWorkspaceAgent).toHaveBeenCalledOnce())
+    await vi.advanceTimersByTimeAsync(1_000)
+    const timedOut = await execution
+
+    expect(timedOut).toMatchObject({
+      status: "outcome-unknown",
+      error: expect.stringContaining("session id was unavailable"),
+    })
+    expect(isAutomationRunOccupying(timedOut.status)).toBe(true)
+    await expect(harness.store.beginRun({ automationId: harness.automation.id, trigger: "manual", promptSnapshot: "next", modelSnapshot: "test:gpt-5.5" }))
+      .rejects.toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE })
+  })
+
+  it.each([
+    ["not-confirmed", vi.fn(async () => ({ accepted: true as const, cursor: 0, stopped: false, clearedQueue: [] })), 0, "session stop was not confirmed"],
+    ["rejected", vi.fn(async () => { throw new Error("stop rejected") }), 0, "session stop was rejected"],
+    ["timed-out", vi.fn(async () => await new Promise<never>(() => undefined)), 5_000, "session stop timed out"],
+  ] as const)("preserves occupancy when session stop is %s", async (_case, stop, graceMs, reason) => {
+    vi.useFakeTimers()
+    const dispatch = vi.fn(async (input: { requestId: string }) => ({
+      ref: { agentTypeId: "default", sessionId: "session-unconfirmed" },
+      receipt: { accepted: true as const, cursor: 0, disposition: "prompt" as const, clientNonce: input.requestId },
+      events: (async function* () { await new Promise<void>(() => undefined) })(),
+    }))
+    const harness = createHarness({
+      runDurationCapMs: 1_000,
+      resolver: createDirectResolver({ dispatch, send: vi.fn(), interrupt: vi.fn(), stop }),
+    })
+
+    const execution = harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce())
+    await vi.advanceTimersByTimeAsync(1_000 + graceMs)
+    const timedOut = await execution
+
+    expect(timedOut).toMatchObject({ status: "outcome-unknown", error: expect.stringContaining(reason) })
+    expect(isAutomationRunOccupying(timedOut.status)).toBe(true)
+  })
+
+  it("does not stop a healthy run below its duration cap", async () => {
+    vi.useFakeTimers()
+    const release = deferred<void>()
+    const dispatch = vi.fn(async (input: { requestId: string }) => ({
+      ref: { agentTypeId: "default", sessionId: "session-healthy" },
+      receipt: { accepted: true as const, cursor: 0, disposition: "prompt" as const, clientNonce: input.requestId },
+      events: (async function* () {
+        await release.promise
+        yield event(0, { type: "agent-end", seq: 1, turnId: "turn-healthy", status: "ok" }, "session-healthy")
+      })(),
+    }))
+    const stop = vi.fn()
+    const harness = createHarness({
+      runDurationCapMs: 1_000,
+      resolver: createDirectResolver({ dispatch, send: vi.fn(), interrupt: vi.fn(), stop }),
+    })
+
+    const execution = harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce())
+    await vi.advanceTimersByTimeAsync(100)
+    release.resolve()
+
+    await expect(execution).resolves.toMatchObject({ status: "succeeded", error: null })
+    expect(stop).not.toHaveBeenCalled()
   })
 
   it("records an executor-owned scheduled occurrence without changing snapshots", async () => {
@@ -453,6 +572,7 @@ interface HarnessOptions {
   prompt?: string
   model?: string
   agentTypeId?: string
+  runDurationCapMs?: number
   availableAgentTypeIds?: readonly string[]
   events?: AgentEvent[]
   streamError?: unknown
@@ -470,7 +590,12 @@ function deferred<T>() {
 
 function createHarness(options: HarnessOptions = {}) {
   const store = new MemoryAutomationStore()
-  const automation = store.seedAutomation({ model: options.model ?? "test:gpt-5.5", prompt: options.prompt ?? "canonical prompt", agentTypeId: options.agentTypeId })
+  const automation = store.seedAutomation({
+    model: options.model ?? "test:gpt-5.5",
+    prompt: options.prompt ?? "canonical prompt",
+    agentTypeId: options.agentTypeId,
+    runDurationCapMs: options.runDurationCapMs,
+  })
   const actor: VerifiedAutomationActor = { workspaceId: "workspace-1", userId: "user-1" }
   const actorResolver = vi.fn(async () => actor)
   const request = options.request ?? fakeRequest()
@@ -555,7 +680,7 @@ class MemoryAutomationStore implements AutomationStore {
   private nextAutomationId = 1
   private nextRunId = 1
 
-  seedAutomation(input: { model: string; prompt: string; agentTypeId?: string }): Automation {
+  seedAutomation(input: { model: string; prompt: string; agentTypeId?: string; runDurationCapMs?: number }): Automation {
     const id = `automation-${this.nextAutomationId++}`
     const now = "2026-07-10T00:00:00.000Z"
     const automation: Automation = {
@@ -566,6 +691,7 @@ class MemoryAutomationStore implements AutomationStore {
       timezone: "UTC",
       model: input.model,
       ...(input.agentTypeId ? { agentTypeId: input.agentTypeId } : {}),
+      ...(input.runDurationCapMs === undefined ? {} : { runDurationCapMs: input.runDurationCapMs }),
       promptRef: `prompts/${id}.md`,
       createdAt: now,
       updatedAt: now,
@@ -614,6 +740,9 @@ class MemoryAutomationStore implements AutomationStore {
 
   async beginRun(input: AutomationRunBegin): Promise<AutomationRun> {
     if (!this.automations.has(input.automationId)) throw automationNotFound(input.automationId)
+    if ([...this.runs.values()].some((run) => run.automationId === input.automationId && isAutomationRunOccupying(run.status))) {
+      throw runAlreadyActive(input.automationId)
+    }
     const now = input.createdAt ?? "2026-07-10T00:00:00.000Z"
     const id = `run-${this.nextRunId++}`
     const run: AutomationRun = {

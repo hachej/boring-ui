@@ -28,6 +28,7 @@ export interface AutomationSummary {
   model: string
   agentTypeId?: string
   thinkingLevel?: Automation["thinkingLevel"]
+  runDurationCapMs?: number | null
   createdAt: string
   updatedAt: string
 }
@@ -302,6 +303,7 @@ function automationSummary(automation: Automation): AutomationSummary {
     model: automation.model,
     ...(automation.agentTypeId ? { agentTypeId: automation.agentTypeId } : {}),
     ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
+    ...(automation.runDurationCapMs === undefined ? {} : { runDurationCapMs: automation.runDurationCapMs }),
     createdAt: automation.createdAt,
     updatedAt: automation.updatedAt,
   }

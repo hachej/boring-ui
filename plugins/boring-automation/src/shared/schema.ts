@@ -1,11 +1,15 @@
 import { z } from "zod"
-import { AUTOMATION_SCHEDULE_ERRORS, isValidFiveFieldCron, isValidIanaTimeZone } from "./schedule"
+import { AUTOMATION_RUN_STATUSES } from "./runStatus"
+import { AUTOMATION_SCHEDULE_ERRORS, isValidFiveFieldCron, isValidIanaTimeZone, MAX_AUTOMATION_PERSISTED_DURATION_MS, MAX_AUTOMATION_RUN_DURATION_CAP_MS } from "./schedule"
 
 const nonEmptyString = z.string().trim().min(1)
 const isoString = z.string().datetime({ offset: true })
 const nonNegativeInteger = z.number().int().nonnegative()
+const persistedDuration = nonNegativeInteger.max(MAX_AUTOMATION_PERSISTED_DURATION_MS)
+const positiveInteger = z.number().int().positive()
+const runDurationCap = positiveInteger.max(MAX_AUTOMATION_RUN_DURATION_CAP_MS)
 
-export const AutomationRunStatusSchema = z.enum(["queued", "running", "succeeded", "failed", "cancelled"])
+export const AutomationRunStatusSchema = z.enum(AUTOMATION_RUN_STATUSES)
 export const AutomationRunTriggerSchema = z.enum(["manual", "scheduled"])
 
 export const AutomationCreateSchema = z.object({
@@ -16,6 +20,7 @@ export const AutomationCreateSchema = z.object({
   model: nonEmptyString,
   agentTypeId: nonEmptyString.optional(),
   thinkingLevel: z.enum(["off", "low", "medium", "high"]).optional(),
+  runDurationCapMs: runDurationCap.nullable().optional(),
   prompt: z.string().optional(),
 }).strict().superRefine((value, ctx) => {
   addScheduleIssues(ctx, value)
@@ -29,6 +34,7 @@ export const AutomationPatchSchema = z.object({
   model: nonEmptyString.optional(),
   agentTypeId: nonEmptyString.optional(),
   thinkingLevel: z.enum(["off", "low", "medium", "high"]).optional(),
+  runDurationCapMs: runDurationCap.nullable().optional(),
 }).strict()
   .refine((value) => Object.keys(value).length > 0, "at least one field must be provided")
   .superRefine((value, ctx) => {
@@ -53,7 +59,7 @@ export const AutomationRunLifecyclePatchSchema = z.object({
   status: AutomationRunStatusSchema.optional(),
   startedAt: isoString.nullable().optional(),
   completedAt: isoString.nullable().optional(),
-  durationMs: nonNegativeInteger.nullable().optional(),
+  durationMs: persistedDuration.nullable().optional(),
   inputTokens: nonNegativeInteger.nullable().optional(),
   outputTokens: nonNegativeInteger.nullable().optional(),
   totalTokens: nonNegativeInteger.nullable().optional(),

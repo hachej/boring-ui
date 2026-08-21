@@ -1,5 +1,16 @@
 import type { AutomationRunStatus } from "./types"
 
+/** Canonical runtime and validation vocabulary for automation runs. */
+export const AUTOMATION_RUN_STATUSES = [
+  "queued",
+  "dispatching",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "outcome-unknown",
+] as const
+
 /** Statuses that reserve an automation's single dispatch slot. */
 export const AUTOMATION_RUN_OCCUPYING_STATUSES = [
   "queued",

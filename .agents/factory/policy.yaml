@@ -8,6 +8,7 @@ beadle:
   lease_heartbeat_minutes: 15 # a working session must touch its bead at least this often
   nudges_per_attempt: 1
   nudge_cooldown_minutes: 15
+  orchestrator_completion_alarm_intervals: 3 # one owner intention per missed-completion episode
   bugfix_reserved_slots: 0 # worker slots held for the bugfix lane
 
 bounce:

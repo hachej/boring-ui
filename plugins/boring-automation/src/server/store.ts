@@ -16,6 +16,7 @@ export interface AutomationSeed {
   timezone: string
   model: string
   agentTypeId: string
+  runDurationCapMs?: number | null
   promptRef: string
 }
 

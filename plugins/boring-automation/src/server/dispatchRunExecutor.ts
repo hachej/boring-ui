@@ -4,6 +4,7 @@ import type { FastifyRequest } from "fastify"
 import type { AgentEvent } from "@hachej/boring-agent/shared"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
+import { clampAutomationPersistedDurationMs, resolveAutomationRunDurationCapMs } from "../shared/schedule"
 import type { AutomationRun, AutomationRunTrigger } from "../shared/types"
 import type { AutomationRunEventPublisher } from "./runEventBus"
 import type { AutomationStore } from "./store"
@@ -41,6 +42,7 @@ export interface DispatchRunInput {
 }
 
 const RUN_HEARTBEAT_INTERVAL_MS = 30_000
+const RUN_DURATION_CAP_STOP_GRACE_MS = 5_000
 
 interface UsageTotals {
   inputTokens: number | null
@@ -98,6 +100,7 @@ export class DispatchRunExecutor {
     const modelSnapshot = automation.model
     const model = parseAutomationModel(modelSnapshot)
     const createdAt = this.nowIso()
+    const runDurationCapMs = resolveAutomationRunDurationCapMs(automation, new Date(createdAt))
     const trigger = input.trigger ?? "manual"
     const scheduledFor = trigger === "scheduled" ? input.scheduledFor ?? null : null
     if (trigger === "scheduled" && !scheduledFor) {
@@ -115,14 +118,14 @@ export class DispatchRunExecutor {
       modelSnapshot,
       createdAt,
     })
-    await this.publishRunChange(actor, run)
     // beginRun is the durable invocation-to-run receipt. A retry of a terminal
-    // invocation returns that receipt verbatim and must never enter dispatch
-    // again, especially after restart reconciliation made the outcome unknown.
+    // invocation returns that receipt verbatim and must never enter dispatch or
+    // republish a lifecycle transition that did not occur.
     if (isTerminalRunStatus(run.status)) {
       await input.onStarted?.(run)
       return run
     }
+    await this.publishRunChange(actor, run)
 
     const usage: UsageAccumulator = { input: null, output: null }
     let sessionId: string | null = null
@@ -175,35 +178,48 @@ export class DispatchRunExecutor {
         durableSessionId = ref.sessionId
         await this.publishRunChange(actor, current)
       }
-      await runWithWorkspaceAgent.call(this.options.dispatcherResolver, {
-        agentTypeId,
-        context: actor,
-        requestId: run.id,
-        ...(input.request ? { request: input.request } : {}),
-      }, async (binding) => {
-        const dispatched = await binding.dispatch({
+      let stopTimedOutSession: ((sessionId: string) => Promise<boolean>) | undefined
+      await runWithDurationCap({
+        durationCapMs: runDurationCapMs,
+        sessionId: () => sessionId,
+        stop: async (timedOutSessionId) => {
+          return stopTimedOutSession ? await stopTimedOutSession(timedOutSessionId) : false
+        },
+      }, async () => {
+        await runWithWorkspaceAgent.call(this.options.dispatcherResolver, {
+          agentTypeId,
+          context: actor,
           requestId: run.id,
-          title: automationSessionTitle(automation.title, promptSnapshot),
-          content: promptSnapshot,
-          model,
-          ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
-          actor: { id: actor.userId },
-          originSurface: "boring-automation",
-        }, async (event) => {
-          const eventSessionId = sessionIdFromEvent(event)
-          if (!durableSessionId && eventSessionId) {
-            await persistDispatchIdentity({ agentTypeId, sessionId: eventSessionId })
+          ...(input.request ? { request: input.request } : {}),
+        }, async (binding) => {
+          stopTimedOutSession = async (timedOutSessionId) => {
+            const receipt = await binding.stop(timedOutSessionId, `duration-cap:${run.id}`)
+            return receipt.stopped === true
           }
-          aggregateUsage(usage, event)
-          const outcome = terminalOutcomeFromEvent(event)
-          if (outcome && !terminalStatus) {
-            terminalStatus = outcome.status
-            terminalError = outcome.error
-          }
-        }, async ({ ref, receipt }) => {
-          await persistDispatchIdentity(ref, receipt)
+          const dispatched = await binding.dispatch({
+            requestId: run.id,
+            title: automationSessionTitle(automation.title, promptSnapshot),
+            content: promptSnapshot,
+            model,
+            ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
+            actor: { id: actor.userId },
+            originSurface: "boring-automation",
+          }, async (event) => {
+            const eventSessionId = sessionIdFromEvent(event)
+            if (!durableSessionId && eventSessionId) {
+              await persistDispatchIdentity({ agentTypeId, sessionId: eventSessionId })
+            }
+            aggregateUsage(usage, event)
+            const outcome = terminalOutcomeFromEvent(event)
+            if (outcome && !terminalStatus) {
+              terminalStatus = outcome.status
+              terminalError = outcome.error
+            }
+          }, async ({ ref, receipt }) => {
+            await persistDispatchIdentity(ref, receipt)
+          })
+          if (!dispatchReceipt) await persistDispatchIdentity(dispatched.ref, dispatched.receipt)
         })
-        if (!dispatchReceipt) await persistDispatchIdentity(dispatched.ref, dispatched.receipt)
       })
       current = await store.updateRunLifecycle(run.id, {
         status: "running",
@@ -226,12 +242,15 @@ export class DispatchRunExecutor {
       await this.publishRunChange(actor, finalized)
       return finalized
     } catch (error) {
-      const completedAt = this.nowIso()
       await stopHeartbeat()
       if (isRunLeaseLost(error)) return await this.readDurableRun(store, automation.id, run.id, current)
+      const durationCapExceeded = error instanceof AutomationRunDurationCapExceededError
+      const durationCapStop = durationCapExceeded ? await error.stopCompletion : null
+      const completedAt = this.nowIso()
       const cancelled = isCancellationError(error)
-      const status = terminalStatus
-        ?? (cancelled ? "cancelled" : (dispatchAccepted || dispatchIdentityPersistenceFailed ? "outcome-unknown" : "failed"))
+      const status = durationCapExceeded
+        ? (durationCapStop?.confirmed ? "cancelled" : "outcome-unknown")
+        : terminalStatus ?? (cancelled ? "cancelled" : (dispatchAccepted || dispatchIdentityPersistenceFailed ? "outcome-unknown" : "failed"))
       let finalized: AutomationRun
       try {
         finalized = await this.finalizeRun(store, run.id, {
@@ -240,7 +259,9 @@ export class DispatchRunExecutor {
           startedAt,
           completedAt,
           status,
-          error: status === "failed" || status === "outcome-unknown" ? (terminalError ?? safeErrorMessage(error)) : null,
+          error: durationCapExceeded
+            ? durationCapErrorMessage(error, durationCapStop!)
+            : status === "failed" || status === "outcome-unknown" ? (terminalError ?? safeErrorMessage(error)) : null,
           usage,
         })
       } catch (finalizeError) {
@@ -295,6 +316,67 @@ export class DispatchRunExecutor {
   private nowIso(): string {
     return this.clock().toISOString()
   }
+}
+
+type DurationCapStopOutcome =
+  | { confirmed: true }
+  | { confirmed: false; reason: "session id was unavailable" | "session stop was rejected" | "session stop timed out" | "session stop was not confirmed" }
+
+class AutomationRunDurationCapExceededError extends Error {
+  constructor(durationCapMs: number, readonly stopCompletion: Promise<DurationCapStopOutcome>) {
+    super(`Automation run exceeded its ${durationCapMs}ms duration cap`)
+    this.name = "AutomationRunDurationCapExceededError"
+  }
+}
+
+async function runWithDurationCap<T>(
+  options: {
+    durationCapMs: number
+    sessionId: () => string | null
+    stop: (sessionId: string) => Promise<boolean>
+  },
+  run: () => Promise<T>,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      const sessionId = options.sessionId()
+      const stopCompletion = sessionId
+        ? settleSessionStop(options.stop(sessionId), RUN_DURATION_CAP_STOP_GRACE_MS)
+        : Promise.resolve({ confirmed: false as const, reason: "session id was unavailable" as const })
+      reject(new AutomationRunDurationCapExceededError(options.durationCapMs, stopCompletion))
+    }, options.durationCapMs)
+    timer.unref?.()
+  })
+  try {
+    return await Promise.race([run(), timeout])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
+async function settleSessionStop(stop: Promise<boolean>, graceMs: number): Promise<DurationCapStopOutcome> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const grace = new Promise<DurationCapStopOutcome>((resolve) => {
+    timer = setTimeout(() => resolve({ confirmed: false, reason: "session stop timed out" }), graceMs)
+    timer.unref?.()
+  })
+  try {
+    return await Promise.race([
+      stop.then(
+        (confirmed): DurationCapStopOutcome => confirmed ? { confirmed: true } : { confirmed: false, reason: "session stop was not confirmed" },
+        (): DurationCapStopOutcome => ({ confirmed: false, reason: "session stop was rejected" }),
+      ),
+      grace,
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
+function durationCapErrorMessage(error: AutomationRunDurationCapExceededError, stop: DurationCapStopOutcome): string {
+  const exceeded = safeErrorMessage(error)
+  return stop.confirmed ? exceeded : `${exceeded}; ${stop.reason}; preserving occupied outcome`
 }
 
 function startRunHeartbeat(store: AutomationStore, runId: string): () => Promise<void> {
@@ -450,5 +532,5 @@ function safeErrorMessage(error: unknown): string {
 }
 
 function durationMs(startedAt: string, completedAt: string): number {
-  return Math.max(0, new Date(completedAt).getTime() - new Date(startedAt).getTime())
+  return clampAutomationPersistedDurationMs(new Date(completedAt).getTime() - new Date(startedAt).getTime())
 }

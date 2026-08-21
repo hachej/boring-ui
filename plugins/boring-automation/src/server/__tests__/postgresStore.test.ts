@@ -120,20 +120,21 @@ describe("PostgresAutomationStore actor isolation", () => {
       if (!text.includes("INSERT INTO boring_automation_automations")) return Promise.resolve([])
       return Promise.resolve([{
         id: values[0], title: values[3], enabled: values[4], cron: values[5], timezone: values[6], model: values[7],
-        agent_type_id: values[8], prompt_ref: values[9], created_at: values[10], updated_at: values[11],
+        agent_type_id: values[8], run_duration_cap_ms: values[9], prompt_ref: values[10], created_at: values[11], updated_at: values[12],
       }])
     }) as unknown as postgres.Sql
     const store = new PostgresAutomationStore(sql, { workspaceId: "workspace-a", userId: "user-a" }, undefined, workspace)
 
     const automation = await store.createAutomation({
-      title: "Daily", cron: "0 9 * * *", timezone: "UTC", model: "test:model", agentTypeId: "researcher", prompt: "canonical prompt",
+      title: "Daily", cron: "0 9 * * *", timezone: "UTC", model: "test:model", agentTypeId: "researcher", runDurationCapMs: 42_000, prompt: "canonical prompt",
     })
 
     expect(automation.agentTypeId).toBe("researcher")
+    expect(automation.runDurationCapMs).toBe(42_000)
     expect(automation.promptRef).toBe(`.agents/automation/${automation.id}.md`)
     expect(files.get(automation.promptRef)).toBe("canonical prompt")
-    expect(queries[0]!.text).toContain("model, agent_type_id, prompt_ref, created_at")
-    expect(queries[0]!.text).toContain("RETURNING id, title, enabled, cron, timezone, model, agent_type_id, prompt_ref")
+    expect(queries[0]!.text).toContain("model, agent_type_id, run_duration_cap_ms, prompt_ref, created_at")
+    expect(queries[0]!.text).toContain("RETURNING id, title, enabled, cron, timezone, model, agent_type_id, run_duration_cap_ms, prompt_ref")
     expect(queries[0]!.text).not.toMatch(/\bprompt\b/)
     expect(queries[0]!.values).not.toContain("canonical prompt")
   })

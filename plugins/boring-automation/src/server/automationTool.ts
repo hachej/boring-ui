@@ -4,6 +4,7 @@ import {
   AutomationCreateSchema,
   AutomationPatchSchema,
   BORING_AUTOMATION_ERROR_CODES,
+  MAX_AUTOMATION_RUN_DURATION_CAP_MS,
   type BoringAutomationErrorCode,
 } from "../shared"
 import { parseAutomationModel } from "./dispatchRunExecutor"
@@ -15,6 +16,7 @@ export const BORING_AUTOMATION_TOOL_NAME = "boring_automation"
 const nonEmpty = z.string().trim().min(1)
 const limit = z.number().int().min(1).max(100).optional()
 const thinkingLevel = z.enum(["off", "low", "medium", "high"])
+const runDurationCap = z.number().int().positive().max(MAX_AUTOMATION_RUN_DURATION_CAP_MS)
 
 const listInput = z.object({ operation: z.literal("list"), limit }).strict()
 const getInput = z.object({ operation: z.literal("get"), automationId: nonEmpty }).strict()
@@ -27,6 +29,7 @@ const createInput = z.object({
   model: nonEmpty,
   agentTypeId: nonEmpty.optional(),
   thinkingLevel: thinkingLevel.optional(),
+  runDurationCapMs: runDurationCap.nullable().optional(),
   prompt: z.string().optional(),
 }).strict()
 const updateInput = z.object({
@@ -39,6 +42,7 @@ const updateInput = z.object({
   model: nonEmpty.optional(),
   agentTypeId: nonEmpty.optional(),
   thinkingLevel: thinkingLevel.optional(),
+  runDurationCapMs: runDurationCap.nullable().optional(),
   prompt: z.string().optional(),
 }).strict()
 const idInput = (operation: "pause" | "resume" | "run" | "delete") => z.object({
@@ -258,6 +262,7 @@ function result(details: object, isError: boolean): ToolResult {
 function automationToolJsonSchema(): Record<string, unknown> {
   const id = { type: "string", minLength: 1 }
   const limitSchema = { type: "integer", minimum: 1, maximum: 100 }
+  const durationCapSchema = { anyOf: [{ type: "integer", minimum: 1, maximum: MAX_AUTOMATION_RUN_DURATION_CAP_MS }, { type: "null" }] }
   const operationOnly = (operation: string, extra: Record<string, unknown> = {}, required: string[] = []) => ({
     type: "object",
     properties: { operation: { const: operation }, ...extra },
@@ -270,14 +275,14 @@ function automationToolJsonSchema(): Record<string, unknown> {
       operationOnly("get", { automationId: id }, ["automationId"]),
       operationOnly("create", {
         title: id, enabled: { type: "boolean" }, cron: id, timezone: id, model: id, agentTypeId: id,
-        thinkingLevel: { enum: ["off", "low", "medium", "high"] }, prompt: { type: "string" },
+        thinkingLevel: { enum: ["off", "low", "medium", "high"] }, runDurationCapMs: durationCapSchema, prompt: { type: "string" },
       }, ["title", "cron", "timezone", "model"]),
       {
         ...operationOnly("update", {
           automationId: id, title: id, enabled: { type: "boolean" }, cron: id, timezone: id, model: id, agentTypeId: id,
-          thinkingLevel: { enum: ["off", "low", "medium", "high"] }, prompt: { type: "string" },
+          thinkingLevel: { enum: ["off", "low", "medium", "high"] }, runDurationCapMs: durationCapSchema, prompt: { type: "string" },
         }, ["automationId"]),
-        anyOf: ["title", "enabled", "cron", "timezone", "model", "agentTypeId", "thinkingLevel", "prompt"].map((field) => ({ required: [field] })),
+        anyOf: ["title", "enabled", "cron", "timezone", "model", "agentTypeId", "thinkingLevel", "runDurationCapMs", "prompt"].map((field) => ({ required: [field] })),
       },
       operationOnly("pause", { automationId: id }, ["automationId"]),
       operationOnly("resume", { automationId: id }, ["automationId"]),
