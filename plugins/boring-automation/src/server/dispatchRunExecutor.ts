@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto"
 
 import type { FastifyRequest } from "fastify"
-import type { AgentEvent } from "@hachej/boring-agent/shared"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import { parseAutomationModelRef } from "../shared/model"
 import { clampAutomationPersistedDurationMs, resolveAutomationRunDurationCapMs } from "../shared/schedule"
 import { isAutomationRunSettled } from "../shared/runStatus"
 import type { AutomationRun, AutomationRunTrigger } from "../shared/types"
+import { aggregateUsage, finalizeUsage, safeErrorMessage, sessionIdFromEvent, terminalOutcomeFromEvent, type UsageAccumulator } from "./agentEventProjection"
+import { AutomationSessionUnaddressableError, DispatchIdentity } from "./dispatchIdentity"
 import type { AutomationRunEventPublisher } from "./runEventBus"
+import { AutomationRunDurationCapExceededError, durationCapErrorMessage, runWithDurationCap, startRunHeartbeat, type DurationCapStopOutcome } from "./runTimers"
 import type { AutomationStore } from "./store"
 import { AutomationStoreError } from "./store"
 
@@ -43,19 +45,6 @@ export interface DispatchRunInput {
   onStarted?: (run: AutomationRun) => void | Promise<void>
 }
 
-const RUN_HEARTBEAT_INTERVAL_MS = 30_000
-const RUN_DURATION_CAP_STOP_GRACE_MS = 5_000
-
-interface UsageTotals {
-  inputTokens: number | null
-  outputTokens: number | null
-  totalTokens: number | null
-}
-
-interface UsageAccumulator {
-  input: number | null
-  output: number | null
-}
 
 export class DispatchRunExecutor {
   private readonly clock: () => Date
@@ -130,12 +119,9 @@ export class DispatchRunExecutor {
     await this.publishRunChange(actor, run)
 
     const usage: UsageAccumulator = { input: null, output: null }
-    let sessionId: string | null = null
     let terminalStatus: "succeeded" | "failed" | "cancelled" | null = null
     let terminalError: string | null = null
-    let dispatchAccepted = false
-    let dispatchIdentityPersistenceFailed = false
-    let sessionAddressabilityVerified = false
+    let identity: DispatchIdentity | undefined
     const claimed = await store.claimRunForDispatch(run.id)
     if (!claimed) {
       const durable = await this.readDurableRun(store, automation.id, run.id, run)
@@ -156,35 +142,19 @@ export class DispatchRunExecutor {
       startedAt = this.nowIso()
       current = await store.updateRunLifecycle(run.id, { status: "dispatching", startedAt, sessionId: null })
       await this.publishRunChange(actor, current)
-      let dispatchReceipt: AutomationRun["dispatchReceipt"] | null = null
-      let durableSessionId: string | null = null
-      const persistDispatchIdentity = async (
-        ref: { agentTypeId: string; sessionId: string },
-        receipt?: Omit<NonNullable<AutomationRun["dispatchReceipt"]>, "ref">,
-      ) => {
-        sessionId = ref.sessionId
-        if (receipt) {
-          dispatchAccepted = true
-          dispatchReceipt = { ref, ...receipt }
-        }
-        if (durableSessionId === ref.sessionId && (!receipt || current.dispatchReceipt)) return
-        try {
-          current = await store.updateRunLifecycle(run.id, {
-            status: "dispatching",
-            sessionId: ref.sessionId,
-            ...(dispatchReceipt ? { dispatchReceipt } : {}),
-          })
-        } catch (error) {
-          dispatchIdentityPersistenceFailed = true
-          throw error
-        }
-        durableSessionId = ref.sessionId
-        await this.publishRunChange(actor, current)
-      }
+      identity = new DispatchIdentity({
+        store,
+        runId: run.id,
+        current,
+        actor,
+        requireAddressability: trigger === "scheduled",
+        dispatcherResolver: this.options.dispatcherResolver,
+        publish: async (changed) => await this.publishRunChange(actor, changed),
+      })
       let stopTimedOutSession: ((sessionId: string) => Promise<boolean>) | undefined
       await runWithDurationCap({
         durationCapMs: runDurationCapMs,
-        sessionId: () => sessionId,
+        sessionId: () => identity!.sessionId,
         stop: async (timedOutSessionId) => {
           return stopTimedOutSession ? await stopTimedOutSession(timedOutSessionId) : false
         },
@@ -209,8 +179,8 @@ export class DispatchRunExecutor {
             originSurface: "boring-automation",
           }, async (event) => {
             const eventSessionId = sessionIdFromEvent(event)
-            if (!durableSessionId && eventSessionId) {
-              await persistDispatchIdentity({ agentTypeId, sessionId: eventSessionId })
+            if (!identity!.durableSessionId && eventSessionId) {
+              await identity!.persist({ agentTypeId, sessionId: eventSessionId })
             }
             aggregateUsage(usage, event)
             const outcome = terminalOutcomeFromEvent(event)
@@ -219,33 +189,17 @@ export class DispatchRunExecutor {
               terminalError = outcome.error
             }
           }, async ({ ref, receipt }) => {
-            await persistDispatchIdentity(ref, receipt)
+            await identity!.persist(ref, receipt)
           })
-          if (!dispatchReceipt) await persistDispatchIdentity(dispatched.ref, dispatched.receipt)
+          if (!identity!.dispatchReceipt) await identity!.persist(dispatched.ref, dispatched.receipt)
         })
-        if (trigger === "scheduled" && (terminalStatus === null || terminalStatus === "succeeded")) {
-          const ref = dispatchReceipt?.ref
-          if (!ref) {
-            throw new AutomationSessionUnaddressableError("automation dispatch completed without a durable session reference")
-          }
-          const authorizeSession = this.options.dispatcherResolver.authorizeSession
-          if (!authorizeSession) {
-            throw new AutomationSessionUnaddressableError("workspace session lookup is unavailable")
-          }
-          try {
-            await authorizeSession.call(this.options.dispatcherResolver, actor, ref)
-            sessionAddressabilityVerified = true
-          } catch (error) {
-            throw new AutomationSessionUnaddressableError(
-              `recorded session ${ref.sessionId} could not be resolved through the workspace session lookup: ${safeErrorMessage(error)}`,
-            )
-          }
-        }
+
       })
+      current = identity.current
       current = await store.updateRunLifecycle(run.id, {
         status: "running",
-        sessionId,
-        dispatchReceipt,
+        sessionId: identity.sessionId,
+        dispatchReceipt: identity.dispatchReceipt,
       })
       await this.publishRunChange(actor, current)
 
@@ -253,7 +207,7 @@ export class DispatchRunExecutor {
       await stopHeartbeat()
       const finalized = await this.finalizeRun(store, run.id, {
         current,
-        sessionId,
+        sessionId: identity.sessionId,
         startedAt,
         completedAt,
         status: terminalStatus ?? "succeeded",
@@ -265,32 +219,21 @@ export class DispatchRunExecutor {
     } catch (error) {
       await stopHeartbeat()
       if (isRunLeaseLost(error)) return await this.readDurableRun(store, automation.id, run.id, current)
-      const durationCapExceeded = error instanceof AutomationRunDurationCapExceededError
-      const scheduledSuccessUnverified = trigger === "scheduled"
-        && terminalStatus === "succeeded"
-        && !sessionAddressabilityVerified
-      const sessionUnaddressable = error instanceof AutomationSessionUnaddressableError || scheduledSuccessUnverified
-      const durationCapStop = durationCapExceeded ? await error.stopCompletion : null
+      if (identity) current = identity.current
+      const failure = await classifyFailure(error, identity ?? { dispatchInFlight: false })
       const completedAt = this.nowIso()
-      const cancelled = isCancellationError(error)
-      const status = sessionUnaddressable
-        ? "failed"
-        : durationCapExceeded
-          ? (durationCapStop?.confirmed ? "cancelled" : "outcome-unknown")
-          : terminalStatus ?? (cancelled ? "cancelled" : (dispatchAccepted || dispatchIdentityPersistenceFailed ? "outcome-unknown" : "failed"))
+      const status = finalStatus(failure, terminalStatus)
       let finalized: AutomationRun
       try {
         finalized = await this.finalizeRun(store, run.id, {
           current,
-          sessionId,
+          sessionId: identity?.sessionId ?? null,
           startedAt,
           completedAt,
           status,
-          error: durationCapExceeded
-            ? durationCapErrorMessage(error, durationCapStop!)
-            : scheduledSuccessUnverified
-              ? `scheduled session addressability could not be verified: ${safeErrorMessage(error)}`
-              : status === "failed" || status === "outcome-unknown" ? (terminalError ?? safeErrorMessage(error)) : null,
+          error: failure.kind === "duration-cap"
+            ? durationCapErrorMessage(failure.error, failure.stop)
+            : status === "failed" || status === "outcome-unknown" ? (terminalError ?? failure.message) : null,
           usage,
         })
       } catch (finalizeError) {
@@ -347,97 +290,6 @@ export class DispatchRunExecutor {
   }
 }
 
-type DurationCapStopOutcome =
-  | { confirmed: true }
-  | { confirmed: false; reason: "session id was unavailable" | "session stop was rejected" | "session stop timed out" | "session stop was not confirmed" }
-
-class AutomationSessionUnaddressableError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = "AutomationSessionUnaddressableError"
-  }
-}
-
-class AutomationRunDurationCapExceededError extends Error {
-  constructor(durationCapMs: number, readonly stopCompletion: Promise<DurationCapStopOutcome>) {
-    super(`Automation run exceeded its ${durationCapMs}ms duration cap`)
-    this.name = "AutomationRunDurationCapExceededError"
-  }
-}
-
-async function runWithDurationCap<T>(
-  options: {
-    durationCapMs: number
-    sessionId: () => string | null
-    stop: (sessionId: string) => Promise<boolean>
-  },
-  run: () => Promise<T>,
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => {
-      const sessionId = options.sessionId()
-      const stopCompletion = sessionId
-        ? settleSessionStop(options.stop(sessionId), RUN_DURATION_CAP_STOP_GRACE_MS)
-        : Promise.resolve({ confirmed: false as const, reason: "session id was unavailable" as const })
-      reject(new AutomationRunDurationCapExceededError(options.durationCapMs, stopCompletion))
-    }, options.durationCapMs)
-    timer.unref?.()
-  })
-  try {
-    return await Promise.race([run(), timeout])
-  } finally {
-    if (timer !== undefined) clearTimeout(timer)
-  }
-}
-
-async function settleSessionStop(stop: Promise<boolean>, graceMs: number): Promise<DurationCapStopOutcome> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const grace = new Promise<DurationCapStopOutcome>((resolve) => {
-    timer = setTimeout(() => resolve({ confirmed: false, reason: "session stop timed out" }), graceMs)
-    timer.unref?.()
-  })
-  try {
-    return await Promise.race([
-      stop.then(
-        (confirmed): DurationCapStopOutcome => confirmed ? { confirmed: true } : { confirmed: false, reason: "session stop was not confirmed" },
-        (): DurationCapStopOutcome => ({ confirmed: false, reason: "session stop was rejected" }),
-      ),
-      grace,
-    ])
-  } finally {
-    if (timer !== undefined) clearTimeout(timer)
-  }
-}
-
-function durationCapErrorMessage(error: AutomationRunDurationCapExceededError, stop: DurationCapStopOutcome): string {
-  const exceeded = safeErrorMessage(error)
-  return stop.confirmed ? exceeded : `${exceeded}; ${stop.reason}; preserving occupied outcome`
-}
-
-function startRunHeartbeat(store: AutomationStore, runId: string): () => Promise<void> {
-  let stopped = false
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let inFlight: Promise<void> = Promise.resolve()
-  const schedule = () => {
-    if (stopped) return
-    timer = setTimeout(() => {
-      inFlight = store.heartbeatRun(runId)
-        .then((renewed) => {
-          if (renewed) schedule()
-          else stopped = true
-        })
-        .catch(() => schedule())
-    }, RUN_HEARTBEAT_INTERVAL_MS)
-    timer.unref?.()
-  }
-  schedule()
-  return async () => {
-    stopped = true
-    if (timer !== undefined) clearTimeout(timer)
-    await inFlight
-  }
-}
 
 export function resolveAutomationAgentTypeId(
   automationAgentTypeId: string | undefined,
@@ -467,67 +319,33 @@ export function parseAutomationModel(value: string): { provider: string; id: str
   )
 }
 
-function sessionIdFromEvent(event: unknown): string | null {
-  if (!event || typeof event !== "object") return null
-  const sessionId = (event as { sessionId?: unknown }).sessionId
-  return typeof sessionId === "string" && sessionId.trim() ? sessionId : null
-}
 
-function chunkFromEvent(event: unknown): AgentEvent["chunk"] | null {
-  if (!event || typeof event !== "object") return null
-  const chunk = (event as { chunk?: unknown }).chunk
-  if (!chunk || typeof chunk !== "object") return null
-  return chunk as AgentEvent["chunk"]
-}
+export type RunFailure =
+  | { kind: "duration-cap"; stop: DurationCapStopOutcome; error: AutomationRunDurationCapExceededError; message: string }
+  | { kind: "unaddressable"; message: string }
+  | { kind: "cancelled"; message: string }
+  | { kind: "unknown"; dispatchInFlight: boolean; message: string }
 
-function aggregateUsage(accumulator: UsageAccumulator, event: unknown): void {
-  const chunk = chunkFromEvent(event)
-  if (!chunk || chunk.type !== "usage") return
-  const usage = chunk.usage
-  if (!usage || typeof usage !== "object") return
-  const record = usage as Record<string, unknown>
-  const input = sumObservedNumbers(record.input, record.inputTokens, record.cacheRead, record.cacheReadTokens, record.cacheWrite, record.cacheWriteTokens)
-  const output = sumObservedNumbers(record.output, record.outputTokens)
-  if (input !== null) accumulator.input = (accumulator.input ?? 0) + input
-  if (output !== null) accumulator.output = (accumulator.output ?? 0) + output
-}
-
-function sumObservedNumbers(...values: unknown[]): number | null {
-  let observed = false
-  let total = 0
-  for (const value of values) {
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) continue
-    observed = true
-    total += Math.trunc(value)
+export async function classifyFailure(error: unknown, identity: { dispatchInFlight: boolean }): Promise<RunFailure> {
+  const message = safeErrorMessage(error)
+  if (error instanceof AutomationRunDurationCapExceededError) {
+    return { kind: "duration-cap", stop: await error.stopCompletion, error, message }
   }
-  return observed ? total : null
+  if (error instanceof AutomationSessionUnaddressableError) return { kind: "unaddressable", message }
+  if (isCancellationError(error)) return { kind: "cancelled", message }
+  return { kind: "unknown", dispatchInFlight: identity.dispatchInFlight, message }
 }
 
-function finalizeUsage(usage: UsageAccumulator): UsageTotals {
-  if (usage.input === null && usage.output === null) {
-    return { inputTokens: null, outputTokens: null, totalTokens: null }
-  }
-  return {
-    inputTokens: usage.input,
-    outputTokens: usage.output,
-    totalTokens: (usage.input ?? 0) + (usage.output ?? 0),
-  }
+export function finalStatus(
+  failure: RunFailure,
+  observed: "succeeded" | "failed" | "cancelled" | null,
+): "succeeded" | "failed" | "cancelled" | "outcome-unknown" {
+  if (failure.kind === "unaddressable") return "failed"
+  if (failure.kind === "duration-cap") return failure.stop.confirmed ? "cancelled" : "outcome-unknown"
+  if (observed) return observed
+  if (failure.kind === "cancelled") return "cancelled"
+  return failure.dispatchInFlight ? "outcome-unknown" : "failed"
 }
-
-function terminalOutcomeFromEvent(event: unknown): { status: "succeeded" | "failed" | "cancelled"; error: string | null } | null {
-  const chunk = chunkFromEvent(event)
-  if (!chunk) return null
-  if (chunk.type === "agent-end" && !chunk.willRetry) {
-    if (chunk.status === "ok") return { status: "succeeded", error: null }
-    if (chunk.status === "aborted") return { status: "cancelled", error: null }
-    return { status: "failed", error: "Automation run failed" }
-  }
-  if (chunk.type === "error") {
-    return { status: "failed", error: safeErrorMessage(chunk.error) }
-  }
-  return null
-}
-
 
 function isRunLeaseLost(error: unknown): boolean {
   return error instanceof AutomationStoreError && error.code === BORING_AUTOMATION_ERROR_CODES.RUN_LEASE_LOST
@@ -539,17 +357,6 @@ function isCancellationError(error: unknown): boolean {
   return record.name === "AbortError" || record.code === "ABORT_ERR"
 }
 
-function safeErrorMessage(error: unknown): string {
-  const raw = error instanceof Error
-    ? error.message
-    : typeof error === "string"
-      ? error
-      : error && typeof error === "object" && typeof (error as { message?: unknown }).message === "string"
-        ? (error as { message: string }).message
-        : "Automation run failed"
-  const firstLine = raw.split(/\r?\n/u)[0]?.trim() || "Automation run failed"
-  return firstLine.length > 300 ? `${firstLine.slice(0, 297)}...` : firstLine
-}
 
 function durationMs(startedAt: string, completedAt: string): number {
   return clampAutomationPersistedDurationMs(new Date(completedAt).getTime() - new Date(startedAt).getTime())

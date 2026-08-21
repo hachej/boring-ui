@@ -6,7 +6,9 @@ import { BORING_AUTOMATION_ERROR_CODES } from "../../shared/error-codes"
 import { isAutomationRunOccupying } from "../../shared/runStatus"
 import { MAX_AUTOMATION_DURATION_MS } from "../../shared/schedule"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../../shared/types"
-import { automationSessionTitle, DispatchRunExecutor, parseAutomationModel, type VerifiedAutomationActor } from "../dispatchRunExecutor"
+import { automationSessionTitle, classifyFailure, DispatchRunExecutor, finalStatus, parseAutomationModel, type VerifiedAutomationActor } from "../dispatchRunExecutor"
+import { AutomationSessionUnaddressableError } from "../dispatchIdentity"
+import { AutomationRunDurationCapExceededError } from "../runTimers"
 import type { AutomationRunEventPublisher } from "../runEventBus"
 import { AutomationStoreError, type AutomationStore, automationNotFound, runAlreadyActive, runLeaseLost, runNotFound } from "../store"
 
@@ -37,6 +39,34 @@ describe("parseAutomationModel", () => {
         expect(error).toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.INVALID_MODEL })
       }
     }
+  })
+})
+
+describe("run failure classification", () => {
+  it("classifies known failures and computes their final statuses", async () => {
+    const confirmedCap = await classifyFailure(
+      new AutomationRunDurationCapExceededError(100, Promise.resolve({ confirmed: true })),
+      { dispatchInFlight: true },
+    )
+    expect(confirmedCap).toMatchObject({ kind: "duration-cap", stop: { confirmed: true } })
+    expect(finalStatus(confirmedCap, null)).toBe("cancelled")
+
+    const unaddressable = await classifyFailure(new AutomationSessionUnaddressableError("session missing"), { dispatchInFlight: true })
+    expect(unaddressable).toEqual({ kind: "unaddressable", message: "session missing" })
+    expect(finalStatus(unaddressable, "succeeded")).toBe("failed")
+
+    const cancelled = await classifyFailure(Object.assign(new Error("stopped"), { name: "AbortError" }), { dispatchInFlight: false })
+    expect(cancelled).toEqual({ kind: "cancelled", message: "stopped" })
+    expect(finalStatus(cancelled, null)).toBe("cancelled")
+  })
+
+  it("uses observed outcomes before unknown dispatch ambiguity", async () => {
+    const beforeDispatch = await classifyFailure(new Error("dispatch failed"), { dispatchInFlight: false })
+    const afterDispatch = await classifyFailure(new Error("stream failed"), { dispatchInFlight: true })
+
+    expect(finalStatus(beforeDispatch, null)).toBe("failed")
+    expect(finalStatus(afterDispatch, null)).toBe("outcome-unknown")
+    expect(finalStatus(afterDispatch, "succeeded")).toBe("succeeded")
   })
 })
 
@@ -136,7 +166,7 @@ describe("DispatchRunExecutor", () => {
     )
   })
 
-  it("fails a scheduled success when the dispatcher rejects before session lookup", async () => {
+  it("verifies scheduled session addressability on the first event before a later stream rejection", async () => {
     const harness = createHarness({
       events: [event(0, { type: "agent-end", seq: 1, turnId: "turn-1", status: "ok" })],
       streamError: new Error("stream closed after terminal event"),
@@ -149,11 +179,11 @@ describe("DispatchRunExecutor", () => {
       scheduledFor: "2026-07-10T09:00:00.000Z",
     })
 
-    expect(run).toMatchObject({
-      status: "failed",
-      error: "scheduled session addressability could not be verified: stream closed after terminal event",
-    })
-    expect(harness.resolver.authorizeSession).not.toHaveBeenCalled()
+    expect(run).toMatchObject({ status: "succeeded", error: null })
+    expect(harness.resolver.authorizeSession).toHaveBeenCalledWith(
+      harness.actor,
+      { agentTypeId: "default", sessionId: "session-1" },
+    )
   })
 
   it("preserves a scheduled worker failure without replacing it with lookup diagnostics", async () => {
@@ -169,7 +199,10 @@ describe("DispatchRunExecutor", () => {
     })
 
     expect(run).toMatchObject({ status: "failed", error: "worker failed" })
-    expect(harness.resolver.authorizeSession).not.toHaveBeenCalled()
+    expect(harness.resolver.authorizeSession).toHaveBeenCalledWith(
+      harness.actor,
+      { agentTypeId: "default", sessionId: "session-1" },
+    )
   })
 
   it("uses canonical prompt and model snapshots from the store", async () => {
